@@ -948,6 +948,19 @@ const proposalDetailPageResponseSchema = {
         },
         additionalProperties: false
       }
+    },
+    // R14 批 FEEDBACK：本人二值反馈+服务端算好的动作 href（additive，只进 properties 不进 required）。
+    feedback: {
+      type: "object",
+      required: ["my_verdict", "my_note", "mark_useful", "mark_not_useful"],
+      properties: {
+        my_verdict: { type: ["string", "null"], enum: ["useful", "not_useful", null] },
+        my_note: { type: ["string", "null"], maxLength: 200 },
+        mark_useful: actionSpecSchema,
+        mark_not_useful: actionSpecSchema,
+        clear: actionSpecSchema
+      },
+      additionalProperties: false
     }
   },
   additionalProperties: false
@@ -4588,6 +4601,17 @@ function conversationMessageResponseVariant(
           },
           additionalProperties: false
         }
+      },
+      // R14 批 FEEDBACK：本人对这条消息的二值反馈（自见性，additive optional）。
+      my_feedback: {
+        type: "object",
+        required: ["verdict", "updated_at"],
+        properties: {
+          verdict: { type: "string", enum: ["useful", "not_useful"] },
+          note: { type: "string", maxLength: 200 },
+          updated_at: dateTimeStringSchema
+        },
+        additionalProperties: false
       }
     },
     additionalProperties: false
@@ -5015,6 +5039,51 @@ const conversationMessageOwnershipForbiddenResponse = jsonErrorStatusResponse(
   ["invalid_client_token", "forbidden", "human_required", "conversation_message_forbidden"]
 ).responses["403"];
 const conversationNoContentResponse = { description: "Acknowledged with no body" } as const;
+// R14 批 FEEDBACK：二值反馈请求体与响应集（三主体共用）。
+const putAiFeedbackRequestBodySchema = {
+  type: "object",
+  required: ["verdict"],
+  properties: {
+    verdict: { type: "string", enum: ["useful", "not_useful"] },
+    note: { type: "string", maxLength: 200 }
+  },
+  additionalProperties: false
+} as const;
+const aiFeedbackForbiddenResponse = jsonErrorStatusResponse(
+  "403",
+  "Feedback requires a signed-in human with access to the subject",
+  ["invalid_client_token", "forbidden", "human_required", "ai_feedback_forbidden", "ai_feedback_human_required"]
+).responses["403"];
+function aiFeedbackPutResponses(notFoundDescription: string, notFoundCodes: string[]) {
+  return {
+    responses: {
+      "204": conversationNoContentResponse,
+      "400": jsonErrorStatusResponse("400", "Feedback payload failed validation", [
+        "malformed_json",
+        "json_object_required",
+        "ai_feedback_note_rejected"
+      ]).responses["400"],
+      "401": conversationAuthRequiredResponse,
+      "403": aiFeedbackForbiddenResponse,
+      "404": jsonErrorStatusResponse("404", notFoundDescription, notFoundCodes).responses["404"],
+      "413": conversationPayloadTooLargeResponse,
+      "422": conversationValidationResponse,
+      "500": conversationInternalResponse
+    }
+  } as const;
+}
+function aiFeedbackDeleteResponses(notFoundDescription: string, notFoundCodes: string[]) {
+  return {
+    responses: {
+      "204": conversationNoContentResponse,
+      "401": conversationAuthRequiredResponse,
+      "403": aiFeedbackForbiddenResponse,
+      "404": jsonErrorStatusResponse("404", notFoundDescription, notFoundCodes).responses["404"],
+      "422": conversationValidationResponse,
+      "500": conversationInternalResponse
+    }
+  } as const;
+}
 const conversationMessageEditResponses = {
   responses: {
     "200": jsonDataResponse(conversationMessageResponseSchema, "Edited message VM").responses["200"],
@@ -7308,6 +7377,63 @@ export function getOpenApiDocument() {
             }
           ],
           ...searchResponses
+        }
+      },
+      "/api/conversations/{id}/messages/{messageId}/feedback": {
+        put: {
+          tags: ["feedback"],
+          summary: "Rate a living Cuu text reply useful or not (idempotent upsert)",
+          parameters: [pathUuidParameter("id"), pathUuidParameter("messageId")],
+          ...jsonRequestBody(putAiFeedbackRequestBodySchema),
+          ...aiFeedbackPutResponses("Conversation, message, or rateable Cuu reply was not found", [
+            "conversation_not_found",
+            "ai_feedback_subject_not_found"
+          ])
+        },
+        delete: {
+          tags: ["feedback"],
+          summary: "Clear your feedback on a Cuu reply (idempotent)",
+          parameters: [pathUuidParameter("id"), pathUuidParameter("messageId")],
+          ...aiFeedbackDeleteResponses("Conversation, message, or rateable Cuu reply was not found", [
+            "conversation_not_found",
+            "ai_feedback_subject_not_found"
+          ])
+        }
+      },
+      "/api/proposals/{id}/feedback": {
+        put: {
+          tags: ["feedback"],
+          summary: "Rate a proposal useful or not (idempotent upsert)",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(putAiFeedbackRequestBodySchema),
+          ...aiFeedbackPutResponses("Proposal was not found or is not visible", ["ai_feedback_subject_not_found"])
+        },
+        delete: {
+          tags: ["feedback"],
+          summary: "Clear your feedback on a proposal (idempotent)",
+          parameters: [pathUuidParameter("id")],
+          ...aiFeedbackDeleteResponses("Proposal was not found or is not visible", [
+            "ai_feedback_subject_not_found"
+          ])
+        }
+      },
+      "/api/action-card-items/{id}/feedback": {
+        put: {
+          tags: ["feedback"],
+          summary: "Rate an action card item useful or not (idempotent upsert)",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(putAiFeedbackRequestBodySchema),
+          ...aiFeedbackPutResponses("Action card item was not found in your workspace", [
+            "ai_feedback_subject_not_found"
+          ])
+        },
+        delete: {
+          tags: ["feedback"],
+          summary: "Clear your feedback on an action card item (idempotent)",
+          parameters: [pathUuidParameter("id")],
+          ...aiFeedbackDeleteResponses("Action card item was not found in your workspace", [
+            "ai_feedback_subject_not_found"
+          ])
         }
       },
       "/api/me/memories": {

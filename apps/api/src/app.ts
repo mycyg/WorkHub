@@ -49,6 +49,10 @@ import { createUserMemoryGovernanceRoutes } from "./routes/user-memory-governanc
 import { createTeamSkillGovernanceRoutes } from "./routes/team-skill-governance.js";
 import { UserMemoryGovernanceServiceError } from "./services/user-memory-governance.js";
 import { TeamSkillGovernanceServiceError } from "./services/team-skill-governance.js";
+import { createConversationMessageFeedbackRoutes } from "./routes/conversation-message-feedback.js";
+import { createProposalFeedbackRoutes } from "./routes/proposal-feedback.js";
+import { createActionCardItemFeedbackRoutes } from "./routes/action-card-item-feedback.js";
+import { AiFeedbackServiceError } from "./services/ai-feedback.js";
 import { createDriveVersionRoutes } from "./routes/drive-versions.js";
 import { createSpotlightIntentRoutes } from "./routes/spotlight-intent.js";
 import { createPersonalProjectRoutes } from "./routes/personal-projects.js";
@@ -273,6 +277,10 @@ app.route("/api", createSearchRoutes());
 // R14 批 MEM：记忆可见可治理——用户记忆（本人可读写）与团队技能（全员读、管理员写）管理面。
 app.route("/api", createUserMemoryGovernanceRoutes());
 app.route("/api", createTeamSkillGovernanceRoutes());
+// R14 批 FEEDBACK：Cuu 回复/提议/行动卡条目的二值反馈（自见性，喂夜间蒸馏）。
+app.route("/api", createConversationMessageFeedbackRoutes());
+app.route("/api", createProposalFeedbackRoutes());
+app.route("/api", createActionCardItemFeedbackRoutes());
 app.route("/api/drive", createDriveVersionRoutes());
 app.route("/api", createSpotlightIntentRoutes());
 app.route("/api", createPersonalProjectRoutes());
@@ -437,6 +445,20 @@ app.onError((error, c) => {
         }
       },
       error.status
+    );
+  }
+
+  // R14 批 FEEDBACK：反馈服务的类型化 400/403/404——不进这张表会被兜底压成 500。
+  if (error instanceof AiFeedbackServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
     );
   }
 
