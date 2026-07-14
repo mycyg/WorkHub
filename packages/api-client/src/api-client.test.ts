@@ -548,3 +548,73 @@ test("api client exposes the workbench bootstrap page VM endpoint", async () => 
     "/api/pages/workbench/project%201?locale=en-US"
   ]);
 });
+
+// R14 批 MEM（记忆可见可治理）：用户记忆 + 团队技能两个治理面的客户端方法——URL/方法/body 构造要
+// 与服务端路由（apps/api/src/routes/{user-memory-governance,team-skill-governance}.ts）逐字对齐。
+// 这两组方法在 WorkHubApiClient 上是可选字段（同上面 pages.workbench? 的既有先例，不强迫
+// apps/desktop-webview 的完整 mock 字面量跟着补桩），真实 createApiClient() 一定实现它们。
+test("api client exposes the user memory governance endpoints (list/patch/delete)", async () => {
+  const calls: Array<{ url: string; method: string; body: string | undefined }> = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET", body: typeof init?.body === "string" ? init.body : undefined });
+      return new Response(JSON.stringify({ ok: true, data: { id: "ok" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  await client.listUserMemories!();
+  await client.listUserMemories!({ category: "preference" });
+  await client.patchUserMemory!("mem-1", { value_md: "喜欢简洁的回复", expected_updated_at: "2026-07-10T00:00:00.000Z" });
+  await client.deleteUserMemory!("mem-1");
+
+  assert.deepEqual(calls, [
+    { url: "/api/me/memories", method: "GET", body: undefined },
+    { url: "/api/me/memories?category=preference", method: "GET", body: undefined },
+    {
+      url: "/api/me/memories/mem-1",
+      method: "PATCH",
+      body: JSON.stringify({ value_md: "喜欢简洁的回复", expected_updated_at: "2026-07-10T00:00:00.000Z" })
+    },
+    { url: "/api/me/memories/mem-1", method: "DELETE", body: undefined }
+  ]);
+});
+
+test("api client exposes the team skill governance endpoints (list/patch/deactivate)", async () => {
+  const calls: Array<{ url: string; method: string; body: string | undefined }> = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET", body: typeof init?.body === "string" ? init.body : undefined });
+      return new Response(JSON.stringify({ ok: true, data: { id: "ok" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  await client.listTeamSkillsManage!();
+  await client.patchTeamSkillManage!("skill-1", {
+    ops: [{ op: "modify_section", section: "边界情况", content_md: "补充边界说明" }],
+    base_version: 3,
+    rationale_md: "管理员手动编辑"
+  });
+  await client.deactivateTeamSkillManage!("skill-1");
+  await client.deactivateTeamSkillManage!("skill-1", { reason: "已过时" });
+
+  assert.deepEqual(calls, [
+    { url: "/api/team-skills/manage", method: "GET", body: undefined },
+    {
+      url: "/api/team-skills/manage/skill-1",
+      method: "PATCH",
+      body: JSON.stringify({
+        ops: [{ op: "modify_section", section: "边界情况", content_md: "补充边界说明" }],
+        base_version: 3,
+        rationale_md: "管理员手动编辑"
+      })
+    },
+    { url: "/api/team-skills/manage/skill-1/deactivate", method: "POST", body: JSON.stringify({}) },
+    { url: "/api/team-skills/manage/skill-1/deactivate", method: "POST", body: JSON.stringify({ reason: "已过时" }) }
+  ]);
+});

@@ -359,6 +359,24 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async replayAgentRun() {
       return surface.page_vms.replay;
     },
+    async listUserMemories() {
+      throw new Error("not needed");
+    },
+    async patchUserMemory() {
+      throw new Error("not needed");
+    },
+    async deleteUserMemory() {
+      throw new Error("not needed");
+    },
+    async listTeamSkillsManage() {
+      throw new Error("not needed");
+    },
+    async patchTeamSkillManage() {
+      throw new Error("not needed");
+    },
+    async deactivateTeamSkillManage() {
+      throw new Error("not needed");
+    },
     pages: {
       async attention() {
         throw new Error("not needed");

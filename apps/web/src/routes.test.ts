@@ -20,7 +20,9 @@ import type {
   ReplayTraceVM,
   SessionVM,
   SettingsPageVM,
-  TeamSkillsPageVM
+  TeamSkillsPageVM,
+  TeamSkillManagementPageVM,
+  UserMemoryManagementPageVM
 } from "@workhub/contracts";
 
 import {
@@ -48,6 +50,8 @@ type RouteClientOverrides = {
   session?: SessionVM;
   knowledge?: EvidenceBubble;
   settings?: SettingsPageVM;
+  userMemories?: UserMemoryManagementPageVM;
+  teamSkillsManage?: TeamSkillManagementPageVM;
   conflicts?: ProposalConflict[];
   attentionError?: Error;
   approvalsError?: Error;
@@ -714,6 +718,14 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
     async replayAgentRun(id: string, options?: { locale?: string }) {
       localeCall(`replayAgentRun:${id}`, options);
       return overrides.replay ?? surface.page_vms.replay;
+    },
+    async listUserMemories() {
+      calls.push("listUserMemories");
+      return overrides.userMemories ?? { generated_at: "2026-07-14T00:00:00.000Z", memories: [], totals: { active: 0 } };
+    },
+    async listTeamSkillsManage() {
+      calls.push("listTeamSkillsManage");
+      return overrides.teamSkillsManage ?? { generated_at: "2026-07-14T00:00:00.000Z", skills: [] };
     }
   } as unknown as WorkHubApiClient;
   return { client, calls };
@@ -884,6 +896,7 @@ function routeStructuredProposalConflict(surface: GoldPathSurfaceVM): ProposalCo
 
 test("R4 web route registry resolves product URL routes", () => {
   // R9.6 adds the live-only Agent Army dashboard to the product route set; the old fixed list was pre-dashboard.
+  // R14 批 MEM 追加 "memory"（/settings/memory，见 routes.ts 的 routeMatchers 末尾新增项）。
   assert.deepEqual(webRouteRegistry.map((route) => route.key), [
     "home",
     "projects",
@@ -902,7 +915,8 @@ test("R4 web route registry resolves product URL routes", () => {
     "agents",
     "knowledge",
     "skills",
-    "settings"
+    "settings",
+    "memory"
   ]);
   assert.equal(resolveWebRoute("/")?.key, "home");
   assert.equal(resolveWebRoute("/projects")?.key, "projects");
@@ -1046,7 +1060,9 @@ test("R4.16 web route tree declares hydration fallback boundaries for every prod
       ["agents", "agents"],
       ["knowledge", "evidence"],
       ["skills", "skills"],
-      ["settings", "settings"]
+      ["settings", "settings"],
+      // R14 批 MEM：新路由 "memory"（/settings/memory），pageVm 同名。
+      ["memory", "memory"]
     ]
   );
   assert.equal(webReactRouteTree.every((route) => route.hydration.enabled), true);
@@ -1603,6 +1619,135 @@ test("xreview batch C: stat chips carry surface-specific labels (no recycled hom
   assert.equal(workitem.status, "ready");
   assert.equal(workitem.html.includes('data-r4-product-metric="acceptedDeliverables">'), true);
   assert.equal(workitem.html.includes("Proposed changes"), true);
+});
+
+test("R14 批 MEM: memory route resolves /settings/memory and defaults to the profile tab", () => {
+  const match = resolveWebRoute("/settings/memory");
+  assert.equal(match?.key, "memory");
+  assert.equal(match?.pathname, "/settings/memory");
+  assert.equal(webRouteRegistry.some((route) => route.key === "memory" && route.pattern === "/settings/memory"), true);
+});
+
+test("R14 批 MEM: memory route fetches both governance endpoints and renders the profile tab by default", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client, calls } = fakeRouteClient(surface, {
+    userMemories: {
+      generated_at: "2026-07-14T00:00:00.000Z",
+      memories: [{
+        id: "99000000-0000-4000-8000-000000000001",
+        category: "preference",
+        key: "reply-tone",
+        value_md: "喜欢简洁的回复",
+        confidence: 0.8,
+        workspace_scoped: true,
+        created_at: "2026-07-10T00:00:00.000Z",
+        updated_at: "2026-07-10T00:00:00.000Z",
+        provenance: { kind: "agent_run", label: "来自会话《周报》的一次 AI 执行" }
+      }],
+      totals: { active: 1 }
+    }
+  });
+  const match = resolveWebRoute("/settings/memory");
+  assert.ok(match);
+  const result = await loadWebRoute(client, match, "zh-CN");
+  assert.equal(result.status, "ready");
+  assert.equal(calls.includes("listUserMemories"), true);
+  assert.equal(calls.includes("listTeamSkillsManage"), true);
+  assert.equal(result.html.includes('data-r14-mem-active-tab="profile"'), true);
+  assert.equal(result.html.includes('data-r14-mem-item="99000000-0000-4000-8000-000000000001"'), true);
+  assert.equal(result.html.includes("喜欢简洁的回复"), true);
+  assert.equal(result.html.includes("来自会话《周报》的一次 AI 执行"), true);
+  // 未登录/非管理员时 shellUser 缺省 —— 团队技能 tab 不应该渲出编辑/停用按钮。
+  // 按 ="true" 完整属性值匹配（不用裸子串——CSS 里的 armed 态选择器本身就含
+  // "[data-r14-skill-deactivate-btn]" 这段文字，裸子串检测会被 <style> 假阳性命中）。
+  assert.equal(result.html.includes('data-r14-skill-edit-btn="true"'), false);
+  assert.equal(result.html.includes('data-r14-skill-deactivate-btn="true"'), false);
+});
+
+test("R14 批 MEM: memory route honors ?tab=skills and diverges from the profile default", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client } = fakeRouteClient(surface, {
+    teamSkillsManage: {
+      generated_at: "2026-07-14T00:00:00.000Z",
+      skills: [{
+        id: "99000000-0000-4000-8000-000000000002",
+        skill_key: "quarterly-report",
+        name: "季度报告",
+        when_to_use: "生成季度业务报告",
+        version: 2,
+        source_kind: "distilled",
+        created_by_kind: "ai",
+        sample_count: 3,
+        updated_at: "2026-07-10T00:00:00.000Z",
+        content_md: "## 总则\n写清楚数据来源",
+        status: "active"
+      }]
+    }
+  });
+  const match = resolveWebRoute("/settings/memory?tab=skills");
+  assert.ok(match);
+  const result = await loadWebRoute(client, match, "zh-CN");
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.includes('data-r14-mem-active-tab="skills"'), true);
+  assert.equal(result.html.includes('data-r14-skill-item="99000000-0000-4000-8000-000000000002"'), true);
+  assert.equal(result.html.includes("data-r14-mem-admin-note"), true);
+});
+
+test("R14 批 MEM: team skill edit/deactivate controls render only when the signed-in shell user is an admin", async () => {
+  const surface = goldPathSurfaceVm();
+  const teamSkillsManage = {
+    generated_at: "2026-07-14T00:00:00.000Z",
+    skills: [{
+      id: "99000000-0000-4000-8000-000000000003",
+      skill_key: "quarterly-report",
+      name: "季度报告",
+      when_to_use: "生成季度业务报告",
+      version: 2,
+      source_kind: "distilled" as const,
+      created_by_kind: "ai" as const,
+      sample_count: 3,
+      updated_at: "2026-07-10T00:00:00.000Z",
+      content_md: "## 总则\n写清楚数据来源",
+      status: "active" as const
+    }]
+  };
+  const match = resolveWebRoute("/settings/memory?tab=skills");
+  assert.ok(match);
+
+  const { client: memberClient } = fakeRouteClient(surface, { teamSkillsManage });
+  const memberResult = await loadWebRoute(memberClient, match, "zh-CN", { nickname: "member", isAdmin: false });
+  assert.equal(memberResult.html.includes('data-r14-skill-edit-btn="true"'), false);
+  assert.equal(memberResult.html.includes('data-r14-skill-deactivate-btn="true"'), false);
+  assert.equal(memberResult.html.includes("data-r14-mem-admin-note"), true);
+
+  const { client: adminClient } = fakeRouteClient(surface, { teamSkillsManage });
+  const adminResult = await loadWebRoute(adminClient, match, "zh-CN", { nickname: "admin", isAdmin: true });
+  assert.equal(adminResult.html.includes('data-r14-skill-edit-btn="true" data-r14-skill-id="99000000-0000-4000-8000-000000000003"'), true);
+  assert.equal(adminResult.html.includes('data-r14-skill-deactivate-btn="true" data-r14-skill-id="99000000-0000-4000-8000-000000000003"'), true);
+  assert.equal(adminResult.html.includes("data-r14-mem-admin-note"), false);
+});
+
+test("R14 批 MEM: empty user memories render the honest empty state, not a blank list", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client } = fakeRouteClient(surface);
+  const match = resolveWebRoute("/settings/memory");
+  assert.ok(match);
+  const result = await loadWebRoute(client, match, "en-US");
+  assert.equal(result.html.includes('data-r14-mem-profile-empty="true"'), true);
+  // escapeHtml 把撇号编成 &#39;，断言按转义后的实际输出核对（不是原始撇号字符串）。
+  assert.equal(result.html.includes("The AI assistant hasn&#39;t learned any preferences about you yet."), true);
+});
+
+test("R14 批 MEM: nav shell surfaces the memory route in the team group, not admin-only", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client } = fakeRouteClient(surface);
+  const match = resolveWebRoute("/settings/memory");
+  assert.ok(match);
+  // Non-admin shellUser still sees "memory" in the nav (team group, not adminOnly) — same login used
+  // for the admin gating test above confirms it isn't leaking into the admin-only nav group either.
+  const result = await loadWebRoute(client, match, "en-US", { nickname: "member", isAdmin: false });
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.includes('data-wh-page-key="memory"'), true);
 });
 
 test("R8 S4b intake start binds to an existing project when ?project_id is present", async () => {

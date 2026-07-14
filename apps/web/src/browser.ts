@@ -1,5 +1,5 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
-import { eventTypes, type ActionSpec } from "@workhub/contracts";
+import { eventTypes, type ActionSpec, type SkillEditOp } from "@workhub/contracts";
 import {
   classifyGoldPathHref,
   goldPathT,
@@ -2041,6 +2041,7 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindSettingsMyProfilePanel(root, result, client, locale, signal);
   bindSettingsAvatarPanel(root, result, client, locale, signal);
   bindAvatarTiles(root, signal);
+  bindMemoryPanel(root, result, client, locale, signal);
   bindLiveRouteStreams(result, client, locale);
 }
 
@@ -2612,6 +2613,376 @@ function bindSettingsAvatarPanel(
     },
     { signal }
   );
+}
+
+// R14 批 MEM（记忆可见可治理）：/settings/memory 两 tab 的客户端接线——「关于我」整段替换 textarea
+// 编辑 + 两段式确认删除；「团队技能」K2 段落级 op 表单编辑（管理员）+ 两段式确认停用。SSR 已经渲了
+// 真实列表数据（同 skills 页既有口径，不走 disabled-skeleton 水合——数据本就在页面 VM 里，没有额外
+// GET 要等），这里只接交互：编辑态切换 + PATCH/DELETE/POST 提交；成功后整路由重渲取最新列表（同其余
+// 动作既有口径，如 approvals/proposal 的写动作），失败只在本地状态行报错，不清空用户已输入的内容。
+// 两段式确认沿用 apps/web 既有的 r9ConfirmArmed 先例（第一次点按钮变警示态 + 提示行，5 秒自动回退，
+// 限时窗口内再点一次才真正发请求）——web 端这套 UI 语言里没有原生 confirm()。
+function bindMemoryPanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "memory") {
+    return;
+  }
+  const zh = locale === "zh-CN";
+  bindMemoryProfileItems(container, client, locale, signal, zh);
+  bindMemorySkillItems(container, client, locale, signal, zh);
+}
+
+function armMemoryConfirmButton(
+  button: HTMLButtonElement,
+  confirmLabel: string,
+  onConfirm: () => void,
+  onArm?: () => void,
+  onRevert?: () => void
+) {
+  if (button.dataset.r9ConfirmArmed !== "true") {
+    const originalLabel = button.dataset.r14MemOriginalLabel ?? button.textContent ?? "";
+    button.dataset.r14MemOriginalLabel = originalLabel;
+    button.dataset.r9ConfirmArmed = "true";
+    button.textContent = confirmLabel;
+    onArm?.();
+    window.setTimeout(() => {
+      if (button.isConnected && button.dataset.r9ConfirmArmed === "true") {
+        delete button.dataset.r9ConfirmArmed;
+        button.textContent = originalLabel;
+        onRevert?.();
+      }
+    }, 5000);
+    return;
+  }
+  delete button.dataset.r9ConfirmArmed;
+  onConfirm();
+}
+
+function bindMemoryProfileItems(
+  container: HTMLElement,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal,
+  zh: boolean
+) {
+  const items = Array.from(container.querySelectorAll<HTMLElement>("[data-r14-mem-item]"));
+  for (const item of items) {
+    const id = item.getAttribute("data-r14-mem-item");
+    const valueView = item.querySelector<HTMLElement>("[data-r14-mem-value-view]");
+    const valueInput = item.querySelector<HTMLTextAreaElement>("[data-r14-mem-value-input]");
+    const editBtn = item.querySelector<HTMLButtonElement>("[data-r14-mem-edit-btn]");
+    const saveBtn = item.querySelector<HTMLButtonElement>("[data-r14-mem-save-btn]");
+    const cancelBtn = item.querySelector<HTMLButtonElement>("[data-r14-mem-cancel-btn]");
+    const deleteBtn = item.querySelector<HTMLButtonElement>("[data-r14-mem-delete-btn]");
+    const deleteHint = item.querySelector<HTMLElement>("[data-r14-mem-delete-hint]");
+    const status = item.querySelector<HTMLElement>("[data-r14-mem-status]");
+    if (!id || !valueView || !valueInput || !editBtn || !saveBtn || !cancelBtn || !deleteBtn) {
+      continue;
+    }
+
+    const setStatus = (text: string, tone: "saving" | "saved" | "error") => {
+      if (!status) {
+        return;
+      }
+      status.hidden = false;
+      status.textContent = text;
+      status.setAttribute("data-r14-mem-status", tone);
+    };
+
+    const enterEdit = () => {
+      valueInput.value = valueView.textContent ?? "";
+      valueView.hidden = true;
+      valueInput.hidden = false;
+      editBtn.hidden = true;
+      saveBtn.hidden = false;
+      cancelBtn.hidden = false;
+      valueInput.focus();
+    };
+    const exitEdit = () => {
+      valueView.hidden = false;
+      valueInput.hidden = true;
+      editBtn.hidden = false;
+      saveBtn.hidden = true;
+      cancelBtn.hidden = true;
+    };
+
+    editBtn.addEventListener("click", () => enterEdit(), { signal });
+    cancelBtn.addEventListener("click", () => exitEdit(), { signal });
+
+    saveBtn.addEventListener(
+      "click",
+      () => {
+        const valueMd = valueInput.value.trim();
+        if (!valueMd) {
+          setStatus(zh ? "内容不能为空" : "Content can't be empty", "error");
+          return;
+        }
+        const patchUserMemory = client.patchUserMemory;
+        if (!patchUserMemory) {
+          return;
+        }
+        const expectedUpdatedAt = item.getAttribute("data-r14-mem-updated-at") ?? "";
+        setStatus(zh ? "保存中…" : "Saving…", "saving");
+        saveBtn.disabled = true;
+        void patchUserMemory(id, { value_md: valueMd, expected_updated_at: expectedUpdatedAt })
+          .then(async () => {
+            if (signal.aborted) {
+              return;
+            }
+            await renderCurrentRoute(client, locale);
+          })
+          .catch((error: unknown) => {
+            if (signal.aborted) {
+              return;
+            }
+            saveBtn.disabled = false;
+            if (error instanceof WorkHubApiError && error.status === 409) {
+              setStatus(
+                zh ? "这条记忆已被更新，请刷新后重试" : "This memory changed elsewhere — reload and try again",
+                "error"
+              );
+              return;
+            }
+            setStatus(
+              error instanceof WorkHubApiError ? error.message : (zh ? "保存失败，请重试" : "Save failed, please retry"),
+              "error"
+            );
+          });
+      },
+      { signal }
+    );
+
+    deleteBtn.addEventListener(
+      "click",
+      () => {
+        armMemoryConfirmButton(
+          deleteBtn,
+          zh ? "确定删除？再点一次" : "Really delete? Click again",
+          () => {
+            const deleteUserMemory = client.deleteUserMemory;
+            if (!deleteUserMemory) {
+              return;
+            }
+            deleteBtn.disabled = true;
+            void deleteUserMemory(id)
+              .then(async () => {
+                if (signal.aborted) {
+                  return;
+                }
+                await renderCurrentRoute(client, locale);
+              })
+              .catch((error: unknown) => {
+                if (signal.aborted) {
+                  return;
+                }
+                deleteBtn.disabled = false;
+                setStatus(
+                  error instanceof WorkHubApiError ? error.message : (zh ? "删除失败，请重试" : "Delete failed, please retry"),
+                  "error"
+                );
+              });
+          },
+          () => {
+            if (deleteHint) {
+              deleteHint.hidden = false;
+            }
+          },
+          () => {
+            if (deleteHint) {
+              deleteHint.hidden = true;
+            }
+          }
+        );
+      },
+      { signal }
+    );
+  }
+}
+
+const memorySkillOpTypes = ["add_section", "modify_section", "remove_section"] as const;
+type MemorySkillOpType = (typeof memorySkillOpTypes)[number];
+
+function bindMemorySkillItems(
+  container: HTMLElement,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal,
+  zh: boolean
+) {
+  const items = Array.from(container.querySelectorAll<HTMLElement>("[data-r14-skill-item]"));
+  for (const item of items) {
+    const editBtn = item.querySelector<HTMLButtonElement>("[data-r14-skill-edit-btn]");
+    const deactivateBtn = item.querySelector<HTMLButtonElement>("[data-r14-skill-deactivate-btn]");
+    const editForm = item.querySelector<HTMLElement>("[data-r14-skill-edit-form]");
+    const deactivateForm = item.querySelector<HTMLElement>("[data-r14-skill-deactivate-form]");
+    const statusLine = item.querySelector<HTMLElement>("[data-r14-skill-status-line]");
+
+    if (editBtn && editForm) {
+      editBtn.addEventListener(
+        "click",
+        () => {
+          editForm.hidden = !editForm.hidden;
+          if (deactivateForm) {
+            deactivateForm.hidden = true;
+          }
+        },
+        { signal }
+      );
+
+      const opRows = Array.from(editForm.querySelectorAll<HTMLElement>("[data-r14-skill-op-row]"));
+      const addOpBtn = editForm.querySelector<HTMLButtonElement>("[data-r14-skill-add-op-btn]");
+      let revealedOps = opRows.filter((row) => !row.hidden).length || 1;
+      addOpBtn?.addEventListener(
+        "click",
+        () => {
+          if (revealedOps < opRows.length) {
+            opRows[revealedOps]!.hidden = false;
+            revealedOps += 1;
+          }
+          if (revealedOps >= opRows.length) {
+            addOpBtn.hidden = true;
+          }
+        },
+        { signal }
+      );
+
+      const cancelEditBtn = editForm.querySelector<HTMLButtonElement>("[data-r14-skill-edit-cancel-btn]");
+      cancelEditBtn?.addEventListener(
+        "click",
+        () => {
+          editForm.hidden = true;
+        },
+        { signal }
+      );
+
+      const submitBtn = editForm.querySelector<HTMLButtonElement>("[data-r14-skill-submit-btn]");
+      const editStatus = editForm.querySelector<HTMLElement>("[data-r14-skill-edit-status]");
+      const setEditStatus = (text: string, tone: "saving" | "saved" | "error") => {
+        if (!editStatus) {
+          return;
+        }
+        editStatus.hidden = false;
+        editStatus.textContent = text;
+        editStatus.setAttribute("data-r14-skill-edit-status", tone);
+      };
+
+      submitBtn?.addEventListener(
+        "click",
+        () => {
+          const skillId = editForm.getAttribute("data-r14-skill-id") ?? "";
+          const baseVersion = Number(editForm.getAttribute("data-r14-skill-base-version") ?? "");
+          const ops: SkillEditOp[] = [];
+          for (const row of opRows) {
+            if (row.hidden) {
+              continue;
+            }
+            const opValue = row.querySelector<HTMLSelectElement>("[data-r14-skill-op-type]")?.value ?? "";
+            const section = row.querySelector<HTMLInputElement>("[data-r14-skill-op-section]")?.value.trim() ?? "";
+            const content = row.querySelector<HTMLTextAreaElement>("[data-r14-skill-op-content]")?.value ?? "";
+            if (!section || !memorySkillOpTypes.includes(opValue as MemorySkillOpType)) {
+              continue;
+            }
+            const op = opValue as MemorySkillOpType;
+            ops.push({ op, section, ...(op === "remove_section" ? {} : { content_md: content }) });
+          }
+          if (ops.length === 0 || !skillId || !Number.isInteger(baseVersion) || baseVersion <= 0) {
+            setEditStatus(zh ? "至少填一处修改（段落标题必填）" : "Fill in at least one edit (section title required)", "error");
+            return;
+          }
+          const patchTeamSkillManage = client.patchTeamSkillManage;
+          if (!patchTeamSkillManage) {
+            return;
+          }
+          const rationale = editForm.querySelector<HTMLTextAreaElement>("[data-r14-skill-rationale]")?.value.trim();
+          setEditStatus(zh ? "保存中…" : "Saving…", "saving");
+          submitBtn.disabled = true;
+          void patchTeamSkillManage(skillId, {
+            ops,
+            base_version: baseVersion,
+            ...(rationale ? { rationale_md: rationale } : {})
+          })
+            .then(async () => {
+              if (signal.aborted) {
+                return;
+              }
+              await renderCurrentRoute(client, locale);
+            })
+            .catch((error: unknown) => {
+              if (signal.aborted) {
+                return;
+              }
+              submitBtn.disabled = false;
+              if (error instanceof WorkHubApiError && error.status === 409) {
+                setEditStatus(
+                  zh ? "这个技能已被更新，请刷新后重试" : "This skill changed elsewhere — reload and try again",
+                  "error"
+                );
+                return;
+              }
+              setEditStatus(
+                error instanceof WorkHubApiError ? error.message : (zh ? "保存失败，请重试" : "Save failed, please retry"),
+                "error"
+              );
+            });
+        },
+        { signal }
+      );
+    }
+
+    if (deactivateBtn) {
+      deactivateBtn.addEventListener(
+        "click",
+        () => {
+          armMemoryConfirmButton(
+            deactivateBtn,
+            zh ? "确定停用？再点一次" : "Really deactivate? Click again",
+            () => {
+              const skillId = deactivateBtn.getAttribute("data-r14-skill-id") ?? "";
+              const reason = deactivateForm?.querySelector<HTMLInputElement>("[data-r14-skill-deactivate-reason]")?.value.trim();
+              const deactivateTeamSkillManage = client.deactivateTeamSkillManage;
+              if (!deactivateTeamSkillManage) {
+                return;
+              }
+              deactivateBtn.disabled = true;
+              void deactivateTeamSkillManage(skillId, reason ? { reason } : {})
+                .then(async () => {
+                  if (signal.aborted) {
+                    return;
+                  }
+                  await renderCurrentRoute(client, locale);
+                })
+                .catch((error: unknown) => {
+                  if (signal.aborted) {
+                    return;
+                  }
+                  deactivateBtn.disabled = false;
+                  if (statusLine) {
+                    statusLine.hidden = false;
+                    statusLine.textContent = error instanceof WorkHubApiError
+                      ? error.message
+                      : (zh ? "停用失败，请重试" : "Deactivate failed, please retry");
+                  }
+                });
+            },
+            () => {
+              if (deactivateForm) {
+                deactivateForm.hidden = false;
+              }
+              if (editForm) {
+                editForm.hidden = true;
+              }
+            }
+          );
+        },
+        { signal }
+      );
+    }
+  }
 }
 
 async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocale, options: { silent?: boolean } = {}) {

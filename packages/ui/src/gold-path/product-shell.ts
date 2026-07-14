@@ -53,6 +53,7 @@ type ProductShellCopyKey =
   | "nav.health"
   | "nav.knowledge"
   | "nav.skills"
+  | "nav.memory"
   | "nav.project-home"
   | "topbar.scope"
   | "topbar.rest"
@@ -79,6 +80,7 @@ type ProductShellCopyKey =
   | "rail.nextHealth"
   | "rail.nextKnowledge"
   | "rail.nextSkills"
+  | "rail.nextMemory"
   | "masthead.home"
   | "masthead.projects"
   | "masthead.approvals"
@@ -95,6 +97,7 @@ type ProductShellCopyKey =
   | "masthead.health"
   | "masthead.knowledge"
   | "masthead.skills"
+  | "masthead.memory"
   | "metric.primary"
   | "metric.queue"
   | "metric.running"
@@ -140,6 +143,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "nav.health": "项目健康",
     "nav.knowledge": "知识",
     "nav.skills": "技能",
+    "nav.memory": "记忆",
     "nav.project-home": "本项目",
     "topbar.scope": "网页版",
     "topbar.rest": "实时数据",
@@ -166,6 +170,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "rail.nextHealth": "先看红黄风险项，再决定要不要拍板介入。",
     "rail.nextKnowledge": "按证据来源核对，再回到对应任务或审批。",
     "rail.nextSkills": "看团队技能战绩与自进化记录，再决定要不要调整。",
+    "rail.nextMemory": "看 AI 助手记住的关于你的偏好，或团队技能库的沿革。",
     "masthead.home": "默认只把最该你拿主意的一件事放在最前，其它在后台安静运行。",
     "masthead.projects": "项目即产品：每个项目汇总进行中工作项、负责人和最近更新，像仓库索引一样一眼看全。",
     "masthead.approvals": "把需要你拍板的审批、理由、超时提醒和后续操作集中在一起。",
@@ -182,6 +187,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "masthead.health": "项目健康把风险信号、阻塞项和需要你介入的地方汇总在一起。",
     "masthead.knowledge": "证据检索把来源、片段和回链放在一起，便于核对事实。",
     "masthead.skills": "团队技能页汇总成员技能、AI 自进化战绩和成本分账。",
+    "masthead.memory": "关于我记录 AI 助手学到的关于你的偏好；团队技能是团队共享的可复用技能库。",
     "metric.primary": "当前焦点",
     "metric.queue": "队列",
     "metric.running": "后台运行",
@@ -226,6 +232,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "nav.health": "Project health",
     "nav.knowledge": "Knowledge",
     "nav.skills": "Skills",
+    "nav.memory": "Memory",
     "nav.project-home": "This project",
     "topbar.scope": "Web manager",
     "topbar.rest": "Live data",
@@ -252,6 +259,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "rail.nextHealth": "Scan red/amber risks first, then decide whether to step in.",
     "rail.nextKnowledge": "Verify against sources, then jump back to the task or approval.",
     "rail.nextSkills": "Review team skills and self-evolution records before adjusting.",
+    "rail.nextMemory": "Review what the AI assistant remembers about you, or the team skill library's history.",
     "masthead.home": "The default view offers one decision first while background work stays secondary.",
     "masthead.projects": "Projects as products: each project rolls up open work, owner, and latest activity like a repo index.",
     "masthead.approvals": "A blocking inbox for approvals, reasons, SLA, and follow-up execution.",
@@ -268,6 +276,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "masthead.health": "Project health gathers risk signals, blockers, and spots that need your call.",
     "masthead.knowledge": "Evidence search keeps sources, snippets, and back-links together for fact-checking.",
     "masthead.skills": "Team skills summarize member skills, AI self-evolution records, and cost split.",
+    "masthead.memory": "About me tracks what the AI assistant has learned about you; team skills is the shared, reusable skill library.",
     "metric.primary": "Focus",
     "metric.queue": "Queue",
     "metric.running": "Background",
@@ -434,7 +443,9 @@ const productNavGroups: ReadonlyArray<{
 }> = [
   { id: "work", titleKey: "nav.group.work", keys: new Set(["home", "projects", "project-home", "approvals", "workitem", "proposal", "replay"]) },
   { id: "assets", titleKey: "nav.group.assets", keys: new Set(["drive", "meetings", "knowledge"]), collapsible: true },
-  { id: "team", titleKey: "nav.group.team", keys: new Set(["notifications", "calendar", "health"]), collapsible: true },
+  // R14 批 MEM：记忆管理面对全体成员可读（团队技能 tab 的编辑/停用才收管理员），不进 adminOnly
+  // 的 admin 组——否则普通成员连「关于我」自己的记忆都点不到导航入口（见 03-mem-design §6.1）。
+  { id: "team", titleKey: "nav.group.team", keys: new Set(["notifications", "calendar", "health", "memory"]), collapsible: true },
   { id: "admin", titleKey: "nav.group.admin", keys: new Set(["cost", "agents", "skills", "settings"]), adminOnly: true, collapsible: true }
 ];
 

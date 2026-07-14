@@ -13,6 +13,7 @@ import type {
   PageRequestOptions,
   PilotDay1MetricsRequestOptions,
   MeetingPageRequestOptions,
+  UserMemoryListRequestOptions,
   WorkHubApiClient,
   WorkHubApiClientOptions
 } from "./types.js";
@@ -134,6 +135,11 @@ function withPilotDay1MetricsOptions(path: string, options?: PilotDay1MetricsReq
   }
   const query = params.toString();
   return query ? `${path}?${query}` : path;
+}
+
+// R14 批 MEM：用户记忆列表可选按 category 过滤。
+function withUserMemoryListOptions(path: string, options?: UserMemoryListRequestOptions) {
+  return options?.category ? `${path}?category=${encodeURIComponent(options.category)}` : path;
 }
 
 async function readJson(response: Response) {
@@ -580,6 +586,27 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
     pilotDay1Metrics: (options) => request(withPilotDay1MetricsOptions("/api/pilot/day1/metrics", options)),
     listProjects: () => request("/api/projects"),
     replayAgentRun: (runId, options) => request(withPageLocale(`/api/agent-runs/${encodeURIComponent(runId)}/replay`, options)),
+    // R14 批 MEM（记忆可见可治理）：用户记忆治理面。
+    listUserMemories: (options) => request(withUserMemoryListOptions("/api/me/memories", options)),
+    patchUserMemory: (id, payload) =>
+      request(`/api/me/memories/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload)
+      }),
+    deleteUserMemory: (id) =>
+      request(`/api/me/memories/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    // 团队技能治理面。
+    listTeamSkillsManage: () => request("/api/team-skills/manage"),
+    patchTeamSkillManage: (id, payload) =>
+      request(`/api/team-skills/manage/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload)
+      }),
+    deactivateTeamSkillManage: (id, payload = {}) =>
+      request(`/api/team-skills/manage/${encodeURIComponent(id)}/deactivate`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
     pages: {
       attention: (options) => request(withPageLocale("/api/pages/attention", options)),
       approvals: (options) => request(withApprovalPageOptions("/api/pages/approvals", options)),

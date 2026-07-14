@@ -26,7 +26,7 @@ export type GoldPathRenderOptions = {
 };
 
 export type GoldPathRenderedPage = {
-  key: "home" | "projects" | "project-home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "agents" | "knowledge" | "skills" | "settings";
+  key: "home" | "projects" | "project-home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "agents" | "knowledge" | "skills" | "settings" | "memory";
   route: string;
   title: string;
   html: string;
@@ -153,7 +153,8 @@ const pageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"], stri
     agents: "智能代理军团",
     knowledge: "证据检索",
     skills: "团队技能",
-    settings: "设置"
+    settings: "设置",
+    memory: "记忆管理"
   },
   "en-US": {
     home: "AI-first Home",
@@ -173,7 +174,8 @@ const pageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"], stri
     agents: "Agent Army",
     knowledge: "Evidence Search",
     skills: "Team Skills",
-    settings: "Settings"
+    settings: "Settings",
+    memory: "Memory"
   }
 };
 
