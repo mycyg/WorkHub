@@ -43,6 +43,7 @@ import {
 } from "./domain/conversation.js";
 import { userMemoryCategorySchema } from "./domain/user-memory.js";
 import { skillEditOpSchema, teamSkillStatusSchema, TEAM_SKILL_MAX_EDIT_OPS } from "./domain/team-skill.js";
+import { githubActivityVmSchema } from "./domain/github.js";
 
 export const actionSpecSchema = z.object({
   id: z.string().min(1),
@@ -689,7 +690,11 @@ export const projectHomePageVmSchema = z.object({
     new_task: actionSpecSchema,
     open_drive: actionSpecSchema
   }),
-  empty_state: z.enum(["no_open_work"]).optional()
+  empty_state: z.enum(["no_open_work"]).optional(),
+  // R14 批 GH（07-gh-design.md §5.1）：GitHub 活动展示切片，additive/optional——省略时表示"没绑定
+  // repo 或绑定了但暂无活动"，不是渲染空列表/占位区块（诚实缺省，同 army/empty_state 的手法）。
+  // 取数失败同样降级为省略，不拖垮整个项目主页（照 army pill 的 try/catch 静默降级）。
+  github_activities: z.array(githubActivityVmSchema).optional()
 });
 export type ProjectHomePageVM = z.infer<typeof projectHomePageVmSchema>;
 
