@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { myAiFeedbackVmSchema } from "./ai-feedback.js";
 import { idSchema, isoDateTimeSchema } from "./common.js";
 
 export const conversationKindSchema = z.enum(["main", "collab"]);
@@ -604,6 +605,11 @@ const conversationMessageBaseShape = {
   pinned: conversationMessagePinVmSchema.optional(),
   reply_to: conversationMessageReplyPreviewVmSchema.optional(),
   reactions: z.array(conversationMessageReactionVmSchema).max(conversationReactionKeySchema.options.length).optional(),
+  // R14 批 FEEDBACK：本人对这条消息的二值反馈（有用/没用 + 可选备注），additive optional——只对
+  // sender_type==='cuu' && kind==='text' 的活消息有意义，但契约层不用 superRefine 强制（同 pinned/
+  // reply_to 的既有宽松处理，服务层保证只在合法主体上写入，见 04-feedback-design.md §3）。读聚合只回
+  // 当前 actor 自己的判定，不做全员聚合（与 reactions 的社交语义刻意区分）。
+  my_feedback: myAiFeedbackVmSchema.optional(),
   created_at: isoDateTimeSchema
 } as const;
 
