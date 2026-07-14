@@ -246,7 +246,22 @@ export const webRouteComponentCss = [
   ".wh-r14-mem-textarea:disabled{opacity:.6}",
   "[data-r14-mem-delete-btn][data-r9-confirm-armed=true],[data-r14-skill-deactivate-btn][data-r9-confirm-armed=true]{background:#fff1ef;color:#d64545;border-color:#f3c5c0}",
   ".wh-r14-mem-op-row{display:grid;gap:6px;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:12px;padding:10px;margin-top:8px}",
-  ".wh-r14-mem-op-row select,.wh-r14-mem-op-row input{font:inherit;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:8px;padding:6px 8px;background:rgba(255,255,255,.92);color:var(--wh-product-ink,#172033)}"
+  ".wh-r14-mem-op-row select,.wh-r14-mem-op-row input{font:inherit;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:8px;padding:6px 8px;background:rgba(255,255,255,.92);color:var(--wh-product-ink,#172033)}",
+  // R14 批 FEEDBACK（web-feedback-ui）：提议详情页「有用/没用」字符 tile（✓/✗ 排版符号，非 emoji，
+  // 04-feedback-design.md §8 第四层视觉语言）+ 可选备注面板。useful 用既有绿色语汇（同
+  // .wh-r9-agent-team-state-dot=succeeded 的 --wh-product-green）；not_useful 故意不用满饱和度红
+  // （那是「删除」类危险动作的既有语义），改用中性 amber 弱化——反馈是判断而非警告。
+  ".wh-r14-proposal-feedback-tiles{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:2px}",
+  ".wh-r14-proposal-feedback-tile{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:999px;padding:7px 12px;font-weight:700;font-size:13px;line-height:1;color:var(--wh-product-secondary,#5B616E);text-decoration:none;background:rgba(255,255,255,.86)}",
+  ".wh-r14-proposal-feedback-glyph{font-size:14px;line-height:1}",
+  ".wh-r14-proposal-feedback-tile[data-r14-proposal-feedback-tile=\"useful\"].wh-r14-proposal-feedback-tile--on{border-color:var(--wh-product-green,#15A05A);color:var(--wh-product-green,#15A05A);background:rgba(21,160,90,.08)}",
+  ".wh-r14-proposal-feedback-tile[data-r14-proposal-feedback-tile=\"not_useful\"].wh-r14-proposal-feedback-tile--on{border-color:var(--wh-product-amber,#d98b16);color:var(--wh-product-amber,#d98b16);background:rgba(217,139,22,.1)}",
+  ".wh-r14-proposal-feedback-clear{align-self:center;font-size:12px;color:var(--wh-product-muted,#66728c);text-decoration:underline;cursor:pointer}",
+  ".wh-r14-proposal-feedback-clear[hidden]{display:none}",
+  ".wh-r14-proposal-feedback-note{display:grid;gap:6px;margin-top:10px}",
+  ".wh-r14-proposal-feedback-note-input{width:100%;min-height:64px;resize:vertical;box-sizing:border-box;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:12px;padding:8px 10px;font:inherit;line-height:1.45;color:var(--wh-product-ink,#172033);background:rgba(255,255,255,.92);overflow-wrap:anywhere}",
+  ".wh-r14-proposal-feedback-note-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}",
+  ".wh-r14-proposal-feedback-note-actions [data-r14-proposal-feedback-note-save][disabled]{opacity:.5;cursor:not-allowed}"
 ].join("");
 
 type RouteCopyKey =
@@ -2700,6 +2715,50 @@ function renderTaskPlanItemsPanel(vm: ProposalDetailVM, locale: WorkHubLocale): 
     </section>`;
 }
 
+// R14 批 FEEDBACK（web-feedback-ui）：提议详情页「这条提议对你有帮助吗」轻反馈——服务端已经算好
+// mark_useful/mark_not_useful/clear 三个动作的 href/method/request_json（buildProposalFeedbackVm，
+// apps/api/src/pages/proposals.ts），本函数只管渲染点击，照 review_actions 的既有风格（04-feedback-
+// design.md §7.2）。字符 tile 用 ✓/✗（U+2713/U+2717 排版符号，不是 emoji——§8 的第四层视觉语言，
+// 不复用 REACTION_EMOJI 的豁免边界）。
+// clear 链接始终渲染（不像 mark_useful/mark_not_useful 那样等 vm.feedback.clear 存在才出现）——
+// 用 hidden 属性按 my_verdict 控制可见性，而不是等客户端把新节点插进 DOM：这样 bindGoldPathNavigation
+// 里乐观切换判定后只需要翻 hidden，不用现造一个新锚点元素（那条路径更脆——插入位置、事件委托的
+// closest("a[href]") 都要重新对齐）。href/method 与 mark_useful 完全一致（buildProposalFeedbackVm
+// 里三个动作共用同一个 /api/proposals/:id/feedback 端点，唯一变量是 method）。
+function renderProposalFeedbackHtml(
+  feedback: NonNullable<ProposalDetailVM["feedback"]>,
+  locale: WorkHubLocale
+): string {
+  const zh = locale === "zh-CN";
+  const tile = (action: ActionSpec, verdict: "useful" | "not_useful", glyph: string, on: boolean) => {
+    const requestJson = action.request_json ? ` data-request-json="${jsonAttr(action.request_json)}"` : "";
+    return `<a class="wh-r14-proposal-feedback-tile${on ? " wh-r14-proposal-feedback-tile--on" : ""}" href="${escapeHtml(safeHref(action.href))}" data-action-id="${escapeHtml(action.id)}" data-method="${escapeHtml(action.method)}"${requestJson} data-r14-proposal-feedback-tile="${verdict}" role="button" aria-pressed="${on ? "true" : "false"}"><span class="wh-r14-proposal-feedback-glyph" aria-hidden="true">${glyph}</span><span>${escapeHtml(action.label)}</span></a>`;
+  };
+  const clearHref = feedback.clear?.href ?? feedback.mark_useful.href;
+  const clearLabel = feedback.clear?.label ?? (zh ? "撤销反馈" : "Clear feedback");
+  const clearId = feedback.clear?.id ?? "clear_feedback";
+  const clearMethod = feedback.clear?.method ?? "DELETE";
+  const clearHidden = feedback.my_verdict === null ? " hidden" : "";
+  const noteValue = feedback.my_note ?? "";
+  const noteDisabled = feedback.my_verdict === null ? " disabled" : "";
+  return `<section class="wh-card wh-r4-route-card wh-r14-proposal-feedback" data-r14-proposal-feedback="true" data-r14-proposal-feedback-verdict="${escapeHtml(feedback.my_verdict ?? "")}">
+      <h3 role="heading" aria-level="2">${escapeHtml(zh ? "这条提议对你有帮助吗" : "Was this proposal helpful?")}</h3>
+      <div class="wh-r14-proposal-feedback-tiles" role="group" aria-label="${escapeHtml(zh ? "反馈" : "Feedback")}">
+        ${tile(feedback.mark_useful, "useful", "✓", feedback.my_verdict === "useful")}
+        ${tile(feedback.mark_not_useful, "not_useful", "✗", feedback.my_verdict === "not_useful")}
+        <a class="wh-r14-proposal-feedback-clear" href="${escapeHtml(safeHref(clearHref))}" data-action-id="${escapeHtml(clearId)}" data-method="${escapeHtml(clearMethod)}" data-r14-proposal-feedback-clear="true" role="button"${clearHidden}>${escapeHtml(clearLabel)}</a>
+      </div>
+      <div class="wh-r14-proposal-feedback-note" data-r14-proposal-feedback-note-panel="true">
+        <label class="wh-subtle" for="wh-r14-proposal-feedback-note-input">${escapeHtml(zh ? "备注（可选，最多 200 字）" : "Note (optional, up to 200 characters)")}</label>
+        <textarea id="wh-r14-proposal-feedback-note-input" class="wh-r14-proposal-feedback-note-input" data-r14-proposal-feedback-note-input maxlength="200" placeholder="${escapeHtml(zh ? "说说这次提议哪里做得好或不好…" : "What worked or didn't about this proposal…")}">${escapeHtml(noteValue)}</textarea>
+        <div class="wh-r14-proposal-feedback-note-actions">
+          <button type="button" class="wh-btn" data-r14-proposal-feedback-note-save${noteDisabled}>${escapeHtml(zh ? "保存备注" : "Save note")}</button>
+          <span class="wh-subtle" data-r14-proposal-feedback-note-status hidden></span>
+        </div>
+      </div>
+    </section>`;
+}
+
 function renderProposalRouteComponent(
   vm: ProposalDetailVM,
   locale: WorkHubLocale,
@@ -2772,6 +2831,7 @@ function renderProposalRouteComponent(
         </div>
         <span class="wh-r4-route-count" data-r4-proposal-status="${escapeHtml(vm.status)}">${escapeHtml(proposalStatusLabel(locale, vm.status))}</span>
       </header>
+      ${vm.feedback ? renderProposalFeedbackHtml(vm.feedback, locale) : ""}
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-proposal-summary="true">
           <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "proposal.summary"))}</h3>

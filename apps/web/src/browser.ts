@@ -1,5 +1,5 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
-import { eventTypes, type ActionSpec, type SearchResultsVm, type SkillEditOp } from "@workhub/contracts";
+import { eventTypes, type ActionSpec, type AiFeedbackVerdict, type PutAiFeedbackRequest, type SearchResultsVm, type SkillEditOp } from "@workhub/contracts";
 import {
   classifyGoldPathHref,
   goldPathT,
@@ -122,6 +122,50 @@ function escalationResolvePayloadFromActionId(actionId: string | undefined) {
     return { action: "cancel" as const };
   }
   return undefined;
+}
+
+// R14 批 FEEDBACK（web-feedback-ui）：提议详情页「有用/没用」反馈 PUT/DELETE 的 href 识别。
+// 照 proposalActionFromHref（packages/web-runtime/src/action-payload.ts）的写法，但**不**加进那个
+// 多端共享文件——本工包围栏只含 route-components.ts/client.ts/browser.ts 三个文件（04-feedback-
+// design.md §10 施工切片表），一个新增子路径不值得为它改一个 desktop 也在用的共享 href 匹配文件。
+function proposalFeedbackActionFromHref(href: string) {
+  const path = new URL(href, globalThis.location?.origin ?? "http://workhub.local").pathname;
+  const match = /^\/api\/proposals\/([^/]+)\/feedback$/u.exec(path);
+  return match?.[1] ? { proposalId: decodeURIComponent(match[1]) } : undefined;
+}
+
+// 点了 mark_useful/mark_not_useful/clear 任一个之后的乐观本地 DOM 更新（不整页 renderCurrentRoute——
+// 同 swapProposalActionRow 已建立的「详情页原地更新，不重跑 loader」纪律，M12 备注）。clearNote 只在
+// DELETE 成功后传 true——反馈整行被撤销，备注框也该清空，避免显示一条已经不存在的历史备注。
+function applyProposalFeedbackVerdictState(
+  container: HTMLElement,
+  verdict: AiFeedbackVerdict | null,
+  options: { clearNote?: boolean } = {}
+) {
+  const panel = container.querySelector<HTMLElement>("[data-r14-proposal-feedback]");
+  if (!panel) {
+    return;
+  }
+  panel.dataset.r14ProposalFeedbackVerdict = verdict ?? "";
+  panel.querySelectorAll<HTMLElement>("[data-r14-proposal-feedback-tile]").forEach((tile) => {
+    const on = tile.dataset.r14ProposalFeedbackTile === verdict;
+    tile.classList.toggle("wh-r14-proposal-feedback-tile--on", on);
+    tile.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+  const clearLink = panel.querySelector<HTMLElement>("[data-r14-proposal-feedback-clear]");
+  if (clearLink) {
+    clearLink.hidden = verdict === null;
+  }
+  const noteSaveButton = panel.querySelector<HTMLButtonElement>("[data-r14-proposal-feedback-note-save]");
+  if (noteSaveButton) {
+    noteSaveButton.disabled = verdict === null;
+  }
+  if (options.clearNote) {
+    const noteInput = panel.querySelector<HTMLTextAreaElement>("[data-r14-proposal-feedback-note-input]");
+    if (noteInput) {
+      noteInput.value = "";
+    }
+  }
 }
 const noticeTimerState: RouteNoticeTimerState = {};
 // 普通用户审查 R2：开始新任务/生成任务计划是十几秒的 LLM 动作——点击后要 pending 提示+
@@ -1708,6 +1752,50 @@ function bindGoldPathNavigation(
         }
         return;
       }
+      // R14 批 FEEDBACK（web-feedback-ui）：提议详情页「有用/没用」轻反馈——低仪式感的频繁小动作，
+      // 照 04-feedback-design.md §7.2 走乐观本地 DOM 切换，不整页 renderCurrentRoute、成功不弹 toast
+      // （只在失败时提示，同 §9「乐观 UI + 下次自然拉取兜底」的产品定位；对照 reviewProposal/
+      // mergeProposal 这类一次性、有后果的动作才配得上一条成功回执）。
+      const proposalFeedback = proposalFeedbackActionFromHref(href);
+      if (proposalFeedback) {
+        if (action.method === "DELETE") {
+          const deleteProposalFeedback = client.deleteProposalFeedback;
+          if (!deleteProposalFeedback) {
+            return;
+          }
+          try {
+            await deleteProposalFeedback(proposalFeedback.proposalId);
+            applyProposalFeedbackVerdictState(shellRoot, null, { clearNote: true });
+          } catch (error) {
+            showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+          }
+          return;
+        }
+        const payload = actionElementJsonPayload<PutAiFeedbackRequest>(actionTarget);
+        if (!payload.ok || !payload.payload?.verdict) {
+          showPayloadFailureNotice(shellRoot, locale, payload.ok ? { ok: false, reason: "invalid_json" } : payload, actionId);
+          return;
+        }
+        const putProposalFeedback = client.putProposalFeedback;
+        if (!putProposalFeedback) {
+          return;
+        }
+        // 保护未保存的备注：切换判定的固定 request_json 里没有 note 字段（服务端 PUT 是整行覆盖，见
+        // 04-feedback-design.md §2「改判…只更新这一行」）——如果备注框里已经有文字（不管是刚打的字
+        // 还是上次保存过的），原样带上去，避免「先写备注、又点了另一个 tile」把备注静默清空。
+        const noteInput = shellRoot.querySelector<HTMLTextAreaElement>("[data-r14-proposal-feedback-note-input]");
+        const currentNote = noteInput?.value.trim();
+        const body: PutAiFeedbackRequest = currentNote
+          ? { verdict: payload.payload.verdict, note: currentNote }
+          : { verdict: payload.payload.verdict };
+        try {
+          await putProposalFeedback(proposalFeedback.proposalId, body);
+          applyProposalFeedbackVerdictState(shellRoot, payload.payload.verdict);
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
       // B-R9.6 UX 审计（skip-plan 假接线）：plan_review 卡「先不拆，单个 AI 跑」——
       // 打回计划草稿并直接入队单个 run，成功后跳回工作项详情看进展。
       const skipPlanProposalId = skipPlanProposalIdFromHref(href);
@@ -2043,6 +2131,7 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindSettingsAvatarPanel(root, result, client, locale, signal);
   bindAvatarTiles(root, signal);
   bindMemoryPanel(root, result, client, locale, signal);
+  bindProposalFeedbackNotePanel(root, result, client, locale, signal);
   bindLiveRouteStreams(result, client, locale);
 }
 
@@ -2834,6 +2923,77 @@ function bindMemoryPanel(
   const zh = locale === "zh-CN";
   bindMemoryProfileItems(container, client, locale, signal, zh);
   bindMemorySkillItems(container, client, locale, signal, zh);
+}
+
+// R14 批 FEEDBACK（web-feedback-ui）：提议详情页反馈块的备注面板——照 bindNotificationMutePanel 的
+// 模板（面板级 querySelector + 自己的 addEventListener + 自己的状态文案），因为备注是自由文本输入，
+// 不适合塞进 ActionSpec.request_json 的固定 JSON 模型，不走 bindGoldPathNavigation 的 api-action
+// 分发器（04-feedback-design.md §7.2）。保存按钮本身没有 href，delegated click 监听器的
+// `a[href],[data-action-href],[data-href]` 选择器天然不会拦到它，两条绑定路径互不打架。
+function bindProposalFeedbackNotePanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "proposal" || result.surface.key !== "proposal" || !result.surface.proposal.feedback) {
+    return;
+  }
+  const proposalId = result.surface.proposal.proposal_id;
+  const panel = container.querySelector<HTMLElement>("[data-r14-proposal-feedback]");
+  const saveButton = panel?.querySelector<HTMLButtonElement>("[data-r14-proposal-feedback-note-save]");
+  const textarea = panel?.querySelector<HTMLTextAreaElement>("[data-r14-proposal-feedback-note-input]");
+  const status = panel?.querySelector<HTMLElement>("[data-r14-proposal-feedback-note-status]");
+  const putProposalFeedback = client.putProposalFeedback;
+  if (!panel || !saveButton || !textarea || !putProposalFeedback) {
+    return;
+  }
+  const zh = locale === "zh-CN";
+  const setStatus = (text: string, tone: "saving" | "saved" | "error") => {
+    if (!status) {
+      return;
+    }
+    status.hidden = false;
+    status.textContent = text;
+    status.setAttribute("data-r14-proposal-feedback-note-status", tone);
+  };
+  saveButton.addEventListener(
+    "click",
+    () => {
+      const verdictAttr = panel.dataset.r14ProposalFeedbackVerdict;
+      const verdict: AiFeedbackVerdict | undefined =
+        verdictAttr === "useful" || verdictAttr === "not_useful" ? verdictAttr : undefined;
+      if (!verdict) {
+        // 主路径已经用原生 disabled 属性挡住这次点击（未判定时按钮不可点）——这里是防御性兜底，
+        // 覆盖 disabled 状态被绕过（比如测试直接调用 click()）的情况。
+        setStatus(zh ? "请先选择「有用」或「没用」" : "Pick Useful or Not useful first", "error");
+        return;
+      }
+      const note = textarea.value.trim();
+      saveButton.disabled = true;
+      setStatus(zh ? "保存中…" : "Saving…", "saving");
+      void putProposalFeedback(proposalId, note ? { verdict, note } : { verdict })
+        .then(() => {
+          if (signal.aborted) {
+            return;
+          }
+          saveButton.disabled = false;
+          setStatus(zh ? "已保存" : "Saved", "saved");
+        })
+        .catch((error: unknown) => {
+          if (signal.aborted) {
+            return;
+          }
+          saveButton.disabled = false;
+          setStatus(
+            error instanceof WorkHubApiError ? error.message : (zh ? "保存失败，请重试" : "Save failed, please retry"),
+            "error"
+          );
+        });
+    },
+    { signal }
+  );
 }
 
 function armMemoryConfirmButton(

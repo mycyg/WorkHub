@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { AgentArmyDashboardVM, AttentionItem, CalendarPageVM, DrivePageVM, ProjectHealthPageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProjectListVM, ProposalConflict, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
+import type { AgentArmyDashboardVM, AttentionItem, CalendarPageVM, DrivePageVM, ProjectHealthPageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProjectListVM, ProposalConflict, ProposalDetailVM, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
 
 import { renderAgentRunReplay } from "../replay/index.js";
 import { renderWebRouteComponent, renderWebRouteComponents } from "./route-components.js";
@@ -3725,4 +3725,97 @@ test("W2 approval workbench renders diff/checks/timeline/discussion markers + re
   // 既有标记仍在（不破 smoke）。
   assert.equal(html.includes('data-r4-approval-routed="true"'), true);
   assert.equal(html.includes("data-requires-reason=\"true\""), true);
+});
+
+// R14 批 FEEDBACK（web-feedback-ui）：提议详情页「有用/没用」反馈块——additive optional 字段，
+// 存量响应/旧客户端零回归；有值时渲染字符 tile（✓/✗）+ 可选备注面板，服务端算好的 href/method/
+// request_json 照 review_actions 既有风格直接渲染点击。
+function proposalWithFeedback(feedback: ProposalDetailVM["feedback"]): ProposalDetailVM {
+  return { ...surfaceVm().page_vms.proposal, feedback };
+}
+
+test("R14 batch FEEDBACK: proposal route component renders nothing when the VM carries no feedback field (additive zero-regression)", () => {
+  const proposal = surfaceVm().page_vms.proposal;
+  assert.equal(proposal.feedback, undefined);
+  const rendered = renderWebRouteComponent({ key: "proposal", proposal }, { locale: "zh-CN" });
+
+  assert.equal(rendered.html.includes("data-r14-proposal-feedback"), false);
+});
+
+test("R14 batch FEEDBACK: proposal route component renders unmarked feedback tiles with the clear link hidden and note disabled", () => {
+  const proposal = proposalWithFeedback({
+    my_verdict: null,
+    my_note: null,
+    mark_useful: { id: "mark_useful", label: "有用", method: "PUT", href: "/api/proposals/r4-route-component-proposal/feedback", request_json: { verdict: "useful" } },
+    mark_not_useful: { id: "mark_not_useful", label: "没用", method: "PUT", href: "/api/proposals/r4-route-component-proposal/feedback", request_json: { verdict: "not_useful" } }
+  });
+  const rendered = renderWebRouteComponent({ key: "proposal", proposal }, { locale: "zh-CN" });
+  const html = rendered.html;
+
+  assert.equal(html.includes('data-r14-proposal-feedback="true"'), true);
+  assert.equal(html.includes('data-r14-proposal-feedback-verdict=""'), true);
+  // 两个 tile 都渲染、都未选中——字符 tile 是排版符号 ✓/✗，不是 emoji。
+  assert.equal(html.includes('data-r14-proposal-feedback-tile="useful"'), true);
+  assert.equal(html.includes('data-r14-proposal-feedback-tile="not_useful"'), true);
+  assert.equal(html.includes("wh-r14-proposal-feedback-tile--on"), false);
+  assert.equal(html.includes('data-r4-proposal-feedback-tile="useful" aria-pressed="true"'), false);
+  assert.match(html, /data-r14-proposal-feedback-tile="useful"[^>]*aria-pressed="false"/u);
+  assert.match(html, /data-r14-proposal-feedback-tile="not_useful"[^>]*aria-pressed="false"/u);
+  assert.equal(html.includes(">✓<"), true);
+  assert.equal(html.includes(">✗<"), true);
+  // 未判定时撤销链接必须存在于 DOM（供客户端乐观切换后直接翻 hidden）但带 hidden 属性。
+  assert.match(html, /data-r14-proposal-feedback-clear="true"[^>]* hidden>/u);
+  // request_json 服务端算好，客户端原样渲染（照 review_actions 既有风格）。
+  assert.equal(html.includes('data-request-json="{&quot;verdict&quot;:&quot;useful&quot;}"'), true);
+  assert.equal(html.includes('data-request-json="{&quot;verdict&quot;:&quot;not_useful&quot;}"'), true);
+  // 无判定时备注保存按钮禁用、备注框为空。
+  assert.match(html, /data-r14-proposal-feedback-note-save disabled>/u);
+  assert.equal(html.includes("这条提议对你有帮助吗"), true);
+  // 文案永不出现「Cuu」——用「AI 助手」这类通用措辞（同 avatar-crop-modal.test.ts 既有口径）。
+  // 注意：只扫反馈块自身——评论区固定 fixture 的 author_label 是测试数据里硬编码的 "Cuu"（生产路径走
+  // pageT(locale,"proposal.author.ai") 永不写死该字面量），与本批新增文案无关，不在此断言范围内。
+  const feedbackSection = /<section class="wh-card wh-r4-route-card wh-r14-proposal-feedback"[\s\S]*?<\/section>/u.exec(html);
+  assert.ok(feedbackSection, "feedback section markup must be present");
+  assert.doesNotMatch(feedbackSection[0], /\bCuu\b/u, "web copy must never say Cuu");
+});
+
+test("R14 batch FEEDBACK: proposal route component highlights the useful tile, reveals undo, and carries the saved note", () => {
+  const proposal = proposalWithFeedback({
+    my_verdict: "useful",
+    my_note: "回滚说明写得很清楚",
+    mark_useful: { id: "mark_useful", label: "有用", method: "PUT", href: "/api/proposals/r4-route-component-proposal/feedback", request_json: { verdict: "useful" } },
+    mark_not_useful: { id: "mark_not_useful", label: "没用", method: "PUT", href: "/api/proposals/r4-route-component-proposal/feedback", request_json: { verdict: "not_useful" } },
+    clear: { id: "clear_feedback", label: "撤销反馈", method: "DELETE", href: "/api/proposals/r4-route-component-proposal/feedback" }
+  });
+  const rendered = renderWebRouteComponent({ key: "proposal", proposal }, { locale: "zh-CN" });
+  const html = rendered.html;
+
+  assert.equal(html.includes('data-r14-proposal-feedback-verdict="useful"'), true);
+  assert.match(html, /class="wh-r14-proposal-feedback-tile wh-r14-proposal-feedback-tile--on"[^>]*data-r14-proposal-feedback-tile="useful"/u);
+  assert.match(html, /data-r14-proposal-feedback-tile="useful"[^>]*aria-pressed="true"/u);
+  assert.match(html, /data-r14-proposal-feedback-tile="not_useful"[^>]*aria-pressed="false"/u);
+  // 已判定——撤销链接可见（不带 hidden），备注保存按钮可点（不带 disabled）。
+  assert.doesNotMatch(html, /data-r14-proposal-feedback-clear="true"[^>]* hidden>/u);
+  assert.equal(html.includes("撤销反馈"), true);
+  assert.doesNotMatch(html, /data-r14-proposal-feedback-note-save disabled>/u);
+  assert.equal(html.includes(">回滚说明写得很清楚</textarea>"), true);
+});
+
+test("R14 batch FEEDBACK: proposal route component localizes the feedback block into English", () => {
+  const proposal = proposalWithFeedback({
+    my_verdict: "not_useful",
+    my_note: null,
+    mark_useful: { id: "mark_useful", label: "Useful", method: "PUT", href: "/api/proposals/r4-route-component-proposal/feedback", request_json: { verdict: "useful" } },
+    mark_not_useful: { id: "mark_not_useful", label: "Not useful", method: "PUT", href: "/api/proposals/r4-route-component-proposal/feedback", request_json: { verdict: "not_useful" } },
+    clear: { id: "clear_feedback", label: "Clear feedback", method: "DELETE", href: "/api/proposals/r4-route-component-proposal/feedback" }
+  });
+  const rendered = renderWebRouteComponent({ key: "proposal", proposal }, { locale: "en-US" });
+  const html = rendered.html;
+
+  assert.equal(html.includes("Was this proposal helpful?"), true);
+  assert.equal(html.includes("Note (optional, up to 200 characters)"), true);
+  assert.equal(html.includes("Save note"), true);
+  assert.equal(html.includes("Clear feedback"), true);
+  assert.match(html, /class="wh-r14-proposal-feedback-tile wh-r14-proposal-feedback-tile--on"[^>]*data-r14-proposal-feedback-tile="not_useful"/u);
+  assert.equal(html.includes("这条提议对你有帮助吗"), false);
 });

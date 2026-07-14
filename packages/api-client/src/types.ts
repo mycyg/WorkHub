@@ -69,7 +69,9 @@ import type {
   TeamSkillManagementPageVM,
   TeamSkillManagementItemVM,
   PatchUserMemoryRequest,
-  PatchTeamSkillRequest
+  PatchTeamSkillRequest,
+  // R14 批 FEEDBACK（web-feedback-ui）：提议详情页「有用/没用」反馈的 PUT 请求体契约。
+  PutAiFeedbackRequest
 } from "@workhub/contracts";
 
 export type ApiOk<T> = {
@@ -337,6 +339,13 @@ export type WorkHubApiClient = {
   getProposal: (id: string) => Promise<Proposal>;
   reviewProposal: (id: string, payload: ReviewProposalRequest, options?: PageRequestOptions) => Promise<ProposalReviewResult>;
   mergeProposal: (id: string, payload?: MergeProposalRequest, options?: PageRequestOptions) => Promise<ProposalMergeResult>;
+  // R14 批 FEEDBACK（web-feedback-ui）：提议详情页「有用/没用」轻反馈——204 No Content，无回执体。
+  // 可选（与 search/记忆治理面不同口径）：本批围栏只含 client.ts/route-components.ts/browser.ts，
+  // 不改 apps/web、apps/desktop-webview 两处穷举 fakeClient() 单测桩——标 required 会让它们缺属性
+  // 报错。真实实现见 client.ts；缺省时 browser.ts 侧的调用点直接跳过（同 patchUserMemory 的既有
+  // 防御性 `if (!fn) return` 写法，尽管那个是 required——这里额外靠 optional 兜底双保险)。
+  putProposalFeedback?: (id: string, payload: PutAiFeedbackRequest) => Promise<void>;
+  deleteProposalFeedback?: (id: string) => Promise<void>;
   rebaseProposal: (id: string) => Promise<RebaseProposalResult>;
   chooseMergeProposalCandidate: (
     id: string,
