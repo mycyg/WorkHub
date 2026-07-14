@@ -14,12 +14,14 @@ import type { AiGranularSettings, AiQuietHours, PatchProjectAiGovernanceRequest,
 import { fetchProjectAiGovernance, patchProjectAiGovernance, type ProjectSettingsApiClient } from "./api.js";
 import {
   PROJECT_GRANULAR_KEYS,
+  RISK_MONITOR_BOUNDS,
   hhmmToMinute,
   projectGranularEffective,
   renderProjectSettingsErrorHtml,
   renderProjectSettingsHtml,
   renderProjectSettingsLoadingHtml,
-  renderProjectSettingsOwnerOnlyHtml
+  renderProjectSettingsOwnerOnlyHtml,
+  resolveRiskMonitorForDisplay
 } from "./render.js";
 
 type Locale = "zh-CN" | "en-US";
@@ -68,6 +70,9 @@ export function mountProjectSettingsView(
   let governance: ProjectAiGovernanceVM | undefined;
   let loadState: "loading" | "ready" | "error" | "owner_only" = "loading";
   let savingSilenceWindow = false;
+  // R14 批 RISK：风险巡检阈值——四个数值输入共用一个显式「保存阈值」按钮（同静默窗口秒数的取舍，
+  // 不能每次击键都发 PATCH）；启停开关走即改即 PATCH（同观察者开关，布尔值不需要校验）。
+  let savingRiskThresholds = false;
   let errorText: string | undefined;
   let loadGeneration = 0;
 
@@ -93,6 +98,7 @@ export function mountProjectSettingsView(
       governance,
       editable: input.editable,
       savingSilenceWindow,
+      savingRiskThresholds,
       errorText
     });
   }
@@ -130,6 +136,7 @@ export function mountProjectSettingsView(
         }
         governance = next;
         savingSilenceWindow = false;
+        savingRiskThresholds = false;
         render();
       })
       .catch((error: unknown) => {
@@ -138,6 +145,7 @@ export function mountProjectSettingsView(
         }
         governance = previous;
         savingSilenceWindow = false;
+        savingRiskThresholds = false;
         errorText =
           error instanceof WorkHubApiError && error.status === 404
             ? zh
@@ -238,6 +246,87 @@ export function mountProjectSettingsView(
       }
       governance = { ...governance, granular_settings: nextGranular };
       patchGovernance({ granular_settings: nextGranular }, previous);
+      return;
+    }
+    // R14 批 RISK：风险巡检启停——即改即 PATCH（同观察者开关，布尔值不需要客户端校验）。整列替换写
+    // （见 render.ts 顶部注释），所以必须带上当前已解析的四个阈值，不能只发 { enabled }。
+    if (target.closest("[data-wb-risk-enabled]")) {
+      const previous = governance;
+      const resolved = resolveRiskMonitorForDisplay(previous.risk_monitor);
+      const nextRisk = { ...resolved, enabled: !resolved.enabled };
+      governance = { ...governance, risk_monitor: nextRisk };
+      patchGovernance({ risk_monitor: nextRisk }, previous);
+      return;
+    }
+    // R14 批 RISK：四个阈值的显式「保存阈值」按钮——客户端先按契约边界（RISK_MONITOR_BOUNDS，跟
+    // render.ts 的 riskMonitorSettingsSchema 边界同一份数字）校验，未过校验不发 PATCH，只给行内提示，
+    // 避免发一个必被 422 拒掉的请求。
+    if (target.closest("[data-wb-risk-save]")) {
+      if (savingRiskThresholds) {
+        return;
+      }
+      const stallField = container.querySelector<HTMLInputElement>("[data-wb-risk-stall-input]");
+      const deadlineField = container.querySelector<HTMLInputElement>("[data-wb-risk-deadline-input]");
+      const costRatioField = container.querySelector<HTMLInputElement>("[data-wb-risk-cost-ratio-input]");
+      const costMinField = container.querySelector<HTMLInputElement>("[data-wb-risk-cost-min-input]");
+      const stall = Number(stallField?.value ?? "");
+      const deadline = Number(deadlineField?.value ?? "");
+      const costRatio = Number(costRatioField?.value ?? "");
+      const costMin = Number(costMinField?.value ?? "");
+      const stallBounds = RISK_MONITOR_BOUNDS.stall_days_threshold;
+      const deadlineBounds = RISK_MONITOR_BOUNDS.deadline_lookahead_days;
+      const costRatioBounds = RISK_MONITOR_BOUNDS.cost_spike_ratio_pct;
+      const costMinBounds = RISK_MONITOR_BOUNDS.cost_spike_min_cny;
+      if (!Number.isInteger(stall) || stall < stallBounds.min || stall > stallBounds.max) {
+        showInlineError(
+          zh
+            ? `工单停滞天数阈值要在 ${stallBounds.min} 到 ${stallBounds.max} 天之间。`
+            : `The stall threshold must be ${stallBounds.min}-${stallBounds.max} days.`
+        );
+        return;
+      }
+      if (!Number.isInteger(deadline) || deadline < deadlineBounds.min || deadline > deadlineBounds.max) {
+        showInlineError(
+          zh
+            ? `deadline 前瞻天数要在 ${deadlineBounds.min} 到 ${deadlineBounds.max} 天之间。`
+            : `The deadline lookahead must be ${deadlineBounds.min}-${deadlineBounds.max} days.`
+        );
+        return;
+      }
+      if (!Number.isInteger(costRatio) || costRatio < costRatioBounds.min || costRatio > costRatioBounds.max) {
+        showInlineError(
+          zh
+            ? `成本放量比例要在 ${costRatioBounds.min} 到 ${costRatioBounds.max} 之间。`
+            : `The cost spike ratio must be ${costRatioBounds.min}-${costRatioBounds.max}.`
+        );
+        return;
+      }
+      if (!Number.isFinite(costMin) || costMin < costMinBounds.min) {
+        showInlineError(
+          zh ? `成本放量下限不能小于 ¥${costMinBounds.min}。` : `The cost spike floor cannot be less than ¥${costMinBounds.min}.`
+        );
+        return;
+      }
+      const previous = governance;
+      const resolved = resolveRiskMonitorForDisplay(previous.risk_monitor);
+      const nextRisk = {
+        enabled: resolved.enabled,
+        stall_days_threshold: stall,
+        deadline_lookahead_days: deadline,
+        cost_spike_ratio_pct: costRatio,
+        cost_spike_min_cny: costMin
+      };
+      if (
+        nextRisk.stall_days_threshold === resolved.stall_days_threshold
+        && nextRisk.deadline_lookahead_days === resolved.deadline_lookahead_days
+        && nextRisk.cost_spike_ratio_pct === resolved.cost_spike_ratio_pct
+        && nextRisk.cost_spike_min_cny === resolved.cost_spike_min_cny
+      ) {
+        return;
+      }
+      savingRiskThresholds = true;
+      governance = { ...governance, risk_monitor: nextRisk };
+      patchGovernance({ risk_monitor: nextRisk }, previous);
     }
   });
 

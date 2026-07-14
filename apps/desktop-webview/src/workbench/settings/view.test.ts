@@ -342,6 +342,147 @@ test("a non-editable mount never issues a PATCH no matter what is clicked", asyn
   });
 });
 
+// —— R14 批 RISK：风险巡检阈值分区读写接线 —— //
+
+test("toggling the risk-monitor enable switch PATCHes the full risk_monitor object (not just { enabled }), preserving the existing thresholds", async () => {
+  await withFakeDomGlobals(async () => {
+    const container = new FakeContainer();
+    const patched: Record<string, unknown>[] = [];
+    mountProjectSettingsView(container as unknown as HTMLElement, {
+      client: clientReturning({
+        onGet: () =>
+          governanceVm({
+            risk_monitor: {
+              enabled: true,
+              stall_days_threshold: 7,
+              deadline_lookahead_days: 3,
+              cost_spike_ratio_pct: 400,
+              cost_spike_min_cny: 30
+            }
+          }),
+        onPatch: (body) => {
+          patched.push(body);
+          return governanceVm({ risk_monitor: body.risk_monitor as ProjectAiGovernanceVM["risk_monitor"] });
+        }
+      }),
+      locale: "zh-CN",
+      projectId: "90000000-0000-4000-8000-000000000001",
+      projectName: "星尘短剧",
+      editable: true
+    });
+    await tick();
+
+    container.dispatch("click", new FakeElement(new Set(["[data-wb-risk-enabled]"])));
+    await tick();
+    assert.deepEqual(patched, [
+      {
+        risk_monitor: {
+          enabled: false,
+          stall_days_threshold: 7,
+          deadline_lookahead_days: 3,
+          cost_spike_ratio_pct: 400,
+          cost_spike_min_cny: 30
+        }
+      }
+    ]);
+  });
+});
+
+test("the risk threshold save button validates each field against the contract bounds client-side and sends no PATCH on failure", async () => {
+  await withFakeDomGlobals(async () => {
+    const container = new FakeContainer();
+    const patched: Record<string, unknown>[] = [];
+    mountProjectSettingsView(container as unknown as HTMLElement, {
+      client: clientReturning({
+        onGet: () => governanceVm(),
+        onPatch: (body) => {
+          patched.push(body);
+          return governanceVm({ risk_monitor: body.risk_monitor as ProjectAiGovernanceVM["risk_monitor"] });
+        }
+      }),
+      locale: "zh-CN",
+      projectId: "90000000-0000-4000-8000-000000000001",
+      projectName: "星尘短剧",
+      editable: true
+    });
+    await tick();
+
+    const stallField = new FakeElement();
+    stallField.value = "91"; // over the max of 90
+    container.setQueryResult("[data-wb-risk-stall-input]", stallField);
+    container.setQueryResult("[data-wb-risk-deadline-input]", Object.assign(new FakeElement(), { value: "2" }));
+    container.setQueryResult("[data-wb-risk-cost-ratio-input]", Object.assign(new FakeElement(), { value: "300" }));
+    container.setQueryResult("[data-wb-risk-cost-min-input]", Object.assign(new FakeElement(), { value: "20" }));
+
+    container.dispatch("click", new FakeElement(new Set(["[data-wb-risk-save]"])));
+    await tick();
+    assert.equal(patched.length, 0);
+    assert.match(container.innerHTML, /工单停滞天数阈值要在 1 到 90 天之间/u);
+  });
+});
+
+test("the risk threshold save button PATCHes all five keys with the new values once every field passes validation", async () => {
+  await withFakeDomGlobals(async () => {
+    const container = new FakeContainer();
+    const patched: Record<string, unknown>[] = [];
+    mountProjectSettingsView(container as unknown as HTMLElement, {
+      client: clientReturning({
+        onGet: () => governanceVm(),
+        onPatch: (body) => {
+          patched.push(body);
+          return governanceVm({ risk_monitor: body.risk_monitor as ProjectAiGovernanceVM["risk_monitor"] });
+        }
+      }),
+      locale: "zh-CN",
+      projectId: "90000000-0000-4000-8000-000000000001",
+      projectName: "星尘短剧",
+      editable: true
+    });
+    await tick();
+
+    container.setQueryResult("[data-wb-risk-stall-input]", Object.assign(new FakeElement(), { value: "12" }));
+    container.setQueryResult("[data-wb-risk-deadline-input]", Object.assign(new FakeElement(), { value: "5" }));
+    container.setQueryResult("[data-wb-risk-cost-ratio-input]", Object.assign(new FakeElement(), { value: "250" }));
+    container.setQueryResult("[data-wb-risk-cost-min-input]", Object.assign(new FakeElement(), { value: "15.5" }));
+
+    container.dispatch("click", new FakeElement(new Set(["[data-wb-risk-save]"])));
+    await tick();
+    assert.deepEqual(patched, [
+      {
+        risk_monitor: {
+          enabled: true,
+          stall_days_threshold: 12,
+          deadline_lookahead_days: 5,
+          cost_spike_ratio_pct: 250,
+          cost_spike_min_cny: 15.5
+        }
+      }
+    ]);
+    assert.match(container.innerHTML, /value="12" data-wb-risk-stall-input/u);
+  });
+});
+
+test("a non-editable mount never issues a risk-monitor PATCH no matter what is clicked", async () => {
+  await withFakeDomGlobals(async () => {
+    const container = new FakeContainer();
+    const requests: RecordedRequest[] = [];
+    mountProjectSettingsView(container as unknown as HTMLElement, {
+      client: clientReturning({ onGet: () => governanceVm(), requests }),
+      locale: "zh-CN",
+      projectId: "90000000-0000-4000-8000-000000000001",
+      projectName: "星尘短剧",
+      editable: false
+    });
+    await tick();
+
+    container.dispatch("click", new FakeElement(new Set(["[data-wb-risk-enabled]"])));
+    container.dispatch("click", new FakeElement(new Set(["[data-wb-risk-save]"])));
+    await tick();
+
+    assert.equal(requests.filter((request) => request.init?.method === "PATCH").length, 0);
+  });
+});
+
 test("defaultEnabledQuietHours produces a contract-valid enabled block", () => {
   const quiet = defaultEnabledQuietHours("Asia/Shanghai");
   assert.equal(quiet.enabled, true);

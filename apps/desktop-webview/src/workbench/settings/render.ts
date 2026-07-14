@@ -8,7 +8,8 @@
 // activeProjectOwnerCondition 把 GET 也锁在 owner 上），所以非负责人实际连数据都拿不到——view.ts 对
 // 404 渲染 renderProjectSettingsOwnerOnlyHtml 的诚实说明，而不是假装有一份只读数据。
 
-import type { AiGranularSettings, AiQuietHours, ProjectAiGovernanceVM } from "@workhub/contracts";
+import type { AiGranularSettings, AiQuietHours, ProjectAiGovernanceVM, RiskMonitorSettings } from "@workhub/contracts";
+import { DEFAULT_RISK_MONITOR_SETTINGS } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 type Locale = "zh-CN" | "en-US";
@@ -93,12 +94,122 @@ function quietHoursBodyHtml(quiet: AiQuietHours, zh: boolean, editable: boolean)
   </div>`;
 }
 
+// —— R14 批 RISK（风险预警巡检，桌面设置分区）——阈值配置读写复用既有 GET/PATCH
+// /api/projects/:id/ai-governance（05-risk-design.md §2 拍板：零新增路由，只加 additive
+// risk_monitor 字段）。projectAiGovernanceVmSchema.risk_monitor 类型仍是 riskMonitorSettingsSchema
+// （每个字段 z.optional()），但读侧服务层已经做了完整默认值合并输出（见 ai-settings.ts 的
+// governanceView）——这里的 resolveRiskMonitorForDisplay 只是把 TS 类型上残留的 `| undefined` 兜底掉，
+// 不是重新实现一遍合并逻辑，真正的默认值只有一份（DEFAULT_RISK_MONITOR_SETTINGS）。 —— //
+
+// `Required<RiskMonitorSettings>` 不能直接用做「解析完一定有值」的类型标注——riskMonitorSettingsSchema
+// 每个字段都是 z.optional()，zod 推导出的属性值类型本身带 `| undefined`（不只是 `?:` 修饰符），
+// `Required<T>` 的 `-?` 只去掉可选修饰符，不去掉值类型里显式的 `| undefined`（同
+// apps/api/src/services/risk-monitor.ts 的 ResolvedRiskMonitorSettings 踩过的同一个坑，这里单独声明
+// 一个「解析后一定有具体值」的本地类型）。
+export type ResolvedRiskMonitorSettings = {
+  enabled: boolean;
+  stall_days_threshold: number;
+  deadline_lookahead_days: number;
+  cost_spike_ratio_pct: number;
+  cost_spike_min_cny: number;
+};
+
+export function resolveRiskMonitorForDisplay(risk: RiskMonitorSettings): ResolvedRiskMonitorSettings {
+  return {
+    enabled: risk.enabled ?? DEFAULT_RISK_MONITOR_SETTINGS.enabled,
+    stall_days_threshold: risk.stall_days_threshold ?? DEFAULT_RISK_MONITOR_SETTINGS.stall_days_threshold,
+    deadline_lookahead_days: risk.deadline_lookahead_days ?? DEFAULT_RISK_MONITOR_SETTINGS.deadline_lookahead_days,
+    cost_spike_ratio_pct: risk.cost_spike_ratio_pct ?? DEFAULT_RISK_MONITOR_SETTINGS.cost_spike_ratio_pct,
+    cost_spike_min_cny: risk.cost_spike_min_cny ?? DEFAULT_RISK_MONITOR_SETTINGS.cost_spike_min_cny
+  };
+}
+
+// 契约边界见 packages/contracts/src/domain/conversation.ts 的 riskMonitorSettingsSchema——四个数值输入
+// 各自的 min/max 直接对齐 zod 的 .min()/.max()，跟 view.ts 的客户端校验共用同一组数字（不是这里随手定
+// 一套、view.ts 另定一套，两边失焦）。
+export const RISK_MONITOR_BOUNDS = {
+  stall_days_threshold: { min: 1, max: 90 },
+  deadline_lookahead_days: { min: 0, max: 30 },
+  cost_spike_ratio_pct: { min: 100, max: 2000 },
+  cost_spike_min_cny: { min: 0, max: undefined as number | undefined }
+} as const;
+
+// PATCH 的 risk_monitor 是整列替换写（同 granular_settings 口径，packages/db/src/repositories/
+// ai-settings.ts 的 riskMonitorJson upsert 条件化 spread）——view.ts 的每一次写（启停开关即改即发 /
+// 阈值显式保存）都必须带上全部五个键，不能只发变化的那个，否则会把用户之前设过的其它阈值悄悄清空。
+function riskMonitorGroupHtml(risk: RiskMonitorSettings, zh: boolean, editable: boolean, saving: boolean | undefined): string {
+  const resolved = resolveRiskMonitorForDisplay(risk);
+  const dis = editable ? "" : " disabled";
+  const numberRow = (input: {
+    hook: string;
+    value: number;
+    min: number;
+    max?: number;
+    step?: string;
+    label: string;
+    unit: string;
+  }) =>
+    `<div class="wh-wb-risk-set-field"><label class="wh-wb-pset-inline-k">${escapeHtml(input.label)}</label><div class="wh-wb-pset-inline"><input type="number" min="${input.min}"${input.max !== undefined ? ` max="${input.max}"` : ""} step="${input.step ?? "1"}" class="wh-wb-pset-num" value="${escapeHtml(String(input.value))}" ${input.hook}${dis} /><span class="wh-wb-pset-inline-k">${escapeHtml(input.unit)}</span></div></div>`;
+
+  const fields = [
+    numberRow({
+      hook: "data-wb-risk-stall-input",
+      value: resolved.stall_days_threshold,
+      min: RISK_MONITOR_BOUNDS.stall_days_threshold.min,
+      max: RISK_MONITOR_BOUNDS.stall_days_threshold.max,
+      label: zh ? "工单停滞天数阈值" : "Stall threshold",
+      unit: zh ? "天" : "days"
+    }),
+    numberRow({
+      hook: "data-wb-risk-deadline-input",
+      value: resolved.deadline_lookahead_days,
+      min: RISK_MONITOR_BOUNDS.deadline_lookahead_days.min,
+      max: RISK_MONITOR_BOUNDS.deadline_lookahead_days.max,
+      label: zh ? "deadline 前瞻天数" : "Deadline lookahead",
+      unit: zh ? "天" : "days"
+    }),
+    numberRow({
+      hook: "data-wb-risk-cost-ratio-input",
+      value: resolved.cost_spike_ratio_pct,
+      min: RISK_MONITOR_BOUNDS.cost_spike_ratio_pct.min,
+      max: RISK_MONITOR_BOUNDS.cost_spike_ratio_pct.max,
+      label: zh ? "成本放量比例" : "Cost spike ratio",
+      unit: "%"
+    }),
+    numberRow({
+      hook: "data-wb-risk-cost-min-input",
+      value: resolved.cost_spike_min_cny,
+      min: RISK_MONITOR_BOUNDS.cost_spike_min_cny.min,
+      step: "0.01",
+      label: zh ? "成本放量下限" : "Cost spike floor",
+      unit: "¥"
+    })
+  ].join("");
+
+  const saveButton = editable
+    ? `<button type="button" class="wh-wb-btn" data-wb-risk-save${saving ? " disabled" : ""}>${saving ? (zh ? "保存中…" : "Saving…") : zh ? "保存阈值" : "Save thresholds"}</button>`
+    : "";
+
+  return `<section class="wh-wb-pset-group wh-wb-risk-set" data-wb-pset-risk-group="true">
+    <div class="wh-wb-pset-row">
+      <div class="wh-wb-pset-row-main">
+        <div class="wh-wb-pset-row-title">${zh ? "风险巡检" : "Risk monitor"}</div>
+        <div class="wh-wb-pset-row-sub">${zh ? "PM 视角每日巡检——工单停滞、临期未动工、项目成本异常放量，一天一次合并汇报" : "A daily PM-style patrol — stalled work, looming deadlines, cost spikes, merged into one digest a day"}</div>
+      </div>
+      ${switchHtml({ on: resolved.enabled, hook: "data-wb-risk-enabled", editable, label: zh ? "风险巡检" : "Risk monitor" })}
+    </div>
+    <div class="wh-wb-risk-set-fields">${fields}</div>
+    ${saveButton ? `<div class="wh-wb-pset-inline" style="margin-top:9px">${saveButton}</div>` : ""}
+  </section>`;
+}
+
 export function renderProjectSettingsHtml(input: {
   locale: Locale;
   projectName: string;
   governance: ProjectAiGovernanceVM;
   editable: boolean;
   savingSilenceWindow?: boolean;
+  savingRiskThresholds?: boolean;
   errorText?: string | undefined;
 }): string {
   const zh = input.locale === "zh-CN";
@@ -172,6 +283,7 @@ export function renderProjectSettingsHtml(input: {
       </div>
       <div class="wh-wb-pset-chips">${granularChips}</div>
     </section>
+    ${riskMonitorGroupHtml(gov.risk_monitor, zh, input.editable, input.savingRiskThresholds)}
   </div>`;
 }
 
