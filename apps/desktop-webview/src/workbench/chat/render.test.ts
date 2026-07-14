@@ -1619,6 +1619,160 @@ test("renderMessageHtml swaps the toolbar for an inline delete confirm when conf
   assert.match(html, /data-wb-chat-delete-cancel/u);
 });
 
+// —— R14 批 FEEDBACK：Cuu 文字消息的「有用/没用」轻反馈 —— //
+
+function cuuTextMessage(overrides: Partial<ConversationMessageVM> = {}): ConversationMessageVM {
+  return {
+    id: "m1",
+    conversation_id: "conv-1",
+    seq: 1,
+    sender_type: "cuu",
+    sender_user_id: null,
+    kind: "text",
+    content: { text: "看过了，整体不错" },
+    thread_root_id: null,
+    created_at: "2026-07-12T09:00:00.000000Z",
+    ...overrides
+  } as ConversationMessageVM;
+}
+
+test("renderMessageHtml renders the feedback toolbar tiles only for a Cuu text message, not for a human or non-text message", () => {
+  const cuu = renderMessageHtml(cuuTextMessage(), ctxWith([], "me"));
+  assert.match(cuu, /data-wb-chat-feedback="useful" data-wb-chat-feedback-msg="m1"/u);
+  assert.match(cuu, /data-wb-chat-feedback="not_useful" data-wb-chat-feedback-msg="m1"/u);
+
+  const human = renderMessageHtml(baseMessage({ sender_user_id: "other" }), ctxWith([], "me"));
+  assert.doesNotMatch(human, /data-wb-chat-feedback=/u);
+
+  const actionCard = renderMessageHtml(
+    baseMessage({ kind: "action_card", sender_type: "cuu", sender_user_id: null, content: { card_id: "card-1", items: [] } }),
+    ctxWith([], "me")
+  );
+  assert.doesNotMatch(actionCard, /data-wb-chat-feedback=/u);
+});
+
+test("renderMessageHtml renders the feedback tiles unselected (aria-pressed=false) when there is no judgement yet", () => {
+  const html = renderMessageHtml(cuuTextMessage(), ctxWith([], "me"));
+  assert.match(html, /data-wb-chat-feedback="useful"[^>]*aria-pressed="false"/u);
+  assert.match(html, /data-wb-chat-feedback="not_useful"[^>]*aria-pressed="false"/u);
+  assert.doesNotMatch(html, /wh-wb-chat-tool--fb-on-useful/u);
+  assert.doesNotMatch(html, /wh-wb-chat-tool--fb-on-not-useful/u);
+});
+
+test("renderMessageHtml highlights exactly the matching feedback tile once judged", () => {
+  const useful = renderMessageHtml(
+    cuuTextMessage({ my_feedback: { verdict: "useful", updated_at: "2026-07-14T00:00:00.000000Z" } }),
+    ctxWith([], "me")
+  );
+  assert.match(useful, /data-wb-chat-feedback="useful"[^>]*aria-pressed="true"/u);
+  assert.match(useful, /data-wb-chat-feedback="not_useful"[^>]*aria-pressed="false"/u);
+  assert.match(useful, /wh-wb-chat-tool--fb-on-useful/u);
+  assert.doesNotMatch(useful, /wh-wb-chat-tool--fb-on-not-useful/u);
+});
+
+test("renderMessageHtml renders the ✓/✗ character glyphs, not emoji, for the feedback tiles", () => {
+  const html = renderMessageHtml(cuuTextMessage(), ctxWith([], "me"));
+  assert.match(html, /wh-wb-chat-fb-glyph">✓</u);
+  assert.match(html, /wh-wb-chat-fb-glyph">✗</u);
+});
+
+test("renderMessageHtml renders a persistent feedback badge only once judged, coloured by verdict", () => {
+  const none = renderMessageHtml(cuuTextMessage(), ctxWith([], "me"));
+  assert.doesNotMatch(none, /wh-wb-chat-fb-badge/u);
+
+  const useful = renderMessageHtml(
+    cuuTextMessage({ my_feedback: { verdict: "useful", updated_at: "2026-07-14T00:00:00.000000Z" } }),
+    ctxWith([], "me")
+  );
+  assert.match(useful, /wh-wb-chat-fb-badge wh-wb-chat-fb-badge--useful" data-wb-chat-feedback-note-toggle="m1">✓/u);
+
+  const notUseful = renderMessageHtml(
+    cuuTextMessage({ my_feedback: { verdict: "not_useful", updated_at: "2026-07-14T00:00:00.000000Z" } }),
+    ctxWith([], "me")
+  );
+  assert.match(notUseful, /wh-wb-chat-fb-badge wh-wb-chat-fb-badge--not-useful" data-wb-chat-feedback-note-toggle="m1">✗/u);
+});
+
+test("renderMessageHtml never renders the feedback badge for a human sender, even if my_feedback were somehow present (defensive gate)", () => {
+  const html = renderMessageHtml(
+    baseMessage({ sender_user_id: "other", my_feedback: { verdict: "useful", updated_at: "2026-07-14T00:00:00.000000Z" } }),
+    ctxWith([], "me")
+  );
+  assert.doesNotMatch(html, /wh-wb-chat-fb-badge/u);
+  assert.doesNotMatch(html, /data-wb-chat-feedback=/u);
+});
+
+test("renderMessageHtml opens the note editor only for the message named in ctx.feedbackNoteEditor, with the draft prefilled", () => {
+  const judged = cuuTextMessage({ id: "m1", my_feedback: { verdict: "useful", updated_at: "2026-07-14T00:00:00.000000Z" } });
+  const other = cuuTextMessage({ id: "m2", my_feedback: { verdict: "useful", updated_at: "2026-07-14T00:00:00.000000Z" } });
+  const ctx: ChatRenderContext = { ...ctxWith([], "me"), feedbackNoteEditor: { messageId: "m1", draft: "回复很到位" } };
+  const openHtml = renderMessageHtml(judged, ctx);
+  assert.match(openHtml, /data-wb-chat-feedback-note-input/u);
+  assert.match(openHtml, /回复很到位/u);
+  assert.match(openHtml, /data-wb-chat-feedback-note-save="m1"/u);
+  assert.match(openHtml, /data-wb-chat-feedback-note-cancel/u);
+  const closedHtml = renderMessageHtml(other, ctx);
+  assert.doesNotMatch(closedHtml, /data-wb-chat-feedback-note-input/u);
+});
+
+test("renderMessageHtml surfaces a feedback note save error inside the note box", () => {
+  const judged = cuuTextMessage({ my_feedback: { verdict: "useful", updated_at: "2026-07-14T00:00:00.000000Z" } });
+  const ctx: ChatRenderContext = {
+    ...ctxWith([], "me"),
+    feedbackNoteEditor: { messageId: "m1", draft: "x", error: "备注太长了" }
+  };
+  const html = renderMessageHtml(judged, ctx);
+  assert.match(html, /wh-wb-chat-edit-error">备注太长了/u);
+});
+
+test("renderMessageHtml renders no feedback affordance at all on a tombstoned message", () => {
+  const html = renderMessageHtml(
+    cuuTextMessage({ deleted_at: "2026-07-12T10:00:00.000000Z", content: { text: "" }, my_feedback: { verdict: "useful", updated_at: "2026-07-14T00:00:00.000000Z" } }),
+    ctxWith([], "me")
+  );
+  assert.doesNotMatch(html, /data-wb-chat-feedback/u);
+  assert.doesNotMatch(html, /wh-wb-chat-fb-badge/u);
+});
+
+// —— R14 批 FEEDBACK：行动卡条目的「有用/没用」轻反馈 —— //
+
+function actionCardMessageWithItem(overrides: Partial<Record<string, unknown>> = {}): ConversationMessageVM {
+  return baseMessage({
+    kind: "action_card",
+    sender_type: "cuu",
+    sender_user_id: null,
+    content: { card_id: "card-1", items: [actionCardItem({ status: "done", ...overrides })] }
+  });
+}
+
+test("renderMessageHtml renders the action_card item feedback tile only for terminal (done/escalated) items", () => {
+  const done = renderMessageHtml(actionCardMessageWithItem({ status: "done" }), ctxWith([]));
+  assert.match(done, /data-wb-chat-actioncard-feedback="useful" data-wb-chat-actioncard-item="i1"/u);
+  const escalated = renderMessageHtml(actionCardMessageWithItem({ status: "escalated" }), ctxWith([]));
+  assert.match(escalated, /data-wb-chat-actioncard-feedback="useful" data-wb-chat-actioncard-item="i1"/u);
+  const waiting = renderMessageHtml(actionCardMessageWithItem({ status: "waiting_decision" }), ctxWith([]));
+  assert.doesNotMatch(waiting, /data-wb-chat-actioncard-feedback=/u);
+  const running = renderMessageHtml(actionCardMessageWithItem({ status: "running" }), ctxWith([]));
+  assert.doesNotMatch(running, /data-wb-chat-actioncard-feedback=/u);
+});
+
+test("renderMessageHtml never offers a feedback tile on an undone action_card item, even if it's otherwise 'done'", () => {
+  const html = renderMessageHtml(actionCardMessageWithItem({ status: "undone" }), ctxWith([]));
+  assert.doesNotMatch(html, /data-wb-chat-actioncard-feedback=/u);
+});
+
+test("renderMessageHtml highlights the matching action_card item feedback tile from content.items[i].feedback", () => {
+  const html = renderMessageHtml(actionCardMessageWithItem({ status: "done", feedback: { verdict: "not_useful" } }), ctxWith([]));
+  assert.match(html, /data-wb-chat-actioncard-feedback="useful"[^>]*aria-pressed="false"/u);
+  assert.match(html, /data-wb-chat-actioncard-feedback="not_useful"[^>]*aria-pressed="true"/u);
+  assert.match(html, /wh-wb-chat-actioncard-fb-tile--on-not-useful/u);
+});
+
+test("renderMessageHtml renders no note input for action_card item feedback (two-way tile only, no free text)", () => {
+  const html = renderMessageHtml(actionCardMessageWithItem({ status: "done" }), ctxWith([]));
+  assert.doesNotMatch(html, /data-wb-chat-actioncard-feedback-note/u);
+});
+
 test("renderPinBarHtml renders nothing with no pins, a collapsed head, and an expandable list", () => {
   const members = membersById([member({ user_id: "u1", nickname: "张三" })]);
   assert.equal(renderPinBarHtml({ pins: [], collapsed: false, locale: "zh-CN", members }), "");
