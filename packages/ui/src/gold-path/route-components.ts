@@ -30,6 +30,7 @@ import type {
   WorkItemDetailVM
 } from "@workhub/contracts";
 
+import { personAvatarTileHtml } from "../avatar/avatar-tile.js";
 import { renderAgentRunReplay } from "../replay/index.js";
 import { proposalCss, renderProposalConflictCards } from "../proposal/index.js";
 import {
@@ -217,7 +218,14 @@ export const webRouteComponentCss = [
   ".wh-avatar-preview{position:relative;display:inline-flex;width:48px;height:48px;flex:0 0 auto;border-radius:50%;overflow:hidden;background:var(--wh-product-line,#E6E7EB)}",
   ".wh-avatar-fallback{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:18px}",
   ".wh-avatar-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}",
-  ".wh-avatar-upload-label{cursor:pointer}"
+  ".wh-avatar-upload-label{cursor:pointer}",
+  // R14 批 CHAT（web-avatars）：只读小尺寸 tile——铺在审批路由/委派、成本按人/按执行者、项目负责人、
+  // 会议上传者、工单负责人这些「VM 已带 user_id 的人物出现点」旁边（packages/ui/src/avatar/
+  // avatar-tile.ts 的 personAvatarTileHtml）。复用上面 .wh-avatar-preview/.wh-avatar-fallback/
+  // .wh-avatar-img 三个 class，只加尺寸 modifier，不重开一套视觉；margin-right 兼顾内联文本前缀
+  // （p/strong 里直接拼接）与 .wh-r4-route-meta 里 flex 兄弟节点两种用法。
+  ".wh-avatar-preview--sm{width:18px;height:18px;margin-right:6px;vertical-align:-4px}",
+  ".wh-avatar-preview--sm .wh-avatar-fallback{font-size:10px}"
 ].join("");
 
 type RouteCopyKey =
@@ -1279,7 +1287,7 @@ function renderHomeRouteComponent(
           <strong><a class="wh-r4-route-row-title" href="/projects/${escapeHtml(encodeURIComponent(project.id))}">${escapeHtml(project.name)}</a></strong>
           ${project.description ? `<p>${escapeHtml(project.description)}</p>` : ""}
           <div class="wh-r4-route-meta">
-            <span class="wh-pill">${escapeHtml(`${routeT(locale, "projects.owner")} · ${project.owner_nickname}`)}</span>
+            ${project.owner_user_id ? personAvatarTileHtml({ userId: project.owner_user_id, label: project.owner_nickname }) : ""}<span class="wh-pill">${escapeHtml(`${routeT(locale, "projects.owner")} · ${project.owner_nickname}`)}</span>
             <span class="wh-pill">${escapeHtml(`${routeT(locale, "projects.openItems")} ${project.open_work_item_count}`)}</span>
             <span class="wh-pill">${escapeHtml(`${routeT(locale, "projects.updated")} ${project.updated_at.slice(0, 10)}`)}</span>
           </div>
@@ -1874,14 +1882,28 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
     ? vm.items.map((item) => renderApprovalDetailPanel(item, vm.items_detail[item.id], locale, item.id === primary?.id)).join("")
     : `<article class="wh-card wh-r4-route-card"><p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.noSelection"))}</p></article>`;
   // 右栏事实区：审批请求路由状态（保留 data-r4-approval-routed / Routed 标记）。
+  // R14 批 CHAT（web-avatars）：routed_to_user_id/delegated_to_user_id 在 ApprovalRequest 里一直都有
+  // （审批人/委派人），此前只把 routed_to_user_id 拿来算一个"已路由/未路由"的布尔药丸，从没显示过
+  // 是路由/委派给了"谁"。两个字段都没有配对的昵称字段可用——只加头像 tile（无姓名回退，图片本身仍
+  // 照常尝试加载），不编造一个不存在的名字。委派此前完全没有任何展示点，这里新增一枚同款药丸
+  // （data-r14-approval-delegated），只在 delegated_to_user_id 存在时才出现。
   const requestRows = vm.requests
-    .map((item) => `<div role="listitem" class="wh-r4-route-row" data-r4-approval-request="${escapeHtml(item.id)}">
+    .map((item) => {
+      const routedAvatar = item.routed_to_user_id ? personAvatarTileHtml({ userId: item.routed_to_user_id, label: "" }) : "";
+      const delegatedChip = item.delegated_to_user_id
+        ? `${personAvatarTileHtml({ userId: item.delegated_to_user_id, label: "" })}<span class="wh-pill" data-r14-approval-delegated="true">${escapeHtml(zh ? "已委派" : "Delegated")}</span>`
+        : "";
+      return `<div role="listitem" class="wh-r4-route-row" data-r4-approval-request="${escapeHtml(item.id)}">
       <div>
         <strong>${escapeHtml(approvalActionLabel(item.action_pattern, locale))}</strong>
         <p>${escapeHtml(approvalRequestStatusLabel(item.status, locale === "zh-CN"))}${item.sla_due_at ? ` · ${locale === "zh-CN" ? "处理期限" : "due"} ${escapeHtml(formatApprovalTimestamp(item.sla_due_at))}` : ""}</p>
       </div>
-      <span class="wh-pill" data-r4-approval-routed="${escapeHtml(String(Boolean(item.routed_to_user_id)))}">${escapeHtml(approvalRouteLabel(item.routed_to_user_id, locale))}</span>
-    </div>`)
+      <div class="wh-r4-route-meta">
+        ${routedAvatar}<span class="wh-pill" data-r4-approval-routed="${escapeHtml(String(Boolean(item.routed_to_user_id)))}">${escapeHtml(approvalRouteLabel(item.routed_to_user_id, locale))}</span>
+        ${delegatedChip}
+      </div>
+    </div>`;
+    })
     .join("");
 
   return createWebRouteComponent({
@@ -2353,6 +2375,13 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
   // （reviewer_kind==="ai"），说明这个工作项确实发生过「全托管自动合并」——置信度 pill 的
   // 「可自动采纳」（未来时/资格描述）此时该改成过去时，不能对已发生的事实用「可以」这种语气。
   const hasAiAutoMergedDeliverable = vm.accepted_deliverables.some((accepted) => accepted.reviewer_kind === "ai");
+  // R14 批 CHAT（web-avatars）：claimed_by_user_id/claimed_by_nickname 一直在 WorkItem 契约里
+  // （apps/api/src/services/work-items.ts 早就在填），但 web 端此前从没渲过——工单详情页从没说过
+  // 「这活现在是谁在认领」。PM 点名「工单详情的负责人」要带头像，这里把文字与头像一起新增
+  // （不是给已有文字加图，是把这块本来就有数据却从没显示的信息补上），只在有人认领时出现。
+  const claimedByPill = vm.workitem.claimed_by_user_id
+    ? `${personAvatarTileHtml({ userId: vm.workitem.claimed_by_user_id, label: vm.workitem.claimed_by_nickname ?? "" })}<span class="wh-pill" data-r14-workitem-claimed-by="true">${escapeHtml(`${locale === "zh-CN" ? "负责人" : "Assignee"} · ${vm.workitem.claimed_by_nickname ?? "?"}`)}</span>`
+    : "";
 
   return createWebRouteComponent({
     key: "workitem",
@@ -2377,6 +2406,7 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
           <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "workitem.context"))}</h3>
           <div class="wh-r4-route-meta">
             <span class="wh-pill">${escapeHtml(vm.workitem.code)}</span>
+            ${claimedByPill}
             <span class="wh-pill">${escapeHtml(attentionPriorityLabel(vm.workitem.priority, locale === "zh-CN"))}</span>
             <span class="wh-pill">${escapeHtml(localizedEnumLabel(vm.workitem.mode, locale === "zh-CN", { worker: "执行", pm: "项目管理" }, { worker: "Worker", pm: "PM" }))}</span>
             ${vm.confidence ? `<span class="wh-pill wh-r4-prio ${vm.confidence.verdict === "escalate" ? "wh-r4-prio--warn" : ""}" data-r9-workitem-confidence="${escapeHtml(vm.confidence.verdict)}" data-r13-workitem-confidence-auto-merged="${escapeHtml(String(vm.confidence.verdict === "auto_merge" && hasAiAutoMergedDeliverable))}" title="${escapeHtml(locale === "zh-CN" ? "AI 对最近一次输出的置信评级与分流结论" : "AI's confidence grade and routing verdict for the latest output")}">${escapeHtml(locale === "zh-CN"
@@ -3065,7 +3095,7 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
     ? vm.meetings.slice(0, 10).map((meeting) => `<a class="wh-r4-route-row" href="/meetings?project_id=${escapeHtml(meeting.project_id)}&m=${escapeHtml(meeting.id)}" data-r5-meeting-id="${escapeHtml(meeting.id)}" data-r5-meeting-status="${escapeHtml(meeting.status)}" data-r5-meeting-selected="${escapeHtml(String(meeting.id === selectedMeeting?.id))}">
       <div>
         <strong>${escapeHtml(meeting.title)}</strong>
-        <p>${escapeHtml(`${formatApprovalTimestamp(meeting.created_at)} · ${meeting.uploaded_by_label}`)}</p>
+        <p>${personAvatarTileHtml({ userId: meeting.uploaded_by_user_id, label: meeting.uploaded_by_label })}${escapeHtml(`${formatApprovalTimestamp(meeting.created_at)} · ${meeting.uploaded_by_label}`)}</p>
       </div>
       <span class="wh-pill">${escapeHtml(meetingRecordStatusLabel(meeting.status, locale))}</span>
     </a>`).join("") + (vm.meetings.length > 10
@@ -3807,7 +3837,7 @@ function renderProjectsRouteComponent(vm: ProjectListVM, locale: WorkHubLocale):
         <strong><a class="wh-r4-route-row-title" href="${escapeHtml(safeHref(projectHref))}">${escapeHtml(project.name)}</a></strong>
         ${descriptionLine}
         <div class="wh-r4-route-meta">
-          <span class="wh-pill">${escapeHtml(`${routeT(locale, "projects.owner")} · ${project.owner_nickname}`)}</span>
+          ${project.owner_user_id ? personAvatarTileHtml({ userId: project.owner_user_id, label: project.owner_nickname }) : ""}<span class="wh-pill">${escapeHtml(`${routeT(locale, "projects.owner")} · ${project.owner_nickname}`)}</span>
           <span class="wh-pill">${escapeHtml(openLabel)}</span>
           <span class="wh-pill" data-r8-project-updated="true">${escapeHtml(updatedLabel)}</span>
           ${archivedPill}
@@ -4074,9 +4104,11 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
     : "";
   // UX-M10（规格 §3.5 三维分组）：按人 / 按军团计划 / 按目标三个维度都要在成本页可达。
   // 静态渲染架构下做成并排卡（有数据才渲），不做假 tab。
+  // R14 批 CHAT（web-avatars）：这一行早就带着 user_id + label 配对（记账维度就是「这个人」），只是
+  // 此前只渲文字——头像 tile 直接铺在名字前面，onerror 天然回退回原来的纯文字观感。
   const byUserRows = vm.by_user.slice(0, 8)
     .map((item) => `<div role="listitem" class="wh-r4-route-row" data-r9-cost-user="${escapeHtml(item.user_id)}">
-      <div><strong>${escapeHtml(item.label)}</strong></div>
+      <div>${personAvatarTileHtml({ userId: item.user_id, label: item.label })}<strong>${escapeHtml(item.label)}</strong></div>
       <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny, locale))}</span>
     </div>`)
     .join("");
@@ -4115,10 +4147,12 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
   // usage.userId（起意者/触发这次调用的身份），by_assignee 是 run 的真实执行身份
   // （agent_runs.actor_user_id）。系统桶（无 run 关联的账目，如夜间技能蒸馏）单独一行，
   // 不与任何真人的名字混在一起，也不静默吞掉这部分花费。
+  // R14 批 CHAT（web-avatars）："按执行者分账"——vm.by_assignee 里 user_id 是可选的（系统桶=无 run
+  // 关联的账目，没有对应真人），只在有 user_id 时铺头像；系统桶维持纯文字，不给它编一个假头像。
   const byAssigneeRows = vm.by_assignee.slice(0, 8)
     .map((item) => `<div role="listitem" class="wh-r4-route-row" data-r13-cost-assignee="${escapeHtml(item.user_id ?? "system")}">
       <div>
-        <strong>${escapeHtml(item.label)}</strong>
+        ${item.user_id ? personAvatarTileHtml({ userId: item.user_id, label: item.label }) : ""}<strong>${escapeHtml(item.label)}</strong>
         <p>${escapeHtml(zhNotice ? `${item.run_count} 次运行` : `${item.run_count} ${item.run_count === 1 ? "run" : "runs"}`)}</p>
       </div>
       <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny, locale))}</span>

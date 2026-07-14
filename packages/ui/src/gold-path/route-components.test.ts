@@ -843,7 +843,41 @@ test("Home route leads with the decision queue before the project desk", () => {
   assert.equal(en.html.includes('href="/drive?project_id=93000000-0000-4000-8000-000000000001"'), true);
   assert.equal(en.html.includes('href="/intake?project_id=93000000-0000-4000-8000-000000000001"'), true);
   assert.ok(en.html.indexOf('data-r4-home-decision="true"') < en.html.indexOf('data-r8-home-project-desk="true"'));
+  // homeProjectListVm() 的项目没带 owner_user_id（只有 owner_nickname）——负责人头像 tile 只在
+  // owner_user_id 存在时才铺，这里没有就该没有，不编一个假 id。
+  assert.equal(en.html.includes("data-r14-avatar-tile-user-id"), false);
   assertNoMainWindowBoundaryLeak(en.html);
+});
+
+// R14 批 CHAT（web-avatars）：project.owner_nickname + owner_user_id 一直配对出现在 ProjectListVM
+// 里，此前"负责人 · {昵称}"药丸从没带过头像——首页项目桌与 /projects 列表两个渲染点都要铺。
+test("R14 CHAT Home and Projects route components show an owner avatar tile when owner_user_id is present", () => {
+  const vm = surfaceVm();
+  const projectsWithOwner: ProjectListVM = {
+    generated_at: "2026-06-11T09:00:00.000Z",
+    projects: [{
+      id: "93000000-0000-4000-8000-000000000001",
+      name: "R14 Workspace",
+      slug: "r14-workspace",
+      owner_nickname: "王五",
+      owner_user_id: "93000000-0000-4000-8000-000000000555",
+      archived: false,
+      created_at: "2026-06-11T08:00:00.000Z",
+      updated_at: "2026-06-11T09:00:00.000Z",
+      open_work_item_count: 1
+    }]
+  };
+  const home = renderWebRouteComponent({
+    key: "home",
+    attention: vm.page_vms.attention,
+    projects: projectsWithOwner
+  }, { locale: "zh-CN" });
+  assert.equal(home.html.includes('data-r14-avatar-tile-user-id="93000000-0000-4000-8000-000000000555"'), true);
+  assertNoMainWindowBoundaryLeak(home.html);
+
+  const projects = renderWebRouteComponent({ key: "projects", projects: projectsWithOwner }, { locale: "zh-CN" });
+  assert.equal(projects.html.includes('data-r14-avatar-tile-user-id="93000000-0000-4000-8000-000000000555"'), true);
+  assertNoMainWindowBoundaryLeak(projects.html);
 });
 
 test("R9.0 Home route renders escalation cards with human action labels", () => {
@@ -1119,6 +1153,30 @@ test("R4.11 WorkItem route component keeps task context, trace, acceptance, and 
   assert.equal(workitem.html.includes('data-s1-day2-post-run-next-action="replay"'), true);
   assert.deepEqual(workitem.primaryHrefs.includes(`/proposals/${vm.page_vms.proposal.proposal_id}`), true);
   assertNoMainWindowBoundaryLeak(workitem.html);
+});
+
+// R14 批 CHAT（web-avatars）：claimed_by_user_id/claimed_by_nickname 一直在契约里，web 端此前从没
+// 渲过——工单详情页从没说过"这活现在是谁在认领"。新增文字 + 头像 tile 一起铺，未认领时两者都不出现。
+test("R14 CHAT WorkItem route component shows an assignee avatar tile once the item is claimed", () => {
+  const base = surfaceVm().page_vms.workitem;
+  assert.equal(base.workitem.claimed_by_user_id, undefined);
+  const unclaimed = renderWebRouteComponent({ key: "workitem", workitem: base }, { locale: "en-US" });
+  assert.equal(unclaimed.html.includes('data-r14-workitem-claimed-by="true"'), false);
+  assert.equal(unclaimed.html.includes("data-r14-avatar-tile-user-id"), false);
+
+  const claimedVm: WorkItemDetailVM = {
+    ...base,
+    workitem: {
+      ...base.workitem,
+      claimed_by_user_id: "93000000-0000-4000-8000-000000000777",
+      claimed_by_nickname: "李雷"
+    }
+  };
+  const claimed = renderWebRouteComponent({ key: "workitem", workitem: claimedVm }, { locale: "zh-CN" });
+  assert.equal(claimed.html.includes('data-r14-workitem-claimed-by="true"'), true);
+  assert.equal(claimed.html.includes('data-r14-avatar-tile-user-id="93000000-0000-4000-8000-000000000777"'), true);
+  assert.equal(claimed.html.includes("负责人 · 李雷"), true);
+  assertNoMainWindowBoundaryLeak(claimed.html);
 });
 
 test("R9.7 WorkItem trace route component does not render machine tool names as visible pills", () => {
@@ -2157,6 +2215,17 @@ test("R4.11 Cost route component renders dashboard values directly from Cost Pag
   assertNoMainWindowBoundaryLeak(cost.html);
 });
 
+// R14 批 CHAT（web-avatars）：按人花费的每一行早就带 user_id + label 配对，只是此前只渲文字——
+// 头像 tile 铺在名字前面。
+test("R14 CHAT Cost route component shows an avatar tile for each spend-by-person row", () => {
+  const vm = surfaceVm();
+  const byUser = vm.page_vms.cost.by_user[0];
+  assert.ok(byUser);
+  const cost = renderWebRouteComponent({ key: "cost", cost: vm.page_vms.cost }, { locale: "zh-CN" });
+  assert.equal(cost.html.includes(`data-r14-avatar-tile-user-id="${byUser.user_id}"`), true);
+  assertNoMainWindowBoundaryLeak(cost.html);
+});
+
 test("R9.6 Agent dashboard route component renders observable dashboard cards without decision actions", () => {
   const agents = renderWebRouteComponent({ key: "agents", agents: agentArmyDashboardVm() }, { locale: "zh-CN" });
 
@@ -2417,6 +2486,10 @@ test("R13 P4 Cost route component renders spend by assignee with current-user an
   assert.equal(cost.html.includes('data-r13-cost-assignee="system"'), true);
   assert.equal(cost.html.includes("当前用户"), true);
   assert.equal(cost.html.includes("系统（无执行者）"), true);
+  // R14 批 CHAT（web-avatars）：真人有头像 tile（data 钩子带上真实 user_id），系统桶没有真人可挂
+  // 头像——不给它编一个假的。
+  assert.equal(cost.html.includes('data-r14-avatar-tile-user-id="97000000-0000-4000-8000-000000000004"'), true);
+  assert.equal(cost.html.includes('data-r14-avatar-tile-user-id="system"'), false);
   assertNoMainWindowBoundaryLeak(cost.html);
 });
 
@@ -2791,6 +2864,31 @@ test("R4.10 Approvals route component keeps action reasons and Page VM counts vi
   assertNoMainWindowBoundaryLeak(approvals.html);
 });
 
+// R14 批 CHAT（web-avatars）：routed_to_user_id 一直都在 ApprovalRequest 契约里，此前只拿去算一个
+// "已路由/未路由"布尔药丸——从没显示过路由给了"谁"。这里加头像 tile（没有配对昵称，纯照片/回退问号，
+// 不编一个假名字）。delegated_to_user_id 此前完全没有展示点，新增一枚同款药丸，只在存在时出现。
+test("R14 CHAT Approvals route component shows a routed-to avatar tile and a delegated chip when present", () => {
+  const base = surfaceVm();
+  const request = base.page_vms.approvals.requests[0];
+  assert.ok(request);
+  assert.ok(request.routed_to_user_id);
+
+  const routedOnly = renderWebRouteComponent({ key: "approvals", approvals: base.page_vms.approvals }, { locale: "en-US" });
+  assert.equal(routedOnly.html.includes(`data-r14-avatar-tile-user-id="${request.routed_to_user_id}"`), true);
+  assert.equal(routedOnly.html.includes('data-r14-approval-delegated="true"'), false);
+
+  const delegatedVm = {
+    ...base.page_vms.approvals,
+    requests: base.page_vms.approvals.requests.map((item) =>
+      item.id === request.id ? { ...item, delegated_to_user_id: "10000000-0000-4000-8000-000000000899" } : item)
+  };
+  const delegated = renderWebRouteComponent({ key: "approvals", approvals: delegatedVm }, { locale: "zh-CN" });
+  assert.equal(delegated.html.includes('data-r14-approval-delegated="true"'), true);
+  assert.equal(delegated.html.includes("已委派"), true);
+  assert.equal(delegated.html.includes('data-r14-avatar-tile-user-id="10000000-0000-4000-8000-000000000899"'), true);
+  assertNoMainWindowBoundaryLeak(delegated.html);
+});
+
 test("Approvals route component does not leak raw approval facts", () => {
   const vm = surfaceVm();
   const request = vm.page_vms.approvals.requests[0];
@@ -2804,7 +2902,18 @@ test("Approvals route component does not leak raw approval facts", () => {
 
   assert.ok(approvals);
   assert.equal(approvals.html.includes("tool.write_file"), false);
-  assert.equal(approvals.html.includes("96000000-0000-4000-8000-000000000011"), false);
+  // R14 批 CHAT（web-avatars）：routed_to_user_id 现在合法地出现一次——不是当作可读文本泄漏，而是
+  // 头像 tile 的 data-r14-avatar-tile-user-id 钩子（供 apps/web/src/browser.ts 水合
+  // /api/users/:id/avatar，与本文件 data-r9-cost-user/data-r13-cost-assignee 同一套已有先例）。
+  // 原断言"这个 UUID 不该出现在页面里"的本意是"不该被当人类可读内容裸露"——这里改成更精确的版本：
+  // 只允许出现在这一个 data 钩子属性里，除此之外（任何 pill/文本/其它属性）仍然一次都不能出现。
+  assert.equal(approvals.html.includes('data-r14-avatar-tile-user-id="96000000-0000-4000-8000-000000000011"'), true);
+  assert.equal(
+    approvals.html
+      .replaceAll('data-r14-avatar-tile-user-id="96000000-0000-4000-8000-000000000011"', "")
+      .includes("96000000-0000-4000-8000-000000000011"),
+    false
+  );
   assert.equal(approvals.html.includes("2026-07-05T00:00:00.000Z"), false);
   assert.equal(approvals.html.includes("<strong>Tool approval</strong>"), true);
   assert.equal(approvals.html.includes("Pending · due 2026-07-05 00:00"), true);
@@ -3091,6 +3200,17 @@ test("R5.5 Meeting route component exposes meetings, insights, actions, and appr
   assert.equal(meetings.html.includes("Update proposal pricing model"), true);
   assert.equal(meetings.hydration.pageVm, "meetings");
   assert.equal(meetings.primaryHrefs.includes("/api/meetings/projects/95000000-0000-4000-8000-000000000001/insights/95000000-0000-4000-8000-000000000004/draft"), true);
+  assertNoMainWindowBoundaryLeak(meetings.html);
+});
+
+// R14 批 CHAT（web-avatars）：会议行早就在渲 uploaded_by_label 这个"人物出现点"，且
+// uploaded_by_user_id 是必填字段——头像 tile 铺在上传者名字前面。
+test("R14 CHAT Meeting route component shows an uploader avatar tile on each meeting row", () => {
+  const vm = meetingPageVm();
+  const uploader = vm.meetings[0];
+  assert.ok(uploader);
+  const meetings = renderWebRouteComponent({ key: "meetings", meetings: vm }, { locale: "en-US" });
+  assert.equal(meetings.html.includes(`data-r14-avatar-tile-user-id="${uploader.uploaded_by_user_id}"`), true);
   assertNoMainWindowBoundaryLeak(meetings.html);
 });
 

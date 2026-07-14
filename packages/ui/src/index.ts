@@ -1,4 +1,5 @@
 export * from "./avatar/avatar-crop.js";
+export * from "./avatar/avatar-tile.js";
 export * from "./gold-path/index.js";
 export * from "./i18n.js";
 export * from "./overlap-hunk-review.js";
