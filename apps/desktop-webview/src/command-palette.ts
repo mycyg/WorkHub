@@ -15,6 +15,9 @@ export type CommandId =
   | "drive"
   | "projects"
   | "replay"
+  // R14 批 SEARCH：跨会话·网盘·工单·会议的统一检索入口——注册顺序刻意排在 knowledge 之前，两者
+  // 的 keywords 都含「搜索/search」，注册表顺序即打平分时的默认胜出方（见 command-palette.test.ts）。
+  | "search"
   | "knowledge"
   | "cost"
   | "team"
@@ -114,6 +117,16 @@ export const commandRegistry: DesktopCommand[] = [
     keywords: ["回放", "记录", "历史", "replay", "history", "trace", "timeline"],
     icon: ic('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
     action: { kind: "open-window", target: "replay" }
+  },
+  {
+    // R14 批 SEARCH：全局搜索——跨会话/网盘/工单/会议一次搜到底，与 knowledge（单项目内的知识/证据
+    // 检索）区分：knowledge=知识/证据，search=全局跨源，文案上明确「全部」。
+    id: "search",
+    label: { "zh-CN": "搜索全部", en: "Search all" },
+    hint: { "zh-CN": "跨会话·网盘·工单·会议", en: "Across chat, drive, tasks, meetings" },
+    keywords: ["搜索", "查找", "全局", "search", "find", "global"],
+    icon: ic('<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.3-4.3"/>'),
+    action: { kind: "open-window", target: "search" }
   },
   {
     id: "knowledge",
