@@ -4867,7 +4867,8 @@ async function main() {
         step.audit.routeTreeAdapter === "route-component-v1" &&
         step.audit.routeTreeActiveOnly &&
         // R9.6 adds /dashboard/agents to the live route tree; the old exact count 17 was pre-dashboard.
-        step.audit.routeTreeRouteCount === "18" &&
+        // R14 adds /dashboard/search (批 SEARCH) and /settings/memory (批 MEM): 18 -> 20.
+        step.audit.routeTreeRouteCount === "20" &&
         routeAdapterPageVmTruth(step)
       ),
       r4_16_action_dispatcher_parity: readyProductSteps.every((step) =>
