@@ -5186,6 +5186,152 @@ const presenceUserIdsQueryParameter = {
   description: "Comma-separated user uuids, at most 50; response keeps the request order",
   schema: { type: "string", minLength: 1 }
 } as const;
+// R14 批 SEARCH：/api/search 响应——与 packages/contracts/src/domain/search.ts 的 zod 逐字段对齐。
+function searchGroupVariant(scope: string, resultSchema: Record<string, unknown>) {
+  return {
+    type: "object",
+    required: ["scope", "has_more", "results"],
+    properties: {
+      scope: { type: "string", const: scope },
+      has_more: { type: "boolean" },
+      results: { type: "array", maxItems: 25, items: resultSchema }
+    },
+    additionalProperties: false
+  };
+}
+const searchDeepLinkSchema = {
+  type: "object",
+  required: ["project_id", "conversation_id", "seq"],
+  properties: {
+    project_id: uuidStringSchema,
+    conversation_id: uuidStringSchema,
+    seq: { type: "integer", minimum: 0 }
+  },
+  additionalProperties: false
+} as const;
+const conversationSearchResultJsonSchema = {
+  type: "object",
+  required: [
+    "message_id",
+    "conversation_id",
+    "project_id",
+    "project_name",
+    "conversation_title",
+    "seq",
+    "sender_type",
+    "sender_user_id",
+    "sender_label",
+    "matched_in",
+    "snippet",
+    "created_at",
+    "deep_link"
+  ],
+  properties: {
+    message_id: uuidStringSchema,
+    conversation_id: uuidStringSchema,
+    project_id: uuidStringSchema,
+    project_name: { type: "string" },
+    conversation_title: { type: "string" },
+    seq: { type: "integer", minimum: 0 },
+    sender_type: { type: "string" },
+    sender_user_id: { anyOf: [uuidStringSchema, { type: "null" }] },
+    sender_label: { type: ["string", "null"] },
+    matched_in: { type: "string", const: "text" },
+    snippet: { type: "string" },
+    created_at: dateTimeStringSchema,
+    deep_link: searchDeepLinkSchema
+  },
+  additionalProperties: false
+} as const;
+const driveSearchResultJsonSchema = {
+  type: "object",
+  required: ["item_id", "project_id", "project_name", "name", "kind", "matched_in", "snippet", "updated_at"],
+  properties: {
+    item_id: uuidStringSchema,
+    project_id: uuidStringSchema,
+    project_name: { type: "string" },
+    name: { type: "string" },
+    kind: { type: "string" },
+    matched_in: { type: "string", enum: ["name", "body"] },
+    snippet: { type: "string" },
+    updated_at: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
+const workItemSearchResultJsonSchema = {
+  type: "object",
+  required: [
+    "work_item_id",
+    "code",
+    "project_id",
+    "project_name",
+    "title",
+    "status",
+    "matched_in",
+    "snippet",
+    "updated_at"
+  ],
+  properties: {
+    work_item_id: uuidStringSchema,
+    code: { type: "string" },
+    project_id: uuidStringSchema,
+    project_name: { type: "string" },
+    title: { type: ["string", "null"] },
+    status: { type: "string" },
+    matched_in: { type: "string", enum: ["title", "description"] },
+    snippet: { type: "string" },
+    updated_at: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
+const meetingSearchResultJsonSchema = {
+  type: "object",
+  required: ["meeting_id", "project_id", "project_name", "title", "status", "matched_in", "snippet", "created_at"],
+  properties: {
+    meeting_id: uuidStringSchema,
+    project_id: uuidStringSchema,
+    project_name: { type: "string" },
+    title: { type: "string" },
+    status: { type: "string" },
+    matched_in: { type: "string", enum: ["title", "minutes"] },
+    snippet: { type: "string" },
+    created_at: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
+const searchResponses = {
+  responses: {
+    "200": jsonDataResponse(
+      {
+        type: "object",
+        required: ["query", "groups"],
+        properties: {
+          query: { type: "string" },
+          groups: {
+            type: "array",
+            maxItems: 4,
+            items: {
+              oneOf: [
+                searchGroupVariant("conversations", conversationSearchResultJsonSchema),
+                searchGroupVariant("drive", driveSearchResultJsonSchema),
+                searchGroupVariant("work_items", workItemSearchResultJsonSchema),
+                searchGroupVariant("meetings", meetingSearchResultJsonSchema)
+              ]
+            }
+          }
+        },
+        additionalProperties: false
+      },
+      "Search results grouped per requested scope, ordered conversations/drive/work_items/meetings"
+    ).responses["200"],
+    "400": jsonErrorStatusResponse("400", "q, scopes, or limit failed validation", ["bad_request"]).responses[
+      "400"
+    ],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
 const presenceListResponses = {
   responses: {
     "200": jsonDataResponse(
@@ -6996,6 +7142,36 @@ export function getOpenApiDocument() {
           summary: "Presence for up to 50 same-workspace members, driven by SSE heartbeats",
           parameters: [presenceUserIdsQueryParameter],
           ...presenceListResponses
+        }
+      },
+      "/api/search": {
+        get: {
+          tags: ["search"],
+          summary: "Global substring search across conversations, drive, work items, and meetings",
+          parameters: [
+            {
+              name: "q",
+              in: "query",
+              required: true,
+              description: "Search text, 2 to 64 characters after trimming",
+              schema: { type: "string", minLength: 2, maxLength: 64 }
+            },
+            {
+              name: "scopes",
+              in: "query",
+              required: false,
+              description: "Comma-separated subset of conversations,drive,work_items,meetings; defaults to all",
+              schema: { type: "string" }
+            },
+            {
+              name: "limit",
+              in: "query",
+              required: false,
+              description: "Per-scope result cap, 1 to 25, default 10",
+              schema: { type: "integer", minimum: 1, maximum: 25 }
+            }
+          ],
+          ...searchResponses
         }
       },
       "/api/conversations/{id}/army": {

@@ -434,6 +434,7 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["put", "/api/conversations/{id}/read"],
     ["get", "/api/conversations/{id}/receipts"],
     ["get", "/api/presence"],
+    ["get", "/api/search"],
     ["post", "/api/spotlight/intent"],
     ["get", "/api/me/personal-projects"],
     ["post", "/api/me/personal-projects"],

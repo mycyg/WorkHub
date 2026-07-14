@@ -44,6 +44,7 @@ import { createConversationTypingRoutes } from "./routes/conversation-typing.js"
 import { createConversationMessageActionRoutes } from "./routes/conversation-message-actions.js";
 import { createConversationReadRoutes } from "./routes/conversation-read.js";
 import { createPresenceRoutes } from "./routes/presence.js";
+import { createSearchRoutes } from "./routes/search.js";
 import { createDriveVersionRoutes } from "./routes/drive-versions.js";
 import { createSpotlightIntentRoutes } from "./routes/spotlight-intent.js";
 import { createPersonalProjectRoutes } from "./routes/personal-projects.js";
@@ -263,6 +264,8 @@ app.route("/api", createConversationTypingRoutes());
 app.route("/api", createConversationMessageActionRoutes());
 app.route("/api", createConversationReadRoutes());
 app.route("/api", createPresenceRoutes());
+// R14 批 SEARCH：全局搜索统一读端点（四 scope 鉴权在 SQL 内逐 actor 收口）。
+app.route("/api", createSearchRoutes());
 app.route("/api/drive", createDriveVersionRoutes());
 app.route("/api", createSpotlightIntentRoutes());
 app.route("/api", createPersonalProjectRoutes());
