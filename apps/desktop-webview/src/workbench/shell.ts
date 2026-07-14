@@ -20,6 +20,7 @@ import { workbenchCss } from "./css.js";
 import { mountDriveSidePanel, type DriveSidePanelApiClient, type DriveSidePanelHandle } from "./drive/side-panel.js";
 import { mountDriveView, type DriveTabApiClient, type DriveViewHandle } from "./drive/view.js";
 import { workbenchIcons } from "./icons.js";
+import { mountProposalSidePanel, type ProposalSidePanelApiClient, type ProposalSidePanelHandle } from "./proposal/panel.js";
 import { createWorkbenchInterruptBroadcaster } from "./interrupt-broadcast.js";
 import { mountWorkbenchRail, type WorkbenchRailApiClient } from "./rail.js";
 import type { ProjectSettingsApiClient } from "./settings/api.js";
@@ -36,6 +37,9 @@ type Locale = "zh-CN" | "en-US";
 // 加军团面板/军团总览（army/panel.ts、army/overview.ts）需要的 request/getAgentRun——getAgentRun 也是
 // 既有具名方法（Spotlight 回放视图已经在用），同样不新增 api-client 面。
 // R13 批 P3 加项目设置标签（settings/view.ts）需要的 request 同样已在 Pick 里，零新增 api-client 面。
+// R14 批 APPROVE-CHAT：右栏第四个 owner（提议详情）需要 reviewProposal/mergeProposal——这两个方法 api-client
+// 早已具名存在（packages/api-client），此前只是 shell 的 Pick 白名单没列（pages 已在，M1 只读用的 pages.proposal
+// 已可用；M2 通过/合入才需补这两个写方法）。零新增 api-client 面。
 export type WorkbenchShellApiClient = WorkbenchRailApiClient &
   ChatViewApiClient &
   DriveTabApiClient &
@@ -43,7 +47,8 @@ export type WorkbenchShellApiClient = WorkbenchRailApiClient &
   ArmyContextPanelApiClient &
   ArmyOverviewApiClient &
   ProjectSettingsApiClient &
-  Pick<WorkHubApiClient, "listProjects" | "bootstrapProject" | "pages" | "request" | "streams" | "uploadDriveFile" | "deleteDriveItem" | "restoreDriveItem" | "getAgentRun">;
+  ProposalSidePanelApiClient &
+  Pick<WorkHubApiClient, "listProjects" | "bootstrapProject" | "pages" | "request" | "streams" | "uploadDriveFile" | "deleteDriveItem" | "restoreDriveItem" | "getAgentRun" | "reviewProposal" | "mergeProposal">;
 
 // 照 boot.ts 的 clientToken() 同款 helper——shell.ts 不 import boot.ts（避免 boot.ts → shell.ts →
 // chat/view.ts → ... 的循环 import 风险），改由 mountWorkbenchShell 的调用方（boot.ts 本尊）注入
@@ -241,8 +246,31 @@ export function mountWorkbenchShell(
   // 这就是 02 计划 P1 原话「drive 预览态互斥切换的既有 store 机制沿用」。
   const armyPanel: ArmyContextPanelHandle = mountArmyContextPanel(sideBodyEl, store, {
     client: input.client,
-    locale: input.locale
+    locale: input.locale,
+    // R14 批 APPROVE-CHAT：军团输出行点击 → 右栏打开提议详情（军团面板不认识提议详情，把 id 抛给这里）。
+    onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId })
   });
+
+  // R14 批 APPROVE-CHAT：情境面板的第四个 owner——提议详情控制器（M1 只读 + M2 通过/打回/合并）。同样挂载
+  // 一次、活过项目/会话切换，与 drive/army 共用同一个 store.sidePanelContent 插槽，靠 ownerId 互斥（见
+  // proposal/panel.ts 顶部注释）。onBack 交回军团面板；onSettled 把本机审批结果回流给当前 chat view（产出卡
+  // 覆盖标）+ 令军团面板后台重拉（输出行 status 翻新）。
+  const proposalPanel: ProposalSidePanelHandle = mountProposalSidePanel(sideBodyEl, store, {
+    client: input.client,
+    locale: input.locale,
+    onBack: () => armyPanel.reshow(),
+    onSettled: (proposalId) => {
+      chatHandle?.markProposalSettled(proposalId);
+      armyPanel.refresh();
+    }
+  });
+
+  // 会话情境切换（切项目/标签/会话）时，drive/army/proposal 三个右栏 owner 都要一起放手——proposal 详情是
+  // 会话内的下钻，导航走开就不该残留在新视图旁边（army 面板已有这套「切走就 clear」纪律，proposal 跟上）。
+  const clearContextPanels = () => {
+    armyPanel.clear();
+    proposalPanel.clear();
+  };
 
   const selectProject = (projectId: string, conversationId?: string) => {
     const my = ++vmRequestGen;
@@ -261,7 +289,7 @@ export function mountWorkbenchShell(
     // side-panel.ts 的 loadGeneration 注释）。armyPanel.clear() 同理让上一个会话的军团面板请求失效
     // （renderCenter 拿到新 VM 后会调 showForConversation 重新指向新项目的会话）。
     driveSidePanel.showIdle();
-    armyPanel.clear();
+    clearContextPanels();
     // pages.workbench 在 PageClient 上是可选字段（不强迫其它 workspace 的完整 PageClient mock 跟着补桩，
     // 见 packages/api-client/src/types.ts 的注释）；真实 createApiClient() 一定实现它，但这里仍老实处理
     // 「万一没有」——报真错误，不假装能拿到数据。
@@ -321,7 +349,7 @@ export function mountWorkbenchShell(
       disposeChat();
       disposeDrive();
       disposeProjectSettings();
-      armyPanel.clear();
+      clearContextPanels();
       centerEl.className = "wh-wb-center wh-wb-center--army-overview";
       if (!armyOverviewHandle) {
         armyOverviewHandle = mountArmyOverviewView(centerEl, { client: input.client, locale: input.locale });
@@ -333,7 +361,7 @@ export function mountWorkbenchShell(
       disposeChat();
       disposeDrive();
       disposeProjectSettings();
-      armyPanel.clear();
+      clearContextPanels();
       centerEl.className = "wh-wb-center";
       centerEl.innerHTML = renderEmptyStateHtml(input.locale, state.projects.length > 0);
       return;
@@ -342,7 +370,7 @@ export function mountWorkbenchShell(
       disposeChat();
       disposeDrive();
       disposeProjectSettings();
-      armyPanel.clear();
+      clearContextPanels();
       centerEl.className = "wh-wb-center";
       centerEl.innerHTML = renderCenterErrorHtml(input.locale);
       return;
@@ -357,7 +385,7 @@ export function mountWorkbenchShell(
           return; // 已经是这个项目的网盘标签——它自己的 store 在内部持续更新，无需重挂。
         }
         disposeDrive();
-        armyPanel.clear();
+        clearContextPanels();
         centerEl.className = "wh-wb-center wh-wb-center--drive";
         driveHandle = mountDriveView(centerEl, {
           client: input.client,
@@ -383,7 +411,7 @@ export function mountWorkbenchShell(
           return;
         }
         disposeProjectSettings();
-        armyPanel.clear();
+        clearContextPanels();
         centerEl.className = "wh-wb-center wh-wb-center--project-settings";
         projectSettingsHandle = mountProjectSettingsView(centerEl, {
           client: input.client,
@@ -432,7 +460,9 @@ export function mountWorkbenchShell(
             void interruptBroadcaster?.handleRawConversationEvent(raw);
             armyPanel.handleRawConversationEvent(raw);
           },
-          onOpenDriveFile: (fileInput) => driveSidePanel.showPreview({ projectId: vm.project.id, itemId: fileInput.itemId, itemName: fileInput.itemName })
+          onOpenDriveFile: (fileInput) => driveSidePanel.showPreview({ projectId: vm.project.id, itemId: fileInput.itemId, itemName: fileInput.itemName }),
+          // R14 批 APPROVE-CHAT：产出卡「看提议」→ 右栏提议详情（与军团输出行汇流到同一个控制器）。
+          onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId })
         });
         chatMountKey = key;
         // R13 批 P1：情境面板默认态挂军团三区——会话情境存在时（这里是刚挂上这个协同会话的 chat 视图）
@@ -445,7 +475,7 @@ export function mountWorkbenchShell(
         // 批 0 的 workbenchPageVmSchema 已经用 superRefine 保证"恰好一个 main 会话"存在；真到这里说明
         // 服务端契约被破坏，老实报错而不是假装能渲染群聊。
         disposeChat();
-        armyPanel.clear();
+        clearContextPanels();
         centerEl.className = "wh-wb-center";
         centerEl.innerHTML = renderCenterErrorHtml(input.locale);
         return;
@@ -475,7 +505,9 @@ export function mountWorkbenchShell(
           armyPanel.handleRawConversationEvent(raw);
         },
         // R12 批 6：file_card 点击 → 右栏预览，和网盘标签共用同一个 driveSidePanel 控制器。
-        onOpenDriveFile: (fileInput) => driveSidePanel.showPreview({ projectId: vm.project.id, itemId: fileInput.itemId, itemName: fileInput.itemName })
+        onOpenDriveFile: (fileInput) => driveSidePanel.showPreview({ projectId: vm.project.id, itemId: fileInput.itemId, itemName: fileInput.itemName }),
+        // R14 批 APPROVE-CHAT：产出卡「看提议」→ 右栏提议详情（与军团输出行汇流到同一个控制器）。
+        onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId })
       });
       chatMountKey = key;
       // R13 批 P1：见上面协同会话分支同款注释——主区会话情境存在时，情境面板默认态挂军团三区。
@@ -485,7 +517,7 @@ export function mountWorkbenchShell(
     disposeChat();
     disposeDrive();
     disposeProjectSettings();
-    armyPanel.clear();
+    clearContextPanels();
     centerEl.className = "wh-wb-center";
     centerEl.innerHTML = renderCenterLoadingHtml(input.locale);
   };
@@ -609,6 +641,7 @@ export function mountWorkbenchShell(
       disposeProjectSettings();
       driveSidePanel.dispose();
       armyPanel.dispose();
+      proposalPanel.dispose();
     }
   };
 }

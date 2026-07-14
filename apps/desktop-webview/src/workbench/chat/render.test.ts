@@ -355,11 +355,16 @@ test("renderMessageHtml renders a proposal_opened system_event as a deliverable 
   assert.match(html, /选题报告 · 第三节/u);
   assert.match(html, /\+86/u);
   assert.match(html, /-12/u);
-  // 等待人工确认——不是「已自动采纳」话术，也不假装有个能点的撤销/交给审核按钮。
+  // 等待人工确认——不是「已自动采纳」话术。
   assert.match(html, /等待人工确认后采纳/u);
   assert.doesNotMatch(html, /已自动采纳/u);
-  assert.doesNotMatch(html, /<button/u);
+  // R14 批 APPROVE-CHAT（M1 接活）：产出卡现在有一个真接线的「看提议」深链按钮（此前是「后续批次接入」死
+  // 文本）——点击 → 右栏打开提议详情。断言从「不许有 button」翻成「必须有这个深链按钮」，是 M1 的正当行为变更。
+  assert.match(html, /<button[^>]*data-wb-chat-open-proposal="proposal-1"[^>]*>/u);
+  assert.match(html, /看提议/u);
   assert.doesNotMatch(html, /wh-wb-chat-sysline"/u);
+  // 没有本机审批记录（settledProposalIds 未传）时不渲覆盖标。
+  assert.doesNotMatch(html, /已处理 · 见落定消息/u);
 });
 
 test("renderMessageHtml renders a proposal_auto_merged system_event with the full-autonomy badge instead of the pending-review note", () => {
@@ -382,6 +387,57 @@ test("renderMessageHtml renders a proposal_auto_merged system_event with the ful
   assert.match(html, /wh-wb-chat-actioncard/u);
   assert.match(html, /已自动采纳 · 全托管/u);
   assert.doesNotMatch(html, /等待人工确认后采纳/u);
+  // auto_merged 变体的深链按钮文案是「看已采纳的提议」（打开即 merged 只读态）。
+  assert.match(html, /<button[^>]*data-wb-chat-open-proposal="proposal-2"[^>]*>/u);
+  assert.match(html, /看已采纳的提议/u);
+});
+
+// R14 批 APPROVE-CHAT 档③：服务端审批落定回流——system_event content.event === 'proposal_settled' 渲成
+// 落定行（标题 + 已通过/已合并/已打回 + 「看提议」深链），不是普通折叠灰线。
+test("renderMessageHtml renders a proposal_settled system_event as a settled line with the outcome and a real view-proposal button", () => {
+  const settledMessage = (outcome: string) =>
+    baseMessage({
+      kind: "system_event",
+      sender_type: "system",
+      sender_user_id: null,
+      content: { event: "proposal_settled", proposal_id: "proposal-7", outcome, title: "选题报告 · 第三节" }
+    });
+  const approved = renderMessageHtml(settledMessage("approved"), ctxWith([]));
+  assert.match(approved, /选题报告 · 第三节 · 已通过/u);
+  assert.match(approved, /<button[^>]*data-wb-chat-open-proposal="proposal-7"[^>]*>/u);
+  assert.doesNotMatch(approved, /wh-wb-chat-sysline"/u);
+  const merged = renderMessageHtml(settledMessage("merged"), ctxWith([]));
+  assert.match(merged, /已合并/u);
+  assert.match(merged, /正式版本/u);
+  const rejected = renderMessageHtml(settledMessage("rejected"), ctxWith([]));
+  assert.match(rejected, /已打回/u);
+  assert.match(rejected, /下一轮 AI/u);
+  // 未知 outcome 不假装认识——落回普通折叠系统行。
+  const unknown = renderMessageHtml(settledMessage("vanished"), ctxWith([]));
+  assert.match(unknown, /wh-wb-chat-sysline"/u);
+});
+
+test("renderMessageHtml overlays a local settled marker on a deliverable card when its proposal is in settledProposalIds", () => {
+  const message = baseMessage({
+    kind: "system_event",
+    sender_type: "system",
+    sender_user_id: null,
+    content: {
+      event: "proposal_opened",
+      proposal_id: "proposal-9",
+      run_id: "run-9",
+      title: "选题报告 · 第三节",
+      adds: 4,
+      dels: 1
+    }
+  });
+  const withoutSettle = renderMessageHtml(message, ctxWith([]));
+  assert.doesNotMatch(withoutSettle, /已处理 · 见落定消息/u);
+  const withSettle = renderMessageHtml(message, { ...ctxWith([]), settledProposalIds: new Set(["proposal-9"]) });
+  assert.match(withSettle, /已处理 · 见落定消息/u);
+  // 覆盖标只针对命中的提议——别的提议 id 命中不影响这张卡。
+  const otherSettled = renderMessageHtml(message, { ...ctxWith([]), settledProposalIds: new Set(["proposal-other"]) });
+  assert.doesNotMatch(otherSettled, /已处理 · 见落定消息/u);
 });
 
 test("renderMessageHtml still renders a non-deliverable system_event (e.g. drive_version_restored) as the plain collapsed sysline", () => {

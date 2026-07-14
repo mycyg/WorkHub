@@ -162,17 +162,20 @@ test("renderArmyPanelHtml renders outputs, runs, and the honest background-tasks
   const state: ArmyPanelViewState = { mode: "list", vm: panelVm(), loadingMore: false };
   const html = renderArmyPanelHtml(state, "zh-CN", noMembers);
   assert.match(html, /选题报告 · 第三节\(草稿\)/u);
-  assert.match(html, /深链/u);
-  assert.match(html, /\/proposals\/prop-1/u);
   assert.match(html, /阿墨/u);
   assert.match(html, /后台任务还没有接入真实数据源/u);
 });
 
-test("renderArmyPanelHtml output rows use a native <details> disclosure, not a real navigating link (deep link ships in a later batch)", () => {
+// R14 批 APPROVE-CHAT：输出行从「<details> 折叠 + 深链死文本（跳转后续批次开放）」翻成真接线的可点按钮——
+// 点击 → 右栏打开提议详情。这是本批的接活，断言相应更新（是正当行为变更，不是迁就实现）。
+test("renderArmyPanelHtml output rows are clickable proposal buttons carrying the proposal id, not a fake navigating link or dead deep-link text", () => {
   const state: ArmyPanelViewState = { mode: "list", vm: panelVm(), loadingMore: false };
   const html = renderArmyPanelHtml(state, "zh-CN", noMembers);
-  assert.match(html, /<details class="wh-wb-army-out-row"/u);
+  assert.match(html, /<button[^>]*class="wh-wb-army-out-row wh-wb-army-out-row--link"[^>]*data-wb-army-open-proposal="prop-1"/u);
   assert.doesNotMatch(html, /<a[^>]*href="\/proposals\/prop-1"/u);
+  // 深链死文本已删除（不再展示 proposal_href 文本，也不再有「跳转后续批次开放」）。
+  assert.doesNotMatch(html, /深链/u);
+  assert.doesNotMatch(html, /跳转后续批次开放/u);
 });
 
 // R13 批 P1.5（右栏变动文件区）：下面几条覆盖设计稿验收门列的三种边界——整体缺失（老 proposal）/

@@ -1622,6 +1622,91 @@ test("proposal routes require mutation access before reviewing or merging readab
   assert.equal((await proposals.get(mergeTarget.id))?.status, "reviewed");
 });
 
+// R14 批 APPROVE-CHAT 档③：review/merge 落定后往来源会话回流（settledNotifier）。注入记录桩断言三种落定
+// outcome 与调用时机；回流失败必须只 warn、不影响已成功的 2xx（best-effort 契约）。
+test("R14 settled notifier fires with approved/rejected/merged outcomes and never breaks the 2xx on failure", async () => {
+  const runtimeSettings = settings();
+  const auth = authDeps(runtimeSettings);
+  const proposals = createInMemoryProposalService({ now: () => now, id: ids() });
+  const workItems = allowingWorkItems();
+  const settledCalls: Array<{ proposalId: string; outcome: string; actorKind: string }> = [];
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createWorkItemProposalRoutes({ auth, proposals, workItems }));
+  app.route("/api/proposals", createProposalRoutes({
+    auth,
+    proposals,
+    workItems,
+    bus: { publish: async () => undefined },
+    settledNotifier: async (input) => {
+      settledCalls.push({ proposalId: input.proposalId, outcome: input.outcome, actorKind: input.actor.actor_kind });
+    }
+  }));
+  const headers = {
+    "Content-Type": "application/json",
+    Cookie: await cookie(runtimeSettings)
+  };
+  const approveManifest = manifest(41);
+  const rejectManifest = manifest(42);
+  const approveTarget = await createProposal(app, runtimeSettings, approveManifest);
+  const rejectTarget = await createProposal(app, runtimeSettings, rejectManifest);
+
+  const approve = await app.request(`/api/proposals/${approveTarget.data.id}/review`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "approve" })
+  });
+  assert.equal(approve.status, 200);
+  const reject = await app.request(`/api/proposals/${rejectTarget.data.id}/review`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "request_changes", reason_md: "细节要调整" })
+  });
+  assert.equal(reject.status, 200);
+  const merge = await app.request(`/api/proposals/${approveTarget.data.id}/merge`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+  assert.equal(merge.status, 200);
+
+  assert.deepEqual(settledCalls, [
+    { proposalId: approveTarget.data.id, outcome: "approved", actorKind: "human" },
+    { proposalId: rejectTarget.data.id, outcome: "rejected", actorKind: "human" },
+    { proposalId: approveTarget.data.id, outcome: "merged", actorKind: "human" }
+  ]);
+
+  // 已合并提议的重复 merge（proposal_already_merged 早路径）不重复回流。
+  const remerge = await app.request(`/api/proposals/${approveTarget.data.id}/merge`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+  assert.equal(remerge.status, 409);
+  assert.equal(settledCalls.length, 3);
+
+  // 回流器抛错：review 仍 2xx（best-effort——warn 走结构化日志，不进这里注入的 eventLogger，
+  // 那个 logger 被别的测试按 warn 内容精确断言使用，见 createDefaultProposalSettledNotifier 注释）。
+  const failingApp = withErrors(new Hono<AuthEnv>());
+  failingApp.route("/api", createWorkItemProposalRoutes({ auth, proposals, workItems }));
+  failingApp.route("/api/proposals", createProposalRoutes({
+    auth,
+    proposals,
+    workItems,
+    bus: { publish: async () => undefined },
+    settledNotifier: async () => {
+      throw new Error("settle pipeline down");
+    }
+  }));
+  const failManifest = manifest(43);
+  const failTarget = await createProposal(failingApp, runtimeSettings, failManifest);
+  const failReview = await failingApp.request(`/api/proposals/${failTarget.data.id}/review`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "approve" })
+  });
+  assert.equal(failReview.status, 200);
+});
+
 test("findings: a concurrent same-id insert (repo conflict) maps to 409 proposal_already_exists, not 500", async () => {
   const repository = new MemoryProposalRepository();
   // 模拟并发输者：findById 预检通过（新 id），但插入撞唯一约束 → 仓库抛 ProposalRepositoryConflictError。

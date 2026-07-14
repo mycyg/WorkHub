@@ -171,6 +171,9 @@ export type ChatViewHandle = {
   dispose: () => void;
   // rail.ts「主区」树叶点击时调用——把焦点交回 composer（会话点击路由，见批 2 汇报）。
   focusComposer: () => void;
+  // R14 批 APPROVE-CHAT（档① 本地乐观回流）：本机在右栏审批过某份提议后，shell 调这个把 id 记进本地
+  // settledProposalIds 集合并重渲——对应产出卡追加「已处理」覆盖标（乐观、仅本机，见 render.ts）。
+  markProposalSettled: (proposalId: string) => void;
 };
 
 type PendingSendRecord = {
@@ -364,6 +367,9 @@ export function mountChatView(
     // R12 批 6：file_card 点击 → 右栏预览，和网盘标签共用同一个情境面板控制器（在 shell.ts 挂载一次，
     // 活过项目/标签切换——见 workbench/drive/side-panel.ts 顶部注释）。可选，测试/未来消费者不必补桩。
     onOpenDriveFile?: (input: { itemId: string; itemName: string }) => void;
+    // R14 批 APPROVE-CHAT（M1 接活）：产出卡「看提议」点击 → 右栏打开提议详情（proposalPanel，shell.ts 挂载
+    // 一次、活过切换，与 drive/army 共用右栏插槽）。可选，测试/未来消费者不必补桩，同 onOpenDriveFile。
+    onOpenProposal?: (proposalId: string) => void;
     // R14 批 CHAT（桌宠彩蛋，stretch）：有人给 Cuu 的一条消息新加了个反应时，把该露的情绪信号交出去
     // （celebrating/worried/thinking，见 reaction-emotion.ts 的映射）。detection 在这里做——只有本地持
     // 有上一份 reactions 快照的 view.ts 能 diff 出「新增了哪个键」（reaction.updated 是全量聚合，无增量）。
@@ -387,6 +393,9 @@ export function mountChatView(
   let olderLoad: "idle" | "loading" | "error" = "idle";
   let renderWindowSize = DEFAULT_MESSAGE_RENDER_WINDOW;
   let expandedMessageIds = new Set<string>();
+  // R14 批 APPROVE-CHAT（档① 本地乐观回流）：本机在右栏审批过的提议 id——产出卡据此追加「已处理」覆盖标。
+  // 瞬态、不落库；重挂 chat 视图（切项目/会话）自然清空，落定态以服务端档③ 的 proposal_settled 系统消息为准。
+  const settledProposalIds = new Set<string>();
   let attachments: ComposerAttachmentChip[] = [];
   let activeTrigger: ComposerTriggerMatch | undefined;
   let mentionMembers: MentionPickerMember[] = [];
@@ -510,7 +519,8 @@ export function mountChatView(
     ...(editingMessageId !== undefined
       ? { editing: { messageId: editingMessageId, draft: editDraft, ...(editError !== undefined ? { error: editError } : {}) } }
       : {}),
-    ...(confirmDeleteMessageId !== undefined ? { confirmDeleteMessageId } : {})
+    ...(confirmDeleteMessageId !== undefined ? { confirmDeleteMessageId } : {}),
+    settledProposalIds
   });
 
   container.innerHTML = `<div class="wh-wb-chat">
@@ -2486,6 +2496,12 @@ export function mountChatView(
       });
       return;
     }
+    // R14 批 APPROVE-CHAT（M1 接活）：产出卡「看提议」点击 → 右栏打开提议详情（同 file_card 的抛给 shell 模式）。
+    const openProposalBtn = target.closest<HTMLElement>("[data-wb-chat-open-proposal]");
+    if (openProposalBtn?.dataset.wbChatOpenProposal) {
+      input.onOpenProposal?.(openProposalBtn.dataset.wbChatOpenProposal);
+      return;
+    }
     const clarifyOptionBtn = target.closest<HTMLElement>("[data-wb-chat-clarify-option]");
     if (clarifyOptionBtn) {
       applyClarifyOptionToComposer(clarifyOptionBtn.dataset.wbChatClarifyOption);
@@ -2809,6 +2825,13 @@ export function mountChatView(
     },
     focusComposer() {
       textareaEl()?.focus();
+    },
+    markProposalSettled(proposalId: string) {
+      if (disposed || settledProposalIds.has(proposalId)) {
+        return;
+      }
+      settledProposalIds.add(proposalId);
+      renderScroll();
     }
   };
 }

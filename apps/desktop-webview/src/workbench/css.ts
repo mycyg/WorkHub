@@ -649,6 +649,82 @@ export const workbenchCss = [
   ".wh-wb-mode-hint{flex:none;padding:0 20px 4px;font:500 11px/1.4 var(--ds-font);color:var(--ds-ink-faint)}",
   ".wh-wb-mode-hint--error{color:var(--ds-danger)}",
 
+  // —— R14 批 APPROVE-CHAT：右栏提议详情（proposal/render.ts，第四个 owner）+ 产出卡「看提议」按钮 +
+  // 军团输出行按钮化。全部独立追加（css.test.ts 的既有精确断言锁死旧规则字符串，只加不改），wh-wb-prop-*
+  // 新前缀，视觉语言对齐 drive/army 侧栏（--ds-* 浅色玻璃 token）。 —— //
+  ".wh-wb-chat-actioncard-actions{margin-top:8px}",
+  ".wh-wb-chat-actioncard-open{font:600 12px/1 var(--ds-font);padding:6px 12px;border-radius:99px;" +
+    "border:1px solid var(--ds-glass-border);background:var(--ds-glass);color:var(--ds-accent);cursor:pointer}",
+  ".wh-wb-chat-actioncard-open:hover{background:var(--ds-glass-strong)}",
+  // 军团输出行翻成 <button>（原 <details> 折叠）后仍复用 .wh-wb-army-out-* 的内部布局类——按钮宿主自己
+  // 要抹掉 UA 默认样式并接住原来 summary 的 flex 布局。
+  ".wh-wb-army-out-row--link{display:flex;align-items:center;gap:9px;width:100%;box-sizing:border-box;" +
+    "padding:8px 10px;font:inherit;color:inherit;text-align:left;cursor:pointer}",
+  ".wh-wb-prop{display:flex;flex-direction:column;gap:10px}",
+  ".wh-wb-prop-back{align-self:flex-start;font:600 12px/1 var(--ds-font);color:var(--ds-ink-muted);border:0;" +
+    "background:transparent;padding:2px 0;cursor:pointer}",
+  ".wh-wb-prop-back:hover{color:var(--ds-ink)}",
+  ".wh-wb-prop-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}",
+  ".wh-wb-prop-risk{font:600 10.5px/1 var(--ds-font);padding:3px 8px;border-radius:99px;" +
+    "background:var(--ds-glass);color:var(--ds-ink-muted);border:1px solid var(--ds-glass-border)}",
+  ".wh-wb-prop-risk--medium{background:var(--ds-warn-soft);color:var(--ds-warn);border-color:transparent}",
+  ".wh-wb-prop-risk--high{background:var(--ds-danger-soft);color:var(--ds-danger);border-color:transparent}",
+  ".wh-wb-prop-title{margin:0;font:700 13.5px/1.4 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-prop-summary,.wh-wb-prop-change{border:1px solid var(--ds-glass-border);background:var(--ds-glass);" +
+    "border-radius:var(--ds-radius-sm);padding:9px 10px}",
+  ".wh-wb-prop-change-head{display:flex;align-items:center;gap:7px;margin-bottom:5px;min-width:0}",
+  ".wh-wb-prop-chip{font:600 10px/1 var(--ds-font);padding:2px 7px;border-radius:99px;flex:0 0 auto;" +
+    "background:var(--ds-accent-soft);color:var(--ds-accent)}",
+  ".wh-wb-prop-change-path{font:500 11px/1.4 var(--ds-font);color:var(--ds-ink-faint);overflow:hidden;" +
+    "text-overflow:ellipsis;white-space:nowrap}",
+  ".wh-wb-prop-change-sum{font:500 12px/1.6 var(--ds-font);color:var(--ds-ink-soft)}",
+  ".wh-wb-prop-changes{display:flex;flex-direction:column;gap:8px}",
+  ".wh-wb-prop-diff{margin-top:7px;border-radius:8px;overflow:hidden;font:500 11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}",
+  ".wh-wb-prop-diff-line{padding:4px 8px;word-break:break-all}",
+  ".wh-wb-prop-diff-line--del{background:var(--ds-danger-soft);color:var(--ds-danger)}",
+  ".wh-wb-prop-diff-line--add{background:var(--ds-success-soft);color:#1f8f3f}",
+  ".wh-wb-prop-checks{display:flex;flex-wrap:wrap;gap:6px}",
+  ".wh-wb-prop-check{font:500 10.5px/1.5 var(--ds-font);padding:3px 8px;border-radius:99px;" +
+    "background:var(--ds-glass);color:var(--ds-ink-muted);border:1px solid var(--ds-glass-border)}",
+  ".wh-wb-prop-check--passed{background:var(--ds-success-soft);color:#1f8f3f;border-color:transparent}",
+  ".wh-wb-prop-check--failed{background:var(--ds-danger-soft);color:var(--ds-danger);border-color:transparent}",
+  ".wh-wb-prop-check--warning{background:var(--ds-warn-soft);color:var(--ds-warn);border-color:transparent}",
+  ".wh-wb-prop-actions{display:flex;flex-direction:column;gap:8px;margin-top:2px}",
+  ".wh-wb-prop-note{margin:0;font:500 11px/1.6 var(--ds-font);color:var(--ds-ink-faint)}",
+  ".wh-wb-prop-act{font:600 12.5px/1 var(--ds-font);padding:9px 14px;border-radius:99px;cursor:pointer;" +
+    "border:1px solid var(--ds-glass-border);background:var(--ds-glass);color:var(--ds-ink)}",
+  ".wh-wb-prop-act:hover{background:var(--ds-glass-strong)}",
+  ".wh-wb-prop-act:disabled{opacity:.5;cursor:default}",
+  ".wh-wb-prop-act--primary{border:0;color:#fff;background:linear-gradient(135deg,#0a84ff,#64d2ff);" +
+    "box-shadow:var(--ds-shadow-glow);font-weight:700}",
+  ".wh-wb-prop-act--danger{border-color:transparent;background:var(--ds-danger-soft);color:var(--ds-danger)}",
+  ".wh-wb-prop-act--ghost{color:var(--ds-ink-muted);background:transparent;border-color:transparent}",
+  ".wh-wb-prop-status{font:600 11px/1 var(--ds-font);padding:5px 10px;border-radius:99px;align-self:flex-start;" +
+    "background:var(--ds-glass);color:var(--ds-ink-muted);border:1px solid var(--ds-glass-border)}",
+  ".wh-wb-prop-status--merged{background:var(--ds-success-soft);color:#1f8f3f;border-color:transparent}",
+  ".wh-wb-prop-status--rejected{background:var(--ds-danger-soft);color:var(--ds-danger);border-color:transparent}",
+  ".wh-wb-prop-reasons{display:flex;flex-direction:column;gap:8px;border:1px solid var(--ds-glass-border);" +
+    "background:var(--ds-glass);border-radius:var(--ds-radius-sm);padding:10px}",
+  ".wh-wb-prop-reasons-q{margin:0;font:700 11.5px/1 var(--ds-font);color:var(--ds-ink-soft)}",
+  ".wh-wb-prop-reasons-row{display:flex;flex-wrap:wrap;gap:6px}",
+  ".wh-wb-prop-reason{font:500 11px/1 var(--ds-font);padding:5px 10px;border-radius:99px;cursor:pointer;" +
+    "border:1px solid var(--ds-glass-border);background:transparent;color:var(--ds-ink-muted)}",
+  '.wh-wb-prop-reason[data-sel="true"]{background:var(--ds-danger-soft);color:var(--ds-danger);border-color:transparent}',
+  ".wh-wb-prop-reason-text{font:500 12px/1.6 var(--ds-font);color:var(--ds-ink);border:1px solid var(--ds-glass-border);" +
+    "border-radius:var(--ds-radius-sm);background:rgba(255,255,255,.8);padding:8px 10px;resize:vertical;min-height:56px}",
+  ".wh-wb-prop-reason-text:focus{outline:none;border-color:var(--ds-accent);box-shadow:0 0 0 3px var(--ds-accent-soft)}",
+  ".wh-wb-prop-reason-error{margin:0;font:500 11px/1.4 var(--ds-font);color:var(--ds-danger)}",
+  ".wh-wb-prop-reason-error:empty{display:none}",
+  ".wh-wb-prop-reason-actions{display:flex;justify-content:flex-end}",
+  ".wh-wb-prop-notice{display:flex;align-items:center;gap:8px;justify-content:space-between;" +
+    "font:500 11.5px/1.5 var(--ds-font);border-radius:var(--ds-radius-sm);padding:8px 10px}",
+  ".wh-wb-prop-notice--permission{background:var(--ds-warn-soft);color:var(--ds-warn)}",
+  ".wh-wb-prop-notice--conflict{background:var(--ds-warn-soft);color:var(--ds-warn)}",
+  ".wh-wb-prop-notice--network{background:var(--ds-danger-soft);color:var(--ds-danger)}",
+  ".wh-wb-prop-loading{display:flex;align-items:center;gap:9px;font:500 12px/1 var(--ds-font);color:var(--ds-ink-faint);padding:8px 0}",
+  ".wh-wb-prop-error{display:flex;flex-direction:column;gap:10px;align-items:flex-start}",
+  ".wh-wb-prop-error-msg{margin:0;font:500 12px/1.6 var(--ds-font);color:var(--ds-ink-muted)}",
+
   "@media (prefers-reduced-motion:reduce){.wh-wb-side,.wh-wb-winbtn,.wh-wb-project-row,.wh-wb-leaf,.wh-wb-btn," +
     ".wh-wb-chat-ctag,.wh-wb-chat-typing-dots i{transition-duration:.01ms!important;animation-duration:.01ms!important}}",
   // 独立追加一条规则，而不是塞进上面那条既有选择器列表——那条字符串被 css.test.ts 的既有测试按

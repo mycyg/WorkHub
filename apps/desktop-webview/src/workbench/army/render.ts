@@ -145,9 +145,9 @@ function armyOutputStatusLabel(status: string, zh: boolean): string {
   return entry ? (zh ? entry[0] : entry[1]) : status;
 }
 
-// 输出区(00 §4/批 5 契约)：点击暂时只展示 proposal_href 文案，深链跳转是后续批次的活——
-// 用原生 <details>/<summary> 折叠展示 href 文本，而不是渲染一个看起来能跳转、实际什么都不做的
-// <a href>（04 §4 铁律 3：没有真接线就不能装作能点）。
+// 输出区(00 §4/批 5 契约)：R14 批 APPROVE-CHAT 起真接线——每行是一个可点按钮，点击 → 右栏打开提议详情
+// （data-wb-army-open-proposal 抛给 panel.ts → shell → proposalPanel.showForProposal）。此前那条「深链：…
+// （跳转后续批次开放）」死文本已随本批接线删除（04 §4 铁律 3 反过来：现在有真接线了，就该是能点的行）。
 function renderArmyOutputsSectionHtml(outputs: ArmyOutputsVM, zh: boolean): string {
   const header = `<div class="wh-wb-army-sec-h">${zh ? "输出" : "Outputs"}<span class="wh-wb-army-sec-n">${outputs.items.length}</span></div>`;
   if (outputs.items.length === 0) {
@@ -155,17 +155,14 @@ function renderArmyOutputsSectionHtml(outputs: ArmyOutputsVM, zh: boolean): stri
   }
   const rows = outputs.items
     .map(
-      (item) => `<details class="wh-wb-army-out-row" data-wb-army-output="${escapeHtml(item.proposal_id)}">
-        <summary>
-          <span class="wh-wb-army-out-icon">${workbenchIcons.file}</span>
-          <span class="wh-wb-army-out-main">
-            <span class="wh-wb-army-out-title">${escapeHtml(item.title)}</span>
-            <span class="wh-wb-army-out-meta">${escapeHtml(armyOutputStatusLabel(item.status, zh))}</span>
-          </span>
-          <span class="wh-wb-army-out-chev">${workbenchIcons.chevronRight}</span>
-        </summary>
-        <p class="wh-wb-army-out-href">${zh ? "深链：" : "Deep link: "}${escapeHtml(item.proposal_href)}${zh ? "（跳转后续批次开放）" : " (navigation opens up in a later batch)"}</p>
-      </details>`
+      (item) => `<button type="button" class="wh-wb-army-out-row wh-wb-army-out-row--link" data-wb-army-open-proposal="${escapeHtml(item.proposal_id)}">
+        <span class="wh-wb-army-out-icon">${workbenchIcons.file}</span>
+        <span class="wh-wb-army-out-main">
+          <span class="wh-wb-army-out-title">${escapeHtml(item.title)}</span>
+          <span class="wh-wb-army-out-meta">${escapeHtml(armyOutputStatusLabel(item.status, zh))}</span>
+        </span>
+        <span class="wh-wb-army-out-chev">${workbenchIcons.chevronRight}</span>
+      </button>`
     )
     .join("");
   const cappedNote = outputs.capped

@@ -152,6 +152,10 @@ export type ChatRenderContext = {
   // R14 批 CHAT：删除二次确认（一次只确认一条）——命中的那条消息在工具条位置改渲「删除这条消息？删除/
   // 取消」的行内确认，避免误删。瞬态、不落库。
   confirmDeleteMessageId?: string;
+  // R14 批 APPROVE-CHAT（档① 本地乐观回流）：本机刚在右栏审批过的提议 id 集合——命中的产出卡追加一枚
+  // 「已通过/已打回/已合并」覆盖标（乐观、仅本机、刷新即依 VM/服务端档③ 的 proposal_settled 系统消息重判）。
+  // 由 view.ts 持有（onSettled 回调把 id 塞进来），缺省（既有调用点/测试）不渲覆盖标。
+  settledProposalIds?: ReadonlySet<string>;
 };
 
 function senderLabel(message: ConversationMessageVM, ctx: ChatRenderContext): string {
@@ -452,21 +456,85 @@ function renderDeliverableCardHtml(
   const title = typeof rawTitle === "string" && rawTitle.trim() ? rawTitle : (zh ? "一份变更申请" : "a change request");
   const adds = typeof content["adds"] === "number" ? content["adds"] : undefined;
   const dels = typeof content["dels"] === "number" ? content["dels"] : undefined;
+  const rawProposalId = content["proposal_id"];
+  const proposalId = typeof rawProposalId === "string" && rawProposalId.trim() ? rawProposalId : undefined;
   const header = zh ? `已起草 ${title}` : `Drafted ${title}`;
   const diffLine = adds !== undefined && dels !== undefined
     ? `<div class="wh-wb-chat-actioncard-note"><span style="color:var(--ds-success);font-weight:700">+${adds}</span> <span style="color:var(--ds-danger);font-weight:700">-${dels}</span></div>`
     : "";
-  // 不新做撤销按钮（撤销走既有提议/回滚通道，见批 4b 设计），也不摆一个没接线的「看提议」按钮——
-  // 跨窗口打开提议详情页需要工作台外壳（shell.ts）配合，这批范围只到产出卡渲染，先给诚实的纯文字状态，
-  // 照批 2 行动卡「完整交互由后续批次接入」的同款取舍，不假装这里已经可点。
-  const statusLine = event === "proposal_auto_merged"
+  // R14 批 APPROVE-CHAT（M1 接活）：产出卡「看提议」按钮真接线——点击 → 右栏打开提议详情（view.ts 的
+  // data-wb-chat-open-proposal → onOpenProposal → shell → proposalPanel）。auto_merged 变体文案「看已采纳的
+  // 提议」（打开即 merged 只读态）。两个 event 变体的 content 都带 proposal_id（agent-runner.ts）。
+  const settled = proposalId ? ctx.settledProposalIds?.has(proposalId) : false;
+  const autoMerged = event === "proposal_auto_merged";
+  const statusLine = autoMerged
     ? `<div class="wh-wb-chat-actioncard-note" style="color:var(--ds-warn);font-weight:700">${zh ? "已自动采纳 · 全托管" : "Auto-adopted · Full autonomy"}</div>`
     : `<div class="wh-wb-chat-actioncard-note">${zh
-        ? "已生成变更申请，等待人工确认后采纳。提议详情页由后续批次接入这个窗口。"
-        : "Change request opened — waiting for review before it's adopted. The proposal detail view lands in a later batch."
+        ? "已生成变更申请，等待人工确认后采纳。"
+        : "Change request opened — waiting for review before it's adopted."
       }</div>`;
+  // 档① 本地乐观覆盖标：本机刚审批过这份提议 → 追加「已处理」标（不精确到通过/打回/合并——本地只知道「动过」，
+  // 精确落定态以服务端档③ 的 proposal_settled 系统消息 / 下次拉 VM 为准，不在这里瞎猜方向）。
+  const settledOverlay = settled
+    ? `<div class="wh-wb-chat-actioncard-note" style="color:var(--ds-success);font-weight:700">${zh ? "已处理 · 见落定消息" : "Handled · see the settled note"}</div>`
+    : "";
+  const openButton = proposalId
+    ? `<div class="wh-wb-chat-actioncard-actions"><button type="button" class="wh-wb-chat-actioncard-open" data-wb-chat-open-proposal="${escapeHtml(proposalId)}">${
+        autoMerged ? (zh ? "看已采纳的提议" : "View the adopted proposal") : zh ? "看提议" : "View proposal"
+      }</button></div>`
+    : "";
   const timestamp = `<div class="wh-wb-chat-actioncard-note">${formatMessageTime(message.created_at, ctx.locale)}</div>`;
-  return `<div class="wh-wb-chat-actioncard wh-wb-chat-actioncard--deliverable"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${diffLine}${statusLine}${timestamp}</div>`;
+  return `<div class="wh-wb-chat-actioncard wh-wb-chat-actioncard--deliverable"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${diffLine}${statusLine}${settledOverlay}${openButton}${timestamp}</div>`;
+}
+
+// R14 批 APPROVE-CHAT 档③（审批落定回流）：review/merge 落定后，服务端往来源会话 post 一条 system_event，
+// content = {event:'proposal_settled', proposal_id, outcome:'approved'|'merged'|'rejected', title}（见
+// apps/api/src/routes/proposals.ts 的 createDefaultProposalSettledNotifier）。这里渲成「落定行」——
+// 标题 + 落定态 + 「看提议」深链（打开右栏详情，此刻已是对应的已审阅/终态），让所有成员在聊天现场看到
+// 这份提议被处理了，产出卡不再永远停在「等待人工确认」。
+type ProposalSettledOutcome = "approved" | "merged" | "rejected";
+
+function proposalSettledOutcomeFromContent(content: Record<string, unknown>): ProposalSettledOutcome | undefined {
+  if (content["event"] !== "proposal_settled") {
+    return undefined;
+  }
+  const outcome = content["outcome"];
+  return outcome === "approved" || outcome === "merged" || outcome === "rejected" ? outcome : undefined;
+}
+
+function renderProposalSettledLineHtml(
+  message: Extract<ConversationMessageVM, { kind: "system_event" }>,
+  outcome: ProposalSettledOutcome,
+  ctx: ChatRenderContext
+): string {
+  const zh = ctx.locale === "zh-CN";
+  const content = message.content;
+  const rawTitle = content["title"];
+  const title = typeof rawTitle === "string" && rawTitle.trim() ? rawTitle : zh ? "一份变更申请" : "a change request";
+  const rawProposalId = content["proposal_id"];
+  const proposalId = typeof rawProposalId === "string" && rawProposalId.trim() ? rawProposalId : undefined;
+  const outcomeLabel =
+    outcome === "approved" ? (zh ? "已通过" : "Approved") : outcome === "merged" ? (zh ? "已合并" : "Merged") : zh ? "已打回" : "Sent back";
+  const color = outcome === "rejected" ? "var(--ds-danger)" : "var(--ds-success)";
+  const note =
+    outcome === "approved"
+      ? zh
+        ? "已确认通过，下一步合入交付物。"
+        : "Approved — merging the deliverable is next."
+      : outcome === "merged"
+        ? zh
+          ? "变更已合入正式版本，全程留档可追溯。"
+          : "The change is now in the official version, fully auditable."
+        : zh
+          ? "已打回，理由会带给下一轮 AI 继续修。"
+          : "Sent back — the reason feeds the next AI pass.";
+  const openButton = proposalId
+    ? `<div class="wh-wb-chat-actioncard-actions"><button type="button" class="wh-wb-chat-actioncard-open" data-wb-chat-open-proposal="${escapeHtml(proposalId)}">${zh ? "看提议" : "View proposal"}</button></div>`
+    : "";
+  const timestamp = `<div class="wh-wb-chat-actioncard-note">${formatMessageTime(message.created_at, ctx.locale)}</div>`;
+  return `<div class="wh-wb-chat-actioncard wh-wb-chat-actioncard--deliverable"><div class="wh-wb-chat-actioncard-h" style="color:${color}">${escapeHtml(
+    `${title} · ${outcomeLabel}`
+  )}</div><div class="wh-wb-chat-actioncard-note">${escapeHtml(note)}</div>${openButton}${timestamp}</div>`;
 }
 
 // R13 批 S2（Cuu 异步化与进度可视，run 终态 PM 汇报）：一个带 source_conversation_id 的 run 到达
@@ -724,6 +792,11 @@ export function renderMessageHtml(message: ConversationMessageVM, ctx: ChatRende
     const deliverableEvent = deliverableSystemEventKind(message.content);
     if (deliverableEvent) {
       return renderDeliverableCardHtml(message, deliverableEvent, ctx);
+    }
+    // R14 批 APPROVE-CHAT 档③：审批落定行（proposal_settled）——见 renderProposalSettledLineHtml 顶部注释。
+    const proposalSettled = proposalSettledOutcomeFromContent(message.content);
+    if (proposalSettled) {
+      return renderProposalSettledLineHtml(message, proposalSettled, ctx);
     }
     const settledReportOutcome = runSettledReportOutcome(message.content);
     if (settledReportOutcome) {

@@ -29,6 +29,13 @@ export type ArmyContextPanelHandle = {
   // chat/view.ts 的 onConversationEvent 转发口——只有匹配当前目标会话的 conversation.action_card.updated
   // 才会触发一次后台静默重拉（不打断用户正在看的文件预览，见顶部注释）。
   handleRawConversationEvent: (raw: unknown) => void;
+  // R14 批 APPROVE-CHAT：提议在本机被审批后（onSettled）令军团面板后台重拉当前会话——输出行 status 走
+  // ArmyOutputLinkVM.status 自然翻新。后台刷新：正被 proposal 详情占着右栏时只更内部缓存不动 DOM（见
+  // publish background 守卫），等 reshow 交回时呈现新数据。
+  refresh: () => void;
+  // R14 批 APPROVE-CHAT：从提议详情「返回」时重新认领右栏——把当前会话的军团面板缓存态重新发布（不 refetch，
+  // 只把内部 state 推回 store，盖过 proposal owner）。没有可展示的 state 时不动 DOM。
+  reshow: () => void;
   // 没有会话情境时清空(如切到网盘标签/军团总览/还没选项目)——只在自己仍然是当前 owner 时才动 DOM。
   clear: () => void;
   dispose: () => void;
@@ -36,6 +43,9 @@ export type ArmyContextPanelHandle = {
 
 const ARMY_OWNER_ID = "army";
 const DRIVE_OWNER_ID = "drive";
+// R14 批 APPROVE-CHAT：右栏第四个 owner（提议详情）——军团的被动后台刷新不能悄悄把用户正在看/审批的提议
+// 详情挤掉，与 drive 文件预览同一优先级（见 publish background 守卫、proposal/panel.ts 顶部互斥注释）。
+const PROPOSAL_OWNER_ID = "proposal";
 
 function errorMessage(error: unknown, locale: Locale): string {
   if (error instanceof Error && error.message) {
@@ -47,7 +57,13 @@ function errorMessage(error: unknown, locale: Locale): string {
 export function mountArmyContextPanel(
   sideBodyEl: HTMLElement,
   store: WorkbenchStore,
-  input: { client: ArmyContextPanelApiClient; locale: Locale }
+  input: {
+    client: ArmyContextPanelApiClient;
+    locale: Locale;
+    // R14 批 APPROVE-CHAT：军团输出行点击 → 把 proposal_id 往外抛给 shell（军团面板不认识提议详情，
+    // 由 shell 转交给 proposalPanel.showForProposal）。可选：测试/未来消费者不接就是纯本地渲染。
+    onOpenProposal?: (proposalId: string) => void;
+  }
 ): ArmyContextPanelHandle {
   let disposed = false;
   let target: { projectId: string; conversationId: string } | undefined;
@@ -67,8 +83,10 @@ export function mountArmyContextPanel(
     if (disposed || !target) {
       return;
     }
-    if (opts.background && store.getState().sidePanelContent?.ownerId === DRIVE_OWNER_ID) {
-      // 后台静默刷新：内部 state 已经在调用方更新过了，但不要把一个正在看的文件预览挤掉。
+    const owner = store.getState().sidePanelContent?.ownerId;
+    if (opts.background && (owner === DRIVE_OWNER_ID || owner === PROPOSAL_OWNER_ID)) {
+      // 后台静默刷新：内部 state 已经在调用方更新过了，但不要把一个正在看的文件预览 / 正在审批的提议详情
+      // 挤掉（drive/proposal 都是用户主动点开的，优先级高于军团的被动后台刷新）。
       return;
     }
     const html = renderArmyPanelHtml(state, input.locale, resolveMembers());
@@ -222,6 +240,12 @@ export function mountArmyContextPanel(
       openReplay();
       return;
     }
+    const proposalBtn = el.closest<HTMLElement>("[data-wb-army-open-proposal]");
+    if (proposalBtn?.dataset.wbArmyOpenProposal) {
+      // 军团面板不认识提议详情，只把点击往外抛给 shell（→ proposalPanel.showForProposal）。
+      input.onOpenProposal?.(proposalBtn.dataset.wbArmyOpenProposal);
+      return;
+    }
     const runBtn = el.closest<HTMLElement>("[data-wb-army-open-run]");
     if (runBtn?.dataset.wbArmyOpenRun && state?.mode === "list") {
       const run = state.vm.runs.runs.find((r) => r.id === runBtn.dataset.wbArmyOpenRun);
@@ -240,9 +264,20 @@ export function mountArmyContextPanel(
     }
   }
 
+  // R14 批 APPROVE-CHAT：从提议详情返回时把当前会话的军团面板缓存态重新发布（不 refetch，只把内部 state
+  // 推回 store 盖过 proposal owner）。没有 state（还没选会话/已 clear）时不动 DOM——由 shell 兜底 idle。
+  function reshow(): void {
+    if (disposed || !state) {
+      return;
+    }
+    publish();
+  }
+
   return {
     showForConversation,
     handleRawConversationEvent,
+    refresh: refreshInBackground,
+    reshow,
     clear,
     dispose: () => {
       disposed = true;
