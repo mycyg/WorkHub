@@ -4,6 +4,7 @@ import { test } from "node:test";
 import type { ConversationMessageVM, WorkbenchPageVM } from "@workhub/contracts";
 
 import {
+  avatarTileHtml,
   membersById,
   modePatchFailedText,
   renderChatEmptyStateHtml,
@@ -16,6 +17,7 @@ import {
   renderDaySeparatorHtml,
   renderHistoryLoadErrorHtml,
   renderHistoryLoadingHtml,
+  renderJumpToUnreadHtml,
   renderLoadEarlierHtml,
   renderMemberBarHtml,
   renderMentionPickerHtml,
@@ -25,9 +27,13 @@ import {
   renderModeObserveOnlyHintHtml,
   renderModePopoverHtml,
   renderNoAiProviderBannerHtml,
+  renderObserverAnalyzingHtml,
   renderPendingOutgoingHtml,
+  renderPinBarHtml,
+  renderReadReceiptHtml,
   renderStreamingCuuBubbleHtml,
   renderTypingIndicatorHtml,
+  renderUnreadDividerHtml,
   type ChatRenderContext,
   type WorkbenchMemberVM
 } from "./render.js";
@@ -693,7 +699,10 @@ test("renderMessageHtml renders a plain 等 @昵称 拍板 text (no buttons) for
     ctxWith([member({ user_id: "other", nickname: "李四" })], "me")
   );
   assert.match(html, /等 @李四 拍板/u);
-  assert.doesNotMatch(html, /<button/u);
+  // R14 批 CHAT：消息行现在带一条 hover 工具条（回复/五键反应/编辑/删除/置顶），每条非墓碑消息都有
+  // <button>。这条断言的原意是「这个行动卡条目不摆决策/撤销/改派按钮」——收窄成只查行动卡动作
+  // 属性，不再误伤新的消息级工具条（01-chat-design.md §5 点名批准的既有断言正当扩展）。
+  assert.doesNotMatch(html, /data-wb-chat-actioncard-(decide|undo|reassign)/u);
 });
 
 test("renderMessageHtml falls back to 负责人 when the assignee's nickname can't be resolved", () => {
@@ -719,7 +728,10 @@ test("renderMessageHtml gives an unassigned decide item the same honest waiting 
     }),
     ctxWith([], "me")
   );
-  assert.doesNotMatch(html, /<button/u);
+  // R14 批 CHAT：消息行现在带一条 hover 工具条（回复/五键反应/编辑/删除/置顶），每条非墓碑消息都有
+  // <button>。这条断言的原意是「这个行动卡条目不摆决策/撤销/改派按钮」——收窄成只查行动卡动作
+  // 属性，不再误伤新的消息级工具条（01-chat-design.md §5 点名批准的既有断言正当扩展）。
+  assert.doesNotMatch(html, /data-wb-chat-actioncard-(decide|undo|reassign)/u);
   assert.match(html, /等 @负责人 拍板/u);
 });
 
@@ -733,7 +745,10 @@ test("renderMessageHtml renders no action row for a decide item that's already b
     }),
     ctxWith([], "me")
   );
-  assert.doesNotMatch(html, /<button/u);
+  // R14 批 CHAT：消息行现在带一条 hover 工具条（回复/五键反应/编辑/删除/置顶），每条非墓碑消息都有
+  // <button>。这条断言的原意是「这个行动卡条目不摆决策/撤销/改派按钮」——收窄成只查行动卡动作
+  // 属性，不再误伤新的消息级工具条（01-chat-design.md §5 点名批准的既有断言正当扩展）。
+  assert.doesNotMatch(html, /data-wb-chat-actioncard-(decide|undo|reassign)/u);
   assert.doesNotMatch(html, /拍板/u);
 });
 
@@ -817,7 +832,10 @@ test("renderMessageHtml renders no undo button once the undo window has passed",
     }),
     ctxWith([], "me", { now: new Date("2026-07-12T09:00:00.000Z") })
   );
-  assert.doesNotMatch(html, /<button/u);
+  // R14 批 CHAT：消息行现在带一条 hover 工具条（回复/五键反应/编辑/删除/置顶），每条非墓碑消息都有
+  // <button>。这条断言的原意是「这个行动卡条目不摆决策/撤销/改派按钮」——收窄成只查行动卡动作
+  // 属性，不再误伤新的消息级工具条（01-chat-design.md §5 点名批准的既有断言正当扩展）。
+  assert.doesNotMatch(html, /data-wb-chat-actioncard-(decide|undo|reassign)/u);
 });
 
 test("renderMessageHtml renders no undo button for an execute item that's running but has no undo deadline", () => {
@@ -833,7 +851,10 @@ test("renderMessageHtml renders no undo button for an execute item that's runnin
     }),
     ctxWith([], "me")
   );
-  assert.doesNotMatch(html, /<button/u);
+  // R14 批 CHAT：消息行现在带一条 hover 工具条（回复/五键反应/编辑/删除/置顶），每条非墓碑消息都有
+  // <button>。这条断言的原意是「这个行动卡条目不摆决策/撤销/改派按钮」——收窄成只查行动卡动作
+  // 属性，不再误伤新的消息级工具条（01-chat-design.md §5 点名批准的既有断言正当扩展）。
+  assert.doesNotMatch(html, /data-wb-chat-actioncard-(decide|undo|reassign)/u);
 });
 
 test("renderMessageHtml renders no undo button for someone else's running execute item, even within the undo window", () => {
@@ -857,7 +878,10 @@ test("renderMessageHtml renders no undo button for someone else's running execut
     }),
     ctxWith([], "me", { now: new Date("2026-07-12T09:00:00.000Z") })
   );
-  assert.doesNotMatch(html, /<button/u);
+  // R14 批 CHAT：消息行现在带一条 hover 工具条（回复/五键反应/编辑/删除/置顶），每条非墓碑消息都有
+  // <button>。这条断言的原意是「这个行动卡条目不摆决策/撤销/改派按钮」——收窄成只查行动卡动作
+  // 属性，不再误伤新的消息级工具条（01-chat-design.md §5 点名批准的既有断言正当扩展）。
+  assert.doesNotMatch(html, /data-wb-chat-actioncard-(decide|undo|reassign)/u);
 });
 
 test("renderMessageHtml never renders an action row for an undone item, even if it would otherwise qualify", () => {
@@ -881,7 +905,10 @@ test("renderMessageHtml never renders an action row for an undone item, even if 
     }),
     ctxWith([], "me", { now: new Date("2026-07-12T09:00:00.000Z") })
   );
-  assert.doesNotMatch(html, /<button/u);
+  // R14 批 CHAT：消息行现在带一条 hover 工具条（回复/五键反应/编辑/删除/置顶），每条非墓碑消息都有
+  // <button>。这条断言的原意是「这个行动卡条目不摆决策/撤销/改派按钮」——收窄成只查行动卡动作
+  // 属性，不再误伤新的消息级工具条（01-chat-design.md §5 点名批准的既有断言正当扩展）。
+  assert.doesNotMatch(html, /data-wb-chat-actioncard-(decide|undo|reassign)/u);
   assert.match(html, /已撤销/u);
 });
 
@@ -898,7 +925,10 @@ test("renderMessageHtml drops an item missing an id rather than rendering a butt
     }),
     ctxWith([], "me")
   );
-  assert.doesNotMatch(html, /<button/u);
+  // R14 批 CHAT：消息行现在带一条 hover 工具条（回复/五键反应/编辑/删除/置顶），每条非墓碑消息都有
+  // <button>。这条断言的原意是「这个行动卡条目不摆决策/撤销/改派按钮」——收窄成只查行动卡动作
+  // 属性，不再误伤新的消息级工具条（01-chat-design.md §5 点名批准的既有断言正当扩展）。
+  assert.doesNotMatch(html, /data-wb-chat-actioncard-(decide|undo|reassign)/u);
   assert.doesNotMatch(html, /没有 id 的条目/u);
 });
 
@@ -1217,11 +1247,15 @@ test("renderComposerHtml behaves exactly as before when turnActive is omitted (m
   assert.equal(withoutTurnActive, withExplicitFalse);
 });
 
-test("renderComposerHtml marks the # and / composer tags as not-yet-available, distinctly from the live @ tag", () => {
+// R14 批 CHAT：撤掉「/ 技能」灰 chip（01-chat-design.md §5 点名的顺路项——技能唤起归 SEARCH 批，不摆
+// 点了没反应的假 affordance）。`#会话` 灰态保留；`/` chip 必须不再出现。这条断言从「# 和 / 都在」收窄成
+// 「# 在、/ 不在」，属设计点名批准的既有断言修改。
+test("renderComposerHtml keeps the # tag as not-yet-available but no longer renders the / skill tag", () => {
   const html = renderComposerHtml({ locale: "zh-CN", draftText: "", attachments: [], sending: false });
   assert.match(html, /data-wb-chat-tool-trigger="@"/u);
   assert.match(html, /wh-wb-chat-ctag--soon"[^>]*><b>#<\/b>/u);
-  assert.match(html, /wh-wb-chat-ctag--soon"[^>]*><b>\/<\/b>/u);
+  assert.doesNotMatch(html, /wh-wb-chat-ctag--soon"[^>]*><b>\/<\/b>/u);
+  assert.doesNotMatch(html, /技能/u);
 });
 
 // —— pickers —— //
@@ -1385,4 +1419,181 @@ test("modePatchFailedText / renderModeErrorHintHtml surface a gentle retry messa
   const html = renderModeErrorHintHtml(zh);
   assert.match(html, /wh-wb-mode-hint--error/u);
   assert.match(html, /再试一次/u);
+});
+
+// —— R14 批 CHAT：presence 在线点 / hover 工具条 / 反应 / 编辑 / 墓碑 / 引用 / 置顶条 / 已读 —— //
+
+test("avatarTileHtml adds a pure-CSS online dot only when online, never on Cuu, and never new text", () => {
+  const on = avatarTileHtml({ label: "张三", id: "u1", online: true });
+  const off = avatarTileHtml({ label: "张三", id: "u1" });
+  const cuu = avatarTileHtml({ label: "Cuu", id: "cuu", variant: "cuu", online: true });
+  assert.match(on, /wh-wb-chat-avatar-dot/u);
+  assert.doesNotMatch(off, /wh-wb-chat-avatar-dot/u);
+  assert.doesNotMatch(cuu, /wh-wb-chat-avatar-dot/u);
+  // 在线态只用视觉点，绝不写「在线」文字（render.test.ts:80 同一红线的本意）。
+  assert.doesNotMatch(on, /在线/u);
+});
+
+test("renderMemberBarHtml paints an online dot for online members only and still has no 在线 text", () => {
+  const html = renderMemberBarHtml({
+    members: [member({ user_id: "u1", nickname: "张三" }), member({ user_id: "u2", nickname: "阿曼" })],
+    locale: "zh-CN",
+    onlineUserIds: new Set(["u1"])
+  });
+  assert.equal((html.match(/wh-wb-chat-avatar-dot/gu) ?? []).length, 1);
+  assert.doesNotMatch(html, /在线/u);
+});
+
+test("renderMessageHtml renders a hover toolbar with reply + five reaction quick-adds for any message", () => {
+  const html = renderMessageHtml(baseMessage({ sender_user_id: "other" }), ctxWith([], "me"));
+  assert.match(html, /wh-wb-chat-tools/u);
+  assert.match(html, /data-wb-chat-reply="m1"/u);
+  assert.equal((html.match(/data-wb-chat-react="/gu) ?? []).length, 5);
+  assert.match(html, /data-wb-chat-pin="m1"/u);
+});
+
+test("renderMessageHtml shows edit + delete in the toolbar for the current user's own text message, but not for others'", () => {
+  const own = renderMessageHtml(baseMessage({ sender_user_id: "me" }), ctxWith([], "me"));
+  const other = renderMessageHtml(baseMessage({ sender_user_id: "other" }), ctxWith([], "me"));
+  assert.match(own, /data-wb-chat-edit="m1"/u);
+  assert.match(own, /data-wb-chat-delete="m1"/u);
+  assert.doesNotMatch(other, /data-wb-chat-edit=/u);
+  assert.doesNotMatch(other, /data-wb-chat-delete=/u);
+});
+
+test("renderMessageHtml offers delete but not edit for the current user's own non-text (file_card) message", () => {
+  const html = renderMessageHtml(
+    baseMessage({ sender_user_id: "me", kind: "file_card", content: { drive_item_id: "d1", snapshot_name: "报告.xlsx" } }),
+    ctxWith([], "me")
+  );
+  assert.match(html, /data-wb-chat-delete="m1"/u);
+  assert.doesNotMatch(html, /data-wb-chat-edit=/u);
+});
+
+test("renderMessageHtml renders a reaction row only when there are reactions, highlighting my own", () => {
+  const none = renderMessageHtml(baseMessage({ sender_user_id: "other" }), ctxWith([], "me"));
+  assert.doesNotMatch(none, /wh-wb-chat-reactions/u);
+  const withReactions = renderMessageHtml(
+    baseMessage({ sender_user_id: "other", reactions: [{ key: "approve", user_ids: ["me", "other"] }, { key: "watch", user_ids: ["x"] }] }),
+    ctxWith([], "me")
+  );
+  assert.match(withReactions, /wh-wb-chat-reactions/u);
+  // approve 里有我 → own 高亮；watch 里没有我 → 普通态。
+  assert.match(withReactions, /wh-wb-chat-reaction wh-wb-chat-reaction--mine[^"]*"[^>]*data-wb-chat-react="approve"/u);
+  assert.match(withReactions, /data-wb-chat-react="approve"[^>]*aria-pressed="true"/u);
+  assert.match(withReactions, /data-wb-chat-react="watch"[^>]*aria-pressed="false"/u);
+  // 计数展示。
+  assert.match(withReactions, /wh-wb-chat-reaction-count">2</u);
+});
+
+test("renderMessageHtml renders reaction emoji glyphs only in the reaction chip / toolbar (emoji live in render, not css)", () => {
+  const html = renderMessageHtml(
+    baseMessage({ sender_user_id: "other", reactions: [{ key: "approve", user_ids: ["x"] }] }),
+    ctxWith([], "me")
+  );
+  assert.match(html, /👍/u);
+});
+
+test("renderMessageHtml shows an 已编辑 label once edited_at is set, not before", () => {
+  const before = renderMessageHtml(baseMessage(), ctxWith([]));
+  const after = renderMessageHtml(baseMessage({ edited_at: "2026-07-12T09:05:00.000000Z" }), ctxWith([]));
+  assert.doesNotMatch(before, /已编辑/u);
+  assert.match(after, /wh-wb-chat-edited">已编辑/u);
+});
+
+test("renderMessageHtml renders a tombstone placeholder with no avatar/toolbar/reactions once deleted_at is set", () => {
+  const html = renderMessageHtml(
+    baseMessage({ sender_user_id: "me", deleted_at: "2026-07-12T10:00:00.000000Z", content: { text: "" } }),
+    ctxWith([], "me")
+  );
+  assert.match(html, /此消息已删除/u);
+  assert.match(html, /data-wb-chat-message-id="m1"/u);
+  assert.doesNotMatch(html, /wh-wb-chat-tools/u);
+  assert.doesNotMatch(html, /wh-wb-chat-avatar/u);
+  assert.doesNotMatch(html, /data-wb-chat-react/u);
+});
+
+test("renderMessageHtml renders a clickable reply reference above the bubble, with a jump target", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      sender_user_id: "other",
+      reply_to: { message_id: "m0", sender_type: "user", sender_user_id: "u1", preview_text: "原来那句话", deleted: false }
+    }),
+    ctxWith([member({ user_id: "u1", nickname: "李四" })], "me")
+  );
+  assert.match(html, /data-wb-chat-reply-jump="m0"/u);
+  assert.match(html, /李四/u);
+  assert.match(html, /原来那句话/u);
+});
+
+test("renderMessageHtml shows a deleted-original placeholder for a reply whose target was later deleted", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      sender_user_id: "other",
+      reply_to: { message_id: "m0", sender_type: "user", sender_user_id: "u1", preview_text: "", deleted: true }
+    }),
+    ctxWith([member({ user_id: "u1", nickname: "李四" })], "me")
+  );
+  assert.match(html, /data-wb-chat-reply-jump="m0"/u);
+  assert.match(html, /原消息已删除/u);
+});
+
+test("renderMessageHtml renders an inline edit textarea (not the body) when editing this message", () => {
+  const ctx: ChatRenderContext = { ...ctxWith([], "me"), editing: { messageId: "m1", draft: "改一半的内容" } };
+  const html = renderMessageHtml(baseMessage({ sender_user_id: "me", content: { text: "原文" } }), ctx);
+  assert.match(html, /data-wb-chat-edit-input/u);
+  assert.match(html, /改一半的内容/u);
+  assert.match(html, /data-wb-chat-edit-save="m1"/u);
+  assert.match(html, /data-wb-chat-edit-cancel/u);
+  // 编辑态不再摆 hover 工具条。
+  assert.doesNotMatch(html, /wh-wb-chat-tools/u);
+});
+
+test("renderMessageHtml surfaces the edit error (e.g. 15-minute window) inside the edit box", () => {
+  const ctx: ChatRenderContext = { ...ctxWith([], "me"), editing: { messageId: "m1", draft: "x", error: "改不了啦" } };
+  const html = renderMessageHtml(baseMessage({ sender_user_id: "me" }), ctx);
+  assert.match(html, /wh-wb-chat-edit-error">改不了啦/u);
+});
+
+test("renderMessageHtml swaps the toolbar for an inline delete confirm when confirming this message", () => {
+  const ctx: ChatRenderContext = { ...ctxWith([], "me"), confirmDeleteMessageId: "m1" };
+  const html = renderMessageHtml(baseMessage({ sender_user_id: "me" }), ctx);
+  assert.match(html, /删除这条消息？/u);
+  assert.match(html, /data-wb-chat-delete-confirm="m1"/u);
+  assert.match(html, /data-wb-chat-delete-cancel/u);
+});
+
+test("renderPinBarHtml renders nothing with no pins, a collapsed head, and an expandable list", () => {
+  const members = membersById([member({ user_id: "u1", nickname: "张三" })]);
+  assert.equal(renderPinBarHtml({ pins: [], collapsed: false, locale: "zh-CN", members }), "");
+  const pin = baseMessage({ id: "p1", sender_user_id: "u1", content: { text: "锁死这条" } });
+  const collapsed = renderPinBarHtml({ pins: [pin], collapsed: true, locale: "zh-CN", members });
+  assert.match(collapsed, /1 条置顶消息/u);
+  assert.match(collapsed, /data-wb-chat-pinbar-toggle/u);
+  assert.doesNotMatch(collapsed, /data-wb-chat-pin-jump/u);
+  const open = renderPinBarHtml({ pins: [pin], collapsed: false, locale: "zh-CN", members });
+  assert.match(open, /data-wb-chat-pin-jump="p1"/u);
+  assert.match(open, /data-wb-chat-pin-remove="p1"/u);
+  assert.match(open, /锁死这条/u);
+});
+
+test("renderUnreadDividerHtml / renderReadReceiptHtml / renderJumpToUnreadHtml render their honest markers", () => {
+  assert.match(renderUnreadDividerHtml("zh-CN"), /以下是新消息/u);
+  assert.match(renderReadReceiptHtml({ readCount: 1, total: 3, locale: "zh-CN" }), /已读 1\/3/u);
+  assert.match(renderJumpToUnreadHtml("zh-CN"), /跳到未读/u);
+  assert.match(renderJumpToUnreadHtml("zh-CN"), /data-wb-chat-jump-unread/u);
+});
+
+test("renderObserverAnalyzingHtml renders the 'Cuu is tidying up' indicator in the typing style", () => {
+  const html = renderObserverAnalyzingHtml("zh-CN");
+  assert.match(html, /Cuu 正在整理刚才的讨论/u);
+  assert.match(html, /wh-wb-chat-typing/u);
+});
+
+test("renderComposerHtml renders a 'replying to' banner with a cancel control when replyingToLabel is set", () => {
+  const withReply = renderComposerHtml({ locale: "zh-CN", draftText: "", attachments: [], sending: false, replyingToLabel: "李四" });
+  assert.match(withReply, /正在回复 李四/u);
+  assert.match(withReply, /data-wb-chat-cancel-reply/u);
+  const without = renderComposerHtml({ locale: "zh-CN", draftText: "", attachments: [], sending: false });
+  assert.doesNotMatch(without, /wh-wb-chat-reply-banner/u);
 });

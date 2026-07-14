@@ -305,15 +305,19 @@ export const workbenchCss = [
   ".wh-wb-chat-avs{display:flex}",
   // 头像堆叠的描边用白色（新壳体底色本就是近白的浅色玻璃），照 .wh-wb-chat-avatar--cuu/render.ts
   // avatarTileHtml 的深底色块配白字在浅底上依然成立——这条边框只是让重叠头像有「切出来」的轮廓感。
-  ".wh-wb-chat-avatar{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;" +
+  ".wh-wb-chat-avatar{position:relative;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;" +
     "font:700 10px/1 var(--ds-font);color:#fff;margin-right:-6px;border:1.5px solid #fff;flex:0 0 auto}",
   ".wh-wb-chat-avatar--cuu{background:var(--wb-cuu-soft);color:var(--wb-cuu)}",
+  // R14 批 CHAT：presence 在线点——纯 CSS 视觉圆点（绿色 success token），叠在色块右下角、盖在头像照片
+  // 之上（z-index 高于 hydrateAvatarPhotos 后插的 <img>）。只有在线成员的 tile 才有这个子元素。
+  ".wh-wb-chat-avatar-dot{position:absolute;right:-1px;bottom:-1px;width:8px;height:8px;border-radius:50%;" +
+    "background:var(--ds-success);border:1.5px solid #fff;z-index:2}",
   ".wh-wb-chat-avatar--cuu svg{width:12px;height:12px}",
   ".wh-wb-chat-head-label{margin-left:4px}",
   ".wh-wb-chat-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;padding:16px 20px 6px}",
   ".wh-wb-chat-daysep{display:flex;align-items:center;gap:10px;color:var(--ds-ink-faint);font:600 10.5px/1 var(--ds-font);margin:6px 0 14px}",
   ".wh-wb-chat-daysep::before,.wh-wb-chat-daysep::after{content:\"\";flex:1;height:1px;background:var(--ds-glass-border)}",
-  ".wh-wb-chat-msg{display:flex;gap:9px;margin:0 0 14px;align-items:flex-start}",
+  ".wh-wb-chat-msg{position:relative;display:flex;gap:9px;margin:0 0 14px;align-items:flex-start}",
   ".wh-wb-chat-bub{min-width:0;max-width:min(560px,86%)}",
   ".wh-wb-chat-msg--self{flex-direction:row-reverse}",
   ".wh-wb-chat-msg--self .wh-wb-chat-bub{text-align:right}",
@@ -380,6 +384,110 @@ export const workbenchCss = [
   ".wh-wb-chat-msg--self .wh-wb-chat-txt-fade{background:linear-gradient(to bottom,transparent,var(--ds-accent-soft))}",
   ".wh-wb-chat-text-toggle{display:block;margin-top:4px;border:0;background:transparent;color:var(--ds-accent);" +
     "font:700 11px/1 var(--ds-font);cursor:pointer;padding:0;text-decoration:underline}",
+
+  // —— R14 批 CHAT：引用回复块（气泡上方，点击跳原消息）—— //
+  ".wh-wb-chat-reply-ref{display:flex;flex-direction:column;gap:1px;max-width:100%;text-align:left;margin:0 0 4px;" +
+    "padding:4px 9px;border:0;border-left:2px solid var(--ds-accent);border-radius:6px;background:var(--ds-glass-quiet);" +
+    "cursor:pointer;font:inherit;color:inherit}",
+  ".wh-wb-chat-reply-ref:hover{background:var(--ds-glass-strong)}",
+  ".wh-wb-chat-reply-ref-who{font:700 10.5px/1.3 var(--ds-font);color:var(--ds-accent)}",
+  ".wh-wb-chat-reply-ref-text{font:500 11.5px/1.3 var(--ds-font);color:var(--ds-ink-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+  ".wh-wb-chat-reply-ref-gone{font:500 11.5px/1.3 var(--ds-font);color:var(--ds-ink-faint);font-style:italic}",
+  ".wh-wb-chat-msg--self .wh-wb-chat-reply-ref{text-align:left}",
+  // 「已编辑」灰标（who 行时间之后）。
+  ".wh-wb-chat-edited{font:500 10px/1 var(--ds-font);color:var(--ds-ink-faint)}",
+
+  // —— R14 批 CHAT：消息行 hover 工具条（回复/五键反应/编辑/删除/置顶）—— //
+  ".wh-wb-chat-tools{position:absolute;top:-12px;right:12px;display:flex;align-items:center;gap:1px;padding:2px;" +
+    "border-radius:9px;border:1px solid var(--ds-glass-border);background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(248,250,253,.99));" +
+    "box-shadow:0 8px 22px -12px rgba(60,60,67,.4);opacity:0;pointer-events:none;" +
+    "transition:opacity var(--ds-dur-fast) var(--ds-ease);z-index:4}",
+  ".wh-wb-chat-msg--self .wh-wb-chat-tools{right:auto;left:12px}",
+  ".wh-wb-chat-msg:hover .wh-wb-chat-tools,.wh-wb-chat-msg:focus-within .wh-wb-chat-tools{opacity:1;pointer-events:auto}",
+  ".wh-wb-chat-tool{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;" +
+    "border:0;border-radius:6px;background:transparent;color:var(--ds-ink-muted);cursor:pointer}",
+  ".wh-wb-chat-tool:hover{background:var(--ds-glass-strong);color:var(--ds-ink)}",
+  ".wh-wb-chat-tool svg{width:14px;height:14px}",
+  ".wh-wb-chat-tool--danger:hover{background:var(--ds-danger-soft);color:var(--ds-danger)}",
+  ".wh-wb-chat-tool--on{color:var(--ds-accent)}",
+  ".wh-wb-chat-tool-emoji{font-size:13px;line-height:1}",
+  ".wh-wb-chat-tool--react-on{background:var(--ds-accent-soft)}",
+
+  // —— R14 批 CHAT：气泡下方的反应行（有反应才渲染，own 高亮可点切换）—— //
+  ".wh-wb-chat-reactions{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}",
+  ".wh-wb-chat-msg--self .wh-wb-chat-reactions{justify-content:flex-end}",
+  ".wh-wb-chat-reaction{display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:999px;" +
+    "border:1px solid var(--ds-glass-border);background:var(--ds-glass);cursor:pointer;font:600 11px/1.4 var(--ds-font);color:var(--ds-ink-soft)}",
+  ".wh-wb-chat-reaction:hover{background:var(--ds-glass-strong)}",
+  ".wh-wb-chat-reaction--mine{border-color:rgba(10,132,255,.4);background:var(--ds-accent-soft);color:var(--ds-accent)}",
+  ".wh-wb-chat-reaction-emoji{font-size:12px;line-height:1}",
+  ".wh-wb-chat-reaction-count{font-variant-numeric:tabular-nums}",
+
+  // —— R14 批 CHAT：行内编辑框 + 删除二次确认 —— //
+  ".wh-wb-chat-edit{margin-top:2px}",
+  ".wh-wb-chat-edit-input{width:100%;box-sizing:border-box;resize:vertical;min-height:38px;max-height:180px;" +
+    "border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-md);background:var(--ds-glass);" +
+    "padding:8px 10px;font:500 13px/1.5 var(--ds-font);color:var(--ds-ink);outline:none}",
+  ".wh-wb-chat-edit-input:focus{border-color:rgba(10,132,255,.4)}",
+  ".wh-wb-chat-edit-error{margin-top:5px;font:500 11px/1.4 var(--ds-font);color:var(--ds-danger)}",
+  ".wh-wb-chat-edit-actions{display:flex;gap:6px;margin-top:6px}",
+  ".wh-wb-chat-del-confirm{position:absolute;top:-12px;right:12px;display:flex;align-items:center;gap:6px;padding:5px 9px;" +
+    "border-radius:9px;border:1px solid var(--ds-glass-border);background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(248,250,253,.99));" +
+    "box-shadow:0 8px 22px -12px rgba(60,60,67,.4);font:600 11.5px/1 var(--ds-font);color:var(--ds-ink-soft);z-index:5}",
+  ".wh-wb-chat-msg--self .wh-wb-chat-del-confirm{right:auto;left:12px}",
+
+  // —— R14 批 CHAT：墓碑占位（删除后「此消息已删除」，无头像/动作区）—— //
+  ".wh-wb-chat-msg--tombstone{justify-content:center}",
+  ".wh-wb-chat-tombstone{font:500 11.5px/1.5 var(--ds-font);color:var(--ds-ink-faint);font-style:italic;padding:2px 0}",
+
+  // —— R14 批 CHAT：跳转命中后的高亮闪烁（引用/置顶/跳到未读共用，1.5s）—— //
+  ".wh-wb-chat-msg--flash{animation:ds-chat-flash 1.5s var(--ds-ease)}",
+  "@keyframes ds-chat-flash{0%{background:var(--ds-accent-soft)}100%{background:transparent}}",
+
+  // —— R14 批 CHAT：置顶条（聊天区顶部可折叠 pin bar）—— //
+  ".wh-wb-chat-pinbar{flex:none}",
+  ".wh-wb-chat-pinbar--open{border-bottom:1px solid var(--ds-glass-border)}",
+  ".wh-wb-chat-pinbar-head{display:flex;align-items:center;gap:7px;width:100%;box-sizing:border-box;padding:7px 20px;" +
+    "border:0;background:var(--ds-glass-quiet);color:var(--ds-ink-muted);font:600 11.5px/1 var(--ds-font);cursor:pointer;text-align:left}",
+  ".wh-wb-chat-pinbar-head:hover{background:var(--ds-glass-strong)}",
+  ".wh-wb-chat-pinbar-head svg{width:13px;height:13px;flex:0 0 auto}",
+  ".wh-wb-chat-pinbar-head-label{flex:1}",
+  ".wh-wb-chat-pinbar-chev{display:inline-flex}",
+  ".wh-wb-chat-pinbar-chev svg{width:13px;height:13px}",
+  ".wh-wb-chat-pin-list{max-height:148px;overflow-y:auto;padding:4px 12px 8px}",
+  ".wh-wb-chat-pin-row{display:flex;align-items:center;gap:6px;padding:2px 0}",
+  ".wh-wb-chat-pin-jump{flex:1;min-width:0;display:flex;align-items:baseline;gap:7px;padding:5px 8px;border:0;border-radius:7px;" +
+    "background:transparent;color:var(--ds-ink);font:inherit;text-align:left;cursor:pointer}",
+  ".wh-wb-chat-pin-jump:hover{background:var(--ds-glass)}",
+  ".wh-wb-chat-pin-who{font:700 11px/1.3 var(--ds-font);color:var(--ds-ink-soft);flex:0 0 auto}",
+  ".wh-wb-chat-pin-text{font:500 12px/1.3 var(--ds-font);color:var(--ds-ink-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+  ".wh-wb-chat-pin-remove{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0;" +
+    "border:0;border-radius:6px;background:transparent;color:var(--ds-ink-faint);cursor:pointer;flex:0 0 auto}",
+  ".wh-wb-chat-pin-remove:hover{background:var(--ds-glass-strong);color:var(--ds-ink)}",
+  ".wh-wb-chat-pin-remove svg{width:12px;height:12px}",
+
+  // —— R14 批 CHAT：未读分割线 + 聚合式「已读 N/M」+ 底部「跳到未读」浮钮 —— //
+  ".wh-wb-chat-unread-sep{display:flex;align-items:center;gap:10px;margin:6px 0 14px;" +
+    "font:700 10.5px/1 var(--ds-font);color:var(--ds-danger)}",
+  ".wh-wb-chat-unread-sep::before,.wh-wb-chat-unread-sep::after{content:\"\";flex:1;height:1px;background:rgba(255,69,58,.35)}",
+  ".wh-wb-chat-readmark{margin:-8px 0 12px;text-align:right;font:600 10px/1 var(--ds-font);color:var(--ds-ink-faint)}",
+  ".wh-wb-chat-jump-slot{position:relative;flex:none}",
+  ".wh-wb-chat-jump-unread{position:absolute;right:16px;bottom:8px;display:inline-flex;align-items:center;gap:3px;" +
+    "padding:5px 12px;border-radius:999px;border:1px solid var(--ds-glass-border);" +
+    "background:linear-gradient(135deg,#0a84ff,#64d2ff);color:#fff;font:700 11px/1 var(--ds-font);cursor:pointer;" +
+    "box-shadow:0 10px 26px -12px rgba(10,132,255,.6);z-index:3}",
+  ".wh-wb-chat-jump-unread svg{width:12px;height:12px;transform:rotate(90deg)}",
+
+  // —— R14 批 CHAT：composer 顶部「正在回复 xxx」条 —— //
+  ".wh-wb-chat-reply-banner{display:flex;align-items:center;gap:7px;margin-bottom:8px;padding:6px 10px;" +
+    "border-radius:var(--ds-radius-md);border:1px solid var(--ds-glass-border);border-left:2px solid var(--ds-accent);" +
+    "background:var(--ds-glass);font:600 12px/1.3 var(--ds-font);color:var(--ds-ink-soft)}",
+  ".wh-wb-chat-reply-banner svg{width:13px;height:13px;color:var(--ds-accent);flex:0 0 auto}",
+  ".wh-wb-chat-reply-banner-label{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+  ".wh-wb-chat-reply-banner-cancel{display:inline-flex;border:0;background:transparent;color:var(--ds-ink-faint);cursor:pointer;padding:0}",
+  ".wh-wb-chat-reply-banner-cancel svg{width:12px;height:12px}",
+  // 观察者「正在整理」指示灯——照 typing 同款，只把点的颜色略偏 Cuu 橙以区分（不是新颜色，用 wb-cuu token）。
+  ".wh-wb-chat-typing--observer .wh-wb-chat-typing-dots i{background:var(--wb-cuu)}",
 
   // —— 正在输入 —— //
   ".wh-wb-chat-typing{flex:none;padding:0 20px 4px;font:500 11px/1 var(--ds-font);color:var(--ds-ink-faint);" +
@@ -545,5 +653,7 @@ export const workbenchCss = [
     ".wh-wb-chat-ctag,.wh-wb-chat-typing-dots i{transition-duration:.01ms!important;animation-duration:.01ms!important}}",
   // 独立追加一条规则，而不是塞进上面那条既有选择器列表——那条字符串被 css.test.ts 的既有测试按
   // 精确子串匹配锁死（04 §4 铁律 1：不许为了迁就实现去改断言），追加新选择器会破坏它的匹配。
-  "@media (prefers-reduced-motion:reduce){.wh-wb-mode-chip,.wh-wb-mode-lvl{transition-duration:.01ms!important;animation-duration:.01ms!important}}"
+  "@media (prefers-reduced-motion:reduce){.wh-wb-mode-chip,.wh-wb-mode-lvl{transition-duration:.01ms!important;animation-duration:.01ms!important}}",
+  // R14 批 CHAT：hover 工具条淡入与跳转高亮闪烁——reduced-motion 下都收成瞬时（同上，独立一条规则）。
+  "@media (prefers-reduced-motion:reduce){.wh-wb-chat-tools,.wh-wb-chat-msg--flash{transition-duration:.01ms!important;animation-duration:.01ms!important}}"
 ].join("");

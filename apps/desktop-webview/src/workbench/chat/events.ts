@@ -6,8 +6,13 @@ import {
   conversationActionCardUpdatedEventSchema,
   conversationMessageCreatedEventSchema,
   conversationMessageDeltaEventSchema,
+  conversationMessageUpdatedEventSchema,
+  conversationObserverAnalyzingEventSchema,
   conversationPresenceTypingEventSchema,
+  conversationReactionUpdatedEventSchema,
+  conversationReadUpdatedEventSchema,
   type ConversationActionCardUpdatedEvent,
+  type ConversationMessageReactionVM,
   type ConversationMessageVM
 } from "@workhub/contracts";
 
@@ -101,4 +106,80 @@ export function parseIncomingActionCardUpdated(
     actionCardId: parsed.data.data.action_card_id,
     items: parsed.data.data.items
   };
+}
+
+// R14 批 CHAT：conversation.message.updated——编辑/删除/置顶/取消置顶后发布，data=变更后全量消息 VM。
+// 同 parseIncomingMessageCreated：未过 zod 校验/会话 id 不匹配一律 undefined，调用方按 id 整条替换本地
+// 快照（本地无此 id → 视 snapshotStale 定点补拉，见 view.ts）。
+export function parseIncomingMessageUpdated(raw: unknown, conversationId: string): ConversationMessageVM | undefined {
+  const parsed = conversationMessageUpdatedEventSchema.safeParse(raw);
+  if (!parsed.success) {
+    return undefined;
+  }
+  if (parsed.data.data.conversation_id !== conversationId) {
+    return undefined;
+  }
+  return parsed.data.data;
+}
+
+// R14 批 CHAT：conversation.reaction.updated——某条消息的全量 reaction 聚合（幂等替换，不发增量）。
+export type IncomingReactionUpdate = {
+  messageId: string;
+  reactions: ConversationMessageReactionVM[];
+};
+
+export function parseIncomingReactionUpdated(raw: unknown, conversationId: string): IncomingReactionUpdate | undefined {
+  const parsed = conversationReactionUpdatedEventSchema.safeParse(raw);
+  if (!parsed.success) {
+    return undefined;
+  }
+  if (parsed.data.data.conversation_id !== conversationId) {
+    return undefined;
+  }
+  return {
+    messageId: parsed.data.data.message_id,
+    reactions: [...parsed.data.data.reactions]
+  };
+}
+
+// R14 批 CHAT：conversation.read.updated——某人已读游标推进（聚合式「已读 N/M」+ 未读分割线增量）。
+export type IncomingReadUpdate = {
+  userId: string;
+  lastReadSeq: number;
+};
+
+export function parseIncomingReadUpdated(raw: unknown, conversationId: string): IncomingReadUpdate | undefined {
+  const parsed = conversationReadUpdatedEventSchema.safeParse(raw);
+  if (!parsed.success) {
+    return undefined;
+  }
+  if (parsed.data.data.conversation_id !== conversationId) {
+    return undefined;
+  }
+  return {
+    userId: parsed.data.data.user_id,
+    lastReadSeq: parsed.data.data.last_read_seq
+  };
+}
+
+// R14 批 CHAT：conversation.observer.analyzing——瞬态（照 typing 模式，ttl 30s），观察者开始整理讨论时
+// 发布。同 parseIncomingTyping：只回过期时刻毫秒，调用方在指示灯行区域渲「Cuu 正在整理刚才的讨论…」，
+// TTL 过期或收到行动卡事件即消。
+export type IncomingObserverAnalyzing = {
+  expiresAtMs: number;
+};
+
+export function parseIncomingObserverAnalyzing(raw: unknown, conversationId: string): IncomingObserverAnalyzing | undefined {
+  const parsed = conversationObserverAnalyzingEventSchema.safeParse(raw);
+  if (!parsed.success) {
+    return undefined;
+  }
+  if (parsed.data.data.conversation_id !== conversationId) {
+    return undefined;
+  }
+  const expiresAtMs = Date.parse(parsed.data.data.expires_at);
+  if (!Number.isFinite(expiresAtMs)) {
+    return undefined;
+  }
+  return { expiresAtMs };
 }

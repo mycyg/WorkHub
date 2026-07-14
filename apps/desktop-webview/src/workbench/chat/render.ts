@@ -1,10 +1,18 @@
 // WorkHub 桌面 · 主区群聊的纯 HTML 渲染函数（照 shell.ts/rail.ts 的 render*/mount* 分工：这里全部是
 // 无副作用的字符串拼装，可单测；imperative 的 DOM 挂载/事件绑定在 view.ts）。
 
-import type { AiMode, ConversationMessageVM, WorkbenchPageVM } from "@workhub/contracts";
+import type {
+  AiMode,
+  ConversationMessageReactionVM,
+  ConversationMessageReplyPreviewVM,
+  ConversationMessageVM,
+  ConversationReactionKey,
+  WorkbenchPageVM
+} from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { workbenchIcons } from "../icons.js";
+import { hasOwnReaction, REACTION_KEYS } from "./reactions.js";
 import {
   ACTION_CARD_RUN_PROGRESS_STAGES,
   type ActionCardRunProgress,
@@ -14,6 +22,26 @@ import {
 import { computeUndoRemainingMinutes, formatMessageTime } from "./timeline.js";
 
 type Locale = "zh-CN" | "en-US";
+
+// —— R14 批 CHAT：精选五键反应的 slug→emoji 字形映射（01-chat-design.md §6 的 emoji 豁免边界）——
+// emoji 只允许出现在这一个映射常量与它拼出的消息 HTML 里，禁入 css.ts/icons.ts/契约/文档。扩充五键
+// 集合须回 01-chat-design.md §6 改表。
+const REACTION_EMOJI: Record<ConversationReactionKey, string> = {
+  approve: "👍",
+  disagree: "👎",
+  done: "✅",
+  question: "❓",
+  watch: "👀"
+};
+
+// 反应键的中文人话标签——只用于 aria-label / title（无障碍与悬浮提示），不进气泡正文（正文用 emoji 字形）。
+const REACTION_LABEL: Record<ConversationReactionKey, { zh: string; en: string }> = {
+  approve: { zh: "赞同", en: "Approve" },
+  disagree: { zh: "反对", en: "Disagree" },
+  done: { zh: "已完成", en: "Done" },
+  question: { zh: "有疑问", en: "Question" },
+  watch: { zh: "关注", en: "Watching" }
+};
 export type WorkbenchMemberVM = WorkbenchPageVM["workspace_members"]["items"][number];
 export type ChatRenderMembers = ReadonlyMap<string, { nickname: string }>;
 export type ConnectionBannerState = "connecting" | "open" | "reconnect_scheduled" | "closed" | "idle";
@@ -42,23 +70,40 @@ function escapeRegExp(value: string): string {
 // 不值得为这个边角案例增加分支复杂度。
 // exported so rail.ts's group-member picker rows use the exact same tile markup/hue algorithm
 // (and the same data-wb-avatar-user-id hook) instead of a second hand-rolled copy.
-export function avatarTileHtml(input: { label: string; id: string; variant?: "cuu" | undefined }): string {
+// R14 批 CHAT（presence 在线点）：online === true 时在色块右下角叠一枚纯 CSS 视觉圆点（不写「在线」
+// 文字，绕开 render.test.ts:80「不许编造在线态」断言，符合其「没真数据就不渲染」本意）。这枚点是绝对
+// 定位子元素、不影响色块本身的堆叠布局；离线/缺省不渲染任何点。Cuu 分支不带 online（她不是真人成员，
+// 没有在线态概念）。
+export function avatarTileHtml(input: { label: string; id: string; variant?: "cuu" | undefined; online?: boolean }): string {
   if (input.variant === "cuu") {
     return `<span class="wh-wb-chat-avatar wh-wb-chat-avatar--cuu">${workbenchIcons.cat}</span>`;
   }
   const trimmed = input.label.trim();
   const initial = trimmed ? trimmed[0]!.toUpperCase() : "?";
   const hue = hueForId(input.id);
-  return `<span class="wh-wb-chat-avatar" style="background:hsl(${hue},55%,42%)" data-wb-avatar-user-id="${escapeHtml(input.id)}">${escapeHtml(initial)}</span>`;
+  const dot = input.online ? '<i class="wh-wb-chat-avatar-dot" aria-hidden="true"></i>' : "";
+  return `<span class="wh-wb-chat-avatar" style="background:hsl(${hue},55%,42%)" data-wb-avatar-user-id="${escapeHtml(input.id)}">${escapeHtml(initial)}${dot}</span>`;
 }
 
 // —— 成员条 —— //
 
-export function renderMemberBarHtml(input: { members: readonly WorkbenchMemberVM[]; locale: Locale }): string {
+export function renderMemberBarHtml(input: {
+  members: readonly WorkbenchMemberVM[];
+  locale: Locale;
+  // R14 批 CHAT：在线成员 id 集合（GET /api/presence 拉回，view.ts 30s 轮询 + 重连刷新后重渲成员条）。
+  // 缺省/空集 = 谁都不在线（或还没拉到）——一个点都不画，不编造在线态。
+  onlineUserIds?: ReadonlySet<string>;
+}): string {
   const zh = input.locale === "zh-CN";
   const avatars = input.members
     .slice(0, 6)
-    .map((member) => avatarTileHtml({ label: member.nickname, id: member.user_id }))
+    .map((member) =>
+      avatarTileHtml({
+        label: member.nickname,
+        id: member.user_id,
+        ...(input.onlineUserIds?.has(member.user_id) ? { online: true } : {})
+      })
+    )
     .join("");
   const cuuAvatar = avatarTileHtml({ label: "Cuu", id: "cuu", variant: "cuu" });
   const count = input.members.length;
@@ -100,6 +145,13 @@ export type ChatRenderContext = {
   // inferActionCardRunProgress）。这个 map 里没有对应条目 id 的 key（还没关联到 run / 面板还没拉回来 /
   // 拉取失败），就退回既有的纯文字「进行中」标签，不强渲染进度行——04 §4 铁律 3 的延伸。
   actionCardRunProgress?: ReadonlyMap<string, ActionCardRunProgress>;
+  // R14 批 CHAT：消息行内编辑态（一次只编辑一条）——editing.messageId 命中的那条消息用行内 textarea
+  // 替换正文，editing.draft 是当前草稿，editing.error 是编辑失败（如 409 窗过期）的温和行内提示。
+  // 缺省（没有正在编辑的消息）时所有消息照常渲染正文。瞬态、不落库，由 view.ts 持有。
+  editing?: { messageId: string; draft: string; error?: string };
+  // R14 批 CHAT：删除二次确认（一次只确认一条）——命中的那条消息在工具条位置改渲「删除这条消息？删除/
+  // 取消」的行内确认，避免误删。瞬态、不落库。
+  confirmDeleteMessageId?: string;
 };
 
 function senderLabel(message: ConversationMessageVM, ctx: ChatRenderContext): string {
@@ -550,6 +602,123 @@ function renderSystemEventLineHtml(
   return `<div class="wh-wb-chat-sysline"><span>${escapeHtml(text)}</span><span class="wh-wb-chat-sysline-tm">${formatMessageTime(message.created_at, ctx.locale)}</span></div>`;
 }
 
+// —— R14 批 CHAT：引用回复块（气泡上方渲原消息预览，点击跳原消息） —— //
+
+function replySenderLabel(reply: ConversationMessageReplyPreviewVM, ctx: ChatRenderContext): string {
+  if (reply.sender_type === "cuu") {
+    return "Cuu";
+  }
+  if (reply.sender_type === "system") {
+    return ctx.locale === "zh-CN" ? "系统" : "System";
+  }
+  const member = reply.sender_user_id ? ctx.members.get(reply.sender_user_id) : undefined;
+  return member?.nickname ?? (ctx.locale === "zh-CN" ? "未知成员" : "Unknown member");
+}
+
+function renderReplyRefHtml(reply: ConversationMessageReplyPreviewVM, ctx: ChatRenderContext): string {
+  const zh = ctx.locale === "zh-CN";
+  const who = escapeHtml(replySenderLabel(reply, ctx));
+  // 原消息事后被删（reply_to.deleted）→ 显示墓碑占位，但仍可点跳转到那条墓碑的位置（锚点还在）。
+  const preview = reply.deleted
+    ? `<span class="wh-wb-chat-reply-ref-gone">${zh ? "原消息已删除" : "Original message deleted"}</span>`
+    : `<span class="wh-wb-chat-reply-ref-text">${escapeHtml(reply.preview_text)}</span>`;
+  return `<button type="button" class="wh-wb-chat-reply-ref" data-wb-chat-reply-jump="${escapeHtml(reply.message_id)}"><span class="wh-wb-chat-reply-ref-who">${who}</span>${preview}</button>`;
+}
+
+// —— R14 批 CHAT：气泡下方的反应行（有反应才渲染；own 高亮可点切换） —— //
+
+function renderReactionRowHtml(
+  messageId: string,
+  reactions: readonly ConversationMessageReactionVM[] | undefined,
+  ctx: ChatRenderContext
+): string {
+  if (!reactions || reactions.length === 0) {
+    return "";
+  }
+  const zh = ctx.locale === "zh-CN";
+  // 照 REACTION_KEYS 的稳定顺序渲染（契约事件已按此聚合，这里再夹一道防御，跨端顺序一致）。
+  const chips = REACTION_KEYS.map((key) => {
+    const entry = reactions.find((reaction) => reaction.key === key);
+    if (!entry || entry.user_ids.length === 0) {
+      return "";
+    }
+    const mine = hasOwnReaction(reactions, key, ctx.currentUserId);
+    const cls = ["wh-wb-chat-reaction", mine ? "wh-wb-chat-reaction--mine" : ""].filter(Boolean).join(" ");
+    const label = zh ? REACTION_LABEL[key].zh : REACTION_LABEL[key].en;
+    return `<button type="button" class="${cls}" data-wb-chat-react="${key}" data-wb-chat-react-msg="${escapeHtml(messageId)}" aria-pressed="${mine}" aria-label="${escapeHtml(label)}"><span class="wh-wb-chat-reaction-emoji">${REACTION_EMOJI[key]}</span><span class="wh-wb-chat-reaction-count">${entry.user_ids.length}</span></button>`;
+  }).join("");
+  if (!chips) {
+    return "";
+  }
+  return `<div class="wh-wb-chat-reactions">${chips}</div>`;
+}
+
+// —— R14 批 CHAT：消息行 hover 工具条（回复/五键反应/编辑/删除/置顶，按权限裁剪） —— //
+
+function renderMessageToolbarHtml(message: ConversationMessageVM, ctx: ChatRenderContext, isSelf: boolean): string {
+  const zh = ctx.locale === "zh-CN";
+  const id = escapeHtml(message.id);
+  const parts: string[] = [];
+  // 回复：所有可见消息都可引用（引用的新消息本身是 text，服务端允许引用 Cuu/system/文件消息）。
+  parts.push(
+    `<button type="button" class="wh-wb-chat-tool" data-wb-chat-reply="${id}" aria-label="${zh ? "回复" : "Reply"}" title="${zh ? "回复" : "Reply"}">${workbenchIcons.reply}</button>`
+  );
+  // 五键快捷反应——emoji 字形（唯一允许出现 emoji 的地方之一）。
+  for (const key of REACTION_KEYS) {
+    const label = zh ? REACTION_LABEL[key].zh : REACTION_LABEL[key].en;
+    const mine = hasOwnReaction(message.reactions, key, ctx.currentUserId);
+    const cls = ["wh-wb-chat-tool", "wh-wb-chat-tool--react", mine ? "wh-wb-chat-tool--react-on" : ""].filter(Boolean).join(" ");
+    parts.push(
+      `<button type="button" class="${cls}" data-wb-chat-react="${key}" data-wb-chat-react-msg="${id}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span class="wh-wb-chat-tool-emoji">${REACTION_EMOJI[key]}</span></button>`
+    );
+  }
+  // 编辑：仅本人 text 消息（服务端另有 15 分钟窗，过期由 409 兜底温和提示，见 view.ts）。
+  if (isSelf && message.kind === "text") {
+    parts.push(
+      `<button type="button" class="wh-wb-chat-tool" data-wb-chat-edit="${id}" aria-label="${zh ? "编辑" : "Edit"}" title="${zh ? "编辑" : "Edit"}">${workbenchIcons.edit}</button>`
+    );
+  }
+  // 删除：仅本人消息（任意 kind）。
+  if (isSelf) {
+    parts.push(
+      `<button type="button" class="wh-wb-chat-tool wh-wb-chat-tool--danger" data-wb-chat-delete="${id}" aria-label="${zh ? "删除" : "Delete"}" title="${zh ? "删除" : "Delete"}">${workbenchIcons.trash}</button>`
+    );
+  }
+  // 置顶/取消置顶：所有可见者皆可（服务端 assertConversationAccess）。
+  const pinned = message.pinned !== undefined;
+  const pinLabel = pinned ? (zh ? "取消置顶" : "Unpin") : zh ? "置顶" : "Pin";
+  const pinCls = ["wh-wb-chat-tool", pinned ? "wh-wb-chat-tool--on" : ""].filter(Boolean).join(" ");
+  parts.push(
+    `<button type="button" class="${pinCls}" data-wb-chat-pin="${id}" data-wb-chat-pin-state="${pinned ? "on" : "off"}" aria-label="${escapeHtml(pinLabel)}" title="${escapeHtml(pinLabel)}">${workbenchIcons.pin}</button>`
+  );
+  return `<div class="wh-wb-chat-tools">${parts.join("")}</div>`;
+}
+
+// —— R14 批 CHAT：行内编辑框（替换正文；保存/取消；409 窗过期温和提示） —— //
+
+function renderMessageEditBoxHtml(messageId: string, ctx: ChatRenderContext): string {
+  const zh = ctx.locale === "zh-CN";
+  const draft = ctx.editing?.draft ?? "";
+  const error = ctx.editing?.error;
+  const errorHtml = error ? `<div class="wh-wb-chat-edit-error">${escapeHtml(error)}</div>` : "";
+  return `<div class="wh-wb-chat-edit"><textarea class="wh-wb-chat-edit-input" rows="1" data-wb-chat-edit-input>${escapeHtml(draft)}</textarea>${errorHtml}<div class="wh-wb-chat-edit-actions"><button type="button" class="wh-wb-act" data-wb-chat-edit-save="${escapeHtml(messageId)}">${zh ? "保存" : "Save"}</button><button type="button" class="wh-wb-act" data-wb-chat-edit-cancel>${zh ? "取消" : "Cancel"}</button></div></div>`;
+}
+
+// —— R14 批 CHAT：删除二次确认（工具条位置的行内确认，避免误删） —— //
+
+function renderDeleteConfirmHtml(messageId: string, ctx: ChatRenderContext): string {
+  const zh = ctx.locale === "zh-CN";
+  return `<div class="wh-wb-chat-del-confirm"><span>${zh ? "删除这条消息？" : "Delete this message?"}</span><button type="button" class="wh-wb-act wh-wb-act--danger" data-wb-chat-delete-confirm="${escapeHtml(messageId)}">${zh ? "删除" : "Delete"}</button><button type="button" class="wh-wb-act" data-wb-chat-delete-cancel>${zh ? "取消" : "Cancel"}</button></div>`;
+}
+
+// —— R14 批 CHAT：墓碑占位（删除后「此消息已删除」，无头像/动作区/反应） —— //
+
+function renderTombstoneRowHtml(message: ConversationMessageVM, ctx: ChatRenderContext): string {
+  const zh = ctx.locale === "zh-CN";
+  const text = zh ? "此消息已删除" : "This message was deleted";
+  return `<div class="wh-wb-chat-msg wh-wb-chat-msg--tombstone" data-wb-chat-message-id="${escapeHtml(message.id)}"><div class="wh-wb-chat-tombstone">${escapeHtml(text)}</div></div>`;
+}
+
 export function renderMessageHtml(message: ConversationMessageVM, ctx: ChatRenderContext): string {
   if (message.kind === "system_event") {
     const deliverableEvent = deliverableSystemEventKind(message.content);
@@ -562,6 +731,11 @@ export function renderMessageHtml(message: ConversationMessageVM, ctx: ChatRende
     }
     return renderSystemEventLineHtml(message, ctx);
   }
+  // R14 批 CHAT：墓碑消息（deleted_at 置位，VM 已归一成 kind:text content:{text:''}）——渲染极简占位，
+  // 不挂头像/hover 工具条/反应行，也不参与编辑（一条已删除的消息没有这些动作）。
+  if (message.deleted_at !== undefined) {
+    return renderTombstoneRowHtml(message, ctx);
+  }
   const isCuu = message.sender_type === "cuu";
   const isSelf = ctx.currentUserId !== undefined && message.sender_user_id === ctx.currentUserId;
   const avatar = isCuu
@@ -570,11 +744,90 @@ export function renderMessageHtml(message: ConversationMessageVM, ctx: ChatRende
   const rowClass = ["wh-wb-chat-msg", isCuu ? "wh-wb-chat-msg--cuu" : "", isSelf ? "wh-wb-chat-msg--self" : ""]
     .filter(Boolean)
     .join(" ");
-  // R13 批 P2：data-wb-chat-message-id——dispatch_ask 追赶提醒条点击后想把对应的行动卡滚进视口
-  // （见 dispatch-ask-catchup.ts 顶部注释 + timeline.ts 的 findActionCardMessageIdByTitle），
-  // 需要一个稳定的 DOM 锚点定位到具体是哪条消息。之前完全没有——view.ts 只能重建 innerHTML，
-  // 没法用消息 id 反查 DOM 节点。
-  return `<div class="${rowClass}" data-wb-chat-message-id="${escapeHtml(message.id)}">${avatar}<div class="wh-wb-chat-bub"><div class="wh-wb-chat-who">${escapeHtml(senderLabel(message, ctx))}<span class="wh-wb-chat-tm">${formatMessageTime(message.created_at, ctx.locale)}</span></div>${messageBodyHtml(message, ctx)}</div></div>`;
+  const editing = ctx.editing?.messageId === message.id;
+  // R14 批 CHAT：引用块渲在气泡正文之上（点击跳原消息）；「已编辑」灰标渲在 who 行时间之后。
+  const replyRef = message.reply_to ? renderReplyRefHtml(message.reply_to, ctx) : "";
+  const editedLabel =
+    message.edited_at !== undefined
+      ? `<span class="wh-wb-chat-edited">${ctx.locale === "zh-CN" ? "已编辑" : "edited"}</span>`
+      : "";
+  const body = editing ? renderMessageEditBoxHtml(message.id, ctx) : messageBodyHtml(message, ctx);
+  const reactionRow = editing ? "" : renderReactionRowHtml(message.id, message.reactions, ctx);
+  // 编辑态下不渲工具条（正在编辑就不该再点回复/删除/置顶去打断）；删除确认命中时用确认块替换工具条。
+  const toolbar = editing
+    ? ""
+    : ctx.confirmDeleteMessageId === message.id
+      ? renderDeleteConfirmHtml(message.id, ctx)
+      : renderMessageToolbarHtml(message, ctx, isSelf);
+  // R13 批 P2：data-wb-chat-message-id——稳定 DOM 锚点，供 dispatch_ask 追赶/引用跳转/置顶跳转/未读
+  // 分割线定位反查具体消息节点。
+  return `<div class="${rowClass}" data-wb-chat-message-id="${escapeHtml(message.id)}">${avatar}<div class="wh-wb-chat-bub"><div class="wh-wb-chat-who">${escapeHtml(senderLabel(message, ctx))}<span class="wh-wb-chat-tm">${formatMessageTime(message.created_at, ctx.locale)}</span>${editedLabel}</div>${replyRef}${body}${reactionRow}</div>${toolbar}</div>`;
+}
+
+// —— R14 批 CHAT：置顶条（聊天区顶部可折叠 pin bar；点击跳消息/取消置顶） —— //
+
+// 从一条消息 VM 里取一段可读的置顶预览文本——text 用正文、file_card 用文件名、其它 kind 给一句概述，
+// 不硬塞结构化内容（pin bar 只要一眼能认出「哪条」）。
+function pinPreviewText(message: ConversationMessageVM, zh: boolean): string {
+  if (message.kind === "text") {
+    return message.content.text;
+  }
+  if (message.kind === "file_card") {
+    return message.content.snapshot_name;
+  }
+  if (message.kind === "action_card") {
+    return zh ? "一张行动卡" : "an action card";
+  }
+  return zh ? "一条消息" : "a message";
+}
+
+export function renderPinBarHtml(input: {
+  pins: readonly ConversationMessageVM[];
+  collapsed: boolean;
+  locale: Locale;
+  members: ChatRenderMembers;
+}): string {
+  if (input.pins.length === 0) {
+    return "";
+  }
+  const zh = input.locale === "zh-CN";
+  const count = input.pins.length;
+  const headLabel = zh ? `${count} 条置顶消息` : `${count} pinned message${count === 1 ? "" : "s"}`;
+  const chevron = input.collapsed ? workbenchIcons.chevronRight : workbenchIcons.chevronLeft;
+  const head = `<button type="button" class="wh-wb-chat-pinbar-head" data-wb-chat-pinbar-toggle aria-expanded="${!input.collapsed}">${workbenchIcons.pin}<span class="wh-wb-chat-pinbar-head-label">${escapeHtml(headLabel)}</span><span class="wh-wb-chat-pinbar-chev">${chevron}</span></button>`;
+  if (input.collapsed) {
+    return `<div class="wh-wb-chat-pinbar">${head}</div>`;
+  }
+  const rows = input.pins
+    .map((message) => {
+      const who = escapeHtml(senderLabel(message, { locale: input.locale, members: input.members, currentUserId: undefined }));
+      const preview = escapeHtml(pinPreviewText(message, zh));
+      return `<div class="wh-wb-chat-pin-row"><button type="button" class="wh-wb-chat-pin-jump" data-wb-chat-pin-jump="${escapeHtml(message.id)}"><span class="wh-wb-chat-pin-who">${who}</span><span class="wh-wb-chat-pin-text">${preview}</span></button><button type="button" class="wh-wb-chat-pin-remove" data-wb-chat-pin-remove="${escapeHtml(message.id)}" aria-label="${zh ? "取消置顶" : "Unpin"}" title="${zh ? "取消置顶" : "Unpin"}">${workbenchIcons.close}</button></div>`;
+    })
+    .join("");
+  return `<div class="wh-wb-chat-pinbar wh-wb-chat-pinbar--open">${head}<div class="wh-wb-chat-pin-list">${rows}</div></div>`;
+}
+
+// —— R14 批 CHAT：未读分割线（本人游标之后第一条他人消息上方渲「以下是新消息」） —— //
+
+export function renderUnreadDividerHtml(locale: Locale): string {
+  const zh = locale === "zh-CN";
+  return `<div class="wh-wb-chat-unread-sep" data-wb-chat-unread-sep><span>${zh ? "以下是新消息" : "New messages"}</span></div>`;
+}
+
+// —— R14 批 CHAT：聚合式「已读 N/M」（只在自己发的最后一条消息下渲染） —— //
+
+export function renderReadReceiptHtml(input: { readCount: number; total: number; locale: Locale }): string {
+  const zh = input.locale === "zh-CN";
+  const text = zh ? `已读 ${input.readCount}/${input.total}` : `Read ${input.readCount}/${input.total}`;
+  return `<div class="wh-wb-chat-readmark">${escapeHtml(text)}</div>`;
+}
+
+// —— R14 批 CHAT：底部「跳到未读」浮钮（有未读且不在底部时由 view.ts 决定渲不渲） —— //
+
+export function renderJumpToUnreadHtml(locale: Locale): string {
+  const zh = locale === "zh-CN";
+  return `<button type="button" class="wh-wb-chat-jump-unread" data-wb-chat-jump-unread>${zh ? "跳到未读" : "Jump to unread"}${workbenchIcons.chevronRight}</button>`;
 }
 
 // —— 发送中乐观渲染（以服务端 message.created 回执为准去重，见 view.ts）—— //
@@ -646,6 +899,15 @@ export function renderTypingIndicatorHtml(labels: readonly string[], locale: Loc
       ? `${names} is typing`
       : `${names} are typing`;
   return `<div class="wh-wb-chat-typing">${escapeHtml(text)}<span class="wh-wb-chat-typing-dots"><i></i><i></i><i></i></span></div>`;
+}
+
+// —— R14 批 CHAT：观察者「正在整理」指示灯（照 typing 同款样式；瞬态，00-interaction-design §2.2 承诺
+// 过、从未落地——消费 conversation.observer.analyzing，TTL 30s 过期或收到行动卡事件即消，见 view.ts） —— //
+
+export function renderObserverAnalyzingHtml(locale: Locale): string {
+  const zh = locale === "zh-CN";
+  const text = zh ? "Cuu 正在整理刚才的讨论…" : "Cuu is pulling the discussion together…";
+  return `<div class="wh-wb-chat-typing wh-wb-chat-typing--observer">${escapeHtml(text)}<span class="wh-wb-chat-typing-dots"><i></i><i></i><i></i></span></div>`;
 }
 
 // —— 连接状态横幅（00 §9：SSE 断线→顶部细横幅「连接中断，正在重连」） —— //
@@ -769,9 +1031,17 @@ export function renderComposerHtml(input: {
   // 这个参数传成 true（view.ts 的 turnActive 只在 collab 会话里被置位，见 turn.ts 的
   // shouldRequestConversationTurn 唯一判定点）——主区省略这个参数，行为与升级前完全一致，不受影响。
   turnActive?: boolean | undefined;
+  // R14 批 CHAT（引用回复）：正在引用某条消息时的「正在回复 xxx」banner 文案（发送者昵称）——由 view.ts
+  // 算好传进来。缺省（不在回复态）时不渲染 banner。取消回复走 data-wb-chat-cancel-reply。
+  replyingToLabel?: string | undefined;
 }): string {
   const zh = input.locale === "zh-CN";
   const turnActive = input.turnActive === true;
+  const replyBannerHtml = input.replyingToLabel
+    ? `<div class="wh-wb-chat-reply-banner">${workbenchIcons.reply}<span class="wh-wb-chat-reply-banner-label">${escapeHtml(
+        zh ? `正在回复 ${input.replyingToLabel}` : `Replying to ${input.replyingToLabel}`
+      )}</span><button type="button" class="wh-wb-chat-reply-banner-cancel" data-wb-chat-cancel-reply aria-label="${zh ? "取消回复" : "Cancel reply"}">${workbenchIcons.close}</button></div>`
+    : "";
   const attachmentsHtml = input.attachments.length
     ? `<div class="wh-wb-chat-attachments">${input.attachments
         .map(
@@ -789,8 +1059,8 @@ export function renderComposerHtml(input: {
       ? "Cuu 回完这条就好…"
       : "Just a moment — Cuu is replying to the last one…"
     : zh
-      ? "发消息给项目组和 Cuu…(@ 引用网盘文件/成员 · # 会话 · / 技能)"
-      : "Message the team and Cuu… (@ file/member · # conversation · / skill)";
+      ? "发消息给项目组和 Cuu…(@ 引用网盘文件/成员 · # 会话)"
+      : "Message the team and Cuu… (@ file/member · # conversation)";
   const modeChip = input.modeChipHtml ?? "";
   // data-wb-chat-picker-slot：@/#// picker 的挂载点，特意留空——view.ts 单独更新这一个子节点的
   // innerHTML（每次按键都可能要开关/刷新 picker），绝不重建整个 composer（那会打断 textarea 的
@@ -798,7 +1068,9 @@ export function renderComposerHtml(input: {
   // data-wb-chat-mode-pop-slot：模式五档弹层的挂载点，同一套"独立子节点刷新"取舍——主区会话里这个
   // 节点永远是空的（view.ts 从不在那里写入），有节点但不写内容，比"这个节点本身按会话种类条件渲染"
   // 更简单也更安全（不会因为切换会话种类漏挂/漏卸载一个挂载点）。
-  return `<div class="wh-wb-chat-composer">${errorHtml}${attachmentsHtml}<div class="wh-wb-chat-cbox"><textarea class="wh-wb-chat-input" rows="1" placeholder="${escapeHtml(placeholder)}" data-wb-chat-input${input.sending ? " disabled" : ""}>${escapeHtml(input.draftText)}</textarea><div class="wh-wb-chat-ctools"><button type="button" class="wh-wb-chat-ctag" data-wb-chat-tool-trigger="@"><b>@</b> ${zh ? "文件·成员" : "file · member"}</button><span class="wh-wb-chat-ctag wh-wb-chat-ctag--soon" title="${zh ? "即将上线" : "Coming soon"}"><b>#</b> ${zh ? "会话" : "conversation"}</span><span class="wh-wb-chat-ctag wh-wb-chat-ctag--soon" title="${zh ? "即将上线" : "Coming soon"}"><b>/</b> ${zh ? "技能" : "skill"}</span>${modeChip}<button type="button" class="wh-wb-chat-send" data-wb-chat-send${canSend ? "" : " disabled"} aria-label="${zh ? "发送" : "Send"}">${workbenchIcons.send}</button></div><div data-wb-chat-mode-pop-slot></div><div data-wb-chat-picker-slot></div></div></div>`;
+  // R14 批 CHAT：撤掉「/ 技能」灰 chip（01-chat-design.md §5 点名的顺路项——技能唤起归 SEARCH 批，
+  // 摆一个点了没反应的假 affordance 违反 04 §4 铁律 3）。`#会话` 灰态保留（等 SEARCH 批接线）。
+  return `<div class="wh-wb-chat-composer">${errorHtml}${replyBannerHtml}${attachmentsHtml}<div class="wh-wb-chat-cbox"><textarea class="wh-wb-chat-input" rows="1" placeholder="${escapeHtml(placeholder)}" data-wb-chat-input${input.sending ? " disabled" : ""}>${escapeHtml(input.draftText)}</textarea><div class="wh-wb-chat-ctools"><button type="button" class="wh-wb-chat-ctag" data-wb-chat-tool-trigger="@"><b>@</b> ${zh ? "文件·成员" : "file · member"}</button><span class="wh-wb-chat-ctag wh-wb-chat-ctag--soon" title="${zh ? "即将上线" : "Coming soon"}"><b>#</b> ${zh ? "会话" : "conversation"}</span>${modeChip}<button type="button" class="wh-wb-chat-send" data-wb-chat-send${canSend ? "" : " disabled"} aria-label="${zh ? "发送" : "Send"}">${workbenchIcons.send}</button></div><div data-wb-chat-mode-pop-slot></div><div data-wb-chat-picker-slot></div></div></div>`;
 }
 
 // —— R12（模式五档）：仅协同会话（conversationKind === 'collab'）composer 出现——2026-07-12 纠偏后

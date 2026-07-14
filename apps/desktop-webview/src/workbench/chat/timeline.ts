@@ -1,7 +1,7 @@
 // WorkHub 桌面 · 主区群聊消息流的纯函数部分：排序去重（seq 是权威顺序）、按天分隔、时间格式化、
 // 行动卡条目状态就地更新。不含任何 DOM/网络——render.ts 消费这里的输出拼 HTML，view.ts 负责拉数据喂进来。
 
-import type { ConversationMessageVM } from "@workhub/contracts";
+import type { ConversationMessageReactionVM, ConversationMessageVM } from "@workhub/contracts";
 
 type Locale = "zh-CN" | "en-US";
 
@@ -147,6 +147,62 @@ export function findActionCardMessageIdByTitle(
     }
   }
   return undefined;
+}
+
+// R14 批 CHAT：conversation.message.updated（编辑/删除/置顶/取消置顶）落地——按 id 整条替换本地快照
+// （data=变更后全量 VM，见契约注释）。保持 seq 不变（编辑/删除/置顶都不动 seq），所以不需要重排；
+// 本地没有这条 id（观察者补拉边界/翻页还没加载到）→ unknownId=true，调用方据此走既有的定点补拉/reconcile
+// 路径（同 applyActionCardUpdate 对「本地没有」的处理）。changed=false 表示同 id 消息内容逐字节相同，
+// 调用方可据此跳过重渲。
+export type ApplyMessageReplacementResult = {
+  messages: ConversationMessageVM[];
+  changed: boolean;
+  unknownId: boolean;
+};
+
+export function applyMessageReplacement(
+  messages: readonly ConversationMessageVM[],
+  updated: ConversationMessageVM
+): ApplyMessageReplacementResult {
+  const index = messages.findIndex((message) => message.id === updated.id);
+  if (index < 0) {
+    return { messages: [...messages], changed: false, unknownId: true };
+  }
+  const existing = messages[index]!;
+  if (JSON.stringify(existing) === JSON.stringify(updated)) {
+    return { messages: [...messages], changed: false, unknownId: false };
+  }
+  const next = [...messages];
+  next[index] = updated;
+  return { messages: next, changed: true, unknownId: false };
+}
+
+// R14 批 CHAT：conversation.reaction.updated 落地——用事件里的全量聚合（幂等替换）覆盖本地这条消息的
+// reactions 字段。谁加谁减不影响最终态。空数组表示这条消息现在一个反应都没有了——写入空数组（而不是
+// 删掉字段），渲染层据此不渲染 reaction 行（reactions?.length 为 0）。本地没有这条消息 → unknownId=true，
+// 调用方据此补拉（同 applyMessageReplacement）。
+export type ApplyReactionUpdateResult = {
+  messages: ConversationMessageVM[];
+  changed: boolean;
+  unknownId: boolean;
+};
+
+export function applyReactionUpdate(
+  messages: readonly ConversationMessageVM[],
+  patch: { messageId: string; reactions: readonly ConversationMessageReactionVM[] }
+): ApplyReactionUpdateResult {
+  const index = messages.findIndex((message) => message.id === patch.messageId);
+  if (index < 0) {
+    return { messages: [...messages], changed: false, unknownId: true };
+  }
+  const existing = messages[index]!;
+  const nextReactions = patch.reactions.map((reaction) => ({ key: reaction.key, user_ids: [...reaction.user_ids] }));
+  if (JSON.stringify(existing.reactions ?? []) === JSON.stringify(nextReactions)) {
+    return { messages: [...messages], changed: false, unknownId: false };
+  }
+  const next = [...messages];
+  next[index] = { ...existing, reactions: nextReactions };
+  return { messages: next, changed: true, unknownId: false };
 }
 
 export type DayGroup = {

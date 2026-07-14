@@ -4,18 +4,28 @@ import { test } from "node:test";
 import type { ConversationMessagePageVM, ConversationMessageVM, UserAiProfileVM } from "@workhub/contracts";
 
 import {
+  addConversationReaction,
+  advanceConversationReadCursor,
   decideActionCardItem,
+  deleteConversationMessage,
+  editConversationMessage,
   fetchConversationMessagesPage,
+  fetchConversationPins,
+  fetchConversationReceipts,
   fetchLatestConversationMessagesPage,
   fetchMyAiProfile,
   fetchNotifications,
   fetchOlderConversationMessagesPage,
+  fetchPresence,
   patchMyAiMode,
+  pinConversationMessage,
   pingConversationTyping,
+  removeConversationReaction,
   requestConversationTurn,
   sendConversationFileCardMessage,
   sendConversationTextMessage,
   undoActionCardItem,
+  unpinConversationMessage,
   type ActionCardItemDecisionResult,
   type ChatApiClient
 } from "./api.js";
@@ -386,4 +396,114 @@ test("fetchNotifications requests the existing GET /api/notifications endpoint w
   assert.equal(calls[0]!.path, "/api/notifications");
   assert.equal(calls[0]!.init, undefined);
   assert.deepEqual(result, { items: [], counts: { unread: 0, total: 0 } });
+});
+
+// —— R14 批 CHAT：编辑/删除/反应/置顶/已读/presence 端点 —— //
+
+test("sendConversationTextMessage includes reply_to_message_id only when given", async () => {
+  const calls: Array<{ path: string; body: unknown }> = [];
+  const client = fakeClient((path, init) => {
+    calls.push({ path, body: init?.body ? JSON.parse(init.body as string) : undefined });
+    return textMessage("m-new", 12);
+  });
+  await sendConversationTextMessage(client, "conv-1", "回你这句", undefined, "m-target");
+  assert.deepEqual(calls[0]!.body, { kind: "text", content: { text: "回你这句" }, reply_to_message_id: "m-target" });
+});
+
+test("editConversationMessage PATCHes the message with the new text and returns the updated VM", async () => {
+  const calls: Array<{ path: string; init: RequestInit | undefined }> = [];
+  const client = fakeClient((path, init) => {
+    calls.push({ path, init });
+    return { ...textMessage("m1", 3), content: { text: "改过了" }, edited_at: "2026-07-12T09:05:00.000000Z" };
+  });
+  const result = await editConversationMessage(client, "conv-1", "m1", "改过了");
+  assert.equal(calls[0]!.path, "/api/conversations/conv-1/messages/m1");
+  assert.equal(calls[0]!.init?.method, "PATCH");
+  assert.deepEqual(JSON.parse(calls[0]!.init?.body as string), { text: "改过了" });
+  assert.equal(result.edited_at, "2026-07-12T09:05:00.000000Z");
+});
+
+test("deleteConversationMessage DELETEs the message and returns the tombstone VM", async () => {
+  const calls: Array<{ path: string; init: RequestInit | undefined }> = [];
+  const client = fakeClient((path, init) => {
+    calls.push({ path, init });
+    return { ...textMessage("m1", 3), content: { text: "" }, deleted_at: "2026-07-12T10:00:00.000000Z" };
+  });
+  const result = await deleteConversationMessage(client, "conv-1", "m1");
+  assert.equal(calls[0]!.path, "/api/conversations/conv-1/messages/m1");
+  assert.equal(calls[0]!.init?.method, "DELETE");
+  assert.equal(result.deleted_at, "2026-07-12T10:00:00.000000Z");
+});
+
+test("addConversationReaction / removeConversationReaction PUT/DELETE the slug-keyed reaction path", async () => {
+  const calls: Array<{ path: string; method: string | undefined }> = [];
+  const client = fakeClient((path, init) => {
+    calls.push({ path, method: init?.method });
+    return undefined;
+  });
+  await addConversationReaction(client, "conv-1", "m1", "approve");
+  await removeConversationReaction(client, "conv-1", "m1", "watch");
+  assert.deepEqual(calls[0], { path: "/api/conversations/conv-1/messages/m1/reactions/approve", method: "PUT" });
+  assert.deepEqual(calls[1], { path: "/api/conversations/conv-1/messages/m1/reactions/watch", method: "DELETE" });
+});
+
+test("pinConversationMessage / unpinConversationMessage PUT/DELETE the pin path", async () => {
+  const calls: Array<{ path: string; method: string | undefined }> = [];
+  const client = fakeClient((path, init) => {
+    calls.push({ path, method: init?.method });
+    return undefined;
+  });
+  await pinConversationMessage(client, "conv-1", "m1");
+  await unpinConversationMessage(client, "conv-1", "m1");
+  assert.deepEqual(calls[0], { path: "/api/conversations/conv-1/messages/m1/pin", method: "PUT" });
+  assert.deepEqual(calls[1], { path: "/api/conversations/conv-1/messages/m1/pin", method: "DELETE" });
+});
+
+test("fetchConversationPins GETs the pins list", async () => {
+  const calls: string[] = [];
+  const client = fakeClient((path) => {
+    calls.push(path);
+    return { messages: [textMessage("p1", 5)] };
+  });
+  const result = await fetchConversationPins(client, "conv-1");
+  assert.equal(calls[0], "/api/conversations/conv-1/pins");
+  assert.equal(result.messages.length, 1);
+});
+
+test("advanceConversationReadCursor PUTs the last_read_seq and returns the clamped cursor", async () => {
+  const calls: Array<{ path: string; init: RequestInit | undefined }> = [];
+  const client = fakeClient((path, init) => {
+    calls.push({ path, init });
+    return { last_read_seq: 9 };
+  });
+  const result = await advanceConversationReadCursor(client, "conv-1", 12);
+  assert.equal(calls[0]!.path, "/api/conversations/conv-1/read");
+  assert.equal(calls[0]!.init?.method, "PUT");
+  assert.deepEqual(JSON.parse(calls[0]!.init?.body as string), { last_read_seq: 12 });
+  assert.equal(result.last_read_seq, 9);
+});
+
+test("fetchConversationReceipts GETs the receipts list", async () => {
+  const calls: string[] = [];
+  const client = fakeClient((path) => {
+    calls.push(path);
+    return { receipts: [{ user_id: "u1", last_read_seq: 7 }] };
+  });
+  const result = await fetchConversationReceipts(client, "conv-1");
+  assert.equal(calls[0], "/api/conversations/conv-1/receipts");
+  assert.equal(result.receipts[0]!.last_read_seq, 7);
+});
+
+test("fetchPresence dedupes/caps user_ids into the query and short-circuits an empty list without a request", async () => {
+  const calls: string[] = [];
+  const client = fakeClient((path) => {
+    calls.push(path);
+    return { presence: [{ user_id: "u1", is_online: true, last_seen_at: null }] };
+  });
+  const result = await fetchPresence(client, ["u1", "u1", "u2"]);
+  assert.equal(calls[0], "/api/presence?user_ids=u1%2Cu2");
+  assert.equal(result.presence.length, 1);
+  const empty = await fetchPresence(client, []);
+  assert.deepEqual(empty, { presence: [] });
+  assert.equal(calls.length, 1, "empty list must not hit the network");
 });
