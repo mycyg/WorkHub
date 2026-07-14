@@ -53,6 +53,7 @@ import { createConversationMessageFeedbackRoutes } from "./routes/conversation-m
 import { createProposalFeedbackRoutes } from "./routes/proposal-feedback.js";
 import { createActionCardItemFeedbackRoutes } from "./routes/action-card-item-feedback.js";
 import { AiFeedbackServiceError } from "./services/ai-feedback.js";
+import { createGithubBindingRoutes } from "./routes/github-bindings.js";
 import { createDriveVersionRoutes } from "./routes/drive-versions.js";
 import { createSpotlightIntentRoutes } from "./routes/spotlight-intent.js";
 import { createPersonalProjectRoutes } from "./routes/personal-projects.js";
@@ -281,6 +282,8 @@ app.route("/api", createTeamSkillGovernanceRoutes());
 app.route("/api", createConversationMessageFeedbackRoutes());
 app.route("/api", createProposalFeedbackRoutes());
 app.route("/api", createActionCardItemFeedbackRoutes());
+// R14 批 GH：项目级 GitHub 绑定（PAT 密文落库，路由自带错误映射）。
+app.route("/api", createGithubBindingRoutes());
 app.route("/api/drive", createDriveVersionRoutes());
 app.route("/api", createSpotlightIntentRoutes());
 app.route("/api", createPersonalProjectRoutes());

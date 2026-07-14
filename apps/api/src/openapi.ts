@@ -5378,6 +5378,68 @@ const patchTeamSkillRequestJsonSchema = {
   },
   additionalProperties: false
 } as const;
+// R14 批 GH：项目 GitHub 绑定——与 packages/contracts/src/domain/github.ts 的 zod 逐字段对齐。
+// 响应 VM 结构性无 token 字段（安全红线：PAT 明文/密文永不下发）。
+const githubBindingStatusJsonSchema = {
+  type: "object",
+  required: ["project_id", "bound"],
+  properties: {
+    project_id: uuidStringSchema,
+    bound: { type: "boolean" },
+    repo_full_name: { type: "string" },
+    repo_default_branch: { type: "string" },
+    repo_private: { type: "boolean" },
+    enabled: { type: "boolean" },
+    last_synced_at: dateTimeStringSchema,
+    last_error: { type: "string" },
+    last_error_at: dateTimeStringSchema,
+    activity_count_7d: { type: "integer", minimum: 0 }
+  },
+  additionalProperties: false
+} as const;
+const githubBindingRequestJsonSchema = {
+  type: "object",
+  required: ["repo_full_name", "personal_access_token"],
+  properties: {
+    repo_full_name: { type: "string", minLength: 3, maxLength: 200 },
+    personal_access_token: { type: "string", minLength: 20, maxLength: 512 }
+  },
+  additionalProperties: false
+} as const;
+const githubTestConnectionRequestJsonSchema = {
+  type: "object",
+  properties: {
+    personal_access_token: { type: "string", minLength: 20, maxLength: 512 },
+    repo_full_name: { type: "string", minLength: 3, maxLength: 200 }
+  },
+  additionalProperties: false
+} as const;
+const githubTestConnectionResultJsonSchema = {
+  type: "object",
+  required: ["ok"],
+  properties: {
+    ok: { type: "boolean" },
+    repo_full_name: { type: "string" },
+    repo_default_branch: { type: "string" },
+    repo_private: { type: "boolean" },
+    error: { type: "string" }
+  },
+  additionalProperties: false
+} as const;
+const githubBindingOwnerForbiddenResponse = jsonErrorStatusResponse(
+  "403",
+  "GitHub binding management requires the project owner",
+  ["invalid_client_token", "forbidden", "human_required", "github_binding_owner_required", "github_binding_access_denied"]
+).responses["403"];
+const githubBindingNotFoundResponse = jsonErrorStatusResponse("404", "Project or binding was not found", [
+  "github_binding_project_not_found",
+  "github_binding_not_found"
+]).responses["404"];
+const githubEncryptionUnconfiguredResponse = jsonErrorStatusResponse(
+  "503",
+  "GITHUB_TOKEN_ENC_KEY is not configured; refusing to handle tokens (fail closed)",
+  ["github_binding_encryption_unconfigured"]
+).responses["503"];
 const memoryGovernanceAuthResponses = {
   "401": conversationAuthRequiredResponse,
   "403": conversationForbiddenResponse,
@@ -7450,6 +7512,79 @@ export function getOpenApiDocument() {
           ...aiFeedbackDeleteResponses("Action card item was not found in your workspace", [
             "ai_feedback_subject_not_found"
           ])
+        }
+      },
+      "/api/projects/{id}/github-binding": {
+        get: {
+          tags: ["github"],
+          summary: "Read the project GitHub binding status (never returns any token material)",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse(githubBindingStatusJsonSchema, "Binding status").responses["200"],
+            "401": conversationAuthRequiredResponse,
+            "403": githubBindingOwnerForbiddenResponse,
+            "404": githubBindingNotFoundResponse,
+            "422": conversationValidationResponse,
+            "500": conversationInternalResponse
+          }
+        },
+        put: {
+          tags: ["github"],
+          summary: "Bind or update the repo and PAT (verified against GitHub before AES-GCM storage)",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(githubBindingRequestJsonSchema),
+          responses: {
+            "200": jsonDataResponse(githubBindingStatusJsonSchema, "Binding updated").responses["200"],
+            "201": jsonDataStatusResponse(githubBindingStatusJsonSchema, "201", "Binding created").responses[
+              "201"
+            ],
+            "401": conversationAuthRequiredResponse,
+            "403": githubBindingOwnerForbiddenResponse,
+            "404": githubBindingNotFoundResponse,
+            "413": conversationPayloadTooLargeResponse,
+            "422": jsonErrorStatusResponse("422", "Request body or GitHub connection check failed", [
+              "validation_error",
+              "github_binding_connection_failed"
+            ]).responses["422"],
+            "500": conversationInternalResponse,
+            "503": githubEncryptionUnconfiguredResponse
+          }
+        },
+        delete: {
+          tags: ["github"],
+          summary: "Unbind and physically destroy the ciphertext (works even without the enc key)",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "204": conversationNoContentResponse,
+            "401": conversationAuthRequiredResponse,
+            "403": githubBindingOwnerForbiddenResponse,
+            "404": githubBindingNotFoundResponse,
+            "422": conversationValidationResponse,
+            "500": conversationInternalResponse
+          }
+        }
+      },
+      "/api/projects/{id}/github-binding/test": {
+        post: {
+          tags: ["github"],
+          summary: "Test a PAT/repo pair (or the stored binding) without persisting anything",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(githubTestConnectionRequestJsonSchema),
+          responses: {
+            "200": jsonDataResponse(githubTestConnectionResultJsonSchema, "Connection check outcome").responses[
+              "200"
+            ],
+            "401": conversationAuthRequiredResponse,
+            "403": githubBindingOwnerForbiddenResponse,
+            "404": githubBindingNotFoundResponse,
+            "413": conversationPayloadTooLargeResponse,
+            "422": jsonErrorStatusResponse("422", "Request body failed validation or repo is required", [
+              "validation_error",
+              "github_binding_repo_required"
+            ]).responses["422"],
+            "500": conversationInternalResponse,
+            "503": githubEncryptionUnconfiguredResponse
+          }
         }
       },
       "/api/me/memories": {
