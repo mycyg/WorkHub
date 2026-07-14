@@ -14,23 +14,39 @@
 // 纯函数里逐一单测过，这里只是把它们接起来。
 
 import { WorkHubApiError } from "@workhub/api-client";
-import type { AiMode, ConversationKind, ConversationMessageVM, Notification } from "@workhub/contracts";
+import type {
+  AiMode,
+  ConversationKind,
+  ConversationMessageVM,
+  ConversationReactionKey,
+  Notification
+} from "@workhub/contracts";
 
 import { fetchConversationArmyPanel } from "../army/api.js";
 import { driveResourceApiBase, fetchDriveResource } from "../../spotlight/views/drive.js";
 import {
+  addConversationReaction,
+  advanceConversationReadCursor,
   decideActionCardItem,
+  deleteConversationMessage,
+  editConversationMessage,
   fetchConversationMessagesPage,
+  fetchConversationPins,
+  fetchConversationReceipts,
   fetchLatestConversationMessagesPage,
   fetchMyAiProfile,
   fetchNotifications,
   fetchOlderConversationMessagesPage,
+  fetchPresence,
   patchMyAiMode,
+  pinConversationMessage,
   pingConversationTyping,
+  removeConversationReaction,
   requestConversationTurn,
   sendConversationFileCardMessage,
   sendConversationTextMessage,
   undoActionCardItem,
+  unpinConversationMessage,
   type ActionCardItemDecisionAction,
   type ActionCardItemDecisionResult,
   type ChatApiClient
@@ -41,8 +57,24 @@ import {
   parseIncomingActionCardUpdated,
   parseIncomingMessageCreated,
   parseIncomingMessageDelta,
-  parseIncomingTyping
+  parseIncomingMessageUpdated,
+  parseIncomingObserverAnalyzing,
+  parseIncomingReactionUpdated,
+  parseIncomingReadUpdated,
+  parseIncomingTyping,
+  type IncomingReactionUpdate
 } from "./events.js";
+import { onlineUserIdsFromPresence, type OnlineUserIds } from "./presence-state.js";
+import { pickCuuReactionEmotion, type CuuReactionEmotion } from "./reaction-emotion.js";
+import { toggleOwnReaction } from "./reactions.js";
+import {
+  applyReadReceipt,
+  highestMessageSeq,
+  readReceiptSummary,
+  receiptsToCursorMap,
+  unreadDividerBeforeMessageId,
+  type ReadCursorMap
+} from "./read-state.js";
 import {
   membersById,
   modePatchFailedText,
@@ -57,6 +89,7 @@ import {
   renderDaySeparatorHtml,
   renderHistoryLoadErrorHtml,
   renderHistoryLoadingHtml,
+  renderJumpToUnreadHtml,
   renderLoadEarlierHtml,
   renderMemberBarHtml,
   renderMentionPickerHtml,
@@ -66,9 +99,13 @@ import {
   renderModeObserveOnlyHintHtml,
   renderModePopoverHtml,
   renderNoAiProviderBannerHtml,
+  renderObserverAnalyzingHtml,
   renderPendingOutgoingHtml,
+  renderPinBarHtml,
+  renderReadReceiptHtml,
   renderStreamingCuuBubbleHtml,
   renderTypingIndicatorHtml,
+  renderUnreadDividerHtml,
   type ChatRenderContext,
   type ComposerAttachmentChip,
   type ConnectionBannerState,
@@ -89,6 +126,8 @@ import { applyComposerChipInsertion, detectComposerTrigger, type ComposerTrigger
 import {
   DEFAULT_MESSAGE_RENDER_WINDOW,
   applyActionCardUpdate,
+  applyMessageReplacement,
+  applyReactionUpdate,
   findActionCardMessageIdByTitle,
   findActionCardMessageIdForItem,
   groupMessagesByDay,
@@ -140,6 +179,8 @@ type PendingSendRecord = {
   text?: string;
   driveItemId?: string;
   fileName?: string;
+  // R14 批 CHAT（引用回复）：仅 text 记录会带——发送时透传给 reply_to_message_id（重试也保留）。
+  replyToMessageId?: string;
   status: "sending" | "error";
 };
 
@@ -162,6 +203,17 @@ const MODE_LEVEL_COUNT = 5;
 const SCROLL_TOP_LOAD_EARLIER_PX = 48;
 // 本地 DOM 窗口每次展开的步长——不是一次性全展开（那样又变回批 2 的性能问题），小步渐进。
 const RENDER_WINDOW_EXPAND_STEP = 150;
+// R14 批 CHAT：已读游标 PUT /read 的节流下限（进会话/滚到底/窗口重获焦点都触发，5s 内至多一次）。
+const READ_PING_MIN_INTERVAL_MS = 5000;
+// presence 轮询周期（GET /api/presence，成员条在线点）——30s，SSE 重连时另外补一次即时刷新。
+const PRESENCE_POLL_INTERVAL_MS = 30_000;
+// 「贴底」判定像素阈值（滚到底自动标记已读 + 隐藏「跳到未读」浮钮）——同 renderScroll 的 wasNearBottom。
+const NEAR_BOTTOM_PX = 48;
+// 引用/置顶跳转命中后的高亮闪烁时长（00 §「跳原消息滚动+高亮」，1.5s）。
+const FLASH_HIGHLIGHT_MS = 1500;
+// 引用跳转「本地无→beforeSeq 翻页加载到为止」的翻页次数硬上限（防跳到一条已被删/根本不存在的目标时
+// 无限翻页；照 loadOlderHistory 的既有防御性熔断精神）。
+const REPLY_JUMP_MAX_OLDER_PAGES = 20;
 
 function toPendingRenderModel(record: PendingSendRecord): PendingOutgoingMessage {
   return {
@@ -312,6 +364,11 @@ export function mountChatView(
     // R12 批 6：file_card 点击 → 右栏预览，和网盘标签共用同一个情境面板控制器（在 shell.ts 挂载一次，
     // 活过项目/标签切换——见 workbench/drive/side-panel.ts 顶部注释）。可选，测试/未来消费者不必补桩。
     onOpenDriveFile?: (input: { itemId: string; itemName: string }) => void;
+    // R14 批 CHAT（桌宠彩蛋，stretch）：有人给 Cuu 的一条消息新加了个反应时，把该露的情绪信号交出去
+    // （celebrating/worried/thinking，见 reaction-emotion.ts 的映射）。detection 在这里做——只有本地持
+    // 有上一份 reactions 快照的 view.ts 能 diff 出「新增了哪个键」（reaction.updated 是全量聚合，无增量）。
+    // 可选：宿主不接（浏览器预览/桌宠桥不可用）就是纯本地渲染，emit 端后续接线，见完成汇报「桌宠彩蛋」。
+    onCuuReactionEmotion?: (emotion: CuuReactionEmotion) => void;
   }
 ): ChatViewHandle {
   const doc = container.ownerDocument ?? document;
@@ -401,6 +458,40 @@ export function mountChatView(
   let actionCardRunProgressRefetchTimer: ReturnType<typeof setTimeout> | undefined;
   // R14 FIX#8 前端半：见上方 mapAiProviderHealthState 顶部注释——"unknown" 是唯一安全的初始值/失败退化值。
   let aiProviderHealthState: AiProviderHealthState = "unknown";
+  // R14 批 CHAT 瞬态 UI 状态（都不落库）：
+  //  - editingMessageId/editDraft/editError：行内编辑（一次一条）；
+  //  - confirmDeleteMessageId：删除二次确认（一次一条）；
+  //  - replyingTo：正在引用回复的目标（composer 顶部「正在回复 xxx」条）；
+  //  - pinnedMessages/pinBarCollapsed：置顶条（GET /pins 初始化，message.updated 增量维护）；
+  //  - readCursors：全员已读游标 Map（GET /receipts 初始化，read.updated 增量）；
+  //  - entryReadSeq：进会话那一刻本人的游标——固定住给未读分割线用（读的过程中不移动，免得线往下跑）；
+  //  - lastReadPingAt/lastSentReadSeq/readPingTimer：PUT /read 节流；
+  //  - onlineUserIds/presencePollTimer：presence 在线点；
+  //  - observerAnalyzingUntilMs：观察者「正在整理」指示灯的过期时刻（TTL 到期或行动卡事件即消）；
+  //  - bufferedMessageUpdates/bufferedReactionUpdates：turn 流式期间的编辑/反应事件缓冲（照 action_card
+  //    的缓冲取舍，turn 落定统一重放，不打断正在阅读的流式气泡；main 会话 turnActive 恒 false 不攒东西）。
+  let editingMessageId: string | undefined;
+  let editDraft = "";
+  let editError: string | undefined;
+  let confirmDeleteMessageId: string | undefined;
+  let replyingTo: { messageId: string; label: string } | undefined;
+  let pinnedMessages: ConversationMessageVM[] = [];
+  let pinBarCollapsed = false;
+  let readCursors: ReadCursorMap = new Map();
+  let entryReadSeq = 0;
+  let lastReadPingAt = 0;
+  let lastSentReadSeq = 0;
+  let readPingTimer: ReturnType<typeof setTimeout> | undefined;
+  let onlineUserIds: OnlineUserIds = new Set();
+  let presencePollTimer: ReturnType<typeof setInterval> | undefined;
+  let observerAnalyzingUntilMs: number | undefined;
+  let bufferedMessageUpdates: ConversationMessageVM[] = [];
+  let bufferedReactionUpdates: IncomingReactionUpdate[] = [];
+
+  // 成员条里除自己以外的成员 id（已读 N/M 的分母 M；presence 也用得到成员 id 全集）——挂载时算一次，
+  // 会话/成员在切项目时整块重挂（shell.ts 的 renderCenter），不会中途变。
+  const otherMemberIds = input.members.map((member) => member.user_id).filter((id) => id !== input.currentUserId);
+  const memberUserIds = input.members.map((member) => member.user_id);
 
   const membersMap = membersById(input.members);
   const renderCtx = (): ChatRenderContext => ({
@@ -414,14 +505,22 @@ export function mountChatView(
     // undefined"的字段不是一回事，TS 会拒绝后者赋给前者）。
     ...(openReassignItemId !== undefined ? { openReassignItemId } : {}),
     ...(reassignHighlightIndex !== undefined ? { reassignHighlightIndex } : {}),
-    actionCardRunProgress: actionCardRunProgressByItemId
+    actionCardRunProgress: actionCardRunProgressByItemId,
+    // R14 批 CHAT：编辑/删除确认瞬态——exactOptionalPropertyTypes 下 undefined 键完全不出现。
+    ...(editingMessageId !== undefined
+      ? { editing: { messageId: editingMessageId, draft: editDraft, ...(editError !== undefined ? { error: editError } : {}) } }
+      : {}),
+    ...(confirmDeleteMessageId !== undefined ? { confirmDeleteMessageId } : {})
   });
 
   container.innerHTML = `<div class="wh-wb-chat">
     <div data-wb-chat-banner></div>
     <div data-wb-chat-head></div>
+    <div data-wb-chat-pinbar></div>
     <div data-wb-chat-catchup></div>
     <div class="wh-wb-chat-scroll" data-wb-chat-scroll></div>
+    <div class="wh-wb-chat-jump-slot" data-wb-chat-jump></div>
+    <div data-wb-chat-observer></div>
     <div data-wb-chat-typing></div>
     <div data-wb-chat-turn-status></div>
     <div data-wb-chat-mode-hint></div>
@@ -430,8 +529,11 @@ export function mountChatView(
   </div>`;
   const bannerEl = container.querySelector<HTMLElement>("[data-wb-chat-banner]");
   const headEl = container.querySelector<HTMLElement>("[data-wb-chat-head]");
+  const pinBarEl = container.querySelector<HTMLElement>("[data-wb-chat-pinbar]");
   const catchupEl = container.querySelector<HTMLElement>("[data-wb-chat-catchup]");
   const scrollEl = container.querySelector<HTMLElement>("[data-wb-chat-scroll]");
+  const jumpEl = container.querySelector<HTMLElement>("[data-wb-chat-jump]");
+  const observerEl = container.querySelector<HTMLElement>("[data-wb-chat-observer]");
   const typingEl = container.querySelector<HTMLElement>("[data-wb-chat-typing]");
   const turnStatusEl = container.querySelector<HTMLElement>("[data-wb-chat-turn-status]");
   const modeHintEl = container.querySelector<HTMLElement>("[data-wb-chat-mode-hint]");
@@ -440,8 +542,11 @@ export function mountChatView(
   if (
     !bannerEl ||
     !headEl ||
+    !pinBarEl ||
     !catchupEl ||
     !scrollEl ||
+    !jumpEl ||
+    !observerEl ||
     !typingEl ||
     !turnStatusEl ||
     !modeHintEl ||
@@ -451,8 +556,11 @@ export function mountChatView(
     throw new Error("workbench chat view markup is missing an expected mount point");
   }
 
-  headEl.innerHTML = renderMemberBarHtml({ members: input.members, locale: input.locale });
-  hydrateAvatarPhotos(headEl);
+  function renderHead(): void {
+    headEl!.innerHTML = renderMemberBarHtml({ members: input.members, locale: input.locale, onlineUserIds });
+    hydrateAvatarPhotos(headEl!);
+  }
+  renderHead();
 
   function textareaEl(): HTMLTextAreaElement | null {
     return composerWrapEl!.querySelector<HTMLTextAreaElement>("[data-wb-chat-input]");
@@ -625,11 +733,22 @@ export function mountChatView(
     const ctx = renderCtx();
     const { visible } = windowRecentMessages(messages, renderWindowSize);
     const groups = groupMessagesByDay(visible, { locale: input.locale });
+    // R14 批 CHAT：未读分割线（本人 entryReadSeq 之后第一条他人消息上方）与聚合式「已读 N/M」（自己发的
+    // 最后一条消息下方）——都在整段 messages 上算好目标 id，只有目标真的落在可见窗口里才渲（目标滚出
+    // DOM 窗口时不硬渲，跳转由 jumpToMessage 负责翻回来，见 timeline.ts 窗口化前置条件）。
+    const dividerBeforeId = unreadDividerBeforeMessageId(messages, entryReadSeq, input.currentUserId);
+    const readSummary = readReceiptSummary(messages, readCursors, input.currentUserId, otherMemberIds);
     let html = renderLoadEarlierHtml(currentLoadEarlierState(), input.locale);
     for (const group of groups) {
       html += renderDaySeparatorHtml(group.label);
       for (const message of group.messages) {
+        if (dividerBeforeId !== undefined && message.id === dividerBeforeId) {
+          html += renderUnreadDividerHtml(input.locale);
+        }
         html += renderMessageHtml(message, ctx);
+        if (readSummary && message.id === readSummary.messageId) {
+          html += renderReadReceiptHtml({ readCount: readSummary.readCount, total: readSummary.total, locale: input.locale });
+        }
       }
     }
     for (const record of pending) {
@@ -668,6 +787,7 @@ export function mountChatView(
     if (wasNearBottom) {
       el.scrollTop = el.scrollHeight;
     }
+    renderJump();
   }
 
   // 加载更早历史后重渲染：不能用 renderScroll 的 wasNearBottom/贴底逻辑（那是为"新消息到达时如果
@@ -681,6 +801,36 @@ export function mountChatView(
     el.innerHTML = buildScrollBodyHtml();
     hydrateAvatarPhotos(el);
     el.scrollTop = beforeTop + (el.scrollHeight - beforeHeight);
+    renderJump();
+  }
+
+  // R14 批 CHAT：置顶条（聊天区顶部可折叠）——GET /pins 初始化，message.updated 里 pinned 变化增量维护。
+  function renderPinBar(): void {
+    pinBarEl!.innerHTML = renderPinBarHtml({
+      pins: pinnedMessages,
+      collapsed: pinBarCollapsed,
+      locale: input.locale,
+      members: membersMap
+    });
+  }
+
+  // R14 批 CHAT：观察者「正在整理」指示灯——瞬态（TTL 30s 或收到行动卡事件即消），照 typing 同款样式，
+  // 渲在 typing 指示行区域（独立挂载点，不进滚动区，不打断正在阅读的流式气泡）。
+  function renderObserver(): void {
+    const active = observerAnalyzingUntilMs !== undefined && observerAnalyzingUntilMs > Date.now();
+    observerEl!.innerHTML = active ? renderObserverAnalyzingHtml(input.locale) : "";
+  }
+
+  // R14 批 CHAT：底部「跳到未读」浮钮——有未读（本人 entryReadSeq 之后有他人消息）且当前不在底部时才渲。
+  function renderJump(): void {
+    if (historyLoad !== "ready") {
+      jumpEl!.innerHTML = "";
+      return;
+    }
+    const hasUnread = unreadDividerBeforeMessageId(messages, entryReadSeq, input.currentUserId) !== undefined;
+    const el = scrollEl!;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
+    jumpEl!.innerHTML = hasUnread && !nearBottom ? renderJumpToUnreadHtml(input.locale) : "";
   }
 
   // R13 H1（键盘可达性）：@ picker 当前可选行总数——成员在前、文件在后拼起来的同一条序列（跟
@@ -748,7 +898,9 @@ export function mountChatView(
       modeChipHtml: isCollabConversation ? renderModeChipHtml(myMode, input.locale) : undefined,
       // R13 批 P2："禁发+文案"——turnActive 只在协同会话里被置位（beginTurn 是唯一写入点，见其
       // 顶部注释），主区这里永远拿到 false，行为不受影响。
-      turnActive
+      turnActive,
+      // R14 批 CHAT（引用回复）：正在引用某条消息时 composer 顶部出现「正在回复 xxx」条（可取消）。
+      ...(replyingTo !== undefined ? { replyingToLabel: replyingTo.label } : {})
     });
     const nextTa = textareaEl();
     if (nextTa && hadFocus) {
@@ -816,6 +968,16 @@ export function mountChatView(
       // （否则一张已经在跑的执行卡在这个视图刚打开时会一直显示旧的纯文字"进行中"，直到下一次观察者
       // tick 才补上）。之后的刷新只靠事件触发+节流，见 maybeRefreshActionCardRunProgress 顶部注释。
       maybeRefreshActionCardRunProgress();
+      // R14 批 CHAT：首屏顺带拉置顶清单 + 已读游标（初始化未读分割线/已读 N/M 的地基）。已读游标必须
+      // 先落地（entryReadSeq 固定成"进会话那一刻我的游标"给未读分割线用，且 lastSentReadSeq 以服务端为
+      // 基准），再进会话标记已读一次——否则 mark-read 先跑会把 entryReadSeq 冲成刚读到的最新 seq，未读
+      // 分割线就永远出不来。都 best-effort，失败不阻塞群聊本身。
+      void loadPins();
+      await loadReceipts();
+      if (disposed) {
+        return;
+      }
+      maybeMarkRead();
     } catch (error) {
       if (disposed) {
         return;
@@ -833,6 +995,122 @@ export function mountChatView(
     }
     messages = sortAndDedupeMessages([...messages, ...incoming]);
     renderScroll();
+  }
+
+  // —— R14 批 CHAT：置顶条 / 已读游标 / presence 的加载与维护（都 best-effort，失败静默） —— //
+
+  async function loadPins(): Promise<void> {
+    try {
+      const result = await fetchConversationPins(input.client, input.conversationId);
+      if (disposed) {
+        return;
+      }
+      pinnedMessages = [...result.messages];
+      renderPinBar();
+    } catch {
+      // best-effort：拉不到就保持现状，pin/unpin 动作或下一条 message.updated 会再补。
+    }
+  }
+
+  // message.updated 里 pinned 变化时的增量维护（设计 §5「增量维护」）：现在置顶了→加进 bar（seq 降序、
+  // cap 50）；取消置顶或被删除→从 bar 里移除。变化了才重渲。
+  function reconcilePinFromMessage(message: ConversationMessageVM): void {
+    const idx = pinnedMessages.findIndex((pin) => pin.id === message.id);
+    const shouldBePinned = message.pinned !== undefined && message.deleted_at === undefined;
+    if (shouldBePinned) {
+      const next = idx >= 0 ? [...pinnedMessages] : [...pinnedMessages, message];
+      if (idx >= 0) {
+        next[idx] = message;
+      }
+      next.sort((a, b) => b.seq - a.seq);
+      pinnedMessages = next.slice(0, 50);
+      renderPinBar();
+      return;
+    }
+    if (idx >= 0) {
+      pinnedMessages = pinnedMessages.filter((pin) => pin.id !== message.id);
+      renderPinBar();
+    }
+  }
+
+  async function loadReceipts(): Promise<void> {
+    try {
+      const result = await fetchConversationReceipts(input.client, input.conversationId);
+      if (disposed) {
+        return;
+      }
+      readCursors = receiptsToCursorMap(result.receipts);
+      // 进会话那一刻本人的游标固定成未读分割线的基准（读的过程中不移动）。
+      entryReadSeq = readCursors.get(input.currentUserId) ?? 0;
+      lastSentReadSeq = entryReadSeq;
+      renderScroll();
+    } catch {
+      // best-effort：拉不到就当作「都没读过」（entryReadSeq=0），分割线会出现在最早的他人消息上方，
+      // 不是致命错误——read.updated 事件或下次进会话会再校准。
+    }
+  }
+
+  async function loadPresence(): Promise<void> {
+    if (memberUserIds.length === 0) {
+      return;
+    }
+    try {
+      const result = await fetchPresence(input.client, memberUserIds);
+      if (disposed) {
+        return;
+      }
+      onlineUserIds = onlineUserIdsFromPresence(result.presence);
+      renderHead();
+    } catch {
+      // best-effort：拉不到就保持上一次的在线集合（或空集），不清成「全离线」骚扰视觉，也不重试轰炸。
+    }
+  }
+
+  // —— R14 批 CHAT：已读游标 PUT /read（进会话/滚到底/窗口重获焦点触发，5s 节流；单调，不回退） —— //
+
+  function doMarkRead(): void {
+    const seq = highestMessageSeq(messages);
+    if (seq <= lastSentReadSeq) {
+      return;
+    }
+    lastReadPingAt = Date.now();
+    lastSentReadSeq = seq;
+    // 乐观更新本人游标（read.updated 自广播也会回来，applyReadReceipt 幂等），让「已读 N/M」里别人看我
+    // 的口径无关、但本地 receipts map 保持新鲜。
+    readCursors = applyReadReceipt(readCursors, input.currentUserId, seq);
+    void advanceConversationReadCursor(input.client, input.conversationId, seq)
+      .then((result) => {
+        if (disposed) {
+          return;
+        }
+        // 服务端把游标夹到会话当前最大 seq——以它回的值为准（可能比我报的小）。
+        readCursors = applyReadReceipt(readCursors, input.currentUserId, result.last_read_seq);
+      })
+      .catch(() => undefined);
+  }
+
+  function maybeMarkRead(): void {
+    if (disposed || historyLoad !== "ready") {
+      return;
+    }
+    if (highestMessageSeq(messages) <= lastSentReadSeq) {
+      return;
+    }
+    const now = Date.now();
+    const elapsed = now - lastReadPingAt;
+    if (elapsed >= READ_PING_MIN_INTERVAL_MS) {
+      doMarkRead();
+      return;
+    }
+    if (readPingTimer !== undefined) {
+      return; // 已经安排了一次收尾 mark，不重复安排。
+    }
+    readPingTimer = setTimeout(() => {
+      readPingTimer = undefined;
+      if (!disposed) {
+        doMarkRead();
+      }
+    }, READ_PING_MIN_INTERVAL_MS - elapsed);
   }
 
   // —— R12 批8：「滚到顶加载更早」 —— //
@@ -1124,6 +1402,371 @@ export function mountChatView(
       });
   }
 
+  // —— R14 批 CHAT：反应（乐观切换 + 失败回滚，静默） —— //
+
+  function toggleReaction(messageId: string, key: ConversationReactionKey): void {
+    const message = messages.find((entry) => entry.id === messageId);
+    if (!message || message.deleted_at !== undefined) {
+      return;
+    }
+    const previous = message.reactions;
+    const { reactions: next, action } = toggleOwnReaction(previous, key, input.currentUserId);
+    const applied = applyReactionUpdate(messages, { messageId, reactions: next });
+    if (applied.changed) {
+      messages = applied.messages;
+      renderScroll();
+    }
+    const request =
+      action === "add"
+        ? addConversationReaction(input.client, input.conversationId, messageId, key)
+        : removeConversationReaction(input.client, input.conversationId, messageId, key);
+    void request.catch(() => {
+      if (disposed) {
+        return;
+      }
+      // 失败回滚到点击前的聚合（服务端幂等，回滚安全）；不弹阻断，静默恢复——下一条 reaction.updated
+      // 事件（若有）仍会以服务端全量为准覆盖。
+      const rolledBack = applyReactionUpdate(messages, { messageId, reactions: [...(previous ?? [])] });
+      if (rolledBack.changed) {
+        messages = rolledBack.messages;
+        renderScroll();
+      }
+    });
+  }
+
+  // —— R14 批 CHAT：行内编辑（保存用返回 VM 替换；409 窗过期温和话术） —— //
+
+  function beginEdit(messageId: string): void {
+    const message = messages.find((entry) => entry.id === messageId);
+    if (!message || message.kind !== "text" || message.deleted_at !== undefined) {
+      return;
+    }
+    if (input.currentUserId === undefined || message.sender_user_id !== input.currentUserId) {
+      return;
+    }
+    editingMessageId = messageId;
+    editDraft = message.content.text;
+    editError = undefined;
+    confirmDeleteMessageId = undefined;
+    renderScroll();
+    // 聚焦编辑框并把光标放到末尾（同 renderComposerChrome 的取舍）。
+    const ta = scrollEl!.querySelector<HTMLTextAreaElement>("[data-wb-chat-edit-input]");
+    if (ta) {
+      ta.focus();
+      try {
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+      } catch {
+        // ignore — value 已正确。
+      }
+    }
+  }
+
+  function cancelEdit(): void {
+    if (editingMessageId === undefined) {
+      return;
+    }
+    editingMessageId = undefined;
+    editDraft = "";
+    editError = undefined;
+    renderScroll();
+  }
+
+  function saveEdit(messageId: string): void {
+    const ta = scrollEl!.querySelector<HTMLTextAreaElement>("[data-wb-chat-edit-input]");
+    const text = (ta?.value ?? editDraft).trim();
+    const original = messages.find((entry) => entry.id === messageId);
+    if (!text) {
+      editError = input.locale === "zh-CN" ? "内容不能为空" : "The message can't be empty.";
+      renderScroll();
+      return;
+    }
+    if (original?.kind === "text" && original.content.text === text) {
+      cancelEdit();
+      return;
+    }
+    editError = undefined;
+    editConversationMessage(input.client, input.conversationId, messageId, text)
+      .then((updated) => {
+        if (disposed) {
+          return;
+        }
+        const applied = applyMessageReplacement(messages, updated);
+        if (applied.changed) {
+          messages = applied.messages;
+        }
+        editingMessageId = undefined;
+        editDraft = "";
+        editError = undefined;
+        renderScroll();
+      })
+      .catch((error) => {
+        if (disposed) {
+          return;
+        }
+        const code = error instanceof WorkHubApiError ? error.code : undefined;
+        const status = error instanceof WorkHubApiError ? error.status : undefined;
+        // 409 = 编辑窗过期 / 目标已删除——温和话术，保持编辑框开着让用户能复制自己的文字再取消。
+        editError =
+          status === 409
+            ? input.locale === "zh-CN"
+              ? "这条消息发出超过 15 分钟了，改不了啦。你可以复制内容重新发一条。"
+              : "This message is more than 15 minutes old and can no longer be edited. You can copy the text and send a new one."
+            : input.locale === "zh-CN"
+              ? "没改成功，再试一次。"
+              : "Couldn't save the edit — try again.";
+        void code;
+        renderScroll();
+      });
+  }
+
+  // —— R14 批 CHAT：删除（二次确认 + 墓碑替换） —— //
+
+  function requestDelete(messageId: string): void {
+    confirmDeleteMessageId = messageId;
+    editingMessageId = undefined;
+    renderScroll();
+  }
+
+  function cancelDelete(): void {
+    if (confirmDeleteMessageId === undefined) {
+      return;
+    }
+    confirmDeleteMessageId = undefined;
+    renderScroll();
+  }
+
+  function confirmDelete(messageId: string): void {
+    confirmDeleteMessageId = undefined;
+    renderScroll();
+    deleteConversationMessage(input.client, input.conversationId, messageId)
+      .then((tombstone) => {
+        if (disposed) {
+          return;
+        }
+        const applied = applyMessageReplacement(messages, tombstone);
+        if (applied.changed) {
+          messages = applied.messages;
+        }
+        // 删除顺带把它从置顶条移除（服务端删除也会清 pinned，双保险）。
+        reconcilePinFromMessage(tombstone);
+        renderScroll();
+      })
+      .catch(() => {
+        // best-effort：删除失败保持原样（消息还在=真实状态），不弹阻断——用户可再试。
+      });
+  }
+
+  // —— R14 批 CHAT：引用回复（composer 顶部「正在回复 xxx」+ 发送带 reply_to；点引用块跳原消息） —— //
+
+  function beginReply(messageId: string): void {
+    const message = messages.find((entry) => entry.id === messageId);
+    if (!message || message.deleted_at !== undefined) {
+      return;
+    }
+    const label =
+      message.sender_type === "cuu"
+        ? "Cuu"
+        : message.sender_type === "system"
+          ? input.locale === "zh-CN"
+            ? "系统"
+            : "System"
+          : (message.sender_user_id ? membersMap.get(message.sender_user_id)?.nickname : undefined) ??
+            (input.locale === "zh-CN" ? "未知成员" : "Unknown member");
+    replyingTo = { messageId, label };
+    renderComposerChrome();
+    textareaEl()?.focus();
+  }
+
+  function cancelReply(): void {
+    if (replyingTo === undefined) {
+      return;
+    }
+    replyingTo = undefined;
+    renderComposerChrome();
+  }
+
+  // —— R14 批 CHAT：置顶/取消置顶（GET /pins 刷新 bar；message.pinned 由 message.updated 事件回流） —— //
+
+  function togglePin(messageId: string, currentlyPinned: boolean): void {
+    const request = currentlyPinned
+      ? unpinConversationMessage(input.client, input.conversationId, messageId)
+      : pinConversationMessage(input.client, input.conversationId, messageId);
+    void request
+      .then(() => {
+        if (disposed) {
+          return;
+        }
+        // 权威刷新置顶条（GET /pins）；工具条上那枚 pin 图标态由 message.updated 事件回流更新 message.pinned。
+        void loadPins();
+      })
+      .catch(() => {
+        // best-effort：失败保持现状，不弹阻断。
+      });
+  }
+
+  // —— R14 批 CHAT：跳到某条消息（引用块/置顶条/跳到未读共用；本地无→beforeSeq 翻页加载到为止） —— //
+
+  function findMessageNode(messageId: string): HTMLElement | undefined {
+    return Array.from(scrollEl!.querySelectorAll<HTMLElement>("[data-wb-chat-message-id]")).find(
+      (node) => node.dataset.wbChatMessageId === messageId
+    );
+  }
+
+  function flashMessage(node: HTMLElement): void {
+    node.classList.add("wh-wb-chat-msg--flash");
+    setTimeout(() => {
+      node.classList.remove("wh-wb-chat-msg--flash");
+    }, FLASH_HIGHLIGHT_MS);
+  }
+
+  async function jumpToMessage(messageId: string): Promise<void> {
+    // 1) 已经在 DOM 里（渲染窗口内）——直接滚过去 + 高亮。
+    let node = findMessageNode(messageId);
+    if (node) {
+      node.scrollIntoView({ behavior: "smooth", block: "center" });
+      flashMessage(node);
+      return;
+    }
+    // 2) 在本地 messages 里但被 DOM 窗口折叠了——把窗口撑到包含它，重渲后再滚。
+    const localIndex = messages.findIndex((entry) => entry.id === messageId);
+    if (localIndex >= 0) {
+      const neededFromEnd = messages.length - localIndex;
+      if (neededFromEnd > renderWindowSize) {
+        renderWindowSize = neededFromEnd + RENDER_WINDOW_EXPAND_STEP;
+        renderScrollPreservingTopAnchor();
+      }
+      node = findMessageNode(messageId);
+      if (node) {
+        node.scrollIntoView({ behavior: "smooth", block: "center" });
+        flashMessage(node);
+      }
+      return;
+    }
+    // 3) 本地根本没有——照 loadOlderHistory 模式反向翻页加载到为止（有硬上限，防跳到已删/不存在的目标
+    // 时无限翻页），加载到后撑窗口再滚；到头还没有就诚实地什么都不做（不假装总能定位）。
+    let pages = 0;
+    while (!disposed && hasOlderHistory && pages < REPLY_JUMP_MAX_OLDER_PAGES) {
+      pages += 1;
+      await loadOlderHistory();
+      if (messages.some((entry) => entry.id === messageId)) {
+        break;
+      }
+    }
+    if (disposed) {
+      return;
+    }
+    const idx = messages.findIndex((entry) => entry.id === messageId);
+    if (idx < 0) {
+      return;
+    }
+    const neededFromEnd = messages.length - idx;
+    if (neededFromEnd > renderWindowSize) {
+      renderWindowSize = neededFromEnd + RENDER_WINDOW_EXPAND_STEP;
+      renderScrollPreservingTopAnchor();
+    }
+    node = findMessageNode(messageId);
+    if (node) {
+      node.scrollIntoView({ behavior: "smooth", block: "center" });
+      flashMessage(node);
+    }
+  }
+
+  function jumpToUnread(): void {
+    const dividerBeforeId = unreadDividerBeforeMessageId(messages, entryReadSeq, input.currentUserId);
+    if (dividerBeforeId === undefined) {
+      return;
+    }
+    void jumpToMessage(dividerBeforeId);
+  }
+
+  // —— R14 批 CHAT：turn 流式期间缓冲的编辑/反应事件，落定后统一重放（照 action_card 缓冲取舍） —— //
+
+  function flushChatBuffers(): void {
+    if (bufferedMessageUpdates.length === 0 && bufferedReactionUpdates.length === 0) {
+      return;
+    }
+    const msgQueue = bufferedMessageUpdates;
+    const reactionQueue = bufferedReactionUpdates;
+    bufferedMessageUpdates = [];
+    bufferedReactionUpdates = [];
+    let changed = false;
+    const staleIds: string[] = [];
+    for (const updated of msgQueue) {
+      const applied = applyMessageReplacement(messages, updated);
+      if (applied.changed) {
+        messages = applied.messages;
+        changed = true;
+      }
+      if (applied.unknownId) {
+        staleIds.push(updated.id);
+      } else {
+        reconcilePinFromMessage(updated);
+      }
+    }
+    for (const reaction of reactionQueue) {
+      const applied = applyReactionUpdate(messages, reaction);
+      if (applied.changed) {
+        messages = applied.messages;
+        changed = true;
+      }
+      if (applied.unknownId) {
+        staleIds.push(reaction.messageId);
+      }
+    }
+    if (changed) {
+      renderScroll();
+    }
+    for (const id of [...new Set(staleIds)]) {
+      void refreshActionCardMessage(id);
+    }
+  }
+
+  // —— R14 批 CHAT：SSE 事件落地（连接内调用，见 connectStream；turnActive 时缓冲编辑/反应事件） —— //
+
+  function applyIncomingMessageUpdated(updated: ConversationMessageVM): void {
+    const applied = applyMessageReplacement(messages, updated);
+    if (applied.changed) {
+      messages = applied.messages;
+      renderScroll();
+    }
+    if (applied.unknownId) {
+      // 本地没有这条消息（翻页还没加载到/补拉边界）——定点补拉，同行动卡快照过期的处理。
+      void refreshActionCardMessage(updated.id);
+      return;
+    }
+    // 编辑/删除/置顶都可能改 pinned/deleted——同步维护置顶条。
+    reconcilePinFromMessage(updated);
+  }
+
+  function applyIncomingReactionUpdate(update: IncomingReactionUpdate): void {
+    // R14 批 CHAT（桌宠彩蛋，stretch）：先按上一份本地快照 diff 出「新增了哪个反应键」——我自己的反应
+    // 已经乐观应用过了（previous 里已含我），所以这里只会对「别人给 Cuu 消息新加反应」触发情绪信号，
+    // 全程 best-effort（回调抛错也不影响反应本身落地）。
+    const target = messages.find((entry) => entry.id === update.messageId);
+    if (input.onCuuReactionEmotion && target && target.deleted_at === undefined) {
+      const emotion = pickCuuReactionEmotion({
+        senderType: target.sender_type,
+        previous: target.reactions,
+        next: update.reactions
+      });
+      if (emotion) {
+        try {
+          input.onCuuReactionEmotion(emotion);
+        } catch {
+          // 彩蛋失败静默——绝不因为一个装饰性情绪信号影响反应聚合的正常落地。
+        }
+      }
+    }
+    const applied = applyReactionUpdate(messages, update);
+    if (applied.changed) {
+      messages = applied.messages;
+      renderScroll();
+    }
+    if (applied.unknownId) {
+      void refreshActionCardMessage(update.messageId);
+    }
+  }
+
   function connectStream(): void {
     streamHandle = connectConversationStream({
       url: input.streamUrl,
@@ -1135,13 +1778,66 @@ export function mountChatView(
         input.onConversationEvent?.(event.data);
         const message = parseIncomingMessageCreated(event.data, input.conversationId);
         if (message) {
+          const wasNearBottom = scrollEl!.scrollHeight - scrollEl!.scrollTop - scrollEl!.clientHeight < NEAR_BOTTOM_PX;
           mergeMessages([message]);
+          // R14 批 CHAT：如果用户本来就贴着底看最新消息，一条新消息到达即视为"看见了"，节流标记已读——
+          // 不在底部（在往上翻历史）时不标记，那条新消息对用户就是"未读"，交给未读分割线/跳到未读浮钮。
+          if (wasNearBottom) {
+            maybeMarkRead();
+          }
+          return;
+        }
+        // R14 批 CHAT：conversation.message.updated（编辑/删除/置顶/取消置顶回流）——按 id 整条替换本地
+        // 快照。turn 流式期间缓冲（同 action_card 取舍，落定后重放），不打断正在阅读的流式气泡。
+        const messageUpdated = parseIncomingMessageUpdated(event.data, input.conversationId);
+        if (messageUpdated) {
+          if (turnActive) {
+            bufferedMessageUpdates = [...bufferedMessageUpdates, messageUpdated];
+            return;
+          }
+          applyIncomingMessageUpdated(messageUpdated);
+          return;
+        }
+        // R14 批 CHAT：conversation.reaction.updated（全量聚合幂等替换）——同样在 turn 流式期间缓冲。
+        const reactionUpdate = parseIncomingReactionUpdated(event.data, input.conversationId);
+        if (reactionUpdate) {
+          if (turnActive) {
+            bufferedReactionUpdates = [...bufferedReactionUpdates, reactionUpdate];
+            return;
+          }
+          applyIncomingReactionUpdate(reactionUpdate);
+          return;
+        }
+        // R14 批 CHAT：conversation.read.updated（已读游标增量）——不缓冲（只动 receipts Map，幂等），
+        // 但 turn 流式期间不立刻重渲（避免抖动流式气泡），只更新 Map，turn 落定的 renderScroll 会带出来。
+        const readUpdate = parseIncomingReadUpdated(event.data, input.conversationId);
+        if (readUpdate) {
+          const nextCursors = applyReadReceipt(readCursors, readUpdate.userId, readUpdate.lastReadSeq);
+          if (nextCursors !== readCursors) {
+            readCursors = nextCursors;
+            if (!turnActive) {
+              renderScroll();
+            }
+          }
+          return;
+        }
+        // R14 批 CHAT：conversation.observer.analyzing（瞬态指示灯）——不缓冲（渲在独立指示行区域，不进
+        // 滚动区），照 typing 静默丢弃模式，设过期时刻并渲指示灯，TTL 到期或收到行动卡事件即消。
+        const observerAnalyzing = parseIncomingObserverAnalyzing(event.data, input.conversationId);
+        if (observerAnalyzing) {
+          observerAnalyzingUntilMs = observerAnalyzing.expiresAtMs;
+          renderObserver();
           return;
         }
         // R12 行动卡状态回流（00 §9 撤销后置灰划线）：条目状态就地合并进本地快照，快照缺条目/缺消息
         // 时按需补拉——事件不带 title_md，光靠它渲不出新条目。
         const cardUpdate = parseIncomingActionCardUpdated(event.data, input.conversationId);
         if (cardUpdate) {
+          // R14 批 CHAT：行动卡事件到达 = 观察者"整理完了"，指示灯即消（00-interaction-design §2.2）。
+          if (observerAnalyzingUntilMs !== undefined) {
+            observerAnalyzingUntilMs = undefined;
+            renderObserver();
+          }
           // R13 批 S2：这类事件也是"该重取一次执行进度了"的信号（节流，见 maybeRefreshActionCardRunProgress
           // 顶部注释）——跟下面 turnActive 缓冲判断是两件独立的事：进度数据本身随时可以去查，只是
           // "查回来之后要不要立刻画出来"才受 turnActive 影响（refreshActionCardRunProgress 内部自己判断）。
@@ -1191,15 +1887,23 @@ export function mountChatView(
       },
       onReconnected: () => {
         void reconcileGap();
+        // R14 批 CHAT：重连后即时刷一次 presence（断线期间可能有人上下线，30s 轮询等不及）。
+        void loadPresence();
       }
     });
   }
 
   const typingPruneTimer = setInterval(() => {
-    const next = pruneExpiredTypingUsers(typing, Date.now());
+    const now = Date.now();
+    const next = pruneExpiredTypingUsers(typing, now);
     if (next !== typing) {
       typing = next;
       renderTyping();
+    }
+    // R14 批 CHAT：观察者「正在整理」指示灯 TTL 过期即消（照 typing 同款惰性清理，不另起计时器）。
+    if (observerAnalyzingUntilMs !== undefined && observerAnalyzingUntilMs <= now) {
+      observerAnalyzingUntilMs = undefined;
+      renderObserver();
     }
   }, TYPING_PRUNE_INTERVAL_MS);
 
@@ -1366,7 +2070,7 @@ export function mountChatView(
   function issueSend(record: PendingSendRecord): void {
     const promise =
       record.kind === "text"
-        ? sendConversationTextMessage(input.client, input.conversationId, record.text ?? "")
+        ? sendConversationTextMessage(input.client, input.conversationId, record.text ?? "", undefined, record.replyToMessageId)
         : sendConversationFileCardMessage(input.client, input.conversationId, record.driveItemId ?? "");
     promise
       .then((created) => {
@@ -1455,6 +2159,7 @@ export function mountChatView(
         // 顶部注释）。放在 mergeMessages 之前/之后都行（两者改的是不相交的消息 id），这里选在它之前，
         // 让"后台任务的事"先归位，再落这一轮对话本身的最终消息。
         flushBufferedActionCardUpdates();
+        flushChatBuffers();
         // 服务端设计决策：Cuu 落库的回复不会触发任何 message.created 广播（见 turn.ts 顶部注释）——
         // 这次 HTTP 响应本身就是唯一的权威"这一轮说完了"信号。mergeMessages 按 id 去重，真把它排进
         // 消息流该在的位置，同时（内部调用 renderScroll）把上面的临时气泡换成这条真消息。
@@ -1484,6 +2189,7 @@ export function mountChatView(
             : undefined;
         // R13 批 S2：turn 落定（这一轮失败也算数）——同样要重放缓冲队列，见上。
         flushBufferedActionCardUpdates();
+        flushChatBuffers();
         // mergeMessages 在成功路径里已经会 renderScroll；失败路径没有新消息可合并，这里手动补一次
         // 好让临时气泡从消息流里消失（turnActive 已经是 false，buildScrollBodyHtml 不会再画它）。
         renderScroll();
@@ -1580,7 +2286,10 @@ export function mountChatView(
       });
   }
 
-  function enqueueSend(kind: "text" | "file_card", payload: { text?: string; driveItemId?: string; fileName?: string }): void {
+  function enqueueSend(
+    kind: "text" | "file_card",
+    payload: { text?: string; driveItemId?: string; fileName?: string; replyToMessageId?: string }
+  ): void {
     pendingCounter += 1;
     const record: PendingSendRecord = {
       tempId: `pending-${input.conversationId}-${pendingCounter}`,
@@ -1588,7 +2297,8 @@ export function mountChatView(
       status: "sending",
       ...(payload.text !== undefined ? { text: payload.text } : {}),
       ...(payload.driveItemId !== undefined ? { driveItemId: payload.driveItemId } : {}),
-      ...(payload.fileName !== undefined ? { fileName: payload.fileName } : {})
+      ...(payload.fileName !== undefined ? { fileName: payload.fileName } : {}),
+      ...(payload.replyToMessageId !== undefined ? { replyToMessageId: payload.replyToMessageId } : {})
     };
     pending = [...pending, record];
     renderScroll();
@@ -1627,12 +2337,16 @@ export function mountChatView(
     draftFallback = "";
     attachments = [];
     activeTrigger = undefined;
+    // R14 批 CHAT（引用回复）：把当前引用目标绑到这条 text 消息上，然后清掉回复态（banner 随 chrome 重渲
+    // 消失）。文件卡消息不带引用（服务端只让 text 变体带 reply_to_message_id）。
+    const replyToMessageId = replyingTo?.messageId;
+    replyingTo = undefined;
     renderComposerChrome();
     for (const attachment of toAttach) {
       enqueueSend("file_card", { driveItemId: attachment.driveItemId, fileName: attachment.name });
     }
     if (text) {
-      enqueueSend("text", { text });
+      enqueueSend("text", { text, ...(replyToMessageId !== undefined ? { replyToMessageId } : {}) });
     }
   }
 
@@ -1692,6 +2406,11 @@ export function mountChatView(
     const target = event.target;
     if (target.closest("[data-wb-chat-send]")) {
       handleSend();
+      return;
+    }
+    // R14 批 CHAT（引用回复）：取消「正在回复 xxx」。
+    if (target.closest("[data-wb-chat-cancel-reply]")) {
+      cancelReply();
       return;
     }
     if (target.closest('[data-wb-chat-tool-trigger="@"]')) {
@@ -1772,6 +2491,60 @@ export function mountChatView(
       applyClarifyOptionToComposer(clarifyOptionBtn.dataset.wbChatClarifyOption);
       return;
     }
+    // —— R14 批 CHAT：消息行 hover 工具条 + 反应行 + 引用块跳转 + 行内编辑/删除确认 —— //
+    // 反应（工具条五键快捷加 + 气泡下反应行 chip 走同一条 data-wb-chat-react 路径，切换语义一致）。
+    const reactBtn = target.closest<HTMLElement>("[data-wb-chat-react]");
+    if (reactBtn?.dataset.wbChatReact) {
+      const key = reactBtn.dataset.wbChatReact as ConversationReactionKey;
+      const msgId = reactBtn.dataset.wbChatReactMsg;
+      if (msgId) {
+        toggleReaction(msgId, key);
+      }
+      return;
+    }
+    const replyBtn = target.closest<HTMLElement>("[data-wb-chat-reply]");
+    if (replyBtn?.dataset.wbChatReply) {
+      beginReply(replyBtn.dataset.wbChatReply);
+      return;
+    }
+    const replyJumpBtn = target.closest<HTMLElement>("[data-wb-chat-reply-jump]");
+    if (replyJumpBtn?.dataset.wbChatReplyJump) {
+      void jumpToMessage(replyJumpBtn.dataset.wbChatReplyJump);
+      return;
+    }
+    const editBtn = target.closest<HTMLElement>("[data-wb-chat-edit]");
+    if (editBtn?.dataset.wbChatEdit) {
+      beginEdit(editBtn.dataset.wbChatEdit);
+      return;
+    }
+    const editSaveBtn = target.closest<HTMLElement>("[data-wb-chat-edit-save]");
+    if (editSaveBtn?.dataset.wbChatEditSave) {
+      saveEdit(editSaveBtn.dataset.wbChatEditSave);
+      return;
+    }
+    if (target.closest("[data-wb-chat-edit-cancel]")) {
+      cancelEdit();
+      return;
+    }
+    const deleteBtn = target.closest<HTMLElement>("[data-wb-chat-delete]");
+    if (deleteBtn?.dataset.wbChatDelete) {
+      requestDelete(deleteBtn.dataset.wbChatDelete);
+      return;
+    }
+    const deleteConfirmBtn = target.closest<HTMLElement>("[data-wb-chat-delete-confirm]");
+    if (deleteConfirmBtn?.dataset.wbChatDeleteConfirm) {
+      confirmDelete(deleteConfirmBtn.dataset.wbChatDeleteConfirm);
+      return;
+    }
+    if (target.closest("[data-wb-chat-delete-cancel]")) {
+      cancelDelete();
+      return;
+    }
+    const pinBtn = target.closest<HTMLElement>("[data-wb-chat-pin]");
+    if (pinBtn?.dataset.wbChatPin) {
+      togglePin(pinBtn.dataset.wbChatPin, pinBtn.dataset.wbChatPinState === "on");
+      return;
+    }
     // R12 P0-A1：行动卡条目的操作按钮——decide 三键（交给我干/派给别人/先不动）、reassign 极简成员
     // 选择器的展开/选中提交、execute 的撤销。
     const decideBtn = target.closest<HTMLElement>("[data-wb-chat-actioncard-decide]");
@@ -1817,7 +2590,71 @@ export function mountChatView(
     if (scrollEl!.scrollTop <= SCROLL_TOP_LOAD_EARLIER_PX) {
       handleReachedTop();
     }
+    // R14 批 CHAT：滚到底=看到了最新消息，节流标记已读；同时刷新「跳到未读」浮钮的显隐。
+    const nearBottom = scrollEl!.scrollHeight - scrollEl!.scrollTop - scrollEl!.clientHeight < NEAR_BOTTOM_PX;
+    if (nearBottom) {
+      maybeMarkRead();
+    }
+    renderJump();
   });
+
+  // R14 批 CHAT：行内编辑框——input 同步 editDraft（这样任何原因触发的 renderScroll 都能保住已输入的
+  // 文字，同 composer 的 draftFallback 取舍）；Escape 取消、Cmd/Ctrl+Enter 保存（普通 Enter 是换行——
+  // 编辑多半是改一段话，换行比发送更常用）。
+  scrollEl.addEventListener("input", (event) => {
+    if (event.target instanceof HTMLTextAreaElement && event.target.matches("[data-wb-chat-edit-input]")) {
+      editDraft = event.target.value;
+    }
+  });
+  scrollEl.addEventListener("keydown", (event) => {
+    if (!(event.target instanceof HTMLTextAreaElement) || !event.target.matches("[data-wb-chat-edit-input]")) {
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelEdit();
+      return;
+    }
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && editingMessageId) {
+      event.preventDefault();
+      saveEdit(editingMessageId);
+    }
+  });
+
+  // R14 批 CHAT：置顶条——折叠切换 / 点击跳消息 / 取消置顶（挂在独立的 pinBarEl 上，不跟消息流一起重建）。
+  pinBarEl.addEventListener("click", (event) => {
+    if (!(event.target instanceof HTMLElement)) {
+      return;
+    }
+    const target = event.target;
+    if (target.closest("[data-wb-chat-pinbar-toggle]")) {
+      pinBarCollapsed = !pinBarCollapsed;
+      renderPinBar();
+      return;
+    }
+    const jumpBtn = target.closest<HTMLElement>("[data-wb-chat-pin-jump]");
+    if (jumpBtn?.dataset.wbChatPinJump) {
+      void jumpToMessage(jumpBtn.dataset.wbChatPinJump);
+      return;
+    }
+    const removeBtn = target.closest<HTMLElement>("[data-wb-chat-pin-remove]");
+    if (removeBtn?.dataset.wbChatPinRemove) {
+      togglePin(removeBtn.dataset.wbChatPinRemove, true);
+    }
+  });
+
+  // R14 批 CHAT：底部「跳到未读」浮钮——挂在独立的 jumpEl 上。
+  jumpEl.addEventListener("click", (event) => {
+    if (event.target instanceof HTMLElement && event.target.closest("[data-wb-chat-jump-unread]")) {
+      jumpToUnread();
+    }
+  });
+
+  // R14 批 CHAT：窗口重获焦点时标记已读（用户从别的窗口切回来=正在看这个会话）。
+  function handleWindowFocus(): void {
+    maybeMarkRead();
+  }
+  (doc.defaultView ?? window).addEventListener("focus", handleWindowFocus);
 
   // R12（模式五档）：点外关闭 + Escape 关闭 + 弹层开着时数字键 1-5 快切——都是弹层开着才生效
   // （modePopoverOpen 把关），不会抢主区/其它会话种类里任何一次点击或按键。这两个监听器挂在
@@ -1935,10 +2772,18 @@ export function mountChatView(
   });
 
   renderCatchup();
+  renderPinBar();
   void loadHistory();
   void loadMyAiProfile();
   void loadDispatchAskCatchup();
   void loadAiProviderHealth();
+  // R14 批 CHAT：挂载时拉一次 presence + 30s 轮询（成员条在线点）。SSE 重连时另有即时刷新（见 onReconnected）。
+  void loadPresence();
+  presencePollTimer = setInterval(() => {
+    if (!disposed) {
+      void loadPresence();
+    }
+  }, PRESENCE_POLL_INTERVAL_MS);
 
   return {
     dispose() {
@@ -1948,11 +2793,18 @@ export function mountChatView(
       doc.removeEventListener("click", handleDocumentModeClick);
       doc.removeEventListener("keydown", handleDocumentModeKeydown);
       doc.removeEventListener("keydown", handleDocumentReassignKeydown);
+      (doc.defaultView ?? window).removeEventListener("focus", handleWindowFocus);
       if (fileSearchTimer !== undefined) {
         clearTimeout(fileSearchTimer);
       }
       if (actionCardRunProgressRefetchTimer !== undefined) {
         clearTimeout(actionCardRunProgressRefetchTimer);
+      }
+      if (readPingTimer !== undefined) {
+        clearTimeout(readPingTimer);
+      }
+      if (presencePollTimer !== undefined) {
+        clearInterval(presencePollTimer);
       }
     },
     focusComposer() {
