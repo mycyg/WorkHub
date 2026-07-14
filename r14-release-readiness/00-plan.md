@@ -37,6 +37,7 @@
 | GH | GitHub 集成 | 项目绑仓，commit/PR 信号进 Cuu 感知 | 中 | 无；建议放 RISK 后（巡检有外部事实源才更值） |
 | PERF | 长会话性能 | 消息列表虚拟化（桌面+web） | 中 | CHAT 后（DOM 结构稳定了再虚拟化） |
 | OSS | 开源就绪 | LICENSE/README/部署指南/贡献指南/密钥卫生 | 小 | 随时可插队，开源时间点定优先级 |
+| EXEC | agent 代码执行与环境 | run_command 上架（隔离执行器）+受控安装通道 | 大 | 设计先行；GH 后 |
 | ONBOARD | 新手导览 | 「跟着 Cuu 做完第一个任务」引导线 | 小中 | 主功能面稳定后（倒数第二） |
 | MOBILE | 全功能移动端 | 占位：技术路线设计先行，不缩水 | 特大 | **全部之后，最后一个** |
 
@@ -125,6 +126,23 @@ GET/PATCH /me/profile，派活评分吃资料完整度+技能重合度）——�
 - 项目级绑定 repo（PAT/deploy key，服务端存储加密，桌面端零密钥纪律不变）；轮询为主（自托管无公网 webhook 也能用），webhook 可选加速。
 - 信号消费：commit/PR/issue 动态进项目健康与 Cuu 巡检上下文；军团 run 产出若关联 PR，链接进提议卡。
 - 明确不做：代码托管镜像、CI 状态面板、review 工具——只做「信号进感知」，不重造 GitHub。
+
+### 批 EXEC · agent 代码执行与环境（2026-07-14 用户授权模型定纲，即 R13 立案的 N8/批9）
+
+现状核对：`run_command` 工具已存在且设计完善（白名单解释器 python/node/pytest 等、无 shell 展开、
+裸名校验、超时/输出/预算闸），文件工具已被 safeResolvePath 钉死在 run 沙箱 workdir——但因**进程不隔离**
+（无 namespace，宿主 PATH，python 可读宿主任意路径）默认 fail-closed 禁用；pilot 容器已预装 python
+数据库（docx/xlsx/matplotlib），容器部署=天然隔离。「自行安装环境」完全未设计（白名单无 pip/uv，
+npm 无网络与写路径管控）。
+
+**用户授权模型（2026-07-14 原话定纲）：除了安装东西外，常规文件操作仅授权在项目文件夹进行。**
+
+- 隔离执行器让 run_command 敢默认开：容器部署直接注入（进程已隔离）；宿主裸跑评估轻量隔离
+  （macOS sandbox-exec/Linux bwrap 类，设计先行阶段选型），选不出就保持显式 opt-in+文档写明风险。
+- 受控安装通道：装依赖=独立于 run_command 的特批动作（声明式清单+审批红线，沿「AI 写生产必须走
+  提议→审批」的既有纪律），安装源白名单（pypi/npm 官方源），装完进沙箱内环境不污染宿主。
+- 参考 codex 的 sandbox/approval 模型（reference/openai-codex 已 clone）。
+- 设计先行：施工前出实现级设计稿（含威胁模型），不直接开工。
 
 ### 批 PERF · 长会话性能
 
