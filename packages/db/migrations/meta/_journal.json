@@ -407,6 +407,13 @@
       "when": 1783909000000,
       "tag": "0057_search_trgm_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1783912000000,
+      "tag": "0059_project_risk_monitor",
+      "breakpoints": true
     }
   ]
 }

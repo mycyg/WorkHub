@@ -344,6 +344,44 @@ test("R12 governance upsert rechecks and locks owner access before a guarded pro
   assert.equal(conflict.set.updatedAt, now);
 });
 
+// R14 批 RISK：riskMonitorJson 未传时既不出现在 INSERT values 也不出现在 UPDATE set（落 DB 列自身的
+// DEFAULT '{}'::jsonb），传了才对称出现在两处——与既有 governance upsert 的 INSERT/UPDATE 形状穷举
+// 断言（上面那个测试）保持零冲突，同时验证新字段自己的读写路径。
+test("R12 governance upsert writes risk_monitor_json only when the patch supplies it, symmetrically for insert and update", async () => {
+  const { createAiSettingsRepository } = await settingsModule();
+  const riskMonitor = { stall_days_threshold: 3, cost_spike_ratio_pct: 400 };
+  const updated = { ...governance, riskMonitorJson: riskMonitor };
+  const { db, queries } = createQueryRecorder([
+    [project],
+    [{ membershipRole: "owner" }],
+    [updated]
+  ]);
+
+  const result = await createAiSettingsRepository(db).upsertProjectGovernance({
+    workspaceId,
+    projectId,
+    actorUserId: userId,
+    patch: { riskMonitorJson: riskMonitor },
+    at: now
+  });
+
+  assert.deepEqual(result, updated);
+  const write = queries[2];
+  assert.deepEqual(write?.valuesValue, {
+    projectId,
+    observerEnabled: true,
+    silenceWindowSecs: 60,
+    quietHoursJson: { enabled: false },
+    granularJson: {},
+    riskMonitorJson: riskMonitor,
+    createdAt: now,
+    updatedAt: now
+  });
+  const conflict = conflictShape(write);
+  assert.deepEqual(Object.keys(conflict.set).sort(), ["riskMonitorJson", "updatedAt"]);
+  assert.deepEqual(conflict.set.riskMonitorJson, riskMonitor);
+});
+
 test("R12 governance upsert rejects empty/non-owner writes and never trusts membership role", async () => {
   const module = await settingsModule();
   const empty = createQueryRecorder();

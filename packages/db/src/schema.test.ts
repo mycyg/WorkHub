@@ -662,7 +662,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0057 search trgm indexes", () => {
+test("migration journal ends with 0059 project risk monitor", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -677,13 +677,30 @@ test("migration journal ends with 0057 search trgm indexes", () => {
       breakpoints: finalEntry.breakpoints
     },
     {
-      // R14 集成收口：并行两批合并后链尾=0057（MEM 的 0056 插在 0055 与 0057 之间，when 严格递增）。
-      idx: 57,
+      // R14 集成裁定（05-risk-design.md 头部）：RISK 批占 0059，journal 从 0057 直接跳到 0059——0058 是
+      // 并行 FEEDBACK 批在其自身分支上的号，集成时按实际落地顺序重排 when（保持严格递增），非阻塞项。
+      idx: 59,
       version: "7",
-      tag: "0057_search_trgm_indexes",
+      tag: "0059_project_risk_monitor",
       breakpoints: true
     }
   );
+});
+
+test("R14 批 RISK migration 0059 adds project_ai_governance.risk_monitor_json as a non-null default-empty jsonb column", () => {
+  const migrationUrl = new URL("../migrations/0059_project_risk_monitor.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0059_project_risk_monitor.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  assert.match(
+    migration,
+    /ALTER TABLE\s+"project_ai_governance"\s+ADD COLUMN IF NOT EXISTS\s+"risk_monitor_json"\s+jsonb\s+NOT NULL\s+DEFAULT\s+'\{\}'::jsonb\s*;/iu
+  );
+
+  const projectAiGovernance = requiredTable("projectAiGovernance") as WorkHubTable & Record<string, any>;
+  assert.equal(projectAiGovernance.riskMonitorJson.name, "risk_monitor_json");
+  assert.equal(projectAiGovernance.riskMonitorJson.notNull, true);
+  assert.deepEqual(projectAiGovernance.riskMonitorJson.default, {});
+  assert.equal(projectAiGovernance.riskMonitorJson.columnType, "PgJsonb");
 });
 
 test("R14 批 SEARCH migration 0057 builds pg_trgm plus five replay-safe GIN indexes", () => {
