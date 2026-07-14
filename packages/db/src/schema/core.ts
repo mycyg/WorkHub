@@ -9,6 +9,7 @@ import type {
   DeliverableChangeManifest,
   DispatchPolicy,
   ExecutionHint,
+  GithubActivityKind,
   RiskLevel,
   TaskPlanItemRole,
   TaskPlanItemStatus,
@@ -37,6 +38,7 @@ import {
   smallint,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
   varchar
@@ -2151,6 +2153,57 @@ export const teamSkills = pgTable(
   ]
 );
 
+// R14 批 GH（GitHub 集成 · 07-gh-design.md §2）。一对一绑定：配置 + 加密 PAT（三列 bytea）+ 轮询水位
+// 同一行（读写生命周期一致，拆表徒增 JOIN）。主键=project_id（拍板范围是「项目级绑定 repo」单数），
+// 照 project_ai_governance 同款一对一形状。PAT 永远密文落库（AES-256-GCM，见 services/secret-box.ts），
+// 明文/密文均绝不进日志、绝不进响应 VM（安全红线 §6）。
+export const projectGithubBindings = pgTable(
+  "project_github_bindings",
+  {
+    projectId: uuid("project_id").primaryKey().references(() => projects.id, { onDelete: "cascade" }),
+    repoFullName: varchar("repo_full_name", { length: 255 }).notNull(),
+    patCiphertext: bytea("pat_ciphertext").notNull(),
+    patIv: bytea("pat_iv").notNull(),
+    patAuthTag: bytea("pat_auth_tag").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    // 轮询水位：每类信号独立 since 时间戳 + 每端点独立 ETag（etagJson 存 commits/issues 两键）。
+    commitsSince: timestampTz("commits_since"),
+    issuesSince: timestampTz("issues_since"),
+    etagJson: jsonb("etag_json").$type<JsonObject>().notNull().default({}),
+    lastSyncedAt: timestampTz("last_synced_at"),
+    // 最近一次失败摘要（人话，从不含 PAT/堆栈），成功后清空。
+    lastError: text("last_error"),
+    lastErrorAt: timestampTz("last_error_at"),
+    ...timestamps()
+  }
+);
+
+// 轮询拉到的原始 GitHub 活动条目——独立小表（不塞 notifications/audit_logs，见 §2.2 取舍）。
+// (project_id, kind, external_id) 唯一约束=增量轮询天然需要的幂等写入原语（ON CONFLICT DO UPDATE
+// 更新 title/state，PR 从 open 变 merged 更新已存行而非插新行）。
+export const projectGithubActivities = pgTable(
+  "project_github_activities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    kind: varchar("kind", { length: 16 }).$type<GithubActivityKind>().notNull(),
+    externalId: varchar("external_id", { length: 128 }).notNull(),
+    title: text("title").notNull(),
+    authorLogin: varchar("author_login", { length: 255 }),
+    htmlUrl: text("html_url").notNull(),
+    state: varchar("state", { length: 32 }),
+    occurredAt: timestampTz("occurred_at").notNull(),
+    // §3.5 stretch：commit message / issue-PR 标题命中本项目工单 code 时的只读回填，v1 可选。
+    relatedWorkItemId: uuid("related_work_item_id").references(() => workItems.id, { onDelete: "set null" }),
+    createdAt: createdAt()
+  },
+  (table) => [
+    unique("project_github_activities_dedupe_uq").on(table.projectId, table.kind, table.externalId),
+    index("project_github_activities_project_occurred_idx").on(table.projectId, table.occurredAt)
+  ]
+);
+
 export const workHubTables = {
   users,
   userMemories,
@@ -2219,7 +2272,9 @@ export const workHubTables = {
   permissionPolicies,
   approvalRequests,
   approvalComments,
-  auditLogs
+  auditLogs,
+  projectGithubBindings,
+  projectGithubActivities
 } as const;
 
 export type WorkHubTableName = keyof typeof workHubTables;
