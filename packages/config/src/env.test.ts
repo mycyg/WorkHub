@@ -31,6 +31,17 @@ test("keeps provider and budget defaults available", () => {
   assert.equal(value.agentRun.projectHydrateEnabled, true);
 });
 
+test("R14 批 GH: GITHUB_TOKEN_ENC_KEY defaults empty (feature unconfigured) and passes through verbatim when set", () => {
+  // 默认空串=未配置 GH 加密密钥：绑定端点 fail-closed 503，轮询 worker 空转（见 07-gh-design §1.1）。
+  assert.equal(loadSettings({}).github.tokenEncKey, "");
+  // 显式配置时逐字节透传，不做任何解码/校验（长度校验在 secret-box 建箱时做，见 secret-box.ts）。
+  const key = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=";
+  assert.equal(loadSettings({ GITHUB_TOKEN_ENC_KEY: key }).github.tokenEncKey, key);
+  // 密钥不得意外出现在与 LLM/COOKIE 无关的字段里——它只落在 github.tokenEncKey 这一处。
+  const serialized = JSON.stringify(loadSettings({ GITHUB_TOKEN_ENC_KEY: key }));
+  assert.equal((serialized.match(new RegExp(key, "g")) ?? []).length, 1);
+});
+
 test("findings[#33] LLM_PROVIDER_DEFAULT is constrained to registered providers (fail-closed at parse)", () => {
   // 默认/显式 "deepseek" 通过，且确实在注册表里。
   assert.equal(loadSettings({ LLM_PROVIDER_DEFAULT: "deepseek" }).llm.defaultProvider, "deepseek");
