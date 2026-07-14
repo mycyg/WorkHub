@@ -7,7 +7,9 @@ import {
   addConversationReaction,
   advanceConversationReadCursor,
   decideActionCardItem,
+  deleteActionCardItemFeedback,
   deleteConversationMessage,
+  deleteConversationMessageFeedback,
   editConversationMessage,
   fetchConversationMessagesPage,
   fetchConversationPins,
@@ -20,6 +22,8 @@ import {
   patchMyAiMode,
   pinConversationMessage,
   pingConversationTyping,
+  putActionCardItemFeedback,
+  putConversationMessageFeedback,
   removeConversationReaction,
   requestConversationTurn,
   sendConversationFileCardMessage,
@@ -492,6 +496,54 @@ test("fetchConversationReceipts GETs the receipts list", async () => {
   const result = await fetchConversationReceipts(client, "conv-1");
   assert.equal(calls[0], "/api/conversations/conv-1/receipts");
   assert.equal(result.receipts[0]!.last_read_seq, 7);
+});
+
+test("putConversationMessageFeedback PUTs {verdict} and omits note when not given", async () => {
+  const calls: Array<{ path: string; init: RequestInit | undefined }> = [];
+  const client = fakeClient((path, init) => {
+    calls.push({ path, init });
+    return undefined;
+  });
+  await putConversationMessageFeedback(client, "conv-1", "m1", { verdict: "useful" });
+  assert.equal(calls[0]!.path, "/api/conversations/conv-1/messages/m1/feedback");
+  assert.equal(calls[0]!.init?.method, "PUT");
+  assert.deepEqual(JSON.parse(calls[0]!.init?.body as string), { verdict: "useful" });
+});
+
+test("putConversationMessageFeedback includes note only when given (and never an empty string)", async () => {
+  const calls: Array<{ init: RequestInit | undefined }> = [];
+  const client = fakeClient((_path, init) => {
+    calls.push({ init });
+    return undefined;
+  });
+  await putConversationMessageFeedback(client, "conv-1", "m1", { verdict: "not_useful", note: "答非所问" });
+  assert.deepEqual(JSON.parse(calls[0]!.init?.body as string), { verdict: "not_useful", note: "答非所问" });
+  await putConversationMessageFeedback(client, "conv-1", "m1", { verdict: "not_useful", note: "" });
+  assert.deepEqual(JSON.parse(calls[1]!.init?.body as string), { verdict: "not_useful" });
+});
+
+test("deleteConversationMessageFeedback DELETEs the message feedback path", async () => {
+  const calls: Array<{ path: string; method: string | undefined }> = [];
+  const client = fakeClient((path, init) => {
+    calls.push({ path, method: init?.method });
+    return undefined;
+  });
+  await deleteConversationMessageFeedback(client, "conv-1", "m1");
+  assert.deepEqual(calls[0], { path: "/api/conversations/conv-1/messages/m1/feedback", method: "DELETE" });
+});
+
+test("putActionCardItemFeedback / deleteActionCardItemFeedback PUT/DELETE the item feedback path, no note support", async () => {
+  const calls: Array<{ path: string; init: RequestInit | undefined }> = [];
+  const client = fakeClient((path, init) => {
+    calls.push({ path, init });
+    return undefined;
+  });
+  await putActionCardItemFeedback(client, "i1", "useful");
+  await deleteActionCardItemFeedback(client, "i1");
+  assert.equal(calls[0]!.path, "/api/action-card-items/i1/feedback");
+  assert.equal(calls[0]!.init?.method, "PUT");
+  assert.deepEqual(JSON.parse(calls[0]!.init?.body as string), { verdict: "useful" });
+  assert.deepEqual(calls[1], { path: "/api/action-card-items/i1/feedback", init: { method: "DELETE" } });
 });
 
 test("fetchPresence dedupes/caps user_ids into the query and short-circuits an empty list without a request", async () => {
