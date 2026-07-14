@@ -45,3 +45,4 @@ export * from "./repositories/budget-reservations.js";
 export * from "./repositories/pilot-metrics.js";
 export * from "./repositories/action-cards.js";
 export * from "./repositories/presence.js";
+export * from "./repositories/search.js";
