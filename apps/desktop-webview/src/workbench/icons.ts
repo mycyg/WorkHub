@@ -25,7 +25,13 @@ export const workbenchIcons = {
   // R12 批8：无权限深链空态（00 §9）——群聊气泡挂锁图标，替代不存在的 emoji。
   lock: ic('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>'),
   // R13 批 P3：rail 项目行的「项目设置」入口（AI 治理表单）——齿轮。
-  gear: ic('<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.6M12 18.6v2.6M21.2 12h-2.6M5.4 12H2.8M18.5 5.5l-1.9 1.9M7.4 16.6l-1.9 1.9M18.5 18.5l-1.9-1.9M7.4 7.4 5.5 5.5"/>')
+  gear: ic('<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.6M12 18.6v2.6M21.2 12h-2.6M5.4 12H2.8M18.5 5.5l-1.9 1.9M7.4 16.6l-1.9 1.9M18.5 18.5l-1.9-1.9M7.4 7.4 5.5 5.5"/>'),
+  // R14 批 CHAT：消息行 hover 工具条 + 置顶条的 SVG 图标（回复/编辑/删除/置顶）——反应键用 emoji 字形
+  // （render.ts 的 REACTION_EMOJI），其余动作一律 SVG，不进 emoji。
+  reply: ic('<path d="M10 8V4l-7 7 7 7v-4c4.5 0 7.5 1.5 9 5 0-7-3.5-11-9-11Z"/>'),
+  edit: ic('<path d="M4 20h4l10-10-4-4L4 16Z"/><path d="M13.5 6.5l4 4"/>'),
+  trash: ic('<path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/>'),
+  pin: ic('<path d="M9 3h6l-1 6 3 3H7l3-3-1-6Z"/><path d="M12 15v6"/>')
 } as const;
 
 export type WorkbenchIconKey = keyof typeof workbenchIcons;
