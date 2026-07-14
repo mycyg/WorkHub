@@ -1807,3 +1807,98 @@ test("renderComposerHtml renders a 'replying to' banner with a cancel control wh
   const without = renderComposerHtml({ locale: "zh-CN", draftText: "", attachments: [], sending: false });
   assert.doesNotMatch(without, /wh-wb-chat-reply-banner/u);
 });
+
+// —— R14 批 RISK：风险巡检 digest（risk_digest system_event）—— //
+
+function riskDigestMessage(overrides: Partial<Record<string, unknown>> = {}): ConversationMessageVM {
+  return baseMessage({
+    id: "m-risk-1",
+    kind: "system_event",
+    sender_type: "cuu",
+    sender_user_id: null,
+    content: {
+      event: "risk_digest",
+      project_id: "project-1",
+      summary: "今天巡检发现 3 项风险信号——2 项工单停滞、1 项临期未动工",
+      stalled_count: 2,
+      deadline_count: 1,
+      cost_spike: false,
+      target_url: "/projects/project-1",
+      ...overrides
+    }
+  });
+}
+
+test("renderMessageHtml renders a risk_digest system_event as a collapsed card with the one-line PM summary by default", () => {
+  const html = renderMessageHtml(riskDigestMessage(), ctxWith([]));
+  assert.match(html, /wh-wb-risk-digest/u);
+  assert.match(html, /今日风险巡检/u);
+  assert.match(html, /2 项工单停滞、1 项临期未动工/u);
+  assert.match(html, /data-wb-chat-expand-message="m-risk-1"/u);
+  assert.doesNotMatch(html, /data-wb-chat-collapse-message/u);
+  // 默认折叠——不铺开三节明细。
+  assert.doesNotMatch(html, /wh-wb-risk-digest-list/u);
+  assert.doesNotMatch(html, /wh-wb-chat-sysline"/u);
+});
+
+test("renderMessageHtml expands a risk_digest into per-signal sections once its id is in expandedMessageIds, with only the triggered signals shown (multi-signal case)", () => {
+  const ctx: ChatRenderContext = { ...ctxWith([]), expandedMessageIds: new Set(["m-risk-1"]) };
+  const html = renderMessageHtml(
+    riskDigestMessage({ stalled_count: 2, deadline_count: 1, cost_spike: true }),
+    ctx
+  );
+  assert.match(html, /wh-wb-risk-digest-list/u);
+  assert.match(html, /工单停滞 · 2 项/u);
+  assert.match(html, /临期未动工 · 1 项/u);
+  assert.match(html, /项目成本异常放量/u);
+  assert.match(html, /data-wb-chat-collapse-message="m-risk-1"/u);
+  assert.doesNotMatch(html, /data-wb-chat-expand-message/u);
+});
+
+test("renderMessageHtml expands a risk_digest with a single triggered signal without inventing zero-count sections for the others", () => {
+  const ctx: ChatRenderContext = { ...ctxWith([]), expandedMessageIds: new Set(["m-risk-1"]) };
+  const html = renderMessageHtml(
+    riskDigestMessage({
+      summary: "今天巡检发现 1 项风险信号——1 项工单停滞",
+      stalled_count: 1,
+      deadline_count: 0,
+      cost_spike: false
+    }),
+    ctx
+  );
+  assert.match(html, /工单停滞 · 1 项/u);
+  assert.doesNotMatch(html, /临期未动工/u);
+  assert.doesNotMatch(html, /成本异常放量/u);
+});
+
+test("renderMessageHtml falls back to the plain collapsed sysline for a risk_digest with a malformed/missing field (honest degrade, not a broken card)", () => {
+  const missingCount = renderMessageHtml(
+    riskDigestMessage({ stalled_count: "two" }),
+    ctxWith([])
+  );
+  assert.match(missingCount, /wh-wb-chat-sysline"/u);
+  assert.doesNotMatch(missingCount, /wh-wb-risk-digest/u);
+  // The plain sysline still reads the summary field honestly.
+  assert.match(missingCount, /2 项工单停滞、1 项临期未动工/u);
+
+  const missingCostSpike = renderMessageHtml(
+    riskDigestMessage({ cost_spike: undefined }),
+    ctxWith([])
+  );
+  assert.match(missingCostSpike, /wh-wb-chat-sysline"/u);
+  assert.doesNotMatch(missingCostSpike, /wh-wb-risk-digest/u);
+});
+
+test("renderMessageHtml does not mistake an unrelated system_event for a risk_digest just because it shares a field name", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "system_event",
+      sender_type: "system",
+      sender_user_id: null,
+      content: { event: "drive_version_restored", summary: "《报告.md》找回了旧版本", stalled_count: 3 }
+    }),
+    ctxWith([])
+  );
+  assert.match(html, /wh-wb-chat-sysline"/u);
+  assert.doesNotMatch(html, /wh-wb-risk-digest/u);
+});
