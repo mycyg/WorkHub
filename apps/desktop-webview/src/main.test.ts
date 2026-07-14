@@ -463,6 +463,24 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
     async search() {
       throw new Error("not needed");
     },
+    async listUserMemories() {
+      throw new Error("not needed");
+    },
+    async patchUserMemory() {
+      throw new Error("not needed");
+    },
+    async deleteUserMemory() {
+      throw new Error("not needed");
+    },
+    async listTeamSkillsManage() {
+      throw new Error("not needed");
+    },
+    async patchTeamSkillManage() {
+      throw new Error("not needed");
+    },
+    async deactivateTeamSkillManage() {
+      throw new Error("not needed");
+    },
     async useEvidenceForWorkItem() {
       throw new Error("not needed");
     },

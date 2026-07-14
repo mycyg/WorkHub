@@ -379,16 +379,15 @@ export type WorkHubApiClient = {
   listProjects: () => Promise<ProjectListVM>;
   replayAgentRun: (runId: string, options?: PageRequestOptions) => Promise<ReplayTraceVM>;
   // R14 批 MEM（记忆可见可治理）：用户记忆治理面——本人可读写，管理员也不能代读/代改他人记忆。
-  // 可选（同上面 pages.workbench? 的既有先例）：这批只有 apps/web 的 /settings/memory 消费；标成必填
-  // 会强迫 apps/desktop-webview/src/main.test.ts 里已有的完整 WorkHubApiClient 字面量 mock 也补一批
-  // 用不到的桩——那个文件不在本工包改动范围内（围栏=apps/desktop-webview/**），不能顺手改。
-  listUserMemories?: (options?: UserMemoryListRequestOptions) => Promise<UserMemoryManagementPageVM>;
-  patchUserMemory?: (id: string, payload: PatchUserMemoryRequest) => Promise<UserMemoryManagementItemVM>;
-  deleteUserMemory?: (id: string) => Promise<{ deleted: true }>;
+  // 必需字段（集成收口改定，与 search 同口径）：可选方法会诱导 ?. 调用静默吞；两个穷举 mock 的存根
+  // 由集成者补齐。
+  listUserMemories: (options?: UserMemoryListRequestOptions) => Promise<UserMemoryManagementPageVM>;
+  patchUserMemory: (id: string, payload: PatchUserMemoryRequest) => Promise<UserMemoryManagementItemVM>;
+  deleteUserMemory: (id: string) => Promise<{ deleted: true }>;
   // 团队技能治理面——列表/详情全员可读，编辑/停用仅管理员（服务端 actor.isAdmin 门，403 兜底）。
-  listTeamSkillsManage?: () => Promise<TeamSkillManagementPageVM>;
-  patchTeamSkillManage?: (id: string, payload: PatchTeamSkillRequest) => Promise<TeamSkillManagementItemVM>;
-  deactivateTeamSkillManage?: (id: string, payload?: { reason?: string }) => Promise<{ deprecated: true }>;
+  listTeamSkillsManage: () => Promise<TeamSkillManagementPageVM>;
+  patchTeamSkillManage: (id: string, payload: PatchTeamSkillRequest) => Promise<TeamSkillManagementItemVM>;
+  deactivateTeamSkillManage: (id: string, payload?: { reason?: string }) => Promise<{ deprecated: true }>;
   pages: PageClient;
   streams: PushStreamClient;
   streamUrl: (path: string) => string;
