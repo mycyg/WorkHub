@@ -639,3 +639,28 @@ test("api client exposes the team skill governance endpoints (list/patch/deactiv
     { url: "/api/team-skills/manage/skill-1/deactivate", method: "POST", body: JSON.stringify({ reason: "已过时" }) }
   ]);
 });
+
+test("R14 batch FEEDBACK: api client PUTs/DELETEs proposal feedback against the single shared endpoint", async () => {
+  const calls: Array<{ url: string; method: string; body: string | undefined }> = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET", body: typeof init?.body === "string" ? init.body : undefined });
+      // 204 No Content — 服务端不回响应体（apps/api/src/routes/proposal-feedback.ts）。
+      return new Response(null, { status: 204 });
+    }
+  });
+
+  await client.putProposalFeedback!("proposal-1", { verdict: "useful" });
+  await client.putProposalFeedback!("proposal-1", { verdict: "not_useful", note: "缺了回滚说明" });
+  await client.deleteProposalFeedback!("proposal-1");
+
+  assert.deepEqual(calls, [
+    { url: "/api/proposals/proposal-1/feedback", method: "PUT", body: JSON.stringify({ verdict: "useful" }) },
+    {
+      url: "/api/proposals/proposal-1/feedback",
+      method: "PUT",
+      body: JSON.stringify({ verdict: "not_useful", note: "缺了回滚说明" })
+    },
+    { url: "/api/proposals/proposal-1/feedback", method: "DELETE", body: undefined }
+  ]);
+});

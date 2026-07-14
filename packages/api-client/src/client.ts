@@ -509,6 +509,15 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    // R14 批 FEEDBACK（web-feedback-ui）：提议详情页「有用/没用」轻反馈——204 No Content，request()
+    // 对空响应体返回 null（见上方 readJson），void 化即可，调用方不需要回执数据。
+    putProposalFeedback: (id, payload) =>
+      request(`/api/proposals/${encodeURIComponent(id)}/feedback`, {
+        method: "PUT",
+        body: JSON.stringify(payload)
+      }),
+    deleteProposalFeedback: (id) =>
+      request(`/api/proposals/${encodeURIComponent(id)}/feedback`, { method: "DELETE" }),
     rebaseProposal: (id) =>
       request(`/api/proposals/${encodeURIComponent(id)}/rebase`, {
         method: "POST",
