@@ -400,6 +400,12 @@ export const notificationItemVmSchema = z.object({
   target_href: z.string().min(1).optional(),
   project_id: idSchema.optional(),
   work_item_id: idSchema.optional(),
+  // R14 FIX（通知深链缺 conversation_id）：additive——镜像 notification.ts 的 Notification.conversation_id。
+  // 服务端从 target_href 的 `?conversation_id=` 查询参数解出来同一份 id（见
+  // apps/api/src/services/notifications.ts 的 extractConversationIdFromTargetUrl，schedule-notify-pages.ts
+  // 的 notificationItem() 复用它），暴露成结构化字段供 web 通知列表标注"这条通知关联一段会话讨论"，
+  // 不用再让调用方自己解析 href 查询串。老通知/没有会话上下文的通知类型这个字段就不出现。
+  conversation_id: idSchema.optional(),
   dedupe_key: z.string().min(1).optional(),
   source_context: notificationSourceContextVmSchema.optional(),
   read_at: isoDateTimeSchema.optional(),
