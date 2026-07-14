@@ -66,6 +66,15 @@ function governanceVm(over: Partial<ProjectAiGovernanceVM> = {}): ProjectAiGover
     silence_window_seconds: 60,
     quiet_hours: { enabled: false },
     granular_settings: {},
+    // R14 批 RISK：ProjectAiGovernanceVM 加了必填 risk_monitor（读侧完整默认值合并输出）——
+    // 不是本文件测的功能改动，纯粹是共享契约加字段牵连的机械补齐（设置分区 UI 归 RISK-B 工包）。
+    risk_monitor: {
+      enabled: true,
+      stall_days_threshold: 5,
+      deadline_lookahead_days: 2,
+      cost_spike_ratio_pct: 300,
+      cost_spike_min_cny: 20
+    },
     updated_at: null,
     ...over
   };

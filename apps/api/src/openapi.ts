@@ -5832,6 +5832,19 @@ const aiGranularSettingsSchema = {
   },
   additionalProperties: false
 } as const;
+// R14 批 RISK：风险巡检阈值（PATCH 侧全字段可选；GET 侧读时与保守默认值合并、每个键都有值）。
+// 形状钉死 packages/contracts/src/domain/conversation.ts 的 riskMonitorSettingsSchema。
+const riskMonitorSettingsSchema = {
+  type: "object",
+  properties: {
+    enabled: { type: "boolean" },
+    stall_days_threshold: { type: "integer", minimum: 1, maximum: 90 },
+    deadline_lookahead_days: { type: "integer", minimum: 0, maximum: 30 },
+    cost_spike_ratio_pct: { type: "integer", minimum: 100, maximum: 2000 },
+    cost_spike_min_cny: { type: "number", minimum: 0 }
+  },
+  additionalProperties: false
+} as const;
 const aiQuietHoursSchema = {
   oneOf: [
     {
@@ -5996,6 +6009,7 @@ const projectAiGovernanceResponseSchema = {
     "silence_window_seconds",
     "quiet_hours",
     "granular_settings",
+    "risk_monitor",
     "updated_at"
   ],
   properties: {
@@ -6004,6 +6018,7 @@ const projectAiGovernanceResponseSchema = {
     silence_window_seconds: { type: "integer", minimum: 0, maximum: 86400 },
     quiet_hours: aiQuietHoursSchema,
     granular_settings: aiGranularSettingsSchema,
+    risk_monitor: riskMonitorSettingsSchema,
     updated_at: { anyOf: [dateTimeStringSchema, { type: "null" }] }
   },
   additionalProperties: false
@@ -6030,7 +6045,8 @@ const patchProjectAiGovernanceRequestBodySchema = {
     observer_enabled: { type: "boolean" },
     silence_window_seconds: { type: "integer", minimum: 0, maximum: 86400 },
     quiet_hours: aiQuietHoursSchema,
-    granular_settings: aiGranularSettingsSchema
+    granular_settings: aiGranularSettingsSchema,
+    risk_monitor: riskMonitorSettingsSchema
   },
   additionalProperties: false
 } as const;
