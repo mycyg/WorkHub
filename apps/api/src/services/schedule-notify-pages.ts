@@ -37,6 +37,9 @@ import {
 
 import type { AuthActor } from "../middleware/auth.js";
 import { parseOutputContract } from "../pages/output-contract.js";
+// R14 FIX（通知深链缺 conversation_id）：复用 services/notifications.ts 已有的 target_url 查询参数
+// 解析——两处都是从同一个字段解同一个参数，不重复写正则。
+import { extractConversationIdFromTargetUrl } from "./notifications.js";
 
 type MeetingInsightSourceContextVM = Extract<NotificationSourceContextVM, { source_type: "meeting_insight" }>;
 
@@ -313,6 +316,11 @@ function notificationItem(
       actions.complete = action("notification_complete", labels.complete as string, "POST", `/api/notifications/${row.id}/complete`);
     }
   }
+  // R14 FIX（通知深链缺 conversation_id）：与 apps/api/src/services/notifications.ts 的
+  // toNotificationResponse 同一条规则——conversation_id 只在 target_href 本身可见时才附带，不单独放宽
+  // （target_href 被 safeTargetHref 拒绝时，query 串里的 conversation_id 也一并不可见，避免绕过 href
+  // 的可见性判定单独泄漏出一个"这条通知关联哪个会话"的信号）。
+  const conversationId = targetHref ? extractConversationIdFromTargetUrl(row.targetUrl) : undefined;
   return {
     id: row.id,
     type: row.type,
@@ -324,6 +332,7 @@ function notificationItem(
     target_href: targetHref,
     project_id: row.projectId ?? undefined,
     work_item_id: visibleWorkItemId,
+    ...(conversationId ? { conversation_id: conversationId } : {}),
     dedupe_key: row.dedupeKey ?? undefined,
     source_context: sourceContextForNotification(row, context),
     read_at: row.readAt?.toISOString(),

@@ -116,7 +116,9 @@ function targetUrlBelongsToWorkItem(targetUrl: string | null, workItemId: string
 // 的正则本来就用 `[/?#]` 收尾，早就容许 target_url 带查询串，不是新引入的兼容性风险），这里再解出来
 // 暴露成响应体上独立的 conversation_id 字段（additive，见 packages/contracts 的 notificationSchema）。
 // 解析失败/没有这个参数/不是合法 uuid 时一律返回 undefined——不假装知道，静默退化成"没有深链目标"。
-function extractConversationIdFromTargetUrl(targetUrl: string | null | undefined): string | undefined {
+// R14 FIX（通知深链缺 conversation_id）：导出给 schedule-notify-pages.ts 的通知页 VM 复用同一份解析
+// 逻辑（DRY——两处都是从同一个 target_url 字段解同一个查询参数，没有理由各写一份正则）。
+export function extractConversationIdFromTargetUrl(targetUrl: string | null | undefined): string | undefined {
   if (!targetUrl) {
     return undefined;
   }
@@ -127,6 +129,22 @@ function extractConversationIdFromTargetUrl(targetUrl: string | null | undefined
     return undefined;
   }
   return conversationId && isUuidParam(conversationId) ? conversationId : undefined;
+}
+
+// R14 FIX（通知深链缺 conversation_id）：里程碑通知（workitem.escalated/workitem.in_review，见
+// packages/events/src/lifecycle.ts 的 createLifecycleNotificationDrafts）原本 targetUrl 只指向工作项页，
+// 没有任何会话上下文——但触发这些里程碑的 agent run 如果是从工作台会话里派发出去的
+// （agent_runs.source_conversation_id，见 apps/api/src/workers/conversation-observer.ts 的
+// dispatchExecuteItem auto 分支/agent-runner.ts 的 notifyRunMilestone），那次"升级"或"待审查"本质上
+//就是那段会话讨论的后续。和 dispatch_ask 同一套约定：把 conversation_id 追加进 targetUrl 查询串，
+// 不新增 notifications 表列、不改 packages/events 的契约类型（range fence：只碰 apps/api 侧）。
+// 没有 source_conversation_id 的 run（不是从会话派发的）targetUrl 原样不变——不硬造。
+function appendConversationIdToTargetUrl(targetUrl: string, conversationId: string | undefined): string {
+  if (!conversationId || !isUuidParam(conversationId)) {
+    return targetUrl;
+  }
+  const separator = targetUrl.includes("?") ? "&" : "?";
+  return `${targetUrl}${separator}conversation_id=${encodeURIComponent(conversationId)}`;
 }
 
 export function toNotificationResponse(row: NotificationRow, options: {
@@ -362,10 +380,16 @@ export function createNotificationService(
       return rows.map((row) => toNotificationResponse(row));
     },
 
-    async notifyMilestone(context: MilestoneNotificationContext) {
+    async notifyMilestone(context: MilestoneNotificationContext & { conversationId?: string }) {
       // R7（通知闭环）：新里程碑落地时，同一工作项上更早的 workitem.* 通知描述的状态已不成立——
       // 一并归档，不再让「已升级」「审阅中」在事项推进后仍卡在待决策桶。归档失败不翻通知创建。
-      const milestone = this.queueMilestoneNotifications(context);
+      // R14 FIX：context.conversationId 是本批新增的可选透传参数（不进 packages/events 的契约类型，
+      // 见上方 appendConversationIdToTargetUrl 注释）——有值时把它缝进每条 draft 的 targetUrl。
+      const milestone = this.queueMilestoneNotifications(context).map((draft) => (
+        context.conversationId
+          ? { ...draft, targetUrl: appendConversationIdToTargetUrl(draft.targetUrl, context.conversationId) }
+          : draft
+      ));
       const keepType = milestone[0]?.type;
       if (keepType && context.workItem.id) {
         try {

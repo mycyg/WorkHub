@@ -785,6 +785,71 @@ test("assigned private work item notifications and calendar blocks stay visible 
   assert.equal(block!.target_href, `/workitems/${workItemId}`);
 });
 
+// R14 FIX（通知深链缺 conversation_id）：apps/api/src/services/notifications.ts 的
+// notifyMilestone 会把工作台会话来源的 conversation_id 缝进 targetUrl 查询串（见
+// apps/api/src/notifications.test.ts 的对应产生点测试）。这条测试锁死消费端——通知页 VM
+// 的 notificationItem() 要把它解出来暴露成结构化的 conversation_id 字段，而不是只让调用方自己
+// 解析 href 查询串；target_href 本身要保留完整查询串（web 无聊天 UI，跳到工作项页时带上这个参数）。
+test("notifications page exposes conversation_id parsed from the target_href query string", async () => {
+  const conversationId = "82000000-0000-4000-8000-00000000c001";
+  const notifications = new MemoryNotifications();
+  notifications.rows = [
+    notification({
+      id: "82000000-0000-4000-8000-000000000017",
+      type: "workitem.escalated",
+      severity: "high",
+      title: "需要你来定一下",
+      body: "这个活我先卡住了。",
+      targetUrl: `/workitems/${workItemId}?conversation_id=${conversationId}`,
+      workItemId,
+      dedupeKey: "escalated-with-conversation"
+    })
+  ];
+  const service = createScheduleNotifyPageService({
+    notifications,
+    scheduleNotify: new AssignedPrivateWorkItemScheduleNotify(),
+    audit: new MemoryAudit(),
+    now: () => now
+  });
+
+  const inbox = await service.notificationsPage({ actor: actor(), locale: "zh-CN" });
+  const item = inbox.items.find((candidate) => candidate.id === "82000000-0000-4000-8000-000000000017");
+  assert.ok(item, "escalated notification with a conversation source should stay in the inbox");
+  assert.equal(item!.conversation_id, conversationId);
+  // target_href 保留完整查询串——web 没有聊天 UI，跳转仍是工作项页，只是带上会话标注。
+  assert.equal(item!.actions.open?.href, `/workitems/${workItemId}?conversation_id=${conversationId}`);
+});
+
+// 没有会话上下文的通知（target_url 没有 ?conversation_id= 查询参数）不该出现这个字段——不硬造，
+// 且不能因为解析失败/字段缺席就让整页通知崩掉。
+test("notifications page omits conversation_id when the notification has no conversation source", async () => {
+  const notifications = new MemoryNotifications();
+  notifications.rows = [
+    notification({
+      id: "82000000-0000-4000-8000-000000000018",
+      type: "workitem.due",
+      severity: "normal",
+      title: "普通到期提醒",
+      body: null,
+      targetUrl: `/workitems/${workItemId}`,
+      workItemId,
+      dedupeKey: "due-without-conversation"
+    })
+  ];
+  const service = createScheduleNotifyPageService({
+    notifications,
+    scheduleNotify: new AssignedPrivateWorkItemScheduleNotify(),
+    audit: new MemoryAudit(),
+    now: () => now
+  });
+
+  const inbox = await service.notificationsPage({ actor: actor(), locale: "zh-CN" });
+  const item = inbox.items.find((candidate) => candidate.id === "82000000-0000-4000-8000-000000000018");
+  assert.ok(item);
+  assert.equal(item!.conversation_id, undefined);
+  assert.equal(item!.actions.open?.href, `/workitems/${workItemId}`);
+});
+
 test("calendar schedule events do not expose dead work-item links for unreadable private work", async () => {
   const service = createScheduleNotifyPageService({
     notifications: new MemoryNotifications(),
