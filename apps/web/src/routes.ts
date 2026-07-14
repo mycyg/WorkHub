@@ -99,6 +99,9 @@ export type WebRouteSurface =
   | { key: "cost"; cost: CostDashboardVM }
   | { key: "agents"; agents: AgentArmyDashboardVM }
   | { key: "knowledge"; evidence: EvidenceBubble; source_ref?: string | undefined; scope_landing?: boolean | undefined; projects?: ProjectListVM | undefined }
+  // R14 批 SEARCH（web-search-page）：搜索页服务端只透传 URL 里的 ?q=，不在服务端拉结果——结果由
+  // 客户端 route-component fetch GET /api/search 后注入（见 02-search-design.md §7 拍板）。
+  | { key: "search"; q?: string | undefined }
   | { key: "skills"; skills: TeamSkillsPageVM }
   | { key: "settings"; settings: SettingsPageVM };
 
@@ -216,6 +219,13 @@ const routeMatchers = [
     paramNames: []
   },
   {
+    key: "search",
+    pattern: "/dashboard/search",
+    apiBaseLabel: "/api/search",
+    regex: /^\/dashboard\/search$/u,
+    paramNames: []
+  },
+  {
     key: "skills",
     pattern: "/dashboard/skills",
     apiBaseLabel: "/api/pages/skills",
@@ -254,6 +264,7 @@ type WebRouteTreePageVm =
   | "cost"
   | "agents"
   | "evidence"
+  | "search"
   | "skills"
   | "settings";
 
@@ -302,6 +313,7 @@ const routeTreePageVmByKey = {
   cost: "cost",
   agents: "agents",
   knowledge: "evidence",
+  search: "search",
   skills: "skills",
   settings: "settings"
 } satisfies Record<R4WebRouteKey, WebRouteTreePageVm>;
@@ -503,6 +515,7 @@ const shellPageOrder = [
   "cost",
   "agents",
   "knowledge",
+  "search",
   "skills",
   "settings"
 ] as const satisfies readonly GoldPathRenderedPage["key"][];
@@ -532,6 +545,7 @@ const shellDefaultRoutes = {
   cost: "/dashboard/cost",
   agents: "/dashboard/agents",
   knowledge: "/knowledge/search",
+  search: "/dashboard/search",
   skills: "/dashboard/skills",
   settings: "/settings"
 } satisfies Record<GoldPathRenderedPage["key"], string>;
@@ -555,6 +569,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     cost: "成本",
     agents: "军团",
     knowledge: "知识证据",
+    search: "搜索",
     skills: "团队技能",
     settings: "设置"
   },
@@ -575,6 +590,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     cost: "Cost",
     agents: "Agent teams",
     knowledge: "Knowledge evidence",
+    search: "Search",
     skills: "Team skills",
     settings: "Settings"
   }
@@ -626,7 +642,8 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     skillsRefined: "已精修",
     skillsAiAuthored: "AI 撰写",
     acceptedDeliverables: "已采纳",
-    activeProjects: "有进展"
+    activeProjects: "有进展",
+    query: "搜索词"
   },
   "en-US": {
     primary: "Focus",
@@ -673,7 +690,8 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     skillsRefined: "Refined",
     skillsAiAuthored: "AI-authored",
     acceptedDeliverables: "Accepted",
-    activeProjects: "Active"
+    activeProjects: "Active",
+    query: "Query"
   }
 };
 
@@ -867,6 +885,14 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
       metric(locale, "runtime", locale === "zh-CN" ? "实时数据" : "Live data")
     ];
   }
+  if (surface.key === "search") {
+    // 服务端只知道 URL 里的 q（结果由客户端拉取），masthead 如实只报「当前搜索词」+「实时数据」，
+    // 不编造结果计数（那要等客户端 fetch 完才知道）。
+    return [
+      metric(locale, "query", surface.q && surface.q.length > 0 ? surface.q : (locale === "zh-CN" ? "未输入" : "Not set")),
+      metric(locale, "runtime", locale === "zh-CN" ? "实时数据" : "Live data")
+    ];
+  }
   if (surface.key === "skills") {
     // 旧代码复用了首页的 primary/queue/running 标签(焦点/队列/后台)，在技能页是彻底错的标签。
     return [
@@ -947,6 +973,9 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
   }
   if (surface.key === "knowledge") {
     return renderWebRouteComponent({ key: "knowledge", evidence: surface.evidence, sourceRef: surface.source_ref, scopeLanding: surface.scope_landing, projects: surface.projects }, { locale });
+  }
+  if (surface.key === "search") {
+    return renderWebRouteComponent({ key: "search", q: surface.q }, { locale });
   }
   if (surface.key === "skills") {
     return renderWebRouteComponent({ key: "skills", skills: surface.skills }, { locale });
@@ -1263,6 +1292,14 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
       } satisfies TailoredEmptyRouteState;
     }
     return { key: "replay", replay } satisfies WebRouteSurface;
+  }
+  if (match.key === "search") {
+    // R14 批 SEARCH（web-search-page）：服务端只透传 ?q=，不预取结果——SSR 渲搜索框外壳 + 诚实的
+    // 空/短词提示；结果由客户端 route-component fetch GET /api/search 后注入（见 02-search-design.md
+    // §7）。这条永不抛错/永不 empty——搜索页本身就是"输入框 + 结果"，不存在"无内容"的空态框架。
+    const params = new URLSearchParams(match.search);
+    const q = params.get("q")?.trim() || undefined;
+    return { key: "search", q } satisfies WebRouteSurface;
   }
   if (match.key === "skills") {
     const skills = await client.pages.skills(withLocale(locale));

@@ -901,6 +901,7 @@ test("R4 web route registry resolves product URL routes", () => {
     "cost",
     "agents",
     "knowledge",
+    "search",
     "skills",
     "settings"
   ]);
@@ -919,6 +920,8 @@ test("R4 web route registry resolves product URL routes", () => {
   assert.equal(resolveWebRoute("/calendar?date=2026-06-11&view=week")?.search, "?date=2026-06-11&view=week");
   assert.equal(resolveWebRoute("/knowledge/search?q=weekly")?.key, "knowledge");
   assert.equal(resolveWebRoute("/knowledge/search?q=weekly")?.search, "?q=weekly");
+  assert.equal(resolveWebRoute("/dashboard/search?q=budget")?.key, "search");
+  assert.equal(resolveWebRoute("/dashboard/search?q=budget")?.search, "?q=budget");
   assert.equal(resolveWebRoute("/dashboard/skills")?.key, "skills");
   assert.equal(resolveWebRoute("/workitems/WH-001")?.params["id"], "WH-001");
   assert.equal(resolveWebRoute("/agent-runs/run-1/replay")?.params["id"], "run-1");
@@ -1045,6 +1048,7 @@ test("R4.16 web route tree declares hydration fallback boundaries for every prod
       // R9.6 adds the live-only Agent Army dashboard; the old route tree inventory was pre-dashboard.
       ["agents", "agents"],
       ["knowledge", "evidence"],
+      ["search", "search"],
       ["skills", "skills"],
       ["settings", "settings"]
     ]
@@ -1235,6 +1239,71 @@ test("M19 knowledge route: a source_ref-only 403 (notification evidence link) la
   assert.equal(result.html.includes('data-r4-route-component="knowledge"'), true);
   assert.equal(result.html.includes('data-r4-web-route-status="forbidden"'), false);
   assert.equal(result.html.includes("锚定具体项目或工作项"), true);
+});
+
+test("R14 batch SEARCH: search route resolves /dashboard/search with zero server calls (client-fetch page)", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client, calls } = fakeRouteClient(surface);
+  const match = resolveWebRoute("/dashboard/search?q=%E9%A2%84%E7%AE%97");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "zh-CN");
+
+  assert.equal(result.status, "ready");
+  // 服务端只透传 ?q=，结果由客户端 fetch GET /api/search 注入——不该在 loadWebRoute 里打任何 API。
+  assert.deepEqual(calls, []);
+  assert.equal(result.html.includes('data-r4-route-component="search"'), true);
+  assert.equal(result.html.includes('data-r14-search-route="true"'), true);
+  assert.equal(result.html.includes('data-r14-search-query="预算"'), true);
+  assert.equal(result.html.includes('data-r14-search-status="loading"'), true);
+  assert.equal(result.html.includes('data-r14-search-results="true"'), true);
+  assert.equal(result.html.includes('data-r14-search-group="conversations"'), true);
+  assert.equal(result.html.includes('data-r14-search-group="drive"'), true);
+  assert.equal(result.html.includes('data-r14-search-group="work_items"'), true);
+  assert.equal(result.html.includes('data-r14-search-group="meetings"'), true);
+  assert.equal(result.html.includes("会话"), true);
+  assert.equal(result.html.includes("网盘"), true);
+  assert.equal(result.html.includes("会议"), true);
+  // 文案永不出现「Cuu」字样——组标题用「会话」不是「Cuu 会话」。
+  assert.equal(/\bCuu\b/u.test(result.html), false);
+  assert.equal(result.html.toLowerCase().includes("kanban"), false);
+});
+
+test("R14 batch SEARCH: search route gives an honest short-query prompt instead of guessing at results", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client: emptyClient, calls: emptyCalls } = fakeRouteClient(surface);
+  const emptyMatch = resolveWebRoute("/dashboard/search");
+  assert.ok(emptyMatch);
+  const emptyResult = await loadWebRoute(emptyClient, emptyMatch, "en-US");
+  assert.equal(emptyResult.status, "ready");
+  assert.deepEqual(emptyCalls, []);
+  assert.equal(emptyResult.html.includes('data-r14-search-status="prompt"'), true);
+  assert.equal(emptyResult.html.includes("Type at least 2 characters"), true);
+  assert.equal(emptyResult.html.includes('data-r14-search-results="true" hidden'), true);
+
+  const { client: shortClient, calls: shortCalls } = fakeRouteClient(surface);
+  const shortMatch = resolveWebRoute("/dashboard/search?q=a");
+  assert.ok(shortMatch);
+  const shortResult = await loadWebRoute(shortClient, shortMatch, "en-US");
+  assert.equal(shortResult.status, "ready");
+  assert.deepEqual(shortCalls, []);
+  assert.equal(shortResult.html.includes('data-r14-search-status="prompt"'), true);
+  assert.equal(shortResult.html.includes("at least 2 characters"), true);
+  assert.equal(shortResult.html.includes('data-r14-search-results="true" hidden'), true);
+});
+
+test("R14 batch SEARCH: search route surfaces the current query as a masthead metric, not a fake result count", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client } = fakeRouteClient(surface);
+  const match = resolveWebRoute("/dashboard/search?q=budget");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "en-US");
+
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.includes('data-r4-product-metric="query"'), true);
+  assert.equal(result.html.includes(">budget<"), true);
+  assert.equal(result.html.includes('data-r4-product-metric="runtime"'), true);
 });
 
 test("R4.13 proposal route loader carries conflict API data into advanced route UX", async () => {
