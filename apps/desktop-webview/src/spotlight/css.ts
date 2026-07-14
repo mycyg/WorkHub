@@ -193,6 +193,11 @@ export const spotlightCss = [
   ".wh-spot-know-bar .wh-spot-freetext{flex:1 1 auto}",
   ".wh-spot-know-projects{display:flex;flex-wrap:wrap;gap:7px}",
   ".wh-spot-know-projects .wh-spot-reason[data-sel=\"true\"]{border-color:var(--ds-accent);color:var(--ds-accent);background:transparent;box-shadow:inset 0 0 0 1px rgba(10,132,255,.18)}",
+  // R14 批 SEARCH：全局搜索——按 scope 分组的结果区 + 键盘上下移动的高亮行（与 drive 已选中项同一套
+  // accent 描边语言）+ snippet 里的命中词高亮（<mark>，用 accent-soft 底色而非刺眼黄，贴合玻璃配色）。
+  ".wh-spot-search-groups{display:flex;flex-direction:column;gap:14px}",
+  ".wh-spot-row[data-search-active=\"true\"]{border-color:rgba(10,132,255,.42);background:transparent;box-shadow:inset 3px 0 0 var(--ds-accent),0 14px 30px rgba(10,132,255,.12)}",
+  ".wh-spot-row-sub mark{background:var(--ds-accent-soft);color:inherit;border-radius:3px;padding:0 1px}",
   // 网盘 / 回放。
   ".wh-spot-file-icon{display:inline-flex;width:22px;height:22px;flex:0 0 auto;color:var(--ds-accent)}.wh-spot-file-icon svg{width:22px;height:22px}",
   ".wh-spot-drive-section{margin-top:6px}",

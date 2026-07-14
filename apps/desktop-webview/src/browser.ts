@@ -246,6 +246,7 @@ const desktopBoxHomeCss = [
 // （没有任何地方调用 boot()），但它仍然编译进 bundle，Record<CommandId,string> 仍要求穷举全部键。
 // R12 批 1 新增的 workbench/new_project 两条不走盒子内联路由（它们 invoke Tauri open_workbench 开
 // 独立窗口，见 spotlight/views/workbench-open.ts），这里只给个占位路由让 tsc 通过。
+// R14 批 SEARCH 新增的 search 同理只给占位路由——真实入口是 spotlight/views/search.ts 的内联视图。
 const COMMAND_ROUTE: Record<CommandId, string> = {
   intake: "/intake",
   approvals: "/approvals",
@@ -255,6 +256,7 @@ const COMMAND_ROUTE: Record<CommandId, string> = {
   projects: "/projects",
   replay: "/agent-runs",
   knowledge: "/knowledge",
+  search: "/dashboard/search",
   cost: "/dashboard/cost",
   agents: "/dashboard/agents",
   team: "/team",

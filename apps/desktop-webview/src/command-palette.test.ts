@@ -29,6 +29,8 @@ test("registry covers every backend capability surface", () => {
       "projects",
       "proposals",
       "replay",
+      // R14 批 SEARCH：跨会话·网盘·工单·会议的全局搜索入口。
+      "search",
       "settings",
       "team",
       "workbench",
@@ -68,6 +70,19 @@ test("fuzzy router: one phrase reaches the right capability (zh + en + alias)", 
   assert.equal(matchCommands("新建项目", "zh-CN")[0]?.command.id, "new_project");
   assert.equal(matchCommands("workbench", "en")[0]?.command.id, "workbench");
   assert.equal(matchCommands("new project", "en")[0]?.command.id, "new_project");
+  // R14 批 SEARCH：全局搜索。「查找/全局/find/global」是它独有的关键词，无歧义。
+  assert.equal(matchCommands("查找", "zh-CN")[0]?.command.id, "search");
+  assert.equal(matchCommands("全局", "zh-CN")[0]?.command.id, "search");
+  assert.equal(matchCommands("find", "en")[0]?.command.id, "search");
+  assert.equal(matchCommands("global", "en")[0]?.command.id, "search");
+});
+
+test("R14: 'search'/'搜索' is shared between the new global-search command and the older project-scoped knowledge command — registry order (search registered first) breaks the tie in favor of the newer, broader capability", () => {
+  assert.equal(matchCommands("搜索", "zh-CN")[0]?.command.id, "search");
+  assert.equal(matchCommands("search", "en")[0]?.command.id, "search");
+  // knowledge keeps winning on its own unambiguous keywords.
+  assert.equal(matchCommands("知识检索", "zh-CN")[0]?.command.id, "knowledge");
+  assert.equal(matchCommands("wiki", "en")[0]?.command.id, "knowledge");
 });
 
 test("ranking: exact/prefix beats substring beats subsequence", () => {
