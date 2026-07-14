@@ -4486,7 +4486,8 @@ const conversationTextContentResponseSchema = {
   type: "object",
   required: ["text"],
   properties: {
-    text: { type: "string", minLength: 1, maxLength: 20_000 },
+    // R14 批 CHAT：墓碑消息归一为 {text:""}，响应侧允许空串（创建请求侧仍 min 1）。
+    text: { type: "string", minLength: 0, maxLength: 20_000 },
     memory_citations: {
       type: "array",
       maxItems: 20,
@@ -4550,7 +4551,44 @@ function conversationMessageResponseVariant(
       kind: { type: "string", const: kind },
       content,
       thread_root_id: conversationNullableUuidSchema,
-      created_at: dateTimeStringSchema
+      created_at: dateTimeStringSchema,
+      // R14 批 CHAT：五个 additive optional 字段（只进 properties 不进 required，旧客户端不受影响）。
+      edited_at: dateTimeStringSchema,
+      deleted_at: dateTimeStringSchema,
+      pinned: {
+        type: "object",
+        required: ["at", "by_user_id"],
+        properties: {
+          at: dateTimeStringSchema,
+          by_user_id: conversationNullableUuidSchema
+        },
+        additionalProperties: false
+      },
+      reply_to: {
+        type: "object",
+        required: ["message_id", "sender_type", "sender_user_id", "preview_text", "deleted"],
+        properties: {
+          message_id: uuidStringSchema,
+          sender_type: { type: "string", enum: ["user", "cuu", "system"] },
+          sender_user_id: conversationNullableUuidSchema,
+          preview_text: { type: "string", maxLength: 80 },
+          deleted: { type: "boolean" }
+        },
+        additionalProperties: false
+      },
+      reactions: {
+        type: "array",
+        maxItems: 5,
+        items: {
+          type: "object",
+          required: ["key", "user_ids"],
+          properties: {
+            key: { type: "string", enum: ["approve", "disagree", "done", "question", "watch"] },
+            user_ids: { type: "array", items: uuidStringSchema }
+          },
+          additionalProperties: false
+        }
+      }
     },
     additionalProperties: false
   };
@@ -4764,6 +4802,14 @@ const createConversationRequestBodySchema = {
   },
   additionalProperties: false
 } as const;
+// R14 批 CHAT：请求侧 text content 保持 min 1（空串只属于响应侧墓碑归一，不允许发空消息）。
+const conversationTextContentRequestSchema = {
+  ...conversationTextContentResponseSchema,
+  properties: {
+    ...conversationTextContentResponseSchema.properties,
+    text: { type: "string", minLength: 1, maxLength: 20_000 }
+  }
+} as const;
 const createConversationMessageRequestBodySchema = {
   oneOf: [
     {
@@ -4771,8 +4817,10 @@ const createConversationMessageRequestBodySchema = {
       required: ["kind", "content"],
       properties: {
         kind: { type: "string", const: "text" },
-        content: conversationTextContentResponseSchema,
-        thread_root_id: uuidStringSchema
+        content: conversationTextContentRequestSchema,
+        thread_root_id: uuidStringSchema,
+        // R14 批 CHAT：引用回复（additive，仅 text 变体）。
+        reply_to_message_id: uuidStringSchema
       },
       additionalProperties: false
     },
@@ -4918,7 +4966,8 @@ const conversationMessageCreateResponses = {
       "malformed_json",
       "json_object_required",
       "conversation_invalid_input",
-      "conversation_thread_invalid"
+      "conversation_thread_invalid",
+      "conversation_reply_target_invalid"
     ]).responses["400"],
     "401": conversationAuthRequiredResponse,
     "403": conversationForbiddenResponse,
@@ -4931,6 +4980,243 @@ const conversationMessageCreateResponses = {
     ]).responses["409"],
     "413": conversationPayloadTooLargeResponse,
     "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+
+// R14 批 CHAT：消息动作（编辑/删除/reaction/置顶）、已读游标与 presence 的手写 schema——
+// 与 routes/conversation-message-actions.ts / conversation-read.ts / presence.ts 的真实状态码逐条对齐。
+const conversationReactionKeyPathParameter = {
+  name: "key",
+  in: "path",
+  required: true,
+  schema: { type: "string", enum: ["approve", "disagree", "done", "question", "watch"] }
+} as const;
+const editConversationMessageRequestBodySchema = {
+  type: "object",
+  required: ["text"],
+  properties: { text: { type: "string", minLength: 1, maxLength: 20_000 } },
+  additionalProperties: false
+} as const;
+const advanceReadCursorRequestBodySchema = {
+  type: "object",
+  required: ["last_read_seq"],
+  properties: { last_read_seq: conversationSafeSequenceSchema },
+  additionalProperties: false
+} as const;
+const conversationMessageLookupNotFoundResponse = jsonErrorStatusResponse(
+  "404",
+  "Conversation or message was not found",
+  ["conversation_not_found", "conversation_message_not_found"]
+).responses["404"];
+const conversationMessageOwnershipForbiddenResponse = jsonErrorStatusResponse(
+  "403",
+  "Conversation guard failed, or the message belongs to someone else",
+  ["invalid_client_token", "forbidden", "human_required", "conversation_message_forbidden"]
+).responses["403"];
+const conversationNoContentResponse = { description: "Acknowledged with no body" } as const;
+const conversationMessageEditResponses = {
+  responses: {
+    "200": jsonDataResponse(conversationMessageResponseSchema, "Edited message VM").responses["200"],
+    "400": jsonErrorStatusResponse("400", "Edit payload is malformed", [
+      "malformed_json",
+      "json_object_required"
+    ]).responses["400"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationMessageOwnershipForbiddenResponse,
+    "404": conversationMessageLookupNotFoundResponse,
+    "409": jsonErrorStatusResponse("409", "Message cannot be edited", [
+      "conversation_message_not_editable",
+      "conversation_message_edit_window_closed",
+      "conversation_message_deleted"
+    ]).responses["409"],
+    "413": conversationPayloadTooLargeResponse,
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+const conversationMessageDeleteResponses = {
+  responses: {
+    "200": jsonDataResponse(conversationMessageResponseSchema, "Tombstoned message VM (idempotent)").responses[
+      "200"
+    ],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationMessageOwnershipForbiddenResponse,
+    "404": conversationMessageLookupNotFoundResponse,
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+const conversationReactionInvalidKeyResponse = jsonErrorStatusResponse("400", "Unknown reaction key", [
+  "conversation_reaction_invalid_key"
+]).responses["400"];
+const conversationReactionAddResponses = {
+  responses: {
+    "204": conversationNoContentResponse,
+    "400": conversationReactionInvalidKeyResponse,
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": conversationMessageLookupNotFoundResponse,
+    "409": jsonErrorStatusResponse("409", "Message was deleted", ["conversation_message_deleted"]).responses[
+      "409"
+    ],
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+const conversationReactionRemoveResponses = {
+  responses: {
+    "204": conversationNoContentResponse,
+    "400": conversationReactionInvalidKeyResponse,
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": conversationMessageLookupNotFoundResponse,
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+const conversationPinAddResponses = {
+  responses: {
+    "204": conversationNoContentResponse,
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": conversationMessageLookupNotFoundResponse,
+    "409": jsonErrorStatusResponse("409", "Message was deleted", ["conversation_message_deleted"]).responses[
+      "409"
+    ],
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+const conversationPinRemoveResponses = {
+  responses: {
+    "204": conversationNoContentResponse,
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": conversationMessageLookupNotFoundResponse,
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+const conversationPinListResponses = {
+  responses: {
+    "200": jsonDataResponse(
+      {
+        type: "object",
+        required: ["messages"],
+        properties: {
+          messages: { type: "array", maxItems: 50, items: conversationMessageResponseSchema }
+        },
+        additionalProperties: false
+      },
+      "Pinned messages, newest sequence first"
+    ).responses["200"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Conversation was not found", ["conversation_not_found"]).responses[
+      "404"
+    ],
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+const conversationReadAdvanceResponses = {
+  responses: {
+    "200": jsonDataResponse(
+      {
+        type: "object",
+        required: ["last_read_seq"],
+        properties: { last_read_seq: conversationSafeSequenceSchema },
+        additionalProperties: false
+      },
+      "Read cursor after the monotonic clamp"
+    ).responses["200"],
+    "400": jsonErrorStatusResponse("400", "Read cursor payload is malformed", [
+      "malformed_json",
+      "json_object_required"
+    ]).responses["400"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Conversation was not found", ["conversation_not_found"]).responses[
+      "404"
+    ],
+    "413": conversationPayloadTooLargeResponse,
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+const conversationReceiptsResponses = {
+  responses: {
+    "200": jsonDataResponse(
+      {
+        type: "object",
+        required: ["receipts"],
+        properties: {
+          receipts: {
+            type: "array",
+            maxItems: 500,
+            items: {
+              type: "object",
+              required: ["user_id", "last_read_seq"],
+              properties: {
+                user_id: uuidStringSchema,
+                last_read_seq: conversationSafeSequenceSchema
+              },
+              additionalProperties: false
+            }
+          }
+        },
+        additionalProperties: false
+      },
+      "All read cursors for the conversation"
+    ).responses["200"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Conversation was not found", ["conversation_not_found"]).responses[
+      "404"
+    ],
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+const presenceUserIdsQueryParameter = {
+  name: "user_ids",
+  in: "query",
+  required: true,
+  description: "Comma-separated user uuids, at most 50; response keeps the request order",
+  schema: { type: "string", minLength: 1 }
+} as const;
+const presenceListResponses = {
+  responses: {
+    "200": jsonDataResponse(
+      {
+        type: "object",
+        required: ["presence"],
+        properties: {
+          presence: {
+            type: "array",
+            maxItems: 50,
+            items: {
+              type: "object",
+              required: ["user_id", "is_online", "last_seen_at"],
+              properties: {
+                user_id: uuidStringSchema,
+                is_online: { type: "boolean" },
+                last_seen_at: { anyOf: [{ type: "string", format: "date-time" }, { type: "null" }] }
+              },
+              additionalProperties: false
+            }
+          }
+        },
+        additionalProperties: false
+      },
+      "Presence for the visible same-workspace members, request order preserved"
+    ).responses["200"],
+    "400": jsonErrorStatusResponse("400", "user_ids is missing, too long, or contains an invalid id", [
+      "bad_request"
+    ]).responses["400"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
     "500": conversationInternalResponse
   }
 } as const;
@@ -6634,6 +6920,82 @@ export function getOpenApiDocument() {
           parameters: [pathUuidParameter("id")],
           ...jsonRequestBody(createConversationMessageRequestBodySchema),
           ...conversationMessageCreateResponses
+        }
+      },
+      "/api/conversations/{id}/messages/{messageId}": {
+        patch: {
+          tags: ["conversations"],
+          summary: "Edit your own text message within the 15-minute window",
+          parameters: [pathUuidParameter("id"), pathUuidParameter("messageId")],
+          ...jsonRequestBody(editConversationMessageRequestBodySchema),
+          ...conversationMessageEditResponses
+        },
+        delete: {
+          tags: ["conversations"],
+          summary: "Tombstone your own message (idempotent, content cleared, seq kept)",
+          parameters: [pathUuidParameter("id"), pathUuidParameter("messageId")],
+          ...conversationMessageDeleteResponses
+        }
+      },
+      "/api/conversations/{id}/messages/{messageId}/reactions/{key}": {
+        put: {
+          tags: ["conversations"],
+          summary: "Add a curated reaction to a message (idempotent)",
+          parameters: [pathUuidParameter("id"), pathUuidParameter("messageId"), conversationReactionKeyPathParameter],
+          ...conversationReactionAddResponses
+        },
+        delete: {
+          tags: ["conversations"],
+          summary: "Remove your reaction from a message (idempotent)",
+          parameters: [pathUuidParameter("id"), pathUuidParameter("messageId"), conversationReactionKeyPathParameter],
+          ...conversationReactionRemoveResponses
+        }
+      },
+      "/api/conversations/{id}/messages/{messageId}/pin": {
+        put: {
+          tags: ["conversations"],
+          summary: "Pin a message for every conversation viewer",
+          parameters: [pathUuidParameter("id"), pathUuidParameter("messageId")],
+          ...conversationPinAddResponses
+        },
+        delete: {
+          tags: ["conversations"],
+          summary: "Unpin a message (idempotent)",
+          parameters: [pathUuidParameter("id"), pathUuidParameter("messageId")],
+          ...conversationPinRemoveResponses
+        }
+      },
+      "/api/conversations/{id}/pins": {
+        get: {
+          tags: ["conversations"],
+          summary: "List pinned messages, newest sequence first (cap 50)",
+          parameters: [pathUuidParameter("id")],
+          ...conversationPinListResponses
+        }
+      },
+      "/api/conversations/{id}/read": {
+        put: {
+          tags: ["conversations"],
+          summary: "Advance your read cursor (monotonic, clamped to the max sequence)",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(advanceReadCursorRequestBodySchema),
+          ...conversationReadAdvanceResponses
+        }
+      },
+      "/api/conversations/{id}/receipts": {
+        get: {
+          tags: ["conversations"],
+          summary: "List every read cursor for the aggregate read indicator",
+          parameters: [pathUuidParameter("id")],
+          ...conversationReceiptsResponses
+        }
+      },
+      "/api/presence": {
+        get: {
+          tags: ["conversations"],
+          summary: "Presence for up to 50 same-workspace members, driven by SSE heartbeats",
+          parameters: [presenceUserIdsQueryParameter],
+          ...presenceListResponses
         }
       },
       "/api/conversations/{id}/army": {
