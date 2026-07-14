@@ -52,6 +52,8 @@ function user(): UserAuthRow {
     availabilityText: null,
     availabilityUpdatedAt: null,
     mutedNotificationTypes: [],
+    avatarWebp: null,
+    avatarUpdatedAt: null,
     isAdmin: userIsAdmin,
     deletedAt: null,
     deletedByUserId: null,

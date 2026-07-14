@@ -42,6 +42,8 @@ export const cuuR3SmokeOwner: UserAuthRow = {
   availabilityText: null,
   availabilityUpdatedAt: null,
   mutedNotificationTypes: [],
+  avatarWebp: null,
+  avatarUpdatedAt: null,
   isAdmin: true,
   deletedAt: null,
   deletedByUserId: null,

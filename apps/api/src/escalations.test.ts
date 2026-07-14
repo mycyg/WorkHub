@@ -45,6 +45,8 @@ function user(partial: Partial<UserAuthRow> = {}): UserAuthRow {
     availabilityText: null,
     availabilityUpdatedAt: null,
     mutedNotificationTypes: [],
+    avatarWebp: null,
+    avatarUpdatedAt: null,
     isAdmin: false,
     deletedAt: null,
     deletedByUserId: null,

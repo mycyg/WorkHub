@@ -69,6 +69,8 @@ function user(): DbUserAuthRow {
     availabilityText: null,
     availabilityUpdatedAt: null,
     mutedNotificationTypes: [],
+    avatarWebp: null,
+    avatarUpdatedAt: null,
     isAdmin: false,
     deletedAt: null,
     deletedByUserId: null,
