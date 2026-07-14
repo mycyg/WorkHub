@@ -7,7 +7,8 @@ import {
   hhmmToMinute,
   minuteToHhmm,
   renderProjectSettingsHtml,
-  renderProjectSettingsOwnerOnlyHtml
+  renderProjectSettingsOwnerOnlyHtml,
+  resolveRiskMonitorForDisplay
 } from "./render.js";
 
 function governanceVm(over: Partial<ProjectAiGovernanceVM> = {}): ProjectAiGovernanceVM {
@@ -136,4 +137,66 @@ test("an inline error row renders when errorText is set", () => {
     errorText: "没保存成功，再试一次。"
   });
   assert.match(html, /data-wb-pset-error="true">没保存成功，再试一次。/u);
+});
+
+// —— R14 批 RISK：风险巡检阈值分区 —— //
+
+test("the editable risk monitor section wires the enable switch and all four threshold inputs to real data hooks", () => {
+  const html = renderProjectSettingsHtml({
+    locale: "zh-CN",
+    projectName: "星尘短剧",
+    governance: governanceVm({
+      risk_monitor: {
+        enabled: true,
+        stall_days_threshold: 7,
+        deadline_lookahead_days: 3,
+        cost_spike_ratio_pct: 400,
+        cost_spike_min_cny: 30
+      }
+    }),
+    editable: true
+  });
+  assert.match(html, /风险巡检/u);
+  assert.match(html, /data-on="true"[^>]*data-wb-risk-enabled/u);
+  assert.match(html, /value="7" data-wb-risk-stall-input/u);
+  assert.match(html, /value="3" data-wb-risk-deadline-input/u);
+  assert.match(html, /value="400" data-wb-risk-cost-ratio-input/u);
+  assert.match(html, /value="30" data-wb-risk-cost-min-input/u);
+  assert.match(html, /data-wb-risk-save\b/u);
+  assert.match(html, /保存阈值/u);
+});
+
+test("the read-only risk monitor section shows the current thresholds but no write hooks", () => {
+  const html = renderProjectSettingsHtml({
+    locale: "zh-CN",
+    projectName: "星尘短剧",
+    governance: governanceVm(),
+    editable: false
+  });
+  assert.match(html, /value="5" data-wb-risk-stall-input disabled/u);
+  assert.doesNotMatch(html, /data-wb-risk-enabled/u);
+  assert.doesNotMatch(html, /data-wb-risk-save\b/u);
+});
+
+test("a saving-in-progress risk threshold save button reads 'Saving…' and is disabled", () => {
+  const html = renderProjectSettingsHtml({
+    locale: "zh-CN",
+    projectName: "星尘短剧",
+    governance: governanceVm(),
+    editable: true,
+    savingRiskThresholds: true
+  });
+  assert.match(html, /data-wb-risk-save disabled/u);
+  assert.match(html, /保存中…/u);
+});
+
+test("resolveRiskMonitorForDisplay fills in every field from DEFAULT_RISK_MONITOR_SETTINGS when the VM sends a sparse object", () => {
+  const resolved = resolveRiskMonitorForDisplay({ stall_days_threshold: 10 });
+  assert.deepEqual(resolved, {
+    enabled: true,
+    stall_days_threshold: 10,
+    deadline_lookahead_days: 2,
+    cost_spike_ratio_pct: 300,
+    cost_spike_min_cny: 20
+  });
 });

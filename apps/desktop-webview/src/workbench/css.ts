@@ -761,5 +761,16 @@ export const workbenchCss = [
   // 精确子串匹配锁死（04 §4 铁律 1：不许为了迁就实现去改断言），追加新选择器会破坏它的匹配。
   "@media (prefers-reduced-motion:reduce){.wh-wb-mode-chip,.wh-wb-mode-lvl{transition-duration:.01ms!important;animation-duration:.01ms!important}}",
   // R14 批 CHAT：hover 工具条淡入与跳转高亮闪烁——reduced-motion 下都收成瞬时（同上，独立一条规则）。
-  "@media (prefers-reduced-motion:reduce){.wh-wb-chat-tools,.wh-wb-chat-msg--flash{transition-duration:.01ms!important;animation-duration:.01ms!important}}"
+  "@media (prefers-reduced-motion:reduce){.wh-wb-chat-tools,.wh-wb-chat-msg--flash{transition-duration:.01ms!important;animation-duration:.01ms!important}}",
+
+  // —— R14 批 RISK（风险预警巡检）—— //
+  // 项目设置 · 风险巡检分区：四个阈值输入排成两列网格（同 .wh-wb-pset-group 的浅色玻璃卡片语言，
+  // 沿用既有 .wh-wb-pset-num/.wh-wb-pset-inline-k，这里只补外层网格与字段标签的排布规则）。
+  ".wh-wb-risk-set-fields{margin-top:11px;display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}",
+  ".wh-wb-risk-set-field{display:flex;flex-direction:column;gap:5px}",
+  // 聊天区 risk_digest 专属卡——沿用产出卡（.wh-wb-chat-actioncard--deliverable）的骨架，警示语汇
+  // 换成 --ds-warn（这是「该看一眼」的提醒，不是失败/危险，用红色会喧宾夺主）。
+  ".wh-wb-risk-digest{border-left:3px solid var(--ds-warn);background:linear-gradient(90deg,var(--ds-warn-soft),transparent 42%)}",
+  ".wh-wb-risk-digest-list{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px}",
+  ".wh-wb-risk-digest-item{font:600 11.5px/1.5 var(--ds-font);color:var(--ds-ink-soft)}"
 ].join("");

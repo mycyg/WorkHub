@@ -631,6 +631,85 @@ function renderRunSettledReportHtml(
   )}</div><div class="wh-wb-chat-actioncard-note">${escapeHtml(bodyText)}</div>${timestamp}</div>`;
 }
 
+// R14 批 RISK（风险预警巡检，见 r14-release-readiness/05-risk-design.md §1.4 + report
+// r12-desktop-workbench/reports/r14-risk-server.md §1「digest 组装与发送」）：项目今日风险巡检首次
+// 产出信号时，服务端（apps/api/src/services/risk-monitor.ts 的 createRiskMonitorService）往项目主区
+// 会话 post 一条 system_event，content 形如 {event:'risk_digest', project_id, summary, stalled_count,
+// deadline_count, cost_spike, target_url}。完整清单（工单标题/停滞天数/成本数字）只在通知正文里——
+// 设计稿明确拍板「聊天卡片只展示三个计数 + 一句话摘要，不在气泡里铺开长列表」，这里照此实现：默认折叠
+// 成一行 PM 摘要，点开看三节计数（工单停滞/临期未动工/成本异常，只有触发的信号才占一节，不为没触发的
+// 信号硬凑一行「0 项」的噪音）。折叠态复用批8长文本折叠的同一套 data-wb-chat-expand-message/
+// collapse-message 挂钩与 ctx.expandedMessageIds 状态（view.ts 已经通用地按 message.id 处理这两个
+// data-* 钩子，不需要再加新分支）。
+type RiskDigestContent = {
+  summary: string;
+  stalledCount: number;
+  deadlineCount: number;
+  costSpike: boolean;
+};
+
+function riskDigestContentFrom(content: Record<string, unknown>): RiskDigestContent | undefined {
+  if (content["event"] !== "risk_digest") {
+    return undefined;
+  }
+  const summary = content["summary"];
+  const stalledCount = content["stalled_count"];
+  const deadlineCount = content["deadline_count"];
+  const costSpike = content["cost_spike"];
+  if (
+    typeof summary !== "string"
+    || !summary.trim()
+    || typeof stalledCount !== "number"
+    || !Number.isFinite(stalledCount)
+    || stalledCount < 0
+    || typeof deadlineCount !== "number"
+    || !Number.isFinite(deadlineCount)
+    || deadlineCount < 0
+    || typeof costSpike !== "boolean"
+  ) {
+    // 形状不对/缺字段——诚实降级：不假装认识一份残缺的 digest，回退既有单行渲染（它本身就会读
+    // content.summary，只要 summary 还在，降级后依然可读）。
+    return undefined;
+  }
+  return { summary, stalledCount, deadlineCount, costSpike };
+}
+
+function renderRiskDigestCardHtml(
+  message: Extract<ConversationMessageVM, { kind: "system_event" }>,
+  digest: RiskDigestContent,
+  ctx: ChatRenderContext
+): string {
+  const zh = ctx.locale === "zh-CN";
+  const expanded = ctx.expandedMessageIds?.has(message.id) ?? false;
+  const header = zh ? "今日风险巡检" : "Today's risk digest";
+  const timestamp = `<div class="wh-wb-chat-actioncard-note">${formatMessageTime(message.created_at, ctx.locale)}</div>`;
+  const summaryLine = `<div class="wh-wb-chat-actioncard-note">${escapeHtml(digest.summary)}</div>`;
+
+  if (!expanded) {
+    const toggle = `<button type="button" class="wh-wb-chat-text-toggle" data-wb-chat-expand-message="${escapeHtml(message.id)}">${zh ? "展开明细" : "Show details"}</button>`;
+    return `<div class="wh-wb-chat-actioncard wh-wb-risk-digest"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${summaryLine}${toggle}${timestamp}</div>`;
+  }
+
+  const sections: string[] = [];
+  if (digest.stalledCount > 0) {
+    sections.push(
+      `<li class="wh-wb-risk-digest-item">${zh ? `工单停滞 · ${digest.stalledCount} 项` : `Stalled work items · ${digest.stalledCount}`}</li>`
+    );
+  }
+  if (digest.deadlineCount > 0) {
+    sections.push(
+      `<li class="wh-wb-risk-digest-item">${zh ? `临期未动工 · ${digest.deadlineCount} 项` : `Nearing deadline, not started · ${digest.deadlineCount}`}</li>`
+    );
+  }
+  if (digest.costSpike) {
+    sections.push(`<li class="wh-wb-risk-digest-item">${zh ? "项目成本异常放量" : "Project cost spike"}</li>`);
+  }
+  const sectionsHtml = sections.length > 0 ? `<ul class="wh-wb-risk-digest-list">${sections.join("")}</ul>` : "";
+  const detailNote = `<div class="wh-wb-chat-actioncard-note">${zh ? "完整清单见通知列表。" : "See the notification inbox for the full list."}</div>`;
+  const collapseToggle = `<button type="button" class="wh-wb-chat-text-toggle" data-wb-chat-collapse-message="${escapeHtml(message.id)}">${zh ? "收起" : "Show less"}</button>`;
+  return `<div class="wh-wb-chat-actioncard wh-wb-risk-digest"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${summaryLine}${sectionsHtml}${detailNote}${collapseToggle}${timestamp}</div>`;
+}
+
 // R12 批8：长消息折叠——超过阈值的文本消息默认只渲染预览片段 + 「展开全文」，避免超长粘贴/观察者
 // 摘要把单条气泡撑成整屏。展开态由 view.ts 的 expandedMessageIds 驱动（纯函数，这里不持有状态）。
 const LONG_TEXT_FOLD_THRESHOLD_CHARS = 800;
@@ -891,6 +970,11 @@ export function renderMessageHtml(message: ConversationMessageVM, ctx: ChatRende
     const settledReportOutcome = runSettledReportOutcome(message.content);
     if (settledReportOutcome) {
       return renderRunSettledReportHtml(message, settledReportOutcome, ctx);
+    }
+    // R14 批 RISK：风险巡检 digest（risk_digest）——见 renderRiskDigestCardHtml 顶部注释。
+    const riskDigest = riskDigestContentFrom(message.content);
+    if (riskDigest) {
+      return renderRiskDigestCardHtml(message, riskDigest, ctx);
     }
     return renderSystemEventLineHtml(message, ctx);
   }
