@@ -1142,7 +1142,16 @@ test("R12 AI settings defaults are complete shared domain values", () => {
     observer_enabled: true,
     silence_window_seconds: 60,
     quiet_hours: { enabled: false },
-    granular_settings: {}
+    granular_settings: {},
+    // R14 批 RISK（批准变更，见 r14-release-readiness/05-risk-design.md §2.1）：additive risk_monitor
+    // 阈值默认值。
+    risk_monitor: {
+      enabled: true,
+      stall_days_threshold: 5,
+      deadline_lookahead_days: 2,
+      cost_spike_ratio_pct: 300,
+      cost_spike_min_cny: 20
+    }
   });
 });
 
@@ -1276,6 +1285,15 @@ test("R12 project AI governance VM is strict and nullable-explicit for synthesiz
     silence_window_seconds: 60,
     quiet_hours: { enabled: false },
     granular_settings: {},
+    // R14 批 RISK（批准变更，见 r14-release-readiness/05-risk-design.md §2.1）：additive risk_monitor,
+    // 读侧完整默认值合并输出。
+    risk_monitor: {
+      enabled: true,
+      stall_days_threshold: 5,
+      deadline_lookahead_days: 2,
+      cost_spike_ratio_pct: 300,
+      cost_spike_min_cny: 20
+    },
     updated_at: null
   };
 
