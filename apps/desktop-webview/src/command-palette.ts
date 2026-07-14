@@ -23,6 +23,9 @@ export type CommandId =
   | "team"
   | "notifications"
   | "settings"
+  // R14 批 MEM：Cuu 的记忆——独立能力视图（不是塞进 settings 内联区块，见 spotlight/views/memory.ts
+  // 顶部注释）。两个 tab：关于我（用户记忆）/ 团队技能。
+  | "memory"
   // R12 批 1：工作台是独立原生窗口（workhub://workbench 深链），不是盒子内联能力——这两条的 view
   // 只 invoke Tauri command "open_workbench" 打开/聚焦那个窗口，见 spotlight/views/workbench-open.ts。
   | "workbench"
@@ -168,6 +171,15 @@ export const commandRegistry: DesktopCommand[] = [
     keywords: ["设置", "偏好", "账户", "settings", "preferences", "config"],
     icon: ic('<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>'),
     action: { kind: "open-window", target: "settings" }
+  },
+  {
+    // R14 批 MEM：设置区旁挂的记忆管理面——settings.ts 里也有一行可点导航能直达同一个视图。
+    id: "memory",
+    label: { "zh-CN": "Cuu 的记忆", en: "Cuu's memory" },
+    hint: { "zh-CN": "关于我的偏好、团队技能库", en: "What Cuu knows about you and your team" },
+    keywords: ["记忆", "偏好", "技能", "memory", "preferences", "skills", "about me", "team skills"],
+    icon: ic('<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.4.9 1 .9 1.7V16h5.2v-.4c0-.7.3-1.3.9-1.7A6 6 0 0 0 12 3z"/>'),
+    action: { kind: "open-window", target: "memory" }
   },
   {
     id: "workbench",

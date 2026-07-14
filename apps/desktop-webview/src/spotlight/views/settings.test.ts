@@ -758,3 +758,37 @@ test("hydrateAvatarPreview stays on the fallback tile (no crash, no error flash)
     globalThis.fetch = originalFetch;
   }
 });
+
+// R14 批 MEM：设置区旁挂的「Cuu 的记忆」导航行——独立能力视图（views/memory.ts），settings.ts 本身
+// 不渲染记忆内容，点击只需要转发给 ctx.open("memory")（03-mem-design §6.2）。
+test("settings view renders a 'Cuu's memory' nav row that opens the independent memory capability", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = settingsVm();
+    const opened: Array<{ id: string }> = [];
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          }
+        } as unknown as SpotlightViewContext["client"],
+        open(id: string) {
+          opened.push({ id });
+        }
+      })
+    );
+    await tick();
+    await tick();
+
+    assert.match(body.innerHTML, /data-set-open-memory="true"/u);
+    assert.match(body.innerHTML, /Cuu 的记忆/u);
+
+    body.click(new FakeElement(new Set(["[data-set-open-memory]"])));
+
+    assert.deepEqual(opened, [{ id: "memory" }]);
+  });
+});

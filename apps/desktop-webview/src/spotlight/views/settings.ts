@@ -262,6 +262,12 @@ function settingsHtml(
     ${avatarSectionHtml(profile, profileFailed, zh)}
     ${profileSectionHtml(profile, profileFailed, zh)}
     ${profileErrorText ? `<div class="wh-spot-row-sub" data-spot-profile-error="true" style="color:var(--ds-danger)">${escapeHtml(profileErrorText)}</div>` : ""}
+    <button type="button" class="wh-spot-row" data-set-open-memory="true">
+      <div class="wh-spot-row-main">
+        <div class="wh-spot-row-title">${zh ? "Cuu 的记忆" : "Cuu's memory"}</div>
+        <div class="wh-spot-row-sub">${zh ? "查看和管理关于我的记忆、团队技能库" : "View and manage what Cuu remembers, and the team skill library"}</div>
+      </div>
+    </button>
     <div class="wh-spot-row" style="cursor:default">
       <div class="wh-spot-row-main">
         <div class="wh-spot-row-title">${zh ? "桌面客户端" : "Desktop client"}</div>
@@ -715,6 +721,11 @@ export function createSettingsView(): SpotlightCapabilityView {
             if (disposed) return;
             renderAll();
           });
+          return;
+        }
+        // R14 批 MEM：设置区旁挂的记忆管理面入口——独立能力视图（views/memory.ts），不是内联区块。
+        if (target.closest("[data-set-open-memory]")) {
+          ctx.open("memory");
           return;
         }
         // R9（身份边缘 high）：桌面此前完全没有登出/换身份入口——首启绑定后永久持有身份。
