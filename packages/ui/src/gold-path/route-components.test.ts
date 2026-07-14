@@ -2577,6 +2577,24 @@ test("R13-A2 settings route renders the my-profile block: locked inputs for hydr
   assert.equal(settings.html.includes("data-r13-settings-profile-retry"), true);
 });
 
+// R14 批 ONBOARD（资料引导提示）：AttentionHomeVM 不带 viewer 资料态，没法在决策队列首页做条件式
+// 提示卡（见 renderSettingsMyProfileCard 顶部注释），退化成资料卡顶部一句常驻引导语——中英文都要有，
+// 且绝不出现"Cuu"字样（web 文案铁律，04 §4 铁律 12 的延伸：web 一律说"AI 助手"）。
+test("R14 ONBOARD settings my-profile card has a persistent guidance hint pointing at why the fields matter", () => {
+  const vm = surfaceVm();
+  const zhSettings = renderWebRouteComponents(vm, { locale: "zh-CN" }).settings;
+  assert.ok(zhSettings);
+  assert.equal(zhSettings.html.includes('data-r14-settings-profile-guidance-hint="true"'), true);
+  assert.match(zhSettings.html, /填好这些，AI 助手派活会更准/u);
+  assert.doesNotMatch(zhSettings.html, /Cuu/u);
+
+  const enSettings = renderWebRouteComponents(vm, { locale: "en-US" }).settings;
+  assert.ok(enSettings);
+  assert.equal(enSettings.html.includes('data-r14-settings-profile-guidance-hint="true"'), true);
+  assert.match(enSettings.html, /Fill these in/u);
+  assert.doesNotMatch(enSettings.html, /Cuu/u);
+});
+
 // R14 批 AVATAR（头像与资料入口，2026-07-14 用户点名新增）：设置页「我的资料」卡加头像位——
 // 圆形预览（回退首字母 tile）+ 隐藏 file input（label 触发,disabled 直到 browser.ts 水合出真实
 // user_id）+ 移除按钮。裁剪层本身是浏览器端交互产物，不在 SSR 字符串里，这里只钉 SSR 骨架的形状。
