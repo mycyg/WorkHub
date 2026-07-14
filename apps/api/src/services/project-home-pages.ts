@@ -2,15 +2,18 @@
 // 访问按 canViewProjectDrive 收口(与网盘同一道项目级 fence)；归档/已删项目 findProjectById 返回 null → 404。
 import {
   createDriveRepository,
+  createGithubBindingRepository,
   createTaskPlanRepository,
   createWorkItemRepository,
   getSharedDatabaseClient,
   type DriveRepository,
+  type GithubBindingRepository,
   type WorkItemDataRepository,
   type WorkHubDatabaseClient
 } from "@workhub/db";
 import {
   projectHomePageVmSchema,
+  type GithubActivityVM,
   type ProjectHomePageVM,
   type WorkHubLocale
 } from "@workhub/contracts";
@@ -28,6 +31,9 @@ export type ProjectHomePageServiceDependencies = {
   driveRepo: Pick<DriveRepository, "listRecentFilesByProject" | "countFilesByProject">;
   // B-R9.6 §3.4：军团 pill 数据源（可选注入——缺省时行尾不渲 pill，页面其余部分不受影响）。
   taskPlans?: Pick<ReturnType<typeof createTaskPlanRepository>, "listArmyProgressByWorkItemIds">;
+  // R14 批 GH（07-gh-design.md §5.1）：GitHub 活动展示切片数据源（可选注入——缺省/取数失败时
+  // github_activities 字段整体不出现，页面其余部分不受影响，同 taskPlans 的降级手法）。
+  githubActivities?: Pick<GithubBindingRepository, "listRecentActivitiesByProject">;
   now?: () => Date;
 };
 
@@ -47,6 +53,32 @@ const OPEN_WORK_ITEM_SCAN_LIMIT = 200;
 // 最近文件卡只展示前几条（file_count 给真实总数）；超出由「打开网盘」进完整文件树。
 const RECENT_FILE_LIMIT = 5;
 const RECENT_FILE_SCAN_LIMIT = 200;
+// R14 批 GH（07-gh-design.md §5.1）：GitHub 活动条目比文件行短，给多一点展示位（8 条）。
+const RECENT_GITHUB_ACTIVITY_LIMIT = 8;
+
+// 未注入（没有仓库依赖，例如测试没传）或取数失败（DB 抖动/查询超时）都返回空数组——调用方按
+// "非空才出现"渲染 github_activities，两种情况在展示层是一回事：没有活动可展示。
+async function fetchRecentGithubActivities(
+  repo: ProjectHomePageServiceDependencies["githubActivities"],
+  projectId: string
+): Promise<GithubActivityVM[]> {
+  if (!repo) {
+    return [];
+  }
+  try {
+    const rows = await repo.listRecentActivitiesByProject(projectId, RECENT_GITHUB_ACTIVITY_LIMIT);
+    return rows.map((row) => ({
+      kind: row.kind,
+      title: row.title,
+      html_url: row.htmlUrl,
+      occurred_at: row.occurredAt.toISOString(),
+      ...(row.authorLogin ? { author_login: row.authorLogin } : {}),
+      ...(row.state ? { state: row.state } : {})
+    }));
+  } catch {
+    return [];
+  }
+}
 
 export function createProjectHomePageService(deps: ProjectHomePageServiceDependencies): ProjectHomePageService {
   const now = deps.now ?? (() => new Date());
@@ -81,7 +113,7 @@ export function createProjectHomePageService(deps: ProjectHomePageServiceDepende
       const actorInProjectWorkspace = !project.workspaceId || !actor.workspaceId || project.workspaceId === actor.workspaceId;
       const canCreateInProject = actorInProjectWorkspace && !project.archived && project.deletedAt == null;
       const newTaskHref = canCreateInProject ? `/intake?project_id=${encodeURIComponent(project.id)}` : "/intake";
-      const [openItems, recentFiles, fileCount, totalOpenCount, rawVisibleOpenCount] = await Promise.all([
+      const [openItems, recentFiles, fileCount, totalOpenCount, rawVisibleOpenCount, githubActivities] = await Promise.all([
         deps.repo.listOpenByProject(projectId, OPEN_WORK_ITEM_SCAN_LIMIT),
         deps.driveRepo.listRecentFilesByProject(projectId, RECENT_FILE_SCAN_LIMIT),
         deps.driveRepo.countFilesByProject(projectId),
@@ -91,7 +123,10 @@ export function createProjectHomePageService(deps: ProjectHomePageServiceDepende
         deps.repo.countVisibleOpenByProject(projectId, {
           viewerUserId,
           isAdmin: actor.isAdmin
-        })
+        }),
+        // R14 批 GH：无绑定/取数失败都降级为空数组（内部吞错，绝不让 Promise.all 因为这个展示增强而
+        // 拖垮整个项目主页——同 army pill 的静默降级手法，见下方 VM 组装处的「非空才出现」判断）。
+        fetchRecentGithubActivities(deps.githubActivities, projectId)
       ]);
       const visibleOpenCount = actorInProjectWorkspace ? rawVisibleOpenCount : 0;
       // services-b-5/ux-web-projects-5：可见性过滤原是逐文件×逐 acceptedWorkItemId 的串行 N+1（最坏
@@ -211,7 +246,9 @@ export function createProjectHomePageService(deps: ProjectHomePageServiceDepende
             href: `/drive?project_id=${encodeURIComponent(project.id)}`
           }
         },
-        ...(visibleOpenCount === 0 ? { empty_state: "no_open_work" as const } : {})
+        ...(visibleOpenCount === 0 ? { empty_state: "no_open_work" as const } : {}),
+        // 未绑定 repo 或绑定了但暂无活动，都省略这个字段（诚实缺省，见 §5.1 与 fetchRecentGithubActivities）。
+        ...(githubActivities.length > 0 ? { github_activities: githubActivities } : {})
       };
       return parseOutputContract(projectHomePageVmSchema, data, "project.home");
     }
@@ -226,7 +263,8 @@ export function getDefaultProjectHomePageService(): ProjectHomePageService {
     defaultProjectHomePageService = createProjectHomePageService({
       repo: createWorkItemRepository(defaultProjectHomeDbClient.db),
       driveRepo: createDriveRepository(defaultProjectHomeDbClient.db),
-      taskPlans: createTaskPlanRepository(defaultProjectHomeDbClient.db)
+      taskPlans: createTaskPlanRepository(defaultProjectHomeDbClient.db),
+      githubActivities: createGithubBindingRepository(defaultProjectHomeDbClient.db)
     });
   }
   return defaultProjectHomePageService;
