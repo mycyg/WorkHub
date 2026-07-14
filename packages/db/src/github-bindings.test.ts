@@ -192,6 +192,21 @@ test("R14 批 GH: unbinding physically deletes the row (ciphertext destroyed) af
   assert.equal(queryReferences(remove?.where, projectGithubBindings.projectId), true);
 });
 
+// R14 批 GH-B（轮询 worker 消费的仓库原语）：listEnabledBindings 是 worker 每 tick 的候选来源，
+// "enabled=false 跳过"这条纪律必须落在这条 WHERE 里，不是 worker 侧再过滤一遍。
+test("R14 批 GH: listEnabledBindings filters to enabled=true at the SQL layer", async () => {
+  const { createGithubBindingRepository } = await repositoryModule();
+  const { db, queries } = createQueryRecorder([[binding]]);
+
+  const rows = await createGithubBindingRepository(db).listEnabledBindings();
+
+  assert.deepEqual(rows, [binding]);
+  const query = queries[0];
+  assert.equal(query?.fromTable, projectGithubBindings);
+  assert.equal(references(query, projectGithubBindings.enabled), true, "must filter on the enabled column");
+  assert.deepEqual(params(query), [true]);
+});
+
 test("R14 批 GH: activity upsert targets the three-column dedupe key and only updates mutable fields", async () => {
   const { createGithubBindingRepository } = await repositoryModule();
   const { db, queries } = createQueryRecorder([[]]);
