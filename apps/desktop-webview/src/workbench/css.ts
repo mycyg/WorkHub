@@ -423,6 +423,36 @@ export const workbenchCss = [
   ".wh-wb-chat-reaction-emoji{font-size:12px;line-height:1}",
   ".wh-wb-chat-reaction-count{font-variant-numeric:tabular-nums}",
 
+  // —— R14 批 FEEDBACK：Cuu 文字回复的「有用/没用」轻反馈——字符 tile ✓/✗（非 emoji，见
+  // 04-feedback-design.md §8 的第四层视觉语言边界）。工具条按钮变体（同 .wh-wb-chat-tool 底色/尺寸，
+  // 只加判定色）+ 持久态徽标（who 行常驻，不依赖 hover）+ 备注编辑行（点徽标展开的极简单行输入）。
+  // useful 用既有成功绿语汇（同产出卡终态行 --ds-success），not_useful 故意不用满饱和度 --ds-danger
+  // （那是"删除"的强烈警示色），改用 --ds-warn 的弱化语汇，避免抢"删除"按钮的视觉分量。
+  ".wh-wb-chat-fb-glyph{font:700 13px/1 var(--ds-font)}",
+  ".wh-wb-chat-tool--fb-on-useful{background:var(--ds-success-soft);color:var(--ds-success)}",
+  ".wh-wb-chat-tool--fb-on-not-useful{background:var(--ds-warn-soft);color:var(--ds-warn)}",
+  ".wh-wb-chat-fb-badge{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;" +
+    "margin-left:2px;border:0;border-radius:5px;padding:0;font:700 10px/1 var(--ds-font);cursor:pointer}",
+  ".wh-wb-chat-fb-badge:hover{filter:brightness(0.94)}",
+  ".wh-wb-chat-fb-badge--useful{background:var(--ds-success-soft);color:var(--ds-success)}",
+  ".wh-wb-chat-fb-badge--not-useful{background:var(--ds-warn-soft);color:var(--ds-warn)}",
+  ".wh-wb-chat-fb-note{margin-top:6px;max-width:280px}",
+  ".wh-wb-chat-fb-note-input{width:100%;box-sizing:border-box;resize:none;min-height:30px;" +
+    "border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-md);background:var(--ds-glass);" +
+    "padding:6px 9px;font:500 12px/1.4 var(--ds-font);color:var(--ds-ink);outline:none}",
+  ".wh-wb-chat-fb-note-input:focus{border-color:rgba(10,132,255,.4)}",
+  ".wh-wb-chat-fb-note-actions{display:flex;gap:6px;margin-top:5px}",
+
+  // 行动卡条目反馈——终态条目行末的独立小 tile 组（不进 hover 工具条，行动卡本身已在整行常驻展示）；
+  // class 前缀独立于消息级选择器（wh-wb-chat-actioncard-fb-* vs wh-wb-chat-fb-*），避免混淆。
+  ".wh-wb-chat-actioncard-fb{display:inline-flex;gap:3px;margin-left:6px}",
+  ".wh-wb-chat-actioncard-fb-tile{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;" +
+    "border:1px solid var(--ds-glass-border);border-radius:5px;background:var(--ds-glass);color:var(--ds-ink-muted);" +
+    "font:700 11px/1 var(--ds-font);padding:0;cursor:pointer}",
+  ".wh-wb-chat-actioncard-fb-tile:hover{background:var(--ds-glass-strong)}",
+  ".wh-wb-chat-actioncard-fb-tile--on-useful{background:var(--ds-success-soft);border-color:transparent;color:var(--ds-success)}",
+  ".wh-wb-chat-actioncard-fb-tile--on-not-useful{background:var(--ds-warn-soft);border-color:transparent;color:var(--ds-warn)}",
+
   // —— R14 批 CHAT：行内编辑框 + 删除二次确认 —— //
   ".wh-wb-chat-edit{margin-top:2px}",
   ".wh-wb-chat-edit-input{width:100%;box-sizing:border-box;resize:vertical;min-height:38px;max-height:180px;" +

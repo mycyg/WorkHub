@@ -2,6 +2,7 @@
 // 无副作用的字符串拼装，可单测；imperative 的 DOM 挂载/事件绑定在 view.ts）。
 
 import type {
+  AiFeedbackVerdict,
   AiMode,
   ConversationMessageReactionVM,
   ConversationMessageReplyPreviewVM,
@@ -9,6 +10,7 @@ import type {
   ConversationReactionKey,
   WorkbenchPageVM
 } from "@workhub/contracts";
+import { AI_FEEDBACK_NOTE_MAX_CHARS } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { workbenchIcons } from "../icons.js";
@@ -156,6 +158,10 @@ export type ChatRenderContext = {
   // 「已通过/已打回/已合并」覆盖标（乐观、仅本机、刷新即依 VM/服务端档③ 的 proposal_settled 系统消息重判）。
   // 由 view.ts 持有（onSettled 回调把 id 塞进来），缺省（既有调用点/测试）不渲覆盖标。
   settledProposalIds?: ReadonlySet<string>;
+  // R14 批 FEEDBACK：Cuu 文字消息反馈的一句话备注编辑框——点击持久 badge 展开（一次只展开一条），
+  // draft 是当前草稿，error 是保存失败（如 note 超长/命中注入短语拦截）的温和行内提示。缺省（没有正在
+  // 编辑的备注）时只渲染 badge，不渲输入框。瞬态、不落库，由 view.ts 持有（同 ctx.editing 的既有模式）。
+  feedbackNoteEditor?: { messageId: string; draft: string; error?: string };
 };
 
 function senderLabel(message: ConversationMessageVM, ctx: ChatRenderContext): string {
@@ -286,6 +292,10 @@ type ActionCardItemRow = {
   status: string;
   assigneeUserId: string | null;
   undoDeadlineAt: string | null;
+  // R14 批 FEEDBACK：本人对这个条目的判定——读时合并进消息 VM（见 04-feedback-design.md §5.3），不是
+  // 建卡快照的一部分。undefined=没打过反馈；note 字段服务端会带，但行动卡条目本批不做备注 UI（§7.1C），
+  // 这里故意不解析 note，只取 verdict。
+  feedback: AiFeedbackVerdict | undefined;
 };
 
 // R12 P0-A1：「派给别人」的极简成员选择——列出除当前用户以外的活跃工作区成员（当前用户已经是这条
@@ -385,6 +395,33 @@ function actionCardItemActionsHtml(row: ActionCardItemRow, ctx: ChatRenderContex
   return "";
 }
 
+// R14 批 FEEDBACK：行动卡条目的「有用/没用」轻反馈——同款字符 tile ✓/✗，但 class 前缀独立
+// （wh-wb-chat-actioncard-fb-*）避免和消息级工具条选择器混淆（04-feedback-design.md §7.1C）。不做备注
+// 输入（条目本身已经很密集，备注需求主要在 Cuu 文字回复上）。交互见 view.ts 的 toggleActionCardItemFeedback。
+function renderActionCardItemFeedbackHtml(row: ActionCardItemRow, zh: boolean): string {
+  const usefulOn = row.feedback === "useful";
+  const notUsefulOn = row.feedback === "not_useful";
+  const usefulCls = [
+    "wh-wb-chat-actioncard-fb-tile",
+    usefulOn ? "wh-wb-chat-actioncard-fb-tile--on-useful" : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const notUsefulCls = [
+    "wh-wb-chat-actioncard-fb-tile",
+    notUsefulOn ? "wh-wb-chat-actioncard-fb-tile--on-not-useful" : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const id = escapeHtml(row.id);
+  return (
+    `<div class="wh-wb-chat-actioncard-fb">` +
+    `<button type="button" class="${usefulCls}" data-wb-chat-actioncard-feedback="useful" data-wb-chat-actioncard-item="${id}" aria-pressed="${usefulOn}" aria-label="${zh ? "有用" : "Useful"}" title="${zh ? "有用" : "Useful"}">✓</button>` +
+    `<button type="button" class="${notUsefulCls}" data-wb-chat-actioncard-feedback="not_useful" data-wb-chat-actioncard-item="${id}" aria-pressed="${notUsefulOn}" aria-label="${zh ? "没用" : "Not useful"}" title="${zh ? "没用" : "Not useful"}">✗</button>` +
+    `</div>`
+  );
+}
+
 // 00 §9：行动卡撤销后「卡片该项置灰划线 +『已撤销』，不删卡（留痕）」——undone 条目加
 // --undone 修饰类（css.ts：标题划线、整行置灰），其它状态只带一枚状态标。快照是建卡时点数据，
 // 实时状态由 view.ts 消费 conversation.action_card.updated 事件后就地合并进来（timeline.ts 的
@@ -412,7 +449,11 @@ function renderActionCardSummaryHtml(content: Record<string, unknown>, ctx: Chat
       const kind = typeof record["kind"] === "string" ? (record["kind"] as string) : "";
       const assigneeUserId = typeof record["assignee_user_id"] === "string" ? (record["assignee_user_id"] as string) : null;
       const undoDeadlineAt = typeof record["undo_deadline_at"] === "string" ? (record["undo_deadline_at"] as string) : null;
-      return { id, title: titleMd, kind, status, assigneeUserId, undoDeadlineAt };
+      const feedbackRaw = record["feedback"];
+      const feedbackVerdict =
+        feedbackRaw && typeof feedbackRaw === "object" ? (feedbackRaw as Record<string, unknown>)["verdict"] : undefined;
+      const feedback = feedbackVerdict === "useful" || feedbackVerdict === "not_useful" ? feedbackVerdict : undefined;
+      return { id, title: titleMd, kind, status, assigneeUserId, undoDeadlineAt, feedback };
     })
     .filter((row): row is ActionCardItemRow => Boolean(row));
   const header = zh
@@ -424,7 +465,11 @@ function renderActionCardSummaryHtml(content: Record<string, unknown>, ctx: Chat
       const liClass = undone ? "wh-wb-chat-actioncard-item wh-wb-chat-actioncard-item--undone" : "wh-wb-chat-actioncard-item";
       const statusHtml = renderActionCardItemStatusHtml(row, ctx, zh);
       const actionsHtml = undone ? "" : actionCardItemActionsHtml(row, ctx);
-      return `<li class="${liClass}"><span class="wh-wb-chat-actioncard-item-title">${escapeHtml(row.title)}</span>${statusHtml}${actionsHtml}</li>`;
+      // R14 批 FEEDBACK：反馈 tile 只在终态（done/escalated）且未撤销的条目上出现——waiting_decision/
+      // running 还没有可评判的结果（04-feedback-design.md §7.1C），undone 已经整行置灰划线，反馈没意义。
+      const feedbackHtml =
+        !undone && (row.status === "done" || row.status === "escalated") ? renderActionCardItemFeedbackHtml(row, zh) : "";
+      return `<li class="${liClass}"><span class="wh-wb-chat-actioncard-item-title">${escapeHtml(row.title)}</span>${statusHtml}${actionsHtml}${feedbackHtml}</li>`;
     })
     .join("");
   return `<div class="wh-wb-chat-actioncard"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${
@@ -740,6 +785,25 @@ function renderMessageToolbarHtml(message: ConversationMessageVM, ctx: ChatRende
       `<button type="button" class="${cls}" data-wb-chat-react="${key}" data-wb-chat-react-msg="${id}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span class="wh-wb-chat-tool-emoji">${REACTION_EMOJI[key]}</span></button>`
     );
   }
+  // R14 批 FEEDBACK：Cuu 文字回复的「有用/没用」轻反馈——字符 tile ✓/✗（U+2713/U+2717，非 emoji，见
+  // 04-feedback-design.md §8 的视觉语言边界）。仅 Cuu 活文字消息渲染入口（写入端点服务层同款收紧，
+  // 这里是渲染层的镜像收紧，不是重复校验——两层各自独立地拒绝对人类消息/非文字消息打反馈）。已判定态
+  // 高亮；点已选中的键=撤销，点另一个键=直接改判（交互接线见 view.ts 的 toggleMessageFeedback）。
+  if (message.sender_type === "cuu" && message.kind === "text") {
+    const fb = message.my_feedback;
+    const usefulOn = fb?.verdict === "useful";
+    const notUsefulOn = fb?.verdict === "not_useful";
+    const usefulCls = ["wh-wb-chat-tool", "wh-wb-chat-tool--fb", usefulOn ? "wh-wb-chat-tool--fb-on-useful" : ""]
+      .filter(Boolean)
+      .join(" ");
+    const notUsefulCls = ["wh-wb-chat-tool", "wh-wb-chat-tool--fb", notUsefulOn ? "wh-wb-chat-tool--fb-on-not-useful" : ""]
+      .filter(Boolean)
+      .join(" ");
+    parts.push(
+      `<button type="button" class="${usefulCls}" data-wb-chat-feedback="useful" data-wb-chat-feedback-msg="${id}" aria-pressed="${usefulOn}" aria-label="${zh ? "有用" : "Useful"}" title="${zh ? "有用" : "Useful"}"><span class="wh-wb-chat-fb-glyph">✓</span></button>`,
+      `<button type="button" class="${notUsefulCls}" data-wb-chat-feedback="not_useful" data-wb-chat-feedback-msg="${id}" aria-pressed="${notUsefulOn}" aria-label="${zh ? "没用" : "Not useful"}" title="${zh ? "没用" : "Not useful"}"><span class="wh-wb-chat-fb-glyph">✗</span></button>`
+    );
+  }
   // 编辑：仅本人 text 消息（服务端另有 15 分钟窗，过期由 409 兜底温和提示，见 view.ts）。
   if (isSelf && message.kind === "text") {
     parts.push(
@@ -777,6 +841,32 @@ function renderMessageEditBoxHtml(messageId: string, ctx: ChatRenderContext): st
 function renderDeleteConfirmHtml(messageId: string, ctx: ChatRenderContext): string {
   const zh = ctx.locale === "zh-CN";
   return `<div class="wh-wb-chat-del-confirm"><span>${zh ? "删除这条消息？" : "Delete this message?"}</span><button type="button" class="wh-wb-act wh-wb-act--danger" data-wb-chat-delete-confirm="${escapeHtml(messageId)}">${zh ? "删除" : "Delete"}</button><button type="button" class="wh-wb-act" data-wb-chat-delete-cancel>${zh ? "取消" : "Cancel"}</button></div>`;
+}
+
+// —— R14 批 FEEDBACK：持久态反馈徽标 + 备注编辑行 —— //
+//
+// badge 是「始终可见的被动提醒」（不依赖 hover，跟工具条按钮是同一个 message.my_feedback 的两个视角，
+// 见 04-feedback-design.md §7.1B）：只在有判定时渲染，点击展开/收起一句话备注的极简输入
+// （renderMessageFeedbackNoteBoxHtml，同 renderMessageEditBoxHtml 的 textarea 结构，rows=1，交互见
+// view.ts 的 toggleFeedbackNoteEditor/saveFeedbackNote）。「不做备注」是主路径默认状态——不点开 badge
+// 就什么都不会发生，不强迫用户每次判定后都要填点什么。
+
+function renderMessageFeedbackBadgeHtml(message: ConversationMessageVM): string {
+  if (message.sender_type !== "cuu" || message.kind !== "text" || !message.my_feedback) {
+    return "";
+  }
+  const useful = message.my_feedback.verdict === "useful";
+  const cls = useful ? "wh-wb-chat-fb-badge wh-wb-chat-fb-badge--useful" : "wh-wb-chat-fb-badge wh-wb-chat-fb-badge--not-useful";
+  return `<button type="button" class="${cls}" data-wb-chat-feedback-note-toggle="${escapeHtml(message.id)}">${useful ? "✓" : "✗"}</button>`;
+}
+
+function renderMessageFeedbackNoteBoxHtml(messageId: string, ctx: ChatRenderContext): string {
+  const zh = ctx.locale === "zh-CN";
+  const draft = ctx.feedbackNoteEditor?.draft ?? "";
+  const error = ctx.feedbackNoteEditor?.error;
+  const errorHtml = error ? `<div class="wh-wb-chat-edit-error">${escapeHtml(error)}</div>` : "";
+  const placeholder = zh ? "补一句为什么（可选）" : "Add a note (optional)";
+  return `<div class="wh-wb-chat-fb-note"><textarea class="wh-wb-chat-fb-note-input" rows="1" maxlength="${AI_FEEDBACK_NOTE_MAX_CHARS}" placeholder="${escapeHtml(placeholder)}" data-wb-chat-feedback-note-input>${escapeHtml(draft)}</textarea>${errorHtml}<div class="wh-wb-chat-fb-note-actions"><button type="button" class="wh-wb-act" data-wb-chat-feedback-note-save="${escapeHtml(messageId)}">${zh ? "保存" : "Save"}</button><button type="button" class="wh-wb-act" data-wb-chat-feedback-note-cancel>${zh ? "跳过" : "Skip"}</button></div></div>`;
 }
 
 // —— R14 批 CHAT：墓碑占位（删除后「此消息已删除」，无头像/动作区/反应） —— //
@@ -832,9 +922,15 @@ export function renderMessageHtml(message: ConversationMessageVM, ctx: ChatRende
     : ctx.confirmDeleteMessageId === message.id
       ? renderDeleteConfirmHtml(message.id, ctx)
       : renderMessageToolbarHtml(message, ctx, isSelf);
+  // R14 批 FEEDBACK：持久态反馈徽标（who 行，「已编辑」灰标之后）+ 点开时的备注编辑行（气泡末尾，
+  // 反应行之后）——两者读同一个 message.my_feedback，没有状态不一致的风险（见 renderMessageFeedbackBadgeHtml
+  // 顶部注释）。
+  const feedbackBadge = editing ? "" : renderMessageFeedbackBadgeHtml(message);
+  const feedbackNoteBox =
+    !editing && ctx.feedbackNoteEditor?.messageId === message.id ? renderMessageFeedbackNoteBoxHtml(message.id, ctx) : "";
   // R13 批 P2：data-wb-chat-message-id——稳定 DOM 锚点，供 dispatch_ask 追赶/引用跳转/置顶跳转/未读
   // 分割线定位反查具体消息节点。
-  return `<div class="${rowClass}" data-wb-chat-message-id="${escapeHtml(message.id)}">${avatar}<div class="wh-wb-chat-bub"><div class="wh-wb-chat-who">${escapeHtml(senderLabel(message, ctx))}<span class="wh-wb-chat-tm">${formatMessageTime(message.created_at, ctx.locale)}</span>${editedLabel}</div>${replyRef}${body}${reactionRow}</div>${toolbar}</div>`;
+  return `<div class="${rowClass}" data-wb-chat-message-id="${escapeHtml(message.id)}">${avatar}<div class="wh-wb-chat-bub"><div class="wh-wb-chat-who">${escapeHtml(senderLabel(message, ctx))}<span class="wh-wb-chat-tm">${formatMessageTime(message.created_at, ctx.locale)}</span>${editedLabel}${feedbackBadge}</div>${replyRef}${body}${reactionRow}${feedbackNoteBox}</div>${toolbar}</div>`;
 }
 
 // —— R14 批 CHAT：置顶条（聊天区顶部可折叠 pin bar；点击跳消息/取消置顶） —— //

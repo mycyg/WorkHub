@@ -6,6 +6,7 @@
 // 的薄封装 + 首屏/向上翻页策略。
 
 import type {
+  AiFeedbackVerdict,
   AiMode,
   ConversationMessagePageVM,
   ConversationMessageVM,
@@ -17,6 +18,7 @@ import type {
   EditConversationMessageRequest,
   NotificationList,
   PresenceListResponse,
+  PutAiFeedbackRequest,
   UserAiProfileVM
 } from "@workhub/contracts";
 
@@ -212,6 +214,19 @@ export function undoActionCardItem(
   });
 }
 
+// —— R14 批 FEEDBACK（行动卡条目的「有用/没用」轻反馈）—— //
+//
+// PUT/DELETE /action-card-items/:id/feedback：同消息反馈同款取舍 → 204。不支持 note（行动卡条目只做
+// 二值 tile，见 04-feedback-design.md §7.1C，桌面渲染层没有备注输入 UI，这里也就不收 note 参数）。
+export function putActionCardItemFeedback(client: ChatApiClient, itemId: string, verdict: AiFeedbackVerdict): Promise<void> {
+  const body: PutAiFeedbackRequest = { verdict };
+  return client.request<void>(actionCardItemPath(itemId, "feedback"), { method: "PUT", body: JSON.stringify(body) });
+}
+
+export function deleteActionCardItemFeedback(client: ChatApiClient, itemId: string): Promise<void> {
+  return client.request<void>(actionCardItemPath(itemId, "feedback"), { method: "DELETE" });
+}
+
 // R13 批 P2（拍板链路收尾）：dispatch_ask 错过补偿——workbench 打开/切项目时用来查"这个项目里有没有
 // 我错过的派活问询"（见 dispatch-ask-catchup.ts 的 pickDispatchAskCatchupNotification）。
 // GET /api/notifications 是已经挂载的既有端点（服务端 listForUser 自带 200 条硬上限，见
@@ -288,6 +303,30 @@ export function pinConversationMessage(client: ChatApiClient, conversationId: st
 
 export function unpinConversationMessage(client: ChatApiClient, conversationId: string, messageId: string): Promise<void> {
   return client.request<void>(conversationPath(conversationId, `messages/${encodeURIComponent(messageId)}/pin`), {
+    method: "DELETE"
+  });
+}
+
+// —— R14 批 FEEDBACK（Cuu 文字回复的「有用/没用」轻反馈）—— //
+//
+// PUT/DELETE /messages/:messageId/feedback：幂等 upsert / 幂等撤销 → 204，无响应体（同 reactions/pin
+// 的既有取舍——反馈没有 SSE、没有跨用户可见面，本地乐观状态就是权威，见 04-feedback-design.md §0 结论
+// 2/3）。verdict 是唯一必填字段，note 省略即代表「不带备注」（服务端把缺省的 note 当 null，见路由层）。
+export function putConversationMessageFeedback(
+  client: ChatApiClient,
+  conversationId: string,
+  messageId: string,
+  payload: { verdict: AiFeedbackVerdict; note?: string }
+): Promise<void> {
+  const body: PutAiFeedbackRequest = { verdict: payload.verdict, ...(payload.note ? { note: payload.note } : {}) };
+  return client.request<void>(conversationPath(conversationId, `messages/${encodeURIComponent(messageId)}/feedback`), {
+    method: "PUT",
+    body: JSON.stringify(body)
+  });
+}
+
+export function deleteConversationMessageFeedback(client: ChatApiClient, conversationId: string, messageId: string): Promise<void> {
+  return client.request<void>(conversationPath(conversationId, `messages/${encodeURIComponent(messageId)}/feedback`), {
     method: "DELETE"
   });
 }

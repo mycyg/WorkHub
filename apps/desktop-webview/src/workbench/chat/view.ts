@@ -15,6 +15,7 @@
 
 import { WorkHubApiError } from "@workhub/api-client";
 import type {
+  AiFeedbackVerdict,
   AiMode,
   ConversationKind,
   ConversationMessageVM,
@@ -28,7 +29,9 @@ import {
   addConversationReaction,
   advanceConversationReadCursor,
   decideActionCardItem,
+  deleteActionCardItemFeedback,
   deleteConversationMessage,
+  deleteConversationMessageFeedback,
   editConversationMessage,
   fetchConversationMessagesPage,
   fetchConversationPins,
@@ -41,6 +44,8 @@ import {
   patchMyAiMode,
   pinConversationMessage,
   pingConversationTyping,
+  putActionCardItemFeedback,
+  putConversationMessageFeedback,
   removeConversationReaction,
   requestConversationTurn,
   sendConversationFileCardMessage,
@@ -52,6 +57,7 @@ import {
   type ChatApiClient
 } from "./api.js";
 import { mapActionCardDecisionError, shouldReconcileActionCardOnError } from "./action-card-decision.js";
+import { decideFeedbackToggle, normalizeFeedbackNote } from "./feedback.js";
 import { pickDispatchAskCatchupNotification, renderDispatchAskCatchupBannerHtml } from "./dispatch-ask-catchup.js";
 import {
   parseIncomingActionCardUpdated,
@@ -125,9 +131,12 @@ import { connectConversationStream, type ConversationStreamHandle } from "./stre
 import { applyComposerChipInsertion, detectComposerTrigger, type ComposerTriggerMatch } from "./trigger-parser.js";
 import {
   DEFAULT_MESSAGE_RENDER_WINDOW,
+  applyActionCardItemFeedbackUpdate,
   applyActionCardUpdate,
+  applyMessageFeedbackUpdate,
   applyMessageReplacement,
   applyReactionUpdate,
+  findActionCardItemFeedbackVerdict,
   findActionCardMessageIdByTitle,
   findActionCardMessageIdForItem,
   groupMessagesByDay,
@@ -483,6 +492,10 @@ export function mountChatView(
   let editDraft = "";
   let editError: string | undefined;
   let confirmDeleteMessageId: string | undefined;
+  // R14 批 FEEDBACK：反馈备注编辑框——点击持久 badge 展开（一次只展开一条），同 editingMessageId 的
+  // 「一次一条、瞬态、不落库」纪律。展开/开始编辑正文/请求删除三者互斥（各自的处理函数会清掉另外两个），
+  // 避免同一条消息同时冒出两套行内输入。
+  let feedbackNoteEditor: { messageId: string; draft: string; error?: string } | undefined;
   let replyingTo: { messageId: string; label: string } | undefined;
   let pinnedMessages: ConversationMessageVM[] = [];
   let pinBarCollapsed = false;
@@ -520,6 +533,8 @@ export function mountChatView(
       ? { editing: { messageId: editingMessageId, draft: editDraft, ...(editError !== undefined ? { error: editError } : {}) } }
       : {}),
     ...(confirmDeleteMessageId !== undefined ? { confirmDeleteMessageId } : {}),
+    // R14 批 FEEDBACK：反馈备注编辑框瞬态——同上，undefined 时整个键不出现。
+    ...(feedbackNoteEditor !== undefined ? { feedbackNoteEditor } : {}),
     settledProposalIds
   });
 
@@ -1444,6 +1459,158 @@ export function mountChatView(
     });
   }
 
+  // —— R14 批 FEEDBACK：Cuu 文字回复反馈（乐观 PUT/DELETE + 失败回滚，静默；同 toggleReaction 的纪律，
+  // 但反馈是单值判定，不需要维护 user_ids 数组，逻辑更简单） —— //
+
+  function toggleMessageFeedback(messageId: string, verdict: AiFeedbackVerdict): void {
+    const message = messages.find((entry) => entry.id === messageId);
+    if (!message || message.deleted_at !== undefined || message.sender_type !== "cuu" || message.kind !== "text") {
+      return;
+    }
+    const previous = message.my_feedback;
+    const decision = decideFeedbackToggle(previous?.verdict, verdict);
+    // 改判（点另一个键）时把已有备注带过去——覆盖式 PUT 不带 note 就是清空，静默丢用户已经填过的备注
+    // 不是好体验，见 view.ts 顶部 feedback.ts 的既有讨论。
+    const carriedNote = previous?.note;
+    const nextFeedback =
+      decision.mode === "delete"
+        ? undefined
+        : { verdict: decision.verdict, ...(carriedNote ? { note: carriedNote } : {}), updated_at: new Date().toISOString() };
+    const applied = applyMessageFeedbackUpdate(messages, { messageId, feedback: nextFeedback });
+    if (applied.changed) {
+      messages = applied.messages;
+      renderScroll();
+    }
+    const request =
+      decision.mode === "delete"
+        ? deleteConversationMessageFeedback(input.client, input.conversationId, messageId)
+        : putConversationMessageFeedback(input.client, input.conversationId, messageId, {
+            verdict: decision.verdict,
+            ...(carriedNote ? { note: carriedNote } : {})
+          });
+    void request.catch(() => {
+      if (disposed) {
+        return;
+      }
+      const rolledBack = applyMessageFeedbackUpdate(messages, { messageId, feedback: previous });
+      if (rolledBack.changed) {
+        messages = rolledBack.messages;
+        renderScroll();
+      }
+    });
+  }
+
+  // —— R14 批 FEEDBACK：反馈备注（点持久 badge 展开的极简单行输入；不做备注是主路径默认状态） —— //
+
+  function toggleFeedbackNoteEditor(messageId: string): void {
+    if (feedbackNoteEditor?.messageId === messageId) {
+      feedbackNoteEditor = undefined;
+      renderScroll();
+      return;
+    }
+    const message = messages.find((entry) => entry.id === messageId);
+    // 展开备注编辑器时收起正在进行的编辑正文/删除确认——同一条消息一次只该有一个行内输入在开着。
+    editingMessageId = undefined;
+    confirmDeleteMessageId = undefined;
+    feedbackNoteEditor = { messageId, draft: message?.my_feedback?.note ?? "" };
+    renderScroll();
+    const ta = scrollEl!.querySelector<HTMLTextAreaElement>("[data-wb-chat-feedback-note-input]");
+    if (ta) {
+      ta.focus();
+      try {
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+      } catch {
+        // ignore — value 已正确。
+      }
+    }
+  }
+
+  function cancelFeedbackNoteEditor(): void {
+    if (feedbackNoteEditor === undefined) {
+      return;
+    }
+    feedbackNoteEditor = undefined;
+    renderScroll();
+  }
+
+  function saveFeedbackNote(messageId: string): void {
+    const ta = scrollEl!.querySelector<HTMLTextAreaElement>("[data-wb-chat-feedback-note-input]");
+    const draftValue = ta?.value ?? feedbackNoteEditor?.draft ?? "";
+    const note = normalizeFeedbackNote(draftValue);
+    const message = messages.find((entry) => entry.id === messageId);
+    const verdict = message?.my_feedback?.verdict;
+    if (!verdict) {
+      // 反馈已被别处撤销（极端竞态：另一个窗口/下次拉取把判定清掉了）——没有判定就没有备注的容身之处。
+      feedbackNoteEditor = undefined;
+      renderScroll();
+      return;
+    }
+    const previous = message?.my_feedback;
+    const nextFeedback = { verdict, ...(note ? { note } : {}), updated_at: new Date().toISOString() };
+    feedbackNoteEditor = undefined;
+    const applied = applyMessageFeedbackUpdate(messages, { messageId, feedback: nextFeedback });
+    if (applied.changed) {
+      messages = applied.messages;
+    }
+    renderScroll();
+    putConversationMessageFeedback(input.client, input.conversationId, messageId, { verdict, ...(note ? { note } : {}) }).catch(
+      (error) => {
+        if (disposed) {
+          return;
+        }
+        const rolledBack = applyMessageFeedbackUpdate(messages, { messageId, feedback: previous });
+        if (rolledBack.changed) {
+          messages = rolledBack.messages;
+        }
+        // 保存失败（多半是 note 超长/命中注入短语拦截的 400）——重新打开编辑框并带上温和提示，让用户能
+        // 看到发生了什么、改一改再试，而不是无声无息地把刚打的字丢掉（同 saveEdit 对 409 的既有纪律）。
+        const status = error instanceof WorkHubApiError ? error.status : undefined;
+        const zh = input.locale === "zh-CN";
+        feedbackNoteEditor = {
+          messageId,
+          draft: draftValue,
+          error:
+            status === 400
+              ? zh
+                ? "这句备注没保存成功，改短一点再试"
+                : "Couldn't save that note — try shortening it"
+              : zh
+                ? "没保存成功，再试一次"
+                : "Couldn't save — try again"
+        };
+        renderScroll();
+      }
+    );
+  }
+
+  // —— R14 批 FEEDBACK：行动卡条目反馈（乐观 PUT/DELETE，无备注 UI，见 04-feedback-design.md §7.1C） —— //
+
+  function toggleActionCardItemFeedback(itemId: string, verdict: AiFeedbackVerdict): void {
+    const currentVerdict = findActionCardItemFeedbackVerdict(messages, itemId);
+    const decision = decideFeedbackToggle(currentVerdict, verdict);
+    const previousFeedback = currentVerdict ? { verdict: currentVerdict } : undefined;
+    const nextFeedback = decision.mode === "delete" ? undefined : { verdict: decision.verdict };
+    const applied = applyActionCardItemFeedbackUpdate(messages, { itemId, feedback: nextFeedback });
+    if (applied.changed) {
+      messages = applied.messages;
+      renderScroll();
+    }
+    const request =
+      decision.mode === "delete"
+        ? deleteActionCardItemFeedback(input.client, itemId)
+        : putActionCardItemFeedback(input.client, itemId, decision.verdict);
+    void request.catch(() => {
+      if (disposed) {
+        return;
+      }
+      const rolledBack = applyActionCardItemFeedbackUpdate(messages, { itemId, feedback: previousFeedback });
+      if (rolledBack.changed) {
+        messages = rolledBack.messages;
+        renderScroll();
+      }
+    });
+  }
+
   // —— R14 批 CHAT：行内编辑（保存用返回 VM 替换；409 窗过期温和话术） —— //
 
   function beginEdit(messageId: string): void {
@@ -1458,6 +1625,8 @@ export function mountChatView(
     editDraft = message.content.text;
     editError = undefined;
     confirmDeleteMessageId = undefined;
+    // R14 批 FEEDBACK：开始编辑正文时收起反馈备注编辑器——同一条消息一次只该有一个行内输入在开着。
+    feedbackNoteEditor = undefined;
     renderScroll();
     // 聚焦编辑框并把光标放到末尾（同 renderComposerChrome 的取舍）。
     const ta = scrollEl!.querySelector<HTMLTextAreaElement>("[data-wb-chat-edit-input]");
@@ -1534,6 +1703,8 @@ export function mountChatView(
   function requestDelete(messageId: string): void {
     confirmDeleteMessageId = messageId;
     editingMessageId = undefined;
+    // R14 批 FEEDBACK：请求删除时收起反馈备注编辑器（同 beginEdit 的互斥纪律）。
+    feedbackNoteEditor = undefined;
     renderScroll();
   }
 
@@ -2561,6 +2732,40 @@ export function mountChatView(
       togglePin(pinBtn.dataset.wbChatPin, pinBtn.dataset.wbChatPinState === "on");
       return;
     }
+    // —— R14 批 FEEDBACK：Cuu 文字回复反馈（工具条 ✓/✗ 切换 + 持久 badge 点击展开/收起备注编辑器） —— //
+    const feedbackBtn = target.closest<HTMLElement>("[data-wb-chat-feedback]");
+    if (feedbackBtn?.dataset.wbChatFeedback) {
+      const verdict = feedbackBtn.dataset.wbChatFeedback as AiFeedbackVerdict;
+      const msgId = feedbackBtn.dataset.wbChatFeedbackMsg;
+      if (msgId) {
+        toggleMessageFeedback(msgId, verdict);
+      }
+      return;
+    }
+    const feedbackNoteToggleBtn = target.closest<HTMLElement>("[data-wb-chat-feedback-note-toggle]");
+    if (feedbackNoteToggleBtn?.dataset.wbChatFeedbackNoteToggle) {
+      toggleFeedbackNoteEditor(feedbackNoteToggleBtn.dataset.wbChatFeedbackNoteToggle);
+      return;
+    }
+    const feedbackNoteSaveBtn = target.closest<HTMLElement>("[data-wb-chat-feedback-note-save]");
+    if (feedbackNoteSaveBtn?.dataset.wbChatFeedbackNoteSave) {
+      saveFeedbackNote(feedbackNoteSaveBtn.dataset.wbChatFeedbackNoteSave);
+      return;
+    }
+    if (target.closest("[data-wb-chat-feedback-note-cancel]")) {
+      cancelFeedbackNoteEditor();
+      return;
+    }
+    // —— R14 批 FEEDBACK：行动卡条目反馈 tile（同款乐观切换，无备注） —— //
+    const actionCardFeedbackBtn = target.closest<HTMLElement>("[data-wb-chat-actioncard-feedback]");
+    if (actionCardFeedbackBtn?.dataset.wbChatActioncardFeedback) {
+      const verdict = actionCardFeedbackBtn.dataset.wbChatActioncardFeedback as AiFeedbackVerdict;
+      const itemId = actionCardFeedbackBtn.dataset.wbChatActioncardItem;
+      if (itemId) {
+        toggleActionCardItemFeedback(itemId, verdict);
+      }
+      return;
+    }
     // R12 P0-A1：行动卡条目的操作按钮——decide 三键（交给我干/派给别人/先不动）、reassign 极简成员
     // 选择器的展开/选中提交、execute 的撤销。
     const decideBtn = target.closest<HTMLElement>("[data-wb-chat-actioncard-decide]");
@@ -2621,19 +2826,36 @@ export function mountChatView(
     if (event.target instanceof HTMLTextAreaElement && event.target.matches("[data-wb-chat-edit-input]")) {
       editDraft = event.target.value;
     }
+    // R14 批 FEEDBACK：反馈备注输入框——同上，input 同步 draft 保住已输入的文字。
+    if (event.target instanceof HTMLTextAreaElement && event.target.matches("[data-wb-chat-feedback-note-input]") && feedbackNoteEditor) {
+      feedbackNoteEditor = { ...feedbackNoteEditor, draft: event.target.value };
+    }
   });
   scrollEl.addEventListener("keydown", (event) => {
-    if (!(event.target instanceof HTMLTextAreaElement) || !event.target.matches("[data-wb-chat-edit-input]")) {
+    if (event.target instanceof HTMLTextAreaElement && event.target.matches("[data-wb-chat-edit-input]")) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancelEdit();
+        return;
+      }
+      if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && editingMessageId) {
+        event.preventDefault();
+        saveEdit(editingMessageId);
+      }
       return;
     }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      cancelEdit();
-      return;
-    }
-    if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && editingMessageId) {
-      event.preventDefault();
-      saveEdit(editingMessageId);
+    // R14 批 FEEDBACK：反馈备注是单行输入（rows=1）——普通 Enter 就保存（不像编辑框那样把 Enter 留给
+    // 换行，一句话备注没有多行的必要），Escape 跳过/取消。
+    if (event.target instanceof HTMLTextAreaElement && event.target.matches("[data-wb-chat-feedback-note-input]")) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancelFeedbackNoteEditor();
+        return;
+      }
+      if (event.key === "Enter" && !event.shiftKey && feedbackNoteEditor) {
+        event.preventDefault();
+        saveFeedbackNote(feedbackNoteEditor.messageId);
+      }
     }
   });
 
