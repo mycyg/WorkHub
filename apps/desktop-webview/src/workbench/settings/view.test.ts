@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { WorkHubApiError } from "@workhub/api-client/client";
-import type { ProjectAiGovernanceVM } from "@workhub/contracts";
+import type { GithubBindingStatusVM, GithubTestConnectionResult, ProjectAiGovernanceVM } from "@workhub/contracts";
 
 import { defaultEnabledQuietHours, mountProjectSettingsView } from "./view.js";
 
@@ -82,19 +82,54 @@ function governanceVm(over: Partial<ProjectAiGovernanceVM> = {}): ProjectAiGover
 
 type RecordedRequest = { path: string; init: RequestInit | undefined };
 
+function githubBindingVm(over: Partial<GithubBindingStatusVM> = {}): GithubBindingStatusVM {
+  return { project_id: "90000000-0000-4000-8000-000000000001", bound: false, ...over };
+}
+
+// R14 批 GH：clientReturning 现在也要路由 /github-binding 请求——mountProjectSettingsView 挂载时
+// 会并行拉 GH 绑定卡的独立状态（见 view.ts 顶部注释：两个分区权限口径不同，不能共用一个 loadState）。
+// 现有（非 GH 相关）测试没有提供任何 onGithub* 处理器，此时默认回落"未绑定"，让它们的 governance
+// 断言不受影响；GH 专项测试通过 onGithub* 覆盖默认值。
 function clientReturning(input: {
   onGet?: () => ProjectAiGovernanceVM | Promise<ProjectAiGovernanceVM>;
   onPatch?: (body: Record<string, unknown>) => ProjectAiGovernanceVM | Promise<ProjectAiGovernanceVM>;
+  onGithubGet?: () => GithubBindingStatusVM | Promise<GithubBindingStatusVM>;
+  onGithubPut?: (body: Record<string, unknown>) => GithubBindingStatusVM | Promise<GithubBindingStatusVM>;
+  onGithubDelete?: () => void | Promise<void>;
+  onGithubTest?: (body: Record<string, unknown>) => GithubTestConnectionResult | Promise<GithubTestConnectionResult>;
   requests?: RecordedRequest[];
 }) {
   return {
     async request<T>(path: string, init?: RequestInit): Promise<T> {
       input.requests?.push({ path, init });
+      const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
+      if (path.includes("/github-binding")) {
+        if (path.endsWith("/test")) {
+          if (!input.onGithubTest) {
+            throw new Error("unexpected github test");
+          }
+          return (await input.onGithubTest(body)) as unknown as T;
+        }
+        if (init?.method === "PUT") {
+          if (!input.onGithubPut) {
+            throw new Error("unexpected github PUT");
+          }
+          return (await input.onGithubPut(body)) as unknown as T;
+        }
+        if (init?.method === "DELETE") {
+          if (!input.onGithubDelete) {
+            throw new Error("unexpected github DELETE");
+          }
+          await input.onGithubDelete();
+          return undefined as unknown as T;
+        }
+        return (await (input.onGithubGet ? input.onGithubGet() : githubBindingVm())) as unknown as T;
+      }
       if (init?.method === "PATCH") {
         if (!input.onPatch) {
           throw new Error("unexpected PATCH");
         }
-        return (await input.onPatch(JSON.parse(String(init.body)) as Record<string, unknown>)) as unknown as T;
+        return (await input.onPatch(body)) as unknown as T;
       }
       if (!input.onGet) {
         throw new Error("unexpected GET");
@@ -339,6 +374,263 @@ test("a non-editable mount never issues a PATCH no matter what is clicked", asyn
 
     assert.equal(requests.filter((request) => request.init?.method === "PATCH").length, 0);
     assert.match(container.innerHTML, /只有项目负责人能修改这些设置。/u);
+  });
+});
+
+// —— R14 批 GH（07-gh-design.md §3 UI 节）：GitHub 绑定卡是独立分区、独立状态机——GET 权限口径
+// 比上面 governance 松（项目可见者皆可读），所以下面几个用例故意让 governance 走 owner_only/404，
+// 验证 GH 分区仍能独立加载/展示，不被 governance 的早退早死带着一起挂掉。 —— //
+
+test("R14 GH: an unbound project renders the honest placeholder with a bind CTA for the owner", async () => {
+  const container = new FakeContainer();
+  mountProjectSettingsView(container as unknown as HTMLElement, {
+    client: clientReturning({ onGet: () => governanceVm() }),
+    locale: "zh-CN",
+    projectId: "90000000-0000-4000-8000-000000000001",
+    projectName: "星尘短剧",
+    editable: true
+  });
+  await tick();
+
+  assert.match(container.innerHTML, /还没有关联 GitHub 仓库/u);
+  assert.match(container.innerHTML, /data-wb-gh-bind-cta/u);
+});
+
+test("R14 GH: a bound project renders repo/sync/activity status for a non-owner (whose governance section is owner-only) with no write hooks", async () => {
+  const container = new FakeContainer();
+  mountProjectSettingsView(container as unknown as HTMLElement, {
+    client: clientReturning({
+      onGet: () => {
+        throw new WorkHubApiError(404, "ai_governance_not_found", "没有找到可管理的项目 AI 设置。");
+      },
+      onGithubGet: () =>
+        githubBindingVm({
+          bound: true,
+          repo_full_name: "octocat/Hello-World",
+          last_synced_at: "2026-07-14T09:00:00.000Z",
+          activity_count_7d: 12
+        })
+    }),
+    locale: "zh-CN",
+    projectId: "90000000-0000-4000-8000-000000000001",
+    projectName: "星尘短剧",
+    editable: false
+  });
+  await tick();
+
+  // Governance still shows its own owner-only explanation...
+  assert.match(container.innerHTML, /data-wb-pset-owner-only="true"/u);
+  // ...but the GH section renders independently, proving it isn't gated on governance's loadState.
+  assert.match(container.innerHTML, /octocat\/Hello-World/u);
+  assert.match(container.innerHTML, /近 7 天活动 12 条/u);
+  assert.doesNotMatch(container.innerHTML, /data-wb-gh-unbind\b/u);
+  assert.doesNotMatch(container.innerHTML, /data-wb-gh-edit-cta\b/u);
+  assert.match(container.innerHTML, /只有项目负责人能管理 GitHub 绑定。/u);
+});
+
+test("R14 GH: a load failure renders a scoped retry that reloads only the GitHub section", async () => {
+  await withFakeDomGlobals(async () => {
+    const container = new FakeContainer();
+    let fail = true;
+    mountProjectSettingsView(container as unknown as HTMLElement, {
+      client: clientReturning({
+        onGet: () => governanceVm(),
+        onGithubGet: () => {
+          if (fail) {
+            throw new WorkHubApiError(500, "internal_error", "boom");
+          }
+          return githubBindingVm();
+        }
+      }),
+      locale: "zh-CN",
+      projectId: "90000000-0000-4000-8000-000000000001",
+      projectName: "星尘短剧",
+      editable: true
+    });
+    await tick();
+
+    assert.match(container.innerHTML, /GitHub 绑定状态没拉到，稍后重试/u);
+    fail = false;
+    container.dispatch("click", new FakeElement(new Set(["[data-wb-gh-retry]"])));
+    await tick();
+    assert.match(container.innerHTML, /还没有关联 GitHub 仓库/u);
+  });
+});
+
+test("R14 GH: owner opens the bind form, tests the connection, links the repo, and the typed PAT is never echoed back afterward", async () => {
+  await withFakeDomGlobals(async () => {
+    const container = new FakeContainer();
+    const putBodies: Record<string, unknown>[] = [];
+    const testBodies: Record<string, unknown>[] = [];
+    mountProjectSettingsView(container as unknown as HTMLElement, {
+      client: clientReturning({
+        onGet: () => governanceVm(),
+        onGithubGet: () => githubBindingVm(),
+        onGithubTest: (body) => {
+          testBodies.push(body);
+          return { ok: true, repo_full_name: "octocat/Hello-World", repo_default_branch: "main", repo_private: false };
+        },
+        onGithubPut: (body) => {
+          putBodies.push(body);
+          return githubBindingVm({ bound: true, repo_full_name: body.repo_full_name as string, activity_count_7d: 0 });
+        }
+      }),
+      locale: "zh-CN",
+      projectId: "90000000-0000-4000-8000-000000000001",
+      projectName: "星尘短剧",
+      editable: true
+    });
+    await tick();
+
+    container.dispatch("click", new FakeElement(new Set(["[data-wb-gh-bind-cta]"])));
+    await tick();
+    assert.match(container.innerHTML, /data-wb-gh-form="true"/u);
+
+    const repoField = new FakeElement();
+    repoField.value = "octocat/Hello-World";
+    const patField = new FakeElement();
+    patField.value = "ghp_1234567890abcdef1234";
+    container.setQueryResult("[data-wb-gh-repo-input]", repoField);
+    container.setQueryResult("[data-wb-gh-pat-input]", patField);
+
+    container.dispatch("click", new FakeElement(new Set(["[data-wb-gh-test]"])));
+    await tick();
+    assert.deepEqual(testBodies, [{ repo_full_name: "octocat/Hello-World", personal_access_token: "ghp_1234567890abcdef1234" }]);
+    assert.match(container.innerHTML, /连接成功/u);
+
+    container.dispatch("click", new FakeElement(new Set(["[data-wb-gh-submit]"])));
+    await tick();
+    assert.deepEqual(putBodies, [{ repo_full_name: "octocat/Hello-World", personal_access_token: "ghp_1234567890abcdef1234" }]);
+    assert.match(container.innerHTML, /octocat\/Hello-World/u);
+    assert.doesNotMatch(container.innerHTML, /ghp_1234567890abcdef1234/u);
+    assert.doesNotMatch(container.innerHTML, /data-wb-gh-form="true"/u);
+  });
+});
+
+test("R14 GH: submitting with an empty PAT is blocked client-side and never issues a PUT", async () => {
+  await withFakeDomGlobals(async () => {
+    const container = new FakeContainer();
+    const putBodies: Record<string, unknown>[] = [];
+    mountProjectSettingsView(container as unknown as HTMLElement, {
+      client: clientReturning({
+        onGet: () => governanceVm(),
+        onGithubGet: () => githubBindingVm(),
+        onGithubPut: (body) => {
+          putBodies.push(body);
+          return githubBindingVm({ bound: true });
+        }
+      }),
+      locale: "zh-CN",
+      projectId: "90000000-0000-4000-8000-000000000001",
+      projectName: "星尘短剧",
+      editable: true
+    });
+    await tick();
+
+    container.dispatch("click", new FakeElement(new Set(["[data-wb-gh-bind-cta]"])));
+    await tick();
+    const repoField = new FakeElement();
+    repoField.value = "octocat/Hello-World";
+    container.setQueryResult("[data-wb-gh-repo-input]", repoField);
+    container.setQueryResult("[data-wb-gh-pat-input]", new FakeElement());
+
+    container.dispatch("click", new FakeElement(new Set(["[data-wb-gh-submit]"])));
+    await tick();
+    assert.equal(putBodies.length, 0);
+    assert.match(container.innerHTML, /仓库和 PAT 都要填。/u);
+  });
+});
+
+test("R14 GH: a 503 from an unconfigured encryption key surfaces the self-host guidance, not a generic error", async () => {
+  await withFakeDomGlobals(async () => {
+    const container = new FakeContainer();
+    mountProjectSettingsView(container as unknown as HTMLElement, {
+      client: clientReturning({
+        onGet: () => governanceVm(),
+        onGithubGet: () => githubBindingVm(),
+        onGithubPut: () => {
+          throw new WorkHubApiError(503, "github_binding_encryption_unconfigured", "GitHub 集成未配置加密密钥");
+        }
+      }),
+      locale: "zh-CN",
+      projectId: "90000000-0000-4000-8000-000000000001",
+      projectName: "星尘短剧",
+      editable: true
+    });
+    await tick();
+
+    container.dispatch("click", new FakeElement(new Set(["[data-wb-gh-bind-cta]"])));
+    await tick();
+    const repoField = new FakeElement();
+    repoField.value = "octocat/Hello-World";
+    const patField = new FakeElement();
+    patField.value = "ghp_1234567890abcdef1234";
+    container.setQueryResult("[data-wb-gh-repo-input]", repoField);
+    container.setQueryResult("[data-wb-gh-pat-input]", patField);
+
+    container.dispatch("click", new FakeElement(new Set(["[data-wb-gh-submit]"])));
+    await tick();
+    assert.match(container.innerHTML, /GitHub 集成未配置加密密钥，请联系管理员查看部署文档完成配置。/u);
+  });
+});
+
+test("R14 GH: unbind requires two clicks (armed confirmation) before DELETE fires", async () => {
+  await withFakeDomGlobals(async () => {
+    const container = new FakeContainer();
+    let deleteCalls = 0;
+    mountProjectSettingsView(container as unknown as HTMLElement, {
+      client: clientReturning({
+        onGet: () => governanceVm(),
+        onGithubGet: () => githubBindingVm({ bound: true, repo_full_name: "octocat/Hello-World" }),
+        onGithubDelete: () => {
+          deleteCalls += 1;
+        }
+      }),
+      locale: "zh-CN",
+      projectId: "90000000-0000-4000-8000-000000000001",
+      projectName: "星尘短剧",
+      editable: true
+    });
+    await tick();
+
+    container.dispatch("click", new FakeElement(new Set(["[data-wb-gh-unbind]"])));
+    await tick();
+    assert.equal(deleteCalls, 0, "first click only arms the confirmation");
+    assert.match(container.innerHTML, /确认解绑？/u);
+
+    container.dispatch("click", new FakeElement(new Set(["[data-wb-gh-unbind]"])));
+    await tick();
+    assert.equal(deleteCalls, 1);
+    assert.match(container.innerHTML, /还没有关联 GitHub 仓库/u);
+  });
+});
+
+test("R14 GH: a non-owner viewer never issues a write request no matter what write hook is clicked (none are even rendered)", async () => {
+  await withFakeDomGlobals(async () => {
+    const container = new FakeContainer();
+    const requests: RecordedRequest[] = [];
+    mountProjectSettingsView(container as unknown as HTMLElement, {
+      client: clientReturning({
+        onGet: () => {
+          throw new WorkHubApiError(404, "ai_governance_not_found", "没有找到可管理的项目 AI 设置。");
+        },
+        onGithubGet: () => githubBindingVm({ bound: true, repo_full_name: "octocat/Hello-World" }),
+        requests
+      }),
+      locale: "zh-CN",
+      projectId: "90000000-0000-4000-8000-000000000001",
+      projectName: "星尘短剧",
+      editable: false
+    });
+    await tick();
+
+    container.dispatch("click", new FakeElement(new Set(["[data-wb-gh-unbind]"])));
+    container.dispatch("click", new FakeElement(new Set(["[data-wb-gh-bind-cta]"])));
+    container.dispatch("click", new FakeElement(new Set(["[data-wb-gh-edit-cta]"])));
+    await tick();
+
+    assert.equal(requests.filter((request) => request.init?.method && request.init.method !== "GET").length, 0);
+    assert.doesNotMatch(container.innerHTML, /确认解绑/u);
   });
 });
 

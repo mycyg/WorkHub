@@ -2160,6 +2160,68 @@ test("B-R9.6 project home rows show the army progress pill only for armied work 
   assertNoMainWindowBoundaryLeak(projectHome.html);
 });
 
+// R14 批 GH（07-gh-design.md §5.1）：项目主页 github_activities 区块——web 端消费。
+test("R14 GH: project home renders recent GitHub activity with kind/state/author badges and a real external link", () => {
+  const baseVm = {
+    generated_at: "2026-07-14T09:00:00.000Z",
+    project: {
+      id: "93000000-0000-4000-8000-000000000001",
+      name: "R5 Workspace",
+      slug: "r5-workspace",
+      description: null,
+      owner_label: "owner",
+      status: "active" as const
+    },
+    summary: { open_work_item_count: 0, total_open_work_item_count: 0 },
+    open_work_items: [],
+    drive: { file_count: 0, recent_files: [] },
+    actions: {
+      new_task: { id: "new_task", label: "新任务", method: "GET" as const, href: "/intake" },
+      open_drive: { id: "open_drive", label: "打开网盘", method: "GET" as const, href: "/drive?project_id=93000000-0000-4000-8000-000000000001" }
+    }
+  };
+  const withActivity = renderWebRouteComponent({
+    key: "project-home",
+    project: {
+      ...baseVm,
+      github_activities: [
+        { kind: "commit" as const, title: "Fix flaky retry test", html_url: "https://github.com/octocat/Hello-World/commit/abc123", occurred_at: "2026-07-14T09:30:00.000Z", author_login: "octocat" },
+        { kind: "pull_request" as const, title: "Add GitHub sync worker", html_url: "https://github.com/octocat/Hello-World/pull/42", occurred_at: "2026-07-13T08:00:00.000Z", author_login: "hubot", state: "merged" },
+        { kind: "issue" as const, title: "Polling misses PR updates", html_url: "https://github.com/octocat/Hello-World/issues/7", occurred_at: "2026-07-12T07:00:00.000Z", state: "open" }
+      ]
+    }
+  }, { locale: "zh-CN" });
+  assert.equal(withActivity.html.includes("最近 GitHub 动态"), true);
+  assert.equal(withActivity.html.includes("Fix flaky retry test"), true);
+  assert.equal(withActivity.html.includes('href="https://github.com/octocat/Hello-World/commit/abc123"'), true);
+  assert.equal(withActivity.html.includes('target="_blank"'), true);
+  assert.equal(withActivity.html.includes('rel="noreferrer"'), true);
+  assert.equal(withActivity.html.includes(">提交<"), true);
+  assert.equal(withActivity.html.includes(">PR<"), true);
+  assert.equal(withActivity.html.includes(">议题<"), true);
+  assert.equal(withActivity.html.includes("merged"), true);
+  assert.equal(withActivity.html.includes("octocat"), true);
+  assert.equal(withActivity.html.includes("hubot"), true);
+  assertNoMainWindowBoundaryLeak(withActivity.html);
+
+  // No binding / no activity: the field is absent (not an empty array), so no section at all.
+  const withoutActivity = renderWebRouteComponent({ key: "project-home", project: baseVm }, { locale: "zh-CN" });
+  assert.equal(withoutActivity.html.includes("最近 GitHub 动态"), false);
+  assert.equal(withoutActivity.html.includes("data-r14-project-home-github"), false);
+
+  const en = renderWebRouteComponent({
+    key: "project-home",
+    project: {
+      ...baseVm,
+      github_activities: [
+        { kind: "commit" as const, title: "Fix flaky retry test", html_url: "https://github.com/octocat/Hello-World/commit/abc123", occurred_at: "2026-07-14T09:30:00.000Z" }
+      ]
+    }
+  }, { locale: "en-US" });
+  assert.equal(en.html.includes("Recent GitHub activity"), true);
+  assert.equal(en.html.includes(">Commit<"), true);
+});
+
 test("R4.14 Intake confirm component exposes create work item action with selected option payload", () => {
   const vm = {
     ...surfaceVm(),

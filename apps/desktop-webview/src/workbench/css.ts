@@ -266,6 +266,18 @@ export const workbenchCss = [
   ".wh-wb-pset-chip[data-sel=\"true\"]{border-color:var(--ds-danger);color:var(--ds-danger);box-shadow:inset 0 0 0 1px rgba(255,69,58,.22)}",
   ".wh-wb-pset-chip:disabled{cursor:default;opacity:.7}",
 
+  // —— R14 批 GH：项目设置里的 GitHub 绑定卡——文本输入/状态卡/操作行，风格延续上面的 .wh-wb-pset-*
+  // 语言（浅色玻璃行 + 同款输入框），不引入新的视觉体系。 —— //
+  ".wh-wb-pset-gh-loading-row{display:flex;align-items:center;gap:8px;font:500 12.5px/1.5 var(--ds-font);color:var(--ds-ink-muted)}",
+  ".wh-wb-pset-gh-form{display:flex;flex-direction:column;gap:6px;margin-top:4px}",
+  ".wh-wb-pset-text{width:100%;box-sizing:border-box;padding:8px 10px;background:rgba(15,23,42,.045);" +
+    "border:1px solid rgba(15,23,42,.14);border-radius:9px;color:var(--ds-ink);font:500 13px/1.3 var(--ds-font);outline:none}",
+  ".wh-wb-pset-text:focus{border-color:rgba(10,132,255,.45)}",
+  ".wh-wb-pset-text:disabled{opacity:.6}",
+  ".wh-wb-pset-gh-status{margin-top:4px}",
+  ".wh-wb-pset-gh-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}",
+  ".wh-wb-pset-gh-unbind--armed{border-color:rgba(255,69,58,.4);color:var(--ds-danger);background:var(--ds-danger-soft,rgba(255,69,58,.12))}",
+
   // —— 新建项目模态 —— //
   // 遮罩层保留深色 scrim（这是弹窗遮罩的通用惯例，跟壳体本身是浅是深无关，只是把注意力摁到模态上；
   // 比原深色主题版本调淡一档，别在浅色壳体上显得突兀）。

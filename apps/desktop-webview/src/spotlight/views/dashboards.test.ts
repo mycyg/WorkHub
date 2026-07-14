@@ -157,6 +157,29 @@ test("desktop project-home recent files keep their file deep-link when opening d
   );
 });
 
+// —— R14 批 GH（07-gh-design.md §5.1）：项目主页 github_activities 区块。 —— //
+
+test("GH: recent GitHub activity renders a kind badge, title, author and date, and is honestly absent when unbound/no activity", () => {
+  const withActivity = projectHomeDetailHtml(vm({
+    github_activities: [
+      { kind: "commit", title: "Fix flaky retry test", html_url: "https://github.com/octocat/Hello-World/commit/abc123", occurred_at: "2026-07-14T09:30:00.000Z", author_login: "octocat" },
+      { kind: "pull_request", title: "Add GitHub sync worker", html_url: "https://github.com/octocat/Hello-World/pull/42", occurred_at: "2026-07-13T08:00:00.000Z", author_login: "hubot", state: "merged" },
+      { kind: "issue", title: "Polling misses PR updates", html_url: "https://github.com/octocat/Hello-World/issues/7", occurred_at: "2026-07-12T07:00:00.000Z", state: "open" }
+    ]
+  }), true);
+  assert.ok(withActivity.includes("最近 GitHub 动态"), "section heading");
+  assert.ok(withActivity.includes("Fix flaky retry test"), "commit title");
+  assert.ok(withActivity.includes('data-open-gh-activity="https://github.com/octocat/Hello-World/commit/abc123"'), "commit links to html_url");
+  assert.ok(withActivity.includes("提交") && withActivity.includes("PR") && withActivity.includes("议题"), "kind labels for commit/PR/issue");
+  assert.ok(withActivity.includes("merged") && withActivity.includes("open"), "state tags for PR/issue");
+  assert.ok(withActivity.includes("octocat") && withActivity.includes("hubot"), "author logins");
+
+  // No binding / no activity: the field is omitted by the server (not an empty array), so no section at all.
+  const withoutActivity = projectHomeDetailHtml(vm(), true);
+  assert.ok(!withoutActivity.includes("最近 GitHub 动态"), "no section when github_activities is absent");
+  assert.ok(!withoutActivity.includes("data-open-gh-activity"), "no activity rows rendered");
+});
+
 test("S3 desktop project-home shows an empty state when there is no open work", () => {
   const html = projectHomeDetailHtml(vm({ summary: { open_work_item_count: 0 }, open_work_items: [] }), true);
   assert.ok(html.includes("暂无进行中的工作"), "empty state copy");

@@ -13,6 +13,7 @@ import type {
   DrivePageVM,
   EvidenceBubble,
   EvidenceRef,
+  GithubActivityVM,
   ProposalConflict,
   ProposalDetailVM,
   MeetingPageVM,
@@ -460,6 +461,7 @@ type RouteCopyKey =
   | "projectHome.back"
   | "projectHome.files"
   | "projectHome.noFiles"
+  | "projectHome.github"
   | "settings.runtime"
   | "settings.llm"
   | "settings.language"
@@ -706,6 +708,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "projectHome.back": "← 返回项目列表",
     "projectHome.files": "最近文件",
     "projectHome.noFiles": "网盘里还没有文件。",
+    "projectHome.github": "最近 GitHub 动态",
     "skills.active": "在用",
     "skills.aiAuthored": "AI 蒸馏",
     "skills.refined": "已精修",
@@ -958,6 +961,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "projectHome.back": "← Back to projects",
     "projectHome.files": "Recent files",
     "projectHome.noFiles": "No files in the drive yet.",
+    "projectHome.github": "Recent GitHub activity",
     "skills.active": "Active",
     "skills.aiAuthored": "AI-distilled",
     "skills.refined": "Refined",
@@ -4225,6 +4229,41 @@ function renderProjectsRouteComponent(vm: ProjectListVM, locale: WorkHubLocale):
   });
 }
 
+// R14 批 GH（07-gh-design.md §5.1）：项目主页 github_activities 区块——GH-B 已把它接进
+// ProjectHomePageVM（扁平数组，非富对象；绑定/同步元信息走独立的绑定卡端点，桌面端设置里的绑定卡消费）。
+// 无绑定/绑定但暂无活动/取数失败三种情况服务端都省略这个字段，故这里只需判空即可诚实不渲区块。
+function githubActivityKindLabel(kind: GithubActivityVM["kind"], zh: boolean): string {
+  switch (kind) {
+    case "commit":
+      return zh ? "提交" : "Commit";
+    case "pull_request":
+      return "PR";
+    case "issue":
+      return zh ? "议题" : "Issue";
+    default:
+      return kind;
+  }
+}
+
+// web 是真浏览器（不是桌面 Tauri webview），target=_blank 真能把外链甩到系统浏览器，
+// 照抄网盘下载链接的既有外链手法（data-native-resource-link + rel=noreferrer）。
+function githubActivityRowHtml(item: GithubActivityVM, locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  const stateTag = item.state ? `<span class="wh-pill" data-tone="${escapeHtml(item.state)}">${escapeHtml(item.state)}</span>` : "";
+  const authorTag = item.author_login ? `<span class="wh-pill">${escapeHtml(item.author_login)}</span>` : "";
+  return `<a class="wh-r4-route-row" href="${escapeHtml(safeHref(item.html_url))}" data-r14-project-home-github-item="true" data-native-resource-link="true" target="_blank" rel="noreferrer">
+      <div>
+        <strong>${escapeHtml(item.title)}</strong>
+        <div class="wh-r4-route-meta">
+          <span class="wh-pill">${escapeHtml(githubActivityKindLabel(item.kind, zh))}</span>
+          ${stateTag}
+          ${authorTag}
+          <span class="wh-pill">${escapeHtml(item.occurred_at.slice(0, 10))}</span>
+        </div>
+      </div>
+    </a>`;
+}
+
 function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubLocale): WebRouteComponent {
   // GitHub 式项目主页：项目头（名称 + 描述 + 负责人 + 状态 + 进行中计数）+ 入口动作（新任务 / 打开网盘）
   // + 进行中工作清单（每条链到 /workitems/:id，带状态/优先级徽标）+ 空态。动作 href/label 取自服务端 VM（已本地化）。
@@ -4292,6 +4331,15 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
       </div>
     </a>`).join("")
     : `<p class="wh-subtle" data-r8-project-home-no-files="true">${escapeHtml(routeT(locale, "projectHome.noFiles"))}</p>`;
+  // R14 批 GH：未绑定/绑定但暂无活动/取数失败——服务端三种情况都省略这个字段（诚实缺省），
+  // 故只有非空数组才渲区块，不渲空列表占位。
+  const githubActivities = vm.github_activities ?? [];
+  const githubSection = githubActivities.length
+    ? `<section class="wh-card wh-r4-route-card" data-r14-project-home-github="${escapeHtml(String(githubActivities.length))}">
+        <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "projectHome.github"))}</h3>
+        <div class="wh-r4-route-table">${githubActivities.map((item) => githubActivityRowHtml(item, locale)).join("")}</div>
+      </section>`
+    : "";
   const rows = vm.open_work_items.length
     ? vm.open_work_items.map((item) => `<a class="wh-r4-route-row" href="${escapeHtml(safeHref(item.href))}" data-r8-project-home-item="${escapeHtml(item.id)}" data-r8-project-home-item-code="${escapeHtml(item.code)}">
       <div>
@@ -4340,6 +4388,7 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
         ${filesMoreNote}
         <a class="wh-r4-route-kicker" href="${escapeHtml(safeHref(vm.actions.open_drive.href))}" data-r8-project-home-files-all="true">${escapeHtml(vm.actions.open_drive.label)} →</a>
       </section>
+      ${githubSection}
       <a class="wh-r4-route-kicker" href="/projects" data-r8-project-home-back="true">${escapeHtml(routeT(locale, "projectHome.back"))}</a>
     </section>`
   });
