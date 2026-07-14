@@ -114,6 +114,34 @@ test("renderMessageHtml resolves each of three distinct human senders in a small
   assert.doesNotMatch(wangHtml, /张三|李四/u);
 });
 
+// R14 批 AVATAR（头像与资料入口，2026-07-14 用户点名新增）：真人消息行的头像 tile 带
+// data-wb-avatar-user-id——view.ts 的 hydrateAvatarPhotos 据此把真实头像图片叠进色块之上，
+// onerror/无头像时回退到已有的首字母色块（这条测试只钉字符串产出，不测 hydrate 本身——那部分
+// 需要真 DOM，覆盖在 view.test.ts）。Cuu 消息不带这个属性——猫头像不受影响。
+test("renderMessageHtml marks a human sender's avatar tile with data-wb-avatar-user-id for later photo hydration", () => {
+  const ctx = ctxWith([member({ user_id: "u1", nickname: "张三" })]);
+  const html = renderMessageHtml(baseMessage({ sender_user_id: "u1", content: { text: "hi" } }), ctx);
+  assert.match(html, /data-wb-avatar-user-id="u1"/u);
+});
+
+test("renderMessageHtml does not mark Cuu's avatar tile with data-wb-avatar-user-id (the cat icon is not a photo)", () => {
+  const ctx = ctxWith([]);
+  const html = renderMessageHtml(baseMessage({ sender_type: "cuu", sender_user_id: null, content: { text: "hi" } }), ctx);
+  assert.doesNotMatch(html, /data-wb-avatar-user-id/u);
+  assert.match(html, /wh-wb-chat-avatar--cuu/u);
+});
+
+test("renderMemberBarHtml marks each member's avatar tile with data-wb-avatar-user-id, but not Cuu's", () => {
+  const html = renderMemberBarHtml({
+    members: [member({ user_id: "u1", nickname: "张三" }), member({ user_id: "u2", nickname: "阿曼" })],
+    locale: "zh-CN"
+  });
+  assert.match(html, /data-wb-avatar-user-id="u1"/u);
+  assert.match(html, /data-wb-avatar-user-id="u2"/u);
+  // Two member tiles + the Cuu tile share the class; only the two members get the data hook.
+  assert.equal((html.match(/data-wb-avatar-user-id="/gu) ?? []).length, 2);
+});
+
 // —— day separator —— //
 
 test("renderDaySeparatorHtml escapes and wraps the label", () => {

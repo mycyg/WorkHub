@@ -13,6 +13,14 @@ function tick() {
 class FakeElement {
   public dataset: Record<string, string> = {};
   public value = "";
+  // R14 批 AVATAR：hydrateAvatarPreview/remove/upload 都会摸 el.hidden / el.textContent / el.src——
+  // 给通用假元素补这三个属性，绝大多数既有测试从不设置查询结果（见 queryResults 默认空），
+  // 因此 ctx.body.querySelector("[data-spot-avatar-*]") 照旧返回 null，hydrateAvatarPreview 直接
+  // 短路 return，不影响任何既有断言；只有专门测头像的新用例会显式注册查询结果。
+  public hidden = false;
+  public textContent: string | null = null;
+  public src = "";
+  private readonly queryResults = new Map<string, FakeElement>();
 
   constructor(
     private readonly selectors = new Set<string>(),
@@ -26,6 +34,14 @@ class FakeElement {
   closest<T extends Element = Element>(selector: string): T | null {
     return this.selectors.has(selector) ? (this as unknown as T) : null;
   }
+
+  querySelector<T extends Element = Element>(selector: string): T | null {
+    return (this.queryResults.get(selector) as unknown as T) ?? null;
+  }
+
+  setQueryResult(selector: string, element: FakeElement): void {
+    this.queryResults.set(selector, element);
+  }
 }
 
 class FakeBody extends FakeElement {
@@ -34,9 +50,12 @@ class FakeBody extends FakeElement {
   // R13 批 A2（派人推荐 v2）："我的资料"分区的三个自由文本字段用 focusout（不是 click）保存——
   // 这个假 body 需要同时支持两种委托事件类型才能测那条保存路径。
   private readonly focusoutListeners: Array<(event: { target: unknown }) => void> = [];
+  // R14 批 AVATAR：头像文件选择器用 change（不是 click/focusout）触发裁剪层。
+  private readonly changeListeners: Array<(event: { target: unknown }) => void> = [];
 
   addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
-    const bucket = type === "click" ? this.clickListeners : type === "focusout" ? this.focusoutListeners : undefined;
+    const bucket =
+      type === "click" ? this.clickListeners : type === "focusout" ? this.focusoutListeners : type === "change" ? this.changeListeners : undefined;
     if (!bucket) return;
     bucket.push((event) => {
       if (typeof listener === "function") {
@@ -55,6 +74,12 @@ class FakeBody extends FakeElement {
 
   focusOutOn(target: FakeElement) {
     for (const listener of this.focusoutListeners) {
+      listener({ target });
+    }
+  }
+
+  changeOn(target: FakeElement) {
+    for (const listener of this.changeListeners) {
       listener({ target });
     }
   }
@@ -538,4 +563,198 @@ test("a failed my-profile fetch does not block the rest of settings, and offers 
     assert.equal(profileFetchCalls, 2);
     assert.match(body.innerHTML, /data-set-profile-title[^>]*value="前端负责人"/u);
   });
+});
+
+// R14 批 AVATAR（头像与资料入口，2026-07-14 用户点名新增）——本节起的测试覆盖头像分区：
+// SSR 骨架渲染、移除头像的 DELETE 接线、以及预览水合（hydrateAvatarPreview）成功/失败两态。
+// 上传裁剪层本身（选图→裁剪→确认→上传）的集成测试在同目录的 avatar-crop-modal.test.ts，
+// 这里不重复——因为 openSpotlightAvatarCropModal 走真 document/Image/canvas 的默认 deps，
+// 而这个文件的假 body 不是真 DOM，change 监听器一旦触发真的会调用默认 deps 而不是测试注入的假 deps
+// （settings.ts 的生产代码本来就不该、也没有对外暴露"从这里注入裁剪层假 deps"的口子）。
+
+test("settings view renders the avatar section: fallback tile initial + upload label + hidden remove button", async () => {
+  const body = new FakeBody();
+  const vm = settingsVm();
+  const profile = userProfileVm({ nickname: "王五" });
+
+  await createSettingsView().mount(
+    baseCtx(body, {
+      client: {
+        pages: { async settings() { return vm; } },
+        async request<T>(path: string) {
+          if (path === "/api/me/profile") {
+            return profile as unknown as T;
+          }
+          return aiProfileVm() as unknown as T;
+        }
+      } as unknown as SpotlightViewContext["client"]
+    })
+  );
+  await tick();
+
+  assert.match(body.innerHTML, /data-spot-avatar-section="true"/u);
+  // Fallback tile shows the first character of the nickname, uppercased.
+  assert.match(body.innerHTML, /data-spot-avatar-fallback="true"[^>]*>王</u);
+  assert.match(body.innerHTML, /data-spot-avatar-img="true"[^>]*hidden/u);
+  assert.match(body.innerHTML, /data-spot-avatar-file-input="true"/u);
+  assert.match(body.innerHTML, /accept="image\/png,image\/jpeg,image\/webp"/u);
+  assert.match(body.innerHTML, /data-spot-avatar-remove-btn="true"[^>]*hidden/u);
+  assert.match(body.innerHTML, /更换头像/u);
+  assert.match(body.innerHTML, /移除头像/u);
+});
+
+test("clicking remove-avatar issues DELETE /api/me/avatar and hides the image + button", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = settingsVm();
+    const profile = userProfileVm();
+    const deleteCalls: string[] = [];
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string, init?: RequestInit) {
+            if (init?.method === "DELETE") {
+              deleteCalls.push(path);
+              return { avatar_updated_at: null } as unknown as T;
+            }
+            if (path === "/api/me/profile") {
+              return profile as unknown as T;
+            }
+            return aiProfileVm() as unknown as T;
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+
+    const img = new FakeElement();
+    body.setQueryResult("[data-spot-avatar-img]", img);
+    const status = new FakeElement();
+    body.setQueryResult("[data-spot-avatar-status]", status);
+
+    const removeBtn = new FakeElement(new Set(["[data-spot-avatar-remove-btn]"]));
+    body.click(removeBtn);
+    await tick();
+    await tick();
+
+    assert.deepEqual(deleteCalls, ["/api/me/avatar"]);
+    assert.equal(img.hidden, true, "the <img> must be hidden after removal");
+    assert.equal(removeBtn.hidden, true, "the remove button itself hides once there's nothing to remove");
+    assert.equal(status.hidden, false);
+    assert.equal(status.textContent, "已移除头像");
+  });
+});
+
+test("a failed DELETE shows a gentle inline error and does not hide the existing avatar", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = settingsVm();
+    const profile = userProfileVm();
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string, init?: RequestInit) {
+            if (init?.method === "DELETE") {
+              throw new Error("boom");
+            }
+            if (path === "/api/me/profile") {
+              return profile as unknown as T;
+            }
+            return aiProfileVm() as unknown as T;
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+
+    const status = new FakeElement();
+    body.setQueryResult("[data-spot-avatar-status]", status);
+    const removeBtn = new FakeElement(new Set(["[data-spot-avatar-remove-btn]"]));
+
+    body.click(removeBtn);
+    await tick();
+    await tick();
+
+    assert.equal(removeBtn.hidden, false, "a failed removal must not hide the button — nothing actually changed");
+    assert.equal(status.hidden, false);
+    assert.match(String(status.textContent), /请重试/u);
+  });
+});
+
+test("hydrateAvatarPreview reveals the <img> + remove button on a successful fetch of the avatar bytes", async () => {
+  const body = new FakeBody();
+  const vm = settingsVm();
+  const profile = userProfileVm();
+  const img = new FakeElement();
+  const removeBtn = new FakeElement();
+  body.setQueryResult("[data-spot-avatar-img]", img);
+  body.setQueryResult("[data-spot-avatar-remove-btn]", removeBtn);
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(new Blob(["fake-bytes"], { type: "image/png" }), { status: 200 })) as typeof fetch;
+  try {
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") {
+              return profile as unknown as T;
+            }
+            return aiProfileVm() as unknown as T;
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+
+    assert.equal(img.hidden, false, "a real avatar must reveal the <img>");
+    assert.match(img.src, /^blob:/u, "the preview must be set from a locally-created object URL, not a bare authenticated href");
+    assert.equal(removeBtn.hidden, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("hydrateAvatarPreview stays on the fallback tile (no crash, no error flash) when the user has no avatar (404)", async () => {
+  const body = new FakeBody();
+  const vm = settingsVm();
+  const profile = userProfileVm();
+  // The real SSR markup starts the <img> as `hidden` (renderSettingsMyProfileCard/avatarSectionHtml);
+  // the fake element defaults to `hidden = false`, so set it explicitly to mirror that real starting
+  // state and prove hydrateAvatarPreview does NOT flip it to visible on a 404.
+  const img = new FakeElement();
+  img.hidden = true;
+  body.setQueryResult("[data-spot-avatar-img]", img);
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(null, { status: 404 })) as typeof fetch;
+  try {
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") {
+              return profile as unknown as T;
+            }
+            return aiProfileVm() as unknown as T;
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+
+    assert.equal(img.hidden, true, "a 404 (no avatar) must leave the <img> hidden — the fallback tile stays visible underneath");
+    assert.equal(img.src, "", "a 404 (no avatar) must never set an <img> src");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

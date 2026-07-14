@@ -34,14 +34,22 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
-function avatarTileHtml(input: { label: string; id: string; variant?: "cuu" | undefined }): string {
+// R14 批 AVATAR（头像与资料入口，2026-07-14 用户点名新增）：真人 tile 带上 data-wb-avatar-user-id——
+// view.ts 的 hydrateAvatarPhotos（真实 DOM 挂载后的命令式步骤，这个文件保持纯字符串拼装、无副作用）
+// 据此把 <img> 叠进色块之上；图裂/没头像时 onerror 隐藏 <img>，色块本就在底下天然回退，不额外加代码。
+// Cuu 的猫图标不受影响（variant="cuu" 分支不带这个属性）。故意不特判 id 是否"看起来像真 UUID"——
+// 极端场景下带一个不存在的 id（如 message.id 兜底）只会让预览图请求 404，被 onerror 悄悄吞掉，
+// 不值得为这个边角案例增加分支复杂度。
+// exported so rail.ts's group-member picker rows use the exact same tile markup/hue algorithm
+// (and the same data-wb-avatar-user-id hook) instead of a second hand-rolled copy.
+export function avatarTileHtml(input: { label: string; id: string; variant?: "cuu" | undefined }): string {
   if (input.variant === "cuu") {
     return `<span class="wh-wb-chat-avatar wh-wb-chat-avatar--cuu">${workbenchIcons.cat}</span>`;
   }
   const trimmed = input.label.trim();
   const initial = trimmed ? trimmed[0]!.toUpperCase() : "?";
   const hue = hueForId(input.id);
-  return `<span class="wh-wb-chat-avatar" style="background:hsl(${hue},55%,42%)">${escapeHtml(initial)}</span>`;
+  return `<span class="wh-wb-chat-avatar" style="background:hsl(${hue},55%,42%)" data-wb-avatar-user-id="${escapeHtml(input.id)}">${escapeHtml(initial)}</span>`;
 }
 
 // —— 成员条 —— //

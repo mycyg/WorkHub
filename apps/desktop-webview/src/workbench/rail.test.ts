@@ -622,6 +622,24 @@ test("renderNewCollabModalHtml checks exactly the selected member checkboxes and
   assert.match(u2Row, /checked/u);
 });
 
+// R14 批 AVATAR（头像与资料入口，2026-07-14 用户点名新增）：建群选人器每行带头像 tile——复用
+// chat/render.ts 的 avatarTileHtml（同一套首字母色块 + data-wb-avatar-user-id 钩子），不是重写
+// 第二份。真实头像图片的挂载不在这里测（那部分要真 DOM，见 chat/view.ts 的既有取舍），这里只钉
+// SSR 字符串产出的形状：每个候选人行都带上了正确的钩子。
+test("renderNewCollabModalHtml gives every member candidate row an avatar tile with the right data hook", () => {
+  const html = renderNewCollabModalHtml({
+    locale: "zh-CN",
+    state: newCollabModalState({ open: true }),
+    memberOptions: [
+      { userId: "u1", nickname: "张三" },
+      { userId: "u2", nickname: "李四" }
+    ]
+  });
+  assert.match(html, /data-wb-avatar-user-id="u1"/u);
+  assert.match(html, /data-wb-avatar-user-id="u2"/u);
+  assert.equal((html.match(/class="wh-wb-chat-avatar"/gu) ?? []).length, 2);
+});
+
 test("renderNewCollabModalHtml shows an honest empty state when the workspace has no other members", () => {
   const html = renderNewCollabModalHtml({ locale: "zh-CN", state: newCollabModalState({ open: true }), memberOptions: [] });
   assert.match(html, /这个工作区暂时没有其他成员/u);
