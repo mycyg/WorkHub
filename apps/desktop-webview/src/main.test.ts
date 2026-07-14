@@ -463,6 +463,12 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
     async search() {
       throw new Error("not needed");
     },
+    async putProposalFeedback() {
+      throw new Error("not needed");
+    },
+    async deleteProposalFeedback() {
+      throw new Error("not needed");
+    },
     async listUserMemories() {
       throw new Error("not needed");
     },
