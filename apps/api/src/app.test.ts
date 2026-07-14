@@ -2883,7 +2883,7 @@ test("health, ready, and client-device OpenAPI routes document startup contracts
   const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
 
   const health = jsonResponseSchema(body.paths, "/api/health", "get", "200");
-  assert.deepEqual(health?.required, ["ok", "service", "env", "runtime", "port"]);
+  assert.deepEqual(health?.required, ["ok", "service", "env", "runtime", "port", "ai_provider_configured"]);
 
   for (const status of ["200", "503"] as const) {
     const ready = jsonResponseSchema(body.paths, "/api/ready", "get", status);

@@ -6,6 +6,7 @@ import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 import { settings } from "@workhub/config";
+import { getDefaultProviderRegistry } from "./services/provider-registry.js";
 
 import { getOpenApiDocument } from "./openapi.js";
 import { createAuthRoutes, createUserDirectoryRoutes } from "./routes/auth.js";
@@ -202,7 +203,10 @@ app.get("/api/health", (c) =>
     service: "workhub-api",
     env: settings.appEnv,
     runtime: "node",
-    port: settings.port
+    port: settings.port,
+    // R14 FIX#8（无 key 自托管的静默死）：LLM provider 未配置时观察者/判定器不启动、turn 直接失败，
+    // 而用户端此前毫无感知。健康端点先把事实亮出来，前端横幅（合并波后接）与自托管排障都读这里。
+    ai_provider_configured: getDefaultProviderRegistry().isConfigured()
   })
 );
 

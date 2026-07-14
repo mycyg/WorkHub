@@ -26,7 +26,7 @@ const onboardingCopy: Record<WorkHubLocale, Record<OnboardingCopyKey, string>> =
   "zh-CN": {
     kicker: "WorkHub",
     title: "报到后开始干活",
-    summary: "告诉团队你是谁。AI 是默认劳动力，你负责审批和拍板。",
+    summary: "告诉团队你是谁。每个项目都有群聊、网盘和 AI 项目经理——派活干活它来，审批拍板归你。",
     nicknameLabel: "你的昵称",
     nicknamePlaceholder: "例如：小拓",
     localeLabel: "界面语言",
@@ -40,7 +40,7 @@ const onboardingCopy: Record<WorkHubLocale, Record<OnboardingCopyKey, string>> =
   "en-US": {
     kicker: "WorkHub",
     title: "Sign in to get to work",
-    summary: "Tell the team who you are. AI does the work by default; you approve and decide.",
+    summary: "Tell the team who you are. Every project gets a group chat, a drive and an AI project manager - it does the work, you approve and decide.",
     nicknameLabel: "Your nickname",
     nicknamePlaceholder: "e.g. Alex",
     localeLabel: "Interface language",

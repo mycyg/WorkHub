@@ -351,13 +351,14 @@ const acceptedDeliverablePreviewResponse = {
 } as const;
 const healthResponseSchema = {
   type: "object",
-  required: ["ok", "service", "env", "runtime", "port"],
+  required: ["ok", "service", "env", "runtime", "port", "ai_provider_configured"],
   properties: {
     ok: { type: "boolean", const: true },
     service: { type: "string", const: "workhub-api" },
     env: { type: "string", enum: ["development", "test", "production"] },
     runtime: { type: "string", const: "node" },
-    port: { type: "integer", minimum: 1, maximum: 65535 }
+    port: { type: "integer", minimum: 1, maximum: 65535 },
+    ai_provider_configured: { type: "boolean" }
   },
   additionalProperties: false
 } as const;
