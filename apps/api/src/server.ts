@@ -9,6 +9,7 @@ import { getDefaultConversationObserverScheduler } from "./workers/conversation-
 import { getDefaultConversationReplyJudgeScheduler } from "./workers/conversation-reply-judge.js";
 import { getDefaultSessionSweepScheduler } from "./workers/session-sweep.js";
 import { getDefaultRiskMonitorScheduler } from "./workers/risk-monitor.js";
+import { getDefaultGithubSyncScheduler } from "./workers/github-poll.js";
 
 // 进程级兜底：未捕获异常/未处理 rejection 此前无人接，一次走线的 throw/reject 会静默杀掉 daemon
 // 或留下半死状态。早注册（先于 server start），与下方 SIGINT/SIGTERM 优雅退出互补、不替代。
@@ -49,6 +50,11 @@ sessionSweepScheduler?.start();
 // 无条件启动，不做 isConfigured 门控（无 key 自托管也要能巡检）。
 const riskMonitorScheduler = getDefaultRiskMonitorScheduler();
 riskMonitorScheduler.start();
+
+// R14 批 GH：GitHub 轮询——加密密钥未配置时 runOnce 自守卫零结果（fail-closed 不哑火进程），
+// 故与 risk-monitor 同档无条件启动。
+const githubPollScheduler = getDefaultGithubSyncScheduler();
+githubPollScheduler.start();
 
 // R12 批3：主区静默观察者——LLM provider 未配置时不启动（tick 会逐会话打 LLM，未配置只会
 // 刷 consecutive_failures 噪音），与 meta-planner/cross-agent-judge 的 isConfigured 守卫同款语义。
@@ -94,6 +100,7 @@ function shutdown(exitCode: number) {
   skillCurationScheduler?.stop();
   sessionSweepScheduler?.stop();
   riskMonitorScheduler.stop();
+  githubPollScheduler.stop();
   conversationObserverScheduler?.stop();
   conversationReplyJudgeScheduler?.stop();
   const forceExit = setTimeout(() => process.exit(exitCode), 2000);
