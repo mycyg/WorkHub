@@ -5514,6 +5514,63 @@ const patchUserProfileRequestBodySchema = {
   },
   additionalProperties: false
 } as const;
+// R14 批 AVATAR：头像三端点。上传为二进制 body（webp/png/jpeg magic bytes 校验+256KB 硬顶），
+// 读取带 ETag（avatar_updated_at 毫秒值）/If-None-Match 304 缓存；404=不可见或没有头像。
+const avatarUpdatedAtResponseSchema = {
+  type: "object",
+  required: ["avatar_updated_at"],
+  properties: {
+    avatar_updated_at: { type: ["string", "null"], format: "date-time" }
+  },
+  additionalProperties: false
+} as const;
+const userAvatarPutResponses = {
+  responses: {
+    "200": jsonDataResponse(avatarUpdatedAtResponseSchema, "Avatar stored").responses["200"],
+    "400": jsonErrorStatusResponse("400", "Avatar payload is not a supported image", [
+      "avatar_invalid_image"
+    ]).responses["400"],
+    "401": aiAuthRequiredResponse,
+    "403": jsonErrorStatusResponse("403", "Avatar update is not authorized", [
+      "invalid_client_token",
+      "user_avatar_access_denied"
+    ]).responses["403"],
+    "413": jsonErrorStatusResponse("413", "Avatar exceeds the 256KB limit", [
+      "avatar_too_large"
+    ]).responses["413"],
+    "500": aiInternalResponse
+  }
+} as const;
+const userAvatarDeleteResponses = {
+  responses: {
+    "200": jsonDataResponse(avatarUpdatedAtResponseSchema, "Avatar removed").responses["200"],
+    "401": aiAuthRequiredResponse,
+    "403": jsonErrorStatusResponse("403", "Avatar removal is not authorized", [
+      "invalid_client_token",
+      "user_avatar_access_denied"
+    ]).responses["403"],
+    "500": aiInternalResponse
+  }
+} as const;
+const userAvatarGetResponses = {
+  responses: {
+    "200": {
+      description: "Avatar image bytes",
+      content: {
+        "image/webp": { schema: { type: "string", format: "binary" } },
+        "image/png": { schema: { type: "string", format: "binary" } },
+        "image/jpeg": { schema: { type: "string", format: "binary" } }
+      }
+    },
+    "304": { description: "Not modified (If-None-Match hit)" },
+    "401": aiAuthRequiredResponse,
+    "404": jsonErrorStatusResponse("404", "Avatar is not visible or not set", [
+      "user_avatar_not_found"
+    ]).responses["404"],
+    "500": aiInternalResponse
+  }
+} as const;
+
 const userProfileReadResponses = {
   responses: {
     "200": jsonDataResponse(userProfileVmResponseSchema, "Current user's profile").responses["200"],
@@ -6779,6 +6836,30 @@ export function getOpenApiDocument() {
           summary: "Update the current user's AI preferences",
           ...jsonRequestBody(patchUserAiProfileRequestBodySchema),
           ...userAiProfilePatchResponses
+        }
+      },
+      "/api/me/avatar": {
+        put: {
+          tags: ["user-profile"],
+          summary: "Upload the current user's avatar (binary body, webp/png/jpeg, 256KB cap)",
+          requestBody: {
+            required: true,
+            content: { "image/*": { schema: { type: "string", format: "binary" } } }
+          },
+          ...userAvatarPutResponses
+        },
+        delete: {
+          tags: ["user-profile"],
+          summary: "Remove the current user's avatar (falls back to the initial tile)",
+          ...userAvatarDeleteResponses
+        }
+      },
+      "/api/users/{id}/avatar": {
+        get: {
+          tags: ["user-profile"],
+          summary: "Read a workspace member's avatar with ETag caching",
+          parameters: [pathUuidParameter("id")],
+          ...userAvatarGetResponses
         }
       },
       "/api/me/profile": {

@@ -36,6 +36,7 @@ import { createCostRoutes } from "./routes/cost.js";
 import { createConversationRoutes } from "./routes/conversations.js";
 import { createAiSettingsRoutes } from "./routes/ai-settings.js";
 import { createUserProfileRoutes } from "./routes/user-profile.js";
+import { createUserAvatarRoutes } from "./routes/user-avatar.js";
 import { createConversationArmyRoutes } from "./routes/conversation-army.js";
 import { createActionCardRoutes } from "./routes/action-cards.js";
 import { createConversationTurnRoutes } from "./routes/conversation-turns.js";
@@ -61,6 +62,7 @@ import { InternalContractError } from "./pages/output-contract.js";
 import { ConversationServiceError } from "./services/conversations.js";
 import { AiSettingsServiceError } from "./services/ai-settings.js";
 import { UserProfileServiceError } from "./services/user-profile.js";
+import { UserAvatarServiceError } from "./services/user-avatar.js";
 import { ConversationTurnServiceError } from "./services/conversation-turns.js";
 import { ActionCardServiceError } from "./services/action-cards.js";
 import { ConversationArmyServiceError } from "./services/conversation-army.js";
@@ -248,6 +250,8 @@ app.route("/api", createConversationRoutes());
 app.route("/api", createAiSettingsRoutes());
 // R13 批 A2（派人推荐 v2）：GET/PATCH /me/profile ——「我是谁」资料面（title/bio/技能标签）。
 app.route("/api", createUserProfileRoutes());
+// R14 批 AVATAR：头像上传/删除/读取（PUT/DELETE /me/avatar + GET /users/:id/avatar，ETag 304）。
+app.route("/api", createUserAvatarRoutes());
 app.route("/api", createConversationArmyRoutes());
 app.route("/api", createActionCardRoutes());
 app.route("/api", createConversationTurnRoutes());
@@ -388,6 +392,20 @@ app.onError((error, c) => {
         }
       },
       error.status as 403
+    );
+  }
+
+  // R14 批 AVATAR：头像端点的类型化错误（400/403/404/413）——同上，不进表就是 500。
+  if (error instanceof UserAvatarServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status
     );
   }
 
