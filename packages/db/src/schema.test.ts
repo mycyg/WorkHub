@@ -662,7 +662,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0057 search trgm indexes", () => {
+test("migration journal ends with 0058 ai feedback", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -677,13 +677,40 @@ test("migration journal ends with 0057 search trgm indexes", () => {
       breakpoints: finalEntry.breakpoints
     },
     {
-      // R14 集成收口：并行两批合并后链尾=0057（MEM 的 0056 插在 0055 与 0057 之间，when 严格递增）。
-      idx: 57,
+      // R14 批 FEEDBACK：链尾=0058（RISK 批的 0059 按集成裁定顺延其后，合并时集成者归一）。
+      idx: 58,
       version: "7",
-      tag: "0057_search_trgm_indexes",
+      tag: "0058_ai_feedback",
       breakpoints: true
     }
   );
+});
+
+test("R14 批 FEEDBACK migration 0058 adds the ai_feedback table with a self-idempotency unique index", () => {
+  const migrationUrl = new URL("../migrations/0058_ai_feedback.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0058_ai_feedback.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  // 建表重放安全（IF NOT EXISTS）。
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "ai_feedback"/u, "must create the ai_feedback table");
+  // 两个 CHECK 约束把 subject_type/verdict 钉死成枚举集合。
+  assert.match(migration, /subject_type" IN \('conversation_message','proposal','action_card_item'\)/u);
+  assert.match(migration, /verdict" IN \('useful','not_useful'\)/u);
+  // 幂等改判的地基：(subject_type, subject_id, user_id) 唯一索引。
+  assert.match(
+    migration,
+    /CREATE UNIQUE INDEX IF NOT EXISTS "ai_feedback_subject_user_uq"\s*\n?\s*ON "ai_feedback" \("subject_type","subject_id","user_id"\)/u
+  );
+  // 每个 CREATE INDEX 都必须 replay-safe（IF NOT EXISTS）。
+  assert.doesNotMatch(
+    migration,
+    /CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?!IF\s+NOT\s+EXISTS)/iu,
+    "every CREATE INDEX must be replay-safe (IF NOT EXISTS)"
+  );
+  // 两条外键（workspace / user）级联删除，subject_id 刻意无真实 FK（多态引用）。
+  assert.match(migration, /"workspace_id" uuid NOT NULL REFERENCES "workspaces"\("id"\) ON DELETE cascade/u);
+  assert.match(migration, /"user_id" uuid NOT NULL REFERENCES "users"\("id"\) ON DELETE cascade/u);
+  // 单事务重放：不用 CONCURRENTLY。
+  assert.doesNotMatch(migration, /CONCURRENTLY/iu, "migration 0058 must not use CONCURRENTLY (single-tx replay)");
 });
 
 test("R14 批 SEARCH migration 0057 builds pg_trgm plus five replay-safe GIN indexes", () => {

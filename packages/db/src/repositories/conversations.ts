@@ -341,6 +341,14 @@ export type ConversationRepository = {
     conversationId: string;
     messageIds: string[];
   }) => Promise<Map<string, ReplyPreviewTargetRow>>;
+  // R14 批 FEEDBACK：反馈目标消息的只读定位（无锁）——服务层据此判定 sender_type/kind/deleted_at 是否
+  // 对反馈开放（只对 Cuu 的活文字回复）。会话级可见性由服务层先行 assertConversationAccess 把关，
+  // 这里只按 workspace + 会话定位消息本体，不做二次可见性判定（与 lockActiveMessage 同款 workspace 围栏）。
+  findMessageForFeedback: (input: {
+    workspaceId: string;
+    conversationId: string;
+    messageId: string;
+  }) => Promise<ConversationMessageRow | null>;
 };
 
 class NamedConversationRepositoryError extends Error {
@@ -1913,6 +1921,28 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
         });
       }
       return result;
+    },
+
+    async findMessageForFeedback(input) {
+      const [row] = await db
+        .select({ message: conversationMessages })
+        .from(conversationMessages)
+        .innerJoin(
+          projectConversations,
+          and(
+            eq(projectConversations.id, conversationMessages.conversationId),
+            eq(projectConversations.workspaceId, input.workspaceId),
+            isNull(projectConversations.deletedAt)
+          )
+        )
+        .where(
+          and(
+            eq(conversationMessages.conversationId, input.conversationId),
+            eq(conversationMessages.id, input.messageId)
+          )
+        )
+        .limit(1);
+      return row?.message ?? null;
     }
   };
 }
