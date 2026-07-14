@@ -899,11 +899,122 @@ test("tick publishes a conversation.action_card.updated event carrying only the 
     }
   });
   await createConversationObserverScheduler(deps).tick();
-  assert.equal(published.length, 1);
-  const call = published[0] as { topic: string; type: string; event: { data: { items: unknown[] } } };
+  // R14 CHAT 批（presence-observer 工包）：tick 现在还会先发一条 conversation.observer.analyzing
+  // 瞬态信号（见 emitObserverAnalyzing，在真正准备 prompt/调 LLM 之前发布）——这条测试原本断言总发布
+  // 数为 1，那时协议里只有 action_card.updated 一种会话级 SSE 产出。这里改成按 type 过滤，
+  // 而不是放宽总数断言：既验证 analyzing 确实先发了一条，也保留原有「action_card.updated 只发一条、
+  // 只带最小可渲染摘要」的核心断言不被稀释。
+  assert.equal(published.length, 2);
+  const analyzing = published[0] as { topic: string; type: string };
+  assert.equal(analyzing.topic, `conversation:${conversationId}`);
+  assert.equal(analyzing.type, "conversation.observer.analyzing");
+  const actionCardCalls = published.filter(
+    (call) => (call as { type: string }).type === "conversation.action_card.updated"
+  );
+  assert.equal(actionCardCalls.length, 1);
+  const call = actionCardCalls[0] as { topic: string; type: string; event: { data: { items: unknown[] } } };
   assert.equal(call.topic, `conversation:${conversationId}`);
   assert.equal(call.type, "conversation.action_card.updated");
   assert.equal(call.event.data.items.length, 1);
+});
+
+// ── SSE: conversation.observer.analyzing ──────────────────────────────────────────────
+
+test("tick publishes conversation.observer.analyzing before analyzing a message window, shaped exactly per contract", async () => {
+  const published: Array<{ topic: string; type: string; event: unknown }> = [];
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate()];
+      }
+    },
+    bus: {
+      async publish(topic: string, type: string, event: unknown) {
+        published.push({ topic, type, event });
+      }
+    }
+  });
+  await createConversationObserverScheduler(deps).tick();
+  const analyzingCalls = published.filter((call) => call.type === "conversation.observer.analyzing");
+  assert.equal(analyzingCalls.length, 1);
+  const event = analyzingCalls[0]!.event as {
+    type: string;
+    topic: string;
+    ts: string;
+    actor: { actor_kind: string; label?: string };
+    data: { conversation_id: string; ttl_ms: number; expires_at: string };
+  };
+  assert.equal(analyzingCalls[0]!.topic, `conversation:${conversationId}`);
+  assert.equal(event.type, "conversation.observer.analyzing");
+  assert.equal(event.topic, `conversation:${conversationId}`);
+  assert.equal(event.actor.actor_kind, "ai");
+  assert.equal(event.data.conversation_id, conversationId);
+  assert.equal(event.data.ttl_ms, 30000);
+  assert.equal(event.ts, now.toISOString());
+  assert.equal(Date.parse(event.data.expires_at) - Date.parse(event.ts), 30000);
+});
+
+test("tick does not publish conversation.observer.analyzing when there is no message window to analyze", async () => {
+  const published: Array<{ topic: string; type: string }> = [];
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate()];
+      },
+      async listMessagesForAnalysis() {
+        return [];
+      }
+    },
+    bus: {
+      async publish(topic: string, type: string) {
+        published.push({ topic, type });
+      }
+    }
+  });
+  const result = await createConversationObserverScheduler(deps).tick();
+  assert.equal(result.skipped_low_quality, 1);
+  assert.equal(published.length, 0);
+});
+
+test("tick does not publish conversation.observer.analyzing when budget-blocked before any message window is fetched", async () => {
+  const exhaustedPolicy: BudgetPolicy = {
+    id: "team-day",
+    scopeKind: "team",
+    period: "day",
+    maxTokens: 1,
+    maxCostCny: "0.01",
+    warningRatio: 0.7,
+    criticalRatio: 0.9,
+    onWarning: "notify",
+    onExhausted: "block_new_run",
+    enabled: true,
+    version: 1
+  };
+  const published: Array<{ topic: string; type: string }> = [];
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate()];
+      }
+    },
+    policyStore: { listPolicies: () => [exhaustedPolicy] },
+    ledgerStore: {
+      usageSnapshots: async () => [
+        { scope: { kind: "team", teamId: workspaceId }, period: "day", tokenIn: 10, tokenOut: 10, estimatedCostCny: "1" }
+      ]
+    },
+    bus: {
+      async publish(topic: string, type: string) {
+        published.push({ topic, type });
+      }
+    }
+  });
+  const result = await createConversationObserverScheduler(deps).tick();
+  assert.equal(result.skipped_budget, 1);
+  assert.equal(published.length, 0);
 });
 
 // ── tick: failure isolation ──────────────────────────────────────────────────────────

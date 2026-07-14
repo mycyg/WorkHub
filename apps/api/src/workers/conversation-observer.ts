@@ -2,6 +2,7 @@ import { settings as runtimeSettings, type Settings } from "@workhub/config";
 import {
   aiQuietHoursSchema,
   conversationActionCardUpdatedEventSchema,
+  conversationObserverAnalyzingEventSchema,
   eventTypes,
   DEFAULT_USER_AI_PROFILE,
   type AiQuietHours,
@@ -72,6 +73,10 @@ export const DEFAULT_MAX_MESSAGES_PER_ANALYSIS = 100;
 const DEFAULT_MAX_ANALYSIS_TOKENS = 2000;
 // 00-interaction-design.md §2.3：执行类条目「10 分钟内可撤销」。
 const UNDO_WINDOW_MS = 10 * 60 * 1000;
+// R14 CHAT 批（presence-observer 工包）：conversation.observer.analyzing 瞬态事件的 TTL——
+// 契约锁死 z.literal(30000)，见 packages/contracts/src/events.ts 的
+// conversationObserverAnalyzingEventSchema 顶部注释。
+const OBSERVER_ANALYZING_TTL_MS = 30_000;
 
 // R13 批 P2（拍板链路收尾）：dispatch_ask 通知的 target_url 里除了指向工作项，还要能带用户回到发起
 // 这次派活讨论的会话——notifications 表没有 conversation_id 列，这批不加迁移（范围围栏禁碰
@@ -598,6 +603,54 @@ async function checkObserverBudget(
 
 // ── SSE 生产者 ──────────────────────────────────────────────────────────────────────
 
+// R14 CHAT 批（presence-observer 工包，00-interaction-design.md §2.2 承诺过、从未落地）：观察者
+// 真正要调用 LLM 分析某会话消息窗之前发布这个瞬态信号，客户端据此渲染「Cuu 正在整理刚才的讨论…」
+// typing 指示行同款样式。同 emitActionCardUpdated 一样尽力而为——broker 发布失败/契约校验失败只记
+// 警告日志，不让分析本身失败（这只是个提示灯，丢了下一条真实事件/行动卡到达时客户端自然会更新）。
+async function emitObserverAnalyzing(
+  deps: ConversationObserverDeps,
+  input: { conversationId: string; at: Date }
+) {
+  const bus = deps.bus ?? getDefaultPushBus();
+  const topic = topics.conversation(input.conversationId).topic;
+  const expiresAt = new Date(input.at.getTime() + OBSERVER_ANALYZING_TTL_MS);
+  let event;
+  try {
+    event = parseOutputContract(
+      conversationObserverAnalyzingEventSchema,
+      makeWorkHubEvent({
+        type: eventTypes.conversationObserverAnalyzing,
+        topic,
+        ts: input.at,
+        actor: { actor_kind: "ai", label: OBSERVER_ACTOR_LABEL },
+        data: {
+          conversation_id: input.conversationId,
+          ttl_ms: OBSERVER_ANALYZING_TTL_MS,
+          expires_at: expiresAt.toISOString()
+        }
+      }),
+      "conversation-observer.analyzing.event"
+    );
+  } catch (error) {
+    if (error instanceof InternalContractError) {
+      deps.logger?.warn?.("conversation_observer_analyzing_event_contract_violation", {
+        conversationId: input.conversationId,
+        error
+      });
+      return;
+    }
+    throw error;
+  }
+  try {
+    await bus.publish(topic, eventTypes.conversationObserverAnalyzing, event);
+  } catch (error) {
+    deps.logger?.warn?.("conversation_observer_analyzing_event_publish_failed", {
+      conversationId: input.conversationId,
+      error
+    });
+  }
+}
+
 async function emitActionCardUpdated(
   deps: ConversationObserverDeps,
   input: {
@@ -684,6 +737,10 @@ async function analyzeConversation(
     return "no_card";
   }
   const analyzedToSeq = messages[messages.length - 1]!.seq;
+
+  // 真正提交去分析这个消息窗（有消息、预算允许）——在动手准备 prompt/调 LLM 之前先广播「正在整理」，
+  // 让客户端尽早亮起指示灯，而不是等到分析全部跑完才有动静。
+  await emitObserverAnalyzing(deps, { conversationId: candidate.conversationId, at: now });
 
   const senderIds = [...new Set(messages.map((row) => row.senderUserId).filter((id): id is string => Boolean(id)))];
   const nicknames = await deps.actionCards.listNicknamesByUserIds(senderIds);
