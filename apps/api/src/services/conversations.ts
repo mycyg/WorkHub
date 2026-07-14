@@ -12,8 +12,11 @@ import {
   ConversationSequenceExhaustedError,
   ConversationSourceMessageMismatchError,
   ConversationThreadRootMismatchError,
+  createAiFeedbackRepository,
   createConversationRepository,
   getSharedDatabaseClient,
+  type AiFeedbackRepository,
+  type AiFeedbackRow,
   type ConversationMessageRow,
   type ConversationParticipantRow,
   type ConversationReactionKey,
@@ -176,6 +179,10 @@ export type ConversationServiceOptions = {
   bus?: Pick<PushBus, "backend" | "publish">;
   logger?: Pick<StructuredLogger, "warn">;
   mentionTrigger?: ConversationMentionTriggerDeps;
+  // R14 批 FEEDBACK：消息 VM / 行动卡条目的读聚合——只回当前 actor 自己的判定（不做全员聚合，见设计
+  // §5.1/§5.3）。可选依赖：省略时（既有测试的 createConversationService 调用点）读聚合整体跳过、
+  // my_feedback / items[].feedback 一律不出现，行为与本批之前逐字一致，不会因缺依赖抛错。
+  aiFeedback?: Pick<AiFeedbackRepository, "listForSubjects">;
 };
 
 function requireHumanActor(actor: AuthActor): HumanConversationActor {
@@ -224,10 +231,34 @@ function participantToVm(row: ConversationParticipantRow) {
 
 // R14 批 CHAT：一条消息可选的页级富化——reactions（全量聚合）与 reply 目标行（用于构建引用预览）。
 // 两者都由服务层用一次 grouped/IN 查询批量取回（禁 N+1），再逐条挂到 VM 上。
+// R14 批 FEEDBACK：再加两条——myFeedback（这条消息本人的反馈）与 itemFeedback（本页所有行动卡条目
+// 本人的反馈，读时合并进 content.items[]，不写回共享 content_json，理由见设计 §5.3）。
 type MessageEnrichment = {
   reactions?: MessageReactionAggregate[] | undefined;
   replyTarget?: ReplyPreviewTargetRow | undefined;
+  myFeedback?: AiFeedbackRow | undefined;
+  itemFeedback?: Map<string, AiFeedbackRow> | undefined;
 };
+
+// R14 批 FEEDBACK：从一页消息里收集所有 kind==='action_card' 活消息的条目 id（content_json.items[].id），
+// 供一次批量反馈查询用（禁 N+1）。墓碑短路，非数组 items 静默跳过。
+function collectActionCardItemIds(rows: ConversationMessageRow[]): string[] {
+  const ids = new Set<string>();
+  for (const row of rows) {
+    if (row.deletedAt || row.kind !== "action_card") {
+      continue;
+    }
+    const content = row.contentJson as Record<string, unknown>;
+    const items = Array.isArray(content["items"]) ? content["items"] : [];
+    for (const item of items) {
+      const itemId = (item as Record<string, unknown> | null)?.["id"];
+      if (typeof itemId === "string") {
+        ids.add(itemId);
+      }
+    }
+  }
+  return [...ids];
+}
 
 // R14 批 CHAT：引用预览文本——同 historyDisplayText 的映射口径，但用于「原消息一句话预览」。墓碑目标
 // 由调用方置空，这里只负责活着的目标。
@@ -307,6 +338,34 @@ function messageToVm(row: ConversationMessageRow, enrichment: MessageEnrichment 
   if (enrichment.reactions && enrichment.reactions.length > 0) {
     vm["reactions"] = reactionsToVm(enrichment.reactions);
   }
+  // R14 批 FEEDBACK：本人对这条消息的反馈（只对 Cuu 活文字回复写入，写入端点已在服务层把关）。
+  if (enrichment.myFeedback) {
+    vm["my_feedback"] = {
+      verdict: enrichment.myFeedback.verdict,
+      ...(enrichment.myFeedback.note ? { note: enrichment.myFeedback.note } : {}),
+      updated_at: enrichment.myFeedback.updatedAt.toISOString()
+    };
+  }
+  // R14 批 FEEDBACK：行动卡条目反馈——读时合并进 content.items[]（per-user，不写回全会话共享的
+  // content_json 快照，见设计 §5.3）。只在真有本人反馈时改写对应 item，其余原样透传。
+  if (row.kind === "action_card" && enrichment.itemFeedback && enrichment.itemFeedback.size > 0) {
+    const content = row.contentJson as Record<string, unknown>;
+    const items = Array.isArray(content["items"]) ? content["items"] : [];
+    vm["content"] = {
+      ...content,
+      items: items.map((item) => {
+        const itemRecord = item as Record<string, unknown> | null;
+        const itemId = itemRecord?.["id"];
+        const fb = typeof itemId === "string" ? enrichment.itemFeedback!.get(itemId) : undefined;
+        return fb
+          ? {
+              ...itemRecord,
+              feedback: { verdict: fb.verdict, ...(fb.note ? { note: fb.note } : {}) }
+            }
+          : item;
+      })
+    };
+  }
   return vm;
 }
 
@@ -376,6 +435,7 @@ export function createConversationService(
   const now = options.now ?? (() => new Date());
   const bus = options.bus ?? getDefaultPushBus();
   const logger = options.logger ?? getDefaultStructuredLogger();
+  const aiFeedback = options.aiFeedback;
 
   async function visibleConversation(input: { actor: AuthActor; conversationId: string }) {
     const human = requireHumanActor(input.actor);
@@ -392,30 +452,50 @@ export function createConversationService(
 
   // R14 批 CHAT：一页/一批消息的富化——reactions 与 reply 预览各一条批量查询（禁 N+1），逐条挂到 VM。
   // 删除消息（墓碑）在 messageToVm 里短路，富化对它无效（无害，不为它单独排除）。
-  async function enrichMessageRows(conversationId: string, rows: ConversationMessageRow[]) {
+  // R14 批 FEEDBACK：再加两条并行查询——按当前 viewer（viewerUserId）过滤的消息级 / 行动卡条目级反馈
+  // （只读自己，见设计 §5.1/§5.3）。aiFeedback 依赖缺省时整体跳过，行为与本批之前一致。
+  async function enrichMessageRows(
+    conversationId: string,
+    rows: ConversationMessageRow[],
+    viewerUserId: string
+  ) {
     const messageIds = rows.map((row) => row.id);
     const replyTargetIds = [
       ...new Set(rows.map((row) => row.replyToMessageId).filter((value): value is string => Boolean(value)))
     ];
-    const [reactionsByMessage, replyTargets] = await Promise.all([
+    const actionCardItemIds = collectActionCardItemIds(rows);
+    const emptyFeedback = () => Promise.resolve(new Map<string, AiFeedbackRow>());
+    const [reactionsByMessage, replyTargets, feedbackByMessage, feedbackByItem] = await Promise.all([
       messageIds.length > 0
         ? repository.listReactionsForMessages({ conversationId, messageIds })
         : Promise.resolve(new Map<string, MessageReactionAggregate[]>()),
       replyTargetIds.length > 0
         ? repository.listReplyPreviews({ conversationId, messageIds: replyTargetIds })
-        : Promise.resolve(new Map<string, ReplyPreviewTargetRow>())
+        : Promise.resolve(new Map<string, ReplyPreviewTargetRow>()),
+      aiFeedback && messageIds.length > 0
+        ? aiFeedback.listForSubjects({ subjectType: "conversation_message", subjectIds: messageIds, userId: viewerUserId })
+        : emptyFeedback(),
+      aiFeedback && actionCardItemIds.length > 0
+        ? aiFeedback.listForSubjects({ subjectType: "action_card_item", subjectIds: actionCardItemIds, userId: viewerUserId })
+        : emptyFeedback()
     ]);
     return rows.map((row) =>
       messageToVm(row, {
         reactions: reactionsByMessage.get(row.id),
-        replyTarget: row.replyToMessageId ? replyTargets.get(row.replyToMessageId) : undefined
+        replyTarget: row.replyToMessageId ? replyTargets.get(row.replyToMessageId) : undefined,
+        myFeedback: feedbackByMessage.get(row.id),
+        itemFeedback: feedbackByItem
       })
     );
   }
 
   // 单条消息富化（编辑/置顶后组装变更后全量 VM 用）——同上批量路径，只是集合大小为 1。
-  async function enrichSingleMessage(conversationId: string, row: ConversationMessageRow) {
-    const [enriched] = await enrichMessageRows(conversationId, [row]);
+  async function enrichSingleMessage(
+    conversationId: string,
+    row: ConversationMessageRow,
+    viewerUserId: string
+  ) {
+    const [enriched] = await enrichMessageRows(conversationId, [row], viewerUserId);
     return enriched;
   }
 
@@ -613,7 +693,7 @@ export function createConversationService(
         // rows 已经是 seq 升序（仓库层保证）——next_after_seq 复用页内最高 seq，让客户端加载完一页
         // 更早历史后，仍然能无缝拼上「继续往前追」的正向翻页游标，不强制它单独再查一次。
         const highestSeqInPage = result.rows.reduce((max, row) => Math.max(max, row.seq), 0);
-        const messages = await enrichMessageRows(input.conversationId, result.rows);
+        const messages = await enrichMessageRows(input.conversationId, result.rows, human.userId);
         return parseOutputContract(conversationMessagePageVmSchema, {
           messages,
           has_more: result.hasMore,
@@ -631,7 +711,7 @@ export function createConversationService(
       if (!result) {
         throw new ConversationServiceError(404, "conversation_not_found", "没有找到这个会话。");
       }
-      const messages = await enrichMessageRows(input.conversationId, result.rows);
+      const messages = await enrichMessageRows(input.conversationId, result.rows, human.userId);
       return parseOutputContract(conversationMessagePageVmSchema, {
         messages,
         has_more: result.hasMore,
@@ -699,7 +779,7 @@ export function createConversationService(
       // 富化：新消息还没有 reactions，但可能带 reply_to——补上引用预览（一次 join），让响应与广播都完整。
       const message = parseOutputContract(
         conversationMessageVmSchema,
-        await enrichSingleMessage(access.conversation.id, created),
+        await enrichSingleMessage(access.conversation.id, created, human.userId),
         "conversations.messages.create"
       );
       const conversationTopic = topics.conversation(access.conversation.id).topic;
@@ -814,7 +894,7 @@ export function createConversationService(
       }
       const message = parseOutputContract(
         conversationMessageVmSchema,
-        await enrichSingleMessage(access.conversation.id, updated),
+        await enrichSingleMessage(access.conversation.id, updated, human.userId),
         "conversations.messages.edit"
       );
       await publishMessageUpdated(access.conversation, human, message, updated);
@@ -863,7 +943,7 @@ export function createConversationService(
       }
       const message = parseOutputContract(
         conversationMessageVmSchema,
-        await enrichSingleMessage(access.conversation.id, updated),
+        await enrichSingleMessage(access.conversation.id, updated, human.userId),
         "conversations.messages.pin"
       );
       await publishMessageUpdated(access.conversation, human, message, updated);
@@ -884,7 +964,7 @@ export function createConversationService(
       }
       const message = parseOutputContract(
         conversationMessageVmSchema,
-        await enrichSingleMessage(access.conversation.id, updated),
+        await enrichSingleMessage(access.conversation.id, updated, human.userId),
         "conversations.messages.unpin"
       );
       await publishMessageUpdated(access.conversation, human, message, updated);
@@ -972,7 +1052,7 @@ export function createConversationService(
         conversationId: access.conversation.id,
         limit: CONVERSATION_PINS_CAP
       });
-      const messages = await enrichMessageRows(access.conversation.id, rows);
+      const messages = await enrichMessageRows(access.conversation.id, rows, human.userId);
       return parseOutputContract(
         conversationPinsVmSchema,
         { messages },
@@ -994,6 +1074,9 @@ export function getDefaultConversationService(): ConversationService {
         driveFiles: getDefaultDrivePageService(),
         bus: getDefaultPushBus(),
         logger: getDefaultStructuredLogger(),
+        // R14 批 FEEDBACK：读聚合复用同一个共享 DB 客户端的 ai_feedback 仓库——消息 VM / 行动卡条目
+        // 富化时只回当前 viewer 自己的判定（listForSubjects 的 userId 过滤）。
+        aiFeedback: createAiFeedbackRepository(defaultDbClient.db),
         // R14 FIX批10：直通复用既有的 turn 服务单例（与判定器 worker 触发 turn 走的是同一个
         // ConversationTurnService 实例，activeTurns busy 闸因此天然共享）和判定器服务单例（模块级
         // 缓存，markMentionHandled 操作的是同一张 lastJudgedByConversation Map，见该文件顶部注释）。

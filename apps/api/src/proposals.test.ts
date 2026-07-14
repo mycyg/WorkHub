@@ -1334,7 +1334,15 @@ function appWithProposalRoutes() {
   const app = withErrors(new Hono<AuthEnv>());
   app.route("/api", createWorkItemProposalRoutes({ auth, proposals, workItems, bus }));
   app.route("/api/proposals", createProposalRoutes({ auth, proposals, workItems, bus }));
-  app.route("/api/pages", createPageRoutes({ auth, proposals, workItems: workItems as WorkItemService, allowUnauthenticatedGoldPath: false }));
+  app.route("/api/pages", createPageRoutes({
+    auth,
+    proposals,
+    workItems: workItems as WorkItemService,
+    // R14 批 FEEDBACK：提议详情页现在会读「本人反馈」——单测不连真库，给个「无判定」桩
+    // （反馈行为本身在 ai-feedback.test.ts 专测）。
+    aiFeedback: { getForSubject: async () => null },
+    allowUnauthenticatedGoldPath: false
+  }));
   return { app, runtimeSettings, bus };
 }
 

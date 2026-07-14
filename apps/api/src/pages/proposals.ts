@@ -1,5 +1,6 @@
 import {
   proposalDetailVmSchema,
+  type AiFeedbackVerdict,
   type AttentionItem,
   type DeliverableChange,
   type ProposalDetailVM,
@@ -94,7 +95,53 @@ export function buildProposalReviewAttentionItem(
   };
 }
 
-export function buildProposalDetailPage(proposal: StoredProposal, locale: WorkHubLocale = "zh-CN"): ProposalDetailVM {
+// R14 批 FEEDBACK：本人对这个提议的现状快照（读聚合只读自己）。用极简形状而非直接依赖 @workhub/db
+// 的 AiFeedbackRow，保持页面构建器与 DB 层解耦。
+export type ProposalMyFeedback = { verdict: AiFeedbackVerdict; note: string | null };
+
+// 服务端算好 mark_useful/mark_not_useful/clear 三个动作的 href/method/request_json——客户端只管渲染点击
+// （照 review_actions 的既有风格）。my_verdict/my_note 反映当前 actor 的现状；clear 只在已有判定时出现。
+function buildProposalFeedbackVm(
+  proposalId: string,
+  myFeedback: ProposalMyFeedback | null,
+  locale: WorkHubLocale
+): NonNullable<ProposalDetailVM["feedback"]> {
+  const href = `/api/proposals/${proposalId}/feedback`;
+  const zh = locale === "zh-CN";
+  const feedback: NonNullable<ProposalDetailVM["feedback"]> = {
+    my_verdict: myFeedback?.verdict ?? null,
+    my_note: myFeedback?.note ?? null,
+    mark_useful: {
+      id: "mark_useful",
+      label: zh ? "有用" : "Useful",
+      method: "PUT",
+      href,
+      request_json: { verdict: "useful" }
+    },
+    mark_not_useful: {
+      id: "mark_not_useful",
+      label: zh ? "没用" : "Not useful",
+      method: "PUT",
+      href,
+      request_json: { verdict: "not_useful" }
+    }
+  };
+  if (myFeedback) {
+    feedback.clear = {
+      id: "clear_feedback",
+      label: zh ? "撤销反馈" : "Clear feedback",
+      method: "DELETE",
+      href
+    };
+  }
+  return feedback;
+}
+
+export function buildProposalDetailPage(
+  proposal: StoredProposal,
+  locale: WorkHubLocale = "zh-CN",
+  myFeedback?: ProposalMyFeedback | null
+): ProposalDetailVM {
   const planReview = isTaskPlanProposal(proposal);
   const requestChangesAction: ProposalDetailVM["review_actions"]["request_changes"] = {
     id: planReview ? "request_replan" : "request_changes",
@@ -150,6 +197,9 @@ export function buildProposalDetailPage(proposal: StoredProposal, locale: WorkHu
         author_label: pageT(locale, review.reviewer_kind === "ai" ? "proposal.author.ai" : "proposal.author.human"),
         body: review.reason_md ?? "",
         created_at: review.created_at
-      }))
+      })),
+    // R14 批 FEEDBACK：additive——两个 mark 动作永远在（无判定时 my_verdict/my_note 为 null），撤销
+    // 动作只在已有判定时出现。myFeedback 由路由在 canReadWorkItem 通过之后查得（避免泄露反馈存在性）。
+    feedback: buildProposalFeedbackVm(proposal.id, myFeedback ?? null, locale)
   }, "proposal.detail");
 }
