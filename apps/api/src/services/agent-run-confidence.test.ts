@@ -323,3 +323,55 @@ test("createAgentRunUserAiModeResolver：仓库查询失败时 fail-closed 回�
 
   assert.equal(mode, 3);
 });
+
+// R14 GAP-2 补测：findings[H9] 把「开升级事件」和「工作项真的推进 escalated」接在一起
+// （agent-run-confidence.ts 244-250 行），但本文件此前没有任何用例直接调用过
+// transitionWorkItemStatus 这个缝隙——只在 agent-runs.test.ts 里跟 agent-runner 的其余流程
+// 混在一起间接跑过。这里补两条隔离用例：正常路径真的转 escalated；状态迁移失败时
+// 升级创建本身不能被拖垮（best-effort）。
+test("R14 GAP-2：置信度记录器开出升级事件时，真的调用 transitionWorkItemStatus 把工作项推进 escalated（无可审阅提议）", async () => {
+  const { decisions, escalationRows } = fakeDecisions();
+  const { auditLogs } = fakeAuditLogs();
+  const transitions: Array<{ workItemId: string; to: string }> = [];
+  const recorder = createAgentRunConfidenceRecorder({
+    decisions,
+    auditLogs,
+    autoMergeAllowed: false,
+    transitionWorkItemStatus: async (input) => {
+      transitions.push({ workItemId: input.workItemId, to: input.to });
+    }
+  });
+
+  const recorded = await recorder({
+    run: agentRun(),
+    result: succeededResult(1),
+    proposalWillOpen: false
+  });
+
+  assert.equal(recorded.verdict, "escalate");
+  assert.equal(escalationRows.length, 1, "an escalation event must be opened");
+  assert.deepEqual(transitions, [{ workItemId, to: "escalated" }]);
+});
+
+test("R14 GAP-2：工单已到终态导致状态迁移落空（reject）时，升级创建本身依旧成功（best-effort，不许被状态迁移拖垮）", async () => {
+  const { decisions, escalationRows } = fakeDecisions();
+  const { auditLogs } = fakeAuditLogs();
+  const recorder = createAgentRunConfidenceRecorder({
+    decisions,
+    auditLogs,
+    autoMergeAllowed: false,
+    transitionWorkItemStatus: async () => {
+      throw new Error("work item already cancelled — no legal predecessor for escalated");
+    }
+  });
+
+  const recorded = await recorder({
+    run: agentRun(),
+    result: succeededResult(1),
+    proposalWillOpen: false
+  });
+
+  assert.equal(recorded.verdict, "escalate");
+  assert.equal(escalationRows.length, 1);
+  assert.ok(recorded.escalationId, "escalation must still be reported even though the status transition failed");
+});

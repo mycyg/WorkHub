@@ -282,6 +282,55 @@ test("R9.7 escalation resolution mutations are fenced by workspace", async () =>
   assert.ok(queryParamValues(workItemUpdate?.where).includes(workspaceId));
 });
 
+// R14 GAP-2 补测：上面这条只覆盖了 happy path。plain（非任务计划）升级 resolve 的两处 CAS 守卫
+// ——escalation_events.resolvedAt IS NULL 与 work_items.status IN (合法前驱)——此前从没有用例
+// 让 UPDATE ... RETURNING 命中 0 行,没验证过「重复 resolve」与「工单已离开 escalated」这两个
+// 真实会发生的竞态分支。task-plan 分支（pm_mode taskPlanAction）已有对应用例
+// （"B-R9.0 pm_mode surfaces a conflict when the work item cannot transition"），这里补 plain 分支。
+test("R14 GAP-2：重复 resolve 一条已被处理过的升级，CAS 落空返回 null，且不再触碰工作项（幂等，不二次迁移）", async () => {
+  const { db, queries } = createQueryRecorder([
+    [] // escalation_events 的 UPDATE ... WHERE resolved_at IS NULL 命中 0 行：已经被并发的另一次 resolve 抢先处理过。
+  ]);
+  const repository = createAiDecisionRepository(db);
+
+  const result = await repository.resolveEscalation({
+    escalationId,
+    targetStatus: "pm_mode",
+    workspaceId,
+    at: now
+  });
+
+  assert.equal(result, null);
+  assert.equal(queries.length, 1, "escalation CAS 落空后不许再发起 work_items 的写");
+  assert.equal(queries[0]?.targetTable, escalationEvents);
+  assert.ok(queryReferences(queries[0]?.where, escalationEvents.resolvedAt));
+});
+
+test("R14 GAP-2：工单已经离开 escalated（终态/被并发迁走）时，plain resolve 报 escalation_status_transition_conflict 而不是静默写坏状态", async () => {
+  const updatedEscalation = {
+    id: escalationId,
+    workItemId,
+    agentRunId: null,
+    handoffJson: {}
+  };
+  const { db, transactions } = createQueryRecorder([
+    [updatedEscalation],
+    [] // work_items 的 UPDATE ... WHERE status IN (合法前驱) 命中 0 行：当前状态不是 pm_mode 的合法前驱（例如已被取消）。
+  ]);
+  const repository = createAiDecisionRepository(db);
+
+  await assert.rejects(
+    repository.resolveEscalation({
+      escalationId,
+      targetStatus: "pm_mode",
+      workspaceId,
+      at: now
+    }),
+    /escalation_status_transition_conflict/
+  );
+  assert.deepEqual(transactions, [{ outcome: "rejected", errorName: "Error" }]);
+});
+
 test("R9.7 finish-current-output budget decision moves the work item to review", async () => {
   const resolvedEscalation = {
     id: escalationId,

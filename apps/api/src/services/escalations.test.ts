@@ -8,6 +8,7 @@ import type { AuthActor } from "../middleware/auth.js";
 import {
   buildEscalationAttentionItem,
   createEscalationService as createEscalationServiceImpl,
+  EscalationServiceError,
   type EscalationRepository,
   type EscalationServiceRow
 } from "./escalations.js";
@@ -74,6 +75,12 @@ class MemoryEscalationRepository implements EscalationRepository {
     private readonly options: {
       findRow?: EscalationServiceRow | null;
       listRows?: EscalationServiceRow[];
+      // R14 GAP-2：从第几次 resolveEscalation 调用开始模拟 DB 层 CAS 落空（返回 null）——
+      // 复现「重复 resolve 同一条升级」的竞态（真实场景：resolvedAt IS NULL 的 UPDATE 命中 0 行）。
+      raceOnResolveAfter?: number;
+      // R14 GAP-2：resolveEscalation 直接抛 escalation_status_transition_conflict——复现工单
+      // 已离开合法前驱态（终态/被并发迁走）时 DB 层的真实报错，而不是静默写坏状态。
+      resolveConflict?: boolean;
     } = {}
   ) {}
 
@@ -97,6 +104,12 @@ class MemoryEscalationRepository implements EscalationRepository {
       targetStatus: input.targetStatus,
       ...(input.taskPlanAction ? { taskPlanAction: input.taskPlanAction } : {})
     });
+    if (this.options.resolveConflict) {
+      throw new Error("escalation_status_transition_conflict");
+    }
+    if (this.options.raceOnResolveAfter !== undefined && this.resolveCalls.length > this.options.raceOnResolveAfter) {
+      return null;
+    }
     return row({ resolvedAt: now, workItemStatus: input.targetStatus as EscalationServiceRow["workItemStatus"] });
   }
 
@@ -437,6 +450,34 @@ test("R9.0 escalation resolve actions map to the work-item state machine", async
     "pm_mode",
     "cancelled"
   ]);
+});
+
+// R14 GAP-2 补测：resolve() 对仓库层两类 CAS 落空结果的转译此前完全没有用例覆盖——
+// repository.resolveEscalation 返回 null（重复 resolve/并发抢跑）该翻成 409 escalation_race，
+// 抛 escalation_status_transition_conflict（工单已离开合法前驱态）该翻成 409
+// escalation_status_conflict，而不是让原始错误/裸 500 泄漏给调用方。
+test("R14 GAP-2：重复 resolve 同一条升级——第二次落到 409 escalation_race，不二次迁移", async () => {
+  const repository = new MemoryEscalationRepository({ raceOnResolveAfter: 1 });
+  const service = createEscalationService({ repository, now: () => now });
+
+  const first = await service.resolve(escalationId, actor(), { action: "retry" });
+  assert.equal(first.work_item_status, "ai_working");
+
+  await assert.rejects(
+    service.resolve(escalationId, actor(), { action: "retry" }),
+    (error: unknown) => error instanceof EscalationServiceError && error.status === 409 && error.code === "escalation_race"
+  );
+  assert.equal(repository.resolveCalls.length, 2, "仓库层仍会被问第二次——由它（而非 service 自己的内存）当竞态裁判");
+});
+
+test("R14 GAP-2：工单已离开合法前驱态时，resolve() 报 409 escalation_status_conflict 而不是裸错误", async () => {
+  const repository = new MemoryEscalationRepository({ resolveConflict: true });
+  const service = createEscalationService({ repository, now: () => now });
+
+  await assert.rejects(
+    service.resolve(escalationId, actor(), { action: "pm_mode" }),
+    (error: unknown) => error instanceof EscalationServiceError && error.status === 409 && error.code === "escalation_status_conflict"
+  );
 });
 
 test("B-R9.0 non-plan escalation retry re-enqueues a real agent run", async () => {
