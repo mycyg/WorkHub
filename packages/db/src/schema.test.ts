@@ -44,7 +44,8 @@ import {
 
 // R12 batch 0: the old count (58) was correct before the conversation foundation existed.
 // This slice intentionally adds exactly eight named tables, so the graph contract evolves to 66.
-const F02_TABLE_COUNT = 66;
+// R14 批 CHAT：新增 message_reactions + conversation_read_cursors 两张表（迁移 0055），graph 涨到 68。
+const F02_TABLE_COUNT = 68;
 
 type WorkHubTable = (typeof workHubTables)[keyof typeof workHubTables];
 
@@ -661,7 +662,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0054 user avatar columns", () => {
+test("migration journal ends with 0055 conversation chat completeness", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -676,15 +677,53 @@ test("migration journal ends with 0054 user avatar columns", () => {
       breakpoints: finalEntry.breakpoints
     },
     {
-      // R14 批 AVATAR：0050-0053 已落主干（P1.5/C1/A2 三批 + pilot smoke 病根种子），本批 0054
-      // 顺排在其后，加 users.avatar_webp/avatar_updated_at 两列。若后续并行批次的迁移号与本批
-      // 冲突，集成者合并时把 when 归一成递增序插在 0054 之前，journal 尾保持 0054 不变。
-      idx: 54,
+      // R14 批 CHAT：0055 顺排在 0054 之后，给 conversation_messages 补编辑/墓碑/引用/置顶列并新增
+      // message_reactions + conversation_read_cursors。若后续并行批次的迁移号与本批冲突，集成者合并时
+      // 把 when 归一成递增序插在 0055 之前，journal 尾保持 0055 不变（这是设计批准的契约变更）。
+      idx: 55,
       version: "7",
-      tag: "0054_user_avatar",
+      tag: "0055_conversation_chat_completeness",
       breakpoints: true
     }
   );
+});
+
+test("R14 批 CHAT migration 0055 adds nullable chat-completeness columns and two additive tables", () => {
+  const migrationUrl = new URL("../migrations/0055_conversation_chat_completeness.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0055_conversation_chat_completeness.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  // conversation_messages 的六个新列全部 ADD COLUMN IF NOT EXISTS（重放安全）+ 均可空（无 NOT NULL）。
+  for (const column of [
+    "edited_at",
+    "deleted_at",
+    "deleted_by_user_id",
+    "reply_to_message_id",
+    "pinned_at",
+    "pinned_by_user_id"
+  ]) {
+    assert.match(
+      migration,
+      new RegExp(`ALTER TABLE\\s+"conversation_messages"\\s+ADD COLUMN IF NOT EXISTS\\s+"${column}"`, "iu"),
+      `missing additive column ${column}`
+    );
+  }
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "message_reactions"/u);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "conversation_read_cursors"/u);
+  // reaction_key 只允许五个 ASCII slug——emoji 字形绝不进 schema/迁移。
+  assert.match(migration, /'approve','disagree','done','question','watch'/u);
+  assert.doesNotMatch(migration, /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u, "migration must not contain emoji glyphs");
+
+  // Drizzle schema 与迁移同步：六个新列 + 两张新表都在活跃 schema graph 上，且新列可空。
+  const messages = requiredTable("conversationMessages") as WorkHubTable & Record<string, any>;
+  assert.equal(messages.editedAt.name, "edited_at");
+  assert.equal(messages.editedAt.notNull, false);
+  assert.equal(messages.deletedAt.name, "deleted_at");
+  assert.equal(messages.deletedByUserId.name, "deleted_by_user_id");
+  assert.equal(messages.replyToMessageId.name, "reply_to_message_id");
+  assert.equal(messages.pinnedAt.name, "pinned_at");
+  assert.equal(messages.pinnedByUserId.name, "pinned_by_user_id");
+  assert.equal(getTableName(requiredTable("messageReactions")), "message_reactions");
+  assert.equal(getTableName(requiredTable("conversationReadCursors")), "conversation_read_cursors");
 });
 
 test("R14 批 AVATAR migration 0054 adds users.avatar_webp/avatar_updated_at as nullable, replay-safe columns", () => {

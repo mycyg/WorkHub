@@ -56,6 +56,8 @@ type JsonArray = unknown[];
 type ObjectiveStatus = "active" | "paused" | "done" | "archived";
 type KeyResultStatus = "active" | "done" | "at_risk" | "cancelled";
 type ConversationParticipantRole = "owner" | "member";
+// R14 批 CHAT：精选五键反应的 ASCII slug 集合（emoji 字形只在桌面渲染层映射，不入 schema/契约）。
+type ConversationReactionKey = "approve" | "disagree" | "done" | "question" | "watch";
 type ActionCardStatus = "active" | "superseded";
 type ActionCardItemKind = "execute" | "decide" | "observe";
 type ActionCardConfidence = "high" | "mid" | "low";
@@ -543,6 +545,19 @@ export const conversationMessages = pgTable(
     threadRootId: uuid("thread_root_id").references((): AnyPgColumn => conversationMessages.id, {
       onDelete: "set null"
     }),
+    // R14 批 CHAT：编辑 / 墓碑删除 / 引用回复 / 置顶的持久化列，全部 nullable（append 语义不变）。
+    // editedAt：编辑（仅本人、仅 text、15 分钟窗）后置位；服务端读侧渲染「已编辑」灰标。
+    editedAt: timestampTz("edited_at"),
+    // deletedAt/deletedByUserId：墓碑删除——content_json 清 {}、seq 不回收、不物理删；VM 层归一成
+    // kind:'text' content:{text:''}。deletedByUserId 用户被删时 set null（审计边可断，墓碑本身不丢）。
+    deletedAt: timestampTz("deleted_at"),
+    deletedByUserId: uuid("deleted_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    // replyToMessageId：引用回复目标（同会话、仅 text 新消息可带）。只挂下面的复合外键保「同会话」，
+    // 刻意不挂 users 那种 set null 单列外键——目标事后被删只是变墓碑，引用边要保住（读时 join 判墓碑）。
+    replyToMessageId: uuid("reply_to_message_id"),
+    // pinnedAt/pinnedByUserId：置顶（会话可见者皆可）；pinnedByUserId 同 deletedByUserId set null 语义。
+    pinnedAt: timestampTz("pinned_at"),
+    pinnedByUserId: uuid("pinned_by_user_id").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt()
   },
   (table): PgTableExtraConfigValue[] => [
@@ -557,11 +572,77 @@ export const conversationMessages = pgTable(
       columns: [table.conversationId, table.threadRootId],
       foreignColumns: [table.conversationId, table.id]
     })),
+    // R14 批 CHAT：引用回复的同会话保证——照 thread_root 同款复合外键（(conversation_id, reply_to)
+    // -> (conversation_id, id)）。无 onDelete（NO ACTION）：消息只软删不物理删，引用边永远指得到那条
+    // 墓碑，读时 join 判 deleted_at 决定引用块是否显示「原消息已删除」。
+    deferredForeignKey((): DeferredForeignKeyConfig => ({
+      name: "conversation_messages_reply_to_conversation_fk",
+      columns: [table.conversationId, table.replyToMessageId],
+      foreignColumns: [table.conversationId, table.id]
+    })),
     uniqueIndex("conversation_messages_conversation_seq_uq").on(table.conversationId, table.seq),
     uniqueIndex("conversation_messages_conversation_id_uq").on(table.conversationId, table.id),
     index("conversation_messages_cursor_idx").on(table.conversationId, table.seq),
     index("conversation_messages_sender_user_id_idx").on(table.senderUserId),
-    index("conversation_messages_thread_root_id_idx").on(table.threadRootId)
+    index("conversation_messages_thread_root_id_idx").on(table.threadRootId),
+    // R14 批 CHAT：置顶清单读取端点走这条（(conversation_id, seq) 降序 cap 50），部分索引只覆盖
+    // 真正置顶的少数行，不给普通消息付索引成本。
+    index("conversation_messages_pinned_idx")
+      .on(table.conversationId, table.seq)
+      .where(sql`${table.pinnedAt} is not null`)
+  ]
+);
+
+// R14 批 CHAT：精选五键 emoji 反应。存储/契约层全程 ASCII slug（approve/disagree/done/question/watch），
+// emoji 字形只存在于桌面渲染层的映射表——本表不出现任何 emoji 字符。conversationId 是冗余列，配合下面
+// 的 (conversation_id, message_id) 复合外键保「反应与目标消息同会话」，也便于按会话批量清理/校验。
+// unique(message_id, user_id, reaction_key) 兜底幂等：一人对同一条消息的同一个键至多一条。
+export const messageReactions = pgTable(
+  "message_reactions",
+  {
+    id: id(),
+    messageId: uuid("message_id").notNull().references(() => conversationMessages.id, { onDelete: "cascade" }),
+    conversationId: uuid("conversation_id").notNull(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    reactionKey: varchar("reaction_key", { length: 24 }).$type<ConversationReactionKey>().notNull(),
+    createdAt: createdAt()
+  },
+  (table): PgTableExtraConfigValue[] => [
+    check(
+      "message_reactions_reaction_key_ck",
+      sql`${table.reactionKey} in ('approve', 'disagree', 'done', 'question', 'watch')`
+    ),
+    foreignKey({
+      name: "message_reactions_conversation_message_fk",
+      columns: [table.conversationId, table.messageId],
+      foreignColumns: [conversationMessages.conversationId, conversationMessages.id]
+    }).onDelete("cascade"),
+    uniqueIndex("message_reactions_message_user_key_uq").on(
+      table.messageId,
+      table.userId,
+      table.reactionKey
+    ),
+    index("message_reactions_message_id_idx").on(table.messageId)
+  ]
+);
+
+// R14 批 CHAT：已读游标。刻意不动 conversation_participants（main 会话无参与者行、小群参与者语义纠缠），
+// 单开一张表。last_read_seq 单调推进（服务端夹紧，收到更小值静默返回当前值，不得超过会话当前最大 seq），
+// 聚合式「已读 N/M」+ 未读分割线共用这一份游标（砍展示零成本）。unique(conversation_id, user_id)。
+export const conversationReadCursors = pgTable(
+  "conversation_read_cursors",
+  {
+    id: id(),
+    conversationId: uuid("conversation_id").notNull().references(() => projectConversations.id, {
+      onDelete: "cascade"
+    }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    lastReadSeq: bigint("last_read_seq", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt()
+  },
+  (table): PgTableExtraConfigValue[] => [
+    check("conversation_read_cursors_last_read_seq_ck", sql`${table.lastReadSeq} >= 0`),
+    uniqueIndex("conversation_read_cursors_conversation_user_uq").on(table.conversationId, table.userId)
   ]
 );
 
@@ -2093,6 +2174,8 @@ export const workHubTables = {
   projectConversations,
   conversationParticipants,
   conversationMessages,
+  messageReactions,
+  conversationReadCursors,
   actionCards,
   actionCardItems,
   conversationObserverState,
