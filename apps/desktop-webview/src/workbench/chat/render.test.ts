@@ -24,6 +24,7 @@ import {
   renderModeErrorHintHtml,
   renderModeObserveOnlyHintHtml,
   renderModePopoverHtml,
+  renderNoAiProviderBannerHtml,
   renderPendingOutgoingHtml,
   renderStreamingCuuBubbleHtml,
   renderTypingIndicatorHtml,
@@ -1070,6 +1071,23 @@ test("renderConnectionBannerHtml shows nothing while the connection is healthy",
 
 test("renderConnectionBannerHtml shows the 00 §9 reconnect banner copy exactly", () => {
   assert.match(renderConnectionBannerHtml("reconnect_scheduled", "zh-CN"), /连接中断，正在重连/u);
+});
+
+// —— R14 FIX#8 前端半：无 key 横幅 —— //
+
+test("renderNoAiProviderBannerHtml names the DEPLOY.md remedy and marks itself with a stable data hook", () => {
+  const html = renderNoAiProviderBannerHtml("zh-CN");
+  assert.match(html, /data-wb-chat-no-ai-provider-banner="true"/u);
+  assert.match(html, /DEPLOY\.md/u);
+  assert.match(html, /AI 服务未配置/u);
+  assert.match(html, /Cuu 不会回应/u);
+});
+
+test("renderNoAiProviderBannerHtml has an English copy too", () => {
+  const html = renderNoAiProviderBannerHtml("en-US");
+  // escapeHtml turns the apostrophe into &#39; — match around it rather than the literal glyph.
+  assert.match(html, /AI service isn.{0,6}t configured/u);
+  assert.match(html, /DEPLOY\.md/u);
 });
 
 // —— empty / loading / error / truncated —— //
