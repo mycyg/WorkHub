@@ -2199,6 +2199,55 @@ test("R4.14 Knowledge route component renders cited fallback evidence and bindin
   assertNoMainWindowBoundaryLeak(knowledge.html);
 });
 
+test("R14 batch SEARCH: search route component renders an honest empty-prompt shell when there is no query yet", () => {
+  const en = renderWebRouteComponent({ key: "search" }, { locale: "en-US" });
+  const zh = renderWebRouteComponent({ key: "search" }, { locale: "zh-CN" });
+
+  assert.equal(en.key, "search");
+  assert.equal(en.html.includes('data-r4-route-component="search"'), true);
+  assert.equal(en.html.includes('data-r14-search-route="true"'), true);
+  assert.equal(en.html.includes('data-r14-search-query=""'), true);
+  assert.equal(en.html.includes('data-r14-search-status="prompt"'), true);
+  assert.equal(en.html.includes("Type at least 2 characters to start searching."), true);
+  assert.equal(en.html.includes('data-r14-search-results="true" hidden'), true);
+  assert.equal(en.primaryHrefs.length, 0);
+  assert.equal(zh.html.includes("输入至少 2 个字符开始搜索。"), true);
+  assertNoMainWindowBoundaryLeak(en.html);
+  assertNoMainWindowBoundaryLeak(zh.html);
+});
+
+test("R14 batch SEARCH: search route component gives a short-query prompt (not fake results) below 2 characters", () => {
+  const en = renderWebRouteComponent({ key: "search", q: "a" }, { locale: "en-US" });
+
+  assert.equal(en.html.includes('data-r14-search-query="a"'), true);
+  assert.equal(en.html.includes('data-r14-search-status="prompt"'), true);
+  assert.equal(en.html.includes("Your search needs at least 2 characters."), true);
+  assert.equal(en.html.includes('data-r14-search-results="true" hidden'), true);
+});
+
+test("R14 batch SEARCH: search route component echoes a valid query into the form and reveals the (still empty) result groups for client hydration", () => {
+  const zh = renderWebRouteComponent({ key: "search", q: "预算" }, { locale: "zh-CN" });
+
+  assert.equal(zh.html.includes('data-r14-search-query="预算"'), true);
+  assert.equal(zh.html.includes('value="预算"'), true);
+  assert.equal(zh.html.includes('data-r14-search-status="loading"'), true);
+  assert.equal(zh.html.includes("正在搜索…"), true);
+  // 结果容器不再隐藏,但四个分组卡自身仍隐藏（无数据）,等客户端拉取后逐个揭示。
+  assert.equal(/data-r14-search-results="true"\s*>/u.test(zh.html), true);
+  assert.equal(zh.html.includes('data-r14-search-group="conversations" hidden'), true);
+  assert.equal(zh.html.includes('data-r14-search-group="drive" hidden'), true);
+  assert.equal(zh.html.includes('data-r14-search-group="work_items" hidden'), true);
+  assert.equal(zh.html.includes('data-r14-search-group="meetings" hidden'), true);
+  // 中文组标题：会话/网盘/任务/会议（用「任务」与本页其余导航措辞对齐，不是「工单」）。
+  assert.equal(zh.html.includes("<h3 role=\"heading\" aria-level=\"2\">会话</h3>"), true);
+  assert.equal(zh.html.includes("<h3 role=\"heading\" aria-level=\"2\">网盘</h3>"), true);
+  assert.equal(zh.html.includes("<h3 role=\"heading\" aria-level=\"2\">任务</h3>"), true);
+  assert.equal(zh.html.includes("<h3 role=\"heading\" aria-level=\"2\">会议</h3>"), true);
+  // 会话结果 web 端没有聊天页可跳——诚实说明行，不假装能打开。
+  assert.equal(zh.html.includes("会话内容在桌面工作台查看"), true);
+  assertNoMainWindowBoundaryLeak(zh.html);
+});
+
 test("R4.11 Cost route component renders dashboard values directly from Cost Page VM", () => {
   const vm = surfaceVm();
   const cost = renderWebRouteComponents(vm, { locale: "en-US" }).cost;
