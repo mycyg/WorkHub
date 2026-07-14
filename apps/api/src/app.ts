@@ -45,6 +45,10 @@ import { createConversationMessageActionRoutes } from "./routes/conversation-mes
 import { createConversationReadRoutes } from "./routes/conversation-read.js";
 import { createPresenceRoutes } from "./routes/presence.js";
 import { createSearchRoutes } from "./routes/search.js";
+import { createUserMemoryGovernanceRoutes } from "./routes/user-memory-governance.js";
+import { createTeamSkillGovernanceRoutes } from "./routes/team-skill-governance.js";
+import { UserMemoryGovernanceServiceError } from "./services/user-memory-governance.js";
+import { TeamSkillGovernanceServiceError } from "./services/team-skill-governance.js";
 import { createDriveVersionRoutes } from "./routes/drive-versions.js";
 import { createSpotlightIntentRoutes } from "./routes/spotlight-intent.js";
 import { createPersonalProjectRoutes } from "./routes/personal-projects.js";
@@ -266,6 +270,9 @@ app.route("/api", createConversationReadRoutes());
 app.route("/api", createPresenceRoutes());
 // R14 批 SEARCH：全局搜索统一读端点（四 scope 鉴权在 SQL 内逐 actor 收口）。
 app.route("/api", createSearchRoutes());
+// R14 批 MEM：记忆可见可治理——用户记忆（本人可读写）与团队技能（全员读、管理员写）管理面。
+app.route("/api", createUserMemoryGovernanceRoutes());
+app.route("/api", createTeamSkillGovernanceRoutes());
 app.route("/api/drive", createDriveVersionRoutes());
 app.route("/api", createSpotlightIntentRoutes());
 app.route("/api", createPersonalProjectRoutes());
@@ -430,6 +437,20 @@ app.onError((error, c) => {
         }
       },
       error.status
+    );
+  }
+
+  // R14 批 MEM：记忆/技能管理面的类型化 400/403/404/409——不进这张表会被兜底压成 500。
+  if (error instanceof UserMemoryGovernanceServiceError || error instanceof TeamSkillGovernanceServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
     );
   }
 

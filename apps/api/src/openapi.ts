@@ -5186,6 +5186,142 @@ const presenceUserIdsQueryParameter = {
   description: "Comma-separated user uuids, at most 50; response keeps the request order",
   schema: { type: "string", minLength: 1 }
 } as const;
+// R14 批 MEM：记忆/技能管理面——与 packages/contracts/src/pages.ts 的管理面 zod 逐字段对齐。
+const userMemoryProvenanceJsonSchema = {
+  type: "object",
+  required: ["kind"],
+  properties: {
+    kind: { type: "string", enum: ["agent_run", "review_correction"] },
+    label: { type: "string", minLength: 1 },
+    run_id: uuidStringSchema,
+    conversation_id: uuidStringSchema,
+    proposal_id: { type: "string", minLength: 1 }
+  },
+  additionalProperties: false
+} as const;
+const userMemoryManagementItemJsonSchema = {
+  type: "object",
+  required: ["id", "category", "key", "value_md", "confidence", "workspace_scoped", "created_at", "updated_at"],
+  properties: {
+    id: uuidStringSchema,
+    category: { type: "string", enum: ["preference", "correction", "recurring_context"] },
+    key: { type: "string", minLength: 1 },
+    value_md: { type: "string", minLength: 1 },
+    confidence: { type: "number", minimum: 0, maximum: 1 },
+    workspace_scoped: { type: "boolean" },
+    created_at: dateTimeStringSchema,
+    updated_at: dateTimeStringSchema,
+    last_used_at: dateTimeStringSchema,
+    edited_at: dateTimeStringSchema,
+    provenance: userMemoryProvenanceJsonSchema
+  },
+  additionalProperties: false
+} as const;
+const userMemoryManagementPageJsonSchema = {
+  type: "object",
+  required: ["generated_at", "memories", "totals"],
+  properties: {
+    generated_at: dateTimeStringSchema,
+    memories: { type: "array", maxItems: 50, items: userMemoryManagementItemJsonSchema },
+    totals: {
+      type: "object",
+      required: ["active"],
+      properties: { active: { type: "integer", minimum: 0 } },
+      additionalProperties: false
+    }
+  },
+  additionalProperties: false
+} as const;
+const teamSkillManagementItemJsonSchema = {
+  type: "object",
+  required: [
+    "skill_key",
+    "name",
+    "when_to_use",
+    "version",
+    "source_kind",
+    "created_by_kind",
+    "sample_count",
+    "updated_at",
+    "id",
+    "content_md",
+    "status"
+  ],
+  properties: {
+    skill_key: { type: "string", minLength: 1 },
+    name: { type: "string", minLength: 1 },
+    when_to_use: { type: "string", minLength: 1 },
+    version: { type: "integer", minimum: 1 },
+    source_kind: { type: "string", enum: ["distilled", "authored"] },
+    created_by_kind: { type: "string", enum: ["ai", "human"] },
+    confidence_score: { type: "number", minimum: 0, maximum: 1 },
+    sample_count: { type: "integer", minimum: 0 },
+    updated_at: dateTimeStringSchema,
+    provenance: {
+      type: "object",
+      required: ["refined_from_version", "op_count"],
+      properties: {
+        refined_from_version: { type: "integer", minimum: 1 },
+        op_count: { type: "integer", minimum: 0 },
+        rationale_md: { type: "string" }
+      },
+      additionalProperties: false
+    },
+    id: uuidStringSchema,
+    content_md: { type: "string", minLength: 1 },
+    status: { type: "string", enum: ["draft", "active", "deprecated"] },
+    deprecated_reason: { type: "string" },
+    deprecated_at: dateTimeStringSchema,
+    source_run_id: uuidStringSchema
+  },
+  additionalProperties: false
+} as const;
+const teamSkillManagementPageJsonSchema = {
+  type: "object",
+  required: ["generated_at", "skills"],
+  properties: {
+    generated_at: dateTimeStringSchema,
+    skills: { type: "array", items: teamSkillManagementItemJsonSchema }
+  },
+  additionalProperties: false
+} as const;
+const patchUserMemoryRequestJsonSchema = {
+  type: "object",
+  required: ["value_md", "expected_updated_at"],
+  properties: {
+    value_md: { type: "string", minLength: 1, maxLength: 2000 },
+    expected_updated_at: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
+const patchTeamSkillRequestJsonSchema = {
+  type: "object",
+  required: ["ops", "base_version"],
+  properties: {
+    ops: {
+      type: "array",
+      minItems: 1,
+      maxItems: 3,
+      items: { type: "object", maxProperties: 8, additionalProperties: true }
+    },
+    base_version: { type: "integer", minimum: 1 },
+    rationale_md: { type: "string" }
+  },
+  additionalProperties: false
+} as const;
+const memoryGovernanceAuthResponses = {
+  "401": conversationAuthRequiredResponse,
+  "403": conversationForbiddenResponse,
+  "422": conversationValidationResponse,
+  "500": conversationInternalResponse
+} as const;
+const userMemoryNotFoundResponse = jsonErrorStatusResponse("404", "Memory was not found or is not yours", [
+  "user_memory_not_found"
+]).responses["404"];
+const teamSkillNotFoundResponse = jsonErrorStatusResponse("404", "Active team skill was not found", [
+  "team_skill_not_found"
+]).responses["404"];
+
 // R14 批 SEARCH：/api/search 响应——与 packages/contracts/src/domain/search.ts 的 zod 逐字段对齐。
 function searchGroupVariant(scope: string, resultSchema: Record<string, unknown>) {
   return {
@@ -7172,6 +7308,180 @@ export function getOpenApiDocument() {
             }
           ],
           ...searchResponses
+        }
+      },
+      "/api/me/memories": {
+        get: {
+          tags: ["memory"],
+          summary: "List your own active memories, optionally filtered by category",
+          parameters: [
+            {
+              name: "category",
+              in: "query",
+              required: false,
+              schema: { type: "string", enum: ["preference", "correction", "recurring_context"] }
+            }
+          ],
+          responses: {
+            "200": jsonDataResponse(userMemoryManagementPageJsonSchema, "Your active memories with provenance")
+              .responses["200"],
+            ...memoryGovernanceAuthResponses
+          }
+        }
+      },
+      "/api/me/memories/{id}": {
+        get: {
+          tags: ["memory"],
+          summary: "Read one of your memories",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse(userMemoryManagementItemJsonSchema, "One memory with provenance").responses[
+              "200"
+            ],
+            "404": userMemoryNotFoundResponse,
+            ...memoryGovernanceAuthResponses
+          }
+        },
+        patch: {
+          tags: ["memory"],
+          summary: "Replace the memory text with optimistic concurrency",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(patchUserMemoryRequestJsonSchema),
+          responses: {
+            "200": jsonDataResponse(userMemoryManagementItemJsonSchema, "The edited memory").responses["200"],
+            "400": jsonErrorStatusResponse("400", "Memory text failed validation", [
+              "malformed_json",
+              "json_object_required",
+              "user_memory_value_required",
+              "user_memory_value_too_long",
+              "user_memory_value_injection"
+            ]).responses["400"],
+            "404": userMemoryNotFoundResponse,
+            "409": jsonErrorStatusResponse("409", "Memory changed concurrently or was deleted", [
+              "user_memory_version_conflict",
+              "user_memory_deleted"
+            ]).responses["409"],
+            "413": conversationPayloadTooLargeResponse,
+            ...memoryGovernanceAuthResponses
+          }
+        },
+        delete: {
+          tags: ["memory"],
+          summary: "Soft-delete a memory so Cuu forgets it (idempotent)",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse(
+              {
+                type: "object",
+                required: ["deleted"],
+                properties: { deleted: { type: "boolean", const: true } },
+                additionalProperties: false
+              },
+              "The memory is gone from every prompt injection"
+            ).responses["200"],
+            "404": userMemoryNotFoundResponse,
+            ...memoryGovernanceAuthResponses
+          }
+        }
+      },
+      "/api/team-skills/manage": {
+        get: {
+          tags: ["memory"],
+          summary: "List every team skill version for the management surface",
+          responses: {
+            "200": jsonDataResponse(teamSkillManagementPageJsonSchema, "All versions, active and deprecated")
+              .responses["200"],
+            ...memoryGovernanceAuthResponses
+          }
+        }
+      },
+      "/api/team-skills/manage/{id}": {
+        get: {
+          tags: ["memory"],
+          summary: "Read one team skill version with its full content",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse(teamSkillManagementItemJsonSchema, "One skill version").responses["200"],
+            "404": teamSkillNotFoundResponse,
+            ...memoryGovernanceAuthResponses
+          }
+        },
+        patch: {
+          tags: ["memory"],
+          summary: "Admin-only sectioned edit patch producing a new human version",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(patchTeamSkillRequestJsonSchema),
+          responses: {
+            "200": jsonDataResponse(teamSkillManagementItemJsonSchema, "The new active version").responses[
+              "200"
+            ],
+            "400": jsonErrorStatusResponse("400", "Edit patch failed the K2 validation gates", [
+              "malformed_json",
+              "json_object_required",
+              "team_skill_edit_no_ops_applied",
+              "team_skill_edit_no_effective_change",
+              "team_skill_edit_invalid_frontmatter",
+              "team_skill_edit_too_short",
+              "team_skill_edit_exceeds_size_budget",
+              "team_skill_edit_conflict_markers",
+              "team_skill_edit_injection_phrasing",
+              "team_skill_edit_low_confidence"
+            ]).responses["400"],
+            "403": jsonErrorStatusResponse("403", "Team skill editing requires an admin", [
+              "invalid_client_token",
+              "forbidden",
+              "human_required",
+              "team_skill_admin_required"
+            ]).responses["403"],
+            "404": jsonErrorStatusResponse("404", "Active team skill was not found or the version is read-only", [
+              "team_skill_not_found",
+              "team_skill_not_editable"
+            ]).responses["404"],
+            "409": jsonErrorStatusResponse("409", "base_version does not match the active version", [
+              "team_skill_base_version_conflict"
+            ]).responses["409"],
+            "413": conversationPayloadTooLargeResponse,
+            "401": conversationAuthRequiredResponse,
+            "422": conversationValidationResponse,
+            "500": conversationInternalResponse
+          }
+        }
+      },
+      "/api/team-skills/manage/{id}/deactivate": {
+        post: {
+          tags: ["memory"],
+          summary: "Admin-only kill switch: deprecate a team skill (idempotent)",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(
+            {
+              type: "object",
+              properties: { reason: { type: "string", maxLength: 500 } },
+              additionalProperties: false
+            },
+            { required: false }
+          ),
+          responses: {
+            "200": jsonDataResponse(
+              {
+                type: "object",
+                required: ["deprecated"],
+                properties: { deprecated: { type: "boolean", const: true } },
+                additionalProperties: false
+              },
+              "The skill no longer feeds the planner"
+            ).responses["200"],
+            "403": jsonErrorStatusResponse("403", "Team skill deactivation requires an admin", [
+              "invalid_client_token",
+              "forbidden",
+              "human_required",
+              "team_skill_admin_required"
+            ]).responses["403"],
+            "404": teamSkillNotFoundResponse,
+            "413": conversationPayloadTooLargeResponse,
+            "401": conversationAuthRequiredResponse,
+            "422": conversationValidationResponse,
+            "500": conversationInternalResponse
+          }
         }
       },
       "/api/conversations/{id}/army": {
