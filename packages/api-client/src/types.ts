@@ -338,9 +338,9 @@ export type WorkHubApiClient = {
   nextQuestion: (sessionId: string, payload?: NextQuestionRequest, options?: PageRequestOptions) => Promise<SessionVM>;
   searchKnowledge: (payload?: unknown, options?: PageRequestOptions) => Promise<EvidenceBubble>;
   // R14 批 SEARCH（web-search-page）：全局搜索统一读端点 GET /api/search（跨会话/网盘/工单/会议）。
-  // 可选——只有 web 顶栏搜索页调用；桌面端走独立的聚焦盒能力（另一工包），其 fakeClient mock
-  // 不需要补这个方法，故此处不声明成必需字段（desktop main.test.ts 不在本工包改动范围内）。
-  search?: (params: SearchRequestParams) => Promise<SearchResultsVm>;
+  // 必需字段（集成收口改定）：可选方法会诱导 client.search?.() 静默吞调用；
+  // desktop main.test.ts 的穷举 mock 已由集成者补对应存根。
+  search: (params: SearchRequestParams) => Promise<SearchResultsVm>;
   useEvidenceForWorkItem: (workItemId: string, payload: UseEvidenceForTaskRequest) => Promise<WorkItemDetailVM>;
   restoreAcceptedDeliverable: (
     workItemId: string,

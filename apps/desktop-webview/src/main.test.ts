@@ -460,6 +460,9 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
     async searchKnowledge() {
       throw new Error("not needed");
     },
+    async search() {
+      throw new Error("not needed");
+    },
     async useEvidenceForWorkItem() {
       throw new Error("not needed");
     },

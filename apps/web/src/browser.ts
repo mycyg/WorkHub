@@ -2358,12 +2358,9 @@ function bindSearchRoutePanel(
       retryButton.hidden = true;
     }
     try {
-      const data = await client.search?.({ q, limit: 10 });
+      const data = await client.search({ q, limit: 10 });
       if (signal.aborted) {
         return;
-      }
-      if (!data) {
-        throw new Error("search endpoint unavailable");
       }
       renderGroups(data);
     } catch {
