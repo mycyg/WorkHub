@@ -2865,9 +2865,11 @@ test("Drive route version history follows the selected file instead of showing u
   assert.equal(drive.html.includes('data-r4-drive-version="94000000-0000-4000-8000-000000000003"'), false);
 });
 
-// R13 批 P4（网盘版本历史两端不对称的诚实标注）：version.restore_href 是服务端为两端共出的同一份字段，
-// 但 web 从不渲染恢复按钮（回滚是桌面独有能力）——此前完全没有提示，看起来像「没有历史版本可恢复」。
-test("R13 P4 Drive route version history notes that restoring an older version needs the desktop client", () => {
+// R14（网盘回滚两端对齐，取代 R13 批 P4 的纯提示）：version.restore_href 是服务端为两端共出的同一份
+// 字段，且只在服务端认定“现在真能找回”时才会给（见 apps/api/src/services/drive-pages.ts 的
+// versionToVm/acceptedDeliverableVersionMarker）——凡是这个字段真出现了，web 现在必须接一个真按钮，
+// 而不再是此前那句笼统的“需要桌面客户端”提示（那句话对这一行来说是不准确的：它明明能在网页上做）。
+test("R14 Drive route renders a real, confirm-gated recovery action for a version the server marked restorable", () => {
   const vm = drivePageVm();
   vm.selected_item_id = "94000000-0000-4000-8000-000000000009";
   const currentVersion = vm.versions.find((version) => version.id === "94000000-0000-4000-8000-000000000010")!;
@@ -2881,12 +2883,55 @@ test("R13 P4 Drive route version history notes that restoring an older version n
 
   const drive = renderWebRouteComponent({ key: "drive", drive: vm }, { locale: "en-US" });
 
-  assert.equal(drive.html.includes('data-r13-drive-versions-desktop-notice="true"'), true);
-  assert.equal(drive.html.includes("Restoring an older version requires the desktop client."), true);
-  assert.equal(drive.html.includes('data-r4-drive-version="94000000-0000-4000-8000-000000000012"'), true);
+  // Exactly one recovery control renders (the base fixture's other, already-current-and-restorable
+  // version — "...003" — belongs to a different file and is filtered out once ...009 is selected).
+  // The action must sit behind a <details> disclosure (collapsed by default, per the shared
+  // ".wh-r4-route details" CSS rule) so a single accidental click can't fire an overwriting action —
+  // the explanation and the actual submit control only appear once expanded.
+  assert.equal((drive.html.match(/wh-r4-drive-version-restore/gu) ?? []).length, 1);
+  assert.equal(drive.html.includes('<details class="wh-r4-drive-version-restore" data-r14-drive-version-restore="true">'), true);
+  assert.equal(drive.html.includes('<summary class="wh-btn">Recover this version</summary>'), true);
+  assert.equal(drive.html.includes('href="/api/workitems/x/deliverables/y/restore"'), true);
+  assert.equal(drive.html.includes('data-action-id="drive_restore" data-method="POST">Confirm recovery</a>'), true);
+  assert.equal(drive.html.includes("is not deleted, it stays in the history"), true);
+  // The recovery markup for this version must be attached to ITS row, not float in globally —
+  // it should appear after this version's own data attribute and before the next row/section.
+  const rowStart = drive.html.indexOf('data-r4-drive-version="94000000-0000-4000-8000-000000000012"');
+  const restoreIndex = drive.html.indexOf("wh-r4-drive-version-restore", rowStart);
+  assert.ok(rowStart >= 0, "expected to find the restorable version's row");
+  assert.ok(restoreIndex > rowStart, "expected the recovery control to render inside that version's row");
+  // No git jargon, and the stale "requires desktop" framing must not linger for a version that
+  // actually has a working web path now.
+  assert.doesNotMatch(drive.html, /\brevert\b/iu);
+  assert.doesNotMatch(drive.html, /\brollback\b/iu);
+  assert.equal(drive.html.includes('data-r13-drive-versions-desktop-notice="true"'), false);
 });
 
-test("R13 P4 Drive route version history omits the desktop notice when every loaded version is current", () => {
+// The remaining, genuine gap: a non-current version the server did NOT mark restorable (e.g. a
+// manual upload with no backing accepted deliverable) still has no working web-side recovery path.
+// That row must stay honest — no button pretending to work — while the page-level notice keeps
+// pointing affected users at the desktop client for *that* version specifically.
+test("R14 Drive route still shows the desktop notice, without a button, for a version the server did not mark restorable", () => {
+  const vm = drivePageVm();
+  vm.selected_item_id = "94000000-0000-4000-8000-000000000009";
+  const currentVersion = vm.versions.find((version) => version.id === "94000000-0000-4000-8000-000000000010")!;
+  vm.versions.push({
+    ...currentVersion,
+    id: "94000000-0000-4000-8000-000000000013",
+    version_no: 0,
+    current: false,
+    restore_href: undefined
+  });
+
+  const drive = renderWebRouteComponent({ key: "drive", drive: vm }, { locale: "en-US" });
+
+  assert.equal(drive.html.includes('data-r13-drive-versions-desktop-notice="true"'), true);
+  assert.equal(drive.html.includes("Recovering these older versions requires the desktop client."), true);
+  assert.equal(drive.html.includes('data-r4-drive-version="94000000-0000-4000-8000-000000000013"'), true, "expected to find the non-restorable version's row");
+  assert.equal((drive.html.match(/wh-r4-drive-version-restore/gu) ?? []).length, 0, "must not render a restore control with no restore_href to point at");
+});
+
+test("R14 Drive route version history omits the desktop notice when every loaded version is current or already restorable", () => {
   const vm = drivePageVm();
   vm.selected_item_id = "94000000-0000-4000-8000-000000000009";
 
@@ -2924,6 +2969,13 @@ test("Drive route explains restricted accepted deliverables without action links
     download_href: undefined,
     restore_href: undefined
   };
+  // R14: in real server output, a version's restore_href is derived from this same (link-filtered)
+  // accepted-deliverable record (see versionToVm in apps/api/src/services/drive-pages.ts) — when the
+  // deliverable is restricted, its version row loses restore_href too. This fixture keeps versions[]
+  // and accepted_deliverables[] as independent literals, so it must clear both by hand to stay a
+  // realistic combination (otherwise the version row would render a recovery action a restricted
+  // deliverable is never actually allowed to expose).
+  vm.versions[0] = { ...vm.versions[0]!, restore_href: undefined };
 
   const drive = renderWebRouteComponent({ key: "drive", drive: vm }, { locale: "en-US" });
 
