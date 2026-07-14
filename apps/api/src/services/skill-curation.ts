@@ -13,6 +13,7 @@ import {
   type AppliedSkillEditOp,
   type DistilledTeamSkill,
   type DistilledTeamSkillsResponse,
+  type AiFeedbackSubjectType,
   type SkillEditPatch,
   type SkillEditPatchResponse
 } from "@workhub/contracts";
@@ -41,6 +42,32 @@ export type SkillCurationAnalysis = {
   // K2：当前活跃团队技能（带正文），用来做受限编辑补丁式精修。
   activeSkills: ActiveSkillForRefinement[];
   totalAccepted: number;
+  // R14 批 FEEDBACK · W-B：夜间 curation 消费的人类反馈信号（见 04-feedback-design.md §6）。
+  // 反例池——被用户明确判「没用」的近期产出，逐条带人话摘要 + 可选备注；蒸馏时避免重蹈同类模式。
+  negativeFeedback: AiFeedbackNegativeSample[];
+  // 好评强化——被用户主动认可的近期产出的聚合计数（只计数不取全文，防 prompt 膨胀）。
+  positiveFeedback: AiFeedbackPositiveSignal[];
+};
+
+// R14 批 FEEDBACK · W-B：一条差评的 curation 侧视图——「哪类主体 + 它具体说了什么（摘要）+ 用户备注」。
+// excerpt 已由 worker 侧截断有界；note 为原样备注（写入端已 looksLikeInjection 拦截，≤200 字符）。
+export type AiFeedbackNegativeSample = {
+  subjectType: AiFeedbackSubjectType;
+  excerpt: string;
+  note: string | null;
+};
+
+// R14 批 FEEDBACK · W-B：一类好评的聚合信号（只带计数，不带全文）。
+export type AiFeedbackPositiveSignal = {
+  subjectType: AiFeedbackSubjectType;
+  count: number;
+};
+
+// R14 批 FEEDBACK · W-B：反馈主体在 curation prompt 里的人话中文标签（curator 读中文，见设计 §6.3）。
+const FEEDBACK_SUBJECT_LABEL: Record<AiFeedbackSubjectType, string> = {
+  conversation_message: "Cuu 回复",
+  proposal: "提议",
+  action_card_item: "行动卡"
 };
 
 export type SkillValidationResult = { ok: true } | { ok: false; reason: string };
@@ -110,7 +137,14 @@ export function validateDistilledSkill(
 
 // 这个工作空间有没有值得蒸馏的活动量（无活动则跳过，省一次 LLM 调用）。
 export function hasCurationSignal(analysis: SkillCurationAnalysis): boolean {
-  return analysis.totalAccepted > 0 || analysis.escalations.length > 0;
+  return (
+    analysis.totalAccepted > 0 ||
+    analysis.escalations.length > 0 ||
+    // R14 批 FEEDBACK · W-B：有新差评/好评也算「有信号」——否则一个只有反馈、没有接受/升级信号的工作区
+    // 会永不触发当晚 curation、反馈数据石沉大海（见 04-feedback-design.md §6.3）。
+    analysis.negativeFeedback.length > 0 ||
+    analysis.positiveFeedback.length > 0
+  );
 }
 
 export function buildCurationSystemPrompt(): string {
@@ -136,14 +170,41 @@ export function buildCurationPrompt(analysis: SkillCurationAnalysis): string {
         .map((row) => `- ${row.skillKey}（曾被放弃 ${row.count} 次，最近原因：${row.reason}）`)
         .join("\n")
     : "（无）";
-  return [
+  const lines = [
     "请根据下面这个团队最近 7 天的工作数据，提议 0–3 项新的团队技能。",
     "",
     "【被接受的交付物（正样本，说明这类活高频且被认可）】",
     accepted,
     "",
     "【升级/卡壳信号（说明缺什么能力）】",
-    escalations,
+    escalations
+  ];
+  // R14 批 FEEDBACK · W-B：反馈两节接在「升级/卡壳信号」之后、「已有技能」之前，反例优先（对 curator
+  // 的决策权重更高，「先给约束、再给素材」）。**只在真有反馈时才拼**——无反馈时整节不出现（不塞空「（无）」
+  // 节：反馈是新增的稀疏信号，与上面 accepted/escalations 那两个常驻高频信号刻意不同，见设计 §6.3）。
+  if (analysis.negativeFeedback.length > 0) {
+    lines.push(
+      "",
+      "【被用户打「没用」的近期产出（反例——蒸馏时主动避免同类模式，勿重蹈覆辙）】",
+      analysis.negativeFeedback
+        .map((row) => {
+          const label = FEEDBACK_SUBJECT_LABEL[row.subjectType];
+          const noteSuffix = row.note ? `（用户备注：${row.note}）` : "";
+          return `- [${label}]「${row.excerpt}」${noteSuffix}`;
+        })
+        .join("\n")
+    );
+  }
+  if (analysis.positiveFeedback.length > 0) {
+    lines.push(
+      "",
+      "【被用户点「有用」认可的近期产出（正样本，用户主动认可，强信号）】",
+      analysis.positiveFeedback
+        .map((row) => `- ${FEEDBACK_SUBJECT_LABEL[row.subjectType]}：获好评 ${row.count} 次`)
+        .join("\n")
+    );
+  }
+  lines.push(
     "",
     `【已有技能（不要重复）】\n${analysis.existingSkills.join("、") || "（无）"}`,
     "",
@@ -158,7 +219,8 @@ export function buildCurationPrompt(analysis: SkillCurationAnalysis): string {
     "",
     "只返回 JSON，结构：",
     '{ "distilled_skills": [ { "skill_key": "...", "name": "...", "when_to_use": "...", "content_md": "---\\nname: ...\\nwhen_to_use: ...\\n---\\n\\n# ...", "sample_count": 6, "confidence_score": 0.85 } ], "reason_if_none": "..." }'
-  ].join("\n");
+  );
+  return lines.join("\n");
 }
 
 function firstBalancedJsonObject(text: string): string | undefined {

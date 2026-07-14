@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { editBudgetForTick, type DistilledTeamSkill } from "@workhub/contracts";
-import type { TeamSkillRow } from "@workhub/db";
+import type { AiFeedbackRow, FeedbackSubjectExcerptReader, TeamSkillRow } from "@workhub/db";
 
 import {
   createAgentRunSkillCurationScheduler,
   createSkillCurationProviderAdapters,
+  negativeFeedbackWithExcerpts,
   type SkillCurationSchedulerOptions
 } from "./workers/agent-skill-curation.js";
 import {
@@ -214,10 +215,41 @@ test("hasCurationSignal is false on an idle workspace", () => {
     discardedSkills: [],
     activeTeamSkillCount: 0,
     activeSkills: [],
-    totalAccepted: 0
+    totalAccepted: 0,
+    negativeFeedback: [],
+    positiveFeedback: []
   };
   assert.equal(hasCurationSignal(analysis), false);
   assert.equal(hasCurationSignal({ ...analysis, totalAccepted: 3 }), true);
+});
+
+test("R14 FEEDBACK hasCurationSignal fires on a feedback-only workspace (negative or positive)", () => {
+  const idle: SkillCurationAnalysis = {
+    workspaceId: "ws-1",
+    acceptedDeliverables: [],
+    escalations: [],
+    existingSkills: ["code-script"],
+    discardedSkills: [],
+    activeTeamSkillCount: 0,
+    activeSkills: [],
+    totalAccepted: 0,
+    negativeFeedback: [],
+    positiveFeedback: []
+  };
+  assert.equal(hasCurationSignal(idle), false);
+  // 只有差评 → 有信号（否则反馈数据永不触发当晚 curation）。
+  assert.equal(
+    hasCurationSignal({
+      ...idle,
+      negativeFeedback: [{ subjectType: "conversation_message", excerpt: "跑偏了", note: null }]
+    }),
+    true
+  );
+  // 只有好评 → 也算有信号。
+  assert.equal(
+    hasCurationSignal({ ...idle, positiveFeedback: [{ subjectType: "proposal", count: 2 }] }),
+    true
+  );
 });
 
 test("buildCurationPrompt surfaces accepted + escalation signals and existing skills", () => {
@@ -229,11 +261,50 @@ test("buildCurationPrompt surfaces accepted + escalation signals and existing sk
     discardedSkills: [],
     activeTeamSkillCount: 2,
     activeSkills: [],
-    totalAccepted: 12
+    totalAccepted: 12,
+    negativeFeedback: [],
+    positiveFeedback: []
   });
   assert.equal(prompt.includes("document"), true);
   assert.equal(prompt.includes("缺少 SQL 导出技能"), true);
   assert.equal(prompt.includes("code-script"), true);
+  // 无反馈 → 不出现反例/好评空节（反馈是稀疏信号，无数据时整节不拼）。
+  assert.equal(prompt.includes("反例"), false);
+  assert.equal(prompt.includes("获好评"), false);
+});
+
+test("R14 FEEDBACK buildCurationPrompt injects the negative counter-example section (excerpt + note) and positive counts", () => {
+  const prompt = buildCurationPrompt({
+    workspaceId: "ws-1",
+    acceptedDeliverables: [{ targetKind: "document", count: 12 }],
+    escalations: [],
+    existingSkills: ["code-script"],
+    discardedSkills: [],
+    activeTeamSkillCount: 1,
+    activeSkills: [],
+    totalAccepted: 12,
+    negativeFeedback: [
+      { subjectType: "conversation_message", excerpt: "这段汇总完全答非所问", note: "跑题了" },
+      { subjectType: "proposal", excerpt: "把生产库直接删表", note: null }
+    ],
+    positiveFeedback: [
+      { subjectType: "conversation_message", count: 6 },
+      { subjectType: "proposal", count: 2 }
+    ]
+  });
+  // 反例节存在，逐条摘要 + 人话中文主体标签。
+  assert.equal(prompt.includes("反例"), true);
+  assert.equal(prompt.includes("Cuu 回复"), true);
+  assert.equal(prompt.includes("这段汇总完全答非所问"), true);
+  assert.equal(prompt.includes("把生产库直接删表"), true);
+  // 有备注的条目带「用户备注：」，note 为 null 的条目不带——全 prompt 恰好一处备注。
+  assert.equal(prompt.includes("（用户备注：跑题了）"), true);
+  assert.equal(prompt.split("用户备注：").length - 1, 1);
+  // 好评强化节：只聚合计数，不取全文。
+  assert.equal(prompt.includes("获好评 6 次"), true);
+  assert.equal(prompt.includes("获好评 2 次"), true);
+  // 反例排在好评之前（先给约束、再给素材）。
+  assert.equal(prompt.indexOf("反例") < prompt.indexOf("获好评"), true);
 });
 
 test("buildCurationPrompt feeds back discarded proposals as a do-not-repeat memory (K1)", () => {
@@ -247,7 +318,9 @@ test("buildCurationPrompt feeds back discarded proposals as a do-not-repeat memo
     ],
     activeTeamSkillCount: 1,
     activeSkills: [],
-    totalAccepted: 12
+    totalAccepted: 12,
+    negativeFeedback: [],
+    positiveFeedback: []
   });
   assert.equal(prompt.includes("勿再原样重提"), true);
   assert.equal(prompt.includes("weekly-recap"), true);
@@ -292,7 +365,9 @@ function buildScheduler(over: Partial<SkillCurationSchedulerOptions> = {}) {
       discardedSkills: [],
       activeTeamSkillCount: 1,
       activeSkills: [],
-      totalAccepted: 9
+      totalAccepted: 9,
+      negativeFeedback: [],
+      positiveFeedback: []
     }),
     distill: async () => ({ distilled_skills: [skill()] }),
     now: () => new Date("2026-06-14T00:00:00.000Z"),
@@ -397,7 +472,9 @@ test("curation provider adapters attach the analysis workspace to usage metering
     discardedSkills: [],
     activeTeamSkillCount: 1,
     activeSkills: [],
-    totalAccepted: 9
+    totalAccepted: 9,
+    negativeFeedback: [],
+    positiveFeedback: []
   };
 
   await adapters.distill(analysis);
@@ -433,7 +510,9 @@ test("scheduler clips promotions to the edit-budget and defers the rest by confi
       discardedSkills: [],
       activeTeamSkillCount: 49,
       activeSkills: [],
-      totalAccepted: 9
+      totalAccepted: 9,
+      negativeFeedback: [],
+      positiveFeedback: []
     }),
     distill: async () => ({
       distilled_skills: [
@@ -484,7 +563,9 @@ function refineAnalyze(over: { version?: number } = {}) {
         contentMd: ACTIVE_SKILL_CONTENT
       }
     ],
-    totalAccepted: 9
+    totalAccepted: 9,
+    negativeFeedback: [],
+    positiveFeedback: []
   });
 }
 
@@ -647,7 +728,9 @@ test("scheduler skips distillation for an idle workspace (no signal → no LLM c
       discardedSkills: [],
       activeTeamSkillCount: 0,
       activeSkills: [],
-      totalAccepted: 0
+      totalAccepted: 0,
+      negativeFeedback: [],
+      positiveFeedback: []
     }),
     distill: async () => {
       distillCalls += 1;
@@ -657,4 +740,125 @@ test("scheduler skips distillation for an idle workspace (no signal → no LLM c
   const result = await scheduler.tick();
   assert.equal(distillCalls, 0);
   assert.equal(result.promoted, 0);
+});
+
+// ── R14 批 FEEDBACK · W-B：差评样本 → 逐条摘要拼装（negativeFeedbackWithExcerpts）────────────────
+
+function negRow(over: Partial<AiFeedbackRow> = {}): AiFeedbackRow {
+  return {
+    id: "fb-1",
+    subjectType: "conversation_message",
+    subjectId: "m1",
+    userId: "u1",
+    verdict: "not_useful",
+    note: null,
+    createdAt: new Date("2026-07-10T00:00:00.000Z"),
+    updatedAt: new Date("2026-07-10T00:00:00.000Z"),
+    ...over
+  };
+}
+
+function emptyExcerpts(): FeedbackSubjectExcerptReader {
+  return {
+    conversationMessageTexts: async () => new Map(),
+    proposalTitles: async () => new Map(),
+    actionCardItemTitles: async () => new Map()
+  };
+}
+
+test("R14 FEEDBACK negativeFeedbackWithExcerpts批量取正文 (O(3) IN, 禁 N+1), truncates, and marks a tombstone unavailable", async () => {
+  const longText = "很".repeat(250);
+  const feedback = {
+    negativeSamplesSince: async () => [
+      negRow({ subjectType: "conversation_message", subjectId: "m1", note: "跑偏" }),
+      negRow({ subjectType: "conversation_message", subjectId: "m2-deleted", note: null }),
+      negRow({ subjectType: "proposal", subjectId: "p1", note: null }),
+      negRow({ subjectType: "action_card_item", subjectId: "a1", note: "没做完" })
+    ]
+  };
+  let msgIds: string[] = [];
+  let propIds: string[] = [];
+  let itemIds: string[] = [];
+  const excerpts: FeedbackSubjectExcerptReader = {
+    conversationMessageTexts: async (ids) => {
+      msgIds = ids;
+      // m2-deleted → null（墓碑/无 text）。
+      return new Map([["m1", longText], ["m2-deleted", null]]);
+    },
+    proposalTitles: async (ids) => {
+      propIds = ids;
+      return new Map([["p1", "季度报告初稿"]]);
+    },
+    actionCardItemTitles: async (ids) => {
+      itemIds = ids;
+      return new Map([["a1", "导出 CSV"]]);
+    }
+  };
+  const result = await negativeFeedbackWithExcerpts({ feedback, excerpts }, "ws-1", new Date());
+  // 三组主体各一条 IN（按 subjectType 分桶），禁 N+1。
+  assert.deepEqual(msgIds, ["m1", "m2-deleted"]);
+  assert.deepEqual(propIds, ["p1"]);
+  assert.deepEqual(itemIds, ["a1"]);
+  // 顺序与 negativeSamplesSince 返回一致（updated_at desc）。
+  assert.equal(result.length, 4);
+  // 超长正文按 ≤200 字符截断 + 省略号。
+  assert.equal(result[0]?.excerpt.length, 201); // 200 chars + '…'
+  assert.equal(result[0]?.excerpt.endsWith("…"), true);
+  assert.equal(result[0]?.note, "跑偏");
+  // 墓碑/不可用 → 占位而非空串或抛错。
+  assert.equal(result[1]?.excerpt, "（内容不可用）");
+  assert.equal(result[1]?.note, null);
+  assert.equal(result[2]?.excerpt, "季度报告初稿");
+  assert.equal(result[3]?.excerpt, "导出 CSV");
+  assert.equal(result[3]?.note, "没做完");
+});
+
+test("R14 FEEDBACK negativeFeedbackWithExcerpts short-circuits with no samples (no excerpt queries)", async () => {
+  let excerptCalls = 0;
+  const excerpts: FeedbackSubjectExcerptReader = {
+    conversationMessageTexts: async () => {
+      excerptCalls += 1;
+      return new Map();
+    },
+    proposalTitles: async () => {
+      excerptCalls += 1;
+      return new Map();
+    },
+    actionCardItemTitles: async () => {
+      excerptCalls += 1;
+      return new Map();
+    }
+  };
+  const result = await negativeFeedbackWithExcerpts(
+    { feedback: { negativeSamplesSince: async () => [] }, excerpts },
+    "ws-1",
+    new Date()
+  );
+  assert.deepEqual(result, []);
+  assert.equal(excerptCalls, 0);
+});
+
+test("R14 FEEDBACK negativeFeedbackWithExcerpts forwards the updated_at freshness window + bounded sample cap (re-judged feedback re-counts)", async () => {
+  const since = new Date("2026-07-07T00:00:00.000Z");
+  let capturedSince: Date | undefined;
+  let capturedLimit: number | undefined;
+  await negativeFeedbackWithExcerpts(
+    {
+      feedback: {
+        negativeSamplesSince: async (_ws, s, limit) => {
+          capturedSince = s;
+          capturedLimit = limit;
+          return [];
+        }
+      },
+      excerpts: emptyExcerpts()
+    },
+    "ws-1",
+    since
+  );
+  // 窗口按 updated_at ≥ since 转发——一条被改判、updated_at 落进本窗口的差评会被 negativeSamplesSince
+  // 重新选中并流进反例池（「改判重新计入」语义，底层 not_useful/updated_at 过滤见 ai-feedback 仓库测试）。
+  assert.equal(capturedSince?.toISOString(), since.toISOString());
+  // 取样上限有界（防 prompt 膨胀），默认 20。
+  assert.equal(capturedLimit, 20);
 });

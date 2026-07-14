@@ -3,7 +3,12 @@ import type { ProviderRegistry } from "@workhub/agent/providers";
 import {
   getSharedDatabaseClient,
   createTeamSkillRepository,
+  createAiFeedbackRepository,
+  createFeedbackSubjectExcerptReader,
+  type AiFeedbackRepository,
+  type AiFeedbackRow,
   type AuditLogRepository,
+  type FeedbackSubjectExcerptReader,
   type TeamSkillRepository,
   type WorkHubDatabaseClient
 } from "@workhub/db";
@@ -31,11 +36,90 @@ import {
   parseSkillEditPatchResponse,
   validateDistilledSkill,
   validateSkillEditPatch,
+  type AiFeedbackNegativeSample,
   type SkillCurationAnalysis
 } from "../services/skill-curation.js";
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+// R14 批 FEEDBACK · W-B：反例池取样上限——比 K1 的 discard 记忆（12）略宽，新信号源起步多给曝光而非
+// 一开始就掐紧（见 04-feedback-design.md §6.1）。样本再逐条按 FEEDBACK_EXCERPT_CHARS 截断，双重有界
+// 防 curation prompt 膨胀。
+const NEGATIVE_FEEDBACK_SAMPLE_LIMIT = 20;
+// 单条差评摘要的字符上限——够 curator 认出「是哪类产出」即可，不需要整段正文（比 K2 精修的 1600
+// 预览上限短得多，因为反例是「多条并列」的证据而非「单篇精修底稿」）。
+const FEEDBACK_EXCERPT_CHARS = 200;
+// 主体正文缺失/墓碑时的占位（Cuu 消息理论上不会被删，此为防御性判断，见设计 §6.1）。
+const FEEDBACK_EXCERPT_UNAVAILABLE = "（内容不可用）";
+
+function truncateFeedbackExcerpt(text: string): string {
+  const trimmed = text.trim();
+  return trimmed.length > FEEDBACK_EXCERPT_CHARS ? `${trimmed.slice(0, FEEDBACK_EXCERPT_CHARS)}…` : trimmed;
+}
+
+function excerptForNegativeSample(
+  sample: AiFeedbackRow,
+  lookups: {
+    messageTexts: Map<string, string | null>;
+    proposalTitles: Map<string, string>;
+    itemTitles: Map<string, string>;
+  }
+): string {
+  let raw: string | null | undefined;
+  if (sample.subjectType === "conversation_message") {
+    raw = lookups.messageTexts.get(sample.subjectId); // null=墓碑/无 text
+  } else if (sample.subjectType === "proposal") {
+    raw = lookups.proposalTitles.get(sample.subjectId);
+  } else {
+    raw = lookups.itemTitles.get(sample.subjectId);
+  }
+  if (raw == null || raw.trim().length === 0) {
+    return FEEDBACK_EXCERPT_UNAVAILABLE;
+  }
+  return truncateFeedbackExcerpt(raw);
+}
+
+// R14 批 FEEDBACK · W-B：把差评样本拼成「逐条人话摘要」——先按 workspace 取近窗（updated_at ≥ since，
+// 改判即重新计入本轮）的 not_useful 样本，再按 subjectType 分三组、各一条 IN 批量取正文（禁 N+1，
+// O(3) 查询而非 O(N)），最后按 negativeSamplesSince 已排好的 updated_at 顺序逐条映射成
+// {subjectType, excerpt, note}。纯函数、可单测：DB 依赖（样本查询 + 三组正文查询）全部注入。
+export async function negativeFeedbackWithExcerpts(
+  deps: {
+    feedback: Pick<AiFeedbackRepository, "negativeSamplesSince">;
+    excerpts: FeedbackSubjectExcerptReader;
+  },
+  workspaceId: string,
+  since: Date,
+  limit: number = NEGATIVE_FEEDBACK_SAMPLE_LIMIT
+): Promise<AiFeedbackNegativeSample[]> {
+  const samples = await deps.feedback.negativeSamplesSince(workspaceId, since, limit);
+  if (samples.length === 0) {
+    return [];
+  }
+  const messageIds: string[] = [];
+  const proposalIds: string[] = [];
+  const itemIds: string[] = [];
+  for (const sample of samples) {
+    if (sample.subjectType === "conversation_message") {
+      messageIds.push(sample.subjectId);
+    } else if (sample.subjectType === "proposal") {
+      proposalIds.push(sample.subjectId);
+    } else {
+      itemIds.push(sample.subjectId);
+    }
+  }
+  const [messageTexts, proposalTitles, itemTitles] = await Promise.all([
+    deps.excerpts.conversationMessageTexts(messageIds),
+    deps.excerpts.proposalTitles(proposalIds),
+    deps.excerpts.actionCardItemTitles(itemIds)
+  ]);
+  return samples.map((sample) => ({
+    subjectType: sample.subjectType,
+    excerpt: excerptForNegativeSample(sample, { messageTexts, proposalTitles, itemTitles }),
+    note: sample.note
+  }));
+}
 
 export type SkillCurationTickResult = {
   workspaces: number;
@@ -477,6 +561,9 @@ export function getDefaultAgentRunSkillCurationScheduler(): AgentRunSkillCuratio
   defaultDbClient = defaultDbClient ?? getSharedDatabaseClient();
   const db = defaultDbClient.db;
   const repository = createTeamSkillRepository(db);
+  // R14 批 FEEDBACK · W-B：夜间 curation 消费人类反馈——差评样本仓库 + 三张主体表的正文摘要 reader。
+  const feedbackRepo = createAiFeedbackRepository(db);
+  const feedbackExcerpts = createFeedbackSubjectExcerptReader(db);
   const auditStores = getDefaultAuditStores();
   const presetSkillKeys = listSkills().map((skill) => skill.id);
   const providerRegistry = getDefaultProviderRegistry();
@@ -518,12 +605,16 @@ export function getDefaultAgentRunSkillCurationScheduler(): AgentRunSkillCuratio
     listWorkspaces: async () => (await repository.listActiveWorkspaceIds()).map((id) => ({ id })),
     analyze: async (workspaceId) => {
       const since = new Date(Date.now() - SEVEN_DAYS_MS);
-      const [acceptedDeliverables, escalations, activeRows, discardedSkills] = await Promise.all([
-        repository.acceptedDeliverableSignals(workspaceId, since),
-        repository.escalationSignals(workspaceId, since),
-        repository.listActive(workspaceId),
-        repository.discardedSkillSignals(workspaceId, since)
-      ]);
+      const [acceptedDeliverables, escalations, activeRows, discardedSkills, negativeFeedback, positiveFeedback] =
+        await Promise.all([
+          repository.acceptedDeliverableSignals(workspaceId, since),
+          repository.escalationSignals(workspaceId, since),
+          repository.listActive(workspaceId),
+          repository.discardedSkillSignals(workspaceId, since),
+          // R14 批 FEEDBACK · W-B：差评样本（带逐条摘要）+ 好评聚合计数，与既有四条信号并行拉。
+          negativeFeedbackWithExcerpts({ feedback: feedbackRepo, excerpts: feedbackExcerpts }, workspaceId, since),
+          feedbackRepo.positiveCountsSince(workspaceId, since)
+        ]);
       const activeKeys = activeRows.map((row) => row.skillKey);
       return {
         workspaceId,
@@ -541,7 +632,11 @@ export function getDefaultAgentRunSkillCurationScheduler(): AgentRunSkillCuratio
           version: row.version,
           contentMd: row.contentMd
         })),
-        totalAccepted: acceptedDeliverables.reduce((sum, row) => sum + row.count, 0)
+        totalAccepted: acceptedDeliverables.reduce((sum, row) => sum + row.count, 0),
+        // R14 批 FEEDBACK · W-B：反例池 + 好评强化信号（进 buildCurationPrompt 的两个新小节，
+        // 蒸馏调用本身已记 source:"curation"，无新增记账路径，见设计 §6/结论 4）。
+        negativeFeedback,
+        positiveFeedback
       };
     },
     distill: providerAdapters.distill,
