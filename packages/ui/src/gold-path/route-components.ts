@@ -159,6 +159,9 @@ export const webRouteComponentCss = [
   ".wh-r4-route .wh-btn,.wh-r4-route .wh-pill{max-width:100%;white-space:normal;text-align:left;overflow-wrap:anywhere}",
   ".wh-drive-upload-control{display:inline-flex;gap:8px;flex-wrap:wrap;align-items:center;max-width:100%}.wh-drive-upload-label{position:relative;cursor:pointer}.wh-drive-upload-input{position:absolute;inline-size:1px;block-size:1px;opacity:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}",
   ".wh-r5-drive-preview-panel{grid-column:1/-1}.wh-r5-drive-preview-body{margin:0;max-height:420px;overflow:auto;white-space:pre-wrap;word-break:break-word;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:12px;padding:12px;background:rgba(247,250,254,.82);color:var(--wh-product-ink,#172033);font:13px/1.55 \"SFMono-Regular\",\"Cascadia Mono\",Consolas,monospace}",
+  // R14（网盘回滚两端对齐）：版本行里的「找回这个版本」是一个 <details> 二次确认盒——折叠态只露出
+  // summary 按钮（.wh-r4-route details 通用规则已隐藏其余子节点），展开后才看到说明文字与真提交按钮。
+  ".wh-r4-drive-version-restore{margin-top:2px}.wh-r4-drive-version-restore summary{cursor:pointer;list-style:none;width:max-content}.wh-r4-drive-version-restore summary::-webkit-details-marker{display:none}.wh-r4-drive-version-restore[open] summary{margin-bottom:6px}.wh-r4-drive-version-restore .wh-r4-route-actions p{flex:1 1 100%;font-size:12.5px}",
   ".wh-r4-route details:not([open])>*:not(summary){display:none}",
   ".wh-r4-intake-free-text{width:100%;min-height:92px;resize:vertical;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:12px;padding:10px 12px;font:inherit;line-height:1.45;color:var(--wh-product-ink,#172033);background:rgba(255,255,255,.92);overflow-wrap:anywhere}",
   ".wh-r4-knowledge-search{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 4px;min-width:0;max-width:100%}.wh-r4-knowledge-search input{flex:1 1 220px;min-width:0;max-width:100%;box-sizing:border-box;font:inherit;line-height:1.45;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:12px;padding:9px 12px;color:var(--wh-product-ink,#172033);background:rgba(255,255,255,.92)}.wh-r4-knowledge-search .wh-btn{flex:0 0 auto}",
@@ -2670,6 +2673,33 @@ function driveActionLinks(
   return links.length || accessNotice ? `<div class="wh-r4-route-actions">${links.join("")}${accessNotice}</div>` : "";
 }
 
+// R14（网盘回滚两端对齐）：version.restore_href 在真实数据里只会挂在服务端认定“现在真能找回”的
+// 那一行——见 apps/api/src/services/drive-pages.ts 的 versionToVm：只有未被取代的已采纳交付物那一条
+// 会带 restore_href，被取代的历史行早被 acceptedDeliverableVersionMarker 剥掉了。所以这里但凡看到
+// restore_href 就能放心接一个真按钮，点了一定打得通，不是猜的假接线。用 <details> 做免 JS 的二次
+// 确认——回滚是覆盖性动作，必须先让用户看清楚“会发生什么”再点确定，不能一点就execute。
+// 文案按这条 href 背后的真实服务端语义写（work-items.ts 的 restoreAcceptedDeliverable：把当前版本
+// 换回上一个已采纳版本，不新建版本行、旧的当前版本也不会被删除），不套用桌面客户端那条“新建版本”
+// 的文案——两条路径服务端实现不同，文案不能照抄（详见 reports/r14-drive-rollback-parity.md）。
+function driveVersionRestoreHtml(
+  version: Pick<DrivePageVM["versions"][number], "restore_href">,
+  locale: WorkHubLocale
+): string {
+  if (!version.restore_href) {
+    return "";
+  }
+  const zh = locale === "zh-CN";
+  return `<details class="wh-r4-drive-version-restore" data-r14-drive-version-restore="true">
+      <summary class="wh-btn">${escapeHtml(zh ? "找回这个版本" : "Recover this version")}</summary>
+      <div class="wh-r4-route-actions">
+        <p class="wh-subtle">${escapeHtml(zh
+          ? "找回后，当前版本会换回这一版的内容——现在的当前版本不会被删除，仍留在版本历史里。"
+          : "Recovering this switches the current version back to this content — the version you are on now is not deleted, it stays in the history.")}</p>
+        <a class="wh-btn wh-btn-primary" href="${escapeHtml(safeHref(version.restore_href))}" data-action-id="drive_restore" data-method="POST">${escapeHtml(zh ? "确定找回" : "Confirm recovery")}</a>
+      </div>
+    </details>`;
+}
+
 function driveItemMutationIdFromHref(href: string) {
   try {
     const path = new URL(href, "http://workhub.local").pathname;
@@ -2823,18 +2853,19 @@ function renderDriveRouteComponent(
         <span class="wh-pill">${escapeHtml(driveVersionSourceLabel(version.source, locale === "zh-CN"))}</span>
         ${version.current ? `<span class="wh-pill">${escapeHtml(routeT(locale, "drive.current"))}</span>` : ""}
       </div>
+      ${driveVersionRestoreHtml(version, locale)}
     </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.emptyVersions"))}</p>`;
   // R13（残留清理）：版本历史与操作日志是同 VM 的姊妹列表，此前唯独它们没有诚实截断提示。
   const versionsCapNote = selectedFileVersions.length > 8
     ? `<p class="wh-subtle" data-r13-drive-versions-capped="${escapeHtml(String(selectedFileVersions.length - 8))}">${escapeHtml(locale === "zh-CN" ? `只显示最近 8 个版本（共 ${selectedFileVersions.length} 个）。` : `Showing the 8 most recent versions of ${selectedFileVersions.length}.`)}</p>`
     : "";
-  // R13 批 P4（网盘版本历史两端不对称的诚实标注）：version.restore_href 是服务端为两端共出的同一份 VM
-  // 字段，但 web 这里从不渲染恢复按钮（回滚是桌面独有能力，见 apps/web/src/browser.ts 的
-  // desktopRequiredNotice 先例）——此前网页用户完全看不出「能不能恢复」，只是静默没有按钮。
-  // 只在真有非当前版本（值得恢复）时才提示，避免只有一个当前版本时的噪音。
-  const versionsDesktopNotice = selectedFileVersions.some((version) => !version.current)
-    ? `<p class="wh-subtle" data-r13-drive-versions-desktop-notice="true">${escapeHtml(locale === "zh-CN" ? "找回历史版本需要桌面客户端。" : "Restoring an older version requires the desktop client.")}</p>`
+  // R14（网盘回滚两端对齐，取代 R13 批 P4 的纯提示）：非当前版本里，服务端真给了 restore_href 的
+  // 那些已经在上面 driveVersionRestoreHtml 接了真按钮——这里的提示只在“还有非当前版本、但服务端
+  // 没给 restore_href”（比如没有关联已采纳交付物的手动上传旧版本）时才出现，如实告知这部分暂时只能
+  // 在桌面客户端里找回，而不是笼统地说“网页做不到”。
+  const versionsDesktopNotice = selectedFileVersions.some((version) => !version.current && !version.restore_href)
+    ? `<p class="wh-subtle" data-r13-drive-versions-desktop-notice="true">${escapeHtml(locale === "zh-CN" ? "这里的更早版本找回需要桌面客户端。" : "Recovering these older versions requires the desktop client.")}</p>`
     : "";
   const acceptedRows = vm.accepted_deliverables.length
     ? vm.accepted_deliverables.slice(0, 6).map((accepted) => `<article class="wh-card wh-r4-route-card" data-r4-drive-accepted-deliverable="${escapeHtml(accepted.id)}">

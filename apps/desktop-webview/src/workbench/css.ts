@@ -490,6 +490,9 @@ export const workbenchCss = [
   ".wh-wb-drive-restore-btn{align-self:flex-start;margin-top:3px;background:transparent;border:1px solid var(--ds-glass-border);" +
     "border-radius:8px;padding:4px 10px;color:var(--ds-accent);font:600 11.5px/1.2 var(--ds-font);cursor:pointer}",
   ".wh-wb-drive-restore-btn:hover{background:var(--ds-accent-soft);border-color:rgba(10,132,255,.3)}",
+  // R14（网盘回滚两端对齐）：两段式确认的第一下——按钮翻成警示色催促再点一次，下方补一句真实语义提示。
+  ".wh-wb-drive-restore-btn--armed{background:var(--ds-warn-soft,rgba(255,159,10,.14));border-color:rgba(255,159,10,.4);color:var(--ds-warn)}",
+  ".wh-wb-drive-version-confirm-pending{display:flex;align-items:flex-start;gap:6px;margin-top:4px;font:500 11.5px/1.4 var(--ds-font);color:var(--ds-warn)}",
   ".wh-wb-drive-version-confirm{display:flex;align-items:center;gap:6px;margin-top:4px;font:500 11.5px/1.4 var(--ds-font);color:var(--ds-warn)}",
   ".wh-wb-drive-version-error{margin-top:4px;font:500 11.5px/1.4 var(--ds-font);color:var(--ds-danger)}",
 

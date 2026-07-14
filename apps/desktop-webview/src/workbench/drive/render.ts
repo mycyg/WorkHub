@@ -149,6 +149,10 @@ export type DriveSidePanelState =
       history: DriveVersionHistory;
       rollback?: { versionId: string; busy: boolean; error?: string };
       justRolledBackVersionNo?: number;
+      // R14（网盘回滚两端对齐）：哪个版本的「找回」按钮正处在两段式确认的第一下——第一次点只武装、
+      // 5 秒内对同一版本再点一次才真正发请求（照 apps/web/src/browser.ts 里 r9ConfirmArmed 的既有
+      // 两段式确认先例）。这之前是一点就直接回滚，回滚这种覆盖性动作不该无确认。
+      armedVersionId?: string;
     };
 
 function sidePanelHeaderHtml(icon: string, title: string, itemName: string): string {
@@ -156,17 +160,36 @@ function sidePanelHeaderHtml(icon: string, title: string, itemName: string): str
     <div class="wh-wb-drive-side-item">${escapeHtml(itemName)}</div>`;
 }
 
-function versionRowHtml(version: DriveVersionEntry, zh: boolean, rollback: { versionId: string; busy: boolean; error?: string } | undefined): string {
+function versionRowHtml(
+  version: DriveVersionEntry,
+  zh: boolean,
+  rollback: { versionId: string; busy: boolean; error?: string } | undefined,
+  armedVersionId: string | undefined
+): string {
   const when = formatVersionTimestamp(version.created_at, zh ? "zh-CN" : "en-US");
   const meta = `${when} · ${escapeHtml(version.created_by_label)} · ${fmtSize(version.size_bytes)}`;
   const badge = version.current
     ? `<span class="wh-wb-drive-version-current">${zh ? "当前版本" : "Current"}</span>`
     : "";
   const isBusy = rollback?.versionId === version.id && rollback.busy;
+  const isArmed = !isBusy && armedVersionId === version.id;
   const restoreBtn = version.restore_href
-    ? `<button type="button" class="wh-wb-btn wh-wb-btn--ghost wh-wb-drive-restore-btn" data-wb-drive-restore-version="${escapeHtml(version.id)}" ${isBusy ? "disabled" : ""}>${
-        isBusy ? (zh ? "找回中…" : "Recovering…") : zh ? "找回这个版本" : "Recover this version"
+    ? `<button type="button" class="wh-wb-btn wh-wb-btn--ghost wh-wb-drive-restore-btn${isArmed ? " wh-wb-drive-restore-btn--armed" : ""}" data-wb-drive-restore-version="${escapeHtml(version.id)}" ${isBusy ? "disabled" : ""}>${
+        isBusy
+          ? (zh ? "找回中…" : "Recovering…")
+          : isArmed
+            ? (zh ? "确定？再点一次找回" : "Sure? Click again to recover")
+            : (zh ? "找回这个版本" : "Recover this version")
       }</button>`
+    : "";
+  // 回滚是覆盖性动作——武装态下把真实服务端语义摆出来再让用户点第二下：会新建一个当前版本
+  // （内容复制自这一版），不会抹掉现有的版本历史（照 side-panel.ts rollbackDriveItemVersion 的
+  // 真实实现：project_drive_versions 追加新行，旧行原样保留）。
+  const armedHint = isArmed
+    ? `<p class="wh-wb-drive-version-confirm-pending">${zh
+        ? "会把这一版的内容存成一个新的当前版本，原来的版本历史都还在。5 秒内再点一次确认，否则自动取消。"
+        : "This creates a new current version from this content — the rest of the history stays. Click again within 5 seconds to confirm, or it cancels automatically."
+      }</p>`
     : "";
   const rowError = rollback?.versionId === version.id && rollback.error
     ? `<p class="wh-wb-drive-version-error">${escapeHtml(rollback.error)}</p>`
@@ -175,6 +198,7 @@ function versionRowHtml(version: DriveVersionEntry, zh: boolean, rollback: { ver
     <div class="wh-wb-drive-version-top"><span class="wh-wb-drive-version-no">v${version.version_no}</span>${badge}</div>
     <div class="wh-wb-drive-version-meta">${meta}</div>
     ${restoreBtn}
+    ${armedHint}
     ${rowError}
   </div>`;
 }
@@ -209,7 +233,7 @@ export function renderDriveSidePanelHtml(state: DriveSidePanelState, locale: Loc
               : `Recovered the content from v${state.justRolledBackVersionNo} as a new version — nothing was erased.`
           }</p>`
         : "";
-      const rows = state.history.versions.map((version) => versionRowHtml(version, zh, state.rollback)).join("");
+      const rows = state.history.versions.map((version) => versionRowHtml(version, zh, state.rollback, state.armedVersionId)).join("");
       return `${sidePanelHeaderHtml(workbenchIcons.history, zh ? "版本历史" : "Version history", state.itemName)}${confirmation}<div class="wh-wb-drive-version-list">${rows}</div>`;
     }
     default:

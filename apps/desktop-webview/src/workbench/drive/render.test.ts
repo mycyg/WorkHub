@@ -245,6 +245,56 @@ test("renderDriveSidePanelHtml disables only the version currently being recover
   assert.doesNotMatch(html, /\brollback\b/iu);
 });
 
+// R14（网盘回滚两端对齐）：回滚是覆盖性动作——之前一点「找回这个版本」就立刻发请求，没有任何确认。
+// 武装态下按钮要换成「确定？再点一次」的措辞，并把真实服务端语义（新建版本、不抹历史）摆在旁边。
+
+test("renderDriveSidePanelHtml arms the recovery button on the targeted version without disabling it or touching others", () => {
+  const html = renderDriveSidePanelHtml(
+    { mode: "versions_ready", itemName: "report.md", history: history(), armedVersionId: "v1" },
+    "zh-CN"
+  );
+  assert.match(html, /class="[^"]*wh-wb-drive-restore-btn--armed[^"]*"[^>]*data-wb-drive-restore-version="v1"/u);
+  assert.doesNotMatch(html, /data-wb-drive-restore-version="v1"[^>]*disabled/u, "armed is not the same as busy — the button must still be clickable to confirm");
+  assert.match(html, /确定？再点一次找回/u);
+  assert.match(html, /会把这一版的内容存成一个新的当前版本，原来的版本历史都还在/u);
+});
+
+test("renderDriveSidePanelHtml does not arm a version the user has not clicked", () => {
+  const html = renderDriveSidePanelHtml(
+    { mode: "versions_ready", itemName: "report.md", history: history() },
+    "zh-CN"
+  );
+  assert.doesNotMatch(html, /wh-wb-drive-restore-btn--armed/u);
+  assert.doesNotMatch(html, /确定？再点一次找回/u);
+  assert.match(html, /找回这个版本/u);
+});
+
+test("renderDriveSidePanelHtml armed hint has an English translation with no git jargon", () => {
+  const html = renderDriveSidePanelHtml(
+    { mode: "versions_ready", itemName: "report.md", history: history(), armedVersionId: "v1" },
+    "en-US"
+  );
+  assert.match(html, /Sure\? Click again to recover/u);
+  assert.match(html, /This creates a new current version from this content — the rest of the history stays\./u);
+  assert.doesNotMatch(html, /\brevert\b/iu);
+  assert.doesNotMatch(html, /\brollback\b/iu);
+});
+
+test("renderDriveSidePanelHtml a busy rollback (second click already fired) takes priority over a stale armed flag", () => {
+  const html = renderDriveSidePanelHtml(
+    {
+      mode: "versions_ready",
+      itemName: "report.md",
+      history: history(),
+      armedVersionId: "v1",
+      rollback: { versionId: "v1", busy: true }
+    },
+    "zh-CN"
+  );
+  assert.match(html, /找回中…/u);
+  assert.doesNotMatch(html, /确定？再点一次找回/u);
+});
+
 test("renderDriveSidePanelHtml surfaces a per-version rollback error without losing the rest of the list", () => {
   const html = renderDriveSidePanelHtml(
     {
