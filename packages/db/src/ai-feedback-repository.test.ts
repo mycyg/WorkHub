@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { aiFeedback } from "./schema/index.js";
-import { createAiFeedbackRepository, type AiFeedbackRow } from "./repositories/ai-feedback.js";
+import { actionCardItems, aiFeedback, conversationMessages, proposals } from "./schema/index.js";
+import {
+  createAiFeedbackRepository,
+  createFeedbackSubjectExcerptReader,
+  type AiFeedbackRow
+} from "./repositories/ai-feedback.js";
 import { createQueryRecorder, queryParamValues, queryReferences } from "./test-query-recorder.js";
 
 const workspaceId = "8f000000-0000-4000-8000-000000000001";
@@ -147,4 +151,48 @@ test("R14 FEEDBACK negativeSamplesSince clamps a runaway limit", async () => {
   await repo.negativeSamplesSince(workspaceId, now, 10_000);
   const query = queries.find((q) => q.operation === "select");
   assert.equal(query?.limit, 100, "limit is clamped to the hard cap");
+});
+
+// ── R14 批 FEEDBACK · W-B：差评摘要批量取正文 reader（curation 消费用）─────────────────────────
+
+test("R14 FEEDBACK excerpt reader: conversation message texts extract content_json.text, tombstones → null", async () => {
+  const { db, queries } = createQueryRecorder([
+    [
+      { id: "m1", contentJson: { text: "季度汇总答非所问" }, deletedAt: null },
+      { id: "m2", contentJson: {}, deletedAt: now }
+    ]
+  ]);
+  const reader = createFeedbackSubjectExcerptReader(db);
+  // 传入含重复 id——去重后一条 IN 查询（禁 N+1）。
+  const map = await reader.conversationMessageTexts(["m1", "m2", "m1"]);
+  const query = queries.find((q) => q.operation === "select");
+  assert.ok(queryReferences(query?.where, conversationMessages.id), "batched IN on message id");
+  assert.equal(map.get("m1"), "季度汇总答非所问");
+  // 墓碑（deleted_at 置位，content_json 已清 {}）→ null。
+  assert.equal(map.get("m2"), null);
+});
+
+test("R14 FEEDBACK excerpt reader: proposal titles and action card item titles map by id", async () => {
+  const { db, queries } = createQueryRecorder([
+    [{ id: "p1", title: "季度报告初稿" }],
+    [{ id: "a1", titleMd: "导出 CSV" }]
+  ]);
+  const reader = createFeedbackSubjectExcerptReader(db);
+  const titles = await reader.proposalTitles(["p1"]);
+  assert.equal(titles.get("p1"), "季度报告初稿");
+  const items = await reader.actionCardItemTitles(["a1"]);
+  assert.equal(items.get("a1"), "导出 CSV");
+  const propQuery = queries.find((q) => queryReferences(q.where, proposals.id));
+  assert.ok(propQuery, "proposal titles batched IN on proposals.id");
+  const itemQuery = queries.find((q) => queryReferences(q.where, actionCardItems.id));
+  assert.ok(itemQuery, "action card item titles batched IN on action_card_items.id");
+});
+
+test("R14 FEEDBACK excerpt reader: empty id sets short-circuit (no query, 禁 N+1 friendly)", async () => {
+  const { db, queries } = createQueryRecorder([]);
+  const reader = createFeedbackSubjectExcerptReader(db);
+  assert.equal((await reader.conversationMessageTexts([])).size, 0);
+  assert.equal((await reader.proposalTitles([])).size, 0);
+  assert.equal((await reader.actionCardItemTitles([])).size, 0);
+  assert.equal(queries.length, 0);
 });

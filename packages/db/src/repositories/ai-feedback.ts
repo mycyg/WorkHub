@@ -5,7 +5,7 @@ import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import type { AiFeedbackSubjectType, AiFeedbackVerdict } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
-import { aiFeedback } from "../schema/index.js";
+import { actionCardItems, aiFeedback, conversationMessages, proposals } from "../schema/index.js";
 
 // R14 批 FEEDBACK：反馈行的对外形状——刻意不含 workspace_id（VM/服务面向的读聚合都以「当前 actor +
 // 主体」定位，workspace 只是落盘/curation 的内部围栏列，不外泄）。
@@ -186,6 +186,76 @@ export function createAiFeedbackRepository(db: WorkHubDb): AiFeedbackRepository 
         subjectType: row.subjectType as AiFeedbackSubjectType,
         count: Number(row.count)
       }));
+    }
+  };
+}
+
+// R14 批 FEEDBACK · W-B curation 消费：差评样本的「逐条摘要」批量取正文。刻意与 AiFeedbackRepository
+// （读写 ai_feedback 表本身）解耦成独立 reader——它查的是三张主体表（会话消息 / 提议 / 行动卡条目），
+// 只为夜间 curation 拼「这条差评具体在说什么」的人话摘要服务（见 04-feedback-design.md §6.1）。三组
+// 主体各一条 IN 批量取回，禁 N+1；空集短路不发查询（同 listForSubjects 的守卫口径）。
+export type FeedbackSubjectExcerptReader = {
+  // 会话消息正文：取 content_json.text；墓碑（deleted_at 置位，正文已清空）或无 text → null，
+  // 由 curation 侧渲染成「内容不可用」（Cuu 消息理论上不会被删，见设计 §2，此为防御性判断）。
+  conversationMessageTexts: (ids: string[]) => Promise<Map<string, string | null>>;
+  proposalTitles: (ids: string[]) => Promise<Map<string, string>>;
+  actionCardItemTitles: (ids: string[]) => Promise<Map<string, string>>;
+};
+
+// 单组 IN 批量的防御性 cap（调用方传入的 id 集理论上已被 negativeSamplesSince 的样本上限约束）。
+const MAX_EXCERPT_BATCH = 100;
+
+export function createFeedbackSubjectExcerptReader(db: WorkHubDb): FeedbackSubjectExcerptReader {
+  return {
+    async conversationMessageTexts(ids) {
+      if (ids.length === 0) {
+        return new Map();
+      }
+      const unique = [...new Set(ids)].slice(0, MAX_EXCERPT_BATCH);
+      const rows = await db
+        .select({
+          id: conversationMessages.id,
+          contentJson: conversationMessages.contentJson,
+          deletedAt: conversationMessages.deletedAt
+        })
+        .from(conversationMessages)
+        .where(inArray(conversationMessages.id, unique));
+      const map = new Map<string, string | null>();
+      for (const row of rows) {
+        // 墓碑（content_json 已清 {}）→ null；否则取 content_json.text（非字符串 → null）。
+        if (row.deletedAt) {
+          map.set(row.id, null);
+          continue;
+        }
+        const content = row.contentJson as Record<string, unknown> | null;
+        const text = content && typeof content["text"] === "string" ? (content["text"] as string) : null;
+        map.set(row.id, text);
+      }
+      return map;
+    },
+
+    async proposalTitles(ids) {
+      if (ids.length === 0) {
+        return new Map();
+      }
+      const unique = [...new Set(ids)].slice(0, MAX_EXCERPT_BATCH);
+      const rows = await db
+        .select({ id: proposals.id, title: proposals.title })
+        .from(proposals)
+        .where(inArray(proposals.id, unique));
+      return new Map(rows.map((row) => [row.id, row.title]));
+    },
+
+    async actionCardItemTitles(ids) {
+      if (ids.length === 0) {
+        return new Map();
+      }
+      const unique = [...new Set(ids)].slice(0, MAX_EXCERPT_BATCH);
+      const rows = await db
+        .select({ id: actionCardItems.id, titleMd: actionCardItems.titleMd })
+        .from(actionCardItems)
+        .where(inArray(actionCardItems.id, unique));
+      return new Map(rows.map((row) => [row.id, row.titleMd]));
     }
   };
 }
