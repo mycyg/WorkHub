@@ -1,7 +1,13 @@
 import {
   ConversationAccessDeniedError,
+  ConversationMessageActorMismatchError,
+  ConversationMessageDeletedError,
+  ConversationMessageEditWindowError,
+  ConversationMessageNotFoundError,
+  ConversationMessageNotTextError,
   ConversationParentAccessError,
   ConversationParticipantMembershipError,
+  ConversationReplyTargetError,
   ConversationRepositoryInputError,
   ConversationSequenceExhaustedError,
   ConversationSourceMessageMismatchError,
@@ -10,30 +16,52 @@ import {
   getSharedDatabaseClient,
   type ConversationMessageRow,
   type ConversationParticipantRow,
+  type ConversationReactionKey,
   type ConversationRepository,
   type ConversationRow,
   type CreateUserMessageInput,
+  type MessageReactionAggregate,
+  type ReplyPreviewTargetRow,
   type VisibleConversationRow,
   type WorkHubDatabaseClient
 } from "@workhub/db";
 import {
   conversationFileCardContentSchema,
   conversationMessageCreatedEventSchema,
+  conversationMessageUpdatedEventSchema,
   conversationListPageVmSchema,
   conversationMessagePageVmSchema,
   conversationMessageVmSchema,
+  conversationPinsVmSchema,
+  conversationReactionKeySchema,
+  conversationReactionUpdatedEventSchema,
+  conversationReadCursorVmSchema,
+  conversationReadReceiptsVmSchema,
+  conversationReadUpdatedEventSchema,
   createConversationResultVmSchema,
   eventTypes,
+  MAX_CONVERSATION_REPLY_PREVIEW_CODE_UNITS,
+  type AdvanceReadCursorRequest,
   type ConversationListPageVM,
   type ConversationListQuery,
   type ConversationMessageListQuery,
   type ConversationMessagePageVM,
+  type ConversationMessageReplyPreviewVM,
   type ConversationMessageVM,
+  type ConversationPinsVM,
+  type ConversationReadCursorVM,
+  type ConversationReadReceiptsVM,
   type CreateConversationMessageRequest,
   type CreateConversationRequest,
-  type CreateConversationResultVM
+  type CreateConversationResultVM,
+  type EditConversationMessageRequest
 } from "@workhub/contracts";
 import { makeWorkHubEvent, topics } from "@workhub/events";
+
+// R14 批 CHAT：编辑窗（15 分钟）——服务端策略常量，传给仓库层并进同一次原子判定。
+const CONVERSATION_EDIT_WINDOW_MS = 15 * 60 * 1000;
+// R14 批 CHAT：置顶清单读取上限（设计 §3：seq 降序 cap 50）。
+const CONVERSATION_PINS_CAP = 50;
 
 import { getDefaultPushBus, type PushBus } from "../broker/index.js";
 import { getDefaultStructuredLogger, type StructuredLogger } from "../logging.js";
@@ -91,6 +119,39 @@ export type ConversationService = {
     conversationId: string;
     payload: CreateConversationMessageRequest;
   }): Promise<ConversationMessageVM>;
+  // R14 批 CHAT：编辑/删除/置顶/取消置顶——返回变更后全量消息 VM（编辑/删除）或无内容（置顶/取消）。
+  editMessage(input: {
+    actor: AuthActor;
+    conversationId: string;
+    messageId: string;
+    payload: EditConversationMessageRequest;
+  }): Promise<ConversationMessageVM>;
+  deleteMessage(input: {
+    actor: AuthActor;
+    conversationId: string;
+    messageId: string;
+  }): Promise<ConversationMessageVM>;
+  pinMessage(input: { actor: AuthActor; conversationId: string; messageId: string }): Promise<void>;
+  unpinMessage(input: { actor: AuthActor; conversationId: string; messageId: string }): Promise<void>;
+  addReaction(input: {
+    actor: AuthActor;
+    conversationId: string;
+    messageId: string;
+    reactionKey: string;
+  }): Promise<void>;
+  removeReaction(input: {
+    actor: AuthActor;
+    conversationId: string;
+    messageId: string;
+    reactionKey: string;
+  }): Promise<void>;
+  advanceReadCursor(input: {
+    actor: AuthActor;
+    conversationId: string;
+    payload: AdvanceReadCursorRequest;
+  }): Promise<ConversationReadCursorVM>;
+  listReceipts(input: { actor: AuthActor; conversationId: string }): Promise<ConversationReadReceiptsVM>;
+  listPins(input: { actor: AuthActor; conversationId: string }): Promise<ConversationPinsVM>;
 };
 
 // R14 FIX批10（被 @ 的回复延迟：事件驱动直通）：消息落库后，如果这条消息命中 @Cuu 且会话是真小群
@@ -161,18 +222,106 @@ function participantToVm(row: ConversationParticipantRow) {
   };
 }
 
-function messageToVm(row: ConversationMessageRow) {
+// R14 批 CHAT：一条消息可选的页级富化——reactions（全量聚合）与 reply 目标行（用于构建引用预览）。
+// 两者都由服务层用一次 grouped/IN 查询批量取回（禁 N+1），再逐条挂到 VM 上。
+type MessageEnrichment = {
+  reactions?: MessageReactionAggregate[] | undefined;
+  replyTarget?: ReplyPreviewTargetRow | undefined;
+};
+
+// R14 批 CHAT：引用预览文本——同 historyDisplayText 的映射口径，但用于「原消息一句话预览」。墓碑目标
+// 由调用方置空，这里只负责活着的目标。
+function replyPreviewText(kind: ConversationMessageRow["kind"], content: Record<string, unknown>): string {
+  switch (kind) {
+    case "text":
+      return typeof content["text"] === "string" ? content["text"] : "";
+    case "file_card":
+      return typeof content["snapshot_name"] === "string"
+        ? `分享了文件：${content["snapshot_name"]}`
+        : "分享了一个文件";
+    case "tool_note":
+      return "（一次工具调用）";
+    case "system_event":
+      return typeof content["summary"] === "string" ? content["summary"] : "（系统事件）";
+    case "action_card":
+      return "（行动卡）";
+    default:
+      return "";
+  }
+}
+
+function buildReplyPreview(messageId: string, target: ReplyPreviewTargetRow): ConversationMessageReplyPreviewVM {
+  const deleted = target.deletedAt !== null;
+  const previewText = deleted ? "" : replyPreviewText(target.kind, target.contentJson);
   return {
+    message_id: messageId,
+    sender_type: target.senderType,
+    sender_user_id: target.senderUserId,
+    preview_text: previewText.slice(0, MAX_CONVERSATION_REPLY_PREVIEW_CODE_UNITS),
+    deleted
+  };
+}
+
+function reactionsToVm(aggregates: MessageReactionAggregate[]) {
+  return aggregates.map((aggregate) => ({ key: aggregate.key, user_ids: aggregate.userIds }));
+}
+
+// R14 批 CHAT：消息行 → VM，含墓碑归一与 additive 富化字段。
+//   * 墓碑（deleted_at 置位）一律归一成 kind:'text'、content:{text:''}、deleted_at；不带 reactions/
+//     reply/pinned/edited（保持墓碑干净，契约层 superRefine 也强制这一点）。
+//   * 活消息：透传 kind/content，按需挂 edited_at/pinned/reply_to/reactions。
+function messageToVm(row: ConversationMessageRow, enrichment: MessageEnrichment = {}) {
+  const base = {
     id: row.id,
     conversation_id: row.conversationId,
     seq: row.seq,
     sender_type: row.senderType,
     sender_user_id: row.senderUserId,
-    kind: row.kind,
-    content: row.contentJson,
     thread_root_id: row.threadRootId,
     created_at: row.createdAt.toISOString()
   };
+  if (row.deletedAt) {
+    return {
+      ...base,
+      kind: "text" as const,
+      content: { text: "" },
+      deleted_at: row.deletedAt.toISOString()
+    };
+  }
+  const vm: Record<string, unknown> = {
+    ...base,
+    kind: row.kind,
+    content: row.contentJson
+  };
+  if (row.editedAt) {
+    vm["edited_at"] = row.editedAt.toISOString();
+  }
+  if (row.pinnedAt) {
+    vm["pinned"] = { at: row.pinnedAt.toISOString(), by_user_id: row.pinnedByUserId };
+  }
+  // reply_to 只在拿得到目标预览时才渲染——拿不到（理论上不该发生，服务层总是成对查询）宁可不显示，
+  // 也不构造缺 sender/preview 的半截引用块。
+  if (row.replyToMessageId && enrichment.replyTarget) {
+    vm["reply_to"] = buildReplyPreview(row.replyToMessageId, enrichment.replyTarget);
+  }
+  if (enrichment.reactions && enrichment.reactions.length > 0) {
+    vm["reactions"] = reactionsToVm(enrichment.reactions);
+  }
+  return vm;
+}
+
+function messagePreviewText(row: ConversationMessageRow): string | undefined {
+  if (row.deletedAt) {
+    return undefined;
+  }
+  const content = row.contentJson as Record<string, unknown>;
+  if (row.kind === "text") {
+    return typeof content["text"] === "string" ? content["text"] : undefined;
+  }
+  if (row.kind === "file_card") {
+    return typeof content["snapshot_name"] === "string" ? content["snapshot_name"] : undefined;
+  }
+  return row.kind;
 }
 
 function mapRepositoryError(error: unknown): never {
@@ -197,6 +346,26 @@ function mapRepositoryError(error: unknown): never {
   if (error instanceof ConversationSequenceExhaustedError) {
     throw new ConversationServiceError(409, "conversation_sequence_exhausted", "这个会话的消息序号已经耗尽。");
   }
+  // R14 批 CHAT（引用回复）：目标跨会话/不存在/已删除 → 400（干净的请求错误，不是 500）。
+  if (error instanceof ConversationReplyTargetError) {
+    throw new ConversationServiceError(400, "conversation_reply_target_invalid", "没有找到可引用的原消息，或它已被删除。");
+  }
+  // R14 批 CHAT：消息动作（编辑/删除/置顶/反应）的结构性失败映射。
+  if (error instanceof ConversationMessageNotFoundError) {
+    throw new ConversationServiceError(404, "conversation_message_not_found", "没有找到这条消息。");
+  }
+  if (error instanceof ConversationMessageActorMismatchError) {
+    throw new ConversationServiceError(403, "conversation_message_forbidden", "只能编辑或删除自己发的消息。");
+  }
+  if (error instanceof ConversationMessageNotTextError) {
+    throw new ConversationServiceError(409, "conversation_message_not_editable", "这条消息不是文字消息，不能编辑。");
+  }
+  if (error instanceof ConversationMessageEditWindowError) {
+    throw new ConversationServiceError(409, "conversation_message_edit_window_closed", "已经超过可以编辑的时间了。");
+  }
+  if (error instanceof ConversationMessageDeletedError) {
+    throw new ConversationServiceError(409, "conversation_message_deleted", "这条消息已经被删除了。");
+  }
   throw error;
 }
 
@@ -219,6 +388,140 @@ export function createConversationService(
       throw new ConversationServiceError(404, "conversation_not_found", "没有找到这个会话。");
     }
     return { human, access };
+  }
+
+  // R14 批 CHAT：一页/一批消息的富化——reactions 与 reply 预览各一条批量查询（禁 N+1），逐条挂到 VM。
+  // 删除消息（墓碑）在 messageToVm 里短路，富化对它无效（无害，不为它单独排除）。
+  async function enrichMessageRows(conversationId: string, rows: ConversationMessageRow[]) {
+    const messageIds = rows.map((row) => row.id);
+    const replyTargetIds = [
+      ...new Set(rows.map((row) => row.replyToMessageId).filter((value): value is string => Boolean(value)))
+    ];
+    const [reactionsByMessage, replyTargets] = await Promise.all([
+      messageIds.length > 0
+        ? repository.listReactionsForMessages({ conversationId, messageIds })
+        : Promise.resolve(new Map<string, MessageReactionAggregate[]>()),
+      replyTargetIds.length > 0
+        ? repository.listReplyPreviews({ conversationId, messageIds: replyTargetIds })
+        : Promise.resolve(new Map<string, ReplyPreviewTargetRow>())
+    ]);
+    return rows.map((row) =>
+      messageToVm(row, {
+        reactions: reactionsByMessage.get(row.id),
+        replyTarget: row.replyToMessageId ? replyTargets.get(row.replyToMessageId) : undefined
+      })
+    );
+  }
+
+  // 单条消息富化（编辑/置顶后组装变更后全量 VM 用）——同上批量路径，只是集合大小为 1。
+  async function enrichSingleMessage(conversationId: string, row: ConversationMessageRow) {
+    const [enriched] = await enrichMessageRows(conversationId, [row]);
+    return enriched;
+  }
+
+  // R14 批 CHAT：发布 conversation.message.updated（编辑/删除/置顶/取消置顶后）——发布失败仅 warn，
+  // 与既有 message.created 的 best-effort 广播口径一致（发送者已看到动作成功，不因广播失败回滚）。
+  async function publishMessageUpdated(
+    access: ConversationRow,
+    actor: HumanConversationActor,
+    messageVm: ConversationMessageVM,
+    row: ConversationMessageRow
+  ) {
+    const conversationTopic = topics.conversation(access.id).topic;
+    const previewText = messagePreviewText(row);
+    const event = parseOutputContract(
+      conversationMessageUpdatedEventSchema,
+      makeWorkHubEvent({
+        type: eventTypes.conversationMessageUpdated,
+        topic: conversationTopic,
+        ts: now(),
+        actor: { actor_kind: "human", actor_user_id: actor.userId, label: actor.actor.label },
+        project_id: access.projectId,
+        ...(previewText !== undefined ? { preview_text: previewText } : {}),
+        data: messageVm
+      }),
+      "conversations.messages.event.updated"
+    );
+    try {
+      await bus.publish(conversationTopic, eventTypes.conversationMessageUpdated, event);
+    } catch (error) {
+      logger.warn("conversation_message_updated_publish_failed", {
+        event_id: event.event_id,
+        topic: conversationTopic,
+        conversation_id: access.id,
+        message_id: row.id,
+        broker_backend: bus.backend,
+        error
+      });
+    }
+  }
+
+  async function publishReactionUpdated(
+    access: ConversationRow,
+    messageId: string,
+    reactions: MessageReactionAggregate[]
+  ) {
+    const conversationTopic = topics.conversation(access.id).topic;
+    const event = parseOutputContract(
+      conversationReactionUpdatedEventSchema,
+      makeWorkHubEvent({
+        type: eventTypes.conversationReactionUpdated,
+        topic: conversationTopic,
+        ts: now(),
+        data: {
+          conversation_id: access.id,
+          message_id: messageId,
+          reactions: reactionsToVm(reactions)
+        }
+      }),
+      "conversations.reactions.event.updated"
+    );
+    try {
+      await bus.publish(conversationTopic, eventTypes.conversationReactionUpdated, event);
+    } catch (error) {
+      logger.warn("conversation_reaction_updated_publish_failed", {
+        event_id: event.event_id,
+        topic: conversationTopic,
+        conversation_id: access.id,
+        message_id: messageId,
+        broker_backend: bus.backend,
+        error
+      });
+    }
+  }
+
+  async function publishReadUpdated(access: ConversationRow, userId: string, lastReadSeq: number) {
+    const conversationTopic = topics.conversation(access.id).topic;
+    const event = parseOutputContract(
+      conversationReadUpdatedEventSchema,
+      makeWorkHubEvent({
+        type: eventTypes.conversationReadUpdated,
+        topic: conversationTopic,
+        ts: now(),
+        data: { conversation_id: access.id, user_id: userId, last_read_seq: lastReadSeq }
+      }),
+      "conversations.read.event.updated"
+    );
+    try {
+      await bus.publish(conversationTopic, eventTypes.conversationReadUpdated, event);
+    } catch (error) {
+      logger.warn("conversation_read_updated_publish_failed", {
+        event_id: event.event_id,
+        topic: conversationTopic,
+        conversation_id: access.id,
+        user_id: userId,
+        broker_backend: bus.backend,
+        error
+      });
+    }
+  }
+
+  function parseReactionKey(rawKey: string): ConversationReactionKey {
+    const parsed = conversationReactionKeySchema.safeParse(rawKey);
+    if (!parsed.success) {
+      throw new ConversationServiceError(400, "conversation_reaction_invalid_key", "不认识这个反应。");
+    }
+    return parsed.data;
   }
 
   return {
@@ -310,8 +613,9 @@ export function createConversationService(
         // rows 已经是 seq 升序（仓库层保证）——next_after_seq 复用页内最高 seq，让客户端加载完一页
         // 更早历史后，仍然能无缝拼上「继续往前追」的正向翻页游标，不强制它单独再查一次。
         const highestSeqInPage = result.rows.reduce((max, row) => Math.max(max, row.seq), 0);
+        const messages = await enrichMessageRows(input.conversationId, result.rows);
         return parseOutputContract(conversationMessagePageVmSchema, {
-          messages: result.rows.map(messageToVm),
+          messages,
           has_more: result.hasMore,
           next_after_seq: highestSeqInPage,
           next_before_seq: result.nextBeforeSeq
@@ -327,8 +631,9 @@ export function createConversationService(
       if (!result) {
         throw new ConversationServiceError(404, "conversation_not_found", "没有找到这个会话。");
       }
+      const messages = await enrichMessageRows(input.conversationId, result.rows);
       return parseOutputContract(conversationMessagePageVmSchema, {
-        messages: result.rows.map(messageToVm),
+        messages,
         has_more: result.hasMore,
         next_after_seq: result.nextAfterSeq
       }, "conversations.messages.list");
@@ -345,6 +650,9 @@ export function createConversationService(
           kind: "text",
           contentJson: input.payload.content,
           ...(input.payload.thread_root_id ? { threadRootId: input.payload.thread_root_id } : {}),
+          // R14 批 CHAT（引用回复）：仅 text 新消息可带引用——目标同会话/存在/未删除的校验在仓库层
+          // 事务内做（对已删/跨会话/不存在的目标抛 ConversationReplyTargetError → 400）。
+          ...(input.payload.reply_to_message_id ? { replyToMessageId: input.payload.reply_to_message_id } : {}),
           at: now()
         };
       } else {
@@ -388,9 +696,10 @@ export function createConversationService(
       } catch (error) {
         mapRepositoryError(error);
       }
+      // 富化：新消息还没有 reactions，但可能带 reply_to——补上引用预览（一次 join），让响应与广播都完整。
       const message = parseOutputContract(
         conversationMessageVmSchema,
-        messageToVm(created),
+        await enrichSingleMessage(access.conversation.id, created),
         "conversations.messages.create"
       );
       const conversationTopic = topics.conversation(access.conversation.id).topic;
@@ -484,6 +793,191 @@ export function createConversationService(
       }
 
       return message;
+    },
+
+    // ── R14 批 CHAT：编辑 ────────────────────────────────────────────────────────────
+    async editMessage(input) {
+      const { human, access } = await visibleConversation(input);
+      let updated: ConversationMessageRow;
+      try {
+        updated = await repository.editMessage({
+          workspaceId: human.workspaceId,
+          conversationId: input.conversationId,
+          messageId: input.messageId,
+          editorUserId: human.userId,
+          text: input.payload.text,
+          editWindowMs: CONVERSATION_EDIT_WINDOW_MS,
+          at: now()
+        });
+      } catch (error) {
+        mapRepositoryError(error);
+      }
+      const message = parseOutputContract(
+        conversationMessageVmSchema,
+        await enrichSingleMessage(access.conversation.id, updated),
+        "conversations.messages.edit"
+      );
+      await publishMessageUpdated(access.conversation, human, message, updated);
+      return message;
+    },
+
+    // ── R14 批 CHAT：墓碑删除（幂等） ─────────────────────────────────────────────────
+    async deleteMessage(input) {
+      const { human, access } = await visibleConversation(input);
+      let updated: ConversationMessageRow;
+      try {
+        updated = await repository.deleteMessage({
+          workspaceId: human.workspaceId,
+          conversationId: input.conversationId,
+          messageId: input.messageId,
+          deleterUserId: human.userId,
+          at: now()
+        });
+      } catch (error) {
+        mapRepositoryError(error);
+      }
+      // 墓碑 VM 归一（messageToVm 的 deleted 分支）——不带 reactions/reply，无需富化查询。
+      const message = parseOutputContract(
+        conversationMessageVmSchema,
+        messageToVm(updated),
+        "conversations.messages.delete"
+      );
+      await publishMessageUpdated(access.conversation, human, message, updated);
+      return message;
+    },
+
+    // ── R14 批 CHAT：置顶 / 取消置顶（幂等，204） ─────────────────────────────────────
+    async pinMessage(input) {
+      const { human, access } = await visibleConversation(input);
+      let updated: ConversationMessageRow;
+      try {
+        updated = await repository.pinMessage({
+          workspaceId: human.workspaceId,
+          conversationId: input.conversationId,
+          messageId: input.messageId,
+          pinnerUserId: human.userId,
+          at: now()
+        });
+      } catch (error) {
+        mapRepositoryError(error);
+      }
+      const message = parseOutputContract(
+        conversationMessageVmSchema,
+        await enrichSingleMessage(access.conversation.id, updated),
+        "conversations.messages.pin"
+      );
+      await publishMessageUpdated(access.conversation, human, message, updated);
+    },
+
+    async unpinMessage(input) {
+      const { human, access } = await visibleConversation(input);
+      let updated: ConversationMessageRow;
+      try {
+        updated = await repository.unpinMessage({
+          workspaceId: human.workspaceId,
+          conversationId: input.conversationId,
+          messageId: input.messageId,
+          at: now()
+        });
+      } catch (error) {
+        mapRepositoryError(error);
+      }
+      const message = parseOutputContract(
+        conversationMessageVmSchema,
+        await enrichSingleMessage(access.conversation.id, updated),
+        "conversations.messages.unpin"
+      );
+      await publishMessageUpdated(access.conversation, human, message, updated);
+    },
+
+    // ── R14 批 CHAT：reaction 幂等加/减（204，发 reaction.updated 全量聚合） ────────────
+    async addReaction(input) {
+      const { human, access } = await visibleConversation(input);
+      const reactionKey = parseReactionKey(input.reactionKey);
+      let result: { reactions: MessageReactionAggregate[] };
+      try {
+        result = await repository.addReaction({
+          workspaceId: human.workspaceId,
+          conversationId: input.conversationId,
+          messageId: input.messageId,
+          userId: human.userId,
+          reactionKey,
+          at: now()
+        });
+      } catch (error) {
+        mapRepositoryError(error);
+      }
+      await publishReactionUpdated(access.conversation, input.messageId, result.reactions);
+    },
+
+    async removeReaction(input) {
+      const { human, access } = await visibleConversation(input);
+      const reactionKey = parseReactionKey(input.reactionKey);
+      let result: { reactions: MessageReactionAggregate[] };
+      try {
+        result = await repository.removeReaction({
+          workspaceId: human.workspaceId,
+          conversationId: input.conversationId,
+          messageId: input.messageId,
+          userId: human.userId,
+          reactionKey,
+          at: now()
+        });
+      } catch (error) {
+        mapRepositoryError(error);
+      }
+      await publishReactionUpdated(access.conversation, input.messageId, result.reactions);
+    },
+
+    // ── R14 批 CHAT：已读游标推进（发 read.updated） ─────────────────────────────────
+    async advanceReadCursor(input) {
+      const { human, access } = await visibleConversation(input);
+      let result: { lastReadSeq: number };
+      try {
+        result = await repository.advanceReadCursor({
+          workspaceId: human.workspaceId,
+          conversationId: input.conversationId,
+          userId: human.userId,
+          lastReadSeq: input.payload.last_read_seq,
+          at: now()
+        });
+      } catch (error) {
+        mapRepositoryError(error);
+      }
+      await publishReadUpdated(access.conversation, human.userId, result.lastReadSeq);
+      return parseOutputContract(
+        conversationReadCursorVmSchema,
+        { last_read_seq: result.lastReadSeq },
+        "conversations.read.cursor"
+      );
+    },
+
+    async listReceipts(input) {
+      const { human, access } = await visibleConversation(input);
+      const receipts = await repository.listReceipts({
+        workspaceId: human.workspaceId,
+        conversationId: access.conversation.id
+      });
+      return parseOutputContract(
+        conversationReadReceiptsVmSchema,
+        { receipts: receipts.map((row) => ({ user_id: row.userId, last_read_seq: row.lastReadSeq })) },
+        "conversations.read.receipts"
+      );
+    },
+
+    async listPins(input) {
+      const { human, access } = await visibleConversation(input);
+      const rows = await repository.listPins({
+        workspaceId: human.workspaceId,
+        conversationId: access.conversation.id,
+        limit: CONVERSATION_PINS_CAP
+      });
+      const messages = await enrichMessageRows(access.conversation.id, rows);
+      return parseOutputContract(
+        conversationPinsVmSchema,
+        { messages },
+        "conversations.pins.list"
+      );
     }
   };
 }

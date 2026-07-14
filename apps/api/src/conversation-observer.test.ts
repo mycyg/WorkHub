@@ -60,6 +60,13 @@ function message(seq: number, overrides: Partial<ActionCardConversationMessageRo
     kind: "text",
     contentJson: { text: `讨论 ${seq}` },
     threadRootId: null,
+    // R14 批 CHAT：conversation_messages 新增六列（全部 nullable）——观察者分析窗读整表，fixture 补齐默认。
+    editedAt: null,
+    deletedAt: null,
+    deletedByUserId: null,
+    replyToMessageId: null,
+    pinnedAt: null,
+    pinnedByUserId: null,
     createdAt: now,
     ...overrides
   };
@@ -221,6 +228,12 @@ function cardMessageRow(overrides: Partial<ActionCardConversationMessageRow> = {
     kind: "action_card",
     contentJson: {},
     threadRootId: null,
+    editedAt: null,
+    deletedAt: null,
+    deletedByUserId: null,
+    replyToMessageId: null,
+    pinnedAt: null,
+    pinnedByUserId: null,
     createdAt: now,
     ...overrides
   };
@@ -1216,4 +1229,44 @@ test("R13 A2: decide item system note does not carry the roster-selection explai
 
   await createConversationObserverScheduler(deps).tick();
   assert.doesNotMatch((systemNoteContent as { summary: string }).summary, /根据资料与历史交付选中/u);
+});
+
+// ── R14 批 CHAT（下游墓碑过滤）：观察者分析窗跳过墓碑，但 watermark 仍按真实最大 seq 推进 ──────
+test("R14 observer excludes deleted (tombstone) message text from the analysis prompt yet advances the watermark past it", async () => {
+  let capturedPrompt = "";
+  let advancedTo = -1;
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate()];
+      },
+      async listMessagesForAnalysis() {
+        // 故意让墓碑行仍带残留文本（生产里删除会清空 content——这里是为了单独证明 deletedAt 短路本身，
+        // 而不是被“内容已空”顺带挡下）。墓碑还占着最高 seq。
+        return [
+          message(4, { seq: 4, contentJson: { text: "活着的讨论内容" } }),
+          message(5, { seq: 5, deletedAt: now, contentJson: { text: "这条已删但仍带残留文本" } })
+        ];
+      },
+      async advanceWatermark(input) {
+        advancedTo = input.analyzedToSeq;
+        return {} as ObserverStateRow;
+      }
+    },
+    client: async () => ({
+      messages: {
+        async create(input: unknown) {
+          capturedPrompt = JSON.stringify(input);
+          return { content: [{ type: "text", text: JSON.stringify({ items: [] }) }] };
+        }
+      }
+    })
+  });
+
+  await createConversationObserverScheduler(deps).tick();
+
+  assert.ok(capturedPrompt.includes("活着的讨论内容"), "live message text must reach the prompt");
+  assert.ok(!capturedPrompt.includes("这条已删但仍带残留文本"), "tombstone text must be skipped");
+  assert.equal(advancedTo, 5, "watermark advances to the true max seq (tombstone still counts), not the last live seq");
 });

@@ -277,6 +277,12 @@ function messageToVm(row: ConversationMessageRow): Record<string, unknown> {
 //    自己的小函数：那份是未导出的 worker 内部函数，触碰它超出本批范围） ─────────────────────────
 
 function historyDisplayText(row: ConversationMessageRow): string | null {
+  // R14 批 CHAT（下游墓碑过滤）：删除的消息一律不喂给 AI——turn 历史（buildHistory）与 C1 压缩摘要
+  // （tryCompactConversationContext 也走 buildHistory）都靠这条短路跳过墓碑。编辑过的消息用当前文本
+  // （不回溯派生物），故这里不特判 editedAt。
+  if (row.deletedAt) {
+    return null;
+  }
   const content = row.contentJson as Record<string, unknown>;
   switch (row.kind) {
     case "text":
@@ -416,7 +422,9 @@ function findPendingClarification(
     return undefined;
   }
   const prev = rows[anchorIndex - 1];
-  if (!prev || prev.senderType !== "cuu" || prev.kind !== "text") {
+  // R14 批 CHAT（下游墓碑过滤）：删除的前一条消息不作为「用户在回答 Cuu 的澄清追问」的上下文线索。
+  // （今天 Cuu 消息不可被删——只有本人 user 消息可删——这条守卫是防御性/前瞻性的，成本为零。）
+  if (!prev || prev.deletedAt || prev.senderType !== "cuu" || prev.kind !== "text") {
     return undefined;
   }
   const content = prev.contentJson as Record<string, unknown>;

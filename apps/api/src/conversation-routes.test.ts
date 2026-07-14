@@ -169,6 +169,35 @@ function service(overrides: Partial<ConversationService> = {}): ConversationServ
     async createMessage() {
       return messageVm();
     },
+    // R14 批 CHAT：新增的消息动作/已读/置顶端点服务方法——本套件（既有会话/消息路由）不测这些，
+    // 给拒绝桩即可（新路由文件 conversation-message-actions.ts / conversation-read.ts 有自己的套件）。
+    async editMessage() {
+      throw new Error("editMessage not expected");
+    },
+    async deleteMessage() {
+      throw new Error("deleteMessage not expected");
+    },
+    async pinMessage() {
+      throw new Error("pinMessage not expected");
+    },
+    async unpinMessage() {
+      throw new Error("unpinMessage not expected");
+    },
+    async addReaction() {
+      throw new Error("addReaction not expected");
+    },
+    async removeReaction() {
+      throw new Error("removeReaction not expected");
+    },
+    async advanceReadCursor() {
+      throw new Error("advanceReadCursor not expected");
+    },
+    async listReceipts() {
+      throw new Error("listReceipts not expected");
+    },
+    async listPins() {
+      throw new Error("listPins not expected");
+    },
     ...overrides
   };
 }

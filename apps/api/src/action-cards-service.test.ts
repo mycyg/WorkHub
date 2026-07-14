@@ -145,6 +145,12 @@ function baseOptions(overrides: Partial<ActionCardServiceOptions> = {}): ActionC
           kind: "system_event",
           contentJson: {},
           threadRootId: messageId,
+          editedAt: null,
+          deletedAt: null,
+          deletedByUserId: null,
+          replyToMessageId: null,
+          pinnedAt: null,
+          pinnedByUserId: null,
           createdAt: now
         };
       },
@@ -305,7 +311,7 @@ test("decide reassign delegates the escalation, updates the assignee, and thread
       ...baseOptions().actionCards,
       async postSystemMessage(input) {
         noteCalls.push(input);
-        return { id: "system-1", conversationId, seq: 8, senderType: "system", senderUserId: null, kind: "system_event", contentJson: {}, threadRootId: input.threadRootId ?? null, createdAt: now };
+        return { id: "system-1", conversationId, seq: 8, senderType: "system", senderUserId: null, kind: "system_event", contentJson: {}, threadRootId: input.threadRootId ?? null, editedAt: null, deletedAt: null, deletedByUserId: null, replyToMessageId: null, pinnedAt: null, pinnedByUserId: null, createdAt: now };
       }
     }
   }));
@@ -371,7 +377,7 @@ test("undo aborts the run, cancels the work item, marks the item undone, and thr
     actionCards: {
       ...baseOptions().actionCards,
       async findItemForActor() { return { item: executeItemRow(), card: cardRow() }; },
-      async postSystemMessage(input) { noteCalls.push(input); return { id: "system-1", conversationId, seq: 8, senderType: "cuu", senderUserId: null, kind: "system_event", contentJson: {}, threadRootId: input.threadRootId ?? null, createdAt: now }; }
+      async postSystemMessage(input) { noteCalls.push(input); return { id: "system-1", conversationId, seq: 8, senderType: "cuu", senderUserId: null, kind: "system_event", contentJson: {}, threadRootId: input.threadRootId ?? null, editedAt: null, deletedAt: null, deletedByUserId: null, replyToMessageId: null, pinnedAt: null, pinnedByUserId: null, createdAt: now }; }
     },
     agentRuns: { async abort(id, who) { abortCalls.push({ id, who }); return agentRunRow(); } },
     workItems: { async transitionWorkItemStatus(input) { transitionCalls.push(input); return { id: workItemId, status: "cancelled", transitioned: true }; } }
@@ -456,7 +462,7 @@ test("undo succeeds when the settlement hook already flipped the item to undone 
       },
       async postSystemMessage(input) {
         noteCalls.push(input);
-        return { id: "system-1", conversationId, seq: 9, senderType: "cuu", senderUserId: null, kind: "system_event", contentJson: {}, threadRootId: input.threadRootId ?? null, createdAt: now };
+        return { id: "system-1", conversationId, seq: 9, senderType: "cuu", senderUserId: null, kind: "system_event", contentJson: {}, threadRootId: input.threadRootId ?? null, editedAt: null, deletedAt: null, deletedByUserId: null, replyToMessageId: null, pinnedAt: null, pinnedByUserId: null, createdAt: now };
       }
     },
     agentRuns: { async abort() { return agentRunRow(); } },
