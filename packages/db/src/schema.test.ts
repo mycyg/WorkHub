@@ -662,7 +662,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0058 ai feedback", () => {
+test("migration journal ends with 0059 project risk monitor", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -677,10 +677,10 @@ test("migration journal ends with 0058 ai feedback", () => {
       breakpoints: finalEntry.breakpoints
     },
     {
-      // R14 批 FEEDBACK：链尾=0058（RISK 批的 0059 按集成裁定顺延其后，合并时集成者归一）。
-      idx: 58,
+      // R14 集成收口：FEEDBACK(0058)+RISK(0059) 双批合并后链尾=0059，when 严格递增。
+      idx: 59,
       version: "7",
-      tag: "0058_ai_feedback",
+      tag: "0059_project_risk_monitor",
       breakpoints: true
     }
   );
@@ -711,6 +711,22 @@ test("R14 批 FEEDBACK migration 0058 adds the ai_feedback table with a self-ide
   assert.match(migration, /"user_id" uuid NOT NULL REFERENCES "users"\("id"\) ON DELETE cascade/u);
   // 单事务重放：不用 CONCURRENTLY。
   assert.doesNotMatch(migration, /CONCURRENTLY/iu, "migration 0058 must not use CONCURRENTLY (single-tx replay)");
+});
+
+test("R14 批 RISK migration 0059 adds project_ai_governance.risk_monitor_json as a non-null default-empty jsonb column", () => {
+  const migrationUrl = new URL("../migrations/0059_project_risk_monitor.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0059_project_risk_monitor.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  assert.match(
+    migration,
+    /ALTER TABLE\s+"project_ai_governance"\s+ADD COLUMN IF NOT EXISTS\s+"risk_monitor_json"\s+jsonb\s+NOT NULL\s+DEFAULT\s+'\{\}'::jsonb\s*;/iu
+  );
+
+  const projectAiGovernance = requiredTable("projectAiGovernance") as WorkHubTable & Record<string, any>;
+  assert.equal(projectAiGovernance.riskMonitorJson.name, "risk_monitor_json");
+  assert.equal(projectAiGovernance.riskMonitorJson.notNull, true);
+  assert.deepEqual(projectAiGovernance.riskMonitorJson.default, {});
+  assert.equal(projectAiGovernance.riskMonitorJson.columnType, "PgJsonb");
 });
 
 test("R14 批 SEARCH migration 0057 builds pg_trgm plus five replay-safe GIN indexes", () => {

@@ -414,6 +414,13 @@
       "when": 1783910000000,
       "tag": "0058_ai_feedback",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1783912000000,
+      "tag": "0059_project_risk_monitor",
+      "breakpoints": true
     }
   ]
 }

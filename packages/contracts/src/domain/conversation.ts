@@ -124,16 +124,41 @@ export const DEFAULT_USER_AI_PROFILE = {
   model_tier_preference: string | null;
 };
 
+// R14 批 RISK（风险预警巡检，2026-07-14 用户拍板范围）：项目级三信号巡检阈值——工单停滞天数/
+// deadline 前瞻窗口/成本放量比例与下限。全部字段可选（PATCH 语义：只传要改的键），读侧用
+// DEFAULT_RISK_MONITOR_SETTINGS 做完整默认值合并输出（见 projectAiGovernanceVmSchema.risk_monitor）。
+// 语义上是「阈值」而非 aiGranularSettingsSchema 那种布尔开关集，不合并进同一列/同一 schema。
+export const riskMonitorSettingsSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    stall_days_threshold: z.number().int().min(1).max(90).optional(),
+    deadline_lookahead_days: z.number().int().min(0).max(30).optional(),
+    cost_spike_ratio_pct: z.number().int().min(100).max(2000).optional(),
+    cost_spike_min_cny: z.number().finite().nonnegative().optional()
+  })
+  .strict();
+export type RiskMonitorSettings = z.infer<typeof riskMonitorSettingsSchema>;
+
+export const DEFAULT_RISK_MONITOR_SETTINGS = {
+  enabled: true,
+  stall_days_threshold: 5,
+  deadline_lookahead_days: 2,
+  cost_spike_ratio_pct: 300,
+  cost_spike_min_cny: 20
+} as const satisfies Required<RiskMonitorSettings>;
+
 export const DEFAULT_PROJECT_AI_GOVERNANCE = {
   observer_enabled: true,
   silence_window_seconds: 60,
   quiet_hours: DEFAULT_AI_QUIET_HOURS,
-  granular_settings: {}
+  granular_settings: {},
+  risk_monitor: DEFAULT_RISK_MONITOR_SETTINGS
 } as const satisfies {
   observer_enabled: boolean;
   silence_window_seconds: number;
   quiet_hours: AiQuietHours;
   granular_settings: AiGranularSettings;
+  risk_monitor: RiskMonitorSettings;
 };
 
 const modelTierPreferenceSchema = z
@@ -161,7 +186,8 @@ export const patchProjectAiGovernanceRequestSchema = z
     observer_enabled: z.boolean().optional(),
     silence_window_seconds: z.number().int().min(0).max(86400).optional(),
     quiet_hours: aiQuietHoursSchema.optional(),
-    granular_settings: aiGranularSettingsSchema.optional()
+    granular_settings: aiGranularSettingsSchema.optional(),
+    risk_monitor: riskMonitorSettingsSchema.optional()
   })
   .strict()
   .refine((value) => Object.values(value).some((field) => field !== undefined), {
@@ -277,6 +303,10 @@ export const projectAiGovernanceVmSchema = z
     silence_window_seconds: z.number().int().min(0).max(86400),
     quiet_hours: aiQuietHoursSchema,
     granular_settings: aiGranularSettingsSchema,
+    // R14 批 RISK：读侧用 DEFAULT_RISK_MONITOR_SETTINGS 做完整默认值合并输出——字段全部有值，
+    // 非 partial（设置 UI 要显示当前生效阈值，不是「哪些被覆盖了」），与 granular_settings 的
+    // 「只输出用户设过的键」刻意不同口径。
+    risk_monitor: riskMonitorSettingsSchema,
     updated_at: isoDateTimeSchema.nullable()
   })
   .strict();

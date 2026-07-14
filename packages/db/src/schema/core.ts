@@ -799,6 +799,10 @@ export const projectAiGovernance = pgTable(
     silenceWindowSecs: integer("silence_window_secs").notNull().default(60),
     quietHoursJson: jsonb("quiet_hours_json").$type<JsonObject>().notNull().default({ enabled: false }),
     granularJson: jsonb("granular_json").$type<JsonObject>().notNull().default({}),
+    // R14 批 RISK（迁移 0059）：风险巡检阈值（停滞天数/deadline 前瞻窗口/成本放量比例与下限）——
+    // 读侧用 DEFAULT_RISK_MONITOR_SETTINGS 做默认合并，语义与 granular_json 平行但不同（阈值而非布尔
+    // 开关集），不合并进同一列。
+    riskMonitorJson: jsonb("risk_monitor_json").$type<JsonObject>().notNull().default({}),
     ...timestamps()
   },
   (table) => [

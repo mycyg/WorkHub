@@ -5,6 +5,7 @@ import {
 } from "@workhub/config";
 import {
   DEFAULT_PROJECT_AI_GOVERNANCE,
+  DEFAULT_RISK_MONITOR_SETTINGS,
   DEFAULT_USER_AI_PROFILE,
   aiBudgetSummaryVmSchema,
   aiProviderVmSchema,
@@ -296,6 +297,12 @@ export function createAiSettingsService(deps: AiSettingsServiceDependencies): Ai
       granular_settings: {
         ...(row?.granularJson ?? DEFAULT_PROJECT_AI_GOVERNANCE.granular_settings)
       },
+      // R14 批 RISK：读侧完整默认值合并输出（非 partial）——DB 列缺省是 '{}'::jsonb，与
+      // DEFAULT_RISK_MONITOR_SETTINGS 合并后每个键都有值，供设置 UI 直接展示当前生效阈值。
+      risk_monitor: {
+        ...DEFAULT_RISK_MONITOR_SETTINGS,
+        ...(row?.riskMonitorJson ?? {})
+      },
       updated_at: row?.updatedAt.toISOString() ?? null
     }, "ai-settings.project-governance");
   }
@@ -397,6 +404,9 @@ export function createAiSettingsService(deps: AiSettingsServiceDependencies): Ai
               : {}),
             ...(payload.granular_settings !== undefined
               ? { granularJson: { ...payload.granular_settings } }
+              : {}),
+            ...(payload.risk_monitor !== undefined
+              ? { riskMonitorJson: { ...payload.risk_monitor } }
               : {})
           },
           at,

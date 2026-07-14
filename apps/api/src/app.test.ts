@@ -805,6 +805,9 @@ test("R12 AI settings runtime and OpenAPI expose four strict secret-free operati
     "silence_window_seconds",
     "quiet_hours",
     "granular_settings",
+    // R14 批 RISK（批准的契约变更，见 r14-release-readiness/05-risk-design.md §2.1）：additive
+    // risk_monitor —— 读侧完整默认值合并输出，必填字段。
+    "risk_monitor",
     "updated_at"
   ]);
   assert.equal(governanceData?.additionalProperties, false);

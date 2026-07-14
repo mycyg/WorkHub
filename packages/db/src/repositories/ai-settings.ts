@@ -3,7 +3,8 @@ import type {
   AiMode,
   AiQuietHours,
   CuuProactivity,
-  DispatchPolicy
+  DispatchPolicy,
+  RiskMonitorSettings
 } from "@workhub/contracts";
 import {
   DEFAULT_PROJECT_AI_GOVERNANCE,
@@ -36,6 +37,9 @@ export type ProjectAiGovernancePatch = {
   silenceWindowSecs?: number;
   quietHoursJson?: AiQuietHours;
   granularJson?: AiGranularSettings;
+  // R14 批 RISK：风险巡检阈值。照 granularJson 一样在 insert/update 值组装里做条件化 spread
+  // （patch 未传时既不出现在 INSERT values 也不出现在 UPDATE set，落 DB 列自身的 DEFAULT '{}'::jsonb）。
+  riskMonitorJson?: RiskMonitorSettings;
 };
 
 export type FindUserProfileAccessInput = {
@@ -111,7 +115,8 @@ const PROJECT_GOVERNANCE_PATCH_KEYS = [
   "observerEnabled",
   "silenceWindowSecs",
   "quietHoursJson",
-  "granularJson"
+  "granularJson",
+  "riskMonitorJson"
 ] as const;
 
 const profileSelection = {
@@ -152,6 +157,7 @@ const governanceSelection = {
   silenceWindowSecs: projectAiGovernance.silenceWindowSecs,
   quietHoursJson: projectAiGovernance.quietHoursJson,
   granularJson: projectAiGovernance.granularJson,
+  riskMonitorJson: projectAiGovernance.riskMonitorJson,
   createdAt: projectAiGovernance.createdAt,
   updatedAt: projectAiGovernance.updatedAt
 };
@@ -240,6 +246,10 @@ function governanceInsertValues(input: UpsertProjectGovernanceInput, at: Date) {
     granularJson: {
       ...(input.patch.granularJson ?? DEFAULT_PROJECT_AI_GOVERNANCE.granular_settings)
     },
+    // R14 批 RISK：riskMonitorJson 未传时不显式赋值（不像 granularJson 那样 ?? 默认合并出一个空对象）——
+    // 落 DB 列自身的 DEFAULT '{}'::jsonb，效果等价，但保持 insert/update 两处对称的条件化 spread，
+    // 不牵连既有 governance upsert 测试对 INSERT values 形状的穷举断言。
+    ...(input.patch.riskMonitorJson !== undefined ? { riskMonitorJson: { ...input.patch.riskMonitorJson } } : {}),
     createdAt: at,
     updatedAt: at
   };
@@ -250,6 +260,7 @@ function governanceUpdateValues(patch: ProjectAiGovernancePatch, at: Date) {
     ...(patch.observerEnabled !== undefined ? { observerEnabled: patch.observerEnabled } : {}),
     ...(patch.silenceWindowSecs !== undefined ? { silenceWindowSecs: patch.silenceWindowSecs } : {}),
     ...(patch.quietHoursJson !== undefined ? { quietHoursJson: copyQuietHours(patch.quietHoursJson) } : {}),
+    ...(patch.riskMonitorJson !== undefined ? { riskMonitorJson: { ...patch.riskMonitorJson } } : {}),
     ...(patch.granularJson !== undefined ? { granularJson: { ...patch.granularJson } } : {}),
     updatedAt: at
   };
