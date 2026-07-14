@@ -1902,3 +1902,62 @@ test("renderMessageHtml does not mistake an unrelated system_event for a risk_di
   assert.match(html, /wh-wb-chat-sysline"/u);
   assert.doesNotMatch(html, /wh-wb-risk-digest/u);
 });
+
+// —— R14 批 PERF（§3 方案 B）：渲染输出的结构性哨兵 —— //
+// 不断言绝对毫秒数（CI 硬件方差会 flaky，见 08-perf-design.md §3）——只断言"一份固定的混合消息窗口拼出来
+// 的标签数不超过一个上限"，作为"有人把工具条从 10 个按钮涨到 50 个"或"折叠判断改坏导致长文本不再折叠"
+// 这类会连带放大整窗渲染成本的结构性回归的哨兵。当前实测 300 条混合窗口 ≈ 9600 标签（设计 §1 基准表同量级），
+// 15000 的上限留 ~1.5x 头寸；真实浏览器 parse+layout+paint 的综合成本只能真机验（§3 方案 C，本批不跑）。
+
+function countHtmlTags(html: string): number {
+  return (html.match(/<[a-zA-Z][^>]*>/gu) ?? []).length;
+}
+
+function syntheticWindowMessage(seq: number): ConversationMessageVM {
+  const pick = seq % 3;
+  if (pick === 0) {
+    return baseMessage({
+      id: `card-${seq}`,
+      seq,
+      sender_type: "cuu",
+      sender_user_id: null,
+      kind: "action_card",
+      content: {
+        card_id: `card-${seq}`,
+        items: [
+          actionCardItem({ id: `${seq}-a`, kind: "execute", title_md: "重写选题报告第三节", status: "running" }),
+          actionCardItem({ id: `${seq}-b`, kind: "decide", title_md: "预算是否砍半", status: "waiting_decision" })
+        ]
+      }
+    });
+  }
+  if (pick === 1) {
+    return baseMessage({
+      id: `file-${seq}`,
+      seq,
+      kind: "file_card",
+      content: { drive_item_id: `d-${seq}`, snapshot_name: `投放周报 W${seq}.xlsx` }
+    });
+  }
+  return baseMessage({
+    id: `text-${seq}`,
+    seq,
+    sender_user_id: "user-1",
+    content: { text: `第 ${seq} 条讨论 @张三 一些较长的正文，逼近真实气泡复杂度` },
+    reactions: [{ key: "approve", user_ids: ["user-1"] }]
+  });
+}
+
+test("a 300-message mixed render window stays under the structural tag-count ceiling (bloat sentinel)", () => {
+  const ctx = ctxWith([member({ user_id: "user-1", nickname: "张三" })], "user-1");
+  let html = "";
+  for (let seq = 1; seq <= 300; seq += 1) {
+    html += renderMessageHtml(syntheticWindowMessage(seq), ctx);
+  }
+  const tags = countHtmlTags(html);
+  assert.ok(tags > 0, "sanity: the window actually rendered something");
+  assert.ok(
+    tags < 15000,
+    `300 mixed messages rendered ${tags} tags — expected < 15000; a jump here means per-message render bloat`
+  );
+});

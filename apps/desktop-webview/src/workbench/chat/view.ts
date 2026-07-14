@@ -143,7 +143,8 @@ import {
   groupMessagesByDay,
   maybeShrinkRenderWindowSize,
   sortAndDedupeMessages,
-  windowRecentMessages
+  windowRecentMessages,
+  windowSizeAfterAppend
 } from "./timeline.js";
 import {
   appendTurnDelta,
@@ -397,7 +398,7 @@ function fetchAvatarPhotoObjectUrl(userId: string): Promise<string | null> {
 }
 
 // 命令式步骤，在任何一次把带 data-wb-avatar-user-id 标记的 HTML 塞进真实 DOM 之后调用
-// （renderScroll/renderScrollPreservingTopAnchor 的消息列表、成员条的 renderMemberBarHtml）。
+// （renderScroll 的消息列表、成员条的 renderMemberBarHtml）。
 export function hydrateAvatarPhotos(root: ParentNode): void {
   const tiles = root.querySelectorAll<HTMLElement>("[data-wb-avatar-user-id]");
   tiles.forEach((tile) => {
@@ -858,9 +859,16 @@ export function mountChatView(
     return html;
   }
 
+  // R14 批 PERF（切片③：锚定补全）：唯一的整窗渲染出口。贴底（wasNearBottom）时重新贴底跟随最新；
+  // 不贴底时统一走 beforeHeight/beforeTop 高度差补偿——保持用户当前正在看的内容相对不跳动（原来的
+  // renderScrollPreservingTopAnchor 只在向上翻页两处调用，其余五个高频被动触发点走的 renderScroll 在
+  // 不贴底时完全不管 scrollTop，导致上方内容高度一变就整体跳动，见 08-perf-design.md §0 第 4 点）。
+  // 合并后不管触发源是 loadOlderHistory / reaction 回流 / turn delta，不贴底时都做同一套补偿。
   function renderScroll(): void {
     const el = scrollEl!;
     const wasNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+    const beforeHeight = el.scrollHeight;
+    const beforeTop = el.scrollTop;
     if (historyLoad === "loading") {
       el.innerHTML = renderHistoryLoadingHtml(input.locale);
       return;
@@ -884,21 +892,11 @@ export function mountChatView(
       // R14 批 PERF（切片②：回缩）：用户贴底回到"看最新"时，收回被翻页撑大的渲染窗口到默认值——下一次
       // 翻页需求发生时再按需撑大，不把"翻过一次历史"的代价长期背在每一次后续渲染上。
       renderWindowSize = maybeShrinkRenderWindowSize(renderWindowSize, wasNearBottom);
+    } else {
+      // R14 批 PERF（切片③）：不贴底——保持用户正在看的内容相对位置不跳动（同 Slack/Discord 的"向上无限
+      // 滚动"手感）。高度不变（如已读回声不改渲染高度）时补偿量为 0，scrollTop 不动。
+      el.scrollTop = beforeTop + (el.scrollHeight - beforeHeight);
     }
-    renderJump();
-  }
-
-  // 加载更早历史后重渲染：不能用 renderScroll 的 wasNearBottom/贴底逻辑（那是为"新消息到达时如果
-  // 用户本来就在看最新消息，跟着滚到底"设计的）——这里是往顶部插入更早的内容，要保持用户当前正在看
-  // 的那条消息在视口里的相对位置不跳动（同 Slack/Discord 的"向上无限滚动"手感），靠 scrollHeight
-  // 差值补偿 scrollTop。
-  function renderScrollPreservingTopAnchor(): void {
-    const el = scrollEl!;
-    const beforeHeight = el.scrollHeight;
-    const beforeTop = el.scrollTop;
-    el.innerHTML = buildScrollBodyHtml();
-    hydrateAvatarPhotos(el);
-    el.scrollTop = beforeTop + (el.scrollHeight - beforeHeight);
     renderJump();
   }
 
@@ -1093,11 +1091,20 @@ export function mountChatView(
     }
   }
 
-  function mergeMessages(incoming: readonly ConversationMessageVM[]): void {
+  function mergeMessages(incoming: readonly ConversationMessageVM[], nearBottomHint?: boolean): void {
     if (incoming.length === 0) {
       return;
     }
+    // R14 批 PERF（切片③-b）：不贴底时冻结窗口起点——见 timeline.ts 的 windowSizeAfterAppend。wasNearBottom
+    // 优先复用调用方（SSE handler）已经算好的那份（设计 §2.3-b 的「共享，不必重复计算」），没传就现算一次
+    // （廉价 DOM 读）。用实际新增到尾部的条数（去重后 messages 长度差）而不是 incoming.length，这样自广播
+    // 回声/补拉替换（净增 0）不会白撑窗口。
+    const wasNearBottom =
+      nearBottomHint ?? scrollEl!.scrollHeight - scrollEl!.scrollTop - scrollEl!.clientHeight < NEAR_BOTTOM_PX;
+    const before = messages.length;
     messages = sortAndDedupeMessages([...messages, ...incoming]);
+    const added = messages.length - before;
+    renderWindowSize = windowSizeAfterAppend(renderWindowSize, added, wasNearBottom);
     // R14 批 PERF（切片①）：新消息到达是高频被动触发（SSE message.created + turn 落定 + 补缺口），合帧。
     scheduleRenderScroll();
   }
@@ -1230,7 +1237,7 @@ export function mountChatView(
     if (hiddenLocalCount > 0) {
       // R14 批 PERF（切片②）：封顶——本地展开也不无限撑大窗口，超上限就让最旧那批保持折叠（用户可再点展开）。
       renderWindowSize = capRenderWindowSize(renderWindowSize + RENDER_WINDOW_EXPAND_STEP);
-      renderScrollPreservingTopAnchor();
+      renderScroll();
       return;
     }
     if (hasOlderHistory && olderLoad !== "loading") {
@@ -1275,7 +1282,7 @@ export function mountChatView(
     hasOlderHistory = madeProgress && page.has_more;
     oldestKnownBeforeSeq = madeProgress ? page.next_before_seq : oldestKnownBeforeSeq;
     olderLoad = "idle";
-    renderScrollPreservingTopAnchor();
+    renderScroll();
   }
 
   // 重连成功后补缺口：断线期间的消息只能靠 afterSeq=本地已知最高 seq 重新拉一遍（broker 不存回放日志，
@@ -1901,7 +1908,7 @@ export function mountChatView(
       const neededFromEnd = messages.length - localIndex;
       if (neededFromEnd > renderWindowSize) {
         renderWindowSize = neededFromEnd + RENDER_WINDOW_EXPAND_STEP;
-        renderScrollPreservingTopAnchor();
+        renderScroll();
       }
       node = findMessageNode(messageId);
       if (node) {
@@ -1932,7 +1939,7 @@ export function mountChatView(
       // R14 批 PERF（切片②）：同上，主动跳转允许突破 cap——loadOlderHistory 在上面的循环里已经把目标拉进
       // messages（它自己封顶的只是渲染窗口，不是 messages 数组），这里再无 cap 地撑窗口把目标纳入 DOM。
       renderWindowSize = neededFromEnd + RENDER_WINDOW_EXPAND_STEP;
-      renderScrollPreservingTopAnchor();
+      renderScroll();
     }
     node = findMessageNode(messageId);
     if (node) {
@@ -2051,7 +2058,9 @@ export function mountChatView(
         const message = parseIncomingMessageCreated(event.data, input.conversationId);
         if (message) {
           const wasNearBottom = scrollEl!.scrollHeight - scrollEl!.scrollTop - scrollEl!.clientHeight < NEAR_BOTTOM_PX;
-          mergeMessages([message]);
+          // R14 批 PERF（切片③-b）：把这份已经算好的 wasNearBottom 交给 mergeMessages 冻结窗口起点（设计
+          // §2.3-b 的「共享」）——用户在上翻历史时，底部来的这条新消息不该把正在读的最旧那条挤出 DOM。
+          mergeMessages([message], wasNearBottom);
           // R14 批 CHAT：如果用户本来就贴着底看最新消息，一条新消息到达即视为"看见了"，节流标记已读——
           // 不在底部（在往上翻历史）时不标记，那条新消息对用户就是"未读"，交给未读分割线/跳到未读浮钮。
           if (wasNearBottom) {

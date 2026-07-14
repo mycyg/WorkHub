@@ -20,7 +20,8 @@ import {
   groupMessagesByDay,
   maybeShrinkRenderWindowSize,
   sortAndDedupeMessages,
-  windowRecentMessages
+  windowRecentMessages,
+  windowSizeAfterAppend
 } from "./timeline.js";
 
 function textMessage(input: { id: string; seq: number; text: string; createdAt: Date; senderUserId?: string }): ConversationMessageVM {
@@ -212,6 +213,29 @@ test("maybeShrinkRenderWindowSize is a no-op when the window is already at (or u
 test("maybeShrinkRenderWindowSize honours a custom fallback", () => {
   assert.equal(maybeShrinkRenderWindowSize(900, true, 500), 500);
   assert.equal(maybeShrinkRenderWindowSize(400, true, 500), 400);
+});
+
+// —— R14 批 PERF（切片③-b）：不贴底追加时冻结窗口起点（windowSizeAfterAppend） —— //
+
+test("windowSizeAfterAppend grows the window by the appended count while the user is reading history (freezes the start)", () => {
+  // 300 条窗口 + 到底部来了 1 条新消息，用户不贴底：窗口涨到 301，start = length - size 保持不变，
+  // 正在阅读的最旧那条不被挤出 DOM。
+  assert.equal(windowSizeAfterAppend(300, 1, false), 301);
+  assert.equal(windowSizeAfterAppend(300, 5, false), 305);
+});
+
+test("windowSizeAfterAppend leaves the window alone when the user is at the bottom (they want the latest anyway)", () => {
+  assert.equal(windowSizeAfterAppend(300, 5, true), 300);
+});
+
+test("windowSizeAfterAppend is a no-op when nothing was actually appended (dedup / in-place replacement)", () => {
+  assert.equal(windowSizeAfterAppend(450, 0, false), 450);
+  assert.equal(windowSizeAfterAppend(450, -3, false), 450);
+});
+
+test("windowSizeAfterAppend still respects the 900 cap — freezing the start cannot grow without bound", () => {
+  assert.equal(windowSizeAfterAppend(MAX_MESSAGE_RENDER_WINDOW, 10, false), 900);
+  assert.equal(windowSizeAfterAppend(895, 20, false), 900);
 });
 
 // —— applyActionCardUpdate（R12 行动卡状态回流：SSE 事件条目状态合并进本地快照） —— //

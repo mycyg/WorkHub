@@ -439,3 +439,22 @@ export function maybeShrinkRenderWindowSize(
 ): number {
   return wasNearBottom && currentSize > fallback ? fallback : currentSize;
 }
+
+// R14 批 PERF（切片③-b：冻结窗口起点）：用户上翻读历史（不贴底）时，底部来了新消息不应该把正在阅读的
+// 最旧那条挤出 DOM 窗口——windowRecentMessages 取"末尾 N 条"，messages 一变长窗口起点（start =
+// messages.length - size）就会随之后移，正在窗口最旧端阅读的用户会被无声抽走最上面那条的 DOM 节点（比
+// 视觉跳动更糟，是"正在看的内容消失"，见 08-perf-design.md §0 第 4 点后半）。补法：不贴底追加时把窗口跟着
+// 实际新增条数一起长（镜像 loadOlderHistory 往顶部塞旧消息时撑窗口，方向相反），让 start 保持不变。贴底时
+// 不补（本来就要看最新，且切片② 的回缩会把窗口拉回默认值，不会无限累积）。仍受 MAX_MESSAGE_RENDER_WINDOW
+// 封顶——极端长会话里冻结不到无穷，超上限后最旧那条退化成"折叠回未展开"（同切片② 的取舍）。
+export function windowSizeAfterAppend(
+  currentSize: number,
+  appendedCount: number,
+  wasNearBottom: boolean,
+  cap: number = MAX_MESSAGE_RENDER_WINDOW
+): number {
+  if (wasNearBottom || appendedCount <= 0) {
+    return currentSize;
+  }
+  return capRenderWindowSize(currentSize + appendedCount, cap);
+}
