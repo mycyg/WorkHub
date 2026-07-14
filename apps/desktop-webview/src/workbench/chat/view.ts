@@ -95,11 +95,18 @@ import {
 } from "./timeline.js";
 import {
   appendTurnDelta,
+  beginTurnPursuit,
+  classifyTurnErrorOutcome,
   EMPTY_TURN_DELTA_STATE,
+  EMPTY_TURN_QUEUE_STATE,
   mapConversationTurnError,
+  queueTurnAnchor,
   renderTurnDeltaText,
+  settleTurnPursuit,
   shouldRequestConversationTurn,
-  type TurnDeltaState
+  turnQueueGiveUpText,
+  type TurnDeltaState,
+  type TurnQueueState
 } from "./turn.js";
 import {
   applyBufferedActionCardUpdates,
@@ -274,6 +281,10 @@ export function mountChatView(
   let turnActive = false;
   let turnDeltaState: TurnDeltaState = EMPTY_TURN_DELTA_STATE;
   let turnErrorText: string | undefined;
+  // R14 P1-11：turn 进行中又发出一条新文本消息时不能被晾住——turnQueue 是 turn.ts 那组纯状态机
+  // （queueTurnAnchor/beginTurnPursuit/settleTurnPursuit）的唯一持有者，只在 beginTurn 的调用点/
+  // settle 回调里被读写（见 beginTurn 顶部注释与其 .then/.catch）。
+  let turnQueue: TurnQueueState = EMPTY_TURN_QUEUE_STATE;
   // R12（模式五档弹层，2026-07-12 纠偏后归位到单聊）：见 render.ts"模式五档"一节顶部注释——
   // isCollabConversation 语义=「这个会话支持直接的 Cuu turn 通道」：collab 恒真；main 仅在个人空间
   // （R13 终验修复，1:1 单聊）为真，团队项目的主区永远 false——composer 不渲染模式 chip，
@@ -1249,8 +1260,20 @@ export function mountChatView(
         // （kind='main'）在这里永远拿到 false，不会走到 beginTurn 半步。file_card 消息不触发——服务端
         // 契约本来就只认"最近一条 user_message_id 指向的文本消息"当锚点，丢一个文件不构成"该 Cuu 说话了"
         // 的信号。
+        //
+        // R14 P1-11：composer 的"禁发"闸门（turnActive）只在 beginTurn 已经被调用之后才生效——这条
+        // 消息落库的 HTTP 响应和上一条消息落库/开始 turn 的时序完全可能交错（用户在第一条消息还没落库
+        // 完、turnActive 还是 false 的窗口里就把第二条也发出去了）。到这里如果发现 turnActive 已经是
+        // true（上一条消息的 turn 正在飞），不能像过去那样无脑再调一次 beginTurn——服务端的会话级忙碌闸
+        // 只会拒第二个请求（409 conversation_turn_busy），而且没人会再帮这条消息重试，它就被晾住了。
+        // 改成把这条消息记成"待回应锚点"（queueTurnAnchor，只记最新一条），等当前这一轮 turn 结束
+        // （settleTurnPursuit）时自动补一轮。
         if (record.kind === "text" && shouldRequestConversationTurn(input.conversationKind, { personalProject: input.projectIsPersonal })) {
-          beginTurn(created.id);
+          if (turnActive) {
+            turnQueue = queueTurnAnchor(turnQueue, created.id);
+          } else {
+            beginTurn(created.id);
+          }
         }
       })
       .catch(() => {
@@ -1265,15 +1288,33 @@ export function mountChatView(
       });
   }
 
+  // R14 P1-11：一轮 turn 结束（成功/失败都算）之后，按 turn.ts 的 settleTurnPursuit 决策把队列状态
+  // 推进一步——有排队的新锚点就自动追一轮（beginTurn 会重新触发它自己的 render），没有就什么都不做。
+  // 抽成单独函数是因为 .then/.catch 两条路径都要在各自的收尾处调用同一段逻辑。
+  function advanceTurnQueue(outcome: "busy" | "settled"): void {
+    const decision = settleTurnPursuit(turnQueue, outcome);
+    turnQueue = decision.state;
+    if (decision.action === "retry_same" || decision.action === "retry_anchor") {
+      beginTurn(decision.messageId);
+      return;
+    }
+    if (decision.action === "give_up") {
+      turnErrorText = turnQueueGiveUpText(input.locale);
+      renderTurnStatus();
+    }
+  }
+
   // R12（final-turns-wiring）：POST /conversations/:id/turns 的等待/流式/落定三段。同一会话同时只有
-  // 一轮进行中（服务端并发闸，见 conversation-turns.ts），所以不需要在这里做本地互斥——下一次
-  // enqueueSend 只会在这一轮的 promise 还没结束时也发起（用户可以边等边接着打字/发下一条），那种情况下
-  // 服务端会用 409 conversation_turn_busy 拒第二个 turn 请求，mapConversationTurnError 会把它翻成
-  // 「Cuu 正忙着上一轮」——不是本地要去拦的错误，是要如实展示的服务端状态。
+  // 一轮进行中（服务端并发闸，见 conversation-turns.ts）——但客户端不再假设"我自己不会撞见 409 busy"：
+  // 上一条消息落库到这条消息落库之间的时序完全可能交错（R14 P1-11），也可能是小群回话判定器的 tick
+  // 抢先拿到了锁；beginTurn 每次真正发起请求前先调 beginTurnPursuit 登记"在追哪条消息"，撞见 busy 时
+  // 由 advanceTurnQueue/settleTurnPursuit 决定原地重试还是放弃（最多连败 3 次，见 turn.ts 顶部注释），
+  // 不是本地要去拦的错误，是要如实处理的服务端状态。
   function beginTurn(userMessageId: string): void {
     if (disposed) {
       return;
     }
+    turnQueue = beginTurnPursuit(turnQueue, userMessageId);
     turnActive = true;
     turnDeltaState = EMPTY_TURN_DELTA_STATE;
     turnErrorText = undefined;
@@ -1300,6 +1341,8 @@ export function mountChatView(
         mergeMessages([result.message]);
         renderTurnStatus();
         renderComposerChrome();
+        // R14 P1-11：这一轮成功落定——如果这期间又有新消息把锚点排上了队，自动追一轮。
+        advanceTurnQueue("settled");
       })
       .catch((error) => {
         if (disposed) {
@@ -1307,10 +1350,18 @@ export function mountChatView(
         }
         turnActive = false;
         turnDeltaState = EMPTY_TURN_DELTA_STATE;
-        turnErrorText = mapConversationTurnError(
-          error instanceof WorkHubApiError ? { status: error.status, code: error.code } : undefined,
-          input.locale
-        );
+        const code = error instanceof WorkHubApiError ? error.code : undefined;
+        const classification = classifyTurnErrorOutcome(code);
+        // R14 P1-11：409 busy 转入自动重试队列，界面不展示任何文字（重试对用户透明）；
+        // conversation_turn_not_warranted 是回话判定器的正常业务态，保持静默；其它错误码照旧展示
+        // mapConversationTurnError 的温和文案（见 turn.ts 顶部注释三种分类的取舍）。
+        turnErrorText =
+          classification === "error"
+            ? mapConversationTurnError(
+                error instanceof WorkHubApiError ? { status: error.status, code: error.code } : undefined,
+                input.locale
+              )
+            : undefined;
         // R13 批 S2：turn 落定（这一轮失败也算数）——同样要重放缓冲队列，见上。
         flushBufferedActionCardUpdates();
         // mergeMessages 在成功路径里已经会 renderScroll；失败路径没有新消息可合并，这里手动补一次
@@ -1318,6 +1369,12 @@ export function mountChatView(
         renderScroll();
         renderTurnStatus();
         renderComposerChrome();
+        // R14 P1-11：busy 就走自动重试链（原地重试同一条消息，连败到上限才放弃）；其它收场方式
+        // （成功/silent/error）只检查有没有排队的新锚点。advanceTurnQueue 内部会在 give_up 时重设
+        // turnErrorText 并重渲染——覆盖掉上面刚设的 undefined/普通错误文案是有意的：连败放弃的提示
+        // 优先级更高，得盖过去（give_up 只会在 classification === "busy" 时发生，不会跟"error"分支的
+        // 文案打架）。
+        advanceTurnQueue(classification === "busy" ? "busy" : "settled");
       });
   }
 

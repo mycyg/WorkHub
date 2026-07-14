@@ -3,10 +3,18 @@ import { test } from "node:test";
 
 import {
   appendTurnDelta,
+  beginTurnPursuit,
+  classifyTurnErrorOutcome,
   EMPTY_TURN_DELTA_STATE,
+  EMPTY_TURN_QUEUE_STATE,
   mapConversationTurnError,
+  queueTurnAnchor,
   renderTurnDeltaText,
-  shouldRequestConversationTurn
+  settleTurnPursuit,
+  shouldRequestConversationTurn,
+  turnQueueGiveUpText,
+  TURN_QUEUE_MAX_CONSECUTIVE_BUSY_FAILURES,
+  type TurnQueueState
 } from "./turn.js";
 
 // —— shouldRequestConversationTurn: 这条红线锁死"主区绝不调 turns" —— //
@@ -129,4 +137,141 @@ test("mapConversationTurnError falls back gracefully when there is no error sour
 test("mapConversationTurnError never leaks a raw error code into the user-facing text", () => {
   const text = mapConversationTurnError({ status: 500, code: "conversation_turn_failed" }, "zh-CN");
   assert.doesNotMatch(text, /conversation_turn/u);
+});
+
+// —— R14 P1-11：turn 进行中发第二条消息不能被晾住 —— //
+//
+// 病灶复述：view.ts 过去无条件对每条落库的文本消息调 beginTurn，turn 进行中收到的第二条消息会撞服务端
+// 409 conversation_turn_busy 且没有任何重试——消息被静默晾住。下面这组测试钉死 turn.ts 里那组纯状态机
+// （queueTurnAnchor/beginTurnPursuit/settleTurnPursuit）承担的四条验收要求。
+
+test("queueTurnAnchor records a message id sent while a turn is already in flight", () => {
+  const state = queueTurnAnchor(EMPTY_TURN_QUEUE_STATE, "msg-2");
+  assert.equal(state.pendingAnchorMessageId, "msg-2");
+});
+
+test("queueTurnAnchor only remembers the latest message — it is not a queue/list", () => {
+  let state = queueTurnAnchor(EMPTY_TURN_QUEUE_STATE, "msg-2");
+  state = queueTurnAnchor(state, "msg-3");
+  state = queueTurnAnchor(state, "msg-4");
+  assert.equal(state.pendingAnchorMessageId, "msg-4");
+});
+
+test("queueTurnAnchor does not disturb the in-flight pursuit's own busy-failure streak", () => {
+  const pursuing: TurnQueueState = { pendingAnchorMessageId: undefined, pursuitMessageId: "msg-1", consecutiveBusyFailures: 2 };
+  const state = queueTurnAnchor(pursuing, "msg-2");
+  assert.equal(state.pursuitMessageId, "msg-1");
+  assert.equal(state.consecutiveBusyFailures, 2);
+  assert.equal(state.pendingAnchorMessageId, "msg-2");
+});
+
+test("settleTurnPursuit auto-requests the queued anchor once the in-flight turn settles successfully", () => {
+  const state = queueTurnAnchor({ pendingAnchorMessageId: undefined, pursuitMessageId: "msg-1", consecutiveBusyFailures: 0 }, "msg-2");
+  const decision = settleTurnPursuit(state, "settled");
+  assert.equal(decision.action, "retry_anchor");
+  assert.equal(decision.action === "retry_anchor" ? decision.messageId : undefined, "msg-2");
+  // 锚点用完就清空——不会被同一条消息重复触发。
+  assert.equal(decision.state.pendingAnchorMessageId, undefined);
+});
+
+test("settleTurnPursuit does nothing when a turn settles and there is no queued anchor", () => {
+  const state: TurnQueueState = { pendingAnchorMessageId: undefined, pursuitMessageId: "msg-1", consecutiveBusyFailures: 0 };
+  const decision = settleTurnPursuit(state, "settled");
+  assert.equal(decision.action, "idle");
+});
+
+test("beginTurnPursuit resets the busy streak when pursuing a different message id", () => {
+  const state: TurnQueueState = { pendingAnchorMessageId: undefined, pursuitMessageId: "msg-1", consecutiveBusyFailures: 2 };
+  const next = beginTurnPursuit(state, "msg-2");
+  assert.equal(next.pursuitMessageId, "msg-2");
+  assert.equal(next.consecutiveBusyFailures, 0);
+});
+
+test("beginTurnPursuit keeps the busy streak when retrying the same message id", () => {
+  const state: TurnQueueState = { pendingAnchorMessageId: undefined, pursuitMessageId: "msg-1", consecutiveBusyFailures: 2 };
+  const next = beginTurnPursuit(state, "msg-1");
+  assert.equal(next.consecutiveBusyFailures, 2);
+});
+
+test("settleTurnPursuit retries the same message on a busy failure below the retry cap", () => {
+  let state = beginTurnPursuit(EMPTY_TURN_QUEUE_STATE, "msg-2");
+  const decision = settleTurnPursuit(state, "busy");
+  assert.equal(decision.action, "retry_same");
+  assert.equal(decision.action === "retry_same" ? decision.messageId : undefined, "msg-2");
+  assert.equal(decision.state.consecutiveBusyFailures, 1);
+});
+
+test("settleTurnPursuit gives up after three consecutive busy failures for the same message", () => {
+  let state = beginTurnPursuit(EMPTY_TURN_QUEUE_STATE, "msg-2");
+  let lastAction: string | undefined;
+  for (let i = 0; i < TURN_QUEUE_MAX_CONSECUTIVE_BUSY_FAILURES; i += 1) {
+    const decision = settleTurnPursuit(state, "busy");
+    lastAction = decision.action;
+    state = decision.state;
+    if (decision.action === "retry_same") {
+      // 原地重试——追的还是同一条消息，beginTurnPursuit 是 no-op（同一个 id 不重置连败计数）。
+      state = beginTurnPursuit(state, decision.messageId);
+    }
+  }
+  assert.equal(TURN_QUEUE_MAX_CONSECUTIVE_BUSY_FAILURES, 3);
+  assert.equal(lastAction, "give_up");
+  assert.equal(state.pursuitMessageId, undefined);
+  assert.equal(state.consecutiveBusyFailures, 0);
+});
+
+test("giving up after a busy streak also drops any queued anchor rather than silently retrying a different message", () => {
+  let state = beginTurnPursuit(EMPTY_TURN_QUEUE_STATE, "msg-2");
+  state = queueTurnAnchor(state, "msg-3");
+  for (let i = 0; i < TURN_QUEUE_MAX_CONSECUTIVE_BUSY_FAILURES; i += 1) {
+    const decision = settleTurnPursuit(state, "busy");
+    state = decision.state;
+    if (decision.action === "retry_same") {
+      state = beginTurnPursuit(state, decision.messageId);
+    }
+  }
+  assert.equal(state.pendingAnchorMessageId, undefined);
+});
+
+test("settleTurnPursuit resets the busy streak once a retried message finally settles (non-busy)", () => {
+  let state = beginTurnPursuit(EMPTY_TURN_QUEUE_STATE, "msg-2");
+  state = settleTurnPursuit(state, "busy").state; // 1st busy failure
+  const decision = settleTurnPursuit(state, "settled");
+  assert.equal(decision.action, "idle");
+  assert.equal(decision.state.consecutiveBusyFailures, 0);
+});
+
+// —— classifyTurnErrorOutcome：busy 转自动重试、not_warranted 静默、其它一律照旧展示错误文案 —— //
+
+test("classifyTurnErrorOutcome routes conversation_turn_busy into the silent auto-retry path", () => {
+  assert.equal(classifyTurnErrorOutcome("conversation_turn_busy"), "busy");
+});
+
+test("classifyTurnErrorOutcome routes conversation_turn_not_warranted to silent (not an error)", () => {
+  assert.equal(classifyTurnErrorOutcome("conversation_turn_not_warranted"), "silent");
+});
+
+test("classifyTurnErrorOutcome treats every other known code as a real, displayable error", () => {
+  assert.equal(classifyTurnErrorOutcome("conversation_turn_mode_observe_only"), "error");
+  assert.equal(classifyTurnErrorOutcome("conversation_turn_budget_exhausted"), "error");
+  assert.equal(classifyTurnErrorOutcome("conversation_turn_not_collab"), "error");
+  assert.equal(classifyTurnErrorOutcome("conversation_turn_cuu_disabled"), "error");
+  assert.equal(classifyTurnErrorOutcome("conversation_turn_failed"), "error");
+});
+
+test("classifyTurnErrorOutcome falls back to error for an unrecognized code or a network failure (undefined)", () => {
+  assert.equal(classifyTurnErrorOutcome("internal_error"), "error");
+  assert.equal(classifyTurnErrorOutcome(undefined), "error");
+});
+
+// —— turnQueueGiveUpText：连败放弃后的提示，跟"忙碌中请稍候"的文案是两句不同的话 —— //
+
+test("turnQueueGiveUpText gives a gentle zh-CN notice distinct from the plain busy-retry text", () => {
+  const text = turnQueueGiveUpText("zh-CN");
+  assert.match(text, /手动|再问/u);
+  assert.notEqual(text, mapConversationTurnError({ status: 409, code: "conversation_turn_busy" }, "zh-CN"));
+});
+
+test("turnQueueGiveUpText has an English table too", () => {
+  const text = turnQueueGiveUpText("en-US");
+  assert.match(text, /ask again/iu);
 });
