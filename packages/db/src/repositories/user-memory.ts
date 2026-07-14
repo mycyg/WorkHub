@@ -5,9 +5,36 @@ import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { USER_MEMORY_MAX_ACTIVE_PER_USER, textDiff3Merge, type UserMemoryCategory } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
-import { userMemories } from "../schema/index.js";
+import { agentRuns, projectConversations, userMemories, workItems } from "../schema/index.js";
 
 export type UserMemoryRow = typeof userMemories.$inferSelect;
+
+// R14 批 MEM：管理面「人工编辑正文」输入。乐观并发的竞态兜底走 expectedValueMd（同文件 updateMemoryIfCurrent
+// 的既有写法），而非 SQL 层 eq(updated_at) ——后者对 DB defaultNow() 写入的 timestamptz（微秒精度）会与客户端
+// 回传的毫秒精度 expected_updated_at 不等，触发误报 409（首次编辑 AI 学到的记忆时必现）。用户级版本校验
+// （getTime() 比对）由 service 层做，见 03-mem-design §2.1。
+export type UpdateUserMemoryValueInput = {
+  userId: string;
+  id: string;
+  valueMd: string;
+  // service 读到的当前正文——作为并发写的兜底闸门（被并发编辑改过则 eq 落空 → 返回 undefined → 409）。
+  expectedValueMd: string;
+  editedByUserId: string;
+  at?: Date;
+  workspaceId?: string;
+};
+
+// R14 批 MEM：用户记忆「学习出处」的三级降级素材（run join → 反解 → 缺省，见 03-mem-design §2.3）。
+// 单次批量 join（inArray），不做逐行 N+1；记忆硬顶 50 条，join 集合天然有界。
+export type UserMemoryRunProvenance = {
+  runId: string;
+  title: string | null;
+  createdAt: Date;
+  workItemId: string;
+  workItemTitle: string | null;
+  sourceConversationId: string | null;
+  conversationTitle: string | null;
+};
 
 export type UpsertUserMemoryInput = {
   userId: string;
@@ -45,6 +72,13 @@ export type UserMemoryRepository = {
   upsert: (input: UpsertUserMemoryInput) => Promise<UserMemoryRow>;
   mergeUpsert: (input: MergeUserMemoryInput) => Promise<UserMemoryMergeResult>;
   listForUser: (userId: string, options?: ListUserMemoriesOptions) => Promise<UserMemoryRow[]>;
+  // R14 批 MEM 管理面：按 id 取本人单条记忆（含已软删行——软删检测交给 service，用于 detail 404 / patch 409）。
+  // 带 workspace 可见性过滤（工作区行 + 全局 NULL 行），与 listForUser 口径一致，杜绝跨工作区凭 id 直取。
+  getForUser: (userId: string, id: string, scope?: { workspaceId?: string }) => Promise<UserMemoryRow | undefined>;
+  // R14 批 MEM 管理面：人工编辑正文 + 留痕，绝不触发 upsert 的 confidence+0.1 强化。返回 undefined = 竞态落空。
+  updateValueForUser: (input: UpdateUserMemoryValueInput) => Promise<UserMemoryRow | undefined>;
+  // R14 批 MEM 管理面：批量解析 source_run_id → run/work_item/conversation 出处（诚实降级素材）。
+  resolveRunProvenance: (runIds: string[]) => Promise<UserMemoryRunProvenance[]>;
   touch: (ids: string[], at?: Date, scope?: { workspaceId?: string }) => Promise<void>;
   softDeleteForUser: (userId: string, id: string, at?: Date, scope?: { workspaceId?: string }) => Promise<boolean>;
   // B-R9.6 §3.7「都不要」：按 key 撤记忆。同时撤 workspace 行与遗留 NULL 行——
@@ -270,6 +304,65 @@ export function createUserMemoryRepository(db: WorkHubDb): UserMemoryRepository 
         }
       }
       return [...byKey.values()].slice(0, limit);
+    },
+
+    async getForUser(userId, id, scope = {}) {
+      // 不过滤 deletedAt：detail 端点据 deletedAt 判 404、patch 据其判「已删除」409（见 03-mem-design §3.1）。
+      const rows = await db
+        .select()
+        .from(userMemories)
+        .where(and(
+          eq(userMemories.id, id),
+          eq(userMemories.userId, userId),
+          workspaceVisibilityCondition(scope.workspaceId)
+        ))
+        .limit(1);
+      return rows[0];
+    },
+
+    async updateValueForUser(input) {
+      const now = input.at ?? new Date();
+      // 只改正文 + 留痕（edited_by/edited_at）+ updated_at。绝不复用 upsert 的 confidence+0.1 强化——
+      // 人工编辑不是「AI 又学到一次」，语义不同（03-mem-design §2.1）。竞态兜底走 expectedValueMd 而非
+      // SQL 层 updated_at 相等（避 timestamptz 微秒/毫秒精度误报 409）。
+      const updated = await db
+        .update(userMemories)
+        .set({
+          valueMd: input.valueMd,
+          editedByUserId: input.editedByUserId,
+          editedAt: now,
+          updatedAt: now
+        })
+        .where(and(
+          eq(userMemories.id, input.id),
+          eq(userMemories.userId, input.userId),
+          workspaceVisibilityCondition(input.workspaceId),
+          isNull(userMemories.deletedAt),
+          eq(userMemories.valueMd, input.expectedValueMd)
+        ))
+        .returning();
+      return updated[0];
+    },
+
+    async resolveRunProvenance(runIds) {
+      if (runIds.length === 0) {
+        return [];
+      }
+      const rows = await db
+        .select({
+          runId: agentRuns.id,
+          title: agentRuns.title,
+          createdAt: agentRuns.createdAt,
+          workItemId: agentRuns.workItemId,
+          workItemTitle: workItems.title,
+          sourceConversationId: agentRuns.sourceConversationId,
+          conversationTitle: projectConversations.title
+        })
+        .from(agentRuns)
+        .leftJoin(workItems, eq(agentRuns.workItemId, workItems.id))
+        .leftJoin(projectConversations, eq(agentRuns.sourceConversationId, projectConversations.id))
+        .where(inArray(agentRuns.id, runIds));
+      return rows;
     },
 
     async touch(ids, at, scope = {}) {

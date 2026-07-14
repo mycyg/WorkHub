@@ -393,6 +393,13 @@
       "when": 1783907000000,
       "tag": "0055_conversation_chat_completeness",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1783908000000,
+      "tag": "0056_memory_edit_provenance",
+      "breakpoints": true
     }
   ]
 }

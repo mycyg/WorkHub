@@ -662,7 +662,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0055 conversation chat completeness", () => {
+test("migration journal ends with 0056 memory edit provenance", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -677,12 +677,12 @@ test("migration journal ends with 0055 conversation chat completeness", () => {
       breakpoints: finalEntry.breakpoints
     },
     {
-      // R14 批 CHAT：0055 顺排在 0054 之后，给 conversation_messages 补编辑/墓碑/引用/置顶列并新增
-      // message_reactions + conversation_read_cursors。若后续并行批次的迁移号与本批冲突，集成者合并时
-      // 把 when 归一成递增序插在 0055 之前，journal 尾保持 0055 不变（这是设计批准的契约变更）。
-      idx: 55,
+      // R14 批 MEM：0056 顺排在 0055 之后，给 user_memories 补人工编辑留痕两列（edited_by_user_id/
+      // edited_at）。SEARCH 批的迁移集成时顺延 0057（集成裁定，见 03-mem-design §0）。若并行批次的迁移号
+      // 与本批冲突，集成者合并时把 when 归一成递增序插在 0056 之前，journal 尾保持 0056 不变（设计批准的契约变更）。
+      idx: 56,
       version: "7",
-      tag: "0055_conversation_chat_completeness",
+      tag: "0056_memory_edit_provenance",
       breakpoints: true
     }
   );
@@ -724,6 +724,36 @@ test("R14 批 CHAT migration 0055 adds nullable chat-completeness columns and tw
   assert.equal(messages.pinnedByUserId.name, "pinned_by_user_id");
   assert.equal(getTableName(requiredTable("messageReactions")), "message_reactions");
   assert.equal(getTableName(requiredTable("conversationReadCursors")), "conversation_read_cursors");
+});
+
+test("R14 批 MEM migration 0056 adds user_memories.edited_by_user_id/edited_at as nullable, replay-safe columns", () => {
+  const migrationUrl = new URL("../migrations/0056_memory_edit_provenance.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0056_memory_edit_provenance.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  // 两个新列都 ADD COLUMN IF NOT EXISTS（重放安全）+ 均可空（无 NOT NULL）。
+  assert.match(
+    migration,
+    /ALTER TABLE\s+"user_memories"\s+ADD COLUMN IF NOT EXISTS\s+"edited_by_user_id"\s+uuid\s*;/iu
+  );
+  assert.match(
+    migration,
+    /ALTER TABLE\s+"user_memories"\s+ADD COLUMN IF NOT EXISTS\s+"edited_at"\s+timestamp with time zone\s*;/iu
+  );
+  assert.doesNotMatch(migration, /NOT NULL/iu, "both edit-provenance columns must stay nullable — AI-learned rows never set them");
+  // FK 回补也要重放安全：条件化 ADD CONSTRAINT（pg_constraint 存在性守卫），on delete set null。
+  assert.match(migration, /IF NOT EXISTS\s*\(\s*SELECT 1 FROM pg_constraint/iu);
+  assert.match(
+    migration,
+    /ADD CONSTRAINT\s+"user_memories_edited_by_user_id_users_id_fk"[\s\S]*REFERENCES\s+"users"\("id"\)\s+ON DELETE set null/iu
+  );
+
+  // Drizzle schema 与迁移同步：两个新列都在活跃 schema graph 上，且可空。
+  const memories = requiredTable("userMemories") as WorkHubTable & Record<string, any>;
+  assert.equal(memories.editedByUserId.name, "edited_by_user_id");
+  assert.equal(memories.editedByUserId.notNull, false);
+  assert.equal(memories.editedAt.name, "edited_at");
+  assert.equal(memories.editedAt.notNull, false);
+  assert.equal(memories.editedAt.columnType, "PgTimestamp");
 });
 
 test("R14 批 AVATAR migration 0054 adds users.avatar_webp/avatar_updated_at as nullable, replay-safe columns", () => {

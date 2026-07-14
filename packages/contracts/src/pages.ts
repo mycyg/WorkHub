@@ -40,6 +40,8 @@ import {
   conversationVmSchema,
   executionHintSchema
 } from "./domain/conversation.js";
+import { userMemoryCategorySchema } from "./domain/user-memory.js";
+import { skillEditOpSchema, teamSkillStatusSchema, TEAM_SKILL_MAX_EDIT_OPS } from "./domain/team-skill.js";
 
 export const actionSpecSchema = z.object({
   id: z.string().min(1),
@@ -97,6 +99,80 @@ export const teamSkillsPageVmSchema = z.object({
   empty_state: z.enum(["no_skills"]).optional()
 });
 export type TeamSkillsPageVM = z.infer<typeof teamSkillsPageVmSchema>;
+
+// ── R14 批 MEM：记忆可见可治理（用户记忆 +团队技能 两个治理管理面 VM/请求契约）───────────────
+// 出处三级降级的诚实结构（run join → proposal key 反解 → 诚实缺省）。缺省时整个 provenance 省略，
+// 前端渲染「早期记录，出处不明」，绝不 null 或瞎编（见 03-mem-design §2.3）。
+export const userMemoryProvenanceSchema = z.object({
+  kind: z.enum(["agent_run", "review_correction"]),
+  // 服务端拼好的诚实文案（会话/任务/审批意见来源）；前端直接展示。
+  label: z.string().min(1).optional(),
+  run_id: idSchema.optional(),
+  conversation_id: idSchema.optional(),
+  // proposal:<id> 反解出的 proposalId（仅文字说明，不承诺可深链）。
+  proposal_id: z.string().min(1).optional()
+});
+export type UserMemoryProvenance = z.infer<typeof userMemoryProvenanceSchema>;
+
+export const userMemoryManagementItemVmSchema = z.object({
+  id: idSchema,
+  category: userMemoryCategorySchema,
+  key: z.string().min(1),
+  value_md: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+  // workspace_id !== null——区分工作区级记忆与遗留全局记忆（诚实反映作用域）。
+  workspace_scoped: z.boolean(),
+  created_at: isoDateTimeSchema,
+  updated_at: isoDateTimeSchema,
+  last_used_at: isoDateTimeSchema.optional(),
+  // 人工编辑发生时间（edited_by_user_id 非空时）；前端据此叠加「最近由你于 X 修改」一行。
+  edited_at: isoDateTimeSchema.optional(),
+  provenance: userMemoryProvenanceSchema.optional()
+});
+export type UserMemoryManagementItemVM = z.infer<typeof userMemoryManagementItemVmSchema>;
+
+export const userMemoryManagementPageVmSchema = z.object({
+  generated_at: isoDateTimeSchema,
+  memories: z.array(userMemoryManagementItemVmSchema),
+  totals: z.object({
+    active: z.number().int().nonnegative()
+  })
+});
+export type UserMemoryManagementPageVM = z.infer<typeof userMemoryManagementPageVmSchema>;
+
+// 团队技能管理面在既有消费页 VM 上补：id + content_md 全文 + status（含 deprecated 历史版本）+
+// 停用元数据 + source_run_id（历史遗留列，恒 NULL 但诚实反映 schema，不替未来写路径打包票）。
+export const teamSkillManagementItemVmSchema = teamSkillVmSchema.extend({
+  id: idSchema,
+  content_md: z.string().min(1),
+  status: teamSkillStatusSchema,
+  deprecated_reason: z.string().optional(),
+  deprecated_at: isoDateTimeSchema.optional(),
+  source_run_id: idSchema.optional()
+});
+export type TeamSkillManagementItemVM = z.infer<typeof teamSkillManagementItemVmSchema>;
+
+export const teamSkillManagementPageVmSchema = z.object({
+  generated_at: isoDateTimeSchema,
+  skills: z.array(teamSkillManagementItemVmSchema)
+});
+export type TeamSkillManagementPageVM = z.infer<typeof teamSkillManagementPageVmSchema>;
+
+// 用户记忆编辑请求：整段替换 + 乐观并发。value_md 上限 2000（宽松但防注入 worker prompt 时膨胀）——
+// 服务端另做 looksLikeInjection 拦截 + 空白/超长 → 400（见 03-mem-design §2.1 与批次汇报的偏离说明）。
+export const patchUserMemoryRequestSchema = z.object({
+  value_md: z.string().min(1).max(2000),
+  expected_updated_at: isoDateTimeSchema
+});
+export type PatchUserMemoryRequest = z.infer<typeof patchUserMemoryRequestSchema>;
+
+// 团队技能编辑请求：K2 段落级受限编辑补丁（复用 skillEditOpSchema，不重定义），base_version 乐观并发。
+export const patchTeamSkillRequestSchema = z.object({
+  ops: z.array(skillEditOpSchema).min(1).max(TEAM_SKILL_MAX_EDIT_OPS),
+  base_version: z.number().int().positive(),
+  rationale_md: z.string().optional()
+});
+export type PatchTeamSkillRequest = z.infer<typeof patchTeamSkillRequestSchema>;
 
 export const attentionSourceWarningSchema = z.object({
   source: z.enum(["approvals", "proposals", "escalations", "sync_conflicts", "worklog"]),
