@@ -108,6 +108,13 @@ function messageRow(overrides: Partial<ConversationMessageRow> = {}): Conversati
     kind: "text",
     contentJson: { text: "请先核对引用。" },
     threadRootId: null,
+    // R14 批 CHAT：conversation_messages 新增六列（全部 nullable），fixture 默认无编辑/删除/引用/置顶。
+    editedAt: null,
+    deletedAt: null,
+    deletedByUserId: null,
+    replyToMessageId: null,
+    pinnedAt: null,
+    pinnedByUserId: null,
     createdAt: now,
     ...overrides
   };
@@ -160,6 +167,43 @@ function repository(overrides: Partial<ConversationRepository> = {}): Conversati
     // 方法一样给个拒绝桩。
     async updateContextSummary() {
       throw new Error("updateContextSummary not expected");
+    },
+    // R14 批 CHAT：新增的编辑/删除/置顶/反应/已读/富化仓库方法——本套件按需 override，未 override 的
+    // 给拒绝桩（同其它未测方法）。
+    async editMessage() {
+      throw new Error("editMessage not expected");
+    },
+    async deleteMessage() {
+      throw new Error("deleteMessage not expected");
+    },
+    async pinMessage() {
+      throw new Error("pinMessage not expected");
+    },
+    async unpinMessage() {
+      throw new Error("unpinMessage not expected");
+    },
+    async addReaction() {
+      throw new Error("addReaction not expected");
+    },
+    async removeReaction() {
+      throw new Error("removeReaction not expected");
+    },
+    async advanceReadCursor() {
+      throw new Error("advanceReadCursor not expected");
+    },
+    async listReceipts() {
+      throw new Error("listReceipts not expected");
+    },
+    async listPins() {
+      throw new Error("listPins not expected");
+    },
+    async listReactionsForMessages() {
+      // 富化路径默认返回空聚合——大量既有 listMessages/createMessage 测试不关心 reactions，
+      // 给个空 Map 默认桩比逐个 override 干净（要测 reactions 的用例自行 override）。
+      return new Map();
+    },
+    async listReplyPreviews() {
+      return new Map();
     },
     ...overrides
   };
@@ -1108,4 +1152,341 @@ test("createMessage without a mentionTrigger dependency behaves exactly as befor
 
   assert.deepEqual(result.content, { text: "@Cuu 帮我看一下这个" });
   assert.equal(push.published.length, 1);
+});
+
+// ── R14 批 CHAT：编辑 / 删除 / 置顶 / reaction / 已读 服务层 ─────────────────────────────
+
+const otherMessageId = "40000000-0000-4000-8000-000000000024";
+
+function parsePublishedEvent(schemaName: string, data: unknown): { data: Record<string, unknown> } {
+  const schema = (conversationContracts as Record<string, unknown>)[schemaName] as
+    | { parse(value: unknown): { data: Record<string, unknown> } }
+    | undefined;
+  if (!schema || typeof schema.parse !== "function") {
+    assert.fail(`missing contract schema export: ${schemaName}`);
+  }
+  return schema.parse(data);
+}
+
+test("R14 editMessage returns the edited VM (edited_at set) and broadcasts message.updated", async () => {
+  const edited = messageRow({ contentJson: { text: "改好了" }, editedAt: now });
+  const editCalls: unknown[] = [];
+  const repo = repository({
+    async findVisibleAccessRecord() {
+      return accessRecord();
+    },
+    async editMessage(input) {
+      editCalls.push(input);
+      return edited;
+    }
+  });
+  const capture = capturingBus();
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    bus: capture.bus,
+    now: () => now
+  });
+
+  const vm = await service.editMessage({
+    actor: actor(),
+    conversationId,
+    messageId,
+    payload: { text: "改好了" }
+  });
+
+  assert.equal(vm.kind, "text");
+  assert.equal((vm.content as { text: string }).text, "改好了");
+  assert.equal(vm.edited_at, now.toISOString());
+  assert.deepEqual(editCalls, [
+    {
+      workspaceId,
+      conversationId,
+      messageId,
+      editorUserId: userId,
+      text: "改好了",
+      editWindowMs: 15 * 60 * 1000,
+      at: now
+    }
+  ]);
+  assert.equal(capture.published.length, 1);
+  assert.equal(capture.published[0]?.type, "conversation.message.updated");
+  const event = parsePublishedEvent("conversationMessageUpdatedEventSchema", capture.published[0]?.data);
+  assert.equal(event.data["id"], messageId);
+});
+
+test("R14 editMessage maps a repository actor mismatch to 403 conversation_message_forbidden", async () => {
+  const { ConversationMessageActorMismatchError } = await import("@workhub/db");
+  const repo = repository({
+    async findVisibleAccessRecord() {
+      return accessRecord();
+    },
+    async editMessage() {
+      throw new ConversationMessageActorMismatchError("nope");
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    bus: capturingBus().bus,
+    now: () => now
+  });
+
+  await assert.rejects(
+    service.editMessage({ actor: actor(), conversationId, messageId, payload: { text: "x" } }),
+    (error) =>
+      error instanceof ConversationServiceError && error.status === 403 && error.code === "conversation_message_forbidden"
+  );
+});
+
+test("R14 deleteMessage normalizes the tombstone VM (kind text, empty content, deleted_at)", async () => {
+  const tombstone = messageRow({
+    kind: "file_card",
+    contentJson: {},
+    deletedAt: now,
+    deletedByUserId: userId
+  });
+  const repo = repository({
+    async findVisibleAccessRecord() {
+      return accessRecord();
+    },
+    async deleteMessage() {
+      return tombstone;
+    }
+  });
+  const capture = capturingBus();
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    bus: capture.bus,
+    now: () => now
+  });
+
+  const vm = await service.deleteMessage({ actor: actor(), conversationId, messageId });
+
+  assert.equal(vm.kind, "text");
+  assert.deepEqual(vm.content, { text: "" });
+  assert.equal(vm.deleted_at, now.toISOString());
+  assert.equal(capture.published[0]?.type, "conversation.message.updated");
+});
+
+test("R14 pinMessage resolves void and broadcasts message.updated carrying the pin metadata", async () => {
+  const pinned = messageRow({ pinnedAt: now, pinnedByUserId: userId });
+  const repo = repository({
+    async findVisibleAccessRecord() {
+      return accessRecord();
+    },
+    async pinMessage() {
+      return pinned;
+    }
+  });
+  const capture = capturingBus();
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    bus: capture.bus,
+    now: () => now
+  });
+
+  const result = await service.pinMessage({ actor: actor(), conversationId, messageId });
+  assert.equal(result, undefined);
+  const event = parsePublishedEvent("conversationMessageUpdatedEventSchema", capture.published[0]?.data);
+  assert.deepEqual(event.data["pinned"], { at: now.toISOString(), by_user_id: userId });
+});
+
+test("R14 addReaction publishes a full reaction.updated aggregate; a bad key is a 400 before the repo", async () => {
+  let addCalls = 0;
+  const repo = repository({
+    async findVisibleAccessRecord() {
+      return accessRecord();
+    },
+    async addReaction() {
+      addCalls += 1;
+      return { reactions: [{ key: "approve", userIds: [userId, participantUserId] }] };
+    }
+  });
+  const capture = capturingBus();
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    bus: capture.bus,
+    now: () => now
+  });
+
+  await service.addReaction({ actor: actor(), conversationId, messageId, reactionKey: "approve" });
+  assert.equal(addCalls, 1);
+  assert.equal(capture.published[0]?.type, "conversation.reaction.updated");
+  const event = parsePublishedEvent("conversationReactionUpdatedEventSchema", capture.published[0]?.data);
+  assert.deepEqual(event.data["reactions"], [{ key: "approve", user_ids: [userId, participantUserId] }]);
+
+  await assert.rejects(
+    service.addReaction({ actor: actor(), conversationId, messageId, reactionKey: "celebrate" }),
+    (error) =>
+      error instanceof ConversationServiceError && error.status === 400 && error.code === "conversation_reaction_invalid_key"
+  );
+  // 坏 key 在打库之前就被拦下——repo 只被合法那次调用过一次。
+  assert.equal(addCalls, 1);
+});
+
+test("R14 advanceReadCursor returns the clamped seq and broadcasts read.updated", async () => {
+  const readCalls: unknown[] = [];
+  const repo = repository({
+    async findVisibleAccessRecord() {
+      return accessRecord();
+    },
+    async advanceReadCursor(input) {
+      readCalls.push(input);
+      return { lastReadSeq: 3 };
+    }
+  });
+  const capture = capturingBus();
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    bus: capture.bus,
+    now: () => now
+  });
+
+  const result = await service.advanceReadCursor({
+    actor: actor(),
+    conversationId,
+    payload: { last_read_seq: 999 }
+  });
+
+  assert.deepEqual(result, { last_read_seq: 3 });
+  assert.deepEqual(readCalls, [{ workspaceId, conversationId, userId, lastReadSeq: 999, at: now }]);
+  assert.equal(capture.published[0]?.type, "conversation.read.updated");
+});
+
+test("R14 listReceipts maps repository rows to the receipts VM shape", async () => {
+  const repo = repository({
+    async findVisibleAccessRecord() {
+      return accessRecord();
+    },
+    async listReceipts() {
+      return [
+        { userId, lastReadSeq: 5 },
+        { userId: participantUserId, lastReadSeq: 2 }
+      ];
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now
+  });
+
+  const result = await service.listReceipts({ actor: actor(), conversationId });
+  assert.deepEqual(result, {
+    receipts: [
+      { user_id: userId, last_read_seq: 5 },
+      { user_id: participantUserId, last_read_seq: 2 }
+    ]
+  });
+});
+
+test("R14 listPins enriches pinned rows and returns the pins VM", async () => {
+  const repo = repository({
+    async findVisibleAccessRecord() {
+      return accessRecord();
+    },
+    async listPins() {
+      return [messageRow({ seq: 4, pinnedAt: now, pinnedByUserId: userId })];
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now
+  });
+
+  const result = await service.listPins({ actor: actor(), conversationId });
+  assert.equal(result.messages.length, 1);
+  assert.deepEqual(result.messages[0]?.pinned, { at: now.toISOString(), by_user_id: userId });
+});
+
+test("R14 listMessages normalizes deleted rows into text tombstones for the client", async () => {
+  const repo = repository({
+    async findVisibleAccessRecord() {
+      return accessRecord();
+    },
+    async listMessagesAfter() {
+      return {
+        rows: [messageRow({ seq: 2, kind: "file_card", contentJson: {}, deletedAt: now, deletedByUserId: userId })],
+        hasMore: false,
+        nextAfterSeq: 2
+      };
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now
+  });
+
+  const page = await service.listMessages({ actor: actor(), conversationId, query: { afterSeq: 0, limit: 50 } });
+  assert.equal(page.messages.length, 1);
+  assert.equal(page.messages[0]?.kind, "text");
+  assert.deepEqual(page.messages[0]?.content, { text: "" });
+  assert.equal(page.messages[0]?.deleted_at, now.toISOString());
+});
+
+test("R14 createMessage forwards reply_to and enriches the reply preview onto the VM", async () => {
+  const created = messageRow({ replyToMessageId: otherMessageId });
+  let writeInput: unknown;
+  const repo = repository({
+    async findVisibleAccessRecord() {
+      return accessRecord();
+    },
+    async createUserMessage(input) {
+      writeInput = input;
+      return created;
+    },
+    async listReplyPreviews() {
+      return new Map([
+        [
+          otherMessageId,
+          {
+            id: otherMessageId,
+            senderType: "user" as const,
+            senderUserId: participantUserId,
+            kind: "text" as const,
+            contentJson: { text: "原始消息" },
+            deletedAt: null
+          }
+        ]
+      ]);
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    bus: capturingBus().bus,
+    now: () => now
+  });
+
+  const vm = await service.createMessage({
+    actor: actor(),
+    conversationId,
+    payload: { kind: "text", content: { text: "回复你" }, reply_to_message_id: otherMessageId }
+  });
+
+  assert.equal((writeInput as { replyToMessageId?: string }).replyToMessageId, otherMessageId);
+  assert.deepEqual(vm.reply_to, {
+    message_id: otherMessageId,
+    sender_type: "user",
+    sender_user_id: participantUserId,
+    preview_text: "原始消息",
+    deleted: false
+  });
 });

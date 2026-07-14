@@ -217,6 +217,13 @@ function parseQuietHours(raw: Record<string, unknown>): AiQuietHours {
 // ── 消息 → prompt 展示行 ──────────────────────────────────────────────────────────
 
 function messageDisplayText(row: ActionCardConversationMessageRow): string | null {
+  // R14 批 CHAT（下游墓碑过滤）：观察者分析窗跳过墓碑——这里短路（而非在 listMessagesForAnalysis 查询里
+  // 加 deleted_at is null），是为了保住 analyzedToSeq 的正确性：分析窗仍然包含墓碑行，watermark 用
+  // 返回行的真实最大 seq 推进，只是墓碑的文本不进 prompt。若在查询里滤掉尾部墓碑，watermark 会卡在
+  // 更小的 seq 上反复重扫。
+  if (row.deletedAt) {
+    return null;
+  }
   const content = row.contentJson as Record<string, unknown>;
   switch (row.kind) {
     case "text":

@@ -1946,3 +1946,39 @@ test("createTurn fails open when the context-compaction LLM call throws: the rea
   const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
   assert.equal(textContent(result.message).text, "看过了，整体不错");
 });
+
+// ── R14 批 CHAT（下游墓碑过滤）：turn 历史（buildHistory/historyDisplayText）跳过墓碑 ──────────
+test("R14 createTurn omits deleted (tombstone) messages from the history handed to the model", async () => {
+  const spy: unknown[] = [];
+  const deletedId = "14000000-0000-4000-8000-0000000000de";
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          // 墓碑行故意仍带残留文本（证明 deletedAt 短路本身，而不是被“内容已空”顺带挡下）。
+          return {
+            rows: [
+              userMessageRow({ id: deletedId, seq: 0, deletedAt: now, contentJson: { text: "墓碑残留文本不该进模型" } }),
+              userMessageRow({ contentJson: { text: "@Cuu 帮我看看草稿" } })
+            ],
+            hasMore: false,
+            nextAfterSeq: 1
+          };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      },
+      client: respondingClient([], "好的，我看看。", spy)
+    })
+  );
+
+  await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  const serialized = JSON.stringify(spy);
+  assert.ok(serialized.includes("@Cuu 帮我看看草稿"), "the anchor message must reach the model");
+  assert.ok(!serialized.includes("墓碑残留文本不该进模型"), "tombstone text must be filtered out of the turn history");
+});

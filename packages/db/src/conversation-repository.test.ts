@@ -5,10 +5,16 @@ import test from "node:test";
 import {
   ConversationAccessDeniedError,
   ConversationInsertFailedError,
+  ConversationMessageActorMismatchError,
+  ConversationMessageDeletedError,
+  ConversationMessageEditWindowError,
   ConversationMessageInsertFailedError,
+  ConversationMessageNotFoundError,
+  ConversationMessageNotTextError,
   ConversationParentAccessError,
   ConversationParticipantInsertFailedError,
   ConversationParticipantMembershipError,
+  ConversationReplyTargetError,
   ConversationRepositoryInputError,
   ConversationSequenceAllocationError,
   ConversationSequenceExhaustedError,
@@ -23,6 +29,8 @@ import {
 import {
   conversationMessages,
   conversationParticipants,
+  conversationReadCursors,
+  messageReactions,
   projectConversations,
   projects,
   workspaceMemberships
@@ -102,6 +110,14 @@ function message(seq: number, overrides: Partial<ConversationMessageRow> = {}): 
     kind: "text",
     contentJson: { text: `message ${seq}` },
     threadRootId: null,
+    // R14 批 CHAT：conversation_messages 新增六列（全部 nullable）——fixture 默认「未编辑/未删除/无引用/
+    // 未置顶」，各方法测试按需 override。
+    editedAt: null,
+    deletedAt: null,
+    deletedByUserId: null,
+    replyToMessageId: null,
+    pinnedAt: null,
+    pinnedByUserId: null,
     createdAt: now,
     ...overrides
   };
@@ -914,6 +930,12 @@ function cuuMessage(seq: number, overrides: Partial<ConversationMessageRow> = {}
     kind: "text",
     contentJson: { text: `Cuu 回应 ${seq}` },
     threadRootId: null,
+    editedAt: null,
+    deletedAt: null,
+    deletedByUserId: null,
+    replyToMessageId: null,
+    pinnedAt: null,
+    pinnedByUserId: null,
     createdAt: now,
     ...overrides
   };
@@ -1278,6 +1300,11 @@ test("R13 listReplyJudgeCandidates joins each candidate group to its own latest 
       lastMessageCreatedAt: now
     }
   ]);
+
+  // R14 批 CHAT（下游墓碑过滤）：两条查询（候选分组 + 最新人类消息归并）都必须带 deleted_at is null——
+  // 判定器不能被拉去回应一条已删的尾消息。
+  assert.ok(referencesAny(queries[0], conversationMessages.deletedAt), "group query must filter tombstones");
+  assert.ok(queryReferences(queries[1]?.where, conversationMessages.deletedAt), "recent-message query must filter tombstones");
 });
 
 test("R13 listReplyJudgeCandidates drops a group whose latest human message could not be resolved in the second query", async () => {
@@ -1285,4 +1312,600 @@ test("R13 listReplyJudgeCandidates drops a group whose latest human message coul
   const { db } = createQueryRecorder([groups, []]);
   const result = await createConversationRepository(db).listReplyJudgeCandidates({ limit: 20, sinceCreatedAt: now });
   assert.deepEqual(result, []);
+});
+
+// ── R14 批 CHAT：编辑 / 墓碑删除 / 置顶 / reaction / 已读游标 ─────────────────────────────
+// lockActiveMessage 用 `.select({ message: conversationMessages })`，故行的 recorder 响应形状是
+// `[{ message: <row> }]`（与 createUserMessage 那些 `[{ projectId }]` 平级）。
+
+const editWindowMs = 15 * 60 * 1000;
+
+function messageLock(row: ConversationMessageRow) {
+  return [{ message: row }];
+}
+
+test("R14 editMessage rewrites text and stamps edited_at inside one locked transaction", async () => {
+  const original = message(1);
+  const updated = message(1, { contentJson: { text: "改好了" }, editedAt: now });
+  const { db, queries, transactions } = createQueryRecorder([messageLock(original), [updated]]);
+
+  const result = await createConversationRepository(db).editMessage({
+    workspaceId,
+    conversationId,
+    messageId: original.id,
+    editorUserId: creatorUserId,
+    text: "改好了",
+    editWindowMs,
+    at: now
+  });
+
+  assert.deepEqual(result, updated);
+  assert.deepEqual(transactions, [{ outcome: "resolved" }]);
+  // 消息锁在会话活跃性之下、锁的是 conversation_messages 行。
+  assert.equal(queries[0]?.fromTable, conversationMessages);
+  assert.equal(queries[0]?.lock, "update");
+  assert.ok(queryReferences(queries[0]?.where, conversationMessages.id));
+  assert.ok(
+    queries[0]?.joins.some((join) => join.table === projectConversations),
+    "message lock must join the owning conversation for tenant safety"
+  );
+  const update = queries[1];
+  assert.equal(update?.operation, "update");
+  assert.equal(update?.targetTable, conversationMessages);
+  assert.equal(update?.returningCalled, true);
+  const setValue = update?.setValue as Record<string, unknown>;
+  assert.deepEqual(setValue["contentJson"], { text: "改好了" });
+  assert.equal(setValue["editedAt"], now);
+});
+
+test("R14 editMessage refuses a message the actor did not send", async () => {
+  const foreign = message(1, { senderUserId: secondMemberUserId });
+  const { db, transactions } = createQueryRecorder([messageLock(foreign)]);
+  await assert.rejects(
+    createConversationRepository(db).editMessage({
+      workspaceId,
+      conversationId,
+      messageId: foreign.id,
+      editorUserId: creatorUserId,
+      text: "别人的消息",
+      editWindowMs,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationMessageActorMismatchError
+  );
+  assert.deepEqual(transactions, [{ outcome: "rejected", errorName: "ConversationMessageActorMismatchError" }]);
+});
+
+test("R14 editMessage refuses a Cuu message (sender_type != user) as a non-owner", async () => {
+  const cuu = cuuMessage(1);
+  const { db } = createQueryRecorder([messageLock(cuu)]);
+  await assert.rejects(
+    createConversationRepository(db).editMessage({
+      workspaceId,
+      conversationId,
+      messageId: cuu.id,
+      editorUserId: creatorUserId,
+      text: "改 Cuu 的话",
+      editWindowMs,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationMessageActorMismatchError
+  );
+});
+
+test("R14 editMessage rejects an expired 15-minute window", async () => {
+  const stale = message(1, { createdAt: new Date(now.getTime() - editWindowMs - 1000) });
+  const { db } = createQueryRecorder([messageLock(stale)]);
+  await assert.rejects(
+    createConversationRepository(db).editMessage({
+      workspaceId,
+      conversationId,
+      messageId: stale.id,
+      editorUserId: creatorUserId,
+      text: "太晚了",
+      editWindowMs,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationMessageEditWindowError
+  );
+});
+
+test("R14 editMessage rejects a non-text (file_card) message with a distinct error", async () => {
+  const fileCard = message(1, {
+    kind: "file_card",
+    contentJson: { drive_item_id: "53000000-0000-4000-8000-0000000000f1", snapshot_name: "brief.docx" }
+  });
+  const { db } = createQueryRecorder([messageLock(fileCard)]);
+  await assert.rejects(
+    createConversationRepository(db).editMessage({
+      workspaceId,
+      conversationId,
+      messageId: fileCard.id,
+      editorUserId: creatorUserId,
+      text: "改文件卡",
+      editWindowMs,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationMessageNotTextError
+  );
+});
+
+test("R14 editMessage rejects editing an already-deleted tombstone", async () => {
+  const tombstone = message(1, { deletedAt: now, deletedByUserId: creatorUserId, contentJson: {} });
+  const { db } = createQueryRecorder([messageLock(tombstone)]);
+  await assert.rejects(
+    createConversationRepository(db).editMessage({
+      workspaceId,
+      conversationId,
+      messageId: tombstone.id,
+      editorUserId: creatorUserId,
+      text: "改墓碑",
+      editWindowMs,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationMessageDeletedError
+  );
+});
+
+test("R14 editMessage 404s when the message is missing from the active conversation", async () => {
+  const { db } = createQueryRecorder([[]]);
+  await assert.rejects(
+    createConversationRepository(db).editMessage({
+      workspaceId,
+      conversationId,
+      messageId: message(1).id,
+      editorUserId: creatorUserId,
+      text: "无此消息",
+      editWindowMs,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationMessageNotFoundError
+  );
+});
+
+test("R14 deleteMessage tombstones own message: clears content, sets deleted, drops pin", async () => {
+  const pinned = message(1, { pinnedAt: now, pinnedByUserId: creatorUserId });
+  const tombstone = message(1, { deletedAt: now, deletedByUserId: creatorUserId, contentJson: {}, pinnedAt: null, pinnedByUserId: null });
+  const { db, queries, transactions } = createQueryRecorder([messageLock(pinned), [tombstone]]);
+
+  const result = await createConversationRepository(db).deleteMessage({
+    workspaceId,
+    conversationId,
+    messageId: pinned.id,
+    deleterUserId: creatorUserId,
+    at: now
+  });
+
+  assert.deepEqual(result, tombstone);
+  assert.deepEqual(transactions, [{ outcome: "resolved" }]);
+  const setValue = queries[1]?.setValue as Record<string, unknown>;
+  assert.equal(setValue["deletedAt"], now);
+  assert.equal(setValue["deletedByUserId"], creatorUserId);
+  assert.deepEqual(setValue["contentJson"], {});
+  assert.equal(setValue["pinnedAt"], null);
+  assert.equal(setValue["pinnedByUserId"], null);
+});
+
+test("R14 deleteMessage is idempotent: re-deleting a tombstone returns current state without an update", async () => {
+  const tombstone = message(1, { deletedAt: now, deletedByUserId: creatorUserId, contentJson: {} });
+  const { db, queries, transactions } = createQueryRecorder([messageLock(tombstone)]);
+
+  const result = await createConversationRepository(db).deleteMessage({
+    workspaceId,
+    conversationId,
+    messageId: tombstone.id,
+    deleterUserId: creatorUserId,
+    at: now
+  });
+
+  assert.deepEqual(result, tombstone);
+  assert.deepEqual(transactions, [{ outcome: "resolved" }]);
+  assert.equal(queries.length, 1);
+  assert.equal(queries.some((query) => query.operation === "update"), false);
+});
+
+test("R14 deleteMessage refuses to tombstone a message the actor did not send", async () => {
+  const foreign = message(1, { senderUserId: secondMemberUserId });
+  const { db } = createQueryRecorder([messageLock(foreign)]);
+  await assert.rejects(
+    createConversationRepository(db).deleteMessage({
+      workspaceId,
+      conversationId,
+      messageId: foreign.id,
+      deleterUserId: creatorUserId,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationMessageActorMismatchError
+  );
+});
+
+test("R14 pinMessage stamps pinned_at/by; unpinMessage clears them; both are tenant-locked", async () => {
+  const plain = message(1);
+  const pinned = message(1, { pinnedAt: now, pinnedByUserId: memberUserId });
+  const pinRecorder = createQueryRecorder([messageLock(plain), [pinned]]);
+  const pinResult = await createConversationRepository(pinRecorder.db).pinMessage({
+    workspaceId,
+    conversationId,
+    messageId: plain.id,
+    pinnerUserId: memberUserId,
+    at: now
+  });
+  assert.deepEqual(pinResult, pinned);
+  const pinSet = pinRecorder.queries[1]?.setValue as Record<string, unknown>;
+  assert.equal(pinSet["pinnedAt"], now);
+  assert.equal(pinSet["pinnedByUserId"], memberUserId);
+
+  const unpinned = message(1, { pinnedAt: null, pinnedByUserId: null });
+  const unpinRecorder = createQueryRecorder([messageLock(pinned), [unpinned]]);
+  const unpinResult = await createConversationRepository(unpinRecorder.db).unpinMessage({
+    workspaceId,
+    conversationId,
+    messageId: pinned.id,
+    at: now
+  });
+  assert.deepEqual(unpinResult, unpinned);
+  const unpinSet = unpinRecorder.queries[1]?.setValue as Record<string, unknown>;
+  assert.equal(unpinSet["pinnedAt"], null);
+  assert.equal(unpinSet["pinnedByUserId"], null);
+});
+
+test("R14 pinMessage refuses a deleted message; unpin/pin are idempotent no-ops", async () => {
+  const tombstone = message(1, { deletedAt: now, contentJson: {} });
+  const pinDeleted = createQueryRecorder([messageLock(tombstone)]);
+  await assert.rejects(
+    createConversationRepository(pinDeleted.db).pinMessage({
+      workspaceId,
+      conversationId,
+      messageId: tombstone.id,
+      pinnerUserId: memberUserId,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationMessageDeletedError
+  );
+
+  const alreadyPinned = message(1, { pinnedAt: now, pinnedByUserId: creatorUserId });
+  const pinAgain = createQueryRecorder([messageLock(alreadyPinned)]);
+  const pinResult = await createConversationRepository(pinAgain.db).pinMessage({
+    workspaceId,
+    conversationId,
+    messageId: alreadyPinned.id,
+    pinnerUserId: memberUserId,
+    at: now
+  });
+  assert.deepEqual(pinResult, alreadyPinned);
+  assert.equal(pinAgain.queries.some((query) => query.operation === "update"), false);
+
+  const notPinned = message(1);
+  const unpinNoop = createQueryRecorder([messageLock(notPinned)]);
+  const unpinResult = await createConversationRepository(unpinNoop.db).unpinMessage({
+    workspaceId,
+    conversationId,
+    messageId: notPinned.id,
+    at: now
+  });
+  assert.deepEqual(unpinResult, notPinned);
+  assert.equal(unpinNoop.queries.some((query) => query.operation === "update"), false);
+});
+
+test("R14 addReaction inserts idempotently and returns the full canonical-order aggregate", async () => {
+  const target = message(1);
+  const { db, queries, transactions } = createQueryRecorder([
+    messageLock(target),
+    [],
+    [
+      { reactionKey: "done", userIds: [memberUserId] },
+      { reactionKey: "approve", userIds: [creatorUserId, memberUserId] }
+    ]
+  ]);
+
+  const result = await createConversationRepository(db).addReaction({
+    workspaceId,
+    conversationId,
+    messageId: target.id,
+    userId: memberUserId,
+    reactionKey: "approve",
+    at: now
+  });
+
+  // 输出按规范键序（approve 先于 done），不按 DB 返回顺序。
+  assert.deepEqual(result, {
+    reactions: [
+      { key: "approve", userIds: [creatorUserId, memberUserId] },
+      { key: "done", userIds: [memberUserId] }
+    ]
+  });
+  assert.deepEqual(transactions, [{ outcome: "resolved" }]);
+  const insert = queries[1];
+  assert.equal(insert?.operation, "insert");
+  assert.equal(insert?.targetTable, messageReactions);
+  assert.ok(insert?.steps.includes("onConflictDoNothing"), "reaction insert must be idempotent");
+  const aggregate = queries[2];
+  assert.equal(aggregate?.fromTable, messageReactions);
+  assert.ok((aggregate?.groupBy.length ?? 0) > 0, "aggregate must group by reaction key");
+});
+
+test("R14 addReaction refuses to react to a deleted message", async () => {
+  const tombstone = message(1, { deletedAt: now, contentJson: {} });
+  const { db } = createQueryRecorder([messageLock(tombstone)]);
+  await assert.rejects(
+    createConversationRepository(db).addReaction({
+      workspaceId,
+      conversationId,
+      messageId: tombstone.id,
+      userId: memberUserId,
+      reactionKey: "approve",
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationMessageDeletedError
+  );
+});
+
+test("R14 removeReaction deletes the row and returns the recomputed aggregate", async () => {
+  const target = message(1);
+  const { db, queries } = createQueryRecorder([
+    messageLock(target),
+    [],
+    [{ reactionKey: "approve", userIds: [creatorUserId] }]
+  ]);
+
+  const result = await createConversationRepository(db).removeReaction({
+    workspaceId,
+    conversationId,
+    messageId: target.id,
+    userId: memberUserId,
+    reactionKey: "approve",
+    at: now
+  });
+
+  assert.deepEqual(result, { reactions: [{ key: "approve", userIds: [creatorUserId] }] });
+  const del = queries[1];
+  assert.equal(del?.operation, "delete");
+  assert.equal(del?.targetTable, messageReactions);
+});
+
+test("R14 addReaction rejects an unknown reaction key before touching the database", async () => {
+  const { db, queries } = createQueryRecorder([]);
+  await assert.rejects(
+    createConversationRepository(db).addReaction({
+      workspaceId,
+      conversationId,
+      messageId: message(1).id,
+      userId: memberUserId,
+      reactionKey: "celebrate" as never,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationRepositoryInputError
+  );
+  assert.equal(queries.length, 0);
+});
+
+test("R14 advanceReadCursor clamps to conversation max seq and upserts monotonically", async () => {
+  const { db, queries, transactions } = createQueryRecorder([
+    [{ nextSeq: 3 }],
+    [{ lastReadSeq: 3 }]
+  ]);
+
+  const result = await createConversationRepository(db).advanceReadCursor({
+    workspaceId,
+    conversationId,
+    userId: memberUserId,
+    lastReadSeq: 999,
+    at: now
+  });
+
+  assert.deepEqual(result, { lastReadSeq: 3 });
+  assert.deepEqual(transactions, [{ outcome: "resolved" }]);
+  const upsert = queries[1];
+  assert.equal(upsert?.operation, "insert");
+  assert.equal(upsert?.targetTable, conversationReadCursors);
+  assert.ok(upsert?.steps.includes("onConflictDoUpdate"), "read cursor must upsert on conflict");
+  assert.equal(upsert?.returningCalled, true);
+  // 夹紧到 3（会话最大 seq），而不是把请求里的 999 直接写进去。
+  const values = upsert?.valuesValue as Record<string, unknown>;
+  assert.equal(values["lastReadSeq"], 3);
+  // ON CONFLICT 的 set 用 greatest(...) 保证单调不回退。
+  assert.ok(
+    queryTextFragments((upsert?.onConflict as { set?: { lastReadSeq?: unknown } })?.set?.lastReadSeq)
+      .join("")
+      .toLowerCase()
+      .includes("greatest")
+  );
+});
+
+test("R14 advanceReadCursor 404s when the target conversation is not active", async () => {
+  const { db } = createQueryRecorder([[]]);
+  await assert.rejects(
+    createConversationRepository(db).advanceReadCursor({
+      workspaceId,
+      conversationId,
+      userId: memberUserId,
+      lastReadSeq: 1,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationAccessDeniedError
+  );
+});
+
+test("R14 advanceReadCursor rejects a negative or unsafe last_read_seq", async () => {
+  const { db } = createQueryRecorder([]);
+  await assert.rejects(
+    createConversationRepository(db).advanceReadCursor({
+      workspaceId,
+      conversationId,
+      userId: memberUserId,
+      lastReadSeq: -1,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationRepositoryInputError
+  );
+});
+
+test("R14 listReceipts is tenant-joined, ordered, and capped", async () => {
+  const { db, queries } = createQueryRecorder([
+    [
+      { userId: creatorUserId, lastReadSeq: 5 },
+      { userId: memberUserId, lastReadSeq: 2 }
+    ]
+  ]);
+
+  const result = await createConversationRepository(db).listReceipts({ workspaceId, conversationId });
+
+  assert.deepEqual(result, [
+    { userId: creatorUserId, lastReadSeq: 5 },
+    { userId: memberUserId, lastReadSeq: 2 }
+  ]);
+  assert.equal(queries[0]?.fromTable, conversationReadCursors);
+  assert.ok(
+    queries[0]?.joins.some((join) => join.table === projectConversations),
+    "receipts must join the conversation for workspace scoping"
+  );
+  assert.equal(queries[0]?.limit, 500);
+});
+
+test("R14 listPins returns pinned, non-deleted messages seq-desc capped by the caller", async () => {
+  const pinnedRow = message(4, { pinnedAt: now, pinnedByUserId: creatorUserId });
+  const { db, queries } = createQueryRecorder([[pinnedRow]]);
+
+  const result = await createConversationRepository(db).listPins({ workspaceId, conversationId, limit: 50 });
+
+  assert.deepEqual(result, [pinnedRow]);
+  assert.equal(queries[0]?.fromTable, conversationMessages);
+  assert.ok(queryReferences(queries[0]?.where, conversationMessages.pinnedAt));
+  assert.ok(queryReferences(queries[0]?.where, conversationMessages.deletedAt));
+  assert.equal(queries[0]?.limit, 50);
+});
+
+test("R14 listReactionsForMessages groups one query and canonicalizes key order per message", async () => {
+  const messageA = "33000000-0000-4000-8000-00000000000a";
+  const messageB = "33000000-0000-4000-8000-00000000000b";
+  const { db, queries } = createQueryRecorder([
+    [
+      { messageId: messageA, reactionKey: "watch", userIds: [memberUserId] },
+      { messageId: messageA, reactionKey: "approve", userIds: [creatorUserId] },
+      { messageId: messageB, reactionKey: "done", userIds: [creatorUserId, memberUserId] }
+    ]
+  ]);
+
+  const result = await createConversationRepository(db).listReactionsForMessages({
+    conversationId,
+    messageIds: [messageA, messageB]
+  });
+
+  assert.deepEqual(result.get(messageA), [
+    { key: "approve", userIds: [creatorUserId] },
+    { key: "watch", userIds: [memberUserId] }
+  ]);
+  assert.deepEqual(result.get(messageB), [{ key: "done", userIds: [creatorUserId, memberUserId] }]);
+  // 单条 grouped 查询，禁 N+1。
+  assert.equal(queries.length, 1);
+  assert.ok((queries[0]?.groupBy.length ?? 0) > 0);
+});
+
+test("R14 listReactionsForMessages short-circuits an empty id set without a query", async () => {
+  const { db, queries } = createQueryRecorder([]);
+  const result = await createConversationRepository(db).listReactionsForMessages({ conversationId, messageIds: [] });
+  assert.equal(result.size, 0);
+  assert.equal(queries.length, 0);
+});
+
+test("R14 listReplyPreviews returns target message projections in one query keyed by id", async () => {
+  const targetId = "33000000-0000-4000-8000-00000000000c";
+  const { db, queries } = createQueryRecorder([
+    [
+      {
+        id: targetId,
+        senderType: "user",
+        senderUserId: creatorUserId,
+        kind: "text",
+        contentJson: { text: "原始消息" },
+        deletedAt: null
+      }
+    ]
+  ]);
+
+  const result = await createConversationRepository(db).listReplyPreviews({
+    conversationId,
+    messageIds: [targetId]
+  });
+
+  assert.deepEqual(result.get(targetId), {
+    id: targetId,
+    senderType: "user",
+    senderUserId: creatorUserId,
+    kind: "text",
+    contentJson: { text: "原始消息" },
+    deletedAt: null
+  });
+  assert.equal(queries.length, 1);
+  assert.ok(queryReferences(queries[0]?.where, conversationMessages.conversationId));
+});
+
+// ── R14 批 CHAT（引用回复写路径）：createUserMessage 的 reply_to 目标校验 ───────────────────
+// 查询顺序：access lock 五连（messageAccessLockResponses）→ reply 目标读 → seq 分配 → 插入。
+
+test("R14 createUserMessage stores a valid reply_to target (same conversation, not deleted)", async () => {
+  const inserted = message(1, { replyToMessageId: sourceMessageId });
+  const { db, queries, transactions } = createQueryRecorder([
+    ...messageAccessLockResponses(),
+    [{ id: sourceMessageId, deletedAt: null }],
+    [{ nextSeq: 1 }],
+    [inserted]
+  ]);
+
+  const result = await createConversationRepository(db).createUserMessage({
+    id: inserted.id,
+    workspaceId,
+    conversationId,
+    senderUserId: creatorUserId,
+    kind: "text",
+    contentJson: { text: "message 1" },
+    replyToMessageId: sourceMessageId,
+    at: now
+  });
+
+  assert.deepEqual(result, inserted);
+  assert.deepEqual(transactions, [{ outcome: "resolved" }]);
+  const insert = queries.find((query) => query.operation === "insert" && query.targetTable === conversationMessages);
+  assert.equal((insert?.valuesValue as Record<string, unknown>)["replyToMessageId"], sourceMessageId);
+});
+
+test("R14 createUserMessage rejects a reply to a deleted target with a 400-mapped error", async () => {
+  const { db, transactions } = createQueryRecorder([
+    ...messageAccessLockResponses(),
+    [{ id: sourceMessageId, deletedAt: now }]
+  ]);
+
+  await assert.rejects(
+    createConversationRepository(db).createUserMessage({
+      workspaceId,
+      conversationId,
+      senderUserId: creatorUserId,
+      kind: "text",
+      contentJson: { text: "回复墓碑" },
+      replyToMessageId: sourceMessageId,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationReplyTargetError
+  );
+  assert.deepEqual(transactions, [{ outcome: "rejected", errorName: "ConversationReplyTargetError" }]);
+});
+
+test("R14 createUserMessage rejects a reply to a target outside the conversation", async () => {
+  const { db } = createQueryRecorder([
+    ...messageAccessLockResponses(),
+    []
+  ]);
+
+  await assert.rejects(
+    createConversationRepository(db).createUserMessage({
+      workspaceId,
+      conversationId,
+      senderUserId: creatorUserId,
+      kind: "text",
+      contentJson: { text: "跨会话引用" },
+      replyToMessageId: sourceMessageId,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationReplyTargetError
+  );
 });

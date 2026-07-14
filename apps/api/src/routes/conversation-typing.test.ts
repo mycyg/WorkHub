@@ -145,6 +145,34 @@ function conversationsService(overrides: Partial<ConversationService> = {}): Con
     async createMessage(): Promise<ConversationMessageVM> {
       throw new Error("not needed");
     },
+    // R14 批 CHAT：typing 路由套件不触碰消息动作/已读/置顶端点，给拒绝桩满足 ConversationService 接口。
+    async editMessage(): Promise<ConversationMessageVM> {
+      throw new Error("not needed");
+    },
+    async deleteMessage(): Promise<ConversationMessageVM> {
+      throw new Error("not needed");
+    },
+    async pinMessage(): Promise<void> {
+      throw new Error("not needed");
+    },
+    async unpinMessage(): Promise<void> {
+      throw new Error("not needed");
+    },
+    async addReaction(): Promise<void> {
+      throw new Error("not needed");
+    },
+    async removeReaction(): Promise<void> {
+      throw new Error("not needed");
+    },
+    async advanceReadCursor() {
+      throw new Error("not needed");
+    },
+    async listReceipts() {
+      throw new Error("not needed");
+    },
+    async listPins() {
+      throw new Error("not needed");
+    },
     ...overrides
   };
 }

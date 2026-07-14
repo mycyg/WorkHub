@@ -2,7 +2,10 @@ import { z } from "zod";
 
 import { eventTypeSchema } from "./enums.js";
 import { idSchema, isoDateTimeSchema } from "./domain/common.js";
-import { conversationMessageVmSchema } from "./domain/conversation.js";
+import {
+  conversationMessageReactionVmSchema,
+  conversationMessageVmSchema
+} from "./domain/conversation.js";
 
 export const topicKindSchema = z.enum([
   "all",
@@ -269,3 +272,87 @@ export const conversationActionCardUpdatedEventSchema = z
     }
   });
 export type ConversationActionCardUpdatedEvent = z.infer<typeof conversationActionCardUpdatedEventSchema>;
+
+// R14 批 CHAT：conversation.message.updated——编辑/删除/置顶/取消置顶后发布。envelope 照 message.created
+// （actor+data=变更后全量消息 VM），客户端按 data.id 整条替换；本地无此 id → 视 snapshotStale 定点补拉。
+// 与 message.created 的关键区别：actor 是「执行这次变更的人」而不是「消息的发送者」——置顶一条 Cuu 消息
+// 时 actor 是置顶者（human），data.sender_type 却是 'cuu'。所以这里刻意不做 message.created 那种
+// actor↔sender 配对校验，只校验 topic 与 data.conversation_id 一致。编辑/删除/置顶都是人类操作，
+// 故 actor 恒为 human。
+export const conversationMessageUpdatedEventSchema = z
+  .object({
+    event_id: idSchema,
+    type: z.literal("conversation.message.updated"),
+    topic: z.string().min(1),
+    ts: isoDateTimeSchema,
+    actor: conversationHumanActorSchema,
+    project_id: idSchema,
+    preview_text: z.string().max(200).optional(),
+    data: conversationMessageVmSchema
+  })
+  .strict()
+  .superRefine((event, ctx) => {
+    if (event.topic !== `conversation:${event.data.conversation_id}`) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["topic"],
+        message: "message-updated topic must match data.conversation_id"
+      });
+    }
+  });
+export type ConversationMessageUpdatedEvent = z.infer<typeof conversationMessageUpdatedEventSchema>;
+
+// R14 批 CHAT：conversation.reaction.updated——加/减反应后发布该消息的全量聚合（幂等替换，不发增量）。
+// 极简 payload（无 actor/project_id）：客户端拿到就整条替换该消息的 reactions，谁加谁减不影响最终态。
+export const conversationReactionUpdatedEventSchema = z
+  .object({
+    event_id: idSchema,
+    type: z.literal("conversation.reaction.updated"),
+    topic: z.string().min(1),
+    ts: isoDateTimeSchema,
+    data: z
+      .object({
+        conversation_id: idSchema,
+        message_id: idSchema,
+        reactions: z.array(conversationMessageReactionVmSchema).max(5)
+      })
+      .strict()
+  })
+  .strict()
+  .superRefine((event, ctx) => {
+    if (event.topic !== `conversation:${event.data.conversation_id}`) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["topic"],
+        message: "reaction-updated topic must match data.conversation_id"
+      });
+    }
+  });
+export type ConversationReactionUpdatedEvent = z.infer<typeof conversationReactionUpdatedEventSchema>;
+
+// R14 批 CHAT：conversation.read.updated——某人已读游标推进后发布（聚合式「已读 N/M」+ 未读分割线增量）。
+export const conversationReadUpdatedEventSchema = z
+  .object({
+    event_id: idSchema,
+    type: z.literal("conversation.read.updated"),
+    topic: z.string().min(1),
+    ts: isoDateTimeSchema,
+    data: z
+      .object({
+        conversation_id: idSchema,
+        user_id: idSchema,
+        last_read_seq: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER)
+      })
+      .strict()
+  })
+  .strict()
+  .superRefine((event, ctx) => {
+    if (event.topic !== `conversation:${event.data.conversation_id}`) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["topic"],
+        message: "read-updated topic must match data.conversation_id"
+      });
+    }
+  });
+export type ConversationReadUpdatedEvent = z.infer<typeof conversationReadUpdatedEventSchema>;

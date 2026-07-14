@@ -11,6 +11,8 @@ import type { WorkHubDb } from "../client.js";
 import {
   conversationMessages,
   conversationParticipants,
+  conversationReadCursors,
+  messageReactions,
   projectConversations,
   projects,
   workspaceMemberships
@@ -19,7 +21,18 @@ import {
 export type ConversationRow = typeof projectConversations.$inferSelect;
 export type ConversationParticipantRow = typeof conversationParticipants.$inferSelect;
 export type ConversationMessageRow = typeof conversationMessages.$inferSelect;
+export type MessageReactionRow = typeof messageReactions.$inferSelect;
+export type ConversationReadCursorRow = typeof conversationReadCursors.$inferSelect;
 export type ConversationParticipantRole = "owner" | "member";
+// R14 批 CHAT：精选五键反应的 ASCII slug 集合。仓库层的规范顺序，页级聚合按这个顺序稳定输出。
+export type ConversationReactionKey = "approve" | "disagree" | "done" | "question" | "watch";
+export const CONVERSATION_REACTION_KEYS: readonly ConversationReactionKey[] = [
+  "approve",
+  "disagree",
+  "done",
+  "question",
+  "watch"
+];
 
 export type VisibleConversationRow = ConversationRow & {
   participantRole: ConversationParticipantRole | null;
@@ -89,7 +102,9 @@ type CreateUserMessageBaseInput = {
 
 export type CreateUserMessageInput = CreateUserMessageBaseInput &
   (
-    | { kind: "text"; contentJson: { text: string } }
+    // R14 批 CHAT（引用回复）：仅 text 新消息可带 replyToMessageId——目标须同会话、存在、未删除
+    // （对已删/跨会话/不存在的目标抛 ConversationReplyTargetError → 服务层 400）。file_card 不支持引用。
+    | { kind: "text"; contentJson: { text: string }; replyToMessageId?: string }
     | { kind: "file_card"; contentJson: { drive_item_id: string; snapshot_name: string } }
   );
 
@@ -203,6 +218,91 @@ export type ReplyJudgeCandidateRow = {
   lastMessageCreatedAt: Date;
 };
 
+// ── R14 批 CHAT：编辑 / 墓碑删除 / 引用 / 置顶 / reaction / 已读游标 ──────────────────────
+
+export type EditMessageInput = {
+  workspaceId: string;
+  conversationId: string;
+  messageId: string;
+  editorUserId: string;
+  text: string;
+  // 编辑窗（毫秒）——服务端策略（15 分钟），仓库把「created_at + window >= at」并进同一次原子判定，
+  // 不跨调用留 TOCTOU 缝。
+  editWindowMs: number;
+  at?: Date;
+};
+
+export type DeleteMessageInput = {
+  workspaceId: string;
+  conversationId: string;
+  messageId: string;
+  deleterUserId: string;
+  at?: Date;
+};
+
+export type PinMessageInput = {
+  workspaceId: string;
+  conversationId: string;
+  messageId: string;
+  pinnerUserId: string;
+  at?: Date;
+};
+
+export type UnpinMessageInput = {
+  workspaceId: string;
+  conversationId: string;
+  messageId: string;
+  at?: Date;
+};
+
+export type ReactionMutationInput = {
+  workspaceId: string;
+  conversationId: string;
+  messageId: string;
+  userId: string;
+  reactionKey: ConversationReactionKey;
+  at?: Date;
+};
+
+// 页级 reaction 全量聚合——一条消息一个键一行，user_ids 是按键去重后的全部反应者（幂等替换语义）。
+export type MessageReactionAggregate = {
+  key: ConversationReactionKey;
+  userIds: string[];
+};
+
+export type ReactionMutationResult = {
+  reactions: MessageReactionAggregate[];
+};
+
+export type AdvanceReadCursorInput = {
+  workspaceId: string;
+  conversationId: string;
+  userId: string;
+  lastReadSeq: number;
+  at?: Date;
+};
+
+export type ReadReceiptRow = {
+  userId: string;
+  lastReadSeq: number;
+};
+
+export type ListPinsInput = {
+  workspaceId: string;
+  conversationId: string;
+  limit: number;
+};
+
+// 引用预览的目标消息投影——服务层据此拼 preview_text(≤80)+deleted 布尔，不在仓库层做文本裁剪。
+export type ReplyPreviewTargetRow = {
+  id: string;
+  senderType: ConversationMessageRow["senderType"];
+  senderUserId: string | null;
+  kind: ConversationMessageRow["kind"];
+  contentJson: Record<string, unknown>;
+  deletedAt: Date | null;
+};
+
 export type ConversationRepository = {
   listVisibleForProject: (
     input: ListVisibleConversationsInput
@@ -221,6 +321,26 @@ export type ConversationRepository = {
   listReplyJudgeCandidates: (input: ListReplyJudgeCandidatesInput) => Promise<ReplyJudgeCandidateRow[]>;
   // R13 批 C1：新增，不改动上面任何既有方法的签名/行为——滚动摘要落库。
   updateContextSummary: (input: UpdateContextSummaryInput) => Promise<void>;
+  // R14 批 CHAT：以下全部新增，不改动上面任何既有方法。语义红线在服务层强制（见 apps/api/src/
+  // services/conversations.ts），仓库层负责租户安全的原子写与页级无 N+1 聚合。
+  editMessage: (input: EditMessageInput) => Promise<ConversationMessageRow>;
+  deleteMessage: (input: DeleteMessageInput) => Promise<ConversationMessageRow>;
+  pinMessage: (input: PinMessageInput) => Promise<ConversationMessageRow>;
+  unpinMessage: (input: UnpinMessageInput) => Promise<ConversationMessageRow>;
+  addReaction: (input: ReactionMutationInput) => Promise<ReactionMutationResult>;
+  removeReaction: (input: ReactionMutationInput) => Promise<ReactionMutationResult>;
+  advanceReadCursor: (input: AdvanceReadCursorInput) => Promise<{ lastReadSeq: number }>;
+  listReceipts: (input: { workspaceId: string; conversationId: string }) => Promise<ReadReceiptRow[]>;
+  listPins: (input: ListPinsInput) => Promise<ConversationMessageRow[]>;
+  // 页级富化：给一页/一批消息一次性取回 reaction 聚合与引用目标——禁 N+1（每批一条 grouped 查询）。
+  listReactionsForMessages: (input: {
+    conversationId: string;
+    messageIds: string[];
+  }) => Promise<Map<string, MessageReactionAggregate[]>>;
+  listReplyPreviews: (input: {
+    conversationId: string;
+    messageIds: string[];
+  }) => Promise<Map<string, ReplyPreviewTargetRow>>;
 };
 
 class NamedConversationRepositoryError extends Error {
@@ -241,6 +361,19 @@ export class ConversationThreadRootMismatchError extends NamedConversationReposi
 export class ConversationSequenceExhaustedError extends NamedConversationRepositoryError {}
 export class ConversationSequenceAllocationError extends NamedConversationRepositoryError {}
 export class ConversationMessageInsertFailedError extends NamedConversationRepositoryError {}
+// R14 批 CHAT：消息动作（编辑/删除/置顶/反应）的结构性失败——服务层映射到具体 HTTP 状态。
+export class ConversationMessageNotFoundError extends NamedConversationRepositoryError {}
+// 编辑/删除只许本人（sender_type='user' 且 sender_user_id=自己）——Cuu/system/他人消息命中这条。
+export class ConversationMessageActorMismatchError extends NamedConversationRepositoryError {}
+// 编辑只许 kind='text'（file_card 等不可编辑）。
+export class ConversationMessageNotTextError extends NamedConversationRepositoryError {}
+// 编辑窗（15 分钟）已过。
+export class ConversationMessageEditWindowError extends NamedConversationRepositoryError {}
+// 目标消息已是墓碑——编辑/置顶/加反应命中这条（幂等删除不走这条，见 deleteMessage）。
+export class ConversationMessageDeletedError extends NamedConversationRepositoryError {}
+export class ConversationMessageMutationFailedError extends NamedConversationRepositoryError {}
+// R14 批 CHAT（引用回复）：reply_to 目标跨会话/不存在/已删除——服务层映射到 400。
+export class ConversationReplyTargetError extends NamedConversationRepositoryError {}
 
 const conversationSelection = {
   id: projectConversations.id,
@@ -276,6 +409,15 @@ const messageSelection = {
   kind: conversationMessages.kind,
   contentJson: conversationMessages.contentJson,
   threadRootId: conversationMessages.threadRootId,
+  // R14 批 CHAT：编辑/墓碑/引用/置顶列必须显式投影——不加进 messageSelection，listMessagesAfter/Before
+  // 返回的行在运行时这些字段就是 undefined（同 cuuEnabled/contextSummary 的教训）。下游墓碑短路
+  // （historyDisplayText 读 deletedAt）与 VM 富化（编辑标/置顶/引用块）全靠这几列真的被读回来。
+  editedAt: conversationMessages.editedAt,
+  deletedAt: conversationMessages.deletedAt,
+  deletedByUserId: conversationMessages.deletedByUserId,
+  replyToMessageId: conversationMessages.replyToMessageId,
+  pinnedAt: conversationMessages.pinnedAt,
+  pinnedByUserId: conversationMessages.pinnedByUserId,
   createdAt: conversationMessages.createdAt
 };
 
@@ -289,6 +431,13 @@ function assertLimit(limit: number) {
     throw new ConversationRepositoryInputError("conversation limit must be an integer from 1 through 100");
   }
 }
+
+// R14 批 CHAT：已读回执读取上限——main 会话可能是整工作区成员，游标行数无界，读端点必须封顶
+// （04 铁律#4）。500 对内部团队规模足够，聚合式「已读 N/M」在服务/客户端上层算。
+const CONVERSATION_READ_RECEIPTS_CAP = 500;
+// 页级富化（reactions/reply 预览）的 IN 列表上限——正常调用方传的是一页消息（≤100）或置顶清单
+// （≤50），这里只做防御性封顶，防止误用把无界 id 列表拼进 IN。
+const CONVERSATION_PAGE_ENRICH_CAP = 200;
 
 function assertCursor(afterSeq: number) {
   if (!Number.isSafeInteger(afterSeq) || afterSeq < 0) {
@@ -635,6 +784,67 @@ async function lockActiveConversation(
   return conversation ?? null;
 }
 
+// R14 批 CHAT：锁定一条消息（租户安全：只锁属于本工作区、且所在会话未删的消息），供编辑/删除/置顶/
+// 反应的原子写用。FOR UPDATE OF conversation_messages 只锁消息行本身（不锁会话），串行化并发编辑/删除。
+async function lockActiveMessage(
+  db: WorkHubDb,
+  input: { workspaceId: string; conversationId: string; messageId: string }
+): Promise<ConversationMessageRow | null> {
+  const [row] = await db
+    .select({ message: conversationMessages })
+    .from(conversationMessages)
+    .innerJoin(
+      projectConversations,
+      and(
+        eq(projectConversations.id, conversationMessages.conversationId),
+        eq(projectConversations.workspaceId, input.workspaceId),
+        isNull(projectConversations.deletedAt)
+      )
+    )
+    .where(
+      and(
+        eq(conversationMessages.conversationId, input.conversationId),
+        eq(conversationMessages.id, input.messageId)
+      )
+    )
+    .for("update", { of: conversationMessages })
+    .limit(1);
+  return row?.message ?? null;
+}
+
+// R14 批 CHAT：一条消息当前的 reaction 全量聚合（单消息版，供加/减反应后组装 SSE 事件）。按规范键序
+// 稳定输出，跳过零反应者的键。
+async function aggregateMessageReactions(
+  db: WorkHubDb,
+  input: { conversationId: string; messageId: string }
+): Promise<MessageReactionAggregate[]> {
+  const rows = await db
+    .select({
+      reactionKey: messageReactions.reactionKey,
+      userIds: sql<string[]>`array_agg(${messageReactions.userId} order by ${messageReactions.userId})`
+    })
+    .from(messageReactions)
+    .where(
+      and(
+        eq(messageReactions.conversationId, input.conversationId),
+        eq(messageReactions.messageId, input.messageId)
+      )
+    )
+    .groupBy(messageReactions.reactionKey);
+  const byKey = new Map<ConversationReactionKey, string[]>();
+  for (const row of rows) {
+    byKey.set(row.reactionKey as ConversationReactionKey, row.userIds ?? []);
+  }
+  const aggregates: MessageReactionAggregate[] = [];
+  for (const key of CONVERSATION_REACTION_KEYS) {
+    const userIds = byKey.get(key);
+    if (userIds && userIds.length > 0) {
+      aggregates.push({ key, userIds });
+    }
+  }
+  return aggregates;
+}
+
 export function createConversationRepository(db: WorkHubDb): ConversationRepository {
   return {
     async listVisibleForProject(input) {
@@ -901,6 +1111,29 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
           }
         }
 
+        // R14 批 CHAT（引用回复）：目标须同会话、存在、未删除。跨会话/不存在/已删除都抛
+        // ConversationReplyTargetError（服务层 → 400）。目标事后被删只是变墓碑，这条引用边靠复合外键
+        // 保住、读时 join 判墓碑；这里只在“创建引用消息的当下”拦已删目标。
+        const replyToMessageId = input.kind === "text" ? input.replyToMessageId : undefined;
+        if (replyToMessageId) {
+          const [target] = await tx
+            .select({ id: conversationMessages.id, deletedAt: conversationMessages.deletedAt })
+            .from(conversationMessages)
+            .where(
+              and(
+                eq(conversationMessages.conversationId, input.conversationId),
+                eq(conversationMessages.id, replyToMessageId)
+              )
+            )
+            .limit(1);
+          if (!target) {
+            throw new ConversationReplyTargetError("reply target does not belong to the target conversation");
+          }
+          if (target.deletedAt) {
+            throw new ConversationReplyTargetError("reply target has been deleted");
+          }
+        }
+
         const currentSeq = conversation.nextSeq;
         if (!Number.isSafeInteger(currentSeq) || currentSeq < 0) {
           throw new ConversationSequenceAllocationError("stored conversation sequence is not a safe integer");
@@ -942,6 +1175,7 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
             kind: input.kind,
             contentJson: input.contentJson,
             ...(input.threadRootId ? { threadRootId: input.threadRootId } : {}),
+            ...(replyToMessageId ? { replyToMessageId } : {}),
             createdAt: at
           })
           .returning();
@@ -1191,7 +1425,10 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
           conversationMessages,
           and(
             eq(conversationMessages.conversationId, projectConversations.id),
-            eq(conversationMessages.senderType, "user")
+            eq(conversationMessages.senderType, "user"),
+            // R14 批 CHAT（下游墓碑过滤）：判定器不能把 Cuu 拉去回应一条已被删除的消息——删掉的
+            // 尾消息不再算「最近有一条值得判的人类消息」，也不进下面 recentUserMessages 的归并。
+            isNull(conversationMessages.deletedAt)
           )
         )
         .where(
@@ -1230,7 +1467,10 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
         .where(
           and(
             inArray(conversationMessages.conversationId, conversationIds),
-            eq(conversationMessages.senderType, "user")
+            eq(conversationMessages.senderType, "user"),
+            // R14 批 CHAT（下游墓碑过滤）：与上面 groups 查询同口径——归并每会话「最新一条人类消息」
+            // 时跳过墓碑，保证挑出的 lastMessage 一定是活着的、可回应的那条。
+            isNull(conversationMessages.deletedAt)
           )
         )
         .orderBy(desc(conversationMessages.seq))
@@ -1287,6 +1527,392 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
             lt(projectConversations.contextSummaryThroughSeq, input.throughSeq)
           )
         );
+    },
+
+    // ── R14 批 CHAT：编辑 ────────────────────────────────────────────────────────────
+    // 仅本人（sender_type='user' 且 sender_user_id=自己）、仅 kind='text'、created_at+window 内、
+    // 目标未删除。四道判定在锁住消息行后的同一次事务里做，不跨调用留 TOCTOU 缝。
+    async editMessage(input) {
+      if (typeof input.text !== "string" || input.text.length === 0) {
+        throw new ConversationRepositoryInputError("edit text must be a non-empty string");
+      }
+      if (!Number.isFinite(input.editWindowMs) || input.editWindowMs < 0) {
+        throw new ConversationRepositoryInputError("edit window must be a non-negative number of milliseconds");
+      }
+      const at = input.at ?? new Date();
+      const editorUserId = input.editorUserId.toLowerCase();
+      return db.transaction(async (tx) => {
+        const message = await lockActiveMessage(tx, input);
+        if (!message) {
+          throw new ConversationMessageNotFoundError("message not found in the active conversation");
+        }
+        if (message.senderType !== "user" || (message.senderUserId?.toLowerCase() ?? null) !== editorUserId) {
+          throw new ConversationMessageActorMismatchError("only the original sender can edit this message");
+        }
+        if (message.deletedAt) {
+          throw new ConversationMessageDeletedError("cannot edit a deleted message");
+        }
+        if (message.kind !== "text") {
+          throw new ConversationMessageNotTextError("only text messages can be edited");
+        }
+        if (at.getTime() - message.createdAt.getTime() > input.editWindowMs) {
+          throw new ConversationMessageEditWindowError("the edit window for this message has closed");
+        }
+        const [updated] = await tx
+          .update(conversationMessages)
+          .set({ contentJson: { text: input.text }, editedAt: at })
+          .where(
+            and(
+              eq(conversationMessages.id, input.messageId),
+              eq(conversationMessages.conversationId, input.conversationId)
+            )
+          )
+          .returning();
+        if (!updated) {
+          throw new ConversationMessageMutationFailedError("edit update returned no row");
+        }
+        return updated;
+      });
+    },
+
+    // ── R14 批 CHAT：墓碑删除（幂等） ─────────────────────────────────────────────────
+    // 仅本人、不限时。墓碑=deleted_at+deleted_by_user_id 置位、content_json 清 {}（file_card 不留
+    // 文件名）、顺带取消置顶（删了的消息不该继续挂在置顶栏）。不物理删、seq 不回收。重复删返回现状。
+    async deleteMessage(input) {
+      const at = input.at ?? new Date();
+      const deleterUserId = input.deleterUserId.toLowerCase();
+      return db.transaction(async (tx) => {
+        const message = await lockActiveMessage(tx, input);
+        if (!message) {
+          throw new ConversationMessageNotFoundError("message not found in the active conversation");
+        }
+        if (message.senderType !== "user" || (message.senderUserId?.toLowerCase() ?? null) !== deleterUserId) {
+          throw new ConversationMessageActorMismatchError("only the original sender can delete this message");
+        }
+        if (message.deletedAt) {
+          return message;
+        }
+        const [updated] = await tx
+          .update(conversationMessages)
+          .set({
+            deletedAt: at,
+            deletedByUserId: deleterUserId,
+            contentJson: {},
+            pinnedAt: null,
+            pinnedByUserId: null
+          })
+          .where(
+            and(
+              eq(conversationMessages.id, input.messageId),
+              eq(conversationMessages.conversationId, input.conversationId)
+            )
+          )
+          .returning();
+        if (!updated) {
+          throw new ConversationMessageMutationFailedError("delete update returned no row");
+        }
+        return updated;
+      });
+    },
+
+    // ── R14 批 CHAT：置顶 / 取消置顶（幂等） ──────────────────────────────────────────
+    // 会话可见者皆可置顶/取消（可见性在服务层 assertConversationAccess 已把关）；已删除消息不可置顶。
+    async pinMessage(input) {
+      const at = input.at ?? new Date();
+      const pinnerUserId = input.pinnerUserId.toLowerCase();
+      return db.transaction(async (tx) => {
+        const message = await lockActiveMessage(tx, input);
+        if (!message) {
+          throw new ConversationMessageNotFoundError("message not found in the active conversation");
+        }
+        if (message.deletedAt) {
+          throw new ConversationMessageDeletedError("cannot pin a deleted message");
+        }
+        if (message.pinnedAt) {
+          return message;
+        }
+        const [updated] = await tx
+          .update(conversationMessages)
+          .set({ pinnedAt: at, pinnedByUserId: pinnerUserId })
+          .where(
+            and(
+              eq(conversationMessages.id, input.messageId),
+              eq(conversationMessages.conversationId, input.conversationId)
+            )
+          )
+          .returning();
+        if (!updated) {
+          throw new ConversationMessageMutationFailedError("pin update returned no row");
+        }
+        return updated;
+      });
+    },
+
+    async unpinMessage(input) {
+      return db.transaction(async (tx) => {
+        const message = await lockActiveMessage(tx, input);
+        if (!message) {
+          throw new ConversationMessageNotFoundError("message not found in the active conversation");
+        }
+        if (!message.pinnedAt) {
+          return message;
+        }
+        const [updated] = await tx
+          .update(conversationMessages)
+          .set({ pinnedAt: null, pinnedByUserId: null })
+          .where(
+            and(
+              eq(conversationMessages.id, input.messageId),
+              eq(conversationMessages.conversationId, input.conversationId)
+            )
+          )
+          .returning();
+        if (!updated) {
+          throw new ConversationMessageMutationFailedError("unpin update returned no row");
+        }
+        return updated;
+      });
+    },
+
+    // ── R14 批 CHAT：reaction 幂等加/减 ──────────────────────────────────────────────
+    // 登录可见会话者皆可加/减；对已删除消息加反应回 409（删除消息命中 ConversationMessageDeletedError）；
+    // 一人同 key 同消息至多一条（unique 兜底 + onConflictDoNothing 幂等）。返回该消息的全量聚合，服务层
+    // 据此发 conversation.reaction.updated（幂等替换语义，不发增量）。
+    async addReaction(input) {
+      if (!CONVERSATION_REACTION_KEYS.includes(input.reactionKey)) {
+        throw new ConversationRepositoryInputError("unknown reaction key");
+      }
+      const at = input.at ?? new Date();
+      const userId = input.userId.toLowerCase();
+      return db.transaction(async (tx) => {
+        const message = await lockActiveMessage(tx, input);
+        if (!message) {
+          throw new ConversationMessageNotFoundError("message not found in the active conversation");
+        }
+        if (message.deletedAt) {
+          throw new ConversationMessageDeletedError("cannot react to a deleted message");
+        }
+        await tx
+          .insert(messageReactions)
+          .values({
+            id: randomUUID(),
+            messageId: input.messageId,
+            conversationId: input.conversationId,
+            userId,
+            reactionKey: input.reactionKey,
+            createdAt: at
+          })
+          .onConflictDoNothing({
+            target: [messageReactions.messageId, messageReactions.userId, messageReactions.reactionKey]
+          });
+        const reactions = await aggregateMessageReactions(tx, input);
+        return { reactions };
+      });
+    },
+
+    async removeReaction(input) {
+      if (!CONVERSATION_REACTION_KEYS.includes(input.reactionKey)) {
+        throw new ConversationRepositoryInputError("unknown reaction key");
+      }
+      const userId = input.userId.toLowerCase();
+      return db.transaction(async (tx) => {
+        // 取反应不因目标已删除而拒（DELETE reaction 只有 204/404 两态）——但仍要求消息存在于本租户，
+        // 否则给 404，不静默假装成功。
+        const message = await lockActiveMessage(tx, input);
+        if (!message) {
+          throw new ConversationMessageNotFoundError("message not found in the active conversation");
+        }
+        await tx
+          .delete(messageReactions)
+          .where(
+            and(
+              eq(messageReactions.messageId, input.messageId),
+              eq(messageReactions.userId, userId),
+              eq(messageReactions.reactionKey, input.reactionKey)
+            )
+          );
+        const reactions = await aggregateMessageReactions(tx, input);
+        return { reactions };
+      });
+    },
+
+    // ── R14 批 CHAT：已读游标单调 upsert ─────────────────────────────────────────────
+    // 单调推进（greatest 兜底，收到更小值静默返回当前值）、夹紧不得超过会话当前最大 seq（= next_seq）。
+    async advanceReadCursor(input) {
+      assertCursor(input.lastReadSeq);
+      const at = input.at ?? new Date();
+      const userId = input.userId.toLowerCase();
+      return db.transaction(async (tx) => {
+        const [conversation] = await tx
+          .select({ nextSeq: projectConversations.nextSeq })
+          .from(projectConversations)
+          .where(
+            and(
+              eq(projectConversations.id, input.conversationId),
+              eq(projectConversations.workspaceId, input.workspaceId),
+              isNull(projectConversations.deletedAt)
+            )
+          )
+          .limit(1);
+        if (!conversation) {
+          throw new ConversationAccessDeniedError("read cursor target conversation is not active");
+        }
+        const clamped = Math.min(input.lastReadSeq, conversation.nextSeq);
+        const [row] = await tx
+          .insert(conversationReadCursors)
+          .values({
+            id: randomUUID(),
+            conversationId: input.conversationId,
+            userId,
+            lastReadSeq: clamped,
+            updatedAt: at
+          })
+          .onConflictDoUpdate({
+            target: [conversationReadCursors.conversationId, conversationReadCursors.userId],
+            set: {
+              lastReadSeq: sql`greatest(${conversationReadCursors.lastReadSeq}, ${clamped})`,
+              updatedAt: at
+            }
+          })
+          .returning({ lastReadSeq: conversationReadCursors.lastReadSeq });
+        if (!row) {
+          throw new ConversationMessageMutationFailedError("read cursor upsert returned no row");
+        }
+        return { lastReadSeq: row.lastReadSeq };
+      });
+    },
+
+    async listReceipts(input) {
+      const rows = await db
+        .select({
+          userId: conversationReadCursors.userId,
+          lastReadSeq: conversationReadCursors.lastReadSeq
+        })
+        .from(conversationReadCursors)
+        .innerJoin(
+          projectConversations,
+          and(
+            eq(projectConversations.id, conversationReadCursors.conversationId),
+            eq(projectConversations.workspaceId, input.workspaceId),
+            isNull(projectConversations.deletedAt)
+          )
+        )
+        .where(eq(conversationReadCursors.conversationId, input.conversationId))
+        .orderBy(asc(conversationReadCursors.userId))
+        .limit(CONVERSATION_READ_RECEIPTS_CAP);
+      return rows.map((row) => ({ userId: row.userId, lastReadSeq: row.lastReadSeq }));
+    },
+
+    async listPins(input) {
+      assertLimit(input.limit);
+      const rows = await db
+        .select(messageSelection)
+        .from(conversationMessages)
+        .innerJoin(
+          projectConversations,
+          and(
+            eq(projectConversations.id, conversationMessages.conversationId),
+            eq(projectConversations.workspaceId, input.workspaceId),
+            isNull(projectConversations.deletedAt)
+          )
+        )
+        .where(
+          and(
+            eq(conversationMessages.conversationId, input.conversationId),
+            isNotNull(conversationMessages.pinnedAt),
+            // 删除已顺带取消置顶（见 deleteMessage），这条是防御性双保险：墓碑绝不进置顶栏。
+            isNull(conversationMessages.deletedAt)
+          )
+        )
+        .orderBy(desc(conversationMessages.seq))
+        .limit(input.limit);
+      return rows as ConversationMessageRow[];
+    },
+
+    // ── R14 批 CHAT：页级富化（禁 N+1，每批一条 grouped 查询） ────────────────────────
+    async listReactionsForMessages(input) {
+      const messageIds = [...new Set(input.messageIds)];
+      const result = new Map<string, MessageReactionAggregate[]>();
+      if (messageIds.length === 0) {
+        return result;
+      }
+      if (messageIds.length > CONVERSATION_PAGE_ENRICH_CAP) {
+        throw new ConversationRepositoryInputError("reaction enrichment message set exceeds the page cap");
+      }
+      const rows = await db
+        .select({
+          messageId: messageReactions.messageId,
+          reactionKey: messageReactions.reactionKey,
+          userIds: sql<string[]>`array_agg(${messageReactions.userId} order by ${messageReactions.userId})`
+        })
+        .from(messageReactions)
+        .where(
+          and(
+            eq(messageReactions.conversationId, input.conversationId),
+            inArray(messageReactions.messageId, messageIds)
+          )
+        )
+        .groupBy(messageReactions.messageId, messageReactions.reactionKey);
+      const byMessageKey = new Map<string, Map<ConversationReactionKey, string[]>>();
+      for (const row of rows) {
+        let keyMap = byMessageKey.get(row.messageId);
+        if (!keyMap) {
+          keyMap = new Map();
+          byMessageKey.set(row.messageId, keyMap);
+        }
+        keyMap.set(row.reactionKey as ConversationReactionKey, row.userIds ?? []);
+      }
+      for (const [messageId, keyMap] of byMessageKey) {
+        const aggregates: MessageReactionAggregate[] = [];
+        for (const key of CONVERSATION_REACTION_KEYS) {
+          const userIds = keyMap.get(key);
+          if (userIds && userIds.length > 0) {
+            aggregates.push({ key, userIds });
+          }
+        }
+        if (aggregates.length > 0) {
+          result.set(messageId, aggregates);
+        }
+      }
+      return result;
+    },
+
+    async listReplyPreviews(input) {
+      const messageIds = [...new Set(input.messageIds)];
+      const result = new Map<string, ReplyPreviewTargetRow>();
+      if (messageIds.length === 0) {
+        return result;
+      }
+      if (messageIds.length > CONVERSATION_PAGE_ENRICH_CAP) {
+        throw new ConversationRepositoryInputError("reply preview message set exceeds the page cap");
+      }
+      const rows = await db
+        .select({
+          id: conversationMessages.id,
+          senderType: conversationMessages.senderType,
+          senderUserId: conversationMessages.senderUserId,
+          kind: conversationMessages.kind,
+          contentJson: conversationMessages.contentJson,
+          deletedAt: conversationMessages.deletedAt
+        })
+        .from(conversationMessages)
+        .where(
+          and(
+            eq(conversationMessages.conversationId, input.conversationId),
+            inArray(conversationMessages.id, messageIds)
+          )
+        );
+      for (const row of rows) {
+        result.set(row.id, {
+          id: row.id,
+          senderType: row.senderType,
+          senderUserId: row.senderUserId,
+          kind: row.kind,
+          contentJson: row.contentJson as Record<string, unknown>,
+          deletedAt: row.deletedAt
+        });
+      }
+      return result;
     }
   };
 }

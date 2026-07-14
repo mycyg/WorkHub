@@ -1284,7 +1284,7 @@ test("R12 project AI governance VM is strict and nullable-explicit for synthesiz
   assert.equal(schema.safeParse({ ...value, quiet_hours: {} }).success, false);
 });
 
-test("R12 conversation topics and all nine event names are formal protocol values", () => {
+test("R12 conversation topics and all twelve event names are formal protocol values", () => {
   const eventTopicSchema = requiredSchema<{ kind: string; topic: string; id?: string }>("eventTopicSchema");
   const eventTypes = (contracts as Record<string, unknown>)["eventTypes"] as Record<string, string> | undefined;
   assert.ok(eventTypes, "missing eventTypes export");
@@ -1322,6 +1322,10 @@ test("R12 conversation topics and all nine event names are formal protocol value
     {
       conversationMessageCreated: eventTypes.conversationMessageCreated,
       conversationMessageDelta: eventTypes.conversationMessageDelta,
+      // R14 批 CHAT：编辑/删除/置顶、reaction、已读三个 additive 事件名钉进本清单（批准变更）。
+      conversationMessageUpdated: eventTypes.conversationMessageUpdated,
+      conversationReactionUpdated: eventTypes.conversationReactionUpdated,
+      conversationReadUpdated: eventTypes.conversationReadUpdated,
       conversationToolBegin: eventTypes.conversationToolBegin,
       conversationToolOutputDelta: eventTypes.conversationToolOutputDelta,
       conversationToolEnd: eventTypes.conversationToolEnd,
@@ -1333,6 +1337,9 @@ test("R12 conversation topics and all nine event names are formal protocol value
     {
       conversationMessageCreated: "conversation.message.created",
       conversationMessageDelta: "conversation.message.delta",
+      conversationMessageUpdated: "conversation.message.updated",
+      conversationReactionUpdated: "conversation.reaction.updated",
+      conversationReadUpdated: "conversation.read.updated",
       conversationToolBegin: "conversation.tool.begin",
       conversationToolOutputDelta: "conversation.tool.output_delta",
       conversationToolEnd: "conversation.tool.end",

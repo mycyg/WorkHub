@@ -1,7 +1,7 @@
 import type { WorkHubDb } from "./client.js";
 
 export type RecordedQuery = {
-  operation: "select" | "insert" | "update" | "execute";
+  operation: "select" | "insert" | "update" | "delete" | "execute";
   selection?: unknown;
   fromTable?: unknown;
   targetTable?: unknown;
@@ -166,6 +166,12 @@ class QueryRecorderDb {
 
   update(table: unknown): RecordedQueryBuilder {
     return this.createBuilder("update", { targetTable: table });
+  }
+
+  // R14 批 CHAT：conversations 仓库的 removeReaction 用 db.delete(...)——这个假 DB 之前没有任何调用方
+  // 用过 delete，补一个和 update 同档次的透传记录（targetTable + where 透传，thenable 返回 seeded 行）。
+  delete(table: unknown): RecordedQueryBuilder {
+    return this.createBuilder("delete", { targetTable: table });
   }
 
   async execute(query: unknown): Promise<unknown[]> {
