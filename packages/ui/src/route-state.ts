@@ -19,6 +19,7 @@ export type R4WebRouteKey =
   | "cost"
   | "agents"
   | "knowledge"
+  | "search"
   | "skills"
   | "settings";
 
@@ -56,6 +57,7 @@ export const r4WebRouteKeys = [
   "cost",
   "agents",
   "knowledge",
+  "search",
   "skills",
   "settings"
 ] as const satisfies readonly R4WebRouteKey[];
@@ -99,6 +101,7 @@ const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; ro
     cost: { label: "成本仪表盘", route: "/dashboard/cost" },
     agents: { label: "军团", route: "/dashboard/agents" },
     knowledge: { label: "证据检索", route: "/knowledge/search" },
+    search: { label: "搜索", route: "/dashboard/search" },
     skills: { label: "团队技能", route: "/dashboard/skills" },
     settings: { label: "设置", route: "/settings" }
   },
@@ -119,6 +122,7 @@ const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; ro
     cost: { label: "Cost dashboard", route: "/dashboard/cost" },
     agents: { label: "Agent teams", route: "/dashboard/agents" },
     knowledge: { label: "Evidence search", route: "/knowledge/search" },
+    search: { label: "Search", route: "/dashboard/search" },
     skills: { label: "Team skills", route: "/dashboard/skills" },
     settings: { label: "Settings", route: "/settings" }
   }

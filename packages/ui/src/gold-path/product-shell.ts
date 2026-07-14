@@ -52,6 +52,7 @@ type ProductShellCopyKey =
   | "nav.intake"
   | "nav.health"
   | "nav.knowledge"
+  | "nav.search"
   | "nav.skills"
   | "nav.project-home"
   | "topbar.scope"
@@ -78,6 +79,7 @@ type ProductShellCopyKey =
   | "rail.nextIntake"
   | "rail.nextHealth"
   | "rail.nextKnowledge"
+  | "rail.nextSearch"
   | "rail.nextSkills"
   | "masthead.home"
   | "masthead.projects"
@@ -139,6 +141,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "nav.intake": "提需求",
     "nav.health": "项目健康",
     "nav.knowledge": "知识",
+    "nav.search": "搜索",
     "nav.skills": "技能",
     "nav.project-home": "本项目",
     "topbar.scope": "网页版",
@@ -165,6 +168,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "rail.nextIntake": "先选方向，需要时再展开手动补充。",
     "rail.nextHealth": "先看红黄风险项，再决定要不要拍板介入。",
     "rail.nextKnowledge": "按证据来源核对，再回到对应任务或审批。",
+    "rail.nextSearch": "跨会话、网盘、任务、会议一起搜——点结果直达原处，会话内容去桌面工作台看。",
     "rail.nextSkills": "看团队技能战绩与自进化记录，再决定要不要调整。",
     "masthead.home": "默认只把最该你拿主意的一件事放在最前，其它在后台安静运行。",
     "masthead.projects": "项目即产品：每个项目汇总进行中工作项、负责人和最近更新，像仓库索引一样一眼看全。",
@@ -225,6 +229,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "nav.intake": "New request",
     "nav.health": "Project health",
     "nav.knowledge": "Knowledge",
+    "nav.search": "Search",
     "nav.skills": "Skills",
     "nav.project-home": "This project",
     "topbar.scope": "Web manager",
@@ -251,6 +256,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "rail.nextIntake": "Pick a direction first; typing stays a collapsed fallback.",
     "rail.nextHealth": "Scan red/amber risks first, then decide whether to step in.",
     "rail.nextKnowledge": "Verify against sources, then jump back to the task or approval.",
+    "rail.nextSearch": "Search chat, drive, tasks, and meetings together — click a result to jump to it; conversations open in the desktop workbench.",
     "rail.nextSkills": "Review team skills and self-evolution records before adjusting.",
     "masthead.home": "The default view offers one decision first while background work stays secondary.",
     "masthead.projects": "Projects as products: each project rolls up open work, owner, and latest activity like a repo index.",
@@ -433,7 +439,7 @@ const productNavGroups: ReadonlyArray<{
   collapsible?: boolean;
 }> = [
   { id: "work", titleKey: "nav.group.work", keys: new Set(["home", "projects", "project-home", "approvals", "workitem", "proposal", "replay"]) },
-  { id: "assets", titleKey: "nav.group.assets", keys: new Set(["drive", "meetings", "knowledge"]), collapsible: true },
+  { id: "assets", titleKey: "nav.group.assets", keys: new Set(["drive", "meetings", "knowledge", "search"]), collapsible: true },
   { id: "team", titleKey: "nav.group.team", keys: new Set(["notifications", "calendar", "health"]), collapsible: true },
   { id: "admin", titleKey: "nav.group.admin", keys: new Set(["cost", "agents", "skills", "settings"]), adminOnly: true, collapsible: true }
 ];
