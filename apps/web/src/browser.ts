@@ -2040,7 +2040,38 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindSettingsAiProfilePanel(root, result, client, locale, signal);
   bindSettingsMyProfilePanel(root, result, client, locale, signal);
   bindSettingsAvatarPanel(root, result, client, locale, signal);
+  bindAvatarTiles(root, signal);
   bindLiveRouteStreams(result, client, locale);
+}
+
+// R14 批 CHAT（web-avatars，2026-07-14 用户点名新增）：把 route-components.ts 里用
+// personAvatarTileHtml（packages/ui/src/avatar/avatar-tile.ts）打了 data-r14-avatar-tile-user-id
+// 标记的首字母色块 tile（审批路由/委派、成本按人/按执行者分账、项目负责人、会议上传者、工单负责人——
+// 凡是 VM 里已经带 user_id 的人物出现点）换成真实头像图（若该用户设了头像）。web 走 cookie 鉴权，
+// /api/users/:id/avatar 可以直连——不需要像桌面 apps/desktop-webview 的 hydrateAvatarPhotos 那样走
+// 鉴权 fetch+blob，直接把 img.src 指过去、onload 显示/onerror 保持隐藏（色块本就在底下天然回退）
+// 即可；逻辑上是 bindSettingsAvatarPanel 里 showAvatarUrl 那套的泛化版本，只是这里覆盖任意路由、
+// 任意个数的只读 tile，不绑定上传/删除交互。挂在每次路由渲染后、不按 route key 过滤——头像 tile
+// 可能出现在任意路由。
+function bindAvatarTiles(container: HTMLElement, signal: AbortSignal) {
+  const tiles = container.querySelectorAll<HTMLElement>("[data-r14-avatar-tile-user-id]");
+  tiles.forEach((tile) => {
+    const userId = tile.dataset.r14AvatarTileUserId;
+    const img = tile.querySelector<HTMLImageElement>(".wh-avatar-img");
+    if (!userId || !img) {
+      return;
+    }
+    img.onload = () => {
+      if (signal.aborted) {
+        return;
+      }
+      img.hidden = false;
+    };
+    img.onerror = () => {
+      img.hidden = true;
+    };
+    img.src = `/api/users/${encodeURIComponent(userId)}/avatar`;
+  });
 }
 
 // 团队就绪 must-have（缺口②）：通知页静音偏好面板的客户端水合。SSR 已出折叠的 <details> + 全不勾的开关
