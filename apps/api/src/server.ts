@@ -8,6 +8,7 @@ import { getDefaultAgentRunSkillCurationScheduler } from "./workers/agent-skill-
 import { getDefaultConversationObserverScheduler } from "./workers/conversation-observer.js";
 import { getDefaultConversationReplyJudgeScheduler } from "./workers/conversation-reply-judge.js";
 import { getDefaultSessionSweepScheduler } from "./workers/session-sweep.js";
+import { getDefaultRiskMonitorScheduler } from "./workers/risk-monitor.js";
 
 // 进程级兜底：未捕获异常/未处理 rejection 此前无人接，一次走线的 throw/reject 会静默杀掉 daemon
 // 或留下半死状态。早注册（先于 server start），与下方 SIGINT/SIGTERM 优雅退出互补、不替代。
@@ -43,6 +44,11 @@ skillCurationScheduler?.start();
 const sessionSweepScheduler =
   settings.auth.authMode !== "nickname" ? getDefaultSessionSweepScheduler() : undefined;
 sessionSweepScheduler?.start();
+
+// R14 批 RISK：PM 例行巡检（三信号确定性规则，不依赖 LLM）——与 recovery/sessionSweep 同档
+// 无条件启动，不做 isConfigured 门控（无 key 自托管也要能巡检）。
+const riskMonitorScheduler = getDefaultRiskMonitorScheduler();
+riskMonitorScheduler.start();
 
 // R12 批3：主区静默观察者——LLM provider 未配置时不启动（tick 会逐会话打 LLM，未配置只会
 // 刷 consecutive_failures 噪音），与 meta-planner/cross-agent-judge 的 isConfigured 守卫同款语义。
@@ -87,6 +93,7 @@ function shutdown(exitCode: number) {
   recoveryScheduler.stop();
   skillCurationScheduler?.stop();
   sessionSweepScheduler?.stop();
+  riskMonitorScheduler.stop();
   conversationObserverScheduler?.stop();
   conversationReplyJudgeScheduler?.stop();
   const forceExit = setTimeout(() => process.exit(exitCode), 2000);
