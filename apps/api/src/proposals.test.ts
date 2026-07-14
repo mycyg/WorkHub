@@ -3957,6 +3957,8 @@ test("proposal review remember-always stores corrections inside the authenticate
         lastUsedAt: null,
         expiresAt: null,
         deletedAt: null,
+        editedByUserId: null,
+        editedAt: null,
         createdAt: now,
         updatedAt: now
       };

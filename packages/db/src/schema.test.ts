@@ -677,9 +677,7 @@ test("migration journal ends with 0057 search trgm indexes", () => {
       breakpoints: finalEntry.breakpoints
     },
     {
-      // R14 批 SEARCH：0057 顺排在 0055 之后（0056 让给并行落地的 MEM 批，journal 直接 55→57，集成裁定）。
-      // 只建 pg_trgm 扩展 + 五个 GIN 索引，零加表零加列。若并行批次的迁移号与本批冲突，集成者合并时把
-      // when 归一成递增序、journal 尾以实际链尾为准（这是设计批准的契约变更，非迁就）。
+      // R14 集成收口：并行两批合并后链尾=0057（MEM 的 0056 插在 0055 与 0057 之间，when 严格递增）。
       idx: 57,
       version: "7",
       tag: "0057_search_trgm_indexes",
@@ -757,6 +755,36 @@ test("R14 批 CHAT migration 0055 adds nullable chat-completeness columns and tw
   assert.equal(messages.pinnedByUserId.name, "pinned_by_user_id");
   assert.equal(getTableName(requiredTable("messageReactions")), "message_reactions");
   assert.equal(getTableName(requiredTable("conversationReadCursors")), "conversation_read_cursors");
+});
+
+test("R14 批 MEM migration 0056 adds user_memories.edited_by_user_id/edited_at as nullable, replay-safe columns", () => {
+  const migrationUrl = new URL("../migrations/0056_memory_edit_provenance.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0056_memory_edit_provenance.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  // 两个新列都 ADD COLUMN IF NOT EXISTS（重放安全）+ 均可空（无 NOT NULL）。
+  assert.match(
+    migration,
+    /ALTER TABLE\s+"user_memories"\s+ADD COLUMN IF NOT EXISTS\s+"edited_by_user_id"\s+uuid\s*;/iu
+  );
+  assert.match(
+    migration,
+    /ALTER TABLE\s+"user_memories"\s+ADD COLUMN IF NOT EXISTS\s+"edited_at"\s+timestamp with time zone\s*;/iu
+  );
+  assert.doesNotMatch(migration, /NOT NULL/iu, "both edit-provenance columns must stay nullable — AI-learned rows never set them");
+  // FK 回补也要重放安全：条件化 ADD CONSTRAINT（pg_constraint 存在性守卫），on delete set null。
+  assert.match(migration, /IF NOT EXISTS\s*\(\s*SELECT 1 FROM pg_constraint/iu);
+  assert.match(
+    migration,
+    /ADD CONSTRAINT\s+"user_memories_edited_by_user_id_users_id_fk"[\s\S]*REFERENCES\s+"users"\("id"\)\s+ON DELETE set null/iu
+  );
+
+  // Drizzle schema 与迁移同步：两个新列都在活跃 schema graph 上，且可空。
+  const memories = requiredTable("userMemories") as WorkHubTable & Record<string, any>;
+  assert.equal(memories.editedByUserId.name, "edited_by_user_id");
+  assert.equal(memories.editedByUserId.notNull, false);
+  assert.equal(memories.editedAt.name, "edited_at");
+  assert.equal(memories.editedAt.notNull, false);
+  assert.equal(memories.editedAt.columnType, "PgTimestamp");
 });
 
 test("R14 批 AVATAR migration 0054 adds users.avatar_webp/avatar_updated_at as nullable, replay-safe columns", () => {

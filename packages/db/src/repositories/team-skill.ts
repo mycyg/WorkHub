@@ -32,6 +32,8 @@ export type TeamSkillRepository = {
   promote: (input: PromoteTeamSkillInput) => Promise<TeamSkillRow>;
   listActive: (workspaceId: string) => Promise<TeamSkillRow[]>;
   listForWorkspace: (workspaceId: string) => Promise<TeamSkillRow[]>;
+  // R14 批 MEM 管理面：按 id 取本工作区单条技能（任意版本/状态）。workspace 归属服务端强制，杜绝跨租户凭 id 直取。
+  getById: (workspaceId: string, id: string) => Promise<TeamSkillRow | undefined>;
   getLatestVersion: (workspaceId: string, skillKey: string) => Promise<number>;
   listActiveSkillKeys: (workspaceId: string) => Promise<string[]>;
   deprecate: (workspaceId: string, id: string, reason: string, at?: Date) => Promise<boolean>;
@@ -138,6 +140,15 @@ export function createTeamSkillRepository(db: WorkHubDb): TeamSkillRepository {
         .from(teamSkills)
         .where(eq(teamSkills.workspaceId, workspaceId))
         .orderBy(teamSkills.skillKey, desc(teamSkills.version));
+    },
+
+    async getById(workspaceId, id) {
+      const rows = await db
+        .select()
+        .from(teamSkills)
+        .where(and(eq(teamSkills.id, id), eq(teamSkills.workspaceId, workspaceId)))
+        .limit(1);
+      return rows[0];
     },
 
     getLatestVersion: latestVersion,

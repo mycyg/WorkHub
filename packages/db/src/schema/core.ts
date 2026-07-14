@@ -2022,6 +2022,10 @@ export const userMemories = pgTable(
     lastUsedAt: timestampTz("last_used_at"),
     expiresAt: timestampTz("expires_at"),
     deletedAt: timestampTz("deleted_at"),
+    // R14 批 MEM（迁移 0056）：人工 PATCH 编辑正文的留痕。AI/夜间晋升写入的记忆此二列恒为 NULL——
+    // 诚实区分「AI 学到的」与「人改过的」；出处展示据此叠加「最近由你于 X 修改」一行（见 03-mem-design §2.3）。
+    editedByUserId: uuid("edited_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    editedAt: timestampTz("edited_at"),
     ...timestamps()
   },
   (table) => [
