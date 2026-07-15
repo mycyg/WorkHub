@@ -245,6 +245,9 @@ function repository(overrides: Partial<ConversationRepository> = {}): Conversati
     async listParticipantUserIds() {
       return [];
     },
+    async findPersonalMainConversation() {
+      return null;
+    },
     ...overrides
   };
 }

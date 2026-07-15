@@ -138,7 +138,11 @@ export const envSchema = z.object({
   // R15 批 D（频控闸）：静默时段（服务器本地时区），形如 "22-08"=22:00–08:00 不投递。空串=不启用静默。
   PROACTIVE_QUIET_HOURS: z.string().default("22-08"),
   // R15 批 D（频控闸）：每人每日主动打扰上限——当日该 target 已投递 intent 达此数则后续 suppressed。
-  PROACTIVE_DAILY_CAP_PER_USER: z.coerce.number().int().positive().default(10)
+  PROACTIVE_DAILY_CAP_PER_USER: z.coerce.number().int().positive().default(10),
+  // R15 批 D2（Cuu 主动开口）：开启时 ddl-chase 的 t1d/overdue 两档对有责任人的工作项改走「Cuu 在个人
+  // 空间主区主动说话」通道（个人空间不可用则降级回 notification）；t3d/escalate/找人始终走 notification。
+  // 关闭=全部走 notification（回到批 D 的行为）。默认 true。
+  PROACTIVE_CUU_DELIVERY_ENABLED: booleanString.default(true)
 });
 
 type ParsedEnv = z.infer<typeof envSchema>;
@@ -230,6 +234,7 @@ export type Settings = {
   proactive: {
     quietHours: string;
     dailyCapPerUser: number;
+    cuuDeliveryEnabled: boolean;
   };
 };
 
@@ -327,7 +332,8 @@ export function loadSettings(env: EnvInput = process.env): Settings {
     },
     proactive: {
       quietHours: parsed.PROACTIVE_QUIET_HOURS,
-      dailyCapPerUser: parsed.PROACTIVE_DAILY_CAP_PER_USER
+      dailyCapPerUser: parsed.PROACTIVE_DAILY_CAP_PER_USER,
+      cuuDeliveryEnabled: parsed.PROACTIVE_CUU_DELIVERY_ENABLED
     }
   };
 

@@ -357,7 +357,12 @@ export const conversationTextContentSchema = z
     memory_citations: z.array(conversationMemoryCitationSchema).max(MAX_CONVERSATION_MEMORY_CITATIONS).optional(),
     is_clarifying_question: z.boolean().optional(),
     clarify_options: z.array(z.string().min(1).max(200)).max(MAX_CONVERSATION_CLARIFY_OPTIONS).optional(),
-    clarify_placeholder: z.string().min(1).max(200).optional()
+    clarify_placeholder: z.string().min(1).max(200).optional(),
+    // R15 批 D2（Cuu 主动开口）：一条 Cuu 消息若由主动性闸（ProactiveIntent）投递到个人空间主区，带上
+    // 产它的 intent id 做审计溯源（读侧 VM strict 校验必须认识这个键，故在此 additive 声明）。普通
+    // 会话回复（走 conversation-turns 的 turn 循环）不带此字段——它只出现在 conversation_message 通道
+    // 投递物上。optional，存量消息不受影响。
+    proactive_intent_id: idSchema.optional()
   })
   .strict();
 export type ConversationTextContent = z.infer<typeof conversationTextContentSchema>;

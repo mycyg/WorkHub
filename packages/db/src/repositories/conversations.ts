@@ -136,6 +136,10 @@ export type CreateCuuMessageInput = {
         is_clarifying_question?: boolean;
         clarify_options?: string[];
         clarify_placeholder?: string;
+        // R15 批 D2（Cuu 主动开口）：主动性闸投递到个人空间主区的 Cuu 消息带上产它的 intent id 做审计
+        // 溯源（对齐 @workhub/contracts 的 conversationTextContentSchema 同名 additive 字段）。普通 turn
+        // 回复不带此字段——它只出现在 conversation_message 投递通道的落库物上。
+        proactive_intent_id?: string;
       };
     }
   | { kind: "file_card"; contentJson: { drive_item_id: string; snapshot_name: string } }
@@ -462,6 +466,15 @@ export type ConversationRepository = {
   }) => Promise<Map<string, number>>;
   // R15 批 A（A5 消息通知）：列出一条会话的全部参与者 user id（小写）。DM=2、collab=N。新增方法。
   listParticipantUserIds: (input: { conversationId: string }) => Promise<string[]>;
+  // R15 批 D2（Cuu 主动开口）：解析目标用户「个人空间主区」——is_personal=true 且 owner=目标用户的项目
+  // 的 main 会话（R13 S3 语义：个人空间主区是用户↔Cuu 的 1:1 落点）。一个用户可能有多个个人空间
+  // （每次「+新建个人空间」新建一条），取最早创建的那个（默认的「我的空间」）作为主动开口的天然落点。
+  // 查不到（用户从未建过个人空间）返回 null —— 调用方据此降级回 notification 通道，绝不硬造个人空间。
+  // 系统级只读定位（无 viewerUserId 门控：owner 判定已收在 owner_user_id=targetUserId 这一条件上）。
+  findPersonalMainConversation: (input: {
+    workspaceId: string;
+    targetUserId: string;
+  }) => Promise<{ conversationId: string; projectId: string; title: string } | null>;
 };
 
 class NamedConversationRepositoryError extends Error {
@@ -2485,6 +2498,39 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
         .orderBy(asc(conversationParticipants.userId))
         .limit(CONVERSATION_READ_RECEIPTS_CAP);
       return rows.map((row) => row.userId.toLowerCase());
+    },
+
+    async findPersonalMainConversation(input) {
+      const rows = await db
+        .select({
+          conversationId: projectConversations.id,
+          projectId: projectConversations.projectId,
+          title: projectConversations.title
+        })
+        .from(projectConversations)
+        .innerJoin(
+          projects,
+          and(
+            eq(projects.id, projectConversations.projectId),
+            eq(projects.workspaceId, projectConversations.workspaceId)
+          )
+        )
+        .where(
+          and(
+            eq(projectConversations.workspaceId, input.workspaceId),
+            eq(projectConversations.kind, "main"),
+            isNull(projectConversations.deletedAt),
+            eq(projects.isPersonal, true),
+            eq(projects.ownerUserId, input.targetUserId),
+            eq(projects.archived, false),
+            isNull(projects.deletedAt)
+          )
+        )
+        // 多个个人空间时取最早建的（默认「我的空间」）——稳定、可预期的单一落点。
+        .orderBy(asc(projects.createdAt), asc(projectConversations.createdAt))
+        .limit(1);
+      const row = rows[0];
+      return row ? { conversationId: row.conversationId, projectId: row.projectId, title: row.title } : null;
     }
   };
 }
