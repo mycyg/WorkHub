@@ -40,6 +40,7 @@ import {
   type NaturalSize
 } from "@workhub/ui";
 
+import { resolveDesktopShellEmitter } from "../../desktop-cuu-runtime.js";
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 import { driveResourceApiBase, fetchDriveResource } from "./drive.js";
 
@@ -756,6 +757,16 @@ export function createSettingsView(): SpotlightCapabilityView {
               } catch {
                 // ignore storage failure
               }
+              // G-desktop 止血批 3（跨窗口登出广播）：这个窗口自己接下来就 reload 了，但已经开着的
+              // 工作台/桌宠窗口不会跟着走——原来没有任何信号告诉它们"手里的 client token 刚被清空
+              // 了"，只会拿着废 token 继续发请求、连环 401。通过既有 Tauri 事件通路（同
+              // workbench/interrupt-broadcast.ts 用的 __TAURI__.event.emit 通用桥，事件名见
+              // desktop-cuu-runtime.ts 的 DesktopShellEventName）广播一下，接收端在 boot.ts 的
+              // bindWorkbenchLoggedOutListener（workbench）和 pet-surface.ts 的同名监听（桌宠）。
+              // 无 Tauri（浏览器 dev 预览）时 resolveDesktopShellEmitter() 返回 undefined，静默跳过——
+              // 那些环境本来就没有别的窗口能收广播，不是这批要修的缺口。
+              const shellEmitter = resolveDesktopShellEmitter();
+              void Promise.resolve(shellEmitter?.emit?.("workhub-logged-out")).catch(() => undefined);
               window.location.reload();
             });
           return;

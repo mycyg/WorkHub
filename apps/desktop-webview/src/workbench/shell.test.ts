@@ -5,6 +5,7 @@ import {
   renderCenterErrorHtml,
   renderCenterLoadingHtml,
   renderEmptyStateHtml,
+  renderWorkbenchLoggedOutHtml,
   renderWorkbenchShellHtml
 } from "./shell.js";
 
@@ -40,6 +41,18 @@ test("renderWorkbenchShellHtml defaults to the self-drawn window controls when n
   assert.doesNotMatch(html, /wh-wb-titlebar--native/u);
 });
 
+// G-desktop 止血批 5：顶栏「打开聚焦盒」入口不是窗口帧控件（不像 min/close 那样在原生红绿灯接管时该
+// 消失）——两种 chrome 下都必须渲染。
+test("renderWorkbenchShellHtml always renders the 'open Spotlight' entry, both with and without native window chrome", () => {
+  const selfDrawn = renderWorkbenchShellHtml("zh-CN", { nativeWindowChrome: false });
+  assert.match(selfDrawn, /data-wb-open-spotlight/u);
+  assert.match(selfDrawn, /打开聚焦盒/u);
+
+  const native = renderWorkbenchShellHtml("en-US", { nativeWindowChrome: true });
+  assert.match(native, /data-wb-open-spotlight/u);
+  assert.match(native, /Open Spotlight/u);
+});
+
 test("renderEmptyStateHtml offers a real 'new project' CTA only when there are no projects yet", () => {
   const noProjects = renderEmptyStateHtml("zh-CN", false);
   assert.match(noProjects, /data-wb-new-project/u);
@@ -60,6 +73,21 @@ test("renderCenterLoadingHtml and renderCenterErrorHtml render distinct, honest 
   const errored = renderCenterErrorHtml("zh-CN");
   assert.match(errored, /没打开这个项目的工作台/u);
   assert.match(errored, /data-wb-retry-vm/u);
+});
+
+// G-desktop 止血批 3（跨窗口登出广播）：整窗「已登出」态——不是三栏壳的一个子区块错误，诚实地说明
+// 现状，不摆一个会转发到别处的假可点控件（工作台不拥有重新登录 UI，那是主窗的地盘）。
+test("renderWorkbenchLoggedOutHtml renders an honest, actionless signed-out screen in both locales", () => {
+  const zh = renderWorkbenchLoggedOutHtml("zh-CN");
+  assert.match(zh, /data-wb-loggedout/u);
+  assert.match(zh, /已登出/u);
+  assert.match(zh, /重新登录/u);
+  assert.doesNotMatch(zh, /<button/u);
+
+  const en = renderWorkbenchLoggedOutHtml("en-US");
+  assert.match(en, /Signed out/u);
+  assert.match(en, /sign back in/iu);
+  assert.doesNotMatch(en, /<button/u);
 });
 
 // renderSidePanelPlaceholderHtml (the "coming soon" notice) retired in R13 batch P1 — the army panel

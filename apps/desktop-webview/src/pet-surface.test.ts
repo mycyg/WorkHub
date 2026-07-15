@@ -24,6 +24,7 @@ import {
 import {
   bootDesktopPetSurface,
   createDesktopPetIdleScheduler,
+  createDesktopPetLoggedOutCard,
   defaultDesktopPetPointerSnapshot,
   desktopPetAliveIdlePolicy,
   desktopPetInitialIdleAction,
@@ -2059,6 +2060,55 @@ test("pet surface syncs settings emitted by the main desktop window", async () =
       configurable: true,
       value: originalLocalStorage
     });
+  }
+});
+
+// G-desktop 止血批 3（跨窗口登出广播）——纯函数覆盖：卡片诚实标出"已登出"，不假装 Cuu 还能干活。
+test("createDesktopPetLoggedOutCard renders an honest signed-out card in both locales", () => {
+  const zh = createDesktopPetLoggedOutCard("zh-CN");
+  assert.equal(zh.kind, "offline");
+  assert.equal(zh.state, "offline");
+  assert.match(zh.title, /已登出/u);
+  assert.match(zh.message, /重新登录/u);
+  assert.deepEqual(zh.actions, []);
+
+  const en = createDesktopPetLoggedOutCard("en-US");
+  assert.match(en.title, /Signed out/u);
+  assert.match(en.message, /sign back in/iu);
+});
+
+// G-desktop 止血批 3：桌宠窗和工作台窗共用同一条 workhub-logged-out 广播（见
+// desktop-cuu-runtime.ts 的 DesktopShellEventName 顶部注释）——主窗登出时已经开着的桌宠窗不会跟着
+// reload，之前完全没有 handler，会拿着刚被清空的 client token 静默连环 401。这条测试钉死：桌宠窗收到
+// 广播后换成诚实的「已登出」卡片，dispose 时把这个新监听也一并解绑（不留泄漏）。
+test("pet surface swaps to an honest signed-out card when it receives the workhub-logged-out broadcast, and unlistens on dispose", async () => {
+  const target = globalThis as typeof globalThis & { __WORKHUB_CUU_QA_LOCALE__?: unknown };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "zh-CN";
+  try {
+    await withFakePetDom(async (root) => {
+      const handlers = new Map<string, (event: { payload: unknown }) => void>();
+      const stopped: string[] = [];
+      const listen: DesktopShellListen = (eventName, handler) => {
+        handlers.set(eventName, handler);
+        return () => stopped.push(eventName);
+      };
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient([]),
+        listen
+      });
+      try {
+        handlers.get("workhub-logged-out")?.({ payload: undefined });
+        await waitForFakePetCardMode();
+        assert.match(root.innerHTML, /data-cuu-card-id="pet-logged-out"/u);
+        assert.match(root.innerHTML, /已登出/u);
+      } finally {
+        await runtime.dispose();
+      }
+      assert.ok(stopped.includes("workhub-logged-out"));
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
   }
 });
 

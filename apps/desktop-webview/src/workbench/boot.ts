@@ -118,8 +118,9 @@ export function bindWorkbenchDeepLinkListener(
 ): void {
   const listen = resolveWorkbenchTauriListen(scope);
   if (!listen) {
-    // 浏览器 dev 预览 / capabilities 尚未把 "workbench" 加进 windows 列表：no-op，不崩溃。
-    // 见 window-bridge.ts 顶部注释——这是已知的、超出本批范围的 Rust/配置缺口。
+    // 浏览器 dev 预览 / 完全没有 Tauri：no-op，不崩溃。capabilities/workbench.json 早已把
+    // "workbench" 加进 windows 列表并授权（见 window-bridge.ts 顶部注释）——这不再是缺口，这条
+    // 分支只覆盖"这个环境压根没有 __TAURI__"的真实场景。
     return;
   }
   void Promise.resolve(
@@ -134,10 +135,28 @@ export function bindWorkbenchDeepLinkListener(
       }
     })
   ).catch((error) => {
-    console.warn(
-      "WorkHub workbench: could not subscribe to the deep-link event (likely missing 'workbench' in client-tauri capabilities/default.json windows list)",
-      error
-    );
+    console.warn("WorkHub workbench: could not subscribe to the deep-link event", error);
+  });
+}
+
+// G-desktop 止血批 3（跨窗口登出广播）：登出动作发生在别的窗口（browser.ts 主窗 / spotlight 设置
+// 视图，见那两处的登出处理器）时，那个窗口自己清 token + reload 就够了，但已经开着的工作台窗口不会
+// 跟着走——它原来完全没有信号知道"手里的 client token 刚被清空了"，只会拿着废 token 继续发请求、
+// 连环 401（这就是本批要修的症状）。登出动作发起方通过既有 Tauri 事件通路广播这个事件名（同
+// bindWorkbenchDeepLinkListener 用的 __TAURI__.event.listen 通用桥，事件名注册在
+// desktop-cuu-runtime.ts 的 DesktopShellEventName——桌宠窗口 pet-surface.ts 也订阅同一个事件名，
+// 两边共用同一条广播，不另起协议），这里订阅后把结果交给调用方（boot() 接的是 shell.showLoggedOut()，
+// 让 workbench 切到明确的「已登出」整窗态并停止后续请求）。
+export function bindWorkbenchLoggedOutListener(onLoggedOut: () => void, scope: unknown = globalThis): void {
+  const listen = resolveWorkbenchTauriListen(scope);
+  if (!listen) {
+    // 浏览器 dev 预览 / 无 Tauri：no-op，不崩溃——同 bindWorkbenchDeepLinkListener 的既有降级路径。
+    return;
+  }
+  void Promise.resolve(
+    listen("workhub-logged-out", () => onLoggedOut())
+  ).catch((error) => {
+    console.warn("WorkHub workbench: could not subscribe to the workhub-logged-out event", error);
   });
 }
 
@@ -181,8 +200,18 @@ async function boot(): Promise<void> {
   // 显式传引用，而不是让 shell.ts 用它自己的兜底默认值（两边逻辑目前碰巧一样，但显式传递才是
   // 真正的"复用 boot.ts 已有 helper"，不是"恰好重复实现了一遍"）。
   const shell = mountWorkbenchShell(root, { client, locale, getClientToken: clientToken });
+  // G-desktop 止血批 3：这次 boot 本身可能就已经处在登出态（比如上一次收到跨窗口登出广播后这个窗口
+  // 自己 reload 了一轮，见 shell.ts selectProject 的恢复路径注释）——必须先于下面两行深链消费判断，
+  // 否则一次带着真实深链目标的冷启动会在还没展示「已登出」之前就先把请求发出去。
+  if (isWorkbenchDesktopLoggedOut()) {
+    shell.showLoggedOut();
+  }
   bindWorkbenchDeepLinkListener(shell);
   applyPendingWorkbenchDeepLink(shell);
+  // 运行期广播：这个窗口一直开着、之后才收到别的窗口发起的登出——见 bindWorkbenchLoggedOutListener
+  // 顶部注释。showLoggedOut() 本身幂等，两条路径（这里的运行期监听 + 上面的 boot 时快照检查）都指向
+  // 同一个方法，不会重复触发副作用。
+  bindWorkbenchLoggedOutListener(() => shell.showLoggedOut());
 }
 
 // node:test 环境没有 document——colocated boot.test.ts 只测上面导出的纯函数，不需要真跑 boot()。
