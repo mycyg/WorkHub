@@ -9,6 +9,7 @@ import {
   spotlightIntentResultSchema,
   type SpotlightIntentResult
 } from "@workhub/agent/spotlight-intent";
+import { ProviderNotConfiguredError } from "@workhub/agent/providers";
 import { decideRunBudget, type BudgetPolicyStore, type CostLedgerStore } from "@workhub/cost";
 
 import { getDefaultStructuredLogger, type StructuredLogger } from "../logging.js";
@@ -32,7 +33,8 @@ import { getDefaultProviderRegistry } from "./provider-registry.js";
 
 export class SpotlightIntentServiceError extends Error {
   constructor(
-    public readonly status: 400 | 403 | 429 | 500,
+    // BUG-02：新增 503——目标 LLM provider 未配置（缺 apiKey）时返回「服务暂不可用」而非泛化 500。
+    public readonly status: 400 | 403 | 429 | 500 | 503,
     public readonly code: string,
     message: string
   ) {
@@ -40,6 +42,12 @@ export class SpotlightIntentServiceError extends Error {
     this.name = "SpotlightIntentServiceError";
   }
 }
+
+// BUG-02：provider registry 的 get() 在缺 apiKey 时 fail-fast 抛 ProviderNotConfiguredError（发生在建
+// transport / 发上游请求之前）。这里映射成明确的 503，与 conversation-turns 的「用户主动问 Cuu」路径一致，
+// 而不是让原始错误漏到 app.onError 被泛化成 500。
+const AI_PROVIDER_NOT_CONFIGURED_MESSAGE =
+  "Cuu 暂时不可用：这个部署还没有配置 LLM 服务的密钥（LLM_API_KEY）。请联系管理员完成配置后再试。";
 
 export const createSpotlightIntentRequestSchema = z
   .object({
@@ -148,7 +156,16 @@ export function createSpotlightIntentService(deps: SpotlightIntentServiceDeps): 
         capabilities: input.payload.capabilities
       });
 
-      const client = await deps.client({ actorId: human.userId, userId: human.userId, workspaceId: human.workspaceId });
+      // BUG-02 fail-fast：get() 缺 apiKey 时会在建 transport 前抛 ProviderNotConfiguredError；映射成 503。
+      let client: SpotlightIntentLlmClient;
+      try {
+        client = await deps.client({ actorId: human.userId, userId: human.userId, workspaceId: human.workspaceId });
+      } catch (error) {
+        if (error instanceof ProviderNotConfiguredError) {
+          throw new SpotlightIntentServiceError(503, "ai_provider_not_configured", AI_PROVIDER_NOT_CONFIGURED_MESSAGE);
+        }
+        throw error;
+      }
       const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
       let text: string;

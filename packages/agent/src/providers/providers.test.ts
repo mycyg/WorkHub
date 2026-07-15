@@ -11,6 +11,7 @@ import {
   LLM_REQUEST_TIMEOUT_ERROR,
   LlmHttpError,
   LlmRequestTimeoutError,
+  ProviderNotConfiguredError,
   nextRetryDecision,
   type LlmCreateParams,
   type LlmCreateResponse,
@@ -121,11 +122,17 @@ test("registry routing can switch a task to another configured model", () => {
   assert.equal(JSON.stringify(registry.publicMetadata()).includes("secret-provider-key"), false);
 });
 
-test("default registry can replace the usage sink after construction", async () => {
+test("registry can replace the usage sink after construction", async () => {
   const transport = new FakeTransport();
   const firstSink = createMemoryUsageSink();
   const secondSink = createMemoryUsageSink();
-  const registry = createDefaultProviderRegistry(() => transport);
+  // 用一个已配置 key 的注册表：get() 现在会 fail-fast 未配置的 provider（见 BUG-02 fail-fast 用例），
+  // 所以换沉降槽的行为要在有 key 的注册表上验证。
+  const settings = loadSettings({ LLM_API_KEY: "secret-provider-key" });
+  const registry = createProviderRegistry({
+    config: createProviderRegistryConfig(settings),
+    transportFactory: () => transport
+  });
   registry.setUsageSink(firstSink);
   await registry.get({ id: "actor-1" }, "assistant").messages.create({
     maxTokens: 1000,
@@ -139,6 +146,45 @@ test("default registry can replace the usage sink after construction", async () 
 
   assert.equal(firstSink.records.length, 1);
   assert.equal(secondSink.records.length, 1);
+});
+
+// BUG-02：无 key 时 get() 必须在建 transport 之前就抛 ProviderNotConfiguredError——绝不拿空 key
+// 去打上游收 401。断言 transportFactory 零调用即证明 fail-fast 发生在任何 transport 之前。
+test("get() throws ProviderNotConfiguredError and never builds a transport when the provider is unconfigured", () => {
+  let transportFactoryCalls = 0;
+  const settings = loadSettings({}); // LLM_API_KEY 缺省为空串 → deepseek 未配置
+  const registry = createProviderRegistry({
+    config: createProviderRegistryConfig(settings),
+    transportFactory: () => {
+      transportFactoryCalls += 1;
+      return new FakeTransport();
+    }
+  });
+
+  assert.equal(registry.isConfigured(), false);
+  assert.throws(
+    () => registry.get({ id: "actor-1", workspaceId: "workspace-b" }, "assistant"),
+    (error) => {
+      assert.equal(error instanceof ProviderNotConfiguredError, true);
+      assert.equal((error as ProviderNotConfiguredError).provider, "deepseek");
+      assert.equal((error as Error).name, "ProviderNotConfiguredError");
+      return true;
+    }
+  );
+  // fail-fast：抛错发生在 transportFactory 之前，工厂一次都没被调到。
+  assert.equal(transportFactoryCalls, 0);
+});
+
+// createDefaultProviderRegistry 复用 defaultSettings（无 key），因此它天然就是"未配置"的注册表——
+// get() 同样在建 transport 前 fail-fast。
+test("createDefaultProviderRegistry fails fast on get() when no API key is configured", () => {
+  let transportFactoryCalls = 0;
+  const registry = createDefaultProviderRegistry(() => {
+    transportFactoryCalls += 1;
+    return new FakeTransport();
+  });
+  assert.throws(() => registry.get({ id: "actor-1" }, "assistant"), ProviderNotConfiguredError);
+  assert.equal(transportFactoryCalls, 0);
 });
 
 test("retry helper honors Retry-After before exponential transient backoff", () => {
