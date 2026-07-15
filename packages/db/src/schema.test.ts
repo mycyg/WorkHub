@@ -664,7 +664,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0060 project github bindings", () => {
+test("migration journal ends with 0061 notification reminders", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -679,12 +679,27 @@ test("migration journal ends with 0060 project github bindings", () => {
       breakpoints: finalEntry.breakpoints
     },
     {
-      // R14 集成收口：FEEDBACK(0058)+RISK(0059)+GH(0060) 三批合并后链尾=0060，when 严格递增。
-      idx: 60,
+      // R15 批 A：提醒阶梯列（0061）接在 R14 链尾 0060 之后，when 严格递增。
+      idx: 61,
       version: "7",
-      tag: "0060_project_github_bindings",
+      tag: "0061_notification_reminders",
       breakpoints: true
     }
+  );
+});
+
+test("R15 批 A migration 0061 adds the reminder-ladder columns additively", () => {
+  const migrationUrl = new URL("../migrations/0061_notification_reminders.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0061_notification_reminders.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  // 只加列（additive，ADD COLUMN IF NOT EXISTS 保证 replay 安全）——不得 DROP/ALTER 既有列。
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS "next_remind_at" timestamp with time zone/u);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS "reminder_count" integer NOT NULL DEFAULT 0/u);
+  assert.doesNotMatch(migration, /DROP COLUMN|ALTER COLUMN/u, "migration 0061 must only add columns");
+  // 扫描热路径的部分索引（只覆盖待提醒的少数行）。
+  assert.match(
+    migration,
+    /CREATE INDEX IF NOT EXISTS "notifications_next_remind_at_idx"[\s\S]*WHERE "next_remind_at" IS NOT NULL/u
   );
 });
 

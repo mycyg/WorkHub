@@ -106,5 +106,16 @@ export function createNotificationRoutes(deps: NotificationRoutesDependencies = 
     }
   });
 
+  // R15 批 A（提醒阶梯）：暂停提醒——停掉 24h 叮嘱但保留读/归档态（通知仍在待决策队列，只是不再催）。
+  routes.post("/:id/snooze", createCurrentUserMiddleware(authSource), async (c) => {
+    try {
+      const notificationId = requireNotificationId(c.req.param("id"));
+      const data = await service.snooze(notificationId, c.var.currentUser.id, { actor: c.var.actor });
+      return c.json({ ok: true, data });
+    } catch (error) {
+      handleNotificationError(error);
+    }
+  });
+
   return routes;
 }

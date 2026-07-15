@@ -28,6 +28,8 @@ function row(partial: Partial<NotificationRow> = {}): NotificationRow {
     dedupeKey: "escalated:90000000-0000-4000-8000-000000000003:ai-auto",
     readAt: null,
     archivedAt: null,
+    nextRemindAt: null,
+    reminderCount: 0,
     createdAt: now,
     updatedAt: now,
     ...partial
@@ -80,6 +82,18 @@ class StubNotifications implements NotificationRepository {
 
   async archiveStaleLifecycleForWorkItem() {
     return 0;
+  }
+
+  async listDueReminders() {
+    return [];
+  }
+
+  async applyReminderTick() {
+    return null;
+  }
+
+  async snoozeReminder() {
+    return null;
   }
 }
 
@@ -157,6 +171,18 @@ class RecordingNotifications implements NotificationRepository {
 
   async archiveStaleLifecycleForWorkItem() {
     return 0;
+  }
+
+  async listDueReminders() {
+    return [];
+  }
+
+  async applyReminderTick() {
+    return null;
+  }
+
+  async snoozeReminder() {
+    return null;
   }
 }
 
@@ -248,6 +274,24 @@ class VisibilityNotifications implements NotificationRepository {
 
   async archiveStaleLifecycleForWorkItem() {
     return 0;
+  }
+
+  async listDueReminders() {
+    return [];
+  }
+
+  async applyReminderTick() {
+    return null;
+  }
+
+  async snoozeReminder(id: string, userId: string, at: Date) {
+    const stored = await this.findByIdForUser(id, userId);
+    if (!stored) {
+      return null;
+    }
+    stored.nextRemindAt = null;
+    stored.updatedAt = at;
+    return { ...stored };
   }
 }
 

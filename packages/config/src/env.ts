@@ -116,7 +116,14 @@ export const envSchema = z.object({
   AGENT_RUN_SKILL_CURATION_INTERVAL_MS: z.coerce.number().int().min(0).default(86400000),
   AGENT_RUN_PROJECT_HYDRATE_ENABLED: booleanString.default(true),
   AGENT_RUN_PROJECT_HYDRATE_MAX_FILES: z.coerce.number().int().positive().default(200),
-  AGENT_RUN_PROJECT_HYDRATE_MAX_BYTES: z.coerce.number().int().positive().default(33554432)
+  AGENT_RUN_PROJECT_HYDRATE_MAX_BYTES: z.coerce.number().int().positive().default(33554432),
+
+  // R15 批 A（统一调度器 Pulse）：周期任务总开关（默认开）+ 各任务 tick 间隔。间隔置 0 = 该任务不启
+  // （沿用 AGENT_RUN_RECOVERY_INTERVAL_MS 的 min(0) 语义）。审批 SLA 巡检 5 分钟一 tick；提醒阶梯
+  // 是 24h 粗粒度，1 小时扫一次足够覆盖到期行且开销小。
+  PULSE_SCHEDULER_ENABLED: booleanString.default(true),
+  PULSE_APPROVAL_SLA_INTERVAL_MS: z.coerce.number().int().min(0).default(300000),
+  PULSE_NOTIFICATION_REMINDER_INTERVAL_MS: z.coerce.number().int().min(0).default(3600000)
 });
 
 type ParsedEnv = z.infer<typeof envSchema>;
@@ -196,6 +203,11 @@ export type Settings = {
     projectHydrateEnabled: boolean;
     projectHydrateMaxFiles: number;
     projectHydrateMaxBytes: number;
+  };
+  pulse: {
+    enabled: boolean;
+    approvalSlaIntervalMs: number;
+    notificationReminderIntervalMs: number;
   };
 };
 
@@ -282,6 +294,11 @@ export function loadSettings(env: EnvInput = process.env): Settings {
       projectHydrateEnabled: parsed.AGENT_RUN_PROJECT_HYDRATE_ENABLED,
       projectHydrateMaxFiles: parsed.AGENT_RUN_PROJECT_HYDRATE_MAX_FILES,
       projectHydrateMaxBytes: parsed.AGENT_RUN_PROJECT_HYDRATE_MAX_BYTES
+    },
+    pulse: {
+      enabled: parsed.PULSE_SCHEDULER_ENABLED,
+      approvalSlaIntervalMs: parsed.PULSE_APPROVAL_SLA_INTERVAL_MS,
+      notificationReminderIntervalMs: parsed.PULSE_NOTIFICATION_REMINDER_INTERVAL_MS
     }
   };
 

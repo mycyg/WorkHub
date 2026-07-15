@@ -251,6 +251,10 @@ test("notification mutation routes pass actor context for work item visibility c
     async complete(_id: string, _userId: string, options?: unknown) {
       received.complete = options;
       return notification;
+    },
+    async snooze(_id: string, _userId: string, options?: unknown) {
+      received.snooze = options;
+      return notification;
     }
   } as unknown as NotificationService;
   const app = withErrors(new Hono<AuthEnv>());
@@ -264,11 +268,13 @@ test("notification mutation routes pass actor context for work item visibility c
   assert.equal((await app.request("/api/notifications/read-all", { method: "POST", headers })).status, 200);
   assert.equal((await app.request(`/api/notifications/${notificationId}/dismiss`, { method: "POST", headers })).status, 200);
   assert.equal((await app.request(`/api/notifications/${notificationId}/complete`, { method: "POST", headers })).status, 200);
+  assert.equal((await app.request(`/api/notifications/${notificationId}/snooze`, { method: "POST", headers })).status, 200);
 
   assert.equal((received.markRead as { actor?: { userId?: string } } | undefined)?.actor?.userId, userId);
   assert.equal((received.markAllRead as { actor?: { userId?: string } } | undefined)?.actor?.userId, userId);
   assert.equal((received.dismiss as { actor?: { userId?: string } } | undefined)?.actor?.userId, userId);
   assert.equal((received.complete as { actor?: { userId?: string } } | undefined)?.actor?.userId, userId);
+  assert.equal((received.snooze as { actor?: { userId?: string } } | undefined)?.actor?.userId, userId);
 });
 
 test("notification preferences route returns malformed_json for malformed request bodies", async () => {

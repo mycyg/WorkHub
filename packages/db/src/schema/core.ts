@@ -872,6 +872,9 @@ export const notifications = pgTable(
     dedupeKey: varchar("dedupe_key", { length: 256 }),
     readAt: timestampTz("read_at"),
     archivedAt: timestampTz("archived_at"),
+    // R15 批 A（提醒阶梯）：next_remind_at=下次复活提醒时刻（NULL=不再提醒）；reminder_count=已提醒次数。
+    nextRemindAt: timestampTz("next_remind_at"),
+    reminderCount: integer("reminder_count").notNull().default(0),
     ...timestamps()
   },
   (table) => [
@@ -883,6 +886,10 @@ export const notifications = pgTable(
     index("notifications_dedupe_key_idx").on(table.dedupeKey),
     index("notifications_read_at_idx").on(table.readAt),
     index("notifications_archived_at_idx").on(table.archivedAt),
+    // R15 批 A：提醒扫描热路径（WHERE next_remind_at <= now AND 未读未归档）——部分索引只覆盖待提醒的少数行。
+    index("notifications_next_remind_at_idx")
+      .on(table.nextRemindAt)
+      .where(sql`${table.nextRemindAt} is not null`),
     // L#56：listForUser 的热路径是 WHERE user_id ORDER BY created_at DESC LIMIT n —— 加复合索引避免按 user 过滤后再全量排序。
     index("notifications_user_created_idx").on(table.userId, table.createdAt),
     // M13/M15：同一用户同一 dedupeKey 只能有一条，挡住并发 check-then-insert 产生的重复通知。

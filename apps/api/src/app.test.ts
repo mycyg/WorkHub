@@ -369,6 +369,7 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["post", "/api/notifications/read-all"],
     ["post", "/api/notifications/{id}/dismiss"],
     ["post", "/api/notifications/{id}/complete"],
+    ["post", "/api/notifications/{id}/snooze"],
     ["get", "/api/projects"],
     ["post", "/api/projects/bootstrap"],
     ["get", "/api/projects/{id}/conversations"],

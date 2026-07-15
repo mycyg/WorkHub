@@ -428,6 +428,13 @@
       "when": 1783914000000,
       "tag": "0060_project_github_bindings",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1783916000000,
+      "tag": "0061_notification_reminders",
+      "breakpoints": true
     }
   ]
 }

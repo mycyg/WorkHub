@@ -7211,6 +7211,15 @@ export function getOpenApiDocument() {
           ...notificationCompleteResponse
         }
       },
+      "/api/notifications/{id}/snooze": {
+        post: {
+          tags: ["notifications"],
+          summary: "Pause reminders for one notification",
+          description: "Clears the reminder ladder (next_remind_at) without marking the notification read or archived, so it stays in the decision queue but stops the 24h nudges.",
+          parameters: [pathUuidParameter("id")],
+          ...notificationItemMutationResponse("Notification with reminders paused")
+        }
+      },
       "/api/workitems/{id}/proposals": {
         post: {
           tags: ["proposals"],

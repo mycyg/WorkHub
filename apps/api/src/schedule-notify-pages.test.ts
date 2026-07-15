@@ -61,6 +61,8 @@ function notification(partial: Partial<NotificationRow> = {}): NotificationRow {
     dedupeKey: `meeting_insight:${insightId}`,
     readAt: null,
     archivedAt: null,
+    nextRemindAt: null,
+    reminderCount: 0,
     createdAt: now,
     updatedAt: now,
     ...partial
@@ -258,6 +260,18 @@ class MemoryNotifications implements NotificationRepository {
       return row;
     });
     return count;
+  }
+
+  async listDueReminders() {
+    return [];
+  }
+
+  async applyReminderTick() {
+    return null;
+  }
+
+  async snoozeReminder() {
+    return null;
   }
 }
 
