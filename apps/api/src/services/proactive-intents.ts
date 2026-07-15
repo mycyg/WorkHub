@@ -39,7 +39,10 @@ import { createProactiveCuuDelivery } from "./proactive-cuu-delivery.js";
 // 故改在扫描任务（ddl-chase）里静默期直接不产 intent、把「该产但静默」记日志计数，下个非静默 tick
 // 再产（suppression_key 保证只产一次，等于把投递延到静默结束）。本闸只管每人每日上限 + 静音。
 
-export type ProactiveIntentKind = "ddl_chase" | "find_owner";
+// R15 批 D2c：'care' 是关怀接缝的注册位——F 批的关怀扫描会产 kind='care' 的 intent，走本闸同一条
+// conversation_message 通道（Cuu 在个人空间主动关怀）。本批不实现关怀扫描，只占位这个 kind（DB kind
+// 列无 check 约束，additive 安全）。见文件末的 careConversationText 模板签名。
+export type ProactiveIntentKind = "ddl_chase" | "find_owner" | "care";
 
 // R15 批 D2：投递通道。选择在调用方（见文件头）。缺省 'notification'（回到批 D 行为）。
 export type ProactiveDeliveryChannel = "notification" | "conversation_message";
@@ -244,6 +247,25 @@ export function isWithinProactiveQuietHours(quietHours: ProactiveQuietHours, now
   }
   // 跨零点（如 22-08）。
   return hour >= startHour || hour < endHour;
+}
+
+// ── D2c 关怀接缝（为批次 F 打底，本批只做骨架，不实现关怀扫描本身）──────────────────────────
+//
+// 批次 F 的「关怀扫描」会侦测需要 Cuu 主动关怀的信号（如连续加班、工单长期积压、临期扎堆），产出
+// kind='care' 的 ProactiveIntent，走本闸【同一条 recordAndDeliver 频控/上限闸 + 同一条
+// conversation_message 通道】（Cuu 在个人空间主区主动关怀）——与追 DDL 复用完全一样的地基，不另起炉灶。
+// 本批仅：① 在 ProactiveIntentKind 注册 'care'（见文件头）；② 占位下面这个文案模板签名。
+// 关怀信号的形状、扫描节奏、以及措辞（后续接 LLM）都留给 F 批，此处刻意不实现——被调用即抛，fail-loud，
+// 防止 F 批接线时误以为已有实现而投出空消息。
+export type CareIntentSeed = {
+  workspaceId: string;
+  targetUserId: string;
+  // F 批扫描产出的关怀信号（形状待 F 批定；此处只占位，不约束）。
+  signal: Record<string, unknown>;
+};
+
+export function careConversationText(_seed: CareIntentSeed): string {
+  throw new Error("care intent templates are implemented in batch F; D2c is a registration seam only");
 }
 
 let defaultDbClient: WorkHubDatabaseClient | undefined;
