@@ -16,6 +16,7 @@ import {
   renameCollabConversation,
   renameCollabConversationInVm,
   renderArmyOverviewNavHtml,
+  renderInboxNavHtml,
   renderDmGroupHtml,
   renderRosterGroupHtml,
   sortRosterMembers,
@@ -349,6 +350,31 @@ test("renderArmyOverviewNavHtml marks itself active only when the caller says so
   assert.match(active, /class="wh-wb-army-nav active"/u);
   const inactive = renderArmyOverviewNavHtml(true, false);
   assert.doesNotMatch(inactive, /class="wh-wb-army-nav active"/u);
+});
+
+// R15 批 I1（决策收件箱）：rail 顶部「待拍板」一级入口 + 计数徽标。
+test("renderInboxNavHtml is a real, clickable top-level entry point in both locales", () => {
+  const zh = renderInboxNavHtml(true, false, 0);
+  assert.match(zh, /<button[^>]*data-wb-open-inbox[^>]*>[^]*待拍板/u);
+  const en = renderInboxNavHtml(false, false, 0);
+  assert.match(en, /<button[^>]*data-wb-open-inbox[^>]*>[^]*Decisions/u);
+});
+
+test("renderInboxNavHtml shows the count badge only when there are pending decisions", () => {
+  const none = renderInboxNavHtml(true, false, 0);
+  assert.doesNotMatch(none, /wh-wb-inbox-nav-count/u);
+  const some = renderInboxNavHtml(true, false, 3);
+  assert.match(some, /class="wh-wb-inbox-nav-count"[^>]*>3</u);
+  // 负数/非有限值当作 0（防御性），不渲徽标。
+  assert.doesNotMatch(renderInboxNavHtml(true, false, -2), /wh-wb-inbox-nav-count/u);
+  assert.doesNotMatch(renderInboxNavHtml(true, false, Number.NaN), /wh-wb-inbox-nav-count/u);
+});
+
+test("renderInboxNavHtml caps the badge at 99+ and marks active only when told", () => {
+  const big = renderInboxNavHtml(true, true, 250);
+  assert.match(big, />99\+</u);
+  assert.match(big, /class="wh-wb-inbox-nav active"/u);
+  assert.doesNotMatch(renderInboxNavHtml(true, false, 5), /class="wh-wb-inbox-nav active"/u);
 });
 
 test("renderNewProjectModalHtml toggles data-open and disables the submit button until a name is entered", () => {

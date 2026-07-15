@@ -486,6 +486,9 @@ export function mountChatView(
     onApproveProposal?: (proposalId: string) => Promise<void>;
     // R15 批 A6：产出卡「打回」按钮点击——打回要写理由，不内联提交，宿主打开右栏并聚焦理由输入。可选。
     onRequestChangesProposal?: (proposalId: string) => void;
+    // R15 批 I2（决策 digest 卡）：pending_digest 卡「打开收件箱」按钮点击——宿主（shell.ts）切中栏到 I1
+    // 的决策收件箱视图（centerTab='inbox'）。可选：不接（测试/其它宿主）时 digest 卡不渲这个按钮。
+    onOpenInbox?: () => void;
     // R14 批 CHAT（桌宠彩蛋，stretch）：有人给 Cuu 的一条消息新加了个反应时，把该露的情绪信号交出去
     // （celebrating/worried/thinking，见 reaction-emotion.ts 的映射）。detection 在这里做——只有本地持
     // 有上一份 reactions 快照的 view.ts 能 diff 出「新增了哪个键」（reaction.updated 是全量聚合，无增量）。
@@ -674,7 +677,9 @@ export function mountChatView(
     // （否则只渲「看提议」，不摆假按钮）。忙态/错误按 proposal id 索引透传给渲染层。
     proposalInlineActionsEnabled: input.onApproveProposal !== undefined,
     busyProposalIds,
-    proposalActionErrors
+    proposalActionErrors,
+    // R15 批 I2（决策 digest 卡）：只有宿主接了 onOpenInbox 才在 pending_digest 卡上渲「打开收件箱」按钮。
+    pendingDigestInboxEnabled: input.onOpenInbox !== undefined
   });
 
   container.innerHTML = `<div class="wh-wb-chat">
@@ -3031,6 +3036,11 @@ export function mountChatView(
     const openProposalBtn = target.closest<HTMLElement>("[data-wb-chat-open-proposal]");
     if (openProposalBtn?.dataset.wbChatOpenProposal) {
       input.onOpenProposal?.(openProposalBtn.dataset.wbChatOpenProposal);
+      return;
+    }
+    // R15 批 I2（决策 digest 卡）：「打开收件箱」点击 → 宿主切中栏到 I1 的决策收件箱视图（同上抛给 shell 模式）。
+    if (target.closest("[data-wb-chat-open-inbox]")) {
+      input.onOpenInbox?.();
       return;
     }
     // R15 批 A6（产出卡内联批准）：「批准」内联提交（reviewProposalWithoutMerge 由宿主处理）；「打回」不内联，

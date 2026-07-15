@@ -414,6 +414,24 @@ export function renderArmyOverviewNavHtml(zh: boolean, active: boolean): string 
   </div>`;
 }
 
+// R15 批 I1（决策收件箱）：rail 顶部「待拍板」一级入口——横跨项目的决策总览（中栏切到 workbench/inbox）。
+// count 来自 store.inboxCount（GET /api/pages/attention 的 queue 长度，shell 维护），>0 才渲红色计数徽标，
+// 是「一眼看到有几条待拍板」的核心承诺（对齐主窗聚焦盒的审批角标）。active 由 centerTab === "inbox" 决定，
+// 同 army-nav/leaf 的选中态约定。放在 rail 最顶（项目树之上），决策面是全桌面最高优先的日常入口。
+export function renderInboxNavHtml(zh: boolean, active: boolean, count: number): string {
+  const safeCount = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+  const badge = safeCount > 0
+    ? `<span class="wh-wb-inbox-nav-count" data-wb-inbox-count="${safeCount}">${safeCount > 99 ? "99+" : safeCount}</span>`
+    : "";
+  return `<div class="wh-wb-rail-group wh-wb-rail-group--inbox">
+    <button type="button" class="wh-wb-inbox-nav${active ? " active" : ""}" data-wb-open-inbox aria-current="${active ? "true" : "false"}">
+      ${workbenchIcons.check}
+      <span class="wh-wb-inbox-nav-label">${zh ? "待拍板" : "Decisions"}</span>
+      ${badge}
+    </button>
+  </div>`;
+}
+
 // —— R15 批 B（人对人私聊）：成员 roster + 私聊分组 —— //
 
 type WorkbenchMemberVM = WorkbenchPageVM["workspace_members"]["items"][number];
@@ -723,6 +741,8 @@ export function mountWorkbenchRail(
     onOpenDrive?: () => void;
     // R13 批 P1：军团总览一级入口点击——shell.ts 把它接成 store.centerTab = "army-overview"。
     onOpenArmyOverview?: () => void;
+    // R15 批 I1（决策收件箱）：rail 顶部「待拍板」一级入口点击——shell.ts 把它接成 store.centerTab = "inbox"。
+    onOpenInbox?: () => void;
     // R13 批 P3：项目行的「项目设置」齿轮点击——shell.ts 把它接成 store.centerTab = "project-settings"。
     onOpenProjectSettings?: () => void;
     // R15 批 B（人对人私聊）：私聊分组某条 DM 会话被点开——传的是该 DM 会话的真实 id（shell.ts 用它去
@@ -769,7 +789,7 @@ export function mountWorkbenchRail(
     // R15 批 B：成员 roster / 私聊分组共用的在线集合 + 当前 viewer。
     const onlineUserIds = new Set(state.onlineUserIds);
     const currentUserId = state.currentUserId ?? state.vm?.viewer.user_id;
-    container.innerHTML = `${renderPersonalSpaceSectionHtml({
+    container.innerHTML = `${renderInboxNavHtml(zh, state.centerTab === "inbox", state.inboxCount)}${renderPersonalSpaceSectionHtml({
       personalProjects: state.personalProjects,
       selectedProjectId: state.selectedProjectId,
       vm: state.vm,
@@ -1239,6 +1259,10 @@ export function mountWorkbenchRail(
     }
     if (target.closest("[data-wb-open-drive]")) {
       input.onOpenDrive?.();
+      return;
+    }
+    if (target.closest("[data-wb-open-inbox]")) {
+      input.onOpenInbox?.();
       return;
     }
     if (target.closest("[data-wb-open-army-overview]")) {
