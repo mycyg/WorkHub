@@ -35,6 +35,7 @@ import {
   messageReactions,
   projectConversations,
   projects,
+  users,
   workspaceMemberships
 } from "./schema/index.js";
 import {
@@ -1791,6 +1792,81 @@ test("R14FIX renameConversation rejects an empty or too-long title before any wr
     );
   }
   assert.equal(queries.length, 0);
+});
+
+// ── R15 批 cuu-toggle：会话级 Cuu 开关翻转 + 参与者列表 ─────────────────────────────────
+
+test("R15 updateCuuEnabled writes only cuu_enabled inside the tenant fence and returns the flipped row", async () => {
+  const flippedRow = conversation({ cuuEnabled: false, updatedAt: new Date("2026-07-15T09:00:00.000Z") });
+  const { db, queries } = createQueryRecorder([[flippedRow]]);
+
+  const result = await createConversationRepository(db).updateCuuEnabled({
+    workspaceId,
+    conversationId,
+    enabled: false,
+    at: now
+  });
+
+  assert.equal(result.cuuEnabled, false);
+  const update = queries[0];
+  assert.equal(update?.operation, "update");
+  assert.equal(update?.targetTable, projectConversations);
+  assert.equal(update?.returningCalled, true);
+  const setValue = update?.setValue as Record<string, unknown>;
+  assert.equal(setValue["cuuEnabled"], false);
+  assert.equal(setValue["updatedAt"], now);
+  // 租户 + 未删除围栏（workspaceId + id + deletedAt IS NULL），同 renameConversation 的既有围栏。
+  for (const column of [projectConversations.id, projectConversations.workspaceId, projectConversations.deletedAt]) {
+    assert.ok(queryReferences(update?.where, column), "cuu toggle must fence on tenant + id + not-deleted");
+  }
+});
+
+test("R15 updateCuuEnabled re-flipping to the same value is still a plain update (idempotent, no special-casing)", async () => {
+  const sameRow = conversation({ cuuEnabled: true, updatedAt: now });
+  const { db, queries } = createQueryRecorder([[sameRow]]);
+
+  const result = await createConversationRepository(db).updateCuuEnabled({
+    workspaceId,
+    conversationId,
+    enabled: true,
+    at: now
+  });
+
+  assert.equal(result.cuuEnabled, true);
+  assert.equal(queries.length, 1);
+  assert.equal(queries[0]?.operation, "update");
+});
+
+test("R15 updateCuuEnabled 404s (ConversationAccessDeniedError) when no active row matches", async () => {
+  const { db } = createQueryRecorder([[]]);
+  await assert.rejects(
+    createConversationRepository(db).updateCuuEnabled({ workspaceId, conversationId, enabled: true, at: now }),
+    (error: unknown) => error instanceof ConversationAccessDeniedError
+  );
+});
+
+test("R15 listParticipantsWithNickname joins active users, filters by conversation, and caps at 100", async () => {
+  const { db, queries } = createQueryRecorder([
+    [
+      { userId: creatorUserId, nickname: "阿曼", role: "owner" },
+      { userId: memberUserId, nickname: "小赵", role: "member" }
+    ]
+  ]);
+
+  const result = await createConversationRepository(db).listParticipantsWithNickname({ conversationId });
+
+  assert.deepEqual(result, [
+    { userId: creatorUserId, nickname: "阿曼", role: "owner" },
+    { userId: memberUserId, nickname: "小赵", role: "member" }
+  ]);
+  const query = queries[0];
+  assert.equal(query?.fromTable, conversationParticipants);
+  assert.ok(
+    query?.joins.some((join) => join.table === users),
+    "participants list must join users for nicknames"
+  );
+  assert.ok(queryReferences(query?.where, conversationParticipants.conversationId));
+  assert.equal(query?.limit, 100);
 });
 
 test("R14 listReceipts is tenant-joined, ordered, and capped", async () => {

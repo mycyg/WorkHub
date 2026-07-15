@@ -132,6 +132,26 @@ export function renderDmHeadBarHtml(input: {
   )}</span><span class="${statusClass}">${statusText}</span></div>`;
 }
 
+// R15 批 cuu-toggle：DM / 非主区协同会话头部的「请 Cuu 进来」开关——main 不渲这个控件（在 view.ts 的
+// 挂载点收紧，这个函数本身不做会话种类判断，纯展示：给定当前状态渲染对应文案 + data 钩子）。busy 时
+// 禁用并换成温和的「处理中…」文案，照 render.ts 既有的 markBusy 手感（同 actionCardItemBusyAction
+// 按钮禁用 + 换文案的既有取舍）。
+export function renderCuuToggleHtml(input: { enabled: boolean; busy: boolean; locale: Locale }): string {
+  const zh = input.locale === "zh-CN";
+  const label = input.enabled
+    ? zh
+      ? "Cuu 已在场 · 点击请出"
+      : "Cuu is here · tap to remove"
+    : zh
+      ? "请 Cuu 进来"
+      : "Invite Cuu";
+  const busyLabel = zh ? "处理中…" : "Working…";
+  const stateClass = input.enabled ? "wh-wb-chat-cuu-toggle wh-wb-chat-cuu-toggle--on" : "wh-wb-chat-cuu-toggle";
+  return `<button type="button" class="${stateClass}" data-wb-chat-cuu-toggle${input.busy ? " disabled" : ""} aria-pressed="${input.enabled}">${escapeHtml(
+    input.busy ? busyLabel : label
+  )}</button>`;
+}
+
 // —— 日期分隔 —— //
 
 export function renderDaySeparatorHtml(label: string): string {

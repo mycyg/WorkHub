@@ -460,6 +460,17 @@ export type RenameConversationRequest = z.infer<typeof renameConversationRequest
 // 重命名成功的响应 VM 定义在 conversationVmSchema 之后（引用它），避免 const 使用前声明——同
 // conversationPinsVmSchema 的既有取舍。见本文件下方 renameConversationResultVmSchema。
 
+// R15 批 cuu-toggle：PATCH /api/conversations/:id/cuu 的请求体——只带目标布尔值（幂等：重复翻到同一个
+// 值不是错误，仓库层就是一次普通的 UPDATE）。语义红线（仅 collab 含 DM 可翻、main 一律拒绝、仅参与者
+// 可翻）在服务层强制，见 apps/api/src/services/conversations.ts updateCuuEnabled。
+export const updateConversationCuuRequestSchema = z
+  .object({
+    enabled: z.boolean()
+  })
+  .strict();
+export type UpdateConversationCuuRequest = z.infer<typeof updateConversationCuuRequestSchema>;
+// 响应 VM 定义在 conversationVmSchema 之后（引用它）——见本文件下方 updateConversationCuuResultVmSchema。
+
 // R14 批 CHAT：编辑消息请求体——只带新正文（仅 text 消息可编辑，kind 判定在服务/仓库层）。text 的
 // 长度约束与创建侧对齐（min 1、上限同 MAX_CONVERSATION_TEXT_CODE_UNITS）。
 export const editConversationMessageRequestSchema = z
@@ -641,6 +652,42 @@ export const renameConversationResultVmSchema = z
   })
   .strict();
 export type RenameConversationResultVM = z.infer<typeof renameConversationResultVmSchema>;
+
+// R15 批 cuu-toggle：PATCH /cuu 成功的响应——回翻转后的完整会话 VM（客户端就地更新 cuu_enabled + 头部
+// 开关状态），同 renameConversationResultVmSchema 的既有取舍。
+export const updateConversationCuuResultVmSchema = z
+  .object({
+    conversation: conversationVmSchema
+  })
+  .strict();
+export type UpdateConversationCuuResultVM = z.infer<typeof updateConversationCuuResultVmSchema>;
+
+// R15 批 cuu-toggle：GET /api/conversations/:id/participants —— 会话参与者列表（供桌面端小群「已读 N/M」
+// 分母修复：真实参与者集合，而不是把整个工作区成员当分母）。main 会话没有 conversation_participants 行
+// （全员可见，01-chat-design 的既有语义），诚实回 scope:"workspace" + 空列表，不假装 main 也有一份
+// "参与者名单"；collab（含 DM）回 scope:"participants" + 真实参与者（user_id/昵称/角色）。参与者门控
+// 与消息可见性同口径——非参与者在服务层的 visibleConversation() 就已经 404，不会走到这里。
+export const conversationParticipantsScopeSchema = z.enum(["workspace", "participants"]);
+export type ConversationParticipantsScope = z.infer<typeof conversationParticipantsScopeSchema>;
+
+export const conversationParticipantListItemVmSchema = z
+  .object({
+    user_id: idSchema,
+    nickname: z.string().min(1),
+    role: conversationParticipantRoleSchema
+  })
+  .strict();
+export type ConversationParticipantListItemVM = z.infer<typeof conversationParticipantListItemVmSchema>;
+
+// 上限 100——同 createCollab 的「至多 99 名被邀请成员 + 1 名创建者」上限对称，纯防御性封顶。
+export const CONVERSATION_PARTICIPANTS_LIST_CAP = 100;
+export const conversationParticipantsVmSchema = z
+  .object({
+    scope: conversationParticipantsScopeSchema,
+    participants: z.array(conversationParticipantListItemVmSchema).max(CONVERSATION_PARTICIPANTS_LIST_CAP)
+  })
+  .strict();
+export type ConversationParticipantsVM = z.infer<typeof conversationParticipantsVmSchema>;
 
 export const conversationParticipantVmSchema = z
   .object({

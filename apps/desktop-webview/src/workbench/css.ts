@@ -382,8 +382,18 @@ export const workbenchCss = [
   ".wh-wb-chat{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}",
   ".wh-wb-chat-banner{flex:none;padding:6px 20px;text-align:center;font:600 11.5px/1.4 var(--ds-font);" +
     "color:var(--ds-warn);background:var(--ds-warn-soft);border-bottom:1px solid var(--ds-glass-border)}",
+  // R15 批 cuu-toggle：头部挂载点本身撑成一行——左边是既有的成员条/DM 头（.wh-wb-chat-head 内部自己的
+  // flex 布局不变），右边留给「请 Cuu 进来」开关（只在 DM/非主区协同会话渲染，见 view.ts renderHead）。
+  // 挂载点本身没有类名，只有 data-wb-chat-head 属性——纯布局壳，不影响任何既有断言（既有测试只覆盖
+  // renderMemberBarHtml/renderDmHeadBarHtml 各自返回的字符串，不检查这层壳）。
+  "[data-wb-chat-head]{display:flex;align-items:center;justify-content:space-between;gap:8px}",
   ".wh-wb-chat-head{flex:none;display:flex;align-items:center;gap:10px;padding:9px 20px;" +
     "border-bottom:1px solid var(--ds-glass-border);font:500 11.5px/1 var(--ds-font);color:var(--ds-ink-muted)}",
+  ".wh-wb-chat-cuu-toggle{flex:none;margin-right:16px;padding:5px 12px;border-radius:999px;" +
+    "border:1px solid var(--ds-glass-border);background:var(--ds-glass);font:600 11px/1.2 var(--ds-font);" +
+    "color:var(--ds-ink-muted);cursor:pointer}",
+  ".wh-wb-chat-cuu-toggle--on{border-color:rgba(255,171,94,.4);background:var(--wb-cuu-soft);color:var(--wb-cuu)}",
+  ".wh-wb-chat-cuu-toggle:disabled{opacity:.6;cursor:default}",
   ".wh-wb-chat-avs{display:flex}",
   // 头像堆叠的描边用白色（新壳体底色本就是近白的浅色玻璃），照 .wh-wb-chat-avatar--cuu/render.ts
   // avatarTileHtml 的深底色块配白字在浅底上依然成立——这条边框只是让重叠头像有「切出来」的轮廓感。

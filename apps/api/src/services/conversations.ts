@@ -20,6 +20,7 @@ import {
   type AiFeedbackRow,
   type ConversationMessageRow,
   type ConversationParticipantRow,
+  type ConversationParticipantWithNicknameRow,
   type ConversationReactionKey,
   type ConversationRepository,
   type ConversationRow,
@@ -30,12 +31,14 @@ import {
   type WorkHubDatabaseClient
 } from "@workhub/db";
 import {
+  conversationCuuUpdatedEventSchema,
   conversationFileCardContentSchema,
   conversationMessageCreatedEventSchema,
   conversationMessageUpdatedEventSchema,
   conversationListPageVmSchema,
   conversationMessagePageVmSchema,
   conversationMessageVmSchema,
+  conversationParticipantsVmSchema,
   conversationPinsVmSchema,
   conversationReactionKeySchema,
   conversationReactionUpdatedEventSchema,
@@ -47,6 +50,7 @@ import {
   dmListVmSchema,
   DM_LIST_CAP,
   renameConversationResultVmSchema,
+  updateConversationCuuResultVmSchema,
   eventTypes,
   MAX_CONVERSATION_REPLY_PREVIEW_CODE_UNITS,
   type AdvanceReadCursorRequest,
@@ -56,6 +60,7 @@ import {
   type ConversationMessagePageVM,
   type ConversationMessageReplyPreviewVM,
   type ConversationMessageVM,
+  type ConversationParticipantsVM,
   type ConversationPinsVM,
   type ConversationReadCursorVM,
   type ConversationReadReceiptsVM,
@@ -66,7 +71,9 @@ import {
   type EditConversationMessageRequest,
   type OpenDmResultVM,
   type RenameConversationRequest,
-  type RenameConversationResultVM
+  type RenameConversationResultVM,
+  type UpdateConversationCuuRequest,
+  type UpdateConversationCuuResultVM
 } from "@workhub/contracts";
 import { makeWorkHubEvent, topics } from "@workhub/events";
 
@@ -136,6 +143,16 @@ export type ConversationService = {
     conversationId: string;
     payload: RenameConversationRequest;
   }): Promise<RenameConversationResultVM>;
+  // R15 批 cuu-toggle：会话级 Cuu 参与开关翻转——同 renameConversation 一样仅 collab（含 DM）、仅
+  // 参与者/owner；main 一律 409（Cuu 在主区的参与语义不同，见实现处注释）。
+  updateCuuEnabled(input: {
+    actor: AuthActor;
+    conversationId: string;
+    payload: UpdateConversationCuuRequest;
+  }): Promise<UpdateConversationCuuResultVM>;
+  // R15 批 cuu-toggle：会话参与者列表——main 诚实回 scope:"workspace" + 空列表，collab（含 DM）回真实
+  // 参与者。参与者门控与消息可见性同口径（非参与者在 visibleConversation() 就已经 404）。
+  listParticipants(input: { actor: AuthActor; conversationId: string }): Promise<ConversationParticipantsVM>;
   listMessages(input: {
     actor: AuthActor;
     conversationId: string;
@@ -643,6 +660,34 @@ export function createConversationService(
     }
   }
 
+  // R15 批 cuu-toggle：会话级 Cuu 参与开关翻转后广播——同 publishReadUpdated 的既有取舍（best-effort，
+  // 发布失败仅 warn，翻转本身已经落库成功，不因广播失败回滚）。让别的开着这个会话的客户端头部即时同步
+  // 开关状态，接不上就等下次挂载时用会话 VM 里的 cuu_enabled 兜底。
+  async function publishConversationCuuUpdated(access: ConversationRow, cuuEnabled: boolean) {
+    const conversationTopic = topics.conversation(access.id).topic;
+    const event = parseOutputContract(
+      conversationCuuUpdatedEventSchema,
+      makeWorkHubEvent({
+        type: eventTypes.conversationCuuUpdated,
+        topic: conversationTopic,
+        ts: now(),
+        data: { conversation_id: access.id, cuu_enabled: cuuEnabled }
+      }),
+      "conversations.cuu.event.updated"
+    );
+    try {
+      await bus.publish(conversationTopic, eventTypes.conversationCuuUpdated, event);
+    } catch (error) {
+      logger.warn("conversation_cuu_updated_publish_failed", {
+        event_id: event.event_id,
+        topic: conversationTopic,
+        conversation_id: access.id,
+        broker_backend: bus.backend,
+        error
+      });
+    }
+  }
+
   function parseReactionKey(rawKey: string): ConversationReactionKey {
     const parsed = conversationReactionKeySchema.safeParse(rawKey);
     if (!parsed.success) {
@@ -857,6 +902,79 @@ export function createConversationService(
         renameConversationResultVmSchema,
         { conversation: conversationToVm(updated, access.participantRole) },
         "conversations.rename"
+      );
+    },
+
+    // ── R15 批 cuu-toggle：会话级 Cuu 参与开关翻转 ────────────────────────────────────
+    // 红线（G1 设计 + 本批用户拍板，见批次交付报告的"main 的两处取舍"一节）：
+    //   1. 会话可见（visibleConversation 已 404 挡住不可见者）；
+    //   2. 仅 collab 会话（含 DM——DM 就是 kind='collab' 的一种）可翻——main（团队主区/个人空间单聊）
+    //      的 Cuu 参与语义不一样（主区归静默观察者处理，没有"这一群人手动开关 Cuu"这件事），一律 409，
+    //      不给一个点了必失败的入口；
+    //   3. 仅参与者/owner（participantRole !== null）——project 可见的 collab 里的旁观者不能翻。
+    // 幂等：重复翻到同一个值不特殊处理，仓库层就是一次普通的 UPDATE，成功返回、正常广播。
+    // 广播 conversation.cuu.updated（best-effort）——让其它开着这个会话的客户端头部即时同步开关状态。
+    async updateCuuEnabled(input) {
+      const { human, access } = await visibleConversation(input);
+      const conversation = access.conversation;
+      if (conversation.kind !== "collab") {
+        throw new ConversationServiceError(
+          409,
+          "conversation_cuu_not_collab",
+          "主区不支持切换 Cuu 是否参与，只有协同会话（含私聊）可以。"
+        );
+      }
+      if (access.participantRole === null) {
+        throw new ConversationServiceError(
+          403,
+          "conversation_cuu_forbidden",
+          "只有会话的参与者才能切换 Cuu 是否参与。"
+        );
+      }
+      let updated: ConversationRow;
+      try {
+        updated = await repository.updateCuuEnabled({
+          workspaceId: human.workspaceId,
+          conversationId: conversation.id,
+          enabled: input.payload.enabled,
+          at: now()
+        });
+      } catch (error) {
+        mapRepositoryError(error);
+      }
+      await publishConversationCuuUpdated(updated, updated.cuuEnabled);
+      return parseOutputContract(
+        updateConversationCuuResultVmSchema,
+        { conversation: conversationToVm(updated, access.participantRole) },
+        "conversations.cuu.update"
+      );
+    },
+
+    // ── R15 批 cuu-toggle：会话参与者列表 ──────────────────────────────────────────────
+    // main 会话没有 conversation_participants 行（01-chat-design 的既有语义：主区对整个工作区可见）——
+    // 诚实回 scope:"workspace" + 空列表，不假装能凑出一份"主区参与者名单"（那份名单其实是"当前工作区
+    // 全体成员"，与协同会话的参与者概念不是一回事，混在一起会误导客户端）。collab（含 DM）回
+    // scope:"participants" + 真实参与者。参与者门控与消息可见性同口径——visibleConversation() 对
+    // 不可见的 collab 已经 404，这里不重复判断。
+    async listParticipants(input) {
+      const { access } = await visibleConversation(input);
+      if (access.conversation.kind !== "collab") {
+        return parseOutputContract(
+          conversationParticipantsVmSchema,
+          { scope: "workspace", participants: [] },
+          "conversations.participants.list"
+        );
+      }
+      const rows: ConversationParticipantWithNicknameRow[] = await repository.listParticipantsWithNickname({
+        conversationId: access.conversation.id
+      });
+      return parseOutputContract(
+        conversationParticipantsVmSchema,
+        {
+          scope: "participants",
+          participants: rows.map((row) => ({ user_id: row.userId, nickname: row.nickname, role: row.role }))
+        },
+        "conversations.participants.list"
       );
     },
 

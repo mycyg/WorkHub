@@ -177,6 +177,14 @@ function service(overrides: Partial<ConversationService> = {}): ConversationServ
     async renameConversation() {
       throw new Error("renameConversation not expected");
     },
+    // R15 批 cuu-toggle：新增 updateCuuEnabled/listParticipants 服务方法——本套件不测它们，给拒绝桩即可
+    // （新路由文件 conversation-cuu.ts / conversation-participants.ts 有自己的套件）。
+    async updateCuuEnabled() {
+      throw new Error("updateCuuEnabled not expected");
+    },
+    async listParticipants() {
+      throw new Error("listParticipants not expected");
+    },
     async listMessages() {
       return { messages: [], has_more: false, next_after_seq: 0 };
     },

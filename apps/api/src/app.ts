@@ -45,6 +45,8 @@ import { createConversationTypingRoutes } from "./routes/conversation-typing.js"
 import { createConversationMessageActionRoutes } from "./routes/conversation-message-actions.js";
 import { createConversationReadRoutes } from "./routes/conversation-read.js";
 import { createConversationRenameRoutes } from "./routes/conversation-rename.js";
+import { createConversationCuuRoutes } from "./routes/conversation-cuu.js";
+import { createConversationParticipantsRoutes } from "./routes/conversation-participants.js";
 import { createPresenceRoutes } from "./routes/presence.js";
 import { createSearchRoutes } from "./routes/search.js";
 import { createUserMemoryGovernanceRoutes } from "./routes/user-memory-governance.js";
@@ -278,6 +280,10 @@ app.route("/api", createConversationMessageActionRoutes());
 app.route("/api", createConversationReadRoutes());
 // R14 验收修复批 A：协同会话重命名（main 主区不可改名，服务层强制）。
 app.route("/api", createConversationRenameRoutes());
+// R15 批 cuu-toggle：会话级 Cuu 参与开关（PATCH /cuu，main 一律 409）+ 参与者列表
+// （GET /participants，main 回 scope:"workspace" 空列表）。
+app.route("/api", createConversationCuuRoutes());
+app.route("/api", createConversationParticipantsRoutes());
 app.route("/api", createPresenceRoutes());
 // R14 批 SEARCH：全局搜索统一读端点（四 scope 鉴权在 SQL 内逐 actor 收口）。
 app.route("/api", createSearchRoutes());

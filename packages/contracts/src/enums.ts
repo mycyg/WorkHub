@@ -196,6 +196,9 @@ export const eventTypes = {
   conversationReactionUpdated: "conversation.reaction.updated",
   // R14 批 CHAT：已读游标推进。
   conversationReadUpdated: "conversation.read.updated",
+  // R15 批 cuu-toggle：会话级 Cuu 参与开关翻转后广播（PATCH /cuu），让其它开着这个会话的客户端头部
+  // 同步开关状态，不必等下次重挂才看到。
+  conversationCuuUpdated: "conversation.cuu.updated",
   conversationToolBegin: "conversation.tool.begin",
   conversationToolOutputDelta: "conversation.tool.output_delta",
   conversationToolEnd: "conversation.tool.end",

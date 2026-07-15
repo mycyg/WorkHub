@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   parseIncomingActionCardUpdated,
+  parseIncomingConversationCuuUpdated,
   parseIncomingMessageCreated,
   parseIncomingMessageDelta,
   parseIncomingMessageUpdated,
@@ -405,6 +406,42 @@ test("parseIncomingReadUpdated rejects garbage / wrong conversation instead of t
   assert.equal(parseIncomingReadUpdated({ nope: true }, conversationId), undefined);
   assert.equal(parseIncomingReadUpdated(null, conversationId), undefined);
   assert.equal(parseIncomingReadUpdated(validReadUpdatedEvent(), "40000000-0000-4000-8000-000000000099"), undefined);
+});
+
+// —— R15 批 cuu-toggle：conversation.cuu.updated（会话级 Cuu 参与开关翻转） —— //
+
+function validCuuUpdatedEvent(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    event_id: eventId,
+    type: "conversation.cuu.updated",
+    topic: `conversation:${conversationId}`,
+    ts,
+    data: {
+      conversation_id: conversationId,
+      cuu_enabled: true
+    },
+    ...overrides
+  };
+}
+
+test("parseIncomingConversationCuuUpdated accepts a well-formed event and returns the flipped boolean", () => {
+  assert.equal(parseIncomingConversationCuuUpdated(validCuuUpdatedEvent(), conversationId), true);
+  assert.equal(
+    parseIncomingConversationCuuUpdated(
+      { ...validCuuUpdatedEvent(), data: { conversation_id: conversationId, cuu_enabled: false } },
+      conversationId
+    ),
+    false
+  );
+});
+
+test("parseIncomingConversationCuuUpdated rejects garbage / wrong conversation instead of throwing", () => {
+  assert.equal(parseIncomingConversationCuuUpdated({ nope: true }, conversationId), undefined);
+  assert.equal(parseIncomingConversationCuuUpdated(null, conversationId), undefined);
+  assert.equal(
+    parseIncomingConversationCuuUpdated(validCuuUpdatedEvent(), "40000000-0000-4000-8000-000000000099"),
+    undefined
+  );
 });
 
 // —— R14 批 CHAT：conversation.observer.analyzing（瞬态指示灯） —— //
