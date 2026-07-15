@@ -2,6 +2,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { eventTypes } from "@workhub/contracts";
+import { errorToolResult, type ToolResult } from "@workhub/tools";
 
 import {
   buildDeliverableChangeManifestFromOutputs,
@@ -9,7 +10,7 @@ import {
   type BuildDeliverableChangeManifestInput
 } from "../deliverables/index.js";
 import type { LlmMessage, LlmStreamEvent } from "../providers/types.js";
-import { checkLoopBudget, controlFromAssistant, createInitialUsage, DoomLoopDetector } from "./control.js";
+import { checkLoopBudget, controlFromAssistant, createInitialUsage, DoomLoopDetector, isTruncatedToolBatch } from "./control.js";
 import { nextRetryDecision } from "../providers/retry.js";
 import { buildStructuredHandoff } from "./handoff.js";
 import type {
@@ -410,6 +411,29 @@ function summarizeStepsForCompaction(steps: AgentLoopStep[], maxChars = 4000) {
   const headChars = Math.floor(maxChars * 0.7);
   const tailChars = Math.floor(maxChars * 0.2);
   return `${summary.slice(0, headChars)}\n…[摘要中段省略]\n${summary.slice(summary.length - tailChars)}`;
+}
+
+/**
+ * 补丁3：把被截断批次的 assistant 内容整理成 API 合法的 echo。截断会让 tool_use 的 input 退化成残缺
+ * partial_json 字符串——直接把这种 string input 回传给 provider 会 400（tool_use.input 必须是对象）。这里
+ * 把残缺 string input 换成合法空对象 {}，保留每个 tool_use 的 id/name（与随后逐个回的 error tool_result 配对，
+ * 维持「tool_use 必配 tool_result」不变量），thinking/unknown 块对「重发工具」无价值故丢弃。
+ */
+function sanitizeTruncatedAssistantContent(blocks: AgentAssistantBlock[]): unknown[] {
+  const content: unknown[] = [];
+  for (const block of blocks) {
+    if (block.type === "tool_use") {
+      content.push({
+        type: "tool_use",
+        id: block.id,
+        name: block.name,
+        input: block.input && typeof block.input === "object" ? block.input : {}
+      });
+    } else if (block.type === "text") {
+      content.push({ type: "text", text: block.text });
+    }
+  }
+  return content;
 }
 
 function blockType(block: unknown): string | undefined {
@@ -863,14 +887,32 @@ export class AgentLoop {
       const assistant = response.content.map(parseBlock);
       await emitAssistantTrace(input, stepNo, assistant);
       const toolCalls = assistant.filter((block): block is Extract<AgentAssistantBlock, { type: "tool_use" }> => block.type === "tool_use");
-      // findings[#48]：先算 control。max_tokens 截断会让 tool_use.input 退化成残缺 partial_json 字符串，
-      // controlFromAssistant 此时返回 "compact"——绝不能拿这种垃圾输入去执行工具。原实现在算 control 之前就把
-      // 工具全跑了，导致 compact 守卫成死代码（执行后 toolResults>0 总走 continue 分支，compact 分支不可达）。
-      // 故 compact 时跳过工具执行，让下方路由进 compact 重来（compactNow 会把残缺的 assistant 内容摘要掉）。
-      // 注意：max_tokens 但所有 tool_use input 仍解析成功时返回的是 "continue"，工具照常执行——只有真退化才跳过。
       const control = controlFromAssistant(assistant, response.stopReason);
-      const toolResults = [];
-      if (control !== "compact") {
+      // 补丁3：max_tokens 截断且某个 tool_use.input 退化成残缺 partial_json 字符串 → 整条消息的 tool_use 都不
+      // 可信（仿 pi failToolCallsFromTruncatedMessage）。不执行、不跳批、不烧压缩配额：给每个 tool_use 回一条
+      // 说明「因输出截断未执行、请重发完整参数」的 error tool_result，control 为 "continue"，下方按 tool_result
+      // 路径 continue，让模型重发完整调用。max_tokens 但所有 input 仍解析成对象时不命中——工具照常执行。
+      const truncatedToolBatch = isTruncatedToolBatch(assistant, response.stopReason);
+      const toolResults: ToolResult[] = [];
+      if (truncatedToolBatch) {
+        for (const toolCall of toolCalls) {
+          const result = errorToolResult(
+            `工具调用「${toolCall.name}」未执行：上一条回复因输出长度限制被截断，其参数可能不完整。请用完整参数重新发起该工具调用。`
+          );
+          toolResults.push(result);
+          await input.emit?.({
+            type: eventTypes.stepToolResult,
+            previewText: result.content.slice(0, 200),
+            data: {
+              run_id: input.runId,
+              step_no: stepNo,
+              tool_id: toolCall.name,
+              ok: false,
+              is_error: true
+            }
+          });
+        }
+      } else if (control !== "compact") {
         for (const toolCall of toolCalls) {
           const result = await input.tools.execute(toolCall.name, toolCall.input, ctx);
           toolResults.push(result);
@@ -954,7 +996,8 @@ export class AgentLoop {
 
       messages.push({
         role: "assistant",
-        content: response.content
+        // 补丁3：截断批次回传时把残缺 string input 清成合法 {}，否则下次 provider 调用会因非法 tool_use.input 400。
+        content: truncatedToolBatch ? sanitizeTruncatedAssistantContent(assistant) : response.content
       });
 
       if (toolResults.length > 0) {

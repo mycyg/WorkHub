@@ -373,9 +373,37 @@ test("AgentLoop compacts after a max_tokens truncation and continues to success"
   assert.equal(result.steps.length, 3);
 });
 
-test("findings[#48] a max_tokens-truncated tool_use with degraded string input is NOT executed; loop compacts instead", async () => {
+test("补丁3 a max_tokens-truncated tool_use with degraded string input fails per-tool and continues (no compaction)", async () => {
   const workdir = await tempWorkdir();
   const executed: string[] = [];
+  const seenMessages: LlmMessage[][] = [];
+  const events: AgentLoopEvent[] = [];
+  let calls = 0;
+  const client: AgentLoopClient = {
+    model: "fake-model",
+    messages: {
+      async create(params) {
+        calls += 1;
+        seenMessages.push(JSON.parse(JSON.stringify(params.messages)));
+        if (calls === 1) {
+          // partial_json 截断：input 退化成残缺 string，不能拿去执行工具。
+          return {
+            id: "m1",
+            stopReason: "max_tokens",
+            usage: { inputTokens: 10, outputTokens: 4096 },
+            content: [{ type: "tool_use", id: "tool-1", name: "write_file", input: "{\"path\":\"outputs/r.md\",\"content\":\"part" }]
+          };
+        }
+        // 第二次：模型重发完整调用（本例回文本收尾即可，重点是 loop 已 continue 而非 compact）。
+        return {
+          id: "m2",
+          stopReason: "end_turn",
+          usage: { inputTokens: 5, outputTokens: 5 },
+          content: [{ type: "text", text: "交付完成" }]
+        };
+      }
+    }
+  };
   const spyTools = {
     toModelTools: async () => [{ name: "write_file", description: "write", input_schema: { type: "object" } }],
     execute: async (name: string) => {
@@ -390,30 +418,47 @@ test("findings[#48] a max_tokens-truncated tool_use with degraded string input i
     workdir,
     systemPrompt: "work",
     initialUserMessage: "write a long report",
-    client: fakeClient([
-      {
-        id: "m1",
-        stopReason: "max_tokens",
-        usage: { inputTokens: 10, outputTokens: 4096 },
-        // partial_json 截断：input 退化成残缺 string，不能拿去执行工具。
-        content: [{ type: "tool_use", id: "tool-1", name: "write_file", input: "{\"path\":\"outputs/r.md\",\"content\":\"part" }]
-      },
-      {
-        id: "m2",
-        stopReason: "end_turn",
-        usage: { inputTokens: 5, outputTokens: 5 },
-        content: [{ type: "text", text: "交付完成" }]
-      }
-    ]),
+    client,
     tools: spyTools,
     budget,
-    snapshot: () => ({ snapshotId: "60000000-0000-4000-8000-000000000048" })
+    requireDeliverable: false,
+    reviewDeliverable: false,
+    snapshot: () => ({ snapshotId: "60000000-0000-4000-8000-000000000048" }),
+    emit: (event) => {
+      events.push(event);
+    }
   });
 
-  // 关键：残缺输入的 tool_use 绝不被执行（修复前会在算 control 之前就把垃圾输入跑了），改走 compact 重来。
+  // 残缺输入的 tool_use 绝不被执行。
   assert.equal(executed.length, 0);
-  assert.equal(result.usage.compactions, 1);
-  // （此 spy 不写交付物，故终态是 no-deliverable failed——与本用例要证的「跳过执行+compact」无关，不断言终态。）
+  // 不烧压缩配额（旧行为会 compact 一次）。
+  assert.notEqual(result.usage.compactions, 1);
+  // loop 继续到第二次模型调用（逐个 fail + continue，而不是跳批 compact）。
+  assert.equal(calls, 2);
+  // 截断的 tool_use 收到一条 is_error 的 tool_result（文案提示重发完整参数）。
+  assert.equal(
+    events.some((event) =>
+      event.type === eventTypes.stepToolResult && event.data.is_error === true && event.data.tool_id === "write_file"),
+    true
+  );
+  // 回传给 provider 的第二次消息里，被截断的 assistant tool_use 已被清成合法对象输入（不是残缺 string），
+  // 并配有对应的 tool_result——不会因非法 tool_use.input 让下次调用 400。
+  const secondCall = seenMessages[1]!;
+  const echoedAssistant = secondCall.find((message) =>
+    message.role === "assistant" &&
+    Array.isArray(message.content) &&
+    (message.content as Array<{ type?: string; id?: string }>).some((block) => block.type === "tool_use" && block.id === "tool-1")
+  );
+  const echoedToolUse = (echoedAssistant?.content as Array<{ type?: string; id?: string; input?: unknown }>)
+    .find((block) => block.type === "tool_use" && block.id === "tool-1");
+  assert.equal(typeof echoedToolUse?.input, "object");
+  const toolResultMessage = secondCall.find((message) =>
+    Array.isArray(message.content) &&
+    (message.content as Array<{ type?: string; tool_use_id?: string }>).some(
+      (block) => block.type === "tool_result" && block.tool_use_id === "tool-1"
+    )
+  );
+  assert.ok(toolResultMessage);
 });
 
 test("M1 AgentLoop proactively compacts when the context-window threshold is crossed", async () => {
