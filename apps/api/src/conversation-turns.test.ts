@@ -2022,3 +2022,229 @@ test("R14 createTurn omits deleted (tombstone) messages from the history handed 
   assert.ok(serialized.includes("@Cuu 帮我看看草稿"), "the anchor message must reach the model");
   assert.ok(!serialized.includes("墓碑残留文本不该进模型"), "tombstone text must be filtered out of the turn history");
 });
+
+// ── R15 批 C Phase 4：loop2（on 模式）单轮语义等价 ─────────────────────────────────────────
+// 复用现状的 client 桩（respondingClient/sequencedClient）—— loop2 的对话 streamFn 用的是同一个
+// extractDeltaText + getFinalMessage 口径，所以桩不用改。逐条对照现状（off）关键用例，钉死 on 模式
+// 单轮行为与现状语义等价。
+
+test("loop2(on): streams ordinal-numbered deltas, broadcasts a created event, and persists the final text with citations (parity with legacy)", async () => {
+  const published: Array<{ topic: string; type: string; data: unknown }> = [];
+  const createCuuMessageCalls: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          createCuuMessageCalls.push(input);
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      },
+      bus: {
+        async publish(topic, type, data) {
+          published.push({ topic, type, data });
+        }
+      }
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  assert.equal(result.turn_id, turnId);
+  assert.equal(result.message.sender_type, "cuu");
+  assert.equal(textContent(result.message).text, "看过了，整体不错");
+  assert.deepEqual(textContent(result.message).memory_citations, [
+    { kind: "user_memory", title: "preference:zh" },
+    { kind: "team_skill", title: "PPT 交付自检" }
+  ]);
+
+  assert.equal(published.length, 3);
+  assert.equal(published[0]?.type, "conversation.message.delta");
+  const firstData = published[0]?.data as { data: { ordinal: number; delta_text: string; turn_id: string } };
+  assert.equal(firstData.data.ordinal, 0);
+  assert.equal(firstData.data.delta_text, "看过了，");
+  assert.equal(firstData.data.turn_id, turnId);
+  const secondData = published[1]?.data as { data: { ordinal: number; delta_text: string } };
+  assert.equal(secondData.data.ordinal, 1);
+  assert.equal(secondData.data.delta_text, "整体不错");
+  assert.equal(published[2]?.type, "conversation.message.created");
+  const createdData = published[2]?.data as { actor: { actor_kind: string }; data: { sender_type: string } };
+  assert.equal(createdData.actor.actor_kind, "ai");
+  assert.equal(createdData.data.sender_type, "cuu");
+
+  assert.equal(createCuuMessageCalls.length, 1);
+});
+
+test("loop2(on): runs drive_search then send_file_card across rounds, persists a real file_card, logs a tool_note per call", async () => {
+  const createCuuMessageCalls: Array<{ kind: string; contentJson: unknown }> = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow({ contentJson: { text: "帮我找一下上次的合同" } })], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(callInput) {
+          createCuuMessageCalls.push({ kind: callInput.kind, contentJson: callInput.contentJson });
+          return cuuMessageRow({ kind: callInput.kind, contentJson: callInput.contentJson });
+        }
+      },
+      drive: {
+        async page() {
+          return drivePageFixture({ items: [driveItemFixture()] });
+        },
+        async file() {
+          return driveStoredFileFixture();
+        }
+      },
+      client: sequencedClient([
+        { final: toolUseFinal("call1", DRIVE_SEARCH_TOOL, { query: "合同" }) },
+        { final: toolUseFinal("call2", SEND_FILE_CARD_TOOL, { drive_item_id: "18000000-0000-4000-8000-000000000001" }) },
+        { final: textFinal("找到啦，发给你了。") }
+      ])
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  assert.equal(textContent(result.message).text, "找到啦，发给你了。");
+  assert.deepEqual(
+    createCuuMessageCalls.map((call) => call.kind),
+    ["tool_note", "file_card", "tool_note", "text"]
+  );
+  assert.deepEqual(createCuuMessageCalls[1]?.contentJson, {
+    drive_item_id: "18000000-0000-4000-8000-000000000001",
+    snapshot_name: "合同.pdf"
+  });
+});
+
+test("loop2(on): ends the turn on ask_clarifying_question, persisting the additive clarify markers on a text message", async () => {
+  const createCuuMessageCalls: Array<{ kind: string }> = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow({ contentJson: { text: "帮我建个任务" } })], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(callInput) {
+          createCuuMessageCalls.push({ kind: callInput.kind });
+          return cuuMessageRow({ kind: callInput.kind, contentJson: callInput.contentJson });
+        }
+      },
+      client: sequencedClient([
+        { final: toolUseFinal("callQ", ASK_CLARIFYING_QUESTION_TOOL, { question: "你要 PPT 还是 Word？", options: ["PPT", "Word"] }) }
+      ])
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  const content = textContent(result.message) as { text: string; is_clarifying_question?: boolean; clarify_options?: string[] };
+  assert.equal(content.text, "你要 PPT 还是 Word？");
+  assert.equal(content.is_clarifying_question, true);
+  assert.deepEqual(content.clarify_options, ["PPT", "Word"]);
+  assert.deepEqual(createCuuMessageCalls.map((call) => call.kind), ["text"]);
+});
+
+test("loop2(on): stops offering tools once the hard cap of 3 tool calls is reached, forcing a text-only closing round", async () => {
+  const streamSpy: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      drive: {
+        async page() {
+          return drivePageFixture({ items: [] });
+        },
+        async file() {
+          throw new Error("file must not be called in this scenario");
+        }
+      },
+      client: sequencedClient(
+        [
+          { final: toolUseFinal("call1", DRIVE_SEARCH_TOOL, { query: "a" }) },
+          { final: toolUseFinal("call2", DRIVE_SEARCH_TOOL, { query: "b" }) },
+          { final: toolUseFinal("call3", DRIVE_SEARCH_TOOL, { query: "c" }) },
+          { final: textFinal("问完了，都没找到。") }
+        ],
+        streamSpy
+      )
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  assert.equal(textContent(result.message).text, "问完了，都没找到。");
+  // spy 形状同现状：[0]=client provider input（每次 createTurn 只拿一次 client），[1..N]=每一轮 stream
+  // params。4 轮模型调用（3 工具轮 + 1 强制收尾轮）→ 长度 5，第四轮不带 tools。
+  assert.equal(streamSpy.length, 5);
+  const fourthRoundParams = streamSpy[4] as { tools?: unknown[] };
+  assert.equal(fourthRoundParams.tools, undefined);
+});
+
+test("loop2(on): fails closed with conversation_turn_failed if the model hallucinates a tool_use on the forced final round", async () => {
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      drive: {
+        async page() {
+          return drivePageFixture({ items: [] });
+        },
+        async file() {
+          throw new Error("file must not be called in this scenario");
+        }
+      },
+      client: sequencedClient([
+        { final: toolUseFinal("call1", DRIVE_SEARCH_TOOL, { query: "a" }) },
+        { final: toolUseFinal("call2", DRIVE_SEARCH_TOOL, { query: "b" }) },
+        { final: toolUseFinal("call3", DRIVE_SEARCH_TOOL, { query: "c" }) },
+        { final: toolUseFinal("call4", DRIVE_SEARCH_TOOL, { query: "d" }) }
+      ])
+    })
+  );
+
+  await assert.rejects(
+    service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } }),
+    (error: unknown) => error instanceof ConversationTurnServiceError && error.status === 500 && error.code === "conversation_turn_failed"
+  );
+});
+
+test("loop2(on): a provider failure maps to 500 conversation_turn_failed and persists nothing", async () => {
+  const createCuuMessageCalls: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          createCuuMessageCalls.push(input);
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      },
+      client: throwingClient()
+    })
+  );
+
+  await assert.rejects(
+    service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } }),
+    (error: unknown) => error instanceof ConversationTurnServiceError && error.status === 500 && error.code === "conversation_turn_failed"
+  );
+  assert.equal(createCuuMessageCalls.length, 0);
+});
