@@ -1,32 +1,38 @@
 /**
- * loop2 Phase 2 — double-run equivalence.
+ * loop2 Phase 3 — double-run equivalence.
  *
  * For each scenario the same deterministic scripted client + tools drive BOTH the
- * production loop (`AgentLoop.run`) and loop2 (`runAgentLoop2`), and we assert the
- * loop-core projection is identical (status / control / reason / finalText / usage
- * tokens+cost / step count / per-step control+stopReason / tool sequence+inputs) plus
- * the usage-record accounting sequence (seq + source + tokens each provider call).
+ * production loop (`AgentLoop.run`) and loop2 (`runAgentLoop2`), and we assert:
+ *   - the loop-core projection is identical (status / control / reason / finalText /
+ *     usage tokens+cost / step count / per-step control+stopReason / tool seq+inputs);
+ *   - the usage-record accounting sequence (seq + source + tokens each provider call);
+ *   - (P3a) the emitted per-step EVENT sequence is identical (type + key data fields);
+ *   - the recorder call sequence (recordUsage/recordStep order + values) is identical.
  *
  * L3 (manifest / llm_review / confidence) is deliberately out of the loop-core
  * projection — every scenario runs with requireDeliverable:false + reviewDeliverable:
  * false to isolate the engine. Allowed differences are documented in ALLOWED_DIFFS.
  *
- * ALLOWED DIFFERENCES (validated to NOT affect loop-core, hence excluded from the
- * projection):
- *   1. usage.secondsUsed — wall clock; excluded from projectLoopCore.
- *   2. step timestamps (startedAt/endedAt) — loop.ts uses per-turn now(); loop2 uses
- *      message reconstruction time. Excluded (only step COUNT + control + tool order
- *      are compared).
- *   3. manifest / review / reviewFailed / handoff details — L3, excluded.
- *   4. emitted event stream granularity — loop.ts emits per-step agentRunStep /
- *      stepToolResult / stream_event; loop2 defers those to an AgentEvent subscriber
- *      (Phase 3). Only load-bearing lifecycle events (started/compacting/escalated)
- *      are emitted by loop2, asserted where relevant.
- *   5. compaction pruned-message shape — loop.ts compacts LlmMessage[]; loop2 compacts
- *      pi AgentMessage[]. With a scripted client this never changes model output, so
- *      loop-core stays identical; the outbound request payloads differ (not asserted).
- *   6. dynamic tool visibility — loop.ts re-resolves tools per turn; loop2 resolves
- *      once. Equivalent for static tool sets (all scenarios here).
+ * ALLOWED DIFFERENCES after Phase 3 (validated to NOT affect loop-core or the emitted
+ * event sequence, hence excluded from the projections) — only wall-clock, timestamps,
+ * and L3 detail remain:
+ *   1. WALL CLOCK — usage.secondsUsed; and, under REAL streaming only (never the
+ *      buffered deterministic client here), the stream_event throttle boundaries
+ *      (which deltas land) and heartbeat count. Excluded from both projections.
+ *   2. TIMESTAMPS — step startedAt/endedAt (loop.ts per-turn now() vs loop2 message
+ *      reconstruction time), and the compaction tail's message `timestamp` fields
+ *      (Date.now() stamped by the pi↔wire converters). The compaction summary TEXT is
+ *      identical (both engines share tryGenerateStructuredSummary +
+ *      summarizeStepsForCompaction); the pruned tail converts to semantically equal
+ *      wire messages differing only by these timestamps. Neither is asserted.
+ *   3. L3 DETAIL — manifest / review / reviewFailed content and handoff body (built by
+ *      the L3 layer from workdir outputs, never fabricated in loop-core). The event
+ *      projection compares scalar data fields, not the handoff object.
+ *
+ * (Removed in Phase 3: event-stream granularity — P3a now emits the full per-step
+ * agentRunStep/stepToolResult/stepSnapshot/stream_event trace via the AgentEvent sink;
+ * structured-summary deferral — P3b ports it; dynamic tool visibility — P3c re-resolves
+ * tools every turn via prepareNextTurn.)
  */
 
 import assert from "node:assert/strict";
@@ -59,6 +65,8 @@ type RecorderEntry = { kind: "usage"; totalTokens: number; stepsUsed: number } |
 type Scenario = {
 	responses: LlmCreateResponse[];
 	toolSpecs?: ToolSpec[];
+	/** Dynamic tool set (P3c): overrides `toolSpecs` and is re-invoked each turn. */
+	toModelTools?: () => ToolSpec[];
 	execute?: (toolId: string, input: unknown, ctx: ToolExecutionContext) => ToolResult;
 	budget?: Partial<AgentLoopBudget>;
 	/** Scripted compaction-summary responses (P3b): wires a compactionClient when present. */
@@ -132,7 +140,7 @@ function makeHarness(scenario: Scenario): Harness {
 			},
 		},
 		tools: {
-			toModelTools: () => scenario.toolSpecs ?? [],
+			toModelTools: () => (scenario.toModelTools ? scenario.toModelTools() : scenario.toolSpecs ?? []),
 			execute: (toolId, toolInput, ctx) =>
 				scenario.execute ? scenario.execute(toolId, toolInput, ctx) : okToolResult(`ran ${toolId}`),
 		},
@@ -202,11 +210,15 @@ function projectEvents(events: EmittedEvent[]): Record<string, unknown>[] {
 
 /**
  * Run the scenario through both engines and assert loop-core + usage-record + emitted-event +
- * recorder equivalence.
+ * recorder equivalence. Accepts a Scenario, or a factory `() => Scenario` for stateful scenarios
+ * (dynamic tools / compaction) that need independent closure state per engine run.
  */
-async function runBoth(scenario: Scenario): Promise<{ legacy: AgentLoopResult; loop2: AgentLoopResult; legacyH: Harness; loop2H: Harness }> {
-	const legacyH = makeHarness(scenario);
-	const loop2H = makeHarness(scenario);
+async function runBoth(
+	scenarioOrFactory: Scenario | (() => Scenario),
+): Promise<{ legacy: AgentLoopResult; loop2: AgentLoopResult; legacyH: Harness; loop2H: Harness }> {
+	const make = typeof scenarioOrFactory === "function" ? scenarioOrFactory : () => scenarioOrFactory;
+	const legacyH = makeHarness(make());
+	const loop2H = makeHarness(make());
 	const legacy = await createAgentLoop().run(legacyH.input);
 	const loop2 = await runAgentLoop2(loop2H.input);
 
@@ -239,6 +251,16 @@ const ECHO_TOOL: ToolSpec = {
 const FAIL_TOOL: ToolSpec = {
 	name: "boom",
 	description: "Always fails.",
+	input_schema: { type: "object", properties: {} },
+};
+const LOAD_SKILL_TOOL: ToolSpec = {
+	name: "load_skill",
+	description: "Mount a skill's tools for the rest of the run.",
+	input_schema: { type: "object", properties: { skill: { type: "string" } }, required: ["skill"] },
+};
+const PDF_TOOL: ToolSpec = {
+	name: "pdf",
+	description: "Render a PDF (mounted by load_skill).",
 	input_schema: { type: "object", properties: {} },
 };
 
@@ -475,4 +497,35 @@ test("equivalence: structured compaction summary — injected compactionClient",
 	assert.equal(loop2.usage.estimatedCostCny, legacy.usage.estimatedCostCny);
 	assert.ok(Number(loop2.usage.estimatedCostCny) > 0.1, "worker (0.07) + compaction (0.05) cost folded in");
 	assert.equal(loop2.usage.totalTokens, legacy.usage.totalTokens);
+});
+
+// --- (P3c) dynamic tool visibility -----------------------------------------
+
+test("equivalence: dynamic tool visibility — load_skill mounts a tool mid-run", async () => {
+	// A load_skill call in turn 1 mounts the pdf tool; turn 2's request must expose it — on BOTH engines.
+	// Factory: fresh `skillLoaded` state per engine run (runBoth builds two independent harnesses).
+	const scenario = (): Scenario => {
+		let skillLoaded = false;
+		return {
+			responses: [
+				toolResponse("m1", [{ id: "c1", name: "load_skill", input: { skill: "pdf" } }]),
+				textResponse("m2", "done"),
+			],
+			toModelTools: () => (skillLoaded ? [LOAD_SKILL_TOOL, PDF_TOOL] : [LOAD_SKILL_TOOL]),
+			execute: (toolId) => {
+				if (toolId === "load_skill") skillLoaded = true;
+				return okToolResult(`ran ${toolId}`);
+			},
+		};
+	};
+	const { loop2, legacyH, loop2H } = await runBoth(scenario);
+
+	assert.equal(loop2.status, "succeeded");
+	const toolNames = (req: LlmCreateParams | undefined): string[] =>
+		(req?.tools ?? []).map((tool) => (tool as { name: string }).name).sort();
+	// Turn 1 saw only load_skill; turn 2's request reflects the mounted pdf tool — both engines identical.
+	assert.deepEqual(toolNames(legacyH.requests[0]), ["load_skill"], "legacy turn-1 tools");
+	assert.deepEqual(toolNames(legacyH.requests[1]), ["load_skill", "pdf"], "legacy turn-2 tools reflect the mount");
+	assert.deepEqual(toolNames(loop2H.requests[0]), ["load_skill"], "loop2 turn-1 tools");
+	assert.deepEqual(toolNames(loop2H.requests[1]), ["load_skill", "pdf"], "loop2 turn-2 tools reflect the mount");
 });

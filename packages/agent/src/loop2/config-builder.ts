@@ -1,5 +1,5 @@
 /**
- * loop2 Phase 2 — configBuilder + shadow switch (R15 批 C 绞杀者迁移).
+ * loop2 Phase 3 — configBuilder + shadow switch (R15 批 C 绞杀者迁移).
  *
  * `runAgentLoop2` assembles a WorkHub `AgentLoopInput` (the shape the production
  * `AgentLoop.run` consumes) into a vendored-pi `AgentLoopConfig` + drives the
@@ -18,13 +18,27 @@
  *   | truncation sanitize (400 fix)  | `convertToLlm` cleans non-object tool_use args  |
  *   | budget stop (steps/time/tok/$) | `shouldStopAfterTurn` = checkLoopBudget         |
  *   | doom-loop escalate             | `shouldStopAfterTurn` = DoomLoopDetector        |
- *   | context compaction             | `transformContext` (threshold + mechanical sum) |
+ *   | context compaction (+summary)  | `transformContext` = threshold + shared L3 sum  |
  *   | overflow self-heal (text trunc)| `shouldStopAfterTurn` + `getFollowUpMessages`   |
+ *   | dynamic tool visibility (P3c)  | `prepareNextTurn` re-resolves toModelTools/turn |
+ *   | per-step SSE/trace events (P3a)| AgentEvent sink → input.emit (loop.ts schema)   |
+ *   | structured compaction summary  | reuse `loop.ts` `tryGenerateStructuredSummary`  |
  *   | human-reserved before-guard    | preserved inside injected `input.tools.execute` |
  *   | L3: deliverable/manifest/review| reuse `loop.ts` `finalizeL3` (single source)    |
  *   | result fold                    | `toAgentLoopResult` + L3/escalation overrides   |
  *
- * See ./NOTICE.md for the vendored-loop provenance and 03-batch-c-engine.md §Phase 2.
+ * Allowed differences from `AgentLoop.run` after Phase 3 (validated by
+ * equivalence.test.ts; only wall-clock / timestamps / L3 detail remain):
+ *   - WALL CLOCK: usage.secondsUsed; and under REAL streaming the stream_event
+ *     throttle boundaries + heartbeat count (never hit by the buffered test client).
+ *   - TIMESTAMPS: step startedAt/endedAt (message reconstruction time), and the
+ *     compaction tail's message `timestamp` fields stamped by the pi↔wire converters.
+ *     The compaction summary TEXT is identical (shared tryGenerateStructuredSummary +
+ *     summarizeStepsForCompaction); the pruned tail converts to semantically-equal wire
+ *     messages differing only by these timestamps.
+ *   - L3 DETAIL: manifest / review / reviewFailed content and handoff body.
+ *
+ * See ./NOTICE.md for the vendored-loop provenance and 03-batch-c-engine.md §Phase 2/3.
  */
 
 import { errorToolResult, type ToolExecutionContext, type ToolResult } from "@workhub/tools";
@@ -333,33 +347,38 @@ export async function runAgentLoop2(input: AgentLoopInput): Promise<AgentLoopRes
 		},
 	});
 
-	// Tools resolved once for the run (pi holds context.tools static across turns; loop.ts
-	// re-resolves per turn — a documented allowed difference for dynamic tool visibility).
+	// P3c dynamic tool visibility: re-resolve `input.tools.toModelTools(ctx)` and re-wrap as pi
+	// `AgentTool[]` every turn (via `prepareNextTurn` below), matching loop.ts's per-turn `toModelTools`.
+	// A `load_skill`-style tool that mounts new tools mid-run is reflected on the very next model request,
+	// same as loop.ts. Resolved once here for the first turn's context; `prepareNextTurn` refreshes it.
 	const ctx = buildToolCtx(input);
-	const modelTools = await input.tools.toModelTools(ctx);
-	const tools: AgentTool[] = modelTools.map((raw) => {
-		const spec = raw as { name: string; description?: string; input_schema?: unknown };
-		const parameters: JsonSchema =
-			spec.input_schema && typeof spec.input_schema === "object" ? (spec.input_schema as JsonSchema) : { type: "object" };
-		return {
-			name: spec.name,
-			description: spec.description ?? "",
-			parameters,
-			label: spec.name,
-			execute: async (_toolCallId: string, params: Record<string, unknown>): Promise<AgentToolResult<ToolResult>> => {
-				try {
-					const result = await input.tools.execute(spec.name, params, ctx);
-					return workhubToolResultToPi(result);
-				} catch (error) {
-					// Legacy loop.run lets input.tools.execute throws propagate out. Capture, abort, and
-					// re-throw after the loop; return an error result so the current batch finishes cleanly.
-					fatalToolError = error;
-					runController.abort(error);
-					return workhubToolResultToPi(errorToolResult(error instanceof Error ? error.message : String(error)));
-				}
-			},
-		} satisfies AgentTool;
-	});
+	const buildPiTools = async (): Promise<AgentTool[]> => {
+		const modelTools = await input.tools.toModelTools(ctx);
+		return modelTools.map((raw) => {
+			const spec = raw as { name: string; description?: string; input_schema?: unknown };
+			const parameters: JsonSchema =
+				spec.input_schema && typeof spec.input_schema === "object" ? (spec.input_schema as JsonSchema) : { type: "object" };
+			return {
+				name: spec.name,
+				description: spec.description ?? "",
+				parameters,
+				label: spec.name,
+				execute: async (_toolCallId: string, params: Record<string, unknown>): Promise<AgentToolResult<ToolResult>> => {
+					try {
+						const result = await input.tools.execute(spec.name, params, ctx);
+						return workhubToolResultToPi(result);
+					} catch (error) {
+						// Legacy loop.run lets input.tools.execute throws propagate out. Capture, abort, and
+						// re-throw after the loop; return an error result so the current batch finishes cleanly.
+						fatalToolError = error;
+						runController.abort(error);
+						return workhubToolResultToPi(errorToolResult(error instanceof Error ? error.message : String(error)));
+					}
+				},
+			} satisfies AgentTool;
+		});
+	};
+	const tools = await buildPiTools();
 
 	const compactionThreshold = (): number =>
 		Math.max(1, Math.floor((input.budget.contextWindowTokens ?? 0) * (input.budget.compactThreshold ?? 0.8)));
@@ -432,6 +451,10 @@ export async function runAgentLoop2(input: AgentLoopInput): Promise<AgentLoopRes
 			}
 			return messages;
 		},
+		// P3c: refresh tools each turn so a mid-run tool mount (load_skill) is visible on the next request.
+		// prepareNextTurn fires after every turn_end (including the last, whose refresh is discarded when
+		// shouldStopAfterTurn ends the run) — a benign extra registry read, never an extra provider call.
+		prepareNextTurn: async ({ context }) => ({ context: { ...context, tools: await buildPiTools() } }),
 		getFollowUpMessages: async () => {
 			if (!wantOverflowRetry) return [];
 			wantOverflowRetry = false;
