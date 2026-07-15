@@ -12,6 +12,7 @@ import {
   renderComposerHtml,
   renderConnectionBannerHtml,
   renderConversationAccessDeniedHtml,
+  renderCuuToggleHtml,
   renderCuuTurnErrorHtml,
   renderCuuTurnPendingHtml,
   renderDaySeparatorHtml,
@@ -117,6 +118,38 @@ test("renderDmHeadBarHtml shows the peer nickname + online state, without the gr
   const offline = renderDmHeadBarHtml({ peerUserId: "u2", peerNickname: "阿曼", online: false, locale: "zh-CN" });
   assert.match(offline, /离线/u);
   assert.doesNotMatch(offline, /wh-wb-chat-head-status--online/u);
+});
+
+// R15 批 cuu-toggle：DM / 协同会话头部的「请 Cuu 进来」开关——三态（off/on/busy）+ 双语，纯展示函数
+// 不做会话种类判断（main 不渲这个控件是 view.ts 挂载点的责任，见 view.ts renderHead）。
+test("renderCuuToggleHtml shows an invite affordance when off and a remove affordance when on, in both locales", () => {
+  const off = renderCuuToggleHtml({ enabled: false, busy: false, locale: "zh-CN" });
+  assert.match(off, /data-wb-chat-cuu-toggle/u);
+  assert.match(off, /请 Cuu 进来/u);
+  assert.doesNotMatch(off, /wh-wb-chat-cuu-toggle--on/u);
+  assert.match(off, /aria-pressed="false"/u);
+  assert.doesNotMatch(off, /disabled/u);
+
+  const on = renderCuuToggleHtml({ enabled: true, busy: false, locale: "zh-CN" });
+  assert.match(on, /Cuu 已在场/u);
+  assert.match(on, /wh-wb-chat-cuu-toggle--on/u);
+  assert.match(on, /aria-pressed="true"/u);
+
+  const onEn = renderCuuToggleHtml({ enabled: true, busy: false, locale: "en-US" });
+  assert.match(onEn, /Cuu is here/u);
+  const offEn = renderCuuToggleHtml({ enabled: false, busy: false, locale: "en-US" });
+  assert.match(offEn, /Invite Cuu/u);
+});
+
+test("renderCuuToggleHtml disables the control and swaps in a working label while busy (markBusy hand-feel)", () => {
+  const busy = renderCuuToggleHtml({ enabled: false, busy: true, locale: "zh-CN" });
+  assert.match(busy, /disabled/u);
+  assert.match(busy, /处理中/u);
+  assert.doesNotMatch(busy, /请 Cuu 进来/u);
+
+  const busyEn = renderCuuToggleHtml({ enabled: true, busy: true, locale: "en-US" });
+  assert.match(busyEn, /disabled/u);
+  assert.match(busyEn, /Working/u);
 });
 
 // R13 批 G1（小群）：senderLabel/renderMessageHtml 按 sender_user_id 查 ctx.members（一个纯 Map 查找，

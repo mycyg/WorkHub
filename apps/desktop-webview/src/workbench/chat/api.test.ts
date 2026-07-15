@@ -21,6 +21,7 @@ import {
   fetchOlderConversationMessagesPage,
   fetchPresence,
   otherParticipantUserIds,
+  patchConversationCuu,
   patchMyAiMode,
   pinConversationMessage,
   pingConversationTyping,
@@ -500,7 +501,20 @@ test("fetchConversationReceipts GETs the receipts list", async () => {
   assert.equal(result.receipts[0]!.last_read_seq, 7);
 });
 
-// ── R15 批 cuu-toggle：参与者列表（小群「已读 N/M」分母修复） ─────────────────────────────
+// ── R15 批 cuu-toggle：会话级 Cuu 参与开关 + 参与者列表 ─────────────────────────────────
+
+test("patchConversationCuu PATCHes {enabled} and returns the flipped conversation VM", async () => {
+  const calls: Array<{ path: string; init: RequestInit | undefined }> = [];
+  const client = fakeClient((path, init) => {
+    calls.push({ path, init });
+    return { conversation: { id: "conv-1", cuu_enabled: false } };
+  });
+  const result = await patchConversationCuu(client, "conv-1", false);
+  assert.equal(calls[0]!.path, "/api/conversations/conv-1/cuu");
+  assert.equal(calls[0]!.init?.method, "PATCH");
+  assert.deepEqual(JSON.parse(calls[0]!.init?.body as string), { enabled: false });
+  assert.equal((result as { conversation: { cuu_enabled: boolean } }).conversation.cuu_enabled, false);
+});
 
 test("fetchConversationParticipants GETs the participants endpoint", async () => {
   const calls: string[] = [];

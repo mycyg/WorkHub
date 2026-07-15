@@ -20,6 +20,7 @@ import type {
   NotificationList,
   PresenceListResponse,
   PutAiFeedbackRequest,
+  UpdateConversationCuuResultVM,
   UserAiProfileVM
 } from "@workhub/contracts";
 
@@ -354,7 +355,20 @@ export function fetchConversationReceipts(client: ChatApiClient, conversationId:
   return client.request<ConversationReadReceiptsVM>(conversationPath(conversationId, "receipts"));
 }
 
-// —— R15 批 cuu-toggle：参与者列表（小群「已读 N/M」分母修复） —— //
+// —— R15 批 cuu-toggle：会话级 Cuu 参与开关 + 参与者列表（小群「已读 N/M」分母修复） —— //
+
+// PATCH /cuu：翻转会话级 Cuu 参与开关（body {enabled}）→ 200 翻转后的完整会话 VM。main 一律 409
+// conversation_cuu_not_collab；非参与者 403 conversation_cuu_forbidden；幂等（重复翻到同一个值不是错误）。
+export function patchConversationCuu(
+  client: ChatApiClient,
+  conversationId: string,
+  enabled: boolean
+): Promise<UpdateConversationCuuResultVM> {
+  return client.request<UpdateConversationCuuResultVM>(conversationPath(conversationId, "cuu"), {
+    method: "PATCH",
+    body: JSON.stringify({ enabled })
+  });
+}
 
 // GET /participants：main 回 scope:"workspace" + 空列表（诚实：主区没有一份"参与者名单"，见服务端
 // listParticipants 顶部注释）；collab（含 DM）回 scope:"participants" + 真实参与者。桌面端只在非 DM 的

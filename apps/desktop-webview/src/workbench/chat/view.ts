@@ -44,6 +44,7 @@ import {
   fetchOlderConversationMessagesPage,
   fetchPresence,
   otherParticipantUserIds,
+  patchConversationCuu,
   patchMyAiMode,
   pinConversationMessage,
   pingConversationTyping,
@@ -64,6 +65,7 @@ import { decideFeedbackToggle, normalizeFeedbackNote } from "./feedback.js";
 import { pickDispatchAskCatchupNotification, renderDispatchAskCatchupBannerHtml } from "./dispatch-ask-catchup.js";
 import {
   parseIncomingActionCardUpdated,
+  parseIncomingConversationCuuUpdated,
   parseIncomingMessageCreated,
   parseIncomingMessageDelta,
   parseIncomingMessageUpdated,
@@ -99,6 +101,7 @@ import {
   renderComposerHtml,
   renderConnectionBannerHtml,
   renderConversationAccessDeniedHtml,
+  renderCuuToggleHtml,
   renderCuuTurnErrorHtml,
   renderCuuTurnPendingHtml,
   renderDaySeparatorHtml,
@@ -553,10 +556,17 @@ export function mountChatView(
   // 手动关掉 Cuu 的协同群）不该自动请 Cuu 回话（否则每发一句都撞服务端 409 conversation_turn_cuu_disabled，
   // 在人对人私聊里尤其突兀）。cuuEnabled 缺省当 true——既有调用点不传，行为完全不变（不特判 DM，纯由
   // cuu_enabled 驱动这条闸）。false 时 composer 也不渲染模式 chip、不走流式气泡（与「Cuu 不在场」一致）。
-  const isCollabConversation =
-    shouldRequestConversationTurn(input.conversationKind, {
-      personalProject: input.projectIsPersonal
-    }) && (input.cuuEnabled ?? true);
+  // R15 批 cuu-toggle：cuu_enabled 现在可能在挂载期间被翻转（本地 PATCH /cuu 成功，或收到别的客户端翻转
+  // 后广播的 conversation.cuu.updated）——collabConversationBase 只算一次（会话种类/个人空间归属不会
+  // 中途变），isCollabConversation 随 cuuEnabled 派生，见下面的 applyCuuEnabledChange。
+  const collabConversationBase = shouldRequestConversationTurn(input.conversationKind, {
+    personalProject: input.projectIsPersonal
+  });
+  let cuuEnabled = input.cuuEnabled ?? true;
+  let isCollabConversation = collabConversationBase && cuuEnabled;
+  // R15 批 cuu-toggle：头部开关「正在翻」的忙态（markBusy 手感，同 spotlight/views/attention.ts 的既有
+  // 取舍）——发起 PATCH 前立即置真、往返落定（成功或失败）后清掉，渲染层据此禁用按钮 + 换「处理中…」文案。
+  let cuuToggleBusy = false;
   let myMode: AiMode | undefined;
   let modePopoverOpen = false;
   let modeErrorText: string | undefined;
@@ -711,21 +721,79 @@ export function mountChatView(
   }
 
   function renderHead(): void {
+    let headBarHtml: string;
     if (input.isDm) {
       // DM：会话头显示对方昵称 + 在线点（对方 = 成员集合里非本人那一位）。
       const peer = input.members.find((member) => member.user_id !== input.currentUserId);
-      headEl!.innerHTML = renderDmHeadBarHtml({
+      headBarHtml = renderDmHeadBarHtml({
         peerUserId: peer?.user_id ?? "",
         peerNickname: peer?.nickname ?? "",
         online: peer ? onlineUserIds.has(peer.user_id) : false,
         locale: input.locale
       });
     } else {
-      headEl!.innerHTML = renderMemberBarHtml({ members: input.members, locale: input.locale, onlineUserIds });
+      headBarHtml = renderMemberBarHtml({ members: input.members, locale: input.locale, onlineUserIds });
     }
+    // R15 批 cuu-toggle：main 一律不渲这个开关（主区的 Cuu 参与语义不一样，包括个人空间单聊——保持
+    // "main 一律不渲"这一条简单心智模型，不额外特判个人空间，同服务端 updateCuuEnabled 的取舍对称）；
+    // DM 与非主区协同会话都渲，态随 cuuEnabled/cuuToggleBusy 走。
+    const toggleHtml =
+      input.conversationKind === "collab"
+        ? renderCuuToggleHtml({ enabled: cuuEnabled, busy: cuuToggleBusy, locale: input.locale })
+        : "";
+    headEl!.innerHTML = headBarHtml + toggleHtml;
     hydrateAvatarPhotos(headEl!);
   }
   renderHead();
+
+  // R15 批 cuu-toggle：cuuEnabled 翻转后的统一收尾——重算 isCollabConversation、重渲头部开关 + 依赖它的
+  // composer 模式 chip（renderComposerChrome 内部按 isCollabConversation 决定要不要渲模式 chip；
+  // renderModeHint 在非协同会话本就清空，见两者各自顶部注释）。注意：isCollabConversation 只影响这两处
+  // UI 展示，不影响 issueSend 是否会自动请求 turn（那条闸只看 conversationKind，见 turn.ts 顶部注释）——
+  // cuu_enabled=false 时能不能真的请到 Cuu 回话，权威判断永远在服务端（409 conversation_turn_cuu_disabled，
+  // 见 turn.ts 的错误文案表），这里只是让本地的模式相关展示不落后于最新的开关状态。本地 PATCH 成功、SSE
+  // 广播同步都走这一条，值真的没变时短路——不为一次无意义的重渲付出成本，也不产生视觉抖动。
+  function applyCuuEnabledChange(next: boolean): void {
+    if (cuuEnabled === next) {
+      return;
+    }
+    cuuEnabled = next;
+    isCollabConversation = collabConversationBase && cuuEnabled;
+    renderHead();
+    renderModeHint();
+    renderComposerChrome();
+  }
+
+  // R15 批 cuu-toggle：头部开关点击——PATCH /cuu 翻转。markBusy 手感：发起前立即置忙 + 重渲（按钮禁用、
+  // 换「处理中…」文案），往返落定（成功或失败）后清掉。刻意不做乐观翻转——这个开关会改变"发消息会不会
+  // 撞 409"这种更重的语义，等服务端确认更稳妥，避免"刚点开又被回滚关掉"的抖动观感（同 selectMode 的
+  // 乐观更新取舍不同，是有意的：那里翻错了只是文字提示，这里翻错了会让用户以为 Cuu 在场其实不在）。
+  // main 不渲这个按钮，理论上点不到；这里仍然按会话种类把关，双重保险。
+  function toggleCuuParticipation(): void {
+    if (input.conversationKind !== "collab" || cuuToggleBusy) {
+      return;
+    }
+    cuuToggleBusy = true;
+    renderHead();
+    patchConversationCuu(input.client, input.conversationId, !cuuEnabled)
+      .then((result) => {
+        if (disposed) {
+          return;
+        }
+        cuuToggleBusy = false;
+        applyCuuEnabledChange(result.conversation.cuu_enabled);
+        // applyCuuEnabledChange 在值真的没变时会短路、不重渲——这里始终补一次，保证忙态无论如何都能
+        // 从界面上消掉（不依赖"这次翻转是否真的改变了值"这个跟忙态无关的条件）。
+        renderHead();
+      })
+      .catch(() => {
+        if (disposed) {
+          return;
+        }
+        cuuToggleBusy = false;
+        renderHead();
+      });
+  }
 
   function textareaEl(): HTMLTextAreaElement | null {
     return composerWrapEl!.querySelector<HTMLTextAreaElement>("[data-wb-chat-input]");
@@ -2245,6 +2313,15 @@ export function mountChatView(
           }
           return;
         }
+        // R15 批 cuu-toggle：conversation.cuu.updated——别的客户端翻转了这条会话的 Cuu 参与开关，本地
+        // 同步头部开关状态 + isCollabConversation（composer 模式 chip 随之显隐，见 applyCuuEnabledChange
+        // 顶部注释）。不缓冲——只是个布尔状态同步，不产生消息/气泡；值真的没变时 applyCuuEnabledChange
+        // 内部短路，不产生多余重渲。
+        const cuuUpdate = parseIncomingConversationCuuUpdated(event.data, input.conversationId);
+        if (cuuUpdate !== undefined) {
+          applyCuuEnabledChange(cuuUpdate);
+          return;
+        }
         // R14 批 CHAT：conversation.observer.analyzing（瞬态指示灯）——不缓冲（渲在独立指示行区域，不进
         // 滚动区），照 typing 静默丢弃模式，设过期时刻并渲指示灯，TTL 到期或收到行动卡事件即消。
         const observerAnalyzing = parseIncomingObserverAnalyzing(event.data, input.conversationId);
@@ -3309,6 +3386,17 @@ export function mountChatView(
     }
     if (event.target.closest("[data-wb-chat-catchup-open]")) {
       handleCatchupClick();
+    }
+  });
+
+  // R15 批 cuu-toggle：头部开关是委托监听（headEl 每次 renderHead() 都整块换 innerHTML，直接绑在按钮
+  // 元素上的监听器会随重渲丢失，同 catchupEl/scrollEl 的既有委托模式一致）。
+  headEl.addEventListener("click", (event) => {
+    if (!(event.target instanceof HTMLElement)) {
+      return;
+    }
+    if (event.target.closest("[data-wb-chat-cuu-toggle]")) {
+      toggleCuuParticipation();
     }
   });
 
