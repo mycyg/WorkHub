@@ -138,9 +138,14 @@ export type ChatRenderContext = {
   //    操作发起时 view.ts 会先清掉旧提示。
   //  - reassignHighlightIndex（R13 H1 键盘可达性）：改派选择器当前方向键高亮到第几行（下标对齐
   //    reassignPickerMemberIds 的返回顺序），瞬态、不落库，只在 openReassignItemId 有值时才有意义。
+  //  - actionCardItemBusyAction（G-desktop 止血批 6）：条目当前正在飞的 decide/undo 动作，按条目 id
+  //    索引，值是具体动作名——markBusy 手感照 spotlight/views/attention.ts 的 markBusy：命中的按钮立即
+  //    disabled + 文案换成对应的「…中」，其余同一条目的按钮一并禁用（防止同一条目并发提交两个决定），
+  //    往返落定（成功或失败）后 view.ts 清掉这个 key，按钮恢复可点。
   now?: Date;
   openReassignItemId?: string;
   actionCardItemErrors?: ReadonlyMap<string, string>;
+  actionCardItemBusyAction?: ReadonlyMap<string, "claim" | "reassign" | "defer" | "undo">;
   reassignHighlightIndex?: number;
   // R13 批 S2（Cuu 异步化与进度可视）：execute 条目(status=running)的阶段流进度——按条目 id 索引，
   // 由 view.ts 从该会话军团面板节流拉取后喂进来（见 chat/run-progress.ts 的
@@ -344,12 +349,22 @@ function renderReassignPickerHtml(
 function renderDecideItemActionsHtml(row: ActionCardItemRow, ctx: ChatRenderContext, zh: boolean): string {
   if (row.assigneeUserId && row.assigneeUserId === ctx.currentUserId) {
     const reassignOpen = ctx.openReassignItemId === row.id;
+    // G-desktop 止血批 6：三键任一在飞时全部禁用（同一条目不许并发提交两个决定），命中的那一键换
+    // 「…中」文案，照 spotlight/views/attention.ts:491-505 的 markBusy 手感。
+    const busyAction = ctx.actionCardItemBusyAction?.get(row.id);
+    const disabledAttr = busyAction ? " disabled" : "";
+    const claimLabel = busyAction === "claim" ? (zh ? "认领中…" : "Claiming…") : zh ? "交给我干" : "I'll do it";
+    const reassignToggleLabel =
+      busyAction === "reassign" ? (zh ? "指派中…" : "Assigning…") : zh ? "派给别人" : "Assign to someone else";
+    const deferLabel = busyAction === "defer" ? (zh ? "处理中…" : "Working…") : zh ? "先不动" : "Leave it for now";
     const actions = `<div class="wh-wb-chat-actioncard-actions" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">` +
-      `<button type="button" class="wh-wb-act" data-wb-chat-actioncard-decide="claim" data-wb-chat-actioncard-item="${escapeHtml(row.id)}">${zh ? "交给我干" : "I'll do it"}</button>` +
-      `<button type="button" class="wh-wb-act" data-wb-chat-actioncard-reassign-toggle="${escapeHtml(row.id)}">${zh ? "派给别人" : "Assign to someone else"}</button>` +
-      `<button type="button" class="wh-wb-act" data-wb-chat-actioncard-decide="defer" data-wb-chat-actioncard-item="${escapeHtml(row.id)}">${zh ? "先不动" : "Leave it for now"}</button>` +
+      `<button type="button" class="wh-wb-act" data-wb-chat-actioncard-decide="claim" data-wb-chat-actioncard-item="${escapeHtml(row.id)}"${disabledAttr}>${escapeHtml(claimLabel)}</button>` +
+      `<button type="button" class="wh-wb-act" data-wb-chat-actioncard-reassign-toggle="${escapeHtml(row.id)}"${disabledAttr}>${escapeHtml(reassignToggleLabel)}</button>` +
+      `<button type="button" class="wh-wb-act" data-wb-chat-actioncard-decide="defer" data-wb-chat-actioncard-item="${escapeHtml(row.id)}"${disabledAttr}>${escapeHtml(deferLabel)}</button>` +
       `</div>`;
-    const picker = reassignOpen
+    // busy 时 openReassignItemId 早已被 submitActionCardDecision 同步清空（见 view.ts），这里的 !busyAction
+    // 只是双重保险——即便某处日后忘了清，也不会在提交已发出后还渲一份可点的成员选择器。
+    const picker = reassignOpen && !busyAction
       ? renderReassignPickerHtml(row.id, ctx.members, ctx.currentUserId, zh, ctx.reassignHighlightIndex)
       : "";
     return `${actions}${picker}`;
@@ -372,8 +387,10 @@ function renderExecuteItemActionsHtml(row: ActionCardItemRow, ctx: ChatRenderCon
   if (remaining === undefined) {
     return "";
   }
-  const label = zh ? `撤销（${remaining} 分钟内）` : `Undo (within ${remaining} min)`;
-  return `<div class="wh-wb-chat-actioncard-actions" style="margin-top:6px"><button type="button" class="wh-wb-act wh-wb-act--danger" data-wb-chat-actioncard-undo="${escapeHtml(row.id)}">${escapeHtml(label)}</button></div>`;
+  // G-desktop 止血批 6：撤销往返在飞时按钮立即禁用 + 文案换「撤销中…」，同 decide 三键的 markBusy 手感。
+  const busy = ctx.actionCardItemBusyAction?.get(row.id) === "undo";
+  const label = busy ? (zh ? "撤销中…" : "Undoing…") : zh ? `撤销（${remaining} 分钟内）` : `Undo (within ${remaining} min)`;
+  return `<div class="wh-wb-chat-actioncard-actions" style="margin-top:6px"><button type="button" class="wh-wb-act wh-wb-act--danger" data-wb-chat-actioncard-undo="${escapeHtml(row.id)}"${busy ? " disabled" : ""}>${escapeHtml(label)}</button></div>`;
 }
 
 // decide/undo 失败后的温和行内提示（见 action-card-decision.ts 的 mapActionCardDecisionError）——
@@ -1312,8 +1329,8 @@ export function renderComposerHtml(input: {
       ? "Cuu 回完这条就好…"
       : "Just a moment — Cuu is replying to the last one…"
     : zh
-      ? "发消息给项目组和 Cuu…(@ 引用网盘文件/成员 · # 会话)"
-      : "Message the team and Cuu… (@ file/member · # conversation)";
+      ? "发消息给项目组和 Cuu…(@ 引用网盘文件/成员)"
+      : "Message the team and Cuu… (@ file/member)";
   const modeChip = input.modeChipHtml ?? "";
   // data-wb-chat-picker-slot：@/#// picker 的挂载点，特意留空——view.ts 单独更新这一个子节点的
   // innerHTML（每次按键都可能要开关/刷新 picker），绝不重建整个 composer（那会打断 textarea 的
@@ -1321,9 +1338,14 @@ export function renderComposerHtml(input: {
   // data-wb-chat-mode-pop-slot：模式五档弹层的挂载点，同一套"独立子节点刷新"取舍——主区会话里这个
   // 节点永远是空的（view.ts 从不在那里写入），有节点但不写内容，比"这个节点本身按会话种类条件渲染"
   // 更简单也更安全（不会因为切换会话种类漏挂/漏卸载一个挂载点）。
-  // R14 批 CHAT：撤掉「/ 技能」灰 chip（01-chat-design.md §5 点名的顺路项——技能唤起归 SEARCH 批，
-  // 摆一个点了没反应的假 affordance 违反 04 §4 铁律 3）。`#会话` 灰态保留（等 SEARCH 批接线）。
-  return `<div class="wh-wb-chat-composer">${errorHtml}${replyBannerHtml}${attachmentsHtml}<div class="wh-wb-chat-cbox"><textarea class="wh-wb-chat-input" rows="1" placeholder="${escapeHtml(placeholder)}" data-wb-chat-input${input.sending ? " disabled" : ""}>${escapeHtml(input.draftText)}</textarea><div class="wh-wb-chat-ctools"><button type="button" class="wh-wb-chat-ctag" data-wb-chat-tool-trigger="@"><b>@</b> ${zh ? "文件·成员" : "file · member"}</button><span class="wh-wb-chat-ctag wh-wb-chat-ctag--soon" title="${zh ? "即将上线" : "Coming soon"}"><b>#</b> ${zh ? "会话" : "conversation"}</span>${modeChip}<button type="button" class="wh-wb-chat-send" data-wb-chat-send${canSend ? "" : " disabled"} aria-label="${zh ? "发送" : "Send"}">${workbenchIcons.send}</button></div><div data-wb-chat-mode-pop-slot></div><div data-wb-chat-picker-slot></div></div></div>`;
+  // G-desktop 止血批 1：撤掉「#会话」灰 chip——上一批（R14 CHAT）已经撤掉了同款的「/技能」假
+  // affordance，只留「#会话」在原地摆着（当时点名"等 SEARCH 批接线"），但会话引用搜索至今没有真的
+  // 接上，这个 chip 点了/打了 # 只会弹一句「即将上线」，仍然是 04 §4 铁律 3 禁止的「没有真接线的
+  // 控件不能看起来能点」。现在一并撤掉，composer 占位符里"# 会话"的提示语同理去掉——不再暗示一个
+  // 打不通的功能。真正的解析器（trigger-parser.ts 的 detectComposerTrigger）和这个 chip / picker
+  // 用过的 CSS 类（.wh-wb-chat-ctag--soon /.wh-wb-chat-picker--soon）都原样保留在 css.ts，接线时
+  // 直接复用现成视觉，见 view.ts renderPicker() 顶部注释。
+  return `<div class="wh-wb-chat-composer">${errorHtml}${replyBannerHtml}${attachmentsHtml}<div class="wh-wb-chat-cbox"><textarea class="wh-wb-chat-input" rows="1" placeholder="${escapeHtml(placeholder)}" data-wb-chat-input${input.sending ? " disabled" : ""}>${escapeHtml(input.draftText)}</textarea><div class="wh-wb-chat-ctools"><button type="button" class="wh-wb-chat-ctag" data-wb-chat-tool-trigger="@"><b>@</b> ${zh ? "文件·成员" : "file · member"}</button>${modeChip}<button type="button" class="wh-wb-chat-send" data-wb-chat-send${canSend ? "" : " disabled"} aria-label="${zh ? "发送" : "Send"}">${workbenchIcons.send}</button></div><div data-wb-chat-mode-pop-slot></div><div data-wb-chat-picker-slot></div></div></div>`;
 }
 
 // —— R12（模式五档）：仅协同会话（conversationKind === 'collab'）composer 出现——2026-07-12 纠偏后
@@ -1517,7 +1539,11 @@ export function renderMentionPickerHtml(input: {
   return `<div class="wh-wb-chat-picker" data-wb-chat-picker="mention" role="listbox">${memberSection}${fileSection}${empty}</div>`;
 }
 
-// —— # / picker：本批只做外壳，「即将可用」灰态，不发真实搜索请求（见批 2 汇报的范围说明）。 —— //
+// —— # / picker：G-desktop 止血批 1 起不再被 view.ts 调用——打「#会话」/「/技能」现在诚实地不弹任何
+// picker（不是「即将可用」的假 UI，是真的什么都还没有），composer 工具条的「#会话」灰 chip 也一并
+// 撤了（见 renderComposerHtml 顶部注释）。这个函数本身留着不删——纯函数、有单测、# / 触发符解析
+// （trigger-parser.ts）和它用的 CSS 类都原样保留，等会话引用搜索真的接线时，直接在 view.ts 的
+// renderPicker() 里把 slot.innerHTML = "" 换回调用这个函数即可，不用重新设计这块 UI。 —— //
 
 export function renderComingSoonPickerHtml(input: { locale: Locale; trigger: "#" | "/" }): string {
   const zh = input.locale === "zh-CN";
