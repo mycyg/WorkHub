@@ -88,6 +88,32 @@ test("R15 批 D: proactivity + ddl-chase settings have sensible defaults and are
   assert.equal(loadSettings({ PROACTIVE_QUIET_HOURS: "" }).proactive.quietHours, "");
 });
 
+test("R15 批 F: care-scan settings have sensible defaults and are overridable", () => {
+  const defaults = loadSettings({});
+  // 关怀扫描默认 6 小时一 tick；周频总闸默认 2；三类信号阈值默认 8/3/2。
+  assert.equal(defaults.pulse.careScanIntervalMs, 21600000);
+  assert.equal(defaults.proactive.careWeeklyCap, 2);
+  assert.equal(defaults.proactive.careHighLoadThreshold, 8);
+  assert.equal(defaults.proactive.careLateNightMinNights, 3);
+  assert.equal(defaults.proactive.careFrustrationThreshold, 2);
+
+  const overridden = loadSettings({
+    PULSE_CARE_SCAN_INTERVAL_MS: "3600000",
+    PROACTIVE_CARE_WEEKLY_CAP: "1",
+    PROACTIVE_CARE_HIGH_LOAD_THRESHOLD: "12",
+    PROACTIVE_CARE_LATE_NIGHT_MIN_NIGHTS: "4",
+    PROACTIVE_CARE_FRUSTRATION_THRESHOLD: "3"
+  });
+  assert.equal(overridden.pulse.careScanIntervalMs, 3600000);
+  assert.equal(overridden.proactive.careWeeklyCap, 1);
+  assert.equal(overridden.proactive.careHighLoadThreshold, 12);
+  assert.equal(overridden.proactive.careLateNightMinNights, 4);
+  assert.equal(overridden.proactive.careFrustrationThreshold, 3);
+
+  // 间隔置 0 = 不挂定时器（关掉关怀）。
+  assert.equal(loadSettings({ PULSE_CARE_SCAN_INTERVAL_MS: "0" }).pulse.careScanIntervalMs, 0);
+});
+
 test("provider registry config keeps API keys out of public metadata", () => {
   const value = loadSettings({
     LLM_API_KEY: "secret-key",

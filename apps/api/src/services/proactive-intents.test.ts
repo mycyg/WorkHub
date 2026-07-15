@@ -330,6 +330,90 @@ test("recordAndDeliver: a duplicate conversation-channel intent is idempotently 
   assert.equal(state.status.length, 0);
 });
 
+// ── 批 F 关怀通道（degradeToNotification=false：不降级到系统通知）─────────────────────────────
+
+function careIntent(over: Partial<ProactiveIntentInput> = {}): ProactiveIntentInput {
+  return intent({
+    projectId: null,
+    workItemId: null,
+    kind: "care",
+    stage: "high_load",
+    suppressionKey: "care:u1:high_load:20260713",
+    channel: "conversation_message",
+    conversationText: "最近你手上的活儿有点多，记得给自己留点喘口气的空间。",
+    degradeToNotification: false,
+    ...over
+  });
+}
+
+test("recordAndDeliver: a care intent with no personal space is suppressed, NEVER degraded to a notification", async () => {
+  const { repo, state } = fakeRepo();
+  const { delivery, calls } = fakeConversationDelivery({ delivered: false, reason: "no_personal_space" });
+  let notified = 0;
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        notified += 1;
+        return notificationRow();
+      }
+    },
+    conversationDelivery: delivery,
+    dailyCapPerUser: 10,
+    now: () => at,
+    logger: { warn() {} }
+  });
+  const result = await service.recordAndDeliver(careIntent());
+  assert.deepEqual(result, { status: "suppressed", reason: "no_personal_space", intentId: "intent-1" });
+  assert.equal(calls.length, 1, "conversation channel is attempted");
+  assert.equal(notified, 0, "care must NOT fall back to a system notification");
+  assert.deepEqual(state.status, [{ id: "intent-1", status: "suppressed" }]);
+});
+
+test("recordAndDeliver: a care intent delivers via the conversation channel when the personal space exists", async () => {
+  const { repo, state } = fakeRepo();
+  const { delivery, calls } = fakeConversationDelivery({ delivered: true, conversationId: "conv-1" });
+  let notified = 0;
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        notified += 1;
+        return notificationRow();
+      }
+    },
+    conversationDelivery: delivery,
+    dailyCapPerUser: 10,
+    now: () => at
+  });
+  const result = await service.recordAndDeliver(careIntent());
+  assert.deepEqual(result, { status: "delivered", intentId: "intent-1" });
+  assert.equal(calls[0]?.text, "最近你手上的活儿有点多，记得给自己留点喘口气的空间。");
+  assert.equal(notified, 0);
+  assert.deepEqual(state.status, [{ id: "intent-1", status: "delivered", deliveredVia: "conversation_message" }]);
+});
+
+test("recordAndDeliver: a care intent with no delivery port injected is suppressed (no notification)", async () => {
+  const { repo, state } = fakeRepo();
+  let notified = 0;
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        notified += 1;
+        return notificationRow();
+      }
+    },
+    // conversationDelivery 未注入 + degradeToNotification=false → 不降级，直接 suppressed。
+    dailyCapPerUser: 10,
+    now: () => at
+  });
+  const result = await service.recordAndDeliver(careIntent());
+  assert.deepEqual(result, { status: "suppressed", reason: "no_personal_space", intentId: "intent-1" });
+  assert.equal(notified, 0);
+  assert.deepEqual(state.status, [{ id: "intent-1", status: "suppressed" }]);
+});
+
 test("parseProactiveQuietHours parses cross-midnight, same-day, and rejects malformed", () => {
   assert.deepEqual(parseProactiveQuietHours("22-08"), { startHour: 22, endHour: 8 });
   assert.deepEqual(parseProactiveQuietHours(" 1 - 6 "), { startHour: 1, endHour: 6 });

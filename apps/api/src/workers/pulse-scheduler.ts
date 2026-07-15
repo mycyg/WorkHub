@@ -5,7 +5,9 @@ import { createApprovalService, type ApprovalService } from "../services/approva
 import { getDefaultApprovalDigestService } from "../services/approval-digest.js";
 import { createNotificationService, type NotificationService } from "../services/notifications.js";
 import { getDefaultDdlChaseService } from "../services/ddl-chase.js";
+import { getDefaultCareScanService } from "../services/care-scan.js";
 import type { ApprovalDigestRunResult } from "../services/approval-digest.js";
+import type { CareScanRunResult } from "../services/care-scan.js";
 import type { DdlChaseRunResult } from "../services/ddl-chase.js";
 
 // R15 批 A（统一调度器 · 01-batch-a-pipeline.md §A1）：通用周期任务注册器。审批 SLA、通知提醒阶梯、
@@ -191,6 +193,7 @@ export function getDefaultPulseScheduler(deps: {
   notifications?: Pick<NotificationService, "runNotificationReminders">;
   approvalDigest?: { runOnce: () => Promise<ApprovalDigestRunResult> };
   ddlChase?: { runOnce: () => Promise<DdlChaseRunResult> };
+  careScan?: { runOnce: () => Promise<CareScanRunResult> };
 } = {}): PulseScheduler {
   if (defaultPulseScheduler) {
     return defaultPulseScheduler;
@@ -199,6 +202,7 @@ export function getDefaultPulseScheduler(deps: {
   const notifications = deps.notifications ?? createNotificationService();
   const approvalDigest = deps.approvalDigest ?? getDefaultApprovalDigestService();
   const ddlChase = deps.ddlChase ?? getDefaultDdlChaseService();
+  const careScan = deps.careScan ?? getDefaultCareScanService();
   const scheduler = createPulseScheduler();
 
   scheduler.register({
@@ -274,6 +278,32 @@ export function getDefaultPulseScheduler(deps: {
           suppressed_muted: result.suppressed_muted,
           skipped_quiet_hours: result.skipped_quiet_hours,
           skipped_no_target: result.skipped_no_target
+        });
+      }
+      return result;
+    }
+  });
+
+  scheduler.register({
+    name: "care-scan",
+    intervalMs: settings.pulse.careScanIntervalMs,
+    // R15 批 F（主动关怀）：Cuu 基于规则信号（高负荷/深夜活跃/连续受挫）对成员的克制关怀。纯规则、无 LLM
+    // 判定；措辞纯模板。投递只走个人空间会话（不可用则 suppressed，绝不降级系统通知）。比 ddl-chase 更克制：
+    // 每人每周至多 careWeeklyCap 条。一 tick 先 upsert 信号（记忆写入源拓宽）再据活跃信号产 care intent。
+    maxDrainPerTick: 500,
+    tick: async () => {
+      const result = await careScan.runOnce();
+      if (result.delivered > 0 || result.signals_detected > 0 || result.suppressed_weekly_cap > 0 || result.skipped_quiet_hours > 0) {
+        getDefaultStructuredLogger().info("pulse_care_scan_swept", {
+          signals_detected: result.signals_detected,
+          scanned: result.scanned,
+          delivered: result.delivered,
+          suppressed_duplicate: result.suppressed_duplicate,
+          suppressed_daily_cap: result.suppressed_daily_cap,
+          suppressed_weekly_cap: result.suppressed_weekly_cap,
+          suppressed_no_personal_space: result.suppressed_no_personal_space,
+          skipped_opted_out: result.skipped_opted_out,
+          skipped_quiet_hours: result.skipped_quiet_hours
         });
       }
       return result;

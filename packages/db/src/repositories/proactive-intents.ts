@@ -84,6 +84,28 @@ export async function countDeliveredProactiveIntentsForUser(
   return rows[0]?.value ?? 0;
 }
 
+// R15 批 F（关怀周频总闸）：某 target 在 [from, to) 区间内已 delivered 的【关怀】intent 数（kind='care'）。
+// 关怀比 DDL 提醒更需克制——除了复用每人每日上限，再叠一层「每人每周至多 N 条关怀」的更严闸，本函数是
+// 那层闸的计数源。只数 delivered（created/suppressed 不占配额），口径与 countDeliveredProactiveIntentsForUser 一致。
+export async function countDeliveredCareIntentsForUser(
+  db: WorkHubDb,
+  input: { targetUserId: string; from: Date; to: Date }
+): Promise<number> {
+  const rows = await db
+    .select({ value: sql<number>`count(*)::int` })
+    .from(proactiveIntents)
+    .where(
+      and(
+        eq(proactiveIntents.targetUserId, input.targetUserId),
+        eq(proactiveIntents.kind, "care"),
+        eq(proactiveIntents.status, "delivered"),
+        sql`${proactiveIntents.createdAt} >= ${input.from}`,
+        sql`${proactiveIntents.createdAt} < ${input.to}`
+      )
+    );
+  return rows[0]?.value ?? 0;
+}
+
 // 投递闸走完后把 intent 从 created 顶到终态：delivered（附 delivered_via）或 suppressed（频控/静音挡下）。
 export async function markProactiveIntentStatus(
   db: WorkHubDb,

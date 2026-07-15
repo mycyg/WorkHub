@@ -48,6 +48,12 @@ export class NotificationServiceError extends Error {
 export const APPROVAL_REMINDER_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export const REMINDER_MAX_COUNT = 3;
 
+// R15 批 F（主动关怀 · opt-out）：关怀消息走会话通道、不走通知，但「不想收关怀」这个偏好复用既有
+// 「通知按类型静音」列（users.muted_notification_types）——保留一个专用伪类型承载它，无新列、无迁移，
+// 复用既有 GET/PUT /notifications/preferences 端点。默认（清单里没有它）= 开启关怀。care-scan 与偏好
+// 端点都引用这个常量作单一真相（放在 notifications 是因它本质是保留的通知类型名，且避免 import 环）。
+export const CARE_MESSAGE_MUTE_TYPE = "care.message";
+
 export type NotificationReminderRunResult = {
   // 本 tick 扫到的到期待提醒行数。
   scanned: number;
@@ -363,7 +369,11 @@ export function createNotificationService(
     }
   }
 
-  async function flushDraft(draft: NotificationDraft & { nextRemindAt?: Date }): Promise<NotificationRow | null> {
+  async function flushDraft(
+    // R15 批 F：workItemId 放宽为可选——主动性 intent（如关怀）不一定挂工作项。底层
+    // createOrUpdateNotification 本就接受可选 workItemId（见 createMentionNotification 先例）。
+    draft: Omit<NotificationDraft, "workItemId"> & { workItemId?: string; nextRemindAt?: Date }
+  ): Promise<NotificationRow | null> {
     // 团队就绪 must-have：收件人静音了该类型则跳过、不建（DEFAULT-OFF：查询不可用/空则照建）。
     if (await isMutedForRecipient(draft.userId, draft.type)) {
       return null;
@@ -376,7 +386,7 @@ export function createNotificationService(
         title: draft.title,
         body: draft.body,
         targetUrl: draft.targetUrl,
-        workItemId: draft.workItemId,
+        ...(draft.workItemId ? { workItemId: draft.workItemId } : {}),
         dedupeKey: draft.dedupeKey,
         ...(draft.projectId ? { projectId: draft.projectId } : {}),
         // R15 批 A：进 24h 提醒阶梯的通知（approval.routed）带上首个 next_remind_at；其余不带。
@@ -433,7 +443,9 @@ export function createNotificationService(
       return deps.notifications.archiveByDedupeKey(dedupeKey, now());
     },
 
-    async createNotification(draft: NotificationDraft & { nextRemindAt?: Date }): Promise<Notification | null> {
+    async createNotification(
+      draft: Omit<NotificationDraft, "workItemId"> & { workItemId?: string; nextRemindAt?: Date }
+    ): Promise<Notification | null> {
       // 团队就绪 must-have：收件人静音了该类型则返回 null（未建）。
       const row = await flushDraft(draft);
       return row ? toNotificationResponse(row) : null;
@@ -576,22 +588,45 @@ export function createNotificationService(
     },
 
     // 团队就绪 must-have（通知偏好-按类型静音）：读该用户被静音的类型清单（DEFAULT-OFF：缺仓库/无行回 []）。
-    async getPreferences(userId: string): Promise<{ muted_notification_types: string[] }> {
+    // R15 批 F：额外派生 care_messages_enabled（关怀开关，默认 true）。关怀伪类型（CARE_MESSAGE_MUTE_TYPE）
+    // 从用户可见的静音清单里剥离——它不是真正的通知类型，只用布尔字段表达，避免既有通知偏好 UI 把它当
+    // 一条「静音类型」误显示/误清。
+    async getPreferences(userId: string): Promise<{ muted_notification_types: string[]; care_messages_enabled: boolean }> {
       const muted = deps.users?.getMutedNotificationTypes
         ? await deps.users.getMutedNotificationTypes(userId)
         : [];
-      return { muted_notification_types: Array.isArray(muted) ? normalizeMutedNotificationTypes(muted) : [] };
+      const normalized = Array.isArray(muted) ? normalizeMutedNotificationTypes(muted) : [];
+      return {
+        muted_notification_types: normalized.filter((type) => type !== CARE_MESSAGE_MUTE_TYPE),
+        care_messages_enabled: !normalized.includes(CARE_MESSAGE_MUTE_TYPE)
+      };
     },
 
-    // 写静音类型清单。入参须先经路由校验为去重的非空字符串数组。仓库未实现则回 501。
+    // 写静音类型清单。入参 mutedNotificationTypes 是【用户可见清单】（不含关怀伪类型），须先经路由校验为
+    // 去重的非空字符串数组。仓库未实现则回 501。R15 批 F：关怀开关单独承载——options.careMessagesEnabled
+    // 显式给了就按它，没给则沿用当前存量（避免用户只想改通知静音时把关怀开关误重置）。最终把关怀伪类型
+    // 按开关合并进持久化清单。
     async setPreferences(
       userId: string,
-      mutedNotificationTypes: string[]
-    ): Promise<{ muted_notification_types: string[] }> {
+      mutedNotificationTypes: string[],
+      options: { careMessagesEnabled?: boolean } = {}
+    ): Promise<{ muted_notification_types: string[]; care_messages_enabled: boolean }> {
       if (!deps.users?.setMutedNotificationTypes) {
         throw new NotificationServiceError(501, "not_implemented", "当前部署不支持通知偏好设置。");
       }
-      const updated = await deps.users.setMutedNotificationTypes(userId, mutedNotificationTypes);
+      let careEnabled: boolean;
+      if (options.careMessagesEnabled !== undefined) {
+        careEnabled = options.careMessagesEnabled;
+      } else {
+        const current = deps.users.getMutedNotificationTypes
+          ? await deps.users.getMutedNotificationTypes(userId)
+          : [];
+        careEnabled = !(Array.isArray(current) && current.includes(CARE_MESSAGE_MUTE_TYPE));
+      }
+      // 可见静音清单（剔除任何混入的关怀伪类型）+ 关怀开关决定是否加回伪类型。
+      const visible = normalizeMutedNotificationTypes(mutedNotificationTypes).filter((type) => type !== CARE_MESSAGE_MUTE_TYPE);
+      const persisted = careEnabled ? visible : [...visible, CARE_MESSAGE_MUTE_TYPE];
+      const updated = await deps.users.setMutedNotificationTypes(userId, persisted);
       if (!updated) {
         throw new NotificationServiceError(404, "not_found", "没有找到这个用户。");
       }
@@ -599,9 +634,13 @@ export function createNotificationService(
         userId,
         entityId: userId,
         action: "notification.set_preferences",
-        detailJson: { muted_notification_types: mutedNotificationTypes }
+        detailJson: { muted_notification_types: visible, care_messages_enabled: careEnabled }
       });
-      return { muted_notification_types: normalizeMutedNotificationTypes(updated.mutedNotificationTypes) };
+      const persistedNormalized = normalizeMutedNotificationTypes(updated.mutedNotificationTypes);
+      return {
+        muted_notification_types: persistedNormalized.filter((type) => type !== CARE_MESSAGE_MUTE_TYPE),
+        care_messages_enabled: !persistedNormalized.includes(CARE_MESSAGE_MUTE_TYPE)
+      };
     },
 
     async markRead(id: string, userId: string, options: NotificationMutationOptions = {}) {

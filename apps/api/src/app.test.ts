@@ -3433,20 +3433,24 @@ test("notification OpenAPI routes document list, preferences, and action payload
   ] as const) {
     const schema = jsonResponseSchema(body.paths, path, method, "200");
     const data = schema?.properties?.data as { required?: string[]; properties?: Record<string, unknown> } | undefined;
-    assert.deepEqual(data?.required, ["muted_notification_types"], `${method.toUpperCase()} ${path} missing preferences response`);
+    // R15 批 F：响应新增必填的 care_messages_enabled（主动关怀 opt-out 开关）。
+    assert.deepEqual(data?.required, ["muted_notification_types", "care_messages_enabled"], `${method.toUpperCase()} ${path} missing preferences response`);
     assert.deepEqual(data?.properties?.muted_notification_types, {
       type: "array",
       maxItems: 100,
       items: { type: "string", minLength: 1, maxLength: 64 }
     });
+    assert.deepEqual(data?.properties?.care_messages_enabled, { type: "boolean" });
   }
 
+  // PUT 请求体：muted_notification_types 必填，care_messages_enabled 可选。
   assert.deepEqual(jsonRequestSchema(body.paths, "/api/notifications/preferences", "put")?.required, ["muted_notification_types"]);
   assert.deepEqual(jsonRequestProperties(body.paths, "/api/notifications/preferences", "put").muted_notification_types, {
     type: "array",
     maxItems: 100,
     items: { type: "string", minLength: 1, maxLength: 64 }
   });
+  assert.deepEqual(jsonRequestProperties(body.paths, "/api/notifications/preferences", "put").care_messages_enabled, { type: "boolean" });
   for (const [path, method] of [
     ["/api/notifications/preferences", "get"],
     ["/api/notifications/preferences", "put"],

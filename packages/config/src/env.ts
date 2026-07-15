@@ -142,7 +142,19 @@ export const envSchema = z.object({
   // R15 批 D2（Cuu 主动开口）：开启时 ddl-chase 的 t1d/overdue 两档对有责任人的工作项改走「Cuu 在个人
   // 空间主区主动说话」通道（个人空间不可用则降级回 notification）；t3d/escalate/找人始终走 notification。
   // 关闭=全部走 notification（回到批 D 的行为）。默认 true。
-  PROACTIVE_CUU_DELIVERY_ENABLED: booleanString.default(true)
+  PROACTIVE_CUU_DELIVERY_ENABLED: booleanString.default(true),
+
+  // R15 批 F（主动关怀 · care-scan pulse 任务）：默认 6 小时一 tick（关怀是低频关切，不必勤扫）。
+  // 0=不挂定时器（仅手动 tick，等于关掉关怀）。与 ddl-chase 同档：纯规则、无 LLM 判定。
+  PULSE_CARE_SCAN_INTERVAL_MS: z.coerce.number().int().min(0).default(21600000),
+  // R15 批 F（关怀周频总闸）：每人每周至多 N 条关怀消息——比每人每日上限更严的第二层闸（默认 2）。
+  PROACTIVE_CARE_WEEKLY_CAP: z.coerce.number().int().positive().default(2),
+  // R15 批 F（关怀信号阈值 · 高负荷）：责任人未完成工作项数达此阈值且其中含逾期（默认 8）。
+  PROACTIVE_CARE_HIGH_LOAD_THRESHOLD: z.coerce.number().int().positive().default(8),
+  // R15 批 F（关怀信号阈值 · 深夜活跃）：近 7 天内 ≥ 此数个不同深夜(23:00–06:00 本地)日历日有活动（默认 3）。
+  PROACTIVE_CARE_LATE_NIGHT_MIN_NIGHTS: z.coerce.number().int().positive().default(3),
+  // R15 批 F（关怀信号阈值 · 连续受挫）：近 7 天该用户提案被打回达此次数（默认 2）。
+  PROACTIVE_CARE_FRUSTRATION_THRESHOLD: z.coerce.number().int().positive().default(2)
 });
 
 type ParsedEnv = z.infer<typeof envSchema>;
@@ -230,11 +242,16 @@ export type Settings = {
     notificationReminderIntervalMs: number;
     approvalDigestIntervalMs: number;
     ddlChaseIntervalMs: number;
+    careScanIntervalMs: number;
   };
   proactive: {
     quietHours: string;
     dailyCapPerUser: number;
     cuuDeliveryEnabled: boolean;
+    careWeeklyCap: number;
+    careHighLoadThreshold: number;
+    careLateNightMinNights: number;
+    careFrustrationThreshold: number;
   };
 };
 
@@ -328,12 +345,17 @@ export function loadSettings(env: EnvInput = process.env): Settings {
       approvalSlaIntervalMs: parsed.PULSE_APPROVAL_SLA_INTERVAL_MS,
       notificationReminderIntervalMs: parsed.PULSE_NOTIFICATION_REMINDER_INTERVAL_MS,
       approvalDigestIntervalMs: parsed.PULSE_APPROVAL_DIGEST_INTERVAL_MS,
-      ddlChaseIntervalMs: parsed.PULSE_DDL_CHASE_INTERVAL_MS
+      ddlChaseIntervalMs: parsed.PULSE_DDL_CHASE_INTERVAL_MS,
+      careScanIntervalMs: parsed.PULSE_CARE_SCAN_INTERVAL_MS
     },
     proactive: {
       quietHours: parsed.PROACTIVE_QUIET_HOURS,
       dailyCapPerUser: parsed.PROACTIVE_DAILY_CAP_PER_USER,
-      cuuDeliveryEnabled: parsed.PROACTIVE_CUU_DELIVERY_ENABLED
+      cuuDeliveryEnabled: parsed.PROACTIVE_CUU_DELIVERY_ENABLED,
+      careWeeklyCap: parsed.PROACTIVE_CARE_WEEKLY_CAP,
+      careHighLoadThreshold: parsed.PROACTIVE_CARE_HIGH_LOAD_THRESHOLD,
+      careLateNightMinNights: parsed.PROACTIVE_CARE_LATE_NIGHT_MIN_NIGHTS,
+      careFrustrationThreshold: parsed.PROACTIVE_CARE_FRUSTRATION_THRESHOLD
     }
   };
 
