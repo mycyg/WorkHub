@@ -17,7 +17,8 @@ import {
   agentStepPhaseSchema,
   taskPlanItemRoleSchema,
   taskPlanItemStatusSchema,
-  taskPlanStatusSchema
+  taskPlanStatusSchema,
+  workItemStatusSchema
 } from "./enums.js";
 import {
   attentionItemSchema,
@@ -714,6 +715,54 @@ export const projectMilestoneVmSchema = z.object({
   status: z.enum(["open", "done"])
 });
 export type ProjectMilestoneVM = z.infer<typeof projectMilestoneVmSchema>;
+
+// R15 批 E1c：时间线（甘特）VM——里程碑 + 排期条 + 关键路径。纯读，无写副作用。
+export const timelineWorkItemVmSchema = z.object({
+  id: idSchema,
+  code: z.string().min(1),
+  title: z.string().min(1),
+  status: workItemStatusSchema,
+  start_at: isoDateTimeSchema.optional(),
+  due_at: isoDateTimeSchema.optional(),
+  // 只在工作项已被认领时带（user_id + 展示名）；未认领项前端标「未指派」。
+  assignee: z.object({ user_id: idSchema, label: z.string().min(1) }).optional(),
+  milestone_id: idSchema.optional(),
+  // 该项依赖的（同项目、可见）工作项 id 列表。
+  depends_on: z.array(idSchema),
+  // 直接 + 传递阻塞的未完成项数（全图真实计数）；overdue = 逾期未完成。
+  blocks_count: z.number().int().nonnegative(),
+  overdue: z.boolean(),
+  // E1d OKR 挂钩：仅当该工作项挂了目标时出现。
+  objective_ids: z.array(idSchema).optional()
+});
+export type TimelineWorkItemVM = z.infer<typeof timelineWorkItemVmSchema>;
+
+export const timelineBlockingRefVmSchema = z.object({
+  work_item_id: idSchema,
+  blocks_count: z.number().int().positive()
+});
+export type TimelineBlockingRefVM = z.infer<typeof timelineBlockingRefVmSchema>;
+
+export const projectTimelinePageVmSchema = z.object({
+  generated_at: isoDateTimeSchema,
+  project: z.object({
+    id: idSchema,
+    name: z.string().min(1),
+    slug: z.string().min(1)
+  }),
+  milestones: z.array(projectMilestoneVmSchema),
+  items: z.array(timelineWorkItemVmSchema),
+  // 关键路径 MVP：blocking = 阻塞≥1 件未完成的项（按阻塞数倒序）；overdue_blocking = 其中逾期的
+  //（「这件卡在你这里，后面 N 件在等」的数据源）。
+  critical: z.object({
+    blocking: z.array(timelineBlockingRefVmSchema),
+    overdue_blocking: z.array(timelineBlockingRefVmSchema)
+  }),
+  // 时间线取数触顶（超大项目）时置真，供前端提示「仅显示前 N 项」。
+  capped: z.boolean().optional(),
+  empty_state: z.enum(["no_work_items"]).optional()
+});
+export type ProjectTimelinePageVM = z.infer<typeof projectTimelinePageVmSchema>;
 
 const workbenchMembershipRoleSchema = z.enum(["member", "admin", "owner"]);
 const workbenchConversationPageVmSchema = z

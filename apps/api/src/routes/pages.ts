@@ -59,6 +59,11 @@ import {
   type ProjectHomePageService
 } from "../services/project-home-pages.js";
 import {
+  getDefaultProjectTimelinePageService,
+  ProjectTimelinePageServiceError,
+  type ProjectTimelinePageService
+} from "../services/project-timeline-pages.js";
+import {
   getDefaultWorkbenchPageService,
   WorkbenchPageServiceError,
   type WorkbenchPageService
@@ -121,6 +126,7 @@ export type PageRoutesDependencies = {
   workItems?: WorkItemService;
   drivePages?: DrivePageService;
   projectHomePages?: ProjectHomePageService;
+  projectTimelinePages?: ProjectTimelinePageService;
   workbenchPages?: WorkbenchPageService;
   meetingPages?: MeetingPageService;
   scheduleNotifyPages?: ScheduleNotifyPageService;
@@ -308,6 +314,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const workItems = deps.workItems ?? getDefaultWorkItemService();
   const drivePages = deps.drivePages ?? getDefaultDrivePageService();
   const projectHomePages = deps.projectHomePages ?? getDefaultProjectHomePageService();
+  const projectTimelinePages = deps.projectTimelinePages ?? getDefaultProjectTimelinePageService();
   const workbenchPages = deps.workbenchPages ?? getDefaultWorkbenchPageService();
   const meetingPages = deps.meetingPages ?? getDefaultMeetingPageService();
   const scheduleNotifyPages = deps.scheduleNotifyPages ?? createScheduleNotifyPageService();
@@ -796,6 +803,24 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       return c.json(pageEnvelope(data, locale));
     } catch (error) {
       if (error instanceof ProjectHomePageServiceError) {
+        return pageServiceErrorResponse(c, error);
+      }
+      throw error;
+    }
+  });
+
+  // R15 批 E1c：时间线（甘特）VM。GET /api/pages/project/:id/timeline → 里程碑 + 排期条 + 关键路径。纯读。
+  routes.get("/project/:id/timeline", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
+    const projectId = c.req.param("id");
+    if (!isUuidParam(projectId)) {
+      return pageServiceErrorResponse(c, new ProjectTimelinePageServiceError(404, "没有找到这个项目。", "project_not_found"));
+    }
+    try {
+      const data = await projectTimelinePages.page({ actor: c.var.actor, projectId, locale });
+      return c.json(pageEnvelope(data, locale));
+    } catch (error) {
+      if (error instanceof ProjectTimelinePageServiceError) {
         return pageServiceErrorResponse(c, error);
       }
       throw error;

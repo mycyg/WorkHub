@@ -3585,6 +3585,48 @@ const timelineValidationResponse = jsonErrorStatusResponse("422", "Timeline muta
   "dependency_cycle",
   "milestone_scope_mismatch"
 ]).responses["422"];
+const projectTimelinePageResponseSchema = {
+  type: "object",
+  required: ["generated_at", "project", "milestones", "items", "critical"],
+  properties: {
+    generated_at: dateTimeStringSchema,
+    project: {
+      type: "object",
+      required: ["id", "name", "slug"],
+      properties: {
+        id: uuidStringSchema,
+        name: { type: "string", minLength: 1 },
+        slug: { type: "string", minLength: 1 }
+      },
+      additionalProperties: false
+    },
+    milestones: { type: "array", items: timelineMilestoneSchema },
+    items: { type: "array", items: { type: "object", additionalProperties: true } },
+    critical: {
+      type: "object",
+      required: ["blocking", "overdue_blocking"],
+      properties: {
+        blocking: { type: "array", items: { type: "object", additionalProperties: true } },
+        overdue_blocking: { type: "array", items: { type: "object", additionalProperties: true } }
+      },
+      additionalProperties: false
+    },
+    capped: { type: "boolean" },
+    empty_state: { type: "string", enum: ["no_work_items"] }
+  },
+  additionalProperties: false
+} as const;
+const projectTimelinePageResponse = {
+  responses: {
+    "200": jsonOkResponse(projectTimelinePageResponseSchema).responses["200"],
+    "403": jsonErrorStatusResponse("403", "Project timeline is not readable by the current user", [
+      "project_forbidden"
+    ]).responses["403"],
+    "404": jsonErrorStatusResponse("404", "Project timeline target was not found", [
+      "project_not_found"
+    ]).responses["404"]
+  }
+} as const;
 const openApiHttpMethods = new Set(["delete", "get", "head", "options", "patch", "post", "put"]);
 type OpenApiParameter = {
   name: string;
@@ -7004,6 +7046,17 @@ export function getOpenApiDocument() {
             localeQueryParameter
           ],
           ...projectHomePageResponse
+        }
+      },
+      "/api/pages/project/{id}/timeline": {
+        get: {
+          tags: ["pages"],
+          summary: "Project timeline (gantt) page VM: milestones, scheduled items, and critical path",
+          parameters: [
+            pathUuidParameter("id"),
+            localeQueryParameter
+          ],
+          ...projectTimelinePageResponse
         }
       },
       "/api/pages/workbench/{projectId}": {

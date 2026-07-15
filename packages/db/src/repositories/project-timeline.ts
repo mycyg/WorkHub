@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, type SQL } from "drizzle-orm";
 
 import type { WorkItemStatus } from "@workhub/contracts";
 
@@ -8,6 +8,7 @@ import type { WorkHubDb } from "../client.js";
 import {
   objectiveWorkItemLinks,
   projectMilestones,
+  workItemAssignments,
   workItemDependencies,
   workItems
 } from "../schema/index.js";
@@ -17,7 +18,9 @@ type WorkHubTx = Parameters<Parameters<WorkHubDb["transaction"]>[0]>[0];
 export type ProjectMilestoneRow = typeof projectMilestones.$inferSelect;
 export type WorkItemDependencyRow = typeof workItemDependencies.$inferSelect;
 
-// 时间线（甘特）取数行：只取渲染排期条要用的列（避免整行 work_items 装配）。
+// 时间线（甘特）取数行：只取渲染排期条 + 可见性判定要用的列（避免整行 work_items 装配）。
+// submitterUserId / workspaceId / assignments 供服务层 canViewWorkItemRecord 过滤掉他人私有草稿
+//（intake/ai_clarifying/spec_ready），与项目主页同口径，不在时间线上泄漏私有态标题。
 export type TimelineWorkItemRow = {
   id: string;
   code: string;
@@ -25,9 +28,12 @@ export type TimelineWorkItemRow = {
   status: WorkItemStatus;
   startAt: Date | null;
   dueAt: Date | null;
+  submitterUserId: string;
   claimedByUserId: string | null;
   claimedByNickname: string | null;
+  workspaceId: string | null;
   milestoneId: string | null;
+  assignments: Array<{ userId: string; role: string }>;
 };
 
 // 依赖有向边（A 依赖 B → { workItemId: A, dependsOnWorkItemId: B }）。
@@ -384,15 +390,39 @@ export function createProjectTimelineRepository(db: WorkHubDb): ProjectTimelineR
           status: workItems.status,
           startAt: workItems.startAt,
           dueAt: workItems.dueAt,
+          submitterUserId: workItems.submitterUserId,
           claimedByUserId: workItems.claimedByUserId,
           claimedByNickname: workItems.claimedByNickname,
+          workspaceId: workItems.workspaceId,
           milestoneId: workItems.milestoneId
         })
         .from(workItems)
         .where(and(eq(workItems.projectId, projectId), isNull(workItems.deletedAt)))
         .orderBy(asc(workItems.dueAt), asc(workItems.createdAt))
         .limit(Math.min(Math.max(1, limit), MAX_TIMELINE_WORK_ITEMS));
-      return rows.map((row) => ({ ...row, status: row.status as WorkItemStatus }));
+      if (rows.length === 0) {
+        return [];
+      }
+      // assignments 批量取（同 listOpenByProject 的一次 IN 查询），供 canViewWorkItemRecord 判定协作可见性。
+      const assignmentRows = await db
+        .select({
+          workItemId: workItemAssignments.workItemId,
+          userId: workItemAssignments.userId,
+          role: workItemAssignments.role
+        })
+        .from(workItemAssignments)
+        .where(inArray(workItemAssignments.workItemId, rows.map((row) => row.id)));
+      const assignmentsByWorkItemId = new Map<string, Array<{ userId: string; role: string }>>();
+      for (const assignment of assignmentRows) {
+        const bucket = assignmentsByWorkItemId.get(assignment.workItemId) ?? [];
+        bucket.push({ userId: assignment.userId, role: assignment.role });
+        assignmentsByWorkItemId.set(assignment.workItemId, bucket);
+      }
+      return rows.map((row) => ({
+        ...row,
+        status: row.status as WorkItemStatus,
+        assignments: assignmentsByWorkItemId.get(row.id) ?? []
+      }));
     },
 
     async listDependencyEdgesByProject(projectId) {
