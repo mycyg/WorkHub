@@ -81,6 +81,25 @@ test("presence follows stream count or recent last-seen within the LAN TTL", asy
   assert.equal((await presence.getPresence("u1")).is_online, false);
 });
 
+// R15 批 A（A5 在线抑制）：会话级「正在看」注册表——引用计数（多窗），close 计到 0 才停止「正在看」。
+test("in-memory conversation-viewer registry is refcounted and per (conversation,user)", async () => {
+  const presence = new InMemoryPresenceStore();
+  assert.equal(await presence.isViewingConversation("u1", "c1"), false);
+
+  await presence.markConversationViewer("u1", "c1");
+  assert.equal(await presence.isViewingConversation("u1", "c1"), true);
+  // 精确到 (conversation,user)：换会话 / 换人都不算「正在看」。
+  assert.equal(await presence.isViewingConversation("u1", "c2"), false);
+  assert.equal(await presence.isViewingConversation("u2", "c1"), false);
+
+  // 同一用户两条流：close 一条仍在看，close 两条才停。
+  await presence.markConversationViewer("u1", "c1");
+  await presence.markConversationViewerClosed("u1", "c1");
+  assert.equal(await presence.isViewingConversation("u1", "c1"), true);
+  await presence.markConversationViewerClosed("u1", "c1");
+  assert.equal(await presence.isViewingConversation("u1", "c1"), false);
+});
+
 test("redis bus delivers events across independent worker instances", async () => {
   const redis = new FakeRedisHub();
   const factory: RedisPubSubClientFactory = () => redis.createPubSubClient();
@@ -227,6 +246,26 @@ test("FIX#2 markStreamClosed never yields a negative count when the streams key 
   assert.equal(await redis.getValue(`presence:streams:u-expire`), "1");
 
   await store.close();
+});
+
+// R15 批 A（A5 在线抑制）：redis 会话级「正在看」注册表跨实例共享，close（含并发多流引用计数）后停止。
+test("redis conversation-viewer registry shares across instances and clears on close", async () => {
+  const redis = new FakeRedisHub();
+  const factory: RedisPresenceClientFactory = () => redis.createPresenceClient();
+  const writer = new RedisPresenceStore("redis://workhub-test", factory, () => new Date(1000));
+  const reader = new RedisPresenceStore("redis://workhub-test", factory, () => new Date(1000));
+
+  // 两条流（多窗）：close 一条仍在看，close 两条才停——引用计数跨实例。
+  await writer.markConversationViewer("u9", "conv-9");
+  await reader.markConversationViewer("u9", "conv-9");
+  assert.equal(await reader.isViewingConversation("u9", "conv-9"), true);
+
+  await reader.markConversationViewerClosed("u9", "conv-9");
+  assert.equal(await writer.isViewingConversation("u9", "conv-9"), true);
+  await writer.markConversationViewerClosed("u9", "conv-9");
+  assert.equal(await reader.isViewingConversation("u9", "conv-9"), false);
+
+  await Promise.all([writer.close(), reader.close()]);
 });
 
 async function nextOrTimeout(iterator: AsyncIterator<PushEvent>, ms: number) {

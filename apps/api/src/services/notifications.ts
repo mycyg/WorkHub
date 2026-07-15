@@ -467,6 +467,59 @@ export function createNotificationService(
       return toNotificationResponse(result.notification);
     },
 
+    // R15 批 A（A5 消息通知）：给会话里一个「其他参与者」落一条新消息通知。dedupe_key 按会话+收件人
+    // 聚合——同会话多条未读复活成同一条（body 更新为最新预览 + 累计未读条数，复用 createOrUpdateNotification
+    // 的 resurfaced 推送语义）。**不设 next_remind_at**（聊天不进 24h 叮嘱阶梯，见设计 A5）。在线抑制
+    // （收件人是否正打开该会话）由调用方（conversation-message-notify.ts）在此之前判定，这里只负责静音
+    // 检查 + 落库 + 复活推送。@mention 升格（conversation.mention，severity 高一档、独立 dedupe_key）预留
+    // isMention 开关——本批消息 schema 无结构化 mention 数据，调用方不会传 true（见交付报告）。
+    async createConversationMessageNotification(input: {
+      userId: string;
+      conversationId: string;
+      projectId: string;
+      conversationTitle: string;
+      senderLabel: string;
+      previewText: string;
+      unreadCount: number;
+      isMention?: boolean;
+    }): Promise<Notification | null> {
+      const type = input.isMention ? "conversation.mention" : "conversation.message";
+      if (await isMutedForRecipient(input.userId, type)) {
+        return null;
+      }
+      const dedupeKey = `${input.isMention ? "conversation_mention" : "conversation_msg"}:${input.conversationId}:${input.userId}`;
+      const preview = input.previewText.trim().slice(0, 140);
+      const count = Number.isFinite(input.unreadCount) && input.unreadCount > 0 ? Math.floor(input.unreadCount) : 1;
+      const senderPrefix = input.senderLabel ? `${input.senderLabel}：` : "";
+      const body = count > 1 ? `${senderPrefix}${preview}（${count} 条未读）` : `${senderPrefix}${preview}`;
+      // 桌面既有深链格式：/workbench/<projectId>/<conversationId>（见 client-tauri window_controls
+      // safe_route + desktop-webview buildWorkbenchDeepLinkHref）——notify.rs 的 OS 桥直接拿 target_url 当
+      // 路由聚焦主窗到这条会话。额外附 ?conversation_id= 让 extractConversationIdFromTargetUrl 解出结构化
+      // conversation_id（桌面 Cuu 气泡按 project_id+conversation_id 拼深链、web 通知页据此标注「在桌面
+      // 工作台打开」）。web 端没有 /workbench 路由，退化为在 /notifications 列表里看到这条（web fallback）。
+      const targetUrl =
+        `/workbench/${encodeURIComponent(input.projectId)}/${encodeURIComponent(input.conversationId)}` +
+        `?conversation_id=${encodeURIComponent(input.conversationId)}`;
+      const result = await deps.notifications.createOrUpdateNotification(
+        {
+          userId: input.userId,
+          type,
+          severity: input.isMention ? "high" : "normal",
+          title: input.conversationTitle,
+          body,
+          targetUrl,
+          dedupeKey,
+          projectId: input.projectId
+          // 刻意不带 nextRemindAt：聊天消息不进 24h 提醒阶梯。
+        },
+        now()
+      );
+      if (result.resurfaced) {
+        await publishNotification(deps.bus, result.notification);
+      }
+      return toNotificationResponse(result.notification);
+    },
+
     async listForUser(input: string | { userId: string; actor?: AuthActor }): Promise<NotificationList> {
       const userId = typeof input === "string" ? input : input.userId;
       const actor = typeof input === "string" ? undefined : input.actor;

@@ -72,10 +72,13 @@ const CONVERSATION_EDIT_WINDOW_MS = 15 * 60 * 1000;
 // R14 批 CHAT：置顶清单读取上限（设计 §3：seq 降序 cap 50）。
 const CONVERSATION_PINS_CAP = 50;
 
-import { getDefaultPushBus, type PushBus } from "../broker/index.js";
+import { getDefaultPushBus, getDefaultPresenceStore, type PushBus } from "../broker/index.js";
+import type { PresenceStore } from "../broker/types.js";
 import { getDefaultStructuredLogger, type StructuredLogger } from "../logging.js";
 import type { AuthActor } from "../middleware/auth.js";
 import { parseOutputContract } from "../pages/output-contract.js";
+import { notifyConversationMessage } from "./conversation-message-notify.js";
+import { createNotificationService, type NotificationService } from "./notifications.js";
 import { getDefaultConversationReplyJudgeService } from "./conversation-reply-judge.js";
 import {
   getDefaultConversationTurnService,
@@ -198,6 +201,13 @@ export type ConversationServiceOptions = {
   // §5.1/§5.3）。可选依赖：省略时（既有测试的 createConversationService 调用点）读聚合整体跳过、
   // my_feedback / items[].feedback 一律不出现，行为与本批之前逐字一致，不会因缺依赖抛错。
   aiFeedback?: Pick<AiFeedbackRepository, "listForSubjects">;
+  // R15 批 A（A5 消息通知）：人类消息落库 + 广播后，给其他参与者 fire-and-forget 扇出 conversation.message
+  // 通知（在线正在看该会话的人被抑制，见 conversation-message-notify.ts）。可选依赖——省略时（既有测试的
+  // createConversationService 调用点）整个扇出跳过，行为零回归，不会因缺依赖抛错。
+  messageNotify?: {
+    presence: Pick<PresenceStore, "isViewingConversation">;
+    notifications: Pick<NotificationService, "createConversationMessageNotification">;
+  };
 };
 
 function requireHumanActor(actor: AuthActor): HumanConversationActor {
@@ -943,6 +953,25 @@ export function createConversationService(
         });
       }
 
+      // R15 批 A（A5 消息通知）：给其他参与者扇出 conversation.message 通知——fire-and-forget，绝不阻塞/
+      // 拖垮这次消息创建的 HTTP 响应（内部已全程 try/catch 吞错，这里的 void+catch 是双保险）。DM/协同天然
+      // 生效（参与者=2/N）；主区无 participant 行 → 无收件人 → 内部短路不发。
+      if (options.messageNotify) {
+        const notify = options.messageNotify;
+        void notifyConversationMessage(
+          { repository, presence: notify.presence, notifications: notify.notifications, logger },
+          {
+            conversationId: access.conversation.id,
+            projectId: access.conversation.projectId,
+            conversationTitle: access.conversation.title,
+            senderUserId: human.userId,
+            senderLabel: human.actor.label ?? "",
+            messageKind: message.kind,
+            previewText
+          }
+        ).catch(() => {});
+      }
+
       // R14 FIX批10（被 @ 的回复延迟：事件驱动直通）——见 ConversationMentionTriggerDeps 顶部注释。
       // 触发口径必须与回话判定器 listReplyJudgeCandidates 的候选口径完全一致（kind='collab' 且
       // participantCount>1），否则会出现"直通覆盖了判定器根本不会扫到的会话"这种新分叉行为：
@@ -1207,6 +1236,12 @@ export function getDefaultConversationService(): ConversationService {
         mentionTrigger: {
           turns: getDefaultConversationTurnService(),
           markMentionHandled: (input) => getDefaultConversationReplyJudgeService().markMentionHandled(input)
+        },
+        // R15 批 A（A5 消息通知）：人类消息落库后扇出 conversation.message 通知。presence 用会话级「正在看」
+        // 注册表（同 SSE 流写的那个单例），notifications 用默认通知服务（自带静音检查 + dedupe 复活推送）。
+        messageNotify: {
+          presence: getDefaultPresenceStore(),
+          notifications: createNotificationService()
         }
       }
     );
