@@ -192,7 +192,10 @@ let liveRuntime: ReturnType<typeof createWebLiveRuntime> | undefined;
 type ShellIdentityUser = { nickname: string; isAdmin: boolean };
 let currentIdentity: ShellIdentityUser | undefined;
 let activeLocale: WorkHubLocale = "zh-CN";
-const liveEventTypes = Object.values(eventTypes);
+// G-web 止血批：web 端没有会话 UI（会话消息/reaction/已读游标/工具流只在桌面工作台渲染），
+// 全量订阅 conversation.* 系列事件白白让 web 的 SSE 连接收一堆用不上的推送。窄化订阅面，
+// 只排除 conversation.* 命名空间——其余事件类型不变。
+const liveEventTypes = Object.values(eventTypes).filter((type) => !type.startsWith("conversation."));
 const postRunTerminalStatuses = new Set(["succeeded", "failed", "cancelled"]);
 const postRunTerminalPollIntervalMs = 1000;
 const postRunTerminalMaxWaitMs = 60000;
