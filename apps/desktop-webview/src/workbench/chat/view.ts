@@ -76,10 +76,17 @@ import { toggleOwnReaction } from "./reactions.js";
 import {
   applyReadReceipt,
   highestMessageSeq,
+  IDLE_READ_CURSOR_SEND_STATE,
+  markReadCursorAcked,
+  markReadCursorFailed,
+  markReadCursorSent,
+  readCursorSendStateFromAcked,
   readReceiptSummary,
   receiptsToCursorMap,
+  shouldSendReadCursor,
   unreadDividerBeforeMessageId,
-  type ReadCursorMap
+  type ReadCursorMap,
+  type ReadCursorSendState
 } from "./read-state.js";
 import {
   membersById,
@@ -370,6 +377,17 @@ export function shouldShowNoAiProviderBanner(state: AiProviderHealthState): bool
   return state === "not_configured";
 }
 
+// R14FIX 批 workbench BUG-05：读游标 PUT /read 失败的结构化日志——conversation/seq/error 三键，便于
+// 排查"读回执没上去"。桌面没有中央结构化日志器（同 boot.ts 的 console.warn 既有取舍），用带稳定事件名
+// 的 console.warn 承载；失败本身不是致命错误（会话仍可用，游标会在下次触发时重试）。
+export function logReadCursorFailure(conversationId: string, seq: number, error: unknown): void {
+  console.warn("workbench.chat.read_cursor_advance_failed", {
+    conversation_id: conversationId,
+    seq,
+    error: error instanceof Error ? error.message : String(error)
+  });
+}
+
 // R14 批 AVATAR（头像与资料入口，2026-07-14 用户点名新增）：把 render.ts 打了 data-wb-avatar-user-id
 // 标记的色块 tile（消息行/成员条）换成真实头像图（若该用户设了头像）。桌面鉴权是 client-token 走
 // 响应体，不是 cookie——<img src="/api/users/:id/avatar"> 直连拿不到鉴权头，必须走 fetchDriveResource
@@ -554,7 +572,7 @@ export function mountChatView(
   //  - pinnedMessages/pinBarCollapsed：置顶条（GET /pins 初始化，message.updated 增量维护）；
   //  - readCursors：全员已读游标 Map（GET /receipts 初始化，read.updated 增量）；
   //  - entryReadSeq：进会话那一刻本人的游标——固定住给未读分割线用（读的过程中不移动，免得线往下跑）；
-  //  - lastReadPingAt/lastSentReadSeq/readPingTimer：PUT /read 节流；
+  //  - lastReadPingAt/readCursorSend/readPingTimer：PUT /read 节流 + attempted/acked 状态机（BUG-05）；
   //  - onlineUserIds/presencePollTimer：presence 在线点；
   //  - observerAnalyzingUntilMs：观察者「正在整理」指示灯的过期时刻（TTL 到期或行动卡事件即消）；
   //  - bufferedMessageUpdates/bufferedReactionUpdates：turn 流式期间的编辑/反应事件缓冲（照 action_card
@@ -573,7 +591,9 @@ export function mountChatView(
   let readCursors: ReadCursorMap = new Map();
   let entryReadSeq = 0;
   let lastReadPingAt = 0;
-  let lastSentReadSeq = 0;
+  // R14FIX 批 workbench BUG-05：读游标发送的 attempted/acked 状态机（read-state.ts）——取代旧的
+  // 单变量 lastSentReadSeq（那个在请求发出前就推进，失败即永久挡住同一个 seq，读游标永久丢失）。
+  let readCursorSend: ReadCursorSendState = IDLE_READ_CURSOR_SEND_STATE;
   let readPingTimer: ReturnType<typeof setTimeout> | undefined;
   let onlineUserIds: OnlineUserIds = new Set();
   let presencePollTimer: ReturnType<typeof setInterval> | undefined;
@@ -1154,7 +1174,8 @@ export function mountChatView(
       readCursors = receiptsToCursorMap(result.receipts);
       // 进会话那一刻本人的游标固定成未读分割线的基准（读的过程中不移动）。
       entryReadSeq = readCursors.get(input.currentUserId) ?? 0;
-      lastSentReadSeq = entryReadSeq;
+      // 服务端已经知道我读到 entryReadSeq——acked 直接以它为基准。
+      readCursorSend = readCursorSendStateFromAcked(entryReadSeq);
       renderScroll();
     } catch {
       // best-effort：拉不到就当作「都没读过」（entryReadSeq=0），分割线会出现在最早的他人消息上方，
@@ -1182,30 +1203,45 @@ export function mountChatView(
 
   function doMarkRead(): void {
     const seq = highestMessageSeq(messages);
-    if (seq <= lastSentReadSeq) {
+    // BUG-05：只有「没有在途请求且 highest > 已确认游标」才发——不再靠"发出前就推进"的单变量挡重复。
+    if (!shouldSendReadCursor(readCursorSend, seq)) {
       return;
     }
     lastReadPingAt = Date.now();
-    lastSentReadSeq = seq;
-    // 乐观更新本人游标（read.updated 自广播也会回来，applyReadReceipt 幂等），让「已读 N/M」里别人看我
-    // 的口径无关、但本地 receipts map 保持新鲜。
+    readCursorSend = markReadCursorSent(readCursorSend, seq);
+    // 乐观更新本人游标（read.updated 自广播也会回来，applyReadReceipt 幂等），让本地 receipts map 保持
+    // 新鲜。注意：这只影响本地渲染，"已读 N/M" 只数他人游标，不数自己，所以失败时不回滚它也无副作用。
     readCursors = applyReadReceipt(readCursors, input.currentUserId, seq);
     void advanceConversationReadCursor(input.client, input.conversationId, seq)
       .then((result) => {
         if (disposed) {
           return;
         }
-        // 服务端把游标夹到会话当前最大 seq——以它回的值为准（可能比我报的小）。
+        // 服务端确认——acked 单调推进到服务端回的值（会话最大 seq 夹紧，可能比我报的小，以它为准）。
+        readCursorSend = markReadCursorAcked(readCursorSend, result.last_read_seq);
         readCursors = applyReadReceipt(readCursors, input.currentUserId, result.last_read_seq);
+        // 在途期间可能又来了更新的消息——落定后自查一次是否要接着报（shouldSendReadCursor 会把关）。
+        maybeMarkRead();
       })
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        if (disposed) {
+          return;
+        }
+        // BUG-05：失败只清在途、绝不推进 acked——这个 seq 因此能在重获焦点/恢复网络/下条消息时重试，
+        // 不再永久丢失。记结构化日志（conversation/seq/error）便于排查。
+        readCursorSend = markReadCursorFailed(readCursorSend);
+        logReadCursorFailure(input.conversationId, seq, error);
+        // 立刻按节流规则再排一次（lastReadPingAt 刚被设成现在，故这次会等满冷却窗口再重试）。焦点/online
+        // 事件也会触发一次即时重试。
+        maybeMarkRead();
+      });
   }
 
   function maybeMarkRead(): void {
     if (disposed || historyLoad !== "ready") {
       return;
     }
-    if (highestMessageSeq(messages) <= lastSentReadSeq) {
+    if (!shouldSendReadCursor(readCursorSend, highestMessageSeq(messages))) {
       return;
     }
     const now = Date.now();
@@ -2993,10 +3029,18 @@ export function mountChatView(
   });
 
   // R14 批 CHAT：窗口重获焦点时标记已读（用户从别的窗口切回来=正在看这个会话）。
+  // R14FIX 批 workbench BUG-05：这也是失败读游标的重试触发点之一——acked 没被推进过，maybeMarkRead 会
+  // 重发（受 5s 节流约束）。
   function handleWindowFocus(): void {
     maybeMarkRead();
   }
   (doc.defaultView ?? window).addEventListener("focus", handleWindowFocus);
+  // R14FIX 批 workbench BUG-05：网络恢复（online）时重试上一次失败的读游标——同重获焦点一路（acked 未
+  // 推进，maybeMarkRead 会重发）。
+  function handleNetworkOnline(): void {
+    maybeMarkRead();
+  }
+  (doc.defaultView ?? window).addEventListener("online", handleNetworkOnline);
 
   // R12（模式五档）：点外关闭 + Escape 关闭 + 弹层开着时数字键 1-5 快切——都是弹层开着才生效
   // （modePopoverOpen 把关），不会抢主区/其它会话种类里任何一次点击或按键。这两个监听器挂在
@@ -3138,6 +3182,7 @@ export function mountChatView(
       doc.removeEventListener("keydown", handleDocumentModeKeydown);
       doc.removeEventListener("keydown", handleDocumentReassignKeydown);
       (doc.defaultView ?? window).removeEventListener("focus", handleWindowFocus);
+      (doc.defaultView ?? window).removeEventListener("online", handleNetworkOnline);
       if (fileSearchTimer !== undefined) {
         clearTimeout(fileSearchTimer);
       }
