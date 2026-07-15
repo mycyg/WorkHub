@@ -20,6 +20,7 @@ export * from "./repositories/team-skill.js";
 export * from "./repositories/task-plans.js";
 export * from "./repositories/objectives.js";
 export * from "./repositories/project-timeline.js";
+export * from "./repositories/project-planner.js";
 export * from "./repositories/devices.js";
 export * from "./repositories/approval-requests.js";
 export * from "./repositories/approval-comments.js";

@@ -3585,6 +3585,91 @@ const timelineValidationResponse = jsonErrorStatusResponse("422", "Timeline muta
   "dependency_cycle",
   "milestone_scope_mismatch"
 ]).responses["422"];
+// R15 批 E3（项目规划 agent）：项目计划草案 VM——起草 / 列表 / 详情 / 审批 / 物化共用。
+const projectPlanDraftMilestoneSchema = {
+  type: "object",
+  required: ["ref", "title", "due_at", "sort"],
+  properties: {
+    ref: { type: "string", minLength: 1 },
+    title: { type: "string", minLength: 1 },
+    due_at: { anyOf: [dateTimeStringSchema, { type: "null" }] },
+    sort: { type: "integer", minimum: 0 }
+  },
+  additionalProperties: false
+} as const;
+const projectPlanDraftItemSchema = {
+  type: "object",
+  required: ["ref", "title", "objective_md", "due_at", "milestone_ref", "depends_on_refs", "assignee_suggestion"],
+  properties: {
+    ref: { type: "string", minLength: 1 },
+    title: { type: "string", minLength: 1 },
+    objective_md: { type: "string", minLength: 1 },
+    due_at: { anyOf: [dateTimeStringSchema, { type: "null" }] },
+    milestone_ref: { anyOf: [{ type: "string" }, { type: "null" }] },
+    depends_on_refs: { type: "array", items: { type: "string" } },
+    assignee_suggestion: { anyOf: [{ type: "string" }, { type: "null" }] }
+  },
+  additionalProperties: false
+} as const;
+const projectPlanDraftResultSchema = {
+  type: "object",
+  required: ["milestone_ids", "work_item_ids", "dependency_count"],
+  properties: {
+    milestone_ids: { type: "array", items: uuidStringSchema },
+    work_item_ids: { type: "array", items: uuidStringSchema },
+    dependency_count: { type: "integer", minimum: 0 }
+  },
+  additionalProperties: false
+} as const;
+const projectPlanDraftSchema = {
+  type: "object",
+  required: [
+    "id", "project_id", "workspace_id", "status", "intent_md",
+    "rationale_md", "review_reason_md", "milestones", "items", "result",
+    "created_by", "reviewed_by", "created_at", "updated_at", "reviewed_at", "materialized_at"
+  ],
+  properties: {
+    id: uuidStringSchema,
+    project_id: uuidStringSchema,
+    workspace_id: uuidStringSchema,
+    status: { type: "string", enum: ["draft", "pending_review", "approved", "rejected", "materialized"] },
+    intent_md: { type: "string" },
+    rationale_md: { anyOf: [{ type: "string" }, { type: "null" }] },
+    review_reason_md: { anyOf: [{ type: "string" }, { type: "null" }] },
+    milestones: { type: "array", items: projectPlanDraftMilestoneSchema },
+    items: { type: "array", items: projectPlanDraftItemSchema },
+    result: { anyOf: [projectPlanDraftResultSchema, { type: "null" }] },
+    created_by: uuidStringSchema,
+    reviewed_by: { anyOf: [uuidStringSchema, { type: "null" }] },
+    created_at: dateTimeStringSchema,
+    updated_at: dateTimeStringSchema,
+    reviewed_at: { anyOf: [dateTimeStringSchema, { type: "null" }] },
+    materialized_at: { anyOf: [dateTimeStringSchema, { type: "null" }] }
+  },
+  additionalProperties: false
+} as const;
+const projectPlannerForbiddenResponse = jsonErrorStatusResponse("403", "Project is not manageable by the current user", [
+  "project_forbidden"
+]).responses["403"];
+const projectPlannerNotFoundResponse = jsonErrorStatusResponse("404", "Project or plan draft was not found", [
+  "project_not_found",
+  "project_plan_draft_not_found"
+]).responses["404"];
+const projectPlannerConflictResponse = jsonErrorStatusResponse("409", "Plan draft state does not allow this action", [
+  "project_plan_needs_human",
+  "project_plan_review_conflict",
+  "project_plan_not_approved",
+  "project_plan_cycle_detected"
+]).responses["409"];
+const projectPlannerValidationResponse = jsonErrorStatusResponse("422", "Planning intent or workspace was missing", [
+  "validation_error",
+  "project_plan_intent_required",
+  "project_plan_reject_reason_required",
+  "project_plan_workspace_missing"
+]).responses["422"];
+const projectPlannerUnavailableResponse = jsonErrorStatusResponse("503", "AI planning is not configured", [
+  "project_plan_llm_unavailable"
+]).responses["503"];
 const projectTimelinePageResponseSchema = {
   type: "object",
   required: ["generated_at", "project", "milestones", "items", "critical"],
@@ -8611,6 +8696,118 @@ export function getOpenApiDocument() {
             "403": timelineForbiddenResponse,
             "404": timelineNotFoundResponse,
             "422": timelineValidationResponse
+          }
+        }
+      },
+      "/api/projects/{id}/plan-drafts": {
+        post: {
+          tags: ["projects"],
+          summary: "Draft a project plan (milestones + work items + dependencies) with the planning agent",
+          parameters: [pathUuidParameter("id"), localeQueryParameter],
+          ...jsonRequestBody({
+            type: "object",
+            required: ["intent"],
+            properties: {
+              intent: { type: "string", minLength: 1, maxLength: 4000 }
+            },
+            additionalProperties: false
+          }),
+          responses: {
+            "201": jsonDataResponse(projectPlanDraftSchema, "Created project plan draft (pending review)").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": projectPlannerForbiddenResponse,
+            "404": projectPlannerNotFoundResponse,
+            "409": projectPlannerConflictResponse,
+            "422": projectPlannerValidationResponse,
+            "503": projectPlannerUnavailableResponse
+          }
+        },
+        get: {
+          tags: ["projects"],
+          summary: "List a project's plan drafts",
+          parameters: [pathUuidParameter("id"), localeQueryParameter],
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["drafts"],
+              properties: { drafts: { type: "array", items: projectPlanDraftSchema } },
+              additionalProperties: false
+            }, "Project plan drafts").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": projectPlannerForbiddenResponse,
+            "404": projectPlannerNotFoundResponse
+          }
+        }
+      },
+      "/api/plan-drafts/{draftId}": {
+        get: {
+          tags: ["projects"],
+          summary: "Get a project plan draft",
+          parameters: [pathUuidParameter("draftId"), localeQueryParameter],
+          responses: {
+            "200": jsonDataResponse(projectPlanDraftSchema, "Project plan draft").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": projectPlannerForbiddenResponse,
+            "404": projectPlannerNotFoundResponse
+          }
+        }
+      },
+      "/api/plan-drafts/{draftId}/approve": {
+        post: {
+          tags: ["projects"],
+          summary: "Approve a project plan draft (human review)",
+          parameters: [pathUuidParameter("draftId"), localeQueryParameter],
+          responses: {
+            "200": jsonDataResponse(projectPlanDraftSchema, "Approved project plan draft").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": projectPlannerForbiddenResponse,
+            "404": projectPlannerNotFoundResponse,
+            "409": projectPlannerConflictResponse
+          }
+        }
+      },
+      "/api/plan-drafts/{draftId}/reject": {
+        post: {
+          tags: ["projects"],
+          summary: "Reject a project plan draft with a reason (fed back into the next draft)",
+          parameters: [pathUuidParameter("draftId"), localeQueryParameter],
+          ...jsonRequestBody({
+            type: "object",
+            required: ["reason"],
+            properties: {
+              reason: { type: "string", minLength: 1, maxLength: 2000 }
+            },
+            additionalProperties: false
+          }),
+          responses: {
+            "200": jsonDataResponse(projectPlanDraftSchema, "Rejected project plan draft").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": projectPlannerForbiddenResponse,
+            "404": projectPlannerNotFoundResponse,
+            "409": projectPlannerConflictResponse,
+            "422": projectPlannerValidationResponse
+          }
+        }
+      },
+      "/api/plan-drafts/{draftId}/materialize": {
+        post: {
+          tags: ["projects"],
+          summary: "Materialize an approved plan draft into milestones, work items, and dependencies",
+          parameters: [pathUuidParameter("draftId"), localeQueryParameter],
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["draft", "result"],
+              properties: {
+                draft: projectPlanDraftSchema,
+                result: projectPlanDraftResultSchema
+              },
+              additionalProperties: false
+            }, "Materialized plan draft with created ids").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": projectPlannerForbiddenResponse,
+            "404": projectPlannerNotFoundResponse,
+            "409": projectPlannerConflictResponse
           }
         }
       },

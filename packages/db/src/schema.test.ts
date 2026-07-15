@@ -48,7 +48,7 @@ import {
 // R14 批 FEEDBACK：新增 ai_feedback 一张表（迁移 0058），graph 涨到 69。
 // R14 批 GH：新增 project_github_bindings + project_github_activities 两张表（迁移 0060），graph 涨到 71。
 // R15 批 E1：新增 project_milestones + work_item_dependencies 两张表（迁移 0064），graph 涨到 74。
-const F02_TABLE_COUNT = 74;
+const F02_TABLE_COUNT = 75;
 
 type WorkHubTable = (typeof workHubTables)[keyof typeof workHubTables];
 
@@ -163,6 +163,7 @@ test("F02 declares the full table graph expected by the plan", () => {
   assert.equal(tableNames.includes("objective_work_item_links"), true);
   assert.equal(tableNames.includes("project_milestones"), true);
   assert.equal(tableNames.includes("work_item_dependencies"), true);
+  assert.equal(tableNames.includes("project_plan_drafts"), true);
   assert.equal(tableNames.includes("requirements"), false);
   assert.equal(tableNames.includes("revision_requests"), false);
   assert.equal(tableNames.includes("activity_log"), false);
@@ -667,7 +668,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0064 project timeline", () => {
+test("migration journal ends with 0065 project plan drafts", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -682,16 +683,16 @@ test("migration journal ends with 0064 project timeline", () => {
       breakpoints: finalEntry.breakpoints
     },
     {
-      // R15 批 E1：项目时间线（里程碑 + 依赖 + work_items.milestone_id）接在 R15 批 D 链尾 0063 之后。
-      idx: 64,
+      // R15 批 E3：项目规划 agent 的草案表接在 R15 批 E1 时间线 0064 之后。
+      idx: 65,
       version: "7",
-      tag: "0064_project_timeline",
+      tag: "0065_project_plan_drafts",
       breakpoints: true
     }
   );
-  // when 严格递增（0064 的时间戳必须大于 0063 的 1783920000000）——否则 drizzle 迁移应用顺序会乱。
-  const intentsEntry = journal.entries.find((entry) => entry.tag === "0063_proactive_intents");
-  assert.ok(intentsEntry && finalEntry && finalEntry.when > intentsEntry.when);
+  // when 严格递增（0065 的时间戳必须大于 0064 的 1783922000000）——否则 drizzle 迁移应用顺序会乱。
+  const timelineEntry = journal.entries.find((entry) => entry.tag === "0064_project_timeline");
+  assert.ok(timelineEntry && finalEntry && finalEntry.when > timelineEntry.when);
 });
 
 test("R15 批 A migration 0061 adds the reminder-ladder columns additively", () => {
@@ -727,6 +728,42 @@ test("R15 批 B migration 0062 adds the DM container column, dm_key column, and 
     migration,
     /CREATE UNIQUE INDEX IF NOT EXISTS "project_conversations_dm_key_uq"[\s\S]*\("project_id", "dm_key"\)[\s\S]*WHERE "dm_key" IS NOT NULL/u
   );
+});
+
+test("R15 批 E3 migration 0065 adds the project_plan_drafts table replay-safe with a status CHECK", () => {
+  const migrationUrl = new URL("../migrations/0065_project_plan_drafts.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0065_project_plan_drafts.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+
+  // 建表 + 索引全部重放安全（IF NOT EXISTS）。
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "project_plan_drafts"/u);
+  assert.doesNotMatch(
+    migration,
+    /CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?!IF\s+NOT\s+EXISTS)/iu,
+    "every CREATE INDEX must be replay-safe (IF NOT EXISTS)"
+  );
+  // status 五态 CHECK 钉死。
+  assert.match(
+    migration,
+    /CONSTRAINT "project_plan_drafts_status_ck" CHECK \("status" IN \('draft','pending_review','approved','rejected','materialized'\)\)/u
+  );
+  // 外键：项目/工作区级联删除；创建人 restrict（留痕）；审阅人 set null。
+  assert.match(migration, /"project_id" uuid NOT NULL REFERENCES "projects"\("id"\) ON DELETE cascade/u);
+  assert.match(migration, /"workspace_id" uuid NOT NULL REFERENCES "workspaces"\("id"\) ON DELETE cascade/u);
+  assert.match(migration, /"created_by" uuid NOT NULL REFERENCES "users"\("id"\) ON DELETE restrict/u);
+  assert.match(migration, /"reviewed_by" uuid REFERENCES "users"\("id"\) ON DELETE set null/u);
+  // additive-only：不改既有列；单事务重放：无 CONCURRENTLY；无 emoji。
+  assert.doesNotMatch(migration, /DROP COLUMN|ALTER COLUMN|ADD COLUMN/u, "migration 0065 must only create a new table");
+  assert.doesNotMatch(migration, /CONCURRENTLY/iu, "migration 0065 must not use CONCURRENTLY (single-tx replay)");
+  assert.doesNotMatch(migration, /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u, "migration must not contain emoji glyphs");
+
+  // Drizzle schema 与迁移同步：新表在活跃 graph 上，status 默认 pending_review。
+  const drafts = requiredTable("projectPlanDrafts") as WorkHubTable & Record<string, any>;
+  assert.equal(getTableName(drafts), "project_plan_drafts");
+  assert.equal(drafts.status.default, "pending_review");
+  assert.equal(drafts.intentMd.notNull, true);
+  assert.equal(drafts.reviewedByUserId.notNull, false);
+  assert.equal(checkSqlText(drafts).includes("'materialized'"), true);
 });
 
 test("R15 批 E1 migration 0064 adds the two timeline tables and work_items.milestone_id additively", () => {
