@@ -890,6 +890,132 @@ async function reviewDeliverable(input: AgentLoopInput, params: {
   }
 }
 
+/**
+ * L3 交付后置的结构化结果：deliverable 门（失败）/ manifest / llm_review。由 finalizeL3 产出，
+ * 调用方（loop.ts run() 与 loop2 configBuilder）各自映射成 terminalResult / AgentLoopResult。
+ */
+export type L3Finalization = {
+  status: "succeeded" | "failed";
+  reason: string;
+  finalText: string;
+  manifest?: AgentLoopResult["manifest"];
+  review?: AgentRunReview;
+  reviewFailed?: boolean;
+};
+
+/**
+ * L3 交付后置：requireDeliverable 门 + manifest 装配 + llm_review。从 run() 成功收尾块**原样抽出**，
+ * 让 loop.ts 与 loop2 configBuilder 共用同一份实现（单一真相，绝不双份漂移）。行为与抽出前完全一致：
+ * - 无交付物时发 agentRunFailed 并回 status:"failed"；
+ * - requireDeliverable 时按同样的可选字段装配 manifest；
+ * - reviewDeliverable（默认开）时发 llm_review / llm_review_failed 事件，并把评审 usage 折进传入的
+ *   usage 对象（addUsage 就地累加）。
+ * 只返回结构体、不建 terminalResult——各调用方按自己的结果形状收尾。
+ */
+export async function finalizeL3(input: AgentLoopInput, params: {
+  finalText: string;
+  usage: AgentLoopUsage;
+  steps: AgentLoopStep[];
+  requireDeliverable: boolean;
+}): Promise<L3Finalization> {
+  const { finalText, usage, steps, requireDeliverable } = params;
+  if (requireDeliverable && !(await hasDeliverables(input.workdir))) {
+    await input.emit?.({
+      type: eventTypes.agentRunFailed,
+      previewText: "AI 没产出交付物",
+      data: { run_id: input.runId }
+    });
+    return { status: "failed", reason: "AI 没产出交付物", finalText };
+  }
+
+  let manifest: AgentLoopResult["manifest"];
+  if (requireDeliverable) {
+    const manifestInput: BuildDeliverableChangeManifestInput = {
+      workdir: input.workdir,
+      workItemId: input.workItemId,
+      title: input.manifest?.title ?? titleFromFinalText(finalText)
+    };
+    const manifestSnapshotId = input.manifest?.snapshotId ?? latestSnapshotId(steps);
+    if (input.manifest?.proposalId) {
+      manifestInput.proposalId = input.manifest.proposalId;
+    }
+    if (input.manifest?.branchId) {
+      manifestInput.branchId = input.manifest.branchId;
+    }
+    if (manifestSnapshotId) {
+      manifestInput.snapshotId = manifestSnapshotId;
+    }
+    if (input.manifest?.branchHeadRef) {
+      manifestInput.branchHeadRef = input.manifest.branchHeadRef;
+    }
+    if (input.manifest?.author) {
+      manifestInput.author = input.manifest.author;
+    }
+    if (input.manifest?.evidenceRefs) {
+      manifestInput.evidenceRefs = input.manifest.evidenceRefs;
+    }
+    if (input.manifest?.createdAt) {
+      manifestInput.createdAt = input.manifest.createdAt;
+    }
+    if (input.manifest?.downloadHrefForPath) {
+      manifestInput.downloadHrefForPath = input.manifest.downloadHrefForPath;
+    }
+    if (input.manifest?.previewHrefForPath) {
+      manifestInput.previewHrefForPath = input.manifest.previewHrefForPath;
+    }
+    manifest = await buildDeliverableChangeManifestFromOutputs(manifestInput);
+  }
+
+  let review: AgentRunReview | undefined;
+  let reviewFailed = false;
+  if (input.reviewDeliverable ?? true) {
+    const outcome = await reviewDeliverable(input, { finalText, manifest, usage });
+    if (outcome.kind === "ok") {
+      review = outcome.review;
+      await input.emit?.({
+        type: eventTypes.agentRunStep,
+        previewText: `llm_review: grade=${review.grade} ${review.rationale.slice(0, 120)}`,
+        data: {
+          run_id: input.runId,
+          step_no: usage.stepsUsed,
+          kind: "llm_review",
+          grade: review.grade
+        }
+      });
+    } else {
+      // findings[#2]：评审被请求但失败/空/不可解析——置位 fail-closed 标志并发审计/遥测信号，
+      // 绝不静默向上美化成乐观启发式分。
+      reviewFailed = true;
+      await input.emit?.({
+        type: eventTypes.agentRunStep,
+        previewText: `llm_review_failed: ${outcome.reason}`,
+        data: {
+          run_id: input.runId,
+          step_no: usage.stepsUsed,
+          kind: "llm_review_failed",
+          reason: outcome.reason
+        }
+      });
+    }
+  }
+
+  const result: L3Finalization = {
+    status: "succeeded",
+    reason: finalText ? publicReasonFromFinalText(finalText) : "AgentRun completed",
+    finalText
+  };
+  if (manifest) {
+    result.manifest = manifest;
+  }
+  if (review) {
+    result.review = review;
+  }
+  if (reviewFailed) {
+    result.reviewFailed = true;
+  }
+  return result;
+}
+
 export class AgentLoop {
   async run(input: AgentLoopInput): Promise<AgentLoopResult> {
     const now = input.now ?? (() => new Date());
@@ -1250,106 +1376,32 @@ export class AgentLoop {
       }
 
       const finalText = textFromBlocks(assistant);
-      if (requireDeliverable && !(await hasDeliverables(input.workdir))) {
-        await input.emit?.({
-          type: eventTypes.agentRunFailed,
-          previewText: "AI 没产出交付物",
-          data: { run_id: input.runId }
-        });
+      // L3 交付后置（deliverable 门 + manifest + llm_review）抽出到 finalizeL3，供 loop.ts 与 loop2
+      // configBuilder 复用同一份实现（单一真相）。此处按抽出前语义把结构体映射回 terminalResult。
+      const l3 = await finalizeL3(input, { finalText, usage, steps, requireDeliverable });
+      if (l3.status === "failed") {
         return terminalResult({
           status: "failed",
-          reason: "AI 没产出交付物",
+          reason: l3.reason,
           control: "stop",
           usage,
           steps,
           finalText
         });
       }
-
-      let manifest: AgentLoopResult["manifest"];
-      if (requireDeliverable) {
-        const manifestInput: BuildDeliverableChangeManifestInput = {
-          workdir: input.workdir,
-          workItemId: input.workItemId,
-          title: input.manifest?.title ?? titleFromFinalText(finalText)
-        };
-        const manifestSnapshotId = input.manifest?.snapshotId ?? latestSnapshotId(steps);
-        if (input.manifest?.proposalId) {
-          manifestInput.proposalId = input.manifest.proposalId;
-        }
-        if (input.manifest?.branchId) {
-          manifestInput.branchId = input.manifest.branchId;
-        }
-        if (manifestSnapshotId) {
-          manifestInput.snapshotId = manifestSnapshotId;
-        }
-        if (input.manifest?.branchHeadRef) {
-          manifestInput.branchHeadRef = input.manifest.branchHeadRef;
-        }
-        if (input.manifest?.author) {
-          manifestInput.author = input.manifest.author;
-        }
-        if (input.manifest?.evidenceRefs) {
-          manifestInput.evidenceRefs = input.manifest.evidenceRefs;
-        }
-        if (input.manifest?.createdAt) {
-          manifestInput.createdAt = input.manifest.createdAt;
-        }
-        if (input.manifest?.downloadHrefForPath) {
-          manifestInput.downloadHrefForPath = input.manifest.downloadHrefForPath;
-        }
-        if (input.manifest?.previewHrefForPath) {
-          manifestInput.previewHrefForPath = input.manifest.previewHrefForPath;
-        }
-        manifest = await buildDeliverableChangeManifestFromOutputs(manifestInput);
-      }
-
-      let review: AgentRunReview | undefined;
-      let reviewFailed = false;
-      if (input.reviewDeliverable ?? true) {
-        const outcome = await reviewDeliverable(input, { finalText, manifest, usage });
-        if (outcome.kind === "ok") {
-          review = outcome.review;
-          await input.emit?.({
-            type: eventTypes.agentRunStep,
-            previewText: `llm_review: grade=${review.grade} ${review.rationale.slice(0, 120)}`,
-            data: {
-              run_id: input.runId,
-              step_no: usage.stepsUsed,
-              kind: "llm_review",
-              grade: review.grade
-            }
-          });
-        } else {
-          // findings[#2]：评审被请求但失败/空/不可解析——置位 fail-closed 标志并发审计/遥测信号，
-          // 绝不静默向上美化成乐观启发式分。
-          reviewFailed = true;
-          await input.emit?.({
-            type: eventTypes.agentRunStep,
-            previewText: `llm_review_failed: ${outcome.reason}`,
-            data: {
-              run_id: input.runId,
-              step_no: usage.stepsUsed,
-              kind: "llm_review_failed",
-              reason: outcome.reason
-            }
-          });
-        }
-      }
-
       const result = terminalResult({
         status: "succeeded",
-        reason: finalText ? publicReasonFromFinalText(finalText) : "AgentRun completed",
+        reason: l3.reason,
         control: "stop",
         usage,
         steps,
         finalText,
-        ...(manifest ? { manifest } : {})
+        ...(l3.manifest ? { manifest: l3.manifest } : {})
       });
-      if (review) {
-        result.review = review;
+      if (l3.review) {
+        result.review = l3.review;
       }
-      if (reviewFailed) {
+      if (l3.reviewFailed) {
         result.reviewFailed = true;
       }
       return result;
