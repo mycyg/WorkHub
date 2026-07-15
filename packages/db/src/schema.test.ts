@@ -664,11 +664,11 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0061 notification reminders", () => {
+test("migration journal ends with 0062 dm containers", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
-    entries: Array<{ idx: number; version: string; tag: string; breakpoints: boolean }>;
+    entries: Array<{ idx: number; version: string; tag: string; breakpoints: boolean; when: number }>;
   };
   const finalEntry = journal.entries.at(-1);
   assert.deepEqual(
@@ -679,13 +679,16 @@ test("migration journal ends with 0061 notification reminders", () => {
       breakpoints: finalEntry.breakpoints
     },
     {
-      // R15 批 A：提醒阶梯列（0061）接在 R14 链尾 0060 之后，when 严格递增。
-      idx: 61,
+      // R15 批 B：DM 容器 + dm_key 查重列（0062）接在 R15 批 A 链尾 0061 之后，when 严格递增。
+      idx: 62,
       version: "7",
-      tag: "0061_notification_reminders",
+      tag: "0062_dm_containers",
       breakpoints: true
     }
   );
+  // when 严格递增（0062 的时间戳必须大于 0061 的 1783916000000）——否则 drizzle 迁移应用顺序会乱。
+  const reminderEntry = journal.entries.find((entry) => entry.tag === "0061_notification_reminders");
+  assert.ok(reminderEntry && finalEntry && finalEntry.when > reminderEntry.when);
 });
 
 test("R15 批 A migration 0061 adds the reminder-ladder columns additively", () => {
@@ -700,6 +703,26 @@ test("R15 批 A migration 0061 adds the reminder-ladder columns additively", () 
   assert.match(
     migration,
     /CREATE INDEX IF NOT EXISTS "notifications_next_remind_at_idx"[\s\S]*WHERE "next_remind_at" IS NOT NULL/u
+  );
+});
+
+test("R15 批 B migration 0062 adds the DM container column, dm_key column, and their partial unique indexes additively", () => {
+  const migrationUrl = new URL("../migrations/0062_dm_containers.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0062_dm_containers.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  // 只加列（additive，ADD COLUMN IF NOT EXISTS 保证 replay 安全）——不得 DROP/ALTER 既有列。
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS "is_dm_container" boolean NOT NULL DEFAULT false/u);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS "dm_key" text/u);
+  assert.doesNotMatch(migration, /DROP COLUMN|ALTER COLUMN/u, "migration 0062 must only add columns");
+  // 每工作区至多一个容器的部分唯一索引（workspace 维度）。
+  assert.match(
+    migration,
+    /CREATE UNIQUE INDEX IF NOT EXISTS "projects_dm_container_uq"[\s\S]*\("workspace_id"\)[\s\S]*WHERE "is_dm_container"/u
+  );
+  // dm_key 查重必须带 project_id 限定（同一对用户跨工作区各有一条 DM，dm_key 本身会撞）。
+  assert.match(
+    migration,
+    /CREATE UNIQUE INDEX IF NOT EXISTS "project_conversations_dm_key_uq"[\s\S]*\("project_id", "dm_key"\)[\s\S]*WHERE "dm_key" IS NOT NULL/u
   );
 });
 
