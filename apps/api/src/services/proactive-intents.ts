@@ -2,6 +2,7 @@ import { settings as runtimeSettings } from "@workhub/config";
 import type { NotificationSeverity } from "@workhub/contracts";
 import {
   countDeliveredProactiveIntentsForUser,
+  createActionCardRepository,
   createConversationRepository,
   getSharedDatabaseClient,
   markProactiveIntentStatus,
@@ -17,6 +18,7 @@ import {
   type NotificationService
 } from "./notifications.js";
 import { createProactiveCuuDelivery } from "./proactive-cuu-delivery.js";
+import { createProactiveFindOwnerCardDelivery } from "./proactive-find-owner-card-delivery.js";
 
 // R15 批 D（主动性 MVP · ProactiveIntent 决策/投递层）：主动打扰的唯一闸门。
 //
@@ -44,8 +46,11 @@ import { createProactiveCuuDelivery } from "./proactive-cuu-delivery.js";
 // 列无 check 约束，additive 安全）。见文件末的 careConversationText 模板签名。
 export type ProactiveIntentKind = "ddl_chase" | "find_owner" | "care";
 
-// R15 批 D2：投递通道。选择在调用方（见文件头）。缺省 'notification'（回到批 D 行为）。
-export type ProactiveDeliveryChannel = "notification" | "conversation_message";
+// R15 批 D2/D4：投递通道。选择在调用方（见文件头）。缺省 'notification'（回到批 D 行为）。
+//   * 'conversation_message' —— D2：Cuu 在目标用户个人空间主区说一句话。
+//   * 'action_card'          —— D4：在【项目】主区插一张系统 decide 行动卡（找人：claim/reassign/defer）。
+// 会话/行动卡通道投不成（个人空间/项目主区不可用、端口未注入、投递抛错）一律降级回 notification。
+export type ProactiveDeliveryChannel = "notification" | "conversation_message" | "action_card";
 
 export type ProactiveIntentNotification = {
   type: string;
@@ -95,6 +100,9 @@ export type ProactiveIntentServiceDeps = {
   // R15 批 D2 通道（Cuu 在个人空间主区说话）。可选——不注入时 channel='conversation_message' 也会降级
   // 走 notification 通道（fail-open：宁可用通知补上，不吞掉这条主动性）。
   conversationDelivery?: ProactiveConversationDelivery;
+  // R15 批 D4 通道（项目主区插系统「找人」行动卡）。可选——不注入时 channel='action_card' 同样降级回
+  // notification（fail-open）。
+  actionCardDelivery?: ProactiveActionCardDelivery;
   dailyCapPerUser: number;
   now?: () => Date;
   logger?: Pick<StructuredLogger, "warn">;
@@ -109,6 +117,20 @@ export type ProactiveConversationDelivery = {
     text: string;
     proactiveIntentId: string;
   }) => Promise<{ delivered: true; conversationId: string } | { delivered: false; reason: "no_personal_space" }>;
+};
+
+// R15 批 D4：action_card 通道投递端口（实现见 proactive-find-owner-card-delivery.ts）。返回
+// delivered=false 表示项目主区不可用 → 本闸降级回 notification 通道。类型独立声明，保持本闸对具体
+// 行动卡仓库的零耦合。
+export type ProactiveActionCardDelivery = {
+  deliverFindOwnerCard: (input: {
+    workspaceId: string;
+    projectId: string;
+    workItemId: string;
+    targetUserId: string;
+    titleMd: string;
+    proactiveIntentId: string;
+  }) => Promise<{ delivered: true; conversationId: string } | { delivered: false; reason: "no_main_conversation" }>;
 };
 
 export type ProactiveIntentService = {
@@ -159,12 +181,14 @@ export function createProactiveIntentService(deps: ProactiveIntentServiceDeps): 
         return { status: "suppressed", reason: "daily_cap", intentId };
       }
 
-      // 3) 投递。通道由调用方选（缺省 notification）。会话通道（Cuu 在个人空间主区说话）走得通就用它；
-      //    个人空间不可用 / 未注入投递端口 / 投递抛错 → 一律降级回 notification 通道（fail-open：不吞
-      //    掉这条主动性）。注意：会话通道不经通知的按类型静音（个人空间是你自己的地盘，没有对应的通知
-      //    类型可静音）——静音只在 notification 通道生效。
-      const wantsConversation = (intent.channel ?? "notification") === "conversation_message";
-      if (wantsConversation && intent.conversationText && deps.conversationDelivery) {
+      // 3) 投递。通道由调用方选（缺省 notification）。非通知通道（会话/行动卡）走得通就用它；目标落点
+      //    不可用 / 未注入投递端口 / 投递抛错 → 一律降级回 notification 通道（fail-open：不吞掉这条主动
+      //    性）。注意：非通知通道不经通知的按类型静音（个人空间/项目主区没有对应的通知类型可静音）——
+      //    静音只在 notification 通道生效。
+      const channel = intent.channel ?? "notification";
+
+      // D2：Cuu 在个人空间主区说话。
+      if (channel === "conversation_message" && intent.conversationText && deps.conversationDelivery) {
         try {
           const outcome = await deps.conversationDelivery.deliverCuuMessage({
             workspaceId: intent.workspaceId,
@@ -185,6 +209,32 @@ export function createProactiveIntentService(deps: ProactiveIntentServiceDeps): 
           logger.warn?.("proactive_conversation_delivery_failed", { intentId, error });
         }
         // 落到这里 = 会话通道没投成，继续走下面的 notification 降级路径。
+      }
+
+      // D4：项目主区插系统「找人」行动卡。projectId/workItemId 对找人 intent 必非空；缺任一则直接走通知。
+      if (channel === "action_card" && deps.actionCardDelivery && intent.projectId && intent.workItemId) {
+        try {
+          const outcome = await deps.actionCardDelivery.deliverFindOwnerCard({
+            workspaceId: intent.workspaceId,
+            projectId: intent.projectId,
+            workItemId: intent.workItemId,
+            targetUserId: intent.targetUserId,
+            titleMd: intent.notification.title,
+            proactiveIntentId: intentId
+          });
+          if (outcome.delivered) {
+            await deps.repository.markStatus({ id: intentId, status: "delivered", deliveredVia: "action_card" });
+            return { status: "delivered", intentId };
+          }
+          logger.warn?.("proactive_action_card_delivery_degraded", {
+            intentId,
+            projectId: intent.projectId,
+            reason: outcome.reason
+          });
+        } catch (error) {
+          logger.warn?.("proactive_action_card_delivery_failed", { intentId, error });
+        }
+        // 落到这里 = 行动卡通道没投成，继续走下面的 notification 降级路径。
       }
 
       // notification 通道（也是会话通道的降级目标）。createNotification 内部按类型静音返回 null → 记 suppressed。
@@ -286,6 +336,14 @@ export function getDefaultProactiveIntentService(): ProactiveIntentService {
       // 默认 SSE 总线（广播 conversation.message.created），与 turn 循环的 Cuu 说话同一套落库/广播底座。
       conversationDelivery: createProactiveCuuDelivery({
         conversations: createConversationRepository(db),
+        bus: getDefaultPushBus(),
+        logger: getDefaultStructuredLogger()
+      }),
+      // R15 批 D4：项目主区「找人」行动卡通道。复用同一共享 DB 的会话仓库（项目主区定位）与行动卡仓库
+      // （insertSystemCard，绕开观察者水位线）+ 默认 SSE 总线。
+      actionCardDelivery: createProactiveFindOwnerCardDelivery({
+        conversations: createConversationRepository(db),
+        actionCards: createActionCardRepository(db),
         bus: getDefaultPushBus(),
         logger: getDefaultStructuredLogger()
       }),

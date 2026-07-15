@@ -475,6 +475,13 @@ export type ConversationRepository = {
     workspaceId: string;
     targetUserId: string;
   }) => Promise<{ conversationId: string; projectId: string; title: string } | null>;
+  // R15 批 D4（找人交互卡投递）：定位一个【真项目】（非个人空间、非 DM 容器、未归档未删除）的 main 会话，
+  // 供 ddl-chase 找人在项目主区插系统行动卡。按 (projectId, workspaceId) 定位，查不到（项目主区缺失/
+  // 项目非真项目）返回 null，调用方据此降级回通知通道。系统级只读定位（无 viewerUserId 门控）。
+  findProjectMainConversation: (input: {
+    projectId: string;
+    workspaceId: string;
+  }) => Promise<{ conversationId: string; projectId: string; title: string } | null>;
 };
 
 class NamedConversationRepositoryError extends Error {
@@ -2528,6 +2535,40 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
         )
         // 多个个人空间时取最早建的（默认「我的空间」）——稳定、可预期的单一落点。
         .orderBy(asc(projects.createdAt), asc(projectConversations.createdAt))
+        .limit(1);
+      const row = rows[0];
+      return row ? { conversationId: row.conversationId, projectId: row.projectId, title: row.title } : null;
+    },
+
+    async findProjectMainConversation(input) {
+      const rows = await db
+        .select({
+          conversationId: projectConversations.id,
+          projectId: projectConversations.projectId,
+          title: projectConversations.title
+        })
+        .from(projectConversations)
+        .innerJoin(
+          projects,
+          and(
+            eq(projects.id, projectConversations.projectId),
+            eq(projects.workspaceId, projectConversations.workspaceId)
+          )
+        )
+        .where(
+          and(
+            eq(projectConversations.projectId, input.projectId),
+            eq(projectConversations.workspaceId, input.workspaceId),
+            eq(projectConversations.kind, "main"),
+            isNull(projectConversations.deletedAt),
+            // 只认真项目：个人空间 / DM 容器 / 已归档已删除项目都不是找人卡的落点。
+            eq(projects.isPersonal, false),
+            eq(projects.isDmContainer, false),
+            eq(projects.archived, false),
+            isNull(projects.deletedAt)
+          )
+        )
+        .orderBy(asc(projectConversations.createdAt))
         .limit(1);
       const row = rows[0];
       return row ? { conversationId: row.conversationId, projectId: row.projectId, title: row.title } : null;
