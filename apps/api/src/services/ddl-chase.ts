@@ -216,8 +216,9 @@ export function planDdlIntent(
     suppressionKey = `ddl:${candidate.workItemId}:${stage}`;
   } else {
     // D4 找人：无责任人的工作项，只有逾期后才「找人」，每工作项一张（suppression_key=ddl_card:{id}）。
-    // 未逾期则本 tick 无事可做。投递物走本批唯一通道 notifications（发给项目负责人认领/指派）——
-    // 交互式 decide 行动卡(claim/reassign/defer)是后续增强，缺口原因见交付报告。
+    // 未逾期则本 tick 无事可做。投递物走 D4b 的 action_card 通道——在项目主区插一张系统 decide 行动卡
+    // （标题=「XX 已逾期且无人认领」，动作 claim/reassign/defer，发给项目负责人定夺）；项目主区不可用
+    // 时闸内降级回 notification（发给项目负责人认领/指派）。suppression_key 保证每工作项恰一张。
     if (!overdue) {
       return { kind: "skip" };
     }
@@ -249,6 +250,14 @@ export function planDdlIntent(
     options.cuuDeliveryEnabled && (stage === "t1d" || stage === "overdue")
       ? stageConversationText(stage, candidate)
       : undefined;
+  // D4b：找人（needs_owner）走 action_card 通道——项目主区插系统 decide 卡。闸内降级回通知（项目主区
+  // 不可用 / 端口未注入）。其余阶梯不走行动卡（各自的通道见上）。
+  const channelExtra: Pick<ProactiveIntentInput, "channel" | "conversationText"> =
+    stage === "needs_owner"
+      ? { channel: "action_card" as const }
+      : conversationText
+        ? { channel: "conversation_message" as const, conversationText }
+        : {};
   return {
     kind: "intent",
     intent: {
@@ -266,7 +275,7 @@ export function planDdlIntent(
         severity: copy.severity
       },
       notification,
-      ...(conversationText ? { channel: "conversation_message" as const, conversationText } : {})
+      ...channelExtra
     }
   };
 }

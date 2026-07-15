@@ -248,6 +248,9 @@ function repository(overrides: Partial<ConversationRepository> = {}): Conversati
     async findPersonalMainConversation() {
       return null;
     },
+    async findProjectMainConversation() {
+      return null;
+    },
     ...overrides
   };
 }

@@ -63,6 +63,10 @@ type ConversationParticipantRole = "owner" | "member";
 // R14 批 CHAT：精选五键反应的 ASCII slug 集合（emoji 字形只在桌面渲染层映射，不入 schema/契约）。
 type ConversationReactionKey = "approve" | "disagree" | "done" | "question" | "watch";
 type ActionCardStatus = "active" | "superseded";
+// R15 批 D4：卡片来源——observer=LLM 观察者从会话讨论里拎出的卡；system=服务端规则直接插的卡
+// （如 ddl-chase 找人）。system 卡绕开观察者水位线状态机（不设 activeCardId、analyzed_to_seq 置 NULL），
+// 观察者的读写路径全部限定 origin='observer'，两类卡在同一会话共存互不干扰。
+type ActionCardOrigin = "observer" | "system";
 type ActionCardItemKind = "execute" | "decide" | "observe";
 type ActionCardConfidence = "high" | "mid" | "low";
 type ActionCardItemStatus = "running" | "done" | "undone" | "waiting_decision" | "dismissed" | "escalated";
@@ -761,11 +765,16 @@ export const actionCards = pgTable(
     }),
     messageId: uuid("message_id").notNull().references(() => conversationMessages.id, { onDelete: "cascade" }),
     status: varchar("status", { length: 16 }).$type<ActionCardStatus>().notNull().default("active"),
-    analyzedToSeq: bigint("analyzed_to_seq", { mode: "number" }).notNull(),
+    // R15 批 D4：来源标记。observer=LLM 观察者产；system=服务端规则直接插（迁移 0066，默认 'observer'）。
+    origin: varchar("origin", { length: 16 }).$type<ActionCardOrigin>().notNull().default("observer"),
+    // R15 批 D4：观察者卡按「分析到第几条消息」写水位线（非空）；系统卡不挂水位线，置 NULL（迁移 0066
+    // 把 NOT NULL 去掉）。既有 CHECK BETWEEN 0..MAX 对 NULL 天然放行。
+    analyzedToSeq: bigint("analyzed_to_seq", { mode: "number" }),
     ...timestamps()
   },
   (table) => [
     check("action_cards_status_ck", sql`${table.status} in ('active', 'superseded')`),
+    check("action_cards_origin_ck", sql`${table.origin} in ('observer', 'system')`),
     check("action_cards_analyzed_to_seq_ck", sql`${table.analyzedToSeq} between 0 and 9007199254740991`),
     foreignKey({
       name: "action_cards_conversation_message_fk",
@@ -773,6 +782,7 @@ export const actionCards = pgTable(
       foreignColumns: [conversationMessages.conversationId, conversationMessages.id]
     }),
     index("action_cards_conversation_status_idx").on(table.conversationId, table.status),
+    index("action_cards_conversation_origin_idx").on(table.conversationId, table.origin),
     uniqueIndex("action_cards_message_id_uq").on(table.messageId),
     uniqueIndex("action_cards_conversation_id_uq").on(table.conversationId, table.id)
   ]

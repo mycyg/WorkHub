@@ -169,7 +169,7 @@ test("planDdlIntent: with Cuu delivery on, overdue routes to conversation and st
   assert.equal(intent.notification.nextRemindAt?.getTime(), now.getTime() + 24 * HOUR);
 });
 
-test("planDdlIntent: with Cuu delivery on, t3d/escalate/needs_owner stay on the notification channel", () => {
+test("planDdlIntent: with Cuu delivery on, t3d/escalate stay on the notification channel", () => {
   const t3d = planDdlIntent(
     candidate({ claimedByUserId: "u1", dueAt: new Date(now.getTime() + 48 * HOUR) }),
     now,
@@ -180,15 +180,29 @@ test("planDdlIntent: with Cuu delivery on, t3d/escalate/needs_owner stay on the 
     now,
     { cuuDeliveryEnabled: true }
   );
-  const needsOwner = planDdlIntent(
-    candidate({ claimedByUserId: null, leadUserId: null, collaboratorUserId: null, projectOwnerUserId: "owner-1", dueAt: new Date(now.getTime() - 5 * HOUR) }),
-    now,
-    { cuuDeliveryEnabled: true }
-  );
-  for (const [label, plan] of [["t3d", t3d], ["escalate", escalate], ["needs_owner", needsOwner]] as const) {
+  for (const [label, plan] of [["t3d", t3d], ["escalate", escalate]] as const) {
     const intent = (plan as { intent: ProactiveIntentInput }).intent;
-    assert.equal(intent.channel, undefined, `${label} must not use the conversation channel`);
+    assert.equal(intent.channel, undefined, `${label} must not use a non-notification channel`);
     assert.equal(intent.conversationText, undefined, `${label} carries no conversation copy`);
+  }
+});
+
+// R15 批 D4b：找人（needs_owner）走 action_card 通道（项目主区插系统 decide 卡），不带会话文案；
+// 与会话通道开关无关（找人卡是给项目负责人定夺，非给责任人的 Cuu 私语）。
+test("planDdlIntent: needs_owner routes to the action_card channel regardless of the Cuu-delivery flag", () => {
+  for (const cuuDeliveryEnabled of [true, false]) {
+    const plan = planDdlIntent(
+      candidate({ claimedByUserId: null, leadUserId: null, collaboratorUserId: null, projectOwnerUserId: "owner-1", dueAt: new Date(now.getTime() - 5 * HOUR) }),
+      now,
+      { cuuDeliveryEnabled }
+    );
+    const intent = (plan as { intent: ProactiveIntentInput }).intent;
+    assert.equal(intent.kind, "find_owner");
+    assert.equal(intent.channel, "action_card");
+    assert.equal(intent.conversationText, undefined, "find-owner card carries no conversation copy");
+    // 通知草稿仍在（项目主区不可用时闸内降级用它），标题即卡的 decide 条目标题。
+    assert.equal(intent.notification.type, "work_item.needs_owner");
+    assert.equal(intent.targetUserId, "owner-1");
   }
 });
 

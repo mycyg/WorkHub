@@ -8,6 +8,7 @@ import {
   isWithinProactiveQuietHours,
   parseProactiveQuietHours,
   type ProactiveConversationDelivery,
+  type ProactiveActionCardDelivery,
   type ProactiveIntentInput,
   type ProactiveIntentRepositoryDeps
 } from "./proactive-intents.js";
@@ -412,6 +413,162 @@ test("recordAndDeliver: a care intent with no delivery port injected is suppress
   assert.deepEqual(result, { status: "suppressed", reason: "no_personal_space", intentId: "intent-1" });
   assert.equal(notified, 0);
   assert.deepEqual(state.status, [{ id: "intent-1", status: "suppressed" }]);
+});
+
+test("parseProactiveQuietHours parses cross-midnight, same-day, and rejects malformed", () => {
+  assert.deepEqual(parseProactiveQuietHours("22-08"), { startHour: 22, endHour: 8 });
+  assert.deepEqual(parseProactiveQuietHours(" 1 - 6 "), { startHour: 1, endHour: 6 });
+  assert.equal(parseProactiveQuietHours(""), null);
+  assert.equal(parseProactiveQuietHours(undefined), null);
+  assert.equal(parseProactiveQuietHours("nope"), null);
+  assert.equal(parseProactiveQuietHours("08-08"), null, "equal bounds = empty window = disabled");
+  assert.equal(parseProactiveQuietHours("25-08"), null, "out-of-range hour rejected");
+});
+
+test("isWithinProactiveQuietHours covers cross-midnight and same-day windows by local hour", () => {
+  const cross = parseProactiveQuietHours("22-08");
+  // 本地 23 点在 22-08 窗内；本地 12 点不在。
+  assert.equal(isWithinProactiveQuietHours(cross, new Date(2026, 6, 15, 23, 0)), true);
+  assert.equal(isWithinProactiveQuietHours(cross, new Date(2026, 6, 15, 3, 0)), true);
+  assert.equal(isWithinProactiveQuietHours(cross, new Date(2026, 6, 15, 8, 0)), false);
+  assert.equal(isWithinProactiveQuietHours(cross, new Date(2026, 6, 15, 12, 0)), false);
+  const sameDay = parseProactiveQuietHours("01-06");
+  assert.equal(isWithinProactiveQuietHours(sameDay, new Date(2026, 6, 15, 3, 0)), true);
+  assert.equal(isWithinProactiveQuietHours(sameDay, new Date(2026, 6, 15, 23, 0)), false);
+  assert.equal(isWithinProactiveQuietHours(null, new Date(2026, 6, 15, 3, 0)), false);
+});
+
+// ── D4b：action_card 通道（项目主区插系统「找人」卡） ─────────────────────────────────────────
+
+type ActionCardDeliveryCall = Parameters<ProactiveActionCardDelivery["deliverFindOwnerCard"]>[0];
+
+function fakeActionCardDelivery(
+  outcome: Awaited<ReturnType<ProactiveActionCardDelivery["deliverFindOwnerCard"]>> | (() => never)
+): { delivery: ProactiveActionCardDelivery; calls: ActionCardDeliveryCall[] } {
+  const calls: ActionCardDeliveryCall[] = [];
+  const delivery: ProactiveActionCardDelivery = {
+    async deliverFindOwnerCard(input) {
+      calls.push(input);
+      if (typeof outcome === "function") {
+        outcome();
+      }
+      return outcome as Awaited<ReturnType<ProactiveActionCardDelivery["deliverFindOwnerCard"]>>;
+    }
+  };
+  return { delivery, calls };
+}
+
+function findOwnerIntent(over: Partial<ProactiveIntentInput> = {}): ProactiveIntentInput {
+  return intent({
+    channel: "action_card",
+    kind: "find_owner",
+    stage: "needs_owner",
+    suppressionKey: "ddl_card:wi",
+    notification: {
+      type: "work_item.needs_owner",
+      severity: "high",
+      title: "上线报价单 逾期且无人负责",
+      body: "这个工作项已逾期，但还没有人认领。",
+      targetUrl: "/workitems/d0000000-0000-4000-8000-000000000003",
+      dedupeKey: "ddl_card:wi"
+    },
+    ...over
+  });
+}
+
+test("recordAndDeliver: action_card channel inserts a find-owner card and marks delivered_via=action_card", async () => {
+  const { repo, state } = fakeRepo();
+  const { delivery, calls } = fakeActionCardDelivery({ delivered: true, conversationId: "conv-main" });
+  let notified = 0;
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        notified += 1;
+        return notificationRow();
+      }
+    },
+    actionCardDelivery: delivery,
+    dailyCapPerUser: 10,
+    now: () => at
+  });
+  const result = await service.recordAndDeliver(findOwnerIntent());
+  assert.deepEqual(result, { status: "delivered", intentId: "intent-1" });
+  assert.equal(calls.length, 1, "action_card channel must be attempted");
+  assert.equal(calls[0]?.titleMd, "上线报价单 逾期且无人负责", "card title reuses the notification title");
+  assert.equal(calls[0]?.proactiveIntentId, "intent-1", "intent id threads onto the card for audit");
+  assert.equal(calls[0]?.workItemId, "d0000000-0000-4000-8000-000000000003");
+  assert.equal(notified, 0, "a successful card delivery must not also fire a notification");
+  assert.deepEqual(state.status, [{ id: "intent-1", status: "delivered", deliveredVia: "action_card" }]);
+});
+
+test("recordAndDeliver: action_card channel degrades to notification when the project main conversation is missing", async () => {
+  const { repo, state } = fakeRepo();
+  const { delivery, calls } = fakeActionCardDelivery({ delivered: false, reason: "no_main_conversation" });
+  const notifications: unknown[] = [];
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification(draft) {
+        notifications.push(draft);
+        return notificationRow();
+      }
+    },
+    actionCardDelivery: delivery,
+    dailyCapPerUser: 10,
+    now: () => at
+  });
+  const result = await service.recordAndDeliver(findOwnerIntent());
+  assert.deepEqual(result, { status: "delivered", intentId: "intent-1" });
+  assert.equal(calls.length, 1, "card channel is attempted first");
+  assert.equal(notifications.length, 1, "then it degrades to the notification channel");
+  assert.deepEqual(state.status, [{ id: "intent-1", status: "delivered", deliveredVia: "notification" }]);
+});
+
+test("recordAndDeliver: action_card channel degrades to notification when card insertion throws", async () => {
+  const { repo, state } = fakeRepo();
+  const { delivery } = fakeActionCardDelivery(() => {
+    throw new Error("card insert failed");
+  });
+  let notified = 0;
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        notified += 1;
+        return notificationRow();
+      }
+    },
+    actionCardDelivery: delivery,
+    dailyCapPerUser: 10,
+    now: () => at,
+    logger: { warn() {} }
+  });
+  const result = await service.recordAndDeliver(findOwnerIntent());
+  assert.deepEqual(result, { status: "delivered", intentId: "intent-1" });
+  assert.equal(notified, 1, "a delivery throw degrades to notification (fail-open)");
+  assert.deepEqual(state.status, [{ id: "intent-1", status: "delivered", deliveredVia: "notification" }]);
+});
+
+test("recordAndDeliver: an action_card intent with no delivery port injected degrades to notification", async () => {
+  const { repo, state } = fakeRepo();
+  let notified = 0;
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        notified += 1;
+        return notificationRow();
+      }
+    },
+    // actionCardDelivery 未注入。
+    dailyCapPerUser: 10,
+    now: () => at
+  });
+  const result = await service.recordAndDeliver(findOwnerIntent());
+  assert.deepEqual(result, { status: "delivered", intentId: "intent-1" });
+  assert.equal(notified, 1);
+  assert.deepEqual(state.status, [{ id: "intent-1", status: "delivered", deliveredVia: "notification" }]);
 });
 
 test("parseProactiveQuietHours parses cross-midnight, same-day, and rejects malformed", () => {

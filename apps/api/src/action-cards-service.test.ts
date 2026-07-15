@@ -81,6 +81,7 @@ function cardRow(overrides: Partial<ActionCardRow> = {}): ActionCardRow {
     conversationId,
     messageId,
     status: "active",
+    origin: "observer",
     analyzedToSeq: 6,
     createdAt: now,
     updatedAt: now,
@@ -177,6 +178,9 @@ function baseOptions(overrides: Partial<ActionCardServiceOptions> = {}): ActionC
     workItems: {
       async transitionWorkItemStatus() {
         return { id: workItemId, status: "cancelled", transitioned: true };
+      },
+      async claimOwnerlessWorkItem() {
+        return { id: workItemId, claimedByUserId: assigneeUserId };
       }
     },
     now: () => now,
@@ -341,6 +345,141 @@ test("decide defer dismisses the item and leaves the escalation untouched", asyn
   assert.equal(delegateCalled, false);
 });
 
+// ── decide: system 卡（origin='system'，D4a 轻量路径，无 escalation） ──────────────────────────
+
+// 系统卡决策绝不碰 escalation——把 listEscalationEventsForWorkItem 设成抛错，证明它一次都没被调用。
+function systemCardOptions(overrides: Partial<ActionCardServiceOptions> = {}): ActionCardServiceOptions {
+  const base = baseOptions();
+  return baseOptions({
+    actionCards: {
+      ...base.actionCards,
+      async findItemForActor() {
+        return { item: decideItemRow(), card: cardRow({ origin: "system" }) };
+      }
+    },
+    decisions: {
+      ...base.decisions,
+      async listEscalationEventsForWorkItem() {
+        throw new Error("system card decide must not touch escalation");
+      },
+      async resolveEscalation() {
+        throw new Error("system card decide must not resolve escalation");
+      },
+      async delegateEscalation() {
+        throw new Error("system card decide must not delegate escalation");
+      }
+    },
+    ...overrides
+  });
+}
+
+test("decide claim on a system card claims the ownerless work item to the caller and marks the item done — no escalation", async () => {
+  const claimCalls: unknown[] = [];
+  const published: unknown[] = [];
+  const base = baseOptions();
+  const service = createActionCardService(systemCardOptions({
+    workItems: {
+      ...base.workItems,
+      async claimOwnerlessWorkItem(input) {
+        claimCalls.push(input);
+        return { id: workItemId, claimedByUserId: input.userId };
+      }
+    },
+    bus: { publish: async (topic, type, event) => { published.push({ topic, type, event }); } }
+  }));
+
+  const result = await service.decide({ actor: actor(), itemId, action: "claim" });
+
+  assert.equal(result.status, "done");
+  assert.equal(result.assignee_user_id, assigneeUserId);
+  assert.equal(claimCalls.length, 1);
+  assert.equal((claimCalls[0] as { userId: string }).userId, assigneeUserId);
+  assert.equal((claimCalls[0] as { workItemId: string }).workItemId, workItemId);
+  assert.equal(published.length, 1);
+});
+
+test("decide claim on a system card surfaces a conflict when the work item was already claimed", async () => {
+  const base = baseOptions();
+  const service = createActionCardService(systemCardOptions({
+    workItems: {
+      ...base.workItems,
+      async claimOwnerlessWorkItem() {
+        return null; // CAS miss = someone already took it
+      }
+    }
+  }));
+  await assert.rejects(
+    service.decide({ actor: actor(), itemId, action: "claim" }),
+    (error: unknown) => error instanceof ActionCardServiceError && error.status === 409 && error.code === "action_card_work_item_already_claimed"
+  );
+});
+
+test("decide reassign on a system card claims the item to the target member, threads a note, marks it done", async () => {
+  const claimCalls: unknown[] = [];
+  const noteCalls: unknown[] = [];
+  const base = baseOptions();
+  const service = createActionCardService(systemCardOptions({
+    actionCards: {
+      ...base.actionCards,
+      async findItemForActor() {
+        return { item: decideItemRow(), card: cardRow({ origin: "system" }) };
+      },
+      async isActiveWorkspaceMember() { return true; },
+      async postSystemMessage(input) {
+        noteCalls.push(input);
+        return { id: "system-2", conversationId, seq: 9, senderType: "system", senderUserId: null, kind: "system_event", contentJson: {}, threadRootId: input.threadRootId ?? null, editedAt: null, deletedAt: null, deletedByUserId: null, replyToMessageId: null, pinnedAt: null, pinnedByUserId: null, createdAt: now };
+      }
+    },
+    workItems: {
+      ...base.workItems,
+      async claimOwnerlessWorkItem(input) {
+        claimCalls.push(input);
+        return { id: workItemId, claimedByUserId: input.userId };
+      }
+    }
+  }));
+
+  const result = await service.decide({ actor: actor(), itemId, action: "reassign", assigneeUserId: otherUserId });
+
+  assert.equal(result.status, "done");
+  assert.equal(result.assignee_user_id, otherUserId);
+  assert.equal((claimCalls[0] as { userId: string }).userId, otherUserId);
+  assert.equal(noteCalls.length, 1);
+  assert.equal((noteCalls[0] as { content: { event: string; to_user_id: string } }).content.event, "action_card_item_reassigned");
+  assert.equal((noteCalls[0] as { content: { to_user_id: string } }).content.to_user_id, otherUserId);
+});
+
+test("decide reassign on a system card rejects a target who is not an active workspace member", async () => {
+  const base = baseOptions();
+  const service = createActionCardService(systemCardOptions({
+    actionCards: {
+      ...base.actionCards,
+      async findItemForActor() {
+        return { item: decideItemRow(), card: cardRow({ origin: "system" }) };
+      },
+      async isActiveWorkspaceMember() { return false; }
+    }
+  }));
+  await assert.rejects(
+    service.decide({ actor: actor(), itemId, action: "reassign", assigneeUserId: otherUserId }),
+    (error: unknown) => error instanceof ActionCardServiceError && error.status === 422 && error.code === "action_card_assignee_not_a_member"
+  );
+});
+
+test("decide defer on a system card dismisses the item and never claims the work item", async () => {
+  let claimCalled = false;
+  const base = baseOptions();
+  const service = createActionCardService(systemCardOptions({
+    workItems: {
+      ...base.workItems,
+      async claimOwnerlessWorkItem() { claimCalled = true; return null; }
+    }
+  }));
+  const result = await service.decide({ actor: actor(), itemId, action: "defer" });
+  assert.equal(result.status, "dismissed");
+  assert.equal(claimCalled, false);
+});
+
 // ── undo ─────────────────────────────────────────────────────────────────────────────
 
 test("undo rejects items with no run, wrong status, or an expired window", async () => {
@@ -380,7 +519,7 @@ test("undo aborts the run, cancels the work item, marks the item undone, and thr
       async postSystemMessage(input) { noteCalls.push(input); return { id: "system-1", conversationId, seq: 8, senderType: "cuu", senderUserId: null, kind: "system_event", contentJson: {}, threadRootId: input.threadRootId ?? null, editedAt: null, deletedAt: null, deletedByUserId: null, replyToMessageId: null, pinnedAt: null, pinnedByUserId: null, createdAt: now }; }
     },
     agentRuns: { async abort(id, who) { abortCalls.push({ id, who }); return agentRunRow(); } },
-    workItems: { async transitionWorkItemStatus(input) { transitionCalls.push(input); return { id: workItemId, status: "cancelled", transitioned: true }; } }
+    workItems: { async transitionWorkItemStatus(input) { transitionCalls.push(input); return { id: workItemId, status: "cancelled", transitioned: true }; }, async claimOwnerlessWorkItem() { return null; } }
   }));
 
   const result = await service.undo({ actor: actor(), itemId });
@@ -412,7 +551,7 @@ test("undo rethrows unexpected abort errors without closing the work item", asyn
         throw new AgentRunnerError(403, "agent_run_abort_forbidden", "只有发起人或管理员可以取消这次 AI 执行。");
       }
     },
-    workItems: { async transitionWorkItemStatus() { transitioned = true; return { id: workItemId, status: "cancelled", transitioned: true }; } }
+    workItems: { async transitionWorkItemStatus() { transitioned = true; return { id: workItemId, status: "cancelled", transitioned: true }; }, async claimOwnerlessWorkItem() { return null; } }
   }));
   await assert.rejects(
     service.undo({ actor: actor(), itemId }),
@@ -424,7 +563,7 @@ test("undo rethrows unexpected abort errors without closing the work item", asyn
 test("undo surfaces a conflict when the work item can no longer transition to cancelled", async () => {
   const service = createActionCardService(baseOptions({
     actionCards: { ...baseOptions().actionCards, async findItemForActor() { return { item: executeItemRow(), card: cardRow() }; } },
-    workItems: { async transitionWorkItemStatus() { return null; } }
+    workItems: { async transitionWorkItemStatus() { return null; }, async claimOwnerlessWorkItem() { return null; } }
   }));
   await assert.rejects(
     service.undo({ actor: actor(), itemId }),
@@ -466,7 +605,7 @@ test("undo succeeds when the settlement hook already flipped the item to undone 
       }
     },
     agentRuns: { async abort() { return agentRunRow(); } },
-    workItems: { async transitionWorkItemStatus() { return { id: workItemId, status: "cancelled", transitioned: true }; } }
+    workItems: { async transitionWorkItemStatus() { return { id: workItemId, status: "cancelled", transitioned: true }; }, async claimOwnerlessWorkItem() { return null; } }
   }));
 
   const result = await service.undo({ actor: actor(), itemId });

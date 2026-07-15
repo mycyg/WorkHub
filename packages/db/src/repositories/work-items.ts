@@ -34,6 +34,7 @@ import {
   reviews,
   taskPlanItems,
   taskPlans,
+  users,
   workItemAcceptanceItems,
   workItemAssignments,
   workItems,
@@ -301,6 +302,17 @@ export type WorkItemClaimHandoverRepository = {
 };
 
 export type WorkItemDataRepository = WorkItemRepository & WorkItemClaimHandoverRepository & {
+  // R15 批 D4（找人交互卡 · claim/reassign 的落地写）：把一个【当前无认领人】的非终态、未软删事项认领
+  // 给指定用户。CAS 守卫 claimed_by_user_id IS NULL——已被别人认领/已改期认领则 0 行返回 null（调用方
+  // 报 409，不覆盖既有认领人）。claimed_by_nickname 用 users 表标量子查询同写，保持展示字段一致；
+  // version+1 让客户端乐观锁/同步感知归属变更（与 unassignActiveClaimsForUser 同款）。找人卡的
+  // claim（认领给自己）与 reassign（改派给他人）都走它，只是 userId 不同。
+  claimOwnerlessWorkItem: (input: {
+    workItemId: string;
+    workspaceId: string;
+    userId: string;
+    at: Date;
+  }) => Promise<{ id: string; claimedByUserId: string | null } | null>;
   findProjectById: (projectId: string) => Promise<WorkItemProjectRow | null>;
   findFirstActiveProject: () => Promise<WorkItemProjectRow | null>;
   // 缺省 project_id 的兜底必须锚定 actor 的 workspace，否则会落到全局首个项目（跨租户写入默认 seed 工作区）。
@@ -764,6 +776,31 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         )
         .returning({ id: workItems.id });
       return rows;
+    },
+
+    async claimOwnerlessWorkItem(input) {
+      const rows = await db
+        .update(workItems)
+        .set({
+          claimedByUserId: input.userId,
+          // 展示字段用标量子查询同源写（users.nickname），避免调用方多打一次 nickname 查询。
+          claimedByNickname: sql<string | null>`(select ${users.nickname} from ${users} where ${users.id} = ${input.userId})`,
+          claimedAt: input.at,
+          version: sql`${workItems.version} + 1`,
+          updatedAt: input.at
+        })
+        .where(
+          and(
+            eq(workItems.id, input.workItemId),
+            eq(workItems.workspaceId, input.workspaceId),
+            // CAS：仅当当前无认领人时才写——防止覆盖已有认领人（并发/卡片过期点击）。
+            isNull(workItems.claimedByUserId),
+            notInArray(workItems.status, terminalWorkItemStatuses),
+            isNull(workItems.deletedAt)
+          )
+        )
+        .returning({ id: workItems.id, claimedByUserId: workItems.claimedByUserId });
+      return rows[0] ?? null;
     },
 
     async findProjectById(projectId) {

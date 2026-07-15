@@ -307,6 +307,20 @@ test("R12 action cards, observer state, AI profiles, and governance expose their
   const projectAiGovernance = requiredTable("projectAiGovernance") as WorkHubTable & Record<string, any>;
 
   assert.equal(actionCards.analyzedToSeq.columnType, "PgBigInt53");
+  // R15 批 D4：系统卡不挂水位线——analyzed_to_seq 现可空（迁移 0066 DROP NOT NULL）。
+  assert.equal(actionCards.analyzedToSeq.notNull, false);
+  // R15 批 D4：origin 标记（默认 observer，CHECK 钉死枚举）——观察者/系统卡的分流由它承载。
+  assert.equal(actionCards.origin.name, "origin");
+  assert.equal(actionCards.origin.notNull, true);
+  assert.equal(actionCards.origin.default, "observer");
+  assert.equal(checkSqlText(actionCards).includes("'observer'"), true);
+  assert.equal(checkSqlText(actionCards).includes("'system'"), true);
+  assert.equal(
+    getTableConfig(actionCards).indexes.some(
+      (candidate) => candidate.config.name === "action_cards_conversation_origin_idx"
+    ),
+    true
+  );
   assert.equal(conversationObserverState.lastAnalyzedSeq.columnType, "PgBigInt53");
   assert.equal(checkSqlText(actionCards).includes(String(Number.MAX_SAFE_INTEGER)), true);
   assert.equal(checkSqlText(conversationObserverState).includes(String(Number.MAX_SAFE_INTEGER)), true);
@@ -668,7 +682,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0065 project plan drafts", () => {
+test("migration journal ends with 0066 action card origin", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -683,14 +697,15 @@ test("migration journal ends with 0065 project plan drafts", () => {
       breakpoints: finalEntry.breakpoints
     },
     {
-      // R15 批 E3：项目规划 agent 的草案表接在 R15 批 E1 时间线 0064 之后。
-      idx: 65,
+      // R15 集成:E3 的 0065(project_plan_drafts,when=1783924000000)与 D4 的 0066(action_card_origin,
+      // when=1783926000000)并行施工后在 wave1 合流,journal 收于 0066,when 严格递增(0064→0065→0066)。
+      idx: 66,
       version: "7",
-      tag: "0065_project_plan_drafts",
+      tag: "0066_action_card_origin",
       breakpoints: true
     }
   );
-  // when 严格递增（0065 的时间戳必须大于 0064 的 1783922000000）——否则 drizzle 迁移应用顺序会乱。
+  // when 严格递增——0066 的时间戳必须大于 0064 的 1783922000000(0065 的 1783924000000 居中)。
   const timelineEntry = journal.entries.find((entry) => entry.tag === "0064_project_timeline");
   assert.ok(timelineEntry && finalEntry && finalEntry.when > timelineEntry.when);
 });
@@ -833,6 +848,34 @@ test("R15 批 E1 migration 0064 adds the two timeline tables and work_items.mile
     getTableConfig(workItemsTable).indexes.some((candidate) => candidate.config.name === "work_items_milestone_id_idx"),
     true
   );
+});
+
+test("R15 批 D4 migration 0066 adds action_cards.origin and makes analyzed_to_seq nullable additively", () => {
+  const migrationUrl = new URL("../migrations/0066_action_card_origin.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0066_action_card_origin.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+
+  // origin 列：ADD COLUMN IF NOT EXISTS（replay 安全），NOT NULL DEFAULT 'observer'（既有卡语义正确，无需回填）。
+  assert.match(
+    migration,
+    /ALTER TABLE "action_cards" ADD COLUMN IF NOT EXISTS "origin" varchar\(16\) NOT NULL DEFAULT 'observer'/u
+  );
+  // origin CHECK 用 pg_constraint 查重的 DO 块加，重放不重复添加。
+  assert.match(migration, /conname = 'action_cards_origin_ck'/u);
+  assert.match(migration, /CHECK \("origin" IN \('observer','system'\)\)/u);
+  // analyzed_to_seq 去掉 NOT NULL（系统卡置 NULL）。DROP NOT NULL 幂等（列已可空为 no-op），replay 安全。
+  assert.match(migration, /ALTER TABLE "action_cards" ALTER COLUMN "analyzed_to_seq" DROP NOT NULL/u);
+  // 唯一没做的破坏性动作：不 DROP 列、不动既有 analyzed_to_seq 的 BETWEEN CHECK、不建/换任何唯一索引。
+  assert.doesNotMatch(migration, /DROP COLUMN|DROP CONSTRAINT|DROP INDEX/u, "migration 0066 must be additive-only");
+  assert.doesNotMatch(migration, /UNIQUE INDEX/u, "migration 0066 must not touch unique indexes");
+  // 每个 CREATE INDEX 都 replay-safe。
+  assert.doesNotMatch(
+    migration,
+    /CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?!IF\s+NOT\s+EXISTS)/iu,
+    "every CREATE INDEX must be replay-safe (IF NOT EXISTS)"
+  );
+  assert.doesNotMatch(migration, /CONCURRENTLY/iu, "migration 0066 must not use CONCURRENTLY (single-tx replay)");
+  assert.doesNotMatch(migration, /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u, "migration must not contain emoji glyphs");
 });
 
 test("R14 批 FEEDBACK migration 0058 adds the ai_feedback table with a self-idempotency unique index", () => {
