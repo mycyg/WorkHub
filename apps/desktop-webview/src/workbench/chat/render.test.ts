@@ -20,6 +20,7 @@ import {
   renderJumpToUnreadHtml,
   renderLoadEarlierHtml,
   renderMemberBarHtml,
+  renderDmHeadBarHtml,
   renderMentionPickerHtml,
   renderMessageHtml,
   renderModeChipHtml,
@@ -100,6 +101,22 @@ test("renderMemberBarHtml caps the rendered avatar row at 6 members but keeps th
   const html = renderMemberBarHtml({ members, locale: "zh-CN" });
   assert.match(html, /10 位成员/u);
   assert.equal((html.match(/class="wh-wb-chat-avatar"/gu) ?? []).length, 6);
+});
+
+// R15 批 B（人对人私聊）：DM 会话头显示对方昵称 + 在线态，不渲染「+ Cuu · 全员群聊」。
+test("renderDmHeadBarHtml shows the peer nickname + online state, without the group / Cuu label", () => {
+  const online = renderDmHeadBarHtml({ peerUserId: "u2", peerNickname: "阿曼", online: true, locale: "zh-CN" });
+  assert.match(online, /阿曼/u);
+  assert.match(online, /在线/u);
+  assert.match(online, /wh-wb-chat-head-status--online/u);
+  assert.doesNotMatch(online, /全员群聊/u);
+  assert.doesNotMatch(online, /位成员/u);
+  // 只画一枚对方头像（不叠 Cuu 的猫）。
+  assert.equal((online.match(/class="wh-wb-chat-avatar"/gu) ?? []).length, 1);
+
+  const offline = renderDmHeadBarHtml({ peerUserId: "u2", peerNickname: "阿曼", online: false, locale: "zh-CN" });
+  assert.match(offline, /离线/u);
+  assert.doesNotMatch(offline, /wh-wb-chat-head-status--online/u);
 });
 
 // R13 批 G1（小群）：senderLabel/renderMessageHtml 按 sender_user_id 查 ctx.members（一个纯 Map 查找，

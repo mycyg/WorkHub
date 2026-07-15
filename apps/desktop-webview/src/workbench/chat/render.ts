@@ -113,6 +113,25 @@ export function renderMemberBarHtml(input: {
   return `<div class="wh-wb-chat-head"><div class="wh-wb-chat-avs">${avatars}${cuuAvatar}</div><span class="wh-wb-chat-head-label">${escapeHtml(label)}</span></div>`;
 }
 
+// R15 批 B（人对人私聊）：DM 会话头——对方头像（在线绿点）+ 对方昵称 + 在线两态文字。不渲染「+ Cuu」
+// （DM 默认 Cuu 不在场），也不渲染「N 位成员」（就两个人）。peerNickname 为空（对方昵称还没解析出来）时
+// 退回「私聊」，不摆一个空名。
+export function renderDmHeadBarHtml(input: {
+  peerUserId: string;
+  peerNickname: string;
+  online: boolean;
+  locale: Locale;
+}): string {
+  const zh = input.locale === "zh-CN";
+  const name = input.peerNickname.trim() || (zh ? "私聊" : "Direct message");
+  const avatar = avatarTileHtml({ label: name, id: input.peerUserId, ...(input.online ? { online: true } : {}) });
+  const statusText = input.online ? (zh ? "在线" : "Online") : zh ? "离线" : "Offline";
+  const statusClass = input.online ? "wh-wb-chat-head-status wh-wb-chat-head-status--online" : "wh-wb-chat-head-status";
+  return `<div class="wh-wb-chat-head"><div class="wh-wb-chat-avs">${avatar}</div><span class="wh-wb-chat-head-label">${escapeHtml(
+    name
+  )}</span><span class="${statusClass}">${statusText}</span></div>`;
+}
+
 // —— 日期分隔 —— //
 
 export function renderDaySeparatorHtml(label: string): string {

@@ -105,6 +105,7 @@ import {
   renderJumpToUnreadHtml,
   renderLoadEarlierHtml,
   renderMemberBarHtml,
+  renderDmHeadBarHtml,
   renderMentionPickerHtml,
   renderMessageHtml,
   renderModeChipHtml,
@@ -454,6 +455,12 @@ export function mountChatView(
     // R13 终验修复（个人空间单聊必回）：当前项目是否个人空间——main 会话在个人空间里是 1:1 单聊，
     // turn 通道（自动请回应/模式 chip/流式气泡）全部放行；团队项目的 main 不受影响。缺省 false。
     projectIsPersonal?: boolean;
+    // R15 批 B（人对人私聊）：这是一条 DM（对方一个真人，kind 仍是 collab）——会话头改渲「对方昵称 + 在线
+    // 点」而不是「N 位成员 + Cuu · 全员群聊」。缺省 false（普通协同/主区照旧渲成员条）。
+    isDm?: boolean;
+    // R15 批 B：会话级 Cuu 硬开关（G1）——false 时不自动请 Cuu 回话（isCollabConversation 收紧，见下）。
+    // DM 默认 false（B5 拍板），普通协同/主区缺省当 true（既有行为不变，不特判 DM——纯由 cuu_enabled 驱动）。
+    cuuEnabled?: boolean;
     currentUserId: string;
     members: readonly WorkbenchMemberVM[];
     getClientToken: () => string | undefined;
@@ -530,9 +537,14 @@ export function mountChatView(
   // 连事件处理都不会被触发）。myMode undefined = 还没拉到 GET /api/me/ai-profile 或者拉失败——诚实
   // 显示「模式」，不假装知道当前档（见 loadMyAiProfile）。modePopoverOpen/modeErrorText 都是这个
   // 功能自己的瞬态 UI 状态，不落库。
-  const isCollabConversation = shouldRequestConversationTurn(input.conversationKind, {
-    personalProject: input.projectIsPersonal
-  });
+  // R15 批 B（人对人私聊）：再叠一道会话级 Cuu 硬开关——cuu_enabled=false 的会话（DM 默认如此，也含用户
+  // 手动关掉 Cuu 的协同群）不该自动请 Cuu 回话（否则每发一句都撞服务端 409 conversation_turn_cuu_disabled，
+  // 在人对人私聊里尤其突兀）。cuuEnabled 缺省当 true——既有调用点不传，行为完全不变（不特判 DM，纯由
+  // cuu_enabled 驱动这条闸）。false 时 composer 也不渲染模式 chip、不走流式气泡（与「Cuu 不在场」一致）。
+  const isCollabConversation =
+    shouldRequestConversationTurn(input.conversationKind, {
+      personalProject: input.projectIsPersonal
+    }) && (input.cuuEnabled ?? true);
   let myMode: AiMode | undefined;
   let modePopoverOpen = false;
   let modeErrorText: string | undefined;
@@ -679,7 +691,18 @@ export function mountChatView(
   }
 
   function renderHead(): void {
-    headEl!.innerHTML = renderMemberBarHtml({ members: input.members, locale: input.locale, onlineUserIds });
+    if (input.isDm) {
+      // DM：会话头显示对方昵称 + 在线点（对方 = 成员集合里非本人那一位）。
+      const peer = input.members.find((member) => member.user_id !== input.currentUserId);
+      headEl!.innerHTML = renderDmHeadBarHtml({
+        peerUserId: peer?.user_id ?? "",
+        peerNickname: peer?.nickname ?? "",
+        online: peer ? onlineUserIds.has(peer.user_id) : false,
+        locale: input.locale
+      });
+    } else {
+      headEl!.innerHTML = renderMemberBarHtml({ members: input.members, locale: input.locale, onlineUserIds });
+    }
     hydrateAvatarPhotos(headEl!);
   }
   renderHead();
