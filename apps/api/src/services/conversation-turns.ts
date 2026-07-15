@@ -36,6 +36,25 @@ import {
 } from "@workhub/agent/turns";
 import { ProviderNotConfiguredError } from "@workhub/agent/providers";
 import {
+  AssistantMessageEventStream,
+  piMessagesToWorkhub,
+  runAgentLoop,
+  toPiStopReason,
+  workhubAssistantContentToPi,
+  type AgentContext,
+  type AgentEvent,
+  type AgentLoopConfig,
+  type AgentMessage,
+  type AgentTool,
+  type AgentToolResult,
+  type AssistantMessage,
+  type Context,
+  type Message,
+  type Model,
+  type SimpleStreamOptions,
+  type StreamFn
+} from "@workhub/agent/loop2";
+import {
   decideRunBudget,
   type BudgetPolicyStore,
   type CostLedgerStore
@@ -263,7 +282,16 @@ export type ConversationTurnServiceDeps = {
     messageKind: string;
     previewText: string;
   }) => void;
+  // R15 批 C Phase 4（Cuu 对话轮次迁 loop2）：轮次循环实现开关。off（默认）=现状内联轮次循环，逐字节零行为
+  // 变化；on=走 loop2（pi 引擎）+ steering/follow-up 队列。省略时从 deps.settings（或运行时 settings）读取
+  // conversationTurns.loop2Mode，缺省 off。测试通过这个字段直接注入 "on" 走新路径，不依赖进程 env。
+  loop2Mode?: ConversationTurnLoop2Mode;
+  // steering 队列深度上限（同会话已有一轮在跑时新到请求的排队上限）。省略时读 settings，缺省 3。
+  queueMaxDepth?: number;
 };
+
+// R15 批 C Phase 4：对话轮次没有 shadow-assert 档——面向用户实时流式，双跑会双倍打 LLM 且延迟翻倍。
+export type ConversationTurnLoop2Mode = "off" | "on";
 
 export type ConversationTurnService = {
   createTurn(input: {
@@ -761,17 +789,930 @@ async function emitDelta(
   }
 }
 
+// ── R15 批 C Phase 4：轮次运行时三件套 + 预备好的一轮上下文 ─────────────────────────────
+//
+// prepareTurnContext 把 createTurn 里"进循环之前"的全部装配（访问/模式/预算/历史/记忆/澄清位/落库
+// 广播闭包）抽成一个纯函数：off（内联轮次循环）与 on（loop2）两条路径都调它，保证两条路径看到的是同一
+// 套预处理，不各写一份逻辑漂移。off 路径的行为逐字节不变——它拿到的 prepared 里每个字段都和过去内联算出
+// 来的一样，只是搬了个位置。
+
+type TurnRuntime = {
+  deps: ConversationTurnServiceDeps;
+  now: () => Date;
+  id: () => string;
+  logger: Pick<StructuredLogger, "warn">;
+};
+
+type PersistCuuMessageInput =
+  | {
+      kind: "text";
+      contentJson: {
+        text: string;
+        memory_citations?: TurnMemoryCitation[];
+        is_clarifying_question?: boolean;
+        clarify_options?: string[];
+        clarify_placeholder?: string;
+      };
+    }
+  | { kind: "file_card"; contentJson: { drive_item_id: string; snapshot_name: string } }
+  | { kind: "tool_note"; contentJson: Record<string, unknown> };
+
+type PreparedTurn = {
+  human: HumanTurnActor;
+  turnId: string;
+  toolCtx: TurnToolExecutionContext;
+  client: TurnLlmClient;
+  historyMessages: Array<{ role: "user" | "assistant"; content: TurnLlmMessageContent }>;
+  pendingClarification: { question: string } | undefined;
+  memorySection: ReturnType<typeof buildTurnMemorySection>;
+  contextSummaryMd: string | null;
+  triggerText: string;
+  persistAndBroadcastCuuMessage: (messageInput: PersistCuuMessageInput) => Promise<ConversationTurnResultVM["message"]>;
+  tryPersistToolNote: (contentJson: Record<string, unknown>) => Promise<void>;
+};
+
+async function prepareTurnContext(
+  runtime: TurnRuntime,
+  input: { actor: AuthActor; conversationId: string; payload: CreateConversationTurnRequest }
+): Promise<PreparedTurn> {
+  const { deps, now, id, logger } = runtime;
+  const human = requireHumanActor(input.actor);
+
+  const access = await deps.conversations.findVisibleAccessRecord({
+    workspaceId: human.workspaceId,
+    viewerUserId: human.userId,
+    conversationId: input.conversationId
+  });
+  if (!access) {
+    throw new ConversationTurnServiceError(404, "conversation_not_found", "没有找到这个会话。");
+  }
+  // R13 终验修复（个人空间单聊必回）：个人空间的默认线程就是该项目的 main 会话（S3 设计），
+  // 它是纯 1:1 单聊——放行 turn。团队项目的 main 仍归静默观察者，恒 409 不变。
+  const personalSingleChat = access.conversation.kind === "main" && access.projectIsPersonal === true;
+  if (access.conversation.kind !== "collab" && !personalSingleChat) {
+    throw new ConversationTurnServiceError(
+      409,
+      "conversation_turn_not_collab",
+      "主区群聊由静默观察者处理，不支持单独发起协同回应。"
+    );
+  }
+  // R13 批 G1：cuu_enabled 硬闸——用户已拍板"强静默不可绕过"，必须排在 mode/回话判定之前，
+  // 且不接受任何形式的绕过（包括本轮触发消息里 @Cuu）。
+  if (access.conversation.cuuEnabled === false) {
+    throw new ConversationTurnServiceError(409, "conversation_turn_cuu_disabled", "这个会话已经关掉了 Cuu，不会有回应。");
+  }
+
+  const profileAccess = await deps.aiSettings.findUserProfileAccessRecord({
+    workspaceId: human.workspaceId,
+    userId: human.userId
+  });
+  const mode = profileAccess?.profile?.defaultMode ?? DEFAULT_USER_AI_PROFILE.default_mode;
+  if (mode === 1) {
+    throw new ConversationTurnServiceError(
+      409,
+      "conversation_turn_mode_observe_only",
+      "当前模式只观察不回应，先在设置里调高档位。"
+    );
+  }
+
+  const windowSize = deps.historyWindowSize ?? DEFAULT_HISTORY_WINDOW;
+  const afterSeq = Math.max(0, access.conversation.nextSeq - 1 - windowSize);
+
+  // R13 批 C1（会话上下文压缩）：触发判定放在拉取历史窗口之前、cuu_enabled 闸与模式闸之后。
+  let contextSummaryMd = access.conversation.contextSummaryMd ?? null;
+  const contextSummaryThroughSeq = access.conversation.contextSummaryThroughSeq ?? 0;
+  if (afterSeq > contextSummaryThroughSeq + CONTEXT_SUMMARY_REFRESH_BATCH) {
+    const compacted = await tryCompactConversationContext(deps, logger, {
+      workspaceId: human.workspaceId,
+      viewerUserId: human.userId,
+      conversationId: input.conversationId,
+      previousSummaryMd: contextSummaryMd,
+      fromSeqExclusive: contextSummaryThroughSeq,
+      toSeqExclusive: afterSeq,
+      at: now()
+    });
+    if (compacted) {
+      contextSummaryMd = compacted.summaryMd;
+    }
+  }
+
+  const page = await deps.conversations.listMessagesAfter({
+    workspaceId: human.workspaceId,
+    viewerUserId: human.userId,
+    conversationId: input.conversationId,
+    afterSeq,
+    limit: windowSize + 1
+  });
+  if (!page) {
+    throw new ConversationTurnServiceError(404, "conversation_not_found", "没有找到这个会话。");
+  }
+  const anchor = page.rows.find((row) => row.id === input.payload.user_message_id);
+  if (!anchor || anchor.senderType !== "user" || anchor.senderUserId?.toLowerCase() !== human.userId.toLowerCase()) {
+    throw new ConversationTurnServiceError(404, "conversation_turn_message_not_found", "没有找到这条待回应的消息。");
+  }
+
+  // R13 批 G1：回话判定——被 @Cuu 必回。没被 @ 时才去问判定器。
+  const triggerText = historyDisplayText(anchor) ?? "";
+  if (!personalSingleChat && !mentionsCuu(triggerText)) {
+    const decider = deps.respondDecider ?? defaultConversationTurnRespondDecider;
+    const shouldRespond = await decider({
+      participantCount: access.participantCount,
+      triggerMessageText: triggerText
+    });
+    if (!shouldRespond) {
+      throw new ConversationTurnServiceError(409, "conversation_turn_not_warranted", "这轮消息看起来还不需要 Cuu 回应。");
+    }
+  }
+
+  const budgetOk = await checkTurnBudget(deps, human.workspaceId, now());
+  if (!budgetOk) {
+    throw new ConversationTurnServiceError(429, "conversation_turn_budget_exhausted", "这个工作区今天的 AI 预算已经用完了。");
+  }
+
+  const senderIds = [...new Set(page.rows.map((row) => row.senderUserId).filter((value): value is string => Boolean(value)))];
+  const nicknames = await deps.nicknames(senderIds);
+  const history = buildHistory(page.rows, nicknames);
+
+  const [userMemoryRows, teamSkillRows] = await Promise.all([
+    deps.userMemories.listForUser(human.userId, { limit: USER_MEMORY_PROMPT_TOP_N, workspaceId: human.workspaceId }),
+    deps.teamSkills.listActive(human.workspaceId)
+  ]);
+  const topTeamSkills = teamSkillRows.slice(0, TURN_TEAM_SKILL_TOP_N);
+  const memorySection = buildTurnMemorySection({
+    userMemories: userMemoryRows.map((row) => ({ key: row.key, valueMd: row.valueMd })),
+    teamSkills: topTeamSkills.map((row) => ({ name: row.name, whenToUse: row.whenToUse }))
+  });
+  if (userMemoryRows.length > 0) {
+    try {
+      await deps.userMemories.touch(userMemoryRows.map((row) => row.id), now(), { workspaceId: human.workspaceId });
+    } catch (error) {
+      logger.warn("conversation_turn_memory_touch_failed", { conversationId: input.conversationId, error });
+    }
+  }
+
+  const pendingClarification = findPendingClarification(page.rows, anchor.id);
+  const toolCtx: TurnToolExecutionContext = {
+    actor: human.actor,
+    workspaceId: human.workspaceId,
+    projectId: access.conversation.projectId
+  };
+  const conversationTitle = access.conversation.title;
+  const turnId = id();
+
+  let client: TurnLlmClient;
+  try {
+    client = await deps.client({ actorId: human.userId, userId: human.userId, workspaceId: human.workspaceId });
+  } catch (error) {
+    throw toConversationTurnServiceError(error);
+  }
+
+  const historyMessages: Array<{ role: "user" | "assistant"; content: TurnLlmMessageContent }> = [...buildTurnMessages(history)];
+
+  async function persistAndBroadcastCuuMessage(messageInput: PersistCuuMessageInput): Promise<ConversationTurnResultVM["message"]> {
+    const created = await deps.conversations.createCuuMessage({
+      workspaceId: human.workspaceId,
+      conversationId: input.conversationId,
+      at: now(),
+      ...messageInput
+    });
+    const vm = parseOutputContract(conversationMessageVmSchema, messageToVm(created), "conversation-turns.message");
+    try {
+      const conversationTopic = topics.conversation(input.conversationId).topic;
+      const previewText = vm.kind === "text" ? vm.content.text : vm.kind === "file_card" ? vm.content.snapshot_name : vm.kind;
+      const createdEvent = parseOutputContract(
+        conversationMessageCreatedEventSchema,
+        makeWorkHubEvent({
+          type: eventTypes.conversationMessageCreated,
+          topic: conversationTopic,
+          ts: now(),
+          actor: { actor_kind: "ai", label: "Cuu" },
+          project_id: toolCtx.projectId,
+          preview_text: previewText.slice(0, 200),
+          data: vm
+        }),
+        "conversation-turns.event.created"
+      );
+      await deps.bus?.publish(conversationTopic, eventTypes.conversationMessageCreated, createdEvent);
+    } catch (error) {
+      logger.warn("conversation_turn_created_publish_failed", { conversationId: input.conversationId, turnId, error });
+    }
+    deps.notifyCuuMessage?.({
+      conversationId: input.conversationId,
+      projectId: toolCtx.projectId,
+      conversationTitle,
+      messageKind: vm.kind,
+      previewText: vm.kind === "text" ? vm.content.text : vm.kind === "file_card" ? vm.content.snapshot_name : vm.kind
+    });
+    return vm;
+  }
+
+  async function tryPersistToolNote(contentJson: Record<string, unknown>) {
+    try {
+      await persistAndBroadcastCuuMessage({ kind: "tool_note", contentJson });
+    } catch (error) {
+      logger.warn("conversation_turn_tool_note_persist_failed", { conversationId: input.conversationId, turnId, error });
+    }
+  }
+
+  return {
+    human,
+    turnId,
+    toolCtx,
+    client,
+    historyMessages,
+    pendingClarification,
+    memorySection,
+    contextSummaryMd,
+    triggerText,
+    persistAndBroadcastCuuMessage,
+    tryPersistToolNote
+  };
+}
+
+// ── off 路径：内联轮次循环（从原 createTurn 原样搬来，行为逐字节不变） ───────────────────────
+
+async function runLegacyTurnLoop(
+  runtime: TurnRuntime,
+  input: { conversationId: string },
+  prepared: PreparedTurn
+): Promise<ConversationTurnResultVM> {
+  const { deps, now, logger } = runtime;
+  const { turnId, toolCtx, memorySection, pendingClarification, contextSummaryMd, client } = prepared;
+  const persistAndBroadcastCuuMessage = prepared.persistAndBroadcastCuuMessage;
+  const tryPersistToolNote = prepared.tryPersistToolNote;
+
+  const llmMessages: Array<{ role: "user" | "assistant"; content: TurnLlmMessageContent }> = [...prepared.historyMessages];
+
+  let finalMessageVm: ConversationTurnResultVM["message"] | undefined;
+  let toolCallsUsed = 0;
+  let ordinal = 0;
+
+  const controller = new AbortController();
+  const timeoutMs = deps.turnTimeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    roundLoop: for (let round = 1; ; round += 1) {
+      if (round > MAX_TURN_MODEL_ROUNDS) {
+        throw new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 卡在了工具调用里，请再试一次。");
+      }
+      if (round > 1) {
+        const roundBudgetOk = await checkTurnBudget(deps, prepared.human.workspaceId, now());
+        if (!roundBudgetOk) {
+          throw new ConversationTurnServiceError(429, "conversation_turn_budget_exhausted", "这个工作区今天的 AI 预算已经用完了。");
+        }
+      }
+
+      const allowTools = toolCallsUsed < MAX_TURN_TOOL_CALLS && round < MAX_TURN_MODEL_ROUNDS;
+      const tools = allowTools ? buildTurnToolDefinitions({ allowCreateWorkItem: Boolean(pendingClarification) }) : undefined;
+      const system = [
+        buildTurnSystemPrompt(pendingClarification ? { pendingClarification } : {}),
+        contextSummaryMd ? buildTurnContextSummarySection(contextSummaryMd) : "",
+        memorySection.promptSection
+      ]
+        .filter((part) => part.length > 0)
+        .join("\n\n");
+
+      let final: TurnLlmFinalMessage;
+      try {
+        const stream = await client.messages.stream({
+          maxTokens: deps.maxResponseTokens ?? DEFAULT_MAX_TURN_RESPONSE_TOKENS,
+          source: "agent_step",
+          system,
+          messages: llmMessages,
+          ...(tools ? { tools } : {}),
+          signal: controller.signal
+        });
+        for await (const event of stream) {
+          const deltaText = extractDeltaText(event);
+          if (deltaText) {
+            await emitDelta(deps, { conversationId: input.conversationId, turnId, deltaText, ordinal, at: now() });
+            ordinal += 1;
+          }
+        }
+        final = await stream.getFinalMessage();
+      } catch (error) {
+        logger.warn("conversation_turn_llm_failed", { conversationId: input.conversationId, turnId, error });
+        throw new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 没接上，请再试一次。");
+      }
+
+      const toolUseBlocks = extractToolUseBlocks(final);
+      if (toolUseBlocks.length === 0) {
+        const fullText = extractFinalText(final).trim();
+        if (fullText.length === 0) {
+          if (finalMessageVm) {
+            break roundLoop;
+          }
+          throw new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 没给出内容，请再试一次。");
+        }
+        const contentJson: { text: string; memory_citations?: TurnMemoryCitation[] } = { text: fullText };
+        if (memorySection.citations.length > 0) {
+          contentJson.memory_citations = memorySection.citations;
+        }
+        try {
+          finalMessageVm = await persistAndBroadcastCuuMessage({ kind: "text", contentJson });
+        } catch (error) {
+          logger.warn("conversation_turn_persist_failed", { conversationId: input.conversationId, turnId, error });
+          throw new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 的回复没能保存，请再试一次。");
+        }
+        break roundLoop;
+      }
+
+      llmMessages.push({ role: "assistant", content: final.content as unknown as Array<Record<string, unknown>> });
+      const toolResultBlocks: Array<Record<string, unknown>> = [];
+      let askedClarifyingQuestion: AskClarifyingQuestionToolInput | undefined;
+
+      for (const call of toolUseBlocks) {
+        if (askedClarifyingQuestion) {
+          toolResultBlocks.push({ type: "tool_result", tool_use_id: call.id, content: "这一轮已经结束，不会执行这个调用。", is_error: true });
+          continue;
+        }
+        const parsed = parseTurnToolCall(call.name, call.input);
+        if (!parsed.ok) {
+          toolResultBlocks.push({ type: "tool_result", tool_use_id: call.id, content: parsed.error, is_error: true });
+          continue;
+        }
+        if (parsed.name === ASK_CLARIFYING_QUESTION_TOOL) {
+          askedClarifyingQuestion = parsed.input;
+          toolResultBlocks.push({ type: "tool_result", tool_use_id: call.id, content: "已经把澄清问题发给对方了。", is_error: false });
+          continue;
+        }
+        if (toolCallsUsed >= MAX_TURN_TOOL_CALLS) {
+          toolResultBlocks.push({
+            type: "tool_result",
+            tool_use_id: call.id,
+            content: "这一轮的工具调用次数已经用完了，请直接用文字回复对方。",
+            is_error: true
+          });
+          continue;
+        }
+        toolCallsUsed += 1;
+        if (parsed.name === DRIVE_SEARCH_TOOL) {
+          const result = await executeDriveSearchTool(deps, toolCtx, parsed.input, logger);
+          toolResultBlocks.push({ type: "tool_result", tool_use_id: call.id, content: result.content, is_error: result.isError });
+          await tryPersistToolNote({ tool: DRIVE_SEARCH_TOOL, summary: result.auditSummary });
+        } else if (parsed.name === SEND_FILE_CARD_TOOL) {
+          const result = await executeSendFileCardTool(deps, toolCtx, parsed.input, logger);
+          if (!result.isError && result.fileCard) {
+            try {
+              finalMessageVm = await persistAndBroadcastCuuMessage({
+                kind: "file_card",
+                contentJson: { drive_item_id: result.fileCard.driveItemId, snapshot_name: result.fileCard.snapshotName }
+              });
+              toolResultBlocks.push({ type: "tool_result", tool_use_id: call.id, content: result.content, is_error: false });
+            } catch (error) {
+              logger.warn("conversation_turn_tool_send_file_card_persist_failed", {
+                conversationId: input.conversationId,
+                turnId,
+                error
+              });
+              toolResultBlocks.push({
+                type: "tool_result",
+                tool_use_id: call.id,
+                content: "文件卡没能发出去，请稍后再试，不要假装已经发送。",
+                is_error: true
+              });
+            }
+          } else {
+            toolResultBlocks.push({ type: "tool_result", tool_use_id: call.id, content: result.content, is_error: result.isError });
+          }
+          await tryPersistToolNote({ tool: SEND_FILE_CARD_TOOL, summary: result.auditSummary });
+        } else if (parsed.name === CREATE_WORK_ITEM_TOOL) {
+          if (!pendingClarification) {
+            toolResultBlocks.push({
+              type: "tool_result",
+              tool_use_id: call.id,
+              content: "现在还不能建工单——需求还不够清楚，先用 ask_clarifying_question 问清楚。",
+              is_error: true
+            });
+            continue;
+          }
+          const result = await executeCreateWorkItemTool(deps, toolCtx, parsed.input);
+          toolResultBlocks.push({ type: "tool_result", tool_use_id: call.id, content: result.content, is_error: result.isError });
+          await tryPersistToolNote({ tool: CREATE_WORK_ITEM_TOOL, summary: result.auditSummary });
+        }
+      }
+
+      if (askedClarifyingQuestion) {
+        const contentJson: {
+          text: string;
+          is_clarifying_question: true;
+          clarify_options?: string[];
+          clarify_placeholder?: string;
+        } = { text: askedClarifyingQuestion.question, is_clarifying_question: true };
+        if (askedClarifyingQuestion.options && askedClarifyingQuestion.options.length > 0) {
+          contentJson.clarify_options = askedClarifyingQuestion.options;
+        }
+        if (askedClarifyingQuestion.placeholder) {
+          contentJson.clarify_placeholder = askedClarifyingQuestion.placeholder;
+        }
+        try {
+          finalMessageVm = await persistAndBroadcastCuuMessage({ kind: "text", contentJson });
+        } catch (error) {
+          logger.warn("conversation_turn_persist_failed", { conversationId: input.conversationId, turnId, error });
+          throw new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 的澄清追问没能保存，请再试一次。");
+        }
+        break roundLoop;
+      }
+
+      llmMessages.push({ role: "user", content: toolResultBlocks });
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (!finalMessageVm) {
+    throw new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 没给出内容，请再试一次。");
+  }
+
+  return parseOutputContract(conversationTurnResultSchema, { turn_id: turnId, message: finalMessageVm }, "conversation-turns.result");
+}
+
+// ── on 路径：loop2（pi 引擎）跑一段对话 turn ─────────────────────────────────────────────
+//
+// 映射（现状受限工具环 → pi AgentLoopConfig，见 03-batch-c-engine.md Phase 4）：
+//   ≤4 轮硬顶            → shouldStopAfterTurn（防御性）+ prepareNextTurn 到第 4 轮不再给工具
+//   对话工具集(turns)     → AgentTool[].execute 直接跑既有 executeXxxTool（不重实现）
+//   tool_note 落库        → afterToolCall 读 details.toolNote 落库；并把 details.isError 传回 pi
+//   工具可见性/预算兜底    → create_work_item 靠 buildTurnToolDefinitions 隐藏 + execute 二次拒绝；
+//                          逐轮预算软闸挪到 shouldStopAfterTurn（"下一次模型调用前"这个边界的诚实落点，
+//                          比逐工具的 beforeToolCall 更贴近现状语义）
+//   SSE delta            → 订阅 message_update 里的 text_delta，走既有 emitDelta（事件形状不变，前端零感知）
+//   澄清位               → execute 落澄清消息 + terminate，shouldStopAfterTurn 立即收尾
+//   连发/steering        → getSteeringMessages 逐条注入进行中的一轮（drainSteering 接缝，P4b 接队列）
+//   follow-up            → getFollowUpMessages 恒返回 []（P4b 里 follow-up 交协调器另起一段=新 turn_id）
+//
+// 段（segment）= 一个 turn_id + 它落的若干 Cuu 消息。跨请求 steering/follow-up 队列（P4b）：同会话已有
+// 一轮在跑时，新到的请求不再 409——消息文本入队，owner 的 loop 在下一次模型调用前经 getSteeringMessages
+// 逐条注入（把连发的第二条折进进行中的这一轮，回复涵盖两条语境）；一轮收尾后队列还有货，owner 另起一段
+// （新 turn_id）续答（follow-up）。队列是进程内跨请求内存态（与 activeTurns 同为进程内，多进程缺口维持
+// 现状不扩大）；队列深度上限（env，默认 3）超限才退回 409 conversation_turn_busy 兜底。
+
+// 一条排队等注入的请求：injectText=已带发言人前缀的用户文本；prepared=该请求自己的一轮上下文（follow-up
+// 另起一段时用它的 actor/client/澄清位）；settle/fail=该请求 HTTP 承诺的结算钩子（它被哪一段答复，就用
+// 那一段的最终消息 VM 结算）。
+type ConversationQueueEntry = {
+  injectText: string;
+  prepared: PreparedTurn;
+  settle: (result: ConversationTurnResultVM) => void;
+  fail: (error: unknown) => void;
+};
+
+type ConversationTurnState = {
+  running: boolean;
+  queue: ConversationQueueEntry[];
+};
+
+function zeroPiUsage(): AssistantMessage["usage"] {
+  return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+}
+
+function newPiAssistant(): AssistantMessage {
+  return { role: "assistant", content: [], api: "", provider: "", model: "", usage: zeroPiUsage(), stopReason: "stop", timestamp: Date.now() };
+}
+
+function isPiAssistant(message: AgentMessage): message is AssistantMessage {
+  return (message as { role?: string }).role === "assistant";
+}
+
+function lastPiAssistant(messages: AgentMessage[]): AssistantMessage | undefined {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message && isPiAssistant(message)) return message;
+  }
+  return undefined;
+}
+
+function piAssistantText(message: AssistantMessage): string {
+  return message.content
+    .filter((block): block is { type: "text"; text: string } => block.type === "text" && typeof block.text === "string")
+    .map((block) => block.text)
+    .join("\n")
+    .trim();
+}
+
+function seedPiTranscript(historyMessages: PreparedTurn["historyMessages"]): AgentMessage[] {
+  return historyMessages.map((m): AgentMessage =>
+    m.role === "assistant"
+      ? { ...newPiAssistant(), content: workhubAssistantContentToPi(m.content) }
+      : { role: "user", content: typeof m.content === "string" ? m.content : "", timestamp: Date.now() }
+  );
+}
+
+type ToolExecDetails = { isError: boolean; toolNote?: { tool: string; summary: string } };
+
+type SegmentOutcome = { finalVm?: ConversationTurnResultVM["message"]; error?: unknown };
+
+// 跑一段 turn（一个 turn_id）：owner 段用 prepared（原请求的 actor/client/澄清位），follow-up 段（P4b）用
+// 队列条目自带的 prepared。转录 transcript 跨段共享（累积会话历史 + 上一段回复），保证续答看得到上文。
+// drainSteering 是队列注入接缝：返回下一条要折进这一轮的用户文本（已带发言人前缀），无货返回 undefined。
+async function runConversationTurnSegment(
+  runtime: TurnRuntime,
+  input: { conversationId: string },
+  prepared: PreparedTurn,
+  seg: { turnId: string; prompts: AgentMessage[]; transcript: AgentMessage[]; drainSteering: () => string | undefined }
+): Promise<SegmentOutcome> {
+  const { deps, now, logger } = runtime;
+  const turnId = seg.turnId;
+
+  let finalMessageVm: ConversationTurnResultVM["message"] | undefined;
+  let toolCallsUsed = 0;
+  let modelRound = 0;
+  let clarifyAsked = false;
+  let ordinal = 0;
+  let fatalError: unknown;
+  let budgetExhausted = false;
+
+  const controller = new AbortController();
+  const timeoutMs = deps.turnTimeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  const system = [
+    buildTurnSystemPrompt(prepared.pendingClarification ? { pendingClarification: prepared.pendingClarification } : {}),
+    prepared.contextSummaryMd ? buildTurnContextSummarySection(prepared.contextSummaryMd) : "",
+    prepared.memorySection.promptSection
+  ]
+    .filter((part) => part.length > 0)
+    .join("\n\n");
+
+  const toolDefs = buildTurnToolDefinitions({ allowCreateWorkItem: Boolean(prepared.pendingClarification) });
+
+  const makeExecute =
+    () =>
+    async (_toolCallId: string, params: Record<string, unknown>, callName: string): Promise<AgentToolResult<ToolExecDetails>> => {
+      const parsed = parseTurnToolCall(callName, params);
+      if (!parsed.ok) {
+        return { content: [{ type: "text", text: parsed.error }], details: { isError: true } };
+      }
+      if (parsed.name === ASK_CLARIFYING_QUESTION_TOOL) {
+        const contentJson: {
+          text: string;
+          is_clarifying_question: true;
+          clarify_options?: string[];
+          clarify_placeholder?: string;
+        } = { text: parsed.input.question, is_clarifying_question: true };
+        if (parsed.input.options && parsed.input.options.length > 0) contentJson.clarify_options = parsed.input.options;
+        if (parsed.input.placeholder) contentJson.clarify_placeholder = parsed.input.placeholder;
+        try {
+          finalMessageVm = await prepared.persistAndBroadcastCuuMessage({ kind: "text", contentJson });
+          clarifyAsked = true;
+        } catch (error) {
+          logger.warn("conversation_turn_persist_failed", { conversationId: input.conversationId, turnId, error });
+          fatalError = new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 的澄清追问没能保存，请再试一次。");
+        }
+        return { content: [{ type: "text", text: "已经把澄清问题发给对方了。" }], details: { isError: false }, terminate: true };
+      }
+      if (toolCallsUsed >= MAX_TURN_TOOL_CALLS) {
+        return { content: [{ type: "text", text: "这一轮的工具调用次数已经用完了，请直接用文字回复对方。" }], details: { isError: true } };
+      }
+      if (parsed.name === CREATE_WORK_ITEM_TOOL && !prepared.pendingClarification) {
+        return {
+          content: [{ type: "text", text: "现在还不能建工单——需求还不够清楚，先用 ask_clarifying_question 问清楚。" }],
+          details: { isError: true }
+        };
+      }
+      toolCallsUsed += 1;
+      try {
+        if (parsed.name === DRIVE_SEARCH_TOOL) {
+          const result = await executeDriveSearchTool(deps, prepared.toolCtx, parsed.input, logger);
+          return { content: [{ type: "text", text: result.content }], details: { isError: result.isError, toolNote: { tool: DRIVE_SEARCH_TOOL, summary: result.auditSummary } } };
+        }
+        if (parsed.name === SEND_FILE_CARD_TOOL) {
+          const result = await executeSendFileCardTool(deps, prepared.toolCtx, parsed.input, logger);
+          if (!result.isError && result.fileCard) {
+            try {
+              finalMessageVm = await prepared.persistAndBroadcastCuuMessage({
+                kind: "file_card",
+                contentJson: { drive_item_id: result.fileCard.driveItemId, snapshot_name: result.fileCard.snapshotName }
+              });
+              return { content: [{ type: "text", text: result.content }], details: { isError: false, toolNote: { tool: SEND_FILE_CARD_TOOL, summary: result.auditSummary } } };
+            } catch (error) {
+              logger.warn("conversation_turn_tool_send_file_card_persist_failed", { conversationId: input.conversationId, turnId, error });
+              return {
+                content: [{ type: "text", text: "文件卡没能发出去，请稍后再试，不要假装已经发送。" }],
+                details: { isError: true, toolNote: { tool: SEND_FILE_CARD_TOOL, summary: result.auditSummary } }
+              };
+            }
+          }
+          return { content: [{ type: "text", text: result.content }], details: { isError: result.isError, toolNote: { tool: SEND_FILE_CARD_TOOL, summary: result.auditSummary } } };
+        }
+        // create_work_item
+        const result = await executeCreateWorkItemTool(deps, prepared.toolCtx, parsed.input);
+        return { content: [{ type: "text", text: result.content }], details: { isError: result.isError, toolNote: { tool: CREATE_WORK_ITEM_TOOL, summary: result.auditSummary } } };
+      } catch (error) {
+        // 现状语义：send_file_card / create_work_item 对非预期错误会向上抛，整轮失败。pi 会把工具抛异常
+        // 吞成 error tool_result 并继续循环——为保持等价，这里捕获、记 fatalError、中断，收尾后原样抛出。
+        fatalError = error;
+        controller.abort();
+        return { content: [{ type: "text", text: "工具执行失败。" }], details: { isError: true } };
+      }
+    };
+
+  const executeImpl = makeExecute();
+  const buildPiTools = (): AgentTool[] =>
+    toolDefs.map((raw) => {
+      const spec = raw as { name: string; description?: string; input_schema?: unknown };
+      const parameters = spec.input_schema && typeof spec.input_schema === "object" ? (spec.input_schema as Record<string, unknown>) : { type: "object" };
+      return {
+        name: spec.name,
+        description: spec.description ?? "",
+        parameters,
+        label: spec.name,
+        execute: (toolCallId: string, params: Record<string, unknown>) => executeImpl(toolCallId, params, spec.name)
+      } satisfies AgentTool;
+    });
+  const piTools = buildPiTools();
+
+  const model: Model = {
+    id: "",
+    name: "",
+    api: "anthropic",
+    provider: "conversation-turn",
+    baseUrl: "",
+    reasoning: false,
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 0,
+    maxTokens: deps.maxResponseTokens ?? DEFAULT_MAX_TURN_RESPONSE_TOKENS
+  };
+
+  const streamFn: StreamFn = (_model, context, streamOptions) => {
+    const stream = new AssistantMessageEventStream();
+    void pumpConversationStream(stream, context, streamOptions);
+    return stream;
+  };
+
+  async function pumpConversationStream(stream: AssistantMessageEventStream, context: Context, streamOptions: SimpleStreamOptions | undefined) {
+    const turnMessages = piMessagesToWorkhub(context.messages) as Array<{ role: "user" | "assistant"; content: TurnLlmMessageContent }>;
+    const turnTools = (context.tools ?? []).map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters }));
+    const base = newPiAssistant();
+    try {
+      const turnStream = await prepared.client.messages.stream({
+        maxTokens: deps.maxResponseTokens ?? DEFAULT_MAX_TURN_RESPONSE_TOKENS,
+        source: "agent_step",
+        system,
+        messages: turnMessages,
+        ...(turnTools.length > 0 ? { tools: turnTools } : {}),
+        ...(streamOptions?.signal ? { signal: streamOptions.signal } : {})
+      });
+      stream.push({ type: "start", partial: { ...base, content: [] } });
+      let acc = "";
+      for await (const event of turnStream) {
+        const deltaText = extractDeltaText(event);
+        if (deltaText !== null) {
+          acc += deltaText;
+          stream.push({ type: "text_delta", contentIndex: 0, delta: deltaText, partial: { ...base, content: [{ type: "text", text: acc }] } });
+        }
+      }
+      const final = await turnStream.getFinalMessage();
+      const content = workhubAssistantContentToPi(final.content);
+      const hasToolCalls = content.some((block) => block.type === "toolCall");
+      const finalMessage: AssistantMessage = { ...base, content, stopReason: toPiStopReason(undefined, hasToolCalls), timestamp: Date.now() };
+      stream.push({ type: "done", reason: hasToolCalls ? "toolUse" : "stop", message: finalMessage });
+    } catch (error) {
+      const aborted = Boolean(streamOptions?.signal?.aborted);
+      stream.push({
+        type: "error",
+        reason: aborted ? "aborted" : "error",
+        error: { ...base, content: [], stopReason: aborted ? "aborted" : "error", errorMessage: error instanceof Error ? error.message : String(error), timestamp: Date.now() }
+      });
+    }
+  }
+
+  const emitSink = async (event: AgentEvent): Promise<void> => {
+    if (event.type === "turn_start") {
+      modelRound += 1;
+      return;
+    }
+    if (event.type === "message_update") {
+      const ame = event.assistantMessageEvent as { type: string; delta?: unknown };
+      if (ame.type === "text_delta" && typeof ame.delta === "string") {
+        await emitDelta(deps, { conversationId: input.conversationId, turnId, deltaText: ame.delta, ordinal, at: now() });
+        ordinal += 1;
+      }
+    }
+  };
+
+  const config: AgentLoopConfig = {
+    model,
+    toolExecution: "sequential",
+    convertToLlm: (messages) => messages as Message[],
+    afterToolCall: async ({ result }) => {
+      const details = result.details as ToolExecDetails | undefined;
+      if (details?.toolNote) {
+        await prepared.tryPersistToolNote({ tool: details.toolNote.tool, summary: details.toolNote.summary });
+      }
+      return details ? { isError: Boolean(details.isError) } : undefined;
+    },
+    // 工具可见性逐轮刷新：第 4 轮（或工具调用已达硬顶）不再给工具，模型只能收尾出文本——等价于现状
+    // allowTools = toolCallsUsed < MAX_TURN_TOOL_CALLS && round < MAX_TURN_MODEL_ROUNDS。
+    prepareNextTurn: async ({ context }) => {
+      const nextRound = modelRound + 1;
+      const allowTools = toolCallsUsed < MAX_TURN_TOOL_CALLS && nextRound < MAX_TURN_MODEL_ROUNDS;
+      return { context: { ...context, tools: allowTools ? piTools : [] } };
+    },
+    getSteeringMessages: async () => {
+      const injectText = seg.drainSteering();
+      if (injectText === undefined) return [];
+      return [{ role: "user", content: injectText, timestamp: Date.now() }];
+    },
+    getFollowUpMessages: async () => [],
+    shouldStopAfterTurn: async ({ message }) => {
+      if (fatalError) return true;
+      if (clarifyAsked) return true;
+      const hasToolCalls = isPiAssistant(message) && message.content.some((block) => block.type === "toolCall");
+      if (!hasToolCalls) return false;
+      if (modelRound >= MAX_TURN_MODEL_ROUNDS) return true;
+      const roundBudgetOk = await checkTurnBudget(deps, prepared.human.workspaceId, now());
+      if (!roundBudgetOk) {
+        budgetExhausted = true;
+        return true;
+      }
+      return false;
+    }
+  };
+
+  try {
+    const context: AgentContext = { systemPrompt: system, messages: seg.transcript, tools: piTools };
+    const newMessages = await runAgentLoop(seg.prompts, context, config, emitSink, controller.signal, streamFn);
+    seg.transcript.push(...newMessages);
+  } catch (error) {
+    return { error };
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (fatalError !== undefined) return { error: fatalError };
+
+  const last = lastPiAssistant(seg.transcript);
+  if (last && (last.stopReason === "error" || last.stopReason === "aborted")) {
+    return { error: new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 没接上，请再试一次。") };
+  }
+
+  if (budgetExhausted && !finalMessageVm) {
+    return { error: new ConversationTurnServiceError(429, "conversation_turn_budget_exhausted", "这个工作区今天的 AI 预算已经用完了。") };
+  }
+
+  if (clarifyAsked) {
+    if (!finalMessageVm) return { error: new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 没给出内容，请再试一次。") };
+    return { finalVm: finalMessageVm };
+  }
+
+  if (last) {
+    const hasToolCalls = last.content.some((block) => block.type === "toolCall");
+    const text = piAssistantText(last);
+    if (!hasToolCalls && text.length > 0) {
+      const contentJson: { text: string; memory_citations?: TurnMemoryCitation[] } = { text };
+      if (prepared.memorySection.citations.length > 0) contentJson.memory_citations = prepared.memorySection.citations;
+      try {
+        finalMessageVm = await prepared.persistAndBroadcastCuuMessage({ kind: "text", contentJson });
+      } catch (error) {
+        logger.warn("conversation_turn_persist_failed", { conversationId: input.conversationId, turnId, error });
+        return { error: new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 的回复没能保存，请再试一次。") };
+      }
+    }
+  }
+
+  if (!finalMessageVm) {
+    return { error: new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 没给出内容，请再试一次。") };
+  }
+  return { finalVm: finalMessageVm };
+}
+
+// owner：串起若干"段"。第 1 段=原请求（prompts 空——触发消息已在历史里），收尾后若队列还有货，逐条起
+// 新段（新 turn_id）续答（follow-up）。每段：owner + 被 steering 折进来的条目，用该段的最终消息 VM 结算
+// （共用该段的 turn_id；client 靠 id 去重，共用 turn_id 前端无感）。段失败：该段的 owner/absorbed 条目
+// 用错误结算，但外层继续处理剩余队列——队列不丢，剩下的转成新 turn 正常处理（满足 abort/失败不丢队列）。
+//
+// turn 行取舍（无 DB turn 表，turn 只是一个 id + 它落的若干 Cuu 消息）：连发 burst 里"生成中到达"的
+// 折进当前段（共用 turn_id，因为 steering 本质就是同一次模型 loop 的续写）；"收尾后到达"的另起一段
+// （新 turn_id）——正好对上 steering vs follow-up 的语义边界，也让 follow-up=新 turn 行更诚实。
+async function runConversationTurnOwner(
+  runtime: TurnRuntime,
+  input: { conversationId: string },
+  prepared: PreparedTurn,
+  state: ConversationTurnState
+): Promise<ConversationTurnResultVM> {
+  const transcript = seedPiTranscript(prepared.historyMessages);
+  let firstResult: ConversationTurnResultVM | undefined;
+  let firstError: unknown;
+  let firstDone = false;
+
+  let segmentPrepared = prepared;
+  let segmentTurnId = prepared.turnId;
+  let prompts: AgentMessage[] = [];
+  let segmentOwnerEntry: ConversationQueueEntry | undefined;
+
+  while (true) {
+    // 本段被 steering 折进来的排队条目——drainSteering 每弹一条就记在这里，段收尾时用本段的最终消息结算。
+    const absorbed: ConversationQueueEntry[] = [];
+    const outcome = await runConversationTurnSegment(runtime, input, segmentPrepared, {
+      turnId: segmentTurnId,
+      prompts,
+      transcript,
+      drainSteering: () => {
+        // "一次一条"（QueueMode.one-at-a-time）：每次模型调用前只注入队首一条，其余留到后续注入点。
+        // 理由：逐条注入让每条连发消息按顺序拿到模型的注意力、保序，且不会把一个 burst 一次性灌成一大坨
+        // user turn（那样上下文突然膨胀、也更容易让模型漏掉中间某条）。
+        const entry = state.queue.length > 0 ? state.queue.shift() : undefined;
+        if (!entry) return undefined;
+        absorbed.push(entry);
+        return entry.injectText;
+      }
+    });
+
+    const entries = segmentOwnerEntry ? [segmentOwnerEntry, ...absorbed] : absorbed;
+    if (outcome.error !== undefined) {
+      if (!firstDone) {
+        firstError = outcome.error;
+        firstDone = true;
+      }
+      for (const entry of entries) entry.fail(outcome.error);
+    } else {
+      const result = parseOutputContract(
+        conversationTurnResultSchema,
+        { turn_id: segmentTurnId, message: outcome.finalVm },
+        "conversation-turns.result"
+      );
+      if (!firstDone) {
+        firstResult = result;
+        firstDone = true;
+      }
+      for (const entry of entries) entry.settle(result);
+    }
+
+    // follow-up：这一段收尾后队列还有货 → 弹队首，另起一段（新 turn_id），用它自己的 prepared 续答。
+    // 这一步是同步弹队列——与 createTurn 里"同步入队/置 running"配对，配合外层 finally 的同步收口，保证
+    // 收尾竞态窗口里到达的消息不会既没被本段注入、又赶不上新段（见 createTurn 的注释）。
+    const next = state.queue.length > 0 ? state.queue.shift() : undefined;
+    if (!next) break;
+    segmentOwnerEntry = next;
+    segmentPrepared = next.prepared;
+    segmentTurnId = runtime.id();
+    prompts = [{ role: "user", content: next.injectText, timestamp: Date.now() }];
+  }
+
+  if (firstError !== undefined) throw firstError;
+  if (!firstResult) throw new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 没给出内容，请再试一次。");
+  return firstResult;
+}
+
 // ── 并发闸：进程内 Map，key=conversationId。多进程部署下这不是完整闸——已知缺口，见批汇报。────────
 
 export function createConversationTurnService(deps: ConversationTurnServiceDeps): ConversationTurnService {
   const now = deps.now ?? (() => new Date());
   const id = deps.id ?? randomUUID;
   const logger = deps.logger ?? getDefaultStructuredLogger();
+  const runtime: TurnRuntime = { deps, now, id, logger };
   const activeTurns = new Set<string>();
+  const settings = deps.settings ?? runtimeSettings;
+  const loop2Mode: ConversationTurnLoop2Mode = deps.loop2Mode ?? settings.conversationTurns?.loop2Mode ?? "off";
+  const queueMaxDepth = deps.queueMaxDepth ?? settings.conversationTurns?.queueMaxDepth ?? 3;
+  // R15 批 C Phase 4（P4b）：steering/follow-up 队列的进程内跨请求态（key=conversationId），与 activeTurns
+  // 同为进程内——多进程缺口维持现状不扩大。仅 on 模式使用；off 走 activeTurns 老闸。
+  const conversations = new Map<string, ConversationTurnState>();
 
   return {
     async createTurn(input) {
-      const human = requireHumanActor(input.actor);
+      if (loop2Mode === "on") {
+        // on 路径：先做和 off 完全相同的一轮前置校验/装配（无效请求照样 403/404/409，不占队列），再看
+        // 协调器：本会话没有进行中的一轮 → 成为 owner 起 loop2；已有一轮在跑 → 消息入 steering 队列
+        // （不再 409），排队等 owner 在下一次模型调用前注入；队列已满才退回 409 兜底。
+        const prepared = await prepareTurnContext(runtime, input);
+        // 「查/置 running 或入队」必须是同步的（无 await 穿插），才和 activeTurns 一样是确定性闸而非竞态：
+        // 两个并发请求先后同步跑到这里，第一个置 running=true 成为 owner，第二个看见 running=true 入队。
+        // owner 收尾在 finally 里同步「若队列空则置 running=false」，与这里的同步检查配对，杜绝丢消息。
+        let state = conversations.get(input.conversationId);
+        if (!state) {
+          state = { running: false, queue: [] };
+          conversations.set(input.conversationId, state);
+        }
+        if (state.running) {
+          if (state.queue.length >= queueMaxDepth) {
+            throw new ConversationTurnServiceError(409, "conversation_turn_busy", "这个会话已经有一轮 Cuu 回应正在进行，请稍候。");
+          }
+          const label = prepared.human.actor.label ?? "成员";
+          const injectText = `${label}：${prepared.triggerText}`;
+          const activeState = state;
+          return await new Promise<ConversationTurnResultVM>((resolve, reject) => {
+            activeState.queue.push({ injectText, prepared, settle: resolve, fail: reject });
+          });
+        }
+        state.running = true;
+        const ownerState = state;
+        try {
+          return await runConversationTurnOwner(runtime, input, prepared, ownerState);
+        } finally {
+          // owner 处理完自己这一段起、直到队列被 follow-up 段抽干，才释放 running。抽干后置 running=false；
+          // 若此刻队列已空则连状态一起清掉（避免 Map 无限长）。若竞态里又有新条目入队（running 仍 true 时
+          // 入的），它已被上面的 owner 循环消费掉，这里 queue 必空。
+          ownerState.running = false;
+          if (ownerState.queue.length === 0) conversations.delete(input.conversationId);
+        }
+      }
+
+      // 非真人 actor 在触碰仓库/占用忙碌位之前就 403（与 prepareTurnContext 里的守卫同源；这里提前一次，
+      // 保住"gate 前先 403、不碰仓库"这条既有行为）。off 路径走 activeTurns 老闸，行为逐字节不变。
+      requireHumanActor(input.actor);
 
       // 并发闸必须是函数体里**第一个**同步动作(在任何 await 之前)：两个并发请求 A/B 在同一个事件循环
       // tick 里先后调用 createTurn 时，A 会同步跑完这一段(含 activeTurns.add)才让出控制权，B 紧接着
@@ -785,433 +1726,8 @@ export function createConversationTurnService(deps: ConversationTurnServiceDeps)
       activeTurns.add(input.conversationId);
 
       try {
-        const access = await deps.conversations.findVisibleAccessRecord({
-          workspaceId: human.workspaceId,
-          viewerUserId: human.userId,
-          conversationId: input.conversationId
-        });
-        if (!access) {
-          throw new ConversationTurnServiceError(404, "conversation_not_found", "没有找到这个会话。");
-        }
-        // R13 终验修复（个人空间单聊必回）：个人空间的默认线程就是该项目的 main 会话（S3 设计），
-        // 它是纯 1:1 单聊——放行 turn。团队项目的 main 仍归静默观察者，恒 409 不变。
-        const personalSingleChat = access.conversation.kind === "main" && access.projectIsPersonal === true;
-        if (access.conversation.kind !== "collab" && !personalSingleChat) {
-          throw new ConversationTurnServiceError(
-            409,
-            "conversation_turn_not_collab",
-            "主区群聊由静默观察者处理，不支持单独发起协同回应。"
-          );
-        }
-        // R13 批 G1：cuu_enabled 硬闸——用户已拍板"强静默不可绕过"，必须排在 mode/回话判定之前，
-        // 且不接受任何形式的绕过（包括本轮触发消息里 @Cuu）。
-        if (access.conversation.cuuEnabled === false) {
-          throw new ConversationTurnServiceError(
-            409,
-            "conversation_turn_cuu_disabled",
-            "这个会话已经关掉了 Cuu，不会有回应。"
-          );
-        }
-
-        const profileAccess = await deps.aiSettings.findUserProfileAccessRecord({
-          workspaceId: human.workspaceId,
-          userId: human.userId
-        });
-        const mode = profileAccess?.profile?.defaultMode ?? DEFAULT_USER_AI_PROFILE.default_mode;
-        if (mode === 1) {
-          throw new ConversationTurnServiceError(
-            409,
-            "conversation_turn_mode_observe_only",
-            "当前模式只观察不回应，先在设置里调高档位。"
-          );
-        }
-
-        const windowSize = deps.historyWindowSize ?? DEFAULT_HISTORY_WINDOW;
-        const afterSeq = Math.max(0, access.conversation.nextSeq - 1 - windowSize);
-
-        // R13 批 C1（会话上下文压缩）：触发判定放在拉取历史窗口之前、cuu_enabled 闸与模式闸之后——
-        // afterSeq 就是这一轮的新窗口起点，超出它的内容原本会被 listMessagesAfter 的滑窗静默丢弃。
-        // 攒够 CONTEXT_SUMMARY_REFRESH_BATCH 条才刷新一次，不是每轮都摘要。
-        let contextSummaryMd = access.conversation.contextSummaryMd ?? null;
-        const contextSummaryThroughSeq = access.conversation.contextSummaryThroughSeq ?? 0;
-        if (afterSeq > contextSummaryThroughSeq + CONTEXT_SUMMARY_REFRESH_BATCH) {
-          const compacted = await tryCompactConversationContext(deps, logger, {
-            workspaceId: human.workspaceId,
-            viewerUserId: human.userId,
-            conversationId: input.conversationId,
-            previousSummaryMd: contextSummaryMd,
-            fromSeqExclusive: contextSummaryThroughSeq,
-            toSeqExclusive: afterSeq,
-            at: now()
-          });
-          if (compacted) {
-            contextSummaryMd = compacted.summaryMd;
-          }
-        }
-
-        const page = await deps.conversations.listMessagesAfter({
-          workspaceId: human.workspaceId,
-          viewerUserId: human.userId,
-          conversationId: input.conversationId,
-          afterSeq,
-          limit: windowSize + 1
-        });
-        if (!page) {
-          throw new ConversationTurnServiceError(404, "conversation_not_found", "没有找到这个会话。");
-        }
-        const anchor = page.rows.find((row) => row.id === input.payload.user_message_id);
-        if (
-          !anchor ||
-          anchor.senderType !== "user" ||
-          anchor.senderUserId?.toLowerCase() !== human.userId.toLowerCase()
-        ) {
-          throw new ConversationTurnServiceError(
-            404,
-            "conversation_turn_message_not_found",
-            "没有找到这条待回应的消息。"
-          );
-        }
-
-        // R13 批 G1：回话判定——被 @Cuu 必回，任何判定器都不能覆盖这条（见本文件顶部 §8 与
-        // mentionsCuu/ConversationTurnRespondDecider 的注释）。没被 @ 时才去问判定器；默认判定器
-        // （4c 落地前）保守永远放行，维持存量行为零回归。
-        const triggerText = historyDisplayText(anchor) ?? "";
-        // 个人空间单聊=判定的必回特例（用户终裁语义）：不要求 @、判定器无权否决。
-        if (!personalSingleChat && !mentionsCuu(triggerText)) {
-          const decider = deps.respondDecider ?? defaultConversationTurnRespondDecider;
-          const shouldRespond = await decider({
-            participantCount: access.participantCount,
-            triggerMessageText: triggerText
-          });
-          if (!shouldRespond) {
-            throw new ConversationTurnServiceError(
-              409,
-              "conversation_turn_not_warranted",
-              "这轮消息看起来还不需要 Cuu 回应。"
-            );
-          }
-        }
-
-        const budgetOk = await checkTurnBudget(deps, human.workspaceId, now());
-        if (!budgetOk) {
-          throw new ConversationTurnServiceError(
-            429,
-            "conversation_turn_budget_exhausted",
-            "这个工作区今天的 AI 预算已经用完了。"
-          );
-        }
-
-        const senderIds = [...new Set(page.rows.map((row) => row.senderUserId).filter((value): value is string => Boolean(value)))];
-        const nicknames = await deps.nicknames(senderIds);
-        const history = buildHistory(page.rows, nicknames);
-
-        const [userMemoryRows, teamSkillRows] = await Promise.all([
-          deps.userMemories.listForUser(human.userId, { limit: USER_MEMORY_PROMPT_TOP_N, workspaceId: human.workspaceId }),
-          deps.teamSkills.listActive(human.workspaceId)
-        ]);
-        const topTeamSkills = teamSkillRows.slice(0, TURN_TEAM_SKILL_TOP_N);
-        const memorySection = buildTurnMemorySection({
-          userMemories: userMemoryRows.map((row) => ({ key: row.key, valueMd: row.valueMd })),
-          teamSkills: topTeamSkills.map((row) => ({ name: row.name, whenToUse: row.whenToUse }))
-        });
-        if (userMemoryRows.length > 0) {
-          try {
-            await deps.userMemories.touch(userMemoryRows.map((row) => row.id), now(), { workspaceId: human.workspaceId });
-          } catch (error) {
-            logger.warn("conversation_turn_memory_touch_failed", { conversationId: input.conversationId, error });
-          }
-        }
-
-        // R13 批4c：澄清位从消息流位置推导（anchor 的上一条如果是 Cuu 发的带 is_clarifying_question
-        // 标记的文本），不新增任何旁路状态字段——满足时解锁 create_work_item 工具 + system prompt 提示。
-        const pendingClarification = findPendingClarification(page.rows, anchor.id);
-        const toolCtx: TurnToolExecutionContext = {
-          actor: human.actor,
-          workspaceId: human.workspaceId,
-          projectId: access.conversation.projectId
-        };
-        // R15 批 A（A5 消息通知）：把会话标题在这里定格成局部常量——persistAndBroadcastCuuMessage 是嵌套
-        // 闭包，TS 不跨闭包边界保留 access 的非空收窄（此处 access 已过前面的空值守卫）。
-        const conversationTitle = access.conversation.title;
-
-        const turnId = id();
-        // BUG-02 fail-fast：provider registry 的 get() 在缺 apiKey 时会抛 ProviderNotConfiguredError，
-        // 且发生在建 transport / 发任何上游请求之前。这里把它映射成 503 ai_provider_not_configured，
-        // 让路由/前端拿到明确语义而不是被吞成泛化 500。其余（DB/预算/真实 LLM 失败）沿用各自处理。
-        let client: TurnLlmClient;
-        try {
-          client = await deps.client({ actorId: human.userId, userId: human.userId, workspaceId: human.workspaceId });
-        } catch (error) {
-          throw toConversationTurnServiceError(error);
-        }
-
-        // llmMessages 在受限工具环里会被追加 assistant tool_use 回放 / user tool_result 回填；
-        // buildTurnMessages(history) 产出的都是 content:string 的普通对话轮次，是这个更宽类型的子集。
-        const llmMessages: Array<{ role: "user" | "assistant"; content: TurnLlmMessageContent }> = [
-          ...buildTurnMessages(history)
-        ];
-
-        // 把一条已经落库、广播过的 Cuu 消息映射成响应/事件都要用的 VM——发文件卡/收尾文本/澄清追问
-        // 三条终止路径共用同一段"落库 + 广播"逻辑，只是 kind/contentJson 不同。createCuuMessage 抛出的
-        // 错误原样向上抛，由各调用点按自己的语义决定是让整个 turn 失败，还是降级成一条错误 tool_result
-        // （见下方 file_card 分支）。
-        async function persistAndBroadcastCuuMessage(
-          messageInput:
-            | { kind: "text"; contentJson: { text: string; memory_citations?: TurnMemoryCitation[]; is_clarifying_question?: boolean; clarify_options?: string[]; clarify_placeholder?: string } }
-            | { kind: "file_card"; contentJson: { drive_item_id: string; snapshot_name: string } }
-            | { kind: "tool_note"; contentJson: Record<string, unknown> }
-        ) {
-          const created = await deps.conversations.createCuuMessage({
-            workspaceId: human.workspaceId,
-            conversationId: input.conversationId,
-            at: now(),
-            ...messageInput
-          });
-          const vm = parseOutputContract(conversationMessageVmSchema, messageToVm(created), "conversation-turns.message");
-          try {
-            const conversationTopic = topics.conversation(input.conversationId).topic;
-            const previewText =
-              vm.kind === "text" ? vm.content.text : vm.kind === "file_card" ? vm.content.snapshot_name : vm.kind;
-            const createdEvent = parseOutputContract(
-              conversationMessageCreatedEventSchema,
-              makeWorkHubEvent({
-                type: eventTypes.conversationMessageCreated,
-                topic: conversationTopic,
-                ts: now(),
-                actor: { actor_kind: "ai", label: "Cuu" },
-                project_id: toolCtx.projectId,
-                preview_text: previewText.slice(0, 200),
-                data: vm
-              }),
-              "conversation-turns.event.created"
-            );
-            await deps.bus?.publish(conversationTopic, eventTypes.conversationMessageCreated, createdEvent);
-          } catch (error) {
-            logger.warn("conversation_turn_created_publish_failed", { conversationId: input.conversationId, turnId, error });
-          }
-          // R15 批 A（A5 消息通知）：Cuu 消息也给其他参与者扇出通知（tool_note 会在 notify 内部按 kind
-          // 短路，不发）。fire-and-forget（同步返回 void）——不阻塞这一轮的落库/广播。
-          deps.notifyCuuMessage?.({
-            conversationId: input.conversationId,
-            projectId: toolCtx.projectId,
-            conversationTitle,
-            messageKind: vm.kind,
-            previewText:
-              vm.kind === "text" ? vm.content.text : vm.kind === "file_card" ? vm.content.snapshot_name : vm.kind
-          });
-          return vm;
-        }
-
-        async function tryPersistToolNote(contentJson: Record<string, unknown>) {
-          try {
-            await persistAndBroadcastCuuMessage({ kind: "tool_note", contentJson });
-          } catch (error) {
-            // 透明日志是锦上添花，不因为它写失败就把整轮判成失败——真正的动作（file_card/工单/最终文本）
-            // 各自有自己的失败处理。
-            logger.warn("conversation_turn_tool_note_persist_failed", { conversationId: input.conversationId, turnId, error });
-          }
-        }
-
-        let finalMessageVm: ConversationTurnResultVM["message"] | undefined;
-        let toolCallsUsed = 0;
-        let ordinal = 0;
-
-        const controller = new AbortController();
-        const timeoutMs = deps.turnTimeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
-        try {
-          roundLoop: for (let round = 1; ; round += 1) {
-            if (round > MAX_TURN_MODEL_ROUNDS) {
-              // 防御性兜底：下面 allowTools 的门槛设计保证第 MAX_TURN_MODEL_ROUNDS 轮必然不带
-              // tools、模型只能回文本——正常情况下走不到这里。
-              throw new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 卡在了工具调用里，请再试一次。");
-            }
-            if (round > 1) {
-              // R13 批4c 修订已知缺口：预算软闸之前只在 turn 开头查一次；多工具调用循环意味着一次
-              // turn 可能产生多次 LLM 计费，这里在每一次额外的模型调用前重新检查。
-              const roundBudgetOk = await checkTurnBudget(deps, human.workspaceId, now());
-              if (!roundBudgetOk) {
-                throw new ConversationTurnServiceError(429, "conversation_turn_budget_exhausted", "这个工作区今天的 AI 预算已经用完了。");
-              }
-            }
-
-            const allowTools = toolCallsUsed < MAX_TURN_TOOL_CALLS && round < MAX_TURN_MODEL_ROUNDS;
-            const tools = allowTools ? buildTurnToolDefinitions({ allowCreateWorkItem: Boolean(pendingClarification) }) : undefined;
-            const system = [
-              buildTurnSystemPrompt(pendingClarification ? { pendingClarification } : {}),
-              // R13 批 C1：滚动摘要插在 memorySection 之前——"这个会话更早内容的背景"先于"用户偏好/
-              // 团队技能"这类跨会话的参考材料。
-              contextSummaryMd ? buildTurnContextSummarySection(contextSummaryMd) : "",
-              memorySection.promptSection
-            ]
-              .filter((part) => part.length > 0)
-              .join("\n\n");
-
-            let final: TurnLlmFinalMessage;
-            try {
-              const stream = await client.messages.stream({
-                maxTokens: deps.maxResponseTokens ?? DEFAULT_MAX_TURN_RESPONSE_TOKENS,
-                source: "agent_step",
-                system,
-                messages: llmMessages,
-                ...(tools ? { tools } : {}),
-                signal: controller.signal
-              });
-              for await (const event of stream) {
-                const deltaText = extractDeltaText(event);
-                if (deltaText) {
-                  await emitDelta(deps, { conversationId: input.conversationId, turnId, deltaText, ordinal, at: now() });
-                  ordinal += 1;
-                }
-              }
-              final = await stream.getFinalMessage();
-            } catch (error) {
-              logger.warn("conversation_turn_llm_failed", { conversationId: input.conversationId, turnId, error });
-              throw new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 没接上，请再试一次。");
-            }
-
-            const toolUseBlocks = extractToolUseBlocks(final);
-            if (toolUseBlocks.length === 0) {
-              const fullText = extractFinalText(final).trim();
-              if (fullText.length === 0) {
-                if (finalMessageVm) {
-                  // 这一轮之前已经有真实动作发生过（比如发了文件卡）——模型这轮没有更多话要补充，
-                  // 不算失败，直接收尾用已经落库的那条消息。
-                  break roundLoop;
-                }
-                throw new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 没给出内容，请再试一次。");
-              }
-              const contentJson: { text: string; memory_citations?: TurnMemoryCitation[] } = { text: fullText };
-              if (memorySection.citations.length > 0) {
-                contentJson.memory_citations = memorySection.citations;
-              }
-              try {
-                finalMessageVm = await persistAndBroadcastCuuMessage({ kind: "text", contentJson });
-              } catch (error) {
-                logger.warn("conversation_turn_persist_failed", { conversationId: input.conversationId, turnId, error });
-                throw new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 的回复没能保存，请再试一次。");
-              }
-              break roundLoop;
-            }
-
-            // 模型请求了工具调用：把这一轮的 assistant 内容（含 tool_use 块）原样回放进历史，
-            // 再给每一个 tool_use 生成恰好一条 tool_result——包括参数校验失败/超过调用上限的情形，
-            // 保证不会留下悬空的 tool_use（见 tools.ts 顶部注释）。
-            llmMessages.push({ role: "assistant", content: final.content as unknown as Array<Record<string, unknown>> });
-            const toolResultBlocks: Array<Record<string, unknown>> = [];
-            let askedClarifyingQuestion: AskClarifyingQuestionToolInput | undefined;
-
-            for (const call of toolUseBlocks) {
-              if (askedClarifyingQuestion) {
-                toolResultBlocks.push({ type: "tool_result", tool_use_id: call.id, content: "这一轮已经结束，不会执行这个调用。", is_error: true });
-                continue;
-              }
-              const parsed = parseTurnToolCall(call.name, call.input);
-              if (!parsed.ok) {
-                toolResultBlocks.push({ type: "tool_result", tool_use_id: call.id, content: parsed.error, is_error: true });
-                continue;
-              }
-              if (parsed.name === ASK_CLARIFYING_QUESTION_TOOL) {
-                askedClarifyingQuestion = parsed.input;
-                toolResultBlocks.push({ type: "tool_result", tool_use_id: call.id, content: "已经把澄清问题发给对方了。", is_error: false });
-                continue;
-              }
-              if (toolCallsUsed >= MAX_TURN_TOOL_CALLS) {
-                toolResultBlocks.push({
-                  type: "tool_result",
-                  tool_use_id: call.id,
-                  content: "这一轮的工具调用次数已经用完了，请直接用文字回复对方。",
-                  is_error: true
-                });
-                continue;
-              }
-              toolCallsUsed += 1;
-              if (parsed.name === DRIVE_SEARCH_TOOL) {
-                const result = await executeDriveSearchTool(deps, toolCtx, parsed.input, logger);
-                toolResultBlocks.push({ type: "tool_result", tool_use_id: call.id, content: result.content, is_error: result.isError });
-                await tryPersistToolNote({ tool: DRIVE_SEARCH_TOOL, summary: result.auditSummary });
-              } else if (parsed.name === SEND_FILE_CARD_TOOL) {
-                const result = await executeSendFileCardTool(deps, toolCtx, parsed.input, logger);
-                if (!result.isError && result.fileCard) {
-                  try {
-                    finalMessageVm = await persistAndBroadcastCuuMessage({
-                      kind: "file_card",
-                      contentJson: { drive_item_id: result.fileCard.driveItemId, snapshot_name: result.fileCard.snapshotName }
-                    });
-                    toolResultBlocks.push({ type: "tool_result", tool_use_id: call.id, content: result.content, is_error: false });
-                  } catch (error) {
-                    logger.warn("conversation_turn_tool_send_file_card_persist_failed", {
-                      conversationId: input.conversationId,
-                      turnId,
-                      error
-                    });
-                    toolResultBlocks.push({
-                      type: "tool_result",
-                      tool_use_id: call.id,
-                      content: "文件卡没能发出去，请稍后再试，不要假装已经发送。",
-                      is_error: true
-                    });
-                  }
-                } else {
-                  toolResultBlocks.push({ type: "tool_result", tool_use_id: call.id, content: result.content, is_error: result.isError });
-                }
-                await tryPersistToolNote({ tool: SEND_FILE_CARD_TOOL, summary: result.auditSummary });
-              } else if (parsed.name === CREATE_WORK_ITEM_TOOL) {
-                // 纵深防御：工具可见性已经在 buildTurnToolDefinitions 那一层把 create_work_item 藏起来
-                // （不满足 pendingClarification 时不出现在 tools 清单里），这里再校验一次——万一模型
-                // 无视清单直接编出这个调用名，服务端仍然拒绝执行，不给"顺嘴建工单"留第二条路。
-                if (!pendingClarification) {
-                  toolResultBlocks.push({
-                    type: "tool_result",
-                    tool_use_id: call.id,
-                    content: "现在还不能建工单——需求还不够清楚，先用 ask_clarifying_question 问清楚。",
-                    is_error: true
-                  });
-                  continue;
-                }
-                const result = await executeCreateWorkItemTool(deps, toolCtx, parsed.input);
-                toolResultBlocks.push({ type: "tool_result", tool_use_id: call.id, content: result.content, is_error: result.isError });
-                await tryPersistToolNote({ tool: CREATE_WORK_ITEM_TOOL, summary: result.auditSummary });
-              }
-            }
-
-            if (askedClarifyingQuestion) {
-              const contentJson: {
-                text: string;
-                is_clarifying_question: true;
-                clarify_options?: string[];
-                clarify_placeholder?: string;
-              } = { text: askedClarifyingQuestion.question, is_clarifying_question: true };
-              if (askedClarifyingQuestion.options && askedClarifyingQuestion.options.length > 0) {
-                contentJson.clarify_options = askedClarifyingQuestion.options;
-              }
-              if (askedClarifyingQuestion.placeholder) {
-                contentJson.clarify_placeholder = askedClarifyingQuestion.placeholder;
-              }
-              try {
-                finalMessageVm = await persistAndBroadcastCuuMessage({ kind: "text", contentJson });
-              } catch (error) {
-                logger.warn("conversation_turn_persist_failed", { conversationId: input.conversationId, turnId, error });
-                throw new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 的澄清追问没能保存，请再试一次。");
-              }
-              break roundLoop;
-            }
-
-            llmMessages.push({ role: "user", content: toolResultBlocks });
-          }
-        } finally {
-          clearTimeout(timer);
-        }
-
-        if (!finalMessageVm) {
-          throw new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 没给出内容，请再试一次。");
-        }
-
-        return parseOutputContract(
-          conversationTurnResultSchema,
-          { turn_id: turnId, message: finalMessageVm },
-          "conversation-turns.result"
-        );
+        const prepared = await prepareTurnContext(runtime, input);
+        return await runLegacyTurnLoop(runtime, input, prepared);
       } finally {
         activeTurns.delete(input.conversationId);
       }

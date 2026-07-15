@@ -122,6 +122,9 @@ export const envSchema = z.object({
   // 环境用，需确定性可重放 stub client，绝不在生产双倍调 LLM）。默认 off——把真实 task role 切到 on 需先补齐
   // L3（manifest/评审在 Phase 2 由 loop2 复用 loop.ts 的 finalizeL3 产出，见 03-batch-c-engine.md）。
   AGENT_RUN_LOOP2_MODE: z.enum(["off", "shadow-assert", "on"]).default("off"),
+  // R15 批 C Phase 4（Cuu 对话轮次迁 loop2 + steering/follow-up 队列）。默认 off=生产零变化。
+  CONVERSATION_TURN_LOOP2_MODE: z.enum(["off", "on"]).default("off"),
+  CONVERSATION_TURN_QUEUE_MAX_DEPTH: z.coerce.number().int().positive().default(3),
 
   // R15 批 A（统一调度器 Pulse）：周期任务总开关（默认开）+ 各任务 tick 间隔。间隔置 0 = 该任务不启
   // （沿用 AGENT_RUN_RECOVERY_INTERVAL_MS 的 min(0) 语义）。审批 SLA 巡检 5 分钟一 tick；提醒阶梯
@@ -236,6 +239,15 @@ export type Settings = {
     projectHydrateMaxBytes: number;
     loop2Mode: "off" | "shadow-assert" | "on";
   };
+  conversationTurns: {
+    // R15 批 C（pi 引擎绞杀者迁移 Phase 4）：Cuu 协同对话轮次循环实现开关。off=现状（conversation-turns.ts
+    // 内联轮次循环，生产默认，零行为变化）；on=走 loop2（pi 引擎）+ steering/follow-up 队列（同会话连发不再 409，
+    // 消息注入进行中的一轮）。无 shadow-assert 档：对话轮次面向用户实时流式，双跑会双倍打 LLM 且延迟翻倍。
+    loop2Mode: "off" | "on";
+    // steering 队列深度上限：同会话已有一轮在跑时，新到的 turn 请求排队等注入；排到这个深度还没轮到就退回
+    // 409 conversation_turn_busy（兜底，队列满/异常）。进程内内存态（与 activeTurns 同）。
+    queueMaxDepth: number;
+  };
   pulse: {
     enabled: boolean;
     approvalSlaIntervalMs: number;
@@ -339,6 +351,10 @@ export function loadSettings(env: EnvInput = process.env): Settings {
       projectHydrateMaxFiles: parsed.AGENT_RUN_PROJECT_HYDRATE_MAX_FILES,
       projectHydrateMaxBytes: parsed.AGENT_RUN_PROJECT_HYDRATE_MAX_BYTES,
       loop2Mode: parsed.AGENT_RUN_LOOP2_MODE
+    },
+    conversationTurns: {
+      loop2Mode: parsed.CONVERSATION_TURN_LOOP2_MODE,
+      queueMaxDepth: parsed.CONVERSATION_TURN_QUEUE_MAX_DEPTH
     },
     pulse: {
       enabled: parsed.PULSE_SCHEDULER_ENABLED,

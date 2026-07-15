@@ -44,6 +44,14 @@ export { AssistantMessageEventStream, EventStream, createAssistantMessageEventSt
 export { setToolArgumentValidator, validateToolArguments } from "./vendor/validation.js";
 export type { ToolArgumentValidator } from "./vendor/validation.js";
 
+// Phase 4 (conversation turns) reuses three Phase 1 adapter helpers from apps/api's
+// `runConversationTurnLoop2`: the pi→wire message converter (with tool_result collapsing),
+// the WorkHub-content→pi-block converter (text + tool_use), and the stop-reason mapping.
+// Re-exported here so the conversation runner reaches them via the same `@workhub/agent/loop2`
+// subpath as everything else, instead of reaching into adapter internals.
+export { piMessagesToWorkhub, workhubAssistantContentToPi } from "./adapters/messages.js";
+export { toPiStopReason } from "./adapters/stream-fn.js";
+
 // Phase 2 configBuilder + shadow dispatch. `runAgentLoop2` is a drop-in stand-in for
 // `AgentLoop.run`; `runAgentLoopDispatch` gates it behind AGENT_RUN_LOOP2_MODE. The main
 // package entry (`@workhub/agent`) stays untouched — this reaches consumers via the
