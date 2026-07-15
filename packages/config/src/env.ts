@@ -123,7 +123,9 @@ export const envSchema = z.object({
   // 是 24h 粗粒度，1 小时扫一次足够覆盖到期行且开销小。
   PULSE_SCHEDULER_ENABLED: booleanString.default(true),
   PULSE_APPROVAL_SLA_INTERVAL_MS: z.coerce.number().int().min(0).default(300000),
-  PULSE_NOTIFICATION_REMINDER_INTERVAL_MS: z.coerce.number().int().min(0).default(3600000)
+  PULSE_NOTIFICATION_REMINDER_INTERVAL_MS: z.coerce.number().int().min(0).default(3600000),
+  // R15 批 A（A3 会话 digest 卡）：审批 digest 巡检间隔（默认 15 分钟）。0=不挂定时器（仅手动 tick）。
+  PULSE_APPROVAL_DIGEST_INTERVAL_MS: z.coerce.number().int().min(0).default(900000)
 });
 
 type ParsedEnv = z.infer<typeof envSchema>;
@@ -208,6 +210,7 @@ export type Settings = {
     enabled: boolean;
     approvalSlaIntervalMs: number;
     notificationReminderIntervalMs: number;
+    approvalDigestIntervalMs: number;
   };
 };
 
@@ -298,7 +301,8 @@ export function loadSettings(env: EnvInput = process.env): Settings {
     pulse: {
       enabled: parsed.PULSE_SCHEDULER_ENABLED,
       approvalSlaIntervalMs: parsed.PULSE_APPROVAL_SLA_INTERVAL_MS,
-      notificationReminderIntervalMs: parsed.PULSE_NOTIFICATION_REMINDER_INTERVAL_MS
+      notificationReminderIntervalMs: parsed.PULSE_NOTIFICATION_REMINDER_INTERVAL_MS,
+      approvalDigestIntervalMs: parsed.PULSE_APPROVAL_DIGEST_INTERVAL_MS
     }
   };
 
