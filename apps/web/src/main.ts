@@ -28,6 +28,9 @@ export const webSurface = {
     "/projects",
     "/api/pages/project/:id",
     "/projects/:id",
+    // R15 批 E2c：项目时间线只读页。
+    "/api/pages/project/:id/timeline",
+    "/projects/:id/timeline",
     "/api/sessions",
     "/api/sessions/:id",
     "/api/workitems",

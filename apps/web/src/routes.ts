@@ -12,6 +12,7 @@ import type {
   ProjectHealthPageVM,
   ProjectHomePageVM,
   ProjectListVM,
+  ProjectTimelinePageVM,
   ProposalConflict,
   ProposalDetailVM,
   ReplayTraceVM,
@@ -88,6 +89,7 @@ export type WebRouteSurface =
   | { key: "home"; attention: AttentionHomeVM; projects?: ProjectListVM | undefined }
   | { key: "projects"; projects: ProjectListVM }
   | { key: "project-home"; project: ProjectHomePageVM }
+  | { key: "project-timeline"; timeline: ProjectTimelinePageVM }
   | { key: "intake"; session: SessionVM }
   | { key: "intake"; start: true; project?: { id: string; name: string }; project_unavailable?: boolean; projects?: ProjectListVM | undefined }
   | { key: "approvals"; approvals: ApprovalCenterVM }
@@ -129,6 +131,15 @@ const routeMatchers = [
     pattern: "/projects/:id",
     apiBaseLabel: "/api/pages/project/:id",
     regex: /^\/projects\/([^/]+)$/u,
+    paramNames: ["id"]
+  },
+  {
+    // R15 批 E2c：项目时间线只读页。锚定 /projects/:id/timeline——正则带 /timeline 后缀，不会与
+    // project-home（^/projects/:id$）相撞。
+    key: "project-timeline",
+    pattern: "/projects/:id/timeline",
+    apiBaseLabel: "/api/pages/project/:id/timeline",
+    regex: /^\/projects\/([^/]+)\/timeline$/u,
     paramNames: ["id"]
   },
   {
@@ -264,6 +275,7 @@ type WebRouteTreePageVm =
   | "attention"
   | "projects"
   | "project-home"
+  | "project-timeline"
   | "session"
   | "approvals"
   | "workitem"
@@ -314,6 +326,7 @@ const routeTreePageVmByKey = {
   home: "attention",
   projects: "projects",
   "project-home": "project-home",
+  "project-timeline": "project-timeline",
   intake: "session",
   approvals: "approvals",
   workitem: "workitem",
@@ -517,6 +530,8 @@ const shellPageOrder = [
   "home",
   "projects",
   "project-home",
+  // R15 批 E2c：时间线是 project-home 的下钻（detail-only），紧邻它。
+  "project-timeline",
   "intake",
   "approvals",
   "workitem",
@@ -541,6 +556,7 @@ const shellPageOrder = [
 // intake 不算 detail-only：/intake（无 sessionId）就是"提需求"起点页，应常驻导航,让用户随处可发起新活。
 const detailOnlyShellPages = new Set<GoldPathRenderedPage["key"]>([
   "project-home",
+  "project-timeline",
   "workitem",
   "proposal",
   "replay"
@@ -550,6 +566,7 @@ const shellDefaultRoutes = {
   home: "/",
   projects: "/projects",
   "project-home": "/projects",
+  "project-timeline": "/projects",
   intake: "/intake",
   approvals: "/approvals",
   workitem: "/",
@@ -574,6 +591,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     home: "总览",
     projects: "项目",
     "project-home": "项目主页",
+    "project-timeline": "时间线",
     // NAMING pass：导航项与所有 CTA（新任务）对齐——「接入」是工程词。
     intake: "新任务",
     approvals: "审批",
@@ -597,6 +615,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     home: "Overview",
     projects: "Projects",
     "project-home": "Project home",
+    "project-timeline": "Timeline",
     intake: "New task",
     approvals: "Approvals",
     workitem: "Task detail",
@@ -666,7 +685,8 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     memoriesActive: "AI 记住",
     acceptedDeliverables: "已采纳",
     activeProjects: "有进展",
-    query: "搜索词"
+    query: "搜索词",
+    milestones: "里程碑"
   },
   "en-US": {
     primary: "Focus",
@@ -716,7 +736,8 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     memoriesActive: "AI remembers",
     acceptedDeliverables: "Accepted",
     activeProjects: "Active",
-    query: "Query"
+    query: "Query",
+    milestones: "Milestones"
   }
 };
 
@@ -795,6 +816,15 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
       ),
       metric(locale, "files", String(surface.project.drive.file_count)),
       metric(locale, "status", surface.project.project.status === "archived" ? (zh ? "已归档" : "Archived") : (zh ? "活跃中" : "Active"))
+    ];
+  }
+  if (surface.key === "project-timeline") {
+    // 只读时间线速览：里程碑数 / 工作项数 / 逾期数（后者与正文关键路径同口径）。
+    const overdue = surface.timeline.items.filter((item) => item.overdue).length;
+    return [
+      metric(locale, "milestones", String(surface.timeline.milestones.length)),
+      metric(locale, "events", String(surface.timeline.items.length)),
+      metric(locale, "overdue", String(overdue))
     ];
   }
   if (surface.key === "intake") {
@@ -950,6 +980,9 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
   }
   if (surface.key === "project-home") {
     return renderWebRouteComponent({ key: "project-home", project: surface.project }, { locale });
+  }
+  if (surface.key === "project-timeline") {
+    return renderWebRouteComponent({ key: "project-timeline", timeline: surface.timeline }, { locale });
   }
   if (surface.key === "intake") {
     if ("start" in surface) {
@@ -1148,6 +1181,16 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     // 始终渲染项目头 + 入口动作本身,而不是给叶子路由用的"回到项目"死胡同。
     const project = await client.pages.project(match.params["id"] ?? "", withLocale(locale));
     return { key: "project-home", project } satisfies WebRouteSurface;
+  }
+  if (match.key === "project-timeline") {
+    // R15 批 E2c：只读时间线。projectTimeline 在 PageClient 上是可选字段（同 workbench，见 api-client
+    // types.ts 注释）；真实 createApiClient() 一定实现它，这里仍老实处理「万一没有」——报真错误，不假装能拿到数据。
+    const fetchTimeline = client.pages.projectTimeline;
+    if (!fetchTimeline) {
+      return "error" as const;
+    }
+    const timeline = await fetchTimeline(match.params["id"] ?? "", withLocale(locale));
+    return { key: "project-timeline", timeline } satisfies WebRouteSurface;
   }
   if (match.key === "intake") {
     const sessionId = match.params["sessionId"] ?? "";
@@ -1426,6 +1469,11 @@ function forbiddenOwnerLabel(error: unknown, locale: WorkHubLocale) {
 // 而非把用户丢到首页死胡同。网盘/会议是项目级能力，没选到项目(空工作区)时回链也应去 /projects
 // 让用户先建/选项目，而不是回总览("回到总览"对"还没有项目"是误导)。其余路由保持回首页。
 function routeStateBackHref(match: WebRouteMatch): string {
+  // R15 批 E2c：时间线是项目主页的下钻——非 Ready 态回链回到具体项目主页（有 id 时），而不是项目列表死胡同。
+  if (match.key === "project-timeline") {
+    const id = match.params["id"];
+    return id ? `/projects/${id}` : "/projects";
+  }
   if (match.key === "project-home" || match.key === "drive" || match.key === "meetings") {
     return "/projects";
   }

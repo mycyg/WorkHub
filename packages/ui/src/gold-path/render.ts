@@ -26,7 +26,7 @@ export type GoldPathRenderOptions = {
 };
 
 export type GoldPathRenderedPage = {
-  key: "home" | "projects" | "project-home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "agents" | "knowledge" | "search" | "skills" | "settings" | "memory";
+  key: "home" | "projects" | "project-home" | "project-timeline" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "agents" | "knowledge" | "search" | "skills" | "settings" | "memory";
   route: string;
   title: string;
   html: string;
@@ -139,6 +139,7 @@ const pageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"], stri
     home: "AI 优先首页",
     projects: "项目",
     "project-home": "项目主页",
+    "project-timeline": "时间线",
     intake: "选项接入",
     approvals: "审批中心",
     workitem: "任务详情",
@@ -161,6 +162,7 @@ const pageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"], stri
     home: "AI-first Home",
     projects: "Projects",
     "project-home": "Project Home",
+    "project-timeline": "Timeline",
     intake: "Option Intake",
     approvals: "Approval Center",
     workitem: "WorkItem Detail",
