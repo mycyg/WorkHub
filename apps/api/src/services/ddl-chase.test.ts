@@ -138,6 +138,76 @@ test("planDdlIntent: an item that jumps straight to overdue only emits overdue (
   assert.equal(intent.stage, "overdue");
 });
 
+// ── D2 会话通道路由（planDdlIntent 的 cuuDeliveryEnabled 选项）───────────────────────────
+
+test("planDdlIntent: with Cuu delivery on, t1d routes to the conversation channel with human copy", () => {
+  const plan = planDdlIntent(
+    candidate({ leadUserId: "lead-1", dueAt: new Date(now.getTime() + 12 * HOUR) }),
+    now,
+    { cuuDeliveryEnabled: true }
+  );
+  const intent = (plan as { intent: ProactiveIntentInput }).intent;
+  assert.equal(intent.stage, "t1d");
+  assert.equal(intent.channel, "conversation_message");
+  assert.match(intent.conversationText ?? "", /明天/);
+  assert.match(intent.conversationText ?? "", /上线报价单/);
+  // notification 草稿仍然保留（供降级路径用）。
+  assert.equal(intent.notification.type, "work_item.due_soon");
+});
+
+test("planDdlIntent: with Cuu delivery on, overdue routes to conversation and still seeds the notification 24h ladder", () => {
+  const plan = planDdlIntent(
+    candidate({ claimedByUserId: "u1", dueAt: new Date(now.getTime() - 3 * HOUR) }),
+    now,
+    { cuuDeliveryEnabled: true }
+  );
+  const intent = (plan as { intent: ProactiveIntentInput }).intent;
+  assert.equal(intent.stage, "overdue");
+  assert.equal(intent.channel, "conversation_message");
+  assert.match(intent.conversationText ?? "", /逾期/);
+  // 「反复叮嘱靠通知侧」：nextRemindAt 仍挂在 notification 草稿上（降级到通知时接 24h 阶梯）。
+  assert.equal(intent.notification.nextRemindAt?.getTime(), now.getTime() + 24 * HOUR);
+});
+
+test("planDdlIntent: with Cuu delivery on, t3d/escalate/needs_owner stay on the notification channel", () => {
+  const t3d = planDdlIntent(
+    candidate({ claimedByUserId: "u1", dueAt: new Date(now.getTime() + 48 * HOUR) }),
+    now,
+    { cuuDeliveryEnabled: true }
+  );
+  const escalate = planDdlIntent(
+    candidate({ claimedByUserId: "u1", projectOwnerUserId: "owner-1", dueAt: new Date(now.getTime() - 30 * HOUR) }),
+    now,
+    { cuuDeliveryEnabled: true }
+  );
+  const needsOwner = planDdlIntent(
+    candidate({ claimedByUserId: null, leadUserId: null, collaboratorUserId: null, projectOwnerUserId: "owner-1", dueAt: new Date(now.getTime() - 5 * HOUR) }),
+    now,
+    { cuuDeliveryEnabled: true }
+  );
+  for (const [label, plan] of [["t3d", t3d], ["escalate", escalate], ["needs_owner", needsOwner]] as const) {
+    const intent = (plan as { intent: ProactiveIntentInput }).intent;
+    assert.equal(intent.channel, undefined, `${label} must not use the conversation channel`);
+    assert.equal(intent.conversationText, undefined, `${label} carries no conversation copy`);
+  }
+});
+
+test("planDdlIntent: with Cuu delivery off, t1d/overdue stay on the notification channel (batch D behaviour)", () => {
+  const t1d = planDdlIntent(candidate({ leadUserId: "lead-1", dueAt: new Date(now.getTime() + 12 * HOUR) }), now, { cuuDeliveryEnabled: false });
+  const overdue = planDdlIntent(candidate({ claimedByUserId: "u1", dueAt: new Date(now.getTime() - 3 * HOUR) }), now, { cuuDeliveryEnabled: false });
+  for (const plan of [t1d, overdue]) {
+    const intent = (plan as { intent: ProactiveIntentInput }).intent;
+    assert.equal(intent.channel, undefined);
+    assert.equal(intent.conversationText, undefined);
+  }
+});
+
+test("planDdlIntent: the cuuDeliveryEnabled option defaults to off when omitted", () => {
+  const plan = planDdlIntent(candidate({ claimedByUserId: "u1", dueAt: new Date(now.getTime() - 3 * HOUR) }), now);
+  const intent = (plan as { intent: ProactiveIntentInput }).intent;
+  assert.equal(intent.channel, undefined, "omitting the option must not opt into the conversation channel");
+});
+
 // ── runOnce 巡检整合 ────────────────────────────────────────────────────────────────────
 
 function recordingProactive(results: ProactiveDeliverResult[] = []) {
@@ -250,4 +320,42 @@ test("runOnce isolates a delivery failure: sibling candidates still process", as
   const result = await service.runOnce();
   assert.equal(calls.length, 2, "sibling must still be attempted after a throw");
   assert.equal(result.delivered, 1);
+});
+
+test("runOnce with cuuDeliveryEnabled threads the conversation channel onto t1d/overdue intents", async () => {
+  const candidates = [
+    candidate({ workItemId: "a", claimedByUserId: "u1", dueAt: new Date(now.getTime() + 12 * HOUR) }), // t1d
+    candidate({ workItemId: "b", claimedByUserId: "u2", dueAt: new Date(now.getTime() - 3 * HOUR) }),  // overdue
+    candidate({ workItemId: "c", claimedByUserId: "u3", dueAt: new Date(now.getTime() + 48 * HOUR) })  // t3d
+  ];
+  const { calls, proactive } = recordingProactive();
+  const service = createDdlChaseService({
+    listCandidates: async () => candidates,
+    proactive,
+    quietHours: noQuiet,
+    cuuDeliveryEnabled: true,
+    now: () => now
+  });
+  await service.runOnce();
+  const byItem = new Map(calls.map((c) => [c.workItemId, c]));
+  assert.equal(byItem.get("a")?.channel, "conversation_message");
+  assert.equal(byItem.get("b")?.channel, "conversation_message");
+  assert.equal(byItem.get("c")?.channel, undefined, "t3d stays on the notification channel");
+});
+
+test("runOnce during quiet hours delivers nothing even for conversation-eligible candidates", async () => {
+  // 静默在会话通道同样生效：静默期由扫描前置拦截，任何通道都不投。
+  const candidates = [candidate({ claimedByUserId: "u1", dueAt: new Date(now.getTime() - 3 * HOUR) })]; // overdue
+  const { calls, proactive } = recordingProactive();
+  const service = createDdlChaseService({
+    listCandidates: async () => candidates,
+    proactive,
+    quietHours: { startHour: 0, endHour: 23 },
+    cuuDeliveryEnabled: true,
+    now: () => new Date(2026, 6, 15, 3, 0)
+  });
+  const result = await service.runOnce();
+  assert.equal(result.skipped_quiet_hours, 1);
+  assert.equal(result.delivered, 0);
+  assert.equal(calls.length, 0, "quiet hours must gate the conversation channel too");
 });

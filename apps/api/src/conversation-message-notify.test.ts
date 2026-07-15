@@ -95,6 +95,15 @@ test("A5 fails open (still notifies) when the presence check throws", async () =
   assert.deepEqual(created.map((c) => c.userId), [bob], "presence hiccup must not drop the notification");
 });
 
+test("D2 a Cuu message into a personal main (no participants) produces zero notifications", async () => {
+  // 钉死 D2 分工：个人空间主区 kind='main' 没有 conversation_participants 行 → listParticipantUserIds
+  // 返回空 → 无收件人 → notifyConversationMessage 天然短路。Cuu 在你自己的空间主动说话，绝不会给你
+  // 自己再落一条「新消息」通知（避免自己通知自己）。
+  const { deps, created } = harness({ participants: [] });
+  await notifyConversationMessage(deps, { ...baseInput, senderUserId: null, senderLabel: "Cuu" });
+  assert.equal(created.length, 0, "a participant-less main must not generate any conversation.message notification");
+});
+
 test("A5 does not notify for non-message kinds (tool_note / system_event)", async () => {
   for (const messageKind of ["tool_note", "system_event"]) {
     const { deps, created } = harness();
