@@ -40,6 +40,8 @@
     "qa:r5-10-dry": "pnpm --filter @workhub/api qa:r5-10-dry",
     "qa:r5-10-real": "pnpm --filter @workhub/api qa:r5-10-real",
     "qa:r2-pg-redis-smoke": "pnpm --filter @workhub/api qa:r2-pg-redis-smoke",
+    "build:desktop-macos": "bash scripts/dev/build-macos-app.sh",
+    "qa:desktop-macos-codesign-smoke": "WORKHUB_MACOS_BUILD_SKIP_BUILD=1 bash scripts/dev/build-macos-app.sh",
     "db:generate": "pnpm --filter @workhub/db generate",
     "db:migrate": "pnpm --filter @workhub/db migrate",
     "db:check": "pnpm --filter @workhub/db check"
