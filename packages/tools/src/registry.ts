@@ -8,6 +8,17 @@ export type ToolRegistryOptions = {
   canUse?: ToolVisibilityCheck;
 };
 
+/**
+ * 供 system prompt 组装的工具文案参考：
+ * - snippets：有 promptSnippet 的工具，一行能力广告，进「可用工具（Available tools）」清单。
+ * - guidelines：所有工具的 promptGuidelines 跨工具 Set 去重合并后的行为准则，进「Guidelines」段。
+ * 与 toModelTools 的完整 description 通道相互独立。
+ */
+export type ToolPromptReference = {
+  snippets: { id: string; snippet: string }[];
+  guidelines: string[];
+};
+
 function modelInputSchema(spec: AnyToolSpec): Record<string, unknown> {
   try {
     const schema = toJSONSchema(spec.schema) as Record<string, unknown>;
@@ -41,6 +52,31 @@ export class ToolRegistry {
 
   list() {
     return [...this.specs.values()];
+  }
+
+  /**
+   * 收集已注册工具的 promptSnippet/promptGuidelines，供 system prompt 组装「可用工具」清单与
+   * 「Guidelines」段。guidelines 按注册顺序跨工具用 Set 去重（同一条准则被多个工具重复声明时只保留一次）。
+   * 不涉及模型 API 的 description 通道（toModelTools 不变）。
+   */
+  promptReference(): ToolPromptReference {
+    const snippets: { id: string; snippet: string }[] = [];
+    const guidelines: string[] = [];
+    const seen = new Set<string>();
+    for (const spec of this.specs.values()) {
+      const snippet = spec.promptSnippet?.trim();
+      if (snippet) {
+        snippets.push({ id: spec.id, snippet });
+      }
+      for (const guideline of spec.promptGuidelines ?? []) {
+        const normalized = guideline.trim();
+        if (normalized && !seen.has(normalized)) {
+          seen.add(normalized);
+          guidelines.push(normalized);
+        }
+      }
+    }
+    return { snippets, guidelines };
   }
 
   async visibleFor(ctx: ToolExecutionContext) {

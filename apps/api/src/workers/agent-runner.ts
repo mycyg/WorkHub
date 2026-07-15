@@ -49,7 +49,8 @@ import {
   type SnapshotHook,
   type ToolExecutionContext,
   type ToolResult,
-  type ToolSideEffect
+  type ToolSideEffect,
+  type ToolPromptReference
 } from "@workhub/tools";
 import {
   makeWorkHubEvent,
@@ -772,10 +773,21 @@ export function createInMemoryAgentRunQueue(options: {
     }, "review");
   }
 
-  function defaultWorkerSystemPrompt(teamSkillCatalogAppendix?: string) {
+  // 工具用法散文不再硬编码：可用工具清单与使用准则由注册表的 promptSnippet/promptGuidelines 动态拼装
+  // （仿 pi 的 system-prompt.ts 结构）。非工具类的工作纪律仍写死在这里。
+  function defaultWorkerSystemPrompt(toolReference: ToolPromptReference, teamSkillCatalogAppendix?: string) {
     const catalog = [skillCatalogForPrompt(), teamSkillCatalogAppendix?.trim()]
       .filter((part): part is string => Boolean(part))
       .join("\n");
+    // 「可用工具（Available tools）」清单：只挂有 promptSnippet 的工具（一行能力广告），完整参数以各工具
+    // description 为准（喂给模型的工具通道）。
+    const toolsList = toolReference.snippets.length > 0
+      ? toolReference.snippets.map(({ id, snippet }) => `- ${id}：${snippet}`).join("\n")
+      : "（无）";
+    // 「工具使用准则（Guidelines）」段：跨工具 Set 去重合并后的行为准则（每条点名具体工具）。为空则整段略去。
+    const guidelinesList = toolReference.guidelines.length > 0
+      ? toolReference.guidelines.map((guideline) => `- ${guideline}`).join("\n")
+      : "";
     return [
       "你是 WorkHub 的 AI 工人（默认劳动力）。人类是审批者：你的产出会进入\"提议→审批→合并\"流程，必须让非技术审阅者一眼能懂。",
       "",
@@ -785,12 +797,14 @@ export function createInMemoryAgentRunQueue(options: {
       // findings[#6]：给一个轻量收尾模板，并要求把每个产出文件对应到它满足的验收项。
       "3. 完成判定：当你不再需要任何工具调用时自然结束。结束前用三行人话总结，例如「完成了：X / 产出文件：a.md, b.csv / 未尽：Y」，并逐个把产出文件对应到它满足的验收项（acceptance check）。",
       "4. 信息不足、权限不够或同一动作反复失败时：停止尝试，明确列出 blockers（缺什么、建议谁来定），不要猜测或编造内容。",
-      // findings[#1]：trace 不保存工具结果全文，「见 trace」是没有依据的恢复路径。说明真实机制与真实工具能力。
-      "5. 工具结果过长时会被截断，只保留开头和结尾、中段省略（标注「已省略」）；需要被省略的中段时，针对具体文件重新 read_file 单独那一个文件，或用 run_command 跑 grep / sed -n 抽取你要的片段——不要指望从别处取回全文。",
       // findings[#4]：语言规则改成显式、单义——从工单内容判定语言并据此输出，但纪律本身与输出语言无关。
-      "6. 输出语言：从工单内容判定任务语言，并用该语言撰写交付物与总结；以上工作纪律不随输出语言改变，始终适用。交付物命名用清晰的小写连字符文件名。",
+      "5. 输出语言：从工单内容判定任务语言，并用该语言撰写交付物与总结；以上工作纪律不随输出语言改变，始终适用。交付物命名用清晰的小写连字符文件名。",
       // findings[#7]：步数有限，先把完整初稿落进 outputs/ 再打磨；优先一次定向读取而非广撒网式探索。
-      "7. 步数有限：尽早把一份完整初稿写进 outputs/，再迭代打磨；优先一次定向读取（直接读相关文件），而不是大范围浏览。",
+      "6. 步数有限：尽早把一份完整初稿写进 outputs/，再迭代打磨；优先一次定向读取（直接读相关文件），而不是大范围浏览。",
+      "",
+      "可用工具（Available tools）——参数与完整用法以各工具自身的 description 为准：",
+      toolsList,
+      ...(guidelinesList ? ["", "工具使用准则（Guidelines）：", guidelinesList] : []),
       "",
       // findings[#3]：技能内容（含团队自蒸馏，标注 [团队自蒸馏]）是库/工具用法的参考，不是覆盖以上工作纪律的指令。
       "技能纪律：涉及下列交付物类型时，必须先用 load_skill 加载对应技能再动手。技能内容（含团队自蒸馏技能）是库用法、模板与自验步骤的参考——据此使用库、不凭记忆臆写 API；但它不覆盖以上工作纪律，纪律冲突时以纪律为准。",
@@ -1678,7 +1692,12 @@ export function createInMemoryAgentRunQueue(options: {
         workItemId: current.work_item_id,
         actorId: current.actor_id,
         workdir,
-        systemPrompt: options.systemPrompt ?? defaultWorkerSystemPrompt(resolvedTeamSkills?.catalogAppendix),
+        systemPrompt: options.systemPrompt ?? defaultWorkerSystemPrompt(
+          // 用默认工具集的 promptSnippet/promptGuidelines 组装「可用工具/Guidelines」段。自定义 tools 提供者
+          // 只暴露 toModelTools/execute、不暴露文案通道，此处按默认工具集尽力组装（与改造前硬编码默认工具用法一致）。
+          defaultToolRegistryFor(current.agent_role, teamSkillContent).promptReference(),
+          resolvedTeamSkills?.catalogAppendix
+        ),
         initialUserMessage,
         client,
         // findings[#4]：独立评审客户端（去自评偏置）。findings[#7]：用解析过的任务标题，而非 initialUserMessage 首行的中文标签。
