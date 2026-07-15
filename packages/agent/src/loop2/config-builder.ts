@@ -33,7 +33,12 @@ import { eventTypes } from "@workhub/contracts";
 import type { LlmMessage } from "../providers/types.js";
 import { checkLoopBudget, controlFromAssistant, createInitialUsage, DoomLoopDetector } from "../loop/control.js";
 import { buildStructuredHandoff } from "../loop/handoff.js";
-import { finalizeL3 } from "../loop/loop.js";
+import {
+	finalizeL3,
+	summarizeStepsForCompaction,
+	tryGenerateStructuredSummary,
+	type StructuredSummaryState,
+} from "../loop/loop.js";
 import type {
 	AgentAssistantBlock,
 	AgentLoopInput,
@@ -85,8 +90,7 @@ function elapsedSeconds(startedAt: number): number {
 	return (Date.now() - startedAt) / 1000;
 }
 
-// --- trace preview + mechanical compaction summary --------------------------
-// (previewUnknown default 200 mirrors loop/loop.ts previewUnknown for trace input_preview.)
+// --- trace preview (mirrors loop/loop.ts previewUnknown default = 200) -------
 
 /** stream_event bus-write throttle: at most one heartbeat per second, matching loop.ts callModel. */
 const STREAM_EMIT_THROTTLE_MS = 1000;
@@ -126,32 +130,6 @@ function piToolResultText(result: unknown): string {
 		.filter((block): block is { type: "text"; text: string } => (block as { type?: unknown }).type === "text" && typeof (block as { text?: unknown }).text === "string")
 		.map((block) => block.text)
 		.join("\n");
-}
-
-function summarizeStepsMechanical(steps: AgentLoopStep[], maxChars = 4000): string {
-	const lines: string[] = [];
-	for (const step of steps) {
-		const text = step.assistant
-			.filter((block): block is Extract<AgentAssistantBlock, { type: "text" }> => block.type === "text")
-			.map((block) => block.text.trim())
-			.join(" ")
-			.slice(0, 120);
-		if (step.toolCalls.length === 0) {
-			lines.push(`step ${step.index}: ${text || "(无工具调用)"}`);
-			continue;
-		}
-		for (let index = 0; index < step.toolCalls.length; index += 1) {
-			const call = step.toolCalls[index]!;
-			const result = step.toolResults[index];
-			const outcome = result ? (result.isError ? "error" : "ok") : "pending";
-			lines.push(`step ${step.index}: ${call.name}(${previewUnknown(call.input, 80)}) -> ${outcome}`);
-		}
-	}
-	const summary = lines.join("\n");
-	if (summary.length <= maxChars) return summary;
-	const headChars = Math.floor(maxChars * 0.7);
-	const tailChars = Math.floor(maxChars * 0.2);
-	return `${summary.slice(0, headChars)}\n…[摘要中段省略]\n${summary.slice(summary.length - tailChars)}`;
 }
 
 // --- pi-message helpers ----------------------------------------------------
@@ -386,30 +364,51 @@ export async function runAgentLoop2(input: AgentLoopInput): Promise<AgentLoopRes
 	const compactionThreshold = (): number =>
 		Math.max(1, Math.floor((input.budget.contextWindowTokens ?? 0) * (input.budget.compactThreshold ?? 0.8)));
 
-	// stepNo mirrors loop.ts compactNow: context_window → the upcoming step; max_tokens → the truncated
-	// step that overflowed. summary_kind is "mechanical" until the structured summary lands (P3b).
-	const doCompactBookkeeping = async (trigger: "context_window" | "max_tokens", stepNo: number): Promise<void> => {
-		compactions += 1;
-		nextCompactionAtTokens = usage.totalTokens + compactionThreshold();
-		await input.emit?.({
-			type: eventTypes.agentRunCompacting,
-			previewText: `上下文已压缩（第 ${compactions} 次，触发=${trigger}）`,
-			data: { run_id: input.runId, step_no: stepNo, trigger, compactions, summary_kind: "mechanical" },
-		});
-	};
+	// P3b: rolling structured-summary state, one per run (shared with loop.ts via the exported
+	// tryGenerateStructuredSummary). Empty until compactionClient produces a first summary.
+	const summaryState: StructuredSummaryState = { lastSummarizedStepIndex: 0 };
 
-	const compactPiContext = (messages: AgentMessage[]): AgentMessage[] => {
+	// Prune the pi AgentMessage[] transcript: keep the last `keep` from the assistant boundary, drop any
+	// dangling tool_use/orphan tool_result, and prepend a compaction summary message. `summaryOverride`
+	// is the structured LLM summary when available; otherwise fall back to loop.ts's exported mechanical
+	// summarizer (summarizeStepsForCompaction) so both engines emit byte-identical summary text.
+	const compactPiContext = (messages: AgentMessage[], summaryOverride?: string): AgentMessage[] => {
 		const keep = 6;
 		let cut = Math.max(1, messages.length - keep);
 		while (cut < messages.length && (messages[cut] as { role?: string }).role !== "assistant") cut += 1;
 		const tail = dropDanglingPiPairs(messages.slice(cut));
-		const summary = summarizeStepsMechanical(steps);
+		const summary = summaryOverride?.trim() || summarizeStepsForCompaction(steps);
 		const summaryMessage: AgentMessage = {
 			role: "user",
 			content: `${input.initialUserMessage}\n\n[上下文已压缩。此前执行摘要]\n${summary}\n[摘要结束。请基于以上进度继续完成任务。]`,
 			timestamp: Date.now(),
 		};
 		return [summaryMessage, ...tail];
+	};
+
+	// P3b: full compaction (bookkeeping + structured summary + prune + emit), mirroring loop.ts compactNow.
+	// Order matches loop.ts: bump compactions + nextCompactionAtTokens FIRST (so the summary call's own
+	// usage does not shift this compaction's threshold), then the structured summary (a compactionClient
+	// LLM call that adds source="compact" usage + recordUsage — or undefined → mechanical fallback), then
+	// prune, then emit agentRunCompacting with the resolved summary_kind. `stepNo` mirrors loop.ts:
+	// context_window → the upcoming step; max_tokens → the truncated step that overflowed.
+	const doCompact = async (trigger: "context_window" | "max_tokens", messages: AgentMessage[], stepNo: number): Promise<AgentMessage[]> => {
+		compactions += 1;
+		nextCompactionAtTokens = usage.totalTokens + compactionThreshold();
+		const structuredSummary = await tryGenerateStructuredSummary({ input, usage, steps, state: summaryState });
+		const pruned = compactPiContext(messages, structuredSummary);
+		await input.emit?.({
+			type: eventTypes.agentRunCompacting,
+			previewText: `上下文已压缩（第 ${compactions} 次，触发=${trigger}）`,
+			data: {
+				run_id: input.runId,
+				step_no: stepNo,
+				trigger,
+				compactions,
+				summary_kind: structuredSummary ? "structured" : "mechanical",
+			},
+		});
+		return pruned;
 	};
 
 	const config: AgentLoopConfig = {
@@ -420,16 +419,16 @@ export async function runAgentLoop2(input: AgentLoopInput): Promise<AgentLoopRes
 		transformContext: async (messages) => {
 			if (forceCompactBeforeNext) {
 				forceCompactBeforeNext = false;
-				// Overflow (max_tokens) compaction: step_no is the truncated step, not this retry turn.
-				await doCompactBookkeeping("max_tokens", lastTruncatedStepNo);
-				return compactPiContext(messages);
+				// Overflow (max_tokens) compaction: step_no is the truncated step, not this retry turn
+				// (mirrors loop.ts compactNow("max_tokens", step.index)).
+				return doCompact("max_tokens", messages, lastTruncatedStepNo);
 			}
 			const decision = checkLoopBudget(usage, input.budget);
 			if (decision?.signal === "compact" && usage.totalTokens >= nextCompactionAtTokens && compactions < maxCompactions) {
 				// Context-window compaction fires before the upcoming turn's model call; step_no is that
-				// upcoming step (sinkStepNo was bumped by this turn's turn_start).
-				await doCompactBookkeeping("context_window", sinkStepNo);
-				return compactPiContext(messages);
+				// upcoming step (sinkStepNo was bumped by this turn's turn_start), matching loop.ts's
+				// compactNow("context_window", usage.stepsUsed + 1).
+				return doCompact("context_window", messages, sinkStepNo);
 			}
 			return messages;
 		},

@@ -61,6 +61,8 @@ type Scenario = {
 	toolSpecs?: ToolSpec[];
 	execute?: (toolId: string, input: unknown, ctx: ToolExecutionContext) => ToolResult;
 	budget?: Partial<AgentLoopBudget>;
+	/** Scripted compaction-summary responses (P3b): wires a compactionClient when present. */
+	compactionResponses?: LlmCreateResponse[];
 };
 
 type Harness = {
@@ -73,6 +75,8 @@ type Harness = {
 	emittedEvents: EmittedEvent[];
 	/** Recorder calls in order (recordUsage/recordStep timing alignment). */
 	recorderLog: RecorderEntry[];
+	/** Provider requests the compactionClient saw (P3b). */
+	compactionRequests: LlmCreateParams[];
 };
 
 const DEFAULT_BUDGET: AgentLoopBudget = {
@@ -88,7 +92,9 @@ function makeHarness(scenario: Scenario): Harness {
 	const requests: LlmCreateParams[] = [];
 	const emittedEvents: EmittedEvent[] = [];
 	const recorderLog: RecorderEntry[] = [];
+	const compactionRequests: LlmCreateParams[] = [];
 	const queue = [...scenario.responses];
+	const compactionQueue = [...(scenario.compactionResponses ?? [])];
 	const harness: Harness = {
 		input: undefined as never,
 		calls,
@@ -97,6 +103,7 @@ function makeHarness(scenario: Scenario): Harness {
 		escalatedEvents: 0,
 		emittedEvents,
 		recorderLog,
+		compactionRequests,
 	};
 
 	const input: AgentLoopInput = {
@@ -147,6 +154,20 @@ function makeHarness(scenario: Scenario): Harness {
 			if (event.type === "agent_run.escalated") harness.escalatedEvents += 1;
 		},
 	};
+	if (scenario.compactionResponses) {
+		input.compactionClient = {
+			model: "deepseek-compact",
+			provider: "deepseek",
+			messages: {
+				create: async (params: LlmCreateParams) => {
+					compactionRequests.push(params);
+					const next = compactionQueue.shift();
+					if (!next) throw new Error("scenario: no scripted compaction response left");
+					return next;
+				},
+			},
+		};
+	}
 	harness.input = input;
 	return harness;
 }
@@ -252,6 +273,22 @@ function toolResponse(id: string, calls: { id: string; name: string; input: unkn
 		usageRecord: usageRecord(cost, inTok, outTok),
 		stopReason: "tool_use",
 	};
+}
+
+/** A scripted structured-summary response returned by the compactionClient stub (P3b). */
+function compactionSummaryResponse(summary: string, inTok = 12, outTok = 20, cost = "0.05"): LlmCreateResponse {
+	return {
+		id: "compact-1",
+		content: [{ type: "text", text: summary }],
+		usage: { inputTokens: inTok, outputTokens: outTok },
+		usageRecord: { ...usageRecord(cost, inTok, outTok), source: "compact" },
+		stopReason: "end_turn",
+	};
+}
+
+/** Project a compaction request to its meaningful fields (excludes the per-engine AbortSignal). */
+function projectCompactionRequest(params: LlmCreateParams): Record<string, unknown> {
+	return { system: params.system, messages: params.messages, maxTokens: params.maxTokens, source: params.source };
 }
 
 // --- scenarios -------------------------------------------------------------
@@ -392,4 +429,50 @@ test("equivalence: context-window compaction triggers on both engines", async ()
 	// Both engines emitted at least one compaction event (the trigger fired on both).
 	assert.ok(legacyH.compactionEvents >= 1, "legacy compacted");
 	assert.ok(loop2H.compactionEvents >= 1, "loop2 compacted");
+});
+
+// --- (P3b) structured compaction summary via compactionClient --------------
+
+test("equivalence: structured compaction summary — injected compactionClient", async () => {
+	// Same context-window trigger as above, but with a compactionClient that returns a fixed structured
+	// summary. Both engines must: make the identical compaction request, fold the summary usage in the
+	// same order, and report summary_kind="structured".
+	const summary = "## 目标（Goal）\n完成 echo 任务\n\n## 进度（Progress）\n### 已完成（Done）\n- [x] 调用了 echo";
+	const scenario: Scenario = {
+		responses: [
+			toolResponse("m1", [{ id: "c1", name: "echo", input: { message: "a" } }], 30, 30, "0.03"),
+			toolResponse("m2", [{ id: "c2", name: "echo", input: { message: "b" } }], 30, 30, "0.03"),
+			textResponse("m3", "finished", 5, 5, "0.01"),
+		],
+		toolSpecs: [ECHO_TOOL],
+		execute: () => okToolResult("ok"),
+		budget: { contextWindowTokens: 100, compactThreshold: 0.8, maxCompactions: 2 },
+		compactionResponses: [compactionSummaryResponse(summary)],
+	};
+	const { legacy, loop2, legacyH, loop2H } = await runBoth(scenario);
+
+	assert.equal(legacy.status, "succeeded");
+	assert.equal(loop2.status, "succeeded");
+	// Exactly one compaction-summary call each, with an identical request shape (source="compact").
+	assert.equal(legacyH.compactionRequests.length, 1, "legacy made one compaction call");
+	assert.equal(loop2H.compactionRequests.length, 1, "loop2 made one compaction call");
+	assert.equal(loop2H.compactionRequests[0]?.source, "compact");
+	assert.deepEqual(
+		projectCompactionRequest(loop2H.compactionRequests[0]!),
+		projectCompactionRequest(legacyH.compactionRequests[0]!),
+		"compaction request diverged",
+	);
+	// summary_kind="structured" on both compacting events (runBoth already asserted the event sequence).
+	const legacyKind = legacyH.emittedEvents.find((e) => e.type === "agent_run.compacting")?.data.summary_kind;
+	const loop2Kind = loop2H.emittedEvents.find((e) => e.type === "agent_run.compacting")?.data.summary_kind;
+	assert.equal(legacyKind, "structured");
+	assert.equal(loop2Kind, "structured");
+	// The fixed summary text landed in the post-compaction worker request (turn 3, first message).
+	const req3First = loop2H.requests[2]?.messages[0];
+	const body = typeof req3First?.content === "string" ? req3First.content : JSON.stringify(req3First?.content);
+	assert.match(body, /完成 echo 任务/, "structured summary injected into the compacted transcript");
+	// The compaction usage (12+20 tokens, ¥0.05) is folded into the final total on both (loop-core equal).
+	assert.equal(loop2.usage.estimatedCostCny, legacy.usage.estimatedCostCny);
+	assert.ok(Number(loop2.usage.estimatedCostCny) > 0.1, "worker (0.07) + compaction (0.05) cost folded in");
+	assert.equal(loop2.usage.totalTokens, legacy.usage.totalTokens);
 });
