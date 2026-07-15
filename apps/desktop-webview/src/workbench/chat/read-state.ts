@@ -66,6 +66,48 @@ export function unreadDividerBeforeMessageId(
   return undefined;
 }
 
+// —— R14FIX 批 workbench BUG-05（读游标失败永久丢失，验收报告）：把 PUT /read 的「已尝试(attempted)」
+// 与「已确认(acked)」拆开的纯状态机。 ——
+// 病根：旧实现在请求发出前就把游标推进到目标 seq（lastSentReadSeq=seq），一旦网络失败，同一个 seq 及
+// 之后所有 <= 它的 seq 都被 `seq <= lastSentReadSeq` 永久挡住，读游标永久丢失（他人永远看不到我读到这里）。
+// 修法：只有服务端确认才推进 acked；in-flight 用 inFlightSeq 记，失败即清 in-flight（不推 acked），
+// 下次触发（重获焦点/恢复网络/新消息）自然重试。无副作用、无 DOM，可单测。
+export type ReadCursorSendState = {
+  // 服务端已确认的最高游标（单调，永不回退）——重试门槛的下界：只有 highest > ackedSeq 才需要再发。
+  ackedSeq: number;
+  // 正在发送中的那个 seq（undefined = 当前没有在途请求）。同一时刻只允许一个在途请求，避免并发竞态；
+  // 在途请求落定后调用方再自查一次是否有更新的消息要接着报（见 view.ts doMarkRead 的 then 分支）。
+  inFlightSeq: number | undefined;
+};
+
+export const IDLE_READ_CURSOR_SEND_STATE: ReadCursorSendState = { ackedSeq: 0, inFlightSeq: undefined };
+
+// 进会话（GET /receipts）拿到本人游标后，acked 直接以服务端为基准（服务端已经知道我读到这里了）。
+export function readCursorSendStateFromAcked(ackedSeq: number): ReadCursorSendState {
+  return { ackedSeq, inFlightSeq: undefined };
+}
+
+// 是否应该现在发起一次 PUT /read：本地最高 seq 超过已确认游标，且当前没有在途请求。
+export function shouldSendReadCursor(state: ReadCursorSendState, highestSeq: number): boolean {
+  return state.inFlightSeq === undefined && highestSeq > state.ackedSeq;
+}
+
+// 标记「已发出」——把 inFlightSeq 置为目标 seq（不动 acked：acked 只在服务端确认后才推进）。
+export function markReadCursorSent(state: ReadCursorSendState, seq: number): ReadCursorSendState {
+  return { ackedSeq: state.ackedSeq, inFlightSeq: seq };
+}
+
+// 服务端确认——acked 单调推进到 max(acked, confirmedSeq)（服务端会把游标夹到会话最大 seq，可能比我报的
+// 小，以它回的值为准），清空在途。
+export function markReadCursorAcked(state: ReadCursorSendState, confirmedSeq: number): ReadCursorSendState {
+  return { ackedSeq: Math.max(state.ackedSeq, confirmedSeq), inFlightSeq: undefined };
+}
+
+// 请求失败——只清在途，绝不推进 acked（BUG-05 的关键：让同一个 seq 能被重试，不再永久丢失）。
+export function markReadCursorFailed(state: ReadCursorSendState): ReadCursorSendState {
+  return { ackedSeq: state.ackedSeq, inFlightSeq: undefined };
+}
+
 export type ReadReceiptSummary = {
   messageId: string;
   readCount: number;

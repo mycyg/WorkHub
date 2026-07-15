@@ -163,6 +163,11 @@ function service(overrides: Partial<ConversationService> = {}): ConversationServ
     async createConversation() {
       return { conversation: conversationVm(), participants: [] };
     },
+    // R14FIX 批 workbench：新增 renameConversation 服务方法——本套件（既有会话/消息路由）不测它，
+    // 给拒绝桩即可（新路由文件 conversation-rename.ts 有自己的套件）。
+    async renameConversation() {
+      throw new Error("renameConversation not expected");
+    },
     async listMessages() {
       return { messages: [], has_more: false, next_after_seq: 0 };
     },

@@ -60,6 +60,20 @@ test("reduced-motion users get the chat typing dots and composer tag transitions
   assert.match(workbenchCss, /prefers-reduced-motion:reduce\)\{[^}]*\.wh-wb-chat-typing-dots i\{transition-duration:\.01ms!important;animation-duration:\.01ms!important\}/u);
 });
 
+// R14FIX 批 workbench（建群弹窗排版修复 · 2026-07-15 用户实拍）：建群模态的成员多选行 <label> 曾在
+// css.ts 完全无样式，默认 inline 让 checkbox/头像/名字换行错乱。这条锁死每行是一条对齐的 flex 行。
+test("the new-collab member row is a single aligned flex row (not an unstyled inline label)", () => {
+  assert.match(workbenchCss, /\.wh-wb-new-collab-member-row\{[^}]*display:flex[^}]*align-items:center/u);
+  // Cuu 参与开关同样是 flex 行（此前也无样式）。
+  assert.match(workbenchCss, /\.wh-wb-new-collab-cuu-toggle\{[^}]*display:flex[^}]*align-items:center/u);
+});
+
+// R14FIX 批 workbench：每条协同会话叶子的悬停重命名铅笔——默认隐藏，行悬停/键盘聚焦才现身。
+test("the collab-leaf rename pencil is hover/focus-revealed, not always visible", () => {
+  assert.match(workbenchCss, /\.wh-wb-collab-rename\{[^}]*opacity:0/u);
+  assert.match(workbenchCss, /\.wh-wb-collab-leaf:hover \.wh-wb-collab-rename,\.wh-wb-collab-rename:focus-visible\{opacity:1\}/u);
+});
+
 // —— R12（模式五档弹层，仅协同会话 composer）—— //
 
 test("the mode popover has an opaque-enough gradient fallback background, not transparent-only", () => {

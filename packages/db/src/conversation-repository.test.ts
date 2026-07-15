@@ -1740,6 +1740,55 @@ test("R14 advanceReadCursor rejects a negative or unsafe last_read_seq", async (
   );
 });
 
+test("R14FIX renameConversation writes a trimmed title inside the tenant fence and returns the row", async () => {
+  const renamedRow = conversation({ title: "改第三幕", updatedAt: new Date("2026-07-15T09:00:00.000Z") });
+  const { db, queries } = createQueryRecorder([[renamedRow]]);
+
+  const result = await createConversationRepository(db).renameConversation({
+    workspaceId,
+    conversationId,
+    title: "  改第三幕  ",
+    at: now
+  });
+
+  assert.equal(result.title, "改第三幕");
+  const update = queries[0];
+  assert.equal(update?.operation, "update");
+  assert.equal(update?.targetTable, projectConversations);
+  assert.equal(update?.returningCalled, true);
+  const setValue = update?.setValue as Record<string, unknown>;
+  // 前后空白被 trim 掉再落库。
+  assert.equal(setValue["title"], "改第三幕");
+  // 租户 + 未删除围栏（workspaceId + id + deletedAt IS NULL）。
+  for (const column of [projectConversations.id, projectConversations.workspaceId, projectConversations.deletedAt]) {
+    assert.ok(queryReferences(update?.where, column), "rename must fence on tenant + id + not-deleted");
+  }
+});
+
+test("R14FIX renameConversation 404s (ConversationAccessDeniedError) when no active row matches", async () => {
+  const { db } = createQueryRecorder([[]]);
+  await assert.rejects(
+    createConversationRepository(db).renameConversation({
+      workspaceId,
+      conversationId,
+      title: "改名",
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationAccessDeniedError
+  );
+});
+
+test("R14FIX renameConversation rejects an empty or too-long title before any write", async () => {
+  const { db, queries } = createQueryRecorder([]);
+  for (const title of ["", "   ", "x".repeat(257)]) {
+    await assert.rejects(
+      createConversationRepository(db).renameConversation({ workspaceId, conversationId, title, at: now }),
+      (error: unknown) => error instanceof ConversationRepositoryInputError
+    );
+  }
+  assert.equal(queries.length, 0);
+});
+
 test("R14 listReceipts is tenant-joined, ordered, and capped", async () => {
   const { db, queries } = createQueryRecorder([
     [

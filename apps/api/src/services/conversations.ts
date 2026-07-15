@@ -42,6 +42,7 @@ import {
   conversationReadReceiptsVmSchema,
   conversationReadUpdatedEventSchema,
   createConversationResultVmSchema,
+  renameConversationResultVmSchema,
   eventTypes,
   MAX_CONVERSATION_REPLY_PREVIEW_CODE_UNITS,
   type AdvanceReadCursorRequest,
@@ -57,7 +58,9 @@ import {
   type CreateConversationMessageRequest,
   type CreateConversationRequest,
   type CreateConversationResultVM,
-  type EditConversationMessageRequest
+  type EditConversationMessageRequest,
+  type RenameConversationRequest,
+  type RenameConversationResultVM
 } from "@workhub/contracts";
 import { makeWorkHubEvent, topics } from "@workhub/events";
 
@@ -112,6 +115,12 @@ export type ConversationService = {
     projectId: string;
     payload: CreateConversationRequest;
   }): Promise<CreateConversationResultVM>;
+  // R14FIX 批 workbench：协同会话改名——仅 collab 会话、仅参与者/owner（红线在实现里强制）。
+  renameConversation(input: {
+    actor: AuthActor;
+    conversationId: string;
+    payload: RenameConversationRequest;
+  }): Promise<RenameConversationResultVM>;
   listMessages(input: {
     actor: AuthActor;
     conversationId: string;
@@ -673,6 +682,48 @@ export function createConversationService(
       } catch (error) {
         mapRepositoryError(error);
       }
+    },
+
+    // ── R14FIX 批 workbench：协同会话改名 ─────────────────────────────────────────────
+    // 红线（04 §4 铁律 / 01-chat-design：主区随项目原子创建、不可改名；协同会话是可命名的单元）：
+    //   1. 会话可见（visibleConversation 已 404 挡住不可见者）；
+    //   2. 仅 collab 会话可改名——main（团队主区/个人空间单聊）一律 403，不给一个点了必失败的入口；
+    //   3. 仅参与者/owner（participantRole !== null）——project 可见的 collab 里的旁观者不能改名。
+    // 没有 conversation.updated 事件（本仓库事件面只到 message/reaction/read 三类），改名后靠客户端
+    // 就地更新左栏树叶 / 下次拉会话树刷新，不广播（见交付报告说明）。
+    async renameConversation(input) {
+      const { human, access } = await visibleConversation(input);
+      const conversation = access.conversation;
+      if (conversation.kind !== "collab") {
+        throw new ConversationServiceError(
+          403,
+          "conversation_rename_forbidden",
+          "只有协同会话可以改名。"
+        );
+      }
+      if (access.participantRole === null) {
+        throw new ConversationServiceError(
+          403,
+          "conversation_rename_forbidden",
+          "只有会话的参与者才能给它改名。"
+        );
+      }
+      let updated: ConversationRow;
+      try {
+        updated = await repository.renameConversation({
+          workspaceId: human.workspaceId,
+          conversationId: conversation.id,
+          title: input.payload.title,
+          at: now()
+        });
+      } catch (error) {
+        mapRepositoryError(error);
+      }
+      return parseOutputContract(
+        renameConversationResultVmSchema,
+        { conversation: conversationToVm(updated, access.participantRole) },
+        "conversations.rename"
+      );
     },
 
     async listMessages(input) {

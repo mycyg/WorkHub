@@ -210,3 +210,38 @@ test("R14 conversation.read.updated pins a non-negative safe last_read_seq to it
     false
   );
 });
+
+// ── R14FIX 批 workbench：协同会话改名契约（additive） ──────────────────────────────────
+
+test("R14FIX rename request accepts a 1..256 char title and rejects empty/too-long/extra keys", () => {
+  const schema = requiredSchema<Record<string, unknown>>("renameConversationRequestSchema");
+  assert.deepEqual(schema.parse({ title: "改第三幕" }), { title: "改第三幕" });
+  assert.equal(schema.safeParse({ title: "" }).success, false);
+  assert.equal(schema.safeParse({ title: "x".repeat(256) }).success, true);
+  assert.equal(schema.safeParse({ title: "x".repeat(257) }).success, false);
+  assert.equal(schema.safeParse({}).success, false);
+  assert.equal(schema.safeParse({ title: "ok", extra: true }).success, false);
+});
+
+test("R14FIX rename result carries a full conversation VM", () => {
+  const schema = requiredSchema<Record<string, unknown>>("renameConversationResultVmSchema");
+  const conversation = {
+    id: conversationId,
+    workspace_id: "10000000-0000-4000-8000-000000000001",
+    project_id: projectId,
+    kind: "collab",
+    title: "改第三幕",
+    parent_conversation_id: null,
+    source_message_id: null,
+    visibility: "private",
+    next_seq: 3,
+    created_by: userId,
+    participant_role: "owner",
+    cuu_enabled: true,
+    created_at: ts,
+    updated_at: ts
+  };
+  assert.equal(schema.safeParse({ conversation }).success, true);
+  assert.equal(schema.safeParse({ conversation: { ...conversation, title: "" } }).success, false);
+  assert.equal(schema.safeParse({ conversation, extra: true }).success, false);
+});

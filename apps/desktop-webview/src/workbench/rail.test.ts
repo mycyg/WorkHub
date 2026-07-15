@@ -7,7 +7,10 @@ import {
   appendCollabConversationToVm,
   createCollabConversation,
   IDLE_NEW_COLLAB_MODAL_STATE,
+  IDLE_RENAME_COLLAB_MODAL_STATE,
   nextCollabConversationTitle,
+  renameCollabConversation,
+  renameCollabConversationInVm,
   renderArmyOverviewNavHtml,
   renderNewPersonalSpaceModalHtml,
   renderNewCollabModalHtml,
@@ -15,7 +18,9 @@ import {
   renderPersonalSpaceSectionHtml,
   renderProjectTreeHtml,
   renderRailFootHtml,
-  type NewCollabModalUiState
+  renderRenameCollabModalHtml,
+  type NewCollabModalUiState,
+  type RenameCollabModalUiState
 } from "./rail.js";
 
 function project(over: Partial<ProjectListItemVM> = {}): ProjectListItemVM {
@@ -707,4 +712,108 @@ test("renderNewCollabModalHtml surfaces a gentle inline error", () => {
 test("renderNewCollabModalHtml never claims a git-jargon action verb", () => {
   const html = renderNewCollabModalHtml({ locale: "zh-CN", state: newCollabModalState({ open: true }), memberOptions: [] });
   assert.doesNotMatch(html, /branch|merge|commit|pull request/iu);
+});
+
+// —— R14FIX 批 workbench：单独和 Cuu 聊 + 会话重命名 —— //
+
+test("the active project tree renders a real 'chat just with Cuu' shortcut button", () => {
+  const vm = workbenchVm();
+  const html = renderProjectTreeHtml({ projects: [project()], selectedProjectId: project().id, vm, locale: "zh-CN" });
+  assert.match(html, /<button[^>]*data-wb-new-solo-cuu[^>]*>[^]*和 Cuu 单独聊/u);
+  assert.doesNotMatch(leafTag(html, "data-wb-new-solo-cuu"), /disabled/u);
+});
+
+test("the solo-Cuu shortcut is disabled with a busy label while a conversation is being created", () => {
+  const vm = workbenchVm();
+  const html = renderProjectTreeHtml({
+    projects: [project()],
+    selectedProjectId: project().id,
+    vm,
+    locale: "zh-CN",
+    newCollab: { submitting: true }
+  });
+  assert.match(leafTag(html, "data-wb-new-solo-cuu"), /disabled/u);
+});
+
+test("every collab leaf carries a hover rename pencil pre-loaded with the current title", () => {
+  const vm = workbenchVm({
+    conversations: {
+      conversations: [...workbenchVm().conversations.conversations, collabConversationVm()],
+      capped: false,
+      next_cursor: null
+    }
+  });
+  const html = renderProjectTreeHtml({ projects: [project()], selectedProjectId: project().id, vm, locale: "zh-CN" });
+  assert.match(
+    html,
+    /data-wb-rename-collab="90000000-0000-4000-8000-000000000102"[^>]*data-wb-rename-collab-title="与 Cuu 的对话"/u
+  );
+  // The open button must still render unchanged (rename pencil is a sibling, not nested).
+  assert.match(html, /<button[^>]*data-wb-open-collab-chat="90000000-0000-4000-8000-000000000102"[^>]*>[^]*与 Cuu 的对话/u);
+});
+
+function renameModalState(over: Partial<RenameCollabModalUiState> = {}): RenameCollabModalUiState {
+  return { ...IDLE_RENAME_COLLAB_MODAL_STATE, ...over };
+}
+
+test("renderRenameCollabModalHtml toggles data-open and prefills the current title", () => {
+  const closed = renderRenameCollabModalHtml({ locale: "zh-CN", state: renameModalState() });
+  assert.match(closed, /data-wb-rename-collab-overlay[^>]*data-open="false"/u);
+  const open = renderRenameCollabModalHtml({
+    locale: "zh-CN",
+    state: renameModalState({ open: true, conversationId: "c1", title: "改第三幕" })
+  });
+  assert.match(open, /data-open="true"/u);
+  assert.match(open, /data-wb-rename-collab-input[^>]*value="改第三幕"/u);
+});
+
+test("renderRenameCollabModalHtml disables the save button when the title is blank", () => {
+  const blank = renderRenameCollabModalHtml({ locale: "zh-CN", state: renameModalState({ open: true, title: "   " }) });
+  const submitTag = blank.slice(
+    blank.indexOf("data-wb-rename-collab-submit") - 5,
+    blank.indexOf("data-wb-rename-collab-submit") + 40
+  );
+  assert.match(submitTag, /disabled/u);
+});
+
+test("renderRenameCollabModalHtml shows a busy label and disables inputs while submitting", () => {
+  const html = renderRenameCollabModalHtml({
+    locale: "zh-CN",
+    state: renameModalState({ open: true, title: "改第三幕", submitting: true })
+  });
+  assert.match(html, /保存中…/u);
+  assert.match(html.slice(html.indexOf("data-wb-rename-collab-input") - 5, html.indexOf("data-wb-rename-collab-input") + 140), /disabled/u);
+});
+
+test("renameCollabConversationInVm swaps the title in place and no-ops when it would not change", () => {
+  const vm = workbenchVm({
+    conversations: {
+      conversations: [...workbenchVm().conversations.conversations, collabConversationVm()],
+      capped: false,
+      next_cursor: null
+    }
+  });
+  const renamed = renameCollabConversationInVm(vm, "90000000-0000-4000-8000-000000000102", "改第三幕");
+  const leaf = renamed.conversations.conversations.find((c) => c.id === "90000000-0000-4000-8000-000000000102");
+  assert.equal(leaf?.title, "改第三幕");
+  // An unchanged title returns the same VM reference (lets subscribers skip a re-render).
+  assert.equal(renameCollabConversationInVm(renamed, "90000000-0000-4000-8000-000000000102", "改第三幕"), renamed);
+  // An unknown id is a no-op too.
+  assert.equal(renameCollabConversationInVm(vm, "does-not-exist", "x"), vm);
+});
+
+test("renameCollabConversation PATCHes /api/conversations/:id with the new title", async () => {
+  const calls: Array<{ path: string; init: RequestInit | undefined }> = [];
+  const client = {
+    request: async <T>(path: string, init?: RequestInit): Promise<T> => {
+      calls.push({ path, init });
+      return { conversation: { ...collabConversationVm(), title: "改第三幕" } } as unknown as T;
+    }
+  };
+  const result = await renameCollabConversation(client, "90000000-0000-4000-8000-000000000102", "改第三幕");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.path, "/api/conversations/90000000-0000-4000-8000-000000000102");
+  assert.equal(calls[0]?.init?.method, "PATCH");
+  assert.deepEqual(JSON.parse(calls[0]?.init?.body as string), { title: "改第三幕" });
+  assert.equal(result.conversation.title, "改第三幕");
 });
