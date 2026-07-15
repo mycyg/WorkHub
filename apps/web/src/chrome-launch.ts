@@ -83,19 +83,74 @@ async function stopChrome(child: ChildProcessWithoutNullStreams | undefined) {
   });
 }
 
-async function waitForDebugTarget(port: number, timeoutMs = 45_000) {
-  const deadline = Date.now() + timeoutMs;
+// BUG-09：启动失败时不能只剩泛化 fetch 超时——限长保留 stderr 尾部与端口探测轨迹，报告里带全诊断。
+const STDERR_TAIL_LIMIT = 16 * 1024;
+const PORT_PROBE_TAIL_LIMIT = 10;
+
+type ChromeExitInfo = { code: number | null; signal: NodeJS.Signals | null };
+
+type PortProbe = { at_ms: number; note: string };
+
+async function chromeVersion(chromePath: string) {
+  return new Promise<string | null>((resolve) => {
+    let output = "";
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(chromePath, ["--version"], { stdio: ["ignore", "pipe", "ignore"] });
+    } catch {
+      resolve(null);
+      return;
+    }
+    const settle = () => {
+      clearTimeout(timer);
+      resolve(output.trim() || null);
+    };
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      settle();
+    }, 3_000);
+    child.stdout?.on("data", (chunk: Buffer) => {
+      output += chunk.toString("utf8");
+    });
+    child.on("error", settle);
+    child.on("exit", settle);
+  });
+}
+
+async function waitForDebugTarget(input: {
+  port: number;
+  timeoutMs: number;
+  probes: PortProbe[];
+  probeCounter: { total: number };
+  childExit: () => ChromeExitInfo | null;
+}) {
+  const startedAt = Date.now();
+  const deadline = startedAt + input.timeoutMs;
+  const record = (note: string) => {
+    input.probeCounter.total += 1;
+    input.probes.push({ at_ms: Date.now() - startedAt, note });
+    if (input.probes.length > PORT_PROBE_TAIL_LIMIT) {
+      input.probes.shift();
+    }
+  };
   let lastError: unknown;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/json/list`);
+      const response = await fetch(`http://127.0.0.1:${input.port}/json/list`, { signal: AbortSignal.timeout(2_000) });
       const pages = await response.json() as Array<{ type?: string; webSocketDebuggerUrl?: string }>;
       const page = pages.find((item) => item.type === "page" && item.webSocketDebuggerUrl);
       if (page?.webSocketDebuggerUrl) {
         return page.webSocketDebuggerUrl;
       }
+      record(`http ${response.status}: ${pages.length} targets, none is a page with webSocketDebuggerUrl`);
     } catch (error) {
       lastError = error;
+      record(String(error));
+    }
+    const exit = input.childExit();
+    if (exit) {
+      // Chrome 已经死了还傻等整个超时窗只会把真因冲淡成 fetch timeout——立即失败并报退出状态。
+      throw new Error(`Chrome exited (code ${String(exit.code)}, signal ${String(exit.signal)}) before the CDP debug port ${input.port} came up`);
     }
     await new Promise((resolve) => setTimeout(resolve, 120));
   }
@@ -117,7 +172,7 @@ export async function launchChrome(
 ) {
   await rm(userDataDir, { recursive: true, force: true });
   await mkdir(userDataDir, { recursive: true });
-  const child = spawn(chromePath, [
+  const args = [
     "--headless=new",
     ...chromeExtraArgs(),
     "--disable-gpu",
@@ -129,17 +184,48 @@ export async function launchChrome(
     `--user-data-dir=${userDataDir}`,
     "--window-size=1365,1100",
     "about:blank"
-  ], { stdio: "ignore" }) as ChildProcessWithoutNullStreams;
+  ];
+  const child = spawn(chromePath, args, { stdio: ["ignore", "ignore", "pipe"] }) as unknown as ChildProcessWithoutNullStreams;
+  let stderrTail = "";
+  child.stderr.on("data", (chunk: Buffer) => {
+    stderrTail = (stderrTail + chunk.toString("utf8")).slice(-STDERR_TAIL_LIMIT);
+  });
+  let exitInfo: ChromeExitInfo | null = null;
+  child.once("exit", (code, signal) => {
+    exitInfo = { code, signal };
+  });
+  const probes: PortProbe[] = [];
+  const probeCounter = { total: 0 };
   let cdp: CdpClient | undefined;
   try {
-    const websocketUrl = await waitForDebugTarget(debugPort, options.debugTargetTimeoutMs);
+    const websocketUrl = await waitForDebugTarget({
+      port: debugPort,
+      timeoutMs: options.debugTargetTimeoutMs ?? 45_000,
+      probes,
+      probeCounter,
+      childExit: () => exitInfo
+    });
     cdp = await CdpClient.connect(websocketUrl);
     await cdp.send("Page.enable");
     await cdp.send("Runtime.enable");
     return { child, cdp };
   } catch (error) {
     cdp?.close();
-    await stopChrome(child);
-    throw error;
+    // 先快照退出状态再 stopChrome,否则诊断里的 exit 会被我们自己的 SIGTERM 污染。
+    const exitBeforeStop: ChromeExitInfo | null = exitInfo;
+    const [version] = await Promise.all([chromeVersion(chromePath), stopChrome(child)]);
+    const diagnostics = {
+      chrome_path: chromePath,
+      chrome_version: version,
+      args,
+      exit: exitBeforeStop,
+      stderr_tail: stderrTail,
+      port_probes: { total: probeCounter.total, tail: probes }
+    };
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `${message}\nChrome launch diagnostics: ${JSON.stringify(diagnostics, null, 2)}`,
+      error instanceof Error ? { cause: error } : undefined
+    );
   }
 }
