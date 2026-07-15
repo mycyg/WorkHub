@@ -47,7 +47,8 @@ import {
 // R14 批 CHAT：新增 message_reactions + conversation_read_cursors 两张表（迁移 0055），graph 涨到 68。
 // R14 批 FEEDBACK：新增 ai_feedback 一张表（迁移 0058），graph 涨到 69。
 // R14 批 GH：新增 project_github_bindings + project_github_activities 两张表（迁移 0060），graph 涨到 71。
-const F02_TABLE_COUNT = 72;
+// R15 批 E1：新增 project_milestones + work_item_dependencies 两张表（迁移 0064），graph 涨到 74。
+const F02_TABLE_COUNT = 74;
 
 type WorkHubTable = (typeof workHubTables)[keyof typeof workHubTables];
 
@@ -160,6 +161,8 @@ test("F02 declares the full table graph expected by the plan", () => {
   assert.equal(tableNames.includes("objectives"), true);
   assert.equal(tableNames.includes("key_results"), true);
   assert.equal(tableNames.includes("objective_work_item_links"), true);
+  assert.equal(tableNames.includes("project_milestones"), true);
+  assert.equal(tableNames.includes("work_item_dependencies"), true);
   assert.equal(tableNames.includes("requirements"), false);
   assert.equal(tableNames.includes("revision_requests"), false);
   assert.equal(tableNames.includes("activity_log"), false);
@@ -664,7 +667,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0063 proactive intents", () => {
+test("migration journal ends with 0064 project timeline", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -679,16 +682,16 @@ test("migration journal ends with 0063 proactive intents", () => {
       breakpoints: finalEntry.breakpoints
     },
     {
-      // R15 批 D：ProactiveIntent 审计表（0063）接在 R15 批 B 链尾 0062 之后，when 严格递增。
-      idx: 63,
+      // R15 批 E1：项目时间线（里程碑 + 依赖 + work_items.milestone_id）接在 R15 批 D 链尾 0063 之后。
+      idx: 64,
       version: "7",
-      tag: "0063_proactive_intents",
+      tag: "0064_project_timeline",
       breakpoints: true
     }
   );
-  // when 严格递增（0063 的时间戳必须大于 0062 的 1783918000000）——否则 drizzle 迁移应用顺序会乱。
-  const dmEntry = journal.entries.find((entry) => entry.tag === "0062_dm_containers");
-  assert.ok(dmEntry && finalEntry && finalEntry.when > dmEntry.when);
+  // when 严格递增（0064 的时间戳必须大于 0063 的 1783920000000）——否则 drizzle 迁移应用顺序会乱。
+  const intentsEntry = journal.entries.find((entry) => entry.tag === "0063_proactive_intents");
+  assert.ok(intentsEntry && finalEntry && finalEntry.when > intentsEntry.when);
 });
 
 test("R15 批 A migration 0061 adds the reminder-ladder columns additively", () => {
@@ -723,6 +726,75 @@ test("R15 批 B migration 0062 adds the DM container column, dm_key column, and 
   assert.match(
     migration,
     /CREATE UNIQUE INDEX IF NOT EXISTS "project_conversations_dm_key_uq"[\s\S]*\("project_id", "dm_key"\)[\s\S]*WHERE "dm_key" IS NOT NULL/u
+  );
+});
+
+test("R15 批 E1 migration 0064 adds the two timeline tables and work_items.milestone_id additively", () => {
+  const migrationUrl = new URL("../migrations/0064_project_timeline.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0064_project_timeline.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+
+  // 两张新表建表重放安全（IF NOT EXISTS）。
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "project_milestones"/u);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "work_item_dependencies"/u);
+  // 里程碑 status 只有 open/done（CHECK 钉死枚举）；依赖禁自依赖（CHECK 比对两列不等）。
+  assert.match(migration, /CONSTRAINT "project_milestones_status_ck" CHECK \("status" IN \('open','done'\)\)/u);
+  assert.match(
+    migration,
+    /CONSTRAINT "work_item_dependencies_no_self_ck" CHECK \("work_item_id" <> "depends_on_work_item_id"\)/u
+  );
+  // 复合唯一（幂等增边）+ 反向索引（阻塞闭包按 depends_on 反查）。
+  assert.match(
+    migration,
+    /CREATE UNIQUE INDEX IF NOT EXISTS "work_item_dependencies_pair_uq" ON "work_item_dependencies" \("work_item_id","depends_on_work_item_id"\)/u
+  );
+  assert.match(
+    migration,
+    /CREATE INDEX IF NOT EXISTS "work_item_dependencies_depends_on_idx" ON "work_item_dependencies" \("depends_on_work_item_id"\)/u
+  );
+  // 依赖两端外键均级联删除（删任一端工作项连带清边）；里程碑外键项目级联删除。
+  assert.match(migration, /"work_item_id" uuid NOT NULL REFERENCES "work_items"\("id"\) ON DELETE cascade/u);
+  assert.match(migration, /"depends_on_work_item_id" uuid\s+NOT NULL REFERENCES "work_items"\("id"\) ON DELETE cascade/u);
+  assert.match(migration, /"project_id" uuid NOT NULL REFERENCES "projects"\("id"\) ON DELETE cascade/u);
+  // work_items 挂里程碑：可空外键（ADD COLUMN IF NOT EXISTS，重放安全），里程碑删除时置空（SET NULL）。
+  assert.match(
+    migration,
+    /ALTER TABLE "work_items" ADD COLUMN IF NOT EXISTS "milestone_id" uuid REFERENCES "project_milestones"\("id"\) ON DELETE set null/u
+  );
+  assert.doesNotMatch(migration, /DROP COLUMN|ALTER COLUMN/u, "migration 0064 must only add tables/columns");
+  assert.doesNotMatch(migration, /CONCURRENTLY/iu, "migration 0064 must not use CONCURRENTLY (single-tx replay)");
+  assert.doesNotMatch(migration, /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u, "migration must not contain emoji glyphs");
+
+  // Drizzle schema 与迁移同步：两张新表在活跃 graph 上，work_items.milestone_id 列可空。
+  const milestones = requiredTable("projectMilestones") as WorkHubTable & Record<string, any>;
+  assert.equal(getTableName(milestones), "project_milestones");
+  assert.equal(milestones.dueAt.notNull, false);
+  assert.equal(milestones.sort.default, 0);
+  assert.equal(milestones.status.default, "open");
+  assert.equal(milestones.deletedAt.name, "deleted_at");
+  assert.equal(checkSqlText(milestones).includes("'open'"), true);
+  assert.equal(checkSqlText(milestones).includes("'done'"), true);
+
+  const dependencies = requiredTable("workItemDependencies") as WorkHubTable & Record<string, any>;
+  assert.equal(getTableName(dependencies), "work_item_dependencies");
+  const dependencyIndexes = getTableConfig(dependencies).indexes;
+  const pairUnique = dependencyIndexes.find((candidate) => candidate.config.name === "work_item_dependencies_pair_uq");
+  assert.equal(pairUnique?.config.unique, true);
+  assert.equal(
+    dependencyIndexes.some((candidate) => candidate.config.name === "work_item_dependencies_depends_on_idx"),
+    true
+  );
+  assert.equal(
+    getTableConfig(dependencies).checks.some((constraint) => constraint.name === "work_item_dependencies_no_self_ck"),
+    true
+  );
+
+  const workItemsTable = requiredTable("workItems") as WorkHubTable & Record<string, any>;
+  assert.equal(workItemsTable.milestoneId.name, "milestone_id");
+  assert.equal(workItemsTable.milestoneId.notNull, false);
+  assert.equal(
+    getTableConfig(workItemsTable).indexes.some((candidate) => candidate.config.name === "work_items_milestone_id_idx"),
+    true
   );
 });
 
