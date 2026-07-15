@@ -440,7 +440,10 @@ function pageMetrics(page: WebProductShellPage, rendered: WebProductShellSurface
 // R10-S1.5→Nav-v2 导航信息架构：「提需求」是动作不是地点——升为置顶主 CTA；工作组(总览/项目/审批
 // +detail-only 激活页)常驻无标题；项目资产/团队/管理三组默认折叠(当前页所在组自动展开)，点组名展开。
 // 普通成员默认视野=1 CTA + 3 项 + 3 个组名。
-const productNavGroups: ReadonlyArray<{
+// G-web 止血批：导出供 apps/web/src/routes.test.ts 做「路由第 4 个同步点」门禁——校验
+// webRouteRegistry 的每个 key 都能在这里的某个组里找到导航入口（intake 走置顶 CTA，是唯一
+// 允许不在任何组 keys 里的例外，见下方 renderProductNav 的 intake 特判）。
+export const productNavGroups: ReadonlyArray<{
   id: string;
   titleKey: ProductShellCopyKey;
   keys: ReadonlySet<string>;

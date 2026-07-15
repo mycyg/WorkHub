@@ -1079,6 +1079,26 @@ function knowledgeScopeLandingBubble(query: string | undefined, locale: WorkHubL
   };
 }
 
+// G-web 止血批：home/projects/drive/meetings/知识 403 落地页/intake 起点六处路由分支各自独立调用
+// client.listProjects()——当两次导航前后脚打进来(比如上一次还没落地,用户又点了别的导航项)，会并发
+// 撞出多个一模一样的 GET /api/projects。这里只做 Promise 级 in-flight 去重：同一时刻只放行一个
+// 真实请求，其余等它落地共享结果；请求一落地(无论成功失败)就清空，绝不做 TTL 缓存——不违反
+// 「每次导航都要新鲜数据」的既有纪律，下一次导航仍会发出全新请求。按 client 实例隔离，避免测试里
+// 不同 fake client 之间串味。
+const listProjectsInFlight = new WeakMap<WorkHubApiClient, Promise<ProjectListVM>>();
+
+function listProjectsDeduped(client: WorkHubApiClient): Promise<ProjectListVM> {
+  const inFlight = listProjectsInFlight.get(client);
+  if (inFlight) {
+    return inFlight;
+  }
+  const request = client.listProjects().finally(() => {
+    listProjectsInFlight.delete(client);
+  });
+  listProjectsInFlight.set(client, request);
+  return request;
+}
+
 async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, locale: WorkHubLocale) {
   if (match.notFound) {
     // 未匹配的 URL(打错/失效链接)= 找不到,不是服务器出错。给「没有找到这个页面」+ 回首页,
@@ -1092,7 +1112,7 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     // listProjects 的失败语义保持不变：not_identified 冒泡去重认证，其余退化为 undefined。
     const [attention, projectsSettled] = await Promise.all([
       client.pages.attention(withLocale(locale)),
-      client.listProjects().then(
+      listProjectsDeduped(client).then(
         (value): ProjectListVM | undefined => value,
         (error: unknown): ProjectListVM | undefined => {
           if (error instanceof WorkHubApiError && error.code === "not_identified") {
@@ -1120,7 +1140,7 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     return { key: "home", attention, projects: projectsSettled } satisfies WebRouteSurface;
   }
   if (match.key === "projects") {
-    const projects = await client.listProjects();
+    const projects = await listProjectsDeduped(client);
     return { key: "projects", projects } satisfies WebRouteSurface;
   }
   if (match.key === "project-home") {
@@ -1208,7 +1228,7 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
         // 非管理员选定项目即可就地检索（服务端单项目口径不变）。清单拉取失败退化为无选择器。
         let landingProjects: ProjectListVM | undefined;
         try {
-          landingProjects = await client.listProjects();
+          landingProjects = await listProjectsDeduped(client);
         } catch {
           landingProjects = undefined;
         }
@@ -1257,7 +1277,7 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
         ...(itemId ? { itemId } : {}),
         ...(driveQuery ? { q: driveQuery } : {})
       }),
-      client.listProjects().then(
+      listProjectsDeduped(client).then(
         (value): ProjectListVM => value,
         (error: unknown): ProjectListVM => {
           if (error instanceof WorkHubApiError && error.code === "not_identified") {
@@ -1284,7 +1304,7 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
         ...(projectId ? { projectId } : {}),
         ...(meetingId ? { meetingId } : {})
       }),
-      client.listProjects().then(
+      listProjectsDeduped(client).then(
         (value): ProjectListVM => value,
         (): ProjectListVM => ({ generated_at: new Date().toISOString(), projects: [] })
       )
@@ -1446,7 +1466,7 @@ function routeStateBackLabel(match: WebRouteMatch, locale: WorkHubLocale): strin
 // R10-0c：intake 起点的项目清单（fail-soft）。会话过期仍要冒泡去重认证。
 async function intakeProjectChoices(client: WorkHubApiClient): Promise<{ projects?: ProjectListVM }> {
   try {
-    return { projects: await client.listProjects() };
+    return { projects: await listProjectsDeduped(client) };
   } catch (error) {
     if (error instanceof WorkHubApiError && error.code === "not_identified") {
       throw error;
