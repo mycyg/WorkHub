@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 
 import type {
@@ -2247,4 +2248,231 @@ test("loop2(on): a provider failure maps to 500 conversation_turn_failed and per
     (error: unknown) => error instanceof ConversationTurnServiceError && error.status === 500 && error.code === "conversation_turn_failed"
   );
   assert.equal(createCuuMessageCalls.length, 0);
+});
+
+// ── R15 批 C Phase 4（P4b）：steering / follow-up 队列 ─────────────────────────────────────
+// 同会话连发不再 409：进行中一轮时新到的消息入 steering 队列，owner 在下一次模型调用前注入。
+
+function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+test("loop2(on): a second message arriving mid-turn is not 409'd — it is steered into the running turn and the reply covers both", async () => {
+  const streamSpy: Array<{ messages?: unknown }> = [];
+  const firstStreamGate = deferred();
+  const firstStreamEntered = deferred();
+  let streamCall = 0;
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      id: () => randomUUID(),
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow({ contentJson: { text: "帮我起个草稿" } })], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ kind: input.kind, contentJson: input.contentJson });
+        }
+      },
+      client: async () => ({
+        messages: {
+          async stream(params) {
+            streamCall += 1;
+            streamSpy.push(params as { messages?: unknown });
+            if (streamCall === 1) {
+              firstStreamEntered.resolve();
+              await firstStreamGate.promise;
+              return fakeStream([], "先回你第一条");
+            }
+            return fakeStream([], "两条我都看到了，一起答");
+          }
+        }
+      })
+    })
+  );
+
+  const first = service.createTurn({ actor: actor({ label: "阿曼" }), conversationId, payload: { user_message_id: userMessageId } });
+  // 等 owner 的第一轮真正开始流式（已越过 owner 起始的 steering 轮询点），此时第二条到达才会被折进"下一轮"，
+  // 而不是第一轮——这样测的是"生成中到达→steering 注入到下一次模型调用"这条真实路径。
+  await firstStreamEntered.promise;
+  // 第二条在第一条还在生成时到达——排队等注入，不该 409。
+  const second = service.createTurn({ actor: actor({ label: "阿曼" }), conversationId, payload: { user_message_id: userMessageId } });
+  // 让第二条走完前置校验并入队。
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  firstStreamGate.resolve();
+
+  const [firstResult, secondResult] = await Promise.all([first, second]);
+
+  // 两条都拿到同一段（同 turn_id）的最终合并回复，且都是 200（没有任何一条 409）。
+  assert.equal(firstResult.turn_id, secondResult.turn_id);
+  assert.equal(textContent(firstResult.message).text, "两条我都看到了，一起答");
+  assert.equal(textContent(secondResult.message).text, "两条我都看到了，一起答");
+  // 走了两轮模型调用：第一轮（第一条）+ steering 注入后的第二轮（涵盖两条）。
+  assert.equal(streamCall, 2);
+  const secondRoundMessages = JSON.stringify(streamSpy[1]?.messages ?? "");
+  assert.ok(secondRoundMessages.includes("帮我起个草稿"), "the steered-in second message must reach the model on round 2");
+});
+
+test("loop2(on): the queue depth cap returns 409 conversation_turn_busy only once the queue is full", async () => {
+  const firstStreamGate = deferred();
+  let streamCall = 0;
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      queueMaxDepth: 1,
+      id: () => randomUUID(),
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ kind: input.kind, contentJson: input.contentJson });
+        }
+      },
+      client: async () => ({
+        messages: {
+          async stream() {
+            streamCall += 1;
+            if (streamCall === 1) {
+              await firstStreamGate.promise;
+            }
+            return fakeStream([], "回复");
+          }
+        }
+      })
+    })
+  );
+
+  const first = service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  // owner 在跑；第二条入队（占满 queueMaxDepth=1）——不 409。
+  const second = service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  // 第三条：队列已满 → 409 兜底。
+  await assert.rejects(
+    service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } }),
+    (error: unknown) => error instanceof ConversationTurnServiceError && error.status === 409 && error.code === "conversation_turn_busy"
+  );
+
+  firstStreamGate.resolve();
+  const firstResult = await first;
+  const secondResult = await second;
+  assert.equal(firstResult.message.sender_type, "cuu");
+  assert.equal(secondResult.message.sender_type, "cuu");
+});
+
+test("loop2(on): a message queued during a turn is not lost when that turn aborts — it is answered as a fresh follow-up turn", async () => {
+  const firstStreamGate = deferred();
+  let streamCall = 0;
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      turnTimeoutMs: 40,
+      id: () => randomUUID(),
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ kind: input.kind, contentJson: input.contentJson });
+        }
+      },
+      client: async () => ({
+        messages: {
+          async stream(params) {
+            streamCall += 1;
+            if (streamCall === 1) {
+              // 第一轮挂起直到被 abort（硬超时）——第一条 turn 失败。
+              return new Promise((_, reject) => {
+                params.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+              });
+            }
+            return fakeStream([], "第二条我来单独答");
+          }
+        }
+      })
+    })
+  );
+
+  const first = service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  // 第二条在第一条还挂着时入队。
+  const second = service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  // 第一条因硬超时 abort，映射成 500 conversation_turn_failed。
+  await assert.rejects(
+    first,
+    (error: unknown) => error instanceof ConversationTurnServiceError && error.status === 500 && error.code === "conversation_turn_failed"
+  );
+  // 队列没丢：第二条被转成一段新 turn（新 turn_id）正常答复。
+  const secondResult = await second;
+  assert.equal(secondResult.message.sender_type, "cuu");
+  assert.equal(textContent(secondResult.message).text, "第二条我来单独答");
+});
+
+test("loop2(on): consecutive turns each get their own turn_id (a message after the turn settles runs its own turn)", async () => {
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      id: () => randomUUID(),
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ kind: input.kind, contentJson: input.contentJson });
+        }
+      },
+      client: respondingClient([], "好的")
+    })
+  );
+
+  const firstResult = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+  const secondResult = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  assert.equal(firstResult.message.sender_type, "cuu");
+  assert.equal(secondResult.message.sender_type, "cuu");
+  assert.notEqual(firstResult.turn_id, secondResult.turn_id);
+});
+
+test("loop2(off): the legacy path still rejects a concurrent turn with 409 conversation_turn_busy (mode gate unchanged)", async () => {
+  const gate = deferred();
+  const service = createConversationTurnService(
+    baseDeps({
+      // loop2Mode omitted → off (default). Concurrent turn must still 409 like today.
+      client: async () => ({
+        messages: {
+          async stream() {
+            await gate.promise;
+            return fakeStream([], "第一轮回复");
+          }
+        }
+      })
+    })
+  );
+
+  const first = service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+  const second = service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+  await assert.rejects(
+    second,
+    (error: unknown) => error instanceof ConversationTurnServiceError && error.status === 409 && error.code === "conversation_turn_busy"
+  );
+  gate.resolve();
+  await first;
 });

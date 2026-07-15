@@ -1241,8 +1241,26 @@ async function runLegacyTurnLoop(
 //   连发/steering        → getSteeringMessages 逐条注入进行中的一轮（drainSteering 接缝，P4b 接队列）
 //   follow-up            → getFollowUpMessages 恒返回 []（P4b 里 follow-up 交协调器另起一段=新 turn_id）
 //
-// 段（segment）= 一个 turn_id + 它落的若干 Cuu 消息。这一步（P4a）只跑单段；跨请求 steering/follow-up
-// 队列在 P4b 接进来（drainSteering 现在恒返回 undefined，是留给队列的注入接缝）。
+// 段（segment）= 一个 turn_id + 它落的若干 Cuu 消息。跨请求 steering/follow-up 队列（P4b）：同会话已有
+// 一轮在跑时，新到的请求不再 409——消息文本入队，owner 的 loop 在下一次模型调用前经 getSteeringMessages
+// 逐条注入（把连发的第二条折进进行中的这一轮，回复涵盖两条语境）；一轮收尾后队列还有货，owner 另起一段
+// （新 turn_id）续答（follow-up）。队列是进程内跨请求内存态（与 activeTurns 同为进程内，多进程缺口维持
+// 现状不扩大）；队列深度上限（env，默认 3）超限才退回 409 conversation_turn_busy 兜底。
+
+// 一条排队等注入的请求：injectText=已带发言人前缀的用户文本；prepared=该请求自己的一轮上下文（follow-up
+// 另起一段时用它的 actor/client/澄清位）；settle/fail=该请求 HTTP 承诺的结算钩子（它被哪一段答复，就用
+// 那一段的最终消息 VM 结算）。
+type ConversationQueueEntry = {
+  injectText: string;
+  prepared: PreparedTurn;
+  settle: (result: ConversationTurnResultVM) => void;
+  fail: (error: unknown) => void;
+};
+
+type ConversationTurnState = {
+  running: boolean;
+  queue: ConversationQueueEntry[];
+};
 
 function zeroPiUsage(): AssistantMessage["usage"] {
   return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
@@ -1560,23 +1578,82 @@ async function runConversationTurnSegment(
   return { finalVm: finalMessageVm };
 }
 
-// P4a：跑单段 loop2 turn（无跨请求队列）。drainSteering 恒 undefined——steering/follow-up 队列在 P4b
-// 换掉这个 owner。
+// owner：串起若干"段"。第 1 段=原请求（prompts 空——触发消息已在历史里），收尾后若队列还有货，逐条起
+// 新段（新 turn_id）续答（follow-up）。每段：owner + 被 steering 折进来的条目，用该段的最终消息 VM 结算
+// （共用该段的 turn_id；client 靠 id 去重，共用 turn_id 前端无感）。段失败：该段的 owner/absorbed 条目
+// 用错误结算，但外层继续处理剩余队列——队列不丢，剩下的转成新 turn 正常处理（满足 abort/失败不丢队列）。
+//
+// turn 行取舍（无 DB turn 表，turn 只是一个 id + 它落的若干 Cuu 消息）：连发 burst 里"生成中到达"的
+// 折进当前段（共用 turn_id，因为 steering 本质就是同一次模型 loop 的续写）；"收尾后到达"的另起一段
+// （新 turn_id）——正好对上 steering vs follow-up 的语义边界，也让 follow-up=新 turn 行更诚实。
 async function runConversationTurnOwner(
   runtime: TurnRuntime,
   input: { conversationId: string },
-  prepared: PreparedTurn
+  prepared: PreparedTurn,
+  state: ConversationTurnState
 ): Promise<ConversationTurnResultVM> {
   const transcript = seedPiTranscript(prepared.historyMessages);
-  const outcome = await runConversationTurnSegment(runtime, input, prepared, {
-    turnId: prepared.turnId,
-    prompts: [],
-    transcript,
-    drainSteering: () => undefined
-  });
-  if (outcome.error !== undefined) throw outcome.error;
-  if (!outcome.finalVm) throw new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 没给出内容，请再试一次。");
-  return parseOutputContract(conversationTurnResultSchema, { turn_id: prepared.turnId, message: outcome.finalVm }, "conversation-turns.result");
+  let firstResult: ConversationTurnResultVM | undefined;
+  let firstError: unknown;
+  let firstDone = false;
+
+  let segmentPrepared = prepared;
+  let segmentTurnId = prepared.turnId;
+  let prompts: AgentMessage[] = [];
+  let segmentOwnerEntry: ConversationQueueEntry | undefined;
+
+  while (true) {
+    // 本段被 steering 折进来的排队条目——drainSteering 每弹一条就记在这里，段收尾时用本段的最终消息结算。
+    const absorbed: ConversationQueueEntry[] = [];
+    const outcome = await runConversationTurnSegment(runtime, input, segmentPrepared, {
+      turnId: segmentTurnId,
+      prompts,
+      transcript,
+      drainSteering: () => {
+        // "一次一条"（QueueMode.one-at-a-time）：每次模型调用前只注入队首一条，其余留到后续注入点。
+        // 理由：逐条注入让每条连发消息按顺序拿到模型的注意力、保序，且不会把一个 burst 一次性灌成一大坨
+        // user turn（那样上下文突然膨胀、也更容易让模型漏掉中间某条）。
+        const entry = state.queue.length > 0 ? state.queue.shift() : undefined;
+        if (!entry) return undefined;
+        absorbed.push(entry);
+        return entry.injectText;
+      }
+    });
+
+    const entries = segmentOwnerEntry ? [segmentOwnerEntry, ...absorbed] : absorbed;
+    if (outcome.error !== undefined) {
+      if (!firstDone) {
+        firstError = outcome.error;
+        firstDone = true;
+      }
+      for (const entry of entries) entry.fail(outcome.error);
+    } else {
+      const result = parseOutputContract(
+        conversationTurnResultSchema,
+        { turn_id: segmentTurnId, message: outcome.finalVm },
+        "conversation-turns.result"
+      );
+      if (!firstDone) {
+        firstResult = result;
+        firstDone = true;
+      }
+      for (const entry of entries) entry.settle(result);
+    }
+
+    // follow-up：这一段收尾后队列还有货 → 弹队首，另起一段（新 turn_id），用它自己的 prepared 续答。
+    // 这一步是同步弹队列——与 createTurn 里"同步入队/置 running"配对，配合外层 finally 的同步收口，保证
+    // 收尾竞态窗口里到达的消息不会既没被本段注入、又赶不上新段（见 createTurn 的注释）。
+    const next = state.queue.length > 0 ? state.queue.shift() : undefined;
+    if (!next) break;
+    segmentOwnerEntry = next;
+    segmentPrepared = next.prepared;
+    segmentTurnId = runtime.id();
+    prompts = [{ role: "user", content: next.injectText, timestamp: Date.now() }];
+  }
+
+  if (firstError !== undefined) throw firstError;
+  if (!firstResult) throw new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 没给出内容，请再试一次。");
+  return firstResult;
 }
 
 // ── 并发闸：进程内 Map，key=conversationId。多进程部署下这不是完整闸——已知缺口，见批汇报。────────
@@ -1589,11 +1666,52 @@ export function createConversationTurnService(deps: ConversationTurnServiceDeps)
   const activeTurns = new Set<string>();
   const settings = deps.settings ?? runtimeSettings;
   const loop2Mode: ConversationTurnLoop2Mode = deps.loop2Mode ?? settings.conversationTurns?.loop2Mode ?? "off";
+  const queueMaxDepth = deps.queueMaxDepth ?? settings.conversationTurns?.queueMaxDepth ?? 3;
+  // R15 批 C Phase 4（P4b）：steering/follow-up 队列的进程内跨请求态（key=conversationId），与 activeTurns
+  // 同为进程内——多进程缺口维持现状不扩大。仅 on 模式使用；off 走 activeTurns 老闸。
+  const conversations = new Map<string, ConversationTurnState>();
 
   return {
     async createTurn(input) {
+      if (loop2Mode === "on") {
+        // on 路径：先做和 off 完全相同的一轮前置校验/装配（无效请求照样 403/404/409，不占队列），再看
+        // 协调器：本会话没有进行中的一轮 → 成为 owner 起 loop2；已有一轮在跑 → 消息入 steering 队列
+        // （不再 409），排队等 owner 在下一次模型调用前注入；队列已满才退回 409 兜底。
+        const prepared = await prepareTurnContext(runtime, input);
+        // 「查/置 running 或入队」必须是同步的（无 await 穿插），才和 activeTurns 一样是确定性闸而非竞态：
+        // 两个并发请求先后同步跑到这里，第一个置 running=true 成为 owner，第二个看见 running=true 入队。
+        // owner 收尾在 finally 里同步「若队列空则置 running=false」，与这里的同步检查配对，杜绝丢消息。
+        let state = conversations.get(input.conversationId);
+        if (!state) {
+          state = { running: false, queue: [] };
+          conversations.set(input.conversationId, state);
+        }
+        if (state.running) {
+          if (state.queue.length >= queueMaxDepth) {
+            throw new ConversationTurnServiceError(409, "conversation_turn_busy", "这个会话已经有一轮 Cuu 回应正在进行，请稍候。");
+          }
+          const label = prepared.human.actor.label ?? "成员";
+          const injectText = `${label}：${prepared.triggerText}`;
+          const activeState = state;
+          return await new Promise<ConversationTurnResultVM>((resolve, reject) => {
+            activeState.queue.push({ injectText, prepared, settle: resolve, fail: reject });
+          });
+        }
+        state.running = true;
+        const ownerState = state;
+        try {
+          return await runConversationTurnOwner(runtime, input, prepared, ownerState);
+        } finally {
+          // owner 处理完自己这一段起、直到队列被 follow-up 段抽干，才释放 running。抽干后置 running=false；
+          // 若此刻队列已空则连状态一起清掉（避免 Map 无限长）。若竞态里又有新条目入队（running 仍 true 时
+          // 入的），它已被上面的 owner 循环消费掉，这里 queue 必空。
+          ownerState.running = false;
+          if (ownerState.queue.length === 0) conversations.delete(input.conversationId);
+        }
+      }
+
       // 非真人 actor 在触碰仓库/占用忙碌位之前就 403（与 prepareTurnContext 里的守卫同源；这里提前一次，
-      // 保住"gate 前先 403、不碰仓库"这条既有行为）。off/on 两条路径共用这条前置守卫与并发闸。
+      // 保住"gate 前先 403、不碰仓库"这条既有行为）。off 路径走 activeTurns 老闸，行为逐字节不变。
       requireHumanActor(input.actor);
 
       // 并发闸必须是函数体里**第一个**同步动作(在任何 await 之前)：两个并发请求 A/B 在同一个事件循环
@@ -1609,10 +1727,7 @@ export function createConversationTurnService(deps: ConversationTurnServiceDeps)
 
       try {
         const prepared = await prepareTurnContext(runtime, input);
-        // off=现状内联轮次循环（逐字节不变）；on=loop2（pi 引擎）单段跑一轮。两条路径的 prepared 一模一样。
-        return loop2Mode === "on"
-          ? await runConversationTurnOwner(runtime, input, prepared)
-          : await runLegacyTurnLoop(runtime, input, prepared);
+        return await runLegacyTurnLoop(runtime, input, prepared);
       } finally {
         activeTurns.delete(input.conversationId);
       }
