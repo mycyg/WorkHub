@@ -28,6 +28,7 @@ import { createMeetingRoutes } from "./routes/meetings.js";
 import { createPilotRoutes } from "./routes/pilot.js";
 import { createProjectRoutes } from "./routes/projects.js";
 import { createProjectTimelineRoutes } from "./routes/project-timeline.js";
+import { createProjectPlannerRoutes } from "./routes/project-planner.js";
 import { createSessionRoutes } from "./routes/sessions.js";
 import { createKnowledgeRoutes } from "./routes/knowledge.js";
 import { createWorkItemRoutes } from "./routes/workitems.js";
@@ -77,6 +78,7 @@ import {
 } from "./services/proposals.js";
 import { WorkItemServiceError } from "./services/work-items.js";
 import { ProjectTimelineServiceError } from "./services/project-timeline.js";
+import { ProjectPlannerServiceError } from "./services/project-planner.js";
 import { InternalContractError } from "./pages/output-contract.js";
 import { ConversationServiceError } from "./services/conversations.js";
 import { AiSettingsServiceError } from "./services/ai-settings.js";
@@ -267,6 +269,7 @@ app.route("/api/drive", createDriveRoutes());
 app.route("/api/meetings", createMeetingRoutes());
 app.route("/api/projects", createProjectRoutes());
 app.route("/api", createProjectTimelineRoutes());
+app.route("/api", createProjectPlannerRoutes());
 app.route("/api", createConversationRoutes());
 app.route("/api/dm", createDmRoutes());
 app.route("/api", createAiSettingsRoutes());
@@ -576,6 +579,19 @@ app.onError((error, c) => {
 
   // R15 批 E1：项目时间线（里程碑 / 依赖 / 挂里程碑）的类型化 403/404/422——不进这张表会被兜底压成 500。
   if (error instanceof ProjectTimelineServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
+    );
+  }
+
+  if (error instanceof ProjectPlannerServiceError) {
     return c.json(
       {
         ok: false,

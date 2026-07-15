@@ -488,6 +488,43 @@ export const workItemDependencies = pgTable(
   ]
 );
 
+// R15 批 E3（项目规划 agent）：Cuu 起草的项目级计划草案（里程碑 + 工作项 + 依赖），人审通过后物化落库。
+// 项目级对象——物化前工作项尚不存在，无法复用 work_item 级的 task_plans（work_item_id NOT NULL、agent
+// 子任务 role/预算份额语义完全不同）。payloadJson 存草案本体（局部 ref，物化映射真 uuid）；status 状态机
+// pending_review→approved→materialized，pending_review→rejected（理由回灌下次起草）。见迁移 0065。
+export const projectPlanDrafts = pgTable(
+  "project_plan_drafts",
+  {
+    id: id(),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    status: varchar("status", { length: 16 })
+      .$type<"draft" | "pending_review" | "approved" | "rejected" | "materialized">()
+      .notNull()
+      .default("pending_review"),
+    intentMd: text("intent_md").notNull(),
+    payloadJson: jsonb("payload_json").$type<JsonObject>().notNull().default({}),
+    rationaleMd: text("rationale_md"),
+    reviewReasonMd: text("review_reason_md"),
+    decompositionContextJson: jsonb("decomposition_context_json").$type<JsonObject>().notNull().default({}),
+    resultJson: jsonb("result_json").$type<JsonObject>(),
+    createdByUserId: uuid("created_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+    reviewedByUserId: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+    ...timestamps(),
+    reviewedAt: timestampTz("reviewed_at"),
+    materializedAt: timestampTz("materialized_at")
+  },
+  (table) => [
+    index("project_plan_drafts_project_status_idx").on(table.projectId, table.status),
+    index("project_plan_drafts_workspace_status_idx").on(table.workspaceId, table.status),
+    index("project_plan_drafts_created_at_idx").on(table.createdAt),
+    check(
+      "project_plan_drafts_status_ck",
+      sql`${table.status} in ('draft', 'pending_review', 'approved', 'rejected', 'materialized')`
+    )
+  ]
+);
+
 export const projectConversations = pgTable(
   "project_conversations",
   {
@@ -2400,6 +2437,7 @@ export const workHubTables = {
   objectiveWorkItemLinks,
   projectMilestones,
   workItemDependencies,
+  projectPlanDrafts,
   taskPlans,
   taskPlanItems,
   workItemTaskPlans,
