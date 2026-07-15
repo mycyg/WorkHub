@@ -44,6 +44,19 @@ export { AssistantMessageEventStream, EventStream, createAssistantMessageEventSt
 export { setToolArgumentValidator, validateToolArguments } from "./vendor/validation.js";
 export type { ToolArgumentValidator } from "./vendor/validation.js";
 
+// Phase 2 configBuilder + shadow dispatch. `runAgentLoop2` is a drop-in stand-in for
+// `AgentLoop.run`; `runAgentLoopDispatch` gates it behind AGENT_RUN_LOOP2_MODE. The main
+// package entry (`@workhub/agent`) stays untouched — this reaches consumers via the
+// dedicated `@workhub/agent/loop2` subpath only.
+export {
+	assertLoopCoreEquivalent,
+	loopCoreDiffs,
+	projectLoopCore,
+	runAgentLoop2,
+	runAgentLoopDispatch,
+} from "./config-builder.js";
+export type { AgentRunLoop2Mode, LoopCoreProjection } from "./config-builder.js";
+
 // The minimal pi-ai message/model type closure the config contract is built on.
 // (ThinkingLevel is intentionally not re-exported here: the agent-level variant
 // from ./vendor/types.js, which includes "off", is the one exported above.)
