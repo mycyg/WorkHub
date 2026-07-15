@@ -148,6 +148,7 @@ function workItemSource(): WorkItemScheduleSourceRow {
       dueAt: new Date("2026-06-11T14:00:00.000Z"),
       sourceMeetingId: null,
       sourceWorkItemId: null,
+      milestoneId: null,
       claimedAt: null,
       doneAt: null,
       deliveredAt: null,

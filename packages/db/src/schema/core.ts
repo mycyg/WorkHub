@@ -407,6 +407,9 @@ export const workItems = pgTable(
       onDelete: "set null"
     }),
     sourceWorkItemId: uuid("source_work_item_id").references((): AnyPgColumn => workItems.id, { onDelete: "set null" }),
+    // R15 批 E1（项目时间线）：可空里程碑外键。里程碑软删/删项目时置空（SET NULL）——挂空不影响工作项本身。
+    // 同项目校验在仓库层（attachMilestone 前比对 project_id），不靠复合外键（保持 work_items 主键形状不变）。
+    milestoneId: uuid("milestone_id").references((): AnyPgColumn => projectMilestones.id, { onDelete: "set null" }),
     claimedAt: timestampTz("claimed_at"),
     doneAt: timestampTz("done_at"),
     deliveredAt: timestampTz("delivered_at"),
@@ -438,7 +441,50 @@ export const workItems = pgTable(
     index("work_items_current_spec_id_idx").on(table.currentSpecId),
     index("work_items_main_branch_id_idx").on(table.mainBranchId),
     index("work_items_latest_confidence_id_idx").on(table.latestConfidenceId),
-    index("work_items_deleted_at_idx").on(table.deletedAt)
+    index("work_items_deleted_at_idx").on(table.deletedAt),
+    index("work_items_milestone_id_idx").on(table.milestoneId)
+  ]
+);
+
+// R15 批 E1（项目时间线 / 甘特底座）——见迁移 0064。
+// 项目里程碑：甘特上的菱形节点。due_at 可空（先建后定期）；sort 排项目内顺序；status 只有 open/done。
+// 软删走 deleted_at（读侧一律过滤）。
+export const projectMilestones = pgTable(
+  "project_milestones",
+  {
+    id: id(),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 256 }).notNull(),
+    dueAt: timestampTz("due_at"),
+    sort: integer("sort").notNull().default(0),
+    status: varchar("status", { length: 16 }).$type<"open" | "done">().notNull().default("open"),
+    ...timestamps(),
+    deletedAt: timestampTz("deleted_at")
+  },
+  (table) => [
+    index("project_milestones_project_sort_idx").on(table.projectId, table.sort),
+    index("project_milestones_project_due_idx").on(table.projectId, table.dueAt),
+    check("project_milestones_status_ck", sql`${table.status} in ('open', 'done')`)
+  ]
+);
+
+// 工作项依赖有向边（人类排期意义上的「A 依赖 B」= B 阻塞 A）。task_plan_items.dependsOn 是 agent 任务
+// DAG，跟这个是两码事。复合唯一杜绝重边；CHECK 禁自依赖；同项目 + 插入前环检测在仓库层强制。
+export const workItemDependencies = pgTable(
+  "work_item_dependencies",
+  {
+    id: id(),
+    workItemId: uuid("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
+    dependsOnWorkItemId: uuid("depends_on_work_item_id")
+      .notNull()
+      .references((): AnyPgColumn => workItems.id, { onDelete: "cascade" }),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt()
+  },
+  (table) => [
+    uniqueIndex("work_item_dependencies_pair_uq").on(table.workItemId, table.dependsOnWorkItemId),
+    index("work_item_dependencies_depends_on_idx").on(table.dependsOnWorkItemId),
+    check("work_item_dependencies_no_self_ck", sql`${table.workItemId} <> ${table.dependsOnWorkItemId}`)
   ]
 );
 
@@ -2352,6 +2398,8 @@ export const workHubTables = {
   objectives,
   keyResults,
   objectiveWorkItemLinks,
+  projectMilestones,
+  workItemDependencies,
   taskPlans,
   taskPlanItems,
   workItemTaskPlans,

@@ -3553,6 +3553,80 @@ const projectHomePageResponse = {
     ]).responses["404"]
   }
 } as const;
+// R15 批 E1（项目时间线 / 甘特）：里程碑 VM——CRUD 与时间线 VM 共用。
+const timelineMilestoneSchema = {
+  type: "object",
+  required: ["id", "project_id", "title", "due_at", "sort", "status"],
+  properties: {
+    id: uuidStringSchema,
+    project_id: uuidStringSchema,
+    title: { type: "string", minLength: 1 },
+    due_at: { anyOf: [dateTimeStringSchema, { type: "null" }] },
+    sort: { type: "integer", minimum: 0 },
+    status: { type: "string", enum: ["open", "done"] }
+  },
+  additionalProperties: false
+} as const;
+const timelineForbiddenResponse = jsonErrorStatusResponse("403", "Timeline resource is not mutable by the current user", [
+  "project_forbidden",
+  "forbidden"
+]).responses["403"];
+const timelineNotFoundResponse = jsonErrorStatusResponse("404", "Timeline project, milestone, or work item was not found", [
+  "project_not_found",
+  "milestone_not_found",
+  "work_item_not_found",
+  "not_found",
+  "dependency_work_item_not_found"
+]).responses["404"];
+const timelineValidationResponse = jsonErrorStatusResponse("422", "Timeline mutation violated a scope, cycle, or self-reference rule", [
+  "validation_error",
+  "dependency_self_dependency",
+  "dependency_cross_project",
+  "dependency_cycle",
+  "milestone_scope_mismatch"
+]).responses["422"];
+const projectTimelinePageResponseSchema = {
+  type: "object",
+  required: ["generated_at", "project", "milestones", "items", "critical"],
+  properties: {
+    generated_at: dateTimeStringSchema,
+    project: {
+      type: "object",
+      required: ["id", "name", "slug"],
+      properties: {
+        id: uuidStringSchema,
+        name: { type: "string", minLength: 1 },
+        slug: { type: "string", minLength: 1 }
+      },
+      additionalProperties: false
+    },
+    milestones: { type: "array", items: timelineMilestoneSchema },
+    items: { type: "array", items: { type: "object", additionalProperties: true } },
+    critical: {
+      type: "object",
+      required: ["blocking", "overdue_blocking"],
+      properties: {
+        blocking: { type: "array", items: { type: "object", additionalProperties: true } },
+        overdue_blocking: { type: "array", items: { type: "object", additionalProperties: true } }
+      },
+      additionalProperties: false
+    },
+    capped: { type: "boolean" },
+    empty_state: { type: "string", enum: ["no_work_items"] }
+  },
+  additionalProperties: false
+} as const;
+const projectTimelinePageResponse = {
+  responses: {
+    "200": jsonOkResponse(projectTimelinePageResponseSchema).responses["200"],
+    "403": jsonErrorStatusResponse("403", "Project timeline is not readable by the current user", [
+      "project_forbidden"
+    ]).responses["403"],
+    "404": jsonErrorStatusResponse("404", "Project timeline target was not found", [
+      "project_not_found"
+    ]).responses["404"]
+  }
+} as const;
 const openApiHttpMethods = new Set(["delete", "get", "head", "options", "patch", "post", "put"]);
 type OpenApiParameter = {
   name: string;
@@ -6974,6 +7048,17 @@ export function getOpenApiDocument() {
           ...projectHomePageResponse
         }
       },
+      "/api/pages/project/{id}/timeline": {
+        get: {
+          tags: ["pages"],
+          summary: "Project timeline (gantt) page VM: milestones, scheduled items, and critical path",
+          parameters: [
+            pathUuidParameter("id"),
+            localeQueryParameter
+          ],
+          ...projectTimelinePageResponse
+        }
+      },
       "/api/pages/workbench/{projectId}": {
         get: {
           tags: ["pages"],
@@ -8369,6 +8454,163 @@ export function getOpenApiDocument() {
             "403": proposalForbiddenResponse,
             "404": proposalNotFoundResponse,
             "422": proposalValidationResponse
+          }
+        }
+      },
+      "/api/projects/{id}/milestones": {
+        post: {
+          tags: ["projects"],
+          summary: "Create a project milestone (timeline / gantt)",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody({
+            type: "object",
+            required: ["title"],
+            properties: {
+              title: { type: "string", minLength: 1, maxLength: 256 },
+              due_at: { anyOf: [dateTimeStringSchema, { type: "null" }] },
+              sort: { type: "integer", minimum: 0, maximum: 1000000 }
+            },
+            additionalProperties: false
+          }),
+          responses: {
+            "201": jsonDataResponse(timelineMilestoneSchema, "Created milestone").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": timelineForbiddenResponse,
+            "404": timelineNotFoundResponse,
+            "422": timelineValidationResponse
+          }
+        }
+      },
+      "/api/projects/{id}/milestones/{milestoneId}": {
+        patch: {
+          tags: ["projects"],
+          summary: "Update a project milestone (title, due date, sort, or open/done status)",
+          parameters: [pathUuidParameter("id"), pathUuidParameter("milestoneId")],
+          ...jsonRequestBody({
+            type: "object",
+            properties: {
+              title: { type: "string", minLength: 1, maxLength: 256 },
+              due_at: { anyOf: [dateTimeStringSchema, { type: "null" }] },
+              sort: { type: "integer", minimum: 0, maximum: 1000000 },
+              status: { type: "string", enum: ["open", "done"] }
+            },
+            additionalProperties: false
+          }),
+          responses: {
+            "200": jsonDataResponse(timelineMilestoneSchema, "Updated milestone").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": timelineForbiddenResponse,
+            "404": timelineNotFoundResponse,
+            "422": timelineValidationResponse
+          }
+        },
+        delete: {
+          tags: ["projects"],
+          summary: "Soft-delete a project milestone",
+          parameters: [pathUuidParameter("id"), pathUuidParameter("milestoneId")],
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["milestone_id"],
+              properties: { milestone_id: uuidStringSchema },
+              additionalProperties: false
+            }, "Deleted milestone").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": timelineForbiddenResponse,
+            "404": timelineNotFoundResponse
+          }
+        }
+      },
+      "/api/workitems/{id}/dependencies": {
+        post: {
+          tags: ["work-items"],
+          summary: "Add a work item dependency (same-project, no self-reference, no cycle)",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody({
+            type: "object",
+            required: ["depends_on"],
+            properties: { depends_on: uuidStringSchema },
+            additionalProperties: false
+          }),
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["work_item_id", "depends_on", "created"],
+              properties: {
+                work_item_id: uuidStringSchema,
+                depends_on: uuidStringSchema,
+                created: { type: "boolean" }
+              },
+              additionalProperties: false
+            }, "Dependency already present (idempotent)").responses["200"],
+            "201": jsonDataResponse({
+              type: "object",
+              required: ["work_item_id", "depends_on", "created"],
+              properties: {
+                work_item_id: uuidStringSchema,
+                depends_on: uuidStringSchema,
+                created: { type: "boolean" }
+              },
+              additionalProperties: false
+            }, "Dependency created").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": timelineForbiddenResponse,
+            "404": timelineNotFoundResponse,
+            "422": timelineValidationResponse
+          }
+        },
+        delete: {
+          tags: ["work-items"],
+          summary: "Remove a work item dependency",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody({
+            type: "object",
+            required: ["depends_on"],
+            properties: { depends_on: uuidStringSchema },
+            additionalProperties: false
+          }),
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["work_item_id", "depends_on", "removed"],
+              properties: {
+                work_item_id: uuidStringSchema,
+                depends_on: uuidStringSchema,
+                removed: { type: "boolean" }
+              },
+              additionalProperties: false
+            }, "Dependency removed (or already absent)").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": timelineForbiddenResponse,
+            "404": timelineNotFoundResponse
+          }
+        }
+      },
+      "/api/workitems/{id}/milestone": {
+        patch: {
+          tags: ["work-items"],
+          summary: "Attach or detach a work item's milestone (same-project)",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody({
+            type: "object",
+            required: ["milestone_id"],
+            properties: { milestone_id: { anyOf: [uuidStringSchema, { type: "null" }] } },
+            additionalProperties: false
+          }),
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["work_item_id", "milestone_id"],
+              properties: {
+                work_item_id: uuidStringSchema,
+                milestone_id: { anyOf: [uuidStringSchema, { type: "null" }] }
+              },
+              additionalProperties: false
+            }, "Milestone attachment updated").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": timelineForbiddenResponse,
+            "404": timelineNotFoundResponse,
+            "422": timelineValidationResponse
           }
         }
       },

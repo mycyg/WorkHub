@@ -153,6 +153,9 @@ function stageCopy(stage: DdlStage, candidate: DdlChaseCandidateRow): StageCopy 
         body: `这个工作项 ${dueDate} 到期，已经逾期还没完成，需要尽快处理。`
       };
     case "escalate":
+      // R15 批 E1c 接缝（仅注释，不改行为）：未来这段升级文案可带「后面 N 件在等」——数据源是
+      // @workhub/db 导出的 listDependencyEdgesByProject + computeBlockingCounts（时间线 VM 的关键路径同源），
+      // 取 blocks_count 拼进 body 即可。此处刻意不接线，避免让 ddl-chase 依赖依赖图/多一次取数。
       return {
         type: "work_item.escalated_ddl",
         severity: "urgent",

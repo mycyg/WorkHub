@@ -116,6 +116,7 @@ function workItemRow(overrides: Partial<WorkItemRow> = {}): WorkItemRow {
     dueAt: null,
     sourceMeetingId: null,
     sourceWorkItemId: null,
+    milestoneId: null,
     claimedAt: null,
     doneAt: null,
     deliveredAt: null,
