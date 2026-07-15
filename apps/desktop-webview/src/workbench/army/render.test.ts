@@ -158,12 +158,21 @@ test("renderArmyPanelHtml with no state at all falls back to the honest 'pick a 
   assert.match(html, /选一个会话/u);
 });
 
-test("renderArmyPanelHtml renders outputs, runs, and the honest background-tasks not-yet-available note in list mode", () => {
+test("renderArmyPanelHtml renders outputs and runs in list mode", () => {
   const state: ArmyPanelViewState = { mode: "list", vm: panelVm(), loadingMore: false };
   const html = renderArmyPanelHtml(state, "zh-CN", noMembers);
   assert.match(html, /选题报告 · 第三节\(草稿\)/u);
   assert.match(html, /阿墨/u);
-  assert.match(html, /后台任务还没有接入真实数据源/u);
+});
+
+// G-desktop 止血批 2：后台任务区契约锁死 not_yet_available——items 永远是空数组，这是一块永远不会有
+// 内容的固定区块，不是偶尔为空的正常态。之前这里渲染一条永远显示的「即将上线」空态，现在整块不渲染
+// （renderArmyBackgroundTasksSectionHtml 这个函数还在，只是没人调用它了，等真数据源接上再放开）。
+test("renderArmyPanelHtml no longer renders the background-tasks section at all (it's a permanently empty, contract-locked block)", () => {
+  const state: ArmyPanelViewState = { mode: "list", vm: panelVm(), loadingMore: false };
+  const html = renderArmyPanelHtml(state, "zh-CN", noMembers);
+  assert.doesNotMatch(html, /后台任务/u);
+  assert.doesNotMatch(html, /Background tasks/u);
 });
 
 // R14 批 APPROVE-CHAT：输出行从「<details> 折叠 + 深链死文本（跳转后续批次开放）」翻成真接线的可点按钮——

@@ -287,8 +287,12 @@ function renderArmyRunsSectionHtml(
   return `${header}<div class="wh-wb-army-runs">${cards}</div>${loadMore}${loadMoreErr}`;
 }
 
-// 后台任务区：契约锁死 not_yet_available(00 §9/批5)——items 恒为空数组，这里照实渲染一条诚实空态，
-// 不拿别的数据（定时任务/最近文件等）冒充。
+// 后台任务区：契约锁死 not_yet_available(00 §9/批5)——items 恒为空数组，永远没有真内容可看。之前这里
+// 照实渲染一条「即将上线」空态，但 G-desktop 止血批 2 发现这在实践里是一块永远存在、永远空的固定区块
+// （不是偶尔为空的正常态，是契约保证的恒空），跟composer 的死 chip 是同一类问题——不留一个只会说
+// 「即将上线」的区块占位置。renderArmyPanelListHtml 现在不再调用这个函数，整块区不渲染；函数本身连同
+// ArmyBackgroundTasksVM 类型都保留，等真的接上后台任务数据源（定时任务/后台巡检等）那天，把
+// renderArmyPanelListHtml 里的调用加回来即可，不用重新设计这块 UI。
 function renderArmyBackgroundTasksSectionHtml(_tasks: ArmyBackgroundTasksVM, zh: boolean): string {
   const header = `<div class="wh-wb-army-sec-h">${zh ? "后台任务" : "Background tasks"}</div>`;
   return `${header}<p class="wh-wb-army-empty-note">${zh ? "后台任务还没有接入真实数据源，即将上线。" : "Background tasks aren't wired to a real data source yet — coming soon."}</p>`;
@@ -319,8 +323,9 @@ function renderArmyPanelListHtml(
     scopeLabel: zh ? `本会话 ${state.vm.runs.runs.length}` : `${state.vm.runs.runs.length} here`,
     loadMoreDataAttr: "data-wb-army-load-more"
   });
-  const backgroundHtml = renderArmyBackgroundTasksSectionHtml(state.vm.background_tasks, zh);
-  return `<div class="wh-wb-army">${outputsHtml}${changedFilesHtml}${runsHtml}${backgroundHtml}</div>`;
+  // G-desktop 止血批 2：后台任务区永远空（契约锁死 not_yet_available），不再渲染这块永远说「即将上线」
+  // 的固定区块——见 renderArmyBackgroundTasksSectionHtml 顶部注释，函数留着，真数据源接上再放开。
+  return `<div class="wh-wb-army">${outputsHtml}${changedFilesHtml}${runsHtml}</div>`;
 }
 
 function renderArmyReplaySectionHtml(trace: ArmyRunTraceState, locale: Locale): string {
