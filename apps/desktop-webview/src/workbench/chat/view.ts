@@ -35,6 +35,7 @@ import {
   deleteConversationMessageFeedback,
   editConversationMessage,
   fetchConversationMessagesPage,
+  fetchConversationParticipants,
   fetchConversationPins,
   fetchConversationReceipts,
   fetchLatestConversationMessagesPage,
@@ -42,6 +43,7 @@ import {
   fetchNotifications,
   fetchOlderConversationMessagesPage,
   fetchPresence,
+  otherParticipantUserIds,
   patchMyAiMode,
   pinConversationMessage,
   pingConversationTyping,
@@ -628,9 +630,12 @@ export function mountChatView(
   let bufferedMessageUpdates: ConversationMessageVM[] = [];
   let bufferedReactionUpdates: IncomingReactionUpdate[] = [];
 
-  // 成员条里除自己以外的成员 id（已读 N/M 的分母 M；presence 也用得到成员 id 全集）——挂载时算一次，
-  // 会话/成员在切项目时整块重挂（shell.ts 的 renderCenter），不会中途变。
-  const otherMemberIds = input.members.map((member) => member.user_id).filter((id) => id !== input.currentUserId);
+  // 成员条里除自己以外的成员 id（已读 N/M 的分母 M；presence 也用得到成员 id 全集）——挂载时算一次
+  // 兜底值（会话/成员在切项目时整块重挂，见 shell.ts 的 renderCenter）。
+  // R15 批 cuu-toggle：这个兜底值对 main（workspace_members 现状）和 DM（shell.ts 已经传入两名真实
+  // 参与者，见 dm.ts dmMembersFromParticipants）都是最终值；非 DM 的 collab 会话会在 loadParticipants
+  // 拉到真实参与者后就地替换（小群「已读 N/M」分母修复——旧病灶是这里一直拿整个工作区成员当分母）。
+  let otherMemberIds = input.members.map((member) => member.user_id).filter((id) => id !== input.currentUserId);
   const memberUserIds = input.members.map((member) => member.user_id);
 
   const membersMap = membersById(input.members);
@@ -1243,6 +1248,29 @@ export function mountChatView(
       renderHead();
     } catch {
       // best-effort：拉不到就保持上一次的在线集合（或空集），不清成「全离线」骚扰视觉，也不重试轰炸。
+    }
+  }
+
+  // R15 批 cuu-toggle：非 DM 的协同会话——挂载后拉一次真实参与者集合，把「已读 N/M」的分母从"整个工作区
+  // 成员"收紧到"这条会话真正的参与者"（旧病灶：非 DM 的 collab 会话头本就渲 input.members 全量工作区
+  // 成员条，otherMemberIds 因此继承了同一个错误分母）。main 不拉——服务端 listParticipants 对它也只回
+  // scope:"workspace" 空列表，拉了白拉，继续用 workspace_members 现状分母；DM 不拉——shell.ts 传进来的
+  // input.members 已经是 dmMembersFromParticipants 给的两名真实参与者，otherMemberIds 挂载时就已经是对
+  // 的（固定 2 人分母）。失败静默降级回挂载时算的分母，不让已读回执因为这个新端点故障而从界面上消失。
+  async function loadParticipants(): Promise<void> {
+    if (input.conversationKind !== "collab" || input.isDm) {
+      return;
+    }
+    try {
+      const result = await fetchConversationParticipants(input.client, input.conversationId);
+      if (disposed || result.scope !== "participants") {
+        return;
+      }
+      otherMemberIds = otherParticipantUserIds(result.participants, input.currentUserId);
+      renderScroll();
+    } catch {
+      // best-effort：拉不到就保持挂载时算的降级分母（workspace_members），不重试轰炸（同
+      // loadPresence/loadMyAiProfile 的既有取舍）。
     }
   }
 
@@ -3292,6 +3320,9 @@ export function mountChatView(
   void loadAiProviderHealth();
   // R14 批 CHAT：挂载时拉一次 presence + 30s 轮询（成员条在线点）。SSE 重连时另有即时刷新（见 onReconnected）。
   void loadPresence();
+  // R15 批 cuu-toggle：非 DM 的协同会话——挂载后拉一次真实参与者集合，修复小群「已读 N/M」分母
+  // （见 loadParticipants 顶部注释）。main/DM 内部短路，不发请求。
+  void loadParticipants();
   presencePollTimer = setInterval(() => {
     if (!disposed) {
       void loadPresence();

@@ -14,11 +14,13 @@ import {
   fetchConversationMessagesPage,
   fetchConversationPins,
   fetchConversationReceipts,
+  fetchConversationParticipants,
   fetchLatestConversationMessagesPage,
   fetchMyAiProfile,
   fetchNotifications,
   fetchOlderConversationMessagesPage,
   fetchPresence,
+  otherParticipantUserIds,
   patchMyAiMode,
   pinConversationMessage,
   pingConversationTyping,
@@ -496,6 +498,37 @@ test("fetchConversationReceipts GETs the receipts list", async () => {
   const result = await fetchConversationReceipts(client, "conv-1");
   assert.equal(calls[0], "/api/conversations/conv-1/receipts");
   assert.equal(result.receipts[0]!.last_read_seq, 7);
+});
+
+// ── R15 批 cuu-toggle：参与者列表（小群「已读 N/M」分母修复） ─────────────────────────────
+
+test("fetchConversationParticipants GETs the participants endpoint", async () => {
+  const calls: string[] = [];
+  const client = fakeClient((path) => {
+    calls.push(path);
+    return { scope: "participants", participants: [{ user_id: "u1", nickname: "阿曼", role: "owner" }] };
+  });
+  const result = await fetchConversationParticipants(client, "conv-1");
+  assert.equal(calls[0], "/api/conversations/conv-1/participants");
+  assert.equal(result.scope, "participants");
+  assert.equal(result.participants.length, 1);
+});
+
+test("otherParticipantUserIds drops the current user and preserves the rest in order", () => {
+  const participants = [
+    { user_id: "self", nickname: "我", role: "owner" as const },
+    { user_id: "peer-1", nickname: "阿曼", role: "member" as const },
+    { user_id: "peer-2", nickname: "小赵", role: "member" as const }
+  ];
+  assert.deepEqual(otherParticipantUserIds(participants, "self"), ["peer-1", "peer-2"]);
+});
+
+test("otherParticipantUserIds keeps every id when currentUserId is undefined (never silently drops a real member)", () => {
+  const participants = [
+    { user_id: "peer-1", nickname: "阿曼", role: "owner" as const },
+    { user_id: "peer-2", nickname: "小赵", role: "member" as const }
+  ];
+  assert.deepEqual(otherParticipantUserIds(participants, undefined), ["peer-1", "peer-2"]);
 });
 
 test("putConversationMessageFeedback PUTs {verdict} and omits note when not given", async () => {

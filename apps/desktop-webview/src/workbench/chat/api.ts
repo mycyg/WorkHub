@@ -10,6 +10,7 @@ import type {
   AiMode,
   ConversationMessagePageVM,
   ConversationMessageVM,
+  ConversationParticipantsVM,
   ConversationPinsVM,
   ConversationReactionKey,
   ConversationReadCursorVM,
@@ -351,6 +352,30 @@ export function advanceConversationReadCursor(
 // GET /receipts：全部读游标 → 200 { receipts: [{ user_id, last_read_seq }] }。
 export function fetchConversationReceipts(client: ChatApiClient, conversationId: string): Promise<ConversationReadReceiptsVM> {
   return client.request<ConversationReadReceiptsVM>(conversationPath(conversationId, "receipts"));
+}
+
+// —— R15 批 cuu-toggle：参与者列表（小群「已读 N/M」分母修复） —— //
+
+// GET /participants：main 回 scope:"workspace" + 空列表（诚实：主区没有一份"参与者名单"，见服务端
+// listParticipants 顶部注释）；collab（含 DM）回 scope:"participants" + 真实参与者。桌面端只在非 DM 的
+// collab 会话挂载时调用它（DM 的两名参与者已经由 dm.ts 的 dmMembersFromParticipants 给全了，main 保持
+// workspace_members 现状分母，见 view.ts 的 loadParticipants）。
+export function fetchConversationParticipants(
+  client: ChatApiClient,
+  conversationId: string
+): Promise<ConversationParticipantsVM> {
+  return client.request<ConversationParticipantsVM>(conversationPath(conversationId, "participants"));
+}
+
+// 小群「已读 N/M」分母修复的纯逻辑：从 GET /participants 的真实参与者集合里去掉自己，得到"他人成员 id"
+// 列表——otherMemberIds 的口径（同 view.ts 挂载时从 input.members 算的既有分母公式一致，只是数据源从
+// "整个工作区成员" 换成 "这条会话的真实参与者"）。scope:"workspace"（main）时调用方本就不该调这个函数
+// （main 保持 workspace_members 现状），这里不对 scope 做特判，纯粹是一个 participants 数组的 map/filter。
+export function otherParticipantUserIds(
+  participants: ConversationParticipantsVM["participants"],
+  currentUserId: string | undefined
+): string[] {
+  return participants.map((participant) => participant.user_id).filter((id) => id !== currentUserId);
 }
 
 // GET /api/presence?user_ids=：≤50 个逗号分隔 uuid，同工作区过滤 → { presence: [{ user_id, is_online, last_seen_at }] }。
