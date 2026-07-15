@@ -1,7 +1,10 @@
 use workhub_client_tauri::config::{load_shell_config_from_json_and_env, WorkHubShellConfig};
 use workhub_client_tauri::deep_link::{deep_link_plan_from_url, describe_deep_link_error};
 use workhub_client_tauri::events::{event_channel_name, ShellEvent};
-use workhub_client_tauri::locale::{normalize_workhub_locale, WorkHubLocale};
+use workhub_client_tauri::locale::{
+    normalize_optional_workhub_locale, normalize_workhub_locale, WorkHubLocale,
+    DEFAULT_WORKHUB_LOCALE,
+};
 use workhub_client_tauri::pet_commands::{
     body_position_from_window_position_with_settings, pet_window_rect_from_position_with_settings,
     restore_saved_body_position, sample_pet_cursor_near_command_plan,
@@ -17,9 +20,10 @@ use workhub_client_tauri::pet_window::{
 use workhub_client_tauri::single_instance::single_instance_plan_from_args_for_locale;
 use workhub_client_tauri::sse_worker::{spawn_default_shell_sse_workers, ShellClientToken};
 use workhub_client_tauri::tray::{
-    tray_menu_action_plan_by_id_for_locale, tray_tooltip, TRAY_HIDE_MAIN_ID, TRAY_OPEN_INBOX_ID,
-    TRAY_OPEN_SETTINGS_ID, TRAY_OPEN_WORKBENCH_ID, TRAY_QUIT_ID, TRAY_RESTORE_PET_INTERACTION_ID,
-    TRAY_SHOW_MAIN_ID, TRAY_TOGGLE_PET_ID, WORKHUB_TRAY_ID,
+    shell_badge_count, tray_menu_action_plan_by_id_for_locale, tray_tooltip,
+    tray_tooltip_with_badge, TRAY_HIDE_MAIN_ID, TRAY_OPEN_INBOX_ID, TRAY_OPEN_SETTINGS_ID,
+    TRAY_OPEN_WORKBENCH_ID, TRAY_QUIT_ID, TRAY_RESTORE_PET_INTERACTION_ID, TRAY_SHOW_MAIN_ID,
+    TRAY_TOGGLE_PET_ID, WORKHUB_TRAY_ID,
 };
 use workhub_client_tauri::window_controls::{
     focus_main_route as focus_main_route_plan, hide_main_window as hide_main_window_plan,
@@ -522,6 +526,27 @@ fn set_spotlight_size(app: tauri::AppHandle, width: f64, height: f64) -> Result<
         .map_err(|error| format!("failed to resize main window: {error}"))?;
     // chain3：内容变高时把窗口顶回工作区内——否则小屏 / 窗口被拖到靠下时，盒子底部会长到屏幕外够不着。
     keep_window_bottom_in_work_area(&window, safe_height);
+    Ok(())
+}
+
+// R15 批 A6（托盘/Dock 角标）：把「有几件待办/未读」推到系统托盘 + macOS Dock 层——workbench 关着、聚焦盒
+// 收着时也能一眼看到有事要处理。由 browser.ts 既有的 refreshApprovalsBadge 30s 轮询顺带 invoke（它已经算了
+// attention 队列数，再加上未读通知数）。count<=0 清角标（macOS set_badge_count(None) 清 dock 角标）；托盘
+// tooltip 带上计数（0 回到基线「Cuu 已就绪」）。托盘/tooltip 拿不到时 best-effort 不致命——Dock 角标是主承诺。
+#[tauri::command]
+fn set_shell_badge(app: tauri::AppHandle, count: i64, locale: Option<String>) -> Result<(), String> {
+    let resolved_locale = normalize_optional_workhub_locale(locale).unwrap_or(DEFAULT_WORKHUB_LOCALE);
+    // Dock 角标（macOS）——app 级，用 main 窗句柄设置。main 窗还没建好（冷启动竞态）时静默跳过，下一拍再来。
+    if let Some(window) = app.get_webview_window("main") {
+        window
+            .set_badge_count(shell_badge_count(count))
+            .map_err(|error| format!("failed to set shell dock badge: {error}"))?;
+    }
+    // 托盘 tooltip 带数——best-effort：没有托盘（无 tray-icon feature / 尚未装好）时不报错。
+    if let Some(tray) = app.tray_by_id(WORKHUB_TRAY_ID) {
+        let badge = i64::max(count, 0).min(u32::MAX as i64) as u32;
+        let _ = tray.set_tooltip(Some(tray_tooltip_with_badge(resolved_locale, badge)));
+    }
     Ok(())
 }
 
@@ -1767,6 +1792,7 @@ fn main() {
             set_pet_window_click_through,
             set_client_token,
             set_spotlight_size,
+            set_shell_badge,
             start_main_window_drag,
             move_main_window_by,
             show_main_window,
