@@ -4,7 +4,9 @@ import { getDefaultStructuredLogger } from "../logging.js";
 import { createApprovalService, type ApprovalService } from "../services/approvals.js";
 import { getDefaultApprovalDigestService } from "../services/approval-digest.js";
 import { createNotificationService, type NotificationService } from "../services/notifications.js";
+import { getDefaultDdlChaseService } from "../services/ddl-chase.js";
 import type { ApprovalDigestRunResult } from "../services/approval-digest.js";
+import type { DdlChaseRunResult } from "../services/ddl-chase.js";
 
 // R15 批 A（统一调度器 · 01-batch-a-pipeline.md §A1）：通用周期任务注册器。审批 SLA、通知提醒阶梯、
 // 后续主动性投递三家共用一条水管，不再各自手搓 setInterval（agent-run-recovery / session-sweep /
@@ -188,6 +190,7 @@ export function getDefaultPulseScheduler(deps: {
   approvals?: Pick<ApprovalService, "expireDueApprovals">;
   notifications?: Pick<NotificationService, "runNotificationReminders">;
   approvalDigest?: { runOnce: () => Promise<ApprovalDigestRunResult> };
+  ddlChase?: { runOnce: () => Promise<DdlChaseRunResult> };
 } = {}): PulseScheduler {
   if (defaultPulseScheduler) {
     return defaultPulseScheduler;
@@ -195,6 +198,7 @@ export function getDefaultPulseScheduler(deps: {
   const approvals = deps.approvals ?? createApprovalService();
   const notifications = deps.notifications ?? createNotificationService();
   const approvalDigest = deps.approvalDigest ?? getDefaultApprovalDigestService();
+  const ddlChase = deps.ddlChase ?? getDefaultDdlChaseService();
   const scheduler = createPulseScheduler();
 
   scheduler.register({
@@ -246,6 +250,30 @@ export function getDefaultPulseScheduler(deps: {
           zeroed: result.zeroed,
           duplicates_tombstoned: result.duplicates_tombstoned,
           failed: result.failed
+        });
+      }
+      return result;
+    }
+  });
+
+  scheduler.register({
+    name: "ddl-chase",
+    intervalMs: settings.pulse.ddlChaseIntervalMs,
+    // R15 批 D（追 DDL 阶梯）：扫未完成/有 due_at 的工作项，按 T-3d→T-1d→逾期→升级 阶梯提醒责任人/
+    // 项目负责人；无责任人的逾期项走「找人」。纯规则、无 LLM，与 approval-digest 同档（DB 驱动巡检）。
+    // 一 tick 最多处理 maxDrainPerTick 个候选（服务内部据 listCandidates 的 limit 封顶，避免积压拖垮）。
+    maxDrainPerTick: 200,
+    tick: async () => {
+      const result = await ddlChase.runOnce();
+      if (result.delivered > 0 || result.suppressed_daily_cap > 0 || result.skipped_quiet_hours > 0 || result.skipped_no_target > 0) {
+        getDefaultStructuredLogger().info("pulse_ddl_chase_swept", {
+          scanned: result.scanned,
+          delivered: result.delivered,
+          suppressed_duplicate: result.suppressed_duplicate,
+          suppressed_daily_cap: result.suppressed_daily_cap,
+          suppressed_muted: result.suppressed_muted,
+          skipped_quiet_hours: result.skipped_quiet_hours,
+          skipped_no_target: result.skipped_no_target
         });
       }
       return result;
