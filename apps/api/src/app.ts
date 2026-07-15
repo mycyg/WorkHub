@@ -77,6 +77,7 @@ import { AiSettingsServiceError } from "./services/ai-settings.js";
 import { UserProfileServiceError } from "./services/user-profile.js";
 import { UserAvatarServiceError } from "./services/user-avatar.js";
 import { ConversationTurnServiceError } from "./services/conversation-turns.js";
+import { SpotlightIntentServiceError } from "./services/spotlight-intent.js";
 import { ActionCardServiceError } from "./services/action-cards.js";
 import { ConversationArmyServiceError } from "./services/conversation-army.js";
 
@@ -467,6 +468,21 @@ app.onError((error, c) => {
 
   // R14 批 MEM：记忆/技能管理面的类型化 400/403/404/409——不进这张表会被兜底压成 500。
   if (error instanceof UserMemoryGovernanceServiceError || error instanceof TeamSkillGovernanceServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
+    );
+  }
+
+  // R14 验收修复批 B：聚焦盒问 Cuu 的类型化错误此前完全不在本映射表（既有缺口，403/429 也会
+  // 被压成 500）；批 B 又给它加了 503 ai_provider_not_configured，一并透传。
+  if (error instanceof SpotlightIntentServiceError) {
     return c.json(
       {
         ok: false,

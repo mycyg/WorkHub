@@ -45,7 +45,9 @@ agent 本地执行/装依赖（EXEC 批未施工）、新手导览（ONBOARD 未
 
 对以下每个路由做四件事：①空态是否有人话引导（不是裸屏）②有数据时字段真实（时间/计数/人名不是占位）③页内每个按钮都点一遍（不许有点了没反应的假按钮）④窗口缩窄到手机宽度无横向溢出。
 
-路由清单：`/`（首页）、`/projects`、项目主页、`/intake`（新建请求）、`/approvals`（审批工作台）、工单详情、提案详情、`/drive`、`/meetings`、`/inbox`（通知）、`/calendar`、`/health`、replay（run 回放）、`/cost`、`/agents`（军团）、`/knowledge`、`/dashboard/search`、`/dashboard/skills`、`/settings`、`/settings/memory`。
+路由清单（**路径以代码 `apps/web/src/routes.ts` 为准**，下面已是真实路径）：`/`（首页）、`/projects`、`/projects/:id`（项目主页）、`/intake`（新建请求）、`/approvals`（审批工作台）、`/workitems/:id`（工单详情）、`/proposals/:id`（提案详情）、`/drive`、`/meetings`、`/notifications`（通知）、`/calendar`、`/dashboard/health`（项目健康）、`/agent-runs/:id/replay`（run 回放）、`/dashboard/cost`（成本）、`/dashboard/agents`（军团）、`/knowledge/search`（知识）、`/dashboard/search`、`/dashboard/skills`、`/settings`、`/settings/memory`。
+
+> 更正说明：本手册首版把通知/健康/成本/军团/知识写成了 `/inbox`、`/health`、`/cost`、`/agents`、`/knowledge` 短路径——那是记忆误差，产品并无这些路由，按错路径访问必得 404（验收报告 BUG-08）。以上已改为 routes.ts 的真实路径。
 
 **历史功能回归重点（P1）**：
 - 审批工作台：批准/打回（打回必填理由）/委派（选人器）/评论流/批量操作；处理后列表计数与首页计数一致。
