@@ -31,7 +31,9 @@ export const workbenchIcons = {
   reply: ic('<path d="M10 8V4l-7 7 7 7v-4c4.5 0 7.5 1.5 9 5 0-7-3.5-11-9-11Z"/>'),
   edit: ic('<path d="M4 20h4l10-10-4-4L4 16Z"/><path d="M13.5 6.5l4 4"/>'),
   trash: ic('<path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/>'),
-  pin: ic('<path d="M9 3h6l-1 6 3 3H7l3-3-1-6Z"/><path d="M12 15v6"/>')
+  pin: ic('<path d="M9 3h6l-1 6 3 3H7l3-3-1-6Z"/><path d="M12 15v6"/>'),
+  // R15 批 E2（项目时间线 / 甘特）：rail 项目行的「时间线」树叶——横向排期条示意（三条错位的甘特条）。
+  timeline: ic('<path d="M4 5h10M4 12h14M4 19h7"/><path d="M14 5v0M18 12v0M11 19v0"/>')
 } as const;
 
 export type WorkbenchIconKey = keyof typeof workbenchIcons;

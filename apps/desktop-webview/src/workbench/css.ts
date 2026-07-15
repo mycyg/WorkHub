@@ -886,5 +886,112 @@ export const workbenchCss = [
   // 换成 --ds-warn（这是「该看一眼」的提醒，不是失败/危险，用红色会喧宾夺主）。
   ".wh-wb-risk-digest{border-left:3px solid var(--ds-warn);background:linear-gradient(90deg,var(--ds-warn-soft),transparent 42%)}",
   ".wh-wb-risk-digest-list{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px}",
-  ".wh-wb-risk-digest-item{font:600 11.5px/1.5 var(--ds-font);color:var(--ds-ink-soft)}"
+  ".wh-wb-risk-digest-item{font:600 11.5px/1.5 var(--ds-font);color:var(--ds-ink-soft)}",
+
+  // —— R15 批 E2（项目时间线 / 甘特）—— //
+  // 纯 CSS 甘特：每行两列（左 260px 元信息/控件 + 右 1fr 排期条轨道），顶部周刻度轴与轨道列左对齐。
+  ".wh-wb-center--timeline{padding:0}",
+  ".wh-wb-tl{display:flex;flex-direction:column;height:100%;min-height:0}",
+  ".wh-wb-tl-bar{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--ds-glass-border);flex:0 0 auto}",
+  ".wh-wb-tl-bar-title{font:700 14px/1.2 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-tl-bar-spacer{flex:1}",
+  ".wh-wb-tl-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:9px;border:1px solid var(--ds-glass-border);" +
+    "background:var(--ds-glass);color:var(--ds-ink);font:600 12px/1.3 var(--ds-font);cursor:pointer;" +
+    "transition:background var(--ds-dur-fast) var(--ds-ease)}",
+  ".wh-wb-tl-btn svg{width:13px;height:13px}",
+  ".wh-wb-tl-btn:hover{background:var(--ds-glass-strong)}",
+  ".wh-wb-tl-btn--primary{background:var(--ds-accent-soft);border-color:rgba(10,132,255,.28);color:var(--ds-accent)}",
+  ".wh-wb-tl-btn[disabled]{opacity:.5;cursor:default}",
+  ".wh-wb-tl-errbar{margin:10px 18px 0;padding:8px 12px;border-radius:var(--ds-radius-sm);background:var(--ds-danger-soft);" +
+    "border:1px solid rgba(255,69,58,.3);color:var(--ds-danger);font:500 12px/1.5 var(--ds-font)}",
+  // 关键路径警示区（逾期且卡着别人）——置顶、暖警示玻璃。
+  ".wh-wb-tl-crit{margin:12px 18px 0;padding:11px 14px;border-radius:var(--ds-radius-md);background:var(--ds-warn-soft);" +
+    "border:1px solid rgba(224,137,42,.32)}",
+  ".wh-wb-tl-crit-head{font:700 12px/1.3 var(--ds-font);color:var(--ds-warn);margin-bottom:8px}",
+  ".wh-wb-tl-crit-body{display:flex;flex-wrap:wrap;gap:6px}",
+  ".wh-wb-tl-crit-chip{padding:4px 9px;border-radius:99px;border:1px solid rgba(224,137,42,.4);background:var(--ds-glass);" +
+    "color:var(--ds-ink);font:600 11px/1.3 var(--ds-font);cursor:pointer}",
+  ".wh-wb-tl-crit-chip:hover{background:var(--ds-warn-soft)}",
+  ".wh-wb-tl-nodates{margin:12px 18px 0;font:500 12px/1.6 var(--ds-font);color:var(--ds-ink-faint)}",
+  ".wh-wb-tl-scroll{flex:1 1 auto;min-height:0;overflow:auto;padding:0 18px 20px}",
+  // 周刻度轴：与轨道列（左偏 260px）对齐；刻度绝对定位，稀疏标注。
+  ".wh-wb-tl-axis{position:sticky;top:0;z-index:2;height:26px;margin:6px 0 4px 260px;border-bottom:1px solid var(--ds-glass-border);" +
+    "background:var(--ds-glass-quiet)}",
+  ".wh-wb-tl-tick{position:absolute;top:0;bottom:0;border-left:1px solid var(--ds-glass-border)}",
+  ".wh-wb-tl-tick-label{position:absolute;top:5px;left:3px;font:600 10px/1 var(--ds-font);color:var(--ds-ink-faint);white-space:nowrap}",
+  ".wh-wb-tl-today{position:absolute;top:0;bottom:0;width:0;border-left:1.5px dashed var(--ds-danger);opacity:.7;pointer-events:none}",
+  // 里程碑分组。
+  ".wh-wb-tl-group{margin-top:10px}",
+  ".wh-wb-tl-group-body{display:flex;flex-direction:column}",
+  ".wh-wb-tl-group-empty{padding:8px 0 8px 260px;font:500 11.5px/1.5 var(--ds-font);color:var(--ds-ink-faint)}",
+  ".wh-wb-tl-mhead{display:flex;align-items:center;gap:8px;padding:8px 6px;border-radius:var(--ds-radius-sm);background:var(--ds-glass);" +
+    "border:1px solid var(--ds-glass-border)}",
+  ".wh-wb-tl-mhead--loose{background:transparent;border-color:transparent}",
+  ".wh-wb-tl-mhead.is-done .wh-wb-tl-mtitle{color:var(--ds-ink-faint);text-decoration:line-through}",
+  ".wh-wb-tl-mflag svg{width:14px;height:14px;color:var(--ds-accent)}",
+  ".wh-wb-tl-mtitle{font:700 12.5px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-tl-mdue{font:600 11px/1.2 var(--ds-font);color:var(--ds-ink-muted);background:var(--ds-glass-strong);padding:2px 7px;border-radius:99px}",
+  ".wh-wb-tl-mdue--none{color:var(--ds-ink-faint);background:transparent}",
+  ".wh-wb-tl-mdone{font:600 10px/1.2 var(--ds-font);color:var(--ds-success);background:var(--ds-success-soft);padding:2px 7px;border-radius:99px}",
+  ".wh-wb-tl-mspacer{flex:1}",
+  ".wh-wb-tl-icbtn{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border:0;border-radius:7px;" +
+    "background:transparent;color:var(--ds-ink-faint);cursor:pointer;transition:background var(--ds-dur-fast) var(--ds-ease)}",
+  ".wh-wb-tl-icbtn svg{width:14px;height:14px}",
+  ".wh-wb-tl-icbtn:hover{background:rgba(20,30,50,.06);color:var(--ds-ink)}",
+  ".wh-wb-tl-icbtn--danger:hover{background:var(--ds-danger-soft);color:var(--ds-danger)}",
+  ".wh-wb-tl-icbtn[disabled]{opacity:.4;cursor:default}",
+  // 里程碑内联表单。
+  ".wh-wb-tl-mform{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 6px}",
+  ".wh-wb-tl-mform-title{flex:1 1 160px;min-width:120px;padding:6px 10px;border-radius:8px;border:1px solid var(--ds-glass-border);" +
+    "background:var(--ds-glass);color:var(--ds-ink);font:500 12.5px/1.3 var(--ds-font)}",
+  ".wh-wb-tl-mform-due{padding:5px 8px;border-radius:8px;border:1px solid var(--ds-glass-border);background:var(--ds-glass);" +
+    "color:var(--ds-ink);font:500 12px/1.3 var(--ds-font)}",
+  // 工作项行。
+  ".wh-wb-tl-row{display:grid;grid-template-columns:260px 1fr;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--ds-glass-hairline)}",
+  ".wh-wb-tl-row:first-child{border-top:0}",
+  ".wh-wb-tl-row--flash{animation:ds-flash 1.4s var(--ds-ease)}",
+  ".wh-wb-tl-rowmeta{display:flex;flex-direction:column;gap:4px;min-width:0}",
+  ".wh-wb-tl-rowtitle{display:flex;align-items:center;gap:6px;min-width:0}",
+  ".wh-wb-tl-code{font:700 11px/1.2 var(--ds-font);color:var(--ds-accent);flex:0 0 auto}",
+  ".wh-wb-tl-name{font:600 12.5px/1.35 var(--ds-font);color:var(--ds-ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+  ".wh-wb-tl-rowtags{display:flex;align-items:center;gap:6px;flex-wrap:wrap}",
+  ".wh-wb-tl-status{font:600 10px/1.3 var(--ds-font);color:var(--ds-ink-muted);background:var(--ds-glass-strong);padding:2px 7px;border-radius:99px}",
+  ".wh-wb-tl-status--done,.wh-wb-tl-status--merged{color:var(--ds-success);background:var(--ds-success-soft)}",
+  ".wh-wb-tl-status--cancelled{color:var(--ds-ink-faint)}",
+  ".wh-wb-tl-status--escalated{color:var(--ds-warn);background:var(--ds-warn-soft)}",
+  ".wh-wb-tl-assignee{font:500 10.5px/1.3 var(--ds-font);color:var(--ds-ink-muted)}",
+  ".wh-wb-tl-assignee--none{color:var(--ds-ink-faint)}",
+  ".wh-wb-tl-blocks{font:600 10px/1.3 var(--ds-font);color:var(--ds-warn);background:var(--ds-warn-soft);padding:2px 7px;border-radius:99px}",
+  ".wh-wb-tl-rowctl{display:flex;gap:6px;align-items:center}",
+  ".wh-wb-tl-attach,.wh-wb-tl-dep-add{max-width:100%;padding:3px 6px;border-radius:7px;border:1px solid var(--ds-glass-border);" +
+    "background:var(--ds-glass);color:var(--ds-ink-muted);font:500 11px/1.3 var(--ds-font);cursor:pointer}",
+  ".wh-wb-tl-deps{display:flex;flex-wrap:wrap;gap:5px;align-items:center}",
+  ".wh-wb-tl-dep{display:inline-flex;align-items:center;gap:3px;font:600 10px/1.3 var(--ds-font);color:var(--ds-ink-muted);" +
+    "background:var(--ds-glass-strong);padding:2px 4px 2px 7px;border-radius:99px}",
+  ".wh-wb-tl-dep-x{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border:0;border-radius:50%;" +
+    "background:transparent;color:var(--ds-ink-faint);cursor:pointer;padding:0}",
+  ".wh-wb-tl-dep-x svg{width:10px;height:10px}",
+  ".wh-wb-tl-dep-x:hover{background:var(--ds-danger-soft);color:var(--ds-danger)}",
+  // OKR tile（E2b）——就近挂在行标题右侧。
+  ".wh-wb-tl-okr{display:inline-flex;align-items:center;gap:3px;font:700 9.5px/1.3 var(--ds-font);color:var(--ds-accent-2,var(--ds-accent));" +
+    "background:var(--ds-accent-soft);padding:1px 6px;border-radius:99px;flex:0 0 auto;cursor:default}",
+  // 排期条轨道 + 条。
+  ".wh-wb-tl-track{position:relative;height:22px;min-width:120px}",
+  ".wh-wb-tl-gbar{position:absolute;top:4px;height:14px;min-width:5px;border-radius:7px;background:var(--ds-accent);box-shadow:var(--ds-shadow-1)}",
+  ".wh-wb-tl-gbar--overdue{background:var(--ds-danger)}",
+  ".wh-wb-tl-gbar--done{background:var(--ds-ink-faint)}",
+  ".wh-wb-tl-gbar--ghost{background:transparent;border:1.5px dashed var(--ds-accent);box-shadow:none}",
+  ".wh-wb-tl-gbar--overdue.wh-wb-tl-gbar--ghost{border-color:var(--ds-danger)}",
+  ".wh-wb-tl-gbar--done.wh-wb-tl-gbar--ghost{border-color:var(--ds-ink-faint)}",
+  ".wh-wb-tl-unscheduled{position:absolute;top:3px;left:0;font:500 10.5px/1.4 var(--ds-font);color:var(--ds-ink-faint);font-style:italic}",
+  // 状态/空态。
+  ".wh-wb-tl-state{padding:40px 20px;text-align:center;font:500 13px/1.6 var(--ds-font);color:var(--ds-ink-muted);" +
+    "display:flex;flex-direction:column;align-items:center;gap:10px}",
+  ".wh-wb-tl-state--error{color:var(--ds-ink-muted)}",
+  ".wh-wb-tl-empty{padding:48px 24px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px}",
+  ".wh-wb-tl-empty-icon svg{width:34px;height:34px;color:var(--ds-ink-faint)}",
+  ".wh-wb-tl-empty-title{margin:6px 0 0;font:700 16px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-tl-empty-sub{margin:0;max-width:420px;font:500 13px/1.6 var(--ds-font);color:var(--ds-ink-muted)}",
+  ".wh-wb-tl-empty-note{margin:4px 0 0;font:500 11.5px/1.5 var(--ds-font);color:var(--ds-ink-faint)}",
+  "@keyframes ds-flash{0%{background:var(--ds-accent-soft)}100%{background:transparent}}"
 ].join("");

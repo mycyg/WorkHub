@@ -6,6 +6,7 @@ export type R4WebRouteKey =
   | "home"
   | "projects"
   | "project-home"
+  | "project-timeline"
   | "intake"
   | "approvals"
   | "workitem"
@@ -46,6 +47,7 @@ export const r4WebRouteKeys = [
   "home",
   "projects",
   "project-home",
+  "project-timeline",
   "intake",
   "approvals",
   "workitem",
@@ -92,6 +94,7 @@ const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; ro
     home: { label: "总览", route: "/" },
     projects: { label: "项目", route: "/projects" },
     "project-home": { label: "项目主页", route: "/projects/:id" },
+    "project-timeline": { label: "时间线", route: "/projects/:id/timeline" },
     intake: { label: "快捷入口", route: "/intake/:sessionId" },
     approvals: { label: "审批中心", route: "/approvals" },
     workitem: { label: "工作项详情", route: "/workitems/:id" },
@@ -115,6 +118,7 @@ const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; ro
     home: { label: "Overview", route: "/" },
     projects: { label: "Projects", route: "/projects" },
     "project-home": { label: "Project home", route: "/projects/:id" },
+    "project-timeline": { label: "Timeline", route: "/projects/:id/timeline" },
     intake: { label: "Intake", route: "/intake/:sessionId" },
     approvals: { label: "Approval center", route: "/approvals" },
     workitem: { label: "Work item detail", route: "/workitems/:id" },

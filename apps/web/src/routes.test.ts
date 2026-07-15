@@ -19,6 +19,7 @@ import type {
   NotificationPageVM,
   ProjectHomePageVM,
   ProjectListVM,
+  ProjectTimelinePageVM,
   ProposalConflict,
   ReplayTraceVM,
   SessionVM,
@@ -46,6 +47,7 @@ type RouteClientOverrides = {
   drive?: DrivePageVM;
   projects?: ProjectListVM;
   projectHome?: ProjectHomePageVM;
+  projectTimeline?: ProjectTimelinePageVM;
   meetings?: MeetingPageVM;
   notifications?: NotificationPageVM;
   calendar?: CalendarPageVM;
@@ -261,6 +263,44 @@ function projectListVm(): ProjectListVM {
         open_work_item_count: 0
       }
     ]
+  };
+}
+
+function projectTimelineVm(id: string): ProjectTimelinePageVM {
+  return {
+    generated_at: "2026-07-15T00:00:00.000Z",
+    project: { id, name: "R5 Workspace", slug: "r5-workspace" },
+    milestones: [
+      { id: "m1", project_id: id, title: "M1 里程碑", due_at: "2026-07-20T00:00:00.000Z", sort: 0, status: "open" }
+    ],
+    items: [
+      {
+        id: "wi-a",
+        code: "WH-1",
+        title: "打通登录",
+        status: "ai_working",
+        due_at: "2026-07-13T00:00:00.000Z",
+        depends_on: [],
+        blocks_count: 2,
+        overdue: false,
+        milestone_id: "m1"
+      },
+      {
+        id: "wi-b",
+        code: "WH-2",
+        title: "会话续期",
+        status: "in_review",
+        due_at: "2026-07-10T00:00:00.000Z",
+        depends_on: ["wi-a"],
+        blocks_count: 3,
+        overdue: true,
+        objective_ids: ["obj-1"]
+      }
+    ],
+    critical: {
+      blocking: [{ work_item_id: "wi-b", blocks_count: 3 }],
+      overdue_blocking: [{ work_item_id: "wi-b", blocks_count: 3 }]
+    }
   };
 }
 
@@ -701,6 +741,10 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
       async project(id: string, options?: { locale?: string }) {
         localeCall(`project:${id}`, options);
         return overrides.projectHome ?? projectHomeVm(id);
+      },
+      async projectTimeline(id: string, options?: { locale?: string }) {
+        localeCall(`projectTimeline:${id}`, options);
+        return overrides.projectTimeline ?? projectTimelineVm(id);
       }
     },
     async listProjects() {
@@ -927,6 +971,7 @@ test("R4 web route registry resolves product URL routes", () => {
     "home",
     "projects",
     "project-home",
+    "project-timeline",
     "intake",
     "approvals",
     "workitem",
@@ -950,6 +995,9 @@ test("R4 web route registry resolves product URL routes", () => {
   assert.equal(resolveWebRoute("/projects")?.key, "projects");
   assert.equal(resolveWebRoute("/projects/93000000-0000-4000-8000-000000000001")?.key, "project-home");
   assert.equal(resolveWebRoute("/projects/93000000-0000-4000-8000-000000000001")?.params["id"], "93000000-0000-4000-8000-000000000001");
+  // R15 批 E2c：时间线只读页 /projects/:id/timeline 独立解析，不与 project-home 相撞。
+  assert.equal(resolveWebRoute("/projects/93000000-0000-4000-8000-000000000001/timeline")?.key, "project-timeline");
+  assert.equal(resolveWebRoute("/projects/93000000-0000-4000-8000-000000000001/timeline")?.params["id"], "93000000-0000-4000-8000-000000000001");
   assert.equal(resolveWebRoute("/dashboard/health")?.key, "health");
   assert.equal(resolveWebRoute("/approvals?filter=pending")?.key, "approvals");
   assert.equal(resolveWebRoute("/dashboard/cost")?.key, "cost");
@@ -1140,6 +1188,7 @@ test("R4.16 web route tree declares hydration fallback boundaries for every prod
       ["home", "attention"],
       ["projects", "projects"],
       ["project-home", "project-home"],
+      ["project-timeline", "project-timeline"],
       ["intake", "session"],
       ["approvals", "approvals"],
       ["workitem", "workitem"],
@@ -1748,6 +1797,34 @@ test("R8 S2b project-home route renders project meta, open-work links, CTAs, bac
   assert.equal(result.html.includes('data-r8-project-home-files="1"'), true);
   assert.equal(result.html.includes('data-r8-project-home-file="20000000-0000-4000-8000-000000000777"'), true);
   assert.equal(result.html.includes("客户复盘.md"), true);
+});
+
+test("R15 E2c: /projects/:id/timeline renders the read-only, milestone-grouped timeline", async () => {
+  const surface = goldPathSurfaceVm();
+  const projectId = "93000000-0000-4000-8000-000000000001";
+  const { client } = fakeRouteClient(surface);
+  const match = resolveWebRoute(`/projects/${projectId}/timeline`);
+  assert.ok(match);
+  const result = await loadWebRoute(client, match, "zh-CN");
+
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.includes('data-r4-route-component="project-timeline"'), true);
+  assert.equal(result.html.includes(`data-r15-timeline="${projectId}"`), true);
+  // milestone group header + its work item.
+  assert.equal(result.html.includes("M1 里程碑"), true);
+  assert.equal(result.html.includes('data-r15-timeline-item="wi-a"'), true);
+  // overdue + blocks + dependency annotation resolved to the depended-on code (read-only, no gantt bars).
+  assert.equal(result.html.includes("逾期"), true);
+  assert.equal(result.html.includes("阻塞 3 项"), true);
+  assert.equal(result.html.includes("依赖 WH-1"), true);
+  // critical (overdue-blocking) area is surfaced.
+  assert.equal(result.html.includes('data-r15-timeline-critical="1"'), true);
+  // OKR annotation appears (id only — no name endpoint).
+  assert.equal(result.html.includes('data-r15-timeline-okr="1"'), true);
+  // back link to the project home (not a dead-end to the list).
+  assert.equal(result.html.includes(`href="/projects/${projectId}"`), true);
+  // the read endpoint was actually called.
+  assert.equal(result.status === "ready", true);
 });
 
 test("M5 project-home: 进行中 stat chip uses the全量 total (matches header headline, no 1-vs-16 contradiction)", async () => {

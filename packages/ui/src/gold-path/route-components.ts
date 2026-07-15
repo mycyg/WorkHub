@@ -23,6 +23,9 @@ import type {
   ProjectHealthPageVM,
   ProjectHomePageVM,
   ProjectListVM,
+  ProjectMilestoneVM,
+  ProjectTimelinePageVM,
+  TimelineWorkItemVM,
   ReplayTraceVM,
   SessionVM,
   SettingsPageVM,
@@ -73,7 +76,7 @@ import { approvalQueuePageInfoText, goldPathT, normalizeWorkHubLocale, type Work
 import type { GoldPathRenderedPage } from "./render.js";
 
 // "agents"/"skills"/"projects"/"project-home"/"memory" 是 live-only 路由（不在 gold-path 静态 surface 渲染里），故单独并入而非走 Extract。
-export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "conversation" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "search" | "settings"> | "agents" | "skills" | "projects" | "project-home" | "memory";
+export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "conversation" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "search" | "settings"> | "agents" | "skills" | "projects" | "project-home" | "project-timeline" | "memory";
 
 export type WebRouteComponent = {
   key: WebRouteComponentKey;
@@ -4493,6 +4496,7 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
         <div class="wh-r4-route-actions">
           <a class="wh-btn wh-btn-primary" href="${escapeHtml(safeHref(vm.actions.new_task.href))}" data-action-id="${escapeHtml(vm.actions.new_task.id)}" data-method="${escapeHtml(vm.actions.new_task.method)}" data-r8-project-home-new-task="true">${escapeHtml(vm.actions.new_task.label)}</a>
           <a class="wh-btn" href="${escapeHtml(safeHref(vm.actions.open_drive.href))}" data-action-id="${escapeHtml(vm.actions.open_drive.id)}" data-method="${escapeHtml(vm.actions.open_drive.method)}" data-r8-project-home-open-drive="true">${escapeHtml(vm.actions.open_drive.label)}</a>
+          <a class="wh-btn" href="/projects/${escapeHtml(project.id)}/timeline" data-r15-project-home-timeline="true">${escapeHtml(zh ? "时间线" : "Timeline")}</a>
         </div>
       </header>
       <section class="wh-card wh-r4-route-card" data-r8-project-home-list="true">
@@ -4508,6 +4512,138 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
       </section>
       ${githubSection}
       <a class="wh-r4-route-kicker" href="/projects" data-r8-project-home-back="true">${escapeHtml(routeT(locale, "projectHome.back"))}</a>
+    </section>`
+  });
+}
+
+// R15 批 E2c：web 端只读时间线（/projects/:id/timeline）。web 是管理者控制台定位——不画甘特条，
+// 按里程碑分组的列表式表格读得清即可（due / 逾期 / 阻塞 N / 依赖 #CODE / OKR 标注）。纯只读，无写控件
+// （里程碑 CRUD/挂依赖是桌面工作台的地盘，web 不给假点击）。CJK 溢出门：不用定高 line-clamp，标题正常换行。
+function renderProjectTimelineRouteComponent(vm: ProjectTimelinePageVM, locale: WorkHubLocale): WebRouteComponent {
+  const zh = locale === "zh-CN";
+  const codeById = new Map(vm.items.map((item) => [item.id, item.code]));
+
+  const rowHtml = (item: TimelineWorkItemVM): string => {
+    const duePill = item.due_at
+      ? `<span class="wh-pill"${item.overdue ? ' data-tone="overdue"' : ""}>${escapeHtml(
+          `${zh ? "截止" : "Due"} ${item.due_at.slice(0, 10)}`
+        )}</span>`
+      : `<span class="wh-pill">${escapeHtml(zh ? "未定期" : "No date")}</span>`;
+    const overduePill = item.overdue
+      ? `<span class="wh-pill" data-tone="overdue">${escapeHtml(zh ? "逾期" : "Overdue")}</span>`
+      : "";
+    const blocksPill = item.blocks_count > 0
+      ? `<span class="wh-pill" data-r15-timeline-blocks="${escapeHtml(String(item.blocks_count))}">${escapeHtml(
+          zh ? `阻塞 ${item.blocks_count} 项` : `blocks ${item.blocks_count}`
+        )}</span>`
+      : "";
+    const depsPill = item.depends_on.length
+      ? `<span class="wh-pill">${escapeHtml(
+          `${zh ? "依赖" : "Needs"} ${item.depends_on.map((depId) => codeById.get(depId) ?? depId.slice(0, 8)).join(" ")}`
+        )}</span>`
+      : "";
+    // OKR 标注：只显 id（E1 VM 不带目标名，web 也无取名端点——见报告缺口，本批不改 api）。
+    const okrPill = item.objective_ids && item.objective_ids.length
+      ? `<span class="wh-pill" data-r15-timeline-okr="${escapeHtml(String(item.objective_ids.length))}" title="${escapeHtml(
+          `${zh ? "目标" : "Objectives"} ${item.objective_ids.join(zh ? "、" : ", ")}`
+        )}">${item.objective_ids.length > 1 ? `OKR ×${item.objective_ids.length}` : "OKR"}</span>`
+      : "";
+    const assigneePill = item.assignee
+      ? `<span class="wh-pill">${escapeHtml(item.assignee.label)}</span>`
+      : "";
+    return `<div class="wh-r4-route-row" data-r15-timeline-item="${escapeHtml(item.id)}" data-r15-timeline-item-code="${escapeHtml(item.code)}">
+      <div>
+        <strong>${escapeHtml(item.title)}</strong>
+        <div class="wh-r4-route-meta">
+          <span class="wh-pill">${escapeHtml(item.code)}</span>
+          <span class="wh-pill" data-tone="${escapeHtml(item.status)}">${escapeHtml(workItemStatusLabel(locale, item.status))}</span>
+          ${duePill}${overduePill}${blocksPill}${depsPill}${okrPill}${assigneePill}
+        </div>
+      </div>
+    </div>`;
+  };
+
+  const knownMilestoneIds = new Set(vm.milestones.map((milestone) => milestone.id));
+  const scheduleKey = (item: TimelineWorkItemVM): number => {
+    const start = item.start_at ? Date.parse(item.start_at) : Number.NaN;
+    const due = item.due_at ? Date.parse(item.due_at) : Number.NaN;
+    if (!Number.isNaN(start)) return start;
+    if (!Number.isNaN(due)) return due;
+    return Number.MAX_SAFE_INTEGER;
+  };
+  const sortRows = (rows: TimelineWorkItemVM[]) => [...rows].sort((a, b) => scheduleKey(a) - scheduleKey(b));
+
+  const groupSection = (title: string, dueLabel: string | undefined, doneTag: string, items: TimelineWorkItemVM[]): string => {
+    const body = items.length
+      ? `<div class="wh-r4-route-table">${sortRows(items).map(rowHtml).join("")}</div>`
+      : `<p class="wh-subtle">${escapeHtml(zh ? "这个里程碑下还没有工作项。" : "No work items under this milestone yet.")}</p>`;
+    return `<section class="wh-card wh-r4-route-card" data-r15-timeline-group="true">
+      <h3 role="heading" aria-level="2">${escapeHtml(title)}${dueLabel ? ` <span class="wh-pill">${escapeHtml(dueLabel)}</span>` : ""}${doneTag}</h3>
+      ${body}
+    </section>`;
+  };
+
+  const milestoneSections = [...vm.milestones]
+    .sort((a, b) => a.sort - b.sort)
+    .map((milestone: ProjectMilestoneVM) => {
+      const items = vm.items.filter((item) => item.milestone_id === milestone.id);
+      const dueLabel = milestone.due_at ? `${zh ? "截止" : "Due"} ${milestone.due_at.slice(0, 10)}` : undefined;
+      const doneTag = milestone.status === "done"
+        ? ` <span class="wh-pill" data-tone="done">${escapeHtml(zh ? "已达成" : "Reached")}</span>`
+        : "";
+      return groupSection(milestone.title, dueLabel, doneTag, items);
+    })
+    .join("");
+  const unassignedItems = vm.items.filter((item) => !item.milestone_id || !knownMilestoneIds.has(item.milestone_id));
+  const unassignedSection = unassignedItems.length
+    ? groupSection(zh ? "未挂里程碑" : "No milestone", undefined, "", unassignedItems)
+    : "";
+
+  // 关键路径：逾期且卡着别人的项置顶警示。
+  const criticalSection = vm.critical.overdue_blocking.length
+    ? `<section class="wh-card wh-r4-route-card" data-r15-timeline-critical="${escapeHtml(String(vm.critical.overdue_blocking.length))}">
+        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "这些逾期项卡着别人" : "These overdue items block others")}</h3>
+        <div class="wh-r4-route-meta">${vm.critical.overdue_blocking
+          .map((ref) => `<span class="wh-pill" data-tone="overdue">${escapeHtml(
+            `${codeById.get(ref.work_item_id) ?? ref.work_item_id.slice(0, 8)} · ${zh ? `卡着 ${ref.blocks_count} 项` : `blocks ${ref.blocks_count}`}`
+          )}</span>`)
+          .join("")}</div>
+      </section>`
+    : "";
+
+  const isEmpty = vm.milestones.length === 0 && (vm.empty_state === "no_work_items" || vm.items.length === 0);
+  const emptySection = isEmpty
+    ? `<section class="wh-card wh-r4-route-card" data-r15-timeline-empty="true">
+        <p class="wh-subtle">${escapeHtml(
+          zh
+            ? "这个项目还没有里程碑或排期。到桌面工作台的「时间线」标签里建里程碑、连依赖，这里就能看到只读进度。"
+            : "This project has no milestones or schedule yet. Create milestones and link dependencies in the desktop workbench Timeline tab — this read-only view will reflect them."
+        )}</p>
+      </section>`
+    : "";
+
+  return createWebRouteComponent({
+    key: "project-timeline",
+    css: webRouteComponentCss,
+    primaryHrefs: [`/projects/${vm.project.id}`],
+    source: "page-vm",
+    locale,
+    pageVm: "project-timeline",
+    html: `<section class="wh-r4-route" data-r4-route-component="project-timeline" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r15-timeline="${escapeHtml(vm.project.id)}" data-r15-timeline-milestone-count="${escapeHtml(String(vm.milestones.length))}" data-r15-timeline-item-count="${escapeHtml(String(vm.items.length))}">
+      <header class="wh-r4-route-head">
+        <div>
+          <span class="wh-r4-route-kicker">${escapeHtml(zh ? "时间线" : "Timeline")}</span>
+          <h1>${escapeHtml(vm.project.name)}</h1>
+          <div class="wh-r4-route-meta">
+            <span class="wh-pill">${escapeHtml(zh ? `里程碑 ${vm.milestones.length}` : `Milestones ${vm.milestones.length}`)}</span>
+            <span class="wh-pill">${escapeHtml(zh ? `工作项 ${vm.items.length}` : `Work items ${vm.items.length}`)}</span>
+          </div>
+        </div>
+        <div class="wh-r4-route-actions">
+          <a class="wh-btn" href="/projects/${escapeHtml(vm.project.id)}" data-r15-timeline-back="true">${escapeHtml(zh ? "返回项目主页" : "Back to project")}</a>
+        </div>
+      </header>
+      ${criticalSection}${emptySection}${milestoneSections}${unassignedSection}
     </section>`
   });
 }
@@ -5379,6 +5515,7 @@ export type WebRouteComponentInput =
   | { key: "home"; attention: AttentionHomeVM; projects?: ProjectListVM | undefined }
   | { key: "projects"; projects: ProjectListVM }
   | { key: "project-home"; project: ProjectHomePageVM }
+  | { key: "project-timeline"; timeline: ProjectTimelinePageVM }
   | { key: "intake"; session: SessionVM }
   | { key: "intake"; start: true; project?: { id: string; name: string } | undefined; projectUnavailable?: boolean | undefined; projects?: ProjectListVM | undefined }
   | { key: "approvals"; approvals: ApprovalCenterVM }
@@ -5411,6 +5548,8 @@ export function renderWebRouteComponent(
       return renderProjectsRouteComponent(input.projects, locale);
     case "project-home":
       return renderProjectHomeRouteComponent(input.project, locale);
+    case "project-timeline":
+      return renderProjectTimelineRouteComponent(input.timeline, locale);
     case "intake":
       if ("start" in input) {
         return renderIntakeStartRouteComponent(locale, input.project, input.projectUnavailable, input.projects);

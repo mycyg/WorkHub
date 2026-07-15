@@ -56,6 +56,7 @@ type ProductShellCopyKey =
   | "nav.skills"
   | "nav.memory"
   | "nav.project-home"
+  | "nav.project-timeline"
   | "topbar.scope"
   | "topbar.rest"
   | "topbar.admin"
@@ -149,6 +150,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "nav.skills": "技能",
     "nav.memory": "记忆",
     "nav.project-home": "本项目",
+    "nav.project-timeline": "时间线",
     "topbar.scope": "网页版",
     "topbar.rest": "实时数据",
     "topbar.admin": "管理员",
@@ -241,6 +243,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "nav.skills": "Skills",
     "nav.memory": "Memory",
     "nav.project-home": "This project",
+    "nav.project-timeline": "Timeline",
     "topbar.scope": "Web manager",
     "topbar.rest": "Live data",
     "topbar.admin": "Admin",
@@ -453,7 +456,7 @@ export const productNavGroups: ReadonlyArray<{
   adminOnly?: boolean;
   collapsible?: boolean;
 }> = [
-  { id: "work", titleKey: "nav.group.work", keys: new Set(["home", "projects", "project-home", "approvals", "workitem", "proposal", "conversation", "replay"]) },
+  { id: "work", titleKey: "nav.group.work", keys: new Set(["home", "projects", "project-home", "project-timeline", "approvals", "workitem", "proposal", "conversation", "replay"]) },
   { id: "assets", titleKey: "nav.group.assets", keys: new Set(["drive", "meetings", "knowledge", "search"]), collapsible: true },
   // R14 批 MEM：记忆管理面对全体成员可读（团队技能 tab 的编辑/停用才收管理员），不进 adminOnly
   // 的 admin 组——否则普通成员连「关于我」自己的记忆都点不到导航入口（见 03-mem-design §6.1）。
