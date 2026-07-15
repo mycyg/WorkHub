@@ -1663,11 +1663,23 @@ fn main() {
                 }
                 #[cfg(target_os = "macos")]
                 if std::env::var("WORKHUB_DISABLE_VIBRANCY").is_err() {
+                    // R14 真机反馈：聚焦盒肉眼看"太透"（背景穿透强），但 screencapture 截图仍是预期的半透明——
+                    // vibrancy 是窗口服务器原生合成，截图工具天生看不到它，只有肉眼能看出真实观感。根因是材质：
+                    // HudWindow 是深色 HUD 材质、不跟随系统外观；工作台窗踩过同一类"材质与浅色玻璃前景不搭"的坑
+                    // （R13 F-01，见 r13-workbench-refinement/00-plan.md），修法是换成跟随外观的
+                    // UnderWindowBackground 并把外观钉死 Light（聚焦盒 CSS 本就是硬编码浅色，不适配系统深色，
+                    // 不钉死的话深色模式下 UnderWindowBackground 会翻黑）。聚焦盒抄同一份材质。
+                    if let Err(error) = main_window.set_theme(Some(tauri::Theme::Light)) {
+                        log_main_window_startup_fallback(
+                            MainWindowStartupFallbackStep::MacosVibrancy,
+                            error,
+                        );
+                    }
                     // state=Active 强制毛玻璃常亮：默认 FollowsWindowActiveState 会让窗口"没被点中(非 key)"时
                     // vibrancy 退成扁平不透明材质 —— 表现就是"点一下才有毛玻璃"。聚焦盒不抢焦点也要一直是玻璃。
                     if let Err(error) = window_vibrancy::apply_vibrancy(
                         &main_window,
-                        window_vibrancy::NSVisualEffectMaterial::HudWindow,
+                        window_vibrancy::NSVisualEffectMaterial::UnderWindowBackground,
                         Some(window_vibrancy::NSVisualEffectState::Active),
                         Some(24.0),
                     ) {
