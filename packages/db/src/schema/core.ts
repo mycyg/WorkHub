@@ -2279,6 +2279,36 @@ export const projectGithubActivities = pgTable(
   ]
 );
 
+// R15 批 D（主动性 MVP · ProactiveIntent 管线）：主动打扰的审计地基。见 0063 迁移注释。
+// 「先记 intent 再投递」——任何一次主动打扰(追 DDL、找人，未来 Cuu 主动开口)先在这落一条 intent，
+// 再过频控闸(每人每日上限/静音/静默时段)、再投递(本批唯一通道=notifications)。suppression_key 全局
+// 幂等：INSERT ... ON CONFLICT DO NOTHING 撞它即「已处理过」，每个 DDL 阶梯对每工作项只发一次全靠它。
+export const proactiveIntents = pgTable(
+  "proactive_intents",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
+    workItemId: uuid("work_item_id").references(() => workItems.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    stage: text("stage"),
+    targetUserId: uuid("target_user_id").references(() => users.id, { onDelete: "set null" }),
+    suppressionKey: text("suppression_key").notNull(),
+    payload: jsonb("payload").$type<JsonObject>().notNull().default(sql`'{}'::jsonb`),
+    // created(已记未投) / delivered(已投递) / suppressed(被频控/静音/重复挡下)。
+    status: text("status").notNull().default("created"),
+    // 本批唯一投递通道='notification'；未来会话卡/SSE 各有自己的值。
+    deliveredVia: text("delivered_via"),
+    createdAt: createdAt()
+  },
+  (table) => [
+    uniqueIndex("proactive_intents_suppression_key_uq").on(table.suppressionKey),
+    index("proactive_intents_target_delivered_idx").on(table.targetUserId, table.createdAt),
+    index("proactive_intents_work_item_id_idx").on(table.workItemId),
+    check("proactive_intents_status_ck", sql`${table.status} in ('created', 'delivered', 'suppressed')`)
+  ]
+);
+
 export const workHubTables = {
   users,
   userMemories,
@@ -2351,7 +2381,8 @@ export const workHubTables = {
   approvalComments,
   auditLogs,
   projectGithubBindings,
-  projectGithubActivities
+  projectGithubActivities,
+  proactiveIntents
 } as const;
 
 export type WorkHubTableName = keyof typeof workHubTables;

@@ -125,3 +125,23 @@ test("pulse scheduler rejects duplicate registration and unknown task names", as
   assert.throws(() => scheduler.register({ name: "once", intervalMs: 2000, tick: () => undefined }), /already registered/);
   await assert.rejects(() => scheduler.runTask("ghost"), /unknown pulse task/);
 });
+
+test("R15 批 D: ddl-chase task drives its service through the shared scheduler contract", async () => {
+  let calls = 0;
+  const scheduler = createPulseScheduler();
+  // 镜像 getDefaultPulseScheduler 里 ddl-chase 的注册形状（名字 + maxDrainPerTick），验证它和
+  // approval-sla/notification-reminder 走同一条互斥/错误隔离/stats 水管。
+  scheduler.register({
+    name: "ddl-chase",
+    intervalMs: 1_800_000,
+    maxDrainPerTick: 200,
+    tick: async () => {
+      calls += 1;
+      return { scanned: 0, delivered: 0, suppressed_daily_cap: 0, skipped_quiet_hours: 0 };
+    }
+  });
+  const outcome = await scheduler.runTask("ddl-chase");
+  assert.equal(outcome.status, "ran");
+  assert.equal(calls, 1);
+  assert.equal(scheduler.stats().tasks["ddl-chase"]!.interval_ms, 1_800_000);
+});

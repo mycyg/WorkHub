@@ -47,7 +47,7 @@ import {
 // R14 批 CHAT：新增 message_reactions + conversation_read_cursors 两张表（迁移 0055），graph 涨到 68。
 // R14 批 FEEDBACK：新增 ai_feedback 一张表（迁移 0058），graph 涨到 69。
 // R14 批 GH：新增 project_github_bindings + project_github_activities 两张表（迁移 0060），graph 涨到 71。
-const F02_TABLE_COUNT = 71;
+const F02_TABLE_COUNT = 72;
 
 type WorkHubTable = (typeof workHubTables)[keyof typeof workHubTables];
 
@@ -664,7 +664,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0062 dm containers", () => {
+test("migration journal ends with 0063 proactive intents", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -679,16 +679,16 @@ test("migration journal ends with 0062 dm containers", () => {
       breakpoints: finalEntry.breakpoints
     },
     {
-      // R15 批 B：DM 容器 + dm_key 查重列（0062）接在 R15 批 A 链尾 0061 之后，when 严格递增。
-      idx: 62,
+      // R15 批 D：ProactiveIntent 审计表（0063）接在 R15 批 B 链尾 0062 之后，when 严格递增。
+      idx: 63,
       version: "7",
-      tag: "0062_dm_containers",
+      tag: "0063_proactive_intents",
       breakpoints: true
     }
   );
-  // when 严格递增（0062 的时间戳必须大于 0061 的 1783916000000）——否则 drizzle 迁移应用顺序会乱。
-  const reminderEntry = journal.entries.find((entry) => entry.tag === "0061_notification_reminders");
-  assert.ok(reminderEntry && finalEntry && finalEntry.when > reminderEntry.when);
+  // when 严格递增（0063 的时间戳必须大于 0062 的 1783918000000）——否则 drizzle 迁移应用顺序会乱。
+  const dmEntry = journal.entries.find((entry) => entry.tag === "0062_dm_containers");
+  assert.ok(dmEntry && finalEntry && finalEntry.when > dmEntry.when);
 });
 
 test("R15 批 A migration 0061 adds the reminder-ladder columns additively", () => {

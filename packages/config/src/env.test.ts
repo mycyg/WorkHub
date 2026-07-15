@@ -67,6 +67,27 @@ test("project drive hydration is on by default and can be explicitly disabled", 
   assert.equal(loadSettings({ AGENT_RUN_PROJECT_HYDRATE_ENABLED: "false" }).agentRun.projectHydrateEnabled, false);
 });
 
+test("R15 批 D: proactivity + ddl-chase settings have sensible defaults and are overridable", () => {
+  const defaults = loadSettings({});
+  // 追 DDL 巡检默认 30 分钟；静默时段默认 22:00–08:00；每人每日上限默认 10。
+  assert.equal(defaults.pulse.ddlChaseIntervalMs, 1800000);
+  assert.equal(defaults.proactive.quietHours, "22-08");
+  assert.equal(defaults.proactive.dailyCapPerUser, 10);
+
+  const overridden = loadSettings({
+    PULSE_DDL_CHASE_INTERVAL_MS: "600000",
+    PROACTIVE_QUIET_HOURS: "23-07",
+    PROACTIVE_DAILY_CAP_PER_USER: "3"
+  });
+  assert.equal(overridden.pulse.ddlChaseIntervalMs, 600000);
+  assert.equal(overridden.proactive.quietHours, "23-07");
+  assert.equal(overridden.proactive.dailyCapPerUser, 3);
+
+  // 间隔置 0 = 不挂定时器（沿用其他 pulse 任务的 min(0) 语义）；空静默串 = 不启用静默。
+  assert.equal(loadSettings({ PULSE_DDL_CHASE_INTERVAL_MS: "0" }).pulse.ddlChaseIntervalMs, 0);
+  assert.equal(loadSettings({ PROACTIVE_QUIET_HOURS: "" }).proactive.quietHours, "");
+});
+
 test("provider registry config keeps API keys out of public metadata", () => {
   const value = loadSettings({
     LLM_API_KEY: "secret-key",
