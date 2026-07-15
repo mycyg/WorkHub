@@ -162,13 +162,13 @@ export function notificationActionFromHref(href: string) {
   if (path === "/api/notifications/read-all") {
     return { action: "mark_all_read" as const };
   }
-  const match = /^\/api\/notifications\/([^/]+)\/(read|dismiss|complete)$/u.exec(path);
+  const match = /^\/api\/notifications\/([^/]+)\/(read|dismiss|complete|snooze)$/u.exec(path);
   if (!match?.[1] || !match[2]) {
     return undefined;
   }
   return {
     notificationId: decodeURIComponent(match[1]),
-    action: match[2] as "read" | "dismiss" | "complete"
+    action: match[2] as "read" | "dismiss" | "complete" | "snooze"
   };
 }
 

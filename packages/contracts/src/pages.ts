@@ -484,6 +484,11 @@ export const notificationItemVmSchema = z.object({
   // 的 notificationItem() 复用它），暴露成结构化字段供 web 通知列表标注"这条通知关联一段会话讨论"，
   // 不用再让调用方自己解析 href 查询串。老通知/没有会话上下文的通知类型这个字段就不出现。
   conversation_id: idSchema.optional(),
+  // R15 批 A（A2 提醒阶梯）：additive optional——镜像 notification.ts 的 Notification.next_remind_at/
+  // reminder_count。桌面 spotlight 通知视图 + web 通知页据 next_remind_at 非空渲「暂停提醒」轻按钮
+  // （POST /api/notifications/:id/snooze 置空即抑制 24h 叮嘱）。不进阶梯的通知类型这两个字段不出现。
+  next_remind_at: isoDateTimeSchema.optional(),
+  reminder_count: z.number().int().nonnegative().optional(),
   dedupe_key: z.string().min(1).optional(),
   source_context: notificationSourceContextVmSchema.optional(),
   read_at: isoDateTimeSchema.optional(),

@@ -10,7 +10,7 @@ import type {
   NotificationWriteResult
 } from "@workhub/db";
 
-import { createNotificationService, NotificationServiceError } from "./services/notifications.js";
+import { createNotificationService, NotificationServiceError, toNotificationResponse } from "./services/notifications.js";
 
 const now = new Date("2026-06-05T00:00:00.000Z");
 
@@ -1350,4 +1350,18 @@ test("A5 respects per-type mute for conversation.message", async () => {
   assert.equal(result, null);
   assert.equal(repo.inputs.length, 0, "muted recipient must never reach the write path");
   assert.deepEqual(published, []);
+});
+
+// R15 批 A（A2 提醒阶梯）：toNotificationResponse 暴露提醒态——next_remind_at 非空 + reminder_count>0 时带出，
+// 前端据此渲「暂停提醒」按钮；不在阶梯上（nextRemindAt=null、reminderCount=0）则两字段都不出现。
+test("toNotificationResponse exposes reminder state only when on the ladder", () => {
+  const onLadder = toNotificationResponse(
+    row({ nextRemindAt: new Date("2026-06-06T00:00:00.000Z"), reminderCount: 2 })
+  );
+  assert.equal(onLadder.next_remind_at, "2026-06-06T00:00:00.000Z");
+  assert.equal(onLadder.reminder_count, 2);
+
+  const offLadder = toNotificationResponse(row({ nextRemindAt: null, reminderCount: 0 }));
+  assert.equal("next_remind_at" in offLadder, false);
+  assert.equal("reminder_count" in offLadder, false);
 });

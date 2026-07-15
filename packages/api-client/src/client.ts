@@ -394,6 +394,11 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       request(`/api/notifications/${encodeURIComponent(id)}/complete`, {
         method: "POST"
       }),
+    // R15 批 A（A2 提醒阶梯）：暂停这条通知的 24h 叮嘱（服务端置 next_remind_at=null，读/归档态不动）。
+    snoozeNotification: (id) =>
+      request(`/api/notifications/${encodeURIComponent(id)}/snooze`, {
+        method: "POST"
+      }),
     getNotificationPreferences: () =>
       request("/api/notifications/preferences"),
     setNotificationPreferences: (mutedNotificationTypes) =>

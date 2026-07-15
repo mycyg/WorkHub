@@ -1544,6 +1544,20 @@ function bindGoldPathNavigation(
         }
         return;
       }
+      // R15 批 A（A2 提醒阶梯）：暂停提醒——POST /snooze 置空 next_remind_at，重渲后这条通知不再挂「暂停提醒」
+      // 按钮（next_remind_at 已空）。读/归档态不动，通知仍留在待决策/FYI 桶里，只是不再 24h 催。
+      if (notificationAction?.action === "snooze") {
+        try {
+          const result = await client.snoozeNotification(notificationAction.notificationId);
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId ?? "notification_snooze"));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
       const escalationAction = escalationActionFromHref(href);
       if (escalationAction?.action === "budget") {
         try {

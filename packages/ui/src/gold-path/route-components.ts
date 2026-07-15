@@ -382,6 +382,8 @@ type RouteCopyKey =
   | "notifications.source"
   | "notifications.groundingWhy"
   | "notifications.conversationLinked"
+  | "notifications.snooze"
+  | "notifications.snoozed"
   | "knowledge.fromNotice"
   | "health.kicker"
   | "health.healthy"
@@ -637,6 +639,8 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     // G-web 止血批：web 没有会话 UI——旧文案「打开后能看到相关上下文」会让人以为点开就能看会话内容，
     // 实际跳转目标只是既有的工作项/审批页（带 ?conversation_id= 查询串），补一句诚实指路。
     "notifications.conversationLinked": "这条通知关联一段讨论，会话内容请在桌面工作台查看",
+    "notifications.snooze": "暂停提醒",
+    "notifications.snoozed": "已暂停",
     "knowledge.fromNotice": "来自通知的相关资料",
     "health.kicker": "项目健康",
     "health.title": "健康总览",
@@ -891,6 +895,8 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "notifications.source": "Source",
     "notifications.groundingWhy": "Why am I seeing this",
     "notifications.conversationLinked": "This notification is tied to a discussion — the conversation itself only opens in the desktop workbench",
+    "notifications.snooze": "Snooze",
+    "notifications.snoozed": "Snoozed",
     "knowledge.fromNotice": "Search context from a notification",
     "health.kicker": "Project health",
     "health.title": "Health overview",
@@ -3452,9 +3458,16 @@ function sourceContextLabel(source: NotificationPageVM["items"][number]["source_
 }
 
 function notificationActionLinks(item: NotificationPageVM["items"][number], locale: WorkHubLocale) {
+  // R15 批 A（A2 提醒阶梯）：next_remind_at 非空 = 这条通知还挂在 24h 叮嘱阶梯上，给一个「暂停提醒」轻链接
+  // （POST /api/notifications/:id/snooze 置空 next_remind_at 即抑制，读/归档态不动）。走既有 data-method 动作
+  // 管道（apps/web browser.ts 的 notificationActionFromHref → snoozeNotification），成功后整页重渲、按钮自消失。
+  const snoozeLink = item.next_remind_at
+    ? `<a class="wh-btn" href="${escapeHtml(safeHref(`/api/notifications/${item.id}/snooze`))}" data-action-id="notification_snooze" data-method="POST" data-r15-notification-snooze="true">${escapeHtml(routeT(locale, "notifications.snooze"))}</a>`
+    : "";
   const links = [
     item.actions.open ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(safeHref(item.actions.open.href))}" data-action-id="${escapeHtml(item.actions.open.id)}">${escapeHtml(item.actions.open.label || routeT(locale, "notifications.open"))}</a>` : "",
     item.actions.mark_read ? `<a class="wh-btn" href="${escapeHtml(safeHref(item.actions.mark_read.href))}" data-action-id="${escapeHtml(item.actions.mark_read.id)}" data-method="${escapeHtml(item.actions.mark_read.method)}" data-r5-notification-mark-read="true">${escapeHtml(item.actions.mark_read.label)}</a>` : "",
+    snoozeLink,
     item.actions.dismiss ? `<a class="wh-btn" href="${escapeHtml(safeHref(item.actions.dismiss.href))}" data-action-id="${escapeHtml(item.actions.dismiss.id)}" data-method="${escapeHtml(item.actions.dismiss.method)}" data-r5-notification-dismiss="true">${escapeHtml(item.actions.dismiss.label)}</a>` : "",
     item.actions.complete ? `<a class="wh-btn" href="${escapeHtml(safeHref(item.actions.complete.href))}" data-action-id="${escapeHtml(item.actions.complete.id)}" data-method="${escapeHtml(item.actions.complete.method)}" data-r5-notification-complete="true">${escapeHtml(item.actions.complete.label)}</a>` : ""
   ].filter(Boolean);
