@@ -168,6 +168,10 @@ function service(overrides: Partial<ConversationService> = {}): ConversationServ
     async openDm() {
       throw new Error("openDm not expected");
     },
+    // R15 批 B：新增 listDms 服务方法（私聊列表）——本套件不测它，给拒绝桩即可。
+    async listDms() {
+      throw new Error("listDms not expected");
+    },
     // R14FIX 批 workbench：新增 renameConversation 服务方法——本套件（既有会话/消息路由）不测它，
     // 给拒绝桩即可（新路由文件 conversation-rename.ts 有自己的套件）。
     async renameConversation() {

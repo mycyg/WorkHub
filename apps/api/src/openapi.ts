@@ -5049,6 +5049,53 @@ const dmOpenResponses = {
   }
 } as const;
 
+// R15 批 B（人对人私聊）：GET /api/dm/list 的响应集——actor 参与的 DM 列表（参与者门控），每条 = 会话 VM
+// + 恰好 2 名参与者（含对方昵称/is_self），与 services/conversations.ts 的 listDms 逐字段对齐。
+const dmListResponses = {
+  responses: {
+    "200": jsonDataResponse(
+      {
+        type: "object",
+        required: ["items"],
+        properties: {
+          items: {
+            type: "array",
+            maxItems: 200,
+            items: {
+              type: "object",
+              required: ["conversation", "participants"],
+              properties: {
+                conversation: conversationResponseSchema,
+                participants: {
+                  type: "array",
+                  minItems: 2,
+                  maxItems: 2,
+                  items: {
+                    type: "object",
+                    required: ["user_id", "nickname", "is_self"],
+                    properties: {
+                      user_id: uuidStringSchema,
+                      nickname: { type: "string", minLength: 1 },
+                      is_self: { type: "boolean" }
+                    },
+                    additionalProperties: false
+                  }
+                }
+              },
+              additionalProperties: false
+            }
+          }
+        },
+        additionalProperties: false
+      },
+      "Direct-message conversations the caller participates in"
+    ).responses["200"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+
 // R14 批 CHAT：消息动作（编辑/删除/reaction/置顶）、已读游标与 presence 的手写 schema——
 // 与 routes/conversation-message-actions.ts / conversation-read.ts / presence.ts 的真实状态码逐条对齐。
 const conversationReactionKeyPathParameter = {
@@ -7407,6 +7454,13 @@ export function getOpenApiDocument() {
           summary: "Open (or reuse) the direct-message conversation with another workspace member",
           ...jsonRequestBody(openDmRequestBodySchema),
           ...dmOpenResponses
+        }
+      },
+      "/api/dm/list": {
+        get: {
+          tags: ["conversations"],
+          summary: "List the direct-message conversations the caller participates in",
+          ...dmListResponses
         }
       },
       "/api/conversations/{id}": {

@@ -36,5 +36,13 @@ export function createDmRoutes(deps: DmRoutesDependencies = {}) {
     return c.json({ ok: true, data }, 201);
   });
 
+  // R15 批 B（人对人私聊 · B3 成员 roster / 私聊分组）：GET /api/dm/list —— actor 参与的 DM 列表。
+  // 参与者门控/容器解析/两名参与者昵称装配全在 services/conversations.ts 的 listDms 里做，路由层只做
+  // 鉴权、转发、成形响应（无 query 参数——服务层用 DM_LIST_CAP 封顶，同 capped 三件套口径）。
+  routes.get("/list", requireCurrentUser, async (c) => {
+    const data = await conversations.listDms({ actor: c.var.actor });
+    return c.json({ ok: true, data });
+  });
+
   return routes;
 }

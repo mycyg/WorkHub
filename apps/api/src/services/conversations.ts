@@ -44,6 +44,8 @@ import {
   conversationReadUpdatedEventSchema,
   createConversationResultVmSchema,
   openDmResultVmSchema,
+  dmListVmSchema,
+  DM_LIST_CAP,
   renameConversationResultVmSchema,
   eventTypes,
   MAX_CONVERSATION_REPLY_PREVIEW_CODE_UNITS,
@@ -60,6 +62,7 @@ import {
   type CreateConversationMessageRequest,
   type CreateConversationRequest,
   type CreateConversationResultVM,
+  type DmListVM,
   type EditConversationMessageRequest,
   type OpenDmResultVM,
   type RenameConversationRequest,
@@ -121,6 +124,9 @@ export type ConversationService = {
   // R15 批 B（人对人私聊）：查/开一对用户的 DM——返回既有会话列表同款的 conversation VM（带 is_dm）。
   // 目标须与调用者同工作区活跃成员、且不是自己（校验在实现/仓库层，映射到 400/404）。
   openDm(input: { actor: AuthActor; targetUserId: string }): Promise<OpenDmResultVM>;
+  // R15 批 B（人对人私聊）：actor 参与的 DM 列表（参与者门控、含对方昵称+is_self）——rail「私聊」分组
+  // 的唯一数据源。DM 容器项目对项目树/工作台 VM 全线围栏，DM 会话没有任何常规入口，靠这个窄口列出。
+  listDms(input: { actor: AuthActor }): Promise<DmListVM>;
   // R14FIX 批 workbench：协同会话改名——仅 collab 会话、仅参与者/owner（红线在实现里强制）。
   renameConversation(input: {
     actor: AuthActor;
@@ -730,6 +736,35 @@ export function createConversationService(
         openDmResultVmSchema,
         { conversation: conversationToVm(result.conversation, participantRole) },
         "conversations.dm.open"
+      );
+    },
+
+    // ── R15 批 B（人对人私聊）：actor 参与的 DM 列表 ─────────────────────────────────────
+    // 参与者门控在仓库层做（只回 actor 是 participant 的 DM）。participant_role 与 openDm 同款按
+    // created_by 判定（发起过的那方 owner、被开聊的那方 member），不额外查参与者角色列。
+    async listDms(input) {
+      const human = requireHumanActor(input.actor);
+      const rows = await repository.listDmsForUser({
+        workspaceId: human.workspaceId,
+        userId: human.userId,
+        limit: DM_LIST_CAP
+      });
+      return parseOutputContract(
+        dmListVmSchema,
+        {
+          items: rows.map((row) => ({
+            conversation: conversationToVm(
+              row.conversation,
+              row.conversation.createdBy?.toLowerCase() === human.userId.toLowerCase() ? "owner" : "member"
+            ),
+            participants: row.participants.map((participant) => ({
+              user_id: participant.userId,
+              nickname: participant.nickname,
+              is_self: participant.isSelf
+            }))
+          }))
+        },
+        "conversations.dm.list"
       );
     },
 

@@ -13,7 +13,7 @@ import type {
   UserAuthRow,
   UserRepository
 } from "@workhub/db";
-import type { OpenDmResultVM } from "@workhub/contracts";
+import type { DmListVM, OpenDmResultVM } from "@workhub/contracts";
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "../middleware/auth.js";
 import { ConversationServiceError, type ConversationService } from "../services/conversations.js";
@@ -134,6 +134,20 @@ function dmResultVm(): OpenDmResultVM {
   };
 }
 
+function dmListVm(): DmListVM {
+  return {
+    items: [
+      {
+        conversation: dmResultVm().conversation,
+        participants: [
+          { user_id: userId, nickname: "r15-dm-owner", is_self: true },
+          { user_id: targetUserId, nickname: "r15-dm-peer", is_self: false }
+        ]
+      }
+    ]
+  };
+}
+
 function service(overrides: Partial<ConversationService> = {}): ConversationService {
   const reject = (name: string) => async () => {
     throw new Error(`${name} not expected`);
@@ -144,6 +158,7 @@ function service(overrides: Partial<ConversationService> = {}): ConversationServ
     listConversations: reject("listConversations"),
     createConversation: reject("createConversation"),
     openDm: reject("openDm"),
+    listDms: reject("listDms"),
     renameConversation: reject("renameConversation"),
     listMessages: reject("listMessages"),
     createMessage: reject("createMessage"),
@@ -303,4 +318,43 @@ test("the route preserves the service's typed 404 for a target outside the works
     ok: false,
     error: { code: "conversation_dm_target_not_found", message: "没有找到这个工作区里的这个人。" }
   });
+});
+
+test("dm list requires authentication before reaching the service", async () => {
+  const runtimeSettings = settings();
+  const app = routeApp(
+    runtimeSettings,
+    service({
+      async listDms() {
+        throw new Error("anonymous request must not reach the service");
+      }
+    })
+  );
+
+  const response = await app.request("/api/dm/list");
+
+  assert.equal(response.status, 401);
+});
+
+test("a well-formed list forwards the actor and returns the service VM verbatim (200)", async () => {
+  const runtimeSettings = settings();
+  const seen: unknown[] = [];
+  const app = routeApp(
+    runtimeSettings,
+    service({
+      async listDms(input) {
+        seen.push(input);
+        return dmListVm();
+      }
+    })
+  );
+  const headers = { Cookie: await cookie(runtimeSettings) };
+
+  const response = await app.request("/api/dm/list", { headers });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, data: dmListVm() });
+  assert.equal(seen.length, 1);
+  const call = seen[0] as { actor: { userId?: string } };
+  assert.equal(call.actor.userId, userId);
 });

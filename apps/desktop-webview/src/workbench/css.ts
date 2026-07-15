@@ -99,6 +99,36 @@ export const workbenchCss = [
   ".wh-wb-army-nav svg{width:18px;height:18px;color:var(--wb-cuu);flex:0 0 auto}",
   ".wh-wb-army-nav-label{font:600 13.5px/1.3 var(--ds-font);color:var(--ds-ink)}",
 
+  // —— R15 批 B（人对人私聊）：成员 roster + 私聊分组 + 头像资料卡 —— //
+  // 分组标题在 .wh-wb-rail-group 里时去掉 rail-head 默认的上/侧内边距冗余，贴合分组容器。
+  ".wh-wb-rail-head--flush{padding:2px 10px 6px}",
+  // roster / DM 行——同 .wh-wb-project-row 的一档密度与 hover/选中手感，左头像右昵称，昵称单行省略号。
+  ".wh-wb-roster-row,.wh-wb-dm-row{display:flex;align-items:center;gap:9px;width:100%;box-sizing:border-box;padding:6px 10px;" +
+    "background:transparent;border:0;border-radius:9px;cursor:pointer;text-align:left;transition:background var(--ds-dur-fast) var(--ds-ease)}",
+  ".wh-wb-roster-row:hover,.wh-wb-dm-row:hover{background:rgba(20,30,50,.05)}",
+  ".wh-wb-dm-row.sel{background:var(--ds-accent-soft)}",
+  ".wh-wb-roster-name,.wh-wb-dm-name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" +
+    "font:500 13px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  // roster/dm 行里的头像不堆叠——抵掉 .wh-wb-chat-avatar 的 -6px 负边距。
+  ".wh-wb-roster-row .wh-wb-chat-avatar,.wh-wb-dm-row .wh-wb-chat-avatar{margin-right:0}",
+  ".wh-wb-dm-empty{margin:0 10px 4px;font:500 12px/1.5 var(--ds-font);color:var(--ds-ink-faint)}",
+  // 头像资料卡：外壳根级绝对定位的浮层 + 内层玻璃卡。
+  ".wh-wb-profile-pop{position:absolute;z-index:60;max-width:230px}",
+  ".wh-wb-profile-card{border-radius:var(--ds-radius-md);padding:12px 13px;display:flex;flex-direction:column;gap:10px}",
+  ".wh-wb-profile-head{display:flex;align-items:center;gap:10px}",
+  ".wh-wb-profile-avatar .wh-wb-chat-avatar{width:34px;height:34px;margin-right:0;font-size:13px}",
+  ".wh-wb-profile-meta{min-width:0;display:flex;flex-direction:column;gap:2px}",
+  ".wh-wb-profile-name{font:600 14px/1.25 var(--ds-font);color:var(--ds-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+  ".wh-wb-profile-status{font:500 12px/1.2 var(--ds-font);color:var(--ds-ink-faint)}",
+  ".wh-wb-profile-status--online{color:var(--ds-success)}",
+  ".wh-wb-profile-self{font:500 12.5px/1.3 var(--ds-font);color:var(--ds-ink-muted)}",
+  ".wh-wb-profile-dm{display:inline-flex;align-items:center;justify-content:center;width:100%;box-sizing:border-box;" +
+    "padding:7px 12px;border:0;border-radius:var(--ds-radius-sm);cursor:pointer;font:600 13px/1 var(--ds-font);" +
+    "color:#fff;background:linear-gradient(135deg,#0a84ff,#64d2ff);box-shadow:var(--ds-shadow-glow)}",
+  // DM 会话头的在线两态文字——贴在对方昵称之后。
+  ".wh-wb-chat-head-status{margin-left:8px;font:500 12px/1.2 var(--ds-font);color:var(--ds-ink-faint)}",
+  ".wh-wb-chat-head-status--online{color:var(--ds-success)}",
+
   // —— 中栏 —— //
   ".wh-wb-center{flex:1 1 auto;min-width:0;overflow-y:auto;padding:20px 26px}",
   ".wh-wb-empty{max-width:420px;margin:14vh auto 0;text-align:center}",
