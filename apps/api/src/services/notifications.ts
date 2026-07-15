@@ -363,7 +363,11 @@ export function createNotificationService(
     }
   }
 
-  async function flushDraft(draft: NotificationDraft & { nextRemindAt?: Date }): Promise<NotificationRow | null> {
+  async function flushDraft(
+    // R15 批 F：workItemId 放宽为可选——主动性 intent（如关怀）不一定挂工作项。底层
+    // createOrUpdateNotification 本就接受可选 workItemId（见 createMentionNotification 先例）。
+    draft: Omit<NotificationDraft, "workItemId"> & { workItemId?: string; nextRemindAt?: Date }
+  ): Promise<NotificationRow | null> {
     // 团队就绪 must-have：收件人静音了该类型则跳过、不建（DEFAULT-OFF：查询不可用/空则照建）。
     if (await isMutedForRecipient(draft.userId, draft.type)) {
       return null;
@@ -376,7 +380,7 @@ export function createNotificationService(
         title: draft.title,
         body: draft.body,
         targetUrl: draft.targetUrl,
-        workItemId: draft.workItemId,
+        ...(draft.workItemId ? { workItemId: draft.workItemId } : {}),
         dedupeKey: draft.dedupeKey,
         ...(draft.projectId ? { projectId: draft.projectId } : {}),
         // R15 批 A：进 24h 提醒阶梯的通知（approval.routed）带上首个 next_remind_at；其余不带。
@@ -433,7 +437,9 @@ export function createNotificationService(
       return deps.notifications.archiveByDedupeKey(dedupeKey, now());
     },
 
-    async createNotification(draft: NotificationDraft & { nextRemindAt?: Date }): Promise<Notification | null> {
+    async createNotification(
+      draft: Omit<NotificationDraft, "workItemId"> & { workItemId?: string; nextRemindAt?: Date }
+    ): Promise<Notification | null> {
       // 团队就绪 must-have：收件人静音了该类型则返回 null（未建）。
       const row = await flushDraft(draft);
       return row ? toNotificationResponse(row) : null;

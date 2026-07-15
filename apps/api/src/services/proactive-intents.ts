@@ -61,25 +61,33 @@ export type ProactiveIntentNotification = {
 
 export type ProactiveIntentInput = {
   workspaceId: string;
-  projectId: string;
-  workItemId: string;
+  // R15 批 F（关怀）：可空——关怀 intent 不挂具体项目/工作项（只关切「人」，不关切某件事）。DDL 追人
+  // 恒有工作项，关怀恒为 null，proactive_intents 两列本就是可空 FK。
+  projectId: string | null;
+  workItemId: string | null;
   kind: ProactiveIntentKind;
   stage: string;
   targetUserId: string;
   suppressionKey: string;
   payload: Record<string, unknown>;
-  // notification 通道的通知草稿。始终必填——即便走会话通道，个人空间不可用时也要靠它降级投递。
+  // notification 通道的通知草稿。始终必填——即便走会话通道，个人空间不可用时也要靠它降级投递
+  // （关怀 degradeToNotification=false 时永不消费它，但类型仍必填，草稿为惰性占位）。
   notification: ProactiveIntentNotification;
   // R15 批 D2：期望的投递通道（缺省 'notification'）。选 'conversation_message' 时须给 conversationText。
   channel?: ProactiveDeliveryChannel;
-  // 会话通道的人话文案（Cuu 在个人空间主区说的那句）——零 LLM，由调用方（ddl-chase 模板）给定。
+  // 会话通道的人话文案（Cuu 在个人空间主区说的那句）——零 LLM，由调用方（ddl-chase / care-scan 模板）给定。
   // 仅在 channel='conversation_message' 时使用；缺省/走通知通道时忽略。
   conversationText?: string;
+  // R15 批 F（关怀）：会话通道投不成时是否降级回 notification。缺省 true（DDL 行为：宁可用系统通知补上，
+  // 不吞掉这条主动性）。关怀设 false——个人空间不可用/投递失败时【直接 suppressed，绝不降级到系统通知】，
+  // 因为关怀走系统通知反而尴尬（"Cuu 想关心你，但只能给你发条冷冰冰的系统通知"）。这是与 DDL 的关键差异。
+  degradeToNotification?: boolean;
 };
 
 export type ProactiveDeliverResult =
   | { status: "delivered"; intentId: string }
-  | { status: "suppressed"; reason: "duplicate" | "daily_cap" | "muted"; intentId?: string };
+  // no_personal_space：关怀专用——会话通道投不成且 degradeToNotification=false，不降级、直接抑制。
+  | { status: "suppressed"; reason: "duplicate" | "daily_cap" | "muted" | "no_personal_space"; intentId?: string };
 
 export type ProactiveIntentRepositoryDeps = {
   recordIntent: (input: Parameters<typeof recordProactiveIntent>[1]) => Promise<RecordProactiveIntentResult>;
@@ -159,35 +167,48 @@ export function createProactiveIntentService(deps: ProactiveIntentServiceDeps): 
         return { status: "suppressed", reason: "daily_cap", intentId };
       }
 
-      // 3) 投递。通道由调用方选（缺省 notification）。会话通道（Cuu 在个人空间主区说话）走得通就用它；
-      //    个人空间不可用 / 未注入投递端口 / 投递抛错 → 一律降级回 notification 通道（fail-open：不吞
-      //    掉这条主动性）。注意：会话通道不经通知的按类型静音（个人空间是你自己的地盘，没有对应的通知
-      //    类型可静音）——静音只在 notification 通道生效。
+      // 3) 投递。通道由调用方选（缺省 notification）。会话通道（Cuu 在个人空间主区说话）走得通就用它。
+      //    投不成时的兜底由 degradeToNotification 决定（缺省 true）：
+      //      * true（DDL 追人）：降级回 notification 通道（fail-open：宁可用系统通知补上，不吞主动性）；
+      //      * false（关怀）：直接 suppressed，绝不降级到系统通知（关怀走系统通知反而尴尬，见类型定义处注释）。
+      //    注意：会话通道不经通知的按类型静音（个人空间是你自己的地盘，没有对应的通知类型可静音）——
+      //    静音只在 notification 通道生效。
       const wantsConversation = (intent.channel ?? "notification") === "conversation_message";
-      if (wantsConversation && intent.conversationText && deps.conversationDelivery) {
-        try {
-          const outcome = await deps.conversationDelivery.deliverCuuMessage({
-            workspaceId: intent.workspaceId,
-            targetUserId: intent.targetUserId,
-            text: intent.conversationText,
-            proactiveIntentId: intentId
-          });
-          if (outcome.delivered) {
-            await deps.repository.markStatus({ id: intentId, status: "delivered", deliveredVia: "conversation_message" });
-            return { status: "delivered", intentId };
+      const degradeToNotification = intent.degradeToNotification ?? true;
+      if (wantsConversation) {
+        if (intent.conversationText && deps.conversationDelivery) {
+          try {
+            const outcome = await deps.conversationDelivery.deliverCuuMessage({
+              workspaceId: intent.workspaceId,
+              targetUserId: intent.targetUserId,
+              text: intent.conversationText,
+              proactiveIntentId: intentId
+            });
+            if (outcome.delivered) {
+              await deps.repository.markStatus({ id: intentId, status: "delivered", deliveredVia: "conversation_message" });
+              return { status: "delivered", intentId };
+            }
+            logger.warn?.("proactive_conversation_delivery_degraded", {
+              intentId,
+              targetUserId: intent.targetUserId,
+              reason: outcome.reason
+            });
+          } catch (error) {
+            logger.warn?.("proactive_conversation_delivery_failed", { intentId, error });
           }
-          logger.warn?.("proactive_conversation_delivery_degraded", {
-            intentId,
-            targetUserId: intent.targetUserId,
-            reason: outcome.reason
-          });
-        } catch (error) {
-          logger.warn?.("proactive_conversation_delivery_failed", { intentId, error });
         }
-        // 落到这里 = 会话通道没投成，继续走下面的 notification 降级路径。
+        // 到这里 = 会话通道没投成（个人空间缺失 / 未注入端口 / 缺文案 / 抛错）。
+        if (!degradeToNotification) {
+          // 关怀：不降级到系统通知——直接 suppressed。
+          await deps.repository.markStatus({ id: intentId, status: "suppressed" });
+          return { status: "suppressed", reason: "no_personal_space", intentId };
+        }
+        // 否则继续走下面的 notification 降级路径（DDL 行为）。
       }
 
-      // notification 通道（也是会话通道的降级目标）。createNotification 内部按类型静音返回 null → 记 suppressed。
+      // notification 通道（也是会话通道的降级目标）。到这里必是「有工作项挂靠」的 DDL 类 intent
+      // （关怀 workItemId=null 且 degradeToNotification=false，上面已 suppressed 返回，不会落到这）。
+      // createNotification 内部按类型静音返回 null → 记 suppressed。
       const notification = await deps.notifications.createNotification({
         userId: intent.targetUserId,
         type: intent.notification.type,
@@ -195,8 +216,8 @@ export function createProactiveIntentService(deps: ProactiveIntentServiceDeps): 
         title: intent.notification.title,
         body: intent.notification.body,
         targetUrl: intent.notification.targetUrl,
-        projectId: intent.projectId,
-        workItemId: intent.workItemId,
+        ...(intent.projectId ? { projectId: intent.projectId } : {}),
+        ...(intent.workItemId ? { workItemId: intent.workItemId } : {}),
         dedupeKey: intent.notification.dedupeKey,
         ...(intent.notification.nextRemindAt ? { nextRemindAt: intent.notification.nextRemindAt } : {})
       });
