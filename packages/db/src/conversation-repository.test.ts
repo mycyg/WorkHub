@@ -2169,3 +2169,89 @@ test("R15 B createCollab refuses to create a normal collab conversation inside a
   // 容器守卫在锁到项目后立即 fail-closed——绝不插会话/参与者。
   assert.equal(queries.some((query) => query.operation === "insert"), false);
 });
+
+// ── R15 批 A（A4/A5 未读聚合）：读游标口径的未读数聚合 + 参与者列举 ─────────────────────────
+test("R15 A4 unreadCountsForViewer aggregates per-conversation in one grouped query with tombstone/self/cursor guards", async () => {
+  const conversationA = "13000000-0000-4000-8000-0000000000a1";
+  const conversationB = "13000000-0000-4000-8000-0000000000a2";
+  const { db, queries } = createQueryRecorder([
+    // 未读为 0 的会话在 GROUP BY 下不产出行——只回有未读的两条，调用方 `?? 0` 兜底其余。
+    [
+      { conversationId: conversationA, unread: 3 },
+      { conversationId: conversationB, unread: 1 }
+    ]
+  ]);
+
+  const result = await createConversationRepository(db).unreadCountsForViewer({
+    viewerUserId: memberUserId,
+    conversationIds: [conversationA, conversationB, conversationId]
+  });
+
+  assert.deepEqual(
+    [...result.entries()].sort(),
+    [
+      [conversationA, 3],
+      [conversationB, 1]
+    ]
+  );
+  const query = queries[0];
+  // 一条查询算齐（禁 N+1）：单 select + 左连读游标 + GROUP BY 会话。
+  assert.equal(queries.length, 1);
+  assert.equal(query?.operation, "select");
+  assert.equal(query?.joins.length, 1);
+  assert.equal(query?.joins[0]?.kind, "left");
+  assert.ok((query?.groupBy.length ?? 0) > 0);
+  assert.ok(queryReferences(query?.groupBy[0], conversationMessages.conversationId));
+  // 墓碑不计 / 自己发的不计 / 游标缺失兜 0（coalesce）。
+  assert.ok(queryReferences(query?.where, conversationMessages.deletedAt), "must filter tombstones");
+  assert.ok(queryReferences(query?.where, conversationMessages.senderUserId), "must exclude own messages");
+  assert.ok(queryTextFragments(query?.where).join("").includes("coalesce"), "missing cursor coalesces to 0");
+});
+
+test("R15 A4 unreadCountsForViewer short-circuits an empty conversation set without querying", async () => {
+  const { db, queries } = createQueryRecorder([]);
+  const result = await createConversationRepository(db).unreadCountsForViewer({
+    viewerUserId: memberUserId,
+    conversationIds: []
+  });
+  assert.equal(result.size, 0);
+  assert.equal(queries.length, 0);
+});
+
+test("R15 A5 unreadCountsForRecipients aggregates per-recipient in one grouped query driven from participants", async () => {
+  const { db, queries } = createQueryRecorder([
+    [
+      { userId: memberUserId, unread: 2 },
+      { userId: secondMemberUserId, unread: 0 }
+    ]
+  ]);
+
+  const result = await createConversationRepository(db).unreadCountsForRecipients({
+    conversationId,
+    recipientUserIds: [memberUserId, secondMemberUserId]
+  });
+
+  assert.equal(result.get(memberUserId), 2);
+  assert.equal(result.get(secondMemberUserId), 0);
+  const query = queries[0];
+  assert.equal(queries.length, 1);
+  assert.equal(query?.operation, "select");
+  // 从参与者驱动（含从未读过的收件人）+ 两条左连（读游标、命中消息）。
+  assert.ok(queryReferences(query?.fromTable, conversationParticipants), "must drive from participants");
+  assert.equal(query?.joins.length, 2);
+  assert.ok(query?.joins.every((join) => join.kind === "left"));
+  assert.ok((query?.groupBy.length ?? 0) > 0);
+  assert.ok(queryReferences(query?.groupBy[0], conversationParticipants.userId));
+  assert.ok(queryReferences(query?.where, conversationParticipants.conversationId));
+  assert.ok(queryTextFragments(query?.joins[1]?.on).join("").includes("coalesce"), "missing cursor coalesces to 0");
+});
+
+test("R15 A5 listParticipantUserIds lowercases and reads the conversation's participants with a bounded cap", async () => {
+  const upperCaseUser = "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA";
+  const { db, queries } = createQueryRecorder([[{ userId: upperCaseUser }, { userId: secondMemberUserId }]]);
+  const result = await createConversationRepository(db).listParticipantUserIds({ conversationId });
+  assert.deepEqual(result, [upperCaseUser.toLowerCase(), secondMemberUserId]);
+  const query = queries[0];
+  assert.ok(queryReferences(query?.where, conversationParticipants.conversationId));
+  assert.equal(query?.limit, 500);
+});

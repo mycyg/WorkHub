@@ -2,7 +2,9 @@ import { settings } from "@workhub/config";
 
 import { getDefaultStructuredLogger } from "../logging.js";
 import { createApprovalService, type ApprovalService } from "../services/approvals.js";
+import { getDefaultApprovalDigestService } from "../services/approval-digest.js";
 import { createNotificationService, type NotificationService } from "../services/notifications.js";
+import type { ApprovalDigestRunResult } from "../services/approval-digest.js";
 
 // R15 批 A（统一调度器 · 01-batch-a-pipeline.md §A1）：通用周期任务注册器。审批 SLA、通知提醒阶梯、
 // 后续主动性投递三家共用一条水管，不再各自手搓 setInterval（agent-run-recovery / session-sweep /
@@ -185,12 +187,14 @@ let defaultPulseScheduler: PulseScheduler | undefined;
 export function getDefaultPulseScheduler(deps: {
   approvals?: Pick<ApprovalService, "expireDueApprovals">;
   notifications?: Pick<NotificationService, "runNotificationReminders">;
+  approvalDigest?: { runOnce: () => Promise<ApprovalDigestRunResult> };
 } = {}): PulseScheduler {
   if (defaultPulseScheduler) {
     return defaultPulseScheduler;
   }
   const approvals = deps.approvals ?? createApprovalService();
   const notifications = deps.notifications ?? createNotificationService();
+  const approvalDigest = deps.approvalDigest ?? getDefaultApprovalDigestService();
   const scheduler = createPulseScheduler();
 
   scheduler.register({
@@ -222,6 +226,27 @@ export function getDefaultPulseScheduler(deps: {
       );
       if (result.reminded > 0) {
         getDefaultStructuredLogger().info("pulse_notification_reminder_swept", result);
+      }
+      return result;
+    }
+  });
+
+  scheduler.register({
+    name: "approval-digest",
+    intervalMs: settings.pulse.approvalDigestIntervalMs,
+    // R15 批 A（A3）：每个项目 main 会话维护一张「待你拍板 N 件」digest 卡（数字变化时墓碑旧卡+发新卡，
+    // 无变化不动，归零墓碑）——见 services/approval-digest.ts 的置底/更新取舍。纯 DB 驱动、无 LLM。
+    tick: async () => {
+      const result = await approvalDigest.runOnce();
+      if (result.posted > 0 || result.updated > 0 || result.zeroed > 0) {
+        getDefaultStructuredLogger().info("pulse_approval_digest_swept", {
+          scanned: result.scanned,
+          posted: result.posted,
+          updated: result.updated,
+          zeroed: result.zeroed,
+          duplicates_tombstoned: result.duplicates_tombstoned,
+          failed: result.failed
+        });
       }
       return result;
     }

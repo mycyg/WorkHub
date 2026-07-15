@@ -56,10 +56,12 @@ import {
   type WorkHubDatabaseClient
 } from "@workhub/db";
 
-import { getDefaultPushBus, type PushBus } from "../broker/index.js";
+import { getDefaultPushBus, getDefaultPresenceStore, type PushBus } from "../broker/index.js";
 import { getDefaultStructuredLogger, type StructuredLogger } from "../logging.js";
 import type { AuthActor } from "../middleware/auth.js";
 import { InternalContractError, parseOutputContract } from "../pages/output-contract.js";
+import { notifyConversationMessage } from "./conversation-message-notify.js";
+import { createNotificationService } from "./notifications.js";
 import { getDefaultBudgetPolicyStore } from "./cost-policy-store.js";
 import { getDefaultCostLedgerStore } from "./cost-ledger-store.js";
 import { DrivePageServiceError, getDefaultDrivePageService, type DrivePageService } from "./drive-pages.js";
@@ -251,6 +253,16 @@ export type ConversationTurnServiceDeps = {
   // 播报（同 apps/api/src/workers/agent-runner.ts 的 postDeliverableSystemMessage 对同一类依赖的既有
   // 取舍："没接依赖/发布失败，都不影响...只是静默跳过"），不影响摘要本身已经落库的结果。
   postContextCompactionSystemMessage?: ConversationTurnSystemEventPoster;
+  // R15 批 A（A5 消息通知）：Cuu 消息（text/file_card）落库 + 广播后，给其他参与者 fire-and-forget 扇出
+  // conversation.message 通知（正在看该会话的人被抑制，见 conversation-message-notify.ts）。省略时（既有
+  // 测试的调用点）不扇出，行为零回归。senderUserId=null（Cuu）+ senderLabel 在默认绑定里填好。
+  notifyCuuMessage?: (input: {
+    conversationId: string;
+    projectId: string;
+    conversationTitle: string;
+    messageKind: string;
+    previewText: string;
+  }) => void;
 };
 
 export type ConversationTurnService = {
@@ -918,6 +930,9 @@ export function createConversationTurnService(deps: ConversationTurnServiceDeps)
           workspaceId: human.workspaceId,
           projectId: access.conversation.projectId
         };
+        // R15 批 A（A5 消息通知）：把会话标题在这里定格成局部常量——persistAndBroadcastCuuMessage 是嵌套
+        // 闭包，TS 不跨闭包边界保留 access 的非空收窄（此处 access 已过前面的空值守卫）。
+        const conversationTitle = access.conversation.title;
 
         const turnId = id();
         // BUG-02 fail-fast：provider registry 的 get() 在缺 apiKey 时会抛 ProviderNotConfiguredError，
@@ -974,6 +989,16 @@ export function createConversationTurnService(deps: ConversationTurnServiceDeps)
           } catch (error) {
             logger.warn("conversation_turn_created_publish_failed", { conversationId: input.conversationId, turnId, error });
           }
+          // R15 批 A（A5 消息通知）：Cuu 消息也给其他参与者扇出通知（tool_note 会在 notify 内部按 kind
+          // 短路，不发）。fire-and-forget（同步返回 void）——不阻塞这一轮的落库/广播。
+          deps.notifyCuuMessage?.({
+            conversationId: input.conversationId,
+            projectId: toolCtx.projectId,
+            conversationTitle,
+            messageKind: vm.kind,
+            previewText:
+              vm.kind === "text" ? vm.content.text : vm.kind === "file_card" ? vm.content.snapshot_name : vm.kind
+          });
           return vm;
         }
 
@@ -1236,7 +1261,28 @@ export function getDefaultConversationTurnService(): ConversationTurnService {
       // 依赖（provider registry / action-cards 仓库），不新增任何服务或仓库。
       compactionClient: defaultCompactionClientProvider(),
       postContextCompactionSystemMessage: ({ workspaceId, conversationId, content, at }) =>
-        actionCards.postSystemMessage({ workspaceId, conversationId, senderType: "system", content, at })
+        actionCards.postSystemMessage({ workspaceId, conversationId, senderType: "system", content, at }),
+      // R15 批 A（A5 消息通知）：Cuu 消息落库后给其他参与者扇出——senderUserId=null（Cuu）、senderLabel=Cuu，
+      // 参与者/未读聚合复用同一个共享 DB 的会话仓库，presence/notifications 复用默认单例（fire-and-forget）。
+      notifyCuuMessage: (message) => {
+        void notifyConversationMessage(
+          {
+            repository: createConversationRepository(db),
+            presence: getDefaultPresenceStore(),
+            notifications: createNotificationService(),
+            logger: getDefaultStructuredLogger()
+          },
+          {
+            conversationId: message.conversationId,
+            projectId: message.projectId,
+            conversationTitle: message.conversationTitle,
+            senderUserId: null,
+            senderLabel: CUU_MENTION_DISPLAY_NAME,
+            messageKind: message.messageKind,
+            previewText: message.previewText
+          }
+        ).catch(() => {});
+      }
     });
   }
   return defaultConversationTurnService;
