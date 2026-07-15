@@ -341,6 +341,45 @@ test("R12 message-created events are strict complete envelopes bound to one conv
   }
 });
 
+// BUG-04：审批落定往来源会话回灌一条 system_event 消息（sender_type='system'），需要以 message.created
+// 事件实时广播。契约补了 system actor ⟺ system 发送者这一支，让开着会话的客户端 safeParse 过闸后渲染。
+test("BUG-04 message-created events accept a system actor paired with a system_event sender", () => {
+  const schema = requiredSchema<Record<string, unknown>>("conversationMessageCreatedEventSchema");
+  const systemMessage = {
+    id: messageId,
+    conversation_id: conversationId,
+    seq: 9,
+    sender_type: "system",
+    sender_user_id: null,
+    kind: "system_event",
+    content: { event: "proposal_settled", proposal_id: messageId, outcome: "approved", title: "季度复盘交付物" },
+    thread_root_id: null,
+    created_at: "2026-07-12T08:31:00.123Z"
+  };
+  const event = {
+    event_id: "41000000-0000-4000-8000-000000000042",
+    type: "conversation.message.created",
+    topic: `conversation:${conversationId}`,
+    ts: "2026-07-12T08:31:00.123Z",
+    actor: { actor_kind: "system", label: "WorkHub" },
+    project_id: projectId,
+    preview_text: "季度复盘交付物 已通过",
+    data: systemMessage
+  };
+
+  assert.deepEqual(schema.parse(event), event);
+  for (const invalid of [
+    // system actor 必须配 system 发送者（不能是 user/cuu）。
+    { ...event, data: { ...systemMessage, sender_type: "cuu", sender_user_id: null } },
+    // system 消息不得带 sender_user_id。
+    { ...event, data: { ...systemMessage, sender_user_id: userId } },
+    // 反向：human actor 配 system 发送者仍非法（既有配对不被 system 支放宽）。
+    { ...event, actor: { actor_kind: "human", actor_user_id: userId }, data: { ...systemMessage } }
+  ]) {
+    assert.equal(schema.safeParse(invalid).success, false);
+  }
+});
+
 test("R12 typing events reserve a strict server-owned 3000ms transient contract only", () => {
   const schema = requiredSchema<Record<string, unknown>>("conversationPresenceTypingEventSchema");
   const event = {

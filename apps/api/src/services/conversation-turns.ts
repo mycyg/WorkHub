@@ -34,6 +34,7 @@ import {
   type TurnHistoryMessage,
   type TurnMemoryCitation
 } from "@workhub/agent/turns";
+import { ProviderNotConfiguredError } from "@workhub/agent/providers";
 import {
   decideRunBudget,
   type BudgetPolicyStore,
@@ -122,13 +123,27 @@ const CONTEXT_SUMMARY_TIMEOUT_MS = 30_000;
 
 export class ConversationTurnServiceError extends Error {
   constructor(
-    public readonly status: 400 | 403 | 404 | 409 | 429 | 500,
+    // BUG-02：新增 503——目标 LLM provider 未配置（缺 apiKey）时返回「服务暂不可用」而非泛化 500。
+    public readonly status: 400 | 403 | 404 | 409 | 429 | 500 | 503,
     public readonly code: string,
     message: string
   ) {
     super(message);
     this.name = "ConversationTurnServiceError";
   }
+}
+
+// BUG-02：把 provider registry 的 fail-fast typed error 映射成明确的 503 语义。部署侧没配 LLM_API_KEY 时，
+// 「用户主动 @Cuu / 协同发消息」这条会真打 LLM 的路径应当立刻拿到「配置缺失」的清晰信号（而不是拿空 key
+// 去打上游、收 401 再被泛化成 500）。文案给部署指引，方便运维定位。
+const AI_PROVIDER_NOT_CONFIGURED_MESSAGE =
+  "Cuu 暂时不可用：这个部署还没有配置 LLM 服务的密钥（LLM_API_KEY）。请联系管理员完成配置后再试。";
+
+function toConversationTurnServiceError(error: unknown): unknown {
+  if (error instanceof ProviderNotConfiguredError) {
+    return new ConversationTurnServiceError(503, "ai_provider_not_configured", AI_PROVIDER_NOT_CONFIGURED_MESSAGE);
+  }
+  return error;
 }
 
 export const createConversationTurnRequestSchema = z
@@ -905,7 +920,15 @@ export function createConversationTurnService(deps: ConversationTurnServiceDeps)
         };
 
         const turnId = id();
-        const client = await deps.client({ actorId: human.userId, userId: human.userId, workspaceId: human.workspaceId });
+        // BUG-02 fail-fast：provider registry 的 get() 在缺 apiKey 时会抛 ProviderNotConfiguredError，
+        // 且发生在建 transport / 发任何上游请求之前。这里把它映射成 503 ai_provider_not_configured，
+        // 让路由/前端拿到明确语义而不是被吞成泛化 500。其余（DB/预算/真实 LLM 失败）沿用各自处理。
+        let client: TurnLlmClient;
+        try {
+          client = await deps.client({ actorId: human.userId, userId: human.userId, workspaceId: human.workspaceId });
+        } catch (error) {
+          throw toConversationTurnServiceError(error);
+        }
 
         // llmMessages 在受限工具环里会被追加 assistant tool_use 回放 / user tool_result 回填；
         // buildTurnMessages(history) 产出的都是 content:string 的普通对话轮次，是这个更宽类型的子集。

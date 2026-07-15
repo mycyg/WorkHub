@@ -12,6 +12,7 @@ import { ZodError } from "zod";
 
 import { loadSettings, type Settings } from "@workhub/config";
 import {
+  conversationMessageCreatedEventSchema,
   deliverableManifestFixtures,
   type DeliverableChangeManifest
 } from "@workhub/contracts";
@@ -42,7 +43,12 @@ import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/a
 import { InternalContractError } from "./pages/output-contract.js";
 import { buildProposalDetailPage } from "./pages/proposals.js";
 import { createPageRoutes } from "./routes/pages.js";
-import { createProposalRoutes, createWorkItemProposalRoutes } from "./routes/proposals.js";
+import {
+  createProposalRoutes,
+  createWorkItemProposalRoutes,
+  publishProposalSettledMessageCreated,
+  type ProposalSettledMessageRow
+} from "./routes/proposals.js";
 import {
   createDbProposalService,
   createInMemoryProposalService,
@@ -1705,6 +1711,77 @@ test("R14 settled notifier fires with approved/rejected/merged outcomes and neve
     body: JSON.stringify({ decision: "approve" })
   });
   assert.equal(failReview.status, 200);
+});
+
+// BUG-04：审批落定往来源会话回灌落定行后，必须 publish conversation.message.created——否则两个开着来源
+// 会话的客户端（都订 conversation:<id> topic）此前收不到刚插入的 proposal_settled 行，只能靠重连补洞。
+// 这里直接驱动抽出来的发布函数（notifier 主体直连 getSharedDatabaseClient，脱库不可单测），用记录式总线
+// 断言：事件确实发到了源会话 topic，且过契约 schema（system actor ⟺ system 发送者），data 就是落定行。
+const settledMessageFixture = (): ProposalSettledMessageRow => ({
+  id: "aa000000-0000-4000-8000-000000000001",
+  conversationId: "aa000000-0000-4000-8000-000000000002",
+  seq: 12,
+  senderType: "system",
+  senderUserId: null,
+  kind: "system_event",
+  contentJson: {
+    event: "proposal_settled",
+    proposal_id: "aa000000-0000-4000-8000-000000000003",
+    outcome: "merged",
+    title: "季度复盘交付物"
+  },
+  threadRootId: null,
+  createdAt: new Date("2026-07-14T10:00:00.000Z")
+});
+
+test("BUG-04 publishProposalSettledMessageCreated broadcasts a schema-valid message.created to the source conversation topic", async () => {
+  const bus = new RecordingBus();
+  const warnings: string[] = [];
+  const message = settledMessageFixture();
+
+  await publishProposalSettledMessageCreated(
+    { bus, logger: { warn: (m) => warnings.push(m) } },
+    {
+      proposalId: "aa000000-0000-4000-8000-000000000003",
+      projectId: "aa000000-0000-4000-8000-000000000004",
+      outcome: "merged",
+      title: "季度复盘交付物",
+      message
+    }
+  );
+
+  assert.equal(warnings.length, 0);
+  assert.equal(bus.events.length, 1);
+  const published = bus.events[0]!;
+  assert.equal(published.topic, `conversation:${message.conversationId}`);
+  assert.equal(published.type, "conversation.message.created");
+  // 发布的事件必须过契约 zod（客户端 parseIncomingMessageCreated 走的就是同一个 safeParse 闸）。
+  const parsed = conversationMessageCreatedEventSchema.parse(published.data);
+  assert.equal(parsed.actor.actor_kind, "system");
+  assert.equal(parsed.data.id, message.id);
+  assert.equal(parsed.data.sender_type, "system");
+  assert.equal(parsed.data.kind, "system_event");
+  assert.equal(parsed.data.seq, 12);
+  assert.deepEqual(parsed.data.content, message.contentJson);
+});
+
+test("BUG-04 publishProposalSettledMessageCreated is best-effort: a bus failure only warns and never throws", async () => {
+  const warnings: string[] = [];
+  const throwingBus = { publish: async () => { throw new Error("bus down"); } };
+
+  await publishProposalSettledMessageCreated(
+    { bus: throwingBus, logger: { warn: (m) => warnings.push(m) } },
+    {
+      proposalId: "aa000000-0000-4000-8000-000000000003",
+      projectId: "aa000000-0000-4000-8000-000000000004",
+      outcome: "approved",
+      title: "季度复盘交付物",
+      message: settledMessageFixture()
+    }
+  );
+
+  // 消息已经落库（notifier 主体先 postSystemMessage 再调这里）——广播失败绝不能把它变成一次抛错。
+  assert.deepEqual(warnings, ["proposal_settled_message_created_publish_failed"]);
 });
 
 test("findings: a concurrent same-id insert (repo conflict) maps to 409 proposal_already_exists, not 500", async () => {

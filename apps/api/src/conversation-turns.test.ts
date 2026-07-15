@@ -23,6 +23,7 @@ import {
   type TurnLlmStreamEvent
 } from "./services/conversation-turns.js";
 import { DrivePageServiceError, type DriveStoredFile } from "./services/drive-pages.js";
+import { ProviderNotConfiguredError } from "@workhub/agent/providers";
 import type { AuthActor } from "./middleware/auth.js";
 import {
   ASK_CLARIFYING_QUESTION_TOOL,
@@ -752,6 +753,45 @@ test("createTurn calls the LLM when cuu_enabled is true and no respondDecider is
 
   const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
   assert.equal(result.message.sender_type, "cuu");
+});
+
+// BUG-02：部署没配 LLM_API_KEY 时，provider registry 的 get() 会 fail-fast 抛 ProviderNotConfiguredError
+// （发生在建 transport / 发任何上游请求之前）。createTurn 必须把它映射成明确的 503 ai_provider_not_configured，
+// 而不是拿空 key 去打上游、收 401 后被泛化成 500。这里用一个在 acquisition 阶段就抛的 client provider 模拟
+// get() 的 fail-fast：既然连 stream 都拿不到，就绝不会打 transport；同时断言不落任何 Cuu 消息。
+test("BUG-02: createTurn maps a fail-fast ProviderNotConfiguredError to 503 ai_provider_not_configured without streaming or persisting", async () => {
+  let clientAcquisitions = 0;
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({ participantCount: 3 });
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow({ contentJson: { text: "这段还需要再改改" } })], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage() {
+          throw new Error("must not persist a Cuu message when the provider is unconfigured");
+        }
+      },
+      // 模拟 registry.get() 缺 apiKey 时的 fail-fast：client provider 本身抛，永远返回不出一个能 stream
+      // （=打 transport）的 client。
+      client: async () => {
+        clientAcquisitions += 1;
+        throw new ProviderNotConfiguredError("deepseek");
+      }
+    })
+  );
+
+  await assert.rejects(
+    service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } }),
+    (error: unknown) =>
+      error instanceof ConversationTurnServiceError &&
+      error.status === 503 &&
+      error.code === "ai_provider_not_configured"
+  );
+  // fail-fast 确实发生在主回应的 client acquisition 上（不是被压缩路径悄悄吞掉）。
+  assert.equal(clientAcquisitions >= 1, true);
 });
 
 test("createTurn rejects with 409 conversation_turn_not_warranted when an injected respondDecider declines an un-mentioned group message", async () => {
