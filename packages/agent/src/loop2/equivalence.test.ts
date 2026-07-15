@@ -51,6 +51,11 @@ type CapturedCall = {
 
 type ToolSpec = { name: string; description: string; input_schema: unknown };
 
+type EmittedEvent = { type: string; previewText?: string | undefined; data: Record<string, unknown> };
+
+/** Recorder call capture: recordUsage → usage snapshot; recordStep → step index. */
+type RecorderEntry = { kind: "usage"; totalTokens: number; stepsUsed: number } | { kind: "step"; index: number };
+
 type Scenario = {
 	responses: LlmCreateResponse[];
 	toolSpecs?: ToolSpec[];
@@ -64,6 +69,10 @@ type Harness = {
 	requests: LlmCreateParams[];
 	compactionEvents: number;
 	escalatedEvents: number;
+	/** Every WorkHub event emitted, in order (P3a event-sequence equivalence). */
+	emittedEvents: EmittedEvent[];
+	/** Recorder calls in order (recordUsage/recordStep timing alignment). */
+	recorderLog: RecorderEntry[];
 };
 
 const DEFAULT_BUDGET: AgentLoopBudget = {
@@ -77,8 +86,18 @@ const DEFAULT_BUDGET: AgentLoopBudget = {
 function makeHarness(scenario: Scenario): Harness {
 	const calls: CapturedCall[] = [];
 	const requests: LlmCreateParams[] = [];
+	const emittedEvents: EmittedEvent[] = [];
+	const recorderLog: RecorderEntry[] = [];
 	const queue = [...scenario.responses];
-	const harness: Harness = { input: undefined as never, calls, requests, compactionEvents: 0, escalatedEvents: 0 };
+	const harness: Harness = {
+		input: undefined as never,
+		calls,
+		requests,
+		compactionEvents: 0,
+		escalatedEvents: 0,
+		emittedEvents,
+		recorderLog,
+	};
 
 	const input: AgentLoopInput = {
 		runId: "run-eqv",
@@ -114,7 +133,16 @@ function makeHarness(scenario: Scenario): Harness {
 		// Isolate loop-core: no deliverable gate, no manifest, no llm_review.
 		requireDeliverable: false,
 		reviewDeliverable: false,
+		recorder: {
+			recordStep: (step) => {
+				recorderLog.push({ kind: "step", index: step.index });
+			},
+			recordUsage: (usage) => {
+				recorderLog.push({ kind: "usage", totalTokens: usage.totalTokens, stepsUsed: usage.stepsUsed });
+			},
+		},
 		emit: (event) => {
+			emittedEvents.push({ type: event.type, previewText: event.previewText, data: event.data });
 			if (event.type === "agent_run.compacting") harness.compactionEvents += 1;
 			if (event.type === "agent_run.escalated") harness.escalatedEvents += 1;
 		},
@@ -123,7 +151,38 @@ function makeHarness(scenario: Scenario): Harness {
 	return harness;
 }
 
-/** Run the scenario through both engines and assert loop-core + usage-record equivalence. */
+// Event-sequence projection (P3a): compare event TYPE + stable scalar data fields only. Excludes
+// previewText (content-preview, e.g. the truncated tool_result error text differs by language) and
+// object fields (budget / handoff — L3) and timestamps.
+const EVENT_DATA_KEYS = [
+	"step_no",
+	"kind",
+	"tool_id",
+	"input_preview",
+	"ok",
+	"is_error",
+	"control",
+	"snapshot_id",
+	"trigger",
+	"compactions",
+	"summary_kind",
+	"provider_event_type",
+] as const;
+
+function projectEvents(events: EmittedEvent[]): Record<string, unknown>[] {
+	return events.map((event) => {
+		const picked: Record<string, unknown> = { type: event.type };
+		for (const key of EVENT_DATA_KEYS) {
+			if (event.data && key in event.data) picked[key] = event.data[key];
+		}
+		return picked;
+	});
+}
+
+/**
+ * Run the scenario through both engines and assert loop-core + usage-record + emitted-event +
+ * recorder equivalence.
+ */
 async function runBoth(scenario: Scenario): Promise<{ legacy: AgentLoopResult; loop2: AgentLoopResult; legacyH: Harness; loop2H: Harness }> {
 	const legacyH = makeHarness(scenario);
 	const loop2H = makeHarness(scenario);
@@ -138,6 +197,14 @@ async function runBoth(scenario: Scenario): Promise<{ legacy: AgentLoopResult; l
 	assertLoopCoreEquivalent(legacy, loop2);
 	// usage-record accounting: same (seq, source, tokens, cost) sequence the usageSink would see.
 	assert.deepEqual(loop2H.calls, legacyH.calls, "usage-record accounting sequence diverged");
+	// P3a: the per-step emitted event sequence is identical (type + key data fields).
+	assert.deepEqual(
+		projectEvents(loop2H.emittedEvents),
+		projectEvents(legacyH.emittedEvents),
+		"emitted event sequence diverged",
+	);
+	// Recorder call sequence (recordUsage/recordStep order + values) is identical.
+	assert.deepEqual(loop2H.recorderLog, legacyH.recorderLog, "recorder call sequence diverged");
 	return { legacy, loop2, legacyH, loop2H };
 }
 
