@@ -184,10 +184,13 @@ function repository(overrides: Partial<ConversationRepository> = {}): Conversati
     async renameConversation() {
       throw new Error("renameConversation not expected");
     },
-    // R15 批 cuu-toggle：新增 updateCuuEnabled——本套件按需 override，未 override 的给拒绝桩（同其它
-    // 未测方法）。
+    // R15 批 cuu-toggle：新增 updateCuuEnabled/listParticipantsWithNickname——本套件按需 override，
+    // 未 override 的给拒绝桩（同其它未测方法）。
     async updateCuuEnabled() {
       throw new Error("updateCuuEnabled not expected");
+    },
+    async listParticipantsWithNickname() {
+      throw new Error("listParticipantsWithNickname not expected");
     },
     // R14 批 CHAT：新增的编辑/删除/置顶/反应/已读/富化仓库方法——本套件按需 override，未 override 的
     // 给拒绝桩（同其它未测方法）。
@@ -1934,7 +1937,7 @@ test("renameConversation 404s an invisible conversation before any write", async
   assert.equal(renameCalls, 0);
 });
 
-// ── R15 批 cuu-toggle：会话级 Cuu 开关翻转 ────────────────────────────────────────────
+// ── R15 批 cuu-toggle：会话级 Cuu 开关翻转 + 参与者列表 ─────────────────────────────────
 
 test("updateCuuEnabled forwards a tenant-safe write, broadcasts cuu.updated, and returns the flipped VM", async () => {
   let writeInput: unknown;
@@ -2094,4 +2097,93 @@ test("updateCuuEnabled 404s an invisible conversation before any write", async (
       error.code === "conversation_not_found"
   );
   assert.equal(writeCalls, 0);
+});
+
+test("listParticipants returns scope=workspace with an empty list for the main conversation without querying the repository", async () => {
+  let listCalls = 0;
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return accessRecord({ conversation: conversationRow({ kind: "main" }), participantRole: null });
+      },
+      async listParticipantsWithNickname() {
+        listCalls += 1;
+        return [];
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now
+    }
+  );
+
+  const result = await service.listParticipants({ actor: actor(), conversationId });
+
+  assert.deepEqual(result, { scope: "workspace", participants: [] });
+  assert.equal(listCalls, 0);
+});
+
+test("listParticipants returns scope=participants with real rows for a collab (and DM) conversation", async () => {
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return accessRecord({ participantRole: "owner" });
+      },
+      async listParticipantsWithNickname(input) {
+        assert.equal(input.conversationId, conversationId);
+        return [
+          { userId, nickname: "阿曼", role: "owner" },
+          { userId: participantUserId, nickname: "小赵", role: "member" }
+        ];
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now
+    }
+  );
+
+  const result = await service.listParticipants({ actor: actor(), conversationId });
+
+  assert.deepEqual(result, {
+    scope: "participants",
+    participants: [
+      { user_id: userId, nickname: "阿曼", role: "owner" },
+      { user_id: participantUserId, nickname: "小赵", role: "member" }
+    ]
+  });
+});
+
+test("listParticipants 404s an invisible (or non-participant) conversation before any query", async () => {
+  let listCalls = 0;
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return null;
+      },
+      async listParticipantsWithNickname() {
+        listCalls += 1;
+        return [];
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now
+    }
+  );
+
+  await assert.rejects(
+    () => service.listParticipants({ actor: actor(), conversationId }),
+    (error: unknown) =>
+      error instanceof ConversationServiceError &&
+      error.status === 404 &&
+      error.code === "conversation_not_found"
+  );
+  assert.equal(listCalls, 0);
 });

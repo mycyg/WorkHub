@@ -35,6 +35,7 @@ import {
   messageReactions,
   projectConversations,
   projects,
+  users,
   workspaceMemberships
 } from "./schema/index.js";
 import {
@@ -1842,6 +1843,30 @@ test("R15 updateCuuEnabled 404s (ConversationAccessDeniedError) when no active r
     createConversationRepository(db).updateCuuEnabled({ workspaceId, conversationId, enabled: true, at: now }),
     (error: unknown) => error instanceof ConversationAccessDeniedError
   );
+});
+
+test("R15 listParticipantsWithNickname joins active users, filters by conversation, and caps at 100", async () => {
+  const { db, queries } = createQueryRecorder([
+    [
+      { userId: creatorUserId, nickname: "阿曼", role: "owner" },
+      { userId: memberUserId, nickname: "小赵", role: "member" }
+    ]
+  ]);
+
+  const result = await createConversationRepository(db).listParticipantsWithNickname({ conversationId });
+
+  assert.deepEqual(result, [
+    { userId: creatorUserId, nickname: "阿曼", role: "owner" },
+    { userId: memberUserId, nickname: "小赵", role: "member" }
+  ]);
+  const query = queries[0];
+  assert.equal(query?.fromTable, conversationParticipants);
+  assert.ok(
+    query?.joins.some((join) => join.table === users),
+    "participants list must join users for nicknames"
+  );
+  assert.ok(queryReferences(query?.where, conversationParticipants.conversationId));
+  assert.equal(query?.limit, 100);
 });
 
 test("R14 listReceipts is tenant-joined, ordered, and capped", async () => {

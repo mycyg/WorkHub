@@ -183,6 +183,15 @@ export type UpdateConversationCuuEnabledInput = {
   at?: Date;
 };
 
+// R15 批 cuu-toggle：GET /participants 的仓库行——参与者 user id + 昵称（join users，同 listDmsForUser
+// 的既有 join 模式）+ 角色。只在服务层判定为 collab（含 DM）会话时才会被调用——main 会话没有
+// conversation_participants 行，服务层直接短路成 scope:"workspace" + 空列表，不会走到这个方法。
+export type ConversationParticipantWithNicknameRow = {
+  userId: string;
+  nickname: string;
+  role: ConversationParticipantRole;
+};
+
 // R12 批8：反向翻页（listMessagesBefore）的输入——除了游标方向（beforeSeq 而非 afterSeq），access
 // 判定与 listMessagesAfter 完全同款（复用同一个 readVisibleAccess + activeConversationCondition）。
 export type ListConversationMessagesBeforeInput = {
@@ -405,6 +414,11 @@ export type ConversationRepository = {
   renameConversation: (input: RenameConversationInput) => Promise<ConversationRow>;
   // R15 批 cuu-toggle：新增，不改动上面任何既有方法——会话级 Cuu 参与开关翻转（返回翻转后的会话行）。
   updateCuuEnabled: (input: UpdateConversationCuuEnabledInput) => Promise<ConversationRow>;
+  // R15 批 cuu-toggle：新增，不改动上面任何既有方法——列出一条会话的全部参与者（user id + 昵称 + 角色），
+  // 只给已判定为 collab（含 DM）的会话调用（main 由服务层短路，不查这个方法）。
+  listParticipantsWithNickname: (input: {
+    conversationId: string;
+  }) => Promise<ConversationParticipantWithNicknameRow[]>;
   // R14 批 CHAT：以下全部新增，不改动上面任何既有方法。语义红线在服务层强制（见 apps/api/src/
   // services/conversations.ts），仓库层负责租户安全的原子写与页级无 N+1 聚合。
   editMessage: (input: EditMessageInput) => Promise<ConversationMessageRow>;
@@ -553,6 +567,9 @@ const CONVERSATION_READ_RECEIPTS_CAP = 500;
 // 页级富化（reactions/reply 预览）的 IN 列表上限——正常调用方传的是一页消息（≤100）或置顶清单
 // （≤50），这里只做防御性封顶，防止误用把无界 id 列表拼进 IN。
 const CONVERSATION_PAGE_ENRICH_CAP = 200;
+// R15 批 cuu-toggle：会话参与者列表上限——与 createCollab「至多 99 名被邀请成员 + 1 名创建者」的既有
+// 上限对称（同 @workhub/contracts 的 CONVERSATION_PARTICIPANTS_LIST_CAP），纯防御性封顶。
+const CONVERSATION_PARTICIPANTS_LIST_CAP = 100;
 
 function assertCursor(afterSeq: number) {
   if (!Number.isSafeInteger(afterSeq) || afterSeq < 0) {
@@ -1938,6 +1955,29 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
         throw new ConversationAccessDeniedError("conversation not found for cuu toggle");
       }
       return updated;
+    },
+
+    // ── R15 批 cuu-toggle：会话参与者列表（含昵称） ───────────────────────────────────
+    // 单条 join 查询（conversation_participants join users，过滤已注销账号——同 listDmsForUser 的既有
+    // join 模式），按 user id 稳定排序（同 listParticipantUserIds 的既有排序口径）。只给已判定为 collab
+    // （含 DM）的会话调用；租户/可见性围栏已经在服务层的 visibleConversation() 做过，这里不重复。
+    async listParticipantsWithNickname(input) {
+      const rows = await db
+        .select({
+          userId: users.id,
+          nickname: users.nickname,
+          role: conversationParticipants.role
+        })
+        .from(conversationParticipants)
+        .innerJoin(users, and(eq(users.id, conversationParticipants.userId), isNull(users.deletedAt)))
+        .where(eq(conversationParticipants.conversationId, input.conversationId))
+        .orderBy(asc(users.id))
+        .limit(CONVERSATION_PARTICIPANTS_LIST_CAP);
+      return rows.map((row) => ({
+        userId: row.userId,
+        nickname: row.nickname,
+        role: row.role as ConversationParticipantRole
+      }));
     },
 
     // ── R14 批 CHAT：编辑 ────────────────────────────────────────────────────────────

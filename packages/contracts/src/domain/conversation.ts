@@ -662,6 +662,33 @@ export const updateConversationCuuResultVmSchema = z
   .strict();
 export type UpdateConversationCuuResultVM = z.infer<typeof updateConversationCuuResultVmSchema>;
 
+// R15 批 cuu-toggle：GET /api/conversations/:id/participants —— 会话参与者列表（供桌面端小群「已读 N/M」
+// 分母修复：真实参与者集合，而不是把整个工作区成员当分母）。main 会话没有 conversation_participants 行
+// （全员可见，01-chat-design 的既有语义），诚实回 scope:"workspace" + 空列表，不假装 main 也有一份
+// "参与者名单"；collab（含 DM）回 scope:"participants" + 真实参与者（user_id/昵称/角色）。参与者门控
+// 与消息可见性同口径——非参与者在服务层的 visibleConversation() 就已经 404，不会走到这里。
+export const conversationParticipantsScopeSchema = z.enum(["workspace", "participants"]);
+export type ConversationParticipantsScope = z.infer<typeof conversationParticipantsScopeSchema>;
+
+export const conversationParticipantListItemVmSchema = z
+  .object({
+    user_id: idSchema,
+    nickname: z.string().min(1),
+    role: conversationParticipantRoleSchema
+  })
+  .strict();
+export type ConversationParticipantListItemVM = z.infer<typeof conversationParticipantListItemVmSchema>;
+
+// 上限 100——同 createCollab 的「至多 99 名被邀请成员 + 1 名创建者」上限对称，纯防御性封顶。
+export const CONVERSATION_PARTICIPANTS_LIST_CAP = 100;
+export const conversationParticipantsVmSchema = z
+  .object({
+    scope: conversationParticipantsScopeSchema,
+    participants: z.array(conversationParticipantListItemVmSchema).max(CONVERSATION_PARTICIPANTS_LIST_CAP)
+  })
+  .strict();
+export type ConversationParticipantsVM = z.infer<typeof conversationParticipantsVmSchema>;
+
 export const conversationParticipantVmSchema = z
   .object({
     id: idSchema,

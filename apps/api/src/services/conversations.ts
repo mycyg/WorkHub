@@ -20,6 +20,7 @@ import {
   type AiFeedbackRow,
   type ConversationMessageRow,
   type ConversationParticipantRow,
+  type ConversationParticipantWithNicknameRow,
   type ConversationReactionKey,
   type ConversationRepository,
   type ConversationRow,
@@ -37,6 +38,7 @@ import {
   conversationListPageVmSchema,
   conversationMessagePageVmSchema,
   conversationMessageVmSchema,
+  conversationParticipantsVmSchema,
   conversationPinsVmSchema,
   conversationReactionKeySchema,
   conversationReactionUpdatedEventSchema,
@@ -58,6 +60,7 @@ import {
   type ConversationMessagePageVM,
   type ConversationMessageReplyPreviewVM,
   type ConversationMessageVM,
+  type ConversationParticipantsVM,
   type ConversationPinsVM,
   type ConversationReadCursorVM,
   type ConversationReadReceiptsVM,
@@ -147,6 +150,9 @@ export type ConversationService = {
     conversationId: string;
     payload: UpdateConversationCuuRequest;
   }): Promise<UpdateConversationCuuResultVM>;
+  // R15 批 cuu-toggle：会话参与者列表——main 诚实回 scope:"workspace" + 空列表，collab（含 DM）回真实
+  // 参与者。参与者门控与消息可见性同口径（非参与者在 visibleConversation() 就已经 404）。
+  listParticipants(input: { actor: AuthActor; conversationId: string }): Promise<ConversationParticipantsVM>;
   listMessages(input: {
     actor: AuthActor;
     conversationId: string;
@@ -941,6 +947,34 @@ export function createConversationService(
         updateConversationCuuResultVmSchema,
         { conversation: conversationToVm(updated, access.participantRole) },
         "conversations.cuu.update"
+      );
+    },
+
+    // ── R15 批 cuu-toggle：会话参与者列表 ──────────────────────────────────────────────
+    // main 会话没有 conversation_participants 行（01-chat-design 的既有语义：主区对整个工作区可见）——
+    // 诚实回 scope:"workspace" + 空列表，不假装能凑出一份"主区参与者名单"（那份名单其实是"当前工作区
+    // 全体成员"，与协同会话的参与者概念不是一回事，混在一起会误导客户端）。collab（含 DM）回
+    // scope:"participants" + 真实参与者。参与者门控与消息可见性同口径——visibleConversation() 对
+    // 不可见的 collab 已经 404，这里不重复判断。
+    async listParticipants(input) {
+      const { access } = await visibleConversation(input);
+      if (access.conversation.kind !== "collab") {
+        return parseOutputContract(
+          conversationParticipantsVmSchema,
+          { scope: "workspace", participants: [] },
+          "conversations.participants.list"
+        );
+      }
+      const rows: ConversationParticipantWithNicknameRow[] = await repository.listParticipantsWithNickname({
+        conversationId: access.conversation.id
+      });
+      return parseOutputContract(
+        conversationParticipantsVmSchema,
+        {
+          scope: "participants",
+          participants: rows.map((row) => ({ user_id: row.userId, nickname: row.nickname, role: row.role }))
+        },
+        "conversations.participants.list"
       );
     },
 

@@ -5385,6 +5385,46 @@ const conversationCuuUpdateResponses = {
   }
 } as const;
 
+// R15 批 cuu-toggle：GET /api/conversations/:id/participants 的响应集——main 诚实回
+// scope:"workspace" + 空列表，collab（含 DM）回 scope:"participants" + 真实参与者。参与者门控与消息
+// 可见性同口径（非参与者的 collab 已经 404，与其它会话读端点一致）。
+const conversationParticipantListItemResponseSchema = {
+  type: "object",
+  required: ["user_id", "nickname", "role"],
+  properties: {
+    user_id: uuidStringSchema,
+    nickname: { type: "string", minLength: 1 },
+    role: conversationParticipantRoleSchema
+  },
+  additionalProperties: false
+} as const;
+const conversationParticipantsResponses = {
+  responses: {
+    "200": jsonDataResponse(
+      {
+        type: "object",
+        required: ["scope", "participants"],
+        properties: {
+          scope: { type: "string", enum: ["workspace", "participants"] },
+          participants: {
+            type: "array",
+            maxItems: 100,
+            items: conversationParticipantListItemResponseSchema
+          }
+        },
+        additionalProperties: false
+      },
+      "Conversation participants (main: scope=workspace with an empty list; collab/DM: scope=participants with real rows)"
+    ).responses["200"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Conversation was not found", ["conversation_not_found"]).responses[
+      "404"
+    ],
+    "500": conversationInternalResponse
+  }
+} as const;
+
 const presenceUserIdsQueryParameter = {
   name: "user_ids",
   in: "query",
@@ -7627,6 +7667,14 @@ export function getOpenApiDocument() {
           parameters: [pathUuidParameter("id")],
           ...jsonRequestBody(updateConversationCuuRequestBodySchema),
           ...conversationCuuUpdateResponses
+        }
+      },
+      "/api/conversations/{id}/participants": {
+        get: {
+          tags: ["conversations"],
+          summary: "List conversation participants (main: scope=workspace + empty list; collab/DM: real rows)",
+          parameters: [pathUuidParameter("id")],
+          ...conversationParticipantsResponses
         }
       },
       "/api/presence": {
