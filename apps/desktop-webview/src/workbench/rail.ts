@@ -2,7 +2,12 @@
 // 纯 TS DOM，风格照 spotlight/views/*：render* 是可单测的纯函数，mount* 负责拉数据 + 绑事件。
 
 import type { WorkHubApiClient } from "@workhub/api-client";
-import type { CreateConversationResultVM, ProjectListItemVM, WorkbenchPageVM } from "@workhub/contracts";
+import type {
+  CreateConversationResultVM,
+  ProjectListItemVM,
+  RenameConversationResultVM,
+  WorkbenchPageVM
+} from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { avatarTileHtml } from "./chat/render.js";
@@ -97,6 +102,45 @@ export function createCollabConversation(
   });
 }
 
+// R14FIX 批 workbench（会话重命名，2026-07-15 用户反馈）：PATCH /api/conversations/:id——同
+// createCollabConversation 顶部注释的既有取舍（走 client.request 而不是扩大 WorkHubApiClient 的具名
+// 方法面）。契约见 apps/api/src/routes/conversation-rename.ts + renameConversationRequestSchema。
+export function renameCollabConversation(
+  client: Pick<WorkbenchRailApiClient, "request">,
+  conversationId: string,
+  title: string
+): Promise<RenameConversationResultVM> {
+  return client.request<RenameConversationResultVM>(`/api/conversations/${encodeURIComponent(conversationId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title })
+  });
+}
+
+// 改名成功后就地更新左栏树叶——不重拉整份 workbench VM（同 appendCollabConversationToVm 的取舍：省一次
+// 往返、避开切项目竞态）。按 id 定位这条会话，替换 title（其余字段透传）。找不到就原样返回（调用方可能
+// 已经切走了项目）。
+export function renameCollabConversationInVm(
+  vm: WorkbenchPageVM,
+  conversationId: string,
+  title: string
+): WorkbenchPageVM {
+  let changed = false;
+  const conversations = vm.conversations.conversations.map((conversation) => {
+    if (conversation.id === conversationId && conversation.title !== title) {
+      changed = true;
+      return { ...conversation, title };
+    }
+    return conversation;
+  });
+  if (!changed) {
+    return vm;
+  }
+  return {
+    ...vm,
+    conversations: { ...vm.conversations, conversations }
+  };
+}
+
 // 项目行下的树叶——批 1 全部只读(没有任何视图能接)。批 2 把主区群聊接进这个窗口后，「主区」升级成
 // 真按钮(会话点击路由：点它把焦点交回已经挂载好的 chat composer，见 shell.ts 的 onOpenMainConversation)；
 // 批 6 把网盘视图接进这个窗口后，「网盘」同样升级成真按钮(data-wb-open-drive，切中栏到 drive 标签，
@@ -137,12 +181,20 @@ function renderProjectTreeLeavesHtml(
     .filter((conversation) => conversation.kind === "collab")
     .map((conversation) => {
       const selected = centerTab === "collab" && activeConversationId === conversation.id;
-      return `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${selected ? " sel" : ""}" data-wb-open-collab-chat="${escapeHtml(conversation.id)}">${workbenchIcons.collab}<span>${escapeHtml(conversation.title)}</span>${
+      // R14FIX 批 workbench（会话重命名）：每条协同会话叶子加一个悬停/聚焦才现身的铅笔（兄弟节点，
+      // 不套在 open 按钮里——按钮里不能套按钮，同项目设置齿轮的既有取舍）。data-wb-rename-collab 带上
+      // 当前标题，mountWorkbenchRail 据此预填重命名弹窗。
+      return `<div class="wh-wb-collab-leaf"><button type="button" class="wh-wb-leaf wh-wb-leaf--live${selected ? " sel" : ""}" data-wb-open-collab-chat="${escapeHtml(conversation.id)}">${workbenchIcons.collab}<span>${escapeHtml(conversation.title)}</span>${
         conversation.next_seq > 0 ? `<span class="wh-wb-leaf-count">${conversation.next_seq}</span>` : ""
-      }</button>`;
+      }</button><button type="button" class="wh-wb-collab-rename" data-wb-rename-collab="${escapeHtml(conversation.id)}" data-wb-rename-collab-title="${escapeHtml(conversation.title)}" title="${zh ? "重命名" : "Rename"}" aria-label="${zh ? "重命名会话" : "Rename chat"}">${workbenchIcons.edit}</button></div>`;
     })
     .join("");
-  const newCollabButton = `<div class="wh-wb-new-collab">
+  // R14FIX 批 workbench（缺「单独和 Cuu 聊」入口 · 2026-07-15 用户反馈）：显眼快捷入口——一键建一条只有
+  // 自己 + Cuu 的私有会话并打开（不用先开建群弹窗、再刻意不选人）。文案桌面用 Cuu。
+  const soloCuuButton = `<button type="button" class="wh-wb-leaf wh-wb-leaf--live wh-wb-leaf--solo-cuu" data-wb-new-solo-cuu${newCollab.submitting ? " disabled" : ""}>${workbenchIcons.cat}<span>${
+    newCollab.submitting ? (zh ? "创建中…" : "Creating…") : zh ? "和 Cuu 单独聊" : "Chat just with Cuu"
+  }</span></button>`;
+  const newCollabButton = `<div class="wh-wb-new-collab">${soloCuuButton}
     <button type="button" class="wh-wb-leaf wh-wb-leaf--new" data-wb-new-collab-conversation${newCollab.submitting ? " disabled" : ""}>${workbenchIcons.plus}<span>${
       newCollab.submitting ? (zh ? "创建中…" : "Creating…") : zh ? "新建协同会话" : "New collab chat"
     }</span></button>${newCollab.error ? `<p class="wh-wb-new-collab-error">${escapeHtml(newCollab.error)}</p>` : ""}
@@ -450,6 +502,49 @@ export function renderNewCollabModalHtml(input: {
   </div>`;
 }
 
+// R14FIX 批 workbench（会话重命名，2026-07-15 用户反馈）：重命名小弹窗——只有一个标题输入框，复用建群/
+// 新建项目那套 .wh-wb-modal* 弹窗外壳（不新造弹窗底盘）。纯函数，imperative 的 PATCH/刷新在
+// mountWorkbenchRail 里（同其它 render* 函数）。
+export type RenameCollabModalUiState = {
+  open: boolean;
+  conversationId?: string | undefined;
+  title: string;
+  submitting: boolean;
+  error?: string | undefined;
+};
+
+export const IDLE_RENAME_COLLAB_MODAL_STATE: RenameCollabModalUiState = {
+  open: false,
+  title: "",
+  submitting: false
+};
+
+export function renderRenameCollabModalHtml(input: { locale: Locale; state: RenameCollabModalUiState }): string {
+  const zh = input.locale === "zh-CN";
+  const state = input.state;
+  return `<div class="wh-wb-modal-overlay" data-wb-rename-collab-overlay data-open="${state.open ? "true" : "false"}">
+    <div class="wh-wb-modal" role="dialog" aria-modal="true" aria-label="${zh ? "重命名会话" : "Rename chat"}">
+      <h3 class="wh-wb-modal-title">${zh ? "重命名会话" : "Rename chat"}</h3>
+      <input
+        class="wh-wb-modal-input"
+        type="text"
+        maxlength="256"
+        placeholder="${zh ? "会话名，如：改第三幕" : "Chat name"}"
+        data-wb-rename-collab-input
+        value="${escapeHtml(state.title)}"
+        ${state.submitting ? "disabled" : ""}
+      />
+      ${state.error ? `<p class="wh-wb-modal-error">${escapeHtml(state.error)}</p>` : ""}
+      <div class="wh-wb-modal-actions">
+        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-rename-collab-cancel ${state.submitting ? "disabled" : ""}>${zh ? "取消" : "Cancel"}</button>
+        <button type="button" class="wh-wb-btn wh-wb-btn--primary" data-wb-rename-collab-submit ${state.submitting || !state.title.trim() ? "disabled" : ""}>
+          ${state.submitting ? (zh ? "保存中…" : "Saving…") : zh ? "保存" : "Save"}
+        </button>
+      </div>
+    </div>
+  </div>`;
+}
+
 export type WorkbenchRailHandle = {
   refresh: () => void;
   // 开新建项目模态、重置上一次遗留的输入/错误态。中栏的空态 CTA 也调这个（不是自己拼一份重复逻辑），
@@ -496,6 +591,12 @@ export function mountWorkbenchRail(
   let newCollabModalTitle = "";
   let newCollabModalSelectedUserIds: string[] = [];
   let newCollabModalCuuEnabled = true;
+  // R14FIX 批 workbench（会话重命名）：重命名弹窗的瞬态输入态——独立于建群/新建项目的那几套，互不共享。
+  let renameModalOpen = false;
+  let renameModalConversationId: string | undefined;
+  let renameModalTitle = "";
+  let renameSubmitting = false;
+  let renameError: string | undefined;
   let disposed = false;
 
   const render = () => {
@@ -552,6 +653,15 @@ export function mountWorkbenchRail(
       memberOptions: (state.vm?.workspace_members.items ?? [])
         .filter((member) => !member.is_self)
         .map((member) => ({ userId: member.user_id, nickname: member.nickname }))
+    })}${renderRenameCollabModalHtml({
+      locale: input.locale,
+      state: {
+        open: renameModalOpen,
+        ...(renameModalConversationId !== undefined ? { conversationId: renameModalConversationId } : {}),
+        title: renameModalTitle,
+        submitting: renameSubmitting,
+        error: renameError
+      }
     })}`;
     // R14 批 AVATAR：建群选人器行的头像 tile 换真图（若有）——复用 chat/view.ts 的同一个命令式
     // 挂载步骤，不重写第二份 fetch+blob URL 逻辑。
@@ -742,6 +852,111 @@ export function mountWorkbenchRail(
     }
   };
 
+  // R14FIX 批 workbench（缺「单独和 Cuu 聊」入口）：一键建一条只有自己 + Cuu 的私有会话并打开——复用
+  // createCollabConversation（participantUserIds 空 = 1:1、cuuEnabled=true），不经过建群弹窗。in-flight/
+  // error 复用 newCollabSubmitting/newCollabError（语义都是"正在建一条协同会话/建失败了"），跟树叶按钮
+  // 的忙碌态天然联动。
+  const submitSoloCuuConversation = async () => {
+    if (newCollabSubmitting) {
+      return;
+    }
+    const state = input.store.getState();
+    const projectId = state.selectedProjectId;
+    const vm = state.vm;
+    if (!projectId || !vm || vm.project.id !== projectId) {
+      return;
+    }
+    newCollabSubmitting = true;
+    newCollabError = undefined;
+    render();
+    try {
+      const result = await createCollabConversation(input.client, projectId, {
+        title: input.locale === "zh-CN" ? "和 Cuu 单独聊" : "Just me and Cuu",
+        participantUserIds: [],
+        cuuEnabled: true
+      });
+      if (disposed) {
+        return;
+      }
+      newCollabSubmitting = false;
+      const latestVm = input.store.getState().vm;
+      if (latestVm && latestVm.project.id === projectId) {
+        input.store.setState({ vm: appendCollabConversationToVm(latestVm, result.conversation) });
+        input.onOpenCollabConversation?.(result.conversation.id);
+      } else {
+        render();
+      }
+    } catch (error) {
+      if (disposed) {
+        return;
+      }
+      newCollabSubmitting = false;
+      newCollabError =
+        error instanceof Error ? error.message : input.locale === "zh-CN" ? "创建失败，请重试" : "Couldn't create it — retry";
+      render();
+    }
+  };
+
+  // R14FIX 批 workbench（会话重命名）：铅笔点开重命名弹窗，预填当前标题（从叶子 data 属性带过来，不再
+  // 回 store 找）。开弹窗时清掉上一次的错误/提交态。
+  const openRenameModal = (conversationId: string, currentTitle: string) => {
+    renameModalConversationId = conversationId;
+    renameModalTitle = currentTitle;
+    renameError = undefined;
+    renameSubmitting = false;
+    renameModalOpen = true;
+    render();
+  };
+
+  const closeRenameModal = () => {
+    renameModalOpen = false;
+    renameModalConversationId = undefined;
+    renameError = undefined;
+    render();
+  };
+
+  // PATCH /api/conversations/:id 改名，成功后就地改左栏树叶（renameCollabConversationInVm），不重拉整份
+  // VM（同 submitNewCollabConversation 的取舍）。请求打完之间用户可能已经切走了项目——只在还停在同一个
+  // 项目时才把新标题合并进当前 VM。
+  const submitRenameConversation = async () => {
+    if (renameSubmitting) {
+      return;
+    }
+    const conversationId = renameModalConversationId;
+    const title = renameModalTitle.trim();
+    if (!conversationId || !title) {
+      return;
+    }
+    renameSubmitting = true;
+    renameError = undefined;
+    render();
+    try {
+      const result = await renameCollabConversation(input.client, conversationId, title);
+      if (disposed) {
+        return;
+      }
+      renameSubmitting = false;
+      renameModalOpen = false;
+      renameModalConversationId = undefined;
+      const latestVm = input.store.getState().vm;
+      if (latestVm) {
+        input.store.setState({
+          vm: renameCollabConversationInVm(latestVm, conversationId, result.conversation.title)
+        });
+      } else {
+        render();
+      }
+    } catch (error) {
+      if (disposed) {
+        return;
+      }
+      renameSubmitting = false;
+      renameError =
+        error instanceof Error ? error.message : input.locale === "zh-CN" ? "改名失败，请重试" : "Couldn't rename it — retry";
+      render();
+    }
+  };
+
   container.addEventListener("click", (event) => {
     if (!(event.target instanceof HTMLElement)) {
       return;
@@ -764,9 +979,21 @@ export function mountWorkbenchRail(
       input.onOpenMainConversation?.();
       return;
     }
+    // R14FIX 批 workbench：会话叶子的重命名铅笔——它是 open 按钮的兄弟节点，必须在 open 判定之前拦下
+    // （虽然 closest 各自独立，但先判它更直白）。
+    const renameBtn = target.closest<HTMLElement>("[data-wb-rename-collab]");
+    if (renameBtn?.dataset.wbRenameCollab) {
+      openRenameModal(renameBtn.dataset.wbRenameCollab, renameBtn.dataset.wbRenameCollabTitle ?? "");
+      return;
+    }
     const collabLeaf = target.closest<HTMLElement>("[data-wb-open-collab-chat]");
     if (collabLeaf?.dataset.wbOpenCollabChat) {
       input.onOpenCollabConversation?.(collabLeaf.dataset.wbOpenCollabChat);
+      return;
+    }
+    // R14FIX 批 workbench：「和 Cuu 单独聊」快捷入口。
+    if (target.closest("[data-wb-new-solo-cuu]")) {
+      void submitSoloCuuConversation();
       return;
     }
     if (target.closest("[data-wb-new-collab-conversation]")) {
@@ -813,6 +1040,16 @@ export function mountWorkbenchRail(
     }
     if (target.closest("[data-wb-new-collab-submit]")) {
       void submitNewCollabConversation();
+      return;
+    }
+    // R14FIX 批 workbench：重命名弹窗的取消/点遮罩背景关闭 + 提交，同其它弹窗同一套约定。
+    const clickedRenameOverlayBackdrop = target.hasAttribute("data-wb-rename-collab-overlay");
+    if (target.closest("[data-wb-rename-collab-cancel]") || clickedRenameOverlayBackdrop) {
+      closeRenameModal();
+      return;
+    }
+    if (target.closest("[data-wb-rename-collab-submit]")) {
+      void submitRenameConversation();
     }
   });
 
@@ -859,6 +1096,22 @@ export function mountWorkbenchRail(
         const end = titleInput.value.length;
         try {
           titleInput.setSelectionRange(end, end);
+        } catch {
+          // ignore: some input rendering modes reject setSelectionRange.
+        }
+      }
+      return;
+    }
+    // R14FIX 批 workbench：重命名弹窗标题输入——同上一套"重渲后还焦点/光标"处理。
+    if (target instanceof HTMLInputElement && target.matches("[data-wb-rename-collab-input]")) {
+      renameModalTitle = target.value;
+      render();
+      const renameInput = container.querySelector<HTMLInputElement>("[data-wb-rename-collab-input]");
+      if (renameInput) {
+        renameInput.focus();
+        const end = renameInput.value.length;
+        try {
+          renameInput.setSelectionRange(end, end);
         } catch {
           // ignore: some input rendering modes reject setSelectionRange.
         }

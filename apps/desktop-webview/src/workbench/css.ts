@@ -297,6 +297,42 @@ export const workbenchCss = [
   ".wh-wb-modal-error{margin:10px 0 0;font:600 12px/1.5 var(--ds-font);color:var(--ds-danger)}",
   ".wh-wb-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}",
 
+  // —— R14FIX 批 workbench（建群弹窗排版修复 · 2026-07-15 用户实拍）：建群模态的成员多选行 + Cuu 参与
+  // 开关此前在 rail.ts 有结构却在 css.ts 完全没有样式，<label> 默认 inline 让 checkbox/头像/名字换行
+  // 错乱（用户截图里 checkbox 浮在名字上方）。这一组规则把每行摆成一条对齐工整的 flex 行。 —— //
+  ".wh-wb-new-collab-members{margin:2px 0 8px;max-height:184px;overflow-y:auto;display:flex;flex-direction:column;gap:1px}",
+  ".wh-wb-new-collab-members-label{margin:0 0 6px;font:500 11.5px/1.5 var(--ds-font);color:var(--ds-ink-muted)}",
+  ".wh-wb-new-collab-member-row{display:flex;align-items:center;gap:9px;padding:5px 8px;border-radius:9px;cursor:pointer;" +
+    "font:500 13px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-new-collab-member-row:hover{background:rgba(20,30,50,.05)}",
+  ".wh-wb-new-collab-member-row input[type=\"checkbox\"]{flex:0 0 auto;width:15px;height:15px;margin:0;accent-color:var(--ds-accent);cursor:pointer}",
+  // 头像 tile 复用 .wh-wb-chat-avatar（含固定 22×22 + margin-right:-6px 的堆叠留白）——建群行里不堆叠，
+  // 抵掉负边距。名字 span 用 :not(.wh-wb-chat-avatar) 排除头像那个 span，否则更高优先级的 `span` 选择器
+  // 会把头像也拉成 flex:1（渲染成横向拉伸的椭圆，而不是 22px 圆）。
+  ".wh-wb-new-collab-member-row .wh-wb-chat-avatar{margin-right:0}",
+  ".wh-wb-new-collab-member-row span:not(.wh-wb-chat-avatar){flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+  ".wh-wb-new-collab-member-empty{margin:2px 0 8px;font:500 12px/1.5 var(--ds-font);color:var(--ds-ink-faint)}",
+  ".wh-wb-new-collab-cuu-toggle{display:flex;align-items:center;gap:9px;padding:8px 2px 2px;cursor:pointer;" +
+    "font:500 13px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-new-collab-cuu-toggle input[type=\"checkbox\"]{flex:0 0 auto;width:15px;height:15px;margin:0;accent-color:var(--ds-accent);cursor:pointer}",
+
+  // —— R14FIX 批 workbench：左栏协同分组的「+ 新建」容器 + 「和 Cuu 单独聊」快捷入口 + 每条协同会话
+  // 叶子的悬停重命名铅笔。 —— //
+  ".wh-wb-new-collab{display:flex;flex-direction:column;gap:1px;margin-top:2px}",
+  ".wh-wb-new-collab-error{margin:2px 10px 4px;font:500 11px/1.4 var(--ds-font);color:var(--ds-danger)}",
+  // 「和 Cuu 单独聊」——真按钮（.wh-wb-leaf--live 已带 hover/cursor），只把 cat 图标染成 Cuu 品牌橙。
+  ".wh-wb-leaf--solo-cuu svg{color:var(--wb-cuu)}",
+  // 协同会话叶子行：叶子 + 悬停铅笔的水平容器（铅笔是 <button> 的兄弟——按钮里不能套按钮，同项目设置
+  // 齿轮的既有取舍）。叶子从固定宽改成 flex:1，把右侧让给铅笔。
+  ".wh-wb-collab-leaf{display:flex;align-items:center}",
+  ".wh-wb-collab-leaf .wh-wb-leaf{flex:1 1 auto;min-width:0;width:auto;margin-right:0}",
+  ".wh-wb-collab-rename{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;" +
+    "margin-right:8px;border:0;border-radius:7px;background:transparent;color:var(--ds-ink-faint);cursor:pointer;opacity:0;" +
+    "transition:opacity .12s var(--ds-ease),background var(--ds-dur-fast) var(--ds-ease)}",
+  ".wh-wb-collab-leaf:hover .wh-wb-collab-rename,.wh-wb-collab-rename:focus-visible{opacity:1}",
+  ".wh-wb-collab-rename:hover{background:rgba(20,30,50,.06);color:var(--ds-ink)}",
+  ".wh-wb-collab-rename svg{width:13px;height:13px}",
+
   // —— 通用按钮（复用 .ds-btn 结构，浅色配色——主按钮照 design-system.ts 的 .ds-btn-primary 同款蓝色渐变
   // + 白字，不再是深色主题那套「浅蓝底配深字」）。 —— //
   ".wh-wb-btn{font:600 12.5px/1 var(--ds-font);padding:8px 14px;border-radius:99px;border:1px solid var(--ds-glass-border);" +
