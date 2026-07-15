@@ -4474,6 +4474,8 @@ const conversationResponseSchema = {
     source_message_id: conversationNullableUuidSchema,
     visibility: { type: "string", enum: ["project", "private"] },
     cuu_enabled: { type: "boolean" },
+    // R15 批 B（人对人私聊）：additive optional——只在 DM 会话上出现且恒为 true，普通会话不带这个键。
+    is_dm: { type: "boolean", description: "Present and true only for direct-message conversations." },
     next_seq: conversationSafeSequenceSchema,
     created_by: conversationNullableUuidSchema,
     participant_role: conversationNullableParticipantRoleSchema,
@@ -5002,6 +5004,45 @@ const conversationMessageCreateResponses = {
     "409": jsonErrorStatusResponse("409", "Conversation message sequence is exhausted", [
       "conversation_sequence_exhausted"
     ]).responses["409"],
+    "413": conversationPayloadTooLargeResponse,
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+
+// R15 批 B（人对人私聊）：POST /api/dm/open 的请求体与响应集——与 routes/dm.ts + services/conversations.ts
+// 的 openDm 真实状态码逐条对齐（自聊 400、目标不在工作区 404）。
+const openDmRequestBodySchema = {
+  type: "object",
+  required: ["user_id"],
+  properties: { user_id: uuidStringSchema },
+  additionalProperties: false
+} as const;
+const openDmResultResponseSchema = {
+  type: "object",
+  required: ["conversation"],
+  properties: { conversation: conversationResponseSchema },
+  additionalProperties: false
+} as const;
+const dmOpenResponses = {
+  responses: {
+    "201": jsonDataStatusResponse(
+      openDmResultResponseSchema,
+      "201",
+      "Opened or reused the direct-message conversation with the target user"
+    ).responses["201"],
+    "400": jsonErrorStatusResponse("400", "Direct-message target is malformed or is the caller themselves", [
+      "malformed_json",
+      "json_object_required",
+      "conversation_dm_target_required",
+      "conversation_dm_self",
+      "conversation_invalid_input"
+    ]).responses["400"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Direct-message target is not an active member of this workspace", [
+      "conversation_dm_target_not_found"
+    ]).responses["404"],
     "413": conversationPayloadTooLargeResponse,
     "422": conversationValidationResponse,
     "500": conversationInternalResponse
@@ -7358,6 +7399,14 @@ export function getOpenApiDocument() {
           parameters: [pathUuidParameter("id")],
           ...jsonRequestBody(createConversationMessageRequestBodySchema),
           ...conversationMessageCreateResponses
+        }
+      },
+      "/api/dm/open": {
+        post: {
+          tags: ["conversations"],
+          summary: "Open (or reuse) the direct-message conversation with another workspace member",
+          ...jsonRequestBody(openDmRequestBodySchema),
+          ...dmOpenResponses
         }
       },
       "/api/conversations/{id}": {
