@@ -25,6 +25,14 @@ import {
 //   升级（due+24h 起）         → 通知项目负责人（owner/lead 判定链），最高               work_item.escalated_ddl
 // 无责任人的逾期项走 D4「找人」：通知项目负责人认领/指派，一张（suppression_key = ddl_card:{workItemId}）。
 //
+// R15 批 D2（Cuu 主动开口）：PROACTIVE_CUU_DELIVERY_ENABLED 开时，t1d/overdue 两档对【有责任人】的工作项
+// 改走 conversation_message 通道——Cuu 在责任人的个人空间主区不请自来说一句人话（个人空间不可用则闸内
+// 降级回 notification）。t3d 保持通知（温和的不打扰）、escalate/找人保持通知（升级要留痕给项目负责人）。
+// 分工要点：overdue 的「每 24h 反复叮嘱」是纯【通知侧】的 reminder 阶梯（nextRemindAt + notification
+// reminder pulse）——会话里 Cuu 只说一次，反复催靠通知阶梯（或降级路径），刻意不在会话通道复刻重复
+// 叮嘱，避免 Cuu 变复读机。故 nextRemindAt 仍挂在 notification 草稿上（会话投成功则它天然不生效；降级到
+// 通知时照旧接 24h 阶梯）。
+//
 // 阶梯的「跨 stage 跳变」语义：每 tick 只按 now vs due_at 算出【当前】所属阶梯并发那一段——一上来就
 // overdue（新建即逾期）只发 overdue，不补发 t3d/t1d（那两段的窗口 now 从没落进去，intent 也就没产过）。
 // due_at 改期后各 stage 以新 due_at 重算，但 suppression_key 不含 due_at → 同 stage 改期后不重发
@@ -62,6 +70,9 @@ export type DdlChaseServiceDeps = {
   listCandidates: (input: { now: Date; horizonMs: number; limit: number }) => Promise<DdlChaseCandidateRow[]>;
   proactive: Pick<ProactiveIntentService, "recordAndDeliver">;
   quietHours: ProactiveQuietHours;
+  // R15 批 D2：t1d/overdue 两档是否改走 Cuu 会话通道（PROACTIVE_CUU_DELIVERY_ENABLED，默认 true）。
+  // 缺省 false（不注入时回到批 D 的全通知行为）。
+  cuuDeliveryEnabled?: boolean;
   now?: () => Date;
   maxPerTick?: number;
   logger?: Pick<StructuredLogger, "info" | "warn">;
@@ -158,13 +169,31 @@ function stageCopy(stage: DdlStage, candidate: DdlChaseCandidateRow): StageCopy 
   }
 }
 
+// R15 批 D2（Cuu 主动开口）：t1d/overdue 两档走会话通道时，Cuu 在个人空间主区说的那句人话（零 LLM
+// 模板，措辞后续可接 LLM）。只有这两档有会话文案——其余阶梯（t3d/escalate/找人）留在通知侧。
+function stageConversationText(stage: "t1d" | "overdue", candidate: DdlChaseCandidateRow): string {
+  const name = displayTitle(candidate);
+  if (stage === "t1d") {
+    return `提醒一下：「${name}」明天就到期了，需要我帮你看看进度吗？`;
+  }
+  return `提醒一下：「${name}」已经逾期了，要不要我帮你梳理下接下来怎么推进？`;
+}
+
 type IntentPlan =
   | { kind: "skip" }
   | { kind: "no_target" }
   | { kind: "intent"; intent: ProactiveIntentInput };
 
+// R15 批 D2：会话通道开关（默认关——纯函数不感知 env）。调用方（createDdlChaseService）把解析好的
+// PROACTIVE_CUU_DELIVERY_ENABLED（默认 true）显式传进来；关闭时 t1d/overdue 也走通知（回到批 D 行为）。
+export type PlanDdlIntentOptions = { cuuDeliveryEnabled?: boolean };
+
 // 把一条候选工作项映射成本 tick 该发的 intent（或不发）。纯函数——不投递、不碰 DB。
-export function planDdlIntent(candidate: DdlChaseCandidateRow, now: Date): IntentPlan {
+export function planDdlIntent(
+  candidate: DdlChaseCandidateRow,
+  now: Date,
+  options: PlanDdlIntentOptions = {}
+): IntentPlan {
   const responsible = responsibleUserId(candidate);
   const owner = ownerChainUserId(candidate);
   const overdue = now.getTime() >= candidate.dueAt.getTime();
@@ -207,9 +236,16 @@ export function planDdlIntent(candidate: DdlChaseCandidateRow, now: Date): Inten
     // web /workitems/:id 现成；桌面 OS 桥同样拿它当路由（见 notifications.ts 深链约定）。
     targetUrl: `/workitems/${candidate.workItemId}`,
     dedupeKey: suppressionKey,
-    // 只有 overdue 进 24h 提醒阶梯（复用 0061 语义）。
+    // 只有 overdue 进 24h 提醒阶梯（复用 0061 语义）。这个字段只被 notification 通道消费——会话通道投成功
+    // 时它天然不生效；降级到通知时照旧接 24h 阶梯（见文件头「反复叮嘱靠通知侧」分工）。
     ...(stage === "overdue" ? { nextRemindAt: new Date(now.getTime() + OVERDUE_REMINDER_INTERVAL_MS) } : {})
   };
+  // 会话通道：仅 t1d/overdue（此时必在 responsible 分支，target=责任人）且开关开启时走 Cuu 会话。
+  // `stage === "t1d" || stage === "overdue"` 同时把类型收窄给 stageConversationText。
+  const conversationText =
+    options.cuuDeliveryEnabled && (stage === "t1d" || stage === "overdue")
+      ? stageConversationText(stage, candidate)
+      : undefined;
   return {
     kind: "intent",
     intent: {
@@ -226,7 +262,8 @@ export function planDdlIntent(candidate: DdlChaseCandidateRow, now: Date): Inten
         due_at: candidate.dueAt.toISOString(),
         severity: copy.severity
       },
-      notification
+      notification,
+      ...(conversationText ? { channel: "conversation_message" as const, conversationText } : {})
     }
   };
 }
@@ -258,7 +295,7 @@ export function createDdlChaseService(deps: DdlChaseServiceDeps): { runOnce(): P
       const quiet = isWithinProactiveQuietHours(deps.quietHours, startedAt);
 
       for (const candidate of candidates) {
-        const plan = planDdlIntent(candidate, startedAt);
+        const plan = planDdlIntent(candidate, startedAt, { cuuDeliveryEnabled: deps.cuuDeliveryEnabled ?? false });
         if (plan.kind === "skip") {
           result.skipped_no_stage += 1;
           continue;
@@ -306,7 +343,8 @@ export function getDefaultDdlChaseService(): ReturnType<typeof createDdlChaseSer
     defaultDdlChaseService = createDdlChaseService({
       listCandidates: (input) => listDdlChaseCandidates(db, input),
       proactive: getDefaultProactiveIntentService(),
-      quietHours: parseProactiveQuietHours(runtimeSettings.proactive.quietHours)
+      quietHours: parseProactiveQuietHours(runtimeSettings.proactive.quietHours),
+      cuuDeliveryEnabled: runtimeSettings.proactive.cuuDeliveryEnabled
     });
   }
   return defaultDdlChaseService;
