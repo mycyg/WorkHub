@@ -2118,13 +2118,29 @@ const notificationListResponseSchema = {
 } as const;
 const notificationPreferencesResponseSchema = {
   type: "object",
+  required: ["muted_notification_types", "care_messages_enabled"],
+  properties: {
+    muted_notification_types: {
+      type: "array",
+      maxItems: 100,
+      items: { type: "string", minLength: 1, maxLength: 64 }
+    },
+    // R15 批 F（主动关怀 opt-out）：是否接收 Cuu 的主动关怀消息（默认 true）。
+    care_messages_enabled: { type: "boolean" }
+  },
+  additionalProperties: false
+} as const;
+// PUT 请求体：muted_notification_types 必填，care_messages_enabled 可选（缺省=不动关怀开关）。
+const notificationPreferencesRequestBodySchema = {
+  type: "object",
   required: ["muted_notification_types"],
   properties: {
     muted_notification_types: {
       type: "array",
       maxItems: 100,
       items: { type: "string", minLength: 1, maxLength: 64 }
-    }
+    },
+    care_messages_enabled: { type: "boolean" }
   },
   additionalProperties: false
 } as const;
@@ -7360,7 +7376,7 @@ export function getOpenApiDocument() {
         put: {
           tags: ["notifications"],
           summary: "Update notification mute preferences",
-          ...jsonRequestBody(notificationPreferencesResponseSchema),
+          ...jsonRequestBody(notificationPreferencesRequestBodySchema),
           ...notificationPreferencesUpdateResponse
         }
       },

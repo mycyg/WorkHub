@@ -23,9 +23,12 @@ export type NotificationRoutesDependencies = {
 };
 
 const notificationPreferencesRequestSchema = z.object({
-  muted_notification_types: z.array(z.string().trim().min(1).max(64)).max(100)
+  muted_notification_types: z.array(z.string().trim().min(1).max(64)).max(100),
+  // R15 批 F（关怀 opt-out）：可选的关怀开关（默认 true）。缺省=不动关怀（沿用当前存量）。
+  care_messages_enabled: z.boolean().optional()
 }).transform((value) => ({
-  muted_notification_types: normalizeMutedNotificationTypes(value.muted_notification_types)
+  muted_notification_types: normalizeMutedNotificationTypes(value.muted_notification_types),
+  ...(value.care_messages_enabled !== undefined ? { care_messages_enabled: value.care_messages_enabled } : {})
 }));
 
 export function createNotificationRoutes(deps: NotificationRoutesDependencies = {}) {
@@ -64,7 +67,11 @@ export function createNotificationRoutes(deps: NotificationRoutesDependencies = 
   routes.put("/preferences", createCurrentUserMiddleware(authSource), async (c) => {
     const payload = notificationPreferencesRequestSchema.parse(await readJsonObject(c));
     try {
-      const data = await service.setPreferences(c.var.currentUser.id, payload.muted_notification_types);
+      const data = await service.setPreferences(
+        c.var.currentUser.id,
+        payload.muted_notification_types,
+        payload.care_messages_enabled !== undefined ? { careMessagesEnabled: payload.care_messages_enabled } : {}
+      );
       return c.json({ ok: true, data });
     } catch (error) {
       handleNotificationError(error);

@@ -16,6 +16,7 @@ import {
 } from "@workhub/db";
 
 import { getDefaultStructuredLogger, type StructuredLogger } from "../logging.js";
+import { CARE_MESSAGE_MUTE_TYPE } from "./notifications.js";
 import {
   careConversationText,
   getDefaultProactiveIntentService,
@@ -37,10 +38,8 @@ import {
 // 一 tick 两步：① F1 侦测三类信号并 upsert 进 user_memories（记忆写入源拓宽，可衰减）；② F2 读活跃信号
 // → 产 care intent 投递。静默期只跳过第②步（第①步纯 DB bookkeeping 不打扰用户）。
 
-// 关怀 opt-out 的存储：复用既有「通知按类型静音」列（users.muted_notification_types），保留一个专用伪类型
-// —— 关怀虽走会话通道不走通知，但把「不想收关怀」表达为静音一个保留类型是最省的做法（无新列、无迁移，
-// 复用既有 GET/PUT /notifications/preferences 端点）。默认（清单里没有它）= 开启关怀。
-export const CARE_MESSAGE_MUTE_TYPE = "care.message";
+// 关怀 opt-out 存储：复用既有「通知按类型静音」列 + 保留伪类型 CARE_MESSAGE_MUTE_TYPE（定义在
+// notifications.ts，作单一真相；见那里的注释）。默认（清单里没有它）= 开启关怀。
 
 const CARE_SIGNAL_WINDOW_DAYS = 7;
 const DEFAULT_MAX_PER_TICK = 500;
