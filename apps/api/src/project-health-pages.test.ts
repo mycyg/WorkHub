@@ -76,6 +76,7 @@ function workItem(partial: Partial<ScheduleNotifyWorkItemRow> = {}): ScheduleNot
     dueAt: null,
     sourceMeetingId: null,
     sourceWorkItemId: null,
+    milestoneId: null,
     claimedAt: null,
     doneAt: null,
     deliveredAt: null,

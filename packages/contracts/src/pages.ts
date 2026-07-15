@@ -703,6 +703,18 @@ export const projectHomePageVmSchema = z.object({
 });
 export type ProjectHomePageVM = z.infer<typeof projectHomePageVmSchema>;
 
+// R15 批 E1（项目时间线 / 甘特）：里程碑 VM——CRUD 端点与时间线 VM 共用这一形状。due_at 可空
+// （里程碑可先建后定期）；status 只有 open/done。
+export const projectMilestoneVmSchema = z.object({
+  id: idSchema,
+  project_id: idSchema,
+  title: z.string().min(1),
+  due_at: isoDateTimeSchema.nullable(),
+  sort: z.number().int().nonnegative(),
+  status: z.enum(["open", "done"])
+});
+export type ProjectMilestoneVM = z.infer<typeof projectMilestoneVmSchema>;
+
 const workbenchMembershipRoleSchema = z.enum(["member", "admin", "owner"]);
 const workbenchConversationPageVmSchema = z
   .object({
