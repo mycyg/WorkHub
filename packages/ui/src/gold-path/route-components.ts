@@ -462,6 +462,7 @@ type RouteCopyKey =
   | "projectHome.files"
   | "projectHome.noFiles"
   | "projectHome.github"
+  | "projectHome.githubEmpty"
   | "settings.runtime"
   | "settings.llm"
   | "settings.language"
@@ -633,7 +634,9 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "notifications.completed": "已处理",
     "notifications.source": "来源",
     "notifications.groundingWhy": "为什么提醒我",
-    "notifications.conversationLinked": "这条通知关联一段讨论，打开后能看到相关上下文",
+    // G-web 止血批：web 没有会话 UI——旧文案「打开后能看到相关上下文」会让人以为点开就能看会话内容，
+    // 实际跳转目标只是既有的工作项/审批页（带 ?conversation_id= 查询串），补一句诚实指路。
+    "notifications.conversationLinked": "这条通知关联一段讨论，会话内容请在桌面工作台查看",
     "knowledge.fromNotice": "来自通知的相关资料",
     "health.kicker": "项目健康",
     "health.title": "健康总览",
@@ -709,6 +712,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "projectHome.files": "最近文件",
     "projectHome.noFiles": "网盘里还没有文件。",
     "projectHome.github": "最近 GitHub 动态",
+    "projectHome.githubEmpty": "在桌面客户端项目设置中绑定 GitHub 后可见。",
     "skills.active": "在用",
     "skills.aiAuthored": "AI 蒸馏",
     "skills.refined": "已精修",
@@ -886,7 +890,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "notifications.completed": "Done",
     "notifications.source": "Source",
     "notifications.groundingWhy": "Why am I seeing this",
-    "notifications.conversationLinked": "This notification is tied to a discussion — open it to see the surrounding context",
+    "notifications.conversationLinked": "This notification is tied to a discussion — the conversation itself only opens in the desktop workbench",
     "knowledge.fromNotice": "Search context from a notification",
     "health.kicker": "Project health",
     "health.title": "Health overview",
@@ -962,6 +966,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "projectHome.files": "Recent files",
     "projectHome.noFiles": "No files in the drive yet.",
     "projectHome.github": "Recent GitHub activity",
+    "projectHome.githubEmpty": "Bind GitHub in the desktop client's project settings to see this.",
     "skills.active": "Active",
     "skills.aiAuthored": "AI-distilled",
     "skills.refined": "Refined",
@@ -1321,7 +1326,10 @@ function notificationTypeLabel(type: string, zh: boolean): string {
     "notification.created": ["新通知", "Update"],
     // R12 功能审查 F5：观察者派活问询——此前落进 humanizeToken 兜底，渲成裸英文
     // "Action Card Item Dispatch Ask"。
-    "action_card_item.dispatch_ask": ["派活问询", "Dispatch ask"]
+    "action_card_item.dispatch_ask": ["派活问询", "Dispatch ask"],
+    // G-web 止血批：project.* 无命名空间前缀兜底（prefix 表没有 "project" key），此前落进
+    // humanizeToken 渲出裸英文 "Project Risk Digest"。
+    "project.risk_digest": ["风险巡检摘要", "Risk digest"]
   };
   const hit = exact[type];
   if (hit) {
@@ -4331,15 +4339,17 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
       </div>
     </a>`).join("")
     : `<p class="wh-subtle" data-r8-project-home-no-files="true">${escapeHtml(routeT(locale, "projectHome.noFiles"))}</p>`;
-  // R14 批 GH：未绑定/绑定但暂无活动/取数失败——服务端三种情况都省略这个字段（诚实缺省），
-  // 故只有非空数组才渲区块，不渲空列表占位。
+  // R14 批 GH：未绑定/绑定但暂无活动/取数失败——服务端三种情况都省略这个字段（诚实缺省），无法
+  // 区分三者。G-web 止血批：此前空值直接不渲区块，用户看不到任何引导，误以为项目主页就是没有
+  // 这块能力；改为区块常渲，空值时给一条空态提示——GitHub 绑定只在桌面客户端项目设置里做。
   const githubActivities = vm.github_activities ?? [];
-  const githubSection = githubActivities.length
-    ? `<section class="wh-card wh-r4-route-card" data-r14-project-home-github="${escapeHtml(String(githubActivities.length))}">
+  const githubBody = githubActivities.length
+    ? `<div class="wh-r4-route-table">${githubActivities.map((item) => githubActivityRowHtml(item, locale)).join("")}</div>`
+    : `<p class="wh-subtle" data-r14-project-home-github-empty="true">${escapeHtml(routeT(locale, "projectHome.githubEmpty"))}</p>`;
+  const githubSection = `<section class="wh-card wh-r4-route-card" data-r14-project-home-github="${escapeHtml(String(githubActivities.length))}">
         <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "projectHome.github"))}</h3>
-        <div class="wh-r4-route-table">${githubActivities.map((item) => githubActivityRowHtml(item, locale)).join("")}</div>
-      </section>`
-    : "";
+        ${githubBody}
+      </section>`;
   const rows = vm.open_work_items.length
     ? vm.open_work_items.map((item) => `<a class="wh-r4-route-row" href="${escapeHtml(safeHref(item.href))}" data-r8-project-home-item="${escapeHtml(item.id)}" data-r8-project-home-item-code="${escapeHtml(item.code)}">
       <div>

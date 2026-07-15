@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { WorkHubApiError, type WorkHubApiClient } from "@workhub/api-client";
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
+import { productNavGroups } from "@workhub/ui/gold-path";
 import type {
   AgentArmyDashboardVM,
   ApprovalCenterVM,
@@ -943,6 +944,67 @@ test("R4 web route registry resolves product URL routes", () => {
   assert.equal(resolveWebRoute("/unknown"), undefined);
   assert.equal(webRouteHref("https://workhub.local/proposals/p-1?tab=diff#top"), "/proposals/p-1?tab=diff");
   assert.equal(webRouteHref("https://workhub.local/#/agent-runs/run-1/replay?from=old"), "/agent-runs/run-1/replay?from=old");
+});
+
+// G-web 止血批：productNavGroups（packages/ui/src/gold-path/product-shell.ts）是路由的第 4 个
+// 同步点——webRouteRegistry/webReactRouteTree/routeTreePageVmByKey 都已经有门禁校验着，唯独
+// 导航分组从没被校验过，新路由加了却忘记分组会悄悄变成一个只能深链、导航里找不到的孤儿页。
+// intake 是唯一的例外：Nav-v2 把它从列表项升级成置顶主 CTA（见 product-shell.ts 的
+// renderProductNav），故意不出现在任何 group.keys 里。
+test("R14 FIX (nav sync gap) productNavGroups covers every webRouteRegistry key", () => {
+  const navKeys = new Set(productNavGroups.flatMap((group) => Array.from(group.keys)));
+  const intakeCtaException = new Set(["intake"]);
+  const orphanRouteKeys = webRouteRegistry
+    .map((route) => route.key)
+    .filter((key) => !navKeys.has(key) && !intakeCtaException.has(key));
+
+  assert.deepEqual(orphanRouteKeys, []);
+});
+
+// G-web 止血批：home/projects/drive/meetings/知识落地页/intake 起点六处路由分支各自独立调
+// client.listProjects()。若两次导航前后脚打进来（比如上一次还没落地，用户又点了别的导航项），
+// 之前会并发发出多个一模一样的 GET /api/projects——这里验证 in-flight 期间第二次调用直接复用
+// 第一次的 promise，不发起新请求；不是 TTL 缓存，请求一落地这个位子就清空。
+test("G-web FIX (listProjects dedup) concurrent route loads share one in-flight listProjects call", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client } = fakeRouteClient(surface);
+  let listProjectsCallCount = 0;
+  let resolveListProjects: (value: ProjectListVM) => void = () => {};
+  client.listProjects = () => new Promise<ProjectListVM>((resolve) => {
+    listProjectsCallCount += 1;
+    resolveListProjects = resolve;
+  });
+
+  const homeMatch = resolveWebRoute("/");
+  const projectsMatch = resolveWebRoute("/projects");
+  assert.ok(homeMatch);
+  assert.ok(projectsMatch);
+
+  // 不 await——两次导航"前后脚"并发打进来，模拟真实的快速切换场景。
+  const homePromise = loadWebRoute(client, homeMatch, "en-US");
+  const projectsPromise = loadWebRoute(client, projectsMatch, "en-US");
+
+  // 两次导航都已经打到 listProjects 这一步（还没落地），但只应该有一次真实调用。
+  assert.equal(listProjectsCallCount, 1);
+  resolveListProjects(projectListVm());
+
+  const [homeResult, projectsResult] = await Promise.all([homePromise, projectsPromise]);
+  assert.equal(homeResult.status, "ready");
+  assert.equal(projectsResult.status, "ready");
+  assert.equal(listProjectsCallCount, 1);
+
+  // in-flight 请求落地后位子清空——不是 TTL 缓存，下一次导航仍应发出全新请求（拿到最新数据）。
+  // 第一次调用已经落地过（上面 resolveListProjects 那次），换回一个立即 resolve 的实现来验证
+  // 第二次确实是全新请求，而不是复用了已经清空的旧 promise。
+  client.listProjects = async () => {
+    listProjectsCallCount += 1;
+    return projectListVm();
+  };
+  const secondMatch = resolveWebRoute("/projects");
+  assert.ok(secondMatch);
+  const secondResult = await loadWebRoute(client, secondMatch, "en-US");
+  assert.equal(secondResult.status, "ready");
+  assert.equal(listProjectsCallCount, 2);
 });
 
 test("R9.7 web resolves emitted /attention links to the decision inbox", async () => {

@@ -2204,10 +2204,13 @@ test("R14 GH: project home renders recent GitHub activity with kind/state/author
   assert.equal(withActivity.html.includes("hubot"), true);
   assertNoMainWindowBoundaryLeak(withActivity.html);
 
-  // No binding / no activity: the field is absent (not an empty array), so no section at all.
+  // G-web 止血批：无绑定/无活动时区块改为常渲——给出「去桌面客户端绑定」的空态引导，
+  // 而不是悄悄消失（此前用户看不到这块能力存在过）。
   const withoutActivity = renderWebRouteComponent({ key: "project-home", project: baseVm }, { locale: "zh-CN" });
-  assert.equal(withoutActivity.html.includes("最近 GitHub 动态"), false);
-  assert.equal(withoutActivity.html.includes("data-r14-project-home-github"), false);
+  assert.equal(withoutActivity.html.includes("最近 GitHub 动态"), true);
+  assert.equal(withoutActivity.html.includes('data-r14-project-home-github="0"'), true);
+  assert.equal(withoutActivity.html.includes('data-r14-project-home-github-empty="true"'), true);
+  assert.equal(withoutActivity.html.includes("在桌面客户端项目设置中绑定 GitHub 后可见"), true);
 
   const en = renderWebRouteComponent({
     key: "project-home",
@@ -3405,6 +3408,30 @@ test("R14 notifications route annotates items that carry a conversation_id witho
   assert.equal(/cuu/iu.test(en.html), false);
   assert.equal(/cuu/iu.test(zh.html), false);
   assertNoMainWindowBoundaryLeak(en.html);
+});
+
+// G-web 止血批：notificationTypeLabel 的 exact 映射表没有 "project" 命名空间前缀兜底——
+// project.risk_digest（risk-monitor.ts 每日风险巡检摘要）此前直接掉进 humanizeToken，
+// 中文界面渲出裸英文 "Project Risk Digest"。
+test("G-web FIX notification type label localizes project.risk_digest instead of falling through to a raw English token", () => {
+  const vm = notificationPageVm();
+  const riskDigestItem: NotificationPageVM["items"][number] = {
+    ...vm.items[0]!,
+    id: "96000000-0000-4000-8000-000000000010",
+    type: "project.risk_digest"
+  };
+  const riskDigestVm: NotificationPageVM = {
+    ...vm,
+    items: [riskDigestItem],
+    buckets: { ...vm.buckets, needs_decision: [riskDigestItem] }
+  };
+
+  const zh = renderWebRouteComponent({ key: "notifications", notifications: riskDigestVm }, { locale: "zh-CN" });
+  const en = renderWebRouteComponent({ key: "notifications", notifications: riskDigestVm }, { locale: "en-US" });
+
+  assert.equal(zh.html.includes("风险巡检摘要"), true);
+  assert.equal(zh.html.includes("Project Risk"), false);
+  assert.equal(en.html.includes("Risk digest"), true);
 });
 
 test("R5.6 Calendar route component renders deterministic day blocks and target links", () => {
