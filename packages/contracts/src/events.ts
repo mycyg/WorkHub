@@ -82,13 +82,25 @@ const conversationAiActorSchema = z
   })
   .strict();
 
+// BUG-04（审批落定回流实时化）：审批落定往来源会话回灌的是一条 system_event 消息（sender_type='system'，
+// 内容如 {event:'proposal_settled', …}）。要让开着来源会话的客户端**实时**收到这条「落定行」，
+// message.created 事件必须能表达 system 发送者——补一个与 human/ai 并列的 system actor 变体（label 可选、
+// 无 user_id）。既有 human↔user、ai↔cuu 的严格配对完全不变；这是 additive 放宽，客户端（同一 @workhub/
+// contracts 包，safeParse 过闸后落 system_event 消息，渲染层已有 sysline 分支）自动接收。
+const conversationSystemActorSchema = z
+  .object({
+    actor_kind: z.literal("system"),
+    label: z.string().optional()
+  })
+  .strict();
+
 export const conversationMessageCreatedEventSchema = z
   .object({
     event_id: idSchema,
     type: z.literal("conversation.message.created"),
     topic: z.string().min(1),
     ts: isoDateTimeSchema,
-    actor: z.union([conversationHumanActorSchema, conversationAiActorSchema]),
+    actor: z.union([conversationHumanActorSchema, conversationAiActorSchema, conversationSystemActorSchema]),
     project_id: idSchema,
     preview_text: z.string().max(200).optional(),
     data: conversationMessageVmSchema
@@ -115,6 +127,24 @@ export const conversationMessageCreatedEventSchema = z
           code: z.ZodIssueCode.custom,
           path: ["data", "sender_user_id"],
           message: "message-created sender must match the human event actor"
+        });
+      }
+      return;
+    }
+    if (event.actor.actor_kind === "system") {
+      // BUG-04：system actor ⟺ system 发送者（且无 user_id）。审批落定/系统事件回流走这一支。
+      if (event.data.sender_type !== "system") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["data", "sender_type"],
+          message: "message-created events from a system actor must have a system sender"
+        });
+      }
+      if (event.data.sender_user_id !== null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["data", "sender_user_id"],
+          message: "system message-created events must not carry a sender_user_id"
         });
       }
       return;

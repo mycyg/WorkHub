@@ -7,6 +7,8 @@ import {
   applyMergeProposalCandidateRequestSchema,
   chooseMergeProposalCandidateRequestSchema,
   conversationActionCardUpdatedEventSchema,
+  conversationMessageCreatedEventSchema,
+  conversationMessageVmSchema,
   createProposalFromManifestRequestSchema,
   eventTypes,
   mergeProposalCandidateChoiceResultSchema,
@@ -131,6 +133,79 @@ function settledPreviewText(outcome: ProposalSettledOutcome, title: string): str
   return `${title.slice(0, 160)} ${label}`;
 }
 
+// BUG-04：落定行消息行的最小结构（actionCards.postSystemMessage 返回的 conversation_messages 行的子集）——
+// 只取构造 message VM 需要的字段，让单测能用极简夹具驱动，不必拼一整行 DB select。
+export type ProposalSettledMessageRow = {
+  id: string;
+  conversationId: string;
+  seq: number;
+  senderType: string;
+  senderUserId: string | null;
+  kind: string;
+  contentJson: unknown;
+  threadRootId: string | null;
+  createdAt: Date;
+};
+
+// BUG-04：为刚落库的「落定行」system_event 消息 publish conversation.message.created。抽成独立可测函数
+// （createDefaultProposalSettledNotifier 内部直连 getSharedDatabaseClient，难以脱库单测）——事件构造 +
+// 发布这段核心逻辑用 fake bus 单测即可覆盖。照 services/conversations.ts / conversation-turns.ts 的既有
+// message.created 模式：makeWorkHubEvent + conversationMessageCreatedEventSchema + bus.publish 到
+// topics.conversation。actor 是 system（契约里 system actor ⟺ system 发送者的新支）。best-effort：发布
+// 失败仅 warn，不影响消息已经落库的事实（同 action_card.updated 的取舍）。
+export async function publishProposalSettledMessageCreated(
+  deps: {
+    bus: Pick<PushBus, "publish">;
+    logger: { warn: (message: string, context?: Record<string, unknown>) => void };
+  },
+  input: {
+    proposalId: string;
+    projectId: string;
+    outcome: ProposalSettledOutcome;
+    title: string;
+    message: ProposalSettledMessageRow;
+  }
+): Promise<void> {
+  const messageTopic = topics.conversation(input.message.conversationId).topic;
+  try {
+    const messageVm = parseOutputContract(
+      conversationMessageVmSchema,
+      {
+        id: input.message.id,
+        conversation_id: input.message.conversationId,
+        seq: input.message.seq,
+        sender_type: input.message.senderType,
+        sender_user_id: input.message.senderUserId,
+        kind: input.message.kind,
+        content: input.message.contentJson,
+        thread_root_id: input.message.threadRootId ?? null,
+        created_at: input.message.createdAt.toISOString()
+      },
+      "proposals.settled.message-vm"
+    );
+    const createdEvent = parseOutputContract(
+      conversationMessageCreatedEventSchema,
+      makeWorkHubEvent({
+        type: eventTypes.conversationMessageCreated,
+        topic: messageTopic,
+        ts: input.message.createdAt,
+        actor: { actor_kind: "system", label: "WorkHub" },
+        project_id: input.projectId,
+        preview_text: settledPreviewText(input.outcome, input.title),
+        data: messageVm
+      }),
+      "proposals.settled.message-created-event"
+    );
+    await deps.bus.publish(messageTopic, eventTypes.conversationMessageCreated, createdEvent);
+  } catch (error) {
+    deps.logger.warn("proposal_settled_message_created_publish_failed", {
+      proposalId: input.proposalId,
+      conversationId: input.message.conversationId,
+      error
+    });
+  }
+}
+
 export function createDefaultProposalSettledNotifier(deps: {
   bus: Pick<PushBus, "publish">;
   // 跳过/失败的 warn 走结构化日志（照 proposal_revision_notify_failed 的既有口径）——不打进路由注入的
@@ -159,7 +234,7 @@ export function createDefaultProposalSettledNotifier(deps: {
     const actionCards = createActionCardRepository(db);
     const at = new Date();
     // ② 落定行（system_event 新 content 变体，照 proposal_opened 同款写入口）。
-    await actionCards.postSystemMessage({
+    const settledMessage = await actionCards.postSystemMessage({
       workspaceId: run.workspaceId,
       conversationId: run.sourceConversationId,
       senderType: "system",
@@ -170,6 +245,15 @@ export function createDefaultProposalSettledNotifier(deps: {
         title: input.title
       },
       at
+    });
+    // BUG-04：为刚插入的落定行 publish conversation.message.created——否则开着来源会话的客户端此前收不到
+    // 这条消息（只有带行动卡血缘时才发下面 ① 的 action_card.updated，纯聊天会话直接漏），只能靠重连补洞。
+    await publishProposalSettledMessageCreated(deps, {
+      proposalId: input.proposalId,
+      projectId: context.projectId,
+      outcome: input.outcome,
+      title: input.title,
+      message: settledMessage
     });
     // ① 源自行动卡条目 → publish 既有 conversation.action_card.updated（军团面板自动后台刷新）。
     if (run.sourceActionCardItemId) {
