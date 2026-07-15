@@ -30,7 +30,8 @@
         "transparent": true,
         "backgroundColor": "#00000000",
         "decorations": false,
-        "alwaysOnTop": true
+        "alwaysOnTop": true,
+        "shadow": true
       },
       {
         "label": "pet",

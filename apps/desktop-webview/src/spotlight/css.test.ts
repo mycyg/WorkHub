@@ -41,7 +41,10 @@ test("Spotlight visual language uses Apple blue/cyan accents instead of purple g
 
 test("Spotlight shell keeps a translucent liquid-glass surface", () => {
   assert.match(css, /html,body,#root\{margin:0;background:rgba\(0,0,0,0\)!important\}/u);
-  assert.match(css, /\.wh-spot\{[^}]*-webkit-app-region:no-drag;[^}]*background:linear-gradient\(135deg,rgba\(255,255,255,\.52\),rgba\(255,255,255,\.36\)\)/u);
+  // R14: real-device feedback said the box read as too see-through (screenshots can't show this —
+  // vibrancy is native compositing that capture tools don't render — only eyes catch it), so the
+  // base alpha moved up from .52/.36 to .78/.6 to give the content more footing over the blur.
+  assert.match(css, /\.wh-spot\{[^}]*-webkit-app-region:no-drag;[^}]*background:linear-gradient\(135deg,rgba\(255,255,255,\.78\),rgba\(255,255,255,\.6\)\)/u);
   assert.doesNotMatch(css, /\.wh-spot::before\{/u);
   assert.doesNotMatch(css, /background:rgba\(255,255,255,\.0[0-9]+\)/u);
   assert.match(css, /\.wh-spot\{[^}]*backdrop-filter:blur\(40px\) saturate\(185%\)/u);
@@ -62,9 +65,15 @@ test("Spotlight shell keeps a translucent liquid-glass surface", () => {
   assert.match(css, /\.wh-liquid-glass-edge--top\{left:0;right:0;top:0;height:var\(--wh-liquid-edge,12px\)/u);
   assert.match(css, /\.wh-liquid-glass-edge--bottom\{left:0;right:0;bottom:0;height:var\(--wh-liquid-edge,12px\)/u);
   assert.doesNotMatch(css, /-webkit-mask-composite:xor|mask-composite:exclude/u);
-  // 盒子和 Cuu 气泡同一套玻璃语言：亮玻璃描边 + 顶部内高光 + 柔投影。
+  // 盒子和 Cuu 气泡同一套玻璃语言：亮玻璃描边 + 顶部内高光。
   assert.match(css, /\.wh-spot\{[^}]*border:1px solid rgba\(255,255,255,\.7\)/u);
-  assert.match(css, /\.wh-spot\{[^}]*box-shadow:0 24px 64px -26px rgba\(31,35,53,\.42\),inset 0 1px 0 rgba\(255,255,255,\.75\)/u);
+  // R14: a rectangular outer box-shadow painted past the native vibrancy's rounded-corner clip,
+  // leaving a flat-edge artifact at the bottom of the box on real hardware (same root cause the
+  // R13 V2 workbench-window fix diagnosed, see r13-v2-window-craft.md). Depth now comes from the
+  // native NSWindow shadow (tauri.conf.json main window `"shadow": true`); only the inset top
+  // highlight stays in CSS, since inset shadows are always clipped inside the border-radius.
+  assert.match(css, /\.wh-spot\{[^}]*box-shadow:inset 0 1px 0 rgba\(255,255,255,\.75\)/u);
+  assert.doesNotMatch(css, /\.wh-spot\{[^}]*box-shadow:0 24px 64px -26px rgba\(31,35,53,\.42\)/u);
   assert.doesNotMatch(css, /wh-liquid-glass-tint|--wh-liquid-tint|mix-blend-mode:screen/u);
   assert.match(css, /\.wh-spot>\.wh-liquid-glass-content\{display:flex;flex-direction:column/u);
   assert.match(css, /\.wh-spot-top\{[^}]*-webkit-app-region:no-drag;cursor:grab/u);

@@ -90,6 +90,28 @@ fn transparent_windows_declare_a_fully_transparent_webview_background() {
 }
 
 #[test]
+fn main_window_declares_native_shadow_explicitly() {
+    // R13 V2 established the pattern (workbench window, r13-v2-window-craft.md): a window's own CSS
+    // box-shadow paints a rectangular projection outside the native rounded-corner clip, leaving a
+    // flat-edge artifact on real hardware — depth must come from the native NSWindow shadow instead,
+    // with the CSS radius only clipping content. The main/Spotlight window relies on this exact same
+    // native shadow (its own CSS box-shadow's outer term was removed for R14), so the declarative
+    // config must say so explicitly rather than resting on tauri-utils' implicit default.
+    let config = read_json("tauri.conf.json");
+    let windows = config["app"]["windows"].as_array().unwrap();
+    let main_window = windows
+        .iter()
+        .find(|window| window["label"] == "main")
+        .expect("main window config must exist");
+
+    assert_eq!(
+        main_window["shadow"], true,
+        "main window must keep the native window shadow so the Spotlight glass has real depth \
+         without a CSS box-shadow poking a flat edge past the rounded corners"
+    );
+}
+
+#[test]
 fn macos_main_window_restores_native_vibrancy_for_real_frosted_glass() {
     // 纯透明窗里 CSS backdrop-filter 没有可糊的内容，半透白底只是奶白不带模糊——真·毛玻璃必须靠 OS vibrancy。
     // 主窗仍保持透明（背景色 alpha≈0），vibrancy 只在 webview 之后贴一层系统材质，透出并模糊桌面。
@@ -101,9 +123,22 @@ fn macos_main_window_restores_native_vibrancy_for_real_frosted_glass() {
         raw.contains("apply_vibrancy("),
         "main window must re-apply native vibrancy so the Spotlight glass actually frosts the desktop"
     );
+    // R14 真机反馈：聚焦盒肉眼太透（HudWindow 是深色 HUD 材质、不跟随外观，跟聚焦盒硬编码浅色 CSS 前景不搭，
+    // 同一类问题工作台窗踩过一次、R13 F-01 换成了跟随外观的 UnderWindowBackground——聚焦盒抄同一份材质）。
     assert!(
-        raw.contains("NSVisualEffectMaterial::HudWindow"),
-        "Spotlight vibrancy should use the HudWindow material to match the glass tint"
+        raw.contains("NSVisualEffectMaterial::UnderWindowBackground"),
+        "Spotlight vibrancy should use the UnderWindowBackground material like the workbench window, not the dark HudWindow HUD material"
+    );
+    assert!(
+        !raw.contains("NSVisualEffectMaterial::HudWindow"),
+        "Spotlight vibrancy must not regress to the dark HudWindow material that read as too see-through against the light glass foreground"
+    );
+    // UnderWindowBackground follows system appearance; the Spotlight CSS is hardcoded light-only
+    // (no prefers-color-scheme branch), so the window appearance must be pinned Light or dark mode
+    // would flip the vibrancy black behind light content — same fix the workbench window needed.
+    assert!(
+        raw.contains("main_window.set_theme(Some(tauri::Theme::Light))"),
+        "Spotlight window appearance must be pinned Light to match its hardcoded-light CSS, like the workbench window"
     );
     assert!(
         raw.contains("WORKHUB_DISABLE_VIBRANCY"),

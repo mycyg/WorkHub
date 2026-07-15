@@ -6,7 +6,8 @@ import { liquidGlassFilterCss } from "../liquid-glass-filter.js";
 
 export const spotlightCss = [
   liquidGlassFilterCss,
-  // 透明窗：不叠原生 material；盒子自己的 SVG displacement + backdrop/filter 层是唯一玻璃表面。
+  // 透明窗：webview 背景清零，让 Rust 侧 apply_vibrancy 贴的原生材质（main.rs，R14 起为
+  // UnderWindowBackground）透出来；盒子自己的 SVG displacement + backdrop/filter 层叠在原生材质之上。
   "html,body,#root{margin:0;background:rgba(0,0,0,0)!important}",
   "html,body,#root{width:100%;height:100%}",
   "body{overflow:hidden}",
@@ -14,8 +15,14 @@ export const spotlightCss = [
   // 盒子直接铺满透明窗(padding:0)，由自身圆角/边缘折射收边，不再留 12px 的方角玻璃"垫边"。
   ".wh-spot-stage{position:relative;min-height:100vh;box-sizing:border-box;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;padding:0;gap:0;-webkit-app-region:no-drag}",
   // 盒子=真·液态玻璃：半透白渐变 + backdrop blur（窗后有原生 vibrancy，可压低不透明度让磨砂桌面透出来），
-  // 配亮玻璃描边 + 顶部内高光 + 柔投影。和 Cuu 气泡(.wh-pet-bubble)同一套玻璃语言，只是盒子更通透（它有 vibrancy 兜底）。
-  ".wh-spot{position:relative;display:flex;flex-direction:column;border-radius:var(--ds-radius-xl);overflow:hidden;-webkit-app-region:no-drag;background:linear-gradient(135deg,rgba(255,255,255,.52),rgba(255,255,255,.36));border:1px solid rgba(255,255,255,.7);box-shadow:0 24px 64px -26px rgba(31,35,53,.42),inset 0 1px 0 rgba(255,255,255,.75);backdrop-filter:blur(40px) saturate(185%);-webkit-backdrop-filter:blur(40px) saturate(185%)}",
+  // 配亮玻璃描边 + 顶部内高光；柔投影交给原生 NSWindow shadow（见下方 R13 V2 注释），CSS 不再自画。
+  // 和 Cuu 气泡(.wh-pet-bubble)同一套玻璃语言，只是盒子更通透（它有 vibrancy 兜底）。
+  // R14 真机反馈：肉眼看太透（背景穿透强，screencapture 截不出这个差异——vibrancy 是原生合成，截图工具本就看不到，
+  // 只有肉眼能看出真实观感）。把底色从 .52/.36 提到 .78/.6，内容在原生 vibrancy 模糊之上更立得住，不靠肉眼碰运气。
+  // R13 V2（工作台窗同款玻璃盒踩过的坑，见 r13-v2-window-craft.md）：外层 box-shadow 是矩形投影，会画到原生裁剪出的
+  // 圆角外面，在真机截图上留下一截直角残影（用户描述"上面圆角正常，下面有一个直角阴影边缘"就是这个）。阴影交给原生
+  // NSWindow 的 shadow（tauri.conf.json 主窗 `shadow:true`），这里只留顶部内高光（inset，天然被圆角裁得干净）。
+  ".wh-spot{position:relative;display:flex;flex-direction:column;border-radius:var(--ds-radius-xl);overflow:hidden;-webkit-app-region:no-drag;background:linear-gradient(135deg,rgba(255,255,255,.78),rgba(255,255,255,.6));border:1px solid rgba(255,255,255,.7);box-shadow:inset 0 1px 0 rgba(255,255,255,.75);backdrop-filter:blur(40px) saturate(185%);-webkit-backdrop-filter:blur(40px) saturate(185%)}",
   ".wh-spot>.wh-liquid-glass-content{display:flex;flex-direction:column;min-width:0;min-height:0}",
   // 真毛玻璃由盒子的 ds-glass-strong 工具类(半透白底 + backdrop blur)+ 原生 vibrancy 提供；
   // 关掉冗余的 SVG warp/haze 折射层与 rim 描边——rim 的 1px 边叠在盒 border 上正是搜索条上那"两道横杠"，

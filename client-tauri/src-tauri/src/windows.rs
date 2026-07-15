@@ -58,8 +58,9 @@ pub fn main_window_plan() -> ShellWindowPlan {
         resizable: true,
         visible: true,
         focus: true,
-        // 真·液态玻璃：主窗口保持完全透明，不叠原生 material；光学表面由 WebView
-        // 内的 SVG displacement + backdrop/filter/highlight 层负责。
+        // 真·液态玻璃：主窗口声明层保持完全透明（webview 背景清零）；实际的原生毛玻璃材质由
+        // main.rs 在启动时对 "main" 窗调用 apply_vibrancy 贴上（R14 起为 UnderWindowBackground，
+        // 见该文件注释），光学表面 = 原生 vibrancy + WebView 内的 SVG displacement/backdrop/highlight 层叠加。
         transparent: true,
         // R8 彻底重构：主窗 = 只剩透明玻璃命令盒（搜索框即整个 app）。去掉 OS 标题栏 chrome → frameless，
         // 盒外空白由前端 -webkit-app-region:drag 拖动整窗；退出走 ⌘Q / Dock。
