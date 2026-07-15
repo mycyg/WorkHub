@@ -2366,9 +2366,13 @@ function bindSearchRoutePanel(
     if (!("conversation_title" in item)) {
       return;
     }
-    const row = document.createElement("div");
-    row.className = "wh-r4-route-row";
-    row.setAttribute("data-r14-search-result-scope", "conversations");
+    // R15 批 web-mirror：会话命中改真链接到只读会话镜像 /conversations/:id?seq=N（deep_link 现成，
+    // 带 conversation_id + seq 定位到命中那条）。此前是不可点的死文字——R13 定「聊天归桌面」时 web 还
+    // 没有会话页，现在有只读镜像了。
+    const link = document.createElement("a");
+    link.className = "wh-r4-route-row wh-r14-search-result-link";
+    link.href = `/conversations/${encodeURIComponent(item.deep_link.conversation_id)}?seq=${encodeURIComponent(String(item.deep_link.seq))}`;
+    link.setAttribute("data-r14-search-result-scope", "conversations");
     const main = document.createElement("div");
     const title = document.createElement("strong");
     title.textContent = `${item.project_name} · ${item.conversation_title}`;
@@ -2379,8 +2383,8 @@ function bindSearchRoutePanel(
     const senderLabel = item.sender_label ?? (zh ? "AI 助手" : "AI assistant");
     meta.textContent = `${senderLabel} · ${formatSearchTimestamp(item.created_at)}`;
     main.append(title, snippet, meta);
-    row.append(main);
-    list.append(row);
+    link.append(main);
+    list.append(link);
   };
 
   const appendLinkRow = (list: HTMLElement, href: string, titleText: string, snippetText: string, metaText: string) => {
