@@ -38,6 +38,9 @@ importers:
       '@workhub/cost':
         specifier: workspace:*
         version: link:../../packages/cost
+      '@workhub/cuu':
+        specifier: workspace:*
+        version: link:../../packages/cuu
       '@workhub/db':
         specifier: workspace:*
         version: link:../../packages/db
