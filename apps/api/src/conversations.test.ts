@@ -168,6 +168,11 @@ function repository(overrides: Partial<ConversationRepository> = {}): Conversati
     async updateContextSummary() {
       throw new Error("updateContextSummary not expected");
     },
+    // R14FIX 批 workbench：新增 renameConversation（协同会话改名）——本套件按需 override，未 override
+    // 的给拒绝桩（同其它未测方法）。
+    async renameConversation() {
+      throw new Error("renameConversation not expected");
+    },
     // R14 批 CHAT：新增的编辑/删除/置顶/反应/已读/富化仓库方法——本套件按需 override，未 override 的
     // 给拒绝桩（同其它未测方法）。
     async editMessage() {
@@ -1494,4 +1499,134 @@ test("R14 createMessage forwards reply_to and enriches the reply preview onto th
     preview_text: "原始消息",
     deleted: false
   });
+});
+
+// ── R14FIX 批 workbench：协同会话改名 ──────────────────────────────────────────────────
+
+test("renameConversation forwards a tenant-safe title write and returns the renamed collab VM", async () => {
+  let renameInput: unknown;
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return accessRecord({ participantRole: "owner" });
+      },
+      async renameConversation(input) {
+        renameInput = input;
+        return conversationRow({ title: input.title, updatedAt: new Date("2026-07-15T09:00:00.000Z") });
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now
+    }
+  );
+
+  const result = await service.renameConversation({
+    actor: actor(),
+    conversationId,
+    payload: { title: "改第三幕" }
+  });
+
+  assert.deepEqual(renameInput, {
+    workspaceId,
+    conversationId,
+    title: "改第三幕",
+    at: now
+  });
+  assert.equal(result.conversation.title, "改第三幕");
+  assert.equal(result.conversation.kind, "collab");
+  assert.equal(result.conversation.participant_role, "owner");
+});
+
+test("renameConversation refuses a non-collab (main) conversation with 403 and never writes", async () => {
+  let renameCalls = 0;
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return accessRecord({ conversation: conversationRow({ kind: "main" }), participantRole: null });
+      },
+      async renameConversation() {
+        renameCalls += 1;
+        throw new Error("main conversations must not be renamed");
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now
+    }
+  );
+
+  await assert.rejects(
+    () => service.renameConversation({ actor: actor(), conversationId, payload: { title: "改名" } }),
+    (error: unknown) =>
+      error instanceof ConversationServiceError &&
+      error.status === 403 &&
+      error.code === "conversation_rename_forbidden"
+  );
+  assert.equal(renameCalls, 0);
+});
+
+test("renameConversation refuses a non-participant viewer with 403 and never writes", async () => {
+  let renameCalls = 0;
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        // A project-visible collab that this viewer can see but is not a participant of.
+        return accessRecord({ participantRole: null });
+      },
+      async renameConversation() {
+        renameCalls += 1;
+        throw new Error("non-participants must not rename");
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now
+    }
+  );
+
+  await assert.rejects(
+    () => service.renameConversation({ actor: actor(), conversationId, payload: { title: "改名" } }),
+    (error: unknown) =>
+      error instanceof ConversationServiceError &&
+      error.status === 403 &&
+      error.code === "conversation_rename_forbidden"
+  );
+  assert.equal(renameCalls, 0);
+});
+
+test("renameConversation 404s an invisible conversation before any write", async () => {
+  let renameCalls = 0;
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return null;
+      },
+      async renameConversation() {
+        renameCalls += 1;
+        throw new Error("invisible conversations must not be renamed");
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now
+    }
+  );
+
+  await assert.rejects(
+    () => service.renameConversation({ actor: actor(), conversationId, payload: { title: "改名" } }),
+    (error: unknown) =>
+      error instanceof ConversationServiceError &&
+      error.status === 404 &&
+      error.code === "conversation_not_found"
+  );
+  assert.equal(renameCalls, 0);
 });

@@ -447,6 +447,19 @@ export const createConversationRequestSchema = z
   });
 export type CreateConversationRequest = z.infer<typeof createConversationRequestSchema>;
 
+// R14FIX 批 workbench（会话重命名，2026-07-15 用户反馈：协同会话需要能改名）——PATCH
+// /api/conversations/:id 的请求体，只带新标题。长度与 createConversationRequestSchema.title 对称
+// （min 1、max 256）。additive 独立 schema，不改任何既有 schema/调用方；语义红线（仅 collab 会话可
+// 改名、仅参与者/owner）在服务层强制（见 apps/api/src/services/conversations.ts renameConversation）。
+export const renameConversationRequestSchema = z
+  .object({
+    title: z.string().min(1).max(256)
+  })
+  .strict();
+export type RenameConversationRequest = z.infer<typeof renameConversationRequestSchema>;
+// 重命名成功的响应 VM 定义在 conversationVmSchema 之后（引用它），避免 const 使用前声明——同
+// conversationPinsVmSchema 的既有取舍。见本文件下方 renameConversationResultVmSchema。
+
 // R14 批 CHAT：编辑消息请求体——只带新正文（仅 text 消息可编辑，kind 判定在服务/仓库层）。text 的
 // 长度约束与创建侧对齐（min 1、上限同 MAX_CONVERSATION_TEXT_CODE_UNITS）。
 export const editConversationMessageRequestSchema = z
@@ -531,6 +544,16 @@ export const conversationVmSchema = z
   })
   .strict();
 export type ConversationVM = z.infer<typeof conversationVmSchema>;
+
+// R14FIX 批 workbench：重命名成功的响应——回改名后的完整会话 VM（客户端就地更新左栏树叶，见
+// rail.ts renameCollabConversationInVm）。定义在 conversationVmSchema 之后（引用它），避免 const
+// 使用前声明——同 conversationPinsVmSchema 的既有取舍。
+export const renameConversationResultVmSchema = z
+  .object({
+    conversation: conversationVmSchema
+  })
+  .strict();
+export type RenameConversationResultVM = z.infer<typeof renameConversationResultVmSchema>;
 
 export const conversationParticipantVmSchema = z
   .object({

@@ -161,6 +161,16 @@ export type UpdateContextSummaryInput = {
   throughSeq: number;
 };
 
+// R14FIX 批 workbench（会话重命名）：只改 title 这一列的幂等更新（不碰 nextSeq/其它任何列，同
+// updateContextSummary 那套「给已存在的会话行做一次字段更新」的事务独立）。语义红线（仅 collab、
+// 仅参与者/owner）在服务层强制——这里只负责租户安全（workspaceId + 未删除围栏）的原子写。
+export type RenameConversationInput = {
+  workspaceId: string;
+  conversationId: string;
+  title: string;
+  at?: Date;
+};
+
 // R12 批8：反向翻页（listMessagesBefore）的输入——除了游标方向（beforeSeq 而非 afterSeq），access
 // 判定与 listMessagesAfter 完全同款（复用同一个 readVisibleAccess + activeConversationCondition）。
 export type ListConversationMessagesBeforeInput = {
@@ -321,6 +331,8 @@ export type ConversationRepository = {
   listReplyJudgeCandidates: (input: ListReplyJudgeCandidatesInput) => Promise<ReplyJudgeCandidateRow[]>;
   // R13 批 C1：新增，不改动上面任何既有方法的签名/行为——滚动摘要落库。
   updateContextSummary: (input: UpdateContextSummaryInput) => Promise<void>;
+  // R14FIX 批 workbench：新增，不改动上面任何既有方法——协同会话改名（返回改名后的会话行）。
+  renameConversation: (input: RenameConversationInput) => Promise<ConversationRow>;
   // R14 批 CHAT：以下全部新增，不改动上面任何既有方法。语义红线在服务层强制（见 apps/api/src/
   // services/conversations.ts），仓库层负责租户安全的原子写与页级无 N+1 聚合。
   editMessage: (input: EditMessageInput) => Promise<ConversationMessageRow>;
@@ -1535,6 +1547,32 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
             lt(projectConversations.contextSummaryThroughSeq, input.throughSeq)
           )
         );
+    },
+
+    // ── R14FIX 批 workbench：协同会话改名 ─────────────────────────────────────────────
+    // 只更新 title（+ updatedAt），workspace + 未删除围栏。命中 0 行（会话不存在/跨租户/已删）→
+    // ConversationAccessDeniedError（服务层映射 404）。会话种类/参与者鉴权在服务层已把关，这里
+    // 只做租户安全的原子写。
+    async renameConversation(input) {
+      const title = input.title.trim();
+      if (title.length === 0 || title.length > 256) {
+        throw new ConversationRepositoryInputError("conversation title must be 1..256 characters after trimming");
+      }
+      const [updated] = await db
+        .update(projectConversations)
+        .set({ title, updatedAt: input.at ?? new Date() })
+        .where(
+          and(
+            eq(projectConversations.id, input.conversationId),
+            eq(projectConversations.workspaceId, input.workspaceId),
+            isNull(projectConversations.deletedAt)
+          )
+        )
+        .returning();
+      if (!updated) {
+        throw new ConversationAccessDeniedError("conversation not found for rename");
+      }
+      return updated;
     },
 
     // ── R14 批 CHAT：编辑 ────────────────────────────────────────────────────────────
