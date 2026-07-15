@@ -117,6 +117,11 @@ export const envSchema = z.object({
   AGENT_RUN_PROJECT_HYDRATE_ENABLED: booleanString.default(true),
   AGENT_RUN_PROJECT_HYDRATE_MAX_FILES: z.coerce.number().int().positive().default(200),
   AGENT_RUN_PROJECT_HYDRATE_MAX_BYTES: z.coerce.number().int().positive().default(33554432),
+  // R15 批 C（pi 引擎绞杀者迁移 Phase 2）：agent-run 循环实现开关。off=现状（loop.ts，生产默认，零行为变化）；
+  // on=单路走 loop2（pi 引擎适配器）；shadow-assert=同输入双跑 loop.ts 与 loop2 并断言 loop-core 等价（仅测试
+  // 环境用，需确定性可重放 stub client，绝不在生产双倍调 LLM）。默认 off——把真实 task role 切到 on 需先补齐
+  // L3（manifest/评审在 Phase 2 由 loop2 复用 loop.ts 的 finalizeL3 产出，见 03-batch-c-engine.md）。
+  AGENT_RUN_LOOP2_MODE: z.enum(["off", "shadow-assert", "on"]).default("off"),
 
   // R15 批 A（统一调度器 Pulse）：周期任务总开关（默认开）+ 各任务 tick 间隔。间隔置 0 = 该任务不启
   // （沿用 AGENT_RUN_RECOVERY_INTERVAL_MS 的 min(0) 语义）。审批 SLA 巡检 5 分钟一 tick；提醒阶梯
@@ -205,6 +210,7 @@ export type Settings = {
     projectHydrateEnabled: boolean;
     projectHydrateMaxFiles: number;
     projectHydrateMaxBytes: number;
+    loop2Mode: "off" | "shadow-assert" | "on";
   };
   pulse: {
     enabled: boolean;
@@ -296,7 +302,8 @@ export function loadSettings(env: EnvInput = process.env): Settings {
       skillCurationIntervalMs: parsed.AGENT_RUN_SKILL_CURATION_INTERVAL_MS,
       projectHydrateEnabled: parsed.AGENT_RUN_PROJECT_HYDRATE_ENABLED,
       projectHydrateMaxFiles: parsed.AGENT_RUN_PROJECT_HYDRATE_MAX_FILES,
-      projectHydrateMaxBytes: parsed.AGENT_RUN_PROJECT_HYDRATE_MAX_BYTES
+      projectHydrateMaxBytes: parsed.AGENT_RUN_PROJECT_HYDRATE_MAX_BYTES,
+      loop2Mode: parsed.AGENT_RUN_LOOP2_MODE
     },
     pulse: {
       enabled: parsed.PULSE_SCHEDULER_ENABLED,
