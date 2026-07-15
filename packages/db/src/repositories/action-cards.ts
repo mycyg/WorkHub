@@ -240,7 +240,11 @@ export function createActionCardRepository(db: WorkHubDb) {
               and(
                 eq(actionCards.id, state.activeCardId),
                 eq(actionCards.conversationId, input.conversationId),
-                eq(actionCards.status, "active")
+                eq(actionCards.status, "active"),
+                // R15 批 D4：观察者只认领/追加 observer 卡——系统卡（ddl-chase 找人等）永不进观察者的
+                // activeCardId 状态机（insertSystemCard 也从不写 conversation_observer_state），这里再加一
+                // 道显式围栏，防止任何路径把 active_card_id 指到系统卡后观察者误把新条目追加进去。
+                eq(actionCards.origin, "observer")
               )
             )
             .for("update", { of: actionCards })
@@ -252,6 +256,129 @@ export function createActionCardRepository(db: WorkHubDb) {
           return appendToCard(tx, input, activeCard, at);
         }
         return createNewCard(tx, input, conversation.nextSeq, at);
+      });
+    },
+
+    // ── 系统行动卡插入（D4a：非观察者路径，绝不碰水位线/activeCardId） ────────────────────────
+    //
+    // 服务端规则（ddl-chase 找人等）在项目 main 会话直接插一张 origin='system' 的行动卡：分配一个消息
+    // seq、写 action_card 消息 + action_cards 行（analyzed_to_seq 置 NULL）+ 条目，全程【不触碰
+    // conversation_observer_state】——不设 activeCardId、不推 last_analyzed_seq。因此它既不污染观察者的
+    // 水位线（观察者下个 tick 照常从自己的 last_analyzed_seq 起分析、认领自己的 observer active card），
+    // 也不撞观察者条目 id 的确定性派生（系统卡条目用随机 id，不走 deriveActionCardItemId）。与观察者卡在
+    // 同一会话可并存。幂等由调用方（ProactiveIntent 的 suppression_key）在上游保证——本方法每调用一次插一张。
+    async insertSystemCard(input: InsertSystemCardInput): Promise<InsertSystemCardResult> {
+      if (input.items.length === 0) {
+        throw new ActionCardRepositoryInputError("insertSystemCard requires at least one item");
+      }
+      const at = input.at ?? new Date();
+
+      return db.transaction(async (tx) => {
+        const [conversation] = await tx
+          .select({ id: projectConversations.id, nextSeq: projectConversations.nextSeq })
+          .from(projectConversations)
+          .where(
+            and(
+              eq(projectConversations.id, input.conversationId),
+              eq(projectConversations.workspaceId, input.workspaceId),
+              eq(projectConversations.projectId, input.projectId),
+              eq(projectConversations.kind, "main"),
+              isNull(projectConversations.deletedAt)
+            )
+          )
+          .for("update", { of: projectConversations })
+          .limit(1);
+        if (!conversation) {
+          throw new ActionCardConversationNotFoundError("conversation is not an active main conversation in this project");
+        }
+
+        const currentSeq = conversation.nextSeq;
+        const [allocation] = await tx
+          .update(projectConversations)
+          .set({ nextSeq: sql<number>`${projectConversations.nextSeq} + 1`, updatedAt: at })
+          .where(
+            and(
+              eq(projectConversations.id, input.conversationId),
+              eq(projectConversations.nextSeq, currentSeq),
+              isNull(projectConversations.deletedAt)
+            )
+          )
+          .returning({ nextSeq: projectConversations.nextSeq });
+        const nextSeq = allocation?.nextSeq;
+        if (!Number.isSafeInteger(nextSeq) || nextSeq !== currentSeq + 1) {
+          throw new ActionCardSequenceAllocationError("system-card message sequence update returned no exact next sequence");
+        }
+
+        const cardId = input.cardId ?? randomUUID();
+        const messageId = input.cardMessageId ?? randomUUID();
+        const preparedItems = input.items.map((item) => ({ ...item, id: item.id ?? randomUUID() }));
+        const contentJson: Record<string, unknown> = {
+          ...buildActionCardMessageContent(
+            cardId,
+            preparedItems.map((item) => ({
+              id: item.id,
+              kind: item.kind,
+              titleMd: item.titleMd,
+              confidence: item.confidence,
+              status: item.status,
+              assigneeUserId: item.assigneeUserId ?? null,
+              undoDeadlineAt: item.undoDeadlineAt ?? null
+            }))
+          ),
+          // D4a：审计溯源——把上游 ProactiveIntent 的 id 挂在消息内容里（additive 字段，与
+          // proactive-cuu-delivery 的 conversation_message content 同款做法）。
+          ...(input.messageContentExtra ?? {})
+        };
+
+        const [insertedMessage] = await tx
+          .insert(conversationMessages)
+          .values({
+            id: messageId,
+            conversationId: input.conversationId,
+            seq: nextSeq,
+            senderType: "cuu",
+            senderUserId: null,
+            kind: "action_card",
+            contentJson,
+            createdAt: at
+          })
+          .returning();
+        if (!insertedMessage) {
+          throw new ActionCardMessageInsertFailedError("system-card message insert returned no row");
+        }
+
+        const [insertedCard] = await tx
+          .insert(actionCards)
+          .values({
+            id: cardId,
+            conversationId: input.conversationId,
+            messageId,
+            status: "active",
+            origin: "system",
+            // 系统卡不挂水位线。
+            analyzedToSeq: null,
+            createdAt: at,
+            updatedAt: at
+          })
+          .returning();
+        if (!insertedCard) {
+          throw new ActionCardInsertFailedError("system-card insert returned no row");
+        }
+
+        const itemRows = preparedItems.map((item, index) =>
+          itemInsertValues(
+            item,
+            { workspaceId: input.workspaceId, projectId: input.projectId, conversationId: input.conversationId, actionCardId: cardId },
+            index,
+            at
+          )
+        );
+        const insertedItems = await tx.insert(actionCardItems).values(itemRows).returning();
+        if (insertedItems.length !== itemRows.length) {
+          throw new ActionCardInsertFailedError("system-card item insert returned an incomplete set");
+        }
+
+        return { card: insertedCard, items: insertedItems, message: insertedMessage };
       });
     },
 
@@ -538,6 +665,25 @@ export type UpsertCardResult = {
   card: ActionCardRow;
   items: ActionCardItemRow[];
   appended: boolean;
+  message: ActionCardConversationMessageRow;
+};
+
+// D4a：系统行动卡插入入参。与 UpsertCardInput 的差异：无 analyzedToSeq（系统卡不挂水位线），加一个
+// 可选 messageContentExtra 用于把 ProactiveIntent id 等审计字段并进消息 content_json。
+export type InsertSystemCardInput = {
+  workspaceId: string;
+  projectId: string;
+  conversationId: string;
+  items: PlanItemInput[];
+  at?: Date;
+  cardId?: string;
+  cardMessageId?: string;
+  messageContentExtra?: Record<string, unknown>;
+};
+
+export type InsertSystemCardResult = {
+  card: ActionCardRow;
+  items: ActionCardItemRow[];
   message: ActionCardConversationMessageRow;
 };
 

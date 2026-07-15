@@ -216,6 +216,7 @@ function actionCardRow(overrides: Partial<ActionCardRow> = {}): ActionCardRow {
     conversationId,
     messageId,
     status: "active",
+    origin: "observer",
     analyzedToSeq: 6,
     createdAt: now,
     updatedAt: now,

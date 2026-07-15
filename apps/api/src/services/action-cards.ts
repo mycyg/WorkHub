@@ -8,6 +8,7 @@ import {
   createWorkItemRepository,
   getSharedDatabaseClient,
   type ActionCardItemRow,
+  type ActionCardRow,
   type ActionCardRepository,
   type AiDecisionRepository,
   type WorkItemDataRepository
@@ -75,8 +76,9 @@ export type ActionCardServiceOptions = {
   >;
   decisions: Pick<AiDecisionRepository, "listEscalationEventsForWorkItem" | "resolveEscalation" | "delegateEscalation">;
   agentRuns: Pick<AgentRunQueue, "abort">;
-  // 撤销要把 run 全程锚定的事项关掉；只用 work-items 仓库已导出的 CAS 状态迁移，不新增写面（铁律7）。
-  workItems: Pick<WorkItemDataRepository, "transitionWorkItemStatus">;
+  // 撤销要把 run 全程锚定的事项关掉（transitionWorkItemStatus）；D4a 的系统「找人」卡在 claim/reassign
+  // 时把无主事项认领给人（claimOwnerlessWorkItem）——都用 work-items 仓库已导出的 CAS 写，不另起写面。
+  workItems: Pick<WorkItemDataRepository, "transitionWorkItemStatus" | "claimOwnerlessWorkItem">;
   now?: () => Date;
   bus?: Pick<PushBus, "publish">;
   logger?: Pick<StructuredLogger, "warn">;
@@ -170,6 +172,96 @@ export function createActionCardService(options: ActionCardServiceOptions): Acti
     return unresolved;
   }
 
+  // D4a：系统「找人」卡的轻量决策——无 escalation，直接落在既有无主事项的认领字段上。调用点已做完
+  // kind/status/workItemId/权限四道守卫，这里只管三动作的真实副作用 + 条目状态回流 + 播报。
+  async function decideSystemCard(input: {
+    human: { userId: string; workspaceId: string; isAdmin?: boolean };
+    record: { card: ActionCardRow; item: ActionCardItemRow };
+    item: ActionCardItemRow;
+    action: DecideActionCardItemAction;
+    assigneeUserId: string | undefined;
+  }): Promise<ActionCardItemVM> {
+    const { human, record, item } = input;
+    const workItemId = item.workItemId;
+    if (!workItemId) {
+      throw new ActionCardServiceError(500, "action_card_item_invariant_violated", "这个决策条目缺少对应的事项记录。");
+    }
+    const at = now();
+
+    if (input.action === "claim" || input.action === "reassign") {
+      let targetUserId: string;
+      if (input.action === "reassign") {
+        if (!input.assigneeUserId) {
+          throw new ActionCardServiceError(400, "action_card_reassign_requires_assignee", "改派需要指定接手的人。");
+        }
+        const isMember = await options.actionCards.isActiveWorkspaceMember({
+          workspaceId: human.workspaceId,
+          userId: input.assigneeUserId
+        });
+        if (!isMember) {
+          throw new ActionCardServiceError(422, "action_card_assignee_not_a_member", "这个人不是当前工作区的活跃成员。");
+        }
+        targetUserId = input.assigneeUserId;
+      } else {
+        targetUserId = human.userId;
+      }
+
+      // 认领无主事项（CAS：仅当仍无认领人时才写）。已被别人认领 → 卡片过期，报冲突。
+      const claimed = await options.workItems.claimOwnerlessWorkItem({
+        workItemId,
+        workspaceId: human.workspaceId,
+        userId: targetUserId,
+        at
+      });
+      if (!claimed) {
+        throw new ActionCardServiceError(409, "action_card_work_item_already_claimed", "这个事项已经有人负责了。");
+      }
+
+      const updated = await options.actionCards.transitionItemStatus({
+        itemId: item.id,
+        workspaceId: human.workspaceId,
+        fromStatuses: ["waiting_decision"],
+        toStatus: "done",
+        assigneeUserId: targetUserId,
+        at
+      });
+      if (!updated) {
+        throw new ActionCardServiceError(409, "action_card_item_already_decided", "这个条目已经被处理过了。");
+      }
+
+      if (input.action === "reassign") {
+        await options.actionCards.postSystemMessage({
+          workspaceId: human.workspaceId,
+          conversationId: item.conversationId,
+          senderType: "system",
+          content: { event: "action_card_item_reassigned", action_card_item_id: item.id, to_user_id: targetUserId },
+          threadRootId: record.card.messageId,
+          at
+        });
+      }
+      await emitUpdated(
+        updated,
+        record.card.messageId,
+        input.action === "claim" ? "有人认领了一件无主的事" : "一件无主的事改派给了别人"
+      );
+      return itemToVm(updated);
+    }
+
+    // defer（先不动）：只把卡上这一条标记「先不动」，事项保持无主（suppression 保证不会重复找人）。
+    const updated = await options.actionCards.transitionItemStatus({
+      itemId: item.id,
+      workspaceId: human.workspaceId,
+      fromStatuses: ["waiting_decision"],
+      toStatus: "dismissed",
+      at
+    });
+    if (!updated) {
+      throw new ActionCardServiceError(409, "action_card_item_already_decided", "这个条目已经被处理过了。");
+    }
+    await emitUpdated(updated, record.card.messageId, "一件无主的事先放着了");
+    return itemToVm(updated);
+  }
+
   return {
     async decide(input) {
       const human = requireHumanActor(input.actor);
@@ -188,6 +280,14 @@ export function createActionCardService(options: ActionCardServiceOptions): Acti
         throw new ActionCardServiceError(500, "action_card_item_invariant_violated", "这个决策条目缺少对应的事项记录。");
       }
       assertCanActOnItem(item, human);
+
+      // D4a：系统卡（ddl-chase 找人等，origin='system'）走轻量决策路径——不挂 escalation。claim/reassign
+      // 直接把无主事项认领给人（现成 CAS 写 claimOwnerlessWorkItem，语义诚实：找人卡本就是「给这件无主
+      // 逾期事项定个负责人」）；defer 只把卡条目记「先不动」，事项保持无主（下次仍可被 suppression 之外的
+      // 路径处理）。观察者卡（origin='observer'）保持原有 escalation 决策链不变。
+      if (record.card.origin === "system") {
+        return decideSystemCard({ human, record, item, action: input.action, assigneeUserId: input.assigneeUserId });
+      }
 
       const escalation = await requireUnresolvedEscalation(item.workItemId);
       const at = now();
