@@ -1,32 +1,38 @@
 /**
- * loop2 Phase 2 — double-run equivalence.
+ * loop2 Phase 3 — double-run equivalence.
  *
  * For each scenario the same deterministic scripted client + tools drive BOTH the
- * production loop (`AgentLoop.run`) and loop2 (`runAgentLoop2`), and we assert the
- * loop-core projection is identical (status / control / reason / finalText / usage
- * tokens+cost / step count / per-step control+stopReason / tool sequence+inputs) plus
- * the usage-record accounting sequence (seq + source + tokens each provider call).
+ * production loop (`AgentLoop.run`) and loop2 (`runAgentLoop2`), and we assert:
+ *   - the loop-core projection is identical (status / control / reason / finalText /
+ *     usage tokens+cost / step count / per-step control+stopReason / tool seq+inputs);
+ *   - the usage-record accounting sequence (seq + source + tokens each provider call);
+ *   - (P3a) the emitted per-step EVENT sequence is identical (type + key data fields);
+ *   - the recorder call sequence (recordUsage/recordStep order + values) is identical.
  *
  * L3 (manifest / llm_review / confidence) is deliberately out of the loop-core
  * projection — every scenario runs with requireDeliverable:false + reviewDeliverable:
  * false to isolate the engine. Allowed differences are documented in ALLOWED_DIFFS.
  *
- * ALLOWED DIFFERENCES (validated to NOT affect loop-core, hence excluded from the
- * projection):
- *   1. usage.secondsUsed — wall clock; excluded from projectLoopCore.
- *   2. step timestamps (startedAt/endedAt) — loop.ts uses per-turn now(); loop2 uses
- *      message reconstruction time. Excluded (only step COUNT + control + tool order
- *      are compared).
- *   3. manifest / review / reviewFailed / handoff details — L3, excluded.
- *   4. emitted event stream granularity — loop.ts emits per-step agentRunStep /
- *      stepToolResult / stream_event; loop2 defers those to an AgentEvent subscriber
- *      (Phase 3). Only load-bearing lifecycle events (started/compacting/escalated)
- *      are emitted by loop2, asserted where relevant.
- *   5. compaction pruned-message shape — loop.ts compacts LlmMessage[]; loop2 compacts
- *      pi AgentMessage[]. With a scripted client this never changes model output, so
- *      loop-core stays identical; the outbound request payloads differ (not asserted).
- *   6. dynamic tool visibility — loop.ts re-resolves tools per turn; loop2 resolves
- *      once. Equivalent for static tool sets (all scenarios here).
+ * ALLOWED DIFFERENCES after Phase 3 (validated to NOT affect loop-core or the emitted
+ * event sequence, hence excluded from the projections) — only wall-clock, timestamps,
+ * and L3 detail remain:
+ *   1. WALL CLOCK — usage.secondsUsed; and, under REAL streaming only (never the
+ *      buffered deterministic client here), the stream_event throttle boundaries
+ *      (which deltas land) and heartbeat count. Excluded from both projections.
+ *   2. TIMESTAMPS — step startedAt/endedAt (loop.ts per-turn now() vs loop2 message
+ *      reconstruction time), and the compaction tail's message `timestamp` fields
+ *      (Date.now() stamped by the pi↔wire converters). The compaction summary TEXT is
+ *      identical (both engines share tryGenerateStructuredSummary +
+ *      summarizeStepsForCompaction); the pruned tail converts to semantically equal
+ *      wire messages differing only by these timestamps. Neither is asserted.
+ *   3. L3 DETAIL — manifest / review / reviewFailed content and handoff body (built by
+ *      the L3 layer from workdir outputs, never fabricated in loop-core). The event
+ *      projection compares scalar data fields, not the handoff object.
+ *
+ * (Removed in Phase 3: event-stream granularity — P3a now emits the full per-step
+ * agentRunStep/stepToolResult/stepSnapshot/stream_event trace via the AgentEvent sink;
+ * structured-summary deferral — P3b ports it; dynamic tool visibility — P3c re-resolves
+ * tools every turn via prepareNextTurn.)
  */
 
 import assert from "node:assert/strict";
@@ -51,11 +57,29 @@ type CapturedCall = {
 
 type ToolSpec = { name: string; description: string; input_schema: unknown };
 
+type EmittedEvent = { type: string; previewText?: string | undefined; data: Record<string, unknown> };
+
+/** Recorder call capture: recordUsage → usage snapshot; recordStep → step index. */
+type RecorderEntry = { kind: "usage"; totalTokens: number; stepsUsed: number } | { kind: "step"; index: number };
+
+/** A scripted provider FAILURE: the harness client throws this value instead of returning. */
+type ScriptedThrow = { scriptedError: unknown };
+
+type ScriptedResponse = LlmCreateResponse | ScriptedThrow;
+
+function isScriptedThrow(value: ScriptedResponse): value is ScriptedThrow {
+	return "scriptedError" in value;
+}
+
 type Scenario = {
-	responses: LlmCreateResponse[];
+	responses: ScriptedResponse[];
 	toolSpecs?: ToolSpec[];
+	/** Dynamic tool set (P3c): overrides `toolSpecs` and is re-invoked each turn. */
+	toModelTools?: () => ToolSpec[];
 	execute?: (toolId: string, input: unknown, ctx: ToolExecutionContext) => ToolResult;
 	budget?: Partial<AgentLoopBudget>;
+	/** Scripted compaction-summary responses (P3b): wires a compactionClient when present. */
+	compactionResponses?: LlmCreateResponse[];
 };
 
 type Harness = {
@@ -64,6 +88,12 @@ type Harness = {
 	requests: LlmCreateParams[];
 	compactionEvents: number;
 	escalatedEvents: number;
+	/** Every WorkHub event emitted, in order (P3a event-sequence equivalence). */
+	emittedEvents: EmittedEvent[];
+	/** Recorder calls in order (recordUsage/recordStep timing alignment). */
+	recorderLog: RecorderEntry[];
+	/** Provider requests the compactionClient saw (P3b). */
+	compactionRequests: LlmCreateParams[];
 };
 
 const DEFAULT_BUDGET: AgentLoopBudget = {
@@ -77,8 +107,21 @@ const DEFAULT_BUDGET: AgentLoopBudget = {
 function makeHarness(scenario: Scenario): Harness {
 	const calls: CapturedCall[] = [];
 	const requests: LlmCreateParams[] = [];
+	const emittedEvents: EmittedEvent[] = [];
+	const recorderLog: RecorderEntry[] = [];
+	const compactionRequests: LlmCreateParams[] = [];
 	const queue = [...scenario.responses];
-	const harness: Harness = { input: undefined as never, calls, requests, compactionEvents: 0, escalatedEvents: 0 };
+	const compactionQueue = [...(scenario.compactionResponses ?? [])];
+	const harness: Harness = {
+		input: undefined as never,
+		calls,
+		requests,
+		compactionEvents: 0,
+		escalatedEvents: 0,
+		emittedEvents,
+		recorderLog,
+		compactionRequests,
+	};
 
 	const input: AgentLoopInput = {
 		runId: "run-eqv",
@@ -94,6 +137,9 @@ function makeHarness(scenario: Scenario): Harness {
 					requests.push(params);
 					const next = queue.shift();
 					if (!next) throw new Error("scenario: no scripted response left");
+					// A scripted failure: throw without recording usage (a real failed request records
+					// nothing — the throw precedes any usage read, same as loop.ts / the measured client).
+					if (isScriptedThrow(next)) throw next.scriptedError;
 					calls.push({
 						seq: params.seq,
 						source: params.source,
@@ -106,7 +152,7 @@ function makeHarness(scenario: Scenario): Harness {
 			},
 		},
 		tools: {
-			toModelTools: () => scenario.toolSpecs ?? [],
+			toModelTools: () => (scenario.toModelTools ? scenario.toModelTools() : scenario.toolSpecs ?? []),
 			execute: (toolId, toolInput, ctx) =>
 				scenario.execute ? scenario.execute(toolId, toolInput, ctx) : okToolResult(`ran ${toolId}`),
 		},
@@ -114,19 +160,81 @@ function makeHarness(scenario: Scenario): Harness {
 		// Isolate loop-core: no deliverable gate, no manifest, no llm_review.
 		requireDeliverable: false,
 		reviewDeliverable: false,
+		recorder: {
+			recordStep: (step) => {
+				recorderLog.push({ kind: "step", index: step.index });
+			},
+			recordUsage: (usage) => {
+				recorderLog.push({ kind: "usage", totalTokens: usage.totalTokens, stepsUsed: usage.stepsUsed });
+			},
+		},
 		emit: (event) => {
+			emittedEvents.push({ type: event.type, previewText: event.previewText, data: event.data });
 			if (event.type === "agent_run.compacting") harness.compactionEvents += 1;
 			if (event.type === "agent_run.escalated") harness.escalatedEvents += 1;
 		},
 	};
+	if (scenario.compactionResponses) {
+		input.compactionClient = {
+			model: "deepseek-compact",
+			provider: "deepseek",
+			messages: {
+				create: async (params: LlmCreateParams) => {
+					compactionRequests.push(params);
+					const next = compactionQueue.shift();
+					if (!next) throw new Error("scenario: no scripted compaction response left");
+					return next;
+				},
+			},
+		};
+	}
 	harness.input = input;
 	return harness;
 }
 
-/** Run the scenario through both engines and assert loop-core + usage-record equivalence. */
-async function runBoth(scenario: Scenario): Promise<{ legacy: AgentLoopResult; loop2: AgentLoopResult; legacyH: Harness; loop2H: Harness }> {
-	const legacyH = makeHarness(scenario);
-	const loop2H = makeHarness(scenario);
+// Event-sequence projection (P3a): compare event TYPE + stable scalar data fields only. Excludes
+// previewText (content-preview, e.g. the truncated tool_result error text differs by language) and
+// object fields (budget / handoff — L3) and timestamps.
+const EVENT_DATA_KEYS = [
+	"step_no",
+	"kind",
+	"tool_id",
+	"input_preview",
+	"ok",
+	"is_error",
+	"control",
+	"snapshot_id",
+	"trigger",
+	"compactions",
+	"summary_kind",
+	"provider_event_type",
+	// provider_retry fields (delay_ms is deterministic: nextRetryDecision has no jitter).
+	"attempt",
+	"retry_reason",
+	"delay_ms",
+] as const;
+
+function projectEvents(events: EmittedEvent[]): Record<string, unknown>[] {
+	return events.map((event) => {
+		const picked: Record<string, unknown> = { type: event.type };
+		for (const key of EVENT_DATA_KEYS) {
+			if (event.data && key in event.data) picked[key] = event.data[key];
+		}
+		return picked;
+	});
+}
+
+/**
+ * Run the scenario through both engines and assert loop-core + usage-record + emitted-event +
+ * recorder equivalence. Accepts a Scenario, or a factory `() => Scenario` for stateful scenarios
+ * (dynamic tools / compaction) that need independent closure state per engine run.
+ */
+async function runBoth(
+	scenarioOrFactory: Scenario | (() => Scenario),
+): Promise<{ legacy: AgentLoopResult; loop2: AgentLoopResult; legacyH: Harness; loop2H: Harness }> {
+	const make = typeof scenarioOrFactory === "function" ? scenarioOrFactory : () => scenarioOrFactory;
+	const legacyH = makeHarness(make());
+	const loop2H = makeHarness(make());
 	const legacy = await createAgentLoop().run(legacyH.input);
 	const loop2 = await runAgentLoop2(loop2H.input);
 
@@ -138,6 +246,14 @@ async function runBoth(scenario: Scenario): Promise<{ legacy: AgentLoopResult; l
 	assertLoopCoreEquivalent(legacy, loop2);
 	// usage-record accounting: same (seq, source, tokens, cost) sequence the usageSink would see.
 	assert.deepEqual(loop2H.calls, legacyH.calls, "usage-record accounting sequence diverged");
+	// P3a: the per-step emitted event sequence is identical (type + key data fields).
+	assert.deepEqual(
+		projectEvents(loop2H.emittedEvents),
+		projectEvents(legacyH.emittedEvents),
+		"emitted event sequence diverged",
+	);
+	// Recorder call sequence (recordUsage/recordStep order + values) is identical.
+	assert.deepEqual(loop2H.recorderLog, legacyH.recorderLog, "recorder call sequence diverged");
 	return { legacy, loop2, legacyH, loop2H };
 }
 
@@ -151,6 +267,16 @@ const ECHO_TOOL: ToolSpec = {
 const FAIL_TOOL: ToolSpec = {
 	name: "boom",
 	description: "Always fails.",
+	input_schema: { type: "object", properties: {} },
+};
+const LOAD_SKILL_TOOL: ToolSpec = {
+	name: "load_skill",
+	description: "Mount a skill's tools for the rest of the run.",
+	input_schema: { type: "object", properties: { skill: { type: "string" } }, required: ["skill"] },
+};
+const PDF_TOOL: ToolSpec = {
+	name: "pdf",
+	description: "Render a PDF (mounted by load_skill).",
 	input_schema: { type: "object", properties: {} },
 };
 
@@ -185,6 +311,22 @@ function toolResponse(id: string, calls: { id: string; name: string; input: unkn
 		usageRecord: usageRecord(cost, inTok, outTok),
 		stopReason: "tool_use",
 	};
+}
+
+/** A scripted structured-summary response returned by the compactionClient stub (P3b). */
+function compactionSummaryResponse(summary: string, inTok = 12, outTok = 20, cost = "0.05"): LlmCreateResponse {
+	return {
+		id: "compact-1",
+		content: [{ type: "text", text: summary }],
+		usage: { inputTokens: inTok, outputTokens: outTok },
+		usageRecord: { ...usageRecord(cost, inTok, outTok), source: "compact" },
+		stopReason: "end_turn",
+	};
+}
+
+/** Project a compaction request to its meaningful fields (excludes the per-engine AbortSignal). */
+function projectCompactionRequest(params: LlmCreateParams): Record<string, unknown> {
+	return { system: params.system, messages: params.messages, maxTokens: params.maxTokens, source: params.source };
 }
 
 // --- scenarios -------------------------------------------------------------
@@ -325,4 +467,144 @@ test("equivalence: context-window compaction triggers on both engines", async ()
 	// Both engines emitted at least one compaction event (the trigger fired on both).
 	assert.ok(legacyH.compactionEvents >= 1, "legacy compacted");
 	assert.ok(loop2H.compactionEvents >= 1, "loop2 compacted");
+});
+
+// --- (P3b) structured compaction summary via compactionClient --------------
+
+test("equivalence: structured compaction summary — injected compactionClient", async () => {
+	// Same context-window trigger as above, but with a compactionClient that returns a fixed structured
+	// summary. Both engines must: make the identical compaction request, fold the summary usage in the
+	// same order, and report summary_kind="structured".
+	const summary = "## 目标（Goal）\n完成 echo 任务\n\n## 进度（Progress）\n### 已完成（Done）\n- [x] 调用了 echo";
+	const scenario: Scenario = {
+		responses: [
+			toolResponse("m1", [{ id: "c1", name: "echo", input: { message: "a" } }], 30, 30, "0.03"),
+			toolResponse("m2", [{ id: "c2", name: "echo", input: { message: "b" } }], 30, 30, "0.03"),
+			textResponse("m3", "finished", 5, 5, "0.01"),
+		],
+		toolSpecs: [ECHO_TOOL],
+		execute: () => okToolResult("ok"),
+		budget: { contextWindowTokens: 100, compactThreshold: 0.8, maxCompactions: 2 },
+		compactionResponses: [compactionSummaryResponse(summary)],
+	};
+	const { legacy, loop2, legacyH, loop2H } = await runBoth(scenario);
+
+	assert.equal(legacy.status, "succeeded");
+	assert.equal(loop2.status, "succeeded");
+	// Exactly one compaction-summary call each, with an identical request shape (source="compact").
+	assert.equal(legacyH.compactionRequests.length, 1, "legacy made one compaction call");
+	assert.equal(loop2H.compactionRequests.length, 1, "loop2 made one compaction call");
+	assert.equal(loop2H.compactionRequests[0]?.source, "compact");
+	assert.deepEqual(
+		projectCompactionRequest(loop2H.compactionRequests[0]!),
+		projectCompactionRequest(legacyH.compactionRequests[0]!),
+		"compaction request diverged",
+	);
+	// summary_kind="structured" on both compacting events (runBoth already asserted the event sequence).
+	const legacyKind = legacyH.emittedEvents.find((e) => e.type === "agent_run.compacting")?.data.summary_kind;
+	const loop2Kind = loop2H.emittedEvents.find((e) => e.type === "agent_run.compacting")?.data.summary_kind;
+	assert.equal(legacyKind, "structured");
+	assert.equal(loop2Kind, "structured");
+	// The fixed summary text landed in the post-compaction worker request (turn 3, first message).
+	const req3First = loop2H.requests[2]?.messages[0];
+	const body = typeof req3First?.content === "string" ? req3First.content : JSON.stringify(req3First?.content);
+	assert.match(body, /完成 echo 任务/, "structured summary injected into the compacted transcript");
+	// The compaction usage (12+20 tokens, ¥0.05) is folded into the final total on both (loop-core equal).
+	assert.equal(loop2.usage.estimatedCostCny, legacy.usage.estimatedCostCny);
+	assert.ok(Number(loop2.usage.estimatedCostCny) > 0.1, "worker (0.07) + compaction (0.05) cost folded in");
+	assert.equal(loop2.usage.totalTokens, legacy.usage.totalTokens);
+});
+
+// --- (P3c) dynamic tool visibility -----------------------------------------
+
+test("equivalence: dynamic tool visibility — load_skill mounts a tool mid-run", async () => {
+	// A load_skill call in turn 1 mounts the pdf tool; turn 2's request must expose it — on BOTH engines.
+	// Factory: fresh `skillLoaded` state per engine run (runBoth builds two independent harnesses).
+	const scenario = (): Scenario => {
+		let skillLoaded = false;
+		return {
+			responses: [
+				toolResponse("m1", [{ id: "c1", name: "load_skill", input: { skill: "pdf" } }]),
+				textResponse("m2", "done"),
+			],
+			toModelTools: () => (skillLoaded ? [LOAD_SKILL_TOOL, PDF_TOOL] : [LOAD_SKILL_TOOL]),
+			execute: (toolId) => {
+				if (toolId === "load_skill") skillLoaded = true;
+				return okToolResult(`ran ${toolId}`);
+			},
+		};
+	};
+	const { loop2, legacyH, loop2H } = await runBoth(scenario);
+
+	assert.equal(loop2.status, "succeeded");
+	const toolNames = (req: LlmCreateParams | undefined): string[] =>
+		(req?.tools ?? []).map((tool) => (tool as { name: string }).name).sort();
+	// Turn 1 saw only load_skill; turn 2's request reflects the mounted pdf tool — both engines identical.
+	assert.deepEqual(toolNames(legacyH.requests[0]), ["load_skill"], "legacy turn-1 tools");
+	assert.deepEqual(toolNames(legacyH.requests[1]), ["load_skill", "pdf"], "legacy turn-2 tools reflect the mount");
+	assert.deepEqual(toolNames(loop2H.requests[0]), ["load_skill"], "loop2 turn-1 tools");
+	assert.deepEqual(toolNames(loop2H.requests[1]), ["load_skill", "pdf"], "loop2 turn-2 tools reflect the mount");
+});
+
+// --- transient provider retry ------------------------------------------------
+
+test("equivalence: transient provider error (429) — one retry then success on both engines", async () => {
+	// Attempt 1 throws a retryable 429; attempt 2 succeeds. Factory: a fresh Error object per engine run.
+	// providerRetryBaseDelayMs=1 keeps the backoff sleep at 1ms (nextRetryDecision: 1 * 2^0, no jitter).
+	const scenario = (): Scenario => ({
+		responses: [
+			{ scriptedError: Object.assign(new Error("429 rate limited"), { status: 429 }) },
+			textResponse("m1", "recovered after retry"),
+		],
+		budget: { providerRetryBaseDelayMs: 1 },
+	});
+	const { legacy, loop2, legacyH, loop2H } = await runBoth(scenario);
+
+	assert.equal(legacy.status, "succeeded");
+	assert.equal(loop2.status, "succeeded");
+	assert.equal(loop2.finalText, "recovered after retry");
+	// Both engines made two provider requests (failed attempt + successful retry), same seq on both
+	// attempts (the failed request records no usage — runBoth already asserted the calls sequence).
+	assert.equal(legacyH.requests.length, 2, "legacy retried the request");
+	assert.equal(loop2H.requests.length, 2, "loop2 retried the request");
+	assert.equal(legacyH.requests[0]?.seq, legacyH.requests[1]?.seq, "legacy retry reuses the step seq");
+	assert.equal(loop2H.requests[0]?.seq, loop2H.requests[1]?.seq, "loop2 retry reuses the step seq");
+	// Exactly one provider_retry event each, identical shape (runBoth compared the full sequences —
+	// including attempt / retry_reason / delay_ms via EVENT_DATA_KEYS).
+	const retryEvents = (h: Harness) => h.emittedEvents.filter((e) => e.data.kind === "provider_retry");
+	assert.equal(retryEvents(legacyH).length, 1, "legacy emitted one provider_retry");
+	assert.equal(retryEvents(loop2H).length, 1, "loop2 emitted one provider_retry");
+	const event = retryEvents(loop2H)[0]!;
+	assert.equal(event.type, "agent_run.step");
+	assert.equal(event.data.step_no, 1);
+	assert.equal(event.data.attempt, 1);
+	assert.equal(event.data.retry_reason, "transient");
+	assert.equal(event.data.delay_ms, 1);
+});
+
+test("equivalence: non-retryable provider error (400) — both engines fail immediately, no retry", async () => {
+	const make = () =>
+		makeHarness({
+			responses: [{ scriptedError: Object.assign(new Error("400 bad request"), { status: 400 }) }],
+			budget: { providerRetryBaseDelayMs: 1 },
+		});
+	const legacyH = make();
+	const loop2H = make();
+
+	// Both engines propagate the failure as a throw (loop.ts: callModelWithRetry re-throws; loop2:
+	// the streamFn encodes the error terminal and runAgentLoop2 re-throws it for agent-runner's catch).
+	await assert.rejects(() => createAgentLoop().run(legacyH.input), /400 bad request/);
+	await assert.rejects(() => runAgentLoop2(loop2H.input), /400 bad request/);
+
+	// No retry on a 4xx: exactly one provider request, zero provider_retry events, on both engines.
+	assert.equal(legacyH.requests.length, 1, "legacy did not retry");
+	assert.equal(loop2H.requests.length, 1, "loop2 did not retry");
+	assert.deepEqual(
+		projectEvents(loop2H.emittedEvents),
+		projectEvents(legacyH.emittedEvents),
+		"emitted event sequence diverged on the failure path",
+	);
+	assert.deepEqual(loop2H.recorderLog, legacyH.recorderLog, "recorder call sequence diverged");
+	assert.deepEqual(loop2H.calls, legacyH.calls, "usage-record accounting diverged (must be empty on both)");
+	assert.deepEqual(loop2H.calls, [], "a failed request records no usage");
 });

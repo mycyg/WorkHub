@@ -509,7 +509,7 @@ function buildCompactionTranscript(
   return `${transcript.slice(0, headChars)}\n…[transcript middle omitted]\n${transcript.slice(transcript.length - tailChars)}`;
 }
 
-function summarizeStepsForCompaction(steps: AgentLoopStep[], maxChars = 4000) {
+export function summarizeStepsForCompaction(steps: AgentLoopStep[], maxChars = 4000) {
   const lines: string[] = [];
   for (const step of steps) {
     const text = step.assistant
@@ -539,6 +539,88 @@ function summarizeStepsForCompaction(steps: AgentLoopStep[], maxChars = 4000) {
   const headChars = Math.floor(maxChars * 0.7);
   const tailChars = Math.floor(maxChars * 0.2);
   return `${summary.slice(0, headChars)}\n…[摘要中段省略]\n${summary.slice(summary.length - tailChars)}`;
+}
+
+/**
+ * 补丁2 结构化压缩摘要状态：跨压缩滚动。`rollingSummary` 是上一次成功的结构化摘要；
+ * `lastSummarizedStepIndex` 是它已覆盖到的最大步号——下次压缩只把这之后的新步转写进 UPDATE 调用。
+ */
+export type StructuredSummaryState = {
+  rollingSummary?: string;
+  lastSummarizedStepIndex: number;
+};
+
+/**
+ * 补丁2 结构化压缩摘要（行为保持抽取，仿 finalizeL3 先例）：把 run() 内联的滚动摘要闭包抽成可复用导出，
+ * 供 loop.ts 与 loop2 configBuilder 共用同一实现（单一真相，绝不双份漂移）。行为与抽出前逐字一致：
+ * - 未注入 compactionClient → undefined（调用方回退机械摘要 summarizeStepsForCompaction）；
+ * - 无新步（index <= state.lastSummarizedStepIndex）→ 沿用 state.rollingSummary（可能 undefined）；
+ * - 独立 LLM 调用（source="compact"、30s abort、1500 maxTokens），usage 走既有记账通道并 recordUsage；
+ * - 空文本/失败/超时 → undefined（不推进 rolling / 覆盖游标），优雅退化回机械摘要，绝不因此挂掉 run。
+ * `state` 就地可变（rollingSummary / lastSummarizedStepIndex），两引擎各持一份跨压缩滚动。
+ */
+export async function tryGenerateStructuredSummary(params: {
+  input: AgentLoopInput;
+  usage: AgentLoopUsage;
+  steps: AgentLoopStep[];
+  state: StructuredSummaryState;
+}): Promise<string | undefined> {
+  const { input, usage, steps, state } = params;
+  const compactionClient = input.compactionClient;
+  if (!compactionClient) {
+    return undefined;
+  }
+  const newSteps = steps.filter((step) => step.index > state.lastSummarizedStepIndex);
+  if (newSteps.length === 0) {
+    // 没有新步可摘要：沿用已有的 rolling（若有），否则退回机械摘要。
+    return state.rollingSummary;
+  }
+  const transcript = buildCompactionTranscript(newSteps);
+  const isUpdate = Boolean(state.rollingSummary);
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  input.signal?.addEventListener("abort", onAbort, { once: true });
+  const timer = setTimeout(() => controller.abort(), COMPACTION_SUMMARY_TIMEOUT_MS);
+  try {
+    const response = await compactionClient.messages.create({
+      system: SUMMARIZATION_SYSTEM_PROMPT,
+      messages: [
+        { role: "user", content: transcript },
+        {
+          role: "user",
+          content: isUpdate
+            ? `${UPDATE_SUMMARIZATION_PROMPT}\n\n<previous-summary>\n${state.rollingSummary}\n</previous-summary>`
+            : SUMMARIZATION_PROMPT
+        }
+      ],
+      maxTokens: COMPACTION_SUMMARY_MAX_TOKENS,
+      source: "compact",
+      signal: controller.signal
+    });
+    // 摘要调用的 usage 走既有记账通道（同 llm_review），失败 run 也记到真实 token/成本。
+    const usageTokens = response.usage ?? { inputTokens: 0, outputTokens: 0 };
+    addUsage(usage, usageTokens.inputTokens, usageTokens.outputTokens, response.usageRecord?.estimatedCostCny);
+    input.recorder?.recordUsage?.(usage);
+    const text = response.content
+      .map(parseBlock)
+      .filter((block): block is Extract<AgentAssistantBlock, { type: "text" }> => block.type === "text")
+      .map((block) => block.text)
+      .join("\n")
+      .trim();
+    if (!text) {
+      // 空文本：优雅退化回机械摘要（不推进 rolling / 覆盖游标）。
+      return undefined;
+    }
+    state.rollingSummary = text;
+    state.lastSummarizedStepIndex = steps[steps.length - 1]?.index ?? state.lastSummarizedStepIndex;
+    return state.rollingSummary;
+  } catch {
+    // 调用失败/超时：优雅退化回机械摘要，绝不因此挂掉 run。
+    return undefined;
+  } finally {
+    clearTimeout(timer);
+    input.signal?.removeEventListener("abort", onAbort);
+  }
 }
 
 /**
@@ -1033,70 +1115,9 @@ export class AgentLoop {
     const maxCompactions = input.budget.maxCompactions ?? 2;
     const toolResultContextChars = input.budget.toolResultContextChars ?? 8000;
     let nextCompactionAtTokens = 0;
-    // 补丁2：滚动结构化摘要状态。rollingSummary 是上一次成功的结构化摘要；lastSummarizedStepIndex 是它已覆盖
-    // 到的最大步号——下一次压缩只把这之后的新步转写进 UPDATE 调用，避免重复摘要。
-    let rollingSummary: string | undefined;
-    let lastSummarizedStepIndex = 0;
-
-    // 补丁2：独立 LLM 调用产出结构化摘要（Goal/Constraints/Progress/Decisions/NextSteps）。
-    // 返回 undefined 表示「退回机械摘要」：未注入 compactionClient、无新步、或调用失败/超时/空文本。
-    const tryGenerateStructuredSummary = async (): Promise<string | undefined> => {
-      const compactionClient = input.compactionClient;
-      if (!compactionClient) {
-        return undefined;
-      }
-      const newSteps = steps.filter((step) => step.index > lastSummarizedStepIndex);
-      if (newSteps.length === 0) {
-        // 没有新步可摘要：沿用已有的 rolling（若有），否则退回机械摘要。
-        return rollingSummary;
-      }
-      const transcript = buildCompactionTranscript(newSteps);
-      const isUpdate = Boolean(rollingSummary);
-      const controller = new AbortController();
-      const onAbort = () => controller.abort();
-      input.signal?.addEventListener("abort", onAbort, { once: true });
-      const timer = setTimeout(() => controller.abort(), COMPACTION_SUMMARY_TIMEOUT_MS);
-      try {
-        const response = await compactionClient.messages.create({
-          system: SUMMARIZATION_SYSTEM_PROMPT,
-          messages: [
-            { role: "user", content: transcript },
-            {
-              role: "user",
-              content: isUpdate
-                ? `${UPDATE_SUMMARIZATION_PROMPT}\n\n<previous-summary>\n${rollingSummary}\n</previous-summary>`
-                : SUMMARIZATION_PROMPT
-            }
-          ],
-          maxTokens: COMPACTION_SUMMARY_MAX_TOKENS,
-          source: "compact",
-          signal: controller.signal
-        });
-        // 摘要调用的 usage 走既有记账通道（同 llm_review），失败 run 也记到真实 token/成本。
-        const usageTokens = response.usage ?? { inputTokens: 0, outputTokens: 0 };
-        addUsage(usage, usageTokens.inputTokens, usageTokens.outputTokens, response.usageRecord?.estimatedCostCny);
-        input.recorder?.recordUsage?.(usage);
-        const text = response.content
-          .map(parseBlock)
-          .filter((block): block is Extract<AgentAssistantBlock, { type: "text" }> => block.type === "text")
-          .map((block) => block.text)
-          .join("\n")
-          .trim();
-        if (!text) {
-          // 空文本：优雅退化回机械摘要（不推进 rolling / 覆盖游标）。
-          return undefined;
-        }
-        rollingSummary = text;
-        lastSummarizedStepIndex = steps[steps.length - 1]?.index ?? lastSummarizedStepIndex;
-        return rollingSummary;
-      } catch {
-        // 调用失败/超时：优雅退化回机械摘要，绝不因此挂掉 run。
-        return undefined;
-      } finally {
-        clearTimeout(timer);
-        input.signal?.removeEventListener("abort", onAbort);
-      }
-    };
+    // 补丁2：滚动结构化摘要状态（跨压缩滚动）。抽取为 tryGenerateStructuredSummary 共用实现（仿 finalizeL3 单一真相），
+    // loop.ts 与 loop2 configBuilder 各持一份 state。
+    const summaryState: StructuredSummaryState = { lastSummarizedStepIndex: 0 };
 
     const compactNow = async (trigger: "context_window" | "max_tokens", stepNo: number) => {
       usage.compactions = (usage.compactions ?? 0) + 1;
@@ -1104,7 +1125,7 @@ export class AgentLoop {
       nextCompactionAtTokens = usage.totalTokens + Math.max(1, Math.floor(window * (input.budget.compactThreshold ?? 0.8)));
       // 补丁2：先尝试结构化 LLM 摘要；失败/超时/空/未注入 client 时 structuredSummary 为 undefined，
       // compactConversation 内部据此回退机械摘要（summarizeStepsForCompaction）。
-      const structuredSummary = await tryGenerateStructuredSummary();
+      const structuredSummary = await tryGenerateStructuredSummary({ input, usage, steps, state: summaryState });
       const compacted = compactConversation({
         messages,
         initialUserMessage: input.initialUserMessage,

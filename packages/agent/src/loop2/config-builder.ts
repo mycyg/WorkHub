@@ -1,5 +1,5 @@
 /**
- * loop2 Phase 2 — configBuilder + shadow switch (R15 批 C 绞杀者迁移).
+ * loop2 Phase 3 — configBuilder + shadow switch (R15 批 C 绞杀者迁移).
  *
  * `runAgentLoop2` assembles a WorkHub `AgentLoopInput` (the shape the production
  * `AgentLoop.run` consumes) into a vendored-pi `AgentLoopConfig` + drives the
@@ -12,19 +12,34 @@
  *   | WorkHub concern                | pi callback / seam                              |
  *   |--------------------------------|-------------------------------------------------|
  *   | provider stream + usage seq    | `streamFn` = createProviderStreamFn(nextSeq)    |
+ *   | transient provider retry       | streamFn pump retry (nextRetryDecision + emit)  |
  *   | tool execution (return-based)  | `tools[].execute` → input.tools.execute (stash) |
  *   | sequential tool order          | `toolExecution: "sequential"`                   |
  *   | isError propagation            | `afterToolCall: workhubAfterToolCall`           |
  *   | truncation sanitize (400 fix)  | `convertToLlm` cleans non-object tool_use args  |
  *   | budget stop (steps/time/tok/$) | `shouldStopAfterTurn` = checkLoopBudget         |
  *   | doom-loop escalate             | `shouldStopAfterTurn` = DoomLoopDetector        |
- *   | context compaction             | `transformContext` (threshold + mechanical sum) |
+ *   | context compaction (+summary)  | `transformContext` = threshold + shared L3 sum  |
  *   | overflow self-heal (text trunc)| `shouldStopAfterTurn` + `getFollowUpMessages`   |
+ *   | dynamic tool visibility (P3c)  | `prepareNextTurn` re-resolves toModelTools/turn |
+ *   | per-step SSE/trace events (P3a)| AgentEvent sink → input.emit (loop.ts schema)   |
+ *   | structured compaction summary  | reuse `loop.ts` `tryGenerateStructuredSummary`  |
  *   | human-reserved before-guard    | preserved inside injected `input.tools.execute` |
  *   | L3: deliverable/manifest/review| reuse `loop.ts` `finalizeL3` (single source)    |
  *   | result fold                    | `toAgentLoopResult` + L3/escalation overrides   |
  *
- * See ./NOTICE.md for the vendored-loop provenance and 03-batch-c-engine.md §Phase 2.
+ * Allowed differences from `AgentLoop.run` after Phase 3 (validated by
+ * equivalence.test.ts; only wall-clock / timestamps / L3 detail remain):
+ *   - WALL CLOCK: usage.secondsUsed; and under REAL streaming the stream_event
+ *     throttle boundaries + heartbeat count (never hit by the buffered test client).
+ *   - TIMESTAMPS: step startedAt/endedAt (message reconstruction time), and the
+ *     compaction tail's message `timestamp` fields stamped by the pi↔wire converters.
+ *     The compaction summary TEXT is identical (shared tryGenerateStructuredSummary +
+ *     summarizeStepsForCompaction); the pruned tail converts to semantically-equal wire
+ *     messages differing only by these timestamps.
+ *   - L3 DETAIL: manifest / review / reviewFailed content and handoff body.
+ *
+ * See ./NOTICE.md for the vendored-loop provenance and 03-batch-c-engine.md §Phase 2/3.
  */
 
 import { errorToolResult, type ToolExecutionContext, type ToolResult } from "@workhub/tools";
@@ -33,7 +48,12 @@ import { eventTypes } from "@workhub/contracts";
 import type { LlmMessage } from "../providers/types.js";
 import { checkLoopBudget, controlFromAssistant, createInitialUsage, DoomLoopDetector } from "../loop/control.js";
 import { buildStructuredHandoff } from "../loop/handoff.js";
-import { finalizeL3 } from "../loop/loop.js";
+import {
+	finalizeL3,
+	summarizeStepsForCompaction,
+	tryGenerateStructuredSummary,
+	type StructuredSummaryState,
+} from "../loop/loop.js";
 import type {
 	AgentAssistantBlock,
 	AgentLoopInput,
@@ -44,11 +64,14 @@ import type {
 } from "../loop/types.js";
 import {
 	type AgentContext,
+	type AgentEvent,
+	type AgentEventSink,
 	type AgentLoopConfig,
 	type AgentMessage,
 	type AgentTool,
 	type AgentToolResult,
 	type AssistantMessage,
+	type AssistantMessageEvent,
 	type JsonSchema,
 	type Message,
 	type Model,
@@ -82,10 +105,12 @@ function elapsedSeconds(startedAt: number): number {
 	return (Date.now() - startedAt) / 1000;
 }
 
-// --- mechanical compaction summary (mirrors loop/loop.ts summarizeStepsForCompaction;
-//     structured-summary-via-compactionClient is deferred to a later phase) ------
+// --- trace preview (mirrors loop/loop.ts previewUnknown default = 200) -------
 
-function previewUnknown(value: unknown, maxLength = 80): string {
+/** stream_event bus-write throttle: at most one heartbeat per second, matching loop.ts callModel. */
+const STREAM_EMIT_THROTTLE_MS = 1000;
+
+function previewUnknown(value: unknown, maxLength = 200): string {
 	if (typeof value === "string") return value.slice(0, maxLength);
 	try {
 		return JSON.stringify(value).slice(0, maxLength);
@@ -94,30 +119,32 @@ function previewUnknown(value: unknown, maxLength = 80): string {
 	}
 }
 
-function summarizeStepsMechanical(steps: AgentLoopStep[], maxChars = 4000): string {
-	const lines: string[] = [];
-	for (const step of steps) {
-		const text = step.assistant
-			.filter((block): block is Extract<AgentAssistantBlock, { type: "text" }> => block.type === "text")
-			.map((block) => block.text.trim())
-			.join(" ")
-			.slice(0, 120);
-		if (step.toolCalls.length === 0) {
-			lines.push(`step ${step.index}: ${text || "(无工具调用)"}`);
-			continue;
-		}
-		for (let index = 0; index < step.toolCalls.length; index += 1) {
-			const call = step.toolCalls[index]!;
-			const result = step.toolResults[index];
-			const outcome = result ? (result.isError ? "error" : "ok") : "pending";
-			lines.push(`step ${step.index}: ${call.name}(${previewUnknown(call.input, 80)}) -> ${outcome}`);
-		}
-	}
-	const summary = lines.join("\n");
-	if (summary.length <= maxChars) return summary;
-	const headChars = Math.floor(maxChars * 0.7);
-	const tailChars = Math.floor(maxChars * 0.2);
-	return `${summary.slice(0, headChars)}\n…[摘要中段省略]\n${summary.slice(summary.length - tailChars)}`;
+/** stream_event 增量预览：抽取 pi assistantMessageEvent 的 delta 文本（对齐 loop.ts previewStreamEvent 口径）。 */
+function previewPiStreamEvent(event: AssistantMessageEvent): string {
+	const delta = (event as { delta?: unknown }).delta;
+	if (typeof delta === "string") return delta.slice(0, 200);
+	return previewUnknown((event as { type?: unknown }).type ?? "");
+}
+
+/**
+ * pi 流式事件类型 → loop.ts 侧的 Anthropic SSE 词汇（stream_event.provider_event_type 对齐）。
+ * 仅在真流式下出现（确定性缓冲测试不触发）；具体节流边界属墙钟差异。
+ */
+function piStreamEventType(piType: string): string {
+	if (piType.endsWith("_start")) return "content_block_start";
+	if (piType.endsWith("_delta")) return "content_block_delta";
+	if (piType.endsWith("_end")) return "content_block_stop";
+	return piType;
+}
+
+/** Text of a pi AgentToolResult (for stepToolResult previewText when no WorkHub result was stashed). */
+function piToolResultText(result: unknown): string {
+	const content = (result as { content?: unknown } | undefined)?.content;
+	if (!Array.isArray(content)) return "";
+	return content
+		.filter((block): block is { type: "text"; text: string } => (block as { type?: unknown }).type === "text" && typeof (block as { text?: unknown }).text === "string")
+		.map((block) => block.text)
+		.join("\n");
 }
 
 // --- pi-message helpers ----------------------------------------------------
@@ -246,6 +273,12 @@ type Escalation = {
 	handoffReason: string;
 	budgetHit: StructuredHandoff["budgetHit"];
 	control: AgentLoopResult["control"];
+	/**
+	 * The compact_required overflow-escalation carries the truncated step index so the terminal emit
+	 * mirrors loop.ts (which emits agentRunCompacting with step_no, not agentRunEscalated). Absent for
+	 * every other escalation (doom/budget/compact_budget_exhausted → agentRunEscalated).
+	 */
+	compactRequiredStepNo?: number;
 };
 
 /**
@@ -267,6 +300,15 @@ export async function runAgentLoop2(input: AgentLoopInput): Promise<AgentLoopRes
 	let forceCompactBeforeNext = false; // overflow self-heal: text-only max_tokens
 	let wantOverflowRetry = false;
 	let escalation: Escalation | undefined;
+	// P3a event-adapter state (shared by the AgentEvent sink + the compaction hook). `sinkStepNo`
+	// is the 1-based worker step being emitted (incremented per pi `turn_start`; equals loop.ts
+	// `usage.stepsUsed + 1` at the loop top). `lastStreamEmitAt` throttles stream_event to the same
+	// cadence as loop.ts (STREAM_EMIT_THROTTLE_MS), reset per step. `lastTruncatedStepNo` remembers the
+	// text-only max_tokens step so the overflow (max_tokens) compaction emit carries its index, not the
+	// retry turn's — mirroring loop.ts `compactNow("max_tokens", step.index)`.
+	let sinkStepNo = 0;
+	let lastStreamEmitAt = 0;
+	let lastTruncatedStepNo = 0;
 	// A throw from input.tools.execute (e.g. human-reserved 409). pi swallows tool throws into
 	// error tool_results, so capture + abort + re-throw after the loop to stay a faithful stand-in
 	// for AgentLoop.run (whose input.tools.execute throws propagate out and fail the run).
@@ -295,6 +337,8 @@ export async function runAgentLoop2(input: AgentLoopInput): Promise<AgentLoopRes
 
 	// nextSeq feeds the real 1-based agent step number into usage-record dedup (findings[19]);
 	// mirrors loop.ts `seq: params.stepNo` (stepNo = usage.stepsUsed + 1, one per worker turn).
+	// Retries inside the pump reuse the same params/seq — matching loop.ts, whose retried
+	// callModel attempts all carry the same stepNo seq.
 	let stepSeq = 0;
 	const streamFn = createProviderStreamFn({
 		client: input.client,
@@ -304,61 +348,114 @@ export async function runAgentLoop2(input: AgentLoopInput): Promise<AgentLoopRes
 			stepSeq += 1;
 			return stepSeq;
 		},
+		// Transient provider retry: same knobs + decision source (nextRetryDecision) as loop.ts
+		// callModelWithRetry, incl. the findings[#49] clamp (single retry delay never exceeds the
+		// whole-run timeout). onRetry emits provider_retry in loop.ts's exact shape; sinkStepNo is
+		// the step being attempted (== loop.ts params.stepNo — turn_start bumped it before the call).
+		retry: {
+			baseDelayMs: input.budget.providerRetryBaseDelayMs ?? 500,
+			maxDelayMs: Math.min(
+				input.budget.providerRetryMaxDelayMs ?? 60_000,
+				Math.max(0, input.budget.totalTimeoutSeconds) * 1000,
+			),
+			onRetry: async ({ attempt, reason, delayMs }) => {
+				await input.emit?.({
+					type: eventTypes.agentRunStep,
+					previewText: `provider 瞬态错误，第 ${attempt} 次重试（${reason}）`,
+					data: {
+						run_id: input.runId,
+						step_no: sinkStepNo,
+						kind: "provider_retry",
+						attempt,
+						retry_reason: reason,
+						delay_ms: delayMs,
+					},
+				});
+			},
+		},
 	});
 
-	// Tools resolved once for the run (pi holds context.tools static across turns; loop.ts
-	// re-resolves per turn — a documented allowed difference for dynamic tool visibility).
+	// P3c dynamic tool visibility: re-resolve `input.tools.toModelTools(ctx)` and re-wrap as pi
+	// `AgentTool[]` every turn (via `prepareNextTurn` below), matching loop.ts's per-turn `toModelTools`.
+	// A `load_skill`-style tool that mounts new tools mid-run is reflected on the very next model request,
+	// same as loop.ts. Resolved once here for the first turn's context; `prepareNextTurn` refreshes it.
 	const ctx = buildToolCtx(input);
-	const modelTools = await input.tools.toModelTools(ctx);
-	const tools: AgentTool[] = modelTools.map((raw) => {
-		const spec = raw as { name: string; description?: string; input_schema?: unknown };
-		const parameters: JsonSchema =
-			spec.input_schema && typeof spec.input_schema === "object" ? (spec.input_schema as JsonSchema) : { type: "object" };
-		return {
-			name: spec.name,
-			description: spec.description ?? "",
-			parameters,
-			label: spec.name,
-			execute: async (_toolCallId: string, params: Record<string, unknown>): Promise<AgentToolResult<ToolResult>> => {
-				try {
-					const result = await input.tools.execute(spec.name, params, ctx);
-					return workhubToolResultToPi(result);
-				} catch (error) {
-					// Legacy loop.run lets input.tools.execute throws propagate out. Capture, abort, and
-					// re-throw after the loop; return an error result so the current batch finishes cleanly.
-					fatalToolError = error;
-					runController.abort(error);
-					return workhubToolResultToPi(errorToolResult(error instanceof Error ? error.message : String(error)));
-				}
-			},
-		} satisfies AgentTool;
-	});
+	const buildPiTools = async (): Promise<AgentTool[]> => {
+		const modelTools = await input.tools.toModelTools(ctx);
+		return modelTools.map((raw) => {
+			const spec = raw as { name: string; description?: string; input_schema?: unknown };
+			const parameters: JsonSchema =
+				spec.input_schema && typeof spec.input_schema === "object" ? (spec.input_schema as JsonSchema) : { type: "object" };
+			return {
+				name: spec.name,
+				description: spec.description ?? "",
+				parameters,
+				label: spec.name,
+				execute: async (_toolCallId: string, params: Record<string, unknown>): Promise<AgentToolResult<ToolResult>> => {
+					try {
+						const result = await input.tools.execute(spec.name, params, ctx);
+						return workhubToolResultToPi(result);
+					} catch (error) {
+						// Legacy loop.run lets input.tools.execute throws propagate out. Capture, abort, and
+						// re-throw after the loop; return an error result so the current batch finishes cleanly.
+						fatalToolError = error;
+						runController.abort(error);
+						return workhubToolResultToPi(errorToolResult(error instanceof Error ? error.message : String(error)));
+					}
+				},
+			} satisfies AgentTool;
+		});
+	};
+	const tools = await buildPiTools();
 
 	const compactionThreshold = (): number =>
 		Math.max(1, Math.floor((input.budget.contextWindowTokens ?? 0) * (input.budget.compactThreshold ?? 0.8)));
 
-	const doCompactBookkeeping = async (trigger: "context_window" | "max_tokens"): Promise<void> => {
-		compactions += 1;
-		nextCompactionAtTokens = usage.totalTokens + compactionThreshold();
-		await input.emit?.({
-			type: eventTypes.agentRunCompacting,
-			previewText: `上下文已压缩（第 ${compactions} 次，触发=${trigger}）`,
-			data: { run_id: input.runId, trigger, compactions, summary_kind: "mechanical" },
-		});
-	};
+	// P3b: rolling structured-summary state, one per run (shared with loop.ts via the exported
+	// tryGenerateStructuredSummary). Empty until compactionClient produces a first summary.
+	const summaryState: StructuredSummaryState = { lastSummarizedStepIndex: 0 };
 
-	const compactPiContext = (messages: AgentMessage[]): AgentMessage[] => {
+	// Prune the pi AgentMessage[] transcript: keep the last `keep` from the assistant boundary, drop any
+	// dangling tool_use/orphan tool_result, and prepend a compaction summary message. `summaryOverride`
+	// is the structured LLM summary when available; otherwise fall back to loop.ts's exported mechanical
+	// summarizer (summarizeStepsForCompaction) so both engines emit byte-identical summary text.
+	const compactPiContext = (messages: AgentMessage[], summaryOverride?: string): AgentMessage[] => {
 		const keep = 6;
 		let cut = Math.max(1, messages.length - keep);
 		while (cut < messages.length && (messages[cut] as { role?: string }).role !== "assistant") cut += 1;
 		const tail = dropDanglingPiPairs(messages.slice(cut));
-		const summary = summarizeStepsMechanical(steps);
+		const summary = summaryOverride?.trim() || summarizeStepsForCompaction(steps);
 		const summaryMessage: AgentMessage = {
 			role: "user",
 			content: `${input.initialUserMessage}\n\n[上下文已压缩。此前执行摘要]\n${summary}\n[摘要结束。请基于以上进度继续完成任务。]`,
 			timestamp: Date.now(),
 		};
 		return [summaryMessage, ...tail];
+	};
+
+	// P3b: full compaction (bookkeeping + structured summary + prune + emit), mirroring loop.ts compactNow.
+	// Order matches loop.ts: bump compactions + nextCompactionAtTokens FIRST (so the summary call's own
+	// usage does not shift this compaction's threshold), then the structured summary (a compactionClient
+	// LLM call that adds source="compact" usage + recordUsage — or undefined → mechanical fallback), then
+	// prune, then emit agentRunCompacting with the resolved summary_kind. `stepNo` mirrors loop.ts:
+	// context_window → the upcoming step; max_tokens → the truncated step that overflowed.
+	const doCompact = async (trigger: "context_window" | "max_tokens", messages: AgentMessage[], stepNo: number): Promise<AgentMessage[]> => {
+		compactions += 1;
+		nextCompactionAtTokens = usage.totalTokens + compactionThreshold();
+		const structuredSummary = await tryGenerateStructuredSummary({ input, usage, steps, state: summaryState });
+		const pruned = compactPiContext(messages, structuredSummary);
+		await input.emit?.({
+			type: eventTypes.agentRunCompacting,
+			previewText: `上下文已压缩（第 ${compactions} 次，触发=${trigger}）`,
+			data: {
+				run_id: input.runId,
+				step_no: stepNo,
+				trigger,
+				compactions,
+				summary_kind: structuredSummary ? "structured" : "mechanical",
+			},
+		});
+		return pruned;
 	};
 
 	const config: AgentLoopConfig = {
@@ -369,16 +466,23 @@ export async function runAgentLoop2(input: AgentLoopInput): Promise<AgentLoopRes
 		transformContext: async (messages) => {
 			if (forceCompactBeforeNext) {
 				forceCompactBeforeNext = false;
-				await doCompactBookkeeping("max_tokens");
-				return compactPiContext(messages);
+				// Overflow (max_tokens) compaction: step_no is the truncated step, not this retry turn
+				// (mirrors loop.ts compactNow("max_tokens", step.index)).
+				return doCompact("max_tokens", messages, lastTruncatedStepNo);
 			}
 			const decision = checkLoopBudget(usage, input.budget);
 			if (decision?.signal === "compact" && usage.totalTokens >= nextCompactionAtTokens && compactions < maxCompactions) {
-				await doCompactBookkeeping("context_window");
-				return compactPiContext(messages);
+				// Context-window compaction fires before the upcoming turn's model call; step_no is that
+				// upcoming step (sinkStepNo was bumped by this turn's turn_start), matching loop.ts's
+				// compactNow("context_window", usage.stepsUsed + 1).
+				return doCompact("context_window", messages, sinkStepNo);
 			}
 			return messages;
 		},
+		// P3c: refresh tools each turn so a mid-run tool mount (load_skill) is visible on the next request.
+		// prepareNextTurn fires after every turn_end (including the last, whose refresh is discarded when
+		// shouldStopAfterTurn ends the run) — a benign extra registry read, never an extra provider call.
+		prepareNextTurn: async ({ context }) => ({ context: { ...context, tools: await buildPiTools() } }),
 		getFollowUpMessages: async () => {
 			if (!wantOverflowRetry) return [];
 			wantOverflowRetry = false;
@@ -396,6 +500,9 @@ export async function runAgentLoop2(input: AgentLoopInput): Promise<AgentLoopRes
 			// Accumulate usage (tokens + CNY side-channel) and record the reconstructed step.
 			const workhubUsage = readWorkhubUsage(message);
 			addUsage(usage, message.usage.input, message.usage.output, workhubUsage?.estimatedCostCny);
+			// recordUsage mirrors loop.ts: right after the model turn's usage is added, BEFORE stepsUsed is
+			// bumped (so the recorder sees the same usage snapshot — stepsUsed still reflects prior steps).
+			input.recorder?.recordUsage?.(usage);
 			const stepNo = steps.length + 1;
 			const blocks = piAssistantContentToBlocks(message.content);
 			const toolCalls = blocks.filter(
@@ -418,8 +525,10 @@ export async function runAgentLoop2(input: AgentLoopInput): Promise<AgentLoopRes
 			steps.push(step);
 			usage.stepsUsed = steps.length;
 			usage.secondsUsed = elapsedSeconds(startedAt);
+			// recordStep after the step is built + counted (mirrors loop.ts). Per step the recorder sees
+			// usage(N) then step(N), with any compaction usage(C) slotting in before the step it compacts
+			// for (that recordUsage lives in tryGenerateStructuredSummary).
 			await input.recorder?.recordStep(step);
-			input.recorder?.recordUsage?.(usage);
 
 			if (fatalToolError) return true; // re-thrown after the loop
 
@@ -466,6 +575,7 @@ export async function runAgentLoop2(input: AgentLoopInput): Promise<AgentLoopRes
 			if (step.control === "compact") {
 				if (compactions < maxCompactions) {
 					wantOverflowRetry = true; // getFollowUpMessages injects the continue prompt
+					lastTruncatedStepNo = step.index; // the overflow compaction emit carries this step's index
 					return false;
 				}
 				escalation = {
@@ -473,11 +583,114 @@ export async function runAgentLoop2(input: AgentLoopInput): Promise<AgentLoopRes
 					handoffReason: "模型响应被截断且压缩次数已用尽。",
 					budgetHit: "tokens",
 					control: "compact",
+					compactRequiredStepNo: step.index,
 				};
 				return true;
 			}
 			return false;
 		},
+	};
+
+	// P3a: adapt the pi AgentEvent stream into WorkHub's per-step emit calls, in loop.ts's exact schema
+	// and field names, so the SSE frontend + trace recorder cannot tell which engine ran. Mapping:
+	//   message_update      → agentRunStep(kind:"stream_event")   incremental, throttled like loop.ts
+	//   message_end (asst)  → agentRunStep(kind: thinking|text|tool_call)   loop.ts emitAssistantTrace
+	//   tool_execution_end  → stepToolResult(tool_id/ok/is_error)  per tool
+	//   turn_end            → stepSnapshot (first snapshotId) then agentRunStep(control)  step summary
+	// Lifecycle events (started/compacting/escalated/failed) stay on the config/finalizeL3 side, so there
+	// is no double emit. Error/aborted turns are skipped (loop.ts throws before emitting their trace).
+	const isTerminalErrorTurn = (message: AgentMessage): boolean =>
+		isAssistant(message) && (message.stopReason === "error" || message.stopReason === "aborted");
+
+	const emitAssistantTrace = async (message: AssistantMessage): Promise<void> => {
+		for (const block of piAssistantContentToBlocks(message.content)) {
+			if (block.type === "thinking") {
+				await input.emit?.({
+					type: eventTypes.agentRunStep,
+					previewText: block.text.slice(0, 200),
+					data: { run_id: input.runId, step_no: sinkStepNo, kind: "thinking" },
+				});
+			} else if (block.type === "text") {
+				await input.emit?.({
+					type: eventTypes.agentRunStep,
+					previewText: block.text.slice(0, 200),
+					data: { run_id: input.runId, step_no: sinkStepNo, kind: "text" },
+				});
+			} else if (block.type === "tool_use") {
+				const inputPreview = previewUnknown(block.input);
+				await input.emit?.({
+					type: eventTypes.agentRunStep,
+					previewText: `${block.name} ${inputPreview}`.slice(0, 200),
+					data: { run_id: input.runId, step_no: sinkStepNo, kind: "tool_call", tool_id: block.name, input_preview: inputPreview },
+				});
+			}
+		}
+	};
+
+	const emitSink: AgentEventSink = async (event: AgentEvent): Promise<void> => {
+		switch (event.type) {
+			case "turn_start":
+				sinkStepNo += 1;
+				lastStreamEmitAt = 0; // reset per-step throttle (loop.ts callModel resets lastStreamEmitAt)
+				return;
+			case "message_update": {
+				const at = Date.now();
+				if (at - lastStreamEmitAt < STREAM_EMIT_THROTTLE_MS) return;
+				lastStreamEmitAt = at;
+				await input.emit?.({
+					type: eventTypes.agentRunStep,
+					previewText: previewPiStreamEvent(event.assistantMessageEvent),
+					data: {
+						run_id: input.runId,
+						step_no: sinkStepNo,
+						kind: "stream_event",
+						provider_event_type: piStreamEventType(event.assistantMessageEvent.type),
+					},
+				});
+				return;
+			}
+			case "message_end":
+				if (isAssistant(event.message) && !isTerminalErrorTurn(event.message)) await emitAssistantTrace(event.message);
+				return;
+			case "tool_execution_end": {
+				const workhub = extractWorkhubToolResult(event.result?.details);
+				const content = workhub ? workhub.content : piToolResultText(event.result);
+				const ok = workhub ? workhub.ok : !event.isError;
+				await input.emit?.({
+					type: eventTypes.stepToolResult,
+					previewText: content.slice(0, 200),
+					data: { run_id: input.runId, step_no: sinkStepNo, tool_id: event.toolName, ok, is_error: event.isError },
+				});
+				return;
+			}
+			case "turn_end": {
+				if (isTerminalErrorTurn(event.message)) return; // loop.ts throws before the step summary
+				const results = (event.toolResults as ToolResultMessage[]).map(toolResultFromMessage);
+				const snapshotId = results.find((result) => result.snapshotId)?.snapshotId;
+				if (snapshotId) {
+					await input.emit?.({
+						type: eventTypes.stepSnapshot,
+						previewText: "Snapshot captured",
+						data: { run_id: input.runId, step_no: sinkStepNo, snapshot_id: snapshotId },
+					});
+				}
+				if (isAssistant(event.message)) {
+					const blocks = piAssistantContentToBlocks(event.message.content);
+					await input.emit?.({
+						type: eventTypes.agentRunStep,
+						previewText: textFromBlocks(blocks).slice(0, 200),
+						data: {
+							run_id: input.runId,
+							step_no: sinkStepNo,
+							control: controlFromAssistant(blocks, toWorkhubStopReason(event.message.stopReason)),
+						},
+					});
+				}
+				return;
+			}
+			default:
+				return;
+		}
 	};
 
 	await input.emit?.({
@@ -492,7 +705,7 @@ export async function runAgentLoop2(input: AgentLoopInput): Promise<AgentLoopRes
 		[promptMessage],
 		context,
 		config,
-		() => {},
+		emitSink,
 		runController.signal,
 		streamFn,
 	);
@@ -509,11 +722,22 @@ export async function runAgentLoop2(input: AgentLoopInput): Promise<AgentLoopRes
 
 	if (escalation) {
 		const handoff = buildStructuredHandoff({ steps, budgetHit: escalation.budgetHit, reason: escalation.handoffReason });
-		await input.emit?.({
-			type: eventTypes.agentRunEscalated,
-			previewText: escalation.handoffReason,
-			data: { run_id: input.runId, handoff },
-		});
+		// compact_required (text-only max_tokens with compaction budget spent) emits agentRunCompacting
+		// with the truncated step's index — mirroring loop.ts, which does NOT emit agentRunEscalated for
+		// this path. Every other escalation (doom/budget/compact_budget_exhausted) emits agentRunEscalated.
+		if (escalation.compactRequiredStepNo !== undefined) {
+			await input.emit?.({
+				type: eventTypes.agentRunCompacting,
+				previewText: escalation.handoffReason,
+				data: { run_id: input.runId, step_no: escalation.compactRequiredStepNo, handoff },
+			});
+		} else {
+			await input.emit?.({
+				type: eventTypes.agentRunEscalated,
+				previewText: escalation.handoffReason,
+				data: { run_id: input.runId, handoff },
+			});
+		}
 		return toAgentLoopResult({
 			messages: transcript,
 			usage,

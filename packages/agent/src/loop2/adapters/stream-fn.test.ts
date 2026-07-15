@@ -229,6 +229,97 @@ test("an aborted request produces an aborted stopReason", async () => {
 	assert.equal(final.stopReason, "aborted");
 });
 
+// --- transient retry --------------------------------------------------------
+
+test("retry: transient failure retries after onRetry, success on the second attempt", async () => {
+	let attempts = 0;
+	const retryInfos: { attempt: number; reason: string; delayMs: number }[] = [];
+	const client: ProviderStreamClient = {
+		messages: {
+			create: async () => {
+				attempts += 1;
+				if (attempts === 1) throw Object.assign(new Error("rate limited"), { status: 429 });
+				return {
+					id: "msg-r",
+					content: [{ type: "text", text: "recovered" }],
+					usage: { inputTokens: 1, outputTokens: 1 },
+					stopReason: "end_turn",
+				} satisfies LlmCreateResponse;
+			},
+		},
+	};
+	const streamFn = createProviderStreamFn({
+		client,
+		retry: { baseDelayMs: 1, maxDelayMs: 10, onRetry: (info) => void retryInfos.push(info) },
+	});
+	const { events, final } = await drive(streamFn(model(), ctx(), {}) as AssistantMessageEventStream);
+	assert.equal(attempts, 2, "retried exactly once");
+	assert.deepEqual(retryInfos, [{ attempt: 1, reason: "transient", delayMs: 1 }]);
+	assert.equal(final.stopReason, "stop");
+	// Stream protocol integrity across attempts: exactly one start, one terminal done.
+	assert.equal(events.filter((e) => e.type === "start").length, 1);
+	assert.equal(events.at(-1)?.type, "done");
+});
+
+test("retry: retries exhaust after nextRetryDecision maxAttempts, then a single error terminal", async () => {
+	let attempts = 0;
+	const client: ProviderStreamClient = {
+		messages: {
+			create: async () => {
+				attempts += 1;
+				throw Object.assign(new Error("upstream 500"), { status: 500 });
+			},
+		},
+	};
+	const streamFn = createProviderStreamFn({ client, retry: { baseDelayMs: 1, maxDelayMs: 10 } });
+	const { events, final } = await drive(streamFn(model(), ctx(), {}) as AssistantMessageEventStream);
+	assert.equal(attempts, 4, "initial attempt + 3 retries (nextRetryDecision maxAttempts=3)");
+	assert.equal(final.stopReason, "error");
+	assert.match(final.errorMessage ?? "", /upstream 500/);
+	assert.equal(events.filter((e) => e.type === "error").length, 1, "exactly one terminal event");
+});
+
+test("retry: abort during the backoff sleep interrupts immediately with an aborted terminal", async () => {
+	const controller = new AbortController();
+	let attempts = 0;
+	const client: ProviderStreamClient = {
+		messages: {
+			create: async () => {
+				attempts += 1;
+				throw Object.assign(new Error("rate limited"), { status: 429 });
+			},
+		},
+	};
+	const streamFn = createProviderStreamFn({
+		client,
+		// A huge backoff: if the abort did NOT interrupt the sleep, this test would hang for 60s.
+		retry: { baseDelayMs: 60_000, maxDelayMs: 60_000, onRetry: () => controller.abort() },
+	});
+	const startedAt = Date.now();
+	const { final } = await drive(streamFn(model(), ctx(), { signal: controller.signal }) as AssistantMessageEventStream);
+	assert.equal(attempts, 1, "no second attempt after the abort");
+	assert.equal(final.stopReason, "aborted");
+	assert.ok(Date.now() - startedAt < 5_000, "the backoff sleep was interrupted, not waited out");
+});
+
+test("retry: a fired run signal is never retried even for a retryable status", async () => {
+	const controller = new AbortController();
+	controller.abort();
+	let attempts = 0;
+	const client: ProviderStreamClient = {
+		messages: {
+			create: async () => {
+				attempts += 1;
+				throw Object.assign(new Error("rate limited"), { status: 429 });
+			},
+		},
+	};
+	const streamFn = createProviderStreamFn({ client, retry: { baseDelayMs: 1, maxDelayMs: 10 } });
+	const { final } = await drive(streamFn(model(), ctx(), { signal: controller.signal }) as AssistantMessageEventStream);
+	assert.equal(attempts, 1);
+	assert.equal(final.stopReason, "aborted");
+});
+
 // --- side-channel isolation ----------------------------------------------
 
 test("attach/readWorkhubUsage do not mutate the message object", () => {
