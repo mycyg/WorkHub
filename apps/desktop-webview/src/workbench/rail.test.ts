@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { ConversationVM, ProjectListItemVM, WorkbenchPageVM } from "@workhub/contracts";
+import type { ConversationVM, DmListItemVM, ProjectListItemVM, WorkbenchPageVM } from "@workhub/contracts";
 
 import {
   appendCollabConversationToVm,
@@ -12,6 +12,9 @@ import {
   renameCollabConversation,
   renameCollabConversationInVm,
   renderArmyOverviewNavHtml,
+  renderDmGroupHtml,
+  renderRosterGroupHtml,
+  sortRosterMembers,
   renderNewPersonalSpaceModalHtml,
   renderNewCollabModalHtml,
   renderNewProjectModalHtml,
@@ -816,4 +819,101 @@ test("renameCollabConversation PATCHes /api/conversations/:id with the new title
   assert.equal(calls[0]?.init?.method, "PATCH");
   assert.deepEqual(JSON.parse(calls[0]?.init?.body as string), { title: "改第三幕" });
   assert.equal(result.conversation.title, "改第三幕");
+});
+
+// —— R15 批 B（人对人私聊）：成员 roster + 私聊分组 —— //
+
+const R15_SELF = "90000000-0000-4000-8000-000000000009";
+const R15_PEER_A = "90000000-0000-4000-8000-0000000000a1";
+const R15_PEER_B = "90000000-0000-4000-8000-0000000000a2";
+
+function rosterMember(userId: string, nickname: string, isSelf = false) {
+  return { user_id: userId, nickname, membership_role: "member" as const, is_project_owner: false, is_self: isSelf };
+}
+
+function r15DmItem(conversationId: string, peerId: string, peerNickname: string): DmListItemVM {
+  return {
+    conversation: {
+      id: conversationId,
+      workspace_id: "90000000-0000-4000-8000-000000000000",
+      project_id: "20000000-0000-4000-8000-000000000009",
+      kind: "collab",
+      title: "私聊",
+      parent_conversation_id: null,
+      source_message_id: null,
+      visibility: "private",
+      next_seq: 0,
+      created_by: R15_SELF,
+      participant_role: "owner",
+      cuu_enabled: false,
+      is_dm: true,
+      created_at: "2026-07-15T08:30:00.123Z",
+      updated_at: "2026-07-15T08:31:00.123Z"
+    },
+    participants: [
+      { user_id: R15_SELF, nickname: "阿曼", is_self: true },
+      { user_id: peerId, nickname: peerNickname, is_self: false }
+    ]
+  };
+}
+
+test("sortRosterMembers excludes self and puts online members first (stable within a status)", () => {
+  const members = [
+    rosterMember(R15_SELF, "阿曼", true),
+    rosterMember(R15_PEER_A, "甲", false),
+    rosterMember(R15_PEER_B, "乙", false)
+  ];
+  const sorted = sortRosterMembers(members, R15_SELF, new Set([R15_PEER_B]));
+  // 自己被排除；在线的乙排前，离线的甲在后。
+  assert.deepEqual(sorted.map((m) => m.user_id), [R15_PEER_B, R15_PEER_A]);
+});
+
+test("renderRosterGroupHtml renders a Members group with per-member profile hooks + online dots, no self", () => {
+  const html = renderRosterGroupHtml({
+    members: [rosterMember(R15_SELF, "阿曼", true), rosterMember(R15_PEER_A, "甲", false)],
+    currentUserId: R15_SELF,
+    onlineUserIds: new Set([R15_PEER_A]),
+    locale: "zh-CN"
+  });
+  assert.match(html, /成员/);
+  // 每个非自己成员一行，带 data-wb-open-profile（点行开资料卡）。
+  assert.match(html, /data-wb-open-profile="90000000-0000-4000-8000-0000000000a1"/);
+  // 自己不出现在 roster。
+  assert.doesNotMatch(html, /data-wb-open-profile="90000000-0000-4000-8000-000000000009"/);
+  // 在线成员画绿点（avatarTileHtml 的 online dot）。
+  assert.match(html, /wh-wb-chat-avatar-dot/);
+});
+
+test("renderRosterGroupHtml renders nothing when there is no VM member data (no empty shell)", () => {
+  assert.equal(renderRosterGroupHtml({ members: [], currentUserId: undefined, onlineUserIds: new Set(), locale: "zh-CN" }), "");
+});
+
+test("renderDmGroupHtml lists DMs with peer name + open hook, marking the active one", () => {
+  const html = renderDmGroupHtml({
+    dmList: [r15DmItem("30000000-0000-4000-8000-000000000031", R15_PEER_A, "甲")],
+    currentUserId: R15_SELF,
+    onlineUserIds: new Set([R15_PEER_A]),
+    activeDmConversationId: "30000000-0000-4000-8000-000000000031",
+    centerTab: "dm",
+    locale: "zh-CN"
+  });
+  assert.match(html, /私聊/);
+  assert.match(html, /data-wb-open-dm="30000000-0000-4000-8000-000000000031"/);
+  // 对方昵称，不是自己的昵称。
+  assert.match(html, /甲/);
+  // 活跃的 DM 行选中态。
+  assert.match(html, /wh-wb-dm-row sel/);
+  assert.match(html, /wh-wb-chat-avatar-dot/);
+});
+
+test("renderDmGroupHtml shows a faint empty-state hint when there are no DMs", () => {
+  const html = renderDmGroupHtml({
+    dmList: [],
+    currentUserId: R15_SELF,
+    onlineUserIds: new Set(),
+    centerTab: "chat",
+    locale: "zh-CN"
+  });
+  assert.match(html, /点成员头像发起私聊/);
+  assert.doesNotMatch(html, /data-wb-open-dm/);
 });
