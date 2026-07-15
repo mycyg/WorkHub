@@ -1,12 +1,12 @@
 // R14 批 SEARCH 真库冒烟（一次性可复跑验证脚本，照 r14-chat-smoke.ts / r12-real-key-smoke.ts 的定位与防呆惯例）：
-// 在专用 scratch 库上跑完整迁移链（含 0057 pg_trgm + 5 GIN 索引）后，直接种四数据源 + 一个「他人的个人空间
-// 项目」作围栏反例，再用 search 服务把四 scope 全过一遍——断言命中、墓碑滤除、个人空间围栏、assignee EXISTS、
-// CJK 2 字/≥3 字、has_more、LIKE 元字符转义、空结果诚实。不需要 LLM key。
-// 需要环境：DATABASE_URL（专用 scratch 库！命名必须匹配 workhub_r14_*smoke）。
+// 在自建唯一命名的 scratch 库上跑完整迁移链（含 0057 pg_trgm + 5 GIN 索引）后，直接种四数据源 + 一个「他人的
+// 个人空间项目」作围栏反例，再用 search 服务把四 scope 全过一遍——断言命中、墓碑滤除、个人空间围栏、assignee
+// EXISTS、CJK 2 字/≥3 字、has_more、LIKE 元字符转义、空结果诚实。不需要 LLM key。
+// 需要环境：DATABASE_URL（workhub_r14_*smoke 命名的锚库，只用来建/删唯一库）；smoke 每次 CREATE 唯一库、
+// 结束 DROP——chat smoke 先写过「完播率」消息也污染不到这里的固定命中数断言。
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
-import { loadSettings } from "@workhub/config";
 import {
   conversationMessages,
   createDatabaseClient,
@@ -28,16 +28,14 @@ import {
 
 import type { AuthActor } from "../middleware/auth.js";
 import { createSearchService } from "../services/search.js";
+import { withR14SmokeDatabase, type R14SmokeSettings } from "./r14-smoke-db.js";
 
 async function main() {
-  const settings = loadSettings(process.env);
-  if (settings.appEnv === "production") {
-    throw new Error("Refusing to run the R14 search smoke in production.");
-  }
-  if (!/workhub_r14_[a-z0-9_]*smoke/u.test(settings.databaseUrl)) {
-    throw new Error("R14 search smoke requires a dedicated workhub_r14_*smoke scratch database.");
-  }
+  await withR14SmokeDatabase("search", runSearchSmoke);
+  process.exit(0);
+}
 
+async function runSearchSmoke(settings: R14SmokeSettings) {
   await runMigrations(settings);
   const client = createDatabaseClient(settings);
   const db = client.db;
@@ -239,7 +237,6 @@ async function main() {
     })
   );
   await client.close?.();
-  process.exit(0);
 }
 
 main().catch((error) => {

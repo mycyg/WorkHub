@@ -942,13 +942,15 @@ test("real-key evaluation wires the provider registry into WorkItem clarificatio
   assert.deepEqual(await options.projectFileContext?.({ intentText: "没有预置文件的任务" }), []);
 });
 
-test("real-key evaluation answers AI clarification with free text before applying task presets", () => {
-  const payload = createR5_10ClarificationAnswerPayload("请优先输出适合项目验收的要点。");
+test("real-key evaluation answers AI clarification per the R10 option-first contract", () => {
+  // long_text 诚实退化：只带 free_text，绝不携带任务预设 option id。
+  const freeTextOnly = createR5_10ClarificationAnswerPayload("请优先输出适合项目验收的要点。");
+  assert.deepEqual(freeTextOnly, { free_text: "请优先输出适合项目验收的要点。" });
+  assert.equal(Object.hasOwn(freeTextOnly, "selected_option_ids"), false);
 
-  // R9.7: the old assertion grepped request-body source around `/next-question`.
-  // That was wrong because source text did not prove the clarification payload omits preset option ids.
-  assert.deepEqual(payload, { free_text: "请优先输出适合项目验收的要点。" });
-  assert.equal(Object.hasOwn(payload, "selected_option_ids"), false);
+  // single_choice option-first：选中服务端问题卡给出的真实候选 id，free_text 仍携带确认语。
+  const optionFirst = createR5_10ClarificationAnswerPayload("确认按该口径执行。", "option-2");
+  assert.deepEqual(optionFirst, { selected_option_ids: ["option-2"], free_text: "确认按该口径执行。" });
 });
 
 test("real-key evaluation labels limited samples instead of applying full-suite gates", () => {

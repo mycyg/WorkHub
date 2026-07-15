@@ -98,6 +98,7 @@ type ClarificationQuestionEvidence = {
   body?: string;
   input_mode: string;
   options?: { id?: string; label?: string }[];
+  recommended_option_ids?: string[];
 };
 
 type EvalClarificationFileContext = {
@@ -193,6 +194,7 @@ type EvalTaskReport = {
     title: string;
     body: string | null;
     option_count: number;
+    selected_option_id: string | null;
     answer: string;
   };
   artifacts: {
@@ -317,11 +319,25 @@ function clarificationAnswerFor(task: EvalTask) {
 
 function assertRealClarificationQuestion(task: EvalTask, question: ClarificationQuestionEvidence) {
   const options = question.options ?? [];
-  if (question.input_mode !== "long_text") {
-    throw new Error(`${task.id} expected AI clarification to request free text, got ${question.input_mode}.`);
-  }
-  if (options.length > 0) {
-    throw new Error(`${task.id} expected AI clarification to avoid preset choices, got ${options.length} options.`);
+  // R10-0c（P1-1）option-first 契约：LLM 草稿带 ≥2 个候选答案时渲 single_choice 选项卡（自由文本折叠兜底）；
+  // 没有可用候选时诚实退化为 long_text（不造假选项）。两种形态都必须是「真问题」，反模板门在下方保留。
+  if (question.input_mode === "single_choice") {
+    if (options.length < 2) {
+      throw new Error(`${task.id} option-first clarification must offer at least 2 candidates, got ${options.length}.`);
+    }
+    const ids = options.map((option) => option.id ?? "");
+    if (ids.some((id) => !id.trim()) || new Set(ids).size !== ids.length) {
+      throw new Error(`${task.id} option-first clarification has empty or duplicated option ids.`);
+    }
+    if (options.some((option) => !(option.label ?? "").trim())) {
+      throw new Error(`${task.id} option-first clarification has an empty option label.`);
+    }
+  } else if (question.input_mode === "long_text") {
+    if (options.length > 0) {
+      throw new Error(`${task.id} long_text degradation must not fabricate preset choices, got ${options.length} options.`);
+    }
+  } else {
+    throw new Error(`${task.id} expected single_choice (option-first) or long_text clarification, got ${question.input_mode}.`);
   }
   const combined = `${question.title}\n${question.body ?? ""}`.toLowerCase();
   const genericPresetCount = [
@@ -889,10 +905,16 @@ async function main() {
       const clarificationQuestion = session.data.question;
       assertRealClarificationQuestion(task, clarificationQuestion);
       const clarificationAnswer = clarificationAnswerFor(task);
+      // option-first 时选中真实候选（优先推荐项，否则第一项）；long_text 退化时只带 free_text。
+      const clarificationOptions = clarificationQuestion.options ?? [];
+      const recommendedOptionId = clarificationQuestion.recommended_option_ids?.[0];
+      const selectedClarificationOptionId = clarificationQuestion.input_mode === "single_choice"
+        ? clarificationOptions.find((option) => option.id === recommendedOptionId)?.id ?? clarificationOptions[0]?.id
+        : undefined;
       await requestJson(
         "POST",
         `/api/sessions/${session.data.session_id}/next-question`,
-        createR5_10ClarificationAnswerPayload(clarificationAnswer),
+        createR5_10ClarificationAnswerPayload(clarificationAnswer, selectedClarificationOptionId),
         200
       );
       const createdWorkItem = await requestJson<{ data: { workitem: { id: string; status: string } } }>("POST", "/api/workitems", {
@@ -1086,6 +1108,7 @@ async function main() {
           title: clarificationQuestion.title,
           body: clarificationQuestion.body ?? null,
           option_count: clarificationQuestion.options?.length ?? 0,
+          selected_option_id: selectedClarificationOptionId ?? null,
           answer: clarificationAnswer
         },
         artifacts: {

@@ -110,8 +110,13 @@ export function createR5_10WorkItemServiceOptions(
   };
 }
 
-export function createR5_10ClarificationAnswerPayload(clarificationAnswer: string) {
-  return { free_text: clarificationAnswer };
+export function createR5_10ClarificationAnswerPayload(clarificationAnswer: string, selectedOptionId?: string) {
+  // R10 option-first 契约：有候选时选中一个真实候选——id 只能来自服务端问题卡，绝不是任务预设；
+  // free_text 始终携带确认语（诚实退化成 long_text 时它就是全部答案）。
+  return {
+    ...(selectedOptionId ? { selected_option_ids: [selectedOptionId] } : {}),
+    free_text: clarificationAnswer
+  };
 }
 
 export function selectR5_10TasksForRun<T>(allTasks: readonly T[], rawTaskLimit: string | undefined) {

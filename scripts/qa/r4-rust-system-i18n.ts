@@ -23,15 +23,8 @@ type Report = {
 };
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const outputDir = path.join(
-  repoRoot,
-  "docs",
-  "workhub",
-  "05-clients",
-  "assets",
-  "audit",
-  "2026-06-11-r4-rust-system-i18n"
-);
+// 生成型审计产物落 gitignored artifacts 区,不改写 tracked 文件——verify 末尾有 git diff --exit-code 门。
+const outputDir = path.join(repoRoot, "artifacts", "qa", "r4-rust-system-i18n");
 
 const sources = {
   locale: path.join(repoRoot, "client-tauri", "src-tauri", "src", "locale.rs"),

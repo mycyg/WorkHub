@@ -11,6 +11,7 @@ import type {
   AttentionHomeVM,
   CostDashboardVM,
   GoldPathSurfaceVM,
+  ProjectListVM,
   ProposalDetailVM,
   ReplayTraceVM,
   WorkHubLocale,
@@ -74,15 +75,8 @@ type ProductShellReport = {
 };
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const outputDir = path.join(
-  repoRoot,
-  "docs",
-  "workhub",
-  "05-clients",
-  "assets",
-  "audit",
-  "2026-06-11-r4-web-product-shell-baseline"
-);
+// 生成型审计产物落 gitignored artifacts 区,不改写 tracked 文件——可复跑且 git diff --exit-code 干净。
+const outputDir = path.join(repoRoot, "artifacts", "qa", "r4-web-product-shell-baseline");
 
 const cases: ProductShellCase[] = [
   {
@@ -225,6 +219,35 @@ function fakeRouteClient(surface: GoldPathSurfaceVM) {
         return surface.page_vms.proposal;
       }
     },
+    // home loader 与 attention 并行拉项目清单——fake 必须与生产 PageClient 契约一致(照抄 routes.test.ts 的 fake)。
+    async listProjects(): Promise<ProjectListVM> {
+      calls.push("listProjects");
+      return {
+        generated_at: "2026-06-11T09:00:00.000Z",
+        projects: [
+          {
+            id: "93000000-0000-4000-8000-000000000001",
+            name: "R5 Workspace",
+            slug: "r5-workspace",
+            owner_nickname: "owner",
+            archived: false,
+            created_at: "2026-06-11T08:00:00.000Z",
+            updated_at: "2026-06-11T09:00:00.000Z",
+            open_work_item_count: 1
+          },
+          {
+            id: "93000000-0000-4000-8000-000000000099",
+            name: "R5 Secondary",
+            slug: "r5-secondary",
+            owner_nickname: "owner",
+            archived: false,
+            created_at: "2026-06-10T08:00:00.000Z",
+            updated_at: "2026-06-10T09:00:00.000Z",
+            open_work_item_count: 0
+          }
+        ]
+      };
+    },
     async listWorkItemConflicts(workItemId: string) {
       localeCall(`conflicts:${workItemId}`);
       return { conflicts: [], empty_state: "no_conflicts" as const };
@@ -323,8 +346,8 @@ ${input.html}
     cuuLeak: /\\bCuu\\b/i.test(text) || Boolean(document.querySelector("[data-cuu]")),
     kanbanLeak: /\\bkanban\\b/i.test(text),
     weeklyFixtureLeak: /客户周报|weekly report/i.test(text),
-    zhChrome: text.includes("工作入口") && text.includes("当前焦点"),
-    enChrome: text.includes("Work entry") && text.includes("Focus"),
+    zhChrome: text.includes("提需求") && text.includes("总览"), // Nav-v2(R10)后的固定外壳锚点:CTA+首个导航项
+    enChrome: text.includes("New request") && text.includes("Overview"),
     clientWidth: document.documentElement.clientWidth,
     scrollWidth: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth),
     navClientWidth,

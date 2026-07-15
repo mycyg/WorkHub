@@ -364,15 +364,8 @@ type RouteStatusProbe = {
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "../../..");
 const webRoot = path.join(repoRoot, "apps", "web");
-const defaultOutputDir = path.join(
-  repoRoot,
-  "docs",
-  "workhub",
-  "05-clients",
-  "assets",
-  "audit",
-  "2026-06-11-r4-web-live-route-interaction"
-);
+// 生成型审计产物落 gitignored artifacts 区:失败中断时删掉的只是生成物,tracked 历史证据不受影响。
+const defaultOutputDir = path.join(repoRoot, "artifacts", "qa", "r4-web-live-route-interaction");
 const r4ReactComponentByRoute: Record<string, string> = {
   home: "HomeRouteComponent",
   proposal: "ProposalRouteComponent",

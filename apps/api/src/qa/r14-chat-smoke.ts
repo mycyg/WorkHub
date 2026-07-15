@@ -1,12 +1,12 @@
 // R14 批 CHAT 真库冒烟（一次性可复跑验证脚本，照 r12-real-key-smoke.ts 的定位与防呆惯例）：
-// 在专用 scratch 库上跑完整迁移链后，走服务层把聊天完整度的全链路过一遍——
+// 在自建唯一命名的 scratch 库上跑完整迁移链后，走服务层把聊天完整度的全链路过一遍——
 // 引用回复→编辑（含他人编辑 403）→reaction 幂等加减→置顶/取消→已读游标单调夹紧+receipts→
 // 墓碑删除（含引用侧墓碑联动）→SSE 事件（recording bus 断言三个新事件都真的发布了）。
-// 不需要 LLM key。需要环境：DATABASE_URL（专用 scratch 库！命名必须匹配 workhub_r14_*smoke）。
+// 不需要 LLM key。需要环境：DATABASE_URL（workhub_r14_*smoke 命名的锚库，只用来建/删唯一库）；
+// smoke 每次 CREATE 唯一库、结束 DROP——与 search 等其他真库 smoke 互不污染。
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
-import { loadSettings } from "@workhub/config";
 import {
   createConversationRepository,
   createDatabaseClient,
@@ -21,16 +21,14 @@ import {
 } from "@workhub/db";
 
 import { createConversationService } from "../services/conversations.js";
+import { withR14SmokeDatabase, type R14SmokeSettings } from "./r14-smoke-db.js";
 
 async function main() {
-  const settings = loadSettings(process.env);
-  if (settings.appEnv === "production") {
-    throw new Error("Refusing to run the R14 chat smoke in production.");
-  }
-  if (!/workhub_r14_[a-z0-9_]*smoke/u.test(settings.databaseUrl)) {
-    throw new Error("R14 chat smoke requires a dedicated workhub_r14_*smoke scratch database.");
-  }
+  await withR14SmokeDatabase("chat", runChatSmoke);
+  process.exit(0);
+}
 
+async function runChatSmoke(settings: R14SmokeSettings) {
   await runMigrations(settings);
   const client = createDatabaseClient(settings);
   const db = client.db;
@@ -222,7 +220,6 @@ async function main() {
     })
   );
   await client.close?.();
-  process.exit(0);
 }
 
 main().catch((error) => {

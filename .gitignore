@@ -1,6 +1,9 @@
 # 参考代码:仅本地保留,绝不入库(当前项目源码 + opencode)
 /reference/
 
+# 生成型 QA 审计产物(报告/截图):可复跑生成,绝不入库——verify 末尾以 git diff --exit-code 保证干净
+/artifacts/
+
 # 依赖与构建产物
 node_modules/
 dist/
