@@ -18,6 +18,8 @@ import { mountArmyContextPanel, type ArmyContextPanelApiClient, type ArmyContext
 import { renderArmySidePanelIdleHtml } from "./army/render.js";
 import { mountChatView, type ChatViewApiClient, type ChatViewHandle } from "./chat/view.js";
 import { workbenchCss } from "./css.js";
+import { dmMembersFromParticipants, dmPeerParticipant, fetchDmList, openDirectMessage, upsertDmListItem } from "./dm.js";
+import { mountProfilePopover, type ProfilePopoverHandle } from "./profile-popover.js";
 import { mountDriveSidePanel, type DriveSidePanelApiClient, type DriveSidePanelHandle } from "./drive/side-panel.js";
 import { mountDriveView, type DriveTabApiClient, type DriveViewHandle } from "./drive/view.js";
 import { workbenchIcons } from "./icons.js";
@@ -188,6 +190,8 @@ export type WorkbenchShellHandle = {
   store: WorkbenchStore;
   // 选中项目（rail 点击 / Spotlight「打开工作台」/ 深链三路共用）。conversationId 目前只落库，批 2 起消费。
   selectProject: (projectId: string, conversationId?: string) => void;
+  // R15 批 B（人对人私聊）：按会话直开一条 DM（rail 私聊行 / 头像资料卡「发私聊」/ 未来 DM 深链共用）。
+  openDmConversation: (conversationId: string) => void;
   // G-desktop 止血批 3：跨窗口登出广播——boot.ts 在两处调用它：①mount 那一刻标记本来就已登出
   // （isWorkbenchDesktopLoggedOut() 为真）；②运行中收到其它窗口发起的 workhub-logged-out 广播。
   // 幂等：已经在登出态再调一次是安全的空操作。
@@ -326,6 +330,63 @@ export function mountWorkbenchShell(
     proposalPanel.clear();
   };
 
+  // ── R15 批 B（人对人私聊）：DM 的「按会话直开」路径 ─────────────────────────────────────
+  // DM 容器项目对项目树/工作台 VM 全线围栏（findWorkbenchAccess fail-closed），DM 会话不经 selectProject
+  // /workbench VM（那条路径会去拉容器 VM 拿到 404）。改走：store.dmList 里那条 DmListItemVM 本身就带了
+  // 会话（含容器 project_id/cuu_enabled）+ 两名参与者（含对方昵称）——chat 视图挂载只用得到 conversationId
+  // （消息/已读/presence/turns 全是会话级端点 /api/conversations/:id/*，与容器项目无关）+ 真实参与者集合
+  // （已读 N/M 的分母因此收敛成 1/1，而不是拿全工作区成员）。
+  let dmListRequestGen = 0;
+  const ensureDmListLoaded = () => {
+    const my = ++dmListRequestGen;
+    return fetchDmList(input.client)
+      .then((result) => {
+        if (disposed || my !== dmListRequestGen) {
+          return;
+        }
+        const selfFromDm = result.items
+          .flatMap((item) => item.participants)
+          .find((participant) => participant.is_self)?.user_id;
+        store.setState({
+          dmList: result.items,
+          dmListLoad: "ready",
+          ...(store.getState().currentUserId === undefined && selfFromDm ? { currentUserId: selfFromDm } : {})
+        });
+      })
+      .catch(() => {
+        if (disposed || my !== dmListRequestGen) {
+          return;
+        }
+        store.setState({ dmListLoad: "error" });
+      });
+  };
+
+  const openDmConversation = (conversationId: string) => {
+    store.setState({ centerTab: "dm", activeDmConversationId: conversationId });
+    // 列表里还没有这条（深链冷启动 / rail 还没拉完）——后台补一次列表，renderCenter 的 dm 分支此刻先渲
+    // loading，列表回来后 store 通知会重挂上真视图。
+    if (!store.getState().dmList.some((dm) => dm.conversation.id === conversationId)) {
+      void ensureDmListLoaded();
+    }
+  };
+
+  // 深链兜底：某个 conversationId 是不是一条（本 actor 参与的）DM——是就直开，返回是否命中。
+  const tryOpenDmByConversationId = async (conversationId: string): Promise<boolean> => {
+    if (store.getState().dmList.some((dm) => dm.conversation.id === conversationId)) {
+      openDmConversation(conversationId);
+      return true;
+    }
+    await ensureDmListLoaded();
+    if (disposed) {
+      return false;
+    }
+    if (store.getState().dmList.some((dm) => dm.conversation.id === conversationId)) {
+      openDmConversation(conversationId);
+      return true;
+    }
+    return false;
+  };
+
   const selectProject = (projectId: string, conversationId?: string) => {
     // G-desktop 止血批 3：本窗正显示「已登出」整窗态时，任何想让它去拉数据的调用（rail 点击/深链/
     // 冷启动兜底,见 boot.ts 的三路调用方）都先在这里截住——不能顺着往下发一个带废 token 的请求。
@@ -338,6 +399,12 @@ export function mountWorkbenchShell(
       if (!isDesktopLoggedOutFlagSet(doc.defaultView?.localStorage)) {
         doc.defaultView?.location.reload();
       }
+      return;
+    }
+    // R15 批 B（人对人私聊）：深链/调用方给的 conversationId 已知是一条 DM（容器项目被围栏，走不了 VM
+    // 路径）——直开这条 DM，不去拉容器 VM（会 404）。列表还没加载时，交给下面 VM 404 的 .catch 兜底。
+    if (conversationId && store.getState().dmList.some((dm) => dm.conversation.id === conversationId)) {
+      openDmConversation(conversationId);
       return;
     }
     const my = ++vmRequestGen;
@@ -386,11 +453,32 @@ export function mountWorkbenchShell(
           vm,
           vmLoad: "ready",
           pendingConversationId: undefined,
+          // R15 批 B：VM 就绪时记住 viewer——头像资料卡判自己 / roster 排除自己 / presence 排除自己都用它。
+          currentUserId: vm.viewer.user_id,
           ...(pendingCollab ? { centerTab: "collab" as const, activeConversationId: pendingCollab.id } : {})
         });
       })
       .catch((error) => {
         if (disposed || my !== vmRequestGen) {
+          return;
+        }
+        // R15 批 B（深链兜底）：容器项目被围栏，DM 深链会走到这里的 404——若 pending 会话其实是一条 DM，
+        // 直开它而不是报「打不开工作台」。不是 DM 才落到真错误态。
+        const pendingId = store.getState().pendingConversationId;
+        if (pendingId) {
+          void tryOpenDmByConversationId(pendingId).then((opened) => {
+            if (disposed || my !== vmRequestGen) {
+              return;
+            }
+            if (opened) {
+              store.setState({ pendingConversationId: undefined });
+              return;
+            }
+            store.setState({
+              vmLoad: "error",
+              vmError: error instanceof Error ? error.message : String(error)
+            });
+          });
           return;
         }
         store.setState({
@@ -424,6 +512,61 @@ export function mountWorkbenchShell(
       return;
     }
     disposeArmyOverview();
+    // R15 批 B（人对人私聊）：DM 走「按会话直开」——不依赖 selectedProjectId/vm（容器项目被围栏），必须
+    // 在下面的空态/VM 判断之前拦下。数据全在 store.dmList 里那条 DmListItemVM（会话 + 两名参与者）。
+    if (state.centerTab === "dm") {
+      disposeDrive();
+      disposeProjectSettings();
+      clearContextPanels();
+      const dm = state.dmList.find((item) => item.conversation.id === state.activeDmConversationId);
+      if (!dm) {
+        // 列表还没拉到这条（深链冷启动 / 刚发起）——诚实渲染 loading，列表回来后 store 通知会重挂真视图。
+        disposeChat();
+        centerEl.className = "wh-wb-center";
+        centerEl.innerHTML = renderCenterLoadingHtml(input.locale);
+        return;
+      }
+      const key = `dm:${dm.conversation.id}`;
+      if (chatHandle && chatMountKey === key) {
+        return; // 已经是这条 DM 的 chat 视图，无需重挂。
+      }
+      disposeChat();
+      const zh = input.locale === "zh-CN";
+      const currentUserId = state.currentUserId ?? dm.participants.find((p) => p.is_self)?.user_id ?? "";
+      // DM 的成员集合 = 两名真实参与者——已读 N/M 的分母因此收敛成 1/1（见 dm.ts dmMembersFromParticipants）。
+      const members = dmMembersFromParticipants(dm);
+      const peer = dmPeerParticipant(dm, currentUserId);
+      centerEl.className = "wh-wb-center wh-wb-center--chat";
+      chatHandle = mountChatView(centerEl, {
+        client: input.client,
+        locale: input.locale,
+        projectId: dm.conversation.project_id,
+        projectName: peer?.nickname ?? (zh ? "私聊" : "Direct message"),
+        conversationId: dm.conversation.id,
+        conversationKind: "collab",
+        // DM 头显示对方昵称 + 在线点（而非「N 位成员 + Cuu」的群聊条）。
+        isDm: true,
+        // DM 默认 cuu_enabled=false（B5 拍板）——chat 视图据此不自动请 Cuu 回话（不特判 DM，纯由
+        // cuu_enabled 驱动，见 view.ts 的 isCollabConversation）。
+        cuuEnabled: dm.conversation.cuu_enabled,
+        currentUserId,
+        members,
+        getClientToken,
+        streamUrl: input.client.streams.conversation(dm.conversation.id),
+        onConversationEvent: (raw: unknown) => {
+          void interruptBroadcaster?.handleRawConversationEvent(raw);
+        },
+        onOpenDriveFile: (fileInput) =>
+          driveSidePanel.showPreview({
+            projectId: dm.conversation.project_id,
+            itemId: fileInput.itemId,
+            itemName: fileInput.itemName
+          }),
+        onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId })
+      });
+      chatMountKey = key;
+      return;
+    }
     if (!state.selectedProjectId) {
       disposeChat();
       disposeDrive();
@@ -519,6 +662,9 @@ export function mountWorkbenchShell(
           projectName: vm.project.name,
           conversationId: collabConversation.id,
           conversationKind: "collab",
+          // R15 批 B：透传会话级 Cuu 硬开关（cuu_enabled=false 的协同会话不自动请 Cuu 回话，见
+          // view.ts 的 isCollabConversation）——additive，cuu_enabled=true 的既有会话行为不变。
+          cuuEnabled: collabConversation.cuu_enabled,
           currentUserId: vm.viewer.user_id,
           members: vm.workspace_members.items,
           getClientToken,
@@ -560,6 +706,9 @@ export function mountWorkbenchShell(
         projectName: vm.project.name,
         conversationId: mainConversation.id,
         conversationKind: "main",
+        // R15 批 B：透传会话级 Cuu 硬开关——团队主区 conversationKind=main 本就不自动 turn，个人空间单聊
+        // （下方 projectIsPersonal）随 cuu_enabled 决定，additive，既有默认 cuu_enabled=true 行为不变。
+        cuuEnabled: mainConversation.cuu_enabled,
         // R13 终验修复（个人空间单聊必回）：个人空间的 main 会话是 1:1 单聊，chat 视图放行 turn
         // 通道；数据源=左栏「我的空间」列表（GET /me/personal-projects），与团队项目列表互斥。
         projectIsPersonal: store.getState().personalProjects.some((project) => project.id === vm.project.id),
@@ -648,7 +797,54 @@ export function mountWorkbenchShell(
     onOpenArmyOverview: () => store.setState({ centerTab: "army-overview" }),
     // R13 批 P3：项目行「项目设置」齿轮点击路由——切 store.centerTab，renderCenter 的订阅回调
     // 负责挂 settings/view.ts 真视图（治理表单）。
-    onOpenProjectSettings: () => store.setState({ centerTab: "project-settings" })
+    onOpenProjectSettings: () => store.setState({ centerTab: "project-settings" }),
+    // R15 批 B（人对人私聊）：私聊分组某条 DM 被点开——直开这条 DM（renderCenter 的 "dm" 分支挂真视图）。
+    onOpenDmConversation: (conversationId) => openDmConversation(conversationId)
+  });
+
+  // R15 批 B（人对人私聊 · B4 点头像开聊）：统一头像资料卡——挂在外壳根，事件委托覆盖 rail/中栏所有头像。
+  // 「发私聊」→ POST /api/dm/open（openDirectMessage）→ 把返回的会话并进 store.dmList（对方昵称从资料卡
+  // 已知的 roster 补齐，openDm 只回会话本体）→ 直开 + 让 rail 重拉列表对齐服务端权威。
+  const profilePopoverHandle: ProfilePopoverHandle = mountProfilePopover(root, {
+    store,
+    locale: input.locale,
+    onOpenDm: (userId) => {
+      void openDirectMessage(input.client, userId)
+        .then((result) => {
+          if (disposed) {
+            return;
+          }
+          const state = store.getState();
+          const currentUserId = state.currentUserId ?? state.vm?.viewer.user_id;
+          const selfMember = state.vm?.workspace_members.items.find((member) => member.is_self);
+          const peerNickname =
+            state.vm?.workspace_members.items.find((member) => member.user_id === userId)?.nickname
+            ?? state.dmList.flatMap((dm) => dm.participants).find((p) => p.user_id === userId)?.nickname
+            ?? (input.locale === "zh-CN" ? "私聊" : "Direct message");
+          const selfUserId = currentUserId ?? selfMember?.user_id ?? result.conversation.created_by ?? "";
+          const item = {
+            conversation: result.conversation,
+            participants: [
+              {
+                user_id: selfUserId,
+                nickname: selfMember?.nickname ?? (input.locale === "zh-CN" ? "我" : "Me"),
+                is_self: true
+              },
+              { user_id: userId, nickname: peerNickname, is_self: false }
+            ]
+          };
+          store.setState({
+            dmList: upsertDmListItem(state.dmList, item),
+            ...(state.currentUserId === undefined && selfUserId ? { currentUserId: selfUserId } : {})
+          });
+          openDmConversation(result.conversation.id);
+          // 后台重拉列表：把服务端权威的参与者/顺序对齐（本地拼的那条只是让中栏能立刻挂上）。
+          railHandle.refreshDms();
+        })
+        .catch(() => {
+          // best-effort：开聊失败（如目标已不在工作区）静默——资料卡已关闭，不弹阻断式错误。
+        });
+    }
   });
 
   centerEl.addEventListener("click", (event) => {
@@ -719,6 +915,7 @@ export function mountWorkbenchShell(
     driveSidePanel.dispose();
     armyPanel.dispose();
     proposalPanel.dispose();
+    profilePopoverHandle.dispose();
   };
 
   // G-desktop 止血批 3：跨窗口登出广播落地处——见 WorkbenchShellHandle.showLoggedOut 顶部注释、
@@ -738,6 +935,7 @@ export function mountWorkbenchShell(
   return {
     store,
     selectProject,
+    openDmConversation,
     showLoggedOut,
     dispose: () => {
       if (disposed) {
