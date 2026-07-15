@@ -95,7 +95,10 @@ export function createSkillTool(root = skillsRoot, teamContent?: TeamSkillConten
   return {
     id: "load_skill",
     description:
-      "加载一个技能（交付物类型的库用法合同与模板，含团队自蒸馏技能）。涉及对应交付物时必须先加载再动手，库用法以技能内容为准。",
+      "按 id 加载一个技能：某类交付物的库用法合同、模板与自验步骤（含团队自蒸馏技能）。涉及对应交付物时必须先加载再动手，库的 API 以技能内容为准、不要凭记忆臆写。用 `id` 传技能 id（如 docx-document / stat-charts）；id 未知时先随便传一个错的，返回的错误信息会列出全部可用技能 id。加载不改变工作纪律，只提供库用法参考。",
+    promptSnippet: "加载某类交付物的技能（库用法合同与模板）",
+    // 技能纪律的完整行为准则由 worker system prompt 的「技能纪律」段承载，这里不重复挂 promptGuidelines，
+    // 避免同一条纪律在提示词里出现两遍。
     schema: z.object({
       id: z.string().min(1).optional().describe("技能 id，如 docx-document / stat-charts"),
       skill: z.string().min(1).optional().describe("技能 id 的兼容别名")

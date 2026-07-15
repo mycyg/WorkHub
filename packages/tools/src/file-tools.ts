@@ -183,7 +183,10 @@ export function createBuiltInFileTools(): AnyToolSpec[] {
   const tools = [
     tool({
       id: "list_files",
-      description: "List files inside the current WorkHub sandbox.",
+      description:
+        "List files and folders inside the WorkHub sandbox, recursively from a starting path (default the sandbox root). Directories are shown with a trailing slash. Output is capped at 200 entries; if you hit the cap, pass a more specific `path` to narrow the listing rather than expecting the whole tree. Use this to discover what is in inputs/ before reading and to confirm outputs/ after writing.",
+      promptSnippet: "List files and folders in the sandbox",
+      promptGuidelines: ["Use list_files to discover what exists before reading; do not guess file paths."],
       schema: pathInput,
       sideEffect: "none",
       async execute(input, ctx) {
@@ -195,7 +198,13 @@ export function createBuiltInFileTools(): AnyToolSpec[] {
     }),
     tool({
       id: "read_file",
-      description: "Read a UTF-8 text file inside the sandbox.",
+      description:
+        "Read a UTF-8 text file inside the sandbox. Pass `path` relative to the sandbox root, for example inputs/notes.md. Reads over 2MB are truncated to the first 2MB and marked [truncated]; when you need the omitted tail, re-read a narrower target or extract the span with run_command (grep / sed -n), because the run trace does not keep the full result. This reads text only — it cannot open binary files and does not accept glob patterns.",
+      promptSnippet: "Read a UTF-8 text file from the sandbox",
+      promptGuidelines: [
+        "Use read_file to inspect a file's contents instead of shelling out to cat or sed.",
+        "When read_file marks its output [truncated], continue with a narrower read or extract the needed span with run_command (grep / sed -n) rather than re-reading the whole file."
+      ],
       schema: readablePathInput,
       sideEffect: "none",
       async execute(input, ctx) {
@@ -230,7 +239,13 @@ export function createBuiltInFileTools(): AnyToolSpec[] {
     }),
     tool({
       id: "write_file",
-      description: "Write a UTF-8 text file inside the sandbox.",
+      description:
+        "Write a UTF-8 text file inside the sandbox, creating parent directories as needed and overwriting any existing file at the path. Deliverables must land under outputs/ (for example outputs/report.md) or they are not collected. This overwrites the whole file every call — it is not an incremental editor, so pass the complete intended contents each time. A write larger than the sandbox byte budget is rejected before it touches disk.",
+      promptSnippet: "Create or overwrite a UTF-8 text file in the sandbox",
+      promptGuidelines: [
+        "Use write_file to create or fully rewrite a text file; it replaces the entire file, so always pass the complete contents.",
+        "Write deliverables under outputs/ with write_file or write_base64_file; anything left outside outputs/ is not collected."
+      ],
       schema: z.object({ path: z.string().min(1), content: z.string() }),
       sideEffect: "sandbox_file",
       async execute(input, ctx) {
@@ -244,7 +259,9 @@ export function createBuiltInFileTools(): AnyToolSpec[] {
     }),
     tool({
       id: "write_base64_file",
-      description: "Write a binary file from base64 content inside the sandbox.",
+      description:
+        "Write a binary file inside the sandbox from base64-encoded content, creating parent directories and overwriting any existing file. Use this for non-text deliverables (images, PDFs, spreadsheets, prebuilt archives); for UTF-8 text use write_file instead so you do not have to base64-encode by hand. The decoded byte length is checked against the sandbox byte budget before it touches disk.",
+      promptSnippet: "Write a binary file from base64 into the sandbox",
       schema: z.object({ path: z.string().min(1), base64_content: z.string().min(1) }),
       sideEffect: "sandbox_file",
       async execute(input, ctx) {
@@ -259,7 +276,9 @@ export function createBuiltInFileTools(): AnyToolSpec[] {
     }),
     tool({
       id: "mkdir",
-      description: "Create a directory inside the sandbox.",
+      description:
+        "Create a directory (and any missing parents) inside the sandbox. write_file already creates the parent directories of the file it writes, so reach for mkdir only when you need an empty directory to exist on its own.",
+      promptSnippet: "Create a directory in the sandbox",
       schema: requiredPathInput,
       sideEffect: "sandbox_file",
       async execute(input, ctx) {
@@ -270,7 +289,9 @@ export function createBuiltInFileTools(): AnyToolSpec[] {
     }),
     tool({
       id: "move_path",
-      description: "Move or rename a file or folder inside the sandbox.",
+      description:
+        "Move or rename a file or folder inside the sandbox. Both `src` and `dest` are resolved relative to the sandbox root, and the parent directories of `dest` are created automatically. `src` must exist; an existing file at `dest` is overwritten.",
+      promptSnippet: "Move or rename a file or folder in the sandbox",
       schema: z.object({ src: z.string().min(1), dest: z.string().min(1) }),
       sideEffect: "sandbox_file",
       async execute(input, ctx) {
@@ -284,7 +305,9 @@ export function createBuiltInFileTools(): AnyToolSpec[] {
     }),
     tool({
       id: "delete_path",
-      description: "Delete a file or folder inside the sandbox.",
+      description:
+        "Delete a file or folder (recursively) inside the sandbox. This only affects the run's scratch sandbox — it never touches WorkHub business data. Deleting a path that does not exist is a no-op rather than an error.",
+      promptSnippet: "Delete a file or folder from the sandbox",
       schema: requiredPathInput,
       sideEffect: "sandbox_file",
       async execute(input, ctx) {
@@ -295,7 +318,12 @@ export function createBuiltInFileTools(): AnyToolSpec[] {
     }),
     tool({
       id: "run_command",
-      description: "Run an allowlisted command inside the sandbox without shell expansion.",
+      description:
+        "Run a single allowlisted command inside the sandbox. `args` is an argv array executed with no shell: there is no globbing, piping, redirection, or `&&` — pass one program and its arguments, and call the tool again for the next step. Only vetted interpreters and utilities are permitted; dependency installs and remote execution are refused. run_command is also disabled unless the deployment injects a sandboxed command runner, in which case it returns a clear error. Use it to compute results (python3 / node) or to grep / sed -n a span out of a file that read_file truncated.",
+      promptSnippet: "Run one allowlisted command in the sandbox (no shell)",
+      promptGuidelines: [
+        "Give run_command an argv array with no shell features — no pipes, globs, redirection, or &&; run one command per call."
+      ],
       schema: z.object({
         args: z.array(z.string().min(1)).min(1),
         cwd: z.string().default("."),
@@ -329,7 +357,9 @@ export function createBuiltInFileTools(): AnyToolSpec[] {
     }),
     tool({
       id: "zip_path",
-      description: "Create a zip archive for a sandbox file or folder.",
+      description:
+        "Create a stored (uncompressed) zip archive of a sandbox file or folder at `dest`. The destination file itself is excluded from the archive, and the archive size is checked against the sandbox byte budget before it is written. Use this to bundle a multi-file deliverable into a single downloadable outputs/*.zip.",
+      promptSnippet: "Bundle sandbox files into a zip archive",
       schema: z.object({ src: z.string().min(1), dest: z.string().min(1) }),
       sideEffect: "sandbox_file",
       async execute(input, ctx) {
@@ -344,7 +374,10 @@ export function createBuiltInFileTools(): AnyToolSpec[] {
     }),
     tool({
       id: "submit",
-      description: "Optional final note. WorkHub completion is end_turn with no tool request, not this flag.",
+      description:
+        "Record an optional closing note. This does NOT finish the run: WorkHub treats the run as complete when you end your turn with no tool call and a non-empty outputs/ folder, not when this tool is called. Prefer ending with a plain final message over calling submit.",
+      // 故意不设 promptSnippet：submit 不进「可用工具」清单，避免把模型引向一个无实际收尾作用的 no-op 标志。
+      // 完整 description 仍在工具通道里说明其真实语义。
       schema: z.object({ notes: z.string().min(1) }),
       sideEffect: "none",
       execute(input) {
