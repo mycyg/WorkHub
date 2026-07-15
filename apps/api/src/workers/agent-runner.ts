@@ -8,11 +8,15 @@ import {
   neutralizeFenceTags,
   type AgentLoopClient,
   type AgentLoopEvent,
+  type AgentLoopInput,
   type AgentLoopResult,
   type AgentLoopStep,
   type AgentLoopUsage,
   type StructuredHandoff
 } from "@workhub/agent/loop";
+// R15 批 C（pi 引擎绞杀者迁移 Phase 2）：影子开关。off=现状 loop.run；on=单路 loop2；
+// shadow-assert=同输入双跑并断言 loop-core 等价（测试用）。默认 off，生产零行为变化。
+import { runAgentLoopDispatch, type AgentRunLoop2Mode } from "@workhub/agent/loop2";
 import { settings as runtimeSettings, type Settings } from "@workhub/config";
 import {
   eventTypes,
@@ -569,6 +573,9 @@ export function createInMemoryAgentRunQueue(options: {
   requireDeliverable?: boolean;
   runSettled?: AgentRunSettledHook | false;
   emit?: (event: AgentLoopEvent, run: AgentRunQueueRecord) => Promise<void> | void;
+  // R15 批 C Phase 2：agent-run 循环实现开关。不传则回退 settings.agentRun.loop2Mode（env
+  // AGENT_RUN_LOOP2_MODE，默认 off）。测试可显式注入 "on"/"shadow-assert" 走 loop2 路径。
+  loop2Mode?: AgentRunLoop2Mode;
 } = {}): AgentRunQueue {
   const now = options.now ?? (() => new Date());
   const nextId = options.id ?? randomUUID;
@@ -1710,7 +1717,10 @@ export function createInMemoryAgentRunQueue(options: {
       const initialUserMessage = options.initialUserMessage
         ? await options.initialUserMessage(current, resolvedWorkItemContext)
         : defaultInitialUserMessage(current, resolvedWorkItemContext, resolvedAgentMemory, resolvedUserMemory, projectFileCount);
-      const result = await loop.run({
+      // R15 批 C Phase 2：影子开关。off（默认）= 原样调 loop.run，零行为变化；on/shadow-assert
+      // 经 runAgentLoopDispatch 走 loop2（同一 input 对象即插替身）。入参组装一字未动，只是先落到常量再分流。
+      const loop2Mode: AgentRunLoop2Mode = options.loop2Mode ?? settings.agentRun.loop2Mode;
+      const loopInput: AgentLoopInput = {
         runId: current.run_id,
         workItemId: current.work_item_id,
         actorId: current.actor_id,
@@ -1768,7 +1778,10 @@ export function createInMemoryAgentRunQueue(options: {
         },
         emit: (event) => emitRunEvent(event, current),
         now
-      });
+      };
+      const result = loop2Mode === "off"
+        ? await loop.run(loopInput)
+        : await runAgentLoopDispatch(loopInput, loop2Mode, (i) => loop.run(i));
       const drifted = driftedRun(current.run_id);
       if (drifted) {
         workerDrifted = true;

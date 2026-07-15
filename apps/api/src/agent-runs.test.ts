@@ -5553,6 +5553,144 @@ test("successful agent run opens a proposal from its generated manifest", async 
   assert.equal(userProposalEvent?.data.cuu_state, "carrying_document");
 });
 
+// R15 批 C（pi 引擎绞杀者迁移）Phase 2：影子接线。loop2Mode:"on" 让整条 agent-run 走 loop2（pi 引擎
+// 适配器 + configBuilder + 复用 loop.ts finalizeL3 的 L3 后置），端到端产出交付物 → manifest → 开提议，
+// 证明 runAgentLoop2 是 AgentLoop.run 的即插替身。
+test("R15 批 C Phase 2: loop2Mode='on' drives the full agent run through loop2 and opens a proposal from the manifest", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-loop2-on-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-loop2-on-snapshot-test-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const proposalIds = [
+    "60000000-0000-4000-8000-0000000000c1",
+    "61000000-0000-4000-8000-0000000000c1"
+  ];
+  const proposals = createInMemoryProposalService({
+    now: () => now,
+    id: () => {
+      const id = proposalIds.shift();
+      if (!id) {
+        throw new Error("No fake proposal id queued");
+      }
+      return id;
+    }
+  });
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000c1",
+    loop2Mode: "on",
+    workdir: () => workdir,
+    client: () => executableAgentClient(),
+    snapshotRoot,
+    snapshotId: () => snapshotId,
+    snapshots,
+    auditLogs,
+    proposals,
+    confidence: false,
+    notifications: false,
+    eventBus: false
+  });
+
+  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "loop2 on worker run" });
+  const executed = await queue.runNext();
+  const opened = await proposals.listByWorkItem(workItemId);
+
+  assert.equal(executed?.run_id, queued.run_id);
+  assert.equal(executed?.status, "succeeded", JSON.stringify(executed?.trace));
+  // loop2 wrote the deliverable, built the manifest (reusing finalizeL3) and opened a proposal.
+  assert.equal(opened.length, 1);
+  assert.equal(opened[0]?.diff_manifest.work_item_id, workItemId);
+  assert.equal(opened[0]?.diff_manifest.changes[0]?.target_ref.path, "/outputs/result.md");
+  assert.equal(await readFile(path.join(workdir, "outputs", "result.md"), "utf8"), "done");
+});
+
+// Phase 2 影子对账：loop2Mode:"shadow-assert" 用同一确定性可重放 stub client 把 loop.run 与 loop2 各跑
+// 一遍并断言 loop-core 等价（runAgentLoopDispatch 内部 assertLoopCoreEquivalent，不等价即抛）。run 成功
+// == 双跑对账通过。用位置确定性 client（按已有 assistant 轮数/评审 source 选响应）保证两跑看到相同响应。
+test("R15 批 C Phase 2: loop2Mode='shadow-assert' double-runs both engines and asserts loop-core equivalence", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-loop2-shadow-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-loop2-shadow-snapshot-test-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  // Deterministic + replayable: worker response by count of prior assistant turns; review by source.
+  const replayableClient: AgentLoopClient = {
+    model: "deepseek-v4-flash",
+    messages: {
+      async create(params) {
+        if (params.source === "review") {
+          return {
+            id: "shadow-review",
+            stopReason: "end_turn",
+            usage: { inputTokens: 0, outputTokens: 0 },
+            content: [{ type: "text", text: "{\"grade\": 5, \"rationale\": \"可直接采纳\"}" }]
+          };
+        }
+        const assistantTurns = params.messages.filter((message) => message.role === "assistant").length;
+        if (assistantTurns === 0) {
+          return {
+            id: "shadow-tool",
+            stopReason: "tool_use",
+            usage: { inputTokens: 10, outputTokens: 20 },
+            usageRecord: {
+              provider: "deepseek",
+              model: "deepseek-v4-flash",
+              task: "worker",
+              inputTokens: 10,
+              outputTokens: 20,
+              estimatedCostCny: "0.001",
+              source: "agent_step",
+              createdAt: "2026-06-05T00:00:00.000Z"
+            },
+            content: [{ type: "tool_use", id: "shadow-c1", name: "write_file", input: { path: "outputs/result.md", content: "done" } }]
+          };
+        }
+        return {
+          id: "shadow-done",
+          stopReason: "end_turn",
+          usage: { inputTokens: 5, outputTokens: 5 },
+          usageRecord: {
+            provider: "deepseek",
+            model: "deepseek-v4-flash",
+            task: "worker",
+            inputTokens: 5,
+            outputTokens: 5,
+            estimatedCostCny: "0.002",
+            source: "agent_step",
+            createdAt: "2026-06-05T00:00:01.000Z"
+          },
+          content: [{ type: "text", text: "交付完成" }]
+        };
+      }
+    }
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000c2",
+    loop2Mode: "shadow-assert",
+    workdir: () => workdir,
+    client: () => replayableClient,
+    snapshotRoot,
+    snapshotId: () => snapshotId,
+    snapshots,
+    auditLogs,
+    proposals: false,
+    confidence: false,
+    notifications: false,
+    eventBus: false
+  });
+
+  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "loop2 shadow worker run" });
+  // If loop2 diverged from loop.run on any loop-core field, runAgentLoopDispatch throws and the run
+  // fails; a succeeded run == the double-run reconciliation passed.
+  const executed = await queue.runNext();
+  assert.equal(executed?.run_id, queued.run_id);
+  assert.equal(executed?.status, "succeeded", JSON.stringify(executed?.trace));
+});
+
 test("R12 批 4b: mode===5 全托管档 + grade5 复核自动合并已开出的提议，并往来源会话回灌 proposal_auto_merged 产出卡", async () => {
   const runtimeSettings = settings();
   const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-automerge-test-"));
