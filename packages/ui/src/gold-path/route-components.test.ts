@@ -3410,6 +3410,36 @@ test("R14 notifications route annotates items that carry a conversation_id witho
   assertNoMainWindowBoundaryLeak(en.html);
 });
 
+// R15 批 A（A2 提醒阶梯）：next_remind_at 非空的通知渲「暂停提醒」链接（POST /snooze，走既有动作管道），
+// 为空/不带的通知不渲。
+test("R15 notifications route renders a snooze link only for items still on the reminder ladder", () => {
+  const vm = notificationPageVm();
+  const onLadder: NotificationPageVM["items"][number] = {
+    ...vm.items[0]!,
+    id: "96000000-0000-4000-8000-0000000000a2",
+    next_remind_at: "2026-06-12T09:30:00.000Z",
+    reminder_count: 1
+  };
+  const onLadderVm: NotificationPageVM = {
+    ...vm,
+    items: [onLadder],
+    buckets: { ...vm.buckets, needs_decision: [onLadder], done: [] }
+  };
+  const zh = renderWebRouteComponent({ key: "notifications", notifications: onLadderVm }, { locale: "zh-CN" });
+  const en = renderWebRouteComponent({ key: "notifications", notifications: onLadderVm }, { locale: "en-US" });
+  // 暂停提醒链接：POST 到 /snooze，走既有 data-method 动作管道。
+  assert.equal(zh.html.includes('href="/api/notifications/96000000-0000-4000-8000-0000000000a2/snooze"'), true);
+  assert.equal(zh.html.includes('data-r15-notification-snooze="true"'), true);
+  assert.equal(zh.html.includes('data-method="POST"'), true);
+  assert.equal(zh.html.includes("暂停提醒"), true);
+  assert.equal(en.html.includes(">Snooze<"), true);
+
+  // 默认 VM 的两条都不带 next_remind_at → 不渲暂停链接。
+  const plain = renderWebRouteComponent({ key: "notifications", notifications: notificationPageVm() }, { locale: "zh-CN" });
+  assert.equal(plain.html.includes("/snooze"), false);
+  assert.equal(plain.html.includes("data-r15-notification-snooze"), false);
+});
+
 // G-web 止血批：notificationTypeLabel 的 exact 映射表没有 "project" 命名空间前缀兜底——
 // project.risk_digest（risk-monitor.ts 每日风险巡检摘要）此前直接掉进 humanizeToken，
 // 中文界面渲出裸英文 "Project Risk Digest"。

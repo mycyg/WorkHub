@@ -182,6 +182,15 @@ export type ChatRenderContext = {
   // 「已通过/已打回/已合并」覆盖标（乐观、仅本机、刷新即依 VM/服务端档③ 的 proposal_settled 系统消息重判）。
   // 由 view.ts 持有（onSettled 回调把 id 塞进来），缺省（既有调用点/测试）不渲覆盖标。
   settledProposalIds?: ReadonlySet<string>;
+  // R15 批 A6（产出卡内联批准）：产出卡直接加「批准」内联按钮（复用右栏 reviewProposalWithoutMerge），
+  // 「打回」不内联（要写理由）→ 打开右栏并聚焦理由输入。以下三个字段由 view.ts 持有，都缺省安全：
+  //  - proposalInlineActionsEnabled：宿主（shell.ts）是否接了内联批准/打回回调——没接（测试/其它宿主）
+  //    就只渲「看提议」，绝不摆一个点了没反应的假按钮（04 §4 铁律 3）；
+  //  - busyProposalIds：某份提议的内联批准正在飞——命中的卡按钮立即 disabled + 「批准中…」（markBusy 手感）；
+  //  - proposalActionErrors：内联批准失败的温和行内提示，按 proposal id 索引，瞬态不落库。
+  proposalInlineActionsEnabled?: boolean;
+  busyProposalIds?: ReadonlySet<string>;
+  proposalActionErrors?: ReadonlyMap<string, string>;
   // R14 批 FEEDBACK：Cuu 文字消息反馈的一句话备注编辑框——点击持久 badge 展开（一次只展开一条），
   // draft 是当前草稿，error 是保存失败（如 note 超长/命中注入短语拦截）的温和行内提示。缺省（没有正在
   // 编辑的备注）时只渲染 badge，不渲输入框。瞬态、不落库，由 view.ts 持有（同 ctx.editing 的既有模式）。
@@ -559,13 +568,34 @@ function renderDeliverableCardHtml(
   const settledOverlay = settled
     ? `<div class="wh-wb-chat-actioncard-note" style="color:var(--ds-success);font-weight:700">${zh ? "已处理 · 见落定消息" : "Handled · see the settled note"}</div>`
     : "";
-  const openButton = proposalId
-    ? `<div class="wh-wb-chat-actioncard-actions"><button type="button" class="wh-wb-chat-actioncard-open" data-wb-chat-open-proposal="${escapeHtml(proposalId)}">${
+  // R15 批 A6（产出卡内联批准）：opened（非 auto_merged）、未落定、且宿主接了内联回调时，产出卡直接给
+  // 「批准」（内联，复用右栏 reviewProposalWithoutMerge 动作）+「打回」（不内联——打回要写理由，点它打开右栏并
+  // 聚焦理由输入）+「看提议」（打开右栏详情，合并仍只在右栏）。已落定 / auto_merged / 宿主没接内联回调时
+  // 退回只有「看提议」的既有形态（04 §4 铁律 3：没真接线不摆假按钮）。
+  const inlineEnabled = ctx.proposalInlineActionsEnabled === true;
+  const busy = proposalId ? ctx.busyProposalIds?.has(proposalId) === true : false;
+  const actionError = proposalId ? ctx.proposalActionErrors?.get(proposalId) : undefined;
+  const viewButton = proposalId
+    ? `<button type="button" class="wh-wb-chat-actioncard-open" data-wb-chat-open-proposal="${escapeHtml(proposalId)}">${
         autoMerged ? (zh ? "看已采纳的提议" : "View the adopted proposal") : zh ? "看提议" : "View proposal"
-      }</button></div>`
+      }</button>`
+    : "";
+  const inlineButtons =
+    proposalId && !autoMerged && !settled && inlineEnabled
+      ? `<button type="button" class="wh-wb-chat-actioncard-approve" data-wb-chat-approve-proposal="${escapeHtml(proposalId)}"${
+          busy ? " disabled" : ""
+        }>${busy ? (zh ? "批准中…" : "Approving…") : zh ? "批准" : "Approve"}</button><button type="button" class="wh-wb-chat-actioncard-deny" data-wb-chat-deny-proposal="${escapeHtml(proposalId)}"${
+          busy ? " disabled" : ""
+        }>${zh ? "打回" : "Request changes"}</button>`
+      : "";
+  const openButton = proposalId
+    ? `<div class="wh-wb-chat-actioncard-actions">${inlineButtons}${viewButton}</div>`
+    : "";
+  const errorLine = actionError
+    ? `<div class="wh-wb-chat-actioncard-note" style="color:var(--ds-danger)">${escapeHtml(actionError)}</div>`
     : "";
   const timestamp = `<div class="wh-wb-chat-actioncard-note">${formatMessageTime(message.created_at, ctx.locale)}</div>`;
-  return `<div class="wh-wb-chat-actioncard wh-wb-chat-actioncard--deliverable"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${diffLine}${statusLine}${settledOverlay}${openButton}${timestamp}</div>`;
+  return `<div class="wh-wb-chat-actioncard wh-wb-chat-actioncard--deliverable"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${diffLine}${statusLine}${settledOverlay}${openButton}${errorLine}${timestamp}</div>`;
 }
 
 // R14 批 APPROVE-CHAT 档③（审批落定回流）：review/merge 落定后，服务端往来源会话 post 一条 system_event，

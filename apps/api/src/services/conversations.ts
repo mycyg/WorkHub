@@ -783,13 +783,29 @@ export function createConversationService(
         userId: human.userId,
         limit: DM_LIST_CAP
       });
+      // R15 批 A6（rail 未读红点）：复用 A4 的同一条聚合 SQL（unreadCountsForViewer，禁 N+1）给每条 DM 会话
+      // 带上当前 viewer 的未读数——DM 列表复用 conversationVmSchema，unread_count 是 additive optional，与
+      // listConversations 同口径。聚合失败只降级成"不带未读数"，绝不因为红点算不出来而让整份 DM 列表 500。
+      let unreadCounts = new Map<string, number>();
+      try {
+        unreadCounts = await repository.unreadCountsForViewer({
+          viewerUserId: human.userId,
+          conversationIds: rows.map((row) => row.conversation.id)
+        });
+      } catch (error) {
+        logger.warn("dm_list_unread_aggregate_failed", {
+          viewerUserId: human.userId,
+          error
+        });
+      }
       return parseOutputContract(
         dmListVmSchema,
         {
           items: rows.map((row) => ({
             conversation: conversationToVm(
               row.conversation,
-              row.conversation.createdBy?.toLowerCase() === human.userId.toLowerCase() ? "owner" : "member"
+              row.conversation.createdBy?.toLowerCase() === human.userId.toLowerCase() ? "owner" : "member",
+              unreadCounts.get(row.conversation.id) ?? 0
             ),
             participants: row.participants.map((participant) => ({
               user_id: participant.userId,

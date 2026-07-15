@@ -304,6 +304,8 @@ export type WorkHubApiClient = {
   markAllNotificationsRead: () => Promise<{ updated: number }>;
   dismissNotification: (id: string) => Promise<Notification>;
   completeNotification: (id: string) => Promise<Notification>;
+  // R15 批 A（A2 提醒阶梯）：暂停一条通知的 24h 提醒（POST /snooze，服务端置 next_remind_at=null）。
+  snoozeNotification: (id: string) => Promise<Notification>;
   getNotificationPreferences: () => Promise<{ muted_notification_types: string[] }>;
   setNotificationPreferences: (
     mutedNotificationTypes: string[]

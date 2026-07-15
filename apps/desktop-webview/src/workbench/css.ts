@@ -86,6 +86,10 @@ export const workbenchCss = [
   ".wh-wb-leaf--live{cursor:pointer;transition:background var(--ds-dur-fast) var(--ds-ease)}",
   ".wh-wb-leaf--live:hover{background:var(--ds-glass-strong)}",
   ".wh-wb-leaf-count{margin-left:auto;font:700 10.5px/1 var(--ds-font);color:var(--ds-ink-faint);background:var(--ds-glass);padding:1px 6px;border-radius:99px}",
+  // R15 批 A6：未读红点徽标——数字挂在树叶/私聊行尾，红点风格（danger 底 + 白字 + 柔光），区别于上面
+  // 那个浅灰的消息总数样式。跟随既有玻璃体系里 wh-wb-project-dot 的 danger 语汇。
+  ".wh-wb-leaf-count--unread{color:#fff;background:var(--ds-danger);box-shadow:0 0 8px var(--ds-danger)}",
+  ".wh-wb-dm-count{flex:0 0 auto;margin-left:6px;font:700 10.5px/1 var(--ds-font);color:#fff;background:var(--ds-danger);box-shadow:0 0 8px var(--ds-danger);padding:1px 6px;border-radius:99px}",
   ".wh-wb-rail-foot{margin-top:auto;border-top:1px solid var(--ds-glass-border);padding:10px 12px}",
   ".wh-wb-me{display:flex;align-items:center;gap:8px;padding:10px 10px 2px;font:500 12.5px/1.3 var(--ds-font);color:var(--ds-ink-muted)}",
   // R13 批 P1：军团总览左栏一级入口——与项目列表平级，独立分组（用户拍板 4）。真按钮，不是批 1/5
@@ -760,10 +764,20 @@ export const workbenchCss = [
   // —— R14 批 APPROVE-CHAT：右栏提议详情（proposal/render.ts，第四个 owner）+ 产出卡「看提议」按钮 +
   // 军团输出行按钮化。全部独立追加（css.test.ts 的既有精确断言锁死旧规则字符串，只加不改），wh-wb-prop-*
   // 新前缀，视觉语言对齐 drive/army 侧栏（--ds-* 浅色玻璃 token）。 —— //
-  ".wh-wb-chat-actioncard-actions{margin-top:8px}",
+  ".wh-wb-chat-actioncard-actions{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}",
   ".wh-wb-chat-actioncard-open{font:600 12px/1 var(--ds-font);padding:6px 12px;border-radius:99px;" +
     "border:1px solid var(--ds-glass-border);background:var(--ds-glass);color:var(--ds-accent);cursor:pointer}",
   ".wh-wb-chat-actioncard-open:hover{background:var(--ds-glass-strong)}",
+  // R15 批 A6：产出卡内联批准/打回——批准是主按钮（accent 实底白字），打回是轻按钮（打开右栏写理由，
+  // 不内联提交）。忙态/落定后置灰不可点，同 spotlight markBusy 手感。
+  ".wh-wb-chat-actioncard-approve{font:600 12px/1 var(--ds-font);padding:6px 12px;border-radius:99px;border:1px solid var(--ds-accent);" +
+    "background:var(--ds-accent);color:#fff;cursor:pointer}",
+  ".wh-wb-chat-actioncard-approve:hover{filter:brightness(1.05)}",
+  ".wh-wb-chat-actioncard-approve:disabled{opacity:.55;cursor:default;filter:none}",
+  ".wh-wb-chat-actioncard-deny{font:600 12px/1 var(--ds-font);padding:6px 12px;border-radius:99px;" +
+    "border:1px solid var(--ds-glass-border);background:var(--ds-glass);color:var(--ds-ink-soft);cursor:pointer}",
+  ".wh-wb-chat-actioncard-deny:hover{background:var(--ds-danger-soft);border-color:rgba(255,69,58,.35);color:var(--ds-danger)}",
+  ".wh-wb-chat-actioncard-deny:disabled{opacity:.55;cursor:default}",
   // 军团输出行翻成 <button>（原 <details> 折叠）后仍复用 .wh-wb-army-out-* 的内部布局类——按钮宿主自己
   // 要抹掉 UA 默认样式并接住原来 summary 的 flex 布局。
   ".wh-wb-army-out-row--link{display:flex;align-items:center;gap:9px;width:100%;box-sizing:border-box;" +

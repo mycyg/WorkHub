@@ -636,12 +636,18 @@ function notificationRow(item: NotificationPageVM["items"][number], zh: boolean)
   const tone = item.severity === "urgent" ? "handoff" : item.inbox_bucket === "needs_decision" ? "approval" : "info";
   const timeMatch = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/u.exec(item.created_at);
   const when = timeMatch ? `${timeMatch[1]} ${timeMatch[2]}` : "";
+  // R15 批 A（A2 提醒阶梯）：next_remind_at 非空 = 这条通知还挂在 24h 叮嘱阶梯上，给一个「暂停提醒」轻按钮
+  // （POST /api/notifications/:id/snooze 置空 next_remind_at 即抑制，读/归档态不动，通知仍留在待决策队列）。
+  const snoozeBtn = item.next_remind_at
+    ? `<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-notif-snooze="${escapeHtml(item.id)}" title="${escapeHtml(zh ? "暂停这条通知的 24h 提醒" : "Stop the 24h reminders for this notification")}">${escapeHtml(zh ? "暂停提醒" : "Snooze")}</button>`
+    : "";
   return `<div class="wh-spot-row" data-notif-id="${escapeHtml(item.id)}">
     <span class="wh-spot-card-bar wh-spot-card-bar--${tone}" style="border-radius:3px"></span>
     <div class="wh-spot-row-main">
       <div class="wh-spot-row-title">${item.status === "unread" ? "● " : ""}${escapeHtml(item.title)}</div>
       <div class="wh-spot-row-sub">${escapeHtml([when, item.body ?? ""].filter(Boolean).join(" · "))}</div>
     </div>
+    ${snoozeBtn}
     <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-notif-mute="${escapeHtml(item.type)}" title="${escapeHtml(zh ? `不再接收「${item.type}」类通知` : `Mute “${item.type}” notifications`)}">${escapeHtml(zh ? "静音此类" : "Mute type")}</button>
   </div>`;
 }
@@ -684,6 +690,30 @@ export function createNotificationsView(): SpotlightCapabilityView {
     },
     onAction: (target, ctx) => {
       const zh = ctx.locale === "zh-CN";
+      // R15 批 A（A2 提醒阶梯）：暂停提醒——POST snooze，本地把按钮改成「已暂停」（不重拉整份列表）。
+      const snoozeBtn = target.closest<HTMLButtonElement>("[data-notif-snooze]");
+      if (snoozeBtn?.dataset.notifSnooze) {
+        if (snoozeBtn.disabled) {
+          return;
+        }
+        const notificationId = snoozeBtn.dataset.notifSnooze;
+        const originalText = snoozeBtn.textContent;
+        snoozeBtn.disabled = true;
+        snoozeBtn.textContent = zh ? "暂停中…" : "Snoozing…";
+        void ctx.client
+          .request(`/api/notifications/${encodeURIComponent(notificationId)}/snooze`, { method: "POST" })
+          .then(() => {
+            snoozeBtn.textContent = zh ? "已暂停" : "Snoozed";
+            snoozeBtn.removeAttribute("data-notif-snooze");
+            ctx.toast(zh ? "已暂停这条通知的提醒" : "Reminders snoozed for this notification", "ok");
+          })
+          .catch(() => {
+            snoozeBtn.disabled = false;
+            snoozeBtn.textContent = originalText;
+            ctx.toast(zh ? "暂停失败，稍后重试" : "Couldn't snooze — try again", "error");
+          });
+        return;
+      }
       const muteBtn = target.closest<HTMLButtonElement>("[data-notif-mute]");
       const unmuteBtn = target.closest<HTMLButtonElement>("[data-notif-unmute]");
       const type = muteBtn?.dataset.notifMute ?? unmuteBtn?.dataset.notifUnmute;

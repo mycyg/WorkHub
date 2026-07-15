@@ -197,6 +197,15 @@ export function toNotificationResponse(row: NotificationRow, options: {
   if (row.dedupeKey) {
     notification.dedupe_key = row.dedupeKey;
   }
+  // R15 批 A（A2 提醒阶梯）：提醒态——next_remind_at 非空说明这条通知还挂在 24h 叮嘱阶梯上，前端据此渲
+  // 「暂停提醒」按钮；reminder_count 已提醒次数，只有 >0 才带（0 是默认、无信息量）。不进阶梯的通知
+  // （next_remind_at=NULL）这两个字段就不出现，additive 零回归。
+  if (row.nextRemindAt) {
+    notification.next_remind_at = row.nextRemindAt.toISOString();
+  }
+  if (typeof row.reminderCount === "number" && row.reminderCount > 0) {
+    notification.reminder_count = row.reminderCount;
+  }
   if (row.readAt) {
     notification.read_at = row.readAt.toISOString();
   }
