@@ -460,6 +460,17 @@ export type RenameConversationRequest = z.infer<typeof renameConversationRequest
 // 重命名成功的响应 VM 定义在 conversationVmSchema 之后（引用它），避免 const 使用前声明——同
 // conversationPinsVmSchema 的既有取舍。见本文件下方 renameConversationResultVmSchema。
 
+// R15 批 cuu-toggle：PATCH /api/conversations/:id/cuu 的请求体——只带目标布尔值（幂等：重复翻到同一个
+// 值不是错误，仓库层就是一次普通的 UPDATE）。语义红线（仅 collab 含 DM 可翻、main 一律拒绝、仅参与者
+// 可翻）在服务层强制，见 apps/api/src/services/conversations.ts updateCuuEnabled。
+export const updateConversationCuuRequestSchema = z
+  .object({
+    enabled: z.boolean()
+  })
+  .strict();
+export type UpdateConversationCuuRequest = z.infer<typeof updateConversationCuuRequestSchema>;
+// 响应 VM 定义在 conversationVmSchema 之后（引用它）——见本文件下方 updateConversationCuuResultVmSchema。
+
 // R14 批 CHAT：编辑消息请求体——只带新正文（仅 text 消息可编辑，kind 判定在服务/仓库层）。text 的
 // 长度约束与创建侧对齐（min 1、上限同 MAX_CONVERSATION_TEXT_CODE_UNITS）。
 export const editConversationMessageRequestSchema = z
@@ -641,6 +652,15 @@ export const renameConversationResultVmSchema = z
   })
   .strict();
 export type RenameConversationResultVM = z.infer<typeof renameConversationResultVmSchema>;
+
+// R15 批 cuu-toggle：PATCH /cuu 成功的响应——回翻转后的完整会话 VM（客户端就地更新 cuu_enabled + 头部
+// 开关状态），同 renameConversationResultVmSchema 的既有取舍。
+export const updateConversationCuuResultVmSchema = z
+  .object({
+    conversation: conversationVmSchema
+  })
+  .strict();
+export type UpdateConversationCuuResultVM = z.infer<typeof updateConversationCuuResultVmSchema>;
 
 export const conversationParticipantVmSchema = z
   .object({

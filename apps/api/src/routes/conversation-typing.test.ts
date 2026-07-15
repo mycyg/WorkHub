@@ -151,6 +151,10 @@ function conversationsService(overrides: Partial<ConversationService> = {}): Con
     async renameConversation() {
       throw new Error("not needed");
     },
+    // R15 批 cuu-toggle：新增 updateCuuEnabled 服务方法——本套件不测它，给拒绝桩即可。
+    async updateCuuEnabled() {
+      throw new Error("not needed");
+    },
     async listMessages(): Promise<ConversationMessagePageVM> {
       throw new Error("not needed");
     },

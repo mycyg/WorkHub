@@ -245,3 +245,50 @@ test("R14FIX rename result carries a full conversation VM", () => {
   assert.equal(schema.safeParse({ conversation: { ...conversation, title: "" } }).success, false);
   assert.equal(schema.safeParse({ conversation, extra: true }).success, false);
 });
+
+// ── R15 批 cuu-toggle：会话级 Cuu 开关 PATCH 契约（additive） ────────────────────────────
+
+test("R15 cuu-toggle request accepts only a boolean enabled and rejects extra keys", () => {
+  const schema = requiredSchema<Record<string, unknown>>("updateConversationCuuRequestSchema");
+  assert.deepEqual(schema.parse({ enabled: true }), { enabled: true });
+  assert.deepEqual(schema.parse({ enabled: false }), { enabled: false });
+  assert.equal(schema.safeParse({}).success, false);
+  assert.equal(schema.safeParse({ enabled: "true" }).success, false);
+  assert.equal(schema.safeParse({ enabled: true, extra: true }).success, false);
+});
+
+test("R15 cuu-toggle result carries a full conversation VM", () => {
+  const schema = requiredSchema<Record<string, unknown>>("updateConversationCuuResultVmSchema");
+  const conversation = {
+    id: conversationId,
+    workspace_id: "10000000-0000-4000-8000-000000000001",
+    project_id: projectId,
+    kind: "collab",
+    title: "协作区",
+    parent_conversation_id: null,
+    source_message_id: null,
+    visibility: "private",
+    next_seq: 3,
+    created_by: userId,
+    participant_role: "owner",
+    cuu_enabled: false,
+    created_at: ts,
+    updated_at: ts
+  };
+  assert.equal(schema.safeParse({ conversation }).success, true);
+  assert.equal(schema.safeParse({ conversation, extra: true }).success, false);
+});
+
+test("R15 conversation.cuu.updated pins the flipped boolean to its topic", () => {
+  const schema = requiredSchema<Record<string, unknown>>("conversationCuuUpdatedEventSchema");
+  const event = {
+    event_id: eventId,
+    type: "conversation.cuu.updated",
+    topic: `conversation:${conversationId}`,
+    ts,
+    data: { conversation_id: conversationId, cuu_enabled: true }
+  };
+  assert.equal(schema.safeParse(event).success, true);
+  assert.equal(schema.safeParse({ ...event, topic: `conversation:${otherMessageId}` }).success, false);
+  assert.equal(schema.safeParse({ ...event, data: { ...event.data, cuu_enabled: "true" } }).success, false);
+});

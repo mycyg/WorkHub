@@ -5342,6 +5342,49 @@ const conversationReceiptsResponses = {
     "500": conversationInternalResponse
   }
 } as const;
+
+// R15 批 cuu-toggle：PATCH /api/conversations/:id/cuu 的请求体与响应集——与 routes/conversation-cuu.ts +
+// services/conversations.ts 的 updateCuuEnabled 真实状态码逐条对齐（main 一律 409、非参与者 403）。
+const updateConversationCuuRequestBodySchema = {
+  type: "object",
+  required: ["enabled"],
+  properties: { enabled: { type: "boolean" } },
+  additionalProperties: false
+} as const;
+const conversationCuuUpdateResponses = {
+  responses: {
+    "200": jsonDataResponse(
+      {
+        type: "object",
+        required: ["conversation"],
+        properties: { conversation: conversationResponseSchema },
+        additionalProperties: false
+      },
+      "The conversation VM after the Cuu-participation toggle was flipped"
+    ).responses["200"],
+    "400": jsonErrorStatusResponse("400", "Cuu toggle payload is malformed", [
+      "malformed_json",
+      "json_object_required"
+    ]).responses["400"],
+    "401": conversationAuthRequiredResponse,
+    "403": jsonErrorStatusResponse("403", "Only collab (including DM) participants may toggle Cuu participation", [
+      "invalid_client_token",
+      "forbidden",
+      "human_required",
+      "conversation_cuu_forbidden"
+    ]).responses["403"],
+    "404": jsonErrorStatusResponse("404", "Conversation was not found", ["conversation_not_found"]).responses[
+      "404"
+    ],
+    "409": jsonErrorStatusResponse("409", "The main area does not support toggling Cuu participation", [
+      "conversation_cuu_not_collab"
+    ]).responses["409"],
+    "413": conversationPayloadTooLargeResponse,
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+
 const presenceUserIdsQueryParameter = {
   name: "user_ids",
   in: "query",
@@ -7575,6 +7618,15 @@ export function getOpenApiDocument() {
           summary: "List every read cursor for the aggregate read indicator",
           parameters: [pathUuidParameter("id")],
           ...conversationReceiptsResponses
+        }
+      },
+      "/api/conversations/{id}/cuu": {
+        patch: {
+          tags: ["conversations"],
+          summary: "Toggle whether Cuu participates in a collab conversation (main is 409)",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(updateConversationCuuRequestBodySchema),
+          ...conversationCuuUpdateResponses
         }
       },
       "/api/presence": {

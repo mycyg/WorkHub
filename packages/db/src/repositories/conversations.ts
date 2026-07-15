@@ -172,6 +172,17 @@ export type RenameConversationInput = {
   at?: Date;
 };
 
+// R15 批 cuu-toggle：只改 cuu_enabled 这一列的幂等更新——同 RenameConversationInput 一样的「给已存在的
+// 会话行做一次字段更新」独立事务档次（不碰 nextSeq/其它任何列）。语义红线（仅 collab 含 DM 可翻、main
+// 一律拒绝、仅参与者可翻）在服务层强制，这里只负责租户安全（workspaceId + 未删除围栏）的原子写。
+// 重复翻到同一个值不是错误——就是一次普通的 UPDATE，updated_at 照常前进。
+export type UpdateConversationCuuEnabledInput = {
+  workspaceId: string;
+  conversationId: string;
+  enabled: boolean;
+  at?: Date;
+};
+
 // R12 批8：反向翻页（listMessagesBefore）的输入——除了游标方向（beforeSeq 而非 afterSeq），access
 // 判定与 listMessagesAfter 完全同款（复用同一个 readVisibleAccess + activeConversationCondition）。
 export type ListConversationMessagesBeforeInput = {
@@ -392,6 +403,8 @@ export type ConversationRepository = {
   updateContextSummary: (input: UpdateContextSummaryInput) => Promise<void>;
   // R14FIX 批 workbench：新增，不改动上面任何既有方法——协同会话改名（返回改名后的会话行）。
   renameConversation: (input: RenameConversationInput) => Promise<ConversationRow>;
+  // R15 批 cuu-toggle：新增，不改动上面任何既有方法——会话级 Cuu 参与开关翻转（返回翻转后的会话行）。
+  updateCuuEnabled: (input: UpdateConversationCuuEnabledInput) => Promise<ConversationRow>;
   // R14 批 CHAT：以下全部新增，不改动上面任何既有方法。语义红线在服务层强制（见 apps/api/src/
   // services/conversations.ts），仓库层负责租户安全的原子写与页级无 N+1 聚合。
   editMessage: (input: EditMessageInput) => Promise<ConversationMessageRow>;
@@ -1900,6 +1913,29 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
         .returning();
       if (!updated) {
         throw new ConversationAccessDeniedError("conversation not found for rename");
+      }
+      return updated;
+    },
+
+    // ── R15 批 cuu-toggle：会话级 Cuu 参与开关翻转 ────────────────────────────────────
+    // 只更新 cuu_enabled（+ updatedAt），workspace + 未删除围栏——同 renameConversation 一样的租户安全
+    // 原子写。命中 0 行（会话不存在/跨租户/已删）→ ConversationAccessDeniedError（服务层映射 404）。
+    // 会话种类（仅 collab 含 DM）/参与者鉴权在服务层已把关；重复翻到同一个值不特殊处理——就是一次
+    // 普通的 UPDATE，天然幂等（updated_at 照常前进，不是"无变化就跳过"的短路）。
+    async updateCuuEnabled(input) {
+      const [updated] = await db
+        .update(projectConversations)
+        .set({ cuuEnabled: input.enabled, updatedAt: input.at ?? new Date() })
+        .where(
+          and(
+            eq(projectConversations.id, input.conversationId),
+            eq(projectConversations.workspaceId, input.workspaceId),
+            isNull(projectConversations.deletedAt)
+          )
+        )
+        .returning();
+      if (!updated) {
+        throw new ConversationAccessDeniedError("conversation not found for cuu toggle");
       }
       return updated;
     },
