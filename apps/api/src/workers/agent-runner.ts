@@ -516,6 +516,8 @@ export function createInMemoryAgentRunQueue(options: {
   client?: AgentRunClientProvider;
   // findings[#4]：可选的独立评审客户端提供者（默认据 'review' 任务类路由派生，去 llm_review 自评偏置）。
   reviewClient?: AgentRunClientProvider;
+  // 补丁2：可选的独立压缩摘要客户端提供者（默认据 'context_compact' 任务类路由派生）。
+  compactionClient?: AgentRunClientProvider;
   workdir?: AgentRunWorkdirProvider;
   tools?: AgentRunToolsProvider;
   snapshot?: SnapshotHook;
@@ -771,6 +773,20 @@ export function createInMemoryAgentRunQueue(options: {
       ...(input.run.task_plan_id ? { taskPlanId: input.run.task_plan_id } : {}),
       ...(input.run.objective_id ? { objectiveId: input.run.objective_id } : {})
     }, "review");
+  }
+
+  // 补丁2：压缩摘要客户端走 'context_compact' 任务类路由，让部署可把结构化摘要指到独立/更廉价的模型，
+  // 并与工人/评审分开记账。默认配置下未单独配则回退默认 provider/模型——行为与配置前一致，不破坏后向兼容。
+  async function defaultCompactionClient(input: AgentRunExecutionInput) {
+    return getDefaultProviderRegistry().get({
+      id: input.run.actor_id,
+      userId: input.run.actor_id,
+      ...(input.run.workspace_id ? { workspaceId: input.run.workspace_id } : {}),
+      runId: input.run.run_id,
+      workItemId: input.run.work_item_id,
+      ...(input.run.task_plan_id ? { taskPlanId: input.run.task_plan_id } : {}),
+      ...(input.run.objective_id ? { objectiveId: input.run.objective_id } : {})
+    }, "context_compact");
   }
 
   // 工具用法散文不再硬编码：可用工具清单与使用准则由注册表的 promptSnippet/promptGuidelines 动态拼装
@@ -1579,6 +1595,13 @@ export function createInMemoryAgentRunQueue(options: {
         : options.client
           ? client
           : await defaultReviewClient(executionInput);
+      // 补丁2：压缩摘要客户端。自定义注入优先；复用工人 client 提供者时也据它派生（走 context_compact 路由），
+      // 默认路由未单独配则回退默认模型，行为不变。
+      const compactionClient = options.compactionClient
+        ? await options.compactionClient(executionInput)
+        : options.client
+          ? client
+          : await defaultCompactionClient(executionInput);
       const workdir = await (options.workdir ?? defaultWorkdir)(executionInput);
       runWorkdirs.set(current.run_id, workdir);
       current = updateRun({
@@ -1702,6 +1725,8 @@ export function createInMemoryAgentRunQueue(options: {
         client,
         // findings[#4]：独立评审客户端（去自评偏置）。findings[#7]：用解析过的任务标题，而非 initialUserMessage 首行的中文标签。
         reviewClient,
+        // 补丁2：独立压缩摘要客户端（context_compact 路由）。
+        compactionClient,
         reviewTaskTitle: current.title,
         tools,
         budget: toAgentLoopBudget(current.budget, resolveWorkerContextWindowTokens()),

@@ -373,6 +373,151 @@ test("AgentLoop compacts after a max_tokens truncation and continues to success"
   assert.equal(result.steps.length, 3);
 });
 
+function truncationWorkerClient(seen: LlmMessage[][]): AgentLoopClient {
+  return {
+    model: "fake-model",
+    messages: {
+      async create(params) {
+        seen.push(JSON.parse(JSON.stringify(params.messages)));
+        const call = seen.length;
+        if (call === 1) {
+          return {
+            id: "m1",
+            stopReason: "tool_use",
+            usage: { inputTokens: 10, outputTokens: 20 },
+            content: [{ type: "tool_use", id: "tool-1", name: "write_file", input: { path: "outputs/report.md", content: "part one" } }]
+          };
+        }
+        if (call === 2) {
+          return {
+            id: "m2",
+            stopReason: "max_tokens",
+            usage: { inputTokens: 10, outputTokens: 100 },
+            content: [{ type: "text", text: "报告写到一半就被截" }]
+          };
+        }
+        return {
+          id: "m3",
+          stopReason: "end_turn",
+          usage: { inputTokens: 5, outputTokens: 5 },
+          content: [{ type: "text", text: "交付完成" }]
+        };
+      }
+    }
+  };
+}
+
+test("补丁2 compaction uses the structured LLM summary when a compaction client is provided", async () => {
+  const workdir = await tempWorkdir();
+  const tools = createToolRegistry(createBuiltInFileTools());
+  const loop = createAgentLoop();
+  const structured = [
+    "## 目标（Goal）",
+    "生成一份长报告",
+    "",
+    "## 进度（Progress）",
+    "### 已完成（Done）",
+    "- [x] 写入 outputs/report.md 的第一部分"
+  ].join("\n");
+  const compactionMessages: LlmMessage[][] = [];
+  let compactionCalls = 0;
+  const compactionClient: AgentLoopClient = {
+    model: "compaction-model",
+    messages: {
+      async create(params) {
+        compactionCalls += 1;
+        compactionMessages.push(JSON.parse(JSON.stringify(params.messages)));
+        return {
+          id: "sum-1",
+          stopReason: "end_turn",
+          usage: { inputTokens: 40, outputTokens: 30 },
+          content: [{ type: "text", text: structured }]
+        };
+      }
+    }
+  };
+  const seenWorkerMessages: LlmMessage[][] = [];
+  const result = await loop.run({
+    runId: "40000000-0000-4000-8000-000000000201",
+    workItemId: "50000000-0000-4000-8000-000000000201",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "write a long report",
+    client: truncationWorkerClient(seenWorkerMessages),
+    compactionClient,
+    tools,
+    budget,
+    reviewDeliverable: false,
+    snapshot: () => ({ snapshotId: "60000000-0000-4000-8000-000000000201" })
+  });
+
+  assert.equal(result.status, "succeeded");
+  assert.equal(result.usage.compactions, 1);
+  // 摘要走了独立 compaction client（恰好一次）。
+  assert.equal(compactionCalls, 1);
+  // 首次压缩用 SUMMARIZATION_PROMPT（非 UPDATE）：含 Goal 骨架、无 <previous-summary>。
+  const firstCompactionInput = JSON.stringify(compactionMessages[0]);
+  assert.equal(firstCompactionInput.includes("目标（Goal）"), true);
+  assert.equal(firstCompactionInput.includes("previous-summary"), false);
+  // 压缩后喂给 worker 的第一条消息带的是结构化摘要，而不是机械的「step N: ... -> ok」罗列。
+  const thirdCall = seenWorkerMessages[2]!;
+  const summaryMessage = String(thirdCall[0]?.content);
+  assert.equal(summaryMessage.includes("## 目标（Goal）"), true);
+  assert.equal(summaryMessage.includes("写入 outputs/report.md 的第一部分"), true);
+  assert.doesNotMatch(summaryMessage, /step \d+: write_file/u);
+  // 摘要调用的 usage 计入总账（worker 30+110+10=150 加 compaction 70 = 220）。
+  assert.equal(result.usage.totalTokens, 150 + 70);
+});
+
+test("补丁2 compaction degrades to the mechanical summary when the compaction client throws", async () => {
+  const workdir = await tempWorkdir();
+  const tools = createToolRegistry(createBuiltInFileTools());
+  const loop = createAgentLoop();
+  const compactionClient: AgentLoopClient = {
+    model: "compaction-model",
+    messages: {
+      async create() {
+        throw new Error("summary model down");
+      }
+    }
+  };
+  const seenWorkerMessages: LlmMessage[][] = [];
+  const events: AgentLoopEvent[] = [];
+  const result = await loop.run({
+    runId: "40000000-0000-4000-8000-000000000202",
+    workItemId: "50000000-0000-4000-8000-000000000202",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "write a long report",
+    client: truncationWorkerClient(seenWorkerMessages),
+    compactionClient,
+    tools,
+    budget,
+    reviewDeliverable: false,
+    snapshot: () => ({ snapshotId: "60000000-0000-4000-8000-000000000202" }),
+    emit: (event) => {
+      events.push(event);
+    }
+  });
+
+  // LLM 摘要抛错不挂掉 run：仍成功压缩并完成。
+  assert.equal(result.status, "succeeded");
+  assert.equal(result.usage.compactions, 1);
+  // 压缩事件标注退化到机械摘要。
+  assert.equal(
+    events.some((event) => event.type === eventTypes.agentRunCompacting && event.data.summary_kind === "mechanical"),
+    true
+  );
+  // worker 第三次调用收到的是机械摘要（含 step 罗列 + 「此前执行摘要」围栏），不是结构化骨架。
+  const thirdCall = seenWorkerMessages[2]!;
+  const summaryMessage = String(thirdCall[0]?.content);
+  assert.equal(summaryMessage.includes("此前执行摘要"), true);
+  assert.match(summaryMessage, /step \d+: write_file/u);
+  assert.doesNotMatch(summaryMessage, /## 目标（Goal）/u);
+  // 退化路径不计入摘要 usage（抛错在 addUsage 之前）：worker 30+110+10=150。
+  assert.equal(result.usage.totalTokens, 150);
+});
+
 test("补丁3 a max_tokens-truncated tool_use with degraded string input fails per-tool and continues (no compaction)", async () => {
   const workdir = await tempWorkdir();
   const executed: string[] = [];
