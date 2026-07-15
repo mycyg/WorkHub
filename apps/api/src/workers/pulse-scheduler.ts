@@ -1,4 +1,8 @@
+import { settings } from "@workhub/config";
+
 import { getDefaultStructuredLogger } from "../logging.js";
+import { createApprovalService, type ApprovalService } from "../services/approvals.js";
+import { createNotificationService, type NotificationService } from "../services/notifications.js";
 
 // R15 批 A（统一调度器 · 01-batch-a-pipeline.md §A1）：通用周期任务注册器。审批 SLA、通知提醒阶梯、
 // 后续主动性投递三家共用一条水管，不再各自手搓 setInterval（agent-run-recovery / session-sweep /
@@ -169,4 +173,60 @@ export function createPulseScheduler(options: {
     stats,
     taskNames: () => [...tasks.keys()]
   };
+}
+
+let defaultPulseScheduler: PulseScheduler | undefined;
+
+// R15 批 A（A2）默认调度器：挂两条任务。
+//  - approval-sla：调 expireDueApprovals（此前无任何调用方，escalate_pm/notify_reviewer 分流形同虚设）。
+//  - notification-reminder：调 runNotificationReminders（24h 提醒阶梯复活推送）。
+// 二者纯 DB 驱动的确定性巡检，无 LLM 依赖，与 risk-monitor/github-poll 同档；仅 PULSE_SCHEDULER_ENABLED
+// 总开关门控（见 server.ts）。依赖可注入，便于单测直驱。
+export function getDefaultPulseScheduler(deps: {
+  approvals?: Pick<ApprovalService, "expireDueApprovals">;
+  notifications?: Pick<NotificationService, "runNotificationReminders">;
+} = {}): PulseScheduler {
+  if (defaultPulseScheduler) {
+    return defaultPulseScheduler;
+  }
+  const approvals = deps.approvals ?? createApprovalService();
+  const notifications = deps.notifications ?? createNotificationService();
+  const scheduler = createPulseScheduler();
+
+  scheduler.register({
+    name: "approval-sla",
+    intervalMs: settings.pulse.approvalSlaIntervalMs,
+    // 一 tick 最多结算这么多到期审批，避免积压时一次同步跑穿整批。
+    maxDrainPerTick: 200,
+    tick: async (ctx) => {
+      const results = await approvals.expireDueApprovals(
+        ctx.maxDrainPerTick !== undefined ? { limit: ctx.maxDrainPerTick } : {}
+      );
+      if (results.length > 0) {
+        getDefaultStructuredLogger().info("pulse_approval_sla_swept", {
+          expired: results.length,
+          escalated: results.filter((result) => result.escalated).length
+        });
+      }
+      return { expired: results.length, escalated: results.filter((result) => result.escalated).length };
+    }
+  });
+
+  scheduler.register({
+    name: "notification-reminder",
+    intervalMs: settings.pulse.notificationReminderIntervalMs,
+    maxDrainPerTick: 200,
+    tick: async (ctx) => {
+      const result = await notifications.runNotificationReminders(
+        ctx.maxDrainPerTick !== undefined ? { limit: ctx.maxDrainPerTick } : {}
+      );
+      if (result.reminded > 0) {
+        getDefaultStructuredLogger().info("pulse_notification_reminder_swept", result);
+      }
+      return result;
+    }
+  });
+
+  defaultPulseScheduler = scheduler;
+  return defaultPulseScheduler;
 }

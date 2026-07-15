@@ -166,6 +166,8 @@ function notificationRow(overrides: Partial<NotificationRow> = {}): Notification
     dedupeKey: "dedupe-1",
     readAt: null,
     archivedAt: null,
+    nextRemindAt: null,
+    reminderCount: 0,
     createdAt: now,
     updatedAt: now,
     ...overrides

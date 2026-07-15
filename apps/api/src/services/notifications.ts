@@ -41,6 +41,22 @@ export class NotificationServiceError extends Error {
   }
 }
 
+// R15 批 A（提醒阶梯 · 01-batch-a-pipeline.md §A2）：硬编码策略。approval.routed 类通知创建即置
+// next_remind_at = 创建时刻 + 24h；此后每次 notification-reminder tick 复活推送并把 next_remind_at 再 +24h，
+// reminder_count 达上限 3 后置空停止续期（approval 类的进一步升级交给 expireDueApprovals 既有分流，
+// 不在此重复造）。approvals.ts 创建 approval.routed 时复用同一个间隔常量。
+export const APPROVAL_REMINDER_INTERVAL_MS = 24 * 60 * 60 * 1000;
+export const REMINDER_MAX_COUNT = 3;
+
+export type NotificationReminderRunResult = {
+  // 本 tick 扫到的到期待提醒行数。
+  scanned: number;
+  // 成功落一次提醒（复活 + 推 SSE）的行数（扫描与更新之间被读/归档的会落空，不计入）。
+  reminded: number;
+  // 本 tick 里达阶梯上限、next_remind_at 被置空的行数（此后不再提醒）。
+  stopped: number;
+};
+
 export type NotificationServiceDependencies = {
   notifications: NotificationRepository;
   audit?: AuditLogRepository;
@@ -338,7 +354,7 @@ export function createNotificationService(
     }
   }
 
-  async function flushDraft(draft: NotificationDraft): Promise<NotificationRow | null> {
+  async function flushDraft(draft: NotificationDraft & { nextRemindAt?: Date }): Promise<NotificationRow | null> {
     // 团队就绪 must-have：收件人静音了该类型则跳过、不建（DEFAULT-OFF：查询不可用/空则照建）。
     if (await isMutedForRecipient(draft.userId, draft.type)) {
       return null;
@@ -353,7 +369,9 @@ export function createNotificationService(
         targetUrl: draft.targetUrl,
         workItemId: draft.workItemId,
         dedupeKey: draft.dedupeKey,
-        ...(draft.projectId ? { projectId: draft.projectId } : {})
+        ...(draft.projectId ? { projectId: draft.projectId } : {}),
+        // R15 批 A：进 24h 提醒阶梯的通知（approval.routed）带上首个 next_remind_at；其余不带。
+        ...(draft.nextRemindAt ? { nextRemindAt: draft.nextRemindAt } : {})
       },
       now()
     );
@@ -406,7 +424,7 @@ export function createNotificationService(
       return deps.notifications.archiveByDedupeKey(dedupeKey, now());
     },
 
-    async createNotification(draft: NotificationDraft): Promise<Notification | null> {
+    async createNotification(draft: NotificationDraft & { nextRemindAt?: Date }): Promise<Notification | null> {
       // 团队就绪 must-have：收件人静音了该类型则返回 null（未建）。
       const row = await flushDraft(draft);
       return row ? toNotificationResponse(row) : null;
@@ -623,6 +641,60 @@ export function createNotificationService(
         row,
         visibility.stripUnreadableWorkItemTarget ? { stripUnreadableWorkItemTarget: true } : {}
       );
+    },
+
+    // R15 批 A（提醒阶梯）：被提醒人「暂停提醒」——置 next_remind_at=NULL，不动读/归档态。
+    // 已读/归档本就会停提醒（扫描条件排除），此动作专门服务「知道了、先别催、但也别把它移出待决策队列」。
+    async snooze(id: string, userId: string, options: NotificationMutationOptions = {}) {
+      const existing = await deps.notifications.findByIdForUser(id, userId);
+      if (!existing) {
+        throw new NotificationServiceError(404, "not_found", "没有找到这条通知。");
+      }
+      const visibility = await requireVisibleNotification(existing, options.actor);
+      const row = await deps.notifications.snoozeReminder(id, userId, now());
+      if (!row) {
+        throw new NotificationServiceError(404, "not_found", "没有找到这条通知。");
+      }
+      await auditNotificationAction({
+        userId,
+        entityId: id,
+        action: "notification.snooze"
+      });
+      return toNotificationResponse(
+        row,
+        visibility.stripUnreadableWorkItemTarget ? { stripUnreadableWorkItemTarget: true } : {}
+      );
+    },
+
+    // R15 批 A（提醒阶梯）：notification-reminder pulse 任务的一次 tick 主体。扫到期该提醒的通知，逐条
+    // reminder_count++、next_remind_at +24h（达上限 3 则置空停止续期），并用 createOrUpdateNotification 之外
+    // 的直更 + 同一条 publishNotification 复活推 SSE（updated_at 顶到 now 使其回到列表最前）。
+    // 已读/已归档的通知在 listDueReminders 就被排除，天然退出阶梯，无需单独抑制状态。
+    async runNotificationReminders(options: { limit?: number } = {}): Promise<NotificationReminderRunResult> {
+      const at = now();
+      const limit = Math.max(1, Math.min(options.limit ?? 200, 500));
+      const due = await deps.notifications.listDueReminders(at, limit);
+      let reminded = 0;
+      let stopped = 0;
+      for (const row of due) {
+        const nextCount = row.reminderCount + 1;
+        // 达上限：本次是最后一提，next_remind_at 置空——此后不再进扫描（approval 类的进一步升级
+        // 由 expireDueApprovals 既有 escalate_pm/notify_reviewer 分流负责，不在这里重复造）。
+        const nextRemindAt = nextCount >= REMINDER_MAX_COUNT
+          ? null
+          : new Date(at.getTime() + APPROVAL_REMINDER_INTERVAL_MS);
+        const updated = await deps.notifications.applyReminderTick(row.id, { nextRemindAt, at });
+        // listDueReminders 与本更新之间通知被读/归档 → applyReminderTick 落空返回 null，跳过（不复活已处理项）。
+        if (!updated) {
+          continue;
+        }
+        reminded += 1;
+        if (nextRemindAt === null) {
+          stopped += 1;
+        }
+        await publishNotification(deps.bus, updated);
+      }
+      return { scanned: due.length, reminded, stopped };
     }
   };
 }
