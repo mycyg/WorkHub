@@ -532,11 +532,16 @@ test("补丁3 a max_tokens-truncated tool_use with degraded string input fails p
         seenMessages.push(JSON.parse(JSON.stringify(params.messages)));
         if (calls === 1) {
           // partial_json 截断：input 退化成残缺 string，不能拿去执行工具。
+          // 前置 thinking 块：严格 Anthropic 语义下（extended thinking 开启时），带 tool_use 的 assistant
+          // 消息回传必须原样保留 thinking，否则下一次请求 400（"Expected thinking..."）。
           return {
             id: "m1",
             stopReason: "max_tokens",
             usage: { inputTokens: 10, outputTokens: 4096 },
-            content: [{ type: "tool_use", id: "tool-1", name: "write_file", input: "{\"path\":\"outputs/r.md\",\"content\":\"part" }]
+            content: [
+              { type: "thinking", thinking: "先把报告初稿写进 outputs/", signature: "sig-1" },
+              { type: "tool_use", id: "tool-1", name: "write_file", input: "{\"path\":\"outputs/r.md\",\"content\":\"part" }
+            ]
           };
         }
         // 第二次：模型重发完整调用（本例回文本收尾即可，重点是 loop 已 continue 而非 compact）。
@@ -594,9 +599,17 @@ test("补丁3 a max_tokens-truncated tool_use with degraded string input fails p
     Array.isArray(message.content) &&
     (message.content as Array<{ type?: string; id?: string }>).some((block) => block.type === "tool_use" && block.id === "tool-1")
   );
-  const echoedToolUse = (echoedAssistant?.content as Array<{ type?: string; id?: string; input?: unknown }>)
-    .find((block) => block.type === "tool_use" && block.id === "tool-1");
+  const echoedBlocks = echoedAssistant?.content as Array<Record<string, unknown>>;
+  const echoedToolUse = echoedBlocks.find((block) => block.type === "tool_use" && block.id === "tool-1");
   assert.equal(typeof echoedToolUse?.input, "object");
+  // thinking 块必须原样保留（含 signature），且顺序仍在 tool_use 之前——严格 Anthropic 语义下丢 thinking
+  // 会让下一次带 tool_use 的回传 400（"Expected thinking..."）。
+  const echoedThinking = echoedBlocks.find((block) => block.type === "thinking");
+  assert.deepEqual(echoedThinking, { type: "thinking", thinking: "先把报告初稿写进 outputs/", signature: "sig-1" });
+  assert.equal(
+    echoedBlocks.findIndex((block) => block.type === "thinking") < echoedBlocks.findIndex((block) => block.type === "tool_use"),
+    true
+  );
   const toolResultMessage = secondCall.find((message) =>
     Array.isArray(message.content) &&
     (message.content as Array<{ type?: string; tool_use_id?: string }>).some(

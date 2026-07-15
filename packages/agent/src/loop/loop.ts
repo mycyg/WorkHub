@@ -543,25 +543,27 @@ function summarizeStepsForCompaction(steps: AgentLoopStep[], maxChars = 4000) {
 
 /**
  * 补丁3：把被截断批次的 assistant 内容整理成 API 合法的 echo。截断会让 tool_use 的 input 退化成残缺
- * partial_json 字符串——直接把这种 string input 回传给 provider 会 400（tool_use.input 必须是对象）。这里
- * 把残缺 string input 换成合法空对象 {}，保留每个 tool_use 的 id/name（与随后逐个回的 error tool_result 配对，
- * 维持「tool_use 必配 tool_result」不变量），thinking/unknown 块对「重发工具」无价值故丢弃。
+ * partial_json 字符串——直接把这种 string input 回传给 provider 会 400（tool_use.input 必须是对象）。
+ * 基于原始 response.content 做**最小替换**：只对 input 不是对象的 tool_use 块把 input 换成合法空对象 {}
+ * （保留 id/name，与随后逐个回的 error tool_result 配对，维持「tool_use 必配 tool_result」不变量），其余
+ * 所有块——text/thinking/redacted_thinking/未知类型——原样透传。必须保留 thinking：严格 Anthropic 语义下
+ * （extended thinking 开启时），带 tool_use 的 assistant 消息回传必须原样带上其前面的 thinking/
+ * redacted_thinking 块，否则下一次请求 400（"Expected thinking..."）。不认识的块一律不丢，比重建白名单保守。
  */
-function sanitizeTruncatedAssistantContent(blocks: AgentAssistantBlock[]): unknown[] {
-  const content: unknown[] = [];
-  for (const block of blocks) {
-    if (block.type === "tool_use") {
-      content.push({
-        type: "tool_use",
-        id: block.id,
-        name: block.name,
-        input: block.input && typeof block.input === "object" ? block.input : {}
-      });
-    } else if (block.type === "text") {
-      content.push({ type: "text", text: block.text });
+function sanitizeTruncatedAssistantContent(rawContent: unknown[]): unknown[] {
+  return rawContent.map((block) => {
+    if (!block || typeof block !== "object") {
+      return block;
     }
-  }
-  return content;
+    const record = block as Record<string, unknown>;
+    if (record.type !== "tool_use") {
+      return block;
+    }
+    if (record.input && typeof record.input === "object") {
+      return block;
+    }
+    return { ...record, input: {} };
+  });
 }
 
 function blockType(block: unknown): string | undefined {
@@ -1196,8 +1198,9 @@ export class AgentLoop {
 
       messages.push({
         role: "assistant",
-        // 补丁3：截断批次回传时把残缺 string input 清成合法 {}，否则下次 provider 调用会因非法 tool_use.input 400。
-        content: truncatedToolBatch ? sanitizeTruncatedAssistantContent(assistant) : response.content
+        // 补丁3：截断批次回传时基于原始 response.content 做最小替换——只把残缺 string input 清成合法 {}，
+        // 其余块（含 thinking/redacted_thinking）原样透传，否则下次 provider 调用会 400。
+        content: truncatedToolBatch ? sanitizeTruncatedAssistantContent(response.content) : response.content
       });
 
       if (toolResults.length > 0) {
