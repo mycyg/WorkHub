@@ -294,9 +294,18 @@ function renderRowHtml(
   </div>`;
 }
 
-// E2b 会替换这个默认实现（OKR tile）。E2a 阶段先返回空串，行渲染逻辑保持不动。
-function renderOkrTile(_item: TimelineWorkItemVM, _zh: boolean): string {
-  return "";
+// E2b OKR 挂钩：工作项挂了目标（objective_ids 非空）时，就近在行标题右侧渲一枚 OKR tile。
+// 缺口（见报告）：E1 的时间线 VM 只带 objective_ids、不带目标名，也没有可批量取名的公开端点
+// （listObjectiveTitlesByIds 只在成本页服务端内部用，未暴露给前端），本批不改 api——所以 tile 的
+// 悬停（title）先显 id，不编造名字。目标名接入等 E1 补 VM 字段或开只读取名端点后再补（additive）。
+function renderOkrTile(item: TimelineWorkItemVM, zh: boolean): string {
+  const ids = item.objective_ids;
+  if (!ids || ids.length === 0) {
+    return "";
+  }
+  const label = ids.length > 1 ? `OKR ×${ids.length}` : "OKR";
+  const hover = zh ? `目标 ${ids.join("、")}` : `Objectives ${ids.join(", ")}`;
+  return `<span class="wh-wb-tl-okr" title="${escapeHtml(hover)}" aria-label="${escapeHtml(hover)}">${label}</span>`;
 }
 
 function renderMilestoneFormHtml(ui: TimelineUiState, zh: boolean): string {

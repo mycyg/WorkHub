@@ -203,6 +203,28 @@ test("milestones present but no dated work items → no-dates hint, controls sti
   assert.equal(html.includes('data-wb-tl-attach="a"'), true);
 });
 
+test("OKR tile appears only when a work item has objective_ids; hover carries the ids (no name endpoint yet)", () => {
+  const withOkr = renderTimelineHtml({
+    locale: "zh-CN",
+    ui: ui(),
+    vm: vm({
+      items: [
+        item({ id: "a", code: "WH-A", due_at: "2026-07-13T00:00:00Z", objective_ids: ["obj-1"] }),
+        item({ id: "b", code: "WH-B", due_at: "2026-07-15T00:00:00Z", objective_ids: ["obj-1", "obj-2"] }),
+        item({ id: "c", code: "WH-C", due_at: "2026-07-16T00:00:00Z" })
+      ]
+    })
+  });
+  assert.equal(withOkr.includes("wh-wb-tl-okr"), true);
+  // single objective → plain "OKR"; multiple → count.
+  assert.equal(withOkr.includes(">OKR</span>"), true);
+  assert.equal(withOkr.includes(">OKR ×2</span>"), true);
+  // hover title carries the id (name not available from the VM).
+  assert.equal(withOkr.includes("obj-1"), true);
+  // an item without objectives gets no tile.
+  assert.equal((withOkr.match(/wh-wb-tl-okr/gu) ?? []).length, 2);
+});
+
 test("loading and error state renderers", () => {
   assert.equal(renderTimelineLoadingHtml("zh-CN").includes("正在加载时间线"), true);
   assert.equal(renderTimelineErrorHtml("en-US").includes("data-wb-tl-retry"), true);
