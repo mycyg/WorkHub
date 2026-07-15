@@ -16,6 +16,7 @@
     "@workhub/config": "workspace:*",
     "@workhub/contracts": "workspace:*",
     "@workhub/cuu": "workspace:*",
+    "@workhub/events": "workspace:*",
     "@workhub/ui": "workspace:*",
     "@workhub/web-runtime": "workspace:*"
   },

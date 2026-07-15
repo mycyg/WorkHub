@@ -74,6 +74,9 @@ importers:
       '@workhub/cuu':
         specifier: workspace:*
         version: link:../../packages/cuu
+      '@workhub/events':
+        specifier: workspace:*
+        version: link:../../packages/events
       '@workhub/ui':
         specifier: workspace:*
         version: link:../../packages/ui
