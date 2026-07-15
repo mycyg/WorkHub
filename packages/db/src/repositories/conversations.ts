@@ -15,6 +15,7 @@ import {
   messageReactions,
   projectConversations,
   projects,
+  users,
   workspaceMemberships
 } from "../schema/index.js";
 
@@ -208,6 +209,26 @@ export type OpenOrCreateDmResult = {
   created: boolean;
 };
 
+// R15 批 B（人对人私聊）：listDmsForUser 的输入——actor 的工作区 + user id + 列表上限。只读、参与者门控
+// （只回 actor 是 participant 的 DM），与 openOrCreateDm 一样限定在工作区级 DM 容器项目内。
+export type ListDmsForUserInput = {
+  workspaceId: string;
+  userId: string;
+  limit: number;
+};
+
+// 一条 DM 的仓库结果：会话行 + 两名活跃参与者（含昵称、is_self 由 actor 判定）。对方账号已注销的 DM
+// 在仓库层被过滤掉（活跃参与者 < 2），不进列表。
+export type DmParticipantRow = {
+  userId: string;
+  nickname: string;
+  isSelf: boolean;
+};
+export type DmListForUserRow = {
+  conversation: ConversationRow;
+  participants: DmParticipantRow[];
+};
+
 // R15 批 B：DM 会话查重键——两个 user id 归一化（小写）后排序，再拼 'dm:' 前缀。同一对用户与顺序无关
 // 得到同一个 key（workspace 维度由容器项目 id 天然限定，见 dmKey 列/唯一索引注释）。导出供单测直接覆盖。
 export function normalizeDmKey(userIdA: string, userIdB: string): string {
@@ -354,6 +375,9 @@ export type ConversationRepository = {
   // 建 collab 会话（cuu_enabled=false）+ 2 参与者，并发双开撞唯一约束后回退查询既有。新增方法，不改动
   // 上面任何既有方法的签名/行为。
   openOrCreateDm: (input: OpenOrCreateDmInput) => Promise<OpenOrCreateDmResult>;
+  // R15 批 B（人对人私聊）：actor 参与的 DM 列表（参与者门控、含两名参与者昵称）。新增只读方法，不改动
+  // 上面任何既有方法的签名/行为——rail「私聊」分组的唯一数据源，桌面 chat 视图据此拿到真实参与者集合。
+  listDmsForUser: (input: ListDmsForUserInput) => Promise<DmListForUserRow[]>;
   createUserMessage: (input: CreateUserMessageInput) => Promise<ConversationMessageRow>;
   // R12 批4a：新增，不改动上面任何既有方法的签名/行为。
   createCuuMessage: (input: CreateCuuMessageInput) => Promise<ConversationMessageRow>;
@@ -1274,6 +1298,92 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
         ]);
         return { conversation: created, created: true };
       });
+    },
+
+    // R15 批 B（人对人私聊）：actor 参与的 DM 列表——两步查询（禁 N+1）：
+    //  1) 工作区级 DM 容器项目里、dm_key 非空、未删除、actor 是 participant 的会话（按 updatedAt 倒序，
+    //     最近聊过的排前）；容器还没被任何人建过（没有 DM）时直接空列表。
+    //  2) 对这批会话 id 一次性取回全部活跃参与者 + 昵称（join users 过滤已注销）。
+    // 对方账号已注销 → 活跃参与者 < 2 → 整条 DM 不进列表（不能给一个点了打不开的死会话）。
+    async listDmsForUser(input) {
+      const actorUserId = input.userId.trim().toLowerCase();
+      if (!actorUserId) {
+        throw new ConversationRepositoryInputError("dm list requires an actor user id");
+      }
+      if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 500) {
+        throw new ConversationRepositoryInputError("dm list limit must be an integer from 1 through 500");
+      }
+      const [container] = await db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(
+          and(
+            eq(projects.workspaceId, input.workspaceId),
+            eq(projects.isDmContainer, true),
+            isNull(projects.deletedAt)
+          )
+        )
+        .limit(1);
+      if (!container) {
+        return [];
+      }
+      const conversationRows = await db
+        .select(conversationSelection)
+        .from(projectConversations)
+        .innerJoin(
+          conversationParticipants,
+          and(
+            eq(conversationParticipants.conversationId, projectConversations.id),
+            eq(conversationParticipants.userId, actorUserId)
+          )
+        )
+        .where(
+          and(
+            eq(projectConversations.projectId, container.id),
+            eq(projectConversations.workspaceId, input.workspaceId),
+            isNotNull(projectConversations.dmKey),
+            isNull(projectConversations.deletedAt)
+          )
+        )
+        .orderBy(desc(projectConversations.updatedAt), desc(projectConversations.id))
+        .limit(input.limit);
+      if (conversationRows.length === 0) {
+        return [];
+      }
+      const conversations = conversationRows as ConversationRow[];
+      const conversationIds = conversations.map((row) => row.id);
+      const participantRows = await db
+        .select({
+          conversationId: conversationParticipants.conversationId,
+          userId: users.id,
+          nickname: users.nickname
+        })
+        .from(conversationParticipants)
+        .innerJoin(
+          users,
+          and(eq(users.id, conversationParticipants.userId), isNull(users.deletedAt))
+        )
+        .where(inArray(conversationParticipants.conversationId, conversationIds));
+      const byConversation = new Map<string, DmParticipantRow[]>();
+      for (const row of participantRows) {
+        const bucket = byConversation.get(row.conversationId) ?? [];
+        bucket.push({
+          userId: row.userId,
+          nickname: row.nickname,
+          isSelf: row.userId.toLowerCase() === actorUserId
+        });
+        byConversation.set(row.conversationId, bucket);
+      }
+      const result: DmListForUserRow[] = [];
+      for (const conversation of conversations) {
+        const participants = byConversation.get(conversation.id) ?? [];
+        // 固定 2 人：actor 自己 + 对方都必须是活跃用户。任一注销（活跃行 < 2）就跳过——不给死会话入口。
+        if (participants.length !== 2 || !participants.some((participant) => participant.isSelf)) {
+          continue;
+        }
+        result.push({ conversation, participants });
+      }
+      return result;
     },
 
     async createUserMessage(input) {

@@ -568,6 +568,65 @@ export const openDmResultVmSchema = z
   .strict();
 export type OpenDmResultVM = z.infer<typeof openDmResultVmSchema>;
 
+// R15 批 B（人对人私聊）：GET /api/dm/list —— 当前 actor 参与的 DM 会话列表。DM 容器项目对项目树/项目
+// 列表/工作台 VM 全线围栏（findWorkbenchAccess/listProjects fail-closed），所以 DM 会话在左栏没有任何
+// 常规入口——这个窄口是「私聊」分组唯一的数据源，参与者门控（服务层只回 actor 是 participant 的 DM）。
+// 每条 DM 固定 2 名活跃参与者（self + 对方），participants 同时给了「对方昵称」（rail 私聊行渲染）与
+// 「本会话真实参与者集合」（桌面 chat 视图据此把已读 N/M 的分母收敛成 1/1，而不是拿全工作区成员当分母）。
+const dmListParticipantVmSchema = z
+  .object({
+    user_id: idSchema,
+    nickname: z.string().min(1),
+    // 恰好一名参与者 is_self=true（见 dmListItemVmSchema 的 superRefine）——客户端据此挑出「对方」。
+    is_self: z.boolean()
+  })
+  .strict();
+export type DmListParticipantVM = z.infer<typeof dmListParticipantVmSchema>;
+
+export const dmListItemVmSchema = z
+  .object({
+    conversation: conversationVmSchema,
+    // 固定 2 人（DM 不可拉人）——两名都是活跃用户；对方账号被删则整条 DM 不出现在列表（服务层过滤）。
+    participants: z.array(dmListParticipantVmSchema).length(2)
+  })
+  .strict()
+  .superRefine((item, ctx) => {
+    // DM 会话一定带 is_dm=true（由 dm_key 非空推导）——列表接口不该混进普通会话。
+    if (item.conversation.is_dm !== true) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["conversation", "is_dm"],
+        message: "a dm list item must carry a dm conversation (is_dm=true)"
+      });
+    }
+    const selfCount = item.participants.filter((participant) => participant.is_self).length;
+    if (selfCount !== 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["participants"],
+        message: "a dm must contain exactly one self participant"
+      });
+    }
+    const userIds = new Set(item.participants.map((participant) => participant.user_id));
+    if (userIds.size !== item.participants.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["participants"],
+        message: "dm participants must be distinct users"
+      });
+    }
+  });
+export type DmListItemVM = z.infer<typeof dmListItemVmSchema>;
+
+// 列表上限——同 capped 三件套口径（前 N 名），DM 数量对内部团队规模远低于此，纯防御性封顶。
+export const DM_LIST_CAP = 200;
+export const dmListVmSchema = z
+  .object({
+    items: z.array(dmListItemVmSchema).max(DM_LIST_CAP)
+  })
+  .strict();
+export type DmListVM = z.infer<typeof dmListVmSchema>;
+
 // R14FIX 批 workbench：重命名成功的响应——回改名后的完整会话 VM（客户端就地更新左栏树叶，见
 // rail.ts renameCollabConversationInVm）。定义在 conversationVmSchema 之后（引用它），避免 const
 // 使用前声明——同 conversationPinsVmSchema 的既有取舍。

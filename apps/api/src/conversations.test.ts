@@ -150,6 +150,10 @@ function repository(overrides: Partial<ConversationRepository> = {}): Conversati
     async openOrCreateDm() {
       throw new Error("openOrCreateDm not expected");
     },
+    // R15 批 B：新增 listDmsForUser（私聊列表）——同上，按需 override。
+    async listDmsForUser() {
+      throw new Error("listDmsForUser not expected");
+    },
     async createUserMessage() {
       throw new Error("createUserMessage not expected");
     },
@@ -509,6 +513,68 @@ test("openDm maps a non-member target to a stable 404 (no leak that the user exi
       && error.status === 404
       && error.code === "conversation_dm_target_not_found"
   );
+});
+
+test("listDms forwards the actor/workspace + cap and shapes each item with is_dm + 2 participants", async () => {
+  let received: unknown;
+  const dmConversation = conversationRow({
+    projectId: "70000000-0000-4000-8000-000000000099",
+    kind: "collab",
+    visibility: "private",
+    cuuEnabled: false,
+    dmKey: `dm:${[userId, participantUserId].sort().join(":")}`,
+    createdBy: userId
+  });
+  const repo = repository({
+    async listDmsForUser(input) {
+      received = input;
+      return [
+        {
+          conversation: dmConversation,
+          participants: [
+            { userId, nickname: "me", isSelf: true },
+            { userId: participantUserId, nickname: "peer", isSelf: false }
+          ]
+        }
+      ];
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now
+  });
+
+  const result = await service.listDms({ actor: actor() });
+
+  assert.deepEqual(received, { workspaceId, userId, limit: 200 });
+  assert.equal(result.items.length, 1);
+  const item = result.items[0]!;
+  assert.equal(item.conversation.is_dm, true);
+  // 发起者（created_by === self）→ owner。
+  assert.equal(item.conversation.participant_role, "owner");
+  assert.deepEqual(item.participants, [
+    { user_id: userId, nickname: "me", is_self: true },
+    { user_id: participantUserId, nickname: "peer", is_self: false }
+  ]);
+});
+
+test("listDms returns an empty list unchanged (no DM container / no DMs)", async () => {
+  const repo = repository({
+    async listDmsForUser() {
+      return [];
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now
+  });
+
+  const result = await service.listDms({ actor: actor() });
+  assert.deepEqual(result, { items: [] });
 });
 
 test("conversation create maps rows and forwards only actor-scoped repository fields", async () => {
