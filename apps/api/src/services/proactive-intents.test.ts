@@ -7,6 +7,7 @@ import {
   createProactiveIntentService,
   isWithinProactiveQuietHours,
   parseProactiveQuietHours,
+  type ProactiveConversationDelivery,
   type ProactiveIntentInput,
   type ProactiveIntentRepositoryDeps
 } from "./proactive-intents.js";
@@ -169,6 +170,164 @@ test("recordAndDeliver: a muted recipient (notification returns null) marks the 
   const result = await service.recordAndDeliver(intent());
   assert.deepEqual(result, { status: "suppressed", reason: "muted", intentId: "intent-1" });
   assert.deepEqual(state.status, [{ id: "intent-1", status: "suppressed" }]);
+});
+
+// ── D2 会话通道（conversation_message）───────────────────────────────────────────────────
+
+type ConversationDeliveryCall = Parameters<ProactiveConversationDelivery["deliverCuuMessage"]>[0];
+
+function fakeConversationDelivery(
+  outcome: Awaited<ReturnType<ProactiveConversationDelivery["deliverCuuMessage"]>> | (() => never)
+): { delivery: ProactiveConversationDelivery; calls: ConversationDeliveryCall[] } {
+  const calls: ConversationDeliveryCall[] = [];
+  const delivery: ProactiveConversationDelivery = {
+    async deliverCuuMessage(input) {
+      calls.push(input);
+      if (typeof outcome === "function") {
+        outcome();
+      }
+      return outcome as Awaited<ReturnType<ProactiveConversationDelivery["deliverCuuMessage"]>>;
+    }
+  };
+  return { delivery, calls };
+}
+
+function conversationIntent(over: Partial<ProactiveIntentInput> = {}): ProactiveIntentInput {
+  return intent({ channel: "conversation_message", conversationText: "提醒一下：「上线报价单」明天就到期了。", ...over });
+}
+
+test("recordAndDeliver: conversation channel delivers a Cuu message and marks delivered_via=conversation_message", async () => {
+  const { repo, state } = fakeRepo();
+  const { delivery, calls } = fakeConversationDelivery({ delivered: true, conversationId: "conv-1" });
+  let notified = 0;
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        notified += 1;
+        return notificationRow();
+      }
+    },
+    conversationDelivery: delivery,
+    dailyCapPerUser: 10,
+    now: () => at
+  });
+  const result = await service.recordAndDeliver(conversationIntent());
+  assert.deepEqual(result, { status: "delivered", intentId: "intent-1" });
+  assert.equal(calls.length, 1, "conversation channel must be attempted");
+  assert.equal(calls[0]?.text, "提醒一下：「上线报价单」明天就到期了。");
+  assert.equal(calls[0]?.proactiveIntentId, "intent-1", "intent id threads onto the delivered message");
+  assert.equal(notified, 0, "a successful conversation delivery must not also fire a notification");
+  assert.deepEqual(state.status, [{ id: "intent-1", status: "delivered", deliveredVia: "conversation_message" }]);
+});
+
+test("recordAndDeliver: conversation channel degrades to notification when the personal space is missing", async () => {
+  const { repo, state } = fakeRepo();
+  const { delivery, calls } = fakeConversationDelivery({ delivered: false, reason: "no_personal_space" });
+  const notifications: unknown[] = [];
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification(draft) {
+        notifications.push(draft);
+        return notificationRow();
+      }
+    },
+    conversationDelivery: delivery,
+    dailyCapPerUser: 10,
+    now: () => at
+  });
+  const result = await service.recordAndDeliver(conversationIntent());
+  assert.deepEqual(result, { status: "delivered", intentId: "intent-1" });
+  assert.equal(calls.length, 1, "conversation channel is attempted first");
+  assert.equal(notifications.length, 1, "then it degrades to the notification channel");
+  assert.deepEqual(state.status, [{ id: "intent-1", status: "delivered", deliveredVia: "notification" }]);
+});
+
+test("recordAndDeliver: conversation channel degrades to notification when delivery throws", async () => {
+  const { repo, state } = fakeRepo();
+  const { delivery } = fakeConversationDelivery(() => {
+    throw new Error("broker down");
+  });
+  let notified = 0;
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        notified += 1;
+        return notificationRow();
+      }
+    },
+    conversationDelivery: delivery,
+    dailyCapPerUser: 10,
+    now: () => at,
+    logger: { warn() {} }
+  });
+  const result = await service.recordAndDeliver(conversationIntent());
+  assert.deepEqual(result, { status: "delivered", intentId: "intent-1" });
+  assert.equal(notified, 1, "a delivery throw degrades to notification (fail-open)");
+  assert.deepEqual(state.status, [{ id: "intent-1", status: "delivered", deliveredVia: "notification" }]);
+});
+
+test("recordAndDeliver: a conversation-channel intent with no delivery port injected degrades to notification", async () => {
+  const { repo, state } = fakeRepo();
+  let notified = 0;
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        notified += 1;
+        return notificationRow();
+      }
+    },
+    // conversationDelivery 未注入。
+    dailyCapPerUser: 10,
+    now: () => at
+  });
+  const result = await service.recordAndDeliver(conversationIntent());
+  assert.deepEqual(result, { status: "delivered", intentId: "intent-1" });
+  assert.equal(notified, 1);
+  assert.deepEqual(state.status, [{ id: "intent-1", status: "delivered", deliveredVia: "notification" }]);
+});
+
+test("recordAndDeliver: the per-user daily cap suppresses a conversation-channel intent before any delivery", async () => {
+  const { repo, state } = fakeRepo({ deliveredToday: 10 });
+  const { delivery, calls } = fakeConversationDelivery({ delivered: true, conversationId: "conv-1" });
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        return notificationRow();
+      }
+    },
+    conversationDelivery: delivery,
+    dailyCapPerUser: 10,
+    now: () => at
+  });
+  const result = await service.recordAndDeliver(conversationIntent());
+  assert.deepEqual(result, { status: "suppressed", reason: "daily_cap", intentId: "intent-1" });
+  assert.equal(calls.length, 0, "the cap gate runs before the conversation channel");
+  assert.deepEqual(state.status, [{ id: "intent-1", status: "suppressed" }]);
+});
+
+test("recordAndDeliver: a duplicate conversation-channel intent is idempotently skipped without delivering", async () => {
+  const { repo, state } = fakeRepo({ created: false });
+  const { delivery, calls } = fakeConversationDelivery({ delivered: true, conversationId: "conv-1" });
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        return notificationRow();
+      }
+    },
+    conversationDelivery: delivery,
+    dailyCapPerUser: 10,
+    now: () => at
+  });
+  const result = await service.recordAndDeliver(conversationIntent());
+  assert.deepEqual(result, { status: "suppressed", reason: "duplicate" });
+  assert.equal(calls.length, 0, "duplicate must not deliver on any channel");
+  assert.equal(state.status.length, 0);
 });
 
 test("parseProactiveQuietHours parses cross-midnight, same-day, and rejects malformed", () => {

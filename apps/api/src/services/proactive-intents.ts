@@ -2,6 +2,7 @@ import { settings as runtimeSettings } from "@workhub/config";
 import type { NotificationSeverity } from "@workhub/contracts";
 import {
   countDeliveredProactiveIntentsForUser,
+  createConversationRepository,
   getSharedDatabaseClient,
   markProactiveIntentStatus,
   recordProactiveIntent,
@@ -9,11 +10,13 @@ import {
   type WorkHubDatabaseClient
 } from "@workhub/db";
 
+import { getDefaultPushBus } from "../broker/index.js";
 import { getDefaultStructuredLogger, type StructuredLogger } from "../logging.js";
 import {
   createNotificationService,
   type NotificationService
 } from "./notifications.js";
+import { createProactiveCuuDelivery } from "./proactive-cuu-delivery.js";
 
 // R15 批 D（主动性 MVP · ProactiveIntent 决策/投递层）：主动打扰的唯一闸门。
 //
@@ -24,14 +27,25 @@ import {
 // 投递物（通知/未来的会话 turn）上做审计溯源。**规则闸判定要不要打扰、LLM 只管措辞**：本闸是纯规则
 // （每人每日上限 + 用户级静音），零 LLM 调用。
 //
-// 本批唯一投递通道 = notifications（delivered_via='notification'）。会话内 digest 卡 / SSE / Cuu turns
-// 是后续批次的通道，各自 delivered_via 值不同，但都复用本闸的记录 + 频控前置。
+// 投递通道（delivered_via）：
+//   * 'notification'          —— 批 D 通道，落一条 notification（用户级按类型静音在此生效）。
+//   * 'conversation_message'  —— 批 D2 通道，Cuu 在目标用户【个人空间主区】不请自来说一句话（R13 S3 的
+//     1:1 落点）。个人空间不可用（用户没建过）→ 降级回 notification 通道并记日志，绝不硬造个人空间。
+// 通道选择在【调用方】（ddl-chase 按阶梯决定 t1d/overdue 走会话、其余走通知）——同一 intent 只投一个
+// 通道。两条通道都复用本闸同一份「先记录 + 频控前置（每人每日上限）」，静默时段仍由扫描任务前置拦截。
+// 会话内 digest 卡 / SSE / Cuu turns 循环是后续批次的通道，各自 delivered_via 值不同，同样复用本闸。
 //
 // 静默时段（PROACTIVE_QUIET_HOURS）的取舍：不在这里拦——静默期内「延后投递」在通知可见性层不好做，
 // 故改在扫描任务（ddl-chase）里静默期直接不产 intent、把「该产但静默」记日志计数，下个非静默 tick
 // 再产（suppression_key 保证只产一次，等于把投递延到静默结束）。本闸只管每人每日上限 + 静音。
 
-export type ProactiveIntentKind = "ddl_chase" | "find_owner";
+// R15 批 D2c：'care' 是关怀接缝的注册位——F 批的关怀扫描会产 kind='care' 的 intent，走本闸同一条
+// conversation_message 通道（Cuu 在个人空间主动关怀）。本批不实现关怀扫描，只占位这个 kind（DB kind
+// 列无 check 约束，additive 安全）。见文件末的 careConversationText 模板签名。
+export type ProactiveIntentKind = "ddl_chase" | "find_owner" | "care";
+
+// R15 批 D2：投递通道。选择在调用方（见文件头）。缺省 'notification'（回到批 D 行为）。
+export type ProactiveDeliveryChannel = "notification" | "conversation_message";
 
 export type ProactiveIntentNotification = {
   type: string;
@@ -54,7 +68,13 @@ export type ProactiveIntentInput = {
   targetUserId: string;
   suppressionKey: string;
   payload: Record<string, unknown>;
+  // notification 通道的通知草稿。始终必填——即便走会话通道，个人空间不可用时也要靠它降级投递。
   notification: ProactiveIntentNotification;
+  // R15 批 D2：期望的投递通道（缺省 'notification'）。选 'conversation_message' 时须给 conversationText。
+  channel?: ProactiveDeliveryChannel;
+  // 会话通道的人话文案（Cuu 在个人空间主区说的那句）——零 LLM，由调用方（ddl-chase 模板）给定。
+  // 仅在 channel='conversation_message' 时使用；缺省/走通知通道时忽略。
+  conversationText?: string;
 };
 
 export type ProactiveDeliverResult =
@@ -69,12 +89,26 @@ export type ProactiveIntentRepositoryDeps = {
 
 export type ProactiveIntentServiceDeps = {
   repository: ProactiveIntentRepositoryDeps;
-  // 本批唯一投递通道。createNotification 内部已做用户级按类型静音（isMutedForRecipient）——静音时返回
+  // 批 D 通道。createNotification 内部已做用户级按类型静音（isMutedForRecipient）——静音时返回
   // null，本闸据此把 intent 记 suppressed（新通知类型自动可静音，无需在此重复判定）。
   notifications: Pick<NotificationService, "createNotification">;
+  // R15 批 D2 通道（Cuu 在个人空间主区说话）。可选——不注入时 channel='conversation_message' 也会降级
+  // 走 notification 通道（fail-open：宁可用通知补上，不吞掉这条主动性）。
+  conversationDelivery?: ProactiveConversationDelivery;
   dailyCapPerUser: number;
   now?: () => Date;
   logger?: Pick<StructuredLogger, "warn">;
+};
+
+// R15 批 D2：会话通道投递端口（实现见 proactive-cuu-delivery.ts）。返回 delivered=false 表示目标个人
+// 空间不可用 → 本闸降级回 notification 通道。类型独立声明，保持本闸对具体会话仓库/SSE 的零耦合。
+export type ProactiveConversationDelivery = {
+  deliverCuuMessage: (input: {
+    workspaceId: string;
+    targetUserId: string;
+    text: string;
+    proactiveIntentId: string;
+  }) => Promise<{ delivered: true; conversationId: string } | { delivered: false; reason: "no_personal_space" }>;
 };
 
 export type ProactiveIntentService = {
@@ -125,7 +159,35 @@ export function createProactiveIntentService(deps: ProactiveIntentServiceDeps): 
         return { status: "suppressed", reason: "daily_cap", intentId };
       }
 
-      // 3) 投递（本批唯一通道=notifications）。createNotification 内部按类型静音返回 null → 记 suppressed。
+      // 3) 投递。通道由调用方选（缺省 notification）。会话通道（Cuu 在个人空间主区说话）走得通就用它；
+      //    个人空间不可用 / 未注入投递端口 / 投递抛错 → 一律降级回 notification 通道（fail-open：不吞
+      //    掉这条主动性）。注意：会话通道不经通知的按类型静音（个人空间是你自己的地盘，没有对应的通知
+      //    类型可静音）——静音只在 notification 通道生效。
+      const wantsConversation = (intent.channel ?? "notification") === "conversation_message";
+      if (wantsConversation && intent.conversationText && deps.conversationDelivery) {
+        try {
+          const outcome = await deps.conversationDelivery.deliverCuuMessage({
+            workspaceId: intent.workspaceId,
+            targetUserId: intent.targetUserId,
+            text: intent.conversationText,
+            proactiveIntentId: intentId
+          });
+          if (outcome.delivered) {
+            await deps.repository.markStatus({ id: intentId, status: "delivered", deliveredVia: "conversation_message" });
+            return { status: "delivered", intentId };
+          }
+          logger.warn?.("proactive_conversation_delivery_degraded", {
+            intentId,
+            targetUserId: intent.targetUserId,
+            reason: outcome.reason
+          });
+        } catch (error) {
+          logger.warn?.("proactive_conversation_delivery_failed", { intentId, error });
+        }
+        // 落到这里 = 会话通道没投成，继续走下面的 notification 降级路径。
+      }
+
+      // notification 通道（也是会话通道的降级目标）。createNotification 内部按类型静音返回 null → 记 suppressed。
       const notification = await deps.notifications.createNotification({
         userId: intent.targetUserId,
         type: intent.notification.type,
@@ -187,6 +249,25 @@ export function isWithinProactiveQuietHours(quietHours: ProactiveQuietHours, now
   return hour >= startHour || hour < endHour;
 }
 
+// ── D2c 关怀接缝（为批次 F 打底，本批只做骨架，不实现关怀扫描本身）──────────────────────────
+//
+// 批次 F 的「关怀扫描」会侦测需要 Cuu 主动关怀的信号（如连续加班、工单长期积压、临期扎堆），产出
+// kind='care' 的 ProactiveIntent，走本闸【同一条 recordAndDeliver 频控/上限闸 + 同一条
+// conversation_message 通道】（Cuu 在个人空间主区主动关怀）——与追 DDL 复用完全一样的地基，不另起炉灶。
+// 本批仅：① 在 ProactiveIntentKind 注册 'care'（见文件头）；② 占位下面这个文案模板签名。
+// 关怀信号的形状、扫描节奏、以及措辞（后续接 LLM）都留给 F 批，此处刻意不实现——被调用即抛，fail-loud，
+// 防止 F 批接线时误以为已有实现而投出空消息。
+export type CareIntentSeed = {
+  workspaceId: string;
+  targetUserId: string;
+  // F 批扫描产出的关怀信号（形状待 F 批定；此处只占位，不约束）。
+  signal: Record<string, unknown>;
+};
+
+export function careConversationText(_seed: CareIntentSeed): string {
+  throw new Error("care intent templates are implemented in batch F; D2c is a registration seam only");
+}
+
 let defaultDbClient: WorkHubDatabaseClient | undefined;
 let defaultService: ProactiveIntentService | undefined;
 
@@ -201,6 +282,13 @@ export function getDefaultProactiveIntentService(): ProactiveIntentService {
         markStatus: (input) => markProactiveIntentStatus(db, input)
       },
       notifications: createNotificationService(),
+      // R15 批 D2：会话通道端口——复用同一个共享 DB 的会话仓库（个人空间主区定位 + Cuu 消息落库）与
+      // 默认 SSE 总线（广播 conversation.message.created），与 turn 循环的 Cuu 说话同一套落库/广播底座。
+      conversationDelivery: createProactiveCuuDelivery({
+        conversations: createConversationRepository(db),
+        bus: getDefaultPushBus(),
+        logger: getDefaultStructuredLogger()
+      }),
       dailyCapPerUser: runtimeSettings.proactive.dailyCapPerUser
     });
   }
