@@ -5,10 +5,14 @@ import type { ConversationVM, DmListItemVM, ProjectListItemVM, WorkbenchPageVM }
 
 import {
   appendCollabConversationToVm,
+  bumpConversationUnreadInVm,
+  bumpDmUnread,
   createCollabConversation,
   IDLE_NEW_COLLAB_MODAL_STATE,
   IDLE_RENAME_COLLAB_MODAL_STATE,
   nextCollabConversationTitle,
+  setConversationUnreadInVm,
+  setDmUnread,
   renameCollabConversation,
   renameCollabConversationInVm,
   renderArmyOverviewNavHtml,
@@ -116,7 +120,9 @@ test("renderProjectTreeHtml always includes a real 'new project' entry point", (
 });
 
 test("renderProjectTreeHtml marks the selected project active and shows its real conversation/drive leaves", () => {
-  const vm = workbenchVm();
+  const base = workbenchVm();
+  // R15 批 A6：树叶尾数字现在是未读数（unread_count），不再是消息总数（next_seq）。
+  const vm = setConversationUnreadInVm(base, base.conversations.conversations[0]!.id, 12);
   const html = renderProjectTreeHtml({
     projects: [project()],
     selectedProjectId: project().id,
@@ -124,9 +130,9 @@ test("renderProjectTreeHtml marks the selected project active and shows its real
     locale: "zh-CN"
   });
   assert.match(html, /class="wh-wb-project active"/u);
-  // Real main-conversation title and message count from the VM, not a placeholder.
+  // Real main-conversation title and unread red badge from the VM, not a placeholder.
   assert.match(html, /主区/u);
-  assert.match(html, /wh-wb-leaf-count">12</u);
+  assert.match(html, /wh-wb-leaf-count wh-wb-leaf-count--unread">12</u);
 });
 
 // R12 批 2：主区群聊接进这个窗口后，「主区」树叶从只读升级成真按钮（会话点击路由）——
@@ -205,7 +211,8 @@ function collabConversationVm(over: Partial<WorkbenchPageVM["conversations"]["co
 test("renderProjectTreeHtml renders a real, clickable leaf for every collab conversation visible to the viewer", () => {
   const vm = workbenchVm({
     conversations: {
-      conversations: [...workbenchVm().conversations.conversations, collabConversationVm()],
+      // R15 批 A6：树叶尾数字是未读数（unread_count），不再是 next_seq。
+      conversations: [...workbenchVm().conversations.conversations, collabConversationVm({ unread_count: 4 })],
       capped: false,
       next_cursor: null
     }
@@ -214,7 +221,7 @@ test("renderProjectTreeHtml renders a real, clickable leaf for every collab conv
   assert.match(html, /<button[^>]*data-wb-open-collab-chat="90000000-0000-4000-8000-000000000102"[^>]*>[^]*与 Cuu 的对话/u);
   assert.match(
     leafButtonOuterHtml(html, 'data-wb-open-collab-chat="90000000-0000-4000-8000-000000000102"'),
-    /wh-wb-leaf-count">4</u
+    /wh-wb-leaf-count wh-wb-leaf-count--unread">4</u
   );
 });
 
@@ -916,4 +923,90 @@ test("renderDmGroupHtml shows a faint empty-state hint when there are no DMs", (
   });
   assert.match(html, /点成员头像发起私聊/);
   assert.doesNotMatch(html, /data-wb-open-dm/);
+});
+
+// —— R15 批 A6（rail 未读红点）—— //
+
+test("renderProjectTreeHtml renders an unread red badge on the main leaf only when unread_count > 0", () => {
+  const withUnread = renderProjectTreeHtml({
+    projects: [project()],
+    selectedProjectId: project().id,
+    vm: workbenchVm({
+      conversations: {
+        conversations: [{ ...workbenchVm().conversations.conversations[0]!, unread_count: 3 }],
+        capped: false,
+        next_cursor: null
+      }
+    }),
+    locale: "zh-CN"
+  });
+  // 红点徽标带数字 3（未读语义），不是 next_seq 的消息总数。
+  assert.match(withUnread, /wh-wb-leaf-count wh-wb-leaf-count--unread">3</);
+
+  const noUnread = renderProjectTreeHtml({
+    projects: [project()],
+    selectedProjectId: project().id,
+    // 默认 workbenchVm 的主区没有 unread_count（=0 语义）——不渲任何数字徽标。
+    vm: workbenchVm(),
+    locale: "zh-CN"
+  });
+  assert.doesNotMatch(noUnread, /wh-wb-leaf-count/);
+});
+
+test("renderDmGroupHtml renders an unread red badge on a DM row only when unread_count > 0", () => {
+  const unreadDm = r15DmItem("30000000-0000-4000-8000-000000000031", R15_PEER_A, "甲");
+  unreadDm.conversation.unread_count = 5;
+  const html = renderDmGroupHtml({
+    dmList: [unreadDm],
+    currentUserId: R15_SELF,
+    onlineUserIds: new Set(),
+    centerTab: "chat",
+    locale: "zh-CN"
+  });
+  assert.match(html, /wh-wb-dm-count">5</);
+
+  const readDm = r15DmItem("30000000-0000-4000-8000-000000000032", R15_PEER_B, "乙");
+  const readHtml = renderDmGroupHtml({
+    dmList: [readDm],
+    currentUserId: R15_SELF,
+    onlineUserIds: new Set(),
+    centerTab: "chat",
+    locale: "zh-CN"
+  });
+  assert.doesNotMatch(readHtml, /wh-wb-dm-count/);
+});
+
+test("setConversationUnreadInVm sets a conversation's unread count and returns the same ref when unchanged", () => {
+  const vm = workbenchVm();
+  const conversationId = vm.conversations.conversations[0]!.id;
+  const next = setConversationUnreadInVm(vm, conversationId, 4);
+  assert.equal(next.conversations.conversations[0]!.unread_count, 4);
+  // 找不到的会话 id → 原样返回同一引用（调用方据此跳过重渲）。
+  assert.equal(setConversationUnreadInVm(vm, "no-such-id", 9), vm);
+  // 设成与当前相同的值（都视作 0）→ 同一引用。
+  assert.equal(setConversationUnreadInVm(vm, conversationId, 0), vm);
+  // 负数/非有限数归零。
+  assert.equal(setConversationUnreadInVm(next, conversationId, -3).conversations.conversations[0]!.unread_count, 0);
+});
+
+test("bumpConversationUnreadInVm increments by one and no-ops for unknown conversations", () => {
+  const vm = setConversationUnreadInVm(workbenchVm(), workbenchVm().conversations.conversations[0]!.id, 2);
+  const conversationId = vm.conversations.conversations[0]!.id;
+  assert.equal(bumpConversationUnreadInVm(vm, conversationId).conversations.conversations[0]!.unread_count, 3);
+  // 从"没有 unread_count 字段"（=0）起也能 +1。
+  const fresh = workbenchVm();
+  assert.equal(bumpConversationUnreadInVm(fresh, fresh.conversations.conversations[0]!.id).conversations.conversations[0]!.unread_count, 1);
+  assert.equal(bumpConversationUnreadInVm(vm, "no-such-id"), vm);
+});
+
+test("setDmUnread / bumpDmUnread update the matching DM and no-op otherwise", () => {
+  const dm = r15DmItem("30000000-0000-4000-8000-000000000031", R15_PEER_A, "甲");
+  const list = [dm];
+  const set = setDmUnread(list, dm.conversation.id, 7);
+  assert.equal(set[0]!.conversation.unread_count, 7);
+  assert.equal(setDmUnread(list, "no-such-id", 3), list);
+  assert.equal(bumpDmUnread(set, dm.conversation.id)[0]!.conversation.unread_count, 8);
+  assert.equal(bumpDmUnread(list, "no-such-id"), list);
+  // clear（设 0）把红点清掉。
+  assert.equal(setDmUnread(set, dm.conversation.id, 0)[0]!.conversation.unread_count ?? 0, 0);
 });

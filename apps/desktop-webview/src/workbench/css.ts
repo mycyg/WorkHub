@@ -86,6 +86,10 @@ export const workbenchCss = [
   ".wh-wb-leaf--live{cursor:pointer;transition:background var(--ds-dur-fast) var(--ds-ease)}",
   ".wh-wb-leaf--live:hover{background:var(--ds-glass-strong)}",
   ".wh-wb-leaf-count{margin-left:auto;font:700 10.5px/1 var(--ds-font);color:var(--ds-ink-faint);background:var(--ds-glass);padding:1px 6px;border-radius:99px}",
+  // R15 批 A6：未读红点徽标——数字挂在树叶/私聊行尾，红点风格（danger 底 + 白字 + 柔光），区别于上面
+  // 那个浅灰的消息总数样式。跟随既有玻璃体系里 wh-wb-project-dot 的 danger 语汇。
+  ".wh-wb-leaf-count--unread{color:#fff;background:var(--ds-danger);box-shadow:0 0 8px var(--ds-danger)}",
+  ".wh-wb-dm-count{flex:0 0 auto;margin-left:6px;font:700 10.5px/1 var(--ds-font);color:#fff;background:var(--ds-danger);box-shadow:0 0 8px var(--ds-danger);padding:1px 6px;border-radius:99px}",
   ".wh-wb-rail-foot{margin-top:auto;border-top:1px solid var(--ds-glass-border);padding:10px 12px}",
   ".wh-wb-me{display:flex;align-items:center;gap:8px;padding:10px 10px 2px;font:500 12.5px/1.3 var(--ds-font);color:var(--ds-ink-muted)}",
   // R13 批 P1：军团总览左栏一级入口——与项目列表平级，独立分组（用户拍板 4）。真按钮，不是批 1/5

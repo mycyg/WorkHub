@@ -16,6 +16,7 @@ import { resolveDesktopTauriInvoke } from "../desktop-window-controls.js";
 import { mountArmyOverviewView, type ArmyOverviewApiClient, type ArmyOverviewViewHandle } from "./army/overview.js";
 import { mountArmyContextPanel, type ArmyContextPanelApiClient, type ArmyContextPanelHandle } from "./army/panel.js";
 import { renderArmySidePanelIdleHtml } from "./army/render.js";
+import { connectConversationStream, type ConversationStreamHandle } from "./chat/stream.js";
 import { mountChatView, type ChatViewApiClient, type ChatViewHandle } from "./chat/view.js";
 import { workbenchCss } from "./css.js";
 import { dmMembersFromParticipants, dmPeerParticipant, fetchDmList, openDirectMessage, upsertDmListItem } from "./dm.js";
@@ -25,7 +26,14 @@ import { mountDriveView, type DriveTabApiClient, type DriveViewHandle } from "./
 import { workbenchIcons } from "./icons.js";
 import { mountProposalSidePanel, type ProposalSidePanelApiClient, type ProposalSidePanelHandle } from "./proposal/panel.js";
 import { createWorkbenchInterruptBroadcaster } from "./interrupt-broadcast.js";
-import { mountWorkbenchRail, type WorkbenchRailApiClient } from "./rail.js";
+import {
+  bumpConversationUnreadInVm,
+  bumpDmUnread,
+  mountWorkbenchRail,
+  setConversationUnreadInVm,
+  setDmUnread,
+  type WorkbenchRailApiClient
+} from "./rail.js";
 import type { ProjectSettingsApiClient } from "./settings/api.js";
 import { mountProjectSettingsView, type ProjectSettingsViewHandle } from "./settings/view.js";
 import { createWorkbenchStore, type WorkbenchStore, type WorkbenchStoreState } from "./store.js";
@@ -361,14 +369,94 @@ export function mountWorkbenchShell(
       });
   };
 
+  // R15 批 A6（rail 未读红点）：当前中栏正打开的是哪条会话——me-stream 收到该会话新消息通知时不给它加
+  // 未读（用户在看、它有自己的会话流、读游标在推进）。main 会话没有独立 id 字段，从 vm 里按 kind 找。
+  const currentlyOpenConversationId = (): string | undefined => {
+    const state = store.getState();
+    if (state.centerTab === "dm") {
+      return state.activeDmConversationId;
+    }
+    if (state.centerTab === "collab") {
+      return state.activeConversationId;
+    }
+    if (state.centerTab === "chat") {
+      return state.vm?.conversations.conversations.find((conversation) => conversation.kind === "main")?.id;
+    }
+    return undefined;
+  };
+
+  // R15 批 A6：打开会话即本地清零未读红点（读游标推进是 chat 视图 PUT /read 的事，这里只同步左栏徽标）。
+  const clearConversationUnread = (conversationId: string) => {
+    const state = store.getState();
+    const patch: Partial<WorkbenchStoreState> = {};
+    if (state.vm) {
+      const nextVm = setConversationUnreadInVm(state.vm, conversationId, 0);
+      if (nextVm !== state.vm) {
+        patch.vm = nextVm;
+      }
+    }
+    const nextDm = setDmUnread(state.dmList, conversationId, 0);
+    if (nextDm !== state.dmList) {
+      patch.dmList = nextDm;
+    }
+    if (Object.keys(patch).length > 0) {
+      store.setState(patch);
+    }
+  };
+
   const openDmConversation = (conversationId: string) => {
     store.setState({ centerTab: "dm", activeDmConversationId: conversationId });
+    // 打开即清零该 DM 的未读红点。
+    clearConversationUnread(conversationId);
     // 列表里还没有这条（深链冷启动 / rail 还没拉完）——后台补一次列表，renderCenter 的 dm 分支此刻先渲
     // loading，列表回来后 store 通知会重挂上真视图。
     if (!store.getState().dmList.some((dm) => dm.conversation.id === conversationId)) {
       void ensureDmListLoaded();
     }
   };
+
+  // R15 批 A6（rail 未读红点 · 实时性）：workbench 订一条 /api/push/stream/me，只消费会话消息类
+  // notification.created（带 conversation_id）——收到就给对应会话的未读本地 +1（近似，不知道服务端精确
+  // 聚合数，30s DM 兜底刷新 + 打开清零把它拉回权威），让左栏红点在 workbench 只开着、没打开那条会话时
+  // 也能动。当前正打开的那条会话不加（见 currentlyOpenConversationId）。断线重连语义复用会话流同一套
+  // connectConversationStream（指数退避 + 心跳看门狗）。浏览器 dev 无 fetch 时 connect 内部优雅降级。
+  const meStream: ConversationStreamHandle = connectConversationStream({
+    url: input.client.streams.me(),
+    getClientToken,
+    onEvent: (event) => {
+      if (disposed || event.type !== "notification.created") {
+        return;
+      }
+      const data = event.data as { type?: string; conversation_id?: string } | null | undefined;
+      const conversationId = data?.conversation_id;
+      if (!conversationId) {
+        return;
+      }
+      // 只有会话消息/被@类通知才动未读红点——审批/里程碑等其它类型即便挂了 conversation_id 也不计入
+      // "会话里有新消息未读"这个语义（它们进决策队列/通知列表，不是聊天未读）。
+      if (data.type !== "conversation.message" && data.type !== "conversation.mention") {
+        return;
+      }
+      if (conversationId === currentlyOpenConversationId()) {
+        return;
+      }
+      const state = store.getState();
+      const patch: Partial<WorkbenchStoreState> = {};
+      if (state.vm) {
+        const nextVm = bumpConversationUnreadInVm(state.vm, conversationId);
+        if (nextVm !== state.vm) {
+          patch.vm = nextVm;
+        }
+      }
+      const nextDm = bumpDmUnread(state.dmList, conversationId);
+      if (nextDm !== state.dmList) {
+        patch.dmList = nextDm;
+      }
+      if (Object.keys(patch).length > 0) {
+        store.setState(patch);
+      }
+    }
+  });
 
   // 深链兜底：某个 conversationId 是不是一条（本 actor 参与的）DM——是就直开，返回是否命中。
   const tryOpenDmByConversationId = async (conversationId: string): Promise<boolean> => {
@@ -457,6 +545,13 @@ export function mountWorkbenchShell(
           currentUserId: vm.viewer.user_id,
           ...(pendingCollab ? { centerTab: "collab" as const, activeConversationId: pendingCollab.id } : {})
         });
+        // R15 批 A6：VM 就绪后中栏落在哪条会话上（默认主区 / 深链协同），用户此刻正看着它——清零它的未读
+        // 红点（VM 里的 unread_count 是拉取那一刻的历史未读，进来就在读，不该继续挂着红点）。
+        const openedConversationId =
+          pendingCollab?.id ?? vm.conversations.conversations.find((conversation) => conversation.kind === "main")?.id;
+        if (openedConversationId) {
+          clearConversationUnread(openedConversationId);
+        }
       })
       .catch((error) => {
         if (disposed || my !== vmRequestGen) {
@@ -781,6 +876,11 @@ export function mountWorkbenchShell(
     // SSE——中栏此刻本来就是这个项目的 chat 视图，见 renderCenter 的 chatMountKey 复用逻辑）。
     onOpenMainConversation: () => {
       store.setState({ centerTab: "chat" });
+      // R15 批 A6：打开主区即清零它的未读红点。
+      const mainId = store.getState().vm?.conversations.conversations.find((conversation) => conversation.kind === "main")?.id;
+      if (mainId) {
+        clearConversationUnread(mainId);
+      }
       chatHandle?.focusComposer();
     },
     // final-turns-wiring：某个协同会话树叶被点开——写入 activeConversationId + 切 centerTab，
@@ -788,6 +888,8 @@ export function mountWorkbenchShell(
     // 直接跳过重挂，只是把焦点交回去，同 onOpenMainConversation 的既有手感一致）。
     onOpenCollabConversation: (conversationId) => {
       store.setState({ centerTab: "collab", activeConversationId: conversationId });
+      // R15 批 A6：打开这条协同会话即清零它的未读红点。
+      clearConversationUnread(conversationId);
       chatHandle?.focusComposer();
     },
     // R12 批 6：「网盘」树叶点击路由——切 store.centerTab，renderCenter 的订阅回调负责挂真视图。
@@ -908,6 +1010,8 @@ export function mountWorkbenchShell(
   // 不再是各写一份、两处容易悄悄漂移。
   const disposeActiveSubviews = () => {
     railHandle.dispose();
+    // R15 批 A6：停掉 /api/push/stream/me 未读订阅（登出/卸载都要放手，否则登出后仍会拿废 token 重连）。
+    meStream.close();
     disposeChat();
     disposeDrive();
     disposeArmyOverview();

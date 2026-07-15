@@ -623,6 +623,84 @@ test("listDms forwards the actor/workspace + cap and shapes each item with is_dm
   ]);
 });
 
+test("listDms attaches the viewer's unread_count per DM via one aggregate (R15 A6 rail red dot)", async () => {
+  const dmConversation = conversationRow({
+    projectId: "70000000-0000-4000-8000-000000000099",
+    kind: "collab",
+    visibility: "private",
+    cuuEnabled: false,
+    dmKey: `dm:${[userId, participantUserId].sort().join(":")}`,
+    createdBy: userId
+  });
+  let unreadInput: unknown;
+  const repo = repository({
+    async listDmsForUser() {
+      return [
+        {
+          conversation: dmConversation,
+          participants: [
+            { userId, nickname: "me", isSelf: true },
+            { userId: participantUserId, nickname: "peer", isSelf: false }
+          ]
+        }
+      ];
+    },
+    async unreadCountsForViewer(input) {
+      unreadInput = input;
+      return new Map([[dmConversation.id, 3]]);
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now
+  });
+
+  const result = await service.listDms({ actor: actor() });
+  // 一条聚合查询（禁 N+1）——viewer + 本页会话 id 集合。
+  assert.deepEqual(unreadInput, { viewerUserId: userId, conversationIds: [dmConversation.id] });
+  assert.equal(result.items[0]!.conversation.unread_count, 3);
+});
+
+test("listDms degrades to unread 0 when the aggregate throws, never 500s the list", async () => {
+  const dmConversation = conversationRow({
+    projectId: "70000000-0000-4000-8000-000000000099",
+    kind: "collab",
+    visibility: "private",
+    cuuEnabled: false,
+    dmKey: `dm:${[userId, participantUserId].sort().join(":")}`,
+    createdBy: userId
+  });
+  const repo = repository({
+    async listDmsForUser() {
+      return [
+        {
+          conversation: dmConversation,
+          participants: [
+            { userId, nickname: "me", isSelf: true },
+            { userId: participantUserId, nickname: "peer", isSelf: false }
+          ]
+        }
+      ];
+    },
+    async unreadCountsForViewer() {
+      throw new Error("aggregate boom");
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now
+  });
+
+  const result = await service.listDms({ actor: actor() });
+  assert.equal(result.items.length, 1);
+  // 未读算不出来时降级成 0（不带红点），而不是让整份 DM 列表崩掉。
+  assert.equal(result.items[0]!.conversation.unread_count, 0);
+});
+
 test("listDms returns an empty list unchanged (no DM container / no DMs)", async () => {
   const repo = repository({
     async listDmsForUser() {

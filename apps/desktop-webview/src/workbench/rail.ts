@@ -146,6 +146,70 @@ export function renameCollabConversationInVm(
   };
 }
 
+// —— R15 批 A6（rail 未读红点）：会话未读数的本地更新纯函数 —— //
+// 左栏树叶/私聊行现在渲的是「未读数」而不是消息总数。未读的权威来源是服务端（listConversations /
+// listDms 的 unread_count，A4/A6 后端），但实时性只靠一条 /api/push/stream/me 订阅：收到某会话新消息
+// 的 notification.created 时本地 +1（近似，不知道服务端精确聚合数），30s 会话列表兜底刷新 + 打开会话
+// 清零把它拉回权威。以下四个纯函数是这套本地更新的可测那一半（imperative 的订阅/清零在 shell.ts）。
+
+// 把 vm.conversations 里某条会话（主区/协同）的 unread_count 设为 count；找不到就原样返回（引用不变，
+// 调用方据此判断是否真的变了、要不要重渲）。count<0 归零，防御性。
+export function setConversationUnreadInVm(
+  vm: WorkbenchPageVM,
+  conversationId: string,
+  count: number
+): WorkbenchPageVM {
+  const safe = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+  let changed = false;
+  const conversations = vm.conversations.conversations.map((conversation) => {
+    if (conversation.id === conversationId && (conversation.unread_count ?? 0) !== safe) {
+      changed = true;
+      return { ...conversation, unread_count: safe };
+    }
+    return conversation;
+  });
+  if (!changed) {
+    return vm;
+  }
+  return { ...vm, conversations: { ...vm.conversations, conversations } };
+}
+
+// 某条会话未读 +1（本地近似，见上方注释）。找不到就原样返回。
+export function bumpConversationUnreadInVm(vm: WorkbenchPageVM, conversationId: string): WorkbenchPageVM {
+  const target = vm.conversations.conversations.find((conversation) => conversation.id === conversationId);
+  if (!target) {
+    return vm;
+  }
+  return setConversationUnreadInVm(vm, conversationId, (target.unread_count ?? 0) + 1);
+}
+
+// 把 dmList 里某条 DM 会话的 unread_count 设为 count；找不到就原样返回（引用不变）。
+export function setDmUnread(
+  dmList: readonly DmListItemVM[],
+  conversationId: string,
+  count: number
+): DmListItemVM[] {
+  const safe = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+  let changed = false;
+  const next = dmList.map((dm) => {
+    if (dm.conversation.id === conversationId && (dm.conversation.unread_count ?? 0) !== safe) {
+      changed = true;
+      return { ...dm, conversation: { ...dm.conversation, unread_count: safe } };
+    }
+    return dm;
+  });
+  return changed ? next : (dmList as DmListItemVM[]);
+}
+
+// 某条 DM 未读 +1。找不到就原样返回。
+export function bumpDmUnread(dmList: readonly DmListItemVM[], conversationId: string): DmListItemVM[] {
+  const target = dmList.find((dm) => dm.conversation.id === conversationId);
+  if (!target) {
+    return dmList as DmListItemVM[];
+  }
+  return setDmUnread(dmList, conversationId, (target.conversation.unread_count ?? 0) + 1);
+}
+
 // 项目行下的树叶——批 1 全部只读(没有任何视图能接)。批 2 把主区群聊接进这个窗口后，「主区」升级成
 // 真按钮(会话点击路由：点它把焦点交回已经挂载好的 chat composer，见 shell.ts 的 onOpenMainConversation)；
 // 批 6 把网盘视图接进这个窗口后，「网盘」同样升级成真按钮(data-wb-open-drive，切中栏到 drive 标签，
@@ -179,7 +243,7 @@ function renderProjectTreeLeavesHtml(
   const main = vm.conversations.conversations.find((conversation) => conversation.kind === "main");
   const mainLeaf = main
     ? `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "chat" ? " sel" : ""}" data-wb-open-main-chat>${workbenchIcons.chat}<span>${escapeHtml(main.title)}</span>${
-        main.next_seq > 0 ? `<span class="wh-wb-leaf-count">${main.next_seq}</span>` : ""
+        (main.unread_count ?? 0) > 0 ? `<span class="wh-wb-leaf-count wh-wb-leaf-count--unread">${main.unread_count}</span>` : ""
       }</button>`
     : "";
   const collabLeaves = vm.conversations.conversations
@@ -190,7 +254,7 @@ function renderProjectTreeLeavesHtml(
       // 不套在 open 按钮里——按钮里不能套按钮，同项目设置齿轮的既有取舍）。data-wb-rename-collab 带上
       // 当前标题，mountWorkbenchRail 据此预填重命名弹窗。
       return `<div class="wh-wb-collab-leaf"><button type="button" class="wh-wb-leaf wh-wb-leaf--live${selected ? " sel" : ""}" data-wb-open-collab-chat="${escapeHtml(conversation.id)}">${workbenchIcons.collab}<span>${escapeHtml(conversation.title)}</span>${
-        conversation.next_seq > 0 ? `<span class="wh-wb-leaf-count">${conversation.next_seq}</span>` : ""
+        (conversation.unread_count ?? 0) > 0 ? `<span class="wh-wb-leaf-count wh-wb-leaf-count--unread">${conversation.unread_count}</span>` : ""
       }</button><button type="button" class="wh-wb-collab-rename" data-wb-rename-collab="${escapeHtml(conversation.id)}" data-wb-rename-collab-title="${escapeHtml(conversation.title)}" title="${zh ? "重命名" : "Rename"}" aria-label="${zh ? "重命名会话" : "Rename chat"}">${workbenchIcons.edit}</button></div>`;
     })
     .join("");
@@ -418,13 +482,15 @@ export function renderDmGroupHtml(input: {
       const peerId = peer?.user_id ?? dm.conversation.id;
       const online = peer ? input.onlineUserIds.has(peer.user_id) : false;
       const selected = input.centerTab === "dm" && input.activeDmConversationId === dm.conversation.id;
+      const unread = dm.conversation.unread_count ?? 0;
+      const unreadBadge = unread > 0 ? `<span class="wh-wb-dm-count">${unread}</span>` : "";
       return `<button type="button" class="wh-wb-dm-row${selected ? " sel" : ""}" data-wb-open-dm="${escapeHtml(
         dm.conversation.id
       )}" aria-current="${selected ? "true" : "false"}">${avatarTileHtml({
         label: nickname,
         id: peerId,
         ...(online ? { online: true } : {})
-      })}<span class="wh-wb-dm-name">${escapeHtml(nickname)}</span></button>`;
+      })}<span class="wh-wb-dm-name">${escapeHtml(nickname)}</span>${unreadBadge}</button>`;
     })
     .join("");
   return `<div class="wh-wb-rail-group">${head}${rows}</div>`;
@@ -1319,9 +1385,12 @@ export function mountWorkbenchRail(
   void loadPersonalProjects();
   // R15 批 B（人对人私聊）：拉 DM 列表 + 起 presence 轮询（成员 roster / 私聊行的在线绿点）。
   void loadDms();
+  // R15 批 A6：与在线态同 30s 节奏兜底刷 DM 列表——把私聊行的未读数拉回服务端权威（me-stream 的本地 +1
+  // 只是近似）。loadDms 内部拉完列表会顺手刷一次在线态（见 loadDms 尾部），所以这条 tick 同时覆盖了原来
+  // 单独 loadPresence 的职责；DM 拉取失败那一拍在线态不刷，下一拍重试即可（都是 best-effort）。
   const presencePollTimer = setInterval(() => {
     if (!disposed) {
-      void loadPresence();
+      void loadDms();
     }
   }, RAIL_PRESENCE_POLL_INTERVAL_MS);
 
