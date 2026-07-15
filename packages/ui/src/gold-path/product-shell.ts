@@ -70,6 +70,7 @@ type ProductShellCopyKey =
   | "rail.nextApprovals"
   | "rail.nextWorkitem"
   | "rail.nextProposal"
+  | "rail.nextConversation"
   | "rail.nextDrive"
   | "rail.nextMeetings"
   | "rail.nextNotifications"
@@ -162,6 +163,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "rail.nextApprovals": "打回理由会回灌给 AI 继续改。",
     "rail.nextWorkitem": "核对验收项、AI 轨迹和交付物。",
     "rail.nextProposal": "审查风险、证据和可回滚路径。",
+    "rail.nextConversation": "这是只读镜像，完整协作请回桌面工作台。",
     "rail.nextDrive": "检查正式交付物、版本历史和评论草稿入口。",
     "rail.nextMeetings": "确认待处理洞察，再进入草稿与提议链路。",
     "rail.nextNotifications": "先处理需要你决定的通知，再归档普通消息。",
@@ -253,6 +255,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "rail.nextApprovals": "Rejection reasons flow back into AI work.",
     "rail.nextWorkitem": "Review acceptance, trace, and deliverables.",
     "rail.nextProposal": "Check risk, evidence, and rollback path.",
+    "rail.nextConversation": "This is a read-only mirror — collaborate in the desktop workbench.",
     "rail.nextDrive": "Inspect accepted deliverables, version history, and comment draft entry points.",
     "rail.nextMeetings": "Confirm pending insights, then continue into draft and proposal review.",
     "rail.nextNotifications": "Handle decisions first, then archive routine updates.",
@@ -450,7 +453,7 @@ export const productNavGroups: ReadonlyArray<{
   adminOnly?: boolean;
   collapsible?: boolean;
 }> = [
-  { id: "work", titleKey: "nav.group.work", keys: new Set(["home", "projects", "project-home", "approvals", "workitem", "proposal", "replay"]) },
+  { id: "work", titleKey: "nav.group.work", keys: new Set(["home", "projects", "project-home", "approvals", "workitem", "proposal", "conversation", "replay"]) },
   { id: "assets", titleKey: "nav.group.assets", keys: new Set(["drive", "meetings", "knowledge", "search"]), collapsible: true },
   // R14 批 MEM：记忆管理面对全体成员可读（团队技能 tab 的编辑/停用才收管理员），不进 adminOnly
   // 的 admin 组——否则普通成员连「关于我」自己的记忆都点不到导航入口（见 03-mem-design §6.1）。

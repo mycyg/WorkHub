@@ -4,6 +4,7 @@ import type {
   ApprovalCenterVM,
   AttentionHomeVM,
   CalendarPageVM,
+  ConversationMessageVM,
   CostDashboardVM,
   DrivePageVM,
   EvidenceBubble,
@@ -93,6 +94,17 @@ export type WebRouteSurface =
   | { key: "approvals"; approvals: ApprovalCenterVM }
   | { key: "workitem"; workitem: WorkItemDetailVM }
   | { key: "proposal"; proposal: ProposalDetailVM; proposal_conflicts: ProposalConflict[]; proposal_conflicts_check_failed?: boolean | undefined }
+  | {
+      key: "conversation";
+      conversationId: string;
+      messages: ConversationMessageVM[];
+      members: Array<{ id: string; nickname: string }>;
+      targetSeq?: number | undefined;
+      olderBeforeSeq?: number | undefined;
+      newerAfterSeq?: number | undefined;
+      isLatest: boolean;
+      refreshHref: string;
+    }
   | { key: "drive"; drive: DrivePageVM; projects: ProjectListVM }
   | { key: "meetings"; meetings: MeetingPageVM; projects?: ProjectListVM }
   | { key: "notifications"; notifications: NotificationPageVM }
@@ -157,6 +169,14 @@ const routeMatchers = [
     pattern: "/proposals/:id",
     apiBaseLabel: "/api/pages/proposals/:id",
     regex: /^\/proposals\/([^/]+)$/u,
+    paramNames: ["id"]
+  },
+  {
+    // R15 批 web-mirror：只读会话镜像。消费既有会话消息读端点（参与者门控在服务端）。
+    key: "conversation",
+    pattern: "/conversations/:id",
+    apiBaseLabel: "/api/conversations/:id/messages",
+    regex: /^\/conversations\/([^/]+)$/u,
     paramNames: ["id"]
   },
   {
@@ -268,6 +288,7 @@ type WebRouteTreePageVm =
   | "approvals"
   | "workitem"
   | "proposal"
+  | "conversation"
   | "drive"
   | "meetings"
   | "notifications"
@@ -318,6 +339,7 @@ const routeTreePageVmByKey = {
   approvals: "approvals",
   workitem: "workitem",
   proposal: "proposal",
+  conversation: "conversation",
   drive: "drive",
   meetings: "meetings",
   notifications: "notifications",
@@ -521,6 +543,9 @@ const shellPageOrder = [
   "approvals",
   "workitem",
   "proposal",
+  // R15 批 web-mirror：只读会话镜像是 detail-only 页（仅激活时出现在壳导航），紧邻 proposal——
+  // 与 product-shell.ts productNavGroups 的 "work" 组顺序一致。
+  "conversation",
   "drive",
   "meetings",
   "notifications",
@@ -543,6 +568,7 @@ const detailOnlyShellPages = new Set<GoldPathRenderedPage["key"]>([
   "project-home",
   "workitem",
   "proposal",
+  "conversation",
   "replay"
 ]);
 
@@ -554,6 +580,8 @@ const shellDefaultRoutes = {
   approvals: "/approvals",
   workitem: "/",
   proposal: "/approvals",
+  // 会话镜像无 web 列表页——非激活时的兜底回链回首页（同 workitem/replay）。
+  conversation: "/",
   drive: "/drive",
   meetings: "/meetings",
   notifications: "/notifications",
@@ -579,6 +607,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     approvals: "审批",
     workitem: "任务详情",
     proposal: "变更申请",
+    conversation: "会话镜像",
     drive: "项目网盘",
     meetings: "会议洞察",
     notifications: "通知中心",
@@ -601,6 +630,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     approvals: "Approvals",
     workitem: "Task detail",
     proposal: "Change request",
+    conversation: "Conversation mirror",
     drive: "Project drive",
     meetings: "Meeting insights",
     notifications: "Notifications",
@@ -666,7 +696,8 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     memoriesActive: "AI 记住",
     acceptedDeliverables: "已采纳",
     activeProjects: "有进展",
-    query: "搜索词"
+    query: "搜索词",
+    messages: "消息"
   },
   "en-US": {
     primary: "Focus",
@@ -716,7 +747,8 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     memoriesActive: "AI remembers",
     acceptedDeliverables: "Accepted",
     activeProjects: "Active",
-    query: "Query"
+    query: "Query",
+    messages: "Messages"
   }
 };
 
@@ -842,6 +874,13 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
       metric(locale, "checks", String(surface.proposal.manifest.checks.length)),
       metric(locale, "evidence", String(surface.proposal.evidence_refs.length)),
       metric(locale, "comments", String(surface.proposal.comments.length))
+    ];
+  }
+  if (surface.key === "conversation") {
+    // 只读镜像 masthead：本页拉到的消息条数 + 「只读镜像」状态（诚实标注：这是镜像，不是全量）。
+    return [
+      metric(locale, "messages", String(surface.messages.length)),
+      metric(locale, "runtime", locale === "zh-CN" ? "只读镜像" : "Read-only")
     ];
   }
   if (surface.key === "drive") {
@@ -978,6 +1017,21 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
       proposal: surface.proposal,
       proposalConflicts: surface.proposal_conflicts,
       proposalConflictsCheckFailed: surface.proposal_conflicts_check_failed ?? false
+    }, { locale });
+  }
+  if (surface.key === "conversation") {
+    return renderWebRouteComponent({
+      key: "conversation",
+      conversation: {
+        conversationId: surface.conversationId,
+        messages: surface.messages,
+        members: surface.members,
+        ...(surface.targetSeq !== undefined ? { targetSeq: surface.targetSeq } : {}),
+        ...(surface.olderBeforeSeq !== undefined ? { olderBeforeSeq: surface.olderBeforeSeq } : {}),
+        ...(surface.newerAfterSeq !== undefined ? { newerAfterSeq: surface.newerAfterSeq } : {}),
+        isLatest: surface.isLatest,
+        refreshHref: surface.refreshHref
+      }
     }, { locale });
   }
   if (surface.key === "drive") {
@@ -1260,6 +1314,80 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
       conflictsCheckFailed = true;
     }
     return { key: "proposal", proposal, proposal_conflicts: conflicts, proposal_conflicts_check_failed: conflictsCheckFailed } satisfies WebRouteSurface;
+  }
+  if (match.key === "conversation") {
+    // R15 批 web-mirror：只读会话镜像。翻页语义照 conversationMessageListQuerySchema：
+    //   无游标 → beforeSeq=MAX（最新一页，O(1)，同桌面首屏策略）；?before= → 更早一页；
+    //   ?after= → 更新一页；?seq= → 定位到含该 seq 的一页（beforeSeq=seq+1，高亮该条）。
+    // 只读边界：只 GET 消息与成员目录，绝不 POST（不发消息/不反应/不推进已读游标）。
+    const conversationId = match.params["id"] ?? "";
+    const CONVERSATION_PAGE_LIMIT = 50;
+    const beforeParam = nonnegativeIntSearchParam(match.search, "before");
+    const afterParam = nonnegativeIntSearchParam(match.search, "after");
+    const seqParam = nonnegativeIntSearchParam(match.search, "seq");
+    let mode: "latest" | "before" | "after" | "seq";
+    let requestOptions: { beforeSeq?: number; afterSeq?: number; limit: number };
+    if (beforeParam !== undefined) {
+      mode = "before";
+      requestOptions = { beforeSeq: beforeParam, limit: CONVERSATION_PAGE_LIMIT };
+    } else if (afterParam !== undefined) {
+      mode = "after";
+      requestOptions = { afterSeq: afterParam, limit: CONVERSATION_PAGE_LIMIT };
+    } else if (seqParam !== undefined) {
+      mode = "seq";
+      requestOptions = { beforeSeq: seqParam + 1, limit: CONVERSATION_PAGE_LIMIT };
+    } else {
+      mode = "latest";
+      requestOptions = { beforeSeq: Number.MAX_SAFE_INTEGER, limit: CONVERSATION_PAGE_LIMIT };
+    }
+    // 消息（主数据，参与者门控在服务端——非参与者 404 走既有 notFound 态）与成员目录并行拉。
+    // 成员目录仅用于发送者昵称解析，失败 fail-soft（消息照常渲，昵称退化为「未知成员」）；
+    // not_identified 仍冒泡去重认证。
+    const [page, members] = await Promise.all([
+      client.listConversationMessages(conversationId, requestOptions),
+      client.listUsers().then(
+        (value) => value.users.map((user) => ({ id: user.id, nickname: user.nickname })),
+        (error: unknown): Array<{ id: string; nickname: string }> => {
+          if (error instanceof WorkHubApiError && error.code === "not_identified") {
+            throw error;
+          }
+          return [];
+        }
+      )
+    ]);
+    const messages = page.messages;
+    const firstSeq = messages[0]?.seq;
+    const lastSeq = messages[messages.length - 1]?.seq;
+    let olderBeforeSeq: number | undefined;
+    let newerAfterSeq: number | undefined;
+    if (mode === "after") {
+      // 正向翻页：has_more=更新的还有；更早方向用页内最旧 seq 回溯。
+      if (firstSeq !== undefined && firstSeq > 0) {
+        olderBeforeSeq = firstSeq;
+      }
+      if (page.has_more) {
+        newerAfterSeq = page.next_after_seq;
+      }
+    } else {
+      // beforeSeq 家族（latest/before/seq）：has_more=更早的还有；非最新页可用页内最新 seq 往后翻。
+      if (page.has_more) {
+        olderBeforeSeq = page.next_before_seq ?? firstSeq;
+      }
+      if (mode !== "latest" && lastSeq !== undefined) {
+        newerAfterSeq = lastSeq;
+      }
+    }
+    return {
+      key: "conversation",
+      conversationId,
+      messages,
+      members,
+      ...(mode === "seq" && seqParam !== undefined ? { targetSeq: seqParam } : {}),
+      ...(olderBeforeSeq !== undefined ? { olderBeforeSeq } : {}),
+      ...(newerAfterSeq !== undefined ? { newerAfterSeq } : {}),
+      isLatest: mode === "latest",
+      refreshHref: `${match.pathname}${match.search}`
+    } satisfies WebRouteSurface;
   }
   if (match.key === "drive") {
     const params = new URLSearchParams(match.search);

@@ -6,6 +6,8 @@ import type {
   AttentionAction,
   AttentionHomeVM,
   AttentionItem,
+  ConversationMessageVM,
+  ConversationReactionKey,
   CostDashboardVM,
   CalendarPageVM,
   DeliverableChange,
@@ -71,7 +73,7 @@ import { approvalQueuePageInfoText, goldPathT, normalizeWorkHubLocale, type Work
 import type { GoldPathRenderedPage } from "./render.js";
 
 // "agents"/"skills"/"projects"/"project-home"/"memory" 是 live-only 路由（不在 gold-path 静态 surface 渲染里），故单独并入而非走 Extract。
-export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "search" | "settings"> | "agents" | "skills" | "projects" | "project-home" | "memory";
+export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "conversation" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "search" | "settings"> | "agents" | "skills" | "projects" | "project-home" | "memory";
 
 export type WebRouteComponent = {
   key: WebRouteComponentKey;
@@ -262,7 +264,33 @@ export const webRouteComponentCss = [
   ".wh-r14-proposal-feedback-note{display:grid;gap:6px;margin-top:10px}",
   ".wh-r14-proposal-feedback-note-input{width:100%;min-height:64px;resize:vertical;box-sizing:border-box;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:12px;padding:8px 10px;font:inherit;line-height:1.45;color:var(--wh-product-ink,#172033);background:rgba(255,255,255,.92);overflow-wrap:anywhere}",
   ".wh-r14-proposal-feedback-note-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}",
-  ".wh-r14-proposal-feedback-note-actions [data-r14-proposal-feedback-note-save][disabled]{opacity:.5;cursor:not-allowed}"
+  ".wh-r14-proposal-feedback-note-actions [data-r14-proposal-feedback-note-save][disabled]{opacity:.5;cursor:not-allowed}",
+  // R15 批 web-mirror（web 只读会话镜像）：镜像消息流样式。刻意不用定高 -webkit-line-clamp（CI Linux
+  // CJK 溢出门）——所有文本自然换行 + overflow-wrap:anywhere。read-only：没有 composer、没有反应/发送按钮。
+  ".wh-mirror{display:grid;gap:14px;min-width:0;max-width:100%}",
+  ".wh-mirror-banner{display:grid;gap:4px;border:1px solid var(--wh-product-line,#E6E7EB);border-left:3px solid var(--wh-product-accent,#2f6df0);border-radius:12px;background:rgba(47,109,240,.06);padding:10px 14px;min-width:0}",
+  ".wh-mirror-banner strong{font-size:14px;color:var(--wh-product-ink,#172033);overflow-wrap:anywhere}.wh-mirror-banner p{margin:0;font-size:12px;color:var(--wh-product-muted,#66728c);line-height:1.5;overflow-wrap:anywhere}",
+  ".wh-mirror-pager{display:flex;gap:8px;flex-wrap:wrap;align-items:center;min-width:0}",
+  ".wh-mirror-pager .wh-btn{flex:0 0 auto}",
+  ".wh-mirror-stream{display:grid;gap:12px;min-width:0}",
+  ".wh-mirror-empty{color:var(--wh-product-muted,#66728c);font-size:13px;line-height:1.5;margin:0}",
+  ".wh-mirror-msg{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:start;min-width:0}",
+  ".wh-mirror-avatar--cuu{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:9px;background:linear-gradient(145deg,#6D8BFF,#4F46E5);color:#fff;font-size:11px;font-weight:850;flex:0 0 auto}",
+  ".wh-mirror-bub{display:grid;gap:6px;min-width:0;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:14px;background:rgba(255,255,255,.9);padding:10px 12px}",
+  ".wh-mirror-msg--cuu .wh-mirror-bub{background:rgba(79,70,229,.05);border-color:rgba(79,70,229,.18)}",
+  ".wh-mirror-msg--target .wh-mirror-bub{box-shadow:0 0 0 2px var(--wh-product-accent,#2f6df0)}",
+  ".wh-mirror-who{display:flex;gap:8px;align-items:center;flex-wrap:wrap;min-width:0;font-size:13px;font-weight:800;color:var(--wh-product-ink,#172033)}.wh-mirror-who>span{min-width:0;overflow-wrap:anywhere}",
+  ".wh-mirror-tm{color:var(--wh-product-muted,#66728c);font-weight:600;font-size:12px}",
+  ".wh-mirror-edited,.wh-mirror-pin{display:inline-flex;align-items:center;border-radius:999px;background:var(--wh-product-soft,#f5f8fc);color:var(--wh-product-muted,#66728c);font-size:11px;font-weight:800;padding:2px 8px}",
+  ".wh-mirror-text{margin:0;font-size:14px;line-height:1.55;color:var(--wh-product-ink,#172033);overflow-wrap:anywhere;white-space:normal}",
+  ".wh-mirror-reply{display:block;border-left:3px solid var(--wh-product-line,#E6E7EB);background:var(--wh-product-soft,#f5f8fc);border-radius:8px;padding:6px 10px;min-width:0}.wh-mirror-reply-who{display:block;font-size:12px;font-weight:800;color:var(--wh-product-secondary,#5B616E)}.wh-mirror-reply-text{display:block;font-size:12px;color:var(--wh-product-muted,#66728c);overflow-wrap:anywhere}.wh-mirror-reply-gone{font-style:italic}",
+  ".wh-mirror-reactions{display:flex;gap:6px;flex-wrap:wrap;min-width:0}",
+  ".wh-mirror-reaction{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:999px;background:rgba(255,255,255,.86);padding:3px 9px;font-size:12px;font-weight:800;color:var(--wh-product-secondary,#5B616E)}.wh-mirror-reaction-emoji{font-size:13px;line-height:1}",
+  ".wh-mirror-filecard{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:10px;background:rgba(255,255,255,.9);padding:8px 11px;font-size:13px;font-weight:750;color:var(--wh-product-ink,#172033);min-width:0;max-width:100%}.wh-mirror-filecard span{min-width:0;overflow-wrap:anywhere}",
+  ".wh-mirror-clarify{display:grid;gap:6px;border-left:3px solid var(--wh-product-accent,#2f6df0);padding-left:10px;min-width:0}.wh-mirror-clarify-badge{display:inline-flex;width:max-content;align-items:center;border-radius:999px;background:rgba(47,109,240,.1);color:var(--wh-product-accent,#2f6df0);font-size:11px;font-weight:850;padding:2px 8px}.wh-mirror-clarify-opts{display:flex;gap:6px;flex-wrap:wrap}.wh-mirror-clarify-opt{border:1px solid var(--wh-product-line,#E6E7EB);border-radius:999px;background:var(--wh-product-soft,#f5f8fc);padding:4px 10px;font-size:12px;font-weight:750;color:var(--wh-product-secondary,#5B616E);overflow-wrap:anywhere}",
+  ".wh-mirror-sysline{display:flex;gap:10px;align-items:baseline;justify-content:center;flex-wrap:wrap;text-align:center;color:var(--wh-product-muted,#66728c);font-size:12px;line-height:1.5;padding:2px 8px;min-width:0}.wh-mirror-sysline>span:first-child{overflow-wrap:anywhere}.wh-mirror-sysline-tm{color:var(--wh-product-faint,#94a0b8);font-weight:700;flex:0 0 auto}",
+  ".wh-mirror-tombstone{color:var(--wh-product-muted,#66728c);font-size:12px;font-style:italic;padding:2px 8px;overflow-wrap:anywhere}",
+  ".wh-mirror-note{color:var(--wh-product-muted,#66728c);font-size:12px;line-height:1.5;padding:2px 8px;overflow-wrap:anywhere}"
 ].join("");
 
 type RouteCopyKey =
@@ -318,6 +346,27 @@ type RouteCopyKey =
   | "search.groupWorkItems"
   | "search.groupMeetings"
   | "search.desktopOnlyNote"
+  | "conversation.kicker"
+  | "conversation.title"
+  | "conversation.readonlyBanner"
+  | "conversation.readonlyHint"
+  | "conversation.empty"
+  | "conversation.older"
+  | "conversation.newer"
+  | "conversation.latest"
+  | "conversation.refresh"
+  | "conversation.senderCuu"
+  | "conversation.senderSystem"
+  | "conversation.senderUnknown"
+  | "conversation.edited"
+  | "conversation.pinned"
+  | "conversation.deleted"
+  | "conversation.replyDeleted"
+  | "conversation.clarifyBadge"
+  | "conversation.toolNote"
+  | "conversation.systemFallback"
+  | "conversation.riskDigest"
+  | "conversation.fileCard"
   | "proposal.summary"
   | "proposal.review"
   | "proposal.files"
@@ -382,6 +431,7 @@ type RouteCopyKey =
   | "notifications.source"
   | "notifications.groundingWhy"
   | "notifications.conversationLinked"
+  | "notifications.conversationOpen"
   | "notifications.snooze"
   | "notifications.snoozed"
   | "knowledge.fromNotice"
@@ -572,7 +622,28 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "search.groupDrive": "网盘",
     "search.groupWorkItems": "任务",
     "search.groupMeetings": "会议",
-    "search.desktopOnlyNote": "会话内容在桌面工作台查看，这里只显示命中的会话线索。",
+    "search.desktopOnlyNote": "在线镜像只读——点开某条即可查看只读会话镜像，完整协作请回桌面工作台。",
+    "conversation.kicker": "只读镜像",
+    "conversation.title": "会话镜像",
+    "conversation.readonlyBanner": "只读镜像 · 完整协作请在桌面工作台",
+    "conversation.readonlyHint": "这里只镜像消息，不能发言、反应或标记已读——不会改动任何人的未读状态。",
+    "conversation.empty": "这个会话还没有可显示的消息。",
+    "conversation.older": "查看更早",
+    "conversation.newer": "查看更新",
+    "conversation.latest": "回到最新",
+    "conversation.refresh": "刷新",
+    "conversation.senderCuu": "Cuu",
+    "conversation.senderSystem": "系统",
+    "conversation.senderUnknown": "未知成员",
+    "conversation.edited": "已编辑",
+    "conversation.pinned": "已置顶",
+    "conversation.deleted": "此消息已删除",
+    "conversation.replyDeleted": "原消息已删除",
+    "conversation.clarifyBadge": "Cuu 在问",
+    "conversation.toolNote": "（一次工具调用）",
+    "conversation.systemFallback": "系统事件",
+    "conversation.riskDigest": "今日风险巡检",
+    "conversation.fileCard": "文件卡片",
     "proposal.summary": "AI 摘要",
     "proposal.review": "审阅动作",
     "proposal.files": "文件与对象变化",
@@ -638,7 +709,8 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "notifications.groundingWhy": "为什么提醒我",
     // G-web 止血批：web 没有会话 UI——旧文案「打开后能看到相关上下文」会让人以为点开就能看会话内容，
     // 实际跳转目标只是既有的工作项/审批页（带 ?conversation_id= 查询串），补一句诚实指路。
-    "notifications.conversationLinked": "这条通知关联一段讨论，会话内容请在桌面工作台查看",
+    "notifications.conversationLinked": "这条通知关联一段讨论——查看只读镜像，完整协作在桌面工作台",
+    "notifications.conversationOpen": "查看只读镜像",
     "notifications.snooze": "暂停提醒",
     "notifications.snoozed": "已暂停",
     "knowledge.fromNotice": "来自通知的相关资料",
@@ -830,7 +902,28 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "search.groupDrive": "Drive",
     "search.groupWorkItems": "Tasks",
     "search.groupMeetings": "Meetings",
-    "search.desktopOnlyNote": "Conversation content opens in the desktop workbench — this only shows matched chat leads.",
+    "search.desktopOnlyNote": "The online mirror is read-only — open a hit to view the conversation mirror; collaborate in the desktop workbench.",
+    "conversation.kicker": "Read-only mirror",
+    "conversation.title": "Conversation mirror",
+    "conversation.readonlyBanner": "Read-only mirror · Collaborate in the desktop workbench",
+    "conversation.readonlyHint": "This mirrors messages only — no sending, reactions, or read receipts, and it never changes anyone's unread state.",
+    "conversation.empty": "This conversation has no messages to show yet.",
+    "conversation.older": "Older",
+    "conversation.newer": "Newer",
+    "conversation.latest": "Jump to latest",
+    "conversation.refresh": "Refresh",
+    "conversation.senderCuu": "Cuu",
+    "conversation.senderSystem": "System",
+    "conversation.senderUnknown": "Unknown member",
+    "conversation.edited": "edited",
+    "conversation.pinned": "Pinned",
+    "conversation.deleted": "This message was deleted",
+    "conversation.replyDeleted": "Original message deleted",
+    "conversation.clarifyBadge": "Cuu is asking",
+    "conversation.toolNote": "(a tool call)",
+    "conversation.systemFallback": "System update",
+    "conversation.riskDigest": "Today's risk digest",
+    "conversation.fileCard": "File card",
     "proposal.summary": "AI summary",
     "proposal.review": "Review actions",
     "proposal.files": "Files and object changes",
@@ -894,7 +987,8 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "notifications.completed": "Done",
     "notifications.source": "Source",
     "notifications.groundingWhy": "Why am I seeing this",
-    "notifications.conversationLinked": "This notification is tied to a discussion — the conversation itself only opens in the desktop workbench",
+    "notifications.conversationLinked": "This notification is tied to a discussion — view the read-only mirror; collaborate in the desktop workbench",
+    "notifications.conversationOpen": "View read-only mirror",
     "notifications.snooze": "Snooze",
     "notifications.snoozed": "Snoozed",
     "knowledge.fromNotice": "Search context from a notification",
@@ -3504,7 +3598,8 @@ function renderNotificationBucket(
         <strong>${escapeHtml(item.title)}</strong>
         ${item.body ? `<p>${escapeHtml(item.body)}</p>` : ""}
         <p>${escapeHtml(routeT(locale, "notifications.source"))}: ${escapeHtml(sourceContextLabel(item.source_context, locale))}</p>
-        ${item.conversation_id ? `<p class="wh-subtle" data-r14-notification-conversation-note="true">${escapeHtml(routeT(locale, "notifications.conversationLinked"))}</p>` : ""}
+        ${item.conversation_id ? `<p class="wh-subtle" data-r14-notification-conversation-note="true">${escapeHtml(routeT(locale, "notifications.conversationLinked"))}</p>
+        <a class="wh-pill" href="${escapeHtml(safeHref(`/conversations/${encodeURIComponent(item.conversation_id)}`))}" data-r15-notification-conversation-open="true">${escapeHtml(routeT(locale, "notifications.conversationOpen"))}</a>` : ""}
         ${renderNotificationGrounding(item, locale)}
         <p>${escapeHtml(formatApprovalTimestamp(item.created_at))}</p>
       </div>
@@ -4762,6 +4857,282 @@ function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale
   });
 }
 
+// ── R15 批 web-mirror（web 只读会话镜像）─────────────────────────────────────────────
+// 只读镜像 /conversations/:id 的消息渲染。语义忠实镜像桌面工作台的 chat 渲染
+// （apps/desktop-webview/src/workbench/chat/render.ts），但刻意精简为「只读」形态：无 composer、
+// 无任何写按钮（发送/反应/编辑/删除/置顶/已读上报全部不渲），管理者看一眼不改动任何人的未读游标。
+// 消息 VM 只带 sender_user_id——昵称由 loader 传入的成员目录（GET /api/users）解析。
+
+export type ConversationMirrorMember = { id: string; nickname: string };
+
+export type ConversationMirrorInput = {
+  conversationId: string;
+  // 升序（旧→新），与读端点返回一致。
+  messages: ConversationMessageVM[];
+  members: ConversationMirrorMember[];
+  // ?seq= 深链定位的目标消息 seq（高亮，不改动读游标）。
+  targetSeq?: number | undefined;
+  // 分页游标：present 即渲对应方向的翻页链接（before/after 语义照 conversationMessageListQuerySchema）。
+  olderBeforeSeq?: number | undefined;
+  newerAfterSeq?: number | undefined;
+  // 当前是否停在「最新一页」——非最新时渲「回到最新」。
+  isLatest: boolean;
+  // 「刷新」按钮回链（= 当前 pathname+search，SPA 原地重新拉取）。
+  refreshHref: string;
+};
+
+type MirrorRenderCtx = {
+  locale: WorkHubLocale;
+  memberNames: Map<string, string>;
+  targetSeq?: number | undefined;
+};
+
+// R14 批 CHAT 定调：emoji 字形只允许活在渲染层的 slug→字形映射常量里（绝不进契约/文档）。这是 web
+// 渲染层对应桌面 REACTION_EMOJI（render.ts）的同款常量，也是「界面不用 emoji」纪律里 reaction 的
+// 唯一破例（见记忆：reaction 破例 emoji）。键序照契约枚举顺序。
+const MIRROR_REACTION_ORDER: readonly ConversationReactionKey[] = ["approve", "disagree", "done", "question", "watch"];
+const MIRROR_REACTION_EMOJI: Record<ConversationReactionKey, string> = {
+  approve: "👍",
+  disagree: "👎",
+  done: "✅",
+  question: "❓",
+  watch: "👀"
+};
+
+function mirrorTime(iso: string | undefined): string {
+  return formatApprovalTimestamp(iso);
+}
+
+// escapeHtml 打底 + 换行→<br>（与桌面 textMessageBodyHtml 同款，无 markdown）。
+function mirrorTextHtml(text: string): string {
+  return escapeHtml(text).replace(/\n/gu, "<br>");
+}
+
+function mirrorSenderLabel(senderType: string, senderUserId: string | null, ctx: MirrorRenderCtx): string {
+  if (senderType === "cuu") {
+    return routeT(ctx.locale, "conversation.senderCuu");
+  }
+  if (senderType === "system") {
+    return routeT(ctx.locale, "conversation.senderSystem");
+  }
+  if (senderUserId) {
+    const name = ctx.memberNames.get(senderUserId);
+    if (name) {
+      return name;
+    }
+  }
+  return routeT(ctx.locale, "conversation.senderUnknown");
+}
+
+function mirrorAvatarHtml(senderType: string, senderUserId: string | null, ctx: MirrorRenderCtx): string {
+  if (senderType === "cuu") {
+    return `<span class="wh-mirror-avatar--cuu" aria-hidden="true">Cuu</span>`;
+  }
+  if (senderUserId) {
+    return personAvatarTileHtml({ userId: senderUserId, label: ctx.memberNames.get(senderUserId) ?? "" });
+  }
+  return `<span class="wh-mirror-avatar--cuu" aria-hidden="true">·</span>`;
+}
+
+// 从任意受限对象内容里尽力取一段人话（summary→text→兜底），供 system_event/tool_note 朴素渲染。
+function mirrorBestEffortNoteText(content: Record<string, unknown>, fallback: string): string {
+  const summary = content["summary"];
+  if (typeof summary === "string" && summary.trim()) {
+    return summary;
+  }
+  const text = content["text"];
+  if (typeof text === "string" && text.trim()) {
+    return text;
+  }
+  return fallback;
+}
+
+function mirrorSettleOutcomeLabel(outcome: string, zh: boolean): string {
+  return localizedEnumLabel(
+    outcome,
+    zh,
+    { approved: "已通过", merged: "已合并", rejected: "已打回" },
+    { approved: "Approved", merged: "Merged", rejected: "Sent back" }
+  );
+}
+
+// system_event 朴素渲染：digest（今日风险巡检）/落定（提议/执行结算）各给一条可读摘要，其余回退到
+// 尽力摘要。绝不复刻桌面的富交互卡（那些带按钮，只读镜像不要）。
+function mirrorSystemEventText(content: Record<string, unknown>, locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  const sep = zh ? "：" : ": ";
+  const event = typeof content["event"] === "string" ? content["event"] : "";
+  const title = typeof content["title"] === "string" ? content["title"] : "";
+  if (event === "risk_digest") {
+    const summary = typeof content["summary"] === "string" ? content["summary"] : "";
+    const head = routeT(locale, "conversation.riskDigest");
+    return summary ? `${head}${sep}${summary}` : head;
+  }
+  if (event === "proposal_settled") {
+    const label = mirrorSettleOutcomeLabel(typeof content["outcome"] === "string" ? content["outcome"] : "", zh);
+    return title ? `${title} · ${label}` : label;
+  }
+  if (event === "run_settled_report") {
+    const outcome = typeof content["outcome"] === "string" ? content["outcome"] : "";
+    const label = outcome === "escalated"
+      ? (zh ? "需要你拍板" : "Needs your call")
+      : (zh ? "这次没干成" : "Didn't land this time");
+    return title ? `${title} · ${label}` : label;
+  }
+  if (event === "proposal_opened") {
+    return title ? (zh ? `已起草${sep}${title}` : `Drafted: ${title}`) : (zh ? "已起草变更" : "Change drafted");
+  }
+  if (event === "proposal_auto_merged") {
+    return title ? (zh ? `已自动采纳${sep}${title}` : `Auto-adopted: ${title}`) : (zh ? "已自动采纳" : "Auto-adopted");
+  }
+  return mirrorBestEffortNoteText(content, routeT(locale, "conversation.systemFallback"));
+}
+
+function renderMirrorReactions(reactions: ConversationMessageVM["reactions"], locale: WorkHubLocale): string {
+  if (!reactions || reactions.length === 0) {
+    return "";
+  }
+  const chips = MIRROR_REACTION_ORDER.map((key) => {
+    const reaction = reactions.find((entry) => entry.key === key);
+    if (!reaction || reaction.user_ids.length === 0) {
+      return "";
+    }
+    return `<span class="wh-mirror-reaction" data-r15-mirror-reaction="${escapeHtml(key)}"><span class="wh-mirror-reaction-emoji" aria-hidden="true">${MIRROR_REACTION_EMOJI[key]}</span><span>${escapeHtml(String(reaction.user_ids.length))}</span></span>`;
+  }).filter(Boolean).join("");
+  return chips ? `<div class="wh-mirror-reactions">${chips}</div>` : "";
+}
+
+function renderMirrorReply(reply: NonNullable<ConversationMessageVM["reply_to"]>, ctx: MirrorRenderCtx): string {
+  const who = mirrorSenderLabel(reply.sender_type, reply.sender_user_id, ctx);
+  const inner = reply.deleted
+    ? `<span class="wh-mirror-reply-text wh-mirror-reply-gone">${escapeHtml(routeT(ctx.locale, "conversation.replyDeleted"))}</span>`
+    : `<span class="wh-mirror-reply-text">${escapeHtml(reply.preview_text)}</span>`;
+  return `<span class="wh-mirror-reply" data-r15-mirror-reply-to="${escapeHtml(reply.message_id)}"><span class="wh-mirror-reply-who">${escapeHtml(who)}</span>${inner}</span>`;
+}
+
+function mirrorTextBodyHtml(content: Extract<ConversationMessageVM, { kind: "text" }>["content"], locale: WorkHubLocale): string {
+  const body = `<p class="wh-mirror-text">${mirrorTextHtml(content.text)}</p>`;
+  if (content.is_clarifying_question) {
+    const options = Array.isArray(content.clarify_options) ? content.clarify_options : [];
+    const optionsHtml = options.length
+      ? `<div class="wh-mirror-clarify-opts">${options.map((option) => `<span class="wh-mirror-clarify-opt">${escapeHtml(option)}</span>`).join("")}</div>`
+      : "";
+    return `<div class="wh-mirror-clarify"><span class="wh-mirror-clarify-badge">${escapeHtml(routeT(locale, "conversation.clarifyBadge"))}</span>${body}${optionsHtml}</div>`;
+  }
+  return body;
+}
+
+function mirrorFileCardHtml(content: Extract<ConversationMessageVM, { kind: "file_card" }>["content"], locale: WorkHubLocale): string {
+  const name = content.snapshot_name || routeT(locale, "conversation.fileCard");
+  return `<span class="wh-mirror-filecard" data-r15-mirror-file-item="${escapeHtml(content.drive_item_id)}"><span aria-hidden="true">▤</span><span>${escapeHtml(name)}</span></span>`;
+}
+
+function mirrorActionCardHtml(content: Record<string, unknown>, locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  const rawItems = content["items"];
+  const items = Array.isArray(rawItems) ? rawItems : [];
+  const count = items.length;
+  const header = zh
+    ? `Cuu 从讨论里拎出 ${count} 件事`
+    : `Cuu pulled ${count} item${count === 1 ? "" : "s"} out of the discussion`;
+  const list = items.slice(0, 8).map((item) => {
+    const record = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+    const titleMd = typeof record["title_md"] === "string" ? record["title_md"] : typeof record["title"] === "string" ? record["title"] : "";
+    const title = stripMarkdown(titleMd);
+    return `<span class="wh-mirror-clarify-opt">${escapeHtml(title || (zh ? "（未命名）" : "(untitled)"))}</span>`;
+  }).join("");
+  return `<div class="wh-mirror-clarify"><span class="wh-mirror-clarify-badge">${escapeHtml(header)}</span>${list ? `<div class="wh-mirror-clarify-opts">${list}</div>` : ""}</div>`;
+}
+
+function mirrorMessageBody(message: ConversationMessageVM, locale: WorkHubLocale): string {
+  if (message.kind === "text") {
+    return mirrorTextBodyHtml(message.content, locale);
+  }
+  if (message.kind === "file_card") {
+    return mirrorFileCardHtml(message.content, locale);
+  }
+  if (message.kind === "action_card") {
+    return mirrorActionCardHtml(message.content, locale);
+  }
+  return "";
+}
+
+function renderMirrorMessage(message: ConversationMessageVM, ctx: MirrorRenderCtx): string {
+  const isTarget = ctx.targetSeq !== undefined && message.seq === ctx.targetSeq;
+  const rowAttrs = `data-r15-mirror-message-id="${escapeHtml(message.id)}" data-r15-mirror-seq="${escapeHtml(String(message.seq))}"${isTarget ? " data-r15-mirror-target=\"true\"" : ""}`;
+  // 墓碑优先（VM 已归一 content.text=''，但键仍看 deleted_at）——无头像/无工具条/无反应，只留一行占位。
+  if (message.deleted_at !== undefined) {
+    return `<div class="wh-mirror-tombstone" ${rowAttrs}>${escapeHtml(routeT(ctx.locale, "conversation.deleted"))}</div>`;
+  }
+  if (message.kind === "system_event") {
+    return `<div class="wh-mirror-sysline" ${rowAttrs} data-r15-mirror-system-event="${escapeHtml(typeof (message.content as Record<string, unknown>)["event"] === "string" ? String((message.content as Record<string, unknown>)["event"]) : "")}"><span>${escapeHtml(mirrorSystemEventText(message.content as Record<string, unknown>, ctx.locale))}</span><span class="wh-mirror-sysline-tm">${escapeHtml(mirrorTime(message.created_at))}</span></div>`;
+  }
+  if (message.kind === "tool_note") {
+    return `<div class="wh-mirror-note" ${rowAttrs} data-r15-mirror-tool-note="true"><span>${escapeHtml(mirrorBestEffortNoteText(message.content as Record<string, unknown>, routeT(ctx.locale, "conversation.toolNote")))}</span> <span class="wh-mirror-sysline-tm">${escapeHtml(mirrorTime(message.created_at))}</span></div>`;
+  }
+  const cuu = message.sender_type === "cuu";
+  const who = mirrorSenderLabel(message.sender_type, message.sender_user_id, ctx);
+  const edited = message.edited_at !== undefined
+    ? `<span class="wh-mirror-edited">${escapeHtml(routeT(ctx.locale, "conversation.edited"))}</span>`
+    : "";
+  const pinned = message.pinned
+    ? `<span class="wh-mirror-pin">${escapeHtml(routeT(ctx.locale, "conversation.pinned"))}</span>`
+    : "";
+  const reply = message.reply_to ? renderMirrorReply(message.reply_to, ctx) : "";
+  const body = mirrorMessageBody(message, ctx.locale);
+  const reactions = renderMirrorReactions(message.reactions, ctx.locale);
+  const avatar = mirrorAvatarHtml(message.sender_type, message.sender_user_id, ctx);
+  return `<div class="wh-mirror-msg${cuu ? " wh-mirror-msg--cuu" : ""}${isTarget ? " wh-mirror-msg--target" : ""}" ${rowAttrs}>
+      ${avatar}
+      <div class="wh-mirror-bub">
+        <div class="wh-mirror-who"><span>${escapeHtml(who)}</span><span class="wh-mirror-tm">${escapeHtml(mirrorTime(message.created_at))}</span>${edited}${pinned}</div>
+        ${reply}${body}${reactions}
+      </div>
+    </div>`;
+}
+
+function renderConversationRouteComponent(input: ConversationMirrorInput, locale: WorkHubLocale): WebRouteComponent {
+  const memberNames = new Map(input.members.map((member) => [member.id, member.nickname] as const));
+  const ctx: MirrorRenderCtx = { locale, memberNames, targetSeq: input.targetSeq };
+  const base = `/conversations/${encodeURIComponent(input.conversationId)}`;
+  const stream = input.messages.length === 0
+    ? `<p class="wh-mirror-empty">${escapeHtml(routeT(locale, "conversation.empty"))}</p>`
+    : input.messages.map((message) => renderMirrorMessage(message, ctx)).join("");
+  const olderLink = input.olderBeforeSeq !== undefined
+    ? `<a class="wh-btn" href="${escapeHtml(safeHref(`${base}?before=${input.olderBeforeSeq}`))}" data-r15-mirror-older="true">${escapeHtml(routeT(locale, "conversation.older"))}</a>`
+    : "";
+  const newerLink = input.newerAfterSeq !== undefined
+    ? `<a class="wh-btn" href="${escapeHtml(safeHref(`${base}?after=${input.newerAfterSeq}`))}" data-r15-mirror-newer="true">${escapeHtml(routeT(locale, "conversation.newer"))}</a>`
+    : "";
+  const latestLink = input.isLatest
+    ? ""
+    : `<a class="wh-btn" href="${escapeHtml(safeHref(base))}" data-r15-mirror-latest="true">${escapeHtml(routeT(locale, "conversation.latest"))}</a>`;
+  const refreshLink = `<a class="wh-btn" href="${escapeHtml(safeHref(input.refreshHref))}" data-r15-mirror-refresh="true">${escapeHtml(routeT(locale, "conversation.refresh"))}</a>`;
+  return createWebRouteComponent({
+    key: "conversation",
+    css: webRouteComponentCss,
+    primaryHrefs: [],
+    source: "page-vm",
+    locale,
+    pageVm: "conversation",
+    html: `<section class="wh-r4-route wh-mirror" data-r4-route-component="conversation" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r15-conversation-mirror="true" data-r15-conversation-id="${escapeHtml(input.conversationId)}" data-r15-conversation-readonly="true"${input.targetSeq !== undefined ? ` data-r15-conversation-target-seq="${escapeHtml(String(input.targetSeq))}"` : ""}>
+      <header class="wh-r4-route-head">
+        <div>
+          <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "conversation.kicker"))}</span>
+          <h1>${escapeHtml(routeT(locale, "conversation.title"))}</h1>
+        </div>
+      </header>
+      <div class="wh-mirror-banner" role="note" data-r15-conversation-readonly-banner="true">
+        <strong>${escapeHtml(routeT(locale, "conversation.readonlyBanner"))}</strong>
+        <p>${escapeHtml(routeT(locale, "conversation.readonlyHint"))}</p>
+      </div>
+      <div class="wh-mirror-pager" data-r15-mirror-pager="top">${olderLink}${refreshLink}</div>
+      <div class="wh-mirror-stream" data-r15-mirror-stream="true">${stream}</div>
+      <div class="wh-mirror-pager" data-r15-mirror-pager="bottom">${newerLink}${latestLink}</div>
+    </section>`
+  });
+}
+
 // R14 批 SEARCH（web-search-page，02-search-design.md §7）：web 顶栏搜索页。服务端只渲搜索框外壳 +
 // 诚实的空/短词提示（q 未给 or <2 字符）——四个结果分组卡先隐藏、不带数据。真结果由
 // apps/web/src/browser.ts 的 bindSearchRoutePanel 客户端拉 GET /api/search（q≥2 字符时）后注入，
@@ -5013,6 +5384,7 @@ export type WebRouteComponentInput =
   | { key: "approvals"; approvals: ApprovalCenterVM }
   | { key: "workitem"; workitem: WorkItemDetailVM }
   | { key: "proposal"; proposal: ProposalDetailVM; proposalConflicts?: ProposalConflict[] | undefined; proposalConflictsCheckFailed?: boolean | undefined }
+  | { key: "conversation"; conversation: ConversationMirrorInput }
   | { key: "drive"; drive: DrivePageVM; projects?: ProjectListVM | undefined }
   | { key: "meetings"; meetings: MeetingPageVM; projects?: ProjectListVM | undefined }
   | { key: "notifications"; notifications: NotificationPageVM }
@@ -5050,6 +5422,8 @@ export function renderWebRouteComponent(
       return renderWorkItemRouteComponent(input.workitem, locale);
     case "proposal":
       return renderProposalRouteComponent(input.proposal, locale, input.proposalConflicts ?? [], input.proposalConflictsCheckFailed ?? false);
+    case "conversation":
+      return renderConversationRouteComponent(input.conversation, locale);
     case "drive":
       return renderDriveRouteComponent(input.drive, locale, input.projects);
     case "meetings":

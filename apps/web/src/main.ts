@@ -44,6 +44,9 @@ export const webSurface = {
     "/api/workitems/:id/conflicts",
     "/api/pages/proposals/:id",
     "/proposals/:id",
+    // R15 批 web-mirror：只读会话镜像页 + 消费的会话消息读端点。
+    "/api/conversations/:id/messages",
+    "/conversations/:id",
     "/api/pages/drive",
     "/drive",
     "/api/pages/meetings",

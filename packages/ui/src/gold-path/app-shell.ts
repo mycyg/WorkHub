@@ -140,6 +140,11 @@ export function resolveGoldPathPageKey(routeMap: Record<string, PageKey>, href: 
   if (route.startsWith("/proposals/")) {
     return "proposal";
   }
+  // 只读会话镜像是 detail-only 路由（不在 shell 导航的 routeMap 里）——与 workitem/proposal 同样
+  // 走前缀回退识别，让分页/刷新链接走 SPA 导航而非整页刷新。
+  if (route.startsWith("/conversations/")) {
+    return "conversation";
+  }
   if (route.startsWith("/agent-runs/")) {
     return "replay";
   }

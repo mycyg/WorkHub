@@ -9,6 +9,8 @@ import type {
   ApprovalCenterVM,
   AttentionHomeVM,
   CalendarPageVM,
+  ConversationMessagePageVM,
+  ConversationMessageVM,
   CostDashboardVM,
   DrivePageVM,
   EvidenceBubble,
@@ -54,10 +56,14 @@ type RouteClientOverrides = {
   userMemories?: UserMemoryManagementPageVM;
   teamSkillsManage?: TeamSkillManagementPageVM;
   conflicts?: ProposalConflict[];
+  conversationMessages?: ConversationMessagePageVM;
+  users?: { users: Array<{ id: string; nickname: string; is_admin: boolean }> };
   attentionError?: Error;
   approvalsError?: Error;
   costError?: Error;
   knowledgeError?: Error;
+  conversationMessagesError?: Error;
+  usersError?: Error;
 };
 
 type ApprovalRouteRequestOptions = {
@@ -700,6 +706,25 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
     async listProjects() {
       return overrides.projects ?? projectListVm();
     },
+    async listUsers() {
+      calls.push("listUsers");
+      if (overrides.usersError) {
+        throw overrides.usersError;
+      }
+      return overrides.users ?? { users: [] };
+    },
+    async listConversationMessages(conversationId: string, options?: { beforeSeq?: number; afterSeq?: number; limit?: number }) {
+      const cursor = options?.beforeSeq !== undefined
+        ? `before=${options.beforeSeq}`
+        : options?.afterSeq !== undefined
+          ? `after=${options.afterSeq}`
+          : "none";
+      calls.push(`conversationMessages:${conversationId}:${cursor}:limit=${options?.limit ?? "none"}`);
+      if (overrides.conversationMessagesError) {
+        throw overrides.conversationMessagesError;
+      }
+      return overrides.conversationMessages ?? { messages: [], has_more: false, next_after_seq: 0 };
+    },
     async listWorkItemConflicts(workItemId: string) {
       localeCall(`conflicts:${workItemId}`);
       const conflicts = (overrides.conflicts ?? []).filter((conflict) => conflict.work_item_id === workItemId);
@@ -906,6 +931,7 @@ test("R4 web route registry resolves product URL routes", () => {
     "approvals",
     "workitem",
     "proposal",
+    "conversation",
     "drive",
     "meetings",
     "notifications",
@@ -939,6 +965,10 @@ test("R4 web route registry resolves product URL routes", () => {
   assert.equal(resolveWebRoute("/dashboard/search?q=budget")?.search, "?q=budget");
   assert.equal(resolveWebRoute("/dashboard/skills")?.key, "skills");
   assert.equal(resolveWebRoute("/workitems/WH-001")?.params["id"], "WH-001");
+  assert.equal(resolveWebRoute("/conversations/30000000-0000-4000-8000-000000000003")?.key, "conversation");
+  assert.equal(resolveWebRoute("/conversations/30000000-0000-4000-8000-000000000003")?.params["id"], "30000000-0000-4000-8000-000000000003");
+  assert.equal(resolveWebRoute("/conversations/c-1?seq=9")?.key, "conversation");
+  assert.equal(resolveWebRoute("/conversations/c-1?seq=9")?.search, "?seq=9");
   assert.equal(resolveWebRoute("/agent-runs/run-1/replay")?.params["id"], "run-1");
   assert.equal(resolveWebRoute("/#/approvals")?.key, "home");
   assert.equal(resolveWebRoute("/unknown"), undefined);
@@ -1114,6 +1144,8 @@ test("R4.16 web route tree declares hydration fallback boundaries for every prod
       ["approvals", "approvals"],
       ["workitem", "workitem"],
       ["proposal", "proposal"],
+      // R15 批 web-mirror：新路由 "conversation"（/conversations/:id 只读镜像），pageVm 同名。
+      ["conversation", "conversation"],
       ["drive", "drive"],
       ["meetings", "meetings"],
       ["notifications", "notifications"],
@@ -2320,4 +2352,245 @@ test("R4 web loader renders unknown routes as recoverable not-found states", asy
   assert.equal(result.html.includes("find this page"), true);
   // recoverable: a home escape hatch is always present (no nav-less dead-end loop).
   assert.equal(result.html.includes('data-r4-web-route-home="true"'), true);
+});
+
+// ── R15 批 web-mirror（web 只读会话镜像）───────────────────────────────────────────────
+const MIRROR_CONVERSATION_ID = "30000000-0000-4000-8000-000000000003";
+const MIRROR_OWNER_ID = "60000000-0000-4000-8000-000000000006";
+const MIRROR_IVY_ID = "60000000-0000-4000-8000-000000000007";
+
+function conversationMessagePageVm(overrides: Partial<ConversationMessagePageVM> = {}): ConversationMessagePageVM {
+  const messages: ConversationMessageVM[] = [
+    {
+      id: "40000000-0000-4000-8000-000000000101",
+      conversation_id: MIRROR_CONVERSATION_ID,
+      seq: 5,
+      sender_type: "user",
+      sender_user_id: MIRROR_OWNER_ID,
+      thread_root_id: null,
+      edited_at: "2026-07-12T01:00:05.000000Z",
+      pinned: { at: "2026-07-12T01:01:00.000000Z", by_user_id: MIRROR_OWNER_ID },
+      reactions: [{ key: "approve", user_ids: [MIRROR_IVY_ID] }],
+      kind: "text",
+      content: { text: "先看风险\n再看指标" },
+      created_at: "2026-07-12T01:00:00.000000Z"
+    },
+    {
+      id: "40000000-0000-4000-8000-000000000102",
+      conversation_id: MIRROR_CONVERSATION_ID,
+      seq: 6,
+      sender_type: "cuu",
+      sender_user_id: null,
+      thread_root_id: null,
+      reply_to: {
+        message_id: "40000000-0000-4000-8000-000000000101",
+        sender_type: "user",
+        sender_user_id: MIRROR_OWNER_ID,
+        preview_text: "先看风险",
+        deleted: false
+      },
+      kind: "text",
+      content: { text: "好的，我先梳理风险。" },
+      created_at: "2026-07-12T01:00:02.000000Z"
+    },
+    {
+      id: "40000000-0000-4000-8000-000000000103",
+      conversation_id: MIRROR_CONVERSATION_ID,
+      seq: 7,
+      sender_type: "user",
+      sender_user_id: MIRROR_IVY_ID,
+      thread_root_id: null,
+      kind: "file_card",
+      content: { drive_item_id: "93000000-0000-4000-8000-000000000002", snapshot_name: "风险清单.md" },
+      created_at: "2026-07-12T01:00:04.000000Z"
+    },
+    {
+      id: "40000000-0000-4000-8000-000000000104",
+      conversation_id: MIRROR_CONVERSATION_ID,
+      seq: 8,
+      sender_type: "system",
+      sender_user_id: null,
+      thread_root_id: null,
+      kind: "system_event",
+      content: { event: "risk_digest", summary: "3 项工单停滞", stalled_count: 3 },
+      created_at: "2026-07-12T01:00:06.000000Z"
+    },
+    {
+      id: "40000000-0000-4000-8000-000000000105",
+      conversation_id: MIRROR_CONVERSATION_ID,
+      seq: 9,
+      sender_type: "user",
+      sender_user_id: MIRROR_IVY_ID,
+      thread_root_id: null,
+      deleted_at: "2026-07-12T01:00:08.000000Z",
+      kind: "text",
+      content: { text: "" },
+      created_at: "2026-07-12T01:00:07.000000Z"
+    }
+  ];
+  return { messages, has_more: false, next_after_seq: 9, next_before_seq: 5, ...overrides };
+}
+
+function conversationUsers() {
+  return {
+    users: [
+      { id: MIRROR_OWNER_ID, nickname: "R15 owner", is_admin: true },
+      { id: MIRROR_IVY_ID, nickname: "Ivy", is_admin: false }
+    ]
+  };
+}
+
+test("R15 web-mirror conversation route renders a read-only message mirror (latest page)", async () => {
+  const { client, calls } = fakeRouteClient(goldPathSurfaceVm(), {
+    conversationMessages: conversationMessagePageVm(),
+    users: conversationUsers()
+  });
+  const match = resolveWebRoute(`/conversations/${MIRROR_CONVERSATION_ID}`);
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "zh-CN");
+
+  assert.equal(result.status, "ready");
+  // 首屏 = 最新一页：beforeSeq=MAX（O(1)，同桌面首屏策略）。
+  assert.ok(calls.some((call) => call.startsWith(`conversationMessages:${MIRROR_CONVERSATION_ID}:before=${Number.MAX_SAFE_INTEGER}:`)));
+  // 成员目录用于昵称解析。
+  assert.ok(calls.includes("listUsers"));
+  // 只读边界：绝不 POST——没有任何写端点被触及（发消息/反应/已读游标/turns 全无）。
+  assert.equal(calls.filter((call) => /receipt|turn|reaction|:read|typing/u.test(call)).length, 0);
+
+  assert.equal(result.html.includes('data-r4-route-component="conversation"'), true);
+  assert.equal(result.html.includes('data-r15-conversation-readonly="true"'), true);
+  // 只读镜像页头横幅（双语其一）。
+  assert.equal(result.html.includes("只读镜像 · 完整协作请在桌面工作台"), true);
+  // 发送者昵称解析（成员目录）+ Cuu + 系统。
+  assert.equal(result.html.includes("R15 owner"), true);
+  assert.equal(result.html.includes("Cuu"), true);
+  // 反应聚合：emoji + 计数（reaction 破例 emoji）。
+  assert.equal(result.html.includes("👍"), true);
+  // 编辑墓碑 + 置顶标记。
+  assert.equal(result.html.includes("已编辑"), true);
+  assert.equal(result.html.includes("已置顶"), true);
+  // file_card 快照名。
+  assert.equal(result.html.includes("风险清单.md"), true);
+  // system_event digest 朴素渲染。
+  assert.equal(result.html.includes("今日风险巡检"), true);
+  // 删除墓碑。
+  assert.equal(result.html.includes("此消息已删除"), true);
+  // 引用回复预览。
+  assert.equal(result.html.includes("先看风险"), true);
+  // 只读：无 composer/textarea，无发送按钮。
+  assert.equal(result.html.includes("<textarea"), false);
+  assert.equal(/data-action-id="[^"]*(send|react|pin|edit|delete)/u.test(result.html), false);
+  // 最新页无「更新」/「回到最新」链接。
+  assert.equal(result.html.includes('data-r15-mirror-newer="true"'), false);
+  assert.equal(result.html.includes('data-r15-mirror-latest="true"'), false);
+});
+
+test("R15 web-mirror ?seq= locates the target message and never advances the read cursor", async () => {
+  const { client, calls } = fakeRouteClient(goldPathSurfaceVm(), {
+    conversationMessages: conversationMessagePageVm(),
+    users: conversationUsers()
+  });
+  const match = resolveWebRoute(`/conversations/${MIRROR_CONVERSATION_ID}?seq=5`);
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "en-US");
+
+  assert.equal(result.status, "ready");
+  // ?seq=5 → 定位到含该 seq 的一页：beforeSeq=seq+1=6。
+  assert.ok(calls.some((call) => call.startsWith(`conversationMessages:${MIRROR_CONVERSATION_ID}:before=6:`)));
+  // 目标高亮（不改动任何读游标：没有 receipt 写调用）。
+  assert.equal(result.html.includes('data-r15-conversation-target-seq="5"'), true);
+  assert.equal(result.html.includes('data-r15-mirror-target="true"'), true);
+  assert.equal(result.html.includes("wh-mirror-msg--target"), true);
+  assert.equal(calls.filter((call) => /receipt|:read/u.test(call)).length, 0);
+  // 英文横幅。
+  assert.equal(result.html.includes("Read-only mirror · Collaborate in the desktop workbench"), true);
+});
+
+test("R15 web-mirror pagination cursors follow the before/after read-endpoint semantics", async () => {
+  // 最新页 + 还有更早：只出「更早」链接（before=next_before_seq），无更新/回最新。
+  const latest = fakeRouteClient(goldPathSurfaceVm(), {
+    conversationMessages: conversationMessagePageVm({ has_more: true, next_before_seq: 3, next_after_seq: 9 }),
+    users: conversationUsers()
+  });
+  const latestMatch = resolveWebRoute(`/conversations/${MIRROR_CONVERSATION_ID}`);
+  assert.ok(latestMatch);
+  const latestResult = await loadWebRoute(latest.client, latestMatch, "zh-CN");
+  assert.equal(latestResult.status, "ready");
+  assert.equal(latestResult.html.includes('data-r15-mirror-older="true"'), true);
+  assert.equal(latestResult.html.includes("before=3"), true);
+  assert.equal(latestResult.html.includes('data-r15-mirror-newer="true"'), false);
+  assert.equal(latestResult.html.includes('data-r15-mirror-latest="true"'), false);
+
+  // 更早页（?before=）：更早（before=next_before_seq）+ 更新（after=页内最新 seq）+ 回到最新 三个都在。
+  const before = fakeRouteClient(goldPathSurfaceVm(), {
+    conversationMessages: conversationMessagePageVm({ has_more: true, next_before_seq: 3, next_after_seq: 9 }),
+    users: conversationUsers()
+  });
+  const beforeMatch = resolveWebRoute(`/conversations/${MIRROR_CONVERSATION_ID}?before=100`);
+  assert.ok(beforeMatch);
+  const beforeResult = await loadWebRoute(before.client, beforeMatch, "zh-CN");
+  assert.ok(before.calls.some((call) => call.startsWith(`conversationMessages:${MIRROR_CONVERSATION_ID}:before=100:`)));
+  assert.equal(beforeResult.html.includes('data-r15-mirror-older="true"'), true);
+  assert.equal(beforeResult.html.includes('data-r15-mirror-newer="true"'), true);
+  assert.equal(beforeResult.html.includes("after=9"), true);
+  assert.equal(beforeResult.html.includes('data-r15-mirror-latest="true"'), true);
+
+  // 正向页（?after=）：afterSeq 请求；has_more → 更新（after=next_after_seq），更早回溯页内最旧 seq。
+  const after = fakeRouteClient(goldPathSurfaceVm(), {
+    conversationMessages: conversationMessagePageVm({ has_more: true, next_after_seq: 42 }),
+    users: conversationUsers()
+  });
+  const afterMatch = resolveWebRoute(`/conversations/${MIRROR_CONVERSATION_ID}?after=4`);
+  assert.ok(afterMatch);
+  const afterResult = await loadWebRoute(after.client, afterMatch, "zh-CN");
+  assert.ok(after.calls.some((call) => call.startsWith(`conversationMessages:${MIRROR_CONVERSATION_ID}:after=4:`)));
+  assert.equal(afterResult.html.includes('data-r15-mirror-newer="true"'), true);
+  assert.equal(afterResult.html.includes("after=42"), true);
+  assert.equal(afterResult.html.includes('data-r15-mirror-older="true"'), true);
+  assert.equal(afterResult.html.includes("before=5"), true);
+});
+
+test("R15 web-mirror non-participant / missing conversation falls to the recoverable not-found state", async () => {
+  const { client } = fakeRouteClient(goldPathSurfaceVm(), {
+    conversationMessagesError: new WorkHubApiError(404, "conversation_not_found", "没有找到这个会话。"),
+    users: conversationUsers()
+  });
+  const match = resolveWebRoute(`/conversations/${MIRROR_CONVERSATION_ID}`);
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "zh-CN");
+
+  assert.equal(result.status, "notFound");
+  assert.equal(result.html.includes('data-route-state="notFound"'), true);
+});
+
+test("R15 web-mirror member-directory failure degrades softly to unknown-member labels", async () => {
+  const { client } = fakeRouteClient(goldPathSurfaceVm(), {
+    conversationMessages: conversationMessagePageVm(),
+    usersError: new Error("directory unavailable")
+  });
+  const match = resolveWebRoute(`/conversations/${MIRROR_CONVERSATION_ID}`);
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "zh-CN");
+
+  // 成员目录失败不连累消息渲染（消息才是主数据）——昵称退化为「未知成员」。
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.includes("未知成员"), true);
+  assert.equal(result.html.includes("Cuu"), true);
+});
+
+test("R15 web-mirror session expiry during a conversation load bubbles for re-auth", async () => {
+  const { client } = fakeRouteClient(goldPathSurfaceVm(), {
+    conversationMessagesError: new WorkHubApiError(401, "not_identified", "请重新登录。")
+  });
+  const match = resolveWebRoute(`/conversations/${MIRROR_CONVERSATION_ID}`);
+  assert.ok(match);
+
+  await assert.rejects(
+    loadWebRoute(client, match, "zh-CN"),
+    (error: unknown) => error instanceof WorkHubApiError && error.code === "not_identified"
+  );
 });
