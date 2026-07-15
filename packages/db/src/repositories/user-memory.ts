@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 
 import { USER_MEMORY_MAX_ACTIVE_PER_USER, textDiff3Merge, type UserMemoryCategory } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
+import { CARE_SIGNAL_CATEGORY } from "./care-signals.js";
 import { agentRuns, projectConversations, userMemories, workItems } from "../schema/index.js";
 
 export type UserMemoryRow = typeof userMemories.$inferSelect;
@@ -269,7 +270,14 @@ export function createUserMemoryRepository(db: WorkHubDb): UserMemoryRepository 
     },
 
     async listForUser(userId, options = {}) {
-      const conditions = [eq(userMemories.userId, userId), isNull(userMemories.deletedAt)];
+      // R15 批 F：关怀信号（category='care_signal'）是内部规则信号，绝不注入 agent prompt、绝不进记忆
+      // 管理页——两者都走 listForUser，故在此 SQL 层一律排除，把关怀信号与用户可见/可编辑的偏好记忆
+      // 彻底隔离。要读关怀信号走专用的 listActiveCareSignals（repositories/care-signals.ts）。
+      const conditions = [
+        eq(userMemories.userId, userId),
+        isNull(userMemories.deletedAt),
+        ne(userMemories.category, CARE_SIGNAL_CATEGORY)
+      ];
       // L#86：类别过滤下推到 SQL，使 LIMIT 在过滤之后生效——否则先取全类别前 N 行再过滤，
       // 指定类别时可能返回远少于 limit 的行（明明还有更多该类别的记忆）。
       if (options.categories?.length) {

@@ -51,3 +51,4 @@ export * from "./repositories/risk-monitor.js";
 export * from "./repositories/approval-digest.js";
 export * from "./repositories/github-bindings.js";
 export * from "./repositories/proactive-intents.js";
+export * from "./repositories/care-signals.js";

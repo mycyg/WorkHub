@@ -2091,7 +2091,11 @@ export const userMemories = pgTable(
     id: id(),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }),
-    category: varchar("category", { length: 32 }).$type<"preference" | "correction" | "recurring_context">().notNull(),
+    // R15 批 F（主动关怀）：additive 新增 'care_signal' 分类——纯规则侦测出的「关于成员当前状态的可衰减
+    // 记忆」（高负荷/深夜活跃/连续受挫），与 preference/correction/recurring_context 语义完全隔离。列本就是
+    // varchar(32) 且无 DB CHECK 约束（见迁移 0012），'care_signal'(11 字符) 直接落，无需迁移。关怀信号绝不
+    // 进 agent prompt、绝不进记忆管理页（listForUser 在 SQL 层排除本分类，见 repositories/user-memory.ts）。
+    category: varchar("category", { length: 32 }).$type<"preference" | "correction" | "recurring_context" | "care_signal">().notNull(),
     key: varchar("key", { length: 256 }).notNull(),
     valueMd: text("value_md").notNull(),
     confidence: doublePrecision("confidence").notNull().default(0.5),
