@@ -326,6 +326,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async listUsers(): Promise<never> {
       throw new Error("not needed");
     },
+    async listConversationMessages(): Promise<never> {
+      throw new Error("not needed");
+    },
     async createMeetingInsightDraft() {
       throw new Error("not needed");
     },

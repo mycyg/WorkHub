@@ -1,6 +1,7 @@
 import type {
   ApiEnvelope,
   ApprovalPageRequestOptions,
+  ConversationMessageListRequestOptions,
   FetchLike,
   HealthResponse,
   IdentifyRequest,
@@ -153,6 +154,22 @@ function withSearchParams(path: string, params: SearchRequestParams) {
 // R14 批 MEM：用户记忆列表可选按 category 过滤。
 function withUserMemoryListOptions(path: string, options?: UserMemoryListRequestOptions) {
   return options?.category ? `${path}?category=${encodeURIComponent(options.category)}` : path;
+}
+
+// R15 批 web-mirror：会话消息读端点分页参数。beforeSeq/afterSeq 契约层互斥——beforeSeq 优先（给
+// 了就走反向游标），否则用 afterSeq（默认 0=从头正向）。limit 可选，服务端夹紧到 [1,100]。
+function withConversationMessageListOptions(path: string, options?: ConversationMessageListRequestOptions) {
+  const params = new URLSearchParams();
+  if (options?.beforeSeq !== undefined) {
+    params.set("beforeSeq", String(options.beforeSeq));
+  } else if (options?.afterSeq !== undefined) {
+    params.set("afterSeq", String(options.afterSeq));
+  }
+  if (options?.limit !== undefined) {
+    params.set("limit", String(options.limit));
+  }
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
 }
 
 async function readJson(response: Response) {
@@ -592,6 +609,13 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         body: JSON.stringify(payload)
       }),
     listUsers: () => request("/api/users"),
+    listConversationMessages: (conversationId, options) =>
+      request(
+        withConversationMessageListOptions(
+          `/api/conversations/${encodeURIComponent(conversationId)}/messages`,
+          options
+        )
+      ),
     createMeetingInsightDraft: (projectId, insightId, options) =>
       request(withPageLocale(`/api/meetings/projects/${encodeURIComponent(projectId)}/insights/${encodeURIComponent(insightId)}/draft`, options), {
         method: "POST"

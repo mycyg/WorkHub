@@ -448,6 +448,9 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
     async listUsers(): Promise<never> {
       throw new Error("not needed");
     },
+    async listConversationMessages(): Promise<never> {
+      throw new Error("not needed");
+    },
     async createMeetingInsightDraft() {
       throw new Error("not needed");
     },

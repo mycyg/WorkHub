@@ -17,6 +17,7 @@ import type {
   CostDashboardVM,
   CalendarPageVM,
   CostSummaryVM,
+  ConversationMessagePageVM,
   CreateWorkItemRequest,
   CreateProposalFromManifestRequest,
   CreateSessionRequest,
@@ -177,6 +178,16 @@ export type CalendarPageRequestOptions = PageRequestOptions & {
 export type PilotDay1MetricsRequestOptions = {
   from?: string;
   to?: string;
+};
+
+// R15 批 web-mirror（web 只读会话镜像）：会话消息读端点 GET /api/conversations/:id/messages 的
+// 分页参数——契约层是 beforeSeq（反向：早于该 seq 的最新一页）与 afterSeq（正向：晚于该 seq）互斥
+// 的联合（见 packages/contracts 的 conversationMessageListQuerySchema）。web 镜像只消费这个既有读
+// 端点，不新增任何服务端能力。
+export type ConversationMessageListRequestOptions = {
+  beforeSeq?: number;
+  afterSeq?: number;
+  limit?: number;
 };
 
 // R14 批 MEM：用户记忆列表可选按 category 过滤（服务端 GET /api/me/memories?category=）。
@@ -376,8 +387,13 @@ export type WorkHubApiClient = {
   createMeetingInsightDraft: (projectId: string, insightId: string, options?: PageRequestOptions) => Promise<MeetingPageVM>;
   // R10-P2-2：导入会议转写。
   importMeetingTranscript: (projectId: string, payload: { title: string; transcript_text: string }, options?: PageRequestOptions) => Promise<MeetingPageVM>;
-  // R10-P2-5：委派选人器的数据源——活跃成员简表。
+  // R10-P2-5：委派选人器的数据源——活跃成员简表。web 会话镜像也复用它做发送者昵称解析。
   listUsers: () => Promise<{ users: Array<{ id: string; nickname: string; is_admin: boolean }> }>;
+  // R15 批 web-mirror：只读会话镜像消费的既有会话消息读端点（参与者门控在服务端）。
+  listConversationMessages: (
+    conversationId: string,
+    options?: ConversationMessageListRequestOptions
+  ) => Promise<ConversationMessagePageVM>;
   dismissMeetingInsight: (projectId: string, insightId: string, options?: PageRequestOptions) => Promise<MeetingPageVM>;
   createMeetingDraftProposal: (workItemId: string, options?: PageRequestOptions) => Promise<WorkItemDetailVM>;
   costUsage: () => Promise<CostSummaryVM>;
