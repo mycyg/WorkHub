@@ -32,6 +32,7 @@
     "@workhub/contracts": "workspace:*",
     "@workhub/cost": "workspace:*",
     "@workhub/audit": "workspace:*",
+    "@workhub/cuu": "workspace:*",
     "@workhub/db": "workspace:*",
     "@workhub/events": "workspace:*",
     "@workhub/permissions": "workspace:*",
