@@ -125,7 +125,15 @@ export const envSchema = z.object({
   PULSE_APPROVAL_SLA_INTERVAL_MS: z.coerce.number().int().min(0).default(300000),
   PULSE_NOTIFICATION_REMINDER_INTERVAL_MS: z.coerce.number().int().min(0).default(3600000),
   // R15 批 A（A3 会话 digest 卡）：审批 digest 巡检间隔（默认 15 分钟）。0=不挂定时器（仅手动 tick）。
-  PULSE_APPROVAL_DIGEST_INTERVAL_MS: z.coerce.number().int().min(0).default(900000)
+  PULSE_APPROVAL_DIGEST_INTERVAL_MS: z.coerce.number().int().min(0).default(900000),
+
+  // R15 批 D（主动性 MVP · 追 DDL 阶梯）：ddl-chase pulse 任务巡检间隔（默认 30 分钟）。0=不挂定时器。
+  // 纯规则、无 LLM，扫未完成/有 due_at/有责任人的工作项，按 T-3d→T-1d→逾期→升级 阶梯投递提醒。
+  PULSE_DDL_CHASE_INTERVAL_MS: z.coerce.number().int().min(0).default(1800000),
+  // R15 批 D（频控闸）：静默时段（服务器本地时区），形如 "22-08"=22:00–08:00 不投递。空串=不启用静默。
+  PROACTIVE_QUIET_HOURS: z.string().default("22-08"),
+  // R15 批 D（频控闸）：每人每日主动打扰上限——当日该 target 已投递 intent 达此数则后续 suppressed。
+  PROACTIVE_DAILY_CAP_PER_USER: z.coerce.number().int().positive().default(10)
 });
 
 type ParsedEnv = z.infer<typeof envSchema>;
@@ -211,6 +219,11 @@ export type Settings = {
     approvalSlaIntervalMs: number;
     notificationReminderIntervalMs: number;
     approvalDigestIntervalMs: number;
+    ddlChaseIntervalMs: number;
+  };
+  proactive: {
+    quietHours: string;
+    dailyCapPerUser: number;
   };
 };
 
@@ -302,7 +315,12 @@ export function loadSettings(env: EnvInput = process.env): Settings {
       enabled: parsed.PULSE_SCHEDULER_ENABLED,
       approvalSlaIntervalMs: parsed.PULSE_APPROVAL_SLA_INTERVAL_MS,
       notificationReminderIntervalMs: parsed.PULSE_NOTIFICATION_REMINDER_INTERVAL_MS,
-      approvalDigestIntervalMs: parsed.PULSE_APPROVAL_DIGEST_INTERVAL_MS
+      approvalDigestIntervalMs: parsed.PULSE_APPROVAL_DIGEST_INTERVAL_MS,
+      ddlChaseIntervalMs: parsed.PULSE_DDL_CHASE_INTERVAL_MS
+    },
+    proactive: {
+      quietHours: parsed.PROACTIVE_QUIET_HOURS,
+      dailyCapPerUser: parsed.PROACTIVE_DAILY_CAP_PER_USER
     }
   };
 
