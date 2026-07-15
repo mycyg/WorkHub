@@ -43,6 +43,7 @@ import { createConversationTurnRoutes } from "./routes/conversation-turns.js";
 import { createConversationTypingRoutes } from "./routes/conversation-typing.js";
 import { createConversationMessageActionRoutes } from "./routes/conversation-message-actions.js";
 import { createConversationReadRoutes } from "./routes/conversation-read.js";
+import { createConversationRenameRoutes } from "./routes/conversation-rename.js";
 import { createPresenceRoutes } from "./routes/presence.js";
 import { createSearchRoutes } from "./routes/search.js";
 import { createUserMemoryGovernanceRoutes } from "./routes/user-memory-governance.js";
@@ -273,6 +274,8 @@ app.route("/api", createConversationTypingRoutes());
 // R14 批 CHAT：消息动作（编辑/删除/reaction/置顶）+ 已读游标 + presence 读端点。
 app.route("/api", createConversationMessageActionRoutes());
 app.route("/api", createConversationReadRoutes());
+// R14 验收修复批 A：协同会话重命名（main 主区不可改名，服务层强制）。
+app.route("/api", createConversationRenameRoutes());
 app.route("/api", createPresenceRoutes());
 // R14 批 SEARCH：全局搜索统一读端点（四 scope 鉴权在 SQL 内逐 actor 收口）。
 app.route("/api", createSearchRoutes());

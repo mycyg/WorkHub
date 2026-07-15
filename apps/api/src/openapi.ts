@@ -7351,6 +7351,46 @@ export function getOpenApiDocument() {
           ...conversationMessageCreateResponses
         }
       },
+      "/api/conversations/{id}": {
+        patch: {
+          tags: ["conversations"],
+          summary: "Rename a collab conversation (main conversations cannot be renamed)",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody({
+            type: "object",
+            required: ["title"],
+            properties: { title: { type: "string", minLength: 1, maxLength: 256 } },
+            additionalProperties: false
+          }),
+          responses: {
+            "200": jsonDataResponse(
+              {
+                type: "object",
+                required: ["conversation"],
+                properties: { conversation: conversationResponseSchema },
+                additionalProperties: false
+              },
+              "The renamed conversation VM"
+            ).responses["200"],
+            "400": jsonErrorStatusResponse("400", "Rename payload is malformed", [
+              "malformed_json",
+              "json_object_required"
+            ]).responses["400"],
+            "401": conversationAuthRequiredResponse,
+            "403": jsonErrorStatusResponse("403", "Only collab participants may rename, and never the main area", [
+              "invalid_client_token",
+              "forbidden",
+              "human_required",
+              "conversation_rename_forbidden"
+            ]).responses["403"],
+            "404": jsonErrorStatusResponse("404", "Conversation was not found", ["conversation_not_found"])
+              .responses["404"],
+            "413": conversationPayloadTooLargeResponse,
+            "422": conversationValidationResponse,
+            "500": conversationInternalResponse
+          }
+        }
+      },
       "/api/conversations/{id}/messages/{messageId}": {
         patch: {
           tags: ["conversations"],
