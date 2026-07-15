@@ -764,10 +764,20 @@ export const workbenchCss = [
   // —— R14 批 APPROVE-CHAT：右栏提议详情（proposal/render.ts，第四个 owner）+ 产出卡「看提议」按钮 +
   // 军团输出行按钮化。全部独立追加（css.test.ts 的既有精确断言锁死旧规则字符串，只加不改），wh-wb-prop-*
   // 新前缀，视觉语言对齐 drive/army 侧栏（--ds-* 浅色玻璃 token）。 —— //
-  ".wh-wb-chat-actioncard-actions{margin-top:8px}",
+  ".wh-wb-chat-actioncard-actions{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}",
   ".wh-wb-chat-actioncard-open{font:600 12px/1 var(--ds-font);padding:6px 12px;border-radius:99px;" +
     "border:1px solid var(--ds-glass-border);background:var(--ds-glass);color:var(--ds-accent);cursor:pointer}",
   ".wh-wb-chat-actioncard-open:hover{background:var(--ds-glass-strong)}",
+  // R15 批 A6：产出卡内联批准/打回——批准是主按钮（accent 实底白字），打回是轻按钮（打开右栏写理由，
+  // 不内联提交）。忙态/落定后置灰不可点，同 spotlight markBusy 手感。
+  ".wh-wb-chat-actioncard-approve{font:600 12px/1 var(--ds-font);padding:6px 12px;border-radius:99px;border:1px solid var(--ds-accent);" +
+    "background:var(--ds-accent);color:#fff;cursor:pointer}",
+  ".wh-wb-chat-actioncard-approve:hover{filter:brightness(1.05)}",
+  ".wh-wb-chat-actioncard-approve:disabled{opacity:.55;cursor:default;filter:none}",
+  ".wh-wb-chat-actioncard-deny{font:600 12px/1 var(--ds-font);padding:6px 12px;border-radius:99px;" +
+    "border:1px solid var(--ds-glass-border);background:var(--ds-glass);color:var(--ds-ink-soft);cursor:pointer}",
+  ".wh-wb-chat-actioncard-deny:hover{background:var(--ds-danger-soft);border-color:rgba(255,69,58,.35);color:var(--ds-danger)}",
+  ".wh-wb-chat-actioncard-deny:disabled{opacity:.55;cursor:default}",
   // 军团输出行翻成 <button>（原 <details> 折叠）后仍复用 .wh-wb-army-out-* 的内部布局类——按钮宿主自己
   // 要抹掉 UA 默认样式并接住原来 summary 的 flex 布局。
   ".wh-wb-army-out-row--link{display:flex;align-items:center;gap:9px;width:100%;box-sizing:border-box;" +

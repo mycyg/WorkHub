@@ -475,6 +475,12 @@ export function mountChatView(
     // R14 批 APPROVE-CHAT（M1 接活）：产出卡「看提议」点击 → 右栏打开提议详情（proposalPanel，shell.ts 挂载
     // 一次、活过切换，与 drive/army 共用右栏插槽）。可选，测试/未来消费者不必补桩，同 onOpenDriveFile。
     onOpenProposal?: (proposalId: string) => void;
+    // R15 批 A6（产出卡内联批准）：产出卡「批准」内联按钮点击——宿主（shell.ts）用右栏同一套
+    // reviewProposalWithoutMerge 动作处理，返回的 Promise 决定本地忙态/落定态回流。可选：不接（测试/其它
+    // 宿主）时产出卡不渲内联批准/打回按钮，只留「看提议」（proposalInlineActionsEnabled 据此判定）。
+    onApproveProposal?: (proposalId: string) => Promise<void>;
+    // R15 批 A6：产出卡「打回」按钮点击——打回要写理由，不内联提交，宿主打开右栏并聚焦理由输入。可选。
+    onRequestChangesProposal?: (proposalId: string) => void;
     // R14 批 CHAT（桌宠彩蛋，stretch）：有人给 Cuu 的一条消息新加了个反应时，把该露的情绪信号交出去
     // （celebrating/worried/thinking，见 reaction-emotion.ts 的映射）。detection 在这里做——只有本地持
     // 有上一份 reactions 快照的 view.ts 能 diff 出「新增了哪个键」（reaction.updated 是全量聚合，无增量）。
@@ -501,6 +507,10 @@ export function mountChatView(
   // R14 批 APPROVE-CHAT（档① 本地乐观回流）：本机在右栏审批过的提议 id——产出卡据此追加「已处理」覆盖标。
   // 瞬态、不落库；重挂 chat 视图（切项目/会话）自然清空，落定态以服务端档③ 的 proposal_settled 系统消息为准。
   const settledProposalIds = new Set<string>();
+  // R15 批 A6（产出卡内联批准）：某份提议的内联批准正在飞（markBusy）+ 内联批准失败的温和行内提示，
+  // 都是瞬态、不落库、按 proposal id 索引（同 actionCardItemBusyAction/actionCardItemErrors 的既有纪律）。
+  const busyProposalIds = new Set<string>();
+  const proposalActionErrors = new Map<string, string>();
   let attachments: ComposerAttachmentChip[] = [];
   let activeTrigger: ComposerTriggerMatch | undefined;
   let mentionMembers: MentionPickerMember[] = [];
@@ -644,7 +654,12 @@ export function mountChatView(
     ...(confirmDeleteMessageId !== undefined ? { confirmDeleteMessageId } : {}),
     // R14 批 FEEDBACK：反馈备注编辑框瞬态——同上，undefined 时整个键不出现。
     ...(feedbackNoteEditor !== undefined ? { feedbackNoteEditor } : {}),
-    settledProposalIds
+    settledProposalIds,
+    // R15 批 A6（产出卡内联批准）：只有宿主接了 onApproveProposal 才在产出卡上渲内联批准/打回按钮
+    // （否则只渲「看提议」，不摆假按钮）。忙态/错误按 proposal id 索引透传给渲染层。
+    proposalInlineActionsEnabled: input.onApproveProposal !== undefined,
+    busyProposalIds,
+    proposalActionErrors
   });
 
   container.innerHTML = `<div class="wh-wb-chat">
@@ -2831,6 +2846,42 @@ export function mountChatView(
     }
   });
 
+  // R15 批 A6（产出卡内联批准）：内联「批准」——复用右栏 reviewProposalWithoutMerge 动作（由 shell.ts 接的
+  // onApproveProposal 执行），markBusy 手感（同一份提议一次只允许一个批准在飞）。成功后本地记进
+  // settledProposalIds（卡上按钮置为「已处理」）+ 依赖服务端档③ 的 proposal_settled「落定行」广播回流；
+  // 失败落一条温和行内提示。合并仍只在右栏，不在这里做。
+  const approveProposalInline = async (proposalId: string) => {
+    if (!input.onApproveProposal || busyProposalIds.has(proposalId) || settledProposalIds.has(proposalId)) {
+      return;
+    }
+    busyProposalIds.add(proposalId);
+    proposalActionErrors.delete(proposalId);
+    renderScroll();
+    try {
+      await input.onApproveProposal(proposalId);
+      if (disposed) {
+        return;
+      }
+      busyProposalIds.delete(proposalId);
+      settledProposalIds.add(proposalId);
+      renderScroll();
+    } catch (error) {
+      if (disposed) {
+        return;
+      }
+      busyProposalIds.delete(proposalId);
+      proposalActionErrors.set(
+        proposalId,
+        error instanceof Error && error.message
+          ? error.message
+          : input.locale === "zh-CN"
+            ? "批准失败，稍后重试"
+            : "Couldn't approve — try again"
+      );
+      renderScroll();
+    }
+  };
+
   scrollEl.addEventListener("click", (event) => {
     if (!(event.target instanceof HTMLElement)) {
       return;
@@ -2875,6 +2926,18 @@ export function mountChatView(
     const openProposalBtn = target.closest<HTMLElement>("[data-wb-chat-open-proposal]");
     if (openProposalBtn?.dataset.wbChatOpenProposal) {
       input.onOpenProposal?.(openProposalBtn.dataset.wbChatOpenProposal);
+      return;
+    }
+    // R15 批 A6（产出卡内联批准）：「批准」内联提交（reviewProposalWithoutMerge 由宿主处理）；「打回」不内联，
+    // 打开右栏并聚焦理由输入（打回要写理由，见 proposal/panel.ts 的 openReason）。
+    const approveProposalBtn = target.closest<HTMLElement>("[data-wb-chat-approve-proposal]");
+    if (approveProposalBtn?.dataset.wbChatApproveProposal) {
+      void approveProposalInline(approveProposalBtn.dataset.wbChatApproveProposal);
+      return;
+    }
+    const denyProposalBtn = target.closest<HTMLElement>("[data-wb-chat-deny-proposal]");
+    if (denyProposalBtn?.dataset.wbChatDenyProposal) {
+      input.onRequestChangesProposal?.(denyProposalBtn.dataset.wbChatDenyProposal);
       return;
     }
     const clarifyOptionBtn = target.closest<HTMLElement>("[data-wb-chat-clarify-option]");

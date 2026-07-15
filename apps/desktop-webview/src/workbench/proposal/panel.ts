@@ -30,7 +30,9 @@ export type ProposalSidePanelApiClient = Pick<WorkHubApiClient, "pages" | "revie
 
 export type ProposalSidePanelHandle = {
   // 群聊产出卡「看提议」/ 军团输出行点击都汇流到这里——用户主动把焦点定到某份提议上，强制发布盖过军团面板。
-  showForProposal: (input: { proposalId: string }) => void;
+  // R15 批 A6：focusReason=true（产出卡内联「打回」点击）——详情加载完后直接摊开理由输入器并聚焦（打回要
+  // 写理由，不内联提交，见 workbench/chat/render.ts 的产出卡内联按钮）。缺省 false = 只打开详情（既有「看提议」）。
+  showForProposal: (input: { proposalId: string; focusReason?: boolean }) => void;
   // 切走会话情境/项目时清空（只在自己仍是当前 owner 时才动 DOM）。
   clear: () => void;
   dispose: () => void;
@@ -62,6 +64,9 @@ export function mountProposalSidePanel(
   let loadGeneration = 0;
   // 审批往返忙态锁：一次只允许一个 approve/deny/merge 在飞（避免连点重复提交）。
   let busy = false;
+  // R15 批 A6：产出卡内联「打回」→ showForProposal({ focusReason:true }) 时置真——详情加载完（异步）后
+  // 由 loadDetail 的成功回调消费一次，摊开理由输入器并聚焦。用后即清，不影响后续普通「看提议」。
+  let pendingOpenReason = false;
 
   function publish(): void {
     if (disposed || !state) {
@@ -94,6 +99,12 @@ export function mountProposalSidePanel(
         }
         state = { mode: "detail", vm, ui: {} };
         publish();
+        // R15 批 A6：产出卡内联「打回」带来的一次性「加载完就摊开理由器」——openReason 自己会守
+        // status==='opened'（已落定的提议摊不开理由，只是打开只读详情），这里不重复判定。
+        if (pendingOpenReason) {
+          pendingOpenReason = false;
+          openReason();
+        }
       })
       .catch((error: unknown) => {
         if (disposed || generation !== loadGeneration) {
@@ -129,8 +140,9 @@ export function mountProposalSidePanel(
       });
   }
 
-  function showForProposal(next: { proposalId: string }): void {
+  function showForProposal(next: { proposalId: string; focusReason?: boolean }): void {
     busy = false;
+    pendingOpenReason = next.focusReason === true;
     loadDetail(next.proposalId);
   }
 

@@ -459,6 +459,74 @@ test("renderMessageHtml overlays a local settled marker on a deliverable card wh
   assert.doesNotMatch(otherSettled, /已处理 · 见落定消息/u);
 });
 
+// R15 批 A6（产出卡内联批准）：opened、未落定、且宿主接了内联回调时，产出卡直接给「批准」「打回」内联按钮。
+test("renderMessageHtml renders inline approve/deny buttons on an opened deliverable card when inline actions are enabled", () => {
+  const message = baseMessage({
+    kind: "system_event",
+    sender_type: "system",
+    sender_user_id: null,
+    content: { event: "proposal_opened", proposal_id: "proposal-a6", run_id: "run-a6", title: "选题报告", adds: 4, dels: 1 }
+  });
+  // 宿主没接内联回调（proposalInlineActionsEnabled 缺省）→ 只有「看提议」，绝不摆假的批准/打回按钮。
+  const noInline = renderMessageHtml(message, ctxWith([]));
+  assert.doesNotMatch(noInline, /data-wb-chat-approve-proposal/u);
+  assert.doesNotMatch(noInline, /data-wb-chat-deny-proposal/u);
+  assert.match(noInline, /data-wb-chat-open-proposal="proposal-a6"/u);
+
+  // 宿主接了内联回调 → 批准（内联）+ 打回（打开右栏写理由）+ 看提议。
+  const withInline = renderMessageHtml(message, { ...ctxWith([]), proposalInlineActionsEnabled: true });
+  assert.match(withInline, /<button[^>]*data-wb-chat-approve-proposal="proposal-a6"[^>]*>[^<]*批准/u);
+  assert.match(withInline, /<button[^>]*data-wb-chat-deny-proposal="proposal-a6"[^>]*>[^<]*打回/u);
+  assert.match(withInline, /data-wb-chat-open-proposal="proposal-a6"/u);
+});
+
+test("renderMessageHtml shows a busy approve button and never inline buttons on settled/auto_merged deliverable cards", () => {
+  const opened = baseMessage({
+    kind: "system_event",
+    sender_type: "system",
+    sender_user_id: null,
+    content: { event: "proposal_opened", proposal_id: "proposal-busy", run_id: "r", title: "报告", adds: 1, dels: 0 }
+  });
+  // 忙态：批准中… + disabled。
+  const busy = renderMessageHtml(opened, {
+    ...ctxWith([]),
+    proposalInlineActionsEnabled: true,
+    busyProposalIds: new Set(["proposal-busy"])
+  });
+  assert.match(busy, /<button[^>]*data-wb-chat-approve-proposal="proposal-busy"[^>]*disabled[^>]*>[^<]*批准中…/u);
+
+  // 内联批准失败 → 温和行内提示。
+  const errored = renderMessageHtml(opened, {
+    ...ctxWith([]),
+    proposalInlineActionsEnabled: true,
+    proposalActionErrors: new Map([["proposal-busy", "批准失败，稍后重试"]])
+  });
+  assert.match(errored, /批准失败，稍后重试/u);
+
+  // 已落定（settledProposalIds 命中）→ 不再渲批准/打回，只留看提议 + 已处理覆盖标。
+  const settled = renderMessageHtml(opened, {
+    ...ctxWith([]),
+    proposalInlineActionsEnabled: true,
+    settledProposalIds: new Set(["proposal-busy"])
+  });
+  assert.doesNotMatch(settled, /data-wb-chat-approve-proposal/u);
+  assert.doesNotMatch(settled, /data-wb-chat-deny-proposal/u);
+  assert.match(settled, /已处理 · 见落定消息/u);
+
+  // auto_merged 变体即使开了内联也不渲批准/打回（它已经合并了）。
+  const autoMerged = renderMessageHtml(
+    baseMessage({
+      kind: "system_event",
+      sender_type: "system",
+      sender_user_id: null,
+      content: { event: "proposal_auto_merged", proposal_id: "proposal-auto", run_id: "r", title: "报告", adds: 1, dels: 0 }
+    }),
+    { ...ctxWith([]), proposalInlineActionsEnabled: true }
+  );
+  assert.doesNotMatch(autoMerged, /data-wb-chat-approve-proposal/u);
+  assert.doesNotMatch(autoMerged, /data-wb-chat-deny-proposal/u);
+});
+
 test("renderMessageHtml still renders a non-deliverable system_event (e.g. drive_version_restored) as the plain collapsed sysline", () => {
   const html = renderMessageHtml(
     baseMessage({

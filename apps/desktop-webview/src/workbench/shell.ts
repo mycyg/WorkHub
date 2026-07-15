@@ -25,6 +25,7 @@ import { mountDriveSidePanel, type DriveSidePanelApiClient, type DriveSidePanelH
 import { mountDriveView, type DriveTabApiClient, type DriveViewHandle } from "./drive/view.js";
 import { workbenchIcons } from "./icons.js";
 import { mountProposalSidePanel, type ProposalSidePanelApiClient, type ProposalSidePanelHandle } from "./proposal/panel.js";
+import { reviewProposalWithoutMerge } from "../spotlight/views/proposals.js";
 import { createWorkbenchInterruptBroadcaster } from "./interrupt-broadcast.js";
 import {
   bumpConversationUnreadInVm,
@@ -330,6 +331,21 @@ export function mountWorkbenchShell(
       armyPanel.refresh();
     }
   });
+
+  // R15 批 A6（产出卡内联批准）：聊天流产出卡「批准」内联提交——复用右栏同一套 reviewProposalWithoutMerge
+  // 动作（approve 不合并，合并仍只在右栏），成功后军团面板后台重拉（输出行 status 翻新）。本地忙态/落定态
+  // 回流由 chat view 自己管（它 await 这个 Promise）+ 服务端档③ 的 proposal_settled「落定行」广播。
+  const approveProposalFromChat = async (proposalId: string): Promise<void> => {
+    await reviewProposalWithoutMerge(input.client, proposalId, { locale: input.locale });
+    if (disposed) {
+      return;
+    }
+    armyPanel.refresh();
+  };
+  // 「打回」不内联（要写理由）：打开右栏提议详情并聚焦理由输入（proposal/panel.ts 的 focusReason）。
+  const requestChangesProposalFromChat = (proposalId: string) => {
+    proposalPanel.showForProposal({ proposalId, focusReason: true });
+  };
 
   // 会话情境切换（切项目/标签/会话）时，drive/army/proposal 三个右栏 owner 都要一起放手——proposal 详情是
   // 会话内的下钻，导航走开就不该残留在新视图旁边（army 面板已有这套「切走就 clear」纪律，proposal 跟上）。
@@ -657,7 +673,9 @@ export function mountWorkbenchShell(
             itemId: fileInput.itemId,
             itemName: fileInput.itemName
           }),
-        onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId })
+        onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId }),
+        onApproveProposal: approveProposalFromChat,
+        onRequestChangesProposal: requestChangesProposalFromChat
       });
       chatMountKey = key;
       return;
@@ -770,7 +788,10 @@ export function mountWorkbenchShell(
           },
           onOpenDriveFile: (fileInput) => driveSidePanel.showPreview({ projectId: vm.project.id, itemId: fileInput.itemId, itemName: fileInput.itemName }),
           // R14 批 APPROVE-CHAT：产出卡「看提议」→ 右栏提议详情（与军团输出行汇流到同一个控制器）。
-          onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId })
+          // R15 批 A6：产出卡内联「批准」/「打回」——批准复用 reviewProposalWithoutMerge，打回打开右栏聚焦理由。
+          onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId }),
+          onApproveProposal: approveProposalFromChat,
+          onRequestChangesProposal: requestChangesProposalFromChat
         });
         chatMountKey = key;
         // R13 批 P1：情境面板默认态挂军团三区——会话情境存在时（这里是刚挂上这个协同会话的 chat 视图）
@@ -818,7 +839,10 @@ export function mountWorkbenchShell(
         // R12 批 6：file_card 点击 → 右栏预览，和网盘标签共用同一个 driveSidePanel 控制器。
         onOpenDriveFile: (fileInput) => driveSidePanel.showPreview({ projectId: vm.project.id, itemId: fileInput.itemId, itemName: fileInput.itemName }),
         // R14 批 APPROVE-CHAT：产出卡「看提议」→ 右栏提议详情（与军团输出行汇流到同一个控制器）。
-        onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId })
+        // R15 批 A6：产出卡内联「批准」/「打回」——批准复用 reviewProposalWithoutMerge，打回打开右栏聚焦理由。
+        onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId }),
+        onApproveProposal: approveProposalFromChat,
+        onRequestChangesProposal: requestChangesProposalFromChat
       });
       chatMountKey = key;
       // R13 批 P1：见上面协同会话分支同款注释——主区会话情境存在时，情境面板默认态挂军团三区。
