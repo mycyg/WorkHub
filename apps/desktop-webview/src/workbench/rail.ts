@@ -272,7 +272,10 @@ function renderProjectTreeLeavesHtml(
   const driveLeaf = `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "drive" ? " sel" : ""}" data-wb-open-drive>${workbenchIcons.folder}<span>${zh ? "网盘" : "Drive"}</span>${
     fileCount > 0 ? `<span class="wh-wb-leaf-count">${fileCount}</span>` : ""
   }</button>`;
-  return `<div class="wh-wb-tree">${mainLeaf}${collabLeaves}${newCollabButton}${driveLeaf}</div>`;
+  // R15 批 E2（项目时间线 / 甘特）：与网盘同级的「时间线」树叶——切中栏到 timeline 标签（见 shell.ts 的
+  // onOpenTimeline）。选中态跟 centerTab === "timeline" 走，同其它树叶的 sel 约定。
+  const timelineLeaf = `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "timeline" ? " sel" : ""}" data-wb-open-timeline>${workbenchIcons.timeline}<span>${zh ? "时间线" : "Timeline"}</span></button>`;
+  return `<div class="wh-wb-tree">${mainLeaf}${collabLeaves}${newCollabButton}${driveLeaf}${timelineLeaf}</div>`;
 }
 
 // R13 批 S3（个人空间）：项目行 + 树叶的渲染逻辑从 renderProjectTreeHtml 里提出来，供团队项目分组
@@ -739,6 +742,8 @@ export function mountWorkbenchRail(
     // vm.conversations.conversations 里找到对应的 collab 会话并挂载 chat 视图）。
     onOpenCollabConversation?: (conversationId: string) => void;
     onOpenDrive?: () => void;
+    // R15 批 E2（项目时间线 / 甘特）：项目行的「时间线」树叶点击——shell.ts 把它接成 store.centerTab = "timeline"。
+    onOpenTimeline?: () => void;
     // R13 批 P1：军团总览一级入口点击——shell.ts 把它接成 store.centerTab = "army-overview"。
     onOpenArmyOverview?: () => void;
     // R15 批 I1（决策收件箱）：rail 顶部「待拍板」一级入口点击——shell.ts 把它接成 store.centerTab = "inbox"。
@@ -1259,6 +1264,10 @@ export function mountWorkbenchRail(
     }
     if (target.closest("[data-wb-open-drive]")) {
       input.onOpenDrive?.();
+      return;
+    }
+    if (target.closest("[data-wb-open-timeline]")) {
+      input.onOpenTimeline?.();
       return;
     }
     if (target.closest("[data-wb-open-inbox]")) {

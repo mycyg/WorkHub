@@ -164,6 +164,27 @@ test("the drive leaf is a real, clickable button once batch 6 wires the drive vi
   assert.match(html, /<button[^>]*data-wb-open-drive[^>]*>[^]*网盘/u);
 });
 
+// R15 批 E2（项目时间线 / 甘特）：与网盘同级的「时间线」树叶，切中栏到 timeline 标签（见 shell.ts 的
+// onOpenTimeline）——真按钮，选中态跟 centerTab === "timeline" 走。
+test("the timeline leaf is a real, clickable button (batch E2)", () => {
+  const vm = workbenchVm();
+  const html = renderProjectTreeHtml({
+    projects: [project()],
+    selectedProjectId: project().id,
+    vm,
+    locale: "zh-CN"
+  });
+  assert.match(html, /<button[^>]*data-wb-open-timeline[^>]*>[^]*时间线/u);
+  const selected = renderProjectTreeHtml({
+    projects: [project()],
+    selectedProjectId: project().id,
+    vm,
+    locale: "zh-CN",
+    centerTab: "timeline"
+  });
+  assert.match(selected.match(/<button[^>]*data-wb-open-timeline[^>]*>/u)![0], / sel/u);
+});
+
 function leafTag(html: string, marker: string): string {
   const match = html.match(new RegExp(`<button[^>]*${marker}[^>]*>`, "u"));
   assert.ok(match, `expected to find a <button> tag carrying ${marker}`);

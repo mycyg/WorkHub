@@ -20,7 +20,9 @@ export type WorkbenchLoadState = "idle" | "loading" | "ready" | "error";
 // R15 批 I1（决策收件箱进 workbench）加 "inbox"——rail 顶部「待拍板」一级入口点开后，中栏切到跨项目的
 // 决策收件箱（workbench/inbox/view.ts，复用 spotlight attention 的全类型决策渲染/动作）。同 army-overview，
 // 这个视图不依赖 selectedProjectId（是「所有要你拍板的」总览，横跨项目）。
-export type WorkbenchCenterTab = "chat" | "drive" | "collab" | "dm" | "army-overview" | "project-settings" | "inbox";
+// R15 批 E2（项目时间线 / 甘特）加 "timeline"——rail 项目行的「时间线」树叶（与主区/网盘同级）点开后，
+// 中栏切到该项目的甘特时间线（workbench/timeline/view.ts），依赖 selectedProjectId + vm（同 drive/settings）。
+export type WorkbenchCenterTab = "chat" | "drive" | "collab" | "dm" | "army-overview" | "project-settings" | "inbox" | "timeline";
 
 // 右栏情境面板的内容——刻意保持不透明（ownerId + 预渲染好的 html），store.ts 不认识任何具体视图
 // 的类型（drive 的版本历史/军团卡片等），谁在挂载期间持有内容所有权就把自己的 ownerId 写进来、

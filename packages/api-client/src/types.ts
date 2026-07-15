@@ -32,6 +32,7 @@ import type {
   ProjectHealthPageVM,
   ProjectHomePageVM,
   ProjectListVM,
+  ProjectTimelinePageVM,
   NotificationList,
   Proposal,
   ProposalConflictListResult,
@@ -272,6 +273,10 @@ export type PageClient = {
   // apps/web 等其它 workspace 里已有的完整 PageClient 字面量 mock 也补一个用不到的桩——那些文件不在
   // 本批改动范围内（apps/desktop-webview/**、packages/api-client/**、报告文件），不能顺手改。
   workbench?: (projectId: string, options?: PageRequestOptions) => Promise<WorkbenchPageVM>;
+  // R15 批 E2（项目时间线 / 甘特）：里程碑分组的排期条 + 关键路径 VM（GET /api/pages/project/:id/timeline）。
+  // 桌面工作台「时间线」标签与 web /projects/:id/timeline 只读页共用这一个只读端点。可选（同 workbench）：
+  // 只有这两处消费，标必填会强迫既有 PageClient 字面量 mock 补一个用不到的桩。
+  projectTimeline?: (projectId: string, options?: PageRequestOptions) => Promise<ProjectTimelinePageVM>;
 };
 
 export type PushStreamClient = {

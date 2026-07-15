@@ -25,6 +25,7 @@ import { mountDriveSidePanel, type DriveSidePanelApiClient, type DriveSidePanelH
 import { mountDriveView, type DriveTabApiClient, type DriveViewHandle } from "./drive/view.js";
 import { workbenchIcons } from "./icons.js";
 import { mountInboxView, type InboxViewHandle } from "./inbox/view.js";
+import { mountTimelineView, type TimelineViewHandle } from "./timeline/view.js";
 import { mountProposalSidePanel, type ProposalSidePanelApiClient, type ProposalSidePanelHandle } from "./proposal/panel.js";
 import { reviewProposalWithoutMerge } from "../spotlight/views/proposals.js";
 import { createWorkbenchInterruptBroadcaster } from "./interrupt-broadcast.js";
@@ -239,6 +240,9 @@ export function mountWorkbenchShell(
   let chatMountKey: string | undefined;
   let driveHandle: DriveViewHandle | undefined;
   let driveMountKey: string | undefined;
+  // R15 批 E2（项目时间线 / 甘特）：中栏时间线标签——同 drive 的「key 没变就不重挂」纪律（timelineMountKey）。
+  let timelineHandle: TimelineViewHandle | undefined;
+  let timelineMountKey: string | undefined;
   let armyOverviewHandle: ArmyOverviewViewHandle | undefined;
   let projectSettingsHandle: ProjectSettingsViewHandle | undefined;
   let projectSettingsMountKey: string | undefined;
@@ -274,6 +278,12 @@ export function mountWorkbenchShell(
     driveHandle?.dispose();
     driveHandle = undefined;
     driveMountKey = undefined;
+  };
+
+  const disposeTimeline = () => {
+    timelineHandle?.dispose();
+    timelineHandle = undefined;
+    timelineMountKey = undefined;
   };
 
   const disposeArmyOverview = () => {
@@ -661,6 +671,7 @@ export function mountWorkbenchShell(
       disposeDrive();
       disposeProjectSettings();
       disposeInbox();
+      disposeTimeline();
       clearContextPanels();
       centerEl.className = "wh-wb-center wh-wb-center--army-overview";
       if (!armyOverviewHandle) {
@@ -677,6 +688,7 @@ export function mountWorkbenchShell(
       disposeDrive();
       disposeProjectSettings();
       disposeArmyOverview();
+      disposeTimeline();
       clearContextPanels();
       if (!inboxHandle) {
         inboxHandle = mountInboxView(centerEl, {
@@ -698,6 +710,7 @@ export function mountWorkbenchShell(
     if (state.centerTab === "dm") {
       disposeDrive();
       disposeProjectSettings();
+      disposeTimeline();
       clearContextPanels();
       const dm = state.dmList.find((item) => item.conversation.id === state.activeDmConversationId);
       if (!dm) {
@@ -756,6 +769,7 @@ export function mountWorkbenchShell(
       disposeChat();
       disposeDrive();
       disposeProjectSettings();
+      disposeTimeline();
       clearContextPanels();
       centerEl.className = "wh-wb-center";
       centerEl.innerHTML = renderEmptyStateHtml(input.locale, state.projects.length > 0);
@@ -765,6 +779,7 @@ export function mountWorkbenchShell(
       disposeChat();
       disposeDrive();
       disposeProjectSettings();
+      disposeTimeline();
       clearContextPanels();
       centerEl.className = "wh-wb-center";
       centerEl.innerHTML = renderCenterErrorHtml(input.locale);
@@ -775,6 +790,7 @@ export function mountWorkbenchShell(
       if (state.centerTab === "drive") {
         disposeChat();
         disposeProjectSettings();
+        disposeTimeline();
         const key = `${vm.project.id}:drive`;
         if (driveHandle && driveMountKey === key) {
           return; // 已经是这个项目的网盘标签——它自己的 store 在内部持续更新，无需重挂。
@@ -795,12 +811,37 @@ export function mountWorkbenchShell(
         driveSidePanel.showIdle();
         return;
       }
+      // R15 批 E2（项目时间线 / 甘特）：时间线标签——同 drive 的「key 没变就不重挂」纪律。时间线不占右栏
+      // （交互全在中栏内联表单/选择器里），进入时把右栏三个 owner 放手回 idle（clearContextPanels），不残留
+      // 上一个会话的军团/提议面板。
+      if (state.centerTab === "timeline") {
+        disposeChat();
+        disposeDrive();
+        disposeProjectSettings();
+        const key = `${vm.project.id}:timeline`;
+        if (timelineHandle && timelineMountKey === key) {
+          return; // 已经是这个项目的时间线标签——它自己的瞬态状态在内部持续更新，无需重挂。
+        }
+        disposeTimeline();
+        clearContextPanels();
+        centerEl.className = "wh-wb-center wh-wb-center--timeline";
+        timelineHandle = mountTimelineView(centerEl, {
+          client: input.client,
+          locale: input.locale,
+          projectId: vm.project.id,
+          projectName: vm.project.name
+        });
+        timelineMountKey = key;
+        driveSidePanel.showIdle();
+        return;
+      }
       // R13 批 P3：项目设置标签（AI 治理表单，settings/view.ts）——同 drive/chat 的"key 没变就不重挂"
       // 纪律。editable 由 vm.viewer.is_project_owner 决定（rail 只对负责人渲染入口，这里仍传真实值兜底：
       // 所有权在会话中途变更时表单老实降级成只读，见 settings/view.ts 顶部注释）。
       if (state.centerTab === "project-settings") {
         disposeChat();
         disposeDrive();
+        disposeTimeline();
         const key = `${vm.project.id}:project-settings`;
         if (projectSettingsHandle && projectSettingsMountKey === key) {
           return;
@@ -820,6 +861,7 @@ export function mountWorkbenchShell(
       }
       disposeDrive();
       disposeProjectSettings();
+      disposeTimeline();
       // final-turns-wiring：centerTab === "collab" 时中栏挂的是某个具体的协同会话（单聊），不是主区。
       // 在 vm 里找 activeConversationId 对应的那个 kind='collab' 会话——找不到（树叶指向的会话已经不在
       // 这次 VM 快照里，比如权限变化/深链过期）就不假装能渲染它，静默落回下面的主区分支，而不是渲染一个
@@ -926,6 +968,7 @@ export function mountWorkbenchShell(
     disposeChat();
     disposeDrive();
     disposeProjectSettings();
+    disposeTimeline();
     clearContextPanels();
     centerEl.className = "wh-wb-center";
     centerEl.innerHTML = renderCenterLoadingHtml(input.locale);
@@ -992,6 +1035,8 @@ export function mountWorkbenchShell(
     },
     // R12 批 6：「网盘」树叶点击路由——切 store.centerTab，renderCenter 的订阅回调负责挂真视图。
     onOpenDrive: () => store.setState({ centerTab: "drive" }),
+    // R15 批 E2（项目时间线 / 甘特）：「时间线」树叶点击路由——切 store.centerTab，renderCenter 挂 timeline/view.ts。
+    onOpenTimeline: () => store.setState({ centerTab: "timeline" }),
     // R13 批 P1：左栏一级入口「军团总览」点击路由——切 store.centerTab，renderCenter 的订阅回调
     // 负责挂 army/overview.ts 真视图。
     onOpenArmyOverview: () => store.setState({ centerTab: "army-overview" }),
@@ -1127,6 +1172,7 @@ export function mountWorkbenchShell(
     clearInterval(inboxBadgePollTimer);
     disposeChat();
     disposeDrive();
+    disposeTimeline();
     disposeArmyOverview();
     disposeProjectSettings();
     disposeInbox();

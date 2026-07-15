@@ -651,7 +651,9 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       project: (id, options) => request(withPageLocale(`/api/pages/project/${encodeURIComponent(id)}`, options)),
       workItem: (id, options) => request(withPageLocale(`/api/pages/workitems/${encodeURIComponent(id)}`, options)),
       proposal: (id, options) => request(withPageLocale(`/api/pages/proposals/${encodeURIComponent(id)}`, options)),
-      workbench: (projectId, options) => request(withPageLocale(`/api/pages/workbench/${encodeURIComponent(projectId)}`, options))
+      workbench: (projectId, options) => request(withPageLocale(`/api/pages/workbench/${encodeURIComponent(projectId)}`, options)),
+      projectTimeline: (projectId, options) =>
+        request(withPageLocale(`/api/pages/project/${encodeURIComponent(projectId)}/timeline`, options))
     }
   };
 }
