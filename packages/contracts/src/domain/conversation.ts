@@ -543,6 +543,11 @@ export const conversationVmSchema = z
     // 会话（团队主区/协同/个人空间）这个键完全不出现（不是出现后填 false）。存量客户端读不带这个键
     // 的会话 VM 行为零回归；认识它的客户端据此渲染「私聊」而非「协同会话」形态。
     is_dm: z.boolean().optional(),
+    // R15 批 A（A4 未读聚合）：additive optional——当前 viewer 在这条会话里的未读消息数（seq > 读游标、
+    // 未删除的墓碑不计、不含自己发的消息）。只在会话列表 VM（workbench 页面的 conversations 段）组装时
+    // 由一条聚合 SQL 一次算齐所有可见会话（禁 N+1），单条 create/open/rename 结果 VM 不带这个键
+    // （新建/刚开的会话未读恒 0，无需查询）。存量客户端读不带这个键的 VM 行为零回归。
+    unread_count: safeIntegerOutputSchema.optional(),
     created_at: isoDateTimeSchema,
     updated_at: isoDateTimeSchema
   })

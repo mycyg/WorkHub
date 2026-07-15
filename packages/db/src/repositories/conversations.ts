@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
 
 import {
   conversationListQuerySchema,
@@ -396,6 +396,21 @@ export type ConversationRepository = {
     conversationId: string;
     messageId: string;
   }) => Promise<ConversationMessageRow | null>;
+  // R15 批 A（A4 未读聚合）：一条聚合 SQL 算齐 viewer 在一批会话里的未读数（禁 N+1）。未读 = seq > 读游标
+  // （无游标 = 0）、未删除（墓碑不计）、且 sender 不是 viewer 自己的消息数。返回 Map<conversationId, count>，
+  // 未读为 0 的会话不出现在 Map 里（调用方 `?? 0` 兜底）。新增方法，不改动任何既有方法。
+  unreadCountsForViewer: (input: {
+    viewerUserId: string;
+    conversationIds: string[];
+  }) => Promise<Map<string, number>>;
+  // R15 批 A（A5 消息通知）：一条聚合 SQL 算齐一条会话里一批收件人各自的未读数（禁 N+1）——口径同上
+  // （seq > 各自读游标、墓碑不计、不含自己发的）。返回 Map<recipientUserId, count>。新增方法。
+  unreadCountsForRecipients: (input: {
+    conversationId: string;
+    recipientUserIds: string[];
+  }) => Promise<Map<string, number>>;
+  // R15 批 A（A5 消息通知）：列出一条会话的全部参与者 user id（小写）。DM=2、collab=N。新增方法。
+  listParticipantUserIds: (input: { conversationId: string }) => Promise<string[]>;
 };
 
 class NamedConversationRepositoryError extends Error {
@@ -2185,6 +2200,105 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
         )
         .limit(1);
       return row?.message ?? null;
+    },
+
+    // ── R15 批 A（A4 未读聚合 / A5 消息通知）：读游标口径的未读数聚合，禁 N+1 ──────────────────
+    // 共同口径：未读 = seq > coalesce(读游标, 0)、deleted_at is null（墓碑不计）、且 sender 不是本人
+    // （sender_user_id 为 NULL 的 Cuu/system 消息一律计入——它们不是「你发的」）。
+    async unreadCountsForViewer(input) {
+      const conversationIds = [...new Set(input.conversationIds)];
+      const counts = new Map<string, number>();
+      if (conversationIds.length === 0) {
+        return counts;
+      }
+      // 一条 GROUP BY 查询算齐这一批会话的未读数：leftJoin 本人读游标（无游标→last_read_seq 为 NULL→
+      // coalesce 兜 0）。未读为 0 的会话在 GROUP BY 下不产出行，Map 里不出现（调用方 `?? 0` 兜底）。
+      const rows = await db
+        .select({
+          conversationId: conversationMessages.conversationId,
+          unread: sql<number>`count(*)::int`
+        })
+        .from(conversationMessages)
+        .leftJoin(
+          conversationReadCursors,
+          and(
+            eq(conversationReadCursors.conversationId, conversationMessages.conversationId),
+            eq(conversationReadCursors.userId, input.viewerUserId)
+          )
+        )
+        .where(
+          and(
+            inArray(conversationMessages.conversationId, conversationIds),
+            isNull(conversationMessages.deletedAt),
+            or(
+              isNull(conversationMessages.senderUserId),
+              ne(conversationMessages.senderUserId, input.viewerUserId)
+            ),
+            sql`${conversationMessages.seq} > coalesce(${conversationReadCursors.lastReadSeq}, 0)`
+          )
+        )
+        .groupBy(conversationMessages.conversationId);
+      for (const row of rows) {
+        counts.set(row.conversationId, Number(row.unread));
+      }
+      return counts;
+    },
+
+    async unreadCountsForRecipients(input) {
+      const recipientUserIds = [...new Set(input.recipientUserIds.map((id) => id.toLowerCase()))];
+      const counts = new Map<string, number>();
+      if (recipientUserIds.length === 0) {
+        return counts;
+      }
+      // 从 conversation_participants 驱动（每个参与者恒有一行 → 从未读过的参与者也被算进来，未读=全部
+      // 非自己非墓碑消息），leftJoin 各自读游标 + leftJoin 命中的未读消息，一条 GROUP BY 算齐这条会话里
+      // 这批收件人各自的未读数（禁 N+1；count(message.id) 在无命中时 LEFT JOIN 产出 NULL → 计 0）。
+      const rows = await db
+        .select({
+          userId: conversationParticipants.userId,
+          unread: sql<number>`count(${conversationMessages.id})::int`
+        })
+        .from(conversationParticipants)
+        .leftJoin(
+          conversationReadCursors,
+          and(
+            eq(conversationReadCursors.conversationId, conversationParticipants.conversationId),
+            eq(conversationReadCursors.userId, conversationParticipants.userId)
+          )
+        )
+        .leftJoin(
+          conversationMessages,
+          and(
+            eq(conversationMessages.conversationId, conversationParticipants.conversationId),
+            isNull(conversationMessages.deletedAt),
+            or(
+              isNull(conversationMessages.senderUserId),
+              ne(conversationMessages.senderUserId, conversationParticipants.userId)
+            ),
+            sql`${conversationMessages.seq} > coalesce(${conversationReadCursors.lastReadSeq}, 0)`
+          )
+        )
+        .where(
+          and(
+            eq(conversationParticipants.conversationId, input.conversationId),
+            inArray(conversationParticipants.userId, recipientUserIds)
+          )
+        )
+        .groupBy(conversationParticipants.userId);
+      for (const row of rows) {
+        counts.set(row.userId.toLowerCase(), Number(row.unread));
+      }
+      return counts;
+    },
+
+    async listParticipantUserIds(input) {
+      const rows = await db
+        .select({ userId: conversationParticipants.userId })
+        .from(conversationParticipants)
+        .where(eq(conversationParticipants.conversationId, input.conversationId))
+        .orderBy(asc(conversationParticipants.userId))
+        .limit(CONVERSATION_READ_RECEIPTS_CAP);
+      return rows.map((row) => row.userId.toLowerCase());
     }
   };
 }

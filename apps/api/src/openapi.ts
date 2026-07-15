@@ -4476,6 +4476,8 @@ const conversationResponseSchema = {
     cuu_enabled: { type: "boolean" },
     // R15 批 B（人对人私聊）：additive optional——只在 DM 会话上出现且恒为 true，普通会话不带这个键。
     is_dm: { type: "boolean", description: "Present and true only for direct-message conversations." },
+    // R15 批 A（A4 未读聚合）：additive optional——viewer 在这条会话里的未读消息数（会话列表 VM 一次聚合算齐）。
+    unread_count: { type: "integer", minimum: 0, description: "Viewer's unread message count in this conversation; present only on conversation-list VMs." },
     next_seq: conversationSafeSequenceSchema,
     created_by: conversationNullableUuidSchema,
     participant_role: conversationNullableParticipantRoleSchema,

@@ -222,6 +222,17 @@ function repository(overrides: Partial<ConversationRepository> = {}): Conversati
     async findMessageForFeedback() {
       throw new Error("findMessageForFeedback not expected");
     },
+    // R15 批 A（A4/A5 未读聚合）：新增的未读数聚合 / 参与者列举方法。listConversations 现在会调
+    // unreadCountsForViewer——默认给空 Map（未读 0），要测未读数的用例自行 override；另两个默认空。
+    async unreadCountsForViewer() {
+      return new Map();
+    },
+    async unreadCountsForRecipients() {
+      return new Map();
+    },
+    async listParticipantUserIds() {
+      return [];
+    },
     ...overrides
   };
 }
@@ -387,6 +398,58 @@ test("project access and conversation lists use bounded tenant-safe repository i
   assert.equal(page.conversations[0]?.participant_role, "owner");
   assert.deepEqual(page.next_cursor, { afterCreatedAt: cursor.createdAt, afterId: cursor.id });
   assert.equal(page.capped, true);
+});
+
+// ── R15 批 A（A4 未读聚合）：会话列表 VM 带上当前 viewer 的未读数（一次聚合、禁 N+1、聚合失败降级 ──
+test("A4 conversation list attaches per-viewer unread_count from one aggregate call and degrades to 0", async () => {
+  const otherId = "30000000-0000-4000-8000-0000000000ff";
+  let unreadCalls = 0;
+  const repo = repository({
+    async listVisibleForProject() {
+      return {
+        rows: [visibleConversationRow(), visibleConversationRow({ id: otherId, participantRole: "member" })],
+        capped: false,
+        nextCursor: null
+      };
+    },
+    async unreadCountsForViewer(input) {
+      unreadCalls += 1;
+      assert.deepEqual([...input.conversationIds].sort(), [conversationId, otherId].sort());
+      // 只回有未读的会话；未列出的走 `?? 0`。
+      return new Map([[conversationId, 4]]);
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    })
+  });
+
+  const page = await service.listConversations({ actor: actor(), projectId, query: { limit: 25 } });
+  assert.equal(unreadCalls, 1, "unread must be one aggregate call, not per-conversation");
+  const byId = new Map(page.conversations.map((c) => [c.id, c.unread_count]));
+  assert.equal(byId.get(conversationId), 4);
+  assert.equal(byId.get(otherId), 0);
+});
+
+test("A4 conversation list still renders (unread_count 0) when the unread aggregate throws", async () => {
+  const repo = repository({
+    async listVisibleForProject() {
+      return { rows: [visibleConversationRow()], capped: false, nextCursor: null };
+    },
+    async unreadCountsForViewer() {
+      throw new Error("aggregate exploded");
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    logger: { warn() {} }
+  });
+
+  const page = await service.listConversations({ actor: actor(), projectId, query: { limit: 25 } });
+  assert.equal(page.conversations[0]?.unread_count, 0);
 });
 
 test("access preflights map invisible projects and conversations to stable non-oracular 404 errors", async () => {

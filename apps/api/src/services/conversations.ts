@@ -213,7 +213,14 @@ function requireHumanActor(actor: AuthActor): HumanConversationActor {
   return { actor, userId, workspaceId };
 }
 
-function conversationToVm(row: ConversationRow | VisibleConversationRow, participantRole?: "owner" | "member" | null) {
+function conversationToVm(
+  row: ConversationRow | VisibleConversationRow,
+  participantRole?: "owner" | "member" | null,
+  // R15 批 A（A4 未读聚合）：会话列表 VM 组装时透传的未读数（一条聚合 SQL 一次算齐，见
+  // listConversations）。additive optional——省略时（单条 create/open/rename 结果 VM）VM 不带这个键，
+  // 存量行为零回归；给了具体数（含 0）时才输出 unread_count。
+  unreadCount?: number
+) {
   return {
     id: row.id,
     workspace_id: row.workspaceId,
@@ -231,6 +238,8 @@ function conversationToVm(row: ConversationRow | VisibleConversationRow, partici
     // R15 批 B（人对人私聊）：由 dm_key 非空推导——只在 DM 会话上输出 is_dm=true，普通会话不带这个键
     // （契约层 is_dm 是 optional，见 conversationVmSchema）。
     ...(row.dmKey ? { is_dm: true as const } : {}),
+    // R15 批 A（A4 未读聚合）：给了具体数（含 0）时才输出——单条结果 VM 传 undefined 则不带这个键。
+    ...(unreadCount !== undefined ? { unread_count: unreadCount } : {}),
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString()
   };
@@ -659,8 +668,23 @@ export function createConversationService(
       if (!result) {
         throw new ConversationServiceError(404, "conversation_project_not_found", "没有找到这个项目会话区。");
       }
+      // R15 批 A（A4 未读聚合）：一条聚合 SQL 算齐本页所有会话在当前 viewer 视角的未读数（禁 N+1——
+      // 不逐会话查）。聚合失败只降级成"不带未读数"，绝不因为红点算不出来而让整页会话列表 500。
+      let unreadCounts = new Map<string, number>();
+      try {
+        unreadCounts = await repository.unreadCountsForViewer({
+          viewerUserId: human.userId,
+          conversationIds: result.rows.map((row) => row.id)
+        });
+      } catch (error) {
+        logger.warn("conversation_unread_aggregate_failed", {
+          projectId: input.projectId,
+          viewerUserId: human.userId,
+          error
+        });
+      }
       return parseOutputContract(conversationListPageVmSchema, {
-        conversations: result.rows.map((row) => conversationToVm(row)),
+        conversations: result.rows.map((row) => conversationToVm(row, undefined, unreadCounts.get(row.id) ?? 0)),
         capped: result.capped,
         next_cursor: result.nextCursor
           ? { afterCreatedAt: result.nextCursor.createdAt, afterId: result.nextCursor.id }
