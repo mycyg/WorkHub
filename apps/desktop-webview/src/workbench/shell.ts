@@ -24,6 +24,7 @@ import { mountProfilePopover, type ProfilePopoverHandle } from "./profile-popove
 import { mountDriveSidePanel, type DriveSidePanelApiClient, type DriveSidePanelHandle } from "./drive/side-panel.js";
 import { mountDriveView, type DriveTabApiClient, type DriveViewHandle } from "./drive/view.js";
 import { workbenchIcons } from "./icons.js";
+import { mountInboxView, type InboxViewHandle } from "./inbox/view.js";
 import { mountProposalSidePanel, type ProposalSidePanelApiClient, type ProposalSidePanelHandle } from "./proposal/panel.js";
 import { reviewProposalWithoutMerge } from "../spotlight/views/proposals.js";
 import { createWorkbenchInterruptBroadcaster } from "./interrupt-broadcast.js";
@@ -60,7 +61,12 @@ export type WorkbenchShellApiClient = WorkbenchRailApiClient &
   ArmyOverviewApiClient &
   ProjectSettingsApiClient &
   ProposalSidePanelApiClient &
-  Pick<WorkHubApiClient, "listProjects" | "bootstrapProject" | "pages" | "request" | "streams" | "uploadDriveFile" | "deleteDriveItem" | "restoreDriveItem" | "getAgentRun" | "reviewProposal" | "mergeProposal">;
+  Pick<WorkHubApiClient, "listProjects" | "bootstrapProject" | "pages" | "request" | "streams" | "uploadDriveFile" | "deleteDriveItem" | "restoreDriveItem" | "getAgentRun" | "reviewProposal" | "mergeProposal"
+    // R15 批 I1（决策收件箱进 workbench）：中栏收件箱复用 spotlight attention 的全类型决策动作，需要这一组
+    // 写方法（respondApproval/resolveEscalation/resolveBudgetDecision/resolveMemoryConflict/skipTaskPlanProposal/
+    // applyMergeProposalCandidate/postApprovalComment）——全是 WorkHubApiClient 早已具名存在的方法（spotlight
+    // 审批视图一直在用），boot 传的就是全量 createApiClient()，这里只是把 shell 的 Pick 白名单补齐，零新增 api 面。
+    | "respondApproval" | "resolveEscalation" | "resolveBudgetDecision" | "resolveMemoryConflict" | "skipTaskPlanProposal" | "applyMergeProposalCandidate" | "postApprovalComment">;
 
 // 照 boot.ts 的 clientToken() 同款 helper——shell.ts 不 import boot.ts（避免 boot.ts → shell.ts →
 // chat/view.ts → ... 的循环 import 风险），改由 mountWorkbenchShell 的调用方（boot.ts 本尊）注入
@@ -236,6 +242,8 @@ export function mountWorkbenchShell(
   let armyOverviewHandle: ArmyOverviewViewHandle | undefined;
   let projectSettingsHandle: ProjectSettingsViewHandle | undefined;
   let projectSettingsMountKey: string | undefined;
+  // R15 批 I1（决策收件箱）：中栏收件箱视图（跨项目，不依赖 selectedProjectId，同 army-overview）。
+  let inboxHandle: InboxViewHandle | undefined;
 
   // R12 批7:打扰矩阵——windowBridge.isFocused() 告诉我们"用户是否正看着这个工作台窗口"；
   // resolveDesktopShellEmitter 是桌宠/主窗共用的通用 Tauri 事件桥(__TAURI__.event.emit),这里复用它
@@ -277,6 +285,11 @@ export function mountWorkbenchShell(
     projectSettingsHandle?.dispose();
     projectSettingsHandle = undefined;
     projectSettingsMountKey = undefined;
+  };
+
+  const disposeInbox = () => {
+    inboxHandle?.dispose();
+    inboxHandle = undefined;
   };
 
   // R13 批 V2:macOS 上 Rust 侧把 workbench 窗切成原生红绿灯（decorations:true + titleBarStyle
@@ -431,6 +444,25 @@ export function mountWorkbenchShell(
     }
   };
 
+  // R15 批 I1（决策收件箱）：维护 rail 顶部「待拍板」计数徽标——GET /api/pages/attention 的 queue 长度
+  // （与主窗 refreshApprovalsBadge 同源）。首帧拉一次 + me-stream 决策类通知刷新 + 收件箱动作落定刷新 +
+  // 30s 兜底轮询。best-effort：拉不到就不动徽标、不打断（单调代次守卫防晚到响应覆盖新值）。
+  let inboxBadgeRequestGen = 0;
+  const refreshInboxBadge = () => {
+    const my = ++inboxBadgeRequestGen;
+    void input.client.pages
+      .attention({ locale: input.locale })
+      .then((vm) => {
+        if (disposed || my !== inboxBadgeRequestGen) {
+          return;
+        }
+        store.setState({ inboxCount: vm.queue?.length ?? 0 });
+      })
+      .catch(() => {
+        // 角标尽力而为——拉不到保持上一次的计数，不清零骚扰。
+      });
+  };
+
   // R15 批 A6（rail 未读红点 · 实时性）：workbench 订一条 /api/push/stream/me，只消费会话消息类
   // notification.created（带 conversation_id）——收到就给对应会话的未读本地 +1（近似，不知道服务端精确
   // 聚合数，30s DM 兜底刷新 + 打开清零把它拉回权威），让左栏红点在 workbench 只开着、没打开那条会话时
@@ -444,6 +476,12 @@ export function mountWorkbenchShell(
         return;
       }
       const data = event.data as { type?: string; conversation_id?: string } | null | undefined;
+      // R15 批 I1（决策收件箱）：会话消息/被@之外的通知（审批请求、提议开出、升级、里程碑等决策类）到达时
+      // 刷新「待拍板」计数徽标——这些正是进决策队列的类型（增量刷新/标脏，权威数仍以下一次 GET attention 为准）。
+      // 会话消息/被@两类是聊天未读、不进决策队列，跳过（否则忙聊天时会无谓地反复拉 attention）。
+      if (data && data.type !== "conversation.message" && data.type !== "conversation.mention") {
+        refreshInboxBadge();
+      }
       const conversationId = data?.conversation_id;
       if (!conversationId) {
         return;
@@ -615,6 +653,7 @@ export function mountWorkbenchShell(
       disposeChat();
       disposeDrive();
       disposeProjectSettings();
+      disposeInbox();
       clearContextPanels();
       centerEl.className = "wh-wb-center wh-wb-center--army-overview";
       if (!armyOverviewHandle) {
@@ -622,7 +661,31 @@ export function mountWorkbenchShell(
       }
       return;
     }
+    // R15 批 I1（决策收件箱）：跨项目决策总览——同 army-overview，必须在"没选项目"的空态判断之前拦下
+    // （用户可能还没选过任何项目就点「待拍板」）。中栏复用 spotlight attention 的全类型决策渲染/动作
+    // （mountInboxView 薄壳），proposal「看详情」抛给右栏 proposalPanel（与聊天产出卡「看提议」汇流），
+    // 动作落定回流刷新徽标 + 军团面板。clearContextPanels 让右栏先回到 idle，用户点「看详情」时再填。
+    if (state.centerTab === "inbox") {
+      disposeChat();
+      disposeDrive();
+      disposeProjectSettings();
+      disposeArmyOverview();
+      clearContextPanels();
+      if (!inboxHandle) {
+        inboxHandle = mountInboxView(centerEl, {
+          client: input.client,
+          locale: input.locale,
+          onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId }),
+          onActionSettled: () => {
+            refreshInboxBadge();
+            armyPanel.refresh();
+          }
+        });
+      }
+      return;
+    }
     disposeArmyOverview();
+    disposeInbox();
     // R15 批 B（人对人私聊）：DM 走「按会话直开」——不依赖 selectedProjectId/vm（容器项目被围栏），必须
     // 在下面的空态/VM 判断之前拦下。数据全在 store.dmList 里那条 DmListItemVM（会话 + 两名参与者）。
     if (state.centerTab === "dm") {
@@ -921,6 +984,12 @@ export function mountWorkbenchShell(
     // R13 批 P1：左栏一级入口「军团总览」点击路由——切 store.centerTab，renderCenter 的订阅回调
     // 负责挂 army/overview.ts 真视图。
     onOpenArmyOverview: () => store.setState({ centerTab: "army-overview" }),
+    // R15 批 I1（决策收件箱）：rail 顶部「待拍板」一级入口点击路由——切 store.centerTab 到 "inbox"，
+    // renderCenter 挂收件箱视图；顺手刷一次徽标（打开即对齐权威计数）。
+    onOpenInbox: () => {
+      store.setState({ centerTab: "inbox" });
+      refreshInboxBadge();
+    },
     // R13 批 P3：项目行「项目设置」齿轮点击路由——切 store.centerTab，renderCenter 的订阅回调
     // 负责挂 settings/view.ts 真视图（治理表单）。
     onOpenProjectSettings: () => store.setState({ centerTab: "project-settings" }),
@@ -1029,6 +1098,16 @@ export function mountWorkbenchShell(
     void windowBridge?.startDragging?.();
   });
 
+  // R15 批 I1（决策收件箱）：首帧拉一次「待拍板」计数 + 30s 兜底轮询——me-stream 决策通知与收件箱动作
+  // 落定是实时增量刷新，这条轮询兜底覆盖"没有 __TAURI__ / me-stream 掉线 / 其它入口处置了审批"时的最终
+  // 一致（同主窗 refreshApprovalsBadge 的 30s 节奏）。登出/卸载在 disposeActiveSubviews 里清定时器。
+  refreshInboxBadge();
+  const inboxBadgePollTimer = setInterval(() => {
+    if (!disposed && !loggedOut) {
+      refreshInboxBadge();
+    }
+  }, 30_000);
+
   // 三栏子控制器的整批放手——真正的窗口卸载（dispose）和「已登出」整窗替换（showLoggedOut）都要做
   // 这同一件事：停掉 chat 的 SSE 连接、网盘/军团总览视图、rail 的后台活动、右栏三个 owner 控制器，
   // 不再是各写一份、两处容易悄悄漂移。
@@ -1036,10 +1115,13 @@ export function mountWorkbenchShell(
     railHandle.dispose();
     // R15 批 A6：停掉 /api/push/stream/me 未读订阅（登出/卸载都要放手，否则登出后仍会拿废 token 重连）。
     meStream.close();
+    // R15 批 I1：停掉「待拍板」计数轮询定时器。
+    clearInterval(inboxBadgePollTimer);
     disposeChat();
     disposeDrive();
     disposeArmyOverview();
     disposeProjectSettings();
+    disposeInbox();
     driveSidePanel.dispose();
     armyPanel.dispose();
     proposalPanel.dispose();

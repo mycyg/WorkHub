@@ -17,7 +17,10 @@ export type WorkbenchLoadState = "idle" | "loading" | "ready" | "error";
 // activeDmConversationId 指出）。DM 容器项目对项目树/工作台 VM 全线围栏，DM 走「按会话直开」路径
 // （不拉容器项目的 VM，见 shell.ts 的 renderCenter 的 "dm" 分支）——数据源是 store.dmList 里那条
 // DmListItemVM（会话 + 两名参与者），而不是 selectedProjectId/vm。
-export type WorkbenchCenterTab = "chat" | "drive" | "collab" | "dm" | "army-overview" | "project-settings";
+// R15 批 I1（决策收件箱进 workbench）加 "inbox"——rail 顶部「待拍板」一级入口点开后，中栏切到跨项目的
+// 决策收件箱（workbench/inbox/view.ts，复用 spotlight attention 的全类型决策渲染/动作）。同 army-overview，
+// 这个视图不依赖 selectedProjectId（是「所有要你拍板的」总览，横跨项目）。
+export type WorkbenchCenterTab = "chat" | "drive" | "collab" | "dm" | "army-overview" | "project-settings" | "inbox";
 
 // 右栏情境面板的内容——刻意保持不透明（ownerId + 预渲染好的 html），store.ts 不认识任何具体视图
 // 的类型（drive 的版本历史/军团卡片等），谁在挂载期间持有内容所有权就把自己的 ownerId 写进来、
@@ -64,6 +67,10 @@ export type WorkbenchStoreState = {
   // R15 批 B：当前 viewer 的 user id——vm 就绪时取 viewer.user_id、DM 列表就绪时取 is_self 参与者兜底。
   // 头像资料卡据此判自己（不显示「发私聊」），roster 据此排除自己。没有任何数据源时 undefined。
   currentUserId: string | undefined;
+  // R15 批 I1（决策收件箱）：rail 顶部「待拍板」入口的计数徽标数据源——GET /api/pages/attention 的 queue
+  // 长度（与主窗 refreshApprovalsBadge 同源）。shell 首帧拉一次 + me-stream 收到决策类 notification.created
+  // 时刷新 + 收件箱内动作落定后刷新 + 30s 兜底轮询。0 时 rail 不渲徽标。
+  inboxCount: number;
   // 右栏情境面板收放（批 5 起有真内容，见 WorkbenchSidePanelContent 注释）。
   sidePanelOpen: boolean;
   sidePanelContent: WorkbenchSidePanelContent;
@@ -100,6 +107,7 @@ export function initialWorkbenchStoreState(): WorkbenchStoreState {
     activeDmConversationId: undefined,
     onlineUserIds: [],
     currentUserId: undefined,
+    inboxCount: 0,
     sidePanelOpen: true,
     sidePanelContent: undefined,
     newProjectModalOpen: false,

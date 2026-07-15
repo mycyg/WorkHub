@@ -10,6 +10,7 @@ import {
   attentionConflictHtmlFromError,
   classifyAttentionActionHref,
   createAttentionView,
+  mountAttentionInbox,
   resolveAttentionMemoryConflictAction,
   reviewAttentionProposalWithoutMerge
 } from "./attention.js";
@@ -245,6 +246,78 @@ test("desktop attention forwards locale to escalation and budget actions", async
 test("attention plan_review cards use explicit plan-review labels", () => {
   assert.equal(attentionTagLabelForKind("plan_review", true), "计划审阅");
   assert.equal(attentionTagLabelForKind("plan_review", false), "Plan review");
+});
+
+test("mountAttentionInbox is a decoupled two-window entry: renders the queue and routes proposal detail via the narrowed open()", async () => {
+  // R15 批 I1：证明抽取出的共用入口不再依赖 SpotlightViewContext——它只吃 AttentionInboxContext（工作台
+  // 收件箱薄壳照此喂）。这里用一个「非聚焦盒」的最小上下文（没有 back/refocusBody/signal/target），并断言
+  // proposal「查看变更」导航型动作走的是收窄后的 open(view,{id,route})，工作台侧据此把它路由到右栏提议详情。
+  const globals = globalThis as typeof globalThis & { HTMLElement: typeof HTMLElement };
+  const previousHTMLElement = globals.HTMLElement;
+  globals.HTMLElement = FakeElement as unknown as typeof HTMLElement;
+  const body = new FakeBody();
+  const opened: Array<{ view: string; target?: { id?: string; route?: string } }> = [];
+  let subtitle = "";
+  const vm = {
+    primary: undefined,
+    queue: [
+      {
+        id: "prop-1",
+        kind: "proposal_review",
+        title: "交付物变更申请",
+        actions: [
+          {
+            id: "view_changes",
+            label: "查看变更",
+            style: "quiet",
+            href: "/proposals/p-1"
+          }
+        ]
+      }
+    ],
+    background_runs: [],
+    cuu_state: "idle"
+  } as unknown as AttentionHomeVM;
+
+  try {
+    const dispose = mountAttentionInbox({
+      body: body as unknown as HTMLElement,
+      locale: "zh-CN",
+      client: {
+        pages: {
+          async attention() {
+            return vm;
+          }
+        }
+      } as never,
+      setSubtitle(text: string) {
+        subtitle = text;
+      },
+      toast() {},
+      requestResize() {},
+      open(view, target) {
+        opened.push({ view, ...(target ? { target } : {}) });
+      }
+    });
+    await tick();
+
+    // 队列渲成决策卡（复用 .wh-spot-* 结构）。
+    assert.match(body.innerHTML, /wh-spot-card/u);
+    assert.match(body.innerHTML, /交付物变更申请/u);
+    assert.equal(subtitle, "1 条待你拍板");
+
+    // 点「查看变更」→ 收窄后的 open("proposals", {id, route})，不当 POST 动作提交。
+    body.click(new FakeElement(new Set(["[data-att-action-id]"]), {
+      attHref: "/proposals/p-1",
+      attActionId: "view_changes"
+    }));
+    await tick();
+
+    assert.deepEqual(opened, [{ view: "proposals", target: { id: "p-1", route: "/proposals/p-1" } }]);
+    dispose();
+  } finally {
+    globals.HTMLElement = previousHTMLElement;
+  }
 });
 
 test("desktop attention view surfaces source warnings instead of showing all clear", async () => {

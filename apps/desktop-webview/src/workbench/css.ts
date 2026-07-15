@@ -102,6 +102,18 @@ export const workbenchCss = [
   ".wh-wb-army-nav.active{background:var(--ds-glass-strong)}",
   ".wh-wb-army-nav svg{width:18px;height:18px;color:var(--wb-cuu);flex:0 0 auto}",
   ".wh-wb-army-nav-label{font:600 13.5px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  // R15 批 I1（决策收件箱）：rail 顶部「待拍板」一级入口——与军团总览同一套一级入口手感（复用
+  // .wh-wb-army-nav 的排布/hover/active），末尾一枚红色计数徽标（同未读红点视觉语言，>0 才渲）。
+  ".wh-wb-inbox-nav{display:flex;align-items:center;gap:9px;width:100%;box-sizing:border-box;padding:8px 10px;" +
+    "border:0;border-radius:var(--ds-radius-md);background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;" +
+    "transition:background var(--ds-dur-fast) var(--ds-ease)}",
+  // 收件箱分组在 rail 最顶，去掉 .wh-wb-rail-group 默认的上边线（顶端不需要分隔线）。
+  ".wh-wb-rail-group--inbox{border-top:0;padding-top:2px;margin-top:2px}",
+  ".wh-wb-inbox-nav:hover{background:rgba(20,30,50,.05)}",
+  ".wh-wb-inbox-nav.active{background:var(--ds-glass-strong)}",
+  ".wh-wb-inbox-nav svg{width:18px;height:18px;color:var(--ds-accent);flex:0 0 auto}",
+  ".wh-wb-inbox-nav-label{font:600 13.5px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-inbox-nav-count{margin-left:auto;flex:0 0 auto;min-width:18px;height:18px;padding:0 6px;box-sizing:border-box;font:700 10.5px/18px var(--ds-font);text-align:center;color:#fff;background:var(--ds-danger);box-shadow:0 0 8px var(--ds-danger);border-radius:99px}",
 
   // —— R15 批 B（人对人私聊）：成员 roster + 私聊分组 + 头像资料卡 —— //
   // 分组标题在 .wh-wb-rail-group 里时去掉 rail-head 默认的上/侧内边距冗余，贴合分组容器。
