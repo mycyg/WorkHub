@@ -40,7 +40,7 @@ const OVERDUE_REMINDER_INTERVAL_MS = 24 * HOUR_MS;
 
 const DEFAULT_MAX_PER_TICK = 200;
 
-export type DdlStage = "t3d" | "t1d" | "overdue" | "escalate";
+export type DdlStage = "t3d" | "t1d" | "overdue" | "escalate" | "needs_owner";
 
 export type DdlChaseRunResult = {
   scanned: number;
@@ -143,6 +143,13 @@ function stageCopy(stage: DdlStage, candidate: DdlChaseCandidateRow): StageCopy 
         title: `${name} 逾期超过一天`,
         body: `这个工作项已逾期超过 24 小时仍未完成，需要你来协调推进。`
       };
+    case "needs_owner":
+      return {
+        type: "work_item.needs_owner",
+        severity: "high",
+        title: `${name} 逾期且无人负责`,
+        body: `这个工作项 ${dueDate} 已逾期，但还没有人认领，需要你指派或亲自接手。`
+      };
   }
 }
 
@@ -155,23 +162,37 @@ type IntentPlan =
 export function planDdlIntent(candidate: DdlChaseCandidateRow, now: Date): IntentPlan {
   const responsible = responsibleUserId(candidate);
   const owner = ownerChainUserId(candidate);
+  const overdue = now.getTime() >= candidate.dueAt.getTime();
 
-  // 无责任人的处置（逾期项走 D4「找人」）在后续 commit 补——本 commit 只发有责任人的四段阶梯。
-  if (!responsible) {
-    return { kind: "skip" };
+  let stage: DdlStage;
+  let targetUserId: string | null;
+  let suppressionKey: string;
+
+  if (responsible) {
+    const responsibleStage = currentResponsibleStage(now, candidate.dueAt);
+    if (!responsibleStage) {
+      return { kind: "skip" };
+    }
+    stage = responsibleStage;
+    // 升级发给项目负责人（不是迟到的责任人本人）；其余阶梯发给责任人。
+    targetUserId = stage === "escalate" ? owner : responsible;
+    suppressionKey = `ddl:${candidate.workItemId}:${stage}`;
+  } else {
+    // D4 找人：无责任人的工作项，只有逾期后才「找人」，每工作项一张（suppression_key=ddl_card:{id}）。
+    // 未逾期则本 tick 无事可做。投递物走本批唯一通道 notifications（发给项目负责人认领/指派）——
+    // 交互式 decide 行动卡(claim/reassign/defer)是后续增强，缺口原因见交付报告。
+    if (!overdue) {
+      return { kind: "skip" };
+    }
+    stage = "needs_owner";
+    targetUserId = owner;
+    suppressionKey = `ddl_card:${candidate.workItemId}`;
   }
 
-  const stage = currentResponsibleStage(now, candidate.dueAt);
-  if (!stage) {
-    return { kind: "skip" };
-  }
-  // 升级发给项目负责人（不是迟到的责任人本人）；其余阶梯发给责任人。
-  const targetUserId = stage === "escalate" ? owner : responsible;
   if (!targetUserId) {
     return { kind: "no_target" };
   }
 
-  const suppressionKey = `ddl:${candidate.workItemId}:${stage}`;
   const copy = stageCopy(stage, candidate);
   const notification: ProactiveIntentInput["notification"] = {
     type: copy.type,
@@ -190,7 +211,7 @@ export function planDdlIntent(candidate: DdlChaseCandidateRow, now: Date): Inten
       workspaceId: candidate.workspaceId,
       projectId: candidate.projectId,
       workItemId: candidate.workItemId,
-      kind: "ddl_chase",
+      kind: stage === "needs_owner" ? "find_owner" : "ddl_chase",
       stage,
       targetUserId,
       suppressionKey,

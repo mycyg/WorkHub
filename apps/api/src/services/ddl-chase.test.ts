@@ -94,6 +94,19 @@ test("planDdlIntent: escalate falls back to the work-item lead when the project 
   assert.equal(intent.targetUserId, "lead-1");
 });
 
+test("planDdlIntent: an unassigned but overdue item becomes a find_owner card to the owner chain", () => {
+  const plan = planDdlIntent(
+    candidate({ claimedByUserId: null, leadUserId: null, collaboratorUserId: null, projectOwnerUserId: "owner-1", dueAt: new Date(now.getTime() - 5 * HOUR) }),
+    now
+  );
+  const intent = (plan as { intent: ProactiveIntentInput }).intent;
+  assert.equal(intent.stage, "needs_owner");
+  assert.equal(intent.kind, "find_owner");
+  assert.equal(intent.targetUserId, "owner-1");
+  assert.equal(intent.notification.type, "work_item.needs_owner");
+  assert.equal(intent.suppressionKey, "ddl_card:wi-1");
+});
+
 test("planDdlIntent: an unassigned item that is not yet overdue does nothing", () => {
   const plan = planDdlIntent(
     candidate({ claimedByUserId: null, leadUserId: null, collaboratorUserId: null, dueAt: new Date(now.getTime() + 10 * HOUR) }),
