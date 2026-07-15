@@ -95,9 +95,14 @@ function currentResponsibleStage(now: Date, dueAt: Date): "t3d" | "t1d" | "overd
   return "escalate";
 }
 
+// work_items.title 与 notifications.title 都是 varchar(256)——满长标题拼上「 还有 3 天到期」等后缀会
+// 撑破 256 让插入直接抛错。夹到 200，给最长后缀留足余量（后缀均 < 16 字符），超长截断加省略号。
+const DISPLAY_TITLE_MAX = 200;
+
 function displayTitle(candidate: DdlChaseCandidateRow): string {
   const title = candidate.title?.trim();
-  return title && title.length > 0 ? title : candidate.code;
+  const base = title && title.length > 0 ? title : candidate.code;
+  return base.length > DISPLAY_TITLE_MAX ? `${base.slice(0, DISPLAY_TITLE_MAX - 1)}…` : base;
 }
 
 function formatDueDate(dueAt: Date): string {

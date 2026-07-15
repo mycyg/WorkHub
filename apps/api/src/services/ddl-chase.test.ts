@@ -123,6 +123,14 @@ test("planDdlIntent: escalate with neither owner nor lead has no target", () => 
   assert.equal(plan.kind, "no_target");
 });
 
+test("planDdlIntent: a max-length work-item title is clamped so the notification title stays within varchar(256)", () => {
+  const longTitle = "标".repeat(256); // work_items.title 的上限
+  const plan = planDdlIntent(candidate({ claimedByUserId: "u1", title: longTitle, dueAt: new Date(now.getTime() - 3 * HOUR) }), now);
+  const intent = (plan as { intent: ProactiveIntentInput }).intent;
+  assert.ok(intent.notification.title.length <= 256, "notification title must fit varchar(256)");
+  assert.ok(intent.notification.title.endsWith("已逾期"), "suffix preserved after clamping");
+});
+
 test("planDdlIntent: an item that jumps straight to overdue only emits overdue (no back-fill of t3d/t1d)", () => {
   // 新建即逾期：现在算出的当前阶梯就是 overdue，只产 overdue 一条（t3d/t1d 的窗口 now 从没落进去）。
   const plan = planDdlIntent(candidate({ claimedByUserId: "u1", dueAt: new Date(now.getTime() - 1 * HOUR) }), now);
