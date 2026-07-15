@@ -12,6 +12,7 @@
  *   | WorkHub concern                | pi callback / seam                              |
  *   |--------------------------------|-------------------------------------------------|
  *   | provider stream + usage seq    | `streamFn` = createProviderStreamFn(nextSeq)    |
+ *   | transient provider retry       | streamFn pump retry (nextRetryDecision + emit)  |
  *   | tool execution (return-based)  | `tools[].execute` → input.tools.execute (stash) |
  *   | sequential tool order          | `toolExecution: "sequential"`                   |
  *   | isError propagation            | `afterToolCall: workhubAfterToolCall`           |
@@ -336,6 +337,8 @@ export async function runAgentLoop2(input: AgentLoopInput): Promise<AgentLoopRes
 
 	// nextSeq feeds the real 1-based agent step number into usage-record dedup (findings[19]);
 	// mirrors loop.ts `seq: params.stepNo` (stepNo = usage.stepsUsed + 1, one per worker turn).
+	// Retries inside the pump reuse the same params/seq — matching loop.ts, whose retried
+	// callModel attempts all carry the same stepNo seq.
 	let stepSeq = 0;
 	const streamFn = createProviderStreamFn({
 		client: input.client,
@@ -344,6 +347,31 @@ export async function runAgentLoop2(input: AgentLoopInput): Promise<AgentLoopRes
 		nextSeq: () => {
 			stepSeq += 1;
 			return stepSeq;
+		},
+		// Transient provider retry: same knobs + decision source (nextRetryDecision) as loop.ts
+		// callModelWithRetry, incl. the findings[#49] clamp (single retry delay never exceeds the
+		// whole-run timeout). onRetry emits provider_retry in loop.ts's exact shape; sinkStepNo is
+		// the step being attempted (== loop.ts params.stepNo — turn_start bumped it before the call).
+		retry: {
+			baseDelayMs: input.budget.providerRetryBaseDelayMs ?? 500,
+			maxDelayMs: Math.min(
+				input.budget.providerRetryMaxDelayMs ?? 60_000,
+				Math.max(0, input.budget.totalTimeoutSeconds) * 1000,
+			),
+			onRetry: async ({ attempt, reason, delayMs }) => {
+				await input.emit?.({
+					type: eventTypes.agentRunStep,
+					previewText: `provider 瞬态错误，第 ${attempt} 次重试（${reason}）`,
+					data: {
+						run_id: input.runId,
+						step_no: sinkStepNo,
+						kind: "provider_retry",
+						attempt,
+						retry_reason: reason,
+						delay_ms: delayMs,
+					},
+				});
+			},
 		},
 	});
 

@@ -42,10 +42,27 @@
  *    When only `messages.create` exists it emits `start` + `done` off the buffered
  *    response (usage is recorded inside `create`). Partial (delta) messages are
  *    best-effort; the authoritative content always comes from the final response.
+ *
+ *  - **Transient retry (`options.retry`).** Mirrors `loop.ts` `callModelWithRetry`:
+ *    the backoff decision is `providers/retry.ts` `nextRetryDecision` (single source
+ *    of truth, not copied), `onRetry` fires before each backoff sleep (the config
+ *    builder emits the `provider_retry` event there), and the sleep is abort-aware
+ *    (run signal interrupts it immediately). The retry lives INSIDE the pump — the
+ *    chosen trade-off vs re-issuing from the consumer side — because it preserves
+ *    the StreamFn contract (never throw; exactly ONE terminal `done`/`error` event,
+ *    pushed only after retries are exhausted) and keeps usage accounting identical
+ *    to loop.ts: a failed attempt records no usage (the throw precedes any usage
+ *    read), the successful attempt records once, and all attempts share one `seq`
+ *    (params are built once per streamFn invocation, same as loop.ts reusing
+ *    `stepNo`). Protocol safety across attempts: `start` is pushed at most once
+ *    (state guard); a mid-stream retry restarts deltas with a fresh block map,
+ *    which is coherent because every pi partial is a complete-state snapshot that
+ *    replaces the previous one. A true run-level abort is never retried.
  */
 
 import type { UsageRecord, UsageSource } from "@workhub/cost";
 
+import { nextRetryDecision } from "../../providers/retry.js";
 import type { LlmCreateParams, LlmCreateResponse, LlmStream, LlmStreamEvent } from "../../providers/types.js";
 import {
 	AssistantMessageEventStream,
@@ -185,6 +202,19 @@ export type ProviderStreamClient = {
 	};
 };
 
+/** Transient-retry knobs, mirroring loop.ts `callModelWithRetry` (decision = `nextRetryDecision`). */
+export type ProviderRetryOptions = {
+	/** Exponential-backoff base (loop.ts: `budget.providerRetryBaseDelayMs ?? 500`). */
+	baseDelayMs?: number;
+	/** Backoff/Retry-After clamp (loop.ts findings[#49]: min(configured cap, whole-run timeout)). */
+	maxDelayMs?: number;
+	/**
+	 * Fired before each backoff sleep — the config builder emits the WorkHub
+	 * `provider_retry` event here (same shape as loop.ts `callModelWithRetry`).
+	 */
+	onRetry?: (info: { attempt: number; reason: string; delayMs: number }) => Promise<void> | void;
+};
+
 export type CreateProviderStreamFnOptions = {
 	/** WorkHub provider client (model/provider/actor/usageSink already bound). */
 	client: ProviderStreamClient;
@@ -199,7 +229,33 @@ export type CreateProviderStreamFnOptions = {
 	nextSeq?: () => number | undefined;
 	/** Use `messages.stream` when the client exposes it (default true). */
 	streaming?: boolean;
+	/** Transient provider retry. Omitted → no retry (Phase 1/2 behavior unchanged). */
+	retry?: ProviderRetryOptions;
 };
+
+// R4 #31 analogue (mirrors loop.ts sleep): abort-aware backoff sleep — the run-level signal
+// interrupts the wait immediately (reject with the abort reason) instead of parking the worker.
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+	return new Promise<void>((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(signal.reason ?? new Error("aborted"));
+			return;
+		}
+		const timer = setTimeout(() => {
+			cleanup();
+			resolve();
+		}, ms);
+		const onAbort = () => {
+			cleanup();
+			reject(signal?.reason ?? new Error("aborted"));
+		};
+		const cleanup = () => {
+			clearTimeout(timer);
+			signal?.removeEventListener("abort", onAbort);
+		};
+		signal?.addEventListener("abort", onAbort, { once: true });
+	});
+}
 
 function piToolsToWire(tools: Tool[] | undefined): unknown[] {
 	return (tools ?? []).map((tool) => ({
@@ -332,16 +388,23 @@ function mapStreamEvent(
 
 // --- pump -----------------------------------------------------------------
 
+/** Cross-attempt pump state: the stream protocol allows at most one `start` per StreamFn call. */
+type PumpState = { startPushed: boolean };
+
 async function pumpStreaming(
 	stream: AssistantMessageEventStream,
 	model: Model,
 	params: LlmCreateParams,
 	streamFn: NonNullable<ProviderStreamClient["messages"]["stream"]>,
+	state: PumpState,
 ): Promise<void> {
 	const llmStream = await streamFn(params);
 	const base = partialBase(model);
 	const blocks = new Map<number, PiBlock>();
-	stream.push({ type: "start", partial: { ...base, content: [] } });
+	if (!state.startPushed) {
+		stream.push({ type: "start", partial: { ...base, content: [] } });
+		state.startPushed = true;
+	}
 	for await (const event of llmStream) {
 		mapStreamEvent(event, base, blocks, (piEvent) => stream.push(piEvent));
 	}
@@ -356,11 +419,15 @@ async function pumpBuffered(
 	model: Model,
 	params: LlmCreateParams,
 	create: ProviderStreamClient["messages"]["create"],
+	state: PumpState,
 ): Promise<void> {
 	const response = await create(params);
 	const finalMessage = buildAssistantMessage(model, response);
 	attachIfCost(finalMessage, response);
-	stream.push({ type: "start", partial: { ...finalMessage, content: [] } });
+	if (!state.startPushed) {
+		stream.push({ type: "start", partial: { ...finalMessage, content: [] } });
+		state.startPushed = true;
+	}
 	stream.push({ type: "done", reason: doneReason(finalMessage.stopReason), message: finalMessage });
 }
 
@@ -371,16 +438,56 @@ async function pump(
 	options: CreateProviderStreamFnOptions,
 	signal: AbortSignal | undefined,
 ): Promise<void> {
-	try {
-		const streamFn = options.client.messages.stream;
-		if ((options.streaming ?? true) && typeof streamFn === "function") {
-			await pumpStreaming(stream, model, params, streamFn.bind(options.client.messages));
-		} else {
-			await pumpBuffered(stream, model, params, options.client.messages.create.bind(options.client.messages));
+	const state: PumpState = { startPushed: false };
+	let attempt = 0;
+	for (;;) {
+		try {
+			const streamFn = options.client.messages.stream;
+			if ((options.streaming ?? true) && typeof streamFn === "function") {
+				await pumpStreaming(stream, model, params, streamFn.bind(options.client.messages), state);
+			} else {
+				await pumpBuffered(stream, model, params, options.client.messages.create.bind(options.client.messages), state);
+			}
+			return;
+		} catch (error) {
+			// Transient retry (mirrors loop.ts callModelWithRetry): a true run-level abort is never
+			// retried; otherwise nextRetryDecision (single source of truth) decides. Timeout/abort-NAMED
+			// errors without a fired signal count as transient network errors — same as loop.ts.
+			if (!signal?.aborted && options.retry) {
+				const decision = nextRetryDecision(
+					error as { status?: number; headers?: { get: (name: string) => string | null } },
+					attempt,
+					{
+						...(options.retry.baseDelayMs !== undefined ? { baseDelayMs: options.retry.baseDelayMs } : {}),
+						...(options.retry.maxDelayMs !== undefined ? { maxDelayMs: options.retry.maxDelayMs } : {}),
+					},
+				);
+				if (decision.retry) {
+					attempt += 1;
+					try {
+						// onRetry (provider_retry emit) BEFORE the backoff sleep — loop.ts order.
+						await options.retry.onRetry?.({ attempt, reason: decision.reason, delayMs: decision.delayMs });
+						await sleep(decision.delayMs, signal);
+						continue;
+					} catch (interruptError) {
+						// Abort during backoff (or an emit failure): encode as the terminal event —
+						// the StreamFn contract forbids throwing.
+						const interruptAborted = Boolean(signal?.aborted) || isAbortLike(interruptError);
+						stream.push({
+							type: "error",
+							reason: interruptAborted ? "aborted" : "error",
+							error: buildErrorMessage(model, interruptError, interruptAborted),
+						});
+						return;
+					}
+				}
+			}
+			// Non-retryable, retries exhausted, or no retry configured → single terminal error event
+			// (config-builder re-throws it, same propagation as loop.ts's callModelWithRetry throw).
+			const aborted = Boolean(signal?.aborted) || isAbortLike(error);
+			stream.push({ type: "error", reason: aborted ? "aborted" : "error", error: buildErrorMessage(model, error, aborted) });
+			return;
 		}
-	} catch (error) {
-		const aborted = Boolean(signal?.aborted) || isAbortLike(error);
-		stream.push({ type: "error", reason: aborted ? "aborted" : "error", error: buildErrorMessage(model, error, aborted) });
 	}
 }
 

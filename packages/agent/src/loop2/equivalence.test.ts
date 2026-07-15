@@ -62,8 +62,17 @@ type EmittedEvent = { type: string; previewText?: string | undefined; data: Reco
 /** Recorder call capture: recordUsage → usage snapshot; recordStep → step index. */
 type RecorderEntry = { kind: "usage"; totalTokens: number; stepsUsed: number } | { kind: "step"; index: number };
 
+/** A scripted provider FAILURE: the harness client throws this value instead of returning. */
+type ScriptedThrow = { scriptedError: unknown };
+
+type ScriptedResponse = LlmCreateResponse | ScriptedThrow;
+
+function isScriptedThrow(value: ScriptedResponse): value is ScriptedThrow {
+	return "scriptedError" in value;
+}
+
 type Scenario = {
-	responses: LlmCreateResponse[];
+	responses: ScriptedResponse[];
 	toolSpecs?: ToolSpec[];
 	/** Dynamic tool set (P3c): overrides `toolSpecs` and is re-invoked each turn. */
 	toModelTools?: () => ToolSpec[];
@@ -128,6 +137,9 @@ function makeHarness(scenario: Scenario): Harness {
 					requests.push(params);
 					const next = queue.shift();
 					if (!next) throw new Error("scenario: no scripted response left");
+					// A scripted failure: throw without recording usage (a real failed request records
+					// nothing — the throw precedes any usage read, same as loop.ts / the measured client).
+					if (isScriptedThrow(next)) throw next.scriptedError;
 					calls.push({
 						seq: params.seq,
 						source: params.source,
@@ -196,6 +208,10 @@ const EVENT_DATA_KEYS = [
 	"compactions",
 	"summary_kind",
 	"provider_event_type",
+	// provider_retry fields (delay_ms is deterministic: nextRetryDecision has no jitter).
+	"attempt",
+	"retry_reason",
+	"delay_ms",
 ] as const;
 
 function projectEvents(events: EmittedEvent[]): Record<string, unknown>[] {
@@ -528,4 +544,67 @@ test("equivalence: dynamic tool visibility — load_skill mounts a tool mid-run"
 	assert.deepEqual(toolNames(legacyH.requests[1]), ["load_skill", "pdf"], "legacy turn-2 tools reflect the mount");
 	assert.deepEqual(toolNames(loop2H.requests[0]), ["load_skill"], "loop2 turn-1 tools");
 	assert.deepEqual(toolNames(loop2H.requests[1]), ["load_skill", "pdf"], "loop2 turn-2 tools reflect the mount");
+});
+
+// --- transient provider retry ------------------------------------------------
+
+test("equivalence: transient provider error (429) — one retry then success on both engines", async () => {
+	// Attempt 1 throws a retryable 429; attempt 2 succeeds. Factory: a fresh Error object per engine run.
+	// providerRetryBaseDelayMs=1 keeps the backoff sleep at 1ms (nextRetryDecision: 1 * 2^0, no jitter).
+	const scenario = (): Scenario => ({
+		responses: [
+			{ scriptedError: Object.assign(new Error("429 rate limited"), { status: 429 }) },
+			textResponse("m1", "recovered after retry"),
+		],
+		budget: { providerRetryBaseDelayMs: 1 },
+	});
+	const { legacy, loop2, legacyH, loop2H } = await runBoth(scenario);
+
+	assert.equal(legacy.status, "succeeded");
+	assert.equal(loop2.status, "succeeded");
+	assert.equal(loop2.finalText, "recovered after retry");
+	// Both engines made two provider requests (failed attempt + successful retry), same seq on both
+	// attempts (the failed request records no usage — runBoth already asserted the calls sequence).
+	assert.equal(legacyH.requests.length, 2, "legacy retried the request");
+	assert.equal(loop2H.requests.length, 2, "loop2 retried the request");
+	assert.equal(legacyH.requests[0]?.seq, legacyH.requests[1]?.seq, "legacy retry reuses the step seq");
+	assert.equal(loop2H.requests[0]?.seq, loop2H.requests[1]?.seq, "loop2 retry reuses the step seq");
+	// Exactly one provider_retry event each, identical shape (runBoth compared the full sequences —
+	// including attempt / retry_reason / delay_ms via EVENT_DATA_KEYS).
+	const retryEvents = (h: Harness) => h.emittedEvents.filter((e) => e.data.kind === "provider_retry");
+	assert.equal(retryEvents(legacyH).length, 1, "legacy emitted one provider_retry");
+	assert.equal(retryEvents(loop2H).length, 1, "loop2 emitted one provider_retry");
+	const event = retryEvents(loop2H)[0]!;
+	assert.equal(event.type, "agent_run.step");
+	assert.equal(event.data.step_no, 1);
+	assert.equal(event.data.attempt, 1);
+	assert.equal(event.data.retry_reason, "transient");
+	assert.equal(event.data.delay_ms, 1);
+});
+
+test("equivalence: non-retryable provider error (400) — both engines fail immediately, no retry", async () => {
+	const make = () =>
+		makeHarness({
+			responses: [{ scriptedError: Object.assign(new Error("400 bad request"), { status: 400 }) }],
+			budget: { providerRetryBaseDelayMs: 1 },
+		});
+	const legacyH = make();
+	const loop2H = make();
+
+	// Both engines propagate the failure as a throw (loop.ts: callModelWithRetry re-throws; loop2:
+	// the streamFn encodes the error terminal and runAgentLoop2 re-throws it for agent-runner's catch).
+	await assert.rejects(() => createAgentLoop().run(legacyH.input), /400 bad request/);
+	await assert.rejects(() => runAgentLoop2(loop2H.input), /400 bad request/);
+
+	// No retry on a 4xx: exactly one provider request, zero provider_retry events, on both engines.
+	assert.equal(legacyH.requests.length, 1, "legacy did not retry");
+	assert.equal(loop2H.requests.length, 1, "loop2 did not retry");
+	assert.deepEqual(
+		projectEvents(loop2H.emittedEvents),
+		projectEvents(legacyH.emittedEvents),
+		"emitted event sequence diverged on the failure path",
+	);
+	assert.deepEqual(loop2H.recorderLog, legacyH.recorderLog, "recorder call sequence diverged");
+	assert.deepEqual(loop2H.calls, legacyH.calls, "usage-record accounting diverged (must be empty on both)");
+	assert.deepEqual(loop2H.calls, [], "a failed request records no usage");
 });
