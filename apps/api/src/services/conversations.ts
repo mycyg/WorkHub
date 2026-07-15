@@ -1,5 +1,6 @@
 import {
   ConversationAccessDeniedError,
+  ConversationDmTargetError,
   ConversationMessageActorMismatchError,
   ConversationMessageDeletedError,
   ConversationMessageEditWindowError,
@@ -42,6 +43,7 @@ import {
   conversationReadReceiptsVmSchema,
   conversationReadUpdatedEventSchema,
   createConversationResultVmSchema,
+  openDmResultVmSchema,
   renameConversationResultVmSchema,
   eventTypes,
   MAX_CONVERSATION_REPLY_PREVIEW_CODE_UNITS,
@@ -59,6 +61,7 @@ import {
   type CreateConversationRequest,
   type CreateConversationResultVM,
   type EditConversationMessageRequest,
+  type OpenDmResultVM,
   type RenameConversationRequest,
   type RenameConversationResultVM
 } from "@workhub/contracts";
@@ -115,6 +118,9 @@ export type ConversationService = {
     projectId: string;
     payload: CreateConversationRequest;
   }): Promise<CreateConversationResultVM>;
+  // R15 批 B（人对人私聊）：查/开一对用户的 DM——返回既有会话列表同款的 conversation VM（带 is_dm）。
+  // 目标须与调用者同工作区活跃成员、且不是自己（校验在实现/仓库层，映射到 400/404）。
+  openDm(input: { actor: AuthActor; targetUserId: string }): Promise<OpenDmResultVM>;
   // R14FIX 批 workbench：协同会话改名——仅 collab 会话、仅参与者/owner（红线在实现里强制）。
   renameConversation(input: {
     actor: AuthActor;
@@ -222,6 +228,9 @@ function conversationToVm(row: ConversationRow | VisibleConversationRow, partici
     participant_role: participantRole ?? ("participantRole" in row ? row.participantRole : null),
     // R13 批 G1（小群）：会话级 Cuu 硬开关——additive 输出字段，直接透传 DB 列。
     cuu_enabled: row.cuuEnabled,
+    // R15 批 B（人对人私聊）：由 dm_key 非空推导——只在 DM 会话上输出 is_dm=true，普通会话不带这个键
+    // （契约层 is_dm 是 optional，见 conversationVmSchema）。
+    ...(row.dmKey ? { is_dm: true as const } : {}),
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString()
   };
@@ -410,6 +419,10 @@ function mapRepositoryError(error: unknown): never {
   }
   if (error instanceof ConversationAccessDeniedError) {
     throw new ConversationServiceError(404, "conversation_not_found", "没有找到这个会话。");
+  }
+  // R15 批 B（人对人私聊）：私聊对象不是本工作区活跃成员——404，不泄漏「这个人存在但不在你工作区」。
+  if (error instanceof ConversationDmTargetError) {
+    throw new ConversationServiceError(404, "conversation_dm_target_not_found", "没有找到这个工作区里的这个人。");
   }
   if (error instanceof ConversationSequenceExhaustedError) {
     throw new ConversationServiceError(409, "conversation_sequence_exhausted", "这个会话的消息序号已经耗尽。");
@@ -682,6 +695,42 @@ export function createConversationService(
       } catch (error) {
         mapRepositoryError(error);
       }
+    },
+
+    // ── R15 批 B（人对人私聊）：查/开一对用户的 DM ───────────────────────────────────
+    // 自聊在这里先行 400（不进仓库）；目标不在工作区由仓库抛 ConversationDmTargetError → 404。
+    // 返回既有会话列表同款的 conversation VM——发起者天然是 owner（新建时如此；命中既有 DM 时也可能是
+    // member，取 DB 里的真实角色，见下）。cuu_enabled=false（DM 默认 Cuu 不在场，B5 拍板）由仓库写死。
+    async openDm(input) {
+      const human = requireHumanActor(input.actor);
+      const targetUserId = input.targetUserId.trim().toLowerCase();
+      if (!targetUserId) {
+        throw new ConversationServiceError(400, "conversation_dm_target_required", "请选择一个私聊对象。");
+      }
+      if (targetUserId === human.userId.toLowerCase()) {
+        throw new ConversationServiceError(400, "conversation_dm_self", "不能和自己开私聊。");
+      }
+      let result: Awaited<ReturnType<ConversationRepository["openOrCreateDm"]>>;
+      try {
+        result = await repository.openOrCreateDm({
+          workspaceId: human.workspaceId,
+          actorUserId: human.userId,
+          targetUserId,
+          at: now()
+        });
+      } catch (error) {
+        mapRepositoryError(error);
+      }
+      // participant_role：DM 里发起者一定是两名参与者之一——命中既有 DM 时，取「本 actor 相对这条 DM」的
+      // 真实角色（发起过的那方是 owner、被开聊的那方是 member）。这里按 created_by 判定：会话 createdBy===
+      // 本 actor 即 owner，否则 member。不额外查参与者表（VM 只需要一个 owner/member 标签）。
+      const participantRole =
+        result.conversation.createdBy?.toLowerCase() === human.userId.toLowerCase() ? "owner" : "member";
+      return parseOutputContract(
+        openDmResultVmSchema,
+        { conversation: conversationToVm(result.conversation, participantRole) },
+        "conversations.dm.open"
+      );
     },
 
     // ── R14FIX 批 workbench：协同会话改名 ─────────────────────────────────────────────

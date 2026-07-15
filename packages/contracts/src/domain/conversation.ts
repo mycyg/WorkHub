@@ -539,11 +539,34 @@ export const conversationVmSchema = z
     // R13 批 G1（小群）：与请求侧 cuu_enabled 对称——服务端总是产出一个具体值（DB 列 default true，
     // 存量行迁移时全部回填 true），VM 输出侧不是 optional。
     cuu_enabled: z.boolean(),
+    // R15 批 B（人对人私聊）：additive optional——由 dm_key 非空推导，只在 DM 会话上输出 true，普通
+    // 会话（团队主区/协同/个人空间）这个键完全不出现（不是出现后填 false）。存量客户端读不带这个键
+    // 的会话 VM 行为零回归；认识它的客户端据此渲染「私聊」而非「协同会话」形态。
+    is_dm: z.boolean().optional(),
     created_at: isoDateTimeSchema,
     updated_at: isoDateTimeSchema
   })
   .strict();
 export type ConversationVM = z.infer<typeof conversationVmSchema>;
+
+// R15 批 B（人对人私聊）：POST /api/dm/open 的请求体——只带私聊对象的 user_id（目标须与调用者同工作区
+// 活跃成员、且不是自己；校验在服务/仓库层）。
+export const openDmRequestSchema = z
+  .object({
+    user_id: idSchema
+  })
+  .strict();
+export type OpenDmRequest = z.infer<typeof openDmRequestSchema>;
+
+// 开聊成功的响应——回既有会话列表接口同款的 conversation VM（带 is_dm=true、participant_role=owner），
+// 客户端据此直接打开该会话。定义在 conversationVmSchema 之后（引用它），避免 const 使用前声明——同
+// renameConversationResultVmSchema/conversationPinsVmSchema 的既有取舍。
+export const openDmResultVmSchema = z
+  .object({
+    conversation: conversationVmSchema
+  })
+  .strict();
+export type OpenDmResultVM = z.infer<typeof openDmResultVmSchema>;
 
 // R14FIX 批 workbench：重命名成功的响应——回改名后的完整会话 VM（客户端就地更新左栏树叶，见
 // rail.ts renameCollabConversationInVm）。定义在 conversationVmSchema 之后（引用它），避免 const

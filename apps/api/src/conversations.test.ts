@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   ConversationAccessDeniedError,
+  ConversationDmTargetError,
   ConversationParticipantMembershipError,
   ConversationParentAccessError,
   ConversationRepositoryInputError,
@@ -69,6 +70,8 @@ function conversationRow(overrides: Partial<ConversationRow> = {}): Conversation
     // ConversationRow 现在多出的两个必需字段。
     contextSummaryMd: null,
     contextSummaryThroughSeq: 0,
+    // R15 批 B：project_conversations 新增 dm_key（nullable）——普通会话默认 null，DM 用例按需 override。
+    dmKey: null,
     createdBy: userId,
     deletedAt: null,
     deletedByUserId: null,
@@ -142,6 +145,10 @@ function repository(overrides: Partial<ConversationRepository> = {}): Conversati
     },
     async createCollab() {
       throw new Error("createCollab not expected");
+    },
+    // R15 批 B：新增 openOrCreateDm（人对人私聊）——本套件按需 override，未 override 给拒绝桩。
+    async openOrCreateDm() {
+      throw new Error("openOrCreateDm not expected");
     },
     async createUserMessage() {
       throw new Error("createUserMessage not expected");
@@ -417,6 +424,90 @@ test("access preflights map invisible projects and conversations to stable non-o
     (error) => error instanceof ConversationServiceError
       && error.status === 404
       && error.code === "conversation_not_found"
+  );
+});
+
+// ── R15 批 B（人对人私聊）：openDm 服务方法 ────────────────────────────────────────────
+test("openDm returns the DM conversation VM with is_dm=true, cuu off, and owner role", async () => {
+  let received: unknown;
+  const dmConversation = conversationRow({
+    projectId: "70000000-0000-4000-8000-000000000099",
+    kind: "collab",
+    visibility: "private",
+    cuuEnabled: false,
+    dmKey: `dm:${[userId, participantUserId].sort().join(":")}`,
+    createdBy: userId
+  });
+  const repo = repository({
+    async openOrCreateDm(input) {
+      received = input;
+      return { conversation: dmConversation, created: true };
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now
+  });
+
+  const result = await service.openDm({ actor: actor(), targetUserId: participantUserId });
+
+  // 转发发起者/对方/工作区/时钟——目标归一由服务层小写化（这里已是小写）。
+  assert.deepEqual(received, {
+    workspaceId,
+    actorUserId: userId,
+    targetUserId: participantUserId,
+    at: now
+  });
+  assert.equal(result.conversation.is_dm, true);
+  assert.equal(result.conversation.cuu_enabled, false);
+  assert.equal(result.conversation.participant_role, "owner");
+  assert.equal(result.conversation.kind, "collab");
+});
+
+test("openDm rejects opening a DM with yourself before calling the repository", async () => {
+  let called = false;
+  const repo = repository({
+    async openOrCreateDm() {
+      called = true;
+      throw new Error("repository must not be called for a self-DM");
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now
+  });
+
+  await assert.rejects(
+    () => service.openDm({ actor: actor(), targetUserId: userId }),
+    (error) =>
+      error instanceof ConversationServiceError && error.status === 400 && error.code === "conversation_dm_self"
+  );
+  assert.equal(called, false);
+});
+
+test("openDm maps a non-member target to a stable 404 (no leak that the user exists elsewhere)", async () => {
+  const repo = repository({
+    async openOrCreateDm() {
+      throw new ConversationDmTargetError("target user is not an active member of this workspace");
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now
+  });
+
+  await assert.rejects(
+    () => service.openDm({ actor: actor(), targetUserId: participantUserId }),
+    (error) =>
+      error instanceof ConversationServiceError
+      && error.status === 404
+      && error.code === "conversation_dm_target_not_found"
   );
 });
 

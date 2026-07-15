@@ -205,7 +205,9 @@ export function createProjectRepository(db: WorkHubDb): ProjectRepository {
           isNull(projects.deletedAt),
           // R13 批 S3：团队项目列表绝不能混进个人空间——个人空间只出现在「我的空间」分组
           // （listPersonalForUser），两处是互斥的两份数据源。
-          eq(projects.isPersonal, false)
+          eq(projects.isPersonal, false),
+          // R15 批 B：DM 容器项目绝不进任何项目列表/树——它只挂 DM 会话，对用户完全不可见。
+          eq(projects.isDmContainer, false)
         )
       ).orderBy(sql`greatest(${projects.updatedAt}, coalesce(max(case when ${workItems.deletedAt} is null then ${workItems.updatedAt} end), ${projects.updatedAt})) desc`);
       return rows.map(toProjectListRow);

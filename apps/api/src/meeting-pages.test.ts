@@ -81,6 +81,8 @@ function projectRow(): NonNullable<MeetingPageRows["project"]> {
     nextSeq: 7,
     // R13 批 S3：projects 加了 is_personal 列——机械补齐，不是本文件测的功能改动。
     isPersonal: false,
+    // R15 批 B：projects 加了 is_dm_container 列——机械补齐（普通项目固定 false）。
+    isDmContainer: false,
     createdAt: now,
     updatedAt: now
   };

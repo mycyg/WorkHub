@@ -337,6 +337,11 @@ export const projects = pgTable(
     // 普通 projects 行（主区/网盘/工单全链路零改动直接复用），只是团队级列表要按这一列过滤掉它、
     // 会话可见性也要收在 owner 一人（见 conversations.ts 的 isPersonal-aware 可见性条件）。
     isPersonal: boolean("is_personal").notNull().default(false),
+    // R15 批 B（人对人私聊）：is_dm_container=true 是系统惰性建的「直达消息」容器项目——每工作区至多
+    // 一个（见下方部分唯一索引），只用来挂 DM 会话（collab + dm_key）。绝不出现在任何项目列表/树/
+    // 工作台 VM，不可归档/建工单/建普通会话——围栏在 repository/service 层强制（listForWorkspace、
+    // createCollab、findProjectById、findFirstActiveProject* 等逐个过滤，见对应仓库）。
+    isDmContainer: boolean("is_dm_container").notNull().default(false),
     ...timestamps()
   },
   (table) => [
@@ -348,7 +353,10 @@ export const projects = pgTable(
     index("projects_deleted_at_idx").on(table.deletedAt),
     // 「我的空间」列表查询用：按 owner 找他名下的个人空间。部分索引只覆盖 is_personal=true 的行，
     // 不占团队项目（多数行）的索引体积。
-    index("projects_personal_owner_idx").on(table.ownerUserId).where(sql`${table.isPersonal}`)
+    index("projects_personal_owner_idx").on(table.ownerUserId).where(sql`${table.isPersonal}`),
+    // R15 批 B：每工作区至多一个 DM 容器项目（workspace 维度部分唯一）——惰性创建的并发双开靠这条
+    // 索引兜底。部分索引只覆盖 is_dm_container=true 的极少数行（每工作区一条）。
+    uniqueIndex("projects_dm_container_uq").on(table.workspaceId).where(sql`${table.isDmContainer}`)
   ]
 );
 
@@ -462,6 +470,12 @@ export const projectConversations = pgTable(
     // 与 cuuEnabled 同一个教训：conversationSelection 必须显式投影这两列，否则运行时读到的是 undefined。
     contextSummaryMd: text("context_summary_md"),
     contextSummaryThroughSeq: bigint("context_summary_through_seq", { mode: "number" }).notNull().default(0),
+    // R15 批 B（人对人私聊）：dm_key 非空 ⟺ 这条会话是一对用户的 DM（仍是 kind='collab'，不新增 kind
+    // 枚举/不炸 CHECK 约束）。dm_key = 'dm:' + [两 userId 排序].join(':')，只在 DM 容器项目内出现。
+    // 下方 (project_id, dm_key) 部分唯一索引兜底同一对用户在同一容器至多一条 DM——必须带 project_id：
+    // 同一对用户在两个共享工作区各有一条 DM，dm_key 本身会撞，靠容器项目 id 隔离。conversationSelection
+    // 必须显式投影这一列，否则运行时读到 undefined（同 cuuEnabled/contextSummary 的教训）。
+    dmKey: text("dm_key"),
     // Legacy projects may not have an owner; new conversation creation must still populate this when known.
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     deletedAt: timestampTz("deleted_at"),
@@ -501,6 +515,11 @@ export const projectConversations = pgTable(
     uniqueIndex("project_conversations_active_main_uq")
       .on(table.projectId)
       .where(sql`${table.kind} = 'main' and ${table.deletedAt} is null`),
+    // R15 批 B（人对人私聊）：同一容器项目内一对用户至多一条 DM 会话。带 project_id 限定（见 dmKey
+    // 列注释）；部分索引只覆盖 dm_key 非空的行，普通会话不付索引成本。并发双开撞这条约束后回退查询。
+    uniqueIndex("project_conversations_dm_key_uq")
+      .on(table.projectId, table.dmKey)
+      .where(sql`${table.dmKey} is not null`),
     index("project_conversations_workspace_project_idx").on(table.workspaceId, table.projectId),
     index("project_conversations_project_created_idx").on(table.projectId, table.createdAt),
     uniqueIndex("project_conversations_id_project_uq").on(table.id, table.projectId),

@@ -774,7 +774,8 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         })
         .from(projects)
         .leftJoin(workspaces, eq(projects.workspaceId, workspaces.id))
-        .where(and(eq(projects.id, projectId), eq(projects.archived, false), isNull(projects.deletedAt)))
+        // R15 批 B：DM 容器项目不是可建工单/可检索资料的真项目——按 id 定位也一律不命中（→ 404）。
+        .where(and(eq(projects.id, projectId), eq(projects.archived, false), eq(projects.isDmContainer, false), isNull(projects.deletedAt)))
         .limit(1);
       const row = rows[0];
       return row ? { ...row.project, orgId: row.orgId } : null;
@@ -874,8 +875,8 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
       const rows = await db
         .select()
         .from(projects)
-        // R13 S3 隐私收尾:intake 兜底绝不把工单落进个人空间。
-        .where(and(eq(projects.archived, false), eq(projects.isPersonal, false), isNull(projects.deletedAt)))
+        // R13 S3 隐私收尾:intake 兜底绝不把工单落进个人空间。R15 批 B：同理绝不落进 DM 容器项目。
+        .where(and(eq(projects.archived, false), eq(projects.isPersonal, false), eq(projects.isDmContainer, false), isNull(projects.deletedAt)))
         .orderBy(asc(projects.createdAt))
         .limit(1);
       return rows[0] ?? null;
@@ -886,7 +887,7 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         .select()
         .from(projects)
         .where(
-          and(eq(projects.workspaceId, workspaceId), eq(projects.archived, false), eq(projects.isPersonal, false), isNull(projects.deletedAt))
+          and(eq(projects.workspaceId, workspaceId), eq(projects.archived, false), eq(projects.isPersonal, false), eq(projects.isDmContainer, false), isNull(projects.deletedAt))
         )
         .orderBy(asc(projects.createdAt))
         .limit(1);

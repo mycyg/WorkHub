@@ -139,6 +139,10 @@ function conversationsService(overrides: Partial<ConversationService> = {}): Con
     async createConversation(): Promise<CreateConversationResultVM> {
       throw new Error("not needed");
     },
+    // R15 批 B：新增 openDm 服务方法（人对人私聊）——本套件不测它，给拒绝桩即可。
+    async openDm() {
+      throw new Error("not needed");
+    },
     // R14FIX 批 workbench：新增 renameConversation 服务方法——本套件不测它，给拒绝桩即可。
     async renameConversation() {
       throw new Error("not needed");

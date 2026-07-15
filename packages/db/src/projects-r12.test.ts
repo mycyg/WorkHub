@@ -47,6 +47,8 @@ function project(overrides: Partial<ProjectRow> = {}): ProjectRow {
     deletedByNickname: null,
     nextSeq: 0,
     isPersonal: false,
+    // R15 批 B：projects 加了 is_dm_container 列——普通项目固定 false（容器项目不经这条 fixture）。
+    isDmContainer: false,
     createdAt: now,
     updatedAt: now,
     ...overrides

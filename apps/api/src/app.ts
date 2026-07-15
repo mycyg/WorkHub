@@ -34,6 +34,7 @@ import { createTaskPlanRoutes } from "./routes/task-plans.js";
 import { createProposalRoutes, createWorkItemProposalRoutes } from "./routes/proposals.js";
 import { createCostRoutes } from "./routes/cost.js";
 import { createConversationRoutes } from "./routes/conversations.js";
+import { createDmRoutes } from "./routes/dm.js";
 import { createAiSettingsRoutes } from "./routes/ai-settings.js";
 import { createUserProfileRoutes } from "./routes/user-profile.js";
 import { createUserAvatarRoutes } from "./routes/user-avatar.js";
@@ -262,6 +263,7 @@ app.route("/api/drive", createDriveRoutes());
 app.route("/api/meetings", createMeetingRoutes());
 app.route("/api/projects", createProjectRoutes());
 app.route("/api", createConversationRoutes());
+app.route("/api/dm", createDmRoutes());
 app.route("/api", createAiSettingsRoutes());
 // R13 批 A2（派人推荐 v2）：GET/PATCH /me/profile ——「我是谁」资料面（title/bio/技能标签）。
 app.route("/api", createUserProfileRoutes());
