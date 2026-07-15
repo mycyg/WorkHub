@@ -1,7 +1,8 @@
 // WorkHub 桌面 · 群聊/协同会话共用视图——imperative 挂载/事件绑定层（照 shell.ts/rail.ts 的分工：纯渲染在
 // render.ts，这里只负责拉数据、绑 DOM 事件、维护会话内的瞬态状态）。批 2 范围：文本+file_card 发送、
-// @ 成员/文件 picker（真实）、# 会话与 / 技能 picker（外壳，「即将可用」灰态，见 render.ts 的
-// renderComingSoonPickerHtml）、SSE 接线（断线指数退避重连+重连后 afterSeq 补缺口）、typing 节流。
+// @ 成员/文件 picker（真实）、SSE 接线（断线指数退避重连+重连后 afterSeq 补缺口）、typing 节流。
+// # 会话引用 / / 技能唤起的假「即将上线」picker 已在 G-desktop 止血批 1 撤线（renderPicker() 打这两个
+// 触发符时就地清空挂载点，不再渲染任何东西）——解析器 trigger-parser.ts 还在，真要接的时候见那里注释。
 // R12（final-turns-wiring）起：input.conversationKind === 'collab' 时，发一条文本消息之后会自动请求
 // 一轮 Cuu 回应（POST /conversations/:id/turns），流式 delta 拼进临时气泡，落定后换成真消息——
 // 逻辑全部下沉进 turn.ts 的纯函数（shouldRequestConversationTurn/appendTurnDelta/
@@ -93,7 +94,6 @@ import {
   modePatchFailedText,
   reassignPickerMemberIds,
   renderChatEmptyStateHtml,
-  renderComingSoonPickerHtml,
   renderComposerHtml,
   renderConnectionBannerHtml,
   renderConversationAccessDeniedHtml,
@@ -545,6 +545,11 @@ export function mountChatView(
   //    发起操作时先清掉（见 submitActionCardDecision/submitActionCardUndo）。
   let openReassignItemId: string | undefined;
   let actionCardItemErrors = new Map<string, string>();
+  // G-desktop 止血批 6：条目当前正在飞的 decide/undo 动作，按条目 id 索引——照 spotlight/views/
+  // attention.ts 的 markBusy 手感，submitActionCardDecision/submitActionCardUndo 发起请求前立即写入、
+  // 往返落定（成功或失败）后清掉，渲染层据此把命中的按钮禁用 + 换「…中」文案（见 render.ts
+  // renderDecideItemActionsHtml/renderExecuteItemActionsHtml）。
+  let actionCardItemBusyAction = new Map<string, ActionCardItemDecisionAction | "undo">();
   // R13 批 P2（拍板链路收尾）：dispatch_ask 错过补偿——只在主区（群聊）里查，见 dispatch-ask-catchup.ts
   // 顶部注释("群里"派活问询才有这条追赶提醒；协同会话是 1:1 单聊，Cuu 有没有回应本来就在眼前，
   // 没有"错过"的场景)。undefined = 还没查完/查失败（诚实地不渲染，不是查到了"没有"）。
@@ -613,6 +618,7 @@ export function mountChatView(
     currentUserId: input.currentUserId,
     expandedMessageIds,
     actionCardItemErrors,
+    actionCardItemBusyAction,
     // exactOptionalPropertyTypes：openReassignItemId/reassignHighlightIndex 都是可选字段，undefined
     // 时整个键都不出现，不是"键在、值是 undefined"（那样和 currentUserId 那种"键必须在、值可以是
     // undefined"的字段不是一回事，TS 会拒绝后者赋给前者）。
@@ -984,7 +990,10 @@ export function mountChatView(
       });
       return;
     }
-    slot.innerHTML = renderComingSoonPickerHtml({ locale: input.locale, trigger: activeTrigger.trigger as "#" | "/" });
+    // G-desktop 止血批 1：# 会话引用 / / 技能唤起还没真正接线——不再弹一块「即将上线」的假 picker
+    // （04 §4 铁律 3），保持挂载点空白，就跟什么都没触发一样诚实。见 render.ts 的
+    // renderComingSoonPickerHtml 顶部注释：函数留着没删，真接线时把这一行换回调它即可。
+    slot.innerHTML = "";
   }
 
   // R13 H1（键盘可达性）：方向键/Enter 选中 @ picker 当前高亮的那一行——跟鼠标点 data-wb-chat-pick-*
@@ -1475,6 +1484,24 @@ export function mountChatView(
     actionCardItemErrors = next;
   }
 
+  // G-desktop 止血批 6：markBusy 手感的两半——发起前标记、往返落定后清掉（成功/失败都要清，否则按钮
+  // 永久卡在禁用态）。同一条目已经在飞时提交函数直接短路，不重复发请求（照 spotlight/proposal 面板的
+  // 既有 `if (busy) return` 纪律，这里按条目粒度而不是整面板粒度，因为不同条目理应能各自独立提交）。
+  function markActionCardItemBusy(itemId: string, action: ActionCardItemDecisionAction | "undo"): void {
+    const next = new Map(actionCardItemBusyAction);
+    next.set(itemId, action);
+    actionCardItemBusyAction = next;
+  }
+
+  function clearActionCardItemBusy(itemId: string): void {
+    if (!actionCardItemBusyAction.has(itemId)) {
+      return;
+    }
+    const next = new Map(actionCardItemBusyAction);
+    next.delete(itemId);
+    actionCardItemBusyAction = next;
+  }
+
   // decide/undo 成功后用 HTTP 响应的条目 VM 就地更新本地快照——同一条合并函数（timeline.ts 的
   // applyActionCardUpdate）也是 SSE 回流用的那条，见其顶部注释。找不到归属消息（理论上不该发生：
   // 按钮只会渲在本地已经持有的消息上）就静默跳过，不崩——后续 SSE 事件/reconcile 仍会补齐。
@@ -1521,12 +1548,18 @@ export function mountChatView(
   }
 
   function submitActionCardDecision(itemId: string, action: ActionCardItemDecisionAction, assigneeUserId?: string): void {
+    // 同一条目已有一个决定在飞：短路，不重复提交（双击/连点防护，照 markBusy 手感）。
+    if (actionCardItemBusyAction.has(itemId)) {
+      return;
+    }
     clearActionCardItemError(itemId);
     openReassignItemId = undefined;
     reassignHighlightIndex = undefined;
+    markActionCardItemBusy(itemId, action);
     renderScroll();
     decideActionCardItem(input.client, { itemId, action, ...(assigneeUserId ? { assigneeUserId } : {}) })
       .then((result) => {
+        clearActionCardItemBusy(itemId);
         if (disposed) {
           return;
         }
@@ -1534,15 +1567,21 @@ export function mountChatView(
         renderScroll();
       })
       .catch((error) => {
+        clearActionCardItemBusy(itemId);
         handleActionCardDecisionError(itemId, error);
       });
   }
 
   function submitActionCardUndo(itemId: string): void {
+    if (actionCardItemBusyAction.has(itemId)) {
+      return;
+    }
     clearActionCardItemError(itemId);
+    markActionCardItemBusy(itemId, "undo");
     renderScroll();
     undoActionCardItem(input.client, { itemId })
       .then((result) => {
+        clearActionCardItemBusy(itemId);
         if (disposed) {
           return;
         }
@@ -1550,6 +1589,7 @@ export function mountChatView(
         renderScroll();
       })
       .catch((error) => {
+        clearActionCardItemBusy(itemId);
         handleActionCardDecisionError(itemId, error);
       });
   }
@@ -2691,8 +2731,9 @@ export function mountChatView(
     }
     // R13 H1（键盘可达性）：@ picker 打开着的时候，方向键/Enter/Escape 先喂给它——焦点仍然留在
     // textarea 里（边打字边过滤这条 UX 不能丢，见 mentionHighlightIndex 顶部注释），只是这几个键
-    // 从"移动文本光标/发送/什么都不做"临时改道成"picker 导航"。「即将上线」的 #// picker 没有可选
-    // 行，Escape 仍然生效（关掉它），方向键/Enter 对它是 no-op（activeTrigger.kind !== "mention"）。
+    // 从"移动文本光标/发送/什么都不做"临时改道成"picker 导航"。# / 触发符（G-desktop 止血批 1 起
+    // 不再渲染任何 picker）没有可选行，Escape 仍然生效（关掉 activeTrigger），方向键/Enter 对它是
+    // no-op（activeTrigger.kind !== "mention"）。
     if (activeTrigger?.kind === "mention") {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();

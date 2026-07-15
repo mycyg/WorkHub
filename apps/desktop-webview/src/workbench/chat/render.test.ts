@@ -50,7 +50,9 @@ function member(input: Partial<WorkbenchMemberVM> & { user_id: string; nickname:
 function ctxWith(
   members: WorkbenchMemberVM[],
   currentUserId?: string,
-  extra?: Partial<Pick<ChatRenderContext, "now" | "openReassignItemId" | "actionCardRunProgress">>
+  extra?: Partial<
+    Pick<ChatRenderContext, "now" | "openReassignItemId" | "actionCardRunProgress" | "actionCardItemBusyAction">
+  >
 ): ChatRenderContext {
   return { locale: "zh-CN", members: membersById(members), currentUserId, ...extra };
 }
@@ -744,6 +746,70 @@ test("renderMessageHtml renders claim/reassign/defer buttons for a decide item a
   assert.doesNotMatch(html, /data-wb-chat-actioncard-reassign-to=/u);
 });
 
+// G-desktop 止血批 6：decide 三键在飞时的 markBusy 手感——命中的按钮换「…中」文案，三键全部禁用
+// （同一条目不许并发提交两个决定），照 spotlight/views/attention.ts:491-505 的既有手感。
+test("renderMessageHtml disables all three decide buttons and swaps the claim label to 认领中… while a claim is in flight for that item", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { card_id: "card-1", items: [actionCardItem({ assignee_user_id: "me" })] }
+    }),
+    ctxWith([member({ user_id: "me", nickname: "张三" })], "me", { actionCardItemBusyAction: new Map([["i1", "claim"]]) })
+  );
+  assert.match(html, /认领中…/u);
+  assert.doesNotMatch(html, /交给我干/u);
+  // 三键（认领/改派切换/先不动）全部禁用，不止命中的那一个。
+  assert.equal((html.match(/ disabled/gu) ?? []).length, 3);
+  assert.match(html, /data-wb-chat-actioncard-decide="defer"[^>]*disabled/u);
+});
+
+test("renderMessageHtml swaps the reassign-toggle label to 指派中… while a reassign is in flight, and keeps the member picker closed even if openReassignItemId still matches", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { card_id: "card-1", items: [actionCardItem({ assignee_user_id: "me" })] }
+    }),
+    ctxWith([member({ user_id: "me", nickname: "张三" }), member({ user_id: "other", nickname: "李四" })], "me", {
+      openReassignItemId: "i1",
+      actionCardItemBusyAction: new Map([["i1", "reassign"]])
+    })
+  );
+  assert.match(html, /指派中…/u);
+  assert.doesNotMatch(html, /data-wb-chat-actioncard-reassign-to=/u);
+});
+
+test("renderMessageHtml swaps the defer label to 处理中… while a defer is in flight", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { card_id: "card-1", items: [actionCardItem({ assignee_user_id: "me" })] }
+    }),
+    ctxWith([member({ user_id: "me", nickname: "张三" })], "me", { actionCardItemBusyAction: new Map([["i1", "defer"]]) })
+  );
+  assert.match(html, /处理中…/u);
+  assert.doesNotMatch(html, /先不动/u);
+});
+
+test("renderMessageHtml leaves a different item's decide buttons untouched while another item is busy", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { card_id: "card-1", items: [actionCardItem({ id: "i2", assignee_user_id: "me" })] }
+    }),
+    ctxWith([member({ user_id: "me", nickname: "张三" })], "me", { actionCardItemBusyAction: new Map([["i1", "claim"]]) })
+  );
+  assert.match(html, /交给我干/u);
+  assert.doesNotMatch(html, / disabled/u);
+});
+
 test("renderMessageHtml renders a plain 等 @昵称 拍板 text (no buttons) for a decide item assigned to someone else", () => {
   const html = renderMessageHtml(
     baseMessage({
@@ -865,6 +931,36 @@ test("renderMessageHtml renders an undo button with remaining minutes for a runn
   assert.match(html, /data-wb-chat-actioncard-undo="i2"/u);
   assert.match(html, /9 分钟内/u);
   assert.match(html, /wh-wb-act--danger/u);
+});
+
+// G-desktop 止血批 6：撤销往返在飞时按钮禁用 + 文案换「撤销中…」，同 decide 三键的 markBusy 手感。
+test("renderMessageHtml disables the undo button and swaps its label to 撤销中… while the undo is in flight", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: {
+        card_id: "card-1",
+        items: [
+          actionCardItem({
+            id: "i2",
+            kind: "execute",
+            status: "running",
+            assignee_user_id: "me",
+            undo_deadline_at: "2026-07-12T09:09:00.000Z"
+          })
+        ]
+      }
+    }),
+    ctxWith([], "me", {
+      now: new Date("2026-07-12T09:00:00.000Z"),
+      actionCardItemBusyAction: new Map([["i2", "undo"]])
+    })
+  );
+  assert.match(html, /撤销中…/u);
+  assert.doesNotMatch(html, /9 分钟内/u);
+  assert.match(html, /data-wb-chat-actioncard-undo="i2"[^>]*disabled/u);
 });
 
 test("renderMessageHtml renders no undo button once the undo window has passed", () => {
@@ -1303,15 +1399,16 @@ test("renderComposerHtml behaves exactly as before when turnActive is omitted (m
   assert.equal(withoutTurnActive, withExplicitFalse);
 });
 
-// R14 批 CHAT：撤掉「/ 技能」灰 chip（01-chat-design.md §5 点名的顺路项——技能唤起归 SEARCH 批，不摆
-// 点了没反应的假 affordance）。`#会话` 灰态保留；`/` chip 必须不再出现。这条断言从「# 和 / 都在」收窄成
-// 「# 在、/ 不在」，属设计点名批准的既有断言修改。
-test("renderComposerHtml keeps the # tag as not-yet-available but no longer renders the / skill tag", () => {
+// G-desktop 止血批 1：撤掉「#会话」灰 chip——R14 批 CHAT 当时已经撤掉了同款的「/技能」假 affordance，
+// 只留「#会话」在原地摆着等 SEARCH 批接线；SEARCH 批至今没有真的接上，这个 chip 点了/打了 # 只会弹
+// 一句「即将上线」，仍然违反 04 §4 铁律 3。现在两个 chip 都不再出现，composer 占位符里的 "# 会话"
+// 提示语也一并去掉。这条断言从「# 在、/ 不在」收窄成「# 和 / 都不在」。
+test("renderComposerHtml no longer renders either the # or the / not-yet-available tag", () => {
   const html = renderComposerHtml({ locale: "zh-CN", draftText: "", attachments: [], sending: false });
   assert.match(html, /data-wb-chat-tool-trigger="@"/u);
-  assert.match(html, /wh-wb-chat-ctag--soon"[^>]*><b>#<\/b>/u);
-  assert.doesNotMatch(html, /wh-wb-chat-ctag--soon"[^>]*><b>\/<\/b>/u);
+  assert.doesNotMatch(html, /wh-wb-chat-ctag--soon/u);
   assert.doesNotMatch(html, /技能/u);
+  assert.doesNotMatch(html, /# 会话/u);
 });
 
 // —— pickers —— //

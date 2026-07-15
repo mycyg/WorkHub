@@ -7,12 +7,13 @@
 // `@tauri-apps/api/window` Window 对象方法（getCurrentWindow().hide()/.minimize()/.startDragging()），
 // 和 pet-window-bridge.ts 解析 currentWindow 的方式一致，不发明新协议。
 //
-// 已知缺口（写进 batch-1-frontend.md 报告，不在本批修——client-tauri 范围外）：
-// client-tauri/src-tauri/capabilities/default.json 的 "windows" 目前只有 ["main","pet"]，不含
-// "workbench"。Tauri v2 的 core 插件命令（window/event 等）按 capability 的 windows 字段逐窗口发权限；
-// "workbench" 不在名单里意味着这个窗口当前拿不到任何 core 权限，min/hide/startDragging 与下面 boot.ts
-// 订阅的 "deep-link" 事件在真机大概率会被 ACL 拒绝。这里仍然接上真实的 Tauri API（不是假按钮），
-// 一旦人工把 "workbench" 加进 capabilities 就能直接工作；真机验收前请先确认这一步。
+// capabilities 现状（G-desktop 止血批 4 核实，之前几批留的"已知缺口"注释已经过时）：
+// client-tauri/src-tauri/capabilities/workbench.json 是独立于 default.json（["main","pet"]）的
+// 一份 capability，"windows" 已经是 ["workbench"]，"permissions" 授了 core:default +
+// allow-start-dragging + allow-hide + allow-minimize + allow-is-focused（isFocused() 那条本批补上——
+// interrupt-broadcast.ts 用它判断前台，之前漏配）。min/hide/startDragging/isFocused 与下面 boot.ts
+// 订阅的 "deep-link" 事件在真机应当已能正常工作，不再是待办。这里仍然走真实的 Tauri API（不是假
+// 按钮），undefined 兜底只用来覆盖"浏览器 dev 预览 / 完全没有 Tauri"这一种真实会发生的降级场景。
 
 export type WorkbenchWindowBridge = {
   startDragging?: () => void | Promise<void>;

@@ -12,6 +12,7 @@ import { escapeHtml } from "@workhub/web-runtime";
 
 import { appleGlassDesignSystemCss } from "../design-system.js";
 import { resolveDesktopShellEmitter } from "../desktop-cuu-runtime.js";
+import { resolveDesktopTauriInvoke } from "../desktop-window-controls.js";
 import { mountArmyOverviewView, type ArmyOverviewApiClient, type ArmyOverviewViewHandle } from "./army/overview.js";
 import { mountArmyContextPanel, type ArmyContextPanelApiClient, type ArmyContextPanelHandle } from "./army/panel.js";
 import { renderArmySidePanelIdleHtml } from "./army/render.js";
@@ -87,11 +88,17 @@ export function renderWorkbenchShellHtml(locale: Locale, chrome: WorkbenchShellC
           <button type="button" class="wh-wb-winbtn" data-wb-minimize aria-label="${zh ? "最小化" : "Minimize"}">${workbenchIcons.minimize}</button>
           <button type="button" class="wh-wb-winbtn wh-wb-winbtn--close" data-wb-close aria-label="${zh ? "关闭" : "Close"}">${workbenchIcons.close}</button>
         </div>`;
+  // G-desktop 止血批 5：顶栏「打开聚焦盒」入口——不是窗口帧控件（不像 min/close 那样在原生红绿灯
+  // 接管时该消失），所以放在 titlebarControlsHtml 判断之外、始终渲染。真实接线见 mountWorkbenchShell
+  // 的点击处理：invoke("show_main_window")，main.rs 已注册的既有 command（托盘/深链/单实例冷启动都在
+  // 用同一个），不是新造的协议。
+  const openSpotlightBtnHtml = `<button type="button" class="wh-wb-winbtn" data-wb-open-spotlight aria-label="${zh ? "打开聚焦盒" : "Open Spotlight"}" title="${zh ? "打开聚焦盒" : "Open Spotlight"}">${workbenchIcons.search}</button>`;
   return `<div class="wh-ds wh-wb">
     <div class="wh-wb-window" data-wb-window>
       <div class="${titlebarClass}" data-wb-titlebar>
         <span class="wh-wb-crumb" data-wb-crumb>${zh ? "WorkHub 工作台" : "WorkHub Workbench"}</span>
         <div class="wh-wb-titlebar-spacer"></div>
+        ${openSpotlightBtnHtml}
         ${titlebarControlsHtml}
       </div>
       <div class="wh-wb-body">
@@ -140,10 +147,51 @@ export function renderCenterErrorHtml(locale: Locale): string {
   </div>`;
 }
 
+// G-desktop 止血批 3（跨窗口登出广播）：整窗替换态——不是三栏壳里的一个子区块错误，是"这整个窗口手里
+// 的身份已经失效了"，所以不复用 renderCenterErrorHtml/renderEmptyStateHtml（那两个都假设三栏壳还在、
+// 只是某一列没内容）。照 boot.ts 的 renderFatalBootError 同一种取舍——用内联样式而不是新增 css.ts
+// 类名，这类"整窗只在极少数分支出现一次"的状态不值得为它扩 workbenchCss 的常驻体积。工作台不拥有
+// 重新登录的 UI（那是主窗 spotlight 设置视图的地盘，见 boot.ts bindWorkbenchLoggedOutListener 顶部
+// 注释），这里只诚实地说明现状，不摆一个只会转发到别处、看起来能操作的按钮。
+export function renderWorkbenchLoggedOutHtml(locale: Locale): string {
+  const zh = locale === "zh-CN";
+  return `<div class="wh-ds wh-wb" data-wb-loggedout>
+    <div style="min-height:100vh;display:grid;place-items:center;box-sizing:border-box;padding:24px">
+      <div class="ds-glass" style="padding:28px 30px;border-radius:16px;display:grid;gap:10px;max-width:340px;text-align:center">
+        <strong style="font:700 16px/1.3 var(--ds-font,system-ui);color:var(--ds-ink,#1c2333)">${zh ? "已登出" : "Signed out"}</strong>
+        <p style="margin:0;font:500 13px/1.6 var(--ds-font,system-ui);color:var(--ds-ink-muted,#5a6478)">${
+          zh
+            ? "这台设备已经登出。去主窗口重新登录后，回来打开这个工作台就能继续用。"
+            : "This device signed out. Sign back in from the main window, then reopen this workbench to continue."
+        }</p>
+      </div>
+    </div>
+  </div>`;
+}
+
+// 跟 boot.ts 的 DESKTOP_LOGGED_OUT_FLAG 是同一个 localStorage 键——照这个文件已有的取舍（顶部注释、
+// defaultClientTokenReader 等）不 import boot.ts（避免 boot.ts → shell.ts → boot.ts 的循环 import），
+// 本机复制这一个字符串常量的读法，比拆一个新模块只为共享一个字面量划算。
+const WORKBENCH_LOGGED_OUT_STORAGE_KEY = "workhub_desktop_logged_out";
+
+// storage 允许 undefined（没有 doc.defaultView 的合成/测试环境）——照这个文件里 windowBridge 那行
+// `doc.defaultView ?? globalThis` 的既有防御纪律，绝不直接摸裸的全局 `window`。
+function isDesktopLoggedOutFlagSet(storage: Pick<Storage, "getItem"> | undefined): boolean {
+  try {
+    return storage?.getItem(WORKBENCH_LOGGED_OUT_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export type WorkbenchShellHandle = {
   store: WorkbenchStore;
   // 选中项目（rail 点击 / Spotlight「打开工作台」/ 深链三路共用）。conversationId 目前只落库，批 2 起消费。
   selectProject: (projectId: string, conversationId?: string) => void;
+  // G-desktop 止血批 3：跨窗口登出广播——boot.ts 在两处调用它：①mount 那一刻标记本来就已登出
+  // （isWorkbenchDesktopLoggedOut() 为真）；②运行中收到其它窗口发起的 workhub-logged-out 广播。
+  // 幂等：已经在登出态再调一次是安全的空操作。
+  showLoggedOut: () => void;
   dispose: () => void;
 };
 
@@ -163,6 +211,10 @@ export function mountWorkbenchShell(
   const store = input.store ?? createWorkbenchStore();
   const getClientToken = input.getClientToken ?? defaultClientTokenReader;
   let disposed = false;
+  // G-desktop 止血批 3：本窗当前是否正显示「已登出」整窗态——showLoggedOut() 置真，selectProject()
+  // 据此决定是继续无视后续调用（还在登出态）还是干脆整窗重载（标记已经被别处清掉，说明用户从主窗
+  // 重新登录过了——见 selectProject 顶部这段判断的注释）。
+  let loggedOut = false;
   let vmRequestGen = 0;
   let chatHandle: ChatViewHandle | undefined;
   let chatMountKey: string | undefined;
@@ -175,16 +227,17 @@ export function mountWorkbenchShell(
   // R12 批7:打扰矩阵——windowBridge.isFocused() 告诉我们"用户是否正看着这个工作台窗口"；
   // resolveDesktopShellEmitter 是桌宠/主窗共用的通用 Tauri 事件桥(__TAURI__.event.emit),这里复用它
   // 把"该弹气泡了"的结论广播出去，接收端在 desktop-cuu-runtime.ts 的 bindDesktopShellCuuRuntime 里监听
-  // 同一个新事件名("workbench-interrupt")。两者任一在当前环境不可用(浏览器 dev 预览 / capabilities
-  // 缺口)时优雅降级为 undefined——mountChatView 不会收到 onConversationEvent，纯本地渲染不受影响。
+  // 同一个新事件名("workbench-interrupt")。两者任一在当前环境不可用(浏览器 dev 预览 / 完全没有
+  // Tauri)时优雅降级为 undefined——mountChatView 不会收到 onConversationEvent，纯本地渲染不受影响。
   const windowBridge = resolveWorkbenchWindowBridge(doc.defaultView ?? globalThis);
   const shellEmitter = resolveDesktopShellEmitter(doc.defaultView ?? globalThis);
   const interruptBroadcaster =
     shellEmitter?.emit
       ? createWorkbenchInterruptBroadcaster({
           emit: (eventName, payload) => shellEmitter.emit!(eventName, payload),
-          // 拿不到 isFocused()(无 Tauri / capabilities 尚未把 "workbench" 加进 windows 列表——见
-          // window-bridge.ts 顶部注释)时默认当作"前台"：宁可少弹一次气泡，也不要背景乱弹。
+          // 拿不到 isFocused()(无 Tauri)时默认当作"前台"：宁可少弹一次气泡，也不要背景乱弹。
+          // capabilities/workbench.json 已经授了 core:window:allow-is-focused（G-desktop 止血批 4 补的），
+          // 真机上这条通常能拿到真实值，这里的兜底只覆盖"没有 __TAURI__"这一种真实场景。
           isForeground: async () => (await windowBridge?.isFocused?.()) ?? true,
           locale: input.locale
         })
@@ -225,6 +278,7 @@ export function mountWorkbenchShell(
   const sideToggleBtn = root.querySelector<HTMLElement>("[data-wb-toggle-side]");
   const minimizeBtn = root.querySelector<HTMLElement>("[data-wb-minimize]");
   const closeBtn = root.querySelector<HTMLElement>("[data-wb-close]");
+  const openSpotlightBtn = root.querySelector<HTMLElement>("[data-wb-open-spotlight]");
   if (!railEl || !centerEl || !sideEl || !sideBodyEl) {
     throw new Error("workbench shell markup is missing an expected mount point");
   }
@@ -273,6 +327,19 @@ export function mountWorkbenchShell(
   };
 
   const selectProject = (projectId: string, conversationId?: string) => {
+    // G-desktop 止血批 3：本窗正显示「已登出」整窗态时，任何想让它去拉数据的调用（rail 点击/深链/
+    // 冷启动兜底,见 boot.ts 的三路调用方）都先在这里截住——不能顺着往下发一个带废 token 的请求。
+    // 如果登出标记这时候已经被清掉（用户从主窗重新登录过了），最简单可靠的恢复路径是整窗重载：
+    // 这个 shell 实例的三栏子控制器已经在 showLoggedOut() 里整批 dispose 过，原地"复活"等于把
+    // mountWorkbenchShell 的挂载逻辑重写一遍，不如直接 reload 让 boot() 走一次干净的正常挂载——
+    // 如果这次调用本身就带着一个真实的深链目标，pending-deep-link.ts 的 stash 机制会在 reload 后
+    // 原样把它接回来，不丢上下文。仍处于登出态就什么都不做，继续晾着那张「已登出」卡片。
+    if (loggedOut) {
+      if (!isDesktopLoggedOutFlagSet(doc.defaultView?.localStorage)) {
+        doc.defaultView?.location.reload();
+      }
+      return;
+    }
     const my = ++vmRequestGen;
     // 换项目时回到默认的主区群聊标签——上一个项目的中栏标签对新项目没有意义。
     store.setState({
@@ -613,6 +680,18 @@ export function mountWorkbenchShell(
     // 销毁窗口——和主窗/桌宠窗一致，避免下次 open_workbench 还要重新起窗口。
     void windowBridge?.hide?.();
   });
+  // G-desktop 止血批 5：顶栏「打开聚焦盒」——唤起 main 窗口（苹果聚焦盒 UI 就长在那个窗口上，工作台
+  // 自己不重造一份）。show_main_window 是 main.rs 已注册的既有 command（托盘菜单/单实例冷启动/深链都
+  // 复用同一个 ShellWindowControlAction::ShowAndFocus 计划——show + focus 主窗），这里直接 invoke，
+  // 不新增 Rust 侧 command。resolveDesktopTauriInvoke 无 Tauri 时返回 undefined，按钮点了静默无效果
+  // （同这个文件其它窗口控制按钮一致的降级手感，不弹错误——这就是个便捷入口，不是关键路径）。
+  openSpotlightBtn?.addEventListener("click", () => {
+    // resolveDesktopTauriInvoke() 不传 scope——跟 boot.ts/spotlight/views/workbench-open.ts 等既有
+    // 调用点一致，用它自己的默认 globalThis 兜底（它的 scope 类型是具名的 DesktopWindowControlsScope
+    // 形状，不是 unknown，传 doc.defaultView 会撞 TS 的弱类型结构检查，不值得为这一个按钮改公共签名）。
+    const invoke = resolveDesktopTauriInvoke();
+    void Promise.resolve(invoke?.("show_main_window")).catch(() => undefined);
+  });
   // R12 验收 F-02 修复：`-webkit-app-region:drag` 是 Electron 的私有属性，WKWebView/Tauri 根本不认——
   // 真机上标题栏四次拖动窗口坐标纹丝不动（验收证据 F-02-window-bounds.txt）。真正的拖动要在 mousedown
   // 时调 Tauri Window API 的 startDragging（window-bridge.ts 批 1 起就有这个方法，一直没接线）。
@@ -628,20 +707,50 @@ export function mountWorkbenchShell(
     void windowBridge?.startDragging?.();
   });
 
+  // 三栏子控制器的整批放手——真正的窗口卸载（dispose）和「已登出」整窗替换（showLoggedOut）都要做
+  // 这同一件事：停掉 chat 的 SSE 连接、网盘/军团总览视图、rail 的后台活动、右栏三个 owner 控制器，
+  // 不再是各写一份、两处容易悄悄漂移。
+  const disposeActiveSubviews = () => {
+    railHandle.dispose();
+    disposeChat();
+    disposeDrive();
+    disposeArmyOverview();
+    disposeProjectSettings();
+    driveSidePanel.dispose();
+    armyPanel.dispose();
+    proposalPanel.dispose();
+  };
+
+  // G-desktop 止血批 3：跨窗口登出广播落地处——见 WorkbenchShellHandle.showLoggedOut 顶部注释、
+  // boot.ts 的 bindWorkbenchLoggedOutListener。幂等（已经在登出态/真正卸载后再调都是空操作），
+  // 不复用主 dispose() 的 disposed 标记——工作台窗是常驻可复用的窗口实例，登出只是"这个窗口手里的
+  // 身份失效了"，不是"这个窗口要被销毁了"，两件事分开判断，真正的 dispose() 仍然只在窗口真卸载时调。
+  const showLoggedOut = () => {
+    if (disposed || loggedOut) {
+      return;
+    }
+    loggedOut = true;
+    disposeActiveSubviews();
+    unsubscribe();
+    root.innerHTML = renderWorkbenchDocumentHead() + renderWorkbenchLoggedOutHtml(input.locale);
+  };
+
   return {
     store,
     selectProject,
+    showLoggedOut,
     dispose: () => {
+      if (disposed) {
+        return;
+      }
       disposed = true;
-      unsubscribe();
-      railHandle.dispose();
-      disposeChat();
-      disposeDrive();
-      disposeArmyOverview();
-      disposeProjectSettings();
-      driveSidePanel.dispose();
-      armyPanel.dispose();
-      proposalPanel.dispose();
+      // loggedOut 态下 disposeActiveSubviews()/unsubscribe() 在 showLoggedOut() 里已经跑过一次——
+      // 不确定三栏子控制器各自的 dispose() 对重复调用是否都幂等，干脆不重复调，比假设"应该是幂等的"
+      // 更诚实（04 §4 铁律 3 的延伸：没把握的地方不装懂）。
+      if (!loggedOut) {
+        disposeActiveSubviews();
+        unsubscribe();
+      }
     }
   };
 }
