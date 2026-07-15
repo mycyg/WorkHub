@@ -43,6 +43,7 @@ use tauri::{
     PhysicalPosition as TauriPhysicalPosition, State, WebviewUrl, WebviewWindowBuilder,
 };
 use tauri_plugin_deep_link::DeepLinkExt;
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 #[cfg(target_os = "macos")]
 use objc2_app_kit::NSWindow;
@@ -803,6 +804,45 @@ fn execute_window_control(
     }
 
     Ok(plan)
+}
+
+// R15：全局热键 Option+Space（macOS 上 Alt 键位即 Option；不占系统级 Cmd+Space）唤起/收起聚焦盒——
+// 桌宠常驻小窗/托盘之外补上"聚焦盒"这个名字暗示的 Spotlight 心智模型的第二条召唤路径。用
+// on_shortcut() 而非插件 Builder::with_shortcut()：后者在插件自己的 setup 阶段用 `?` 直接把
+// register() 的失败上抛，会让整个 tauri::Builder::run() 失败（应用起不来）；on_shortcut() 把
+// Result 交回调用方，可以自行降级——热键被别的应用占用时只记日志，应用照常启动。
+fn install_workhub_global_hotkey(app: &tauri::AppHandle) -> Result<(), String> {
+    let shortcut = Shortcut::new(Some(Modifiers::ALT), Code::Space);
+    app.global_shortcut()
+        .on_shortcut(shortcut, |app, _shortcut, event| {
+            // 全局热键的按下/松开各触发一次事件；只在按下时切换，否则一次按键会触发两次 toggle
+            // （按下唤起、松开又立刻收起）。
+            if event.state == ShortcutState::Pressed {
+                toggle_main_window_from_global_hotkey(app);
+            }
+        })
+        .map_err(|error| format!("failed to register global hotkey Option+Space: {error}"))
+}
+
+// Spotlight 手感：主窗已聚焦（前台且拿到焦点）→ 收起；否则（不可见，或可见但焦点被别的应用抢走）
+// → 唤起并聚焦。故意用 is_focused() 而非泛用的 ShellWindowControlAction::Toggle（它只看 is_visible()）
+// ——聚焦盒常驻可见、alwaysOnTop，"可见但没聚焦"是最常见的起点，此时应当唤起而不是被 Toggle 藏起来。
+// 复用既有的 show_main_window_plan/hide_main_window_plan + execute_window_control 执行路径
+// （跟托盘/深链/通知同一条控制协议），不另造第二套窗口控制协议。
+fn toggle_main_window_from_global_hotkey(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        eprintln!("WorkHub: global hotkey fired but the main window is unavailable");
+        return;
+    };
+    let is_focused = window.is_focused().unwrap_or(false);
+    let plan = if is_focused {
+        hide_main_window_plan(ShellWindowControlSource::Setting)
+    } else {
+        show_main_window_plan(ShellWindowControlSource::Setting)
+    };
+    if let Err(error) = execute_window_control(app, plan) {
+        eprintln!("WorkHub: failed to apply global hotkey window control: {error}");
+    }
 }
 
 fn prepare_pet_window_on_startup(app: &tauri::App) -> Result<(), String> {
@@ -1596,6 +1636,11 @@ fn main() {
         }))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
+        // R15：全局热键宿主插件——只登记插件本身（不预注册任何 accelerator,见插件的
+        // Builder::with_shortcut，那条路径会在 setup 阶段用 `?` 直接让 register() 失败上抛,
+        // 导致整个 .run() 失败/应用起不来）。真正的 Option+Space 注册放在下面 .setup() 里，
+        // 用 on_shortcut() 的 Result 手动兜底降级，绝不让"热键被别的应用占用"炸掉整个启动。
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(Mutex::new(PetWindowRuntimeState::default()))
         .manage(Mutex::new(WorkHubLocale::default()))
         // R8：webview bootstrap 拿到的设备令牌经 set_client_token 写入此处，供 Rust SSE worker 鉴权（修 Cuu 重连中）。
@@ -1636,6 +1681,13 @@ fn main() {
             prepare_pet_window_on_startup(app)?;
             install_workhub_tray(app, shell_config.locale)?;
             install_workhub_deep_links(app)?;
+            // R15：全局热键唤起聚焦盒（交互规划 04 §二第 2 项）——注册失败（多半是 Option+Space 被
+            // 别的应用占用）只记日志降级，绝不 panic/绝不让应用起不来：托盘/常驻小窗仍是保底触达路径。
+            if let Err(error) = install_workhub_global_hotkey(&app.handle()) {
+                eprintln!(
+                    "WorkHub: {error}; continuing without the global hotkey (tray icon and the docked spotlight window remain available)"
+                );
+            }
             if workhub_sse_disabled_from_env(|name| std::env::var(name).ok()) {
                 eprintln!("WorkHub SSE worker disabled by {WORKHUB_DISABLE_SSE_ENV}.");
             } else {
