@@ -2118,6 +2118,74 @@ test("renderMessageHtml does not mistake an unrelated system_event for a risk_di
   assert.doesNotMatch(html, /wh-wb-risk-digest/u);
 });
 
+// —— R15 批 I2：决策 digest 卡（pending_digest system_event，判据 content.kind）—— //
+
+function pendingDigestMessage(overrides: Partial<Record<string, unknown>> = {}): ConversationMessageVM {
+  return baseMessage({
+    id: "m-digest-1",
+    kind: "system_event",
+    sender_type: "cuu",
+    sender_user_id: null,
+    content: {
+      kind: "pending_digest",
+      pending_count: 3,
+      oldest_days: 2,
+      summary: "待你拍板 3 件，最久 2 天",
+      target_url: "/approvals",
+      ...overrides
+    }
+  });
+}
+
+test("renderMessageHtml renders a pending_digest as its own card with count + oldest age and an Open-inbox button when the host wires it", () => {
+  const ctx: ChatRenderContext = { ...ctxWith([]), pendingDigestInboxEnabled: true };
+  const html = renderMessageHtml(pendingDigestMessage(), ctx);
+  assert.match(html, /待你拍板/u);
+  assert.match(html, /待拍板 3 件 · 最久 2 天/u);
+  assert.match(html, /data-wb-chat-open-inbox/u);
+  assert.match(html, /打开收件箱/u);
+  // 是专属卡，不是通用系统事件单行。
+  assert.doesNotMatch(html, /wh-wb-chat-sysline"/u);
+});
+
+test("renderMessageHtml drops the oldest-age clause when oldest_days is 0 (today's items)", () => {
+  const ctx: ChatRenderContext = { ...ctxWith([]), pendingDigestInboxEnabled: true };
+  const html = renderMessageHtml(pendingDigestMessage({ pending_count: 1, oldest_days: 0 }), ctx);
+  assert.match(html, /待拍板 1 件/u);
+  assert.doesNotMatch(html, /最久/u);
+});
+
+test("renderMessageHtml does not render the Open-inbox button when the host did not wire onOpenInbox (no dead button)", () => {
+  const html = renderMessageHtml(pendingDigestMessage(), ctxWith([]));
+  assert.match(html, /待拍板 3 件 · 最久 2 天/u);
+  assert.doesNotMatch(html, /data-wb-chat-open-inbox/u);
+  assert.doesNotMatch(html, /打开收件箱/u);
+});
+
+test("renderMessageHtml renders a zeroed pending_digest as a low-key single line, not a card", () => {
+  const ctx: ChatRenderContext = { ...ctxWith([]), pendingDigestInboxEnabled: true };
+  const html = renderMessageHtml(pendingDigestMessage({ pending_count: 0, oldest_days: 0, summary: "待你拍板 0 件" }), ctx);
+  assert.match(html, /wh-wb-chat-sysline"/u);
+  assert.match(html, /待拍板已清空/u);
+  assert.doesNotMatch(html, /data-wb-chat-open-inbox/u);
+  assert.doesNotMatch(html, /wh-wb-chat-actioncard--deliverable/u);
+});
+
+test("renderMessageHtml renders the pending_digest in English too", () => {
+  const ctx: ChatRenderContext = { locale: "en-US", members: new Map(), currentUserId: undefined, pendingDigestInboxEnabled: true };
+  const html = renderMessageHtml(pendingDigestMessage({ pending_count: 5, oldest_days: 1 }), ctx);
+  assert.match(html, /5 waiting on you · oldest 1 day/u);
+  assert.match(html, /Open inbox/u);
+});
+
+test("renderMessageHtml falls back to the plain sysline for a pending_digest with a malformed field (honest degrade)", () => {
+  const html = renderMessageHtml(pendingDigestMessage({ pending_count: "three" }), ctxWith([]));
+  assert.match(html, /wh-wb-chat-sysline"/u);
+  assert.doesNotMatch(html, /wh-wb-chat-actioncard--deliverable/u);
+  // The plain sysline still reads the summary field honestly.
+  assert.match(html, /待你拍板 3 件，最久 2 天/u);
+});
+
 // —— R14 批 PERF（§3 方案 B）：渲染输出的结构性哨兵 —— //
 // 不断言绝对毫秒数（CI 硬件方差会 flaky，见 08-perf-design.md §3）——只断言"一份固定的混合消息窗口拼出来
 // 的标签数不超过一个上限"，作为"有人把工具条从 10 个按钮涨到 50 个"或"折叠判断改坏导致长文本不再折叠"

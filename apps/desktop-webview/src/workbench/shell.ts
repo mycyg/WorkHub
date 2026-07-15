@@ -463,6 +463,13 @@ export function mountWorkbenchShell(
       });
   };
 
+  // R15 批 I1/I2：切中栏到决策收件箱——rail 顶部「待拍板」入口与聊天流 digest 卡「打开收件箱」共用一处，
+  // 打开即顺手刷一次计数（对齐权威）。
+  const openInbox = () => {
+    store.setState({ centerTab: "inbox" });
+    refreshInboxBadge();
+  };
+
   // R15 批 A6（rail 未读红点 · 实时性）：workbench 订一条 /api/push/stream/me，只消费会话消息类
   // notification.created（带 conversation_id）——收到就给对应会话的未读本地 +1（近似，不知道服务端精确
   // 聚合数，30s DM 兜底刷新 + 打开清零把它拉回权威），让左栏红点在 workbench 只开着、没打开那条会话时
@@ -738,7 +745,9 @@ export function mountWorkbenchShell(
           }),
         onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId }),
         onApproveProposal: approveProposalFromChat,
-        onRequestChangesProposal: requestChangesProposalFromChat
+        onRequestChangesProposal: requestChangesProposalFromChat,
+        // R15 批 I2（决策 digest 卡）：聊天流里的 pending_digest 卡「打开收件箱」→ 切中栏到 I1 收件箱视图。
+        onOpenInbox: openInbox
       });
       chatMountKey = key;
       return;
@@ -905,7 +914,9 @@ export function mountWorkbenchShell(
         // R15 批 A6：产出卡内联「批准」/「打回」——批准复用 reviewProposalWithoutMerge，打回打开右栏聚焦理由。
         onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId }),
         onApproveProposal: approveProposalFromChat,
-        onRequestChangesProposal: requestChangesProposalFromChat
+        onRequestChangesProposal: requestChangesProposalFromChat,
+        // R15 批 I2（决策 digest 卡）：聊天流里的 pending_digest 卡「打开收件箱」→ 切中栏到 I1 收件箱视图。
+        onOpenInbox: openInbox
       });
       chatMountKey = key;
       // R13 批 P1：见上面协同会话分支同款注释——主区会话情境存在时，情境面板默认态挂军团三区。
@@ -986,10 +997,7 @@ export function mountWorkbenchShell(
     onOpenArmyOverview: () => store.setState({ centerTab: "army-overview" }),
     // R15 批 I1（决策收件箱）：rail 顶部「待拍板」一级入口点击路由——切 store.centerTab 到 "inbox"，
     // renderCenter 挂收件箱视图；顺手刷一次徽标（打开即对齐权威计数）。
-    onOpenInbox: () => {
-      store.setState({ centerTab: "inbox" });
-      refreshInboxBadge();
-    },
+    onOpenInbox: openInbox,
     // R13 批 P3：项目行「项目设置」齿轮点击路由——切 store.centerTab，renderCenter 的订阅回调
     // 负责挂 settings/view.ts 真视图（治理表单）。
     onOpenProjectSettings: () => store.setState({ centerTab: "project-settings" }),

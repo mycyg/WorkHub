@@ -211,6 +211,10 @@ export type ChatRenderContext = {
   proposalInlineActionsEnabled?: boolean;
   busyProposalIds?: ReadonlySet<string>;
   proposalActionErrors?: ReadonlyMap<string, string>;
+  // R15 批 I2（决策 digest 卡）：pending_digest 系统卡的「打开收件箱」按钮是否可点——宿主（shell.ts）
+  // 接了 onOpenInbox 才渲这个按钮（挂 I1 的中栏收件箱视图），没接（测试/其它宿主）就只渲文案，不摆一个
+  // 点了没反应的假入口（04 §4 铁律 3）。缺省安全（既有调用点/测试不渲按钮）。
+  pendingDigestInboxEnabled?: boolean;
   // R14 批 FEEDBACK：Cuu 文字消息反馈的一句话备注编辑框——点击持久 badge 展开（一次只展开一条），
   // draft 是当前草稿，error 是保存失败（如 note 超长/命中注入短语拦截）的温和行内提示。缺省（没有正在
   // 编辑的备注）时只渲染 badge，不渲输入框。瞬态、不落库，由 view.ts 持有（同 ctx.editing 的既有模式）。
@@ -796,6 +800,70 @@ function renderRiskDigestCardHtml(
   return `<div class="wh-wb-chat-actioncard wh-wb-risk-digest"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${summaryLine}${sectionsHtml}${detailNote}${collapseToggle}${timestamp}</div>`;
 }
 
+// R15 批 I2（决策 digest 卡专属渲染）：批 A3 的 pending_digest system_event（apps/api/src/services/
+// approval-digest.ts 的 buildPendingDigestContent，content = {kind:'pending_digest', pending_count,
+// oldest_days, summary:'待你拍板 N 件…', target_url:'/approvals', previous_digest_message_id?}）此前走
+// 通用 system_event 单行渲染。这里给它专属卡：「待拍板 N 件 · 最久 X 天」+「打开收件箱」（挂 I1 的中栏
+// 收件箱视图，data-wb-chat-open-inbox → view.ts → shell 切 centerTab='inbox'）。注意判据是 content.kind
+// （不是其它 digest 用的 content.event）。归零态（pending_count===0——服务端归零其实是墓碑收尾、不发新卡，
+// 见 approval-digest.ts 的收窄机制，这里仍防御性处理）渲成低调一行。墓碑旧卡（数字变化时服务端墓碑再发
+// 新卡）已被服务层归一成 kind:'text'+deleted_at，走既有 renderTombstoneRowHtml，不进这个分支（见
+// renderMessageHtml 的 deleted_at 判断在 system_event 归一之后——system_event 只在活卡上出现）。
+type PendingDigestContent = {
+  pendingCount: number;
+  oldestDays: number;
+};
+
+function pendingDigestContentFrom(content: Record<string, unknown>): PendingDigestContent | undefined {
+  if (content["kind"] !== "pending_digest") {
+    return undefined;
+  }
+  const pendingCount = content["pending_count"];
+  const oldestDays = content["oldest_days"];
+  if (
+    typeof pendingCount !== "number"
+    || !Number.isFinite(pendingCount)
+    || pendingCount < 0
+    || typeof oldestDays !== "number"
+    || !Number.isFinite(oldestDays)
+    || oldestDays < 0
+  ) {
+    // 形状不对/缺字段——诚实降级回既有单行渲染（renderSystemEventLineHtml 会读 content.summary，只要
+    // summary 还在，降级后依然可读），不假装认识一份残缺的 digest。
+    return undefined;
+  }
+  return { pendingCount: Math.floor(pendingCount), oldestDays: Math.floor(oldestDays) };
+}
+
+function renderPendingDigestCardHtml(
+  message: Extract<ConversationMessageVM, { kind: "system_event" }>,
+  digest: PendingDigestContent,
+  ctx: ChatRenderContext
+): string {
+  const zh = ctx.locale === "zh-CN";
+  const timestamp = `<div class="wh-wb-chat-actioncard-note">${formatMessageTime(message.created_at, ctx.locale)}</div>`;
+  // 归零态：低调一行（同系统事件单行布局），不摆一张「0 件」的空卡骚扰。
+  if (digest.pendingCount === 0) {
+    const text = zh ? "待拍板已清空" : "All caught up on decisions";
+    return `<div class="wh-wb-chat-sysline"><span>${escapeHtml(text)}</span><span class="wh-wb-chat-sysline-tm">${formatMessageTime(message.created_at, ctx.locale)}</span></div>`;
+  }
+  const header = zh ? "待你拍板" : "Decisions waiting on you";
+  const countText = zh ? `待拍板 ${digest.pendingCount} 件` : `${digest.pendingCount} waiting on you`;
+  const oldestText =
+    digest.oldestDays > 0
+      ? zh
+        ? ` · 最久 ${digest.oldestDays} 天`
+        : ` · oldest ${digest.oldestDays} ${digest.oldestDays === 1 ? "day" : "days"}`
+      : "";
+  const summaryLine = `<div class="wh-wb-chat-actioncard-note">${escapeHtml(`${countText}${oldestText}`)}</div>`;
+  // 「打开收件箱」只在宿主接了 onOpenInbox 时才渲（04 §4 铁律 3：没真接线不摆假按钮）。
+  const openButton =
+    ctx.pendingDigestInboxEnabled === true
+      ? `<div class="wh-wb-chat-actioncard-actions"><button type="button" class="wh-wb-chat-actioncard-open" data-wb-chat-open-inbox>${zh ? "打开收件箱" : "Open inbox"}</button></div>`
+      : "";
+  return `<div class="wh-wb-chat-actioncard wh-wb-chat-actioncard--deliverable"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${summaryLine}${openButton}${timestamp}</div>`;
+}
+
 // R12 批8：长消息折叠——超过阈值的文本消息默认只渲染预览片段 + 「展开全文」，避免超长粘贴/观察者
 // 摘要把单条气泡撑成整屏。展开态由 view.ts 的 expandedMessageIds 驱动（纯函数，这里不持有状态）。
 const LONG_TEXT_FOLD_THRESHOLD_CHARS = 800;
@@ -1061,6 +1129,11 @@ export function renderMessageHtml(message: ConversationMessageVM, ctx: ChatRende
     const riskDigest = riskDigestContentFrom(message.content);
     if (riskDigest) {
       return renderRiskDigestCardHtml(message, riskDigest, ctx);
+    }
+    // R15 批 I2：决策 digest 卡（pending_digest，判据 content.kind）——见 renderPendingDigestCardHtml 顶部注释。
+    const pendingDigest = pendingDigestContentFrom(message.content);
+    if (pendingDigest) {
+      return renderPendingDigestCardHtml(message, pendingDigest, ctx);
     }
     return renderSystemEventLineHtml(message, ctx);
   }
