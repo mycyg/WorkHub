@@ -5,6 +5,8 @@ import type { ConversationMessageVM, WorkbenchPageVM } from "@workhub/contracts"
 
 import {
   avatarTileHtml,
+  formatTurnElapsed,
+  formatTurnTokens,
   membersById,
   modePatchFailedText,
   renderChatEmptyStateHtml,
@@ -244,6 +246,79 @@ test("renderMessageHtml escapes text content — no raw HTML injection from mess
   const html = renderMessageHtml(baseMessage({ content: { text: "<img src=x onerror=alert(1)>" } }), ctxWith([]));
   assert.doesNotMatch(html, /<img/u);
   assert.match(html, /&lt;img/u);
+});
+
+// —— R16-W1（工作台聊天流升级）：模型归因 pill + 尾部元信息行（复制 · 耗时 · tokens） —— //
+
+test("renderMessageHtml renders the model pill + copy + elapsed·tokens meta row on a Cuu text reply that carries the metadata", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { text: "重写好了", model: "deepseek-v4", usage_tokens: 12_400, elapsed_ms: 42_000 }
+    }),
+    ctxWith([])
+  );
+  assert.match(html, /wh-wb-chat-model-pill/u);
+  assert.match(html, /deepseek-v4/u);
+  assert.match(html, /data-wb-chat-copy="m1"/u);
+  assert.match(html, /42s/u);
+  assert.match(html, /12\.4k tokens/u);
+});
+
+test("renderMessageHtml omits the model pill and stats when a Cuu reply lacks the metadata, but still offers copy", () => {
+  const html = renderMessageHtml(
+    baseMessage({ sender_type: "cuu", sender_user_id: null, content: { text: "好的" } }),
+    ctxWith([])
+  );
+  assert.doesNotMatch(html, /wh-wb-chat-model-pill/u);
+  assert.doesNotMatch(html, /wh-wb-chat-cuu-meta-stats/u);
+  // 复制按钮对任何 Cuu 文字回应都在（现成剪贴板便利），只是没有耗时/tokens 数据可显示。
+  assert.match(html, /data-wb-chat-copy="m1"/u);
+});
+
+test("renderMessageHtml renders only the tokens stat (no elapsed) when usage is present but elapsed is not", () => {
+  const html = renderMessageHtml(
+    baseMessage({ sender_type: "cuu", sender_user_id: null, content: { text: "查到了", usage_tokens: 800 } }),
+    ctxWith([])
+  );
+  assert.match(html, /800 tokens/u);
+  assert.doesNotMatch(html, / · /u);
+});
+
+test("renderMessageHtml does not attach the model pill or meta row to a human message", () => {
+  const html = renderMessageHtml(
+    baseMessage({ sender_type: "user", sender_user_id: "user-1", content: { text: "hi", model: "deepseek-v4" } }),
+    ctxWith([member({ user_id: "user-1", nickname: "张三" })])
+  );
+  assert.doesNotMatch(html, /wh-wb-chat-model-pill/u);
+  assert.doesNotMatch(html, /wh-wb-chat-cuu-meta/u);
+});
+
+test("formatTurnElapsed / formatTurnTokens produce compact human-readable turn stats across ranges", () => {
+  assert.equal(formatTurnElapsed(400), "0.4s");
+  assert.equal(formatTurnElapsed(3_400), "3.4s");
+  assert.equal(formatTurnElapsed(42_000), "42s");
+  assert.equal(formatTurnElapsed(90_000), "1m 30s");
+  assert.equal(formatTurnElapsed(120_000), "2m");
+  assert.equal(formatTurnElapsed(-5), "");
+  assert.equal(formatTurnTokens(800), "800");
+  assert.equal(formatTurnTokens(12_400), "12.4k");
+  assert.equal(formatTurnTokens(2_500_000), "2.5M");
+  assert.equal(formatTurnTokens(-1), "");
+});
+
+test("renderMessageHtml keeps the model pill but drops the meta row on a Cuu clarifying question", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { text: "你指的是哪个项目？", is_clarifying_question: true, model: "deepseek-v4", elapsed_ms: 3000 }
+    }),
+    ctxWith([])
+  );
+  assert.match(html, /wh-wb-chat-model-pill/u);
+  assert.doesNotMatch(html, /wh-wb-chat-cuu-meta/u);
 });
 
 // —— R12 批8：超长文本消息折叠 —— //

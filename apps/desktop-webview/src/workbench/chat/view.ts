@@ -3024,6 +3024,18 @@ export function mountChatView(
       retryPending(retryBtn.dataset.wbChatRetryPending);
       return;
     }
+    // R16-W1（工作台聊天流升级）：Cuu 文字回应尾部「复制」——按 message id 取当前 VM 的正文写进剪贴板
+    // （不把正文塞进 DOM data 属性，避免长文重复占内存）。剪贴板不可用（老 webview / 非安全上下文）时静默
+    // 吞掉，不弹错——这是纯锦上添花的便利动作。
+    const copyBtn = target.closest<HTMLElement>("[data-wb-chat-copy]");
+    if (copyBtn?.dataset.wbChatCopy) {
+      const targetId = copyBtn.dataset.wbChatCopy;
+      const source = messages.find((candidate) => candidate.id === targetId);
+      if (source && source.kind === "text") {
+        void navigator.clipboard?.writeText?.(source.content.text).catch(() => {});
+      }
+      return;
+    }
     const fileCardBtn = target.closest<HTMLElement>("[data-wb-chat-open-file]");
     if (fileCardBtn?.dataset.wbChatOpenFile) {
       input.onOpenDriveFile?.({
