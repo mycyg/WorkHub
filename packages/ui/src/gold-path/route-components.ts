@@ -4434,6 +4434,23 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
         <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "projectHome.github"))}</h3>
         ${githubBody}
       </section>`;
+  // G4 #9（E3 web 只读入口）：规划草案小区块——SSR 出骨架，browser.ts 拉 GET /api/projects/:id/plan-drafts
+  // 后填 pending_review 计数 + 最新草案状态（只读；起草/审批/物化都在桌面客户端）。取数失败/无权静默降级。
+  const plansSection = `<section class="wh-card wh-r4-route-card" data-r17-project-home-plans="true" data-r17-project-home-plans-project="${escapeHtml(project.id)}">
+        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "规划草案" : "Plan drafts")}</h3>
+        <div data-r17-project-home-plans-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载规划草案…" : "Loading plan drafts…")}</p></div>
+      </section>`;
+  // G4 #24（项目自定义指令 web 入口）：SSR 出骨架，browser.ts 拉 GET /api/projects/:id/instructions
+  // 后按权限渲可编辑 textarea（失焦 PATCH 保存）或只读说明（403）。与桌面 W4b1 同一错误矩阵。
+  const instructionsSection = `<section class="wh-card wh-r4-route-card" data-r17-project-home-instructions="true" data-r17-project-home-instructions-project="${escapeHtml(project.id)}">
+        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "自定义指令" : "Custom instructions")}</h3>
+        <p class="wh-subtle">${escapeHtml(
+          zh
+            ? "该项目的所有 AI 对话与自动执行都会读到这段指令；与系统工作纪律冲突时以纪律为准。"
+            : "Every AI conversation and automated run in this project reads this text; when it conflicts with the system's working discipline, the discipline wins."
+        )}</p>
+        <div data-r17-project-home-instructions-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载自定义指令…" : "Loading custom instructions…")}</p></div>
+      </section>`;
   const rows = vm.open_work_items.length
     ? vm.open_work_items.map((item) => `<a class="wh-r4-route-row" href="${escapeHtml(safeHref(item.href))}" data-r8-project-home-item="${escapeHtml(item.id)}" data-r8-project-home-item-code="${escapeHtml(item.code)}">
       <div>
@@ -4484,6 +4501,8 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
         <a class="wh-r4-route-kicker" href="${escapeHtml(safeHref(vm.actions.open_drive.href))}" data-r8-project-home-files-all="true">${escapeHtml(vm.actions.open_drive.label)} →</a>
       </section>
       ${githubSection}
+      ${plansSection}
+      ${instructionsSection}
       <a class="wh-r4-route-kicker" href="/projects" data-r8-project-home-back="true">${escapeHtml(routeT(locale, "projectHome.back"))}</a>
     </section>`
   });
