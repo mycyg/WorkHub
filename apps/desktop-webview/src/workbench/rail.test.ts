@@ -209,6 +209,29 @@ test("the kanban leaf is a real, clickable button with a New badge (batch W2)", 
   assert.match(selected.match(/<button[^>]*data-wb-open-kanban[^>]*>/u)![0], / sel/u);
 });
 
+// R16 批 W2：与时间线同级的「日程」树叶，切中栏到 schedule 标签（见 shell.ts 的 onOpenSchedule）——真按钮，
+// 选中态跟 centerTab === "schedule" 走，首发带「新」小徽标（复用现有 wh-wb-leaf-count 徽标类）。
+test("the schedule leaf is a real, clickable button with a New badge (batch W2)", () => {
+  const vm = workbenchVm();
+  const html = renderProjectTreeHtml({
+    projects: [project()],
+    selectedProjectId: project().id,
+    vm,
+    locale: "zh-CN"
+  });
+  const leaf = html.match(/<button[^>]*data-wb-open-schedule[^>]*>[^]*?<\/button>/u)![0];
+  assert.match(leaf, /日程/u);
+  assert.match(leaf, /wh-wb-leaf-count">新</u);
+  const selected = renderProjectTreeHtml({
+    projects: [project()],
+    selectedProjectId: project().id,
+    vm,
+    locale: "zh-CN",
+    centerTab: "schedule"
+  });
+  assert.match(selected.match(/<button[^>]*data-wb-open-schedule[^>]*>/u)![0], / sel/u);
+});
+
 function leafTag(html: string, marker: string): string {
   const match = html.match(new RegExp(`<button[^>]*${marker}[^>]*>`, "u"));
   assert.ok(match, `expected to find a <button> tag carrying ${marker}`);
