@@ -32,11 +32,31 @@ export type EditorReadyUi = {
   expanded: ReadonlySet<number>;
 };
 
+// #13（同提议多文件）：编辑器顶部文件切换条的一格。adds/dels 只在该文件的 diff 被加载过后才有值
+// （view.ts 逐访问缓存，不预取全部 diff——避免一开编辑器就打 N 个 diff 请求）；未加载时退回 change_type
+// 短标签当轻量 diffstat 代理，诚实不编造行数。
+export type EditorFileTab = {
+  path: string;
+  filename: string;
+  changeType: ProposalChangeDiffVM["change_type"];
+  adds?: number;
+  dels?: number;
+};
+
+// 同一份提议里所有可逐行对照的文本变动文件 + 当前激活的那个（view.ts 维护，render 只读）。
+export type EditorFilesState = {
+  tabs: EditorFileTab[];
+  activePath: string;
+};
+
 export type EditorViewState =
   | { mode: "loading"; filename: string }
   | { mode: "error"; filename: string; message: string }
   | { mode: "unsupported"; filename: string }
-  | { mode: "ready"; diff: ProposalChangeDiffVM; actions: EditorReadyActions; ui: EditorReadyUi };
+  // #12（合并撞真实冲突）：merge_conflict 分支——复用 Spotlight 既有逐冲突解决面板的 HTML
+  // （proposalMergeConflictHtml，view.ts 传入已构好的可信 HTML 串），不再一律渲「状态变了刷新看看」。
+  | { mode: "conflict"; filename: string; conflictHtml: string }
+  | { mode: "ready"; diff: ProposalChangeDiffVM; actions: EditorReadyActions; ui: EditorReadyUi; files?: EditorFilesState };
 
 const STATUS_LABEL: Record<EditorProposalStatus, [string, string]> = {
   opened: ["变更待审", "Open"],
@@ -53,6 +73,56 @@ function statusLabel(status: EditorProposalStatus, zh: boolean): string {
 // status → 状态标签的语气修饰符（对齐右栏提议 chip 的语气分层）。
 function statusTone(status: EditorProposalStatus): string {
   return status === "merged" ? "merged" : status === "rejected" ? "rejected" : status === "reviewed" ? "reviewed" : "opened";
+}
+
+// #13：文件切换条的每格 diffstat。加载过 diff 的文件显真实 +adds/−dels；没加载过的退回 change_type 短标签。
+const CHANGE_TYPE_SHORT: Record<ProposalChangeDiffVM["change_type"], [string, string]> = {
+  created: ["新增", "New"],
+  updated: ["修改", "Edit"],
+  deleted: ["删除", "Del"],
+  renamed: ["重命名", "Ren"],
+  moved: ["移动", "Move"],
+  replaced: ["替换", "Repl"],
+  generated: ["生成", "Gen"]
+};
+
+function fileTabStatHtml(tab: EditorFileTab, zh: boolean): string {
+  if (tab.adds !== undefined || tab.dels !== undefined) {
+    const adds = tab.adds ?? 0;
+    const dels = tab.dels ?? 0;
+    return `<span class="wh-wb-ed-ftab-stat"><span class="wh-wb-ed-ftab-add">+${adds}</span> <span class="wh-wb-ed-ftab-del">−${dels}</span></span>`;
+  }
+  const entry = CHANGE_TYPE_SHORT[tab.changeType];
+  return `<span class="wh-wb-ed-ftab-stat wh-wb-ed-ftab-stat--type">${escapeHtml(zh ? entry[0] : entry[1])}</span>`;
+}
+
+// #13：同提议含多个文本变动文件时的顶部切换条（文件名 chips + diffstat + 上一个/下一个）。单文件不渲。
+function filesBarHtml(files: EditorFilesState | undefined, zh: boolean): string {
+  if (!files || files.tabs.length <= 1) {
+    return "";
+  }
+  const activeIdx = Math.max(0, files.tabs.findIndex((tab) => tab.path === files.activePath));
+  const atFirst = activeIdx <= 0;
+  const atLast = activeIdx >= files.tabs.length - 1;
+  const chips = files.tabs
+    .map((tab) => {
+      const active = tab.path === files.activePath;
+      return `<button type="button" class="wh-wb-ed-ftab${active ? " wh-wb-ed-ftab--active" : ""}" data-wb-ed-file="${escapeHtml(
+        tab.path
+      )}"${active ? ' aria-current="true"' : ""} title="${escapeHtml(tab.filename)}">
+        <span class="wh-wb-ed-ftab-name">${escapeHtml(tab.filename)}</span>${fileTabStatHtml(tab, zh)}</button>`;
+    })
+    .join("");
+  return `<div class="wh-wb-ed-files" data-wb-ed-files>
+    <button type="button" class="wh-wb-ed-fnav" data-wb-ed-file-prev${atFirst ? " disabled" : ""} aria-label="${
+      zh ? "上一个文件" : "Previous file"
+    }" title="${zh ? "上一个文件" : "Previous file"}">${workbenchIcons.chevronLeft}</button>
+    <div class="wh-wb-ed-ftabs">${chips}</div>
+    <button type="button" class="wh-wb-ed-fnav" data-wb-ed-file-next${atLast ? " disabled" : ""} aria-label="${
+      zh ? "下一个文件" : "Next file"
+    }" title="${zh ? "下一个文件" : "Next file"}">${workbenchIcons.chevronRight}</button>
+    <span class="wh-wb-ed-fcount">${activeIdx + 1}/${files.tabs.length}</span>
+  </div>`;
 }
 
 function headerHtml(filename: string, statusChip: string, zh: boolean): string {
@@ -172,9 +242,19 @@ export function renderEditorHtml(state: EditorViewState, locale: Locale): string
       }</div></div>
     </div>`;
   }
+  // #12：合并撞真实冲突——渲复用的逐冲突解决面板（conflictHtml 是 proposalMergeConflictHtml 产出的可信 HTML，
+  // 内含 data-prop-back 返回把手 + 各冲突选项动作，view.ts 接管点击）。没有动作条：处理走面板内的冲突动作。
+  if (state.mode === "conflict") {
+    const conflictChip = `<span class="wh-wb-ed-tag wh-wb-ed-tag--rejected">${escapeHtml(zh ? "有冲突" : "Conflict")}</span>`;
+    return `<div class="wh-wb-ed">
+      ${headerHtml(state.filename, conflictChip, zh)}
+      <div class="wh-wb-ed-scroll"><div class="wh-wb-ed-conflict" data-wb-ed-conflict>${state.conflictHtml}</div></div>
+    </div>`;
+  }
   const statusChip = `<span class="wh-wb-ed-tag wh-wb-ed-tag--${statusTone(state.actions.status)}">${escapeHtml(statusLabel(state.actions.status, zh))}</span>`;
   return `<div class="wh-wb-ed">
     ${headerHtml(state.diff.filename, statusChip, zh)}
+    ${filesBarHtml(state.files, zh)}
     <div class="wh-wb-ed-scroll">${bodyHtml(state.diff, state.ui, zh)}</div>
     ${actionsHtml(state.actions, state.ui, zh)}
   </div>`;
