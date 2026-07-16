@@ -8,6 +8,7 @@
 // 不是 CSS 藏起来，两套控件叠一起是 bug 不是冗余保险。非 macOS 维持 decorations:false 全套自绘。
 
 import type { WorkHubApiClient } from "@workhub/api-client";
+import { eventTypes } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { appleGlassDesignSystemCss } from "../design-system.js";
@@ -608,6 +609,11 @@ export function mountWorkbenchShell(
       .catch(() => {
         // 角标尽力而为——拉不到保持上一次的计数，不清零骚扰。
       });
+    // #17：中栏正开着决策收件箱时，随角标一起重拉列表——让开着的列表随实时事件/轮询同步刷新，不必切走再
+    // 切回。inboxHandle.refresh 内部有 disposed/单飞守卫，中栏不是 inbox / 未挂载时是无害空操作。
+    if (store.getState().centerTab === "inbox") {
+      inboxHandle?.refresh();
+    }
   };
 
   // R15 批 I1/I2：切中栏到决策收件箱——rail 顶部「待拍板」入口与聊天流 digest 卡「打开收件箱」共用一处，
@@ -617,16 +623,41 @@ export function mountWorkbenchShell(
     refreshInboxBadge();
   };
 
-  // R15 批 A6（rail 未读红点 · 实时性）：workbench 订一条 /api/push/stream/me，只消费会话消息类
-  // notification.created（带 conversation_id）——收到就给对应会话的未读本地 +1（近似，不知道服务端精确
-  // 聚合数，30s DM 兜底刷新 + 打开清零把它拉回权威），让左栏红点在 workbench 只开着、没打开那条会话时
-  // 也能动。当前正打开的那条会话不加（见 currentlyOpenConversationId）。断线重连语义复用会话流同一套
-  // connectConversationStream（指数退避 + 心跳看门狗）。浏览器 dev 无 fetch 时 connect 内部优雅降级。
+  // R15 批 A6（rail 未读红点 · 实时性）：workbench 订一条 /api/push/stream/me，消费两类信号——会话消息类
+  // notification.created（带 conversation_id）动左栏未读红点，决策类事件刷「待拍板」角标（见下）。断线重连
+  // 语义复用会话流同一套 connectConversationStream（指数退避 + 心跳看门狗）。浏览器 dev 无 fetch 时优雅降级。
+  //
+  // R17 #6（决策推送链）：此前 onEvent 用 `event.type !== "notification.created"` 硬过滤——escalation/budget/
+  // sync_conflict 这些真会到 /me 流的决策类事件被整条丢弃，角标只能靠 30s 轮询兜底；而同一 /me 话题在桌宠
+  // 气泡通道（desktop-cuu-runtime 的 cardFromEvent/toAttentionItem）却能正常出卡，两个消费者行为不一致。改成
+  // 决策类白名单：下面这些正是 push 路由里真会发到 topics.user(=/me) 且进 GET /attention 决策队列的类型
+  //（notifications.ts / approvals.ts / agent-memory.ts / agent-runner.ts / human-reserved-guard[#5] 的
+  // topics.user 发布面）——收到任一即刷角标（+ 中栏开着收件箱时随之刷列表，见 refreshInboxBadge）。刷新是
+  // 幂等的 GET attention，权威数仍以响应为准；决策事件稀疏，不像聊天消息高频。
+  const decisionRefreshEventTypes = new Set<string>([
+    eventTypes.escalationOpened,
+    eventTypes.budgetWarning,
+    eventTypes.budgetExhausted,
+    eventTypes.syncConflict,
+    eventTypes.permissionAsk,
+    eventTypes.permissionDecided,
+    eventTypes.permissionReassigned,
+    eventTypes.permissionExpired,
+    eventTypes.proposalOpened
+  ]);
   const meStream: ConversationStreamHandle = connectConversationStream({
     url: input.client.streams.me(),
     getClientToken,
     onEvent: (event) => {
-      if (disposed || event.type !== "notification.created") {
+      if (disposed) {
+        return;
+      }
+      // 决策类事件（升级/预算/偏好冲突/审批/提议）：全是进决策队列的类型，收到即刷角标——它们不带会话未读语义。
+      if (decisionRefreshEventTypes.has(event.type)) {
+        refreshInboxBadge();
+        return;
+      }
+      if (event.type !== eventTypes.notificationCreated) {
         return;
       }
       const data = event.data as { type?: string; conversation_id?: string } | null | undefined;
@@ -1526,6 +1557,56 @@ export function mountWorkbenchShell(
       activateSessTab(openTarget.dataset.wbTab);
     }
   });
+  // #37：会话 tab 中键点击关闭（浏览器/编辑器通用手感）——auxclick 的 button===1 即中键；点在 tab 任意处
+  // （不必命中那个小 x）都关掉整条 tab。
+  sessStripEl?.addEventListener("auxclick", (event) => {
+    if (event.button !== 1 || !(event.target instanceof HTMLElement)) {
+      return;
+    }
+    const tabTarget = event.target.closest<HTMLElement>("[data-wb-tab]");
+    if (tabTarget?.dataset.wbTab) {
+      event.preventDefault();
+      closeSessTab(tabTarget.dataset.wbTab);
+    }
+  });
+
+  // #38：会话 tab 的应用级快捷键。Cmd/Ctrl+W 关当前会话 tab；Cmd/Ctrl+1..9 切到第 N 个已开 tab。取窄：
+  // 只在「会话类中栏 + 确有对应 tab」时才 preventDefault 拦下——否则一律放行，绝不抢浏览器/系统在其它场景
+  // （非会话中栏、没有可关的 tab、组合键带 Shift/Alt）的关窗/切标签语义。桌面壳里这正是原生 tab 手感，浏览器
+  // dev 下也只有真有会话 tab 可操作时才接管。
+  const isConversationCenterTab = (tab: WorkbenchStoreState["centerTab"]): boolean =>
+    tab === "chat" || tab === "collab" || tab === "dm";
+  const onShellTabKeydown = (event: KeyboardEvent) => {
+    if (disposed || loggedOut) {
+      return;
+    }
+    // 主修饰键：mac 上是 Cmd(metaKey)、其它平台是 Ctrl；两者都收下以兼容桌面壳与浏览器 dev。带 Shift/Alt
+    // 的组合（如 Cmd+Shift+W 关整窗）不拦，留给系统。
+    const primaryModifier = event.metaKey || event.ctrlKey;
+    if (!primaryModifier || event.altKey || event.shiftKey) {
+      return;
+    }
+    const state = store.getState();
+    if (!isConversationCenterTab(state.centerTab)) {
+      return;
+    }
+    if (event.key === "w" || event.key === "W") {
+      const current = currentlyOpenConversationId();
+      if (current && state.openConversationTabs.some((tab) => tab.conversationId === current)) {
+        event.preventDefault();
+        closeSessTab(current);
+      }
+      return;
+    }
+    if (/^[1-9]$/u.test(event.key)) {
+      const tab = state.openConversationTabs[Number.parseInt(event.key, 10) - 1];
+      if (tab) {
+        event.preventDefault();
+        activateSessTab(tab.conversationId);
+      }
+    }
+  };
+  doc.addEventListener("keydown", onShellTabKeydown);
 
   const unsubscribe = store.subscribe((state) => {
     renderCenter(state);
@@ -1702,6 +1783,8 @@ export function mountWorkbenchShell(
   // 不再是各写一份、两处容易悄悄漂移。
   const disposeActiveSubviews = () => {
     railHandle.dispose();
+    // #38：撤下文档级 tab 快捷键监听（doc 生命周期长于本 shell 实例，登出/卸载都要摘掉防泄漏）。
+    doc.removeEventListener("keydown", onShellTabKeydown);
     // R15 批 A6：停掉 /api/push/stream/me 未读订阅（登出/卸载都要放手，否则登出后仍会拿废 token 重连）。
     meStream.close();
     // R15 批 I1：停掉「待拍板」计数轮询定时器。
