@@ -200,7 +200,7 @@ function renderCard(item: AttentionItem, zh: boolean): string {
   const desc = item.reason_text ?? item.summary_text ?? "";
   const actions = item.actions.filter((a) => !isUnsupportedDesktopAction(a.href));
   const title = attentionCardDisplayTitle(item, zh);
-  return `<article class="wh-spot-card ds-glass" data-att-id="${escapeHtml(item.id)}" data-att-tone="${tone}">
+  return `<article class="wh-spot-card ds-glass" data-att-id="${escapeHtml(item.id)}" data-att-kind="${escapeHtml(item.kind)}" data-att-tone="${tone}">
     <span class="wh-spot-card-bar wh-spot-card-bar--${tone}"></span>
     <div class="wh-spot-card-main">
       <div class="wh-spot-card-head">
