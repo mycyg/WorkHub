@@ -63,6 +63,10 @@ export type AttentionAction = z.infer<typeof attentionActionSchema>;
 
 export const attentionItemSchema = z.object({
   id: idSchema,
+  // R17 #31（死 kind 核查）：`clarification` 与 `knowledge_result` 两个 kind schema/UI 齐备但**无真实生产者**
+  // ——决策收件箱四源（升级/偏好冲突/审批/提议）都不产出这两类，映射它们的 knowledge.evidence.ready 事件也
+  // 无 publish（见 enums.ts 该事件的 @deprecated 注释）。枚举值保留（contracts 兼容），双端 UI 的 kind 分支也
+  // 保留——那是穷举渲染（toneForKind/tagLabel/route-components 的 switch 覆盖全枚举），删掉反而会让穷举漏项。
   kind: z.enum([
     "clarification",
     "approval",
