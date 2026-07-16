@@ -9,13 +9,22 @@
 
 import type { WorkHubApiClient } from "@workhub/api-client";
 import type { ArmyOverviewPageVM } from "@workhub/contracts";
+import { escapeHtml } from "@workhub/web-runtime";
 
 import { fetchArmyOverview } from "./api.js";
-import { mergeArmyRunPages, renderArmyOverviewHtml, type ArmyOverviewViewState } from "./render.js";
+import { armyDataAgeLabel, mergeArmyRunPages, renderArmyOverviewHtml, type ArmyOverviewViewState } from "./render.js";
 
 type Locale = "zh-CN" | "en-US";
 
 export type ArmyOverviewApiClient = Pick<WorkHubApiClient, "request">;
+
+// R17 G3(#21)：总览卡片下钻——把项目/会话/run id 抛给 shell，由它 selectProject(该项目) + 右栏定位该 run
+// 详情。conversationId 可选：系统派发、无血缘会话的 run 只能 selectProject，无从定位右栏详情。
+export type ArmyOverviewOpenRunInput = {
+  projectId: string;
+  runId: string;
+  conversationId?: string;
+};
 
 export type ArmyOverviewViewHandle = {
   dispose: () => void;
@@ -31,7 +40,7 @@ function errorMessage(error: unknown, locale: Locale): string {
 
 export function mountArmyOverviewView(
   container: HTMLElement,
-  input: { client: ArmyOverviewApiClient; locale: Locale }
+  input: { client: ArmyOverviewApiClient; locale: Locale; onOpenRun?: (input: ArmyOverviewOpenRunInput) => void }
 ): ArmyOverviewViewHandle {
   let disposed = false;
   let state: ArmyOverviewViewState = { mode: "loading" };
@@ -43,9 +52,14 @@ export function mountArmyOverviewView(
     }
     const zh = input.locale === "zh-CN";
     const refreshing = state.mode === "loading";
+    // R17 G3(#32)：头部标注「数据加载于 N 分钟前」——总览是跨项目聚合、无天然 SSE 刷新，让用户知道手里
+    // 这份是多久前的快照（配合既有的手动刷新按钮）。只在有数据时标注。
+    const ageLabel = state.mode === "ready" ? armyDataAgeLabel(state.vm.generated_at, Date.now(), zh) : "";
+    const ageHtml = ageLabel ? `<span class="wh-wb-army-ov-age">${escapeHtml(ageLabel)}</span>` : "";
     container.innerHTML = `<div class="wh-wb-army-overview">
       <div class="wh-wb-army-ov-bar">
         <div class="wh-wb-army-ov-title">${zh ? "军团总览" : "Army overview"}</div>
+        ${ageHtml}
         <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-army-ov-refresh ${refreshing ? "disabled" : ""}>${zh ? "刷新" : "Refresh"}</button>
       </div>
       <div class="wh-wb-army-ov-body">${renderArmyOverviewHtml(state, input.locale)}</div>
@@ -116,6 +130,17 @@ export function mountArmyOverviewView(
     }
     if (el.closest("[data-wb-army-ov-load-more]")) {
       loadMore();
+      return;
+    }
+    // R17 G3(#21)：卡片下钻——把 project/run/conversation id 抛给 shell（selectProject + 右栏定位该 run 详情）。
+    const drilldown = el.closest<HTMLElement>("[data-wb-army-ov-drilldown]");
+    if (drilldown) {
+      const projectId = drilldown.dataset.wbArmyProjectId;
+      const runId = drilldown.dataset.wbArmyRunId;
+      const conversationId = drilldown.dataset.wbArmyConversationId;
+      if (projectId && runId) {
+        input.onOpenRun?.({ projectId, runId, ...(conversationId ? { conversationId } : {}) });
+      }
     }
   });
 
