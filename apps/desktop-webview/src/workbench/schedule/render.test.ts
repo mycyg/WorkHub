@@ -5,12 +5,14 @@ import type { ProjectTimelinePageVM, TimelineWorkItemVM } from "@workhub/contrac
 
 import type { SchedulePlanDraft } from "./api.js";
 import {
+  computeScheduleMonth,
   computeScheduleWeek,
   emptyScheduleUiState,
   emptySchedulePlanUiState,
   renderScheduleErrorHtml,
   renderScheduleHtml,
   renderScheduleLoadingHtml,
+  weekOffsetForDay,
   type SchedulePlanDraftsState,
   type SchedulePlanUiState,
   type ScheduleUiState
@@ -110,6 +112,46 @@ test("weekly grid: 7 day columns, today highlighted, weekend columns marked", ()
   assert.equal(html.includes("7 月 13 日"), true);
 });
 
+// R17-G5 #28：月视图 + 周/月切换。
+test("computeScheduleMonth: 6x7 Monday-start grid covering the focused month", () => {
+  const month = computeScheduleMonth("2026-07-15T00:00:00.000Z", 0);
+  assert.equal(month.year, 2026);
+  assert.equal(month.monthIndex, 6); // July
+  assert.equal(month.weeks.length, 6);
+  assert.equal(month.weeks[0]!.length, 7);
+  // 2026-07-01 是周三 → 网格起于该周周一 2026-06-29。
+  assert.equal(month.weeks[0]![0]!.toISOString().slice(0, 10), "2026-06-29");
+  assert.equal(month.todayKey, "2026-07-15");
+});
+
+test("computeScheduleMonth: monthOffset shifts whole months", () => {
+  const next = computeScheduleMonth("2026-07-15T00:00:00.000Z", 1);
+  assert.equal(next.monthIndex, 7); // August
+});
+
+test("weekOffsetForDay: day in a later week resolves to that week's offset", () => {
+  // 今天 2026-07-15（本周一 07-13）；目标 2026-07-27（那周一 07-27）→ 偏移 +2 周。
+  assert.equal(weekOffsetForDay("2026-07-15T00:00:00.000Z", "2026-07-27"), 2);
+  assert.equal(weekOffsetForDay("2026-07-15T00:00:00.000Z", "2026-07-15"), 0);
+});
+
+test("month view renders the 6x7 grid, mode chips, and compressed task dots", () => {
+  const html = render({
+    ui: ui({ viewMode: "month" }),
+    vm: vm({ items: [item({ id: "a", due_at: "2026-07-16T02:00:00Z" })] })
+  });
+  assert.equal(html.includes("wh-wb-sc-month"), true);
+  assert.equal((html.match(/data-wb-sc-day="/gu) ?? []).length, 42);
+  assert.equal(html.includes('data-wb-sc-mode="week"'), true);
+  assert.equal(html.includes('data-wb-sc-mode="month"'), true);
+  // 有任务的那天渲一个小点 + 该单元格带 data-wb-sc-day 供点击回周视图。
+  assert.equal(html.includes("wh-wb-sc-mdot"), true);
+  assert.equal(html.includes('data-wb-sc-day="2026-07-16"'), true);
+  // 月标题 + 不渲周网格。
+  assert.equal(html.includes("2026 年 7 月"), true);
+  assert.equal(html.includes("wh-wb-sc-grid"), false);
+});
+
 test("work items land on their due day; the card carries the id and status meta", () => {
   const html = render({
     vm: vm({
@@ -126,9 +168,20 @@ test("work items land on their due day; the card carries the id and status meta"
   assert.equal(html.includes('data-wb-sc-id="b"'), false);
 });
 
-test("undated items are simply not placed (no fake day)", () => {
-  const html = render({ vm: vm({ items: [item({ id: "a", code: "WH-A" })] }) });
-  assert.equal(html.includes('data-wb-sc-id="a"'), false);
+// R17-G5 #26：无 due_at 的工作项不再静默丢弃（也不放到假的某一天）——落到底部「未定期」小列。
+test("undated items surface in the 未定期 strip (not silently dropped, not on a fake day)", () => {
+  const html = render({ vm: vm({ items: [item({ id: "a", code: "WH-A", title: "待排期项" })] }) });
+  assert.equal(html.includes("wh-wb-sc-undated"), true);
+  assert.equal(html.includes("未定期"), true);
+  assert.equal(html.includes('data-wb-sc-id="a"'), true);
+  assert.equal(html.includes("待排期项"), true);
+  // 网格列里没有它（不放到假的某一天）——周历单元格是空的。
+  assert.equal(/<div class="wh-wb-sc-cells">\s*<\/div>/u.test(html), true);
+});
+
+test("schedule with no undated items renders no 未定期 strip", () => {
+  const html = render({ vm: vm({ items: [item({ id: "a", due_at: "2026-07-16T02:00:00Z" })] }) });
+  assert.equal(html.includes("wh-wb-sc-undated"), false);
 });
 
 test("overdue task shows an overdue dot", () => {

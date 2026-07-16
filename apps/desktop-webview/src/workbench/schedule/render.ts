@@ -15,13 +15,16 @@ type Locale = "zh-CN" | "en-US";
 const DAY_MS = 86_400_000;
 
 // 周历本地 UI 态——由 view.ts 持有，render 只读。weekOffset＝相对「今天所在周」的偏移（0＝本周，
-// -1＝上一周，+1＝下一周）。
+// -1＝上一周，+1＝下一周）。R17-G5 #28：viewMode 周/月切换；monthOffset＝相对「今天所在月」的月偏移。
+export type ScheduleViewMode = "week" | "month";
 export type ScheduleUiState = {
   weekOffset: number;
+  monthOffset: number;
+  viewMode: ScheduleViewMode;
 };
 
 export function emptyScheduleUiState(): ScheduleUiState {
-  return { weekOffset: 0 };
+  return { weekOffset: 0, monthOffset: 0, viewMode: "week" };
 }
 
 // G4 #9（E3 计划草案左栏）：左栏计划面板的本地 UI 态——由 view.ts 持有，render 只读。
@@ -118,6 +121,46 @@ export function computeScheduleWeek(referenceIso: string, weekOffset: number): S
     rangeEnd: days[6]!,
     todayKey: dayKey(now)
   };
+}
+
+// #28：当月（含填满整周的溢出日）6×7 网格。周一起，UTC 口径同周历。
+export type ScheduleMonth = {
+  weeks: Date[][];
+  year: number;
+  monthIndex: number; // 0 = 一月
+  todayKey: string;
+};
+
+export function computeScheduleMonth(referenceIso: string, monthOffset: number): ScheduleMonth {
+  const now = parseDate(referenceIso) ?? new Date();
+  const firstOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + monthOffset, 1));
+  const gridStart = startOfWeekUtc(firstOfMonth);
+  const weeks: Date[][] = [];
+  for (let w = 0; w < 6; w += 1) {
+    const days: Date[] = [];
+    for (let d = 0; d < 7; d += 1) {
+      days.push(new Date(gridStart.getTime() + (w * 7 + d) * DAY_MS));
+    }
+    weeks.push(days);
+  }
+  return {
+    weeks,
+    year: firstOfMonth.getUTCFullYear(),
+    monthIndex: firstOfMonth.getUTCMonth(),
+    todayKey: dayKey(now)
+  };
+}
+
+// #28：点月历某天 → 切回周视图并定位到那周。算出该天相对今天所在周的整周偏移。
+export function weekOffsetForDay(referenceIso: string, dayKeyStr: string): number {
+  const now = parseDate(referenceIso) ?? new Date();
+  const target = parseDate(dayKeyStr);
+  if (!target) {
+    return 0;
+  }
+  const base = startOfWeekUtc(now).getTime();
+  const targetWeek = startOfWeekUtc(target).getTime();
+  return Math.round((targetWeek - base) / (7 * DAY_MS));
 }
 
 function statusBorder(item: TimelineWorkItemVM): string {
@@ -419,19 +462,11 @@ export function renderScheduleErrorHtml(locale: Locale): string {
   }</button></div></div>`;
 }
 
-export function renderScheduleHtml(input: {
-  vm: ProjectTimelinePageVM;
-  drafts: SchedulePlanDraft[];
-  draftsState: SchedulePlanDraftsState;
-  plan: SchedulePlanUiState;
-  locale: Locale;
-  ui: ScheduleUiState;
-}): string {
-  const { vm, drafts, draftsState, plan, ui } = input;
-  const zh = input.locale === "zh-CN";
-  const week = computeScheduleWeek(vm.generated_at, ui.weekOffset);
-
-  // 工作项按 due_at 的 UTC 日归组。
+// due_at 按 UTC 日归组（周历/月历共用）。
+function bucketByDay(vm: ProjectTimelinePageVM): {
+  itemsByDay: Map<string, TimelineWorkItemVM[]>;
+  milestonesByDay: Map<string, string[]>;
+} {
   const itemsByDay = new Map<string, TimelineWorkItemVM[]>();
   for (const item of vm.items) {
     const due = parseDate(item.due_at);
@@ -443,7 +478,6 @@ export function renderScheduleHtml(input: {
     bucket.push(item);
     itemsByDay.set(key, bucket);
   }
-  // 里程碑按 due_at 的 UTC 日归组（标在列头）。
   const milestonesByDay = new Map<string, string[]>();
   for (const milestone of vm.milestones) {
     const due = parseDate(milestone.due_at);
@@ -455,7 +489,41 @@ export function renderScheduleHtml(input: {
     bucket.push(milestone.title);
     milestonesByDay.set(key, bucket);
   }
+  return { itemsByDay, milestonesByDay };
+}
 
+// #28：周/月切换 chip。
+function viewToggleHtml(mode: ScheduleViewMode, zh: boolean): string {
+  const chip = (m: ScheduleViewMode, label: string) =>
+    `<button type="button" class="wh-wb-sc-modechip${mode === m ? " wh-wb-sc-modechip--active" : ""}" data-wb-sc-mode="${m}"${
+      mode === m ? ' aria-current="true"' : ""
+    }>${label}</button>`;
+  return `<div class="wh-wb-sc-modes" role="group" aria-label="${zh ? "视图切换" : "View mode"}">${chip(
+    "week",
+    zh ? "周" : "Week"
+  )}${chip("month", zh ? "月" : "Month")}</div>`;
+}
+
+function calHeadHtml(title: string, mode: ScheduleViewMode, zh: boolean): string {
+  const prevLabel = mode === "month" ? (zh ? "上个月" : "Previous month") : zh ? "上一周" : "Previous week";
+  const nextLabel = mode === "month" ? (zh ? "下个月" : "Next month") : zh ? "下一周" : "Next week";
+  return `<div class="wh-wb-sc-cal-head">
+    <span class="wh-wb-sc-range">${escapeHtml(title)}</span>
+    ${viewToggleHtml(mode, zh)}
+    <div class="wh-wb-sc-nav">
+      <button type="button" class="wh-wb-sc-navbtn" data-wb-sc-prev title="${prevLabel}" aria-label="${prevLabel}">${workbenchIcons.chevronLeft}</button>
+      <button type="button" class="wh-wb-tl-btn" data-wb-sc-today>${zh ? "今天" : "Today"}</button>
+      <button type="button" class="wh-wb-sc-navbtn" data-wb-sc-next title="${nextLabel}" aria-label="${nextLabel}">${workbenchIcons.chevronRight}</button>
+    </div>
+  </div>`;
+}
+
+function renderWeekGridHtml(
+  week: ScheduleWeek,
+  itemsByDay: Map<string, TimelineWorkItemVM[]>,
+  milestonesByDay: Map<string, string[]>,
+  zh: boolean
+): string {
   const columns = week.days
     .map((day, index) => {
       const key = dayKey(day);
@@ -481,22 +549,120 @@ export function renderScheduleHtml(input: {
       </div>`;
     })
     .join("");
+  return `<div class="wh-wb-sc-grid">${columns}</div>`;
+}
 
-  const cal = `<div class="wh-wb-sc-cal">
-    <div class="wh-wb-sc-cal-head">
-      <span class="wh-wb-sc-range">${escapeHtml(formatRange(week, zh))}</span>
-      <div class="wh-wb-sc-nav">
-        <button type="button" class="wh-wb-sc-navbtn" data-wb-sc-prev title="${zh ? "上一周" : "Previous week"}" aria-label="${
-          zh ? "上一周" : "Previous week"
-        }">${workbenchIcons.chevronLeft}</button>
-        <button type="button" class="wh-wb-tl-btn" data-wb-sc-today>${zh ? "今天" : "Today"}</button>
-        <button type="button" class="wh-wb-sc-navbtn" data-wb-sc-next title="${zh ? "下一周" : "Next week"}" aria-label="${
-          zh ? "下一周" : "Next week"
-        }">${workbenchIcons.chevronRight}</button>
-      </div>
-    </div>
-    <div class="wh-wb-sc-grid">${columns}</div>
+// #28：月视图单元格——日期 + 任务压缩成小点（按状态着色，超 4 个折成「+K」）+ 里程碑标记。
+const MONTH_DOT_CAP = 4;
+function monthCellHtml(
+  day: Date,
+  month: ScheduleMonth,
+  itemsByDay: Map<string, TimelineWorkItemVM[]>,
+  milestonesByDay: Map<string, string[]>,
+  zh: boolean
+): string {
+  const key = dayKey(day);
+  const inMonth = day.getUTCMonth() === month.monthIndex;
+  const isToday = key === month.todayKey;
+  const dayItems = itemsByDay.get(key) ?? [];
+  const ms = milestonesByDay.get(key) ?? [];
+  const dots = dayItems
+    .slice(0, MONTH_DOT_CAP)
+    .map((item) => `<span class="wh-wb-sc-mdot" style="background:${statusBorder(item)}"></span>`)
+    .join("");
+  const overflow = dayItems.length > MONTH_DOT_CAP ? `<span class="wh-wb-sc-mmore">+${dayItems.length - MONTH_DOT_CAP}</span>` : "";
+  const msDot = ms.length
+    ? `<span class="wh-wb-sc-mms" title="${escapeHtml(zh ? `里程碑：${ms.join("、")}` : `Milestone: ${ms.join(", ")}`)}">${workbenchIcons.pin}</span>`
+    : "";
+  const title = dayItems.length
+    ? zh
+      ? `${day.getUTCMonth() + 1}/${day.getUTCDate()}：${dayItems.length} 项，点击查看这周`
+      : `${day.getUTCMonth() + 1}/${day.getUTCDate()}: ${dayItems.length} item(s) — open this week`
+    : zh
+      ? "点击查看这周"
+      : "Open this week";
+  return `<div class="wh-wb-sc-mcell${inMonth ? "" : " wh-wb-sc-mcell--out"}${isToday ? " wh-wb-sc-mcell--today" : ""}" data-wb-sc-day="${key}" role="button" tabindex="0" title="${title}">
+    <div class="wh-wb-sc-mcell-top"><span class="wh-wb-sc-mdate">${day.getUTCDate()}</span>${msDot}</div>
+    ${dayItems.length ? `<div class="wh-wb-sc-mdots">${dots}${overflow}</div>` : ""}
   </div>`;
+}
 
+function renderMonthGridHtml(
+  month: ScheduleMonth,
+  itemsByDay: Map<string, TimelineWorkItemVM[]>,
+  milestonesByDay: Map<string, string[]>,
+  zh: boolean
+): string {
+  const dowRow = (zh ? ZH_DOW : EN_DOW).map((label) => `<div class="wh-wb-sc-mdow">${label}</div>`).join("");
+  const rows = month.weeks
+    .map(
+      (week) =>
+        `<div class="wh-wb-sc-mrow">${week
+          .map((day) => monthCellHtml(day, month, itemsByDay, milestonesByDay, zh))
+          .join("")}</div>`
+    )
+    .join("");
+  return `<div class="wh-wb-sc-month"><div class="wh-wb-sc-mhead">${dowRow}</div><div class="wh-wb-sc-mbody">${rows}</div></div>`;
+}
+
+function monthTitle(month: ScheduleMonth, zh: boolean): string {
+  return zh ? `${month.year} 年 ${month.monthIndex + 1} 月` : `${EN_MONTHS[month.monthIndex]} ${month.year}`;
+}
+
+// #26：无 due_at 的工作项此前在日程里被静默丢弃（看板/时间线都诚实标「未定期」）。这里在周历/月历底部加
+// 一条「未定期」小列（计数 + 列表），扫描口径与看板「未排期」一致（parseDate(due_at) 为空）；点击复用
+// 日程卡的 data-wb-sc-card 通道跳到时间线该行（view.ts 无需另接）。全部有 due_at 时不渲，不占空间。
+function renderUndatedStripHtml(vm: ProjectTimelinePageVM, zh: boolean): string {
+  const undated = vm.items.filter((item) => !parseDate(item.due_at));
+  if (undated.length === 0) {
+    return "";
+  }
+  const rows = [...undated]
+    .sort((a, b) => a.code.localeCompare(b.code))
+    .map(
+      (item) =>
+        `<div class="wh-wb-sc-undated-item" data-wb-sc-card data-wb-sc-id="${escapeHtml(item.id)}" role="button" tabindex="0" title="${
+          zh ? "点击查看这件在时间线上的位置" : "Open this item on the timeline"
+        }">
+          <span class="wh-wb-sc-undated-code">${escapeHtml(item.code)}</span>
+          <span class="wh-wb-sc-undated-title">${escapeHtml(item.title)}</span>
+          <span class="wh-wb-sc-undated-status">${escapeHtml(statusLabelShort(item.status, zh))}</span>
+        </div>`
+    )
+    .join("");
+  return `<div class="wh-wb-sc-undated" data-wb-sc-undated>
+    <div class="wh-wb-sc-undated-head">
+      <span class="wh-wb-sc-undated-t">${zh ? "未定期" : "Undated"}</span>
+      <span class="wh-wb-sc-undated-count">${undated.length}</span>
+    </div>
+    <div class="wh-wb-sc-undated-list">${rows}</div>
+  </div>`;
+}
+
+export function renderScheduleHtml(input: {
+  vm: ProjectTimelinePageVM;
+  drafts: SchedulePlanDraft[];
+  draftsState: SchedulePlanDraftsState;
+  plan: SchedulePlanUiState;
+  locale: Locale;
+  ui: ScheduleUiState;
+}): string {
+  const { vm, drafts, draftsState, plan, ui } = input;
+  const zh = input.locale === "zh-CN";
+  const { itemsByDay, milestonesByDay } = bucketByDay(vm);
+
+  let head: string;
+  let grid: string;
+  if (ui.viewMode === "month") {
+    const month = computeScheduleMonth(vm.generated_at, ui.monthOffset);
+    head = calHeadHtml(monthTitle(month, zh), "month", zh);
+    grid = renderMonthGridHtml(month, itemsByDay, milestonesByDay, zh);
+  } else {
+    const week = computeScheduleWeek(vm.generated_at, ui.weekOffset);
+    head = calHeadHtml(formatRange(week, zh), "week", zh);
+    grid = renderWeekGridHtml(week, itemsByDay, milestonesByDay, zh);
+  }
+
+  const cal = `<div class="wh-wb-sc-cal">${head}${grid}${renderUndatedStripHtml(vm, zh)}</div>`;
   return `<div class="wh-wb-sc">${renderPlanPanelHtml({ vm, drafts, draftsState, plan, zh })}${cal}</div>`;
 }

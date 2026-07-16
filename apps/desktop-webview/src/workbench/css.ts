@@ -1317,6 +1317,43 @@ export const workbenchCss = [
   ".wh-wb-sc-overdot{width:6px;height:6px;border-radius:50%;background:var(--ds-danger);flex:none}",
   ".wh-wb-sc-state{padding:40px 20px;text-align:center;font:500 13px/1.6 var(--ds-font);color:var(--ds-ink-muted);" +
     "display:flex;flex-direction:column;align-items:center;gap:10px;flex:1}",
+  // R17-G5 #28：周/月切换 chip。
+  ".wh-wb-sc-modes{display:inline-flex;gap:2px;background:var(--ds-glass);border:1px solid var(--ds-glass-border);border-radius:8px;padding:2px;flex:none}",
+  ".wh-wb-sc-modechip{font:600 11.5px/1 var(--ds-font);color:var(--ds-ink-muted);background:transparent;border:0;border-radius:6px;padding:5px 11px;cursor:pointer}",
+  ".wh-wb-sc-modechip--active{background:var(--ds-glass-strong);color:var(--ds-ink);box-shadow:var(--ds-shadow-1)}",
+  // #28：月视图网格（6 行 × 7 列，任务压缩成小点；溢出日淡显；今天高亮）。
+  ".wh-wb-sc-month{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;border-top:1px solid var(--ds-glass-border)}",
+  ".wh-wb-sc-mhead{flex:0 0 auto;display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}",
+  ".wh-wb-sc-mdow{padding:6px 8px;font:500 10.5px/1 var(--ds-font);color:var(--ds-ink-faint);border-right:1px solid var(--ds-glass-hairline,var(--ds-glass-border))}",
+  ".wh-wb-sc-mdow:last-child{border-right:none}",
+  ".wh-wb-sc-mbody{flex:1 1 auto;min-height:0;display:grid;grid-template-rows:repeat(6,minmax(0,1fr));overflow:hidden}",
+  ".wh-wb-sc-mrow{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border-top:1px solid var(--ds-glass-hairline,var(--ds-glass-border))}",
+  ".wh-wb-sc-mcell{min-width:0;display:flex;flex-direction:column;gap:4px;padding:5px 6px;border-right:1px solid var(--ds-glass-hairline,var(--ds-glass-border));cursor:pointer;overflow:hidden}",
+  ".wh-wb-sc-mcell:last-child{border-right:none}",
+  ".wh-wb-sc-mcell:hover{background:var(--ds-glass)}",
+  ".wh-wb-sc-mcell:focus-visible{outline:2px solid var(--ds-accent);outline-offset:-2px}",
+  ".wh-wb-sc-mcell--out{background:rgba(30,42,74,.02)}",
+  ".wh-wb-sc-mcell--out .wh-wb-sc-mdate{color:var(--ds-ink-faint)}",
+  ".wh-wb-sc-mcell-top{display:flex;align-items:center;gap:4px}",
+  ".wh-wb-sc-mdate{font:600 12px/1 var(--ds-font);color:var(--ds-ink);display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;border-radius:50%}",
+  ".wh-wb-sc-mcell--today .wh-wb-sc-mdate{background:var(--ds-accent);color:#fff}",
+  ".wh-wb-sc-mms{display:inline-flex;color:var(--ds-accent)}.wh-wb-sc-mms svg{width:11px;height:11px}",
+  ".wh-wb-sc-mdots{display:flex;flex-wrap:wrap;align-items:center;gap:3px}",
+  ".wh-wb-sc-mdot{width:6px;height:6px;border-radius:50%;flex:none}",
+  ".wh-wb-sc-mmore{font:600 9px/1 var(--ds-font);color:var(--ds-ink-faint)}",
+  // R17-G5 #26：底部「未定期」小列（无 due_at 的工作项，点击跳时间线）。
+  ".wh-wb-sc-undated{flex:0 0 auto;max-height:132px;display:flex;flex-direction:column;border-top:1px solid var(--ds-glass-border);background:var(--ds-glass-quiet)}",
+  ".wh-wb-sc-undated-head{flex:0 0 auto;display:flex;align-items:center;gap:7px;padding:7px 16px 5px}",
+  ".wh-wb-sc-undated-t{font:600 11px/1 var(--ds-font);color:var(--ds-ink-muted)}",
+  ".wh-wb-sc-undated-count{font:700 9.5px/1 var(--ds-font);color:var(--ds-ink-faint);background:var(--ds-glass);border-radius:99px;min-width:17px;height:16px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center}",
+  ".wh-wb-sc-undated-list{flex:1 1 auto;min-height:0;overflow-y:auto;padding:0 12px 10px;display:flex;flex-direction:column;gap:5px}",
+  ".wh-wb-sc-undated-item{display:flex;align-items:center;gap:9px;padding:6px 9px;border:1px solid var(--ds-glass-border);border-radius:8px;" +
+    "background:var(--ds-glass-strong);cursor:pointer;transition:box-shadow var(--ds-dur-fast,120ms) var(--ds-ease,ease)}",
+  ".wh-wb-sc-undated-item:hover{box-shadow:var(--ds-shadow-1)}",
+  ".wh-wb-sc-undated-item:focus-visible{outline:2px solid var(--ds-accent);outline-offset:1px}",
+  ".wh-wb-sc-undated-code{flex:none;font:600 10px/1.3 var(--ds-mono,ui-monospace,monospace);color:var(--ds-ink-faint)}",
+  ".wh-wb-sc-undated-title{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 11.5px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-sc-undated-status{flex:none;font:500 9.5px/1.3 var(--ds-font);color:var(--ds-ink-faint)}",
 
   "@keyframes ds-flash{0%{background:var(--ds-accent-soft)}100%{background:transparent}}"
 ].join("");
