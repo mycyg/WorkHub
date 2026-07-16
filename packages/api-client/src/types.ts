@@ -322,10 +322,13 @@ export type WorkHubApiClient = {
   completeNotification: (id: string) => Promise<Notification>;
   // R15 批 A（A2 提醒阶梯）：暂停一条通知的 24h 提醒（POST /snooze，服务端置 next_remind_at=null）。
   snoozeNotification: (id: string) => Promise<Notification>;
-  getNotificationPreferences: () => Promise<{ muted_notification_types: string[] }>;
+  // G4 #10（关怀 opt-out）：偏好里额外带 care_messages_enabled（Cuu 关怀私聊开关，默认 true）。
+  getNotificationPreferences: () => Promise<{ muted_notification_types: string[]; care_messages_enabled: boolean }>;
+  // options.careMessagesEnabled 缺省＝不动关怀开关（沿用当前存量，服务端同口径）。
   setNotificationPreferences: (
-    mutedNotificationTypes: string[]
-  ) => Promise<{ muted_notification_types: string[] }>;
+    mutedNotificationTypes: string[],
+    options?: { careMessagesEnabled?: boolean }
+  ) => Promise<{ muted_notification_types: string[]; care_messages_enabled: boolean }>;
   bootstrapProject: (payload?: BootstrapProjectRequest) => Promise<BootstrapProjectResult>;
   createSession: (payload?: CreateSessionRequest, options?: PageRequestOptions) => Promise<SessionVM>;
   getSession: (id: string, options?: PageRequestOptions) => Promise<SessionVM>;

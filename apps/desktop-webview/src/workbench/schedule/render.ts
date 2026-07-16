@@ -24,6 +24,54 @@ export function emptyScheduleUiState(): ScheduleUiState {
   return { weekOffset: 0 };
 }
 
+// G4 #9（E3 计划草案左栏）：左栏计划面板的本地 UI 态——由 view.ts 持有，render 只读。
+//   mode: list=草案列表 / compose=起草表单 / detail=某草案详情
+//   draftsState: ready=能管项目（可起草/审批）/ forbidden=无管理权（退回里程碑回落）/ loading
+//   intentDraft/rejectDraft: 失败重渲时回填 textarea 用（不在每次击键都重渲，只在提交时快照）。
+export type SchedulePlanMode = "list" | "compose" | "detail";
+export type SchedulePlanDraftsState = "loading" | "ready" | "forbidden";
+export type SchedulePlanUiState = {
+  mode: SchedulePlanMode;
+  selectedDraftId?: string | undefined;
+  rejecting: boolean;
+  busy: boolean;
+  error?: string | undefined;
+  notice?: string | undefined;
+  intentDraft: string;
+  rejectDraft: string;
+};
+
+export function emptySchedulePlanUiState(): SchedulePlanUiState {
+  return { mode: "list", rejecting: false, busy: false, intentDraft: "", rejectDraft: "" };
+}
+
+function planDraftStatusLabel(status: string, zh: boolean): string {
+  const map: Record<string, { zh: string; en: string }> = {
+    draft: { zh: "草稿", en: "Draft" },
+    pending_review: { zh: "待审阅", en: "Pending review" },
+    approved: { zh: "已批准", en: "Approved" },
+    rejected: { zh: "已驳回", en: "Rejected" },
+    materialized: { zh: "已物化", en: "Materialized" }
+  };
+  const entry = map[status];
+  return entry ? (zh ? entry.zh : entry.en) : status;
+}
+
+function planDraftStatusTone(status: string): string {
+  switch (status) {
+    case "pending_review":
+      return "approval";
+    case "approved":
+      return "info";
+    case "materialized":
+      return "info";
+    case "rejected":
+      return "handoff";
+    default:
+      return "info";
+  }
+}
+
 function parseDate(value: string | undefined | null): Date | undefined {
   if (!value) {
     return undefined;
@@ -139,67 +187,222 @@ function renderTaskCardHtml(item: TimelineWorkItemVM, zh: boolean): string {
   </div>`;
 }
 
-function renderPlanDocHtml(
-  vm: ProjectTimelinePageVM,
-  planDraft: SchedulePlanDraft | undefined,
-  zh: boolean
-): string {
-  const head = `<div class="wh-wb-sc-plan-head"><span class="wh-wb-sc-plan-t">${
-    zh ? "项目计划" : "Project plan"
-  }</span>${
-    planDraft
-      ? `<span class="wh-wb-sc-plan-tag">${zh ? "已批准" : "Approved"}</span>`
-      : ""
-  }</div>`;
+function planDueLabel(value: string | null, zh: boolean): string {
+  const due = parseDate(value);
+  return due
+    ? `<span class="wh-wb-sc-plan-due">${due.getUTCMonth() + 1}/${due.getUTCDate()}</span>`
+    : `<span class="wh-wb-sc-plan-due wh-wb-sc-plan-due--none">${zh ? "未定期" : "TBD"}</span>`;
+}
 
-  if (planDraft) {
-    const milestones = [...planDraft.milestones].sort((a, b) => a.sort - b.sort);
-    const milestoneList = milestones.length
-      ? `<h2 class="wh-wb-sc-plan-h2">${zh ? "里程碑" : "Milestones"}</h2><ul class="wh-wb-sc-plan-ms">${milestones
-          .map((m) => {
-            const due = parseDate(m.due_at);
-            const dueLabel = due
-              ? `<span class="wh-wb-sc-plan-due">${due.getUTCMonth() + 1}/${due.getUTCDate()}</span>`
-              : `<span class="wh-wb-sc-plan-due wh-wb-sc-plan-due--none">${zh ? "未定期" : "TBD"}</span>`;
-            return `<li>${workbenchIcons.pin}<span class="wh-wb-sc-plan-ms-t">${escapeHtml(m.title)}</span>${dueLabel}</li>`;
-          })
-          .join("")}</ul>`
-      : "";
-    const rationale = planDraft.rationale_md
-      ? `<h2 class="wh-wb-sc-plan-h2">${zh ? "计划说明" : "Rationale"}</h2>${planDraft.rationale_md
-          .split("\n")
-          .map((line) => line.trim())
-          .filter((line) => line.length > 0)
-          .map((line) => `<p class="wh-wb-sc-plan-p">${escapeHtml(line)}</p>`)
-          .join("")}`
-      : "";
-    const body = milestoneList + rationale || `<p class="wh-wb-sc-plan-p">${zh ? "这份计划暂无内容。" : "This plan has no content yet."}</p>`;
-    return `<div class="wh-wb-sc-plan">${head}<div class="wh-wb-sc-plan-body">${body}</div></div>`;
+function planShortDate(value: string, zh: boolean): string {
+  const d = parseDate(value);
+  if (!d) {
+    return "";
   }
+  return zh ? `${d.getUTCMonth() + 1}月${d.getUTCDate()}日` : `${EN_MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
+}
 
-  // 回落：没有已批准的计划草案（E3）——直接列时间线里程碑，并诚实说明这是回落。
+// 里程碑回落（无管理权 / 无草案时）：直接列时间线里程碑，诚实说明这是回落。
+function renderMilestoneFallbackBody(vm: ProjectTimelinePageVM, zh: boolean, canDraft: boolean): string {
   const milestones = [...vm.milestones].sort((a, b) => a.sort - b.sort);
   if (milestones.length === 0) {
-    return `<div class="wh-wb-sc-plan">${head}<div class="wh-wb-sc-plan-body"><p class="wh-wb-sc-plan-empty">${
-      zh
-        ? "还没有已批准的项目计划，也还没有里程碑。让 Cuu 起草计划（时间线里的入口）后，这里会显示计划摘要。"
-        : "No approved plan and no milestones yet. Once a plan is drafted (from the timeline), its summary shows here."
-    }</p></div></div>`;
+    return `<p class="wh-wb-sc-plan-empty">${
+      canDraft
+        ? (zh
+          ? "还没有项目计划，也还没有里程碑。点上方「用 Cuu 起草计划」让 Cuu 拟一份。"
+          : "No plan and no milestones yet. Use “Draft a plan with Cuu” above to have Cuu propose one.")
+        : (zh
+          ? "还没有已批准的项目计划，也还没有里程碑。"
+          : "No approved plan and no milestones yet.")
+    }</p>`;
   }
   const list = milestones
     .map((m) => {
-      const due = parseDate(m.due_at);
-      const dueLabel = due
-        ? `<span class="wh-wb-sc-plan-due">${due.getUTCMonth() + 1}/${due.getUTCDate()}</span>`
-        : `<span class="wh-wb-sc-plan-due wh-wb-sc-plan-due--none">${zh ? "未定期" : "TBD"}</span>`;
       const doneTag = m.status === "done" ? `<span class="wh-wb-sc-plan-done">${zh ? "已达成" : "Reached"}</span>` : "";
-      return `<li>${workbenchIcons.pin}<span class="wh-wb-sc-plan-ms-t">${escapeHtml(m.title)}</span>${dueLabel}${doneTag}</li>`;
+      return `<li>${workbenchIcons.pin}<span class="wh-wb-sc-plan-ms-t">${escapeHtml(m.title)}</span>${planDueLabel(m.due_at, zh)}${doneTag}</li>`;
     })
     .join("");
-  return `<div class="wh-wb-sc-plan">${head}<div class="wh-wb-sc-plan-body">
-    <p class="wh-wb-sc-plan-note">${zh ? "还没有已批准的项目计划，先列出里程碑：" : "No approved plan yet — showing milestones:"}</p>
-    <ul class="wh-wb-sc-plan-ms">${list}</ul>
-  </div></div>`;
+  return `<p class="wh-wb-sc-plan-note">${zh ? "当前里程碑：" : "Current milestones:"}</p>
+    <ul class="wh-wb-sc-plan-ms">${list}</ul>`;
+}
+
+// 起草表单（mode=compose）。intentDraft 只在提交时快照回填，不逐字重渲——textarea 的 DOM 值自然保留。
+function renderPlanComposeBody(plan: SchedulePlanUiState, zh: boolean): string {
+  return `<form class="wh-wb-sc-plan-compose" data-wb-sc-plan-compose>
+    <label class="wh-wb-sc-plan-compose-label">${zh ? "规划意图（目标 / 期限 / 约束）" : "Planning intent (goal / deadline / constraints)"}</label>
+    <textarea class="wh-wb-sc-plan-compose-intent" data-wb-sc-plan-compose-intent rows="5" maxlength="4000" placeholder="${escapeHtml(
+      zh
+        ? "例如：两周内做出可演示的邀请码注册流程，覆盖埋点与基础测试。"
+        : "e.g. Ship a demoable invite-code signup flow within two weeks, with analytics and basic tests."
+    )}"${plan.busy ? " disabled" : ""}>${escapeHtml(plan.intentDraft)}</textarea>
+    <div class="wh-wb-sc-plan-actions">
+      <button type="submit" class="wh-wb-tl-btn wh-wb-tl-btn--primary" data-wb-sc-plan-compose-submit${plan.busy ? " disabled" : ""}>${
+        plan.busy ? (zh ? "生成中…" : "Drafting…") : (zh ? "用 Cuu 起草" : "Draft with Cuu")
+      }</button>
+      <button type="button" class="wh-wb-tl-btn" data-wb-sc-plan-compose-cancel${plan.busy ? " disabled" : ""}>${zh ? "取消" : "Cancel"}</button>
+    </div>
+    <p class="wh-wb-sc-plan-hint">${zh ? "Cuu 会据此拟里程碑与工作项草案，落库后交你审批。" : "Cuu drafts milestones and work items from this, saved for your review."}</p>
+  </form>`;
+}
+
+// 草案列表（mode=list）。每条可点进详情；状态 chip 直观区分 pending_review/approved/…。
+function renderPlanListBody(drafts: SchedulePlanDraft[], zh: boolean): string {
+  if (drafts.length === 0) {
+    return `<p class="wh-wb-sc-plan-empty" data-wb-sc-plan-list-empty>${
+      zh
+        ? "还没有计划草案。点上方「用 Cuu 起草计划」让 Cuu 拟一份。"
+        : "No plan drafts yet. Use “Draft a plan with Cuu” above to have Cuu propose one."
+    }</p>`;
+  }
+  const rows = [...drafts]
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+    .map((draft) => {
+      const firstLine = (draft.intent_md.split("\n").find((line) => line.trim().length > 0) ?? "").trim();
+      const title = firstLine || (zh ? "（无意图描述）" : "(no intent)");
+      return `<div class="wh-wb-sc-plan-draft-row" data-wb-sc-plan-draft="${escapeHtml(draft.id)}" data-wb-sc-plan-draft-status="${escapeHtml(
+        draft.status
+      )}" role="button" tabindex="0" title="${zh ? "查看这份草案的详情" : "Open this draft"}">
+        <div class="wh-wb-sc-plan-draft-main">
+          <div class="wh-wb-sc-plan-draft-title">${escapeHtml(title)}</div>
+          <div class="wh-wb-sc-plan-draft-meta">${escapeHtml(planShortDate(draft.updated_at, zh))} · ${escapeHtml(
+            zh ? `${draft.milestones.length} 里程碑 · ${draft.items.length} 工作项` : `${draft.milestones.length} milestones · ${draft.items.length} items`
+          )}</div>
+        </div>
+        <span class="wh-wb-sc-plan-chip wh-wb-sc-plan-chip--${planDraftStatusTone(draft.status)}">${escapeHtml(planDraftStatusLabel(draft.status, zh))}</span>
+      </div>`;
+    })
+    .join("");
+  return `<div class="wh-wb-sc-plan-list" data-wb-sc-plan-list>${rows}</div>`;
+}
+
+// 草案详情（mode=detail）：里程碑 / 工作项 / 理由 / 审阅意见 + 按状态给动作按钮。
+function renderPlanDetailBody(draft: SchedulePlanDraft, plan: SchedulePlanUiState, zh: boolean): string {
+  const back = `<button type="button" class="wh-wb-sc-plan-back" data-wb-sc-plan-back>${workbenchIcons.chevronLeft}<span>${
+    zh ? "返回草案列表" : "Back to drafts"
+  }</span></button>`;
+  const statusChip = `<span class="wh-wb-sc-plan-chip wh-wb-sc-plan-chip--${planDraftStatusTone(draft.status)}">${escapeHtml(
+    planDraftStatusLabel(draft.status, zh)
+  )}</span>`;
+
+  const milestones = [...draft.milestones].sort((a, b) => a.sort - b.sort);
+  const milestoneList = milestones.length
+    ? `<h2 class="wh-wb-sc-plan-h2">${zh ? "里程碑" : "Milestones"}</h2><ul class="wh-wb-sc-plan-ms">${milestones
+        .map((m) => `<li>${workbenchIcons.pin}<span class="wh-wb-sc-plan-ms-t">${escapeHtml(m.title)}</span>${planDueLabel(m.due_at, zh)}</li>`)
+        .join("")}</ul>`
+    : "";
+  const itemList = draft.items.length
+    ? `<h2 class="wh-wb-sc-plan-h2">${zh ? "工作项" : "Work items"}</h2><ul class="wh-wb-sc-plan-items">${draft.items
+        .map((it) => {
+          const deps = it.depends_on_refs.length
+            ? `<span class="wh-wb-sc-plan-item-dep">${escapeHtml(zh ? `依赖 ${it.depends_on_refs.join("、")}` : `needs ${it.depends_on_refs.join(", ")}`)}</span>`
+            : "";
+          const assignee = it.assignee_suggestion
+            ? `<span class="wh-wb-sc-plan-item-owner">${escapeHtml(zh ? `建议：${it.assignee_suggestion}` : `suggest: ${it.assignee_suggestion}`)}</span>`
+            : "";
+          return `<li class="wh-wb-sc-plan-item" data-wb-sc-plan-item-ref="${escapeHtml(it.ref)}">
+            <div class="wh-wb-sc-plan-item-title">${escapeHtml(it.title)}${planDueLabel(it.due_at, zh)}</div>
+            <div class="wh-wb-sc-plan-item-obj">${escapeHtml(it.objective_md)}</div>
+            <div class="wh-wb-sc-plan-item-meta">${deps}${assignee}</div>
+          </li>`;
+        })
+        .join("")}</ul>`
+    : "";
+  const rationale = draft.rationale_md
+    ? `<h2 class="wh-wb-sc-plan-h2">${zh ? "计划说明" : "Rationale"}</h2>${draft.rationale_md
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line) => `<p class="wh-wb-sc-plan-p">${escapeHtml(line)}</p>`)
+        .join("")}`
+    : "";
+  const reviewReason = draft.review_reason_md
+    ? `<h2 class="wh-wb-sc-plan-h2">${zh ? "审阅意见" : "Review note"}</h2><p class="wh-wb-sc-plan-p wh-wb-sc-plan-review">${escapeHtml(
+        draft.review_reason_md
+      )}</p>`
+    : "";
+  const resultSummary = draft.status === "materialized" && draft.result
+    ? `<p class="wh-wb-sc-plan-note" data-wb-sc-plan-result>${escapeHtml(
+        zh
+          ? `已物化到时间线：${draft.result.milestone_ids.length} 里程碑 · ${draft.result.work_item_ids.length} 工作项 · ${draft.result.dependency_count} 依赖。`
+          : `Materialized: ${draft.result.milestone_ids.length} milestones · ${draft.result.work_item_ids.length} items · ${draft.result.dependency_count} dependencies.`
+      )}</p>`
+    : "";
+
+  // 动作按钮（按状态；忙态全禁用）。驳回展开时露理由输入。
+  const busyAttr = plan.busy ? " disabled" : "";
+  let actions = "";
+  if (plan.rejecting) {
+    actions = `<div class="wh-wb-sc-plan-reject" data-wb-sc-plan-reject-panel>
+      <textarea class="wh-wb-sc-plan-reject-reason" data-wb-sc-plan-reject-reason rows="3" maxlength="2000" placeholder="${escapeHtml(
+        zh ? "写明驳回理由（会带给下一次重拟）" : "Reason for rejection (fed into the next redraft)"
+      )}"${busyAttr}>${escapeHtml(plan.rejectDraft)}</textarea>
+      <div class="wh-wb-sc-plan-actions">
+        <button type="button" class="wh-wb-tl-btn wh-wb-tl-btn--danger" data-wb-sc-plan-reject-confirm${busyAttr}>${
+          plan.busy ? (zh ? "驳回中…" : "Rejecting…") : (zh ? "确认驳回" : "Confirm reject")
+        }</button>
+        <button type="button" class="wh-wb-tl-btn" data-wb-sc-plan-reject-cancel${busyAttr}>${zh ? "取消" : "Cancel"}</button>
+      </div>
+    </div>`;
+  } else if (draft.status === "pending_review") {
+    actions = `<div class="wh-wb-sc-plan-actions">
+      <button type="button" class="wh-wb-tl-btn wh-wb-tl-btn--primary" data-wb-sc-plan-approve${busyAttr}>${
+        plan.busy ? (zh ? "处理中…" : "Working…") : (zh ? "批准" : "Approve")
+      }</button>
+      <button type="button" class="wh-wb-tl-btn" data-wb-sc-plan-reject${busyAttr}>${zh ? "驳回" : "Reject"}</button>
+    </div>`;
+  } else if (draft.status === "approved") {
+    actions = `<div class="wh-wb-sc-plan-actions">
+      <button type="button" class="wh-wb-tl-btn wh-wb-tl-btn--primary" data-wb-sc-plan-materialize${busyAttr}>${
+        plan.busy ? (zh ? "物化中…" : "Materializing…") : (zh ? "物化到时间线" : "Materialize to timeline")
+      }</button>
+    </div>`;
+  }
+
+  return `${back}
+    <div class="wh-wb-sc-plan-detail-head">${statusChip}</div>
+    <h2 class="wh-wb-sc-plan-h2">${zh ? "规划意图" : "Intent"}</h2>
+    <p class="wh-wb-sc-plan-p wh-wb-sc-plan-intent">${escapeHtml(draft.intent_md)}</p>
+    ${milestoneList}${itemList}${rationale}${reviewReason}${resultSummary}${actions}`;
+}
+
+function renderPlanPanelHtml(input: {
+  vm: ProjectTimelinePageVM;
+  drafts: SchedulePlanDraft[];
+  draftsState: SchedulePlanDraftsState;
+  plan: SchedulePlanUiState;
+  zh: boolean;
+}): string {
+  const { vm, drafts, draftsState, plan, zh } = input;
+  const canDraft = draftsState === "ready";
+  const newBtn = canDraft && plan.mode === "list"
+    ? `<button type="button" class="wh-wb-tl-btn wh-wb-tl-btn--primary wh-wb-sc-plan-new" data-wb-sc-plan-new>${zh ? "用 Cuu 起草计划" : "Draft a plan with Cuu"}</button>`
+    : "";
+  const head = `<div class="wh-wb-sc-plan-head"><span class="wh-wb-sc-plan-t">${zh ? "项目计划" : "Project plan"}</span>${newBtn}</div>`;
+  const notice = plan.notice
+    ? `<p class="wh-wb-sc-plan-notice" data-wb-sc-plan-notice>${escapeHtml(plan.notice)}</p>`
+    : "";
+  const error = plan.error
+    ? `<p class="wh-wb-sc-plan-err" data-wb-sc-plan-error>${escapeHtml(plan.error)}</p>`
+    : "";
+
+  let body: string;
+  if (draftsState !== "ready") {
+    // 无管理权（forbidden）或还在加载草案——退回里程碑回落，不给「起草」假入口。
+    body = renderMilestoneFallbackBody(vm, zh, false);
+  } else if (plan.mode === "compose") {
+    body = renderPlanComposeBody(plan, zh);
+  } else if (plan.mode === "detail") {
+    const selected = drafts.find((d) => d.id === plan.selectedDraftId);
+    body = selected
+      ? renderPlanDetailBody(selected, plan, zh)
+      : renderPlanListBody(drafts, zh); // 选中项没了（被物化后重拉等）——退回列表
+  } else {
+    body = renderPlanListBody(drafts, zh);
+  }
+
+  return `<div class="wh-wb-sc-plan" data-wb-sc-plan-mode="${escapeHtml(plan.mode)}" data-wb-sc-plan-drafts-state="${escapeHtml(
+    draftsState
+  )}">${head}${notice}${error}<div class="wh-wb-sc-plan-body">${body}</div></div>`;
 }
 
 export function renderScheduleLoadingHtml(locale: Locale): string {
@@ -218,11 +421,13 @@ export function renderScheduleErrorHtml(locale: Locale): string {
 
 export function renderScheduleHtml(input: {
   vm: ProjectTimelinePageVM;
-  planDraft: SchedulePlanDraft | undefined;
+  drafts: SchedulePlanDraft[];
+  draftsState: SchedulePlanDraftsState;
+  plan: SchedulePlanUiState;
   locale: Locale;
   ui: ScheduleUiState;
 }): string {
-  const { vm, planDraft, ui } = input;
+  const { vm, drafts, draftsState, plan, ui } = input;
   const zh = input.locale === "zh-CN";
   const week = computeScheduleWeek(vm.generated_at, ui.weekOffset);
 
@@ -293,5 +498,5 @@ export function renderScheduleHtml(input: {
     <div class="wh-wb-sc-grid">${columns}</div>
   </div>`;
 
-  return `<div class="wh-wb-sc">${renderPlanDocHtml(vm, planDraft, zh)}${cal}</div>`;
+  return `<div class="wh-wb-sc">${renderPlanPanelHtml({ vm, drafts, draftsState, plan, zh })}${cal}</div>`;
 }

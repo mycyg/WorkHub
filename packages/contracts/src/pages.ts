@@ -733,7 +733,11 @@ export const timelineWorkItemVmSchema = z.object({
   blocks_count: z.number().int().nonnegative(),
   overdue: z.boolean(),
   // E1d OKR 挂钩：仅当该工作项挂了目标时出现。
-  objective_ids: z.array(idSchema).optional()
+  objective_ids: z.array(idSchema).optional(),
+  // G4 #36：与 objective_ids 一一对应的目标标题（服务端 join listObjectiveTitlesByIds 得到；未命中的
+  // 目标回落成 id，保证长度与 objective_ids 一致）。additive/optional——旧 fixture 或取名失败时省略，
+  // 前端回落到显示裸 id（见 route-components / 桌面 timeline 的 OKR pill）。
+  objective_titles: z.array(z.string().min(1)).optional()
 });
 export type TimelineWorkItemVM = z.infer<typeof timelineWorkItemVmSchema>;
 

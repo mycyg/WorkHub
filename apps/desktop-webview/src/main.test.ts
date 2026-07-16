@@ -272,10 +272,10 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
       throw new Error("not needed");
     },
     async getNotificationPreferences() {
-      return { muted_notification_types: [] };
+      return { muted_notification_types: [], care_messages_enabled: true };
     },
     async setNotificationPreferences() {
-      return { muted_notification_types: [] };
+      return { muted_notification_types: [], care_messages_enabled: true };
     },
     async bootstrapProject() {
       return {
