@@ -380,6 +380,79 @@ export function uiFormatCny(value: string | number | null | undefined, locale: W
   return `${prefix}${amount}`;
 }
 
+// G4 #22/#35（通知类型标签，双端共享）：通知类型是点分命名空间
+// （comment.mention / workitem.escalated / work_item.due_soon / conversation.message / agent_run.succeeded …）。
+// 精确类型映射（双语）→ 命名空间前缀兜底（双语）→ 最后才 humanize，绝不把裸机器 token 抛给用户。
+// 此前是 route-components.ts 里的私有函数（只 web 用）；#35 桌面「静音此类」文案也要走同一份标签，故上提到
+// i18n（uiFormatCny 同款共享层），route-components 与桌面 dashboards 都从这里导入，不再各留一份。
+// 自留注释：新增可静音/可展示的通知类型时，若中文界面会裸显英文 token，就在下方 exact 表补一条。
+const NOTIFICATION_TYPE_EXACT: Record<string, [string, string]> = {
+  "comment.mention": ["提到你", "Mention"],
+  "workitem.claimed": ["已认领", "Claimed"],
+  "workitem.escalated": ["已升级", "Escalated"],
+  "escalation.opened": ["已升级", "Escalated"],
+  "proposal.ready": ["改动待审", "Proposal ready"],
+  "proposal.opened": ["改动待审", "Proposal ready"],
+  "agent_run.step": ["AI 进展", "AI progress"],
+  "agent_run.succeeded": ["AI 完成", "AI done"],
+  "agent_run.failed": ["AI 失败", "AI failed"],
+  "approval.decided": ["审批已定", "Decided"],
+  "approval.delegated": ["审批转交", "Delegated"],
+  "approval.expired": ["审批过期", "Expired"],
+  "approval.commented": ["审批评论", "Comment"],
+  "meeting.insight.pending": ["会议待办", "Meeting insight"],
+  "drive.page": ["网盘更新", "Drive"],
+  "system.notice": ["系统通知", "System"],
+  milestone: ["里程碑", "Milestone"],
+  "notification.created": ["新通知", "Update"],
+  // R12 功能审查 F5：观察者派活问询（此前落进 humanize 兜底，渲成裸英文 "Action Card Item Dispatch Ask"）。
+  "action_card_item.dispatch_ask": ["派活问询", "Dispatch ask"],
+  // G-web 止血批：project.* 无命名空间前缀兜底（prefix 表没有 "project" key），此前渲出裸英文 "Project Risk Digest"。
+  "project.risk_digest": ["风险巡检摘要", "Risk digest"],
+  // G4 #22：R15 四阶梯 DDL 提醒（services/ddl-chase.ts 真实 publish 的 type 串，注意前缀是 work_item.）
+  // 与会话消息通知（services/notifications.ts：conversation.message / conversation.mention）——此前中文界面
+  // 裸显大写英文 token（"Work Item.due Soon" 等），补精确映射。
+  "work_item.due_soon": ["到期提醒", "Due soon"],
+  "work_item.overdue": ["已逾期", "Overdue"],
+  "work_item.escalated_ddl": ["逾期升级", "Overdue escalated"],
+  "work_item.needs_owner": ["待认领提醒", "Needs owner"],
+  "conversation.message": ["新消息", "New message"],
+  "conversation.mention": ["有人提到你", "Mentioned you"]
+};
+
+const NOTIFICATION_TYPE_PREFIX: Record<string, [string, string]> = {
+  comment: ["评论", "Comment"],
+  workitem: ["工作项", "Work item"],
+  work_item: ["工作项", "Work item"],
+  conversation: ["会话", "Conversation"],
+  agent_run: ["AI 运行", "AI run"],
+  approval: ["审批", "Approval"],
+  proposal: ["改动", "Proposal"],
+  escalation: ["升级", "Escalation"],
+  drive: ["网盘", "Drive"],
+  drive_comment: ["网盘评论", "Drive comment"],
+  meeting: ["会议", "Meeting"],
+  budget: ["预算", "Budget"],
+  system: ["系统", "System"],
+  action_card_item: ["行动卡", "Action card"]
+};
+
+export function notificationTypeLabel(type: string, zh: boolean): string {
+  const hit = NOTIFICATION_TYPE_EXACT[type];
+  if (hit) {
+    return zh ? hit[0] : hit[1];
+  }
+  const ns = NOTIFICATION_TYPE_PREFIX[type.split(".")[0] ?? type];
+  if (ns) {
+    return zh ? ns[0] : ns[1];
+  }
+  // uiHumanize 只 `_`→空格；点分命名空间还要把 `.` 也摊平后首字母大写，别渲成 "Foo.bar baz"。
+  return type
+    .replace(/[._]/gu, " ")
+    .replace(/\b\w/gu, (char) => char.toUpperCase())
+    .trim();
+}
+
 function labelFromMap(locale: WorkHubLocale, value: string, map: Record<string, Copy>) {
   return map[value]?.[locale] ?? uiHumanize(value);
 }

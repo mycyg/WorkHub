@@ -2219,9 +2219,14 @@ function bindNotificationMutePanel(
   // R10-P1-7：水合竞态收口——SSR 开关是禁用的，只有 GET 成功回填后才解禁；GET 失败保持锁定+
   // 显式错误+重试按钮（此前失败被静默吞掉，用户在「假的全不勾」上点一下就把已有静音整组覆盖丢了）。
   const retryButton = panel.querySelector<HTMLButtonElement>("[data-r10-notification-mute-retry]");
+  // G4 #10（关怀 opt-out）：Cuu 关怀私聊开关——与 mute 复选框共用同一份偏好 GET/PUT，故一起水合/一起锁禁用。
+  const careToggle = panel.querySelector<HTMLInputElement>("[data-r17-notification-care-toggle]");
   const setEnabled = (enabled: boolean) => {
     for (const checkbox of checkboxes) {
       checkbox.disabled = !enabled;
+    }
+    if (careToggle) {
+      careToggle.disabled = !enabled;
     }
   };
   const hydrate = async () => {
@@ -2238,6 +2243,10 @@ function bindNotificationMutePanel(
       const muted = new Set(prefs.muted_notification_types ?? []);
       for (const checkbox of checkboxes) {
         checkbox.checked = muted.has(checkbox.getAttribute("data-r5-notification-mute-type") ?? "");
+      }
+      if (careToggle) {
+        // 勾选＝开启关怀（默认 true）；旧后端不带该字段时回落成开启，与服务端默认一致。
+        careToggle.checked = prefs.care_messages_enabled !== false;
       }
       setEnabled(true);
       if (status) {
@@ -2257,15 +2266,19 @@ function bindNotificationMutePanel(
   retryButton?.addEventListener("click", () => void hydrate(), { signal });
 
   // 保存按到达顺序串行（PUT 是整体替换，乱序完成会用旧勾选覆盖新勾选）；每次执行时现读 DOM，最后写赢。
+  // includeCare=true 时把关怀开关也一并提交（care 行变更）；否则省略该字段＝不动关怀（mute 行变更）。
   let saveChain: Promise<void> = Promise.resolve();
-  const doSave = async () => {
+  const doSave = async (includeCare: boolean) => {
     const muted = checkboxes
       .filter((checkbox) => checkbox.checked)
       .map((checkbox) => checkbox.getAttribute("data-r5-notification-mute-type") ?? "")
       .filter((type) => type.length > 0);
     setStatus(zh ? "保存中…" : "Saving…", "saving");
     try {
-      await client.setNotificationPreferences(muted);
+      await client.setNotificationPreferences(
+        muted,
+        includeCare && careToggle ? { careMessagesEnabled: careToggle.checked } : undefined
+      );
       if (signal.aborted) {
         return;
       }
@@ -2277,14 +2290,15 @@ function bindNotificationMutePanel(
       setStatus(zh ? "保存失败，请重试" : "Save failed, please retry", "error");
     }
   };
-  const save = () => {
-    saveChain = saveChain.then(doSave);
+  const save = (includeCare: boolean) => {
+    saveChain = saveChain.then(() => doSave(includeCare));
     return saveChain;
   };
 
   for (const checkbox of checkboxes) {
-    checkbox.addEventListener("change", () => void save(), { signal });
+    checkbox.addEventListener("change", () => void save(false), { signal });
   }
+  careToggle?.addEventListener("change", () => void save(true), { signal });
 }
 
 // R14 批 SEARCH（web-search-page，02-search-design.md §7）：顶栏搜索页的客户端水合。SSR

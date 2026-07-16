@@ -169,6 +169,44 @@ test("timeline assembles milestones, blocking closure, overdue_blocking, assigne
   // 关键路径：B 上榜 blocking + overdue_blocking；A（阻塞 0）不在。
   assert.deepEqual(vm.critical.blocking, [{ work_item_id: WI_B, blocks_count: 2 }]);
   assert.deepEqual(vm.critical.overdue_blocking, [{ work_item_id: WI_B, blocks_count: 2 }]);
+  // G4 #36：未注入 objectives 依赖时只带 objective_ids、不带 objective_titles（回落显裸 id）。
+  assert.equal(a.objective_titles, undefined);
+});
+
+test("G4 #36: objective_titles joined when objectives dep is provided; falls back to id when a title is missing", async () => {
+  const OBJ2 = "70000000-0000-4000-8000-0000000000b2";
+  const items = [item({ id: WI_A, code: "ALP-1", status: "ai_working", dueAt: FUTURE })];
+  const service = createProjectTimelinePageService({
+    repo: fakeRepo({
+      listTimelineWorkItems: async () => items,
+      listObjectiveIdsByWorkItemIds: async () => new Map([[WI_A, [OBJ, OBJ2]]])
+    }),
+    projectRepo: projectRepo(projectRow()),
+    // 只给 OBJ 有名字；OBJ2 没命中 → 回落成裸 id，保证与 objective_ids 等长。
+    objectives: { listObjectiveTitlesByIds: async () => new Map([[OBJ, "把交付周期压到两周"]]) },
+    now: () => NOW
+  });
+  const vm = await service.page({ actor: actor(), projectId: PROJ });
+  const a = vm.items.find((i) => i.id === WI_A)!;
+  assert.deepEqual(a.objective_ids, [OBJ, OBJ2]);
+  assert.deepEqual(a.objective_titles, ["把交付周期压到两周", OBJ2]);
+});
+
+test("G4 #36: objective_titles omitted when every title is missing (all fall back to id)", async () => {
+  const items = [item({ id: WI_A, code: "ALP-1", status: "ai_working", dueAt: FUTURE })];
+  const service = createProjectTimelinePageService({
+    repo: fakeRepo({
+      listTimelineWorkItems: async () => items,
+      listObjectiveIdsByWorkItemIds: async () => new Map([[WI_A, [OBJ]]])
+    }),
+    projectRepo: projectRepo(projectRow()),
+    objectives: { listObjectiveTitlesByIds: async () => new Map() },
+    now: () => NOW
+  });
+  const vm = await service.page({ actor: actor(), projectId: PROJ });
+  const a = vm.items.find((i) => i.id === WI_A)!;
+  assert.deepEqual(a.objective_ids, [OBJ]);
+  assert.equal(a.objective_titles, undefined);
 });
 
 test("timeline emits empty_state when no work items are visible", async () => {

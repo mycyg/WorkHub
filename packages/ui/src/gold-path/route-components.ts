@@ -61,6 +61,7 @@ import {
   checkStatusLabel,
   deliverableTargetLabel,
   evidenceSourceLabel,
+  notificationTypeLabel,
   previewKindLabel,
   proposalStatusLabel,
   taskPlanItemRoleLabel,
@@ -1404,60 +1405,8 @@ function notificationSeverityLabel(severity: string, zh: boolean): string {
   );
 }
 
-// 通知类型是点分命名空间(comment.mention / workitem.escalated / agent_run.succeeded / proposal.ready …)。
-// rank7：旧 map 的 key(proposal_review 等)与真实类型对不上 + en map 为空 → 两种语言都掉进 humanizeToken
-// 渲出「Workitem.ai Working」式机器 token。改为：精确类型映射(双语) → 命名空间前缀兜底(双语) → 最后才 humanize。
-function notificationTypeLabel(type: string, zh: boolean): string {
-  const exact: Record<string, [string, string]> = {
-    "comment.mention": ["提到你", "Mention"],
-    "workitem.claimed": ["已认领", "Claimed"],
-    "workitem.escalated": ["已升级", "Escalated"],
-    "escalation.opened": ["已升级", "Escalated"],
-    "proposal.ready": ["改动待审", "Proposal ready"],
-    "proposal.opened": ["改动待审", "Proposal ready"],
-    "agent_run.step": ["AI 进展", "AI progress"],
-    "agent_run.succeeded": ["AI 完成", "AI done"],
-    "agent_run.failed": ["AI 失败", "AI failed"],
-    "approval.decided": ["审批已定", "Decided"],
-    "approval.delegated": ["审批转交", "Delegated"],
-    "approval.expired": ["审批过期", "Expired"],
-    "approval.commented": ["审批评论", "Comment"],
-    "meeting.insight.pending": ["会议待办", "Meeting insight"],
-    "drive.page": ["网盘更新", "Drive"],
-    "system.notice": ["系统通知", "System"],
-    milestone: ["里程碑", "Milestone"],
-    "notification.created": ["新通知", "Update"],
-    // R12 功能审查 F5：观察者派活问询——此前落进 humanizeToken 兜底，渲成裸英文
-    // "Action Card Item Dispatch Ask"。
-    "action_card_item.dispatch_ask": ["派活问询", "Dispatch ask"],
-    // G-web 止血批：project.* 无命名空间前缀兜底（prefix 表没有 "project" key），此前落进
-    // humanizeToken 渲出裸英文 "Project Risk Digest"。
-    "project.risk_digest": ["风险巡检摘要", "Risk digest"]
-  };
-  const hit = exact[type];
-  if (hit) {
-    return zh ? hit[0] : hit[1];
-  }
-  const prefix: Record<string, [string, string]> = {
-    comment: ["评论", "Comment"],
-    workitem: ["工作项", "Work item"],
-    agent_run: ["AI 运行", "AI run"],
-    approval: ["审批", "Approval"],
-    proposal: ["改动", "Proposal"],
-    escalation: ["升级", "Escalation"],
-    drive: ["网盘", "Drive"],
-    drive_comment: ["网盘评论", "Drive comment"],
-    meeting: ["会议", "Meeting"],
-    budget: ["预算", "Budget"],
-    system: ["系统", "System"],
-    action_card_item: ["行动卡", "Action card"]
-  };
-  const ns = prefix[type.split(".")[0] ?? type];
-  if (ns) {
-    return zh ? ns[0] : ns[1];
-  }
-  return humanizeToken(type.replace(/\./gu, " "));
-}
+// 通知类型标签(comment.mention / work_item.due_soon / conversation.message …)现由 packages/ui/src/i18n.ts
+// 的 notificationTypeLabel 提供(桌面「静音此类」文案共用同一份，见 G4 #22/#35)——本文件只 import 复用。
 
 function driveItemKindLabel(kind: string, zh: boolean): string {
   return localizedEnumLabel(kind, zh, { file: "文件", folder: "文件夹" }, { file: "File", folder: "Folder" });
@@ -3619,6 +3568,12 @@ function renderNotificationBucket(
 // `flushDraft` 里按 `draft.type` 做静音判定的字符串完全一致——否则勾选了却照发就是骗用户。
 // 来源：packages/events/src/lifecycle.ts 的 6 个 workitem.* 里程碑 + notifications.ts 的 comment.mention
 // + schedule-notify-pages.ts 的 meeting.insight.pending。新增可静音类型时同步这里。
+// G4 #23：补 R15 新增的、且经 isMutedForRecipient（createNotification/notifyConversationMessage 内部）
+// 真正按 type 静音的类型——三档 DDL 通知（work_item.due_soon/overdue/escalated_ddl，见
+// apps/api/src/services/ddl-chase.ts）+ 会话消息/被@（conversation.message/mention，见
+// apps/api/src/services/notifications.ts notifyConversationMessage 的 isMutedForRecipient 判定）。
+// 刻意不含 work_item.needs_owner：它主通道是项目主区的 action_card（find_owner 决策卡），只有降级
+// 回落时才走可静音的通知，勾了未必拦得住主通道——不放进来免得「勾了却照发」。
 const MUTABLE_NOTIFICATION_TYPES: ReadonlyArray<{ type: string; zh: string; en: string }> = [
   { type: "workitem.ai_working", zh: "AI 开始处理工作项", en: "AI started working on an item" },
   { type: "workitem.in_review", zh: "工作项待审查", en: "An item is ready for review" },
@@ -3627,7 +3582,12 @@ const MUTABLE_NOTIFICATION_TYPES: ReadonlyArray<{ type: string; zh: string; en: 
   { type: "workitem.merged", zh: "工作项已合并交付", en: "An item was merged" },
   { type: "workitem.cancelled", zh: "工作项已取消", en: "An item was cancelled" },
   { type: "comment.mention", zh: "评论里 @ 了我", en: "Someone mentioned me in a comment" },
-  { type: "meeting.insight.pending", zh: "会议洞察待确认", en: "A meeting insight needs confirmation" }
+  { type: "meeting.insight.pending", zh: "会议洞察待确认", en: "A meeting insight needs confirmation" },
+  { type: "work_item.due_soon", zh: "工作项快到期提醒", en: "An item is due soon" },
+  { type: "work_item.overdue", zh: "工作项已逾期提醒", en: "An item is overdue" },
+  { type: "work_item.escalated_ddl", zh: "工作项逾期升级提醒", en: "An overdue item was escalated" },
+  { type: "conversation.message", zh: "会话里的新消息", en: "New messages in a conversation" },
+  { type: "conversation.mention", zh: "会话里 @ 了我", en: "Someone mentioned me in a conversation" }
 ];
 
 // 静音偏好面板：SSR 出一个折叠的 <details>（默认收起→不占版面、不触溢出门），开关默认全不勾（诚实
@@ -3639,12 +3599,25 @@ function renderNotificationMutePanel(locale: WorkHubLocale): string {
   ).join("");
   // R10-P1-7：开关 SSR 先禁用——当前偏好是异步 GET 回填的，回填前就能点会让「看起来全不勾」的
   // 假状态被整组 PUT 覆盖掉已有静音。水合成功后由客户端解禁；失败时保持锁定+显式重试。
+  const zh = locale === "zh-CN";
+  // G4 #10（关怀 opt-out）：关怀私聊开关（默认开）。与「按类型静音」是两回事——这是主动关怀而非
+  // 某类通知，故独立成一行、勾选＝开启（不同于下方 mute 行的勾选＝静音）。同样 SSR 先禁用、GET 回填后解禁。
+  // 文案避开 web 端不露出的「Cuu」品牌词（smoke 门：web HTML 不含 Cuu；桌面端另有带 Cuu 的措辞）。
+  const careToggle = `<label class="wh-r5-notif-mute-row wh-r17-notif-care-row" data-r17-notification-care-row="true"><input type="checkbox" data-r17-notification-care-toggle="true" disabled /><span>${escapeHtml(
+    zh ? "主动关怀问候" : "Care check-ins"
+  )}</span></label>
+  <p class="wh-subtle wh-r17-notif-care-help">${escapeHtml(
+    zh
+      ? "在你负荷高、或连续深夜工作时，会收到一句私下问候，可随时关闭。"
+      : "You'll get a private check-in when your load is high or you're working late nights — turn it off anytime."
+  )}</p>`;
   return `<details class="wh-card wh-r4-route-card wh-r5-notif-mute" data-r5-notification-mute-panel="true">
         <summary>${escapeHtml(routeT(locale, "notifications.muteTitle"))}</summary>
+        ${careToggle}
         <p class="wh-subtle">${escapeHtml(routeT(locale, "notifications.muteHelp"))}</p>
         <div class="wh-r5-notif-mute-list">${rows}</div>
         <p class="wh-subtle wh-r5-notif-mute-status" data-r5-notification-mute-status="idle" hidden></p>
-        <button type="button" class="wh-btn" data-r10-notification-mute-retry="true" hidden>${escapeHtml(locale === "zh-CN" ? "重新读取设置" : "Reload settings")}</button>
+        <button type="button" class="wh-btn" data-r10-notification-mute-retry="true" hidden>${escapeHtml(zh ? "重新读取设置" : "Reload settings")}</button>
       </details>`;
 }
 
@@ -4542,10 +4515,14 @@ function renderProjectTimelineRouteComponent(vm: ProjectTimelinePageVM, locale: 
           `${zh ? "依赖" : "Needs"} ${item.depends_on.map((depId) => codeById.get(depId) ?? depId.slice(0, 8)).join(" ")}`
         )}</span>`
       : "";
-    // OKR 标注：只显 id（E1 VM 不带目标名，web 也无取名端点——见报告缺口，本批不改 api）。
+    // OKR 标注：悬停显目标名（G4 #36：VM 现带 objective_titles，服务端 join 得到；缺省/取名失败时
+    // 回落成裸 id，与旧行为一致）。
+    const okrHoverNames = item.objective_titles && item.objective_titles.length === (item.objective_ids?.length ?? 0)
+      ? item.objective_titles
+      : item.objective_ids ?? [];
     const okrPill = item.objective_ids && item.objective_ids.length
       ? `<span class="wh-pill" data-r15-timeline-okr="${escapeHtml(String(item.objective_ids.length))}" title="${escapeHtml(
-          `${zh ? "目标" : "Objectives"} ${item.objective_ids.join(zh ? "、" : ", ")}`
+          `${zh ? "目标" : "Objectives"} ${okrHoverNames.join(zh ? "、" : ", ")}`
         )}">${item.objective_ids.length > 1 ? `OKR ×${item.objective_ids.length}` : "OKR"}</span>`
       : "";
     const assigneePill = item.assignee

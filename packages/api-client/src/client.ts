@@ -418,10 +418,17 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       }),
     getNotificationPreferences: () =>
       request("/api/notifications/preferences"),
-    setNotificationPreferences: (mutedNotificationTypes) =>
+    setNotificationPreferences: (mutedNotificationTypes, options) =>
       request("/api/notifications/preferences", {
         method: "PUT",
-        body: JSON.stringify({ muted_notification_types: mutedNotificationTypes })
+        body: JSON.stringify({
+          muted_notification_types: mutedNotificationTypes,
+          // G4 #10：只在调用方显式给了值时才带 care_messages_enabled——缺省＝不动关怀开关（服务端
+          // 的 PUT schema 对该字段为 optional，缺省不覆盖存量）。
+          ...(options?.careMessagesEnabled !== undefined
+            ? { care_messages_enabled: options.careMessagesEnabled }
+            : {})
+        })
       }),
     bootstrapProject: (payload = {}) =>
       request("/api/projects/bootstrap", {
