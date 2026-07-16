@@ -140,6 +140,12 @@ export type CreateCuuMessageInput = {
         // 溯源（对齐 @workhub/contracts 的 conversationTextContentSchema 同名 additive 字段）。普通 turn
         // 回复不带此字段——它只出现在 conversation_message 投递通道的落库物上。
         proactive_intent_id?: string;
+        // R16-W1（工作台聊天流升级）：Cuu 回应展示元信息（模型 id / 累计 token / 耗时 ms），additive
+        // optional，由 services/conversation-turns.ts 在 turn 结算时写入（对齐同名契约字段）。仓库层不校验
+        // 这些字段的语义，只原样落 content_json（同 memory_citations 的既有分工）。
+        model?: string;
+        usage_tokens?: number;
+        elapsed_ms?: number;
       };
     }
   | { kind: "file_card"; contentJson: { drive_item_id: string; snapshot_name: string } }

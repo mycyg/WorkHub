@@ -191,7 +191,14 @@ export type TurnLlmStreamEvent = { type: string; data?: unknown };
 // 截断时可能是原始未解析字符串而不是对象——parseTurnToolCall 的 zod 校验会温和地把它判成参数不对，
 // 见 packages/agent/src/turns/tools.ts 顶部注释）。
 export type TurnLlmContentBlock = { type: string; text?: string; id?: string; name?: string; input?: unknown };
-export type TurnLlmFinalMessage = { content: TurnLlmContentBlock[] };
+// R16-W1（工作台聊天流升级）：结算时读用量做「N tokens」元信息——provider 的 getFinalMessage() 已经带
+// usage（见 packages/agent/src/providers/anthropic-compatible.ts 的 finalMessage()：{inputTokens,
+// outputTokens}）。声明成 optional 是因为既有测试桩/非 anthropic-compat 路径可能不带——拿不到就不写
+// usage_tokens（铁律：没有真数据不渲染），不编造。
+export type TurnLlmFinalMessage = {
+  content: TurnLlmContentBlock[];
+  usage?: { inputTokens?: number; outputTokens?: number };
+};
 export type TurnLlmStream = AsyncIterable<TurnLlmStreamEvent> & {
   getFinalMessage: () => Promise<TurnLlmFinalMessage>;
 };
@@ -200,6 +207,10 @@ export type TurnLlmStream = AsyncIterable<TurnLlmStreamEvent> & {
 // 合法，宽化这个联合类型不影响批4a 既有调用方（那些调用点只产出字符串 content）。
 export type TurnLlmMessageContent = string | Array<Record<string, unknown>>;
 export type TurnLlmClient = {
+  // R16-W1（工作台聊天流升级）：实际路由到的模型 id——ProviderRegistry.get(...) 返回的 MeasuredLlmClient
+  // 上就有这个只读字段（= route.model.model，见 packages/agent/src/providers/measured-client.ts）。声明成
+  // optional 是为了不逼既有测试桩都补一个 model；拿不到（空/缺）就不渲染模型 pill，历史消息同理，不编造。
+  model?: string;
   messages: {
     stream: (input: {
       maxTokens: number;
@@ -812,6 +823,12 @@ type PersistCuuMessageInput =
         is_clarifying_question?: boolean;
         clarify_options?: string[];
         clarify_placeholder?: string;
+        // R16-W1（工作台聊天流升级）：展示元信息（模型 pill / 尾部「Ns · N tokens」）——additive optional。
+        // model 由 persistAndBroadcastCuuMessage 统一补（所有 Cuu 文字回应都带），usage_tokens/elapsed_ms
+        // 由具体轮次循环在落定文字回应时按真实结算值填（拿不到就不填，不编造）。
+        model?: string;
+        usage_tokens?: number;
+        elapsed_ms?: number;
       };
     }
   | { kind: "file_card"; contentJson: { drive_item_id: string; snapshot_name: string } }
@@ -968,12 +985,23 @@ async function prepareTurnContext(
 
   const historyMessages: Array<{ role: "user" | "assistant"; content: TurnLlmMessageContent }> = [...buildTurnMessages(history)];
 
+  // R16-W1（工作台聊天流升级）：这一轮实际路由到的模型 id——统一在落库前补进所有 Cuu 文字回应的 content，
+  // 让两条轮次路径（off 内联循环 / on loop2 段）都自动带上模型 pill 数据，不用在各自的落定点分别接线
+  // （on 路径的落定点属于「不碰 loop2」范围，集中在这里补是更克制的做法）。拿不到就不补（历史/测试桩），
+  // 读侧据此不渲 pill。
+  const routedModelId =
+    typeof (client as { model?: unknown }).model === "string" ? (client as { model: string }).model.trim() : "";
+
   async function persistAndBroadcastCuuMessage(messageInput: PersistCuuMessageInput): Promise<ConversationTurnResultVM["message"]> {
+    const withModel: PersistCuuMessageInput =
+      messageInput.kind === "text" && routedModelId && messageInput.contentJson.model === undefined
+        ? { kind: "text", contentJson: { ...messageInput.contentJson, model: routedModelId } }
+        : messageInput;
     const created = await deps.conversations.createCuuMessage({
       workspaceId: human.workspaceId,
       conversationId: input.conversationId,
       at: now(),
-      ...messageInput
+      ...withModel
     });
     const vm = parseOutputContract(conversationMessageVmSchema, messageToVm(created), "conversation-turns.message");
     try {
@@ -1046,6 +1074,11 @@ async function runLegacyTurnLoop(
   let finalMessageVm: ConversationTurnResultVM["message"] | undefined;
   let toolCallsUsed = 0;
   let ordinal = 0;
+  // R16-W1（工作台聊天流升级）：结算尾部元信息「Ns · N tokens」。startedAt=进循环时刻；usage 跨轮累加
+  // （多轮工具调用时把每一轮模型调用的 token 都算进这一次 turn 的成本，不是只报最后一轮）。
+  const startedAt = now().getTime();
+  let usageTokensTotal = 0;
+  let sawUsage = false;
 
   const controller = new AbortController();
   const timeoutMs = deps.turnTimeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
@@ -1090,6 +1123,10 @@ async function runLegacyTurnLoop(
           }
         }
         final = await stream.getFinalMessage();
+        if (final.usage) {
+          usageTokensTotal += (final.usage.inputTokens ?? 0) + (final.usage.outputTokens ?? 0);
+          sawUsage = true;
+        }
       } catch (error) {
         logger.warn("conversation_turn_llm_failed", { conversationId: input.conversationId, turnId, error });
         throw new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 没接上，请再试一次。");
@@ -1104,10 +1141,21 @@ async function runLegacyTurnLoop(
           }
           throw new ConversationTurnServiceError(500, "conversation_turn_failed", "这一轮 Cuu 没给出内容，请再试一次。");
         }
-        const contentJson: { text: string; memory_citations?: TurnMemoryCitation[] } = { text: fullText };
+        const contentJson: {
+          text: string;
+          memory_citations?: TurnMemoryCitation[];
+          usage_tokens?: number;
+          elapsed_ms?: number;
+        } = { text: fullText };
         if (memorySection.citations.length > 0) {
           contentJson.memory_citations = memorySection.citations;
         }
+        // R16-W1：只在真的从 provider 拿到过 usage 时才写 usage_tokens（铁律：没有真数据不渲染）；elapsed_ms
+        // 是本机时钟差，恒可得。model 由 persistAndBroadcastCuuMessage 统一补，这里不重复。
+        if (sawUsage) {
+          contentJson.usage_tokens = usageTokensTotal;
+        }
+        contentJson.elapsed_ms = Math.max(0, now().getTime() - startedAt);
         try {
           finalMessageVm = await persistAndBroadcastCuuMessage({ kind: "text", contentJson });
         } catch (error) {

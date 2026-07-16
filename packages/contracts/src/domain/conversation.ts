@@ -362,7 +362,16 @@ export const conversationTextContentSchema = z
     // 产它的 intent id 做审计溯源（读侧 VM strict 校验必须认识这个键，故在此 additive 声明）。普通
     // 会话回复（走 conversation-turns 的 turn 循环）不带此字段——它只出现在 conversation_message 通道
     // 投递物上。optional，存量消息不受影响。
-    proactive_intent_id: idSchema.optional()
+    proactive_intent_id: idSchema.optional(),
+    // R16-W1（工作台聊天流升级）：Cuu 回应的展示元信息——全部 additive optional，只由服务端 turn 结算时
+    // 写入（见 apps/api/src/services/conversation-turns.ts）。存量消息 / 人类消息不带这些字段，读侧缺省
+    // 不渲染（04 §4 铁律 3：没有真数据就不渲染，历史消息没有这些字段就不显示 pill/元信息行）。
+    //   model：这一轮实际使用的模型 id（provider 路由处 route.model.model），渲染成 Cuu 气泡头部的模型 pill。
+    //   usage_tokens：这一轮累计 token（输入+输出之和），渲染进消息尾部元信息行「N tokens」。
+    //   elapsed_ms：这一轮从进循环到落定的耗时（毫秒），渲染进消息尾部元信息行「Ns」。
+    model: z.string().min(1).max(128).optional(),
+    usage_tokens: z.number().int().min(0).max(1_000_000_000).optional(),
+    elapsed_ms: z.number().int().min(0).max(86_400_000).optional()
   })
   .strict();
 export type ConversationTextContent = z.infer<typeof conversationTextContentSchema>;

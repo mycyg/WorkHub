@@ -1120,6 +1120,117 @@ test("createTurn streams ordinal-numbered delta events on the conversation topic
   assert.equal(persistInput.contentJson.text, "看过了，整体不错");
 });
 
+test("R16-W1 createTurn stamps the routed model id, accumulated usage tokens, and elapsed_ms onto the settled Cuu text message", async () => {
+  const createCuuMessageCalls: Array<{ contentJson: Record<string, unknown> }> = [];
+  // 单调递增时钟：每次读都前进 1s，保证 elapsed_ms（结算时刻 - 进循环时刻）严格为正。
+  let clockMs = Date.UTC(2026, 6, 16, 12, 0, 0);
+  const advancingClock = () => {
+    const at = new Date(clockMs);
+    clockMs += 1_000;
+    return at;
+  };
+  // 带 model + usage 的 client 桩：镜像 ProviderRegistry.get(...) 返回的 MeasuredLlmClient（.model 只读，
+  // getFinalMessage() 带 usage）。
+  const meteredClient: ConversationTurnClientProvider = async () => ({
+    model: "deepseek-v4",
+    messages: {
+      async stream(): Promise<TurnLlmStream> {
+        const events: TurnLlmStreamEvent[] = [textDeltaEvent("看过了，"), textDeltaEvent("整体不错")];
+        return {
+          [Symbol.asyncIterator]() {
+            let index = 0;
+            return {
+              async next() {
+                if (index >= events.length) {
+                  return { value: undefined as unknown as TurnLlmStreamEvent, done: true as const };
+                }
+                const value = events[index]!;
+                index += 1;
+                return { value, done: false as const };
+              }
+            };
+          },
+          async getFinalMessage() {
+            return { content: [{ type: "text", text: "看过了，整体不错" }], usage: { inputTokens: 900, outputTokens: 400 } };
+          }
+        };
+      }
+    }
+  });
+
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          createCuuMessageCalls.push(input as { contentJson: Record<string, unknown> });
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      },
+      client: meteredClient,
+      now: advancingClock
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  assert.equal(result.message.sender_type, "cuu");
+  assert.equal(textContent(result.message).text, "看过了，整体不错");
+
+  assert.equal(createCuuMessageCalls.length, 1);
+  const content = createCuuMessageCalls[0]!.contentJson as {
+    model?: string;
+    usage_tokens?: number;
+    elapsed_ms?: number;
+  };
+  assert.equal(content.model, "deepseek-v4");
+  assert.equal(content.usage_tokens, 1_300);
+  assert.equal(typeof content.elapsed_ms, "number");
+  assert.ok((content.elapsed_ms ?? -1) > 0, "elapsed_ms should be a positive turn duration");
+});
+
+test("R16-W1 createTurn omits usage_tokens (but still stamps model) when the provider stream reports no usage", async () => {
+  const createCuuMessageCalls: Array<{ contentJson: Record<string, unknown> }> = [];
+  // model 有、usage 无（既有测试桩 / 非 anthropic-compat 路径）：model pill 照渲，usage_tokens 不写（不编造）。
+  const modelOnlyClient: ConversationTurnClientProvider = async () => ({
+    model: "deepseek-v4",
+    messages: {
+      async stream() {
+        return fakeStream([textDeltaEvent("好的")], "好的");
+      }
+    }
+  });
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          createCuuMessageCalls.push(input as { contentJson: Record<string, unknown> });
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      },
+      client: modelOnlyClient
+    })
+  );
+
+  await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  assert.equal(createCuuMessageCalls.length, 1);
+  const content = createCuuMessageCalls[0]!.contentJson as Record<string, unknown>;
+  assert.equal(content["model"], "deepseek-v4");
+  assert.equal("usage_tokens" in content, false, "usage_tokens must be absent when the provider reports no usage");
+});
+
 test("createTurn caps injected user memories at USER_MEMORY_PROMPT_TOP_N and team skills at the top-5 slice", async () => {
   const listForUserCalls: unknown[] = [];
   const manyTeamSkills = Array.from({ length: 8 }, (_, index) =>

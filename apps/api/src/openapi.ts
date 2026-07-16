@@ -4703,7 +4703,11 @@ const conversationTextContentResponseSchema = {
       maxItems: 8,
       items: { type: "string", minLength: 1, maxLength: 200 }
     },
-    clarify_placeholder: { type: "string", minLength: 1, maxLength: 200 }
+    clarify_placeholder: { type: "string", minLength: 1, maxLength: 200 },
+    // R16-W1（工作台聊天流升级）：Cuu 回应展示元信息，additive optional（服务端 turn 结算时写入）。
+    model: { type: "string", minLength: 1, maxLength: 128 },
+    usage_tokens: { type: "integer", minimum: 0, maximum: 1_000_000_000 },
+    elapsed_ms: { type: "integer", minimum: 0, maximum: 86_400_000 }
   },
   additionalProperties: false
 } as const;
