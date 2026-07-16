@@ -52,6 +52,14 @@ class RecordedQueryBuilder implements PromiseLike<unknown[]> {
     return this;
   }
 
+  // R17 #18（approval-digest 扩源）：unionAll 用来把审批/升级/提议三源统一成一个待决行流子查询。
+  // 每个 union 分支本身是独立的 db.select()（各自已作为一条记录进 queries），这里只记一步、返回 this 让链
+  // 继续（后续 .as() 把整个 union 收成子查询别名）。
+  unionAll(_subquery: unknown): this {
+    this.query.steps.push("unionAll");
+    return this;
+  }
+
   where(condition: unknown): this {
     this.query.where = condition;
     this.query.steps.push("where");
