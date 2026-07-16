@@ -346,8 +346,15 @@ export type AttentionInboxContext = {
   onActionSettled?: (() => void) | undefined;
 };
 
-// 两窗共用的收件箱挂载逻辑（S1 证明片的 mount 主体，行为逐字保持）。返回卸载清理函数。
-export function mountAttentionInbox(ctx: AttentionInboxContext): () => void {
+// R17 #17：mount 句柄——dispose 卸载 + refresh 重拉列表。spotlight 侧只取 .dispose（见 createAttentionView），
+// 行为零变化；工作台收件箱额外用 refresh() 让开着的列表随角标一起活（不必切走再切回）。
+export type AttentionInboxHandle = {
+  dispose: () => void;
+  refresh: () => void;
+};
+
+// 两窗共用的收件箱挂载逻辑（S1 证明片的 mount 主体，行为逐字保持）。返回卸载清理 + 重拉句柄。
+export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxHandle {
   {
       const zh = ctx.locale === "zh-CN";
       const { body, client } = ctx;
@@ -715,8 +722,18 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): () => void {
       ctx.requestResize();
       void refresh();
 
-      return () => {
-        disposed = true;
+      return {
+        dispose: () => {
+          disposed = true;
+        },
+        // #17：宿主在角标随 SSE/轮询刷新时同步调这个重拉列表——单飞守卫（busy）与 disposed 保护都在 refresh
+        // 内部，已卸载后再调是无害空操作。
+        refresh: () => {
+          if (disposed) {
+            return;
+          }
+          void refresh();
+        }
       };
   }
 }
@@ -728,7 +745,8 @@ export function createAttentionView(): SpotlightCapabilityView {
   return {
     id: "approvals",
     mount(ctx: SpotlightViewContext) {
-      return mountAttentionInbox(ctx);
+      // spotlight 只需要卸载清理函数——取 .dispose，refresh 句柄不外露，聚焦盒行为逐字不变。
+      return mountAttentionInbox(ctx).dispose;
     }
   };
 }
