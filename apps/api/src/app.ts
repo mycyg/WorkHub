@@ -28,6 +28,7 @@ import { createMeetingRoutes } from "./routes/meetings.js";
 import { createPilotRoutes } from "./routes/pilot.js";
 import { createProjectRoutes } from "./routes/projects.js";
 import { createProjectTimelineRoutes } from "./routes/project-timeline.js";
+import { createProjectInstructionsRoutes } from "./routes/project-instructions.js";
 import { createProjectPlannerRoutes } from "./routes/project-planner.js";
 import { createSessionRoutes } from "./routes/sessions.js";
 import { createKnowledgeRoutes } from "./routes/knowledge.js";
@@ -78,6 +79,7 @@ import {
 } from "./services/proposals.js";
 import { WorkItemServiceError } from "./services/work-items.js";
 import { ProjectTimelineServiceError } from "./services/project-timeline.js";
+import { ProjectInstructionsServiceError } from "./services/project-instructions.js";
 import { ProjectPlannerServiceError } from "./services/project-planner.js";
 import { InternalContractError } from "./pages/output-contract.js";
 import { ConversationServiceError } from "./services/conversations.js";
@@ -269,6 +271,8 @@ app.route("/api/drive", createDriveRoutes());
 app.route("/api/meetings", createMeetingRoutes());
 app.route("/api/projects", createProjectRoutes());
 app.route("/api", createProjectTimelineRoutes());
+// R16 批 W4a：项目级自定义指令——GET/PATCH /api/projects/:id/instructions，权限与上面的里程碑写同门。
+app.route("/api", createProjectInstructionsRoutes());
 app.route("/api", createProjectPlannerRoutes());
 app.route("/api", createConversationRoutes());
 app.route("/api/dm", createDmRoutes());
@@ -579,6 +583,20 @@ app.onError((error, c) => {
 
   // R15 批 E1：项目时间线（里程碑 / 依赖 / 挂里程碑）的类型化 403/404/422——不进这张表会被兜底压成 500。
   if (error instanceof ProjectTimelineServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
+    );
+  }
+
+  // R16 批 W4a：项目级自定义指令的类型化 403/404——不进这张表会被兜底压成 500。
+  if (error instanceof ProjectInstructionsServiceError) {
     return c.json(
       {
         ok: false,

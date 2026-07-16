@@ -58,3 +58,31 @@ export type CreatePersonalProjectRequest = z.infer<typeof createPersonalProjectR
 // （主区会话已就绪），语义上和团队项目 bootstrap 的 context_ready 完全一致，不另开一份契约。
 export const createPersonalProjectResultSchema = bootstrapProjectResultSchema;
 export type CreatePersonalProjectResult = BootstrapProjectResult;
+
+// R16 批 W4a（项目级自定义指令 · 纯后端）：项目设置里的一段自由文本，注入该项目所有 Cuu 对话回复与
+// agent-run 的 worker system prompt（优先级=高于通用默认、低于系统工作纪律——见
+// packages/agent/src/turns/prompt.ts 的 buildTurnProjectInstructionsSection 与
+// apps/api/src/services/project-instructions-context.ts 的同名 worker 侧实现）。留空（trim 后空串）
+// 即不注入。长度上限与 user-profile 的 bio_md 同口径——.trim().max() 链式校验，超限直接抛 ZodError，
+// 由 app.ts 的全局兜底转成 422 validation_error，不需要服务层另起一套错误码。
+export const PROJECT_INSTRUCTIONS_MAX_CHARS = 4000;
+
+const instructionsMdSchema = z.string().trim().max(PROJECT_INSTRUCTIONS_MAX_CHARS);
+
+export const projectInstructionsVmSchema = z
+  .object({
+    project_id: idSchema,
+    // 空串＝未配置自定义指令（DB 侧存 NULL，读侧折成 ""）——VM 字段本身不做 nullable，前端 textarea
+    // 直接绑定即可,不需要额外的 null 判空。
+    instructions_md: z.string(),
+    updated_at: isoDateTimeSchema
+  })
+  .strict();
+export type ProjectInstructionsVM = z.infer<typeof projectInstructionsVmSchema>;
+
+export const patchProjectInstructionsRequestSchema = z
+  .object({
+    instructions_md: instructionsMdSchema
+  })
+  .strict();
+export type PatchProjectInstructionsRequest = z.infer<typeof patchProjectInstructionsRequestSchema>;

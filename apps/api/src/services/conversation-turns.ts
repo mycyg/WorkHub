@@ -24,6 +24,7 @@ import {
   buildTurnContextSummarySection,
   buildTurnMemorySection,
   buildTurnMessages,
+  buildTurnProjectInstructionsSection,
   buildTurnSystemPrompt,
   buildTurnToolDefinitions,
   parseTurnToolCall,
@@ -842,6 +843,9 @@ type PreparedTurn = {
   historyMessages: Array<{ role: "user" | "assistant"; content: TurnLlmMessageContent }>;
   pendingClarification: { question: string } | undefined;
   memorySection: ReturnType<typeof buildTurnMemorySection>;
+  // R16 批 W4a：预先算好的项目自定义指令段（""＝不注入——未配置或所属项目是 DM 容器）,两条 system
+  // 拼接路径（runLegacyTurnLoop / runConversationTurnSegment）共用同一份,不重复判定 DM 容器围栏。
+  projectInstructionsSection: string;
   contextSummaryMd: string | null;
   triggerText: string;
   persistAndBroadcastCuuMessage: (messageInput: PersistCuuMessageInput) => Promise<ConversationTurnResultVM["message"]>;
@@ -959,6 +963,12 @@ async function prepareTurnContext(
     userMemories: userMemoryRows.map((row) => ({ key: row.key, valueMd: row.valueMd })),
     teamSkills: topTeamSkills.map((row) => ({ name: row.name, whenToUse: row.whenToUse }))
   });
+  // R16 批 W4a（项目级自定义指令）：DM 容器项目的会话永不注入（硬围栏，与人自己的地盘个人空间不同——
+  // 个人空间项目走下面同一条 buildTurnProjectInstructionsSection，正常按 access.projectInstructionsMd
+  // 是否配置来注入，不做特殊豁免）。
+  const projectInstructionsSection = access.projectIsDmContainer
+    ? ""
+    : buildTurnProjectInstructionsSection(access.projectInstructionsMd);
   if (userMemoryRows.length > 0) {
     try {
       await deps.userMemories.touch(userMemoryRows.map((row) => row.id), now(), { workspaceId: human.workspaceId });
@@ -1050,6 +1060,7 @@ async function prepareTurnContext(
     historyMessages,
     pendingClarification,
     memorySection,
+    projectInstructionsSection,
     contextSummaryMd,
     triggerText,
     persistAndBroadcastCuuMessage,
@@ -1065,7 +1076,7 @@ async function runLegacyTurnLoop(
   prepared: PreparedTurn
 ): Promise<ConversationTurnResultVM> {
   const { deps, now, logger } = runtime;
-  const { turnId, toolCtx, memorySection, pendingClarification, contextSummaryMd, client } = prepared;
+  const { turnId, toolCtx, memorySection, pendingClarification, projectInstructionsSection, contextSummaryMd, client } = prepared;
   const persistAndBroadcastCuuMessage = prepared.persistAndBroadcastCuuMessage;
   const tryPersistToolNote = prepared.tryPersistToolNote;
 
@@ -1099,6 +1110,8 @@ async function runLegacyTurnLoop(
       const tools = allowTools ? buildTurnToolDefinitions({ allowCreateWorkItem: Boolean(pendingClarification) }) : undefined;
       const system = [
         buildTurnSystemPrompt(pendingClarification ? { pendingClarification } : {}),
+        // R16 批 W4a：项目自定义指令——位置在通用工作纪律之后、会话上下文（滚动摘要/记忆）之前。
+        projectInstructionsSection,
         contextSummaryMd ? buildTurnContextSummarySection(contextSummaryMd) : "",
         memorySection.promptSection
       ]
@@ -1376,6 +1389,8 @@ async function runConversationTurnSegment(
 
   const system = [
     buildTurnSystemPrompt(prepared.pendingClarification ? { pendingClarification: prepared.pendingClarification } : {}),
+    // R16 批 W4a：项目自定义指令——位置在通用工作纪律之后、会话上下文（滚动摘要/记忆）之前。
+    prepared.projectInstructionsSection,
     prepared.contextSummaryMd ? buildTurnContextSummarySection(prepared.contextSummaryMd) : "",
     prepared.memorySection.promptSection
   ]

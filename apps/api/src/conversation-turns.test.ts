@@ -98,6 +98,9 @@ function accessRecord(overrides: Partial<ConversationAccessRecord> = {}): Conver
     conversation: conversationRow(),
     projectOwnerUserId: userId,
     projectIsPersonal: false,
+    // R16 批 W4a：默认「未配置项目指令 + 非 DM 容器」——各测试按需 override 来断言注入/跳过。
+    projectInstructionsMd: null,
+    projectIsDmContainer: false,
     membershipRole: "member",
     participantRole: "owner",
     participantCount: 1,
@@ -1261,6 +1264,226 @@ test("createTurn caps injected user memories at USER_MEMORY_PROMPT_TOP_N and tea
   const citations = textContent(result.message).memory_citations ?? [];
   const teamSkillCitations = citations.filter((citation) => citation.kind === "team_skill");
   assert.equal(teamSkillCitations.length, 5);
+});
+
+// ── R16 批 W4a（项目级自定义指令）───────────────────────────────────────────────────────────
+// 该会话所属项目在设置里配置的自定义指令，注入这一轮 system prompt——位置在通用工作纪律之后、
+// 会话上下文（滚动摘要/记忆）之前；留空/未配置不注入；DM 容器项目永远跳过（硬围栏）；个人空间
+// 项目正常注入（不做特殊豁免）。off（legacy）与 loop2(on) 两条拼接路径都要覆盖。
+
+test("createTurn injects the project's custom instructions after the general discipline and before the rolling-summary section", async () => {
+  const mainSpy: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({
+            projectInstructionsMd: "遇到发布相关的工单，先问一句要不要拉发布负责人。",
+            conversation: conversationRow({
+              contextSummaryMd: "当前进度：正在核对交付清单。",
+              contextSummaryThroughSeq: 40,
+              nextSeq: 2
+            })
+          });
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      },
+      client: respondingClient([], "好的，收到", mainSpy)
+    })
+  );
+
+  await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  const params = mainSpy.find(
+    (entry): entry is { system: string } => typeof (entry as Record<string, unknown>)?.["system"] === "string"
+  );
+  assert.ok(params);
+  assert.match(params.system, /这个项目在设置里配置的自定义指令/);
+  assert.match(params.system, /不是系统工作纪律/);
+  assert.match(params.system, /遇到发布相关的工单，先问一句要不要拉发布负责人。/);
+
+  const disciplineIndex = params.system.indexOf("你是 WorkHub 项目里的 Cuu");
+  const instructionsIndex = params.system.indexOf("遇到发布相关的工单");
+  const summaryIndex = params.system.indexOf("当前进度：正在核对交付清单");
+  assert.ok(disciplineIndex >= 0, "general discipline text must be present");
+  assert.ok(instructionsIndex > disciplineIndex, "project instructions must come after the general discipline");
+  assert.ok(summaryIndex > instructionsIndex, "project instructions must come before the rolling-summary section");
+});
+
+test("createTurn injects nothing when the project has no custom instructions configured (blank/unset)", async () => {
+  for (const instructionsMd of [null, "", "   "]) {
+    const mainSpy: unknown[] = [];
+    const service = createConversationTurnService(
+      baseDeps({
+        conversations: {
+          async findVisibleAccessRecord() {
+            return accessRecord({ projectInstructionsMd: instructionsMd });
+          },
+          async listMessagesAfter() {
+            return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+          },
+          async createCuuMessage(input) {
+            return cuuMessageRow({ contentJson: input.contentJson });
+          }
+        },
+        client: respondingClient([], "好的，收到", mainSpy)
+      })
+    );
+
+    await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+    const params = mainSpy.find(
+      (entry): entry is { system: string } => typeof (entry as Record<string, unknown>)?.["system"] === "string"
+    );
+    assert.ok(params);
+    assert.doesNotMatch(
+      params.system,
+      /这个项目在设置里配置的自定义指令/,
+      `instructionsMd=${JSON.stringify(instructionsMd)} must not inject a section`
+    );
+  }
+});
+
+test("createTurn never injects project instructions into a DM-container conversation, even when instructions_md is configured", async () => {
+  const mainSpy: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({
+            projectInstructionsMd: "遇到发布相关的工单，先问一句要不要拉发布负责人。",
+            projectIsDmContainer: true
+          });
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      },
+      client: respondingClient([], "好的，收到", mainSpy)
+    })
+  );
+
+  await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  const params = mainSpy.find(
+    (entry): entry is { system: string } => typeof (entry as Record<string, unknown>)?.["system"] === "string"
+  );
+  assert.ok(params);
+  assert.doesNotMatch(params.system, /这个项目在设置里配置的自定义指令/);
+  assert.doesNotMatch(params.system, /遇到发布相关的工单/);
+});
+
+test("createTurn injects project instructions normally for a personal-space conversation (no special exemption)", async () => {
+  const mainSpy: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({
+            conversation: conversationRow({ kind: "main" }),
+            projectIsPersonal: true,
+            participantCount: 0,
+            projectInstructionsMd: "写周报默认用中文小标题分段。"
+          });
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      },
+      client: respondingClient([], "好的，收到", mainSpy)
+    })
+  );
+
+  await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  const params = mainSpy.find(
+    (entry): entry is { system: string } => typeof (entry as Record<string, unknown>)?.["system"] === "string"
+  );
+  assert.ok(params);
+  assert.match(params.system, /写周报默认用中文小标题分段。/);
+});
+
+test("loop2(on): injects the project's custom instructions after the general discipline and before the rolling-summary section (parity with legacy)", async () => {
+  const mainSpy: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({
+            projectInstructionsMd: "遇到发布相关的工单，先问一句要不要拉发布负责人。",
+            conversation: conversationRow({
+              contextSummaryMd: "当前进度：正在核对交付清单。",
+              contextSummaryThroughSeq: 40,
+              nextSeq: 2
+            })
+          });
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      },
+      client: respondingClient([], "好的，收到", mainSpy)
+    })
+  );
+
+  await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  const params = mainSpy.find(
+    (entry): entry is { system: string } => typeof (entry as Record<string, unknown>)?.["system"] === "string"
+  );
+  assert.ok(params);
+  const disciplineIndex = params.system.indexOf("你是 WorkHub 项目里的 Cuu");
+  const instructionsIndex = params.system.indexOf("遇到发布相关的工单");
+  const summaryIndex = params.system.indexOf("当前进度：正在核对交付清单");
+  assert.ok(disciplineIndex >= 0 && instructionsIndex > disciplineIndex);
+  assert.ok(summaryIndex > instructionsIndex);
+});
+
+test("loop2(on): never injects project instructions into a DM-container conversation", async () => {
+  const mainSpy: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({
+            projectInstructionsMd: "遇到发布相关的工单，先问一句要不要拉发布负责人。",
+            projectIsDmContainer: true
+          });
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      },
+      client: respondingClient([], "好的，收到", mainSpy)
+    })
+  );
+
+  await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  const params = mainSpy.find(
+    (entry): entry is { system: string } => typeof (entry as Record<string, unknown>)?.["system"] === "string"
+  );
+  assert.ok(params);
+  assert.doesNotMatch(params.system, /这个项目在设置里配置的自定义指令/);
 });
 
 test("createTurn touches injected user memories and swallows a touch failure without failing the turn", async () => {

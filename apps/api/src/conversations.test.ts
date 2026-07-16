@@ -128,6 +128,9 @@ function accessRecord(overrides: Partial<ConversationAccessRecord> = {}): Conver
     conversation: conversationRow(),
     projectOwnerUserId: userId,
     projectIsPersonal: false,
+    // R16 批 W4a：projects 加了 instructions_md/is_dm_container 的显式投影——机械补齐（默认空/非容器）。
+    projectInstructionsMd: null,
+    projectIsDmContainer: false,
     membershipRole: "member",
     participantRole: "owner",
     participantCount: 1,

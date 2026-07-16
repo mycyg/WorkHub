@@ -682,7 +682,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0066 action card origin", () => {
+test("migration journal ends with 0067 project instructions", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -697,17 +697,17 @@ test("migration journal ends with 0066 action card origin", () => {
       breakpoints: finalEntry.breakpoints
     },
     {
-      // R15 集成:E3 的 0065(project_plan_drafts,when=1783924000000)与 D4 的 0066(action_card_origin,
-      // when=1783926000000)并行施工后在 wave1 合流,journal 收于 0066,when 严格递增(0064→0065→0066)。
-      idx: 66,
+      // R16 批 W4a（项目级自定义指令）：0067(project_instructions,when=1783928000000)接在 D4 的
+      // 0066(action_card_origin,when=1783926000000)之后,journal 收于 0067,when 严格递增(0065→0066→0067)。
+      idx: 67,
       version: "7",
-      tag: "0066_action_card_origin",
+      tag: "0067_project_instructions",
       breakpoints: true
     }
   );
-  // when 严格递增——0066 的时间戳必须大于 0064 的 1783922000000(0065 的 1783924000000 居中)。
-  const timelineEntry = journal.entries.find((entry) => entry.tag === "0064_project_timeline");
-  assert.ok(timelineEntry && finalEntry && finalEntry.when > timelineEntry.when);
+  // when 严格递增——0067 的时间戳必须大于 0066 的 1783926000000。
+  const originEntry = journal.entries.find((entry) => entry.tag === "0066_action_card_origin");
+  assert.ok(originEntry && finalEntry && finalEntry.when > originEntry.when);
 });
 
 test("R15 批 A migration 0061 adds the reminder-ladder columns additively", () => {
@@ -876,6 +876,26 @@ test("R15 批 D4 migration 0066 adds action_cards.origin and makes analyzed_to_s
   );
   assert.doesNotMatch(migration, /CONCURRENTLY/iu, "migration 0066 must not use CONCURRENTLY (single-tx replay)");
   assert.doesNotMatch(migration, /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u, "migration must not contain emoji glyphs");
+});
+
+test("R16 批 W4a migration 0067 adds projects.instructions_md additively", () => {
+  const migrationUrl = new URL("../migrations/0067_project_instructions.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0067_project_instructions.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+
+  // 只加一列（additive，ADD COLUMN IF NOT EXISTS 保证 replay 安全），无默认值、可空、无 CHECK
+  // （长度上限在契约层校验）。
+  assert.match(migration, /ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "instructions_md" text;/u);
+  assert.doesNotMatch(migration, /DROP COLUMN|DROP CONSTRAINT|DROP INDEX|ALTER COLUMN/u, "migration 0067 must be additive-only");
+  assert.doesNotMatch(migration, /UNIQUE INDEX|CREATE INDEX|CREATE TABLE/iu, "migration 0067 must only add a column");
+  assert.doesNotMatch(migration, /CONCURRENTLY/iu, "migration 0067 must not use CONCURRENTLY (single-tx replay)");
+  assert.doesNotMatch(migration, /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u, "migration must not contain emoji glyphs");
+
+  // Drizzle schema 与迁移同步：projects.instructionsMd 可空、无默认值。
+  const projectsTable = requiredTable("projects") as WorkHubTable & Record<string, any>;
+  assert.equal(projectsTable.instructionsMd.name, "instructions_md");
+  assert.equal(projectsTable.instructionsMd.notNull, false);
+  assert.equal(projectsTable.instructionsMd.hasDefault, false);
 });
 
 test("R14 批 FEEDBACK migration 0058 adds the ai_feedback table with a self-idempotency unique index", () => {

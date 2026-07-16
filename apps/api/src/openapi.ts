@@ -3728,6 +3728,56 @@ const projectTimelinePageResponse = {
     ]).responses["404"]
   }
 } as const;
+// R16 批 W4a（项目级自定义指令）：权限门与上面的里程碑写同一道 canManageProjectDrive fence——
+// 403/404 复用同款 timelineForbiddenResponse/timelineNotFoundResponse 的错误码集合（project_forbidden /
+// project_not_found），不重开一套。
+const projectInstructionsResponseSchema = {
+  type: "object",
+  required: ["project_id", "instructions_md", "updated_at"],
+  properties: {
+    project_id: uuidStringSchema,
+    instructions_md: { type: "string", maxLength: 4000 },
+    updated_at: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
+const patchProjectInstructionsRequestBodySchema = {
+  type: "object",
+  required: ["instructions_md"],
+  properties: {
+    instructions_md: { type: "string", maxLength: 4000 }
+  },
+  additionalProperties: false
+} as const;
+const projectInstructionsForbiddenResponse = jsonErrorStatusResponse(
+  "403",
+  "Project instructions are not manageable by the current user",
+  ["project_forbidden"]
+).responses["403"];
+const projectInstructionsNotFoundResponse = jsonErrorStatusResponse(
+  "404",
+  "Project instructions target was not found",
+  ["project_not_found"]
+).responses["404"];
+const projectInstructionsReadResponses = {
+  responses: {
+    "200": jsonDataResponse(projectInstructionsResponseSchema, "Project custom instructions for its manager").responses["200"],
+    "401": proposalNotIdentifiedResponse,
+    "403": projectInstructionsForbiddenResponse,
+    "404": projectInstructionsNotFoundResponse
+  }
+} as const;
+const projectInstructionsPatchResponses = {
+  responses: {
+    "200": jsonDataResponse(projectInstructionsResponseSchema, "Updated project custom instructions").responses["200"],
+    "401": proposalNotIdentifiedResponse,
+    "403": projectInstructionsForbiddenResponse,
+    "404": projectInstructionsNotFoundResponse,
+    "422": jsonErrorStatusResponse("422", "Project instructions body does not match the contract", [
+      "validation_error"
+    ]).responses["422"]
+  }
+} as const;
 const openApiHttpMethods = new Set(["delete", "get", "head", "options", "patch", "post", "put"]);
 type OpenApiParameter = {
   name: string;
@@ -8624,6 +8674,21 @@ export function getOpenApiDocument() {
             "403": timelineForbiddenResponse,
             "404": timelineNotFoundResponse
           }
+        }
+      },
+      "/api/projects/{id}/instructions": {
+        get: {
+          tags: ["projects"],
+          summary: "Read a project's custom instructions (injected into Cuu turns and agent-run worker prompts)",
+          parameters: [pathUuidParameter("id")],
+          ...projectInstructionsReadResponses
+        },
+        patch: {
+          tags: ["projects"],
+          summary: "Update a project's custom instructions",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(patchProjectInstructionsRequestBodySchema),
+          ...projectInstructionsPatchResponses
         }
       },
       "/api/workitems/{id}/dependencies": {
