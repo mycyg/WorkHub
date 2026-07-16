@@ -474,6 +474,20 @@ class MemoryMemberships implements WorkspaceMembershipRepository {
     row.updatedAt = at;
     return row;
   }
+
+  async listActiveByWorkspace(workspaceId: string) {
+    return this.rows.filter((row) => row.workspaceId === workspaceId && row.deletedAt === null);
+  }
+
+  async updateRole(id: string, role: MembershipRole, at: Date) {
+    const row = this.rows.find((candidate) => candidate.id === id && candidate.deletedAt === null);
+    if (!row) {
+      return null;
+    }
+    row.role = role;
+    row.updatedAt = at;
+    return row;
+  }
 }
 
 function inviteRow(input: CreateInviteInput, seq = 1): UserInviteRow {

@@ -38,6 +38,7 @@ import { createProposalRoutes, createWorkItemProposalRoutes } from "./routes/pro
 import { createCostRoutes } from "./routes/cost.js";
 import { createConversationRoutes } from "./routes/conversations.js";
 import { createDmRoutes } from "./routes/dm.js";
+import { createWorkspaceMemberRoutes } from "./routes/workspace-members.js";
 import { createAiSettingsRoutes } from "./routes/ai-settings.js";
 import { createUserProfileRoutes } from "./routes/user-profile.js";
 import { createUserAvatarRoutes } from "./routes/user-avatar.js";
@@ -83,6 +84,7 @@ import { ProjectInstructionsServiceError } from "./services/project-instructions
 import { ProjectPlannerServiceError } from "./services/project-planner.js";
 import { InternalContractError } from "./pages/output-contract.js";
 import { ConversationServiceError } from "./services/conversations.js";
+import { WorkspaceMemberServiceError } from "./services/workspace-members.js";
 import { AiSettingsServiceError } from "./services/ai-settings.js";
 import { UserProfileServiceError } from "./services/user-profile.js";
 import { UserAvatarServiceError } from "./services/user-avatar.js";
@@ -276,6 +278,8 @@ app.route("/api", createProjectInstructionsRoutes());
 app.route("/api", createProjectPlannerRoutes());
 app.route("/api", createConversationRoutes());
 app.route("/api/dm", createDmRoutes());
+// R17 批 G1（群成员管理）：工作区成员移出/角色变更（DELETE/PATCH /api/workspace/members/:userId）。
+app.route("/api", createWorkspaceMemberRoutes());
 app.route("/api", createAiSettingsRoutes());
 // R13 批 A2（派人推荐 v2）：GET/PATCH /me/profile ——「我是谁」资料面（title/bio/技能标签）。
 app.route("/api", createUserProfileRoutes());
@@ -420,6 +424,19 @@ app.onError((error, c) => {
   }
 
   if (error instanceof ConversationServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
+    );
+  }
+
+  if (error instanceof WorkspaceMemberServiceError) {
     return c.json(
       {
         ok: false,

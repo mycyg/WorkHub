@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { idSchema } from "./domain/common.js";
 import { clientDeviceSchema, userSchema } from "./domain/identity.js";
 import { identityContextSchema } from "./identity.js";
 import { workHubLocaleInputSchema, workHubLocaleSchema } from "./locale.js";
@@ -54,6 +55,37 @@ export const inviteAcceptRequestSchema = z.object({
   password: z.string().min(8).max(1024)
 });
 export type InviteAcceptRequest = z.infer<typeof inviteAcceptRequestSchema>;
+
+// R17 批 G1（群成员管理 · #15 工作区成员移出/角色变更）：工作区成员角色枚举——与 db
+// memberships.role（'member'|'admin'|'owner'）对齐。
+export const workspaceMemberRoleSchema = z.enum(["member", "admin", "owner"]);
+export type WorkspaceMemberRole = z.infer<typeof workspaceMemberRoleSchema>;
+
+// PATCH /api/workspace/members/:userId 的请求体——只带目标角色。权限红线（仅 admin/owner；不能改自己；
+// 不能把最后一名 admin/owner 降级）在服务层强制，见 apps/api/src/services/workspace-members.ts。
+export const updateWorkspaceMemberRoleRequestSchema = z
+  .object({
+    role: workspaceMemberRoleSchema
+  })
+  .strict();
+export type UpdateWorkspaceMemberRoleRequest = z.infer<typeof updateWorkspaceMemberRoleRequestSchema>;
+
+// DELETE /api/workspace/members/:userId 移出成功的响应——回被移出者 user_id（客户端据此就地从 roster
+// 剔除），角色变更则额外回新角色。both additive，纯为客户端就地刷新用。
+export const removeWorkspaceMemberResultVmSchema = z
+  .object({
+    removed_user_id: idSchema
+  })
+  .strict();
+export type RemoveWorkspaceMemberResultVM = z.infer<typeof removeWorkspaceMemberResultVmSchema>;
+
+export const updateWorkspaceMemberRoleResultVmSchema = z
+  .object({
+    user_id: idSchema,
+    role: workspaceMemberRoleSchema
+  })
+  .strict();
+export type UpdateWorkspaceMemberRoleResultVM = z.infer<typeof updateWorkspaceMemberRoleResultVmSchema>;
 
 export const identifyResponseSchema = userSchema.pick({
   id: true,
