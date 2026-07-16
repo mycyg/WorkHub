@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 
 import type {
@@ -97,6 +98,9 @@ function accessRecord(overrides: Partial<ConversationAccessRecord> = {}): Conver
     conversation: conversationRow(),
     projectOwnerUserId: userId,
     projectIsPersonal: false,
+    // R16 批 W4a：默认「未配置项目指令 + 非 DM 容器」——各测试按需 override 来断言注入/跳过。
+    projectInstructionsMd: null,
+    projectIsDmContainer: false,
     membershipRole: "member",
     participantRole: "owner",
     participantCount: 1,
@@ -1119,6 +1123,117 @@ test("createTurn streams ordinal-numbered delta events on the conversation topic
   assert.equal(persistInput.contentJson.text, "看过了，整体不错");
 });
 
+test("R16-W1 createTurn stamps the routed model id, accumulated usage tokens, and elapsed_ms onto the settled Cuu text message", async () => {
+  const createCuuMessageCalls: Array<{ contentJson: Record<string, unknown> }> = [];
+  // 单调递增时钟：每次读都前进 1s，保证 elapsed_ms（结算时刻 - 进循环时刻）严格为正。
+  let clockMs = Date.UTC(2026, 6, 16, 12, 0, 0);
+  const advancingClock = () => {
+    const at = new Date(clockMs);
+    clockMs += 1_000;
+    return at;
+  };
+  // 带 model + usage 的 client 桩：镜像 ProviderRegistry.get(...) 返回的 MeasuredLlmClient（.model 只读，
+  // getFinalMessage() 带 usage）。
+  const meteredClient: ConversationTurnClientProvider = async () => ({
+    model: "deepseek-v4",
+    messages: {
+      async stream(): Promise<TurnLlmStream> {
+        const events: TurnLlmStreamEvent[] = [textDeltaEvent("看过了，"), textDeltaEvent("整体不错")];
+        return {
+          [Symbol.asyncIterator]() {
+            let index = 0;
+            return {
+              async next() {
+                if (index >= events.length) {
+                  return { value: undefined as unknown as TurnLlmStreamEvent, done: true as const };
+                }
+                const value = events[index]!;
+                index += 1;
+                return { value, done: false as const };
+              }
+            };
+          },
+          async getFinalMessage() {
+            return { content: [{ type: "text", text: "看过了，整体不错" }], usage: { inputTokens: 900, outputTokens: 400 } };
+          }
+        };
+      }
+    }
+  });
+
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          createCuuMessageCalls.push(input as { contentJson: Record<string, unknown> });
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      },
+      client: meteredClient,
+      now: advancingClock
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  assert.equal(result.message.sender_type, "cuu");
+  assert.equal(textContent(result.message).text, "看过了，整体不错");
+
+  assert.equal(createCuuMessageCalls.length, 1);
+  const content = createCuuMessageCalls[0]!.contentJson as {
+    model?: string;
+    usage_tokens?: number;
+    elapsed_ms?: number;
+  };
+  assert.equal(content.model, "deepseek-v4");
+  assert.equal(content.usage_tokens, 1_300);
+  assert.equal(typeof content.elapsed_ms, "number");
+  assert.ok((content.elapsed_ms ?? -1) > 0, "elapsed_ms should be a positive turn duration");
+});
+
+test("R16-W1 createTurn omits usage_tokens (but still stamps model) when the provider stream reports no usage", async () => {
+  const createCuuMessageCalls: Array<{ contentJson: Record<string, unknown> }> = [];
+  // model 有、usage 无（既有测试桩 / 非 anthropic-compat 路径）：model pill 照渲，usage_tokens 不写（不编造）。
+  const modelOnlyClient: ConversationTurnClientProvider = async () => ({
+    model: "deepseek-v4",
+    messages: {
+      async stream() {
+        return fakeStream([textDeltaEvent("好的")], "好的");
+      }
+    }
+  });
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          createCuuMessageCalls.push(input as { contentJson: Record<string, unknown> });
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      },
+      client: modelOnlyClient
+    })
+  );
+
+  await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  assert.equal(createCuuMessageCalls.length, 1);
+  const content = createCuuMessageCalls[0]!.contentJson as Record<string, unknown>;
+  assert.equal(content["model"], "deepseek-v4");
+  assert.equal("usage_tokens" in content, false, "usage_tokens must be absent when the provider reports no usage");
+});
+
 test("createTurn caps injected user memories at USER_MEMORY_PROMPT_TOP_N and team skills at the top-5 slice", async () => {
   const listForUserCalls: unknown[] = [];
   const manyTeamSkills = Array.from({ length: 8 }, (_, index) =>
@@ -1149,6 +1264,226 @@ test("createTurn caps injected user memories at USER_MEMORY_PROMPT_TOP_N and tea
   const citations = textContent(result.message).memory_citations ?? [];
   const teamSkillCitations = citations.filter((citation) => citation.kind === "team_skill");
   assert.equal(teamSkillCitations.length, 5);
+});
+
+// ── R16 批 W4a（项目级自定义指令）───────────────────────────────────────────────────────────
+// 该会话所属项目在设置里配置的自定义指令，注入这一轮 system prompt——位置在通用工作纪律之后、
+// 会话上下文（滚动摘要/记忆）之前；留空/未配置不注入；DM 容器项目永远跳过（硬围栏）；个人空间
+// 项目正常注入（不做特殊豁免）。off（legacy）与 loop2(on) 两条拼接路径都要覆盖。
+
+test("createTurn injects the project's custom instructions after the general discipline and before the rolling-summary section", async () => {
+  const mainSpy: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({
+            projectInstructionsMd: "遇到发布相关的工单，先问一句要不要拉发布负责人。",
+            conversation: conversationRow({
+              contextSummaryMd: "当前进度：正在核对交付清单。",
+              contextSummaryThroughSeq: 40,
+              nextSeq: 2
+            })
+          });
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      },
+      client: respondingClient([], "好的，收到", mainSpy)
+    })
+  );
+
+  await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  const params = mainSpy.find(
+    (entry): entry is { system: string } => typeof (entry as Record<string, unknown>)?.["system"] === "string"
+  );
+  assert.ok(params);
+  assert.match(params.system, /这个项目在设置里配置的自定义指令/);
+  assert.match(params.system, /不是系统工作纪律/);
+  assert.match(params.system, /遇到发布相关的工单，先问一句要不要拉发布负责人。/);
+
+  const disciplineIndex = params.system.indexOf("你是 WorkHub 项目里的 Cuu");
+  const instructionsIndex = params.system.indexOf("遇到发布相关的工单");
+  const summaryIndex = params.system.indexOf("当前进度：正在核对交付清单");
+  assert.ok(disciplineIndex >= 0, "general discipline text must be present");
+  assert.ok(instructionsIndex > disciplineIndex, "project instructions must come after the general discipline");
+  assert.ok(summaryIndex > instructionsIndex, "project instructions must come before the rolling-summary section");
+});
+
+test("createTurn injects nothing when the project has no custom instructions configured (blank/unset)", async () => {
+  for (const instructionsMd of [null, "", "   "]) {
+    const mainSpy: unknown[] = [];
+    const service = createConversationTurnService(
+      baseDeps({
+        conversations: {
+          async findVisibleAccessRecord() {
+            return accessRecord({ projectInstructionsMd: instructionsMd });
+          },
+          async listMessagesAfter() {
+            return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+          },
+          async createCuuMessage(input) {
+            return cuuMessageRow({ contentJson: input.contentJson });
+          }
+        },
+        client: respondingClient([], "好的，收到", mainSpy)
+      })
+    );
+
+    await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+    const params = mainSpy.find(
+      (entry): entry is { system: string } => typeof (entry as Record<string, unknown>)?.["system"] === "string"
+    );
+    assert.ok(params);
+    assert.doesNotMatch(
+      params.system,
+      /这个项目在设置里配置的自定义指令/,
+      `instructionsMd=${JSON.stringify(instructionsMd)} must not inject a section`
+    );
+  }
+});
+
+test("createTurn never injects project instructions into a DM-container conversation, even when instructions_md is configured", async () => {
+  const mainSpy: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({
+            projectInstructionsMd: "遇到发布相关的工单，先问一句要不要拉发布负责人。",
+            projectIsDmContainer: true
+          });
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      },
+      client: respondingClient([], "好的，收到", mainSpy)
+    })
+  );
+
+  await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  const params = mainSpy.find(
+    (entry): entry is { system: string } => typeof (entry as Record<string, unknown>)?.["system"] === "string"
+  );
+  assert.ok(params);
+  assert.doesNotMatch(params.system, /这个项目在设置里配置的自定义指令/);
+  assert.doesNotMatch(params.system, /遇到发布相关的工单/);
+});
+
+test("createTurn injects project instructions normally for a personal-space conversation (no special exemption)", async () => {
+  const mainSpy: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({
+            conversation: conversationRow({ kind: "main" }),
+            projectIsPersonal: true,
+            participantCount: 0,
+            projectInstructionsMd: "写周报默认用中文小标题分段。"
+          });
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      },
+      client: respondingClient([], "好的，收到", mainSpy)
+    })
+  );
+
+  await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  const params = mainSpy.find(
+    (entry): entry is { system: string } => typeof (entry as Record<string, unknown>)?.["system"] === "string"
+  );
+  assert.ok(params);
+  assert.match(params.system, /写周报默认用中文小标题分段。/);
+});
+
+test("loop2(on): injects the project's custom instructions after the general discipline and before the rolling-summary section (parity with legacy)", async () => {
+  const mainSpy: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({
+            projectInstructionsMd: "遇到发布相关的工单，先问一句要不要拉发布负责人。",
+            conversation: conversationRow({
+              contextSummaryMd: "当前进度：正在核对交付清单。",
+              contextSummaryThroughSeq: 40,
+              nextSeq: 2
+            })
+          });
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      },
+      client: respondingClient([], "好的，收到", mainSpy)
+    })
+  );
+
+  await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  const params = mainSpy.find(
+    (entry): entry is { system: string } => typeof (entry as Record<string, unknown>)?.["system"] === "string"
+  );
+  assert.ok(params);
+  const disciplineIndex = params.system.indexOf("你是 WorkHub 项目里的 Cuu");
+  const instructionsIndex = params.system.indexOf("遇到发布相关的工单");
+  const summaryIndex = params.system.indexOf("当前进度：正在核对交付清单");
+  assert.ok(disciplineIndex >= 0 && instructionsIndex > disciplineIndex);
+  assert.ok(summaryIndex > instructionsIndex);
+});
+
+test("loop2(on): never injects project instructions into a DM-container conversation", async () => {
+  const mainSpy: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({
+            projectInstructionsMd: "遇到发布相关的工单，先问一句要不要拉发布负责人。",
+            projectIsDmContainer: true
+          });
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      },
+      client: respondingClient([], "好的，收到", mainSpy)
+    })
+  );
+
+  await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  const params = mainSpy.find(
+    (entry): entry is { system: string } => typeof (entry as Record<string, unknown>)?.["system"] === "string"
+  );
+  assert.ok(params);
+  assert.doesNotMatch(params.system, /这个项目在设置里配置的自定义指令/);
 });
 
 test("createTurn touches injected user memories and swallows a touch failure without failing the turn", async () => {
@@ -2021,4 +2356,457 @@ test("R14 createTurn omits deleted (tombstone) messages from the history handed 
   const serialized = JSON.stringify(spy);
   assert.ok(serialized.includes("@Cuu 帮我看看草稿"), "the anchor message must reach the model");
   assert.ok(!serialized.includes("墓碑残留文本不该进模型"), "tombstone text must be filtered out of the turn history");
+});
+
+// ── R15 批 C Phase 4：loop2（on 模式）单轮语义等价 ─────────────────────────────────────────
+// 复用现状的 client 桩（respondingClient/sequencedClient）—— loop2 的对话 streamFn 用的是同一个
+// extractDeltaText + getFinalMessage 口径，所以桩不用改。逐条对照现状（off）关键用例，钉死 on 模式
+// 单轮行为与现状语义等价。
+
+test("loop2(on): streams ordinal-numbered deltas, broadcasts a created event, and persists the final text with citations (parity with legacy)", async () => {
+  const published: Array<{ topic: string; type: string; data: unknown }> = [];
+  const createCuuMessageCalls: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          createCuuMessageCalls.push(input);
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      },
+      bus: {
+        async publish(topic, type, data) {
+          published.push({ topic, type, data });
+        }
+      }
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  assert.equal(result.turn_id, turnId);
+  assert.equal(result.message.sender_type, "cuu");
+  assert.equal(textContent(result.message).text, "看过了，整体不错");
+  assert.deepEqual(textContent(result.message).memory_citations, [
+    { kind: "user_memory", title: "preference:zh" },
+    { kind: "team_skill", title: "PPT 交付自检" }
+  ]);
+
+  assert.equal(published.length, 3);
+  assert.equal(published[0]?.type, "conversation.message.delta");
+  const firstData = published[0]?.data as { data: { ordinal: number; delta_text: string; turn_id: string } };
+  assert.equal(firstData.data.ordinal, 0);
+  assert.equal(firstData.data.delta_text, "看过了，");
+  assert.equal(firstData.data.turn_id, turnId);
+  const secondData = published[1]?.data as { data: { ordinal: number; delta_text: string } };
+  assert.equal(secondData.data.ordinal, 1);
+  assert.equal(secondData.data.delta_text, "整体不错");
+  assert.equal(published[2]?.type, "conversation.message.created");
+  const createdData = published[2]?.data as { actor: { actor_kind: string }; data: { sender_type: string } };
+  assert.equal(createdData.actor.actor_kind, "ai");
+  assert.equal(createdData.data.sender_type, "cuu");
+
+  assert.equal(createCuuMessageCalls.length, 1);
+});
+
+test("loop2(on): runs drive_search then send_file_card across rounds, persists a real file_card, logs a tool_note per call", async () => {
+  const createCuuMessageCalls: Array<{ kind: string; contentJson: unknown }> = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow({ contentJson: { text: "帮我找一下上次的合同" } })], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(callInput) {
+          createCuuMessageCalls.push({ kind: callInput.kind, contentJson: callInput.contentJson });
+          return cuuMessageRow({ kind: callInput.kind, contentJson: callInput.contentJson });
+        }
+      },
+      drive: {
+        async page() {
+          return drivePageFixture({ items: [driveItemFixture()] });
+        },
+        async file() {
+          return driveStoredFileFixture();
+        }
+      },
+      client: sequencedClient([
+        { final: toolUseFinal("call1", DRIVE_SEARCH_TOOL, { query: "合同" }) },
+        { final: toolUseFinal("call2", SEND_FILE_CARD_TOOL, { drive_item_id: "18000000-0000-4000-8000-000000000001" }) },
+        { final: textFinal("找到啦，发给你了。") }
+      ])
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  assert.equal(textContent(result.message).text, "找到啦，发给你了。");
+  assert.deepEqual(
+    createCuuMessageCalls.map((call) => call.kind),
+    ["tool_note", "file_card", "tool_note", "text"]
+  );
+  assert.deepEqual(createCuuMessageCalls[1]?.contentJson, {
+    drive_item_id: "18000000-0000-4000-8000-000000000001",
+    snapshot_name: "合同.pdf"
+  });
+});
+
+test("loop2(on): ends the turn on ask_clarifying_question, persisting the additive clarify markers on a text message", async () => {
+  const createCuuMessageCalls: Array<{ kind: string }> = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow({ contentJson: { text: "帮我建个任务" } })], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(callInput) {
+          createCuuMessageCalls.push({ kind: callInput.kind });
+          return cuuMessageRow({ kind: callInput.kind, contentJson: callInput.contentJson });
+        }
+      },
+      client: sequencedClient([
+        { final: toolUseFinal("callQ", ASK_CLARIFYING_QUESTION_TOOL, { question: "你要 PPT 还是 Word？", options: ["PPT", "Word"] }) }
+      ])
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  const content = textContent(result.message) as { text: string; is_clarifying_question?: boolean; clarify_options?: string[] };
+  assert.equal(content.text, "你要 PPT 还是 Word？");
+  assert.equal(content.is_clarifying_question, true);
+  assert.deepEqual(content.clarify_options, ["PPT", "Word"]);
+  assert.deepEqual(createCuuMessageCalls.map((call) => call.kind), ["text"]);
+});
+
+test("loop2(on): stops offering tools once the hard cap of 3 tool calls is reached, forcing a text-only closing round", async () => {
+  const streamSpy: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      drive: {
+        async page() {
+          return drivePageFixture({ items: [] });
+        },
+        async file() {
+          throw new Error("file must not be called in this scenario");
+        }
+      },
+      client: sequencedClient(
+        [
+          { final: toolUseFinal("call1", DRIVE_SEARCH_TOOL, { query: "a" }) },
+          { final: toolUseFinal("call2", DRIVE_SEARCH_TOOL, { query: "b" }) },
+          { final: toolUseFinal("call3", DRIVE_SEARCH_TOOL, { query: "c" }) },
+          { final: textFinal("问完了，都没找到。") }
+        ],
+        streamSpy
+      )
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  assert.equal(textContent(result.message).text, "问完了，都没找到。");
+  // spy 形状同现状：[0]=client provider input（每次 createTurn 只拿一次 client），[1..N]=每一轮 stream
+  // params。4 轮模型调用（3 工具轮 + 1 强制收尾轮）→ 长度 5，第四轮不带 tools。
+  assert.equal(streamSpy.length, 5);
+  const fourthRoundParams = streamSpy[4] as { tools?: unknown[] };
+  assert.equal(fourthRoundParams.tools, undefined);
+});
+
+test("loop2(on): fails closed with conversation_turn_failed if the model hallucinates a tool_use on the forced final round", async () => {
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      drive: {
+        async page() {
+          return drivePageFixture({ items: [] });
+        },
+        async file() {
+          throw new Error("file must not be called in this scenario");
+        }
+      },
+      client: sequencedClient([
+        { final: toolUseFinal("call1", DRIVE_SEARCH_TOOL, { query: "a" }) },
+        { final: toolUseFinal("call2", DRIVE_SEARCH_TOOL, { query: "b" }) },
+        { final: toolUseFinal("call3", DRIVE_SEARCH_TOOL, { query: "c" }) },
+        { final: toolUseFinal("call4", DRIVE_SEARCH_TOOL, { query: "d" }) }
+      ])
+    })
+  );
+
+  await assert.rejects(
+    service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } }),
+    (error: unknown) => error instanceof ConversationTurnServiceError && error.status === 500 && error.code === "conversation_turn_failed"
+  );
+});
+
+test("loop2(on): a provider failure maps to 500 conversation_turn_failed and persists nothing", async () => {
+  const createCuuMessageCalls: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          createCuuMessageCalls.push(input);
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      },
+      client: throwingClient()
+    })
+  );
+
+  await assert.rejects(
+    service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } }),
+    (error: unknown) => error instanceof ConversationTurnServiceError && error.status === 500 && error.code === "conversation_turn_failed"
+  );
+  assert.equal(createCuuMessageCalls.length, 0);
+});
+
+// ── R15 批 C Phase 4（P4b）：steering / follow-up 队列 ─────────────────────────────────────
+// 同会话连发不再 409：进行中一轮时新到的消息入 steering 队列，owner 在下一次模型调用前注入。
+
+function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+test("loop2(on): a second message arriving mid-turn is not 409'd — it is steered into the running turn and the reply covers both", async () => {
+  const streamSpy: Array<{ messages?: unknown }> = [];
+  const firstStreamGate = deferred();
+  const firstStreamEntered = deferred();
+  let streamCall = 0;
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      id: () => randomUUID(),
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow({ contentJson: { text: "帮我起个草稿" } })], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ kind: input.kind, contentJson: input.contentJson });
+        }
+      },
+      client: async () => ({
+        messages: {
+          async stream(params) {
+            streamCall += 1;
+            streamSpy.push(params as { messages?: unknown });
+            if (streamCall === 1) {
+              firstStreamEntered.resolve();
+              await firstStreamGate.promise;
+              return fakeStream([], "先回你第一条");
+            }
+            return fakeStream([], "两条我都看到了，一起答");
+          }
+        }
+      })
+    })
+  );
+
+  const first = service.createTurn({ actor: actor({ label: "阿曼" }), conversationId, payload: { user_message_id: userMessageId } });
+  // 等 owner 的第一轮真正开始流式（已越过 owner 起始的 steering 轮询点），此时第二条到达才会被折进"下一轮"，
+  // 而不是第一轮——这样测的是"生成中到达→steering 注入到下一次模型调用"这条真实路径。
+  await firstStreamEntered.promise;
+  // 第二条在第一条还在生成时到达——排队等注入，不该 409。
+  const second = service.createTurn({ actor: actor({ label: "阿曼" }), conversationId, payload: { user_message_id: userMessageId } });
+  // 让第二条走完前置校验并入队。
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  firstStreamGate.resolve();
+
+  const [firstResult, secondResult] = await Promise.all([first, second]);
+
+  // 两条都拿到同一段（同 turn_id）的最终合并回复，且都是 200（没有任何一条 409）。
+  assert.equal(firstResult.turn_id, secondResult.turn_id);
+  assert.equal(textContent(firstResult.message).text, "两条我都看到了，一起答");
+  assert.equal(textContent(secondResult.message).text, "两条我都看到了，一起答");
+  // 走了两轮模型调用：第一轮（第一条）+ steering 注入后的第二轮（涵盖两条）。
+  assert.equal(streamCall, 2);
+  const secondRoundMessages = JSON.stringify(streamSpy[1]?.messages ?? "");
+  assert.ok(secondRoundMessages.includes("帮我起个草稿"), "the steered-in second message must reach the model on round 2");
+});
+
+test("loop2(on): the queue depth cap returns 409 conversation_turn_busy only once the queue is full", async () => {
+  const firstStreamGate = deferred();
+  let streamCall = 0;
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      queueMaxDepth: 1,
+      id: () => randomUUID(),
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ kind: input.kind, contentJson: input.contentJson });
+        }
+      },
+      client: async () => ({
+        messages: {
+          async stream() {
+            streamCall += 1;
+            if (streamCall === 1) {
+              await firstStreamGate.promise;
+            }
+            return fakeStream([], "回复");
+          }
+        }
+      })
+    })
+  );
+
+  const first = service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  // owner 在跑；第二条入队（占满 queueMaxDepth=1）——不 409。
+  const second = service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  // 第三条：队列已满 → 409 兜底。
+  await assert.rejects(
+    service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } }),
+    (error: unknown) => error instanceof ConversationTurnServiceError && error.status === 409 && error.code === "conversation_turn_busy"
+  );
+
+  firstStreamGate.resolve();
+  const firstResult = await first;
+  const secondResult = await second;
+  assert.equal(firstResult.message.sender_type, "cuu");
+  assert.equal(secondResult.message.sender_type, "cuu");
+});
+
+test("loop2(on): a message queued during a turn is not lost when that turn aborts — it is answered as a fresh follow-up turn", async () => {
+  const firstStreamGate = deferred();
+  let streamCall = 0;
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      turnTimeoutMs: 40,
+      id: () => randomUUID(),
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ kind: input.kind, contentJson: input.contentJson });
+        }
+      },
+      client: async () => ({
+        messages: {
+          async stream(params) {
+            streamCall += 1;
+            if (streamCall === 1) {
+              // 第一轮挂起直到被 abort（硬超时）——第一条 turn 失败。
+              return new Promise((_, reject) => {
+                params.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+              });
+            }
+            return fakeStream([], "第二条我来单独答");
+          }
+        }
+      })
+    })
+  );
+
+  const first = service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  // 第二条在第一条还挂着时入队。
+  const second = service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  // 第一条因硬超时 abort，映射成 500 conversation_turn_failed。
+  await assert.rejects(
+    first,
+    (error: unknown) => error instanceof ConversationTurnServiceError && error.status === 500 && error.code === "conversation_turn_failed"
+  );
+  // 队列没丢：第二条被转成一段新 turn（新 turn_id）正常答复。
+  const secondResult = await second;
+  assert.equal(secondResult.message.sender_type, "cuu");
+  assert.equal(textContent(secondResult.message).text, "第二条我来单独答");
+});
+
+test("loop2(on): consecutive turns each get their own turn_id (a message after the turn settles runs its own turn)", async () => {
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      id: () => randomUUID(),
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ kind: input.kind, contentJson: input.contentJson });
+        }
+      },
+      client: respondingClient([], "好的")
+    })
+  );
+
+  const firstResult = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+  const secondResult = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  assert.equal(firstResult.message.sender_type, "cuu");
+  assert.equal(secondResult.message.sender_type, "cuu");
+  assert.notEqual(firstResult.turn_id, secondResult.turn_id);
+});
+
+test("loop2(off): the legacy path still rejects a concurrent turn with 409 conversation_turn_busy (mode gate unchanged)", async () => {
+  const gate = deferred();
+  const service = createConversationTurnService(
+    baseDeps({
+      // loop2Mode omitted → off (default). Concurrent turn must still 409 like today.
+      client: async () => ({
+        messages: {
+          async stream() {
+            await gate.promise;
+            return fakeStream([], "第一轮回复");
+          }
+        }
+      })
+    })
+  );
+
+  const first = service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+  const second = service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+  await assert.rejects(
+    second,
+    (error: unknown) => error instanceof ConversationTurnServiceError && error.status === 409 && error.code === "conversation_turn_busy"
+  );
+  gate.resolve();
+  await first;
 });

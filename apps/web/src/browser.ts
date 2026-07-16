@@ -192,7 +192,10 @@ let liveRuntime: ReturnType<typeof createWebLiveRuntime> | undefined;
 type ShellIdentityUser = { nickname: string; isAdmin: boolean };
 let currentIdentity: ShellIdentityUser | undefined;
 let activeLocale: WorkHubLocale = "zh-CN";
-const liveEventTypes = Object.values(eventTypes);
+// G-web 止血批：web 端没有会话 UI（会话消息/reaction/已读游标/工具流只在桌面工作台渲染），
+// 全量订阅 conversation.* 系列事件白白让 web 的 SSE 连接收一堆用不上的推送。窄化订阅面，
+// 只排除 conversation.* 命名空间——其余事件类型不变。
+const liveEventTypes = Object.values(eventTypes).filter((type) => !type.startsWith("conversation."));
 const postRunTerminalStatuses = new Set(["succeeded", "failed", "cancelled"]);
 const postRunTerminalPollIntervalMs = 1000;
 const postRunTerminalMaxWaitMs = 60000;
@@ -1541,6 +1544,20 @@ function bindGoldPathNavigation(
         }
         return;
       }
+      // R15 批 A（A2 提醒阶梯）：暂停提醒——POST /snooze 置空 next_remind_at，重渲后这条通知不再挂「暂停提醒」
+      // 按钮（next_remind_at 已空）。读/归档态不动，通知仍留在待决策/FYI 桶里，只是不再 24h 催。
+      if (notificationAction?.action === "snooze") {
+        try {
+          const result = await client.snoozeNotification(notificationAction.notificationId);
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId ?? "notification_snooze"));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
       const escalationAction = escalationActionFromHref(href);
       if (escalationAction?.action === "budget") {
         try {
@@ -2349,9 +2366,13 @@ function bindSearchRoutePanel(
     if (!("conversation_title" in item)) {
       return;
     }
-    const row = document.createElement("div");
-    row.className = "wh-r4-route-row";
-    row.setAttribute("data-r14-search-result-scope", "conversations");
+    // R15 批 web-mirror：会话命中改真链接到只读会话镜像 /conversations/:id?seq=N（deep_link 现成，
+    // 带 conversation_id + seq 定位到命中那条）。此前是不可点的死文字——R13 定「聊天归桌面」时 web 还
+    // 没有会话页，现在有只读镜像了。
+    const link = document.createElement("a");
+    link.className = "wh-r4-route-row wh-r14-search-result-link";
+    link.href = `/conversations/${encodeURIComponent(item.deep_link.conversation_id)}?seq=${encodeURIComponent(String(item.deep_link.seq))}`;
+    link.setAttribute("data-r14-search-result-scope", "conversations");
     const main = document.createElement("div");
     const title = document.createElement("strong");
     title.textContent = `${item.project_name} · ${item.conversation_title}`;
@@ -2362,8 +2383,8 @@ function bindSearchRoutePanel(
     const senderLabel = item.sender_label ?? (zh ? "AI 助手" : "AI assistant");
     meta.textContent = `${senderLabel} · ${formatSearchTimestamp(item.created_at)}`;
     main.append(title, snippet, meta);
-    row.append(main);
-    list.append(row);
+    link.append(main);
+    list.append(link);
   };
 
   const appendLinkRow = (list: HTMLElement, href: string, titleText: string, snippetText: string, metaText: string) => {

@@ -45,6 +45,7 @@ function cardRow(overrides: Partial<ActionCardRow> = {}): ActionCardRow {
     conversationId,
     messageId,
     status: "active",
+    origin: "observer",
     analyzedToSeq: 3,
     createdAt: now,
     updatedAt: now,
@@ -418,6 +419,130 @@ test("createOrAppendCard appends to the active card in place, extends ordinals, 
 
   const stateUpdate = queries[8];
   assert.equal(stateUpdate?.targetTable, conversationObserverState);
+});
+
+// R15 批 D4a：观察者认领 active card 时只认 origin='observer'——系统卡（ddl-chase 找人等）永不被
+// 观察者接管/追加，即便 conversation_observer_state.active_card_id 被指到系统卡（构造上不会，但这是
+// 第二道显式围栏）。
+test("createOrAppendCard's active-card lookup is fenced to origin='observer'", async () => {
+  const { db, queries } = createQueryRecorder([
+    [{ id: conversationId, nextSeq: 6 }],
+    [observerStateRow()],
+    [cardRow()], // active card lookup
+    [{ maxOrdinal: 0 }],
+    [itemRow({ id: "new-item", ordinal: 1 })],
+    [itemRow(), itemRow({ id: "new-item", ordinal: 1 })],
+    [{ id: messageId, conversationId, seq: 3, senderType: "cuu", senderUserId: null, kind: "action_card", contentJson: {}, threadRootId: null, createdAt: now }],
+    [cardRow({ analyzedToSeq: 6 })],
+    [observerStateRow({ lastAnalyzedSeq: 6 })]
+  ]);
+
+  await createActionCardRepository(db).createOrAppendCard({
+    workspaceId,
+    projectId,
+    conversationId,
+    analyzedToSeq: 6,
+    items: [{ kind: "decide", titleMd: "预算是否砍半", confidence: "low", status: "waiting_decision" }],
+    at: now
+  });
+
+  // queries[2] = active-card lookup (0=lock conversation, 1=observer state select, 2=active card select)。
+  const activeCardLookup = queries[2];
+  assert.equal(referencesAny(activeCardLookup, actionCards.origin), true, "active-card lookup must filter on origin");
+  assert.equal(
+    queryParamValues(activeCardLookup?.where).includes("observer"),
+    true,
+    "the bound origin value must be 'observer'"
+  );
+});
+
+// ── insertSystemCard: 系统卡插入路径（绝不碰 conversation_observer_state） ─────────────────────
+
+test("insertSystemCard writes an origin='system' card with a null watermark and never touches observer state", async () => {
+  const insertedMessage = { id: "sys-message", conversationId, seq: 6, senderType: "cuu", senderUserId: null, kind: "action_card", contentJson: {}, threadRootId: null, createdAt: now };
+  const insertedCard = cardRow({ id: "sys-card", messageId: "sys-message", origin: "system", analyzedToSeq: null });
+  const insertedItems = [itemRow({ id: "sys-item", actionCardId: "sys-card", ordinal: 0, kind: "decide", status: "waiting_decision", workItemId: "wi-1" })];
+  const { db, queries, transactions } = createQueryRecorder([
+    [{ id: conversationId, nextSeq: 5 }], // lock conversation
+    [{ nextSeq: 6 }], // allocate seq
+    [insertedMessage], // insert message
+    [insertedCard], // insert card
+    insertedItems // insert items
+  ]);
+
+  const result = await createActionCardRepository(db).insertSystemCard({
+    workspaceId,
+    projectId,
+    conversationId,
+    at: now,
+    cardId: "sys-card",
+    cardMessageId: "sys-message",
+    items: [
+      { kind: "decide", titleMd: "「上线材料」已逾期且无人认领", confidence: "high", status: "waiting_decision", workItemId: "wi-1", assigneeUserId: userId }
+    ],
+    messageContentExtra: { proactive_intent_id: "intent-9" }
+  });
+
+  assert.equal(result.card.id, "sys-card");
+  assert.equal(result.card.origin, "system");
+  assert.deepEqual(result.items, insertedItems);
+  assert.deepEqual(transactions, [{ outcome: "resolved" }]);
+
+  // 关键解耦断言：整条插入路径没有任何一步写/读 conversation_observer_state。
+  for (const query of queries) {
+    assert.notEqual(query.targetTable, conversationObserverState, "system card must not write observer state");
+    assert.notEqual(query.fromTable, conversationObserverState, "system card must not read observer state");
+  }
+  assert.equal(queries.length, 5, "lock + alloc + message + card + items, no observer-state upsert");
+
+  const cardInsert = queries[3];
+  assert.equal(cardInsert?.targetTable, actionCards);
+  const cardValues = cardInsert?.valuesValue as Record<string, unknown>;
+  assert.equal(cardValues["origin"], "system");
+  assert.equal(cardValues["analyzedToSeq"], null, "system card carries no watermark");
+  assert.equal(cardValues["status"], "active");
+
+  const messageInsert = queries[2];
+  assert.equal(messageInsert?.targetTable, conversationMessages);
+  const messageValues = messageInsert?.valuesValue as Record<string, unknown>;
+  assert.equal(messageValues["kind"], "action_card");
+  assert.equal(messageValues["senderType"], "cuu");
+  const contentJson = messageValues["contentJson"] as Record<string, unknown>;
+  assert.equal(contentJson["proactive_intent_id"], "intent-9", "intent id must be embedded for audit");
+  assert.equal(contentJson["card_id"], "sys-card");
+  assert.equal((contentJson["items"] as unknown[]).length, 1);
+
+  const itemInsert = queries[4];
+  assert.equal(itemInsert?.targetTable, actionCardItems);
+  const itemValues = (itemInsert?.valuesValue as Array<Record<string, unknown>>)[0];
+  assert.equal(itemValues?.["kind"], "decide");
+  assert.equal(itemValues?.["workItemId"], "wi-1");
+  assert.equal(itemValues?.["assigneeUserId"], userId);
+  assert.equal(itemValues?.["ordinal"], 0);
+});
+
+test("insertSystemCard rejects an empty item batch before opening a transaction", async () => {
+  const { db, transactions } = createQueryRecorder();
+  await assert.rejects(
+    createActionCardRepository(db).insertSystemCard({ workspaceId, projectId, conversationId, items: [] }),
+    (error: unknown) => error instanceof ActionCardRepositoryInputError
+  );
+  assert.deepEqual(transactions, []);
+});
+
+test("insertSystemCard fails closed when the conversation is not an active main conversation", async () => {
+  const { db, transactions } = createQueryRecorder([[]]);
+  await assert.rejects(
+    createActionCardRepository(db).insertSystemCard({
+      workspaceId,
+      projectId,
+      conversationId,
+      items: [{ kind: "decide", titleMd: "x", confidence: "high", status: "waiting_decision", workItemId: "wi-1" }],
+      at: now
+    }),
+    (error: unknown) => error instanceof ActionCardConversationNotFoundError
+  );
+  assert.deepEqual(transactions, [{ outcome: "rejected", errorName: "ActionCardConversationNotFoundError" }]);
 });
 
 test("createOrAppendCard raises when the append path's item insert returns an incomplete set", async () => {

@@ -20,6 +20,10 @@
       "types": "./src/loop/index.ts",
       "import": "./src/loop/index.ts"
     },
+    "./loop2": {
+      "types": "./src/loop2/index.ts",
+      "import": "./src/loop2/index.ts"
+    },
     "./deliverables": {
       "types": "./src/deliverables/index.ts",
       "import": "./src/deliverables/index.ts"
@@ -48,7 +52,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test src/**/*.test.ts",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

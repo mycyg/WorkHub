@@ -172,6 +172,41 @@ test("showForProposal loads the detail and publishes it into the side-panel slot
   });
 });
 
+// R15 批 A6（产出卡内联「打回」）：showForProposal({ focusReason:true }) 加载完详情后直接摊开理由输入器并聚焦。
+test("showForProposal with focusReason opens the reason composer and focuses the textarea after the detail loads", async () => {
+  await withFakeDomGlobals(async () => {
+    const store = createWorkbenchStore();
+    const body = new FakeSideBody();
+    const textarea = new FakeElement();
+    body.setQueryResult("[data-wb-prop-reason-text]", textarea);
+    const panel = mountProposalSidePanel(
+      body as unknown as HTMLElement,
+      store,
+      mountInput({ client: fakeClient({ onProposal: () => proposalVm() }) })
+    );
+    panel.showForProposal({ proposalId: "prop-1", focusReason: true });
+    await tick();
+    // 详情加载完 → 理由器已摊开 + 焦点交给 textarea。
+    assert.match(store.getState().sidePanelContent?.html ?? "", /data-wb-prop-reasons/u);
+    assert.equal(textarea.focused, true);
+  });
+});
+
+test("showForProposal without focusReason does not auto-open the reason composer (plain view-proposal)", async () => {
+  await withFakeDomGlobals(async () => {
+    const store = createWorkbenchStore();
+    const body = new FakeSideBody();
+    const panel = mountProposalSidePanel(
+      body as unknown as HTMLElement,
+      store,
+      mountInput({ client: fakeClient({ onProposal: () => proposalVm() }) })
+    );
+    panel.showForProposal({ proposalId: "prop-1" });
+    await tick();
+    assert.doesNotMatch(store.getState().sidePanelContent?.html ?? "", /data-wb-prop-reasons/u);
+  });
+});
+
 test("a late-arriving first load never overwrites a newer navigation (monotonic load generation)", async () => {
   await withFakeDomGlobals(async () => {
     const store = createWorkbenchStore();

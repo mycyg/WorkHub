@@ -1,7 +1,11 @@
+// Summarization prompt adapted from pi (github.com/earendil-works/pi, MIT):
+// the structured compaction summary (SUMMARIZATION_SYSTEM_PROMPT / SUMMARIZATION_PROMPT /
+// UPDATE_SUMMARIZATION_PROMPT below) follows pi's Goal/Constraints/Progress/Decisions/NextSteps skeleton.
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { eventTypes } from "@workhub/contracts";
+import { errorToolResult, type ToolResult } from "@workhub/tools";
 
 import {
   buildDeliverableChangeManifestFromOutputs,
@@ -9,7 +13,7 @@ import {
   type BuildDeliverableChangeManifestInput
 } from "../deliverables/index.js";
 import type { LlmMessage, LlmStreamEvent } from "../providers/types.js";
-import { checkLoopBudget, controlFromAssistant, createInitialUsage, DoomLoopDetector } from "./control.js";
+import { checkLoopBudget, controlFromAssistant, createInitialUsage, DoomLoopDetector, isTruncatedToolBatch } from "./control.js";
 import { nextRetryDecision } from "../providers/retry.js";
 import { buildStructuredHandoff } from "./handoff.js";
 import type {
@@ -380,7 +384,132 @@ function toolResultDigest(result: { content: string; data?: unknown } | undefine
   return hints.join(" ");
 }
 
-function summarizeStepsForCompaction(steps: AgentLoopStep[], maxChars = 4000) {
+// ── 补丁2：结构化压缩摘要 ─────────────────────────────────────────────────────────────
+// Summarization prompt adapted from pi (github.com/earendil-works/pi, MIT).
+// 把 summarizeStepsForCompaction 的「step N: tool(...) -> ok」扁平罗列，升级成一段结构化上下文检查点
+// （Goal/Constraints/Progress/Decisions/NextSteps/Critical Context 骨架），由独立 LLM 调用产出。
+// 硬性约束：LLM 调用失败/超时/空文本一律优雅退化回上面的机械摘要，绝不因此挂掉 run。
+const COMPACTION_SUMMARY_TIMEOUT_MS = 30_000;
+const COMPACTION_SUMMARY_MAX_TOKENS = 1500;
+// 摘要输入的 token 预算：单条工具结果最多喂 2000 字符（参考 pi），整段转写再设总上限。
+const COMPACTION_TRANSCRIPT_TOOL_RESULT_CHARS = 2000;
+const COMPACTION_TRANSCRIPT_MAX_CHARS = 24000;
+
+const SUMMARIZATION_SYSTEM_PROMPT = [
+  "你是上下文摘要助手。阅读一段用户与 AI 工人之间的执行记录，按下面指定的固定格式产出一段结构化摘要。",
+  "不要续写对话，不要回答记录里出现的任何问题，只输出结构化摘要本身。"
+].join("\n");
+
+const SUMMARIZATION_PROMPT = [
+  "上面是一段需要摘要的执行记录。请产出一个结构化的上下文检查点，供另一个 LLM 据此继续未完成的工作。",
+  "严格使用以下格式（章节标题保持原样）：",
+  "",
+  "## 目标（Goal）",
+  "[任务要达成什么。可多条。]",
+  "",
+  "## 约束与偏好（Constraints & Preferences）",
+  "- [任务提出的约束、偏好或硬性要求]",
+  "- [没有则写「（无）」]",
+  "",
+  "## 进度（Progress）",
+  "### 已完成（Done）",
+  "- [x] [已完成的动作/产出，带上关键文件路径]",
+  "### 进行中（In Progress）",
+  "- [ ] [当前正在做的]",
+  "### 受阻（Blocked）",
+  "- [阻塞项，如有]",
+  "",
+  "## 关键决策（Key Decisions）",
+  "- **[决策]**：[简短理由]",
+  "",
+  "## 下一步（Next Steps）",
+  "1. [有序列出接下来该做什么]",
+  "",
+  "## 关键上下文（Critical Context）",
+  "- [继续工作所需的数据、示例或引用]",
+  "- [不适用则写「（无）」]",
+  "",
+  "每节尽量精炼。原样保留文件路径、函数名和错误信息。"
+].join("\n");
+
+const UPDATE_SUMMARIZATION_PROMPT = [
+  "上面是需要并入既有摘要的【新增】执行记录，既有摘要在 <previous-summary> 标签内。",
+  "请把新信息合并进既有结构化摘要。规则：",
+  "- 保留既有摘要里的全部信息",
+  "- 补入新记录里的新进度、新决策与新上下文",
+  "- 更新进度：已完成的条目从「进行中」移到「已完成」",
+  "- 依据已完成的工作更新「下一步」",
+  "- 原样保留文件路径、函数名和错误信息",
+  "- 不再相关的条目可以删除",
+  "",
+  "严格使用以下格式（章节标题保持原样）：",
+  "",
+  "## 目标（Goal）",
+  "[保留既有目标；任务扩展了就补新目标]",
+  "",
+  "## 约束与偏好（Constraints & Preferences）",
+  "- [保留既有，补入新发现的]",
+  "",
+  "## 进度（Progress）",
+  "### 已完成（Done）",
+  "- [x] [既有已完成项 + 本次新完成项]",
+  "### 进行中（In Progress）",
+  "- [ ] [据进度更新]",
+  "### 受阻（Blocked）",
+  "- [当前阻塞项；已解除的删掉]",
+  "",
+  "## 关键决策（Key Decisions）",
+  "- **[决策]**：[简短理由]（保留全部旧决策，补入新的）",
+  "",
+  "## 下一步（Next Steps）",
+  "1. [据当前状态更新]",
+  "",
+  "## 关键上下文（Critical Context）",
+  "- [保留重要上下文，必要时补新]",
+  "",
+  "每节尽量精炼。原样保留文件路径、函数名和错误信息。"
+].join("\n");
+
+/**
+ * 把要压缩的步骤转写成喂给摘要 LLM 的输入文本：助手文本 + 工具调用/结果，单条工具结果截到 2000 字符，
+ * 整段再设总上限（head+tail 截断）。给摘要器真实素材，同时钳住摘要调用自身的 token 开销。
+ */
+function buildCompactionTranscript(
+  steps: AgentLoopStep[],
+  opts: { maxToolResultChars?: number; maxTotalChars?: number } = {}
+): string {
+  const maxToolResultChars = opts.maxToolResultChars ?? COMPACTION_TRANSCRIPT_TOOL_RESULT_CHARS;
+  const maxTotalChars = opts.maxTotalChars ?? COMPACTION_TRANSCRIPT_MAX_CHARS;
+  const lines: string[] = [];
+  for (const step of steps) {
+    const text = textFromBlocks(step.assistant);
+    if (text) {
+      lines.push(`[assistant step ${step.index}] ${text}`);
+    }
+    for (let index = 0; index < step.toolCalls.length; index += 1) {
+      const call = step.toolCalls[index]!;
+      const result = step.toolResults[index];
+      lines.push(`[tool ${call.name}] input: ${previewUnknown(call.input, 400)}`);
+      if (result) {
+        const outcome = result.isError ? "error" : "ok";
+        const content = result.content.trim();
+        const clipped = content.length > maxToolResultChars
+          ? `${content.slice(0, maxToolResultChars)}…[truncated ${content.length - maxToolResultChars} chars]`
+          : content;
+        lines.push(`[result ${outcome}] ${clipped}`);
+      }
+    }
+  }
+  const transcript = lines.join("\n");
+  if (transcript.length <= maxTotalChars) {
+    return transcript;
+  }
+  const headChars = Math.floor(maxTotalChars * 0.7);
+  const tailChars = Math.floor(maxTotalChars * 0.2);
+  return `${transcript.slice(0, headChars)}\n…[transcript middle omitted]\n${transcript.slice(transcript.length - tailChars)}`;
+}
+
+export function summarizeStepsForCompaction(steps: AgentLoopStep[], maxChars = 4000) {
   const lines: string[] = [];
   for (const step of steps) {
     const text = step.assistant
@@ -410,6 +539,113 @@ function summarizeStepsForCompaction(steps: AgentLoopStep[], maxChars = 4000) {
   const headChars = Math.floor(maxChars * 0.7);
   const tailChars = Math.floor(maxChars * 0.2);
   return `${summary.slice(0, headChars)}\n…[摘要中段省略]\n${summary.slice(summary.length - tailChars)}`;
+}
+
+/**
+ * 补丁2 结构化压缩摘要状态：跨压缩滚动。`rollingSummary` 是上一次成功的结构化摘要；
+ * `lastSummarizedStepIndex` 是它已覆盖到的最大步号——下次压缩只把这之后的新步转写进 UPDATE 调用。
+ */
+export type StructuredSummaryState = {
+  rollingSummary?: string;
+  lastSummarizedStepIndex: number;
+};
+
+/**
+ * 补丁2 结构化压缩摘要（行为保持抽取，仿 finalizeL3 先例）：把 run() 内联的滚动摘要闭包抽成可复用导出，
+ * 供 loop.ts 与 loop2 configBuilder 共用同一实现（单一真相，绝不双份漂移）。行为与抽出前逐字一致：
+ * - 未注入 compactionClient → undefined（调用方回退机械摘要 summarizeStepsForCompaction）；
+ * - 无新步（index <= state.lastSummarizedStepIndex）→ 沿用 state.rollingSummary（可能 undefined）；
+ * - 独立 LLM 调用（source="compact"、30s abort、1500 maxTokens），usage 走既有记账通道并 recordUsage；
+ * - 空文本/失败/超时 → undefined（不推进 rolling / 覆盖游标），优雅退化回机械摘要，绝不因此挂掉 run。
+ * `state` 就地可变（rollingSummary / lastSummarizedStepIndex），两引擎各持一份跨压缩滚动。
+ */
+export async function tryGenerateStructuredSummary(params: {
+  input: AgentLoopInput;
+  usage: AgentLoopUsage;
+  steps: AgentLoopStep[];
+  state: StructuredSummaryState;
+}): Promise<string | undefined> {
+  const { input, usage, steps, state } = params;
+  const compactionClient = input.compactionClient;
+  if (!compactionClient) {
+    return undefined;
+  }
+  const newSteps = steps.filter((step) => step.index > state.lastSummarizedStepIndex);
+  if (newSteps.length === 0) {
+    // 没有新步可摘要：沿用已有的 rolling（若有），否则退回机械摘要。
+    return state.rollingSummary;
+  }
+  const transcript = buildCompactionTranscript(newSteps);
+  const isUpdate = Boolean(state.rollingSummary);
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  input.signal?.addEventListener("abort", onAbort, { once: true });
+  const timer = setTimeout(() => controller.abort(), COMPACTION_SUMMARY_TIMEOUT_MS);
+  try {
+    const response = await compactionClient.messages.create({
+      system: SUMMARIZATION_SYSTEM_PROMPT,
+      messages: [
+        { role: "user", content: transcript },
+        {
+          role: "user",
+          content: isUpdate
+            ? `${UPDATE_SUMMARIZATION_PROMPT}\n\n<previous-summary>\n${state.rollingSummary}\n</previous-summary>`
+            : SUMMARIZATION_PROMPT
+        }
+      ],
+      maxTokens: COMPACTION_SUMMARY_MAX_TOKENS,
+      source: "compact",
+      signal: controller.signal
+    });
+    // 摘要调用的 usage 走既有记账通道（同 llm_review），失败 run 也记到真实 token/成本。
+    const usageTokens = response.usage ?? { inputTokens: 0, outputTokens: 0 };
+    addUsage(usage, usageTokens.inputTokens, usageTokens.outputTokens, response.usageRecord?.estimatedCostCny);
+    input.recorder?.recordUsage?.(usage);
+    const text = response.content
+      .map(parseBlock)
+      .filter((block): block is Extract<AgentAssistantBlock, { type: "text" }> => block.type === "text")
+      .map((block) => block.text)
+      .join("\n")
+      .trim();
+    if (!text) {
+      // 空文本：优雅退化回机械摘要（不推进 rolling / 覆盖游标）。
+      return undefined;
+    }
+    state.rollingSummary = text;
+    state.lastSummarizedStepIndex = steps[steps.length - 1]?.index ?? state.lastSummarizedStepIndex;
+    return state.rollingSummary;
+  } catch {
+    // 调用失败/超时：优雅退化回机械摘要，绝不因此挂掉 run。
+    return undefined;
+  } finally {
+    clearTimeout(timer);
+    input.signal?.removeEventListener("abort", onAbort);
+  }
+}
+
+/**
+ * 补丁3：把被截断批次的 assistant 内容整理成 API 合法的 echo。截断会让 tool_use 的 input 退化成残缺
+ * partial_json 字符串——直接把这种 string input 回传给 provider 会 400（tool_use.input 必须是对象）。
+ * 基于原始 response.content 做**最小替换**：只对 input 不是对象的 tool_use 块把 input 换成合法空对象 {}
+ * （保留 id/name，与随后逐个回的 error tool_result 配对，维持「tool_use 必配 tool_result」不变量），其余
+ * 所有块——text/thinking/redacted_thinking/未知类型——原样透传。必须保留 thinking：严格 Anthropic 语义下
+ * （extended thinking 开启时），带 tool_use 的 assistant 消息回传必须原样带上其前面的 thinking/
+ * redacted_thinking 块，否则下一次请求 400（"Expected thinking..."）。不认识的块一律不丢，比重建白名单保守。
+ */
+function sanitizeTruncatedAssistantContent(rawContent: unknown[]): unknown[] {
+  return rawContent.map((block) => {
+    if (!block || typeof block !== "object") {
+      return block;
+    }
+    const record = block as Record<string, unknown>;
+    if (record.type !== "tool_use") {
+      return block;
+    }
+    if (record.input && typeof record.input === "object") {
+      return block;
+    }
+    return { ...record, input: {} };
+  });
 }
 
 function blockType(block: unknown): string | undefined {
@@ -478,6 +714,8 @@ export function compactConversation(input: {
   initialUserMessage: string;
   steps: AgentLoopStep[];
   keepTailEntries?: number;
+  /** 补丁2：结构化 LLM 摘要（成功时）。缺省则回退机械摘要 summarizeStepsForCompaction。 */
+  summaryOverride?: string;
 }): LlmMessage[] {
   const keep = input.keepTailEntries ?? 6;
   // 尾部保留必须从 assistant 边界开始，保证 tool_use/tool_result 配对完整。
@@ -487,7 +725,7 @@ export function compactConversation(input: {
   }
   // 剔除被截断遗留的悬空 tool_use（无匹配 tool_result）——否则压缩后的序列以悬空 tool_use 收尾，下次调用 400。
   const tail = dropDanglingToolUse(input.messages.slice(cut));
-  const summary = summarizeStepsForCompaction(input.steps);
+  const summary = input.summaryOverride?.trim() || summarizeStepsForCompaction(input.steps);
   return [
     {
       role: "user",
@@ -734,6 +972,132 @@ async function reviewDeliverable(input: AgentLoopInput, params: {
   }
 }
 
+/**
+ * L3 交付后置的结构化结果：deliverable 门（失败）/ manifest / llm_review。由 finalizeL3 产出，
+ * 调用方（loop.ts run() 与 loop2 configBuilder）各自映射成 terminalResult / AgentLoopResult。
+ */
+export type L3Finalization = {
+  status: "succeeded" | "failed";
+  reason: string;
+  finalText: string;
+  manifest?: AgentLoopResult["manifest"];
+  review?: AgentRunReview;
+  reviewFailed?: boolean;
+};
+
+/**
+ * L3 交付后置：requireDeliverable 门 + manifest 装配 + llm_review。从 run() 成功收尾块**原样抽出**，
+ * 让 loop.ts 与 loop2 configBuilder 共用同一份实现（单一真相，绝不双份漂移）。行为与抽出前完全一致：
+ * - 无交付物时发 agentRunFailed 并回 status:"failed"；
+ * - requireDeliverable 时按同样的可选字段装配 manifest；
+ * - reviewDeliverable（默认开）时发 llm_review / llm_review_failed 事件，并把评审 usage 折进传入的
+ *   usage 对象（addUsage 就地累加）。
+ * 只返回结构体、不建 terminalResult——各调用方按自己的结果形状收尾。
+ */
+export async function finalizeL3(input: AgentLoopInput, params: {
+  finalText: string;
+  usage: AgentLoopUsage;
+  steps: AgentLoopStep[];
+  requireDeliverable: boolean;
+}): Promise<L3Finalization> {
+  const { finalText, usage, steps, requireDeliverable } = params;
+  if (requireDeliverable && !(await hasDeliverables(input.workdir))) {
+    await input.emit?.({
+      type: eventTypes.agentRunFailed,
+      previewText: "AI 没产出交付物",
+      data: { run_id: input.runId }
+    });
+    return { status: "failed", reason: "AI 没产出交付物", finalText };
+  }
+
+  let manifest: AgentLoopResult["manifest"];
+  if (requireDeliverable) {
+    const manifestInput: BuildDeliverableChangeManifestInput = {
+      workdir: input.workdir,
+      workItemId: input.workItemId,
+      title: input.manifest?.title ?? titleFromFinalText(finalText)
+    };
+    const manifestSnapshotId = input.manifest?.snapshotId ?? latestSnapshotId(steps);
+    if (input.manifest?.proposalId) {
+      manifestInput.proposalId = input.manifest.proposalId;
+    }
+    if (input.manifest?.branchId) {
+      manifestInput.branchId = input.manifest.branchId;
+    }
+    if (manifestSnapshotId) {
+      manifestInput.snapshotId = manifestSnapshotId;
+    }
+    if (input.manifest?.branchHeadRef) {
+      manifestInput.branchHeadRef = input.manifest.branchHeadRef;
+    }
+    if (input.manifest?.author) {
+      manifestInput.author = input.manifest.author;
+    }
+    if (input.manifest?.evidenceRefs) {
+      manifestInput.evidenceRefs = input.manifest.evidenceRefs;
+    }
+    if (input.manifest?.createdAt) {
+      manifestInput.createdAt = input.manifest.createdAt;
+    }
+    if (input.manifest?.downloadHrefForPath) {
+      manifestInput.downloadHrefForPath = input.manifest.downloadHrefForPath;
+    }
+    if (input.manifest?.previewHrefForPath) {
+      manifestInput.previewHrefForPath = input.manifest.previewHrefForPath;
+    }
+    manifest = await buildDeliverableChangeManifestFromOutputs(manifestInput);
+  }
+
+  let review: AgentRunReview | undefined;
+  let reviewFailed = false;
+  if (input.reviewDeliverable ?? true) {
+    const outcome = await reviewDeliverable(input, { finalText, manifest, usage });
+    if (outcome.kind === "ok") {
+      review = outcome.review;
+      await input.emit?.({
+        type: eventTypes.agentRunStep,
+        previewText: `llm_review: grade=${review.grade} ${review.rationale.slice(0, 120)}`,
+        data: {
+          run_id: input.runId,
+          step_no: usage.stepsUsed,
+          kind: "llm_review",
+          grade: review.grade
+        }
+      });
+    } else {
+      // findings[#2]：评审被请求但失败/空/不可解析——置位 fail-closed 标志并发审计/遥测信号，
+      // 绝不静默向上美化成乐观启发式分。
+      reviewFailed = true;
+      await input.emit?.({
+        type: eventTypes.agentRunStep,
+        previewText: `llm_review_failed: ${outcome.reason}`,
+        data: {
+          run_id: input.runId,
+          step_no: usage.stepsUsed,
+          kind: "llm_review_failed",
+          reason: outcome.reason
+        }
+      });
+    }
+  }
+
+  const result: L3Finalization = {
+    status: "succeeded",
+    reason: finalText ? publicReasonFromFinalText(finalText) : "AgentRun completed",
+    finalText
+  };
+  if (manifest) {
+    result.manifest = manifest;
+  }
+  if (review) {
+    result.review = review;
+  }
+  if (reviewFailed) {
+    result.reviewFailed = true;
+  }
+  return result;
+}
+
 export class AgentLoop {
   async run(input: AgentLoopInput): Promise<AgentLoopResult> {
     const now = input.now ?? (() => new Date());
@@ -751,15 +1115,22 @@ export class AgentLoop {
     const maxCompactions = input.budget.maxCompactions ?? 2;
     const toolResultContextChars = input.budget.toolResultContextChars ?? 8000;
     let nextCompactionAtTokens = 0;
+    // 补丁2：滚动结构化摘要状态（跨压缩滚动）。抽取为 tryGenerateStructuredSummary 共用实现（仿 finalizeL3 单一真相），
+    // loop.ts 与 loop2 configBuilder 各持一份 state。
+    const summaryState: StructuredSummaryState = { lastSummarizedStepIndex: 0 };
 
     const compactNow = async (trigger: "context_window" | "max_tokens", stepNo: number) => {
       usage.compactions = (usage.compactions ?? 0) + 1;
       const window = input.budget.contextWindowTokens ?? 0;
       nextCompactionAtTokens = usage.totalTokens + Math.max(1, Math.floor(window * (input.budget.compactThreshold ?? 0.8)));
+      // 补丁2：先尝试结构化 LLM 摘要；失败/超时/空/未注入 client 时 structuredSummary 为 undefined，
+      // compactConversation 内部据此回退机械摘要（summarizeStepsForCompaction）。
+      const structuredSummary = await tryGenerateStructuredSummary({ input, usage, steps, state: summaryState });
       const compacted = compactConversation({
         messages,
         initialUserMessage: input.initialUserMessage,
-        steps
+        steps,
+        ...(structuredSummary ? { summaryOverride: structuredSummary } : {})
       });
       messages.length = 0;
       messages.push(...compacted);
@@ -770,7 +1141,9 @@ export class AgentLoop {
           run_id: input.runId,
           step_no: stepNo,
           trigger,
-          compactions: usage.compactions
+          compactions: usage.compactions,
+          // 摘要来源：结构化 LLM 摘要 vs 机械退化，便于遥测区分。
+          summary_kind: structuredSummary ? "structured" : "mechanical"
         }
       });
     };
@@ -863,14 +1236,32 @@ export class AgentLoop {
       const assistant = response.content.map(parseBlock);
       await emitAssistantTrace(input, stepNo, assistant);
       const toolCalls = assistant.filter((block): block is Extract<AgentAssistantBlock, { type: "tool_use" }> => block.type === "tool_use");
-      // findings[#48]：先算 control。max_tokens 截断会让 tool_use.input 退化成残缺 partial_json 字符串，
-      // controlFromAssistant 此时返回 "compact"——绝不能拿这种垃圾输入去执行工具。原实现在算 control 之前就把
-      // 工具全跑了，导致 compact 守卫成死代码（执行后 toolResults>0 总走 continue 分支，compact 分支不可达）。
-      // 故 compact 时跳过工具执行，让下方路由进 compact 重来（compactNow 会把残缺的 assistant 内容摘要掉）。
-      // 注意：max_tokens 但所有 tool_use input 仍解析成功时返回的是 "continue"，工具照常执行——只有真退化才跳过。
       const control = controlFromAssistant(assistant, response.stopReason);
-      const toolResults = [];
-      if (control !== "compact") {
+      // 补丁3：max_tokens 截断且某个 tool_use.input 退化成残缺 partial_json 字符串 → 整条消息的 tool_use 都不
+      // 可信（仿 pi failToolCallsFromTruncatedMessage）。不执行、不跳批、不烧压缩配额：给每个 tool_use 回一条
+      // 说明「因输出截断未执行、请重发完整参数」的 error tool_result，control 为 "continue"，下方按 tool_result
+      // 路径 continue，让模型重发完整调用。max_tokens 但所有 input 仍解析成对象时不命中——工具照常执行。
+      const truncatedToolBatch = isTruncatedToolBatch(assistant, response.stopReason);
+      const toolResults: ToolResult[] = [];
+      if (truncatedToolBatch) {
+        for (const toolCall of toolCalls) {
+          const result = errorToolResult(
+            `工具调用「${toolCall.name}」未执行：上一条回复因输出长度限制被截断，其参数可能不完整。请用完整参数重新发起该工具调用。`
+          );
+          toolResults.push(result);
+          await input.emit?.({
+            type: eventTypes.stepToolResult,
+            previewText: result.content.slice(0, 200),
+            data: {
+              run_id: input.runId,
+              step_no: stepNo,
+              tool_id: toolCall.name,
+              ok: false,
+              is_error: true
+            }
+          });
+        }
+      } else if (control !== "compact") {
         for (const toolCall of toolCalls) {
           const result = await input.tools.execute(toolCall.name, toolCall.input, ctx);
           toolResults.push(result);
@@ -954,7 +1345,9 @@ export class AgentLoop {
 
       messages.push({
         role: "assistant",
-        content: response.content
+        // 补丁3：截断批次回传时基于原始 response.content 做最小替换——只把残缺 string input 清成合法 {}，
+        // 其余块（含 thinking/redacted_thinking）原样透传，否则下次 provider 调用会 400。
+        content: truncatedToolBatch ? sanitizeTruncatedAssistantContent(response.content) : response.content
       });
 
       if (toolResults.length > 0) {
@@ -1004,106 +1397,32 @@ export class AgentLoop {
       }
 
       const finalText = textFromBlocks(assistant);
-      if (requireDeliverable && !(await hasDeliverables(input.workdir))) {
-        await input.emit?.({
-          type: eventTypes.agentRunFailed,
-          previewText: "AI 没产出交付物",
-          data: { run_id: input.runId }
-        });
+      // L3 交付后置（deliverable 门 + manifest + llm_review）抽出到 finalizeL3，供 loop.ts 与 loop2
+      // configBuilder 复用同一份实现（单一真相）。此处按抽出前语义把结构体映射回 terminalResult。
+      const l3 = await finalizeL3(input, { finalText, usage, steps, requireDeliverable });
+      if (l3.status === "failed") {
         return terminalResult({
           status: "failed",
-          reason: "AI 没产出交付物",
+          reason: l3.reason,
           control: "stop",
           usage,
           steps,
           finalText
         });
       }
-
-      let manifest: AgentLoopResult["manifest"];
-      if (requireDeliverable) {
-        const manifestInput: BuildDeliverableChangeManifestInput = {
-          workdir: input.workdir,
-          workItemId: input.workItemId,
-          title: input.manifest?.title ?? titleFromFinalText(finalText)
-        };
-        const manifestSnapshotId = input.manifest?.snapshotId ?? latestSnapshotId(steps);
-        if (input.manifest?.proposalId) {
-          manifestInput.proposalId = input.manifest.proposalId;
-        }
-        if (input.manifest?.branchId) {
-          manifestInput.branchId = input.manifest.branchId;
-        }
-        if (manifestSnapshotId) {
-          manifestInput.snapshotId = manifestSnapshotId;
-        }
-        if (input.manifest?.branchHeadRef) {
-          manifestInput.branchHeadRef = input.manifest.branchHeadRef;
-        }
-        if (input.manifest?.author) {
-          manifestInput.author = input.manifest.author;
-        }
-        if (input.manifest?.evidenceRefs) {
-          manifestInput.evidenceRefs = input.manifest.evidenceRefs;
-        }
-        if (input.manifest?.createdAt) {
-          manifestInput.createdAt = input.manifest.createdAt;
-        }
-        if (input.manifest?.downloadHrefForPath) {
-          manifestInput.downloadHrefForPath = input.manifest.downloadHrefForPath;
-        }
-        if (input.manifest?.previewHrefForPath) {
-          manifestInput.previewHrefForPath = input.manifest.previewHrefForPath;
-        }
-        manifest = await buildDeliverableChangeManifestFromOutputs(manifestInput);
-      }
-
-      let review: AgentRunReview | undefined;
-      let reviewFailed = false;
-      if (input.reviewDeliverable ?? true) {
-        const outcome = await reviewDeliverable(input, { finalText, manifest, usage });
-        if (outcome.kind === "ok") {
-          review = outcome.review;
-          await input.emit?.({
-            type: eventTypes.agentRunStep,
-            previewText: `llm_review: grade=${review.grade} ${review.rationale.slice(0, 120)}`,
-            data: {
-              run_id: input.runId,
-              step_no: usage.stepsUsed,
-              kind: "llm_review",
-              grade: review.grade
-            }
-          });
-        } else {
-          // findings[#2]：评审被请求但失败/空/不可解析——置位 fail-closed 标志并发审计/遥测信号，
-          // 绝不静默向上美化成乐观启发式分。
-          reviewFailed = true;
-          await input.emit?.({
-            type: eventTypes.agentRunStep,
-            previewText: `llm_review_failed: ${outcome.reason}`,
-            data: {
-              run_id: input.runId,
-              step_no: usage.stepsUsed,
-              kind: "llm_review_failed",
-              reason: outcome.reason
-            }
-          });
-        }
-      }
-
       const result = terminalResult({
         status: "succeeded",
-        reason: finalText ? publicReasonFromFinalText(finalText) : "AgentRun completed",
+        reason: l3.reason,
         control: "stop",
         usage,
         steps,
         finalText,
-        ...(manifest ? { manifest } : {})
+        ...(l3.manifest ? { manifest: l3.manifest } : {})
       });
-      if (review) {
-        result.review = review;
+      if (l3.review) {
+        result.review = l3.review;
       }
-      if (reviewFailed) {
+      if (l3.reviewFailed) {
         result.reviewFailed = true;
       }
       return result;

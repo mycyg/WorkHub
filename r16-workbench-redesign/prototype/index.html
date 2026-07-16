@@ -1,0 +1,1618 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WorkHub 工作台 · R16 迭代原型</title>
+<!-- R16 v3: 基座=现状工作台(rail+centerTab+右栏), NewMax 只做增量叠加; 玻璃取色对齐 design-system.ts -->
+<style>
+:root{
+  /* —— 对齐 desktop-webview design-system.ts 的 --ds-* 体系;透明度按用户要求略降(实底感强) —— */
+  --ink:#1d1d1f; --ink-soft:#3a3a3c; --ink-muted:#636366; --ink-faint:#84848b;
+  --accent:#0a84ff; --accent-2:#64d2ff; --accent-ink:#0071e3; --accent-soft:rgba(10,132,255,.14);
+  --success:#30d158; --success-ink:#1f9d4e; --success-soft:rgba(48,209,88,.16);
+  --warn:#ff9f0a; --warn-ink:#b8720a; --warn-soft:rgba(255,159,10,.16);
+  --danger:#ff453a; --danger-ink:#d3372e; --danger-soft:rgba(255,69,58,.14);
+  --cuu:#ffab5e; --cuu-ink:#b46a1e; --cuu-soft:rgba(255,171,94,.16);
+  --purple:#8256d0;
+  --glass:rgba(255,255,255,.62);
+  --glass-strong:rgba(255,255,255,.78);
+  --glass-quiet:rgba(255,255,255,.42);
+  --glass-border:rgba(255,255,255,.66);
+  --hairline-dark:rgba(30,42,74,.10);
+  --hairline-dark-2:rgba(30,42,74,.16);
+  --blur:26px;
+  --r-sm:10px; --r-md:14px; --r-lg:18px;
+  --sh-1:0 1px 2px rgba(60,60,67,.08), inset 0 1px 0 rgba(255,255,255,.6);
+  --sh-2:0 10px 26px -16px rgba(60,60,67,.34), inset 0 1px 0 rgba(255,255,255,.65);
+  --sh-pop:0 14px 40px rgba(8,14,38,.26), 0 2px 8px rgba(8,14,38,.12), inset 0 0 0 1px rgba(255,255,255,.5);
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","PingFang SC","Noto Sans SC",system-ui,sans-serif;
+  --mono:"SF Mono",ui-monospace,"Menlo",monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:var(--font);color:var(--ink);font-size:14px;line-height:1.55;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  background:
+    radial-gradient(1100px 780px at 82% -6%, rgba(130,86,208,.50), transparent 55%),
+    radial-gradient(950px 700px at 8% 110%, rgba(10,132,255,.42), transparent 58%),
+    radial-gradient(700px 500px at 40% 45%, rgba(100,210,255,.14), transparent 60%),
+    linear-gradient(158deg,#141a33 0%,#1d2547 42%,#2a2350 100%);
+  min-height:100%;display:flex;align-items:center;justify-content:center;padding:20px;
+}
+button{font-family:inherit;font-size:inherit;color:inherit;cursor:pointer;border:none;background:none}
+.ic{width:17px;height:17px;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ic-sm{width:14px;height:14px}
+.ic-xs{width:12px;height:12px;stroke-width:1.9}
+
+/* ============ 窗口外壳(照现状 .wh-wb-window:radius24 + 近白玻璃渐变 + 发丝白边) ============ */
+.wb{
+  /* 窄视口(侧栏预览)不许三栏挤塌:窗体钉最小宽,交给 body 横向滚动 */
+  width:min(1300px,97vw);min-width:1280px;height:min(830px,94vh);
+  display:flex;flex-direction:column;overflow:hidden;position:relative;
+  border-radius:24px;border:1px solid rgba(255,255,255,.7);
+  background:linear-gradient(180deg,rgba(250,251,253,.90),rgba(242,245,250,.94));
+  backdrop-filter:blur(var(--blur)) saturate(180%);-webkit-backdrop-filter:blur(var(--blur)) saturate(180%);
+  box-shadow:0 42px 110px rgba(4,8,24,.55), 0 10px 34px rgba(4,8,24,.34);
+}
+.titlebar{
+  flex:none;height:44px;display:flex;align-items:center;gap:10px;padding:0 14px 0 16px;
+  border-bottom:1px solid var(--glass-border);box-shadow:0 1px 0 var(--hairline-dark);
+}
+.lights{display:flex;gap:8px;align-items:center;margin-right:4px}
+.l{width:12px;height:12px;border-radius:50%;display:block;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.12)}
+.l.r{background:#ff5f57}.l.y{background:#febc2e}.l.g{background:#28c840}
+.crumb{font:600 13px/1 var(--font);color:var(--ink-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crumb b{color:var(--ink);font-weight:700}
+.tb-spacer{flex:1}
+.tb-btn{width:27px;height:27px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--ink-faint)}
+.tb-btn:hover{background:rgba(20,30,50,.06);color:var(--ink)}
+.proto-banner{
+  flex:none;height:24px;display:flex;align-items:center;justify-content:center;gap:8px;
+  font-size:11px;letter-spacing:.02em;color:#6d6046;
+  background:rgba(255,241,204,.55);border-bottom:1px solid rgba(140,110,40,.22);
+}
+.proto-banner b{font-weight:650;color:#5d5138}
+.proto-banner .dotd{width:3px;height:3px;border-radius:50%;background:#b3a37e}
+.body{flex:1;display:flex;min-height:0}
+
+/* ============ 左 rail(照现状 .wh-wb-rail 242px glass-quiet;结构=待拍板/项目树/军团/成员/私聊/我) ============ */
+.rail{
+  width:242px;flex:none;display:flex;flex-direction:column;min-height:0;overflow-y:auto;
+  background:var(--glass-quiet);border-right:1px solid var(--glass-border);
+  box-shadow:inset -1px 0 0 var(--hairline-dark);
+}
+.rail::-webkit-scrollbar{width:8px}
+.rail::-webkit-scrollbar-thumb{background:rgba(30,42,74,.16);border-radius:8px}
+.rail-group{margin:8px 8px 0;padding-top:0}
+.rail-group--line{margin-top:8px;padding-top:8px;border-top:1px solid var(--glass-border);box-shadow:0 -1px 0 var(--hairline-dark)}
+.inbox-nav{
+  display:flex;align-items:center;gap:9px;width:100%;padding:9px 10px;text-align:left;
+  border-radius:var(--r-md);transition:background .14s;
+}
+.inbox-nav:hover{background:var(--glass-strong)}
+.inbox-nav.active{background:var(--glass-strong);box-shadow:var(--sh-1)}
+.inbox-nav .ic{color:var(--accent);width:18px;height:18px}
+.inbox-nav .lbl{font:600 13.5px/1.3 var(--font);color:var(--ink)}
+.inbox-nav .count{
+  margin-left:auto;min-width:18px;height:18px;padding:0 6px;border-radius:99px;text-align:center;
+  font:700 10.5px/18px var(--font);color:#fff;background:var(--danger);box-shadow:0 0 8px var(--danger);
+}
+.rail-head{padding:12px 14px 6px;font:700 11px/1 var(--font);letter-spacing:.12em;color:var(--ink-faint);text-transform:uppercase;display:flex;align-items:center;gap:6px}
+.rail-head .mut{font:600 10px/1 var(--font);letter-spacing:0;color:var(--ink-faint)}
+.rail-head .headbtn{margin-left:auto;font:600 10.5px/1 var(--font);letter-spacing:0;color:var(--accent);padding:3px 6px;border-radius:6px}
+.rail-head .headbtn:hover{background:var(--accent-soft)}
+.project{margin:2px 8px;border-radius:var(--r-md)}
+.project-head{display:flex;align-items:center;gap:2px;padding-right:6px}
+.project-row{flex:1;min-width:0;display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:var(--r-md);text-align:left}
+.project.active .project-row{background:var(--glass-strong);box-shadow:var(--sh-1)}
+.project-row:hover{background:var(--glass-strong)}
+.tile{
+  width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex:none;
+  font:700 12px/1 var(--font);background:var(--accent-soft);color:var(--accent);
+}
+.tile--ok{background:var(--success-soft);color:var(--success-ink)}
+.project-name{font:600 13.5px/1.3 var(--font);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
+.project-name--muted{color:var(--ink-muted);font-weight:500}
+.project-dot{width:7px;height:7px;border-radius:50%;background:var(--success);box-shadow:0 0 8px var(--success);flex:none}
+.gear{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--ink-faint);flex:none}
+.gear:hover{background:rgba(20,30,50,.06);color:var(--ink)}
+.gear.sel{background:var(--accent-soft);color:var(--accent)}
+.tree{padding:2px 0 4px 26px}
+.leaf{
+  display:flex;align-items:center;gap:8px;width:calc(100% - 8px);font:500 13px/1.3 var(--font);
+  text-align:left;color:var(--ink-muted);padding:6px 10px;margin:1px 8px 1px 0;border-radius:9px;border:1px solid transparent;
+  transition:background .14s;
+}
+.leaf:hover{background:var(--glass-strong)}
+.leaf.sel{background:var(--accent-soft);color:var(--ink);border-color:rgba(10,132,255,.25)}
+.leaf .ic{width:13px;height:13px;color:var(--ink-faint)}
+.leaf.sel .ic{color:var(--accent)}
+.leaf .lbl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.leaf-count{margin-left:auto;font:700 10.5px/1 var(--font);color:var(--ink-faint);background:var(--glass);padding:2px 6px;border-radius:99px}
+.leaf-count--unread{color:#fff;background:var(--danger);box-shadow:0 0 8px var(--danger)}
+.leaf--new{color:var(--ink-faint)}
+.pill-new{
+  margin-left:auto;flex:none;font:700 9.5px/1 var(--font);color:var(--accent);letter-spacing:.08em;
+  border:1px solid rgba(10,132,255,.35);background:var(--accent-soft);border-radius:99px;padding:2px 6px;
+}
+.army-nav{
+  display:flex;align-items:center;gap:9px;width:calc(100% - 16px);margin:2px 8px;padding:8px 10px;
+  border-radius:var(--r-md);text-align:left;
+}
+.army-nav:hover{background:var(--glass-strong)}
+.army-nav.active{background:var(--glass-strong);box-shadow:var(--sh-1)}
+.army-nav .ic{width:17px;height:17px;color:var(--ink-muted)}
+.army-nav .lbl{font:600 13.5px/1.3 var(--font);color:var(--ink)}
+.member-row{
+  display:flex;align-items:center;gap:9px;width:calc(100% - 16px);margin:1px 8px;padding:6px 10px;
+  border-radius:9px;text-align:left;color:var(--ink);font:500 13px/1.3 var(--font);
+}
+.member-row:hover{background:var(--glass-strong)}
+.member-row .meta{margin-left:auto;font:500 10.5px/1 var(--font);color:var(--ink-faint)}
+.member-row .kick{
+  display:none;margin-left:auto;font:600 11px/1 var(--font);color:var(--danger-ink);
+  padding:3px 8px;border-radius:7px;border:1px solid rgba(255,69,58,.3);background:rgba(255,69,58,.08);
+}
+.rail.manage .member-row .kick{display:inline-flex}
+.rail.manage .member-row .meta{display:none}
+.member-row.removed{opacity:.42}
+.member-row.removed .kick{display:none}
+.member-row .removed-tag{margin-left:auto;font:600 10.5px/1 var(--font);color:var(--ink-faint)}
+.invite-row{
+  display:flex;align-items:center;gap:8px;width:calc(100% - 16px);margin:2px 8px;padding:6px 10px;
+  border-radius:9px;text-align:left;color:var(--accent);font:600 12.5px/1.3 var(--font);
+}
+.invite-row:hover{background:var(--accent-soft)}
+.dm-row{
+  display:flex;align-items:center;gap:9px;width:calc(100% - 16px);margin:1px 8px;padding:6px 10px;
+  border-radius:9px;text-align:left;color:var(--ink);font:500 13px/1.3 var(--font);
+}
+.dm-row:hover{background:var(--glass-strong)}
+.dm-row.sel{background:var(--accent-soft)}
+.dm-count{flex:none;margin-left:auto;font:700 10.5px/1 var(--font);color:#fff;background:var(--danger);box-shadow:0 0 8px var(--danger);padding:2px 6px;border-radius:99px}
+.av{
+  border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
+  color:#fff;font-weight:700;font-size:10px;width:22px;height:22px;position:relative;border:1.5px solid #fff;
+}
+.av.blue{background:linear-gradient(150deg,#4b9bf7,#0a6ae3)}
+.av.teal{background:linear-gradient(150deg,#22b8a6,#12897c)}
+.av.purple{background:linear-gradient(150deg,#9a6ee0,#7a4fca)}
+.av.slate{background:linear-gradient(150deg,#8b93a7,#697089)}
+.av.cuu{background:var(--cuu-soft);color:var(--cuu-ink);border-color:rgba(255,171,94,.5)}
+.av .on{position:absolute;right:-2px;bottom:-2px;width:8px;height:8px;border-radius:50%;background:var(--success);border:1.5px solid #fff;z-index:2}
+.rail-foot{margin-top:auto;border-top:1px solid var(--glass-border);box-shadow:0 -1px 0 var(--hairline-dark);padding:10px 12px;display:flex;align-items:center;gap:9px}
+.rail-foot .av{width:28px;height:28px;font-size:12px}
+.rail-foot .nm{font:600 13px/1.2 var(--font)}
+.rail-foot .sub{font:500 11px/1.3 var(--font);color:var(--success-ink)}
+
+/* ============ 中栏(照现状 .wh-wb-center;各 centerTab 视图切换) ============ */
+.center{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}
+.cview{display:none;flex:1;min-height:0;flex-direction:column}
+.cview.active{display:flex}
+.center-scroll{flex:1;min-height:0;overflow-y:auto;padding:20px 26px}
+.center-scroll::-webkit-scrollbar,.chat-scroll::-webkit-scrollbar,.side-body::-webkit-scrollbar{width:9px}
+.center-scroll::-webkit-scrollbar-thumb,.chat-scroll::-webkit-scrollbar-thumb,.side-body::-webkit-scrollbar-thumb{background:rgba(30,42,74,.16);border-radius:8px}
+
+/* —— 增量 2:同项目已打开会话的 tab 条(温和增强,不破坏 rail 点选) —— */
+.sess-strip{
+  flex:none;display:none;align-items:center;gap:3px;padding:7px 14px 0;
+  border-bottom:1px solid var(--glass-border);box-shadow:0 1px 0 var(--hairline-dark);
+}
+.sess-strip.show{display:flex}
+.sess-tab{
+  display:flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:9px 9px 0 0;
+  color:var(--ink-muted);font:500 12.5px/1 var(--font);
+}
+.sess-tab .ic{width:13px;height:13px;color:var(--ink-faint)}
+.sess-tab:hover{background:var(--glass)}
+.sess-tab.active{background:var(--glass-strong);color:var(--ink);font-weight:600;box-shadow:inset 0 -2px 0 var(--accent)}
+.sess-tab.active .ic{color:var(--accent)}
+.sess-tab .mini-unread{min-width:15px;height:15px;padding:0 4px;border-radius:99px;font:700 9.5px/15px var(--font);text-align:center;color:#fff;background:var(--danger)}
+.sess-tab .av{width:16px;height:16px;font-size:8px;border-width:1px}
+
+/* —— 聊天(照现状 chat-head 成员条 + 气泡;自己=accent、Cuu=橙 cuu-soft) —— */
+.chat{flex:1;min-height:0;display:flex;flex-direction:column}
+.chat-head{
+  flex:none;display:flex;align-items:center;gap:10px;padding:9px 20px;
+  border-bottom:1px solid var(--glass-border);box-shadow:0 1px 0 var(--hairline-dark);
+  font:500 11.5px/1 var(--font);color:var(--ink-muted);
+}
+.chat-avs{display:flex}
+.chat-avs .av{margin-right:-6px}
+.chat-head-label{margin-left:6px}
+.chat-head-status--online{color:var(--success-ink)}
+.cuu-toggle{
+  flex:none;margin-left:auto;padding:5px 12px;border-radius:999px;border:1px solid var(--glass-border);
+  background:var(--glass);font:600 11px/1.2 var(--font);color:var(--ink-muted);
+}
+.cuu-toggle.on{border-color:rgba(255,171,94,.4);background:var(--cuu-soft);color:var(--cuu-ink)}
+.chat-scroll{flex:1;min-height:0;overflow-y:auto;padding:16px 20px 6px}
+.daysep{display:flex;align-items:center;gap:10px;color:var(--ink-faint);font:600 10.5px/1 var(--font);margin:6px 0 14px}
+.daysep::before,.daysep::after{content:"";flex:1;height:1px;background:var(--glass-border)}
+.msg{position:relative;display:flex;gap:9px;margin:0 0 14px;align-items:flex-start}
+.msg .av{width:26px;height:26px;font-size:11px;margin-top:2px}
+.bub{min-width:0;max-width:min(600px,88%)}
+.msg--self{flex-direction:row-reverse}
+.msg--self .bub{text-align:right}
+.msg--self .who{flex-direction:row-reverse}
+.who{display:flex;align-items:baseline;gap:7px;font:600 12px/1 var(--font);color:var(--ink-soft);margin-bottom:4px}
+.tm{font:500 10.5px/1 var(--font);color:var(--ink-faint)}
+.model-pill{font:600 10px/1 var(--mono);color:var(--cuu-ink);background:var(--cuu-soft);border:1px solid rgba(255,171,94,.35);border-radius:99px;padding:2px 7px}
+.txt{
+  font:500 13.5px/1.6 var(--font);color:var(--ink);white-space:pre-wrap;word-break:break-word;
+  background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--r-md);padding:9px 13px;
+  display:inline-block;text-align:left;box-shadow:var(--sh-1);
+}
+.msg--cuu .txt{background:var(--cuu-soft);border-color:rgba(255,171,94,.28)}
+.msg--self .txt{background:var(--accent-soft);border-color:rgba(10,132,255,.3)}
+.mention{color:var(--accent);font-weight:700}
+.txt .md-b{font-weight:650}
+.txt .md-code{font-family:var(--mono);font-size:12px;background:rgba(255,255,255,.6);border:1px solid var(--glass-border);border-radius:5px;padding:0 5px}
+/* 增量 1:思考/工具摘要折叠条(挂在 Cuu 气泡组里) */
+.fold{max-width:min(600px,88%);border:1px solid var(--glass-border);border-radius:var(--r-sm);background:var(--glass-quiet);overflow:hidden;margin:0 0 6px}
+.fold-h{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:6px 11px;font:600 11.5px/1.3 var(--font);color:var(--ink-muted)}
+.fold-h:hover{background:var(--glass)}
+.fold-h .ic{width:13px;height:13px;color:var(--ink-faint)}
+.fold-h .caret{margin-left:auto;display:flex;color:var(--ink-faint);transition:transform .16s}
+.fold.open .caret{transform:rotate(90deg)}
+.fold-body{display:none;padding:2px 12px 9px 32px;font:500 12px/1.7 var(--font);color:var(--ink-muted)}
+.fold.open .fold-body{display:block}
+.fold-body .tline{display:flex;gap:8px;padding:1px 0}
+.fold-body .tline .k{color:var(--ink-faint);font-family:var(--mono);font-size:11px}
+/* 增量 1:消息操作条(复制/重试 + 耗时·tokens) */
+.msg-actions{display:flex;align-items:center;gap:8px;margin-top:6px;color:var(--ink-faint);font:500 11px/1 var(--font)}
+.msg-actions .iconbtn{display:flex;padding:4px;border-radius:6px;color:var(--ink-faint)}
+.msg-actions .iconbtn:hover{background:var(--glass-strong);color:var(--ink-muted)}
+/* 产出卡(照现状 actioncard--deliverable:绿左边 + success 渐隐) */
+.dcard{
+  max-width:min(600px,88%);border:1px solid var(--glass-border);border-left:3px solid var(--success);
+  border-radius:var(--r-md);background:linear-gradient(90deg,var(--success-soft),rgba(255,255,255,.55) 42%);
+  padding:11px 13px;margin-top:8px;box-shadow:var(--sh-1);text-align:left;
+}
+.dcard-h{display:flex;align-items:center;gap:9px}
+.dcard-h .ic{width:16px;height:16px;color:var(--success-ink)}
+.dcard-h .fname{font:700 12.5px/1.3 var(--font);color:var(--ink)}
+.dcard-h .diffstat{font:600 11px/1 var(--mono)}
+.diffstat .add{color:var(--success-ink)}
+.diffstat .del{color:var(--danger-ink)}
+.dcard-sub{margin-top:3px;font:500 11.5px/1.5 var(--font);color:var(--ink-muted)}
+.dcard-actions{display:flex;gap:8px;margin-top:9px}
+.dcard-note{display:none;margin-top:9px;padding:7px 10px;border-radius:8px;background:var(--success-soft);color:var(--success-ink);font:600 12px/1.4 var(--font);align-items:center;gap:6px}
+.dcard-note.show{display:flex}
+.sysline{display:flex;align-items:center;justify-content:center;gap:8px;margin:8px 0;font:500 11.5px/1.4 var(--font);color:var(--ink-faint)}
+/* 行动卡(Cuu 回执,照现状 actioncard) */
+.acard{max-width:min(520px,88%);border:1px solid var(--glass-border);border-radius:var(--r-md);background:var(--cuu-soft);padding:10px 13px;margin-top:8px;text-align:left}
+.acard-h{font:700 12.5px/1.3 var(--font);color:var(--ink)}
+.acard-list{margin:7px 0 0;padding-left:18px;font:500 12px/1.6 var(--font);color:var(--ink-soft)}
+
+/* composer(现状底部输入 + 增量:联网 toggle/模型选择器) */
+.composer{flex:none;padding:10px 18px 14px}
+.composer-box{
+  border:1px solid var(--glass-border);border-radius:var(--r-lg);background:var(--glass-strong);
+  box-shadow:var(--sh-2);padding:5px 6px;
+}
+.composer-box:focus-within{border-color:rgba(10,132,255,.45);box-shadow:0 0 0 3px rgba(10,132,255,.16), var(--sh-2)}
+.composer .field{
+  width:100%;border:none;outline:none;resize:none;font-family:inherit;font-size:13.5px;line-height:1.5;
+  padding:8px 10px 3px;color:var(--ink);background:transparent;max-height:110px;
+}
+.composer .field::placeholder{color:var(--ink-faint)}
+.composer-bar{display:flex;align-items:center;gap:5px;padding:2px 3px 1px}
+.cbtn{width:29px;height:29px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--ink-faint)}
+.cbtn:hover{background:rgba(20,30,50,.06);color:var(--ink-muted)}
+.toggle-pill{display:inline-flex;align-items:center;gap:6px;height:27px;padding:0 11px;border-radius:99px;font:600 12px/1 var(--font);color:var(--ink-muted);border:1px solid var(--glass-border);background:var(--glass)}
+.toggle-pill .ic{width:14px;height:14px}
+.toggle-pill.on{background:var(--accent-soft);color:var(--accent-ink);border-color:rgba(10,132,255,.35)}
+.toggle-pill.on .ic{color:var(--accent)}
+.c-spacer{flex:1}
+.model-sel{position:relative}
+.model-btn{display:inline-flex;align-items:center;gap:7px;height:27px;padding:0 10px;border-radius:99px;font:600 12px/1 var(--font);color:var(--ink-muted);border:1px solid var(--glass-border);background:var(--glass)}
+.model-btn:hover{background:var(--glass-strong)}
+.model-btn .dt{width:6px;height:6px;border-radius:50%;background:var(--success)}
+.model-menu{
+  position:absolute;bottom:35px;right:0;width:216px;border-radius:var(--r-md);padding:6px;display:none;z-index:40;
+  background:rgba(255,255,255,.92);backdrop-filter:blur(30px) saturate(170%);-webkit-backdrop-filter:blur(30px) saturate(170%);
+  box-shadow:var(--sh-pop);
+}
+.model-menu.show{display:block}
+.model-opt{display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:9px;font:500 12.5px/1.3 var(--font);width:100%;text-align:left}
+.model-opt:hover{background:rgba(20,30,50,.05)}
+.model-opt .mn{flex:1}
+.model-opt .desc{font:500 10.5px/1 var(--font);color:var(--ink-faint)}
+.model-opt.sel{background:var(--accent-soft)}
+.send-btn{width:29px;height:29px;border-radius:9px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 14px -6px rgba(10,132,255,.6)}
+.send-btn:hover{background:var(--accent-ink)}
+
+/* 通用按钮 */
+.btn{
+  display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:var(--r-sm);
+  font:600 12.5px/1 var(--font);background:var(--glass-strong);border:1px solid var(--glass-border);color:var(--ink);
+  box-shadow:var(--sh-1);white-space:nowrap;
+}
+.btn:hover{background:#fff}
+.btn.primary{background:linear-gradient(135deg,#0a84ff,#3f9dff);border-color:transparent;color:#fff;box-shadow:0 8px 18px -8px rgba(10,132,255,.55)}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--ink-muted);box-shadow:none}
+.btn.ghost:hover{background:rgba(20,30,50,.06)}
+.btn.sm{height:26px;padding:0 10px;font-size:12px}
+.btn[disabled]{opacity:.55;cursor:default;pointer-events:none}
+.tag{display:inline-flex;align-items:center;gap:4px;height:19px;padding:0 8px;border-radius:99px;font:600 11px/1 var(--font);background:var(--glass);color:var(--ink-muted);border:1px solid var(--glass-border)}
+.tag.blue{background:var(--accent-soft);color:var(--accent-ink);border-color:transparent}
+.tag.green{background:var(--success-soft);color:var(--success-ink);border-color:transparent}
+.tag.amber{background:var(--warn-soft);color:var(--warn-ink);border-color:transparent}
+.tag.red{background:var(--danger-soft);color:var(--danger-ink);border-color:transparent}
+.tag.purple{background:rgba(130,86,208,.14);color:var(--purple);border-color:transparent}
+
+/* —— 收件箱(现状 centerTab=inbox;卡片=玻璃) —— */
+.inbox-head{padding:4px 2px 14px}
+.inbox-head h2{font:700 19px/1.3 var(--font)}
+.inbox-head .s{margin-top:4px;font:500 12.5px/1.5 var(--font);color:var(--ink-muted)}
+.inbox-head .s b{color:var(--ink)}
+.icard{
+  border:1px solid var(--glass-border);border-radius:var(--r-lg);background:var(--glass);
+  box-shadow:var(--sh-2);overflow:hidden;margin-bottom:13px;max-width:820px;
+}
+.icard-top{display:flex;align-items:center;gap:11px;padding:14px 17px 9px}
+.icard-ico{width:36px;height:36px;border-radius:11px;flex:none;display:flex;align-items:center;justify-content:center}
+.icard-ico.blue{background:var(--accent-soft);color:var(--accent-ink)}
+.icard-ico.purple{background:rgba(130,86,208,.14);color:var(--purple)}
+.icard-ico.amber{background:var(--warn-soft);color:var(--warn-ink)}
+.icard .dh{flex:1;min-width:0}
+.icard .dh .t{font:650 14px/1.35 var(--font)}
+.icard .dh .m{font:500 11.5px/1.4 var(--font);color:var(--ink-faint);margin-top:2px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.icard-body{padding:2px 17px 12px 64px;font:500 12.5px/1.65 var(--font);color:var(--ink-muted)}
+.icard-facts{display:flex;gap:20px;padding:0 17px 13px 64px;flex-wrap:wrap}
+.ifact{font:500 11.5px/1.4 var(--font)}
+.ifact .k{color:var(--ink-faint);display:block;margin-bottom:1px}
+.ifact .v{color:var(--ink);font-weight:600}
+.icard-actions{display:flex;align-items:center;gap:9px;padding:11px 17px;border-top:1px solid var(--glass-border);background:rgba(255,255,255,.3)}
+.icard-actions .sla{margin-left:auto;font:500 11px/1 var(--font);color:var(--ink-faint)}
+.icard-result{display:none;align-items:center;gap:7px;font:600 12.5px/1 var(--font)}
+.icard-result.ok{color:var(--success-ink)}
+.icard-result.rej{color:var(--warn-ink)}
+.icard.resolved .icard-actions .btn{display:none}
+.icard.resolved{opacity:.85}
+.spin{width:13px;height:13px;border-radius:50%;border:2px solid var(--accent-soft);border-top-color:var(--accent);animation:sp .7s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.busy-txt{display:none;align-items:center;gap:7px;font:500 12px/1 var(--font);color:var(--ink-muted)}
+.busy-txt.show{display:inline-flex}
+
+/* —— 网盘(现状 drive 表格) —— */
+.pane-top{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.pane-top .t{font:700 15px/1.3 var(--font);flex:1}
+.pane-search{display:flex;align-items:center;gap:7px;height:29px;padding:0 11px;border:1px solid var(--glass-border);border-radius:99px;background:var(--glass);color:var(--ink-faint);font:500 12px/1 var(--font);width:210px}
+.ftbl-card{border:1px solid var(--glass-border);border-radius:var(--r-lg);background:var(--glass);box-shadow:var(--sh-1);overflow:hidden;max-width:860px}
+.ftbl{width:100%;border-collapse:collapse}
+.ftbl th{text-align:left;font:600 11px/1 var(--font);color:var(--ink-faint);padding:10px 14px;border-bottom:1px solid var(--glass-border)}
+.ftbl td{padding:9px 14px;border-bottom:1px solid var(--hairline-dark);font:500 12.5px/1.4 var(--font);color:var(--ink-muted)}
+.ftbl tr:last-child td{border-bottom:none}
+.ftbl tr:hover td{background:rgba(255,255,255,.4)}
+.ftbl .name{display:flex;align-items:center;gap:9px;color:var(--ink)}
+.ftbl .name .ic{color:var(--ink-faint);width:15px;height:15px}
+.ftbl tr.folder .name .ic{color:#c79a3e}
+.ftbl .name.open-md{cursor:pointer}
+.ftbl .name.open-md:hover{color:var(--accent-ink)}
+.ftbl .indent{padding-left:26px}
+
+/* —— 增量 3:任务看板 —— */
+.board-top{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.board-top .cnt{font:700 15px/1.3 var(--font)}
+.board-top .cnt span{color:var(--ink-faint);font-weight:500}
+.board-top .hint{font:500 11.5px/1 var(--font);color:var(--ink-faint)}
+.board{display:flex;gap:13px;overflow-x:auto;align-items:flex-start;padding-bottom:8px}
+.col{width:252px;flex:none;display:flex;flex-direction:column;background:var(--glass-quiet);border:1px solid var(--glass-border);border-radius:var(--r-md);box-shadow:var(--sh-1)}
+.col-h{display:flex;align-items:center;gap:8px;padding:10px 12px 8px}
+.col-h .dot{width:8px;height:8px;border-radius:50%;flex:none}
+.col-h .nm{font:600 12.5px/1 var(--font)}
+.col-h .cc{font:600 11px/1 var(--font);color:var(--ink-faint);background:var(--glass);border-radius:99px;min-width:18px;height:17px;padding:0 6px;display:flex;align-items:center;justify-content:center}
+.col-h .add{margin-left:auto;display:flex;padding:4px;border-radius:6px;color:var(--ink-faint)}
+.col-h .add:hover{background:var(--glass-strong)}
+.col-list{padding:2px 9px 11px;display:flex;flex-direction:column;gap:8px;min-height:56px}
+.col-list.drop-hover{background:var(--accent-soft);border-radius:10px;outline:2px dashed rgba(10,132,255,.4);outline-offset:-4px}
+.tcard{background:var(--glass-strong);border:1px solid var(--glass-border);border-radius:var(--r-sm);box-shadow:var(--sh-1);padding:10px 11px;cursor:grab}
+.tcard:active{cursor:grabbing}
+.tcard.dragging{opacity:.4}
+.tcard .th{display:flex;align-items:flex-start;gap:8px}
+.tcard .pd{width:7px;height:7px;border-radius:50%;flex:none;margin-top:5px}
+.tcard .tt{font:600 12.5px/1.4 var(--font);flex:1;color:var(--ink)}
+.tcard .tf{display:flex;align-items:center;gap:8px;margin-top:8px;color:var(--ink-faint);font:500 11px/1 var(--font)}
+.tcard .due{display:flex;align-items:center;gap:4px}
+.tcard .due.over{color:var(--danger-ink)}
+.tcard .manual{background:var(--glass);border:1px solid var(--glass-border);border-radius:5px;padding:0 6px;height:16px;display:inline-flex;align-items:center}
+.tcard .owner{margin-left:auto;display:flex;align-items:center;gap:5px}
+.tcard .av{width:18px;height:18px;font-size:9px}
+.over-dot{width:6px;height:6px;border-radius:50%;background:var(--danger)}
+
+/* —— 增量 4:日程(左计划文档 + 右周历) —— */
+.sched{flex:1;display:flex;min-height:0}
+.plan-doc{width:320px;flex:none;border-right:1px solid var(--glass-border);box-shadow:1px 0 0 var(--hairline-dark);display:flex;flex-direction:column;min-height:0;background:var(--glass-quiet)}
+.plan-head{flex:none;display:flex;align-items:center;gap:8px;padding:12px 16px 8px}
+.plan-head .t{font:600 12px/1 var(--font);color:var(--ink-muted);flex:1}
+.plan-head .iconbtn{display:flex;padding:4px;border-radius:6px;color:var(--ink-faint)}
+.plan-head .iconbtn:hover{background:var(--glass-strong)}
+.plan-body{flex:1;overflow-y:auto;padding:8px 20px 20px}
+.plan-body::-webkit-scrollbar{width:8px}
+.plan-body::-webkit-scrollbar-thumb{background:rgba(30,42,74,.16);border-radius:8px}
+.plan-body h1{font:700 19px/1.3 var(--font);margin:6px 0 12px;letter-spacing:-.01em}
+.plan-body h2{font:650 13.5px/1.4 var(--font);margin:16px 0 6px}
+.plan-body p,.plan-body li{font:500 12.5px/1.7 var(--font);color:var(--ink-muted)}
+.plan-body ul,.plan-body ol{margin:0 0 8px;padding-left:18px}
+.plan-body strong{color:var(--ink);font-weight:650}
+.cal{flex:1;display:flex;flex-direction:column;min-width:0}
+.cal-head{flex:none;display:flex;align-items:center;gap:12px;padding:12px 18px 10px}
+.cal-head .rng{font:650 13.5px/1 var(--font);flex:1}
+.cal-nav{display:flex;align-items:center;gap:2px}
+.cal-nav .navbtn{width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted)}
+.cal-nav .navbtn:hover{background:var(--glass-strong)}
+.cal-grid{flex:1;display:grid;grid-template-columns:repeat(7,1fr);min-height:0;overflow-y:auto;border-top:1px solid var(--glass-border);box-shadow:0 1px 0 var(--hairline-dark) inset}
+.cal-col{border-right:1px solid var(--hairline-dark);display:flex;flex-direction:column;min-height:0}
+.cal-col:last-child{border-right:none}
+.cal-col.weekend{background:rgba(30,42,74,.03)}
+.cal-dh{padding:8px 9px 7px;border-bottom:1px solid var(--hairline-dark)}
+.cal-dh .dow{font:500 10.5px/1 var(--font);color:var(--ink-faint)}
+.cal-dh .dnum{font:600 14px/1 var(--font);margin-top:4px;display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;border-radius:50%}
+.cal-dh.today .dnum{background:var(--accent);color:#fff;box-shadow:0 4px 10px -4px rgba(10,132,255,.6)}
+.cal-cells{flex:1;padding:7px 6px;display:flex;flex-direction:column;gap:6px}
+.cal-task{border:1px solid var(--glass-border);border-left:3px solid var(--accent);border-radius:8px;background:var(--glass-strong);box-shadow:var(--sh-1);padding:6px 8px;font:500 11.5px/1.35 var(--font)}
+.cal-task.t-green{border-left-color:var(--success)}
+.cal-task.t-amber{border-left-color:var(--warn)}
+.cal-task.t-purple{border-left-color:var(--purple)}
+.cal-task .ct{font-weight:600;color:var(--ink)}
+.cal-task .cm{color:var(--ink-faint);font-size:10.5px;margin-top:2px}
+
+/* —— 增量 5:设置(现状项目设置分区 + 新增自定义指令) —— */
+.settings{flex:1;display:flex;min-height:0}
+.set-nav{width:200px;flex:none;border-right:1px solid var(--glass-border);box-shadow:1px 0 0 var(--hairline-dark);padding:14px 10px;background:var(--glass-quiet)}
+.set-nav-item{display:flex;align-items:center;gap:9px;height:33px;padding:0 11px;border-radius:9px;color:var(--ink-muted);font:500 13px/1 var(--font);width:100%;text-align:left}
+.set-nav-item .ic{color:var(--ink-faint);width:15px;height:15px}
+.set-nav-item:hover{background:var(--glass-strong)}
+.set-nav-item.active{background:var(--accent-soft);color:var(--ink);font-weight:600}
+.set-nav-item.active .ic{color:var(--accent)}
+.set-body{flex:1;overflow-y:auto;padding:24px 34px;max-width:720px}
+.set-body h2{font:650 16px/1.3 var(--font);margin:0 0 6px;display:flex;align-items:center;gap:10px}
+.set-desc{color:var(--ink-muted);font:500 12.5px/1.65 var(--font);margin:0 0 16px}
+.saved-pill{display:none;align-items:center;gap:5px;font:600 11px/1 var(--font);color:var(--success-ink);background:var(--success-soft);padding:3px 9px;border-radius:99px}
+.saved-pill.show{display:inline-flex}
+.ci-area{
+  width:100%;min-height:210px;border:1px solid var(--glass-border);border-radius:var(--r-md);
+  padding:13px 15px;font:500 12.5px/1.7 var(--mono);color:var(--ink);resize:vertical;outline:none;
+  background:var(--glass-strong);box-shadow:var(--sh-1);
+}
+.ci-area:focus{border-color:rgba(10,132,255,.45);box-shadow:0 0 0 3px rgba(10,132,255,.14)}
+.ci-area::placeholder{color:var(--ink-faint)}
+.ci-hint{margin-top:9px;font:500 11.5px/1.6 var(--font);color:var(--ink-faint)}
+.set-generic{color:var(--ink-faint);font:500 12.5px/1.7 var(--font);padding:16px;border:1px dashed var(--glass-border);border-radius:var(--r-md);background:var(--glass-quiet)}
+
+/* —— 现状占位视图(时间线/军团总览:本次迭代不动) —— */
+.empty-note{max-width:420px;margin:12vh auto 0;text-align:center}
+.empty-note .eicon{display:inline-flex;width:32px;height:32px;color:var(--accent)}
+.empty-note .eicon svg{width:32px;height:32px}
+.empty-note .et{margin:13px 0 0;font:700 16px/1.35 var(--font)}
+.empty-note .es{margin:8px 0 0;font:500 12.5px/1.7 var(--font);color:var(--ink-muted)}
+
+/* —— 增量 6:编辑器(中栏全宽) —— */
+.editor{flex:1;display:flex;flex-direction:column;min-height:0}
+.ed-tabs{flex:none;display:flex;align-items:center;gap:2px;padding:7px 14px 0;border-bottom:1px solid var(--glass-border);box-shadow:0 1px 0 var(--hairline-dark)}
+.ed-tab{display:flex;align-items:center;gap:7px;height:30px;padding:0 13px;border-radius:9px 9px 0 0;font:600 12.5px/1 var(--font);color:var(--ink)}
+.ed-tab .ic{width:13px;height:13px;color:var(--accent)}
+.ed-tab.active{background:var(--glass-strong);box-shadow:inset 0 -2px 0 var(--accent)}
+.ed-back{display:flex;align-items:center;gap:5px;height:28px;padding:0 10px 0 6px;border-radius:8px;color:var(--ink-muted);font:500 12.5px/1 var(--font);margin-right:6px}
+.ed-back:hover{background:var(--glass)}
+.ed-tools-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.saved-chip{display:inline-flex;align-items:center;gap:5px;font:600 11.5px/1 var(--font);color:var(--success-ink)}
+.ed-toolbar{flex:none;height:40px;display:flex;align-items:center;gap:3px;padding:0 16px;border-bottom:1px solid var(--glass-border);box-shadow:0 1px 0 var(--hairline-dark)}
+.tbtn{min-width:27px;height:27px;padding:0 7px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted);font:600 12.5px/1 var(--font)}
+.tbtn:hover{background:var(--glass-strong)}
+.tbtn .ic{width:15px;height:15px}
+.tsep{width:1px;height:17px;background:var(--hairline-dark-2);margin:0 5px}
+.ed-doc{flex:1;overflow-y:auto;padding:30px 42px}
+.ed-doc::-webkit-scrollbar{width:9px}
+.ed-doc::-webkit-scrollbar-thumb{background:rgba(30,42,74,.16);border-radius:8px}
+.ed-page{max-width:680px;margin:0 auto;background:var(--glass-strong);border:1px solid var(--glass-border);border-radius:var(--r-lg);box-shadow:var(--sh-2);padding:36px 44px}
+.ed-page h1{font:700 24px/1.3 var(--font);margin:0 0 4px;letter-spacing:-.02em}
+.ed-page .lede{color:var(--ink-faint);font:500 12px/1.5 var(--font);margin:0 0 20px}
+.ed-page h2{font:650 17px/1.35 var(--font);margin:24px 0 9px}
+.ed-page p{margin:0 0 13px;font:500 14.5px/1.85 var(--font);color:var(--ink-soft)}
+.ed-page ul{margin:0 0 13px;padding-left:21px}
+.ed-page li{margin:5px 0;font:500 14.5px/1.7 var(--font);color:var(--ink-soft)}
+.tc-del{background:rgba(255,69,58,.14);color:#b83236;text-decoration:line-through;text-decoration-color:#d97073;border-radius:3px;padding:0 2px}
+.tc-ins{background:rgba(48,209,88,.2);color:#14713c;border-radius:3px;padding:0 2px;box-decoration-break:clone}
+.tc-normal{background:transparent;color:inherit;text-decoration:none;padding:0}
+
+/* ============ 右栏(照现状 .wh-wb-side 322px glass-quiet;升级:提议/文件/改写 可切模式) ============ */
+.side{
+  width:322px;flex:none;border-left:1px solid var(--glass-border);box-shadow:inset 1px 0 0 var(--hairline-dark);
+  display:flex;flex-direction:column;min-height:0;background:var(--glass-quiet);
+}
+.side-head{padding:11px 14px 9px;border-bottom:1px solid var(--glass-border);box-shadow:0 1px 0 var(--hairline-dark);display:flex;align-items:center;gap:8px}
+.side-head .ic{width:15px;height:15px;color:var(--ink-muted)}
+.side-title{font:700 12.5px/1 var(--font);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.side-modes{display:flex;flex:none;gap:2px;background:var(--glass);padding:2px;border-radius:99px;border:1px solid var(--glass-border)}
+.smode-btn{height:22px;padding:0 10px;border-radius:99px;font:600 11px/1 var(--font);color:var(--ink-muted)}
+.smode-btn.on{background:#fff;color:var(--ink);box-shadow:var(--sh-1)}
+.side-body{flex:1;overflow-y:auto;padding:14px 14px;font:500 12.5px/1.6 var(--font);color:var(--ink-muted)}
+.smode{display:none}
+.smode.active{display:block}
+/* 提议详情(现状) */
+.prop-card{border:1px solid var(--glass-border);border-radius:var(--r-md);background:var(--glass);box-shadow:var(--sh-1);padding:12px 13px;margin-bottom:11px}
+.prop-title{display:flex;align-items:center;gap:8px;font:700 12.5px/1.3 var(--font);color:var(--ink)}
+.prop-title .ic{width:15px;height:15px;color:var(--success-ink)}
+.prop-sub{margin-top:3px;font:500 11px/1.5 var(--font);color:var(--ink-faint)}
+.prop-facts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.pfact{border:1px solid var(--glass-border);background:rgba(255,255,255,.4);border-radius:9px;padding:7px 9px}
+.pfact .k{font:600 10px/1 var(--font);color:var(--ink-faint)}
+.pfact .v{margin-top:3px;font:700 12px/1.2 var(--font);color:var(--ink)}
+.prop-diff{margin-top:10px;border:1px solid var(--glass-border);border-radius:9px;overflow:hidden;font:500 11px/1.6 var(--mono)}
+.prop-diff .dl{padding:2px 9px;display:flex;gap:7px}
+.prop-diff .dl.del{background:rgba(255,69,58,.10);color:#a03530}
+.prop-diff .dl.ins{background:rgba(48,209,88,.14);color:#14713c}
+.prop-diff .dl .ln{color:var(--ink-faint);width:14px;flex:none}
+.prop-actions{display:flex;gap:8px;margin-top:11px}
+.prop-actions .btn{flex:1;justify-content:center}
+.prop-status{display:none;margin-top:10px;padding:7px 10px;border-radius:8px;font:600 11.5px/1.4 var(--font);align-items:center;gap:6px}
+.prop-status.show{display:flex}
+.side-note{font:500 11px/1.6 var(--font);color:var(--ink-faint);padding:2px 2px 0}
+/* 增量 6:工作区文件模式 */
+.fp-tabs{display:flex;gap:2px;margin-bottom:9px;background:var(--glass);padding:2px;border-radius:99px;border:1px solid var(--glass-border)}
+.fp-tab{flex:1;height:24px;border-radius:99px;font:600 11.5px/1 var(--font);color:var(--ink-muted);display:flex;align-items:center;justify-content:center;gap:6px}
+.fp-tab .cnt{font:700 10px/1 var(--font);color:var(--accent-ink);background:var(--accent-soft);border-radius:99px;padding:2px 5px}
+.fp-tab.active{background:#fff;color:var(--ink);box-shadow:var(--sh-1)}
+.fp-list{display:none;flex-direction:column;gap:2px}
+.fp-list.active{display:flex}
+.frow{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:9px;color:var(--ink-soft);font:500 12.5px/1.3 var(--font);width:100%;text-align:left}
+.frow:hover{background:var(--glass-strong)}
+.frow .ic{color:var(--ink-faint);width:15px;height:15px}
+.frow.folder .ic{color:#c79a3e}
+.frow .fn{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.frow .gdot{width:7px;height:7px;border-radius:50%;background:var(--success);box-shadow:0 0 6px var(--success);flex:none}
+.frow .chg{font:600 10.5px/1 var(--mono)}
+.frow .chg .a{color:var(--success-ink)}
+.frow .chg .d{color:var(--danger-ink)}
+.tree-indent{padding-left:24px}
+/* 增量 6:AI 改写模式 */
+.rw-card{border:1px solid var(--glass-border);border-radius:var(--r-md);background:var(--glass);box-shadow:var(--sh-1);overflow:hidden;margin-bottom:11px}
+.rw-head{display:flex;align-items:center;gap:7px;padding:10px 12px 6px}
+.rw-head .kind{font:700 12.5px/1 var(--font);color:var(--ink)}
+.rw-head .model{font:600 9.5px/1 var(--mono);color:var(--cuu-ink);margin-left:auto}
+.rw-sub{padding:0 12px 7px;font:500 11px/1.5 var(--font);color:var(--ink-faint)}
+.rw-preview{margin:0 12px 10px;padding:9px 11px;background:rgba(255,255,255,.45);border:1px solid var(--glass-border);border-radius:9px;font:500 11.5px/1.6 var(--font);color:var(--ink-soft)}
+.rw-preview .add{color:#14713c;background:rgba(48,209,88,.2);border-radius:3px;padding:0 2px}
+.rw-actions{display:flex;gap:8px;padding:0 12px 11px}
+.rw-actions .btn{flex:1;justify-content:center}
+.rw-done{padding:10px 12px;background:var(--success-soft);color:var(--success-ink);font:600 11.5px/1.4 var(--font);display:none;align-items:center;gap:7px}
+.rw-done.show{display:flex}
+.rw-card.resolved .rw-head,.rw-card.resolved .rw-sub,.rw-card.resolved .rw-preview,.rw-card.resolved .rw-actions{display:none}
+.rw-foot{border:1px solid var(--glass-border);border-radius:var(--r-sm);background:var(--glass-strong);padding:9px 11px;color:var(--ink-faint);font:500 11.5px/1.5 var(--font);display:flex;align-items:center;gap:8px}
+.rw-foot .ic{width:14px;height:14px;flex:none}
+</style>
+</head>
+<body>
+<div class="wb">
+
+  <!-- 标题栏(照现状:红绿灯 + 面包屑) -->
+  <div class="titlebar">
+    <div class="lights"><span class="l r"></span><span class="l y"></span><span class="l g"></span></div>
+    <div class="crumb" id="crumb"><b>WorkHub</b> · 官网改版 · 主区</div>
+    <div class="tb-spacer"></div>
+    <button class="tb-btn" title="收起右栏" onclick="toggleSide()">
+      <svg class="ic ic-sm" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M15 4.5v15"/></svg>
+    </button>
+  </div>
+
+  <div class="proto-banner">
+    <b>R16 迭代原型 · 仅供拍板</b><span class="dotd"></span>基座 = 现状工作台(rail + 中栏 tab + 右栏)<span class="dotd"></span>NewMax 元素只做增量,标「新」<span class="dotd"></span>演示假数据
+  </div>
+
+  <div class="body">
+
+    <!-- ============ 左 rail(照现状结构) ============ -->
+    <aside class="rail" id="rail">
+      <!-- 待拍板一级入口(现状 R15 批 I1) -->
+      <div class="rail-group">
+        <button class="inbox-nav" id="navInbox" onclick="openCenter('inbox')">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.4 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.4-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.8 1.1Z"/></svg>
+          <span class="lbl">待拍板</span>
+          <span class="count" id="inboxCount">3</span>
+        </button>
+      </div>
+
+      <!-- 项目树(现状) -->
+      <div class="rail-head">项目</div>
+      <div class="project active">
+        <div class="project-head">
+          <button class="project-row">
+            <span class="tile">官</span>
+            <span class="project-name">官网改版</span>
+            <span class="project-dot" title="有成员在线"></span>
+          </button>
+          <button class="gear" id="gearSite" title="项目设置" onclick="openCenter('settings')">
+            <svg class="ic ic-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg>
+          </button>
+        </div>
+        <div class="tree">
+          <button class="leaf sel" id="leafChat" onclick="openCenter('chat')">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2Z"/></svg>
+            <span class="lbl">主区</span>
+          </button>
+          <button class="leaf" id="leafCollab" onclick="openCenter('collab')">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M14 9a4 4 0 1 0-8 0 4 4 0 0 0 8 0Z" transform="scale(.8) translate(2 2)"/><path d="M17 21v-1a5 5 0 0 0-10 0v1M19 8v4M21 10h-4"/></svg>
+            <span class="lbl">隐私区文案讨论</span>
+            <span class="leaf-count leaf-count--unread" id="collabUnread">2</span>
+          </button>
+          <button class="leaf leaf--new">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            <span class="lbl">新建协同会话</span>
+          </button>
+          <button class="leaf" id="leafDrive" onclick="openCenter('drive')">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+            <span class="lbl">网盘</span>
+            <span class="leaf-count">12</span>
+          </button>
+          <button class="leaf" id="leafTimeline" onclick="openCenter('timeline')">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M3 6h8M3 12h12M3 18h6"/><circle cx="17" cy="6" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="13" cy="18" r="2"/></svg>
+            <span class="lbl">时间线</span>
+          </button>
+          <button class="leaf" id="leafKanban" onclick="openCenter('kanban')">
+            <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4.5" width="5" height="15" rx="1.4"/><rect x="10" y="4.5" width="5" height="10" rx="1.4"/><rect x="17" y="4.5" width="4" height="13" rx="1.4"/></svg>
+            <span class="lbl">任务看板</span>
+            <span class="pill-new">新</span>
+          </button>
+          <button class="leaf" id="leafSchedule" onclick="openCenter('schedule')">
+            <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9h18M8 2.5v4M16 2.5v4"/></svg>
+            <span class="lbl">日程</span>
+            <span class="pill-new">新</span>
+          </button>
+        </div>
+      </div>
+      <div class="project">
+        <div class="project-head">
+          <button class="project-row">
+            <span class="tile tile--ok">Q</span>
+            <span class="project-name project-name--muted">Q3 发布</span>
+          </button>
+          <button class="gear" title="项目设置">
+            <svg class="ic ic-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 军团总览(现状一级入口) -->
+      <div class="rail-group--line rail-group">
+        <button class="army-nav" id="navArmy" onclick="openCenter('army')">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 7.8-8 9-4.6-1.2-8-4.5-8-9V6Z"/><path d="M9 12l2 2 4-4"/></svg>
+          <span class="lbl">军团总览</span>
+        </button>
+      </div>
+
+      <!-- 成员 roster(现状) + 增量 7:邀请/移出演示 -->
+      <div class="rail-group--line rail-group"></div>
+      <div class="rail-head">成员 <span class="mut">4 · 2 在线</span>
+        <button class="headbtn" id="manageBtn" onclick="toggleManage()">管理</button>
+      </div>
+      <button class="member-row"><span class="av teal">林<span class="on"></span></span>小林<span class="meta">在线</span><span class="kick" onclick="removeMember(event,this)">移出</span></button>
+      <button class="member-row"><span class="av purple">周</span>周姐<span class="meta">昨天来过</span><span class="kick" onclick="removeMember(event,this)">移出</span></button>
+      <button class="member-row"><span class="av slate">凯</span>阿凯<span class="meta">3 天前</span><span class="kick" onclick="removeMember(event,this)">移出</span></button>
+      <button class="invite-row" id="inviteBtn" onclick="inviteDemo()">
+        <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>邀请成员
+      </button>
+
+      <!-- 私聊分组(现状) -->
+      <div class="rail-group--line rail-group"></div>
+      <div class="rail-head">私聊</div>
+      <button class="dm-row" id="dmRow" onclick="openCenter('dm')">
+        <span class="av teal">林<span class="on"></span></span>和小林的私聊
+        <span class="dm-count" id="dmUnread">1</span>
+      </button>
+
+      <!-- 底部我(现状 rail-foot) -->
+      <div class="rail-foot">
+        <span class="av blue">陈<span class="on"></span></span>
+        <div><div class="nm">陈屿</div><div class="sub">在线 · 产品负责人</div></div>
+      </div>
+    </aside>
+
+    <!-- ============ 中栏 ============ -->
+    <main class="center">
+
+      <!-- 增量 2:同项目已打开会话 tab 条 -->
+      <div class="sess-strip show" id="sessStrip">
+        <button class="sess-tab active" id="stChat" onclick="openCenter('chat')">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2Z"/></svg>主区
+        </button>
+        <button class="sess-tab" id="stCollab" onclick="openCenter('collab')">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M17 21v-1a5 5 0 0 0-10 0v1M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"/></svg>隐私区文案讨论
+          <span class="mini-unread" id="stCollabUnread">2</span>
+        </button>
+        <button class="sess-tab" id="stDm" style="display:none" onclick="openCenter('dm')">
+          <span class="av teal">林<span class="on"></span></span>和小林的私聊
+        </button>
+      </div>
+
+      <!-- 主区群聊(现状 chat + 增量 1 聊天流升级) -->
+      <section class="cview active" data-cv="chat">
+        <div class="chat">
+          <div class="chat-head">
+            <div class="chat-avs">
+              <span class="av blue">陈<span class="on"></span></span><span class="av teal">林<span class="on"></span></span><span class="av purple">周</span><span class="av slate">凯</span><span class="av cuu">C</span>
+            </div>
+            <span class="chat-head-label">4 名成员 · <span class="chat-head-status--online">2 在线</span> · Cuu 在场</span>
+            <button class="cuu-toggle on" onclick="this.classList.toggle('on')">Cuu 在场</button>
+          </div>
+          <div class="chat-scroll">
+            <div class="daysep">今天</div>
+
+            <div class="msg">
+              <span class="av teal">林<span class="on"></span></span>
+              <div class="bub">
+                <div class="who">小林<span class="tm">14:20</span></div>
+                <span class="txt">隐私区块的文案今天能定吗?我这边 Hero 联调等着对齐高度。</span>
+              </div>
+            </div>
+
+            <div class="msg msg--self">
+              <span class="av blue">陈<span class="on"></span></span>
+              <div class="bub">
+                <div class="who">陈屿<span class="tm">14:28</span></div>
+                <span class="txt"><span class="mention">@Cuu</span> 把首页隐私区的文案重写一版,强调「本地优先、数据不外传」,口吻要让非技术用户也能放心。参考 <span class="md-code">02-文件处理/安全白皮书草稿.md</span>。</span>
+              </div>
+            </div>
+
+            <div class="msg msg--cuu">
+              <span class="av cuu">C</span>
+              <div class="bub">
+                <div class="who">Cuu<span class="model-pill">deepseek-v4</span><span class="tm">14:32</span></div>
+
+                <div class="fold" id="thinkBox">
+                  <button class="fold-h" onclick="toggleFold('thinkBox')">
+                    <svg class="ic" viewBox="0 0 24 24"><path d="M9.5 2a5.5 5.5 0 0 0-3 10.1V16a2 2 0 0 0 2 2h.5M14.5 2a5.5 5.5 0 0 1 3 10.1V16a2 2 0 0 1-2 2H15"/><path d="M9 22h6"/></svg>
+                    深度思考 4 秒
+                    <span class="caret"><svg class="ic ic-xs" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></span>
+                  </button>
+                  <div class="fold-body">读者是非技术用户,避开「端到端加密」「本地推理」这类术语;承诺压到三条:数据只在本机、不用于训练、随时可导出删除。语气参考白皮书草稿但更口语,收尾给一句安心话。</div>
+                </div>
+
+                <div class="fold" id="toolBox">
+                  <button class="fold-h" onclick="toggleFold('toolBox')">
+                    <svg class="ic" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.4 2.4-2-2Z"/></svg>
+                    读取文件 ×3,检索知识库 ×1
+                    <span class="caret"><svg class="ic ic-xs" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></span>
+                  </button>
+                  <div class="fold-body">
+                    <div class="tline"><span class="k">read</span>02-文件处理/安全白皮书草稿.md</div>
+                    <div class="tline"><span class="k">read</span>文案/隐私区-旧版.md</div>
+                    <div class="tline"><span class="k">read</span>设计/首页信息架构.md</div>
+                    <div class="tline"><span class="k">search</span>知识库:「本地优先」品牌口径(命中 4 段)</div>
+                  </div>
+                </div>
+
+                <span class="txt">重写好了,去掉技术黑话,承诺收成三条:
+<span class="md-b">你的东西,只留在你的电脑上</span>
+· <span class="md-b">本地优先</span> —— 文件读取和处理都在你自己的电脑完成,不上传云端
+· <span class="md-b">绝不外传</span> —— 不把你的文档或对话用于模型训练
+· <span class="md-b">随时可撤</span> —— 数据一键导出或彻底删除,主动权在你手里
+
+这版已落进 <span class="md-code">privacy-section.md</span>,逐句对照在变更集里。</span>
+
+                <div class="dcard" id="outCard">
+                  <div class="dcard-h">
+                    <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/></svg>
+                    <span class="fname">privacy-section.md</span>
+                    <span class="diffstat"><span class="add">+18</span> <span class="del">−11</span></span>
+                    <span class="tag green" id="outTag">待合并</span>
+                  </div>
+                  <div class="dcard-sub">交付物变更申请 · 通过合规检查 · 无冲突,可回滚</div>
+                  <div class="dcard-actions">
+                    <button class="btn primary sm" onclick="approveOut()">批准</button>
+                    <button class="btn sm" onclick="rejectOut()">打回</button>
+                    <button class="btn ghost sm" onclick="openEditor()">看提议</button>
+                  </div>
+                  <div class="dcard-note" id="outNote"></div>
+                </div>
+
+                <div class="msg-actions">
+                  <button class="iconbtn" title="复制"><svg class="ic ic-xs" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+                  <button class="iconbtn" title="重试"><svg class="ic ic-xs" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+                  <span>42s · 12.4k tokens</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="sysline">小林、周姐 已读到这里</div>
+          </div>
+
+          <div class="composer">
+            <div class="composer-box">
+              <textarea class="field autosize" rows="1" placeholder="输入消息…( / 召唤 Skill,@ 提及成员或 Cuu )"></textarea>
+              <div class="composer-bar">
+                <button class="cbtn" title="附加"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+                <button class="cbtn" title="召唤 Skill"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 3l1.9 4.3L18 9l-4.1 1.7L12 15l-1.9-4.3L6 9l4.1-1.7Z"/></svg></button>
+                <button class="toggle-pill on" id="webToggle" onclick="this.classList.toggle('on')">
+                  <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.6 2.5 2.6 15.5 0 18M12 3c-2.6 2.5-2.6 15.5 0 18"/></svg>联网
+                </button>
+                <div class="c-spacer"></div>
+                <div class="model-sel">
+                  <button class="model-btn" onclick="toggleModelMenu(event)"><span class="dt"></span><span id="modelName">deepseek-v4</span>
+                    <svg class="ic ic-xs" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+                  <div class="model-menu" id="modelMenu">
+                    <button class="model-opt sel" onclick="pickModel(event,'deepseek-v4')"><span class="mn">deepseek-v4</span><span class="desc">默认</span></button>
+                    <button class="model-opt" onclick="pickModel(event,'claude-sonnet-4')"><span class="mn">claude-sonnet-4</span></button>
+                    <button class="model-opt" onclick="pickModel(event,'kimi-k2')"><span class="mn">kimi-k2</span></button>
+                  </div>
+                </div>
+                <button class="cbtn" title="语音输入"><svg class="ic ic-sm" viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18.5V21"/></svg></button>
+                <button class="send-btn" title="发送"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4Z"/></svg></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 协同会话:隐私区文案讨论 -->
+      <section class="cview" data-cv="collab">
+        <div class="chat">
+          <div class="chat-head">
+            <div class="chat-avs"><span class="av blue">陈<span class="on"></span></span><span class="av teal">林<span class="on"></span></span><span class="av cuu">C</span></div>
+            <span class="chat-head-label">协同会话 · 你、小林、Cuu</span>
+            <button class="cuu-toggle on" onclick="this.classList.toggle('on')">Cuu 在场</button>
+          </div>
+          <div class="chat-scroll">
+            <div class="daysep">今天</div>
+            <div class="msg">
+              <span class="av teal">林<span class="on"></span></span>
+              <div class="bub"><div class="who">小林<span class="tm">14:05</span></div>
+              <span class="txt">隐私区那版 Cuu 出稿了吗?我等着按最终行数留高度。</span></div>
+            </div>
+            <div class="msg msg--self">
+              <span class="av blue">陈<span class="on"></span></span>
+              <div class="bub"><div class="who">陈屿<span class="tm">14:07</span></div>
+              <span class="txt">出了,在主区,我正在收尾。你先按三条承诺占位,今天合并。</span></div>
+            </div>
+            <div class="msg">
+              <span class="av teal">林<span class="on"></span></span>
+              <div class="bub"><div class="who">小林<span class="tm">14:09</span></div>
+              <span class="txt">好。<span class="mention">@Cuu</span> 顺手建个任务:移动端的隐私说明也要补一版。</span></div>
+            </div>
+            <div class="msg msg--cuu">
+              <span class="av cuu">C</span>
+              <div class="bub">
+                <div class="who">Cuu<span class="model-pill">deepseek-v4</span><span class="tm">14:09</span></div>
+                <span class="txt">收到,已经建好。</span>
+                <div class="acard">
+                  <div class="acard-h">已创建任务</div>
+                  <ul class="acard-list">
+                    <li>「补全移动端隐私说明」 · 排期 07/18 · 落在看板「待认领」</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            <div class="sysline">小林 已读 · 在线</div>
+          </div>
+          <div class="composer">
+            <div class="composer-box">
+              <textarea class="field autosize" rows="1" placeholder="输入消息…( @ 提及成员或 Cuu )"></textarea>
+              <div class="composer-bar">
+                <button class="cbtn"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+                <div class="c-spacer"></div>
+                <button class="send-btn"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4Z"/></svg></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 私聊(现状 DM) -->
+      <section class="cview" data-cv="dm">
+        <div class="chat">
+          <div class="chat-head">
+            <span class="av teal">林<span class="on"></span></span>
+            <span class="chat-head-label">和小林的私聊 · <span class="chat-head-status--online">在线</span> · 仅你们两人可见</span>
+            <button class="cuu-toggle" onclick="this.classList.toggle('on')">请 Cuu 进来</button>
+          </div>
+          <div class="chat-scroll">
+            <div class="daysep">今天</div>
+            <div class="msg">
+              <span class="av teal">林<span class="on"></span></span>
+              <div class="bub"><div class="who">小林<span class="tm">13:52</span></div>
+              <span class="txt">周四的 Hero 联调想挪到上午,下午我得出趟门。</span></div>
+            </div>
+            <div class="msg msg--self">
+              <span class="av blue">陈<span class="on"></span></span>
+              <div class="bub"><div class="who">陈屿<span class="tm">13:55</span></div>
+              <span class="txt">行,上午 10 点开始,我把日程里的卡挪一下。</span></div>
+            </div>
+            <div class="msg">
+              <span class="av teal">林<span class="on"></span></span>
+              <div class="bub"><div class="who">小林<span class="tm">13:56</span></div>
+              <span class="txt">收到,谢啦。</span></div>
+            </div>
+            <div class="sysline">已读 · 在线</div>
+          </div>
+          <div class="composer">
+            <div class="composer-box">
+              <textarea class="field autosize" rows="1" placeholder="发私聊消息…"></textarea>
+              <div class="composer-bar">
+                <button class="cbtn"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+                <div class="c-spacer"></div>
+                <button class="send-btn"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4Z"/></svg></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 收件箱(现状 centerTab=inbox) -->
+      <section class="cview" data-cv="inbox">
+        <div class="center-scroll">
+          <div class="inbox-head">
+            <h2>决策收件箱</h2>
+            <div class="s">AI 替你扛了大半,这儿只留要你拍板的。<b>待处理 3 件</b> · 最久已等 2 天</div>
+          </div>
+
+          <div class="icard" id="ic1">
+            <div class="icard-top">
+              <span class="icard-ico blue"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/></svg></span>
+              <div class="dh"><div class="t">合并「隐私区文案」变更</div>
+                <div class="m"><span class="tag blue">审批</span>privacy-section.md · 由 Cuu 提交 · 2 分钟前</div></div>
+            </div>
+            <div class="icard-body">首页隐私区重写为三条承诺(本地优先 / 不外传 / 随时可撤),去掉技术黑话。变更集 +18 / −11,通过合规检查,无冲突。</div>
+            <div class="icard-facts">
+              <div class="ifact"><span class="k">动作类型</span><span class="v">文档合并</span></div>
+              <div class="ifact"><span class="k">证据</span><span class="v">4 条来源</span></div>
+              <div class="ifact"><span class="k">风险</span><span class="v" style="color:var(--success-ink)">低</span></div>
+              <div class="ifact"><span class="k">影响</span><span class="v">官网首页</span></div>
+            </div>
+            <div class="icard-actions">
+              <button class="btn primary sm" onclick="decide('ic1','ok')">批准</button>
+              <button class="btn sm" onclick="decide('ic1','rej')">打回</button>
+              <button class="btn ghost sm" onclick="openEditor()">看提议</button>
+              <span class="busy-txt" id="busy-ic1"><span class="spin"></span>提交中…</span>
+              <span class="icard-result" id="res-ic1"></span>
+              <span class="sla">SLA 今天 18:00</span>
+            </div>
+          </div>
+
+          <div class="icard" id="ic2">
+            <div class="icard-top">
+              <span class="icard-ico purple"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3l1.9 4.3L18 9l-4.1 1.7L12 15l-1.9-4.3L6 9l4.1-1.7Z"/></svg></span>
+              <div class="dh"><div class="t">Hero 区块 A / B 两版,选一版继续</div>
+                <div class="m"><span class="tag purple">提议评审</span>home-hero.md · 由 Cuu 提交 · 3 小时前</div></div>
+            </div>
+            <div class="icard-body">A 版主打「团队的 AI 工作台」,B 版主打「本地优先,数据不外传」。两版都能过成功标准,方向不同需要你定调。</div>
+            <div class="icard-facts">
+              <div class="ifact"><span class="k">动作类型</span><span class="v">方案二选一</span></div>
+              <div class="ifact"><span class="k">证据</span><span class="v">竞品对照 + 品牌口径</span></div>
+              <div class="ifact"><span class="k">风险</span><span class="v" style="color:var(--warn-ink)">需定调</span></div>
+            </div>
+            <div class="icard-actions">
+              <button class="btn primary sm" onclick="decide('ic2','ok')">采纳 A 版</button>
+              <button class="btn sm" onclick="decide('ic2','rej')">采纳 B 版</button>
+              <span class="busy-txt" id="busy-ic2"><span class="spin"></span>提交中…</span>
+              <span class="icard-result" id="res-ic2"></span>
+              <span class="sla">SLA 明天 12:00</span>
+            </div>
+          </div>
+
+          <div class="icard" id="ic3">
+            <div class="icard-top">
+              <span class="icard-ico amber"><svg class="ic" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l3-4 3 3 4-6"/></svg></span>
+              <div class="dh"><div class="t">本月 AI 成本已达预算 82%</div>
+                <div class="m"><span class="tag amber">预算</span>官网改版 · 系统提醒 · 2 天前</div></div>
+            </div>
+            <div class="icard-body">本月该项目 AI 成本 ¥41.0,预算 ¥50。按当前速度预计月底达 ¥58,会超支。可调高预算或维持并留意。</div>
+            <div class="icard-facts">
+              <div class="ifact"><span class="k">已用</span><span class="v">¥41.0 / ¥50</span></div>
+              <div class="ifact"><span class="k">预计月底</span><span class="v" style="color:var(--warn-ink)">¥58</span></div>
+              <div class="ifact"><span class="k">主要模型</span><span class="v">deepseek-v4</span></div>
+            </div>
+            <div class="icard-actions">
+              <button class="btn primary sm" onclick="decide('ic3','ok')">调高预算</button>
+              <button class="btn sm" onclick="decide('ic3','rej')">维持并留意</button>
+              <button class="btn ghost sm">查看明细</button>
+              <span class="busy-txt" id="busy-ic3"><span class="spin"></span>提交中…</span>
+              <span class="icard-result" id="res-ic3"></span>
+              <span class="sla">无硬性截止</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 网盘(现状 drive) -->
+      <section class="cview" data-cv="drive">
+        <div class="center-scroll">
+          <div class="pane-top">
+            <span class="t">网盘 · 官网改版</span>
+            <div class="pane-search"><svg class="ic ic-sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>搜索文件…</div>
+            <button class="btn sm"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>新建</button>
+          </div>
+          <div class="ftbl-card">
+            <table class="ftbl">
+              <thead><tr><th>名称</th><th style="width:130px">修改时间</th><th style="width:80px">大小</th><th style="width:100px">状态</th></tr></thead>
+              <tbody>
+                <tr class="folder"><td><span class="name"><svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>文案</span></td><td>今天 14:32</td><td>—</td><td>4 个文件</td></tr>
+                <tr><td><span class="name indent open-md" onclick="openEditor()"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/></svg>privacy-section.md</span></td><td>今天 14:32</td><td>3.1 KB</td><td><span class="tag green">变更待审</span></td></tr>
+                <tr><td><span class="name indent open-md" onclick="openEditor()"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/></svg>home-hero.md</span></td><td>今天 11:08</td><td>1.8 KB</td><td><span class="tag green">变更待审</span></td></tr>
+                <tr><td><span class="name indent"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/></svg>faq.md</span></td><td>昨天 17:40</td><td>5.2 KB</td><td>—</td></tr>
+                <tr class="folder"><td><span class="name"><svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>设计稿</span></td><td>昨天 16:12</td><td>—</td><td>6 个文件</td></tr>
+                <tr class="folder"><td><span class="name"><svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>法务</span></td><td>7 月 12 日</td><td>—</td><td>2 个文件</td></tr>
+                <tr><td><span class="name"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/></svg>竞品调研.xlsx</span></td><td>7 月 10 日</td><td>42 KB</td><td>—</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="side-note" style="margin-top:10px">点 md 文件可进编辑器(增量 6);右栏「文件」模式是同一棵树的常驻入口。</div>
+        </div>
+      </section>
+
+      <!-- 时间线(现状,本次不动:占位说明) -->
+      <section class="cview" data-cv="timeline">
+        <div class="center-scroll">
+          <div class="empty-note">
+            <span class="eicon"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6h8M3 12h12M3 18h6"/><circle cx="17" cy="6" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="13" cy="18" r="2"/></svg></span>
+            <div class="et">时间线(现状视图)</div>
+            <div class="es">里程碑甘特沿用现状实现,本次迭代不改动,原型不重复还原。周历口径的排期看新增的「日程」tab。</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 军团总览(现状,本次不动:占位说明) -->
+      <section class="cview" data-cv="army">
+        <div class="center-scroll">
+          <div class="empty-note">
+            <span class="eicon"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 7.8-8 9-4.6-1.2-8-4.5-8-9V6Z"/><path d="M9 12l2 2 4-4"/></svg></span>
+            <div class="et">军团总览(现状视图)</div>
+            <div class="es">跨项目军团卡片流、run 下钻沿用现状实现,本次迭代不改动,原型不重复还原。</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 增量 3:任务看板 -->
+      <section class="cview" data-cv="kanban">
+        <div class="center-scroll">
+          <div class="board-top">
+            <span class="cnt"><span id="taskTotal">10</span> 个任务</span>
+            <span class="hint">拖动卡片换列 = 状态机动作(待认领 / 进行中 / 评审中 / 已完成)</span>
+            <div style="flex:1"></div>
+            <button class="btn primary sm"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>创建任务</button>
+          </div>
+          <div class="board" id="board">
+            <div class="col">
+              <div class="col-h"><span class="dot" style="background:#8e8e93"></span><span class="nm">待认领</span><span class="cc">4</span><button class="add"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>
+              <div class="col-list" ondragover="colOver(event)" ondragleave="colLeave(event)" ondrop="colDrop(event)">
+                <div class="tcard" draggable="true"><div class="th"><span class="pd" style="background:#8e8e93"></span><span class="tt">补全移动端隐私说明</span></div><div class="tf"><span class="due">07/18</span><span class="manual">Cuu 建</span></div></div>
+                <div class="tcard" draggable="true"><div class="th"><span class="pd" style="background:#8e8e93"></span><span class="tt">画 Q3 发布 banner</span></div><div class="tf"><span class="due">07/19</span><span class="manual">手动</span></div></div>
+                <div class="tcard" draggable="true"><div class="th"><span class="pd" style="background:#8e8e93"></span><span class="tt">整理竞品定价对照表</span></div><div class="tf"><span class="due">07/20</span><span class="manual">手动</span></div></div>
+                <div class="tcard" draggable="true"><div class="th"><span class="pd" style="background:#8e8e93"></span><span class="tt">写 v0.9 changelog</span></div><div class="tf"><span class="due">07/21</span><span class="manual">手动</span></div></div>
+              </div>
+            </div>
+            <div class="col">
+              <div class="col-h"><span class="dot" style="background:var(--accent)"></span><span class="nm">进行中</span><span class="cc">2</span><button class="add"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>
+              <div class="col-list" ondragover="colOver(event)" ondragleave="colLeave(event)" ondrop="colDrop(event)">
+                <div class="tcard" draggable="true"><div class="th"><span class="pd" style="background:var(--accent)"></span><span class="tt">隐私区文案重写</span></div><div class="tf"><span class="due">07/15</span><span class="manual">Cuu</span><span class="owner"><span class="av blue">陈</span></span></div></div>
+                <div class="tcard" draggable="true"><div class="th"><span class="pd" style="background:var(--danger)"></span><span class="tt">Hero 区块开发</span></div><div class="tf"><span class="due over"><span class="over-dot"></span>07/14 逾期</span><span class="owner"><span class="av teal">林</span></span></div></div>
+              </div>
+            </div>
+            <div class="col">
+              <div class="col-h"><span class="dot" style="background:var(--warn)"></span><span class="nm">评审中</span><span class="cc">1</span><button class="add"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>
+              <div class="col-list" ondragover="colOver(event)" ondragleave="colLeave(event)" ondrop="colDrop(event)">
+                <div class="tcard" draggable="true"><div class="th"><span class="pd" style="background:var(--warn)"></span><span class="tt">隐私政策法务复核</span></div><div class="tf"><span class="due">07/16</span><span class="owner"><span class="av purple">周</span></span></div></div>
+              </div>
+            </div>
+            <div class="col">
+              <div class="col-h"><span class="dot" style="background:var(--success)"></span><span class="nm">已完成</span><span class="cc">3</span><button class="add"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>
+              <div class="col-list" ondragover="colOver(event)" ondragleave="colLeave(event)" ondrop="colDrop(event)">
+                <div class="tcard" draggable="true"><div class="th"><span class="pd" style="background:var(--success)"></span><span class="tt">首页信息架构</span></div><div class="tf"><span class="due">07/11</span><span class="owner"><span class="av blue">陈</span></span></div></div>
+                <div class="tcard" draggable="true"><div class="th"><span class="pd" style="background:var(--success)"></span><span class="tt">配色与字体规范</span></div><div class="tf"><span class="due">07/12</span><span class="owner"><span class="av teal">林</span></span></div></div>
+                <div class="tcard" draggable="true"><div class="th"><span class="pd" style="background:var(--success)"></span><span class="tt">组件库梳理</span></div><div class="tf"><span class="due">07/12</span><span class="owner"><span class="av cuu" style="color:var(--cuu-ink)">C</span></span></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 增量 4:日程 -->
+      <section class="cview" data-cv="schedule">
+        <div class="sched">
+          <div class="plan-doc">
+            <div class="plan-head"><span class="t">计划文档 · project.md</span>
+              <button class="iconbtn" title="编辑"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+            </div>
+            <div class="plan-body">
+              <h1>官网改版项目</h1>
+              <h2>项目目标</h2>
+              <p>两周内完成官网首页改版,访客第一屏就能理解:</p>
+              <ul><li>WorkHub 是团队用的 AI 工作台</li><li>能读文件、调工具、编排人和 AI 的协作</li><li>本地优先、数据不外传,协同有据可查</li></ul>
+              <h2>核心卖点</h2>
+              <ol>
+                <li><strong>本地优先</strong> —— 文件与执行在本机</li>
+                <li><strong>决策收件箱</strong> —— 只把要拍板的端到你面前</li>
+                <li><strong>人机协同</strong> —— 成员、私聊、已读、@ 一应俱全</li>
+                <li><strong>可追溯</strong> —— 每次改动都有回放与证据</li>
+              </ol>
+              <h2>成功标准</h2>
+              <ul><li>访客 10 秒说清与普通聊天机器人的差别</li><li>4 个卖点都有真实截图佐证</li><li>文案不夸大云端能力</li></ul>
+              <h2>交付物</h2>
+              <ul><li>Hero 文案与副标题</li><li>隐私与安全区块</li><li>移动端走查报告</li></ul>
+            </div>
+          </div>
+          <div class="cal">
+            <div class="cal-head">
+              <span class="rng">2026 年 7 月 13 日 - 19 日</span>
+              <button class="btn primary sm"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>创建任务</button>
+              <div class="cal-nav">
+                <button class="navbtn"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button>
+                <button class="btn sm">今天</button>
+                <button class="navbtn"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>
+              </div>
+            </div>
+            <div class="cal-grid">
+              <div class="cal-col"><div class="cal-dh"><div class="dow">周一</div><div class="dnum">13</div></div><div class="cal-cells"></div></div>
+              <div class="cal-col"><div class="cal-dh"><div class="dow">周二</div><div class="dnum">14</div></div><div class="cal-cells">
+                <div class="cal-task t-amber"><div class="ct">竞品定价梳理</div><div class="cm">10:00 · 手动</div></div>
+              </div></div>
+              <div class="cal-col"><div class="cal-dh today"><div class="dow">周三</div><div class="dnum">15</div></div><div class="cal-cells">
+                <div class="cal-task"><div class="ct">隐私区文案定稿</div><div class="cm">14:00 · Cuu 起草</div></div>
+                <div class="cal-task t-purple"><div class="ct">法务复核会</div><div class="cm">16:30 · 周姐</div></div>
+              </div></div>
+              <div class="cal-col"><div class="cal-dh"><div class="dow">周四</div><div class="dnum">16</div></div><div class="cal-cells">
+                <div class="cal-task t-green"><div class="ct">Hero 区块联调</div><div class="cm">10:00 · 小林</div></div>
+              </div></div>
+              <div class="cal-col"><div class="cal-dh"><div class="dow">周五</div><div class="dnum">17</div></div><div class="cal-cells">
+                <div class="cal-task"><div class="ct">移动端走查</div><div class="cm">09:30 · 待认领</div></div>
+              </div></div>
+              <div class="cal-col weekend"><div class="cal-dh"><div class="dow">周六</div><div class="dnum">18</div></div><div class="cal-cells"></div></div>
+              <div class="cal-col weekend"><div class="cal-dh"><div class="dow">周日</div><div class="dnum">19</div></div><div class="cal-cells"></div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 增量 5:项目设置(现状分区 + 新增自定义指令) -->
+      <section class="cview" data-cv="settings">
+        <div class="settings">
+          <nav class="set-nav">
+            <button class="set-nav-item" onclick="setSetting('basic',this)"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg>基础</button>
+            <button class="set-nav-item active" onclick="setSetting('instr',this)"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M8 13h8M8 17h5"/></svg>自定义指令<span class="pill-new">新</span></button>
+            <button class="set-nav-item" onclick="setSetting('ai',this)"><svg class="ic" viewBox="0 0 24 24"><rect x="4" y="4.5" width="16" height="16" rx="3"/><path d="M9 9h6v6H9zM9 2.5v2M15 2.5v2M9 20v1.5M15 20v1.5M2.5 9h2M2.5 15h2M20 9h1.5M20 15h1.5"/></svg>AI 治理</button>
+            <button class="set-nav-item" onclick="setSetting('gh',this)"><svg class="ic" viewBox="0 0 24 24"><path d="M9 19c-4 1.5-4-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.3 4.3 0 0 0-.1-3.2s-1-.3-3.4 1.3a11.7 11.7 0 0 0-6 0C6.9 2.3 5.9 2.6 5.9 2.6a4.3 4.3 0 0 0-.1 3.2A4.6 4.6 0 0 0 4.5 9c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21"/></svg>GitHub</button>
+            <button class="set-nav-item" onclick="setSetting('notify',this)"><svg class="ic" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg>通知</button>
+          </nav>
+          <div class="set-body">
+            <div id="setInstr">
+              <h2>自定义指令 <span class="pill-new">新</span> <span class="saved-pill" id="ciSaved"><svg class="ic ic-xs" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>已保存</span></h2>
+              <p class="set-desc">本项目的对话和自动任务都会读到这段指令(优先级高于通用规则,低于系统纪律)。例如:固定输出语言、行业术语、禁止使用的工具等。</p>
+              <textarea class="ci-area" id="ciArea" onblur="saveCi()" placeholder="例如:
+- 所有输出用简体中文,避免技术黑话
+- 涉及隐私功能时,优先强调「本地优先、数据不外传」
+- 引用数据时标注来源,不夸大云端能力
+- 未经批准禁止调用网络搜索工具"></textarea>
+              <div class="ci-hint">失焦自动保存。留空则不注入项目级指令。只对「官网改版」生效,其他项目互不影响。</div>
+            </div>
+            <div id="setGeneric" style="display:none">
+              <h2 id="setGenTitle">基础</h2>
+              <p class="set-desc" id="setGenDesc"></p>
+              <div class="set-generic">此分区沿用现状项目设置(AI 治理 / GitHub / 观察者 / 通知),本原型不重复还原,只演示新增的「自定义指令」。</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 增量 6:编辑器(中栏全宽) -->
+      <section class="cview" data-cv="editor">
+        <div class="editor">
+          <div class="ed-tabs">
+            <button class="ed-back" onclick="openCenter(prevCenter)">
+              <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>返回
+            </button>
+            <div class="ed-tab active"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/></svg>privacy-section.md</div>
+            <div class="ed-tools-right">
+              <button class="btn ghost sm"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7M16 6l-4-4-4 4M12 2v13"/></svg>导出</button>
+              <span class="saved-chip"><svg class="ic ic-xs" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>已保存</span>
+            </div>
+          </div>
+          <div class="ed-toolbar">
+            <button class="tbtn" style="font-weight:800">B</button>
+            <button class="tbtn" style="font-style:italic">I</button>
+            <button class="tbtn" style="text-decoration:underline">U</button>
+            <span class="tsep"></span>
+            <button class="tbtn">H1</button>
+            <button class="tbtn">H2</button>
+            <span class="tsep"></span>
+            <button class="tbtn"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
+            <button class="tbtn" title="引用"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M6 17h3l2-4V7H5v6h3ZM15 17h3l2-4V7h-6v6h3Z"/></svg></button>
+            <button class="tbtn" title="表格"><svg class="ic ic-sm" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M3 10h18M3 15h18M9 5v14M15 5v14"/></svg></button>
+            <button class="tbtn" title="链接"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></button>
+            <div style="flex:1"></div>
+            <span class="tag amber" id="pendingTag">2 处待确认改动</span>
+          </div>
+          <div class="ed-doc">
+            <div class="ed-page">
+              <h1>隐私与安全</h1>
+              <div class="lede">首页安全区块 · 面向非技术访客 · 由 Cuu 起草,含 2 处修订建议(右栏「改写」处理)</div>
+              <h2>你的东西,只留在你的电脑上</h2>
+              <p>WorkHub 的所有文件读取和处理,<span class="tc" data-cg="a"><span class="tc-del">都会先上传到我们的云端服务器,</span><span class="tc-ins">全程只在你自己的电脑上完成,</span></span>不经过任何第三方转手。你打开哪个文件、AI 读了什么,都停留在本机。</p>
+              <p>我们<span class="tc" data-cg="b"><span class="tc-ins">郑重承诺,</span></span>绝不会把你的文档、聊天记录或任何工作内容用于模型训练<span class="tc" data-cg="b"><span class="tc-del">,除非你主动授权</span></span>。团队协同时,谁看过、谁改过都有记录,安心又有据可查。</p>
+              <h2>主动权始终在你手里</h2>
+              <ul>
+                <li>数据可以一键导出,也能彻底删除,不留后台副本。</li>
+                <li>每一次 AI 改动都要经你批准,才会合并进正式文件。</li>
+                <li>需要联网时会显式提示,你随时可以关掉。</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- ============ 右栏(现状 322px 情境面板;升级为可切模式:提议 / 文件 / 改写) ============ -->
+    <aside class="side" id="side">
+      <div class="side-head">
+        <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M15 4.5v15"/></svg>
+        <span class="side-title" id="sideTitle">情境面板</span>
+        <div class="side-modes">
+          <button class="smode-btn on" id="smProposal" onclick="switchSide('proposal')">提议</button>
+          <button class="smode-btn" id="smFiles" onclick="switchSide('files')">文件</button>
+          <button class="smode-btn" id="smRewrite" style="display:none" onclick="switchSide('rewrite')">改写</button>
+        </div>
+      </div>
+      <div class="side-body">
+
+        <!-- 模式 1:提议详情(现状) -->
+        <div class="smode active" data-smv="proposal">
+          <div class="prop-card">
+            <div class="prop-title">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/></svg>
+              privacy-section.md
+              <span class="tag green" id="propTag">待合并</span>
+            </div>
+            <div class="prop-sub">交付物变更申请 · 由 Cuu 提交 · 2 分钟前</div>
+            <div class="prop-facts">
+              <div class="pfact"><div class="k">风险</div><div class="v" style="color:var(--success-ink)">低 · 可回滚</div></div>
+              <div class="pfact"><div class="k">证据</div><div class="v">4 条来源</div></div>
+              <div class="pfact"><div class="k">变更集</div><div class="v"><span style="color:var(--success-ink)">+18</span> / <span style="color:var(--danger-ink)">−11</span></div></div>
+              <div class="pfact"><div class="k">合规检查</div><div class="v" style="color:var(--success-ink)">通过</div></div>
+            </div>
+            <div class="prop-diff">
+              <div class="dl del"><span class="ln">−</span>都会先上传到我们的云端服务器,</div>
+              <div class="dl ins"><span class="ln">+</span>全程只在你自己的电脑上完成,</div>
+              <div class="dl ins"><span class="ln">+</span>我们郑重承诺,绝不会…用于模型训练。</div>
+            </div>
+            <div class="prop-actions">
+              <button class="btn primary sm" onclick="approveOut()">批准</button>
+              <button class="btn sm" onclick="rejectOut()">打回</button>
+            </div>
+            <div class="prop-status" id="propStatus"></div>
+          </div>
+          <div class="side-note">打回时请说明原因,Cuu 会照着继续改。逐句对照点产出卡「看提议」进编辑器。</div>
+        </div>
+
+        <!-- 模式 2:工作区文件(增量 6) -->
+        <div class="smode" data-smv="files">
+          <div class="fp-tabs">
+            <button class="fp-tab active" onclick="switchFp('changed',this)">变动文件 <span class="cnt">2</span></button>
+            <button class="fp-tab" onclick="switchFp('all',this)">所有文件</button>
+          </div>
+          <div class="fp-list active" id="fpChanged">
+            <button class="frow" onclick="openEditor()">
+              <span class="gdot"></span>
+              <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/></svg>
+              <span class="fn">privacy-section.md</span><span class="chg"><span class="a">+18</span> <span class="d">−11</span></span>
+            </button>
+            <button class="frow" onclick="openEditor()">
+              <span class="gdot"></span>
+              <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/></svg>
+              <span class="fn">home-hero.md</span><span class="chg"><span class="a">+6</span> <span class="d">−2</span></span>
+            </button>
+            <div class="side-note" style="margin-top:8px">变动 = 提议 manifest 的变更集(待审 / 已合),点文件看逐句对照。</div>
+          </div>
+          <div class="fp-list" id="fpAll">
+            <button class="frow folder"><svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg><span class="fn">文案</span></button>
+            <button class="frow tree-indent" onclick="openEditor()"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/></svg><span class="fn">privacy-section.md</span><span class="gdot"></span></button>
+            <button class="frow tree-indent" onclick="openEditor()"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/></svg><span class="fn">home-hero.md</span><span class="gdot"></span></button>
+            <button class="frow tree-indent"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/></svg><span class="fn">faq.md</span></button>
+            <button class="frow folder"><svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg><span class="fn">设计稿</span></button>
+            <button class="frow folder"><svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg><span class="fn">法务</span></button>
+            <button class="frow"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/></svg><span class="fn">竞品调研.xlsx</span></button>
+          </div>
+        </div>
+
+        <!-- 模式 3:AI 改写(增量 6,编辑器打开时出现) -->
+        <div class="smode" data-smv="rewrite">
+          <div class="rw-card" id="rwA">
+            <div class="rw-head"><span class="kind">润色</span><span class="tag blue">第 1 段</span><span class="model">Cuu · deepseek-v4</span></div>
+            <div class="rw-sub">把「云端服务器」改成访客能懂的说法,突出本地。</div>
+            <div class="rw-preview">WorkHub 的所有文件读取和处理,<span class="add">全程只在你自己的电脑上完成,</span>不经过任何第三方转手。</div>
+            <div class="rw-actions"><button class="btn sm" onclick="rejectRw('a')">拒绝</button><button class="btn primary sm" onclick="acceptRw('a')">接受</button></div>
+            <div class="rw-done" id="rwDoneA"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg><span id="rwDoneAtxt"></span></div>
+          </div>
+          <div class="rw-card" id="rwB">
+            <div class="rw-head"><span class="kind">扩写</span><span class="tag blue">第 2 段</span><span class="model">Cuu · deepseek-v4</span></div>
+            <div class="rw-sub">加一句更有分量的承诺,去掉「除非主动授权」的模糊余地。</div>
+            <div class="rw-preview">我们<span class="add">郑重承诺,</span>绝不会把你的文档、聊天记录或任何工作内容用于模型训练。</div>
+            <div class="rw-actions"><button class="btn sm" onclick="rejectRw('b')">拒绝</button><button class="btn primary sm" onclick="acceptRw('b')">接受</button></div>
+            <div class="rw-done" id="rwDoneB"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg><span id="rwDoneBtxt"></span></div>
+          </div>
+          <div class="rw-foot">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+            先选中正文里要改写的文字,再让 Cuu 润色或扩写。接受 = 提议合并语义,进回放可追溯。
+          </div>
+        </div>
+
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script>
+/* ============ 中栏 centerTab 切换(照现状 store.centerTab 语义) ============ */
+var CRUMB = {
+  chat:'官网改版 · 主区', collab:'官网改版 · 隐私区文案讨论', dm:'私聊 · 和小林',
+  inbox:'待拍板 · 决策收件箱', drive:'官网改版 · 网盘', timeline:'官网改版 · 时间线',
+  army:'军团总览', kanban:'官网改版 · 任务看板', schedule:'官网改版 · 日程',
+  settings:'官网改版 · 项目设置', editor:'privacy-section.md · 编辑器'
+};
+var LEAF = { chat:'leafChat', collab:'leafCollab', drive:'leafDrive', timeline:'leafTimeline', kanban:'leafKanban', schedule:'leafSchedule' };
+var CHAT_VIEWS = { chat:1, collab:1, dm:1 };
+var curCenter = 'chat';
+var prevCenter = 'chat';
+var dmOpened = false;
+
+function openCenter(name){
+  if(name === curCenter) { /* still refresh visuals */ }
+  if(name === 'editor' && curCenter !== 'editor') prevCenter = curCenter;
+  curCenter = name;
+  document.querySelectorAll('.cview').forEach(function(v){
+    v.classList.toggle('active', v.getAttribute('data-cv')===name);
+  });
+  // rail leaf 高亮(照现状 sel 跟 centerTab 走)
+  Object.keys(LEAF).forEach(function(k){
+    var el = document.getElementById(LEAF[k]);
+    if(el) el.classList.toggle('sel', k===name);
+  });
+  document.getElementById('navInbox').classList.toggle('active', name==='inbox');
+  document.getElementById('navArmy').classList.toggle('active', name==='army');
+  document.getElementById('gearSite').classList.toggle('sel', name==='settings');
+  document.getElementById('dmRow').classList.toggle('sel', name==='dm');
+  // 会话 tab 条:只在会话类视图显示(增量 2)
+  var strip = document.getElementById('sessStrip');
+  strip.classList.toggle('show', !!CHAT_VIEWS[name]);
+  document.getElementById('stChat').classList.toggle('active', name==='chat');
+  document.getElementById('stCollab').classList.toggle('active', name==='collab');
+  document.getElementById('stDm').classList.toggle('active', name==='dm');
+  // 未读清零(现状:打开会话清零)
+  if(name==='collab'){
+    var u1=document.getElementById('collabUnread'); if(u1) u1.remove();
+    var u2=document.getElementById('stCollabUnread'); if(u2) u2.remove();
+  }
+  if(name==='dm'){
+    dmOpened = true;
+    document.getElementById('stDm').style.display='flex';
+    var u3=document.getElementById('dmUnread'); if(u3) u3.remove();
+  }
+  // 面包屑
+  document.getElementById('crumb').innerHTML = '<b>WorkHub</b> · ' + CRUMB[name];
+  // 右栏模式联动:编辑器 → 改写;其余保持当前模式
+  if(name==='editor'){
+    document.getElementById('smRewrite').style.display='inline-flex';
+    switchSide('rewrite');
+  }
+  var sc = document.querySelector('.cview.active .center-scroll, .cview.active .chat-scroll, .cview.active .ed-doc, .cview.active .set-body');
+  if(sc) sc.scrollTop = 0;
+}
+function openEditor(){ openCenter('editor'); }
+
+/* 右栏模式(现状面板升级:提议/文件/改写) */
+function switchSide(mode){
+  document.querySelectorAll('.smode').forEach(function(m){
+    m.classList.toggle('active', m.getAttribute('data-smv')===mode);
+  });
+  document.getElementById('smProposal').classList.toggle('on', mode==='proposal');
+  document.getElementById('smFiles').classList.toggle('on', mode==='files');
+  document.getElementById('smRewrite').classList.toggle('on', mode==='rewrite');
+  var titles = { proposal:'提议详情', files:'工作区文件', rewrite:'改写建议' };
+  document.getElementById('sideTitle').textContent = titles[mode];
+}
+function toggleSide(){
+  var s = document.getElementById('side');
+  s.style.display = (s.style.display==='none') ? 'flex' : 'none';
+}
+function switchFp(which,el){
+  document.querySelectorAll('.fp-tab').forEach(function(t){ t.classList.remove('active'); });
+  el.classList.add('active');
+  document.getElementById('fpChanged').classList.toggle('active', which==='changed');
+  document.getElementById('fpAll').classList.toggle('active', which==='all');
+}
+
+/* 折叠(增量 1) */
+function toggleFold(id){ document.getElementById(id).classList.toggle('open'); }
+
+/* 模型菜单 / 联网 toggle(增量 1) */
+function toggleModelMenu(e){ e.stopPropagation(); document.getElementById('modelMenu').classList.toggle('show'); }
+function pickModel(e,name){
+  document.getElementById('modelName').textContent = name;
+  document.querySelectorAll('.model-opt').forEach(function(o){ o.classList.remove('sel'); });
+  e.currentTarget.classList.add('sel');
+  document.getElementById('modelMenu').classList.remove('show');
+}
+document.addEventListener('click', function(){ document.getElementById('modelMenu').classList.remove('show'); });
+
+/* 产出卡批准/打回(聊天内联 + 右栏提议详情同步) */
+function approveOut(){
+  var n = document.getElementById('outNote');
+  n.className = 'dcard-note show';
+  n.innerHTML = '<svg class="ic ic-sm" viewBox="0 0 24 24" style="stroke:var(--success-ink)"><path d="M20 6 9 17l-5-5"/></svg>已批准,变更已合并进 privacy-section.md';
+  setOutResolved('已合并','green');
+  var ps = document.getElementById('propStatus');
+  ps.className = 'prop-status show';
+  ps.style.background='var(--success-soft)'; ps.style.color='var(--success-ink)';
+  ps.textContent = '已批准并合并 · 回放可追溯';
+  disableProp();
+}
+function rejectOut(){
+  var n = document.getElementById('outNote');
+  n.className = 'dcard-note show';
+  n.style.background='var(--warn-soft)'; n.style.color='var(--warn-ink)';
+  n.innerHTML = '已打回:请说明方向,Cuu 会带着它继续改';
+  setOutResolved('已打回','amber');
+  var ps = document.getElementById('propStatus');
+  ps.className = 'prop-status show';
+  ps.style.background='var(--warn-soft)'; ps.style.color='var(--warn-ink)';
+  ps.textContent = '已打回 · 等你补充原因,Cuu 继续改';
+  disableProp();
+}
+function setOutResolved(txt,color){
+  ['outTag','propTag'].forEach(function(id){
+    var t=document.getElementById(id); t.className='tag '+color; t.textContent=txt;
+  });
+  document.querySelectorAll('#outCard .dcard-actions .btn').forEach(function(b){
+    var l=b.textContent.trim(); if(l==='批准'||l==='打回') b.disabled=true;
+  });
+}
+function disableProp(){
+  document.querySelectorAll('.prop-actions .btn').forEach(function(b){ b.disabled=true; });
+}
+
+/* 看板拖拽(增量 3) */
+var dragEl = null;
+document.querySelectorAll('.tcard').forEach(function(c){
+  c.addEventListener('dragstart', function(){ dragEl=c; setTimeout(function(){c.classList.add('dragging');},0); });
+  c.addEventListener('dragend',   function(){ c.classList.remove('dragging'); dragEl=null; refreshCounts(); });
+});
+function colOver(e){ e.preventDefault(); e.currentTarget.classList.add('drop-hover'); }
+function colLeave(e){ e.currentTarget.classList.remove('drop-hover'); }
+function colDrop(e){
+  e.preventDefault();
+  e.currentTarget.classList.remove('drop-hover');
+  if(dragEl) e.currentTarget.appendChild(dragEl);
+  refreshCounts();
+}
+function refreshCounts(){
+  var total=0;
+  document.querySelectorAll('#board .col').forEach(function(col){
+    var n = col.querySelectorAll('.tcard').length;
+    col.querySelector('.cc').textContent = n;
+    total += n;
+  });
+  document.getElementById('taskTotal').textContent = total;
+}
+
+/* 设置:自定义指令(增量 5) */
+var ciTimer=null;
+function saveCi(){
+  var pill = document.getElementById('ciSaved');
+  pill.classList.add('show');
+  clearTimeout(ciTimer);
+  ciTimer = setTimeout(function(){ pill.classList.remove('show'); }, 2200);
+}
+function setSetting(which, el){
+  document.querySelectorAll('.set-nav-item').forEach(function(i){ i.classList.remove('active'); });
+  el.classList.add('active');
+  var isInstr = which==='instr';
+  document.getElementById('setInstr').style.display = isInstr ? 'block' : 'none';
+  document.getElementById('setGeneric').style.display = isInstr ? 'none' : 'block';
+  if(!isInstr){
+    var titles={basic:'基础',ai:'AI 治理',gh:'GitHub',notify:'通知'};
+    var descs={
+      basic:'项目名称、图标、可见成员等基础信息,沿用现状。',
+      ai:'模型档位、工具权限、预算与升级红线,沿用现状 AI 治理。',
+      gh:'关联仓库、分支与 PR 回写规则,沿用现状集成。',
+      notify:'通知渠道与静音规则,口径与决策收件箱一致,沿用现状。'
+    };
+    document.getElementById('setGenTitle').textContent = titles[which];
+    document.getElementById('setGenDesc').textContent = descs[which];
+  }
+}
+
+/* 编辑器 tracked changes + AI 改写(增量 6) */
+function resolveChange(cg, mode){
+  document.querySelectorAll('.tc[data-cg="'+cg+'"]').forEach(function(wrap){
+    var del = wrap.querySelector('.tc-del');
+    var ins = wrap.querySelector('.tc-ins');
+    if(mode==='accept'){
+      if(del) del.remove();
+      if(ins) ins.className = 'tc-normal';
+    }else{
+      if(ins) ins.remove();
+      if(del) del.className = 'tc-normal';
+    }
+  });
+}
+function acceptRw(cg){ resolveChange(cg,'accept'); finishRw(cg,'已接受,正文已更新',false); }
+function rejectRw(cg){ resolveChange(cg,'reject'); finishRw(cg,'已拒绝,保留原文',true); }
+function finishRw(cg,msg,rej){
+  var up = cg.toUpperCase();
+  document.getElementById('rw'+up).classList.add('resolved');
+  var done = document.getElementById('rwDone'+up);
+  document.getElementById('rwDone'+up+'txt').textContent = msg;
+  done.className = 'rw-done show';
+  if(rej){ done.style.background='var(--warn-soft)'; done.style.color='var(--warn-ink)'; }
+  var remaining = countChangeGroups();
+  var tagEl = document.getElementById('pendingTag');
+  if(remaining===0){ tagEl.className='tag green'; tagEl.textContent='改动已全部处理'; }
+  else{ tagEl.textContent = remaining + ' 处待确认改动'; }
+}
+function countChangeGroups(){
+  var groups={};
+  document.querySelectorAll('.tc-del, .tc-ins').forEach(function(s){
+    var w = s.closest('.tc'); if(w) groups[w.getAttribute('data-cg')]=1;
+  });
+  return Object.keys(groups).length;
+}
+
+/* 收件箱拍板(现状 inbox 交互,演示忙态) */
+function decide(id, mode){
+  var card = document.getElementById(id);
+  card.querySelectorAll('.btn').forEach(function(b){ b.disabled=true; });
+  document.getElementById('busy-'+id).classList.add('show');
+  setTimeout(function(){
+    document.getElementById('busy-'+id).classList.remove('show');
+    var res = document.getElementById('res-'+id);
+    card.classList.add('resolved');
+    if(mode==='ok'){
+      res.className='icard-result ok';
+      var okTxt = {ic1:'已批准并合并', ic2:'已采纳 A 版,Cuu 继续推进', ic3:'预算已调高至 ¥70'};
+      res.innerHTML = '<svg class="ic ic-sm" viewBox="0 0 24 24" style="stroke:var(--success-ink)"><path d="M20 6 9 17l-5-5"/></svg>'+(okTxt[id]||'已通过');
+    }else{
+      res.className='icard-result rej';
+      var rejTxt = {ic1:'已打回,等你补充方向', ic2:'已采纳 B 版,Cuu 继续推进', ic3:'维持预算,已加入留意清单'};
+      res.innerHTML = rejTxt[id]||'已处理';
+    }
+    res.style.display='inline-flex';
+    updateInboxBadge();
+  }, 850);
+}
+function updateInboxBadge(){
+  var open = document.querySelectorAll('.icard:not(.resolved)').length;
+  var badge = document.getElementById('inboxCount');
+  if(open<=0){ badge.style.display='none'; }
+  else{ badge.textContent = open; }
+}
+
+/* 成员管理(增量 7,演示态) */
+function toggleManage(){
+  var rail = document.getElementById('rail');
+  rail.classList.toggle('manage');
+  document.getElementById('manageBtn').textContent = rail.classList.contains('manage') ? '完成' : '管理';
+}
+function removeMember(e,el){
+  e.stopPropagation();
+  var row = el.closest('.member-row');
+  row.classList.add('removed');
+  el.outerHTML = '<span class="removed-tag">已移出(演示)</span>';
+}
+function inviteDemo(){
+  var b = document.getElementById('inviteBtn');
+  var orig = b.innerHTML;
+  b.innerHTML = '<svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>邀请链接已复制(演示)';
+  b.disabled = true;
+  setTimeout(function(){ b.innerHTML = orig; b.disabled = false; }, 1800);
+}
+
+/* composer 自适应高度 */
+document.querySelectorAll('.field.autosize').forEach(function(f){
+  f.addEventListener('input', function(){ f.style.height='auto'; f.style.height=Math.min(f.scrollHeight,110)+'px'; });
+});
+</script>
+</body>
+</html>

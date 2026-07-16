@@ -14,10 +14,23 @@ export const webSurface = {
   devPort: defaultPorts.web,
   apiBaseUrlEnv: "VITE_API_BASE_URL",
   defaultDaemonUrl: `http://127.0.0.1:${defaultPorts.api}`,
+  // G-web 止血批：本目录自 R10（f986360e）后没再跟 routes.ts 同步过，R11-R14 陆续新增的
+  // 路由（projects/health/cost 独立页 pattern、R14 SEARCH/MEM/GH 批）从没补进来。以
+  // apps/web/src/routes.ts 的 webRouteRegistry（pattern + apiBaseLabel）为准补全；GitHub 绑定
+  // 端点（/api/projects/:id/github-binding 等）核实后确认只有桌面工作台设置页调用，web 端
+  // 没有任何调用点，不虚构进目录。
   pages: [
+    "/",
     "/api/auth/me",
     "/api/auth/preferences",
     "/api/pages/attention",
+    "/api/projects",
+    "/projects",
+    "/api/pages/project/:id",
+    "/projects/:id",
+    // R15 批 E2c：项目时间线只读页。
+    "/api/pages/project/:id/timeline",
+    "/projects/:id/timeline",
     "/api/sessions",
     "/api/sessions/:id",
     "/api/workitems",
@@ -30,9 +43,15 @@ export const webSurface = {
     "/intake/:sessionId",
     "/knowledge/search",
     "/api/pages/workitems/:id",
+    "/workitems/:id",
     "/api/workitems/:id/conflicts",
     "/api/pages/proposals/:id",
+    "/proposals/:id",
+    // R15 批 web-mirror：只读会话镜像页 + 消费的会话消息读端点。
+    "/api/conversations/:id/messages",
+    "/conversations/:id",
     "/api/pages/drive",
+    "/drive",
     "/api/pages/meetings",
     "/api/pages/notifications",
     "/api/pages/calendar",
@@ -53,11 +72,24 @@ export const webSurface = {
     "/api/notifications/:id/complete",
     "/api/notifications/preferences",
     "/api/pages/approvals",
+    "/approvals",
+    "/api/pages/health",
+    "/dashboard/health",
     "/api/pages/cost",
+    "/dashboard/cost",
     "/api/pages/agents",
+    "/dashboard/agents",
+    // R14 批 SEARCH：全局搜索页。
+    "/api/search",
+    "/dashboard/search",
+    // R14 批团队技能管理页。
+    "/api/pages/skills",
+    "/dashboard/skills",
+    // R14 批 MEM：我的记忆 + 团队技能治理（两 tab 共用 /settings/memory，服务端只透传 query）。
+    "/api/me/memories",
+    "/settings/memory",
     "/api/pages/settings",
     "/api/agent-runs/:id/replay",
-    "/dashboard/agents",
     "/settings"
   ],
   consumesTypedClient: "@workhub/api-client"

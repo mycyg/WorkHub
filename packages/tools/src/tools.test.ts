@@ -212,6 +212,34 @@ test("toModelTools exposes concrete JSON schema for provider tool calling", asyn
   assert.deepEqual(writeFile.input_schema?.required?.sort(), ["content", "path"]);
 });
 
+test("promptReference collects snippets/guidelines separately from the model description channel", () => {
+  const registry = createToolRegistry([...createBuiltInFileTools(), createSkillTool()]);
+  const reference = registry.promptReference();
+
+  // 有 promptSnippet 的工具进「可用工具」清单；submit 故意不设 snippet → 不在清单里。
+  const snippetIds = reference.snippets.map((entry) => entry.id);
+  assert.equal(snippetIds.includes("read_file"), true);
+  assert.equal(snippetIds.includes("write_file"), true);
+  assert.equal(snippetIds.includes("run_command"), true);
+  assert.equal(snippetIds.includes("load_skill"), true);
+  assert.equal(snippetIds.includes("submit"), false);
+  // snippet 是一行能力广告，不等于喂给模型的完整 description。
+  const readSnippet = reference.snippets.find((entry) => entry.id === "read_file");
+  assert.equal(readSnippet?.snippet, "Read a UTF-8 text file from the sandbox");
+
+  // guidelines 点名具体工具、且跨工具 Set 去重（无重复条目）。
+  assert.equal(reference.guidelines.length, new Set(reference.guidelines).size);
+  assert.equal(reference.guidelines.some((line) => line.includes("read_file")), true);
+  assert.equal(reference.guidelines.some((line) => line.includes("run_command")), true);
+  // 不许出现无主语的「this tool」占位式准则。
+  assert.equal(reference.guidelines.some((line) => /this tool/iu.test(line)), false);
+
+  // description 通道保持独立且完整（内联了截断续读说明），不被 snippet 取代。
+  const readSpec = registry.get("read_file");
+  assert.notEqual(readSpec?.description, readSnippet?.snippet);
+  assert.equal(readSpec?.description.includes("[truncated]"), true);
+});
+
 test("zip_path writes a real zip archive after snapshot succeeds", async () => {
   const workdir = await tempWorkdir();
   await mkdir(path.join(workdir, "outputs", "bundle"), { recursive: true });

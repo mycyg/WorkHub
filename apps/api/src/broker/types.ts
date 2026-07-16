@@ -29,4 +29,14 @@ export type PresenceStore = {
   forgetUser: (userId: string) => Promise<void>;
   getPresence: (userId: string) => Promise<PresenceState>;
   getPresenceMap: (userIds: string[]) => Promise<Record<string, PresenceState>>;
+  // R15 批 A（A5 在线抑制）：会话级「正在看」注册表——某用户是否持有某会话的实时 SSE 订阅
+  // （GET /api/push/stream/conversation/:id）。桌面 OS 桥只订 /stream/me（收 notification.created），
+  // conversation.message.created 只在客户端打开了该会话流时才收得到——所以「持有该会话流」正是
+  // 「此刻正在看这条会话」的精确信号（粗粒度的 is_online 会把「后台/锁屏但流还开着」误判成正在看，
+  // 反而扼杀 OS 通知的主用例，见 conversation-message-notify.ts 的取舍注释）。引用计数（同一用户多窗
+  // 各一条流）与 streams 计数同构。SSE 流打开/心跳续期/断开时维护，A5 通知生成时查询。
+  markConversationViewer: (userId: string, conversationId: string) => Promise<void>;
+  refreshConversationViewer: (userId: string, conversationId: string) => Promise<void>;
+  markConversationViewerClosed: (userId: string, conversationId: string) => Promise<void>;
+  isViewingConversation: (userId: string, conversationId: string) => Promise<boolean>;
 };

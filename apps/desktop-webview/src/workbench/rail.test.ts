@@ -1,17 +1,25 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { ConversationVM, ProjectListItemVM, WorkbenchPageVM } from "@workhub/contracts";
+import type { ConversationVM, DmListItemVM, ProjectListItemVM, WorkbenchPageVM } from "@workhub/contracts";
 
 import {
   appendCollabConversationToVm,
+  bumpConversationUnreadInVm,
+  bumpDmUnread,
   createCollabConversation,
   IDLE_NEW_COLLAB_MODAL_STATE,
   IDLE_RENAME_COLLAB_MODAL_STATE,
   nextCollabConversationTitle,
+  setConversationUnreadInVm,
+  setDmUnread,
   renameCollabConversation,
   renameCollabConversationInVm,
   renderArmyOverviewNavHtml,
+  renderInboxNavHtml,
+  renderDmGroupHtml,
+  renderRosterGroupHtml,
+  sortRosterMembers,
   renderNewPersonalSpaceModalHtml,
   renderNewCollabModalHtml,
   renderNewProjectModalHtml,
@@ -113,7 +121,9 @@ test("renderProjectTreeHtml always includes a real 'new project' entry point", (
 });
 
 test("renderProjectTreeHtml marks the selected project active and shows its real conversation/drive leaves", () => {
-  const vm = workbenchVm();
+  const base = workbenchVm();
+  // R15 批 A6：树叶尾数字现在是未读数（unread_count），不再是消息总数（next_seq）。
+  const vm = setConversationUnreadInVm(base, base.conversations.conversations[0]!.id, 12);
   const html = renderProjectTreeHtml({
     projects: [project()],
     selectedProjectId: project().id,
@@ -121,9 +131,9 @@ test("renderProjectTreeHtml marks the selected project active and shows its real
     locale: "zh-CN"
   });
   assert.match(html, /class="wh-wb-project active"/u);
-  // Real main-conversation title and message count from the VM, not a placeholder.
+  // Real main-conversation title and unread red badge from the VM, not a placeholder.
   assert.match(html, /主区/u);
-  assert.match(html, /wh-wb-leaf-count">12</u);
+  assert.match(html, /wh-wb-leaf-count wh-wb-leaf-count--unread">12</u);
 });
 
 // R12 批 2：主区群聊接进这个窗口后，「主区」树叶从只读升级成真按钮（会话点击路由）——
@@ -152,6 +162,74 @@ test("the drive leaf is a real, clickable button once batch 6 wires the drive vi
     locale: "zh-CN"
   });
   assert.match(html, /<button[^>]*data-wb-open-drive[^>]*>[^]*网盘/u);
+});
+
+// R15 批 E2（项目时间线 / 甘特）：与网盘同级的「时间线」树叶，切中栏到 timeline 标签（见 shell.ts 的
+// onOpenTimeline）——真按钮，选中态跟 centerTab === "timeline" 走。
+test("the timeline leaf is a real, clickable button (batch E2)", () => {
+  const vm = workbenchVm();
+  const html = renderProjectTreeHtml({
+    projects: [project()],
+    selectedProjectId: project().id,
+    vm,
+    locale: "zh-CN"
+  });
+  assert.match(html, /<button[^>]*data-wb-open-timeline[^>]*>[^]*时间线/u);
+  const selected = renderProjectTreeHtml({
+    projects: [project()],
+    selectedProjectId: project().id,
+    vm,
+    locale: "zh-CN",
+    centerTab: "timeline"
+  });
+  assert.match(selected.match(/<button[^>]*data-wb-open-timeline[^>]*>/u)![0], / sel/u);
+});
+
+// R16 批 W2：与时间线同级的「任务看板」树叶，切中栏到 kanban 标签（见 shell.ts 的 onOpenKanban）——真按钮，
+// 选中态跟 centerTab === "kanban" 走，首发带「新」小徽标（复用现有 wh-wb-leaf-count 徽标类）。
+test("the kanban leaf is a real, clickable button with a New badge (batch W2)", () => {
+  const vm = workbenchVm();
+  const html = renderProjectTreeHtml({
+    projects: [project()],
+    selectedProjectId: project().id,
+    vm,
+    locale: "zh-CN"
+  });
+  const leaf = html.match(/<button[^>]*data-wb-open-kanban[^>]*>[^]*?<\/button>/u)![0];
+  assert.match(leaf, /任务看板/u);
+  // 「新」徽标复用现有 wh-wb-leaf-count 徽标体系，不造新样式。
+  assert.match(leaf, /wh-wb-leaf-count">新</u);
+  const selected = renderProjectTreeHtml({
+    projects: [project()],
+    selectedProjectId: project().id,
+    vm,
+    locale: "zh-CN",
+    centerTab: "kanban"
+  });
+  assert.match(selected.match(/<button[^>]*data-wb-open-kanban[^>]*>/u)![0], / sel/u);
+});
+
+// R16 批 W2：与时间线同级的「日程」树叶，切中栏到 schedule 标签（见 shell.ts 的 onOpenSchedule）——真按钮，
+// 选中态跟 centerTab === "schedule" 走，首发带「新」小徽标（复用现有 wh-wb-leaf-count 徽标类）。
+test("the schedule leaf is a real, clickable button with a New badge (batch W2)", () => {
+  const vm = workbenchVm();
+  const html = renderProjectTreeHtml({
+    projects: [project()],
+    selectedProjectId: project().id,
+    vm,
+    locale: "zh-CN"
+  });
+  const leaf = html.match(/<button[^>]*data-wb-open-schedule[^>]*>[^]*?<\/button>/u)![0];
+  assert.match(leaf, /日程/u);
+  assert.match(leaf, /wh-wb-leaf-count">新</u);
+  const selected = renderProjectTreeHtml({
+    projects: [project()],
+    selectedProjectId: project().id,
+    vm,
+    locale: "zh-CN",
+    centerTab: "schedule"
+  });
+  assert.match(selected.match(/<button[^>]*data-wb-open-schedule[^>]*>/u)![0], / sel/u);
 });
 
 function leafTag(html: string, marker: string): string {
@@ -202,7 +280,8 @@ function collabConversationVm(over: Partial<WorkbenchPageVM["conversations"]["co
 test("renderProjectTreeHtml renders a real, clickable leaf for every collab conversation visible to the viewer", () => {
   const vm = workbenchVm({
     conversations: {
-      conversations: [...workbenchVm().conversations.conversations, collabConversationVm()],
+      // R15 批 A6：树叶尾数字是未读数（unread_count），不再是 next_seq。
+      conversations: [...workbenchVm().conversations.conversations, collabConversationVm({ unread_count: 4 })],
       capped: false,
       next_cursor: null
     }
@@ -211,7 +290,7 @@ test("renderProjectTreeHtml renders a real, clickable leaf for every collab conv
   assert.match(html, /<button[^>]*data-wb-open-collab-chat="90000000-0000-4000-8000-000000000102"[^>]*>[^]*与 Cuu 的对话/u);
   assert.match(
     leafButtonOuterHtml(html, 'data-wb-open-collab-chat="90000000-0000-4000-8000-000000000102"'),
-    /wh-wb-leaf-count">4</u
+    /wh-wb-leaf-count wh-wb-leaf-count--unread">4</u
   );
 });
 
@@ -339,6 +418,31 @@ test("renderArmyOverviewNavHtml marks itself active only when the caller says so
   assert.match(active, /class="wh-wb-army-nav active"/u);
   const inactive = renderArmyOverviewNavHtml(true, false);
   assert.doesNotMatch(inactive, /class="wh-wb-army-nav active"/u);
+});
+
+// R15 批 I1（决策收件箱）：rail 顶部「待拍板」一级入口 + 计数徽标。
+test("renderInboxNavHtml is a real, clickable top-level entry point in both locales", () => {
+  const zh = renderInboxNavHtml(true, false, 0);
+  assert.match(zh, /<button[^>]*data-wb-open-inbox[^>]*>[^]*待拍板/u);
+  const en = renderInboxNavHtml(false, false, 0);
+  assert.match(en, /<button[^>]*data-wb-open-inbox[^>]*>[^]*Decisions/u);
+});
+
+test("renderInboxNavHtml shows the count badge only when there are pending decisions", () => {
+  const none = renderInboxNavHtml(true, false, 0);
+  assert.doesNotMatch(none, /wh-wb-inbox-nav-count/u);
+  const some = renderInboxNavHtml(true, false, 3);
+  assert.match(some, /class="wh-wb-inbox-nav-count"[^>]*>3</u);
+  // 负数/非有限值当作 0（防御性），不渲徽标。
+  assert.doesNotMatch(renderInboxNavHtml(true, false, -2), /wh-wb-inbox-nav-count/u);
+  assert.doesNotMatch(renderInboxNavHtml(true, false, Number.NaN), /wh-wb-inbox-nav-count/u);
+});
+
+test("renderInboxNavHtml caps the badge at 99+ and marks active only when told", () => {
+  const big = renderInboxNavHtml(true, true, 250);
+  assert.match(big, />99\+</u);
+  assert.match(big, /class="wh-wb-inbox-nav active"/u);
+  assert.doesNotMatch(renderInboxNavHtml(true, false, 5), /class="wh-wb-inbox-nav active"/u);
 });
 
 test("renderNewProjectModalHtml toggles data-open and disables the submit button until a name is entered", () => {
@@ -816,4 +920,189 @@ test("renameCollabConversation PATCHes /api/conversations/:id with the new title
   assert.equal(calls[0]?.init?.method, "PATCH");
   assert.deepEqual(JSON.parse(calls[0]?.init?.body as string), { title: "改第三幕" });
   assert.equal(result.conversation.title, "改第三幕");
+});
+
+// —— R15 批 B（人对人私聊）：成员 roster + 私聊分组 —— //
+
+const R15_SELF = "90000000-0000-4000-8000-000000000009";
+const R15_PEER_A = "90000000-0000-4000-8000-0000000000a1";
+const R15_PEER_B = "90000000-0000-4000-8000-0000000000a2";
+
+function rosterMember(userId: string, nickname: string, isSelf = false) {
+  return { user_id: userId, nickname, membership_role: "member" as const, is_project_owner: false, is_self: isSelf };
+}
+
+function r15DmItem(conversationId: string, peerId: string, peerNickname: string): DmListItemVM {
+  return {
+    conversation: {
+      id: conversationId,
+      workspace_id: "90000000-0000-4000-8000-000000000000",
+      project_id: "20000000-0000-4000-8000-000000000009",
+      kind: "collab",
+      title: "私聊",
+      parent_conversation_id: null,
+      source_message_id: null,
+      visibility: "private",
+      next_seq: 0,
+      created_by: R15_SELF,
+      participant_role: "owner",
+      cuu_enabled: false,
+      is_dm: true,
+      created_at: "2026-07-15T08:30:00.123Z",
+      updated_at: "2026-07-15T08:31:00.123Z"
+    },
+    participants: [
+      { user_id: R15_SELF, nickname: "阿曼", is_self: true },
+      { user_id: peerId, nickname: peerNickname, is_self: false }
+    ]
+  };
+}
+
+test("sortRosterMembers excludes self and puts online members first (stable within a status)", () => {
+  const members = [
+    rosterMember(R15_SELF, "阿曼", true),
+    rosterMember(R15_PEER_A, "甲", false),
+    rosterMember(R15_PEER_B, "乙", false)
+  ];
+  const sorted = sortRosterMembers(members, R15_SELF, new Set([R15_PEER_B]));
+  // 自己被排除；在线的乙排前，离线的甲在后。
+  assert.deepEqual(sorted.map((m) => m.user_id), [R15_PEER_B, R15_PEER_A]);
+});
+
+test("renderRosterGroupHtml renders a Members group with per-member profile hooks + online dots, no self", () => {
+  const html = renderRosterGroupHtml({
+    members: [rosterMember(R15_SELF, "阿曼", true), rosterMember(R15_PEER_A, "甲", false)],
+    currentUserId: R15_SELF,
+    onlineUserIds: new Set([R15_PEER_A]),
+    locale: "zh-CN"
+  });
+  assert.match(html, /成员/);
+  // 每个非自己成员一行，带 data-wb-open-profile（点行开资料卡）。
+  assert.match(html, /data-wb-open-profile="90000000-0000-4000-8000-0000000000a1"/);
+  // 自己不出现在 roster。
+  assert.doesNotMatch(html, /data-wb-open-profile="90000000-0000-4000-8000-000000000009"/);
+  // 在线成员画绿点（avatarTileHtml 的 online dot）。
+  assert.match(html, /wh-wb-chat-avatar-dot/);
+});
+
+test("renderRosterGroupHtml renders nothing when there is no VM member data (no empty shell)", () => {
+  assert.equal(renderRosterGroupHtml({ members: [], currentUserId: undefined, onlineUserIds: new Set(), locale: "zh-CN" }), "");
+});
+
+test("renderDmGroupHtml lists DMs with peer name + open hook, marking the active one", () => {
+  const html = renderDmGroupHtml({
+    dmList: [r15DmItem("30000000-0000-4000-8000-000000000031", R15_PEER_A, "甲")],
+    currentUserId: R15_SELF,
+    onlineUserIds: new Set([R15_PEER_A]),
+    activeDmConversationId: "30000000-0000-4000-8000-000000000031",
+    centerTab: "dm",
+    locale: "zh-CN"
+  });
+  assert.match(html, /私聊/);
+  assert.match(html, /data-wb-open-dm="30000000-0000-4000-8000-000000000031"/);
+  // 对方昵称，不是自己的昵称。
+  assert.match(html, /甲/);
+  // 活跃的 DM 行选中态。
+  assert.match(html, /wh-wb-dm-row sel/);
+  assert.match(html, /wh-wb-chat-avatar-dot/);
+});
+
+test("renderDmGroupHtml shows a faint empty-state hint when there are no DMs", () => {
+  const html = renderDmGroupHtml({
+    dmList: [],
+    currentUserId: R15_SELF,
+    onlineUserIds: new Set(),
+    centerTab: "chat",
+    locale: "zh-CN"
+  });
+  assert.match(html, /点成员头像发起私聊/);
+  assert.doesNotMatch(html, /data-wb-open-dm/);
+});
+
+// —— R15 批 A6（rail 未读红点）—— //
+
+test("renderProjectTreeHtml renders an unread red badge on the main leaf only when unread_count > 0", () => {
+  const withUnread = renderProjectTreeHtml({
+    projects: [project()],
+    selectedProjectId: project().id,
+    vm: workbenchVm({
+      conversations: {
+        conversations: [{ ...workbenchVm().conversations.conversations[0]!, unread_count: 3 }],
+        capped: false,
+        next_cursor: null
+      }
+    }),
+    locale: "zh-CN"
+  });
+  // 红点徽标带数字 3（未读语义），不是 next_seq 的消息总数。
+  assert.match(withUnread, /wh-wb-leaf-count wh-wb-leaf-count--unread">3</);
+
+  const noUnread = renderProjectTreeHtml({
+    projects: [project()],
+    selectedProjectId: project().id,
+    // 默认 workbenchVm 的主区没有 unread_count（=0 语义）——不渲未读红点徽标。
+    // 注：wh-wb-leaf-count 是通用徽标类（网盘文件数、R16 看板/日程「新」标同样复用它），这里只断言
+    // 不出现「未读」变体（--unread），不再断言整棵树无任何 leaf-count（那会误伤 W2 的「新」徽标）。
+    vm: workbenchVm(),
+    locale: "zh-CN"
+  });
+  assert.doesNotMatch(noUnread, /wh-wb-leaf-count--unread/);
+});
+
+test("renderDmGroupHtml renders an unread red badge on a DM row only when unread_count > 0", () => {
+  const unreadDm = r15DmItem("30000000-0000-4000-8000-000000000031", R15_PEER_A, "甲");
+  unreadDm.conversation.unread_count = 5;
+  const html = renderDmGroupHtml({
+    dmList: [unreadDm],
+    currentUserId: R15_SELF,
+    onlineUserIds: new Set(),
+    centerTab: "chat",
+    locale: "zh-CN"
+  });
+  assert.match(html, /wh-wb-dm-count">5</);
+
+  const readDm = r15DmItem("30000000-0000-4000-8000-000000000032", R15_PEER_B, "乙");
+  const readHtml = renderDmGroupHtml({
+    dmList: [readDm],
+    currentUserId: R15_SELF,
+    onlineUserIds: new Set(),
+    centerTab: "chat",
+    locale: "zh-CN"
+  });
+  assert.doesNotMatch(readHtml, /wh-wb-dm-count/);
+});
+
+test("setConversationUnreadInVm sets a conversation's unread count and returns the same ref when unchanged", () => {
+  const vm = workbenchVm();
+  const conversationId = vm.conversations.conversations[0]!.id;
+  const next = setConversationUnreadInVm(vm, conversationId, 4);
+  assert.equal(next.conversations.conversations[0]!.unread_count, 4);
+  // 找不到的会话 id → 原样返回同一引用（调用方据此跳过重渲）。
+  assert.equal(setConversationUnreadInVm(vm, "no-such-id", 9), vm);
+  // 设成与当前相同的值（都视作 0）→ 同一引用。
+  assert.equal(setConversationUnreadInVm(vm, conversationId, 0), vm);
+  // 负数/非有限数归零。
+  assert.equal(setConversationUnreadInVm(next, conversationId, -3).conversations.conversations[0]!.unread_count, 0);
+});
+
+test("bumpConversationUnreadInVm increments by one and no-ops for unknown conversations", () => {
+  const vm = setConversationUnreadInVm(workbenchVm(), workbenchVm().conversations.conversations[0]!.id, 2);
+  const conversationId = vm.conversations.conversations[0]!.id;
+  assert.equal(bumpConversationUnreadInVm(vm, conversationId).conversations.conversations[0]!.unread_count, 3);
+  // 从"没有 unread_count 字段"（=0）起也能 +1。
+  const fresh = workbenchVm();
+  assert.equal(bumpConversationUnreadInVm(fresh, fresh.conversations.conversations[0]!.id).conversations.conversations[0]!.unread_count, 1);
+  assert.equal(bumpConversationUnreadInVm(vm, "no-such-id"), vm);
+});
+
+test("setDmUnread / bumpDmUnread update the matching DM and no-op otherwise", () => {
+  const dm = r15DmItem("30000000-0000-4000-8000-000000000031", R15_PEER_A, "甲");
+  const list = [dm];
+  const set = setDmUnread(list, dm.conversation.id, 7);
+  assert.equal(set[0]!.conversation.unread_count, 7);
+  assert.equal(setDmUnread(list, "no-such-id", 3), list);
+  assert.equal(bumpDmUnread(set, dm.conversation.id)[0]!.conversation.unread_count, 8);
+  assert.equal(bumpDmUnread(list, "no-such-id"), list);
+  // clear（设 0）把红点清掉。
+  assert.equal(setDmUnread(set, dm.conversation.id, 0)[0]!.conversation.unread_count ?? 0, 0);
 });

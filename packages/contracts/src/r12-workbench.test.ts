@@ -208,6 +208,101 @@ test("R12 conversation HTTP VMs are strict, nullable-explicit, and safe-integer 
   assert.equal(conversationSchema.safeParse({ ...baseConversation, storage_path: "/secret" }).success, false);
 });
 
+test("R15 B conversation VM carries an additive optional is_dm, and the DM open request/result VMs are strict", () => {
+  const conversationSchema = requiredSchema<Record<string, unknown>>("conversationVmSchema");
+  const openDmRequestSchema = requiredSchema<Record<string, unknown>>("openDmRequestSchema");
+  const openDmResultSchema = requiredSchema<Record<string, unknown>>("openDmResultVmSchema");
+  const baseConversation = {
+    id: conversationId,
+    workspace_id: workspaceId,
+    project_id: projectId,
+    kind: "collab",
+    title: "私聊",
+    parent_conversation_id: null,
+    source_message_id: null,
+    visibility: "private",
+    next_seq: 0,
+    created_by: userId,
+    participant_role: "owner",
+    cuu_enabled: false,
+    created_at: "2026-07-15T08:30:00.123Z",
+    updated_at: "2026-07-15T08:31:00.123Z"
+  };
+
+  // is_dm 是 additive optional：不带它的普通会话 VM 原样通过（roundtrip 不凭空补键）。
+  assert.deepEqual(conversationSchema.parse(baseConversation), baseConversation);
+  // DM 会话 VM 带 is_dm=true 也通过，且 roundtrip 保留该键。
+  const dmConversation = { ...baseConversation, is_dm: true };
+  assert.deepEqual(conversationSchema.parse(dmConversation), dmConversation);
+  // is_dm 必须是布尔——非布尔 fail-closed。
+  assert.equal(conversationSchema.safeParse({ ...baseConversation, is_dm: "yes" }).success, false);
+
+  // 开聊请求体：只接受 user_id（uuid），拒绝缺失/非法/多余键。
+  assert.equal(openDmRequestSchema.safeParse({ user_id: participantUserId }).success, true);
+  assert.equal(openDmRequestSchema.safeParse({}).success, false);
+  assert.equal(openDmRequestSchema.safeParse({ user_id: "not-a-uuid" }).success, false);
+  assert.equal(openDmRequestSchema.safeParse({ user_id: participantUserId, extra: 1 }).success, false);
+
+  // 开聊结果 VM：严格包一个会话 VM。
+  assert.deepEqual(openDmResultSchema.parse({ conversation: dmConversation }), { conversation: dmConversation });
+  assert.equal(openDmResultSchema.safeParse({ conversation: dmConversation, extra: 1 }).success, false);
+});
+
+test("R15 B dm list VM: 2 distinct participants with exactly one self, over a real dm conversation", () => {
+  const dmListSchema = requiredSchema<Record<string, unknown>>("dmListVmSchema");
+  const dmConversation = {
+    id: conversationId,
+    workspace_id: workspaceId,
+    project_id: projectId,
+    kind: "collab",
+    title: "私聊",
+    parent_conversation_id: null,
+    source_message_id: null,
+    visibility: "private",
+    next_seq: 0,
+    created_by: userId,
+    participant_role: "owner",
+    cuu_enabled: false,
+    is_dm: true,
+    created_at: "2026-07-15T08:30:00.123Z",
+    updated_at: "2026-07-15T08:31:00.123Z"
+  };
+  const item = {
+    conversation: dmConversation,
+    participants: [
+      { user_id: userId, nickname: "me", is_self: true },
+      { user_id: participantUserId, nickname: "peer", is_self: false }
+    ]
+  };
+
+  // 正常一条 DM roundtrip 保留。
+  assert.deepEqual(dmListSchema.parse({ items: [item] }), { items: [item] });
+  // 空列表也是合法的（还没有任何 DM）。
+  assert.equal(dmListSchema.safeParse({ items: [] }).success, true);
+
+  // 会话必须 is_dm=true——普通会话（不带 is_dm）不许混进 DM 列表。
+  const { is_dm: _omit, ...plainConversation } = dmConversation;
+  assert.equal(dmListSchema.safeParse({ items: [{ ...item, conversation: plainConversation }] }).success, false);
+  // 参与者必须恰好 2 人。
+  assert.equal(dmListSchema.safeParse({ items: [{ ...item, participants: [item.participants[0]] }] }).success, false);
+  // 必须恰好一名 is_self。
+  assert.equal(
+    dmListSchema.safeParse({
+      items: [{ ...item, participants: [{ ...item.participants[0] }, { ...item.participants[1], is_self: true }] }]
+    }).success,
+    false
+  );
+  // 参与者不能是同一个人（重复 user_id）。
+  assert.equal(
+    dmListSchema.safeParse({
+      items: [{ ...item, participants: [item.participants[0], { ...item.participants[1], user_id: userId }] }]
+    }).success,
+    false
+  );
+  // 严格对象：多余键 fail-closed。
+  assert.equal(dmListSchema.safeParse({ items: [item], extra: 1 }).success, false);
+});
+
 test("R12 message VMs validate text/file cards fail-closed and bound future content records", () => {
   const schema = requiredSchema<Record<string, unknown>>("conversationMessageVmSchema");
   const base = {

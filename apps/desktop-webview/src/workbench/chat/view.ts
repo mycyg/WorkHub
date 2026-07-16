@@ -1,7 +1,8 @@
 // WorkHub 桌面 · 群聊/协同会话共用视图——imperative 挂载/事件绑定层（照 shell.ts/rail.ts 的分工：纯渲染在
 // render.ts，这里只负责拉数据、绑 DOM 事件、维护会话内的瞬态状态）。批 2 范围：文本+file_card 发送、
-// @ 成员/文件 picker（真实）、# 会话与 / 技能 picker（外壳，「即将可用」灰态，见 render.ts 的
-// renderComingSoonPickerHtml）、SSE 接线（断线指数退避重连+重连后 afterSeq 补缺口）、typing 节流。
+// @ 成员/文件 picker（真实）、SSE 接线（断线指数退避重连+重连后 afterSeq 补缺口）、typing 节流。
+// # 会话引用 / / 技能唤起的假「即将上线」picker 已在 G-desktop 止血批 1 撤线（renderPicker() 打这两个
+// 触发符时就地清空挂载点，不再渲染任何东西）——解析器 trigger-parser.ts 还在，真要接的时候见那里注释。
 // R12（final-turns-wiring）起：input.conversationKind === 'collab' 时，发一条文本消息之后会自动请求
 // 一轮 Cuu 回应（POST /conversations/:id/turns），流式 delta 拼进临时气泡，落定后换成真消息——
 // 逻辑全部下沉进 turn.ts 的纯函数（shouldRequestConversationTurn/appendTurnDelta/
@@ -34,6 +35,7 @@ import {
   deleteConversationMessageFeedback,
   editConversationMessage,
   fetchConversationMessagesPage,
+  fetchConversationParticipants,
   fetchConversationPins,
   fetchConversationReceipts,
   fetchLatestConversationMessagesPage,
@@ -41,6 +43,8 @@ import {
   fetchNotifications,
   fetchOlderConversationMessagesPage,
   fetchPresence,
+  otherParticipantUserIds,
+  patchConversationCuu,
   patchMyAiMode,
   pinConversationMessage,
   pingConversationTyping,
@@ -61,6 +65,7 @@ import { decideFeedbackToggle, normalizeFeedbackNote } from "./feedback.js";
 import { pickDispatchAskCatchupNotification, renderDispatchAskCatchupBannerHtml } from "./dispatch-ask-catchup.js";
 import {
   parseIncomingActionCardUpdated,
+  parseIncomingConversationCuuUpdated,
   parseIncomingMessageCreated,
   parseIncomingMessageDelta,
   parseIncomingMessageUpdated,
@@ -93,10 +98,10 @@ import {
   modePatchFailedText,
   reassignPickerMemberIds,
   renderChatEmptyStateHtml,
-  renderComingSoonPickerHtml,
   renderComposerHtml,
   renderConnectionBannerHtml,
   renderConversationAccessDeniedHtml,
+  renderCuuToggleHtml,
   renderCuuTurnErrorHtml,
   renderCuuTurnPendingHtml,
   renderDaySeparatorHtml,
@@ -105,12 +110,14 @@ import {
   renderJumpToUnreadHtml,
   renderLoadEarlierHtml,
   renderMemberBarHtml,
+  renderDmHeadBarHtml,
   renderMentionPickerHtml,
   renderMessageHtml,
   renderModeChipHtml,
   renderModeErrorHintHtml,
   renderModeObserveOnlyHintHtml,
   renderModePopoverHtml,
+  renderToolActivityGroupHtml,
   renderNoAiProviderBannerHtml,
   renderObserverAnalyzingHtml,
   renderPendingOutgoingHtml,
@@ -454,6 +461,12 @@ export function mountChatView(
     // R13 终验修复（个人空间单聊必回）：当前项目是否个人空间——main 会话在个人空间里是 1:1 单聊，
     // turn 通道（自动请回应/模式 chip/流式气泡）全部放行；团队项目的 main 不受影响。缺省 false。
     projectIsPersonal?: boolean;
+    // R15 批 B（人对人私聊）：这是一条 DM（对方一个真人，kind 仍是 collab）——会话头改渲「对方昵称 + 在线
+    // 点」而不是「N 位成员 + Cuu · 全员群聊」。缺省 false（普通协同/主区照旧渲成员条）。
+    isDm?: boolean;
+    // R15 批 B：会话级 Cuu 硬开关（G1）——false 时不自动请 Cuu 回话（isCollabConversation 收紧，见下）。
+    // DM 默认 false（B5 拍板），普通协同/主区缺省当 true（既有行为不变，不特判 DM——纯由 cuu_enabled 驱动）。
+    cuuEnabled?: boolean;
     currentUserId: string;
     members: readonly WorkbenchMemberVM[];
     getClientToken: () => string | undefined;
@@ -468,6 +481,18 @@ export function mountChatView(
     // R14 批 APPROVE-CHAT（M1 接活）：产出卡「看提议」点击 → 右栏打开提议详情（proposalPanel，shell.ts 挂载
     // 一次、活过切换，与 drive/army 共用右栏插槽）。可选，测试/未来消费者不必补桩，同 onOpenDriveFile。
     onOpenProposal?: (proposalId: string) => void;
+    // R15 批 A6（产出卡内联批准）：产出卡「批准」内联按钮点击——宿主（shell.ts）用右栏同一套
+    // reviewProposalWithoutMerge 动作处理，返回的 Promise 决定本地忙态/落定态回流。可选：不接（测试/其它
+    // 宿主）时产出卡不渲内联批准/打回按钮，只留「看提议」（proposalInlineActionsEnabled 据此判定）。
+    onApproveProposal?: (proposalId: string) => Promise<void>;
+    // R15 批 A6：产出卡「打回」按钮点击——打回要写理由，不内联提交，宿主打开右栏并聚焦理由输入。可选。
+    onRequestChangesProposal?: (proposalId: string) => void;
+    // R16-W3：产出卡「在编辑器中查看」轻链点击——宿主（shell.ts）在中栏打开变更编辑器（逐句 tracked
+    // changes）。可选：不接（测试/其它宿主）时轻链不渲（proposalEditorLinkEnabled 据此判定）。
+    onOpenProposalInEditor?: (proposalId: string) => void;
+    // R15 批 I2（决策 digest 卡）：pending_digest 卡「打开收件箱」按钮点击——宿主（shell.ts）切中栏到 I1
+    // 的决策收件箱视图（centerTab='inbox'）。可选：不接（测试/其它宿主）时 digest 卡不渲这个按钮。
+    onOpenInbox?: () => void;
     // R14 批 CHAT（桌宠彩蛋，stretch）：有人给 Cuu 的一条消息新加了个反应时，把该露的情绪信号交出去
     // （celebrating/worried/thinking，见 reaction-emotion.ts 的映射）。detection 在这里做——只有本地持
     // 有上一份 reactions 快照的 view.ts 能 diff 出「新增了哪个键」（reaction.updated 是全量聚合，无增量）。
@@ -494,6 +519,10 @@ export function mountChatView(
   // R14 批 APPROVE-CHAT（档① 本地乐观回流）：本机在右栏审批过的提议 id——产出卡据此追加「已处理」覆盖标。
   // 瞬态、不落库；重挂 chat 视图（切项目/会话）自然清空，落定态以服务端档③ 的 proposal_settled 系统消息为准。
   const settledProposalIds = new Set<string>();
+  // R15 批 A6（产出卡内联批准）：某份提议的内联批准正在飞（markBusy）+ 内联批准失败的温和行内提示，
+  // 都是瞬态、不落库、按 proposal id 索引（同 actionCardItemBusyAction/actionCardItemErrors 的既有纪律）。
+  const busyProposalIds = new Set<string>();
+  const proposalActionErrors = new Map<string, string>();
   let attachments: ComposerAttachmentChip[] = [];
   let activeTrigger: ComposerTriggerMatch | undefined;
   let mentionMembers: MentionPickerMember[] = [];
@@ -530,9 +559,21 @@ export function mountChatView(
   // 连事件处理都不会被触发）。myMode undefined = 还没拉到 GET /api/me/ai-profile 或者拉失败——诚实
   // 显示「模式」，不假装知道当前档（见 loadMyAiProfile）。modePopoverOpen/modeErrorText 都是这个
   // 功能自己的瞬态 UI 状态，不落库。
-  const isCollabConversation = shouldRequestConversationTurn(input.conversationKind, {
+  // R15 批 B（人对人私聊）：再叠一道会话级 Cuu 硬开关——cuu_enabled=false 的会话（DM 默认如此，也含用户
+  // 手动关掉 Cuu 的协同群）不该自动请 Cuu 回话（否则每发一句都撞服务端 409 conversation_turn_cuu_disabled，
+  // 在人对人私聊里尤其突兀）。cuuEnabled 缺省当 true——既有调用点不传，行为完全不变（不特判 DM，纯由
+  // cuu_enabled 驱动这条闸）。false 时 composer 也不渲染模式 chip、不走流式气泡（与「Cuu 不在场」一致）。
+  // R15 批 cuu-toggle：cuu_enabled 现在可能在挂载期间被翻转（本地 PATCH /cuu 成功，或收到别的客户端翻转
+  // 后广播的 conversation.cuu.updated）——collabConversationBase 只算一次（会话种类/个人空间归属不会
+  // 中途变），isCollabConversation 随 cuuEnabled 派生，见下面的 applyCuuEnabledChange。
+  const collabConversationBase = shouldRequestConversationTurn(input.conversationKind, {
     personalProject: input.projectIsPersonal
   });
+  let cuuEnabled = input.cuuEnabled ?? true;
+  let isCollabConversation = collabConversationBase && cuuEnabled;
+  // R15 批 cuu-toggle：头部开关「正在翻」的忙态（markBusy 手感，同 spotlight/views/attention.ts 的既有
+  // 取舍）——发起 PATCH 前立即置真、往返落定（成功或失败）后清掉，渲染层据此禁用按钮 + 换「处理中…」文案。
+  let cuuToggleBusy = false;
   let myMode: AiMode | undefined;
   let modePopoverOpen = false;
   let modeErrorText: string | undefined;
@@ -545,6 +586,11 @@ export function mountChatView(
   //    发起操作时先清掉（见 submitActionCardDecision/submitActionCardUndo）。
   let openReassignItemId: string | undefined;
   let actionCardItemErrors = new Map<string, string>();
+  // G-desktop 止血批 6：条目当前正在飞的 decide/undo 动作，按条目 id 索引——照 spotlight/views/
+  // attention.ts 的 markBusy 手感，submitActionCardDecision/submitActionCardUndo 发起请求前立即写入、
+  // 往返落定（成功或失败）后清掉，渲染层据此把命中的按钮禁用 + 换「…中」文案（见 render.ts
+  // renderDecideItemActionsHtml/renderExecuteItemActionsHtml）。
+  let actionCardItemBusyAction = new Map<string, ActionCardItemDecisionAction | "undo">();
   // R13 批 P2（拍板链路收尾）：dispatch_ask 错过补偿——只在主区（群聊）里查，见 dispatch-ask-catchup.ts
   // 顶部注释("群里"派活问询才有这条追赶提醒；协同会话是 1:1 单聊，Cuu 有没有回应本来就在眼前，
   // 没有"错过"的场景)。undefined = 还没查完/查失败（诚实地不渲染，不是查到了"没有"）。
@@ -601,9 +647,12 @@ export function mountChatView(
   let bufferedMessageUpdates: ConversationMessageVM[] = [];
   let bufferedReactionUpdates: IncomingReactionUpdate[] = [];
 
-  // 成员条里除自己以外的成员 id（已读 N/M 的分母 M；presence 也用得到成员 id 全集）——挂载时算一次，
-  // 会话/成员在切项目时整块重挂（shell.ts 的 renderCenter），不会中途变。
-  const otherMemberIds = input.members.map((member) => member.user_id).filter((id) => id !== input.currentUserId);
+  // 成员条里除自己以外的成员 id（已读 N/M 的分母 M；presence 也用得到成员 id 全集）——挂载时算一次
+  // 兜底值（会话/成员在切项目时整块重挂，见 shell.ts 的 renderCenter）。
+  // R15 批 cuu-toggle：这个兜底值对 main（workspace_members 现状）和 DM（shell.ts 已经传入两名真实
+  // 参与者，见 dm.ts dmMembersFromParticipants）都是最终值；非 DM 的 collab 会话会在 loadParticipants
+  // 拉到真实参与者后就地替换（小群「已读 N/M」分母修复——旧病灶是这里一直拿整个工作区成员当分母）。
+  let otherMemberIds = input.members.map((member) => member.user_id).filter((id) => id !== input.currentUserId);
   const memberUserIds = input.members.map((member) => member.user_id);
 
   const membersMap = membersById(input.members);
@@ -613,6 +662,7 @@ export function mountChatView(
     currentUserId: input.currentUserId,
     expandedMessageIds,
     actionCardItemErrors,
+    actionCardItemBusyAction,
     // exactOptionalPropertyTypes：openReassignItemId/reassignHighlightIndex 都是可选字段，undefined
     // 时整个键都不出现，不是"键在、值是 undefined"（那样和 currentUserId 那种"键必须在、值可以是
     // undefined"的字段不是一回事，TS 会拒绝后者赋给前者）。
@@ -626,7 +676,16 @@ export function mountChatView(
     ...(confirmDeleteMessageId !== undefined ? { confirmDeleteMessageId } : {}),
     // R14 批 FEEDBACK：反馈备注编辑框瞬态——同上，undefined 时整个键不出现。
     ...(feedbackNoteEditor !== undefined ? { feedbackNoteEditor } : {}),
-    settledProposalIds
+    settledProposalIds,
+    // R15 批 A6（产出卡内联批准）：只有宿主接了 onApproveProposal 才在产出卡上渲内联批准/打回按钮
+    // （否则只渲「看提议」，不摆假按钮）。忙态/错误按 proposal id 索引透传给渲染层。
+    proposalInlineActionsEnabled: input.onApproveProposal !== undefined,
+    busyProposalIds,
+    proposalActionErrors,
+    // R15 批 I2（决策 digest 卡）：只有宿主接了 onOpenInbox 才在 pending_digest 卡上渲「打开收件箱」按钮。
+    pendingDigestInboxEnabled: input.onOpenInbox !== undefined,
+    // R16-W3：只有宿主接了 onOpenProposalInEditor 才在产出卡上渲「在编辑器中查看」轻链（且卡带 diffstat）。
+    proposalEditorLinkEnabled: input.onOpenProposalInEditor !== undefined
   });
 
   container.innerHTML = `<div class="wh-wb-chat">
@@ -673,10 +732,79 @@ export function mountChatView(
   }
 
   function renderHead(): void {
-    headEl!.innerHTML = renderMemberBarHtml({ members: input.members, locale: input.locale, onlineUserIds });
+    let headBarHtml: string;
+    if (input.isDm) {
+      // DM：会话头显示对方昵称 + 在线点（对方 = 成员集合里非本人那一位）。
+      const peer = input.members.find((member) => member.user_id !== input.currentUserId);
+      headBarHtml = renderDmHeadBarHtml({
+        peerUserId: peer?.user_id ?? "",
+        peerNickname: peer?.nickname ?? "",
+        online: peer ? onlineUserIds.has(peer.user_id) : false,
+        locale: input.locale
+      });
+    } else {
+      headBarHtml = renderMemberBarHtml({ members: input.members, locale: input.locale, onlineUserIds });
+    }
+    // R15 批 cuu-toggle：main 一律不渲这个开关（主区的 Cuu 参与语义不一样，包括个人空间单聊——保持
+    // "main 一律不渲"这一条简单心智模型，不额外特判个人空间，同服务端 updateCuuEnabled 的取舍对称）；
+    // DM 与非主区协同会话都渲，态随 cuuEnabled/cuuToggleBusy 走。
+    const toggleHtml =
+      input.conversationKind === "collab"
+        ? renderCuuToggleHtml({ enabled: cuuEnabled, busy: cuuToggleBusy, locale: input.locale })
+        : "";
+    headEl!.innerHTML = headBarHtml + toggleHtml;
     hydrateAvatarPhotos(headEl!);
   }
   renderHead();
+
+  // R15 批 cuu-toggle：cuuEnabled 翻转后的统一收尾——重算 isCollabConversation、重渲头部开关 + 依赖它的
+  // composer 模式 chip（renderComposerChrome 内部按 isCollabConversation 决定要不要渲模式 chip；
+  // renderModeHint 在非协同会话本就清空，见两者各自顶部注释）。注意：isCollabConversation 只影响这两处
+  // UI 展示，不影响 issueSend 是否会自动请求 turn（那条闸只看 conversationKind，见 turn.ts 顶部注释）——
+  // cuu_enabled=false 时能不能真的请到 Cuu 回话，权威判断永远在服务端（409 conversation_turn_cuu_disabled，
+  // 见 turn.ts 的错误文案表），这里只是让本地的模式相关展示不落后于最新的开关状态。本地 PATCH 成功、SSE
+  // 广播同步都走这一条，值真的没变时短路——不为一次无意义的重渲付出成本，也不产生视觉抖动。
+  function applyCuuEnabledChange(next: boolean): void {
+    if (cuuEnabled === next) {
+      return;
+    }
+    cuuEnabled = next;
+    isCollabConversation = collabConversationBase && cuuEnabled;
+    renderHead();
+    renderModeHint();
+    renderComposerChrome();
+  }
+
+  // R15 批 cuu-toggle：头部开关点击——PATCH /cuu 翻转。markBusy 手感：发起前立即置忙 + 重渲（按钮禁用、
+  // 换「处理中…」文案），往返落定（成功或失败）后清掉。刻意不做乐观翻转——这个开关会改变"发消息会不会
+  // 撞 409"这种更重的语义，等服务端确认更稳妥，避免"刚点开又被回滚关掉"的抖动观感（同 selectMode 的
+  // 乐观更新取舍不同，是有意的：那里翻错了只是文字提示，这里翻错了会让用户以为 Cuu 在场其实不在）。
+  // main 不渲这个按钮，理论上点不到；这里仍然按会话种类把关，双重保险。
+  function toggleCuuParticipation(): void {
+    if (input.conversationKind !== "collab" || cuuToggleBusy) {
+      return;
+    }
+    cuuToggleBusy = true;
+    renderHead();
+    patchConversationCuu(input.client, input.conversationId, !cuuEnabled)
+      .then((result) => {
+        if (disposed) {
+          return;
+        }
+        cuuToggleBusy = false;
+        applyCuuEnabledChange(result.conversation.cuu_enabled);
+        // applyCuuEnabledChange 在值真的没变时会短路、不重渲——这里始终补一次，保证忙态无论如何都能
+        // 从界面上消掉（不依赖"这次翻转是否真的改变了值"这个跟忙态无关的条件）。
+        renderHead();
+      })
+      .catch(() => {
+        if (disposed) {
+          return;
+        }
+        cuuToggleBusy = false;
+        renderHead();
+      });
+  }
 
   function textareaEl(): HTMLTextAreaElement | null {
     return composerWrapEl!.querySelector<HTMLTextAreaElement>("[data-wb-chat-input]");
@@ -857,14 +985,40 @@ export function mountChatView(
     let html = renderLoadEarlierHtml(currentLoadEarlierState(), input.locale);
     for (const group of groups) {
       html += renderDaySeparatorHtml(group.label);
-      for (const message of group.messages) {
+      // R16-W1（工作台聊天流升级）：把一轮 turn 里连续的 tool_note 消息在渲染层归组成一条可折叠摘要行
+      // （renderToolActivityGroupHtml）。消息数据不动，仍逐条落库/广播——这里只是把相邻的活 tool_note
+      // 折进一个玻璃条。未读分割线可能命中 Cuu 的 tool_note（sender_user_id=null，不算「自己发的」，见
+      // read-state.ts unreadDividerBeforeMessageId），所以在组内遇到分割线目标就截断这一组、让分割线正常
+      // 落在下一组之前（已读回执的锚点只会是本人消息，永远不是 tool_note，组内无需处理）。
+      const items = group.messages;
+      let i = 0;
+      while (i < items.length) {
+        const message = items[i]!;
         if (dividerBeforeId !== undefined && message.id === dividerBeforeId) {
           html += renderUnreadDividerHtml(input.locale);
+        }
+        if (message.kind === "tool_note" && message.deleted_at === undefined) {
+          const run: Array<Extract<ConversationMessageVM, { kind: "tool_note" }>> = [];
+          let j = i;
+          while (
+            j < items.length &&
+            items[j]!.kind === "tool_note" &&
+            items[j]!.deleted_at === undefined &&
+            // 分割线目标（非本组第一条）截断本组：让它成为下一组的起点，分割线在下一轮迭代照常渲。
+            (j === i || items[j]!.id !== dividerBeforeId)
+          ) {
+            run.push(items[j] as Extract<ConversationMessageVM, { kind: "tool_note" }>);
+            j += 1;
+          }
+          html += renderToolActivityGroupHtml(run, ctx);
+          i = j;
+          continue;
         }
         html += renderMessageHtml(message, ctx);
         if (readSummary && message.id === readSummary.messageId) {
           html += renderReadReceiptHtml({ readCount: readSummary.readCount, total: readSummary.total, locale: input.locale });
         }
+        i += 1;
       }
     }
     for (const record of pending) {
@@ -984,7 +1138,10 @@ export function mountChatView(
       });
       return;
     }
-    slot.innerHTML = renderComingSoonPickerHtml({ locale: input.locale, trigger: activeTrigger.trigger as "#" | "/" });
+    // G-desktop 止血批 1：# 会话引用 / / 技能唤起还没真正接线——不再弹一块「即将上线」的假 picker
+    // （04 §4 铁律 3），保持挂载点空白，就跟什么都没触发一样诚实。见 render.ts 的
+    // renderComingSoonPickerHtml 顶部注释：函数留着没删，真接线时把这一行换回调它即可。
+    slot.innerHTML = "";
   }
 
   // R13 H1（键盘可达性）：方向键/Enter 选中 @ picker 当前高亮的那一行——跟鼠标点 data-wb-chat-pick-*
@@ -1196,6 +1353,29 @@ export function mountChatView(
       renderHead();
     } catch {
       // best-effort：拉不到就保持上一次的在线集合（或空集），不清成「全离线」骚扰视觉，也不重试轰炸。
+    }
+  }
+
+  // R15 批 cuu-toggle：非 DM 的协同会话——挂载后拉一次真实参与者集合，把「已读 N/M」的分母从"整个工作区
+  // 成员"收紧到"这条会话真正的参与者"（旧病灶：非 DM 的 collab 会话头本就渲 input.members 全量工作区
+  // 成员条，otherMemberIds 因此继承了同一个错误分母）。main 不拉——服务端 listParticipants 对它也只回
+  // scope:"workspace" 空列表，拉了白拉，继续用 workspace_members 现状分母；DM 不拉——shell.ts 传进来的
+  // input.members 已经是 dmMembersFromParticipants 给的两名真实参与者，otherMemberIds 挂载时就已经是对
+  // 的（固定 2 人分母）。失败静默降级回挂载时算的分母，不让已读回执因为这个新端点故障而从界面上消失。
+  async function loadParticipants(): Promise<void> {
+    if (input.conversationKind !== "collab" || input.isDm) {
+      return;
+    }
+    try {
+      const result = await fetchConversationParticipants(input.client, input.conversationId);
+      if (disposed || result.scope !== "participants") {
+        return;
+      }
+      otherMemberIds = otherParticipantUserIds(result.participants, input.currentUserId);
+      renderScroll();
+    } catch {
+      // best-effort：拉不到就保持挂载时算的降级分母（workspace_members），不重试轰炸（同
+      // loadPresence/loadMyAiProfile 的既有取舍）。
     }
   }
 
@@ -1475,6 +1655,24 @@ export function mountChatView(
     actionCardItemErrors = next;
   }
 
+  // G-desktop 止血批 6：markBusy 手感的两半——发起前标记、往返落定后清掉（成功/失败都要清，否则按钮
+  // 永久卡在禁用态）。同一条目已经在飞时提交函数直接短路，不重复发请求（照 spotlight/proposal 面板的
+  // 既有 `if (busy) return` 纪律，这里按条目粒度而不是整面板粒度，因为不同条目理应能各自独立提交）。
+  function markActionCardItemBusy(itemId: string, action: ActionCardItemDecisionAction | "undo"): void {
+    const next = new Map(actionCardItemBusyAction);
+    next.set(itemId, action);
+    actionCardItemBusyAction = next;
+  }
+
+  function clearActionCardItemBusy(itemId: string): void {
+    if (!actionCardItemBusyAction.has(itemId)) {
+      return;
+    }
+    const next = new Map(actionCardItemBusyAction);
+    next.delete(itemId);
+    actionCardItemBusyAction = next;
+  }
+
   // decide/undo 成功后用 HTTP 响应的条目 VM 就地更新本地快照——同一条合并函数（timeline.ts 的
   // applyActionCardUpdate）也是 SSE 回流用的那条，见其顶部注释。找不到归属消息（理论上不该发生：
   // 按钮只会渲在本地已经持有的消息上）就静默跳过，不崩——后续 SSE 事件/reconcile 仍会补齐。
@@ -1521,12 +1719,18 @@ export function mountChatView(
   }
 
   function submitActionCardDecision(itemId: string, action: ActionCardItemDecisionAction, assigneeUserId?: string): void {
+    // 同一条目已有一个决定在飞：短路，不重复提交（双击/连点防护，照 markBusy 手感）。
+    if (actionCardItemBusyAction.has(itemId)) {
+      return;
+    }
     clearActionCardItemError(itemId);
     openReassignItemId = undefined;
     reassignHighlightIndex = undefined;
+    markActionCardItemBusy(itemId, action);
     renderScroll();
     decideActionCardItem(input.client, { itemId, action, ...(assigneeUserId ? { assigneeUserId } : {}) })
       .then((result) => {
+        clearActionCardItemBusy(itemId);
         if (disposed) {
           return;
         }
@@ -1534,15 +1738,21 @@ export function mountChatView(
         renderScroll();
       })
       .catch((error) => {
+        clearActionCardItemBusy(itemId);
         handleActionCardDecisionError(itemId, error);
       });
   }
 
   function submitActionCardUndo(itemId: string): void {
+    if (actionCardItemBusyAction.has(itemId)) {
+      return;
+    }
     clearActionCardItemError(itemId);
+    markActionCardItemBusy(itemId, "undo");
     renderScroll();
     undoActionCardItem(input.client, { itemId })
       .then((result) => {
+        clearActionCardItemBusy(itemId);
         if (disposed) {
           return;
         }
@@ -1550,6 +1760,7 @@ export function mountChatView(
         renderScroll();
       })
       .catch((error) => {
+        clearActionCardItemBusy(itemId);
         handleActionCardDecisionError(itemId, error);
       });
   }
@@ -2139,6 +2350,15 @@ export function mountChatView(
           }
           return;
         }
+        // R15 批 cuu-toggle：conversation.cuu.updated——别的客户端翻转了这条会话的 Cuu 参与开关，本地
+        // 同步头部开关状态 + isCollabConversation（composer 模式 chip 随之显隐，见 applyCuuEnabledChange
+        // 顶部注释）。不缓冲——只是个布尔状态同步，不产生消息/气泡；值真的没变时 applyCuuEnabledChange
+        // 内部短路，不产生多余重渲。
+        const cuuUpdate = parseIncomingConversationCuuUpdated(event.data, input.conversationId);
+        if (cuuUpdate !== undefined) {
+          applyCuuEnabledChange(cuuUpdate);
+          return;
+        }
         // R14 批 CHAT：conversation.observer.analyzing（瞬态指示灯）——不缓冲（渲在独立指示行区域，不进
         // 滚动区），照 typing 静默丢弃模式，设过期时刻并渲指示灯，TTL 到期或收到行动卡事件即消。
         const observerAnalyzing = parseIncomingObserverAnalyzing(event.data, input.conversationId);
@@ -2691,8 +2911,9 @@ export function mountChatView(
     }
     // R13 H1（键盘可达性）：@ picker 打开着的时候，方向键/Enter/Escape 先喂给它——焦点仍然留在
     // textarea 里（边打字边过滤这条 UX 不能丢，见 mentionHighlightIndex 顶部注释），只是这几个键
-    // 从"移动文本光标/发送/什么都不做"临时改道成"picker 导航"。「即将上线」的 #// picker 没有可选
-    // 行，Escape 仍然生效（关掉它），方向键/Enter 对它是 no-op（activeTrigger.kind !== "mention"）。
+    // 从"移动文本光标/发送/什么都不做"临时改道成"picker 导航"。# / 触发符（G-desktop 止血批 1 起
+    // 不再渲染任何 picker）没有可选行，Escape 仍然生效（关掉 activeTrigger），方向键/Enter 对它是
+    // no-op（activeTrigger.kind !== "mention"）。
     if (activeTrigger?.kind === "mention") {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
@@ -2767,6 +2988,42 @@ export function mountChatView(
     }
   });
 
+  // R15 批 A6（产出卡内联批准）：内联「批准」——复用右栏 reviewProposalWithoutMerge 动作（由 shell.ts 接的
+  // onApproveProposal 执行），markBusy 手感（同一份提议一次只允许一个批准在飞）。成功后本地记进
+  // settledProposalIds（卡上按钮置为「已处理」）+ 依赖服务端档③ 的 proposal_settled「落定行」广播回流；
+  // 失败落一条温和行内提示。合并仍只在右栏，不在这里做。
+  const approveProposalInline = async (proposalId: string) => {
+    if (!input.onApproveProposal || busyProposalIds.has(proposalId) || settledProposalIds.has(proposalId)) {
+      return;
+    }
+    busyProposalIds.add(proposalId);
+    proposalActionErrors.delete(proposalId);
+    renderScroll();
+    try {
+      await input.onApproveProposal(proposalId);
+      if (disposed) {
+        return;
+      }
+      busyProposalIds.delete(proposalId);
+      settledProposalIds.add(proposalId);
+      renderScroll();
+    } catch (error) {
+      if (disposed) {
+        return;
+      }
+      busyProposalIds.delete(proposalId);
+      proposalActionErrors.set(
+        proposalId,
+        error instanceof Error && error.message
+          ? error.message
+          : input.locale === "zh-CN"
+            ? "批准失败，稍后重试"
+            : "Couldn't approve — try again"
+      );
+      renderScroll();
+    }
+  };
+
   scrollEl.addEventListener("click", (event) => {
     if (!(event.target instanceof HTMLElement)) {
       return;
@@ -2799,6 +3056,18 @@ export function mountChatView(
       retryPending(retryBtn.dataset.wbChatRetryPending);
       return;
     }
+    // R16-W1（工作台聊天流升级）：Cuu 文字回应尾部「复制」——按 message id 取当前 VM 的正文写进剪贴板
+    // （不把正文塞进 DOM data 属性，避免长文重复占内存）。剪贴板不可用（老 webview / 非安全上下文）时静默
+    // 吞掉，不弹错——这是纯锦上添花的便利动作。
+    const copyBtn = target.closest<HTMLElement>("[data-wb-chat-copy]");
+    if (copyBtn?.dataset.wbChatCopy) {
+      const targetId = copyBtn.dataset.wbChatCopy;
+      const source = messages.find((candidate) => candidate.id === targetId);
+      if (source && source.kind === "text") {
+        void navigator.clipboard?.writeText?.(source.content.text).catch(() => {});
+      }
+      return;
+    }
     const fileCardBtn = target.closest<HTMLElement>("[data-wb-chat-open-file]");
     if (fileCardBtn?.dataset.wbChatOpenFile) {
       input.onOpenDriveFile?.({
@@ -2811,6 +3080,29 @@ export function mountChatView(
     const openProposalBtn = target.closest<HTMLElement>("[data-wb-chat-open-proposal]");
     if (openProposalBtn?.dataset.wbChatOpenProposal) {
       input.onOpenProposal?.(openProposalBtn.dataset.wbChatOpenProposal);
+      return;
+    }
+    // R15 批 I2（决策 digest 卡）：「打开收件箱」点击 → 宿主切中栏到 I1 的决策收件箱视图（同上抛给 shell 模式）。
+    if (target.closest("[data-wb-chat-open-inbox]")) {
+      input.onOpenInbox?.();
+      return;
+    }
+    // R15 批 A6（产出卡内联批准）：「批准」内联提交（reviewProposalWithoutMerge 由宿主处理）；「打回」不内联，
+    // 打开右栏并聚焦理由输入（打回要写理由，见 proposal/panel.ts 的 openReason）。
+    const approveProposalBtn = target.closest<HTMLElement>("[data-wb-chat-approve-proposal]");
+    if (approveProposalBtn?.dataset.wbChatApproveProposal) {
+      void approveProposalInline(approveProposalBtn.dataset.wbChatApproveProposal);
+      return;
+    }
+    const denyProposalBtn = target.closest<HTMLElement>("[data-wb-chat-deny-proposal]");
+    if (denyProposalBtn?.dataset.wbChatDenyProposal) {
+      input.onRequestChangesProposal?.(denyProposalBtn.dataset.wbChatDenyProposal);
+      return;
+    }
+    // R16-W3：产出卡「在编辑器中查看」→ 宿主在中栏打开变更编辑器（抛给 shell，同 onOpenProposal 模式）。
+    const openEditorBtn = target.closest<HTMLElement>("[data-wb-chat-open-editor]");
+    if (openEditorBtn?.dataset.wbChatOpenEditor) {
+      input.onOpenProposalInEditor?.(openEditorBtn.dataset.wbChatOpenEditor);
       return;
     }
     const clarifyOptionBtn = target.closest<HTMLElement>("[data-wb-chat-clarify-option]");
@@ -3157,6 +3449,17 @@ export function mountChatView(
     }
   });
 
+  // R15 批 cuu-toggle：头部开关是委托监听（headEl 每次 renderHead() 都整块换 innerHTML，直接绑在按钮
+  // 元素上的监听器会随重渲丢失，同 catchupEl/scrollEl 的既有委托模式一致）。
+  headEl.addEventListener("click", (event) => {
+    if (!(event.target instanceof HTMLElement)) {
+      return;
+    }
+    if (event.target.closest("[data-wb-chat-cuu-toggle]")) {
+      toggleCuuParticipation();
+    }
+  });
+
   renderCatchup();
   renderPinBar();
   void loadHistory();
@@ -3165,6 +3468,9 @@ export function mountChatView(
   void loadAiProviderHealth();
   // R14 批 CHAT：挂载时拉一次 presence + 30s 轮询（成员条在线点）。SSE 重连时另有即时刷新（见 onReconnected）。
   void loadPresence();
+  // R15 批 cuu-toggle：非 DM 的协同会话——挂载后拉一次真实参与者集合，修复小群「已读 N/M」分母
+  // （见 loadParticipants 顶部注释）。main/DM 内部短路，不发请求。
+  void loadParticipants();
   presencePollTimer = setInterval(() => {
     if (!disposed) {
       void loadPresence();

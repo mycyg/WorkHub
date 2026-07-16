@@ -56,6 +56,7 @@ type ProductShellCopyKey =
   | "nav.skills"
   | "nav.memory"
   | "nav.project-home"
+  | "nav.project-timeline"
   | "topbar.scope"
   | "topbar.rest"
   | "topbar.admin"
@@ -70,6 +71,7 @@ type ProductShellCopyKey =
   | "rail.nextApprovals"
   | "rail.nextWorkitem"
   | "rail.nextProposal"
+  | "rail.nextConversation"
   | "rail.nextDrive"
   | "rail.nextMeetings"
   | "rail.nextNotifications"
@@ -148,6 +150,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "nav.skills": "技能",
     "nav.memory": "记忆",
     "nav.project-home": "本项目",
+    "nav.project-timeline": "时间线",
     "topbar.scope": "网页版",
     "topbar.rest": "实时数据",
     "topbar.admin": "管理员",
@@ -162,6 +165,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "rail.nextApprovals": "打回理由会回灌给 AI 继续改。",
     "rail.nextWorkitem": "核对验收项、AI 轨迹和交付物。",
     "rail.nextProposal": "审查风险、证据和可回滚路径。",
+    "rail.nextConversation": "这是只读镜像，完整协作请回桌面工作台。",
     "rail.nextDrive": "检查正式交付物、版本历史和评论草稿入口。",
     "rail.nextMeetings": "确认待处理洞察，再进入草稿与提议链路。",
     "rail.nextNotifications": "先处理需要你决定的通知，再归档普通消息。",
@@ -239,6 +243,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "nav.skills": "Skills",
     "nav.memory": "Memory",
     "nav.project-home": "This project",
+    "nav.project-timeline": "Timeline",
     "topbar.scope": "Web manager",
     "topbar.rest": "Live data",
     "topbar.admin": "Admin",
@@ -253,6 +258,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "rail.nextApprovals": "Rejection reasons flow back into AI work.",
     "rail.nextWorkitem": "Review acceptance, trace, and deliverables.",
     "rail.nextProposal": "Check risk, evidence, and rollback path.",
+    "rail.nextConversation": "This is a read-only mirror — collaborate in the desktop workbench.",
     "rail.nextDrive": "Inspect accepted deliverables, version history, and comment draft entry points.",
     "rail.nextMeetings": "Confirm pending insights, then continue into draft and proposal review.",
     "rail.nextNotifications": "Handle decisions first, then archive routine updates.",
@@ -440,14 +446,17 @@ function pageMetrics(page: WebProductShellPage, rendered: WebProductShellSurface
 // R10-S1.5→Nav-v2 导航信息架构：「提需求」是动作不是地点——升为置顶主 CTA；工作组(总览/项目/审批
 // +detail-only 激活页)常驻无标题；项目资产/团队/管理三组默认折叠(当前页所在组自动展开)，点组名展开。
 // 普通成员默认视野=1 CTA + 3 项 + 3 个组名。
-const productNavGroups: ReadonlyArray<{
+// G-web 止血批：导出供 apps/web/src/routes.test.ts 做「路由第 4 个同步点」门禁——校验
+// webRouteRegistry 的每个 key 都能在这里的某个组里找到导航入口（intake 走置顶 CTA，是唯一
+// 允许不在任何组 keys 里的例外，见下方 renderProductNav 的 intake 特判）。
+export const productNavGroups: ReadonlyArray<{
   id: string;
   titleKey: ProductShellCopyKey;
   keys: ReadonlySet<string>;
   adminOnly?: boolean;
   collapsible?: boolean;
 }> = [
-  { id: "work", titleKey: "nav.group.work", keys: new Set(["home", "projects", "project-home", "approvals", "workitem", "proposal", "replay"]) },
+  { id: "work", titleKey: "nav.group.work", keys: new Set(["home", "projects", "project-home", "project-timeline", "approvals", "workitem", "proposal", "conversation", "replay"]) },
   { id: "assets", titleKey: "nav.group.assets", keys: new Set(["drive", "meetings", "knowledge", "search"]), collapsible: true },
   // R14 批 MEM：记忆管理面对全体成员可读（团队技能 tab 的编辑/停用才收管理员），不进 adminOnly
   // 的 admin 组——否则普通成员连「关于我」自己的记忆都点不到导航入口（见 03-mem-design §6.1）。

@@ -63,6 +63,10 @@ type ConversationParticipantRole = "owner" | "member";
 // R14 批 CHAT：精选五键反应的 ASCII slug 集合（emoji 字形只在桌面渲染层映射，不入 schema/契约）。
 type ConversationReactionKey = "approve" | "disagree" | "done" | "question" | "watch";
 type ActionCardStatus = "active" | "superseded";
+// R15 批 D4：卡片来源——observer=LLM 观察者从会话讨论里拎出的卡；system=服务端规则直接插的卡
+// （如 ddl-chase 找人）。system 卡绕开观察者水位线状态机（不设 activeCardId、analyzed_to_seq 置 NULL），
+// 观察者的读写路径全部限定 origin='observer'，两类卡在同一会话共存互不干扰。
+type ActionCardOrigin = "observer" | "system";
 type ActionCardItemKind = "execute" | "decide" | "observe";
 type ActionCardConfidence = "high" | "mid" | "low";
 type ActionCardItemStatus = "running" | "done" | "undone" | "waiting_decision" | "dismissed" | "escalated";
@@ -337,6 +341,17 @@ export const projects = pgTable(
     // 普通 projects 行（主区/网盘/工单全链路零改动直接复用），只是团队级列表要按这一列过滤掉它、
     // 会话可见性也要收在 owner 一人（见 conversations.ts 的 isPersonal-aware 可见性条件）。
     isPersonal: boolean("is_personal").notNull().default(false),
+    // R15 批 B（人对人私聊）：is_dm_container=true 是系统惰性建的「直达消息」容器项目——每工作区至多
+    // 一个（见下方部分唯一索引），只用来挂 DM 会话（collab + dm_key）。绝不出现在任何项目列表/树/
+    // 工作台 VM，不可归档/建工单/建普通会话——围栏在 repository/service 层强制（listForWorkspace、
+    // createCollab、findProjectById、findFirstActiveProject* 等逐个过滤，见对应仓库）。
+    isDmContainer: boolean("is_dm_container").notNull().default(false),
+    // R16 批 W4a（项目级自定义指令）：项目设置里的一段自由文本，注入该项目所有 Cuu 对话回复与
+    // agent-run 的 worker system prompt（优先级=高于通用默认、低于系统工作纪律）——可空，留空即不注入
+    // （见 apps/api/src/services/project-instructions.ts 与 packages/agent/src/turns/prompt.ts 的
+    // buildTurnProjectInstructionsSection）。长度上限 4000 字符在契约层（PROJECT_INSTRUCTIONS_MAX_CHARS）
+    // 校验，DB 侧不加 CHECK——additive-only 迁移，纯加列。
+    instructionsMd: text("instructions_md"),
     ...timestamps()
   },
   (table) => [
@@ -348,7 +363,10 @@ export const projects = pgTable(
     index("projects_deleted_at_idx").on(table.deletedAt),
     // 「我的空间」列表查询用：按 owner 找他名下的个人空间。部分索引只覆盖 is_personal=true 的行，
     // 不占团队项目（多数行）的索引体积。
-    index("projects_personal_owner_idx").on(table.ownerUserId).where(sql`${table.isPersonal}`)
+    index("projects_personal_owner_idx").on(table.ownerUserId).where(sql`${table.isPersonal}`),
+    // R15 批 B：每工作区至多一个 DM 容器项目（workspace 维度部分唯一）——惰性创建的并发双开靠这条
+    // 索引兜底。部分索引只覆盖 is_dm_container=true 的极少数行（每工作区一条）。
+    uniqueIndex("projects_dm_container_uq").on(table.workspaceId).where(sql`${table.isDmContainer}`)
   ]
 );
 
@@ -399,6 +417,9 @@ export const workItems = pgTable(
       onDelete: "set null"
     }),
     sourceWorkItemId: uuid("source_work_item_id").references((): AnyPgColumn => workItems.id, { onDelete: "set null" }),
+    // R15 批 E1（项目时间线）：可空里程碑外键。里程碑软删/删项目时置空（SET NULL）——挂空不影响工作项本身。
+    // 同项目校验在仓库层（attachMilestone 前比对 project_id），不靠复合外键（保持 work_items 主键形状不变）。
+    milestoneId: uuid("milestone_id").references((): AnyPgColumn => projectMilestones.id, { onDelete: "set null" }),
     claimedAt: timestampTz("claimed_at"),
     doneAt: timestampTz("done_at"),
     deliveredAt: timestampTz("delivered_at"),
@@ -430,7 +451,87 @@ export const workItems = pgTable(
     index("work_items_current_spec_id_idx").on(table.currentSpecId),
     index("work_items_main_branch_id_idx").on(table.mainBranchId),
     index("work_items_latest_confidence_id_idx").on(table.latestConfidenceId),
-    index("work_items_deleted_at_idx").on(table.deletedAt)
+    index("work_items_deleted_at_idx").on(table.deletedAt),
+    index("work_items_milestone_id_idx").on(table.milestoneId)
+  ]
+);
+
+// R15 批 E1（项目时间线 / 甘特底座）——见迁移 0064。
+// 项目里程碑：甘特上的菱形节点。due_at 可空（先建后定期）；sort 排项目内顺序；status 只有 open/done。
+// 软删走 deleted_at（读侧一律过滤）。
+export const projectMilestones = pgTable(
+  "project_milestones",
+  {
+    id: id(),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 256 }).notNull(),
+    dueAt: timestampTz("due_at"),
+    sort: integer("sort").notNull().default(0),
+    status: varchar("status", { length: 16 }).$type<"open" | "done">().notNull().default("open"),
+    ...timestamps(),
+    deletedAt: timestampTz("deleted_at")
+  },
+  (table) => [
+    index("project_milestones_project_sort_idx").on(table.projectId, table.sort),
+    index("project_milestones_project_due_idx").on(table.projectId, table.dueAt),
+    check("project_milestones_status_ck", sql`${table.status} in ('open', 'done')`)
+  ]
+);
+
+// 工作项依赖有向边（人类排期意义上的「A 依赖 B」= B 阻塞 A）。task_plan_items.dependsOn 是 agent 任务
+// DAG，跟这个是两码事。复合唯一杜绝重边；CHECK 禁自依赖；同项目 + 插入前环检测在仓库层强制。
+export const workItemDependencies = pgTable(
+  "work_item_dependencies",
+  {
+    id: id(),
+    workItemId: uuid("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
+    dependsOnWorkItemId: uuid("depends_on_work_item_id")
+      .notNull()
+      .references((): AnyPgColumn => workItems.id, { onDelete: "cascade" }),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt()
+  },
+  (table) => [
+    uniqueIndex("work_item_dependencies_pair_uq").on(table.workItemId, table.dependsOnWorkItemId),
+    index("work_item_dependencies_depends_on_idx").on(table.dependsOnWorkItemId),
+    check("work_item_dependencies_no_self_ck", sql`${table.workItemId} <> ${table.dependsOnWorkItemId}`)
+  ]
+);
+
+// R15 批 E3（项目规划 agent）：Cuu 起草的项目级计划草案（里程碑 + 工作项 + 依赖），人审通过后物化落库。
+// 项目级对象——物化前工作项尚不存在，无法复用 work_item 级的 task_plans（work_item_id NOT NULL、agent
+// 子任务 role/预算份额语义完全不同）。payloadJson 存草案本体（局部 ref，物化映射真 uuid）；status 状态机
+// pending_review→approved→materialized，pending_review→rejected（理由回灌下次起草）。见迁移 0065。
+export const projectPlanDrafts = pgTable(
+  "project_plan_drafts",
+  {
+    id: id(),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    status: varchar("status", { length: 16 })
+      .$type<"draft" | "pending_review" | "approved" | "rejected" | "materialized">()
+      .notNull()
+      .default("pending_review"),
+    intentMd: text("intent_md").notNull(),
+    payloadJson: jsonb("payload_json").$type<JsonObject>().notNull().default({}),
+    rationaleMd: text("rationale_md"),
+    reviewReasonMd: text("review_reason_md"),
+    decompositionContextJson: jsonb("decomposition_context_json").$type<JsonObject>().notNull().default({}),
+    resultJson: jsonb("result_json").$type<JsonObject>(),
+    createdByUserId: uuid("created_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+    reviewedByUserId: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+    ...timestamps(),
+    reviewedAt: timestampTz("reviewed_at"),
+    materializedAt: timestampTz("materialized_at")
+  },
+  (table) => [
+    index("project_plan_drafts_project_status_idx").on(table.projectId, table.status),
+    index("project_plan_drafts_workspace_status_idx").on(table.workspaceId, table.status),
+    index("project_plan_drafts_created_at_idx").on(table.createdAt),
+    check(
+      "project_plan_drafts_status_ck",
+      sql`${table.status} in ('draft', 'pending_review', 'approved', 'rejected', 'materialized')`
+    )
   ]
 );
 
@@ -462,6 +563,12 @@ export const projectConversations = pgTable(
     // 与 cuuEnabled 同一个教训：conversationSelection 必须显式投影这两列，否则运行时读到的是 undefined。
     contextSummaryMd: text("context_summary_md"),
     contextSummaryThroughSeq: bigint("context_summary_through_seq", { mode: "number" }).notNull().default(0),
+    // R15 批 B（人对人私聊）：dm_key 非空 ⟺ 这条会话是一对用户的 DM（仍是 kind='collab'，不新增 kind
+    // 枚举/不炸 CHECK 约束）。dm_key = 'dm:' + [两 userId 排序].join(':')，只在 DM 容器项目内出现。
+    // 下方 (project_id, dm_key) 部分唯一索引兜底同一对用户在同一容器至多一条 DM——必须带 project_id：
+    // 同一对用户在两个共享工作区各有一条 DM，dm_key 本身会撞，靠容器项目 id 隔离。conversationSelection
+    // 必须显式投影这一列，否则运行时读到 undefined（同 cuuEnabled/contextSummary 的教训）。
+    dmKey: text("dm_key"),
     // Legacy projects may not have an owner; new conversation creation must still populate this when known.
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     deletedAt: timestampTz("deleted_at"),
@@ -501,6 +608,11 @@ export const projectConversations = pgTable(
     uniqueIndex("project_conversations_active_main_uq")
       .on(table.projectId)
       .where(sql`${table.kind} = 'main' and ${table.deletedAt} is null`),
+    // R15 批 B（人对人私聊）：同一容器项目内一对用户至多一条 DM 会话。带 project_id 限定（见 dmKey
+    // 列注释）；部分索引只覆盖 dm_key 非空的行，普通会话不付索引成本。并发双开撞这条约束后回退查询。
+    uniqueIndex("project_conversations_dm_key_uq")
+      .on(table.projectId, table.dmKey)
+      .where(sql`${table.dmKey} is not null`),
     index("project_conversations_workspace_project_idx").on(table.workspaceId, table.projectId),
     index("project_conversations_project_created_idx").on(table.projectId, table.createdAt),
     uniqueIndex("project_conversations_id_project_uq").on(table.id, table.projectId),
@@ -659,11 +771,16 @@ export const actionCards = pgTable(
     }),
     messageId: uuid("message_id").notNull().references(() => conversationMessages.id, { onDelete: "cascade" }),
     status: varchar("status", { length: 16 }).$type<ActionCardStatus>().notNull().default("active"),
-    analyzedToSeq: bigint("analyzed_to_seq", { mode: "number" }).notNull(),
+    // R15 批 D4：来源标记。observer=LLM 观察者产；system=服务端规则直接插（迁移 0066，默认 'observer'）。
+    origin: varchar("origin", { length: 16 }).$type<ActionCardOrigin>().notNull().default("observer"),
+    // R15 批 D4：观察者卡按「分析到第几条消息」写水位线（非空）；系统卡不挂水位线，置 NULL（迁移 0066
+    // 把 NOT NULL 去掉）。既有 CHECK BETWEEN 0..MAX 对 NULL 天然放行。
+    analyzedToSeq: bigint("analyzed_to_seq", { mode: "number" }),
     ...timestamps()
   },
   (table) => [
     check("action_cards_status_ck", sql`${table.status} in ('active', 'superseded')`),
+    check("action_cards_origin_ck", sql`${table.origin} in ('observer', 'system')`),
     check("action_cards_analyzed_to_seq_ck", sql`${table.analyzedToSeq} between 0 and 9007199254740991`),
     foreignKey({
       name: "action_cards_conversation_message_fk",
@@ -671,6 +788,7 @@ export const actionCards = pgTable(
       foreignColumns: [conversationMessages.conversationId, conversationMessages.id]
     }),
     index("action_cards_conversation_status_idx").on(table.conversationId, table.status),
+    index("action_cards_conversation_origin_idx").on(table.conversationId, table.origin),
     uniqueIndex("action_cards_message_id_uq").on(table.messageId),
     uniqueIndex("action_cards_conversation_id_uq").on(table.conversationId, table.id)
   ]
@@ -872,6 +990,9 @@ export const notifications = pgTable(
     dedupeKey: varchar("dedupe_key", { length: 256 }),
     readAt: timestampTz("read_at"),
     archivedAt: timestampTz("archived_at"),
+    // R15 批 A（提醒阶梯）：next_remind_at=下次复活提醒时刻（NULL=不再提醒）；reminder_count=已提醒次数。
+    nextRemindAt: timestampTz("next_remind_at"),
+    reminderCount: integer("reminder_count").notNull().default(0),
     ...timestamps()
   },
   (table) => [
@@ -883,6 +1004,10 @@ export const notifications = pgTable(
     index("notifications_dedupe_key_idx").on(table.dedupeKey),
     index("notifications_read_at_idx").on(table.readAt),
     index("notifications_archived_at_idx").on(table.archivedAt),
+    // R15 批 A：提醒扫描热路径（WHERE next_remind_at <= now AND 未读未归档）——部分索引只覆盖待提醒的少数行。
+    index("notifications_next_remind_at_idx")
+      .on(table.nextRemindAt)
+      .where(sql`${table.nextRemindAt} is not null`),
     // L#56：listForUser 的热路径是 WHERE user_id ORDER BY created_at DESC LIMIT n —— 加复合索引避免按 user 过滤后再全量排序。
     index("notifications_user_created_idx").on(table.userId, table.createdAt),
     // M13/M15：同一用户同一 dedupeKey 只能有一条，挡住并发 check-then-insert 产生的重复通知。
@@ -2065,7 +2190,11 @@ export const userMemories = pgTable(
     id: id(),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }),
-    category: varchar("category", { length: 32 }).$type<"preference" | "correction" | "recurring_context">().notNull(),
+    // R15 批 F（主动关怀）：additive 新增 'care_signal' 分类——纯规则侦测出的「关于成员当前状态的可衰减
+    // 记忆」（高负荷/深夜活跃/连续受挫），与 preference/correction/recurring_context 语义完全隔离。列本就是
+    // varchar(32) 且无 DB CHECK 约束（见迁移 0012），'care_signal'(11 字符) 直接落，无需迁移。关怀信号绝不
+    // 进 agent prompt、绝不进记忆管理页（listForUser 在 SQL 层排除本分类，见 repositories/user-memory.ts）。
+    category: varchar("category", { length: 32 }).$type<"preference" | "correction" | "recurring_context" | "care_signal">().notNull(),
     key: varchar("key", { length: 256 }).notNull(),
     valueMd: text("value_md").notNull(),
     confidence: doublePrecision("confidence").notNull().default(0.5),
@@ -2253,6 +2382,36 @@ export const projectGithubActivities = pgTable(
   ]
 );
 
+// R15 批 D（主动性 MVP · ProactiveIntent 管线）：主动打扰的审计地基。见 0063 迁移注释。
+// 「先记 intent 再投递」——任何一次主动打扰(追 DDL、找人，未来 Cuu 主动开口)先在这落一条 intent，
+// 再过频控闸(每人每日上限/静音/静默时段)、再投递(本批唯一通道=notifications)。suppression_key 全局
+// 幂等：INSERT ... ON CONFLICT DO NOTHING 撞它即「已处理过」，每个 DDL 阶梯对每工作项只发一次全靠它。
+export const proactiveIntents = pgTable(
+  "proactive_intents",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
+    workItemId: uuid("work_item_id").references(() => workItems.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    stage: text("stage"),
+    targetUserId: uuid("target_user_id").references(() => users.id, { onDelete: "set null" }),
+    suppressionKey: text("suppression_key").notNull(),
+    payload: jsonb("payload").$type<JsonObject>().notNull().default(sql`'{}'::jsonb`),
+    // created(已记未投) / delivered(已投递) / suppressed(被频控/静音/重复挡下)。
+    status: text("status").notNull().default("created"),
+    // 本批唯一投递通道='notification'；未来会话卡/SSE 各有自己的值。
+    deliveredVia: text("delivered_via"),
+    createdAt: createdAt()
+  },
+  (table) => [
+    uniqueIndex("proactive_intents_suppression_key_uq").on(table.suppressionKey),
+    index("proactive_intents_target_delivered_idx").on(table.targetUserId, table.createdAt),
+    index("proactive_intents_work_item_id_idx").on(table.workItemId),
+    check("proactive_intents_status_ck", sql`${table.status} in ('created', 'delivered', 'suppressed')`)
+  ]
+);
+
 export const workHubTables = {
   users,
   userMemories,
@@ -2296,6 +2455,9 @@ export const workHubTables = {
   objectives,
   keyResults,
   objectiveWorkItemLinks,
+  projectMilestones,
+  workItemDependencies,
+  projectPlanDrafts,
   taskPlans,
   taskPlanItems,
   workItemTaskPlans,
@@ -2325,7 +2487,8 @@ export const workHubTables = {
   approvalComments,
   auditLogs,
   projectGithubBindings,
-  projectGithubActivities
+  projectGithubActivities,
+  proactiveIntents
 } as const;
 
 export type WorkHubTableName = keyof typeof workHubTables;

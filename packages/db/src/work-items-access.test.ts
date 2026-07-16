@@ -60,3 +60,42 @@ test("findWorkItemAccessRecord returns project org id and assignment rows", asyn
   assert.equal(assignmentQuery?.fromTable, workItemAssignments);
   assert.ok(queryReferences(assignmentQuery?.where, workItemAssignments.workItemId));
 });
+
+// R15 批 D4：找人卡的 claim/reassign 落地写——CAS 只在事项仍无认领人时把它认领给指定用户。
+test("claimOwnerlessWorkItem CAS-writes the claimer, guarded on a still-empty owner", async () => {
+  const claimedRow = { id: "wi-1", claimedByUserId: "user-9" };
+  const { db, queries } = createQueryRecorder([[claimedRow]]);
+  const repository = createWorkItemRepository(db);
+
+  const result = await repository.claimOwnerlessWorkItem({
+    workItemId: "wi-1",
+    workspaceId: "ws-1",
+    userId: "user-9",
+    at: new Date("2026-07-15T00:00:00.000Z")
+  });
+
+  assert.deepEqual(result, claimedRow);
+  const [update] = queries;
+  assert.equal(update?.targetTable, workItems);
+  // CAS 守卫：id + workspace + 仍无认领人 + 非终态 + 未软删。
+  assert.ok(queryReferences(update?.where, workItems.id));
+  assert.ok(queryReferences(update?.where, workItems.workspaceId));
+  assert.ok(queryReferences(update?.where, workItems.claimedByUserId));
+  assert.ok(queryReferences(update?.where, workItems.status));
+  assert.ok(queryReferences(update?.where, workItems.deletedAt));
+  const setValue = update?.setValue as Record<string, unknown>;
+  assert.equal(setValue["claimedByUserId"], "user-9");
+  assert.ok("claimedByNickname" in setValue, "claimed nickname is written from a users subquery");
+  assert.ok("version" in setValue, "version is bumped so clients see the ownership change");
+});
+
+test("claimOwnerlessWorkItem returns null when the CAS guard misses (already claimed)", async () => {
+  const { db } = createQueryRecorder([[]]);
+  const result = await createWorkItemRepository(db).claimOwnerlessWorkItem({
+    workItemId: "wi-1",
+    workspaceId: "ws-1",
+    userId: "user-9",
+    at: new Date("2026-07-15T00:00:00.000Z")
+  });
+  assert.equal(result, null);
+});

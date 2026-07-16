@@ -40,6 +40,9 @@ function fakeRepo(): { repo: ProjectRepository; slugs: string[] } {
     },
     async listPersonalForUser() {
       return [];
+    },
+    async updateInstructions() {
+      throw new Error("not needed for this test");
     }
   };
   return { repo, slugs };

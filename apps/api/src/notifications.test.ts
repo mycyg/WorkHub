@@ -10,7 +10,7 @@ import type {
   NotificationWriteResult
 } from "@workhub/db";
 
-import { createNotificationService, NotificationServiceError } from "./services/notifications.js";
+import { createNotificationService, NotificationServiceError, toNotificationResponse } from "./services/notifications.js";
 
 const now = new Date("2026-06-05T00:00:00.000Z");
 
@@ -28,6 +28,8 @@ function row(partial: Partial<NotificationRow> = {}): NotificationRow {
     dedupeKey: "escalated:90000000-0000-4000-8000-000000000003:ai-auto",
     readAt: null,
     archivedAt: null,
+    nextRemindAt: null,
+    reminderCount: 0,
     createdAt: now,
     updatedAt: now,
     ...partial
@@ -80,6 +82,18 @@ class StubNotifications implements NotificationRepository {
 
   async archiveStaleLifecycleForWorkItem() {
     return 0;
+  }
+
+  async listDueReminders() {
+    return [];
+  }
+
+  async applyReminderTick() {
+    return null;
+  }
+
+  async snoozeReminder() {
+    return null;
   }
 }
 
@@ -157,6 +171,18 @@ class RecordingNotifications implements NotificationRepository {
 
   async archiveStaleLifecycleForWorkItem() {
     return 0;
+  }
+
+  async listDueReminders() {
+    return [];
+  }
+
+  async applyReminderTick() {
+    return null;
+  }
+
+  async snoozeReminder() {
+    return null;
   }
 }
 
@@ -248,6 +274,24 @@ class VisibilityNotifications implements NotificationRepository {
 
   async archiveStaleLifecycleForWorkItem() {
     return 0;
+  }
+
+  async listDueReminders() {
+    return [];
+  }
+
+  async applyReminderTick() {
+    return null;
+  }
+
+  async snoozeReminder(id: string, userId: string, at: Date) {
+    const stored = await this.findByIdForUser(id, userId);
+    if (!stored) {
+      return null;
+    }
+    stored.nextRemindAt = null;
+    stored.updatedAt = at;
+    return { ...stored };
   }
 }
 
@@ -1190,4 +1234,134 @@ test("notification creation returns committed result even when post-write publis
 
   assert.ok(created);
   assert.equal(created.id, "90000000-0000-4000-8000-000000000001");
+});
+
+// ── R15 批 A（A5 消息通知）：createConversationMessageNotification ─────────────────────────
+const a5ConversationId = "90000000-0000-4000-8000-0000000000c1";
+const a5ProjectId = "90000000-0000-4000-8000-0000000000c2";
+
+class ConversationMsgNotifications extends RecordingNotifications {
+  public inputs: CreateNotificationInput[] = [];
+
+  override async createOrUpdateNotification(
+    input: CreateNotificationInput,
+    at: Date
+  ): Promise<NotificationWriteResult> {
+    this.inputs.push(input);
+    await super.createOrUpdateNotification(input, at);
+    return {
+      notification: row({
+        userId: input.userId,
+        type: input.type,
+        severity: input.severity,
+        title: input.title,
+        body: input.body ?? null,
+        targetUrl: input.targetUrl ?? null,
+        dedupeKey: input.dedupeKey ?? null,
+        projectId: input.projectId ?? null,
+        nextRemindAt: input.nextRemindAt ?? null
+      }),
+      created: false,
+      resurfaced: true
+    };
+  }
+}
+
+function capturingBus() {
+  const published: Array<{ topic: string; type: string }> = [];
+  return {
+    published,
+    bus: {
+      async publish(topic: string, type: string) {
+        published.push({ topic, type });
+      }
+    }
+  };
+}
+
+test("A5 message notification uses workbench deep link, per-conversation dedupe, count-in-body, no reminder ladder", async () => {
+  const repo = new ConversationMsgNotifications();
+  const { bus, published } = capturingBus();
+  const service = createNotificationService({ notifications: repo, now: () => now, bus });
+
+  const result = await service.createConversationMessageNotification({
+    userId: recipientId,
+    conversationId: a5ConversationId,
+    projectId: a5ProjectId,
+    conversationTitle: "设计讨论",
+    senderLabel: "Alice",
+    previewText: "看下这版稿",
+    unreadCount: 3
+  });
+
+  assert.ok(result);
+  const input = repo.inputs[0]!;
+  assert.equal(input.type, "conversation.message");
+  assert.equal(input.severity, "normal");
+  assert.equal(input.dedupeKey, `conversation_msg:${a5ConversationId}:${recipientId}`);
+  assert.equal(
+    input.targetUrl,
+    `/workbench/${a5ProjectId}/${a5ConversationId}?conversation_id=${a5ConversationId}`
+  );
+  assert.equal(input.projectId, a5ProjectId);
+  assert.match(input.body ?? "", /Alice：看下这版稿/u);
+  assert.match(input.body ?? "", /3 条未读/u);
+  // 聊天不进 24h 叮嘱阶梯——绝不带 nextRemindAt。
+  assert.equal(input.nextRemindAt, undefined);
+  // resurfaced → 推 SSE（复活语义）。
+  assert.deepEqual(published, [{ topic: `user:${recipientId}`, type: "notification.created" }]);
+});
+
+test("A5 single unread renders a bare preview body without a count suffix", async () => {
+  const repo = new ConversationMsgNotifications();
+  const service = createNotificationService({ notifications: repo, now: () => now });
+  await service.createConversationMessageNotification({
+    userId: recipientId,
+    conversationId: a5ConversationId,
+    projectId: a5ProjectId,
+    conversationTitle: "设计讨论",
+    senderLabel: "Alice",
+    previewText: "在吗",
+    unreadCount: 1
+  });
+  assert.equal(repo.inputs[0]?.body, "Alice：在吗");
+});
+
+test("A5 respects per-type mute for conversation.message", async () => {
+  const repo = new ConversationMsgNotifications();
+  const { bus, published } = capturingBus();
+  const service = createNotificationService({
+    notifications: repo,
+    now: () => now,
+    bus,
+    users: fakeUsers({ [recipientId]: ["conversation.message"] })
+  });
+
+  const result = await service.createConversationMessageNotification({
+    userId: recipientId,
+    conversationId: a5ConversationId,
+    projectId: a5ProjectId,
+    conversationTitle: "设计讨论",
+    senderLabel: "Alice",
+    previewText: "看下这版稿",
+    unreadCount: 2
+  });
+
+  assert.equal(result, null);
+  assert.equal(repo.inputs.length, 0, "muted recipient must never reach the write path");
+  assert.deepEqual(published, []);
+});
+
+// R15 批 A（A2 提醒阶梯）：toNotificationResponse 暴露提醒态——next_remind_at 非空 + reminder_count>0 时带出，
+// 前端据此渲「暂停提醒」按钮；不在阶梯上（nextRemindAt=null、reminderCount=0）则两字段都不出现。
+test("toNotificationResponse exposes reminder state only when on the ladder", () => {
+  const onLadder = toNotificationResponse(
+    row({ nextRemindAt: new Date("2026-06-06T00:00:00.000Z"), reminderCount: 2 })
+  );
+  assert.equal(onLadder.next_remind_at, "2026-06-06T00:00:00.000Z");
+  assert.equal(onLadder.reminder_count, 2);
+
+  const offLadder = toNotificationResponse(row({ nextRemindAt: null, reminderCount: 0 }));
+  assert.equal("next_remind_at" in offLadder, false);
+  assert.equal("reminder_count" in offLadder, false);
 });

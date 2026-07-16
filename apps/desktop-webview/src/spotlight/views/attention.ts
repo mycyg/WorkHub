@@ -3,8 +3,9 @@
 // 全部内联打真 API（复用 web-runtime 的 href 分类器 + client 方法），处置后回拉 queue、盒子随内容缩放。
 // 这一片证明是「真·内联重构」而非换入口：没有 hash、没有全屏壳、动作就地落库。
 
-import type { PageRequestOptions } from "@workhub/api-client";
+import type { PageRequestOptions, WorkHubApiClient } from "@workhub/api-client";
 import type { ApprovalDetailVM, AttentionHomeVM, AttentionItem } from "@workhub/contracts";
+import type { WorkHubLocale } from "@workhub/ui/gold-path";
 import {
   actionElementApplyPayload,
   actionElementMergePayload,
@@ -308,10 +309,46 @@ export function attentionConflictHtmlFromError(error: unknown, zh: boolean) {
   return proposalMergeConflictHtml(error, zh);
 }
 
-export function createAttentionView(): SpotlightCapabilityView {
-  return {
-    id: "approvals",
-    mount(ctx: SpotlightViewContext) {
+// R15 批 I1（决策收件箱进 workbench）：把这套「渲染 + 动作」逻辑抽成两窗共用的纯函数入口。Spotlight
+// 聚焦盒与工作台中栏收件箱都调用它——只依赖下面这个最小上下文契约（SpotlightViewContext 在结构上
+// 天然满足它，见 createAttentionView 的零改造委托；工作台侧另建一层薄适配把 open→右栏提议详情、
+// requestResize→no-op、toast→工作台内联提示，见 workbench/inbox/view.ts）。抽取边界刻意收在「哪些
+// ctx 能力真被 mount 用到」：client（下面这组读/写端点）、locale、body、setSubtitle、toast、
+// requestResize、open（导航型动作路由的 5 个目标）、onActionSettled。back/refocusBody/signal/target/
+// resetShell 都没被这套逻辑用到，故不进契约。
+export type AttentionInboxApiClient = Pick<
+  WorkHubApiClient,
+  | "pages"
+  | "respondApproval"
+  | "reviewProposal"
+  | "mergeProposal"
+  | "applyMergeProposalCandidate"
+  | "resolveBudgetDecision"
+  | "resolveEscalation"
+  | "resolveMemoryConflict"
+  | "skipTaskPlanProposal"
+  | "postApprovalComment"
+>;
+
+// 导航型动作 href 分类出的跳转目标（classifyAttentionActionHref 的 view 联合）——刻意不复用 spotlight
+// 的 CommandId，让共用模块与 command-palette 解耦；这五个字面量都是 CommandId 的子集，故 spotlight 侧
+// 的 ctx.open(CommandId, SpotlightTarget) 结构上仍能承接（见 createAttentionView 的委托）。
+export type AttentionInboxNavView = "proposals" | "workitem" | "replay" | "settings" | "cost";
+
+export type AttentionInboxContext = {
+  client: AttentionInboxApiClient;
+  locale: WorkHubLocale;
+  body: HTMLElement;
+  setSubtitle: (text: string) => void;
+  toast: (message: string, tone?: "ok" | "error" | "info") => void;
+  requestResize: () => void;
+  open: (view: AttentionInboxNavView, target?: { id?: string; route?: string }) => void;
+  onActionSettled?: (() => void) | undefined;
+};
+
+// 两窗共用的收件箱挂载逻辑（S1 证明片的 mount 主体，行为逐字保持）。返回卸载清理函数。
+export function mountAttentionInbox(ctx: AttentionInboxContext): () => void {
+  {
       const zh = ctx.locale === "zh-CN";
       const { body, client } = ctx;
       let disposed = false;
@@ -681,6 +718,17 @@ export function createAttentionView(): SpotlightCapabilityView {
       return () => {
         disposed = true;
       };
+  }
+}
+
+// Spotlight 侧零改造：能力视图外壳只是把 mount 委托给共用逻辑（SpotlightViewContext 结构上满足
+// AttentionInboxContext——client 是全量 WorkHubApiClient、open 的 CommandId/SpotlightTarget 分别是
+// AttentionInboxNavView/{id,route} 的超集，逆变承接）。行为与抽取前逐字相同，spotlight 既有测试原样绿。
+export function createAttentionView(): SpotlightCapabilityView {
+  return {
+    id: "approvals",
+    mount(ctx: SpotlightViewContext) {
+      return mountAttentionInbox(ctx);
     }
   };
 }

@@ -1,12 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "workbench",
-  "description": "R12 workbench window: deep-link events plus its own hide/minimize/drag chrome (frameless glass). Scoped to the workbench window only so main/pet ACLs stay unchanged.",
+  "description": "R12 workbench window: deep-link events plus its own hide/minimize/drag chrome (frameless glass), plus isFocused() for the interrupt-broadcast bubble-routing decision (G-desktop stop-the-bleeding batch 4). Scoped to the workbench window only so main/pet ACLs stay unchanged.",
   "windows": ["workbench"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
     "core:window:allow-hide",
-    "core:window:allow-minimize"
+    "core:window:allow-minimize",
+    "core:window:allow-is-focused"
   ]
 }

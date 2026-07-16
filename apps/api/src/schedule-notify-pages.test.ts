@@ -61,6 +61,8 @@ function notification(partial: Partial<NotificationRow> = {}): NotificationRow {
     dedupeKey: `meeting_insight:${insightId}`,
     readAt: null,
     archivedAt: null,
+    nextRemindAt: null,
+    reminderCount: 0,
     createdAt: now,
     updatedAt: now,
     ...partial
@@ -115,6 +117,10 @@ function meetingInsightSource(): MeetingInsightScheduleSourceRow {
       nextSeq: 1,
       // R13 批 S3：projects 加了 is_personal 列——机械补齐，不是本文件测的功能改动。
       isPersonal: false,
+      // R15 批 B：projects 加了 is_dm_container 列——机械补齐（普通项目固定 false）。
+      isDmContainer: false,
+      // R16 批 W4a：projects 加了 instructions_md 列——机械补齐（这份 fixture 不关心它，默认空）。
+      instructionsMd: null,
       createdAt: now,
       updatedAt: now
     },
@@ -144,6 +150,7 @@ function workItemSource(): WorkItemScheduleSourceRow {
       dueAt: new Date("2026-06-11T14:00:00.000Z"),
       sourceMeetingId: null,
       sourceWorkItemId: null,
+      milestoneId: null,
       claimedAt: null,
       doneAt: null,
       deliveredAt: null,
@@ -258,6 +265,18 @@ class MemoryNotifications implements NotificationRepository {
       return row;
     });
     return count;
+  }
+
+  async listDueReminders() {
+    return [];
+  }
+
+  async applyReminderTick() {
+    return null;
+  }
+
+  async snoozeReminder() {
+    return null;
   }
 }
 

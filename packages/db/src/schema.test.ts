@@ -47,7 +47,8 @@ import {
 // R14 批 CHAT：新增 message_reactions + conversation_read_cursors 两张表（迁移 0055），graph 涨到 68。
 // R14 批 FEEDBACK：新增 ai_feedback 一张表（迁移 0058），graph 涨到 69。
 // R14 批 GH：新增 project_github_bindings + project_github_activities 两张表（迁移 0060），graph 涨到 71。
-const F02_TABLE_COUNT = 71;
+// R15 批 E1：新增 project_milestones + work_item_dependencies 两张表（迁移 0064），graph 涨到 74。
+const F02_TABLE_COUNT = 75;
 
 type WorkHubTable = (typeof workHubTables)[keyof typeof workHubTables];
 
@@ -160,6 +161,9 @@ test("F02 declares the full table graph expected by the plan", () => {
   assert.equal(tableNames.includes("objectives"), true);
   assert.equal(tableNames.includes("key_results"), true);
   assert.equal(tableNames.includes("objective_work_item_links"), true);
+  assert.equal(tableNames.includes("project_milestones"), true);
+  assert.equal(tableNames.includes("work_item_dependencies"), true);
+  assert.equal(tableNames.includes("project_plan_drafts"), true);
   assert.equal(tableNames.includes("requirements"), false);
   assert.equal(tableNames.includes("revision_requests"), false);
   assert.equal(tableNames.includes("activity_log"), false);
@@ -303,6 +307,20 @@ test("R12 action cards, observer state, AI profiles, and governance expose their
   const projectAiGovernance = requiredTable("projectAiGovernance") as WorkHubTable & Record<string, any>;
 
   assert.equal(actionCards.analyzedToSeq.columnType, "PgBigInt53");
+  // R15 批 D4：系统卡不挂水位线——analyzed_to_seq 现可空（迁移 0066 DROP NOT NULL）。
+  assert.equal(actionCards.analyzedToSeq.notNull, false);
+  // R15 批 D4：origin 标记（默认 observer，CHECK 钉死枚举）——观察者/系统卡的分流由它承载。
+  assert.equal(actionCards.origin.name, "origin");
+  assert.equal(actionCards.origin.notNull, true);
+  assert.equal(actionCards.origin.default, "observer");
+  assert.equal(checkSqlText(actionCards).includes("'observer'"), true);
+  assert.equal(checkSqlText(actionCards).includes("'system'"), true);
+  assert.equal(
+    getTableConfig(actionCards).indexes.some(
+      (candidate) => candidate.config.name === "action_cards_conversation_origin_idx"
+    ),
+    true
+  );
   assert.equal(conversationObserverState.lastAnalyzedSeq.columnType, "PgBigInt53");
   assert.equal(checkSqlText(actionCards).includes(String(Number.MAX_SAFE_INTEGER)), true);
   assert.equal(checkSqlText(conversationObserverState).includes(String(Number.MAX_SAFE_INTEGER)), true);
@@ -664,11 +682,11 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0060 project github bindings", () => {
+test("migration journal ends with 0067 project instructions", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
-    entries: Array<{ idx: number; version: string; tag: string; breakpoints: boolean }>;
+    entries: Array<{ idx: number; version: string; tag: string; breakpoints: boolean; when: number }>;
   };
   const finalEntry = journal.entries.at(-1);
   assert.deepEqual(
@@ -679,13 +697,205 @@ test("migration journal ends with 0060 project github bindings", () => {
       breakpoints: finalEntry.breakpoints
     },
     {
-      // R14 集成收口：FEEDBACK(0058)+RISK(0059)+GH(0060) 三批合并后链尾=0060，when 严格递增。
-      idx: 60,
+      // R16 批 W4a（项目级自定义指令）：0067(project_instructions,when=1783928000000)接在 D4 的
+      // 0066(action_card_origin,when=1783926000000)之后,journal 收于 0067,when 严格递增(0065→0066→0067)。
+      idx: 67,
       version: "7",
-      tag: "0060_project_github_bindings",
+      tag: "0067_project_instructions",
       breakpoints: true
     }
   );
+  // when 严格递增——0067 的时间戳必须大于 0066 的 1783926000000。
+  const originEntry = journal.entries.find((entry) => entry.tag === "0066_action_card_origin");
+  assert.ok(originEntry && finalEntry && finalEntry.when > originEntry.when);
+});
+
+test("R15 批 A migration 0061 adds the reminder-ladder columns additively", () => {
+  const migrationUrl = new URL("../migrations/0061_notification_reminders.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0061_notification_reminders.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  // 只加列（additive，ADD COLUMN IF NOT EXISTS 保证 replay 安全）——不得 DROP/ALTER 既有列。
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS "next_remind_at" timestamp with time zone/u);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS "reminder_count" integer NOT NULL DEFAULT 0/u);
+  assert.doesNotMatch(migration, /DROP COLUMN|ALTER COLUMN/u, "migration 0061 must only add columns");
+  // 扫描热路径的部分索引（只覆盖待提醒的少数行）。
+  assert.match(
+    migration,
+    /CREATE INDEX IF NOT EXISTS "notifications_next_remind_at_idx"[\s\S]*WHERE "next_remind_at" IS NOT NULL/u
+  );
+});
+
+test("R15 批 B migration 0062 adds the DM container column, dm_key column, and their partial unique indexes additively", () => {
+  const migrationUrl = new URL("../migrations/0062_dm_containers.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0062_dm_containers.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  // 只加列（additive，ADD COLUMN IF NOT EXISTS 保证 replay 安全）——不得 DROP/ALTER 既有列。
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS "is_dm_container" boolean NOT NULL DEFAULT false/u);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS "dm_key" text/u);
+  assert.doesNotMatch(migration, /DROP COLUMN|ALTER COLUMN/u, "migration 0062 must only add columns");
+  // 每工作区至多一个容器的部分唯一索引（workspace 维度）。
+  assert.match(
+    migration,
+    /CREATE UNIQUE INDEX IF NOT EXISTS "projects_dm_container_uq"[\s\S]*\("workspace_id"\)[\s\S]*WHERE "is_dm_container"/u
+  );
+  // dm_key 查重必须带 project_id 限定（同一对用户跨工作区各有一条 DM，dm_key 本身会撞）。
+  assert.match(
+    migration,
+    /CREATE UNIQUE INDEX IF NOT EXISTS "project_conversations_dm_key_uq"[\s\S]*\("project_id", "dm_key"\)[\s\S]*WHERE "dm_key" IS NOT NULL/u
+  );
+});
+
+test("R15 批 E3 migration 0065 adds the project_plan_drafts table replay-safe with a status CHECK", () => {
+  const migrationUrl = new URL("../migrations/0065_project_plan_drafts.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0065_project_plan_drafts.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+
+  // 建表 + 索引全部重放安全（IF NOT EXISTS）。
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "project_plan_drafts"/u);
+  assert.doesNotMatch(
+    migration,
+    /CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?!IF\s+NOT\s+EXISTS)/iu,
+    "every CREATE INDEX must be replay-safe (IF NOT EXISTS)"
+  );
+  // status 五态 CHECK 钉死。
+  assert.match(
+    migration,
+    /CONSTRAINT "project_plan_drafts_status_ck" CHECK \("status" IN \('draft','pending_review','approved','rejected','materialized'\)\)/u
+  );
+  // 外键：项目/工作区级联删除；创建人 restrict（留痕）；审阅人 set null。
+  assert.match(migration, /"project_id" uuid NOT NULL REFERENCES "projects"\("id"\) ON DELETE cascade/u);
+  assert.match(migration, /"workspace_id" uuid NOT NULL REFERENCES "workspaces"\("id"\) ON DELETE cascade/u);
+  assert.match(migration, /"created_by" uuid NOT NULL REFERENCES "users"\("id"\) ON DELETE restrict/u);
+  assert.match(migration, /"reviewed_by" uuid REFERENCES "users"\("id"\) ON DELETE set null/u);
+  // additive-only：不改既有列；单事务重放：无 CONCURRENTLY；无 emoji。
+  assert.doesNotMatch(migration, /DROP COLUMN|ALTER COLUMN|ADD COLUMN/u, "migration 0065 must only create a new table");
+  assert.doesNotMatch(migration, /CONCURRENTLY/iu, "migration 0065 must not use CONCURRENTLY (single-tx replay)");
+  assert.doesNotMatch(migration, /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u, "migration must not contain emoji glyphs");
+
+  // Drizzle schema 与迁移同步：新表在活跃 graph 上，status 默认 pending_review。
+  const drafts = requiredTable("projectPlanDrafts") as WorkHubTable & Record<string, any>;
+  assert.equal(getTableName(drafts), "project_plan_drafts");
+  assert.equal(drafts.status.default, "pending_review");
+  assert.equal(drafts.intentMd.notNull, true);
+  assert.equal(drafts.reviewedByUserId.notNull, false);
+  assert.equal(checkSqlText(drafts).includes("'materialized'"), true);
+});
+
+test("R15 批 E1 migration 0064 adds the two timeline tables and work_items.milestone_id additively", () => {
+  const migrationUrl = new URL("../migrations/0064_project_timeline.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0064_project_timeline.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+
+  // 两张新表建表重放安全（IF NOT EXISTS）。
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "project_milestones"/u);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "work_item_dependencies"/u);
+  // 里程碑 status 只有 open/done（CHECK 钉死枚举）；依赖禁自依赖（CHECK 比对两列不等）。
+  assert.match(migration, /CONSTRAINT "project_milestones_status_ck" CHECK \("status" IN \('open','done'\)\)/u);
+  assert.match(
+    migration,
+    /CONSTRAINT "work_item_dependencies_no_self_ck" CHECK \("work_item_id" <> "depends_on_work_item_id"\)/u
+  );
+  // 复合唯一（幂等增边）+ 反向索引（阻塞闭包按 depends_on 反查）。
+  assert.match(
+    migration,
+    /CREATE UNIQUE INDEX IF NOT EXISTS "work_item_dependencies_pair_uq" ON "work_item_dependencies" \("work_item_id","depends_on_work_item_id"\)/u
+  );
+  assert.match(
+    migration,
+    /CREATE INDEX IF NOT EXISTS "work_item_dependencies_depends_on_idx" ON "work_item_dependencies" \("depends_on_work_item_id"\)/u
+  );
+  // 依赖两端外键均级联删除（删任一端工作项连带清边）；里程碑外键项目级联删除。
+  assert.match(migration, /"work_item_id" uuid NOT NULL REFERENCES "work_items"\("id"\) ON DELETE cascade/u);
+  assert.match(migration, /"depends_on_work_item_id" uuid\s+NOT NULL REFERENCES "work_items"\("id"\) ON DELETE cascade/u);
+  assert.match(migration, /"project_id" uuid NOT NULL REFERENCES "projects"\("id"\) ON DELETE cascade/u);
+  // work_items 挂里程碑：可空外键（ADD COLUMN IF NOT EXISTS，重放安全），里程碑删除时置空（SET NULL）。
+  assert.match(
+    migration,
+    /ALTER TABLE "work_items" ADD COLUMN IF NOT EXISTS "milestone_id" uuid REFERENCES "project_milestones"\("id"\) ON DELETE set null/u
+  );
+  assert.doesNotMatch(migration, /DROP COLUMN|ALTER COLUMN/u, "migration 0064 must only add tables/columns");
+  assert.doesNotMatch(migration, /CONCURRENTLY/iu, "migration 0064 must not use CONCURRENTLY (single-tx replay)");
+  assert.doesNotMatch(migration, /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u, "migration must not contain emoji glyphs");
+
+  // Drizzle schema 与迁移同步：两张新表在活跃 graph 上，work_items.milestone_id 列可空。
+  const milestones = requiredTable("projectMilestones") as WorkHubTable & Record<string, any>;
+  assert.equal(getTableName(milestones), "project_milestones");
+  assert.equal(milestones.dueAt.notNull, false);
+  assert.equal(milestones.sort.default, 0);
+  assert.equal(milestones.status.default, "open");
+  assert.equal(milestones.deletedAt.name, "deleted_at");
+  assert.equal(checkSqlText(milestones).includes("'open'"), true);
+  assert.equal(checkSqlText(milestones).includes("'done'"), true);
+
+  const dependencies = requiredTable("workItemDependencies") as WorkHubTable & Record<string, any>;
+  assert.equal(getTableName(dependencies), "work_item_dependencies");
+  const dependencyIndexes = getTableConfig(dependencies).indexes;
+  const pairUnique = dependencyIndexes.find((candidate) => candidate.config.name === "work_item_dependencies_pair_uq");
+  assert.equal(pairUnique?.config.unique, true);
+  assert.equal(
+    dependencyIndexes.some((candidate) => candidate.config.name === "work_item_dependencies_depends_on_idx"),
+    true
+  );
+  assert.equal(
+    getTableConfig(dependencies).checks.some((constraint) => constraint.name === "work_item_dependencies_no_self_ck"),
+    true
+  );
+
+  const workItemsTable = requiredTable("workItems") as WorkHubTable & Record<string, any>;
+  assert.equal(workItemsTable.milestoneId.name, "milestone_id");
+  assert.equal(workItemsTable.milestoneId.notNull, false);
+  assert.equal(
+    getTableConfig(workItemsTable).indexes.some((candidate) => candidate.config.name === "work_items_milestone_id_idx"),
+    true
+  );
+});
+
+test("R15 批 D4 migration 0066 adds action_cards.origin and makes analyzed_to_seq nullable additively", () => {
+  const migrationUrl = new URL("../migrations/0066_action_card_origin.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0066_action_card_origin.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+
+  // origin 列：ADD COLUMN IF NOT EXISTS（replay 安全），NOT NULL DEFAULT 'observer'（既有卡语义正确，无需回填）。
+  assert.match(
+    migration,
+    /ALTER TABLE "action_cards" ADD COLUMN IF NOT EXISTS "origin" varchar\(16\) NOT NULL DEFAULT 'observer'/u
+  );
+  // origin CHECK 用 pg_constraint 查重的 DO 块加，重放不重复添加。
+  assert.match(migration, /conname = 'action_cards_origin_ck'/u);
+  assert.match(migration, /CHECK \("origin" IN \('observer','system'\)\)/u);
+  // analyzed_to_seq 去掉 NOT NULL（系统卡置 NULL）。DROP NOT NULL 幂等（列已可空为 no-op），replay 安全。
+  assert.match(migration, /ALTER TABLE "action_cards" ALTER COLUMN "analyzed_to_seq" DROP NOT NULL/u);
+  // 唯一没做的破坏性动作：不 DROP 列、不动既有 analyzed_to_seq 的 BETWEEN CHECK、不建/换任何唯一索引。
+  assert.doesNotMatch(migration, /DROP COLUMN|DROP CONSTRAINT|DROP INDEX/u, "migration 0066 must be additive-only");
+  assert.doesNotMatch(migration, /UNIQUE INDEX/u, "migration 0066 must not touch unique indexes");
+  // 每个 CREATE INDEX 都 replay-safe。
+  assert.doesNotMatch(
+    migration,
+    /CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?!IF\s+NOT\s+EXISTS)/iu,
+    "every CREATE INDEX must be replay-safe (IF NOT EXISTS)"
+  );
+  assert.doesNotMatch(migration, /CONCURRENTLY/iu, "migration 0066 must not use CONCURRENTLY (single-tx replay)");
+  assert.doesNotMatch(migration, /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u, "migration must not contain emoji glyphs");
+});
+
+test("R16 批 W4a migration 0067 adds projects.instructions_md additively", () => {
+  const migrationUrl = new URL("../migrations/0067_project_instructions.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0067_project_instructions.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+
+  // 只加一列（additive，ADD COLUMN IF NOT EXISTS 保证 replay 安全），无默认值、可空、无 CHECK
+  // （长度上限在契约层校验）。
+  assert.match(migration, /ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "instructions_md" text;/u);
+  assert.doesNotMatch(migration, /DROP COLUMN|DROP CONSTRAINT|DROP INDEX|ALTER COLUMN/u, "migration 0067 must be additive-only");
+  assert.doesNotMatch(migration, /UNIQUE INDEX|CREATE INDEX|CREATE TABLE/iu, "migration 0067 must only add a column");
+  assert.doesNotMatch(migration, /CONCURRENTLY/iu, "migration 0067 must not use CONCURRENTLY (single-tx replay)");
+  assert.doesNotMatch(migration, /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u, "migration must not contain emoji glyphs");
+
+  // Drizzle schema 与迁移同步：projects.instructionsMd 可空、无默认值。
+  const projectsTable = requiredTable("projects") as WorkHubTable & Record<string, any>;
+  assert.equal(projectsTable.instructionsMd.name, "instructions_md");
+  assert.equal(projectsTable.instructionsMd.notNull, false);
+  assert.equal(projectsTable.instructionsMd.hasDefault, false);
 });
 
 test("R14 批 FEEDBACK migration 0058 adds the ai_feedback table with a self-idempotency unique index", () => {

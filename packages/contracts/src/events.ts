@@ -429,3 +429,32 @@ export const conversationReadUpdatedEventSchema = z
     }
   });
 export type ConversationReadUpdatedEvent = z.infer<typeof conversationReadUpdatedEventSchema>;
+
+// R15 批 cuu-toggle：conversation.cuu.updated——会话级 Cuu 参与开关翻转（PATCH /cuu）后发布，data 只带
+// 翻转后的布尔值。同 read.updated 的既有取舍：客户端按 conversation_id 过滤，本地更新头部开关 + 重算
+// isCollabConversation（composer 模式 chip / 流式气泡随之显隐），接不上（断线/未挂载这个会话）就等下次
+// 重挂时用会话 VM 里的 cuu_enabled 兜底，不强求这条广播必达。
+export const conversationCuuUpdatedEventSchema = z
+  .object({
+    event_id: idSchema,
+    type: z.literal("conversation.cuu.updated"),
+    topic: z.string().min(1),
+    ts: isoDateTimeSchema,
+    data: z
+      .object({
+        conversation_id: idSchema,
+        cuu_enabled: z.boolean()
+      })
+      .strict()
+  })
+  .strict()
+  .superRefine((event, ctx) => {
+    if (event.topic !== `conversation:${event.data.conversation_id}`) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["topic"],
+        message: "cuu-updated topic must match data.conversation_id"
+      });
+    }
+  });
+export type ConversationCuuUpdatedEvent = z.infer<typeof conversationCuuUpdatedEventSchema>;

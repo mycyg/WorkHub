@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { AgentArmyDashboardVM, AttentionItem, CalendarPageVM, DrivePageVM, ProjectHealthPageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProjectListVM, ProposalConflict, ProposalDetailVM, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
+import type { AgentArmyDashboardVM, AttentionItem, CalendarPageVM, ConversationMessageVM, DrivePageVM, ProjectHealthPageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProjectListVM, ProposalConflict, ProposalDetailVM, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
 
 import { renderAgentRunReplay } from "../replay/index.js";
 import { renderWebRouteComponent, renderWebRouteComponents } from "./route-components.js";
@@ -2204,10 +2204,13 @@ test("R14 GH: project home renders recent GitHub activity with kind/state/author
   assert.equal(withActivity.html.includes("hubot"), true);
   assertNoMainWindowBoundaryLeak(withActivity.html);
 
-  // No binding / no activity: the field is absent (not an empty array), so no section at all.
+  // G-web 止血批：无绑定/无活动时区块改为常渲——给出「去桌面客户端绑定」的空态引导，
+  // 而不是悄悄消失（此前用户看不到这块能力存在过）。
   const withoutActivity = renderWebRouteComponent({ key: "project-home", project: baseVm }, { locale: "zh-CN" });
-  assert.equal(withoutActivity.html.includes("最近 GitHub 动态"), false);
-  assert.equal(withoutActivity.html.includes("data-r14-project-home-github"), false);
+  assert.equal(withoutActivity.html.includes("最近 GitHub 动态"), true);
+  assert.equal(withoutActivity.html.includes('data-r14-project-home-github="0"'), true);
+  assert.equal(withoutActivity.html.includes('data-r14-project-home-github-empty="true"'), true);
+  assert.equal(withoutActivity.html.includes("在桌面客户端项目设置中绑定 GitHub 后可见"), true);
 
   const en = renderWebRouteComponent({
     key: "project-home",
@@ -2305,8 +2308,9 @@ test("R14 batch SEARCH: search route component echoes a valid query into the for
   assert.equal(zh.html.includes("<h3 role=\"heading\" aria-level=\"2\">网盘</h3>"), true);
   assert.equal(zh.html.includes("<h3 role=\"heading\" aria-level=\"2\">任务</h3>"), true);
   assert.equal(zh.html.includes("<h3 role=\"heading\" aria-level=\"2\">会议</h3>"), true);
-  // 会话结果 web 端没有聊天页可跳——诚实说明行，不假装能打开。
-  assert.equal(zh.html.includes("会话内容在桌面工作台查看"), true);
+  // R15 批 web-mirror：web 现在有只读会话镜像可跳——SSR 骨架里的说明改为「在线镜像只读」语义
+  // （真链接由客户端 bindSearchRoutePanel 用 deep_link 注入，见 apps/web/src/browser.ts）。
+  assert.equal(zh.html.includes("在线镜像只读"), true);
   assertNoMainWindowBoundaryLeak(zh.html);
 });
 
@@ -3366,9 +3370,9 @@ test("R5.6 Notifications route component groups inbox buckets and exposes audite
 
 // R14 FIX（通知深链缺 conversation_id）：page VM 新增的可选 conversation_id 字段（服务端从
 // target_href 查询参数解出，见 apps/api/src/services/schedule-notify-pages.ts 的 notificationItem）
-// 要在通知列表项上标注"这条通知关联一段讨论"——web 没有聊天 UI，跳转目标仍是既有的 target_href
-// （已经带上 ?conversation_id= 查询串），这里只补一句人话提示，不发明新路由/新跳转目标。
-test("R14 notifications route annotates items that carry a conversation_id without changing the jump target", () => {
+// R15 批 web-mirror：web 现在有只读会话镜像了——会话类通知除了保留既有 target_href（工作项页）+ 关联
+// 提示外，补一条真链接到 /conversations/:id（「查看只读镜像」）。此前 R14 时 web 没有聊天页，只能给提示。
+test("R14 notifications route annotates items that carry a conversation_id and links to the read-only mirror", () => {
   const vm = notificationPageVm();
   const withConversation: NotificationPageVM["items"][number] = {
     ...vm.items[0]!,
@@ -3399,12 +3403,71 @@ test("R14 notifications route annotates items that carry a conversation_id witho
   assert.equal(en.html.includes('data-r14-notification-conversation-note="true"'), true);
   assert.equal(en.html.includes("tied to a discussion"), true);
   assert.equal(zh.html.includes("这条通知关联一段讨论"), true);
-  // web 没有聊天 UI：跳转目标仍是既有的工作项页链接（带上 ?conversation_id= 查询串），不是发明的新路由。
+  // 既有的工作项页跳转目标（带 ?conversation_id= 查询串）保留不动。
   assert.equal(en.html.includes('href="/workitems/95000000-0000-4000-8000-000000000009?conversation_id=95000000-0000-4000-8000-00000000c009"'), true);
+  // R15 批 web-mirror：补一条真链接到只读会话镜像 + 「查看只读镜像」文案。
+  assert.equal(en.html.includes('href="/conversations/95000000-0000-4000-8000-00000000c009"'), true);
+  assert.equal(en.html.includes('data-r15-notification-conversation-open="true"'), true);
+  assert.equal(en.html.includes("View read-only mirror"), true);
+  assert.equal(zh.html.includes("查看只读镜像"), true);
   // smoke 门：web 端不出现 "Cuu" 字样。
   assert.equal(/cuu/iu.test(en.html), false);
   assert.equal(/cuu/iu.test(zh.html), false);
   assertNoMainWindowBoundaryLeak(en.html);
+});
+
+// R15 批 A（A2 提醒阶梯）：next_remind_at 非空的通知渲「暂停提醒」链接（POST /snooze，走既有动作管道），
+// 为空/不带的通知不渲。
+test("R15 notifications route renders a snooze link only for items still on the reminder ladder", () => {
+  const vm = notificationPageVm();
+  const onLadder: NotificationPageVM["items"][number] = {
+    ...vm.items[0]!,
+    id: "96000000-0000-4000-8000-0000000000a2",
+    next_remind_at: "2026-06-12T09:30:00.000Z",
+    reminder_count: 1
+  };
+  const onLadderVm: NotificationPageVM = {
+    ...vm,
+    items: [onLadder],
+    buckets: { ...vm.buckets, needs_decision: [onLadder], done: [] }
+  };
+  const zh = renderWebRouteComponent({ key: "notifications", notifications: onLadderVm }, { locale: "zh-CN" });
+  const en = renderWebRouteComponent({ key: "notifications", notifications: onLadderVm }, { locale: "en-US" });
+  // 暂停提醒链接：POST 到 /snooze，走既有 data-method 动作管道。
+  assert.equal(zh.html.includes('href="/api/notifications/96000000-0000-4000-8000-0000000000a2/snooze"'), true);
+  assert.equal(zh.html.includes('data-r15-notification-snooze="true"'), true);
+  assert.equal(zh.html.includes('data-method="POST"'), true);
+  assert.equal(zh.html.includes("暂停提醒"), true);
+  assert.equal(en.html.includes(">Snooze<"), true);
+
+  // 默认 VM 的两条都不带 next_remind_at → 不渲暂停链接。
+  const plain = renderWebRouteComponent({ key: "notifications", notifications: notificationPageVm() }, { locale: "zh-CN" });
+  assert.equal(plain.html.includes("/snooze"), false);
+  assert.equal(plain.html.includes("data-r15-notification-snooze"), false);
+});
+
+// G-web 止血批：notificationTypeLabel 的 exact 映射表没有 "project" 命名空间前缀兜底——
+// project.risk_digest（risk-monitor.ts 每日风险巡检摘要）此前直接掉进 humanizeToken，
+// 中文界面渲出裸英文 "Project Risk Digest"。
+test("G-web FIX notification type label localizes project.risk_digest instead of falling through to a raw English token", () => {
+  const vm = notificationPageVm();
+  const riskDigestItem: NotificationPageVM["items"][number] = {
+    ...vm.items[0]!,
+    id: "96000000-0000-4000-8000-000000000010",
+    type: "project.risk_digest"
+  };
+  const riskDigestVm: NotificationPageVM = {
+    ...vm,
+    items: [riskDigestItem],
+    buckets: { ...vm.buckets, needs_decision: [riskDigestItem] }
+  };
+
+  const zh = renderWebRouteComponent({ key: "notifications", notifications: riskDigestVm }, { locale: "zh-CN" });
+  const en = renderWebRouteComponent({ key: "notifications", notifications: riskDigestVm }, { locale: "en-US" });
+
+  assert.equal(zh.html.includes("风险巡检摘要"), true);
+  assert.equal(zh.html.includes("Project Risk"), false);
+  assert.equal(en.html.includes("Risk digest"), true);
 });
 
 test("R5.6 Calendar route component renders deterministic day blocks and target links", () => {
@@ -3880,4 +3943,222 @@ test("R14 batch FEEDBACK: proposal route component localizes the feedback block 
   assert.equal(html.includes("Clear feedback"), true);
   assert.match(html, /class="wh-r14-proposal-feedback-tile wh-r14-proposal-feedback-tile--on"[^>]*data-r14-proposal-feedback-tile="not_useful"/u);
   assert.equal(html.includes("这条提议对你有帮助吗"), false);
+});
+
+// ── R15 批 web-mirror（web 只读会话镜像）渲染层 ────────────────────────────────────────
+function conversationMirrorMessages(): ConversationMessageVM[] {
+  const cid = "30000000-0000-4000-8000-000000000003";
+  const owner = "60000000-0000-4000-8000-000000000006";
+  const ivy = "60000000-0000-4000-8000-000000000007";
+  return [
+    {
+      id: "40000000-0000-4000-8000-000000000101",
+      conversation_id: cid,
+      seq: 5,
+      sender_type: "user",
+      sender_user_id: owner,
+      thread_root_id: null,
+      edited_at: "2026-07-12T01:00:05.000000Z",
+      pinned: { at: "2026-07-12T01:01:00.000000Z", by_user_id: owner },
+      reactions: [
+        { key: "approve", user_ids: [ivy] },
+        { key: "watch", user_ids: [ivy, owner] }
+      ],
+      kind: "text",
+      content: { text: "先看风险\n<script>alert(1)</script>" },
+      created_at: "2026-07-12T01:00:00.000000Z"
+    },
+    {
+      id: "40000000-0000-4000-8000-000000000102",
+      conversation_id: cid,
+      seq: 6,
+      sender_type: "cuu",
+      sender_user_id: null,
+      thread_root_id: null,
+      reply_to: {
+        message_id: "40000000-0000-4000-8000-000000000199",
+        sender_type: "user",
+        sender_user_id: ivy,
+        preview_text: "",
+        deleted: true
+      },
+      kind: "text",
+      content: { text: "这是我的看法？", is_clarifying_question: true, clarify_options: ["先看风险", "先看指标"] },
+      created_at: "2026-07-12T01:00:02.000000Z"
+    },
+    {
+      id: "40000000-0000-4000-8000-000000000103",
+      conversation_id: cid,
+      seq: 7,
+      sender_type: "user",
+      sender_user_id: ivy,
+      thread_root_id: null,
+      kind: "file_card",
+      content: { drive_item_id: "93000000-0000-4000-8000-000000000002", snapshot_name: "风险清单.md" },
+      created_at: "2026-07-12T01:00:04.000000Z"
+    },
+    {
+      id: "40000000-0000-4000-8000-000000000104",
+      conversation_id: cid,
+      seq: 8,
+      sender_type: "system",
+      sender_user_id: null,
+      thread_root_id: null,
+      kind: "system_event",
+      content: { event: "proposal_settled", title: "周报变更", outcome: "merged", proposal_id: "50000000-0000-4000-8000-000000000001" },
+      created_at: "2026-07-12T01:00:06.000000Z"
+    },
+    {
+      id: "40000000-0000-4000-8000-000000000105",
+      conversation_id: cid,
+      seq: 9,
+      sender_type: "user",
+      sender_user_id: ivy,
+      thread_root_id: null,
+      deleted_at: "2026-07-12T01:00:08.000000Z",
+      kind: "text",
+      content: { text: "" },
+      created_at: "2026-07-12T01:00:07.000000Z"
+    }
+  ];
+}
+
+test("R15 web-mirror conversation component renders a read-only bilingual message mirror", () => {
+  const conversation = {
+    conversationId: "30000000-0000-4000-8000-000000000003",
+    messages: conversationMirrorMessages(),
+    members: [
+      { id: "60000000-0000-4000-8000-000000000006", nickname: "R15 owner" },
+      { id: "60000000-0000-4000-8000-000000000007", nickname: "Ivy" }
+    ],
+    isLatest: true,
+    refreshHref: "/conversations/30000000-0000-4000-8000-000000000003"
+  };
+  const zh = renderWebRouteComponent({ key: "conversation", conversation }, { locale: "zh-CN" });
+  const html = zh.html;
+
+  // 只读边界：横幅 + 无 composer/textarea + 无写按钮。
+  assert.equal(html.includes("只读镜像 · 完整协作请在桌面工作台"), true);
+  assert.equal(html.includes('data-r15-conversation-readonly="true"'), true);
+  assert.equal(html.includes("<textarea"), false);
+  assert.equal(html.includes("<button"), false);
+  assert.equal(/data-action-id=/u.test(html), false);
+  // 昵称解析（成员目录）。
+  assert.equal(html.includes("R15 owner"), true);
+  assert.equal(html.includes("Ivy"), true);
+  assert.equal(html.includes("Cuu"), true);
+  // 用户内容转义（防注入）：脚本被转义，绝不原样出现。
+  assert.equal(html.includes("<script>alert(1)</script>"), false);
+  assert.equal(html.includes("&lt;script&gt;"), true);
+  // 换行 → <br>。
+  assert.equal(html.includes("先看风险<br>"), true);
+  // 反应聚合：emoji + 计数（reaction 破例 emoji）。
+  assert.equal(html.includes("👍"), true);
+  assert.equal(html.includes("👀"), true);
+  assert.match(html, /wh-mirror-reaction-emoji" aria-hidden="true">👀<\/span><span>2<\/span>/u);
+  // 编辑 + 置顶标记。
+  assert.equal(html.includes("已编辑"), true);
+  assert.equal(html.includes("已置顶"), true);
+  // 引用回复：原消息已删 → 占位。
+  assert.equal(html.includes("原消息已删除"), true);
+  // 澄清追问徽标 + 选项。
+  assert.equal(html.includes("Cuu 在问"), true);
+  assert.equal(html.includes("先看指标"), true);
+  // file_card 快照名（只读 chip）。
+  assert.equal(html.includes("风险清单.md"), true);
+  // system_event 落定行朴素渲染：标题 + 结算词。
+  assert.equal(html.includes("周报变更 · 已合并"), true);
+  // 删除墓碑。
+  assert.equal(html.includes("此消息已删除"), true);
+
+  // 英文横幅 + 结算词本地化。
+  const en = renderWebRouteComponent({ key: "conversation", conversation }, { locale: "en-US" });
+  assert.equal(en.html.includes("Read-only mirror · Collaborate in the desktop workbench"), true);
+  assert.equal(en.html.includes("周报变更 · Merged"), true);
+  assert.equal(en.html.includes("Original message deleted"), true);
+  assert.equal(en.html.includes("Cuu is asking"), true);
+});
+
+test("R15 web-mirror conversation component shows an honest empty state and pagination controls", () => {
+  const empty = renderWebRouteComponent({
+    key: "conversation",
+    conversation: {
+      conversationId: "c-1",
+      messages: [],
+      members: [],
+      isLatest: true,
+      refreshHref: "/conversations/c-1"
+    }
+  }, { locale: "zh-CN" });
+  assert.equal(empty.html.includes("这个会话还没有可显示的消息"), true);
+  // 刷新按钮常驻。
+  assert.equal(empty.html.includes('data-r15-mirror-refresh="true"'), true);
+
+  const paged = renderWebRouteComponent({
+    key: "conversation",
+    conversation: {
+      conversationId: "c-1",
+      messages: [],
+      members: [],
+      targetSeq: 12,
+      olderBeforeSeq: 3,
+      newerAfterSeq: 20,
+      isLatest: false,
+      refreshHref: "/conversations/c-1?seq=12"
+    }
+  }, { locale: "en-US" });
+  assert.equal(paged.html.includes('href="/conversations/c-1?before=3"'), true);
+  assert.equal(paged.html.includes('href="/conversations/c-1?after=20"'), true);
+  assert.equal(paged.html.includes('data-r15-mirror-latest="true"'), true);
+  assert.equal(paged.html.includes('data-r15-conversation-target-seq="12"'), true);
+});
+
+test("R15 web-mirror conversation component renders system_event risk digest and tool_note plainly", () => {
+  const messages: ConversationMessageVM[] = [
+    {
+      id: "40000000-0000-4000-8000-000000000201",
+      conversation_id: "c-1",
+      seq: 1,
+      sender_type: "system",
+      sender_user_id: null,
+      thread_root_id: null,
+      kind: "system_event",
+      content: { event: "risk_digest", summary: "3 项工单停滞、1 项临期", stalled_count: 3 },
+      created_at: "2026-07-12T02:00:00.000000Z"
+    },
+    {
+      id: "40000000-0000-4000-8000-000000000202",
+      conversation_id: "c-1",
+      seq: 2,
+      sender_type: "cuu",
+      sender_user_id: null,
+      thread_root_id: null,
+      kind: "tool_note",
+      content: { summary: "查询了三个工单的状态" },
+      created_at: "2026-07-12T02:00:02.000000Z"
+    },
+    {
+      id: "40000000-0000-4000-8000-000000000203",
+      conversation_id: "c-1",
+      seq: 3,
+      sender_type: "cuu",
+      sender_user_id: null,
+      thread_root_id: null,
+      kind: "action_card",
+      content: { items: [{ title_md: "**跟进** 供应延期", status: "waiting_decision" }, { title_md: "复核预算", status: "running" }] },
+      created_at: "2026-07-12T02:00:04.000000Z"
+    }
+  ];
+  const html = renderWebRouteComponent({
+    key: "conversation",
+    conversation: { conversationId: "c-1", messages, members: [], isLatest: true, refreshHref: "/conversations/c-1" }
+  }, { locale: "zh-CN" }).html;
+
+  assert.equal(html.includes("今日风险巡检：3 项工单停滞、1 项临期"), true);
+  assert.equal(html.includes("查询了三个工单的状态"), true);
+  // action_card 朴素渲染：header 计数 + 去 markdown 的条目标题（无交互按钮）。
+  assert.equal(html.includes("Cuu 从讨论里拎出 2 件事"), true);
+  assert.equal(html.includes("跟进 供应延期"), true);
+  assert.equal(html.includes("**跟进**"), false);
+  assert.equal(html.includes("<button"), false);
 });

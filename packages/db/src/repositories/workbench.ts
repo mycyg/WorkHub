@@ -180,6 +180,8 @@ export function createWorkbenchRepository(db: WorkHubDb) {
           eq(projects.workspaceId, input.workspaceId),
           eq(projects.archived, false),
           isNull(projects.deletedAt),
+          // R15 批 B：DM 容器项目绝不渲染工作台 VM——就算拿到它的 id 也 fail-closed（无入口，纵深防御）。
+          eq(projects.isDmContainer, false),
           eq(workspaces.id, input.workspaceId),
           isNull(workspaces.deletedAt),
           eq(workspaceMemberships.workspaceId, input.workspaceId),

@@ -64,6 +64,10 @@ function projectRow(): NonNullable<DrivePageRows["project"]> {
     nextSeq: 7,
     // R13 批 S3：projects 加了 is_personal 列——机械补齐，不是本文件测的功能改动。
     isPersonal: false,
+    // R15 批 B：projects 加了 is_dm_container 列——机械补齐（普通项目固定 false）。
+    isDmContainer: false,
+    // R16 批 W4a：projects 加了 instructions_md 列——机械补齐（这份 fixture 不关心它，默认空）。
+    instructionsMd: null,
     createdAt: now,
     updatedAt: now
   };
@@ -4267,6 +4271,8 @@ function mainConversationRow(overrides: Partial<VisibleConversationRow> = {}): V
     // ConversationRow 现在多出的两个必需字段。
     contextSummaryMd: null,
     contextSummaryThroughSeq: 0,
+    // R15 批 B：project_conversations 新增 dm_key（nullable）——主区会话固定 null。
+    dmKey: null,
     createdBy: null,
     deletedAt: null,
     deletedByUserId: null,

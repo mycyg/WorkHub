@@ -148,7 +148,11 @@ const projectSelection = {
   // R13 批 S3：projects 加了 is_personal 列——这份手选列表要和 typeof projects.$inferSelect
   // 完整对齐才能编译（AiSettingsProjectRow 就是那个类型），否则每次建表加列这里都会红。
   // 不是本批的功能改动，纯粹是共享表加列牵连的机械补齐。
-  isPersonal: projects.isPersonal
+  isPersonal: projects.isPersonal,
+  // R15 批 B：projects 加了 is_dm_container 列——同上，机械补齐让手选列表与 $inferSelect 对齐。
+  isDmContainer: projects.isDmContainer,
+  // R16 批 W4a：projects 加了 instructions_md 列——同上，机械补齐让手选列表与 $inferSelect 对齐。
+  instructionsMd: projects.instructionsMd
 };
 
 const governanceSelection = {

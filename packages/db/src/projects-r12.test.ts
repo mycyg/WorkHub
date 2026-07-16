@@ -47,6 +47,10 @@ function project(overrides: Partial<ProjectRow> = {}): ProjectRow {
     deletedByNickname: null,
     nextSeq: 0,
     isPersonal: false,
+    // R15 批 B：projects 加了 is_dm_container 列——普通项目固定 false（容器项目不经这条 fixture）。
+    isDmContainer: false,
+    // R16 批 W4a：projects 加了 instructions_md 列——大多数 fixture 场景不关心它，默认空。
+    instructionsMd: null,
     createdAt: now,
     updatedAt: now,
     ...overrides
@@ -311,4 +315,48 @@ test("R13 S3 bootstrapPersonalProject never reuses another project on a slug con
   // 撞车时不能顺手插了主区会话或治理行——报错必须发生在任何其它写入之前。
   assert.equal(queries.some((query) => query.targetTable === projectConversations), false);
   assert.equal(queries.some((query) => query.targetTable === projectAiGovernance), false);
+});
+
+// R16 批 W4a（项目级自定义指令）：单列条件更新——只改 instructions_md + updatedAt，且只对活跃项目
+// （未归档、未软删）生效，呼应服务层 requireManageableProject 的活跃性判定。
+test("R16 W4a updateInstructions writes instructions_md scoped to the active project only", async () => {
+  const at = new Date("2026-07-16T02:00:00.000Z");
+  const updated = project({ instructionsMd: "遇到发布相关的工单，先问一句要不要拉发布负责人。" });
+  const { db, queries } = createQueryRecorder([[updated]]);
+  const repository = createProjectRepository(db);
+
+  const result = await repository.updateInstructions({
+    projectId,
+    instructionsMd: "遇到发布相关的工单，先问一句要不要拉发布负责人。",
+    now: at
+  });
+
+  assert.equal(result?.instructionsMd, "遇到发布相关的工单，先问一句要不要拉发布负责人。");
+  const update = queries.find((query) => query.operation === "update");
+  assert.equal(update?.targetTable, projects);
+  const values = update?.setValue as Record<string, unknown>;
+  assert.equal(values["instructionsMd"], "遇到发布相关的工单，先问一句要不要拉发布负责人。");
+  assert.equal(values["updatedAt"], at);
+  assert.ok(queryReferences(update?.where, projects.id));
+  assert.ok(queryReferences(update?.where, projects.archived));
+  assert.ok(queryReferences(update?.where, projects.deletedAt));
+  const params = queryParamValues(update?.where);
+  assert.ok(params.includes(projectId));
+  assert.ok(params.includes(false));
+});
+
+test("R16 W4a updateInstructions clears to null (blank means no injection) and returns null when the project misses the active fence", async () => {
+  const { db, queries } = createQueryRecorder([[]]);
+  const repository = createProjectRepository(db);
+
+  const result = await repository.updateInstructions({
+    projectId,
+    instructionsMd: null,
+    now: new Date("2026-07-16T02:05:00.000Z")
+  });
+
+  assert.equal(result, null);
+  const update = queries.find((query) => query.operation === "update");
+  const values = update?.setValue as Record<string, unknown>;
+  assert.equal(values["instructionsMd"], null);
 });

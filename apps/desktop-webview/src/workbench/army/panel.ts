@@ -46,6 +46,9 @@ const DRIVE_OWNER_ID = "drive";
 // R14 批 APPROVE-CHAT：右栏第四个 owner（提议详情）——军团的被动后台刷新不能悄悄把用户正在看/审批的提议
 // 详情挤掉，与 drive 文件预览同一优先级（见 publish background 守卫、proposal/panel.ts 顶部互斥注释）。
 const PROPOSAL_OWNER_ID = "proposal";
+// R16-W3：右栏第五个 owner（文件模式：变动文件 / 所有文件）——用户切到「文件」chip 后军团的被动后台刷新
+// 同样不能把它挤掉（与 drive/proposal 同一优先级，见下 publish background 守卫）。
+const FILES_OWNER_ID = "files";
 
 function errorMessage(error: unknown, locale: Locale): string {
   if (error instanceof Error && error.message) {
@@ -84,9 +87,9 @@ export function mountArmyContextPanel(
       return;
     }
     const owner = store.getState().sidePanelContent?.ownerId;
-    if (opts.background && (owner === DRIVE_OWNER_ID || owner === PROPOSAL_OWNER_ID)) {
+    if (opts.background && (owner === DRIVE_OWNER_ID || owner === PROPOSAL_OWNER_ID || owner === FILES_OWNER_ID)) {
       // 后台静默刷新：内部 state 已经在调用方更新过了，但不要把一个正在看的文件预览 / 正在审批的提议详情
-      // 挤掉（drive/proposal 都是用户主动点开的，优先级高于军团的被动后台刷新）。
+      // / 正在看的变动文件列表挤掉（drive/proposal/files 都是用户主动点开的，优先级高于军团的被动后台刷新）。
       return;
     }
     const html = renderArmyPanelHtml(state, input.locale, resolveMembers());

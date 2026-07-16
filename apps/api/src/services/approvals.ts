@@ -54,6 +54,7 @@ import { getDefaultStructuredLogger } from "../logging.js";
 import { parseOutputContract } from "../pages/output-contract.js";
 import { presentableManifestChanges } from "../pages/proposals.js";
 import {
+  APPROVAL_REMINDER_INTERVAL_MS,
   createNotificationService,
   type NotificationService
 } from "./notifications.js";
@@ -781,7 +782,10 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
             body: attention.summary_text,
             targetUrl: "/approvals",
             workItemId: approval.workItemId,
-            dedupeKey: `approval_routed:${approval.id}`
+            dedupeKey: `approval_routed:${approval.id}`,
+            // R15 批 A（提醒阶梯）：进 24h 叮嘱阶梯——未读未处理满 24h 由 notification-reminder pulse 复活提醒，
+            // 最多 3 次。被通知人「暂停提醒」或读/归档即退出。
+            nextRemindAt: new Date(now().getTime() + APPROVAL_REMINDER_INTERVAL_MS)
           });
         } catch (error) {
           getDefaultStructuredLogger().warn("approval_routed_notify_failed", { approvalId: approval.id, error });

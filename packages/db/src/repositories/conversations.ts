@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
 
 import {
   conversationListQuerySchema,
@@ -15,6 +15,7 @@ import {
   messageReactions,
   projectConversations,
   projects,
+  users,
   workspaceMemberships
 } from "../schema/index.js";
 
@@ -45,6 +46,12 @@ export type ConversationAccessRecord = {
   // "个人项目的 main 会话"这一单聊特例（团队项目的 main 仍归观察者，turns 恒 409）。跟着
   // readVisibleAccess 的 select 一起加（不显式投影运行时就是 undefined，教训同 cuuEnabled）。
   projectIsPersonal: boolean;
+  // R16 批 W4a（项目级自定义指令）：该会话所属项目的指令原文（未 trim，可能为 null）与「是否 DM 容器
+  // 项目」标记——apps/api/src/services/conversation-turns.ts 据此判定要不要把项目指令注入这一轮
+  // system prompt（DM 容器项目永远跳过，见该文件里 buildTurnProjectInstructionsSection 调用处的注释）。
+  // 同 projectIsPersonal 当初的教训：不在这里显式投影，readVisibleAccess 读回的值运行时就是 undefined。
+  projectInstructionsMd: string | null;
+  projectIsDmContainer: boolean;
   membershipRole: string;
   participantRole: ConversationParticipantRole | null;
   // R13 批 G1（小群）：conversation_participants 的真实行数（含创建者）——服务端回话判定的
@@ -135,6 +142,16 @@ export type CreateCuuMessageInput = {
         is_clarifying_question?: boolean;
         clarify_options?: string[];
         clarify_placeholder?: string;
+        // R15 批 D2（Cuu 主动开口）：主动性闸投递到个人空间主区的 Cuu 消息带上产它的 intent id 做审计
+        // 溯源（对齐 @workhub/contracts 的 conversationTextContentSchema 同名 additive 字段）。普通 turn
+        // 回复不带此字段——它只出现在 conversation_message 投递通道的落库物上。
+        proactive_intent_id?: string;
+        // R16-W1（工作台聊天流升级）：Cuu 回应展示元信息（模型 id / 累计 token / 耗时 ms），additive
+        // optional，由 services/conversation-turns.ts 在 turn 结算时写入（对齐同名契约字段）。仓库层不校验
+        // 这些字段的语义，只原样落 content_json（同 memory_citations 的既有分工）。
+        model?: string;
+        usage_tokens?: number;
+        elapsed_ms?: number;
       };
     }
   | { kind: "file_card"; contentJson: { drive_item_id: string; snapshot_name: string } }
@@ -171,6 +188,26 @@ export type RenameConversationInput = {
   at?: Date;
 };
 
+// R15 批 cuu-toggle：只改 cuu_enabled 这一列的幂等更新——同 RenameConversationInput 一样的「给已存在的
+// 会话行做一次字段更新」独立事务档次（不碰 nextSeq/其它任何列）。语义红线（仅 collab 含 DM 可翻、main
+// 一律拒绝、仅参与者可翻）在服务层强制，这里只负责租户安全（workspaceId + 未删除围栏）的原子写。
+// 重复翻到同一个值不是错误——就是一次普通的 UPDATE，updated_at 照常前进。
+export type UpdateConversationCuuEnabledInput = {
+  workspaceId: string;
+  conversationId: string;
+  enabled: boolean;
+  at?: Date;
+};
+
+// R15 批 cuu-toggle：GET /participants 的仓库行——参与者 user id + 昵称（join users，同 listDmsForUser
+// 的既有 join 模式）+ 角色。只在服务层判定为 collab（含 DM）会话时才会被调用——main 会话没有
+// conversation_participants 行，服务层直接短路成 scope:"workspace" + 空列表，不会走到这个方法。
+export type ConversationParticipantWithNicknameRow = {
+  userId: string;
+  nickname: string;
+  role: ConversationParticipantRole;
+};
+
 // R12 批8：反向翻页（listMessagesBefore）的输入——除了游标方向（beforeSeq 而非 afterSeq），access
 // 判定与 listMessagesAfter 完全同款（复用同一个 readVisibleAccess + activeConversationCondition）。
 export type ListConversationMessagesBeforeInput = {
@@ -191,6 +228,57 @@ export type CreatedCollabConversation = {
   conversation: ConversationRow;
   participants: ConversationParticipantRow[];
 };
+
+// R15 批 B（人对人私聊）：openOrCreateDm 的输入——只需两个人类 user id + 工作区，容器项目由本方法惰性
+// 创建（不需要调用方先解析出容器 id）。target 须与 actor 同工作区活跃成员、且 target≠actor（自聊在
+// 服务层先行 400，仓库层再兜一次 InputError）。
+export type OpenOrCreateDmInput = {
+  workspaceId: string;
+  actorUserId: string;
+  targetUserId: string;
+  at?: Date;
+};
+
+// created=true 表示这次真的新建了 DM（含 2 参与者）；false 表示命中既有 DM 或并发双开回退到既有。
+export type OpenOrCreateDmResult = {
+  conversation: ConversationRow;
+  created: boolean;
+};
+
+// R15 批 B（人对人私聊）：listDmsForUser 的输入——actor 的工作区 + user id + 列表上限。只读、参与者门控
+// （只回 actor 是 participant 的 DM），与 openOrCreateDm 一样限定在工作区级 DM 容器项目内。
+export type ListDmsForUserInput = {
+  workspaceId: string;
+  userId: string;
+  limit: number;
+};
+
+// 一条 DM 的仓库结果：会话行 + 两名活跃参与者（含昵称、is_self 由 actor 判定）。对方账号已注销的 DM
+// 在仓库层被过滤掉（活跃参与者 < 2），不进列表。
+export type DmParticipantRow = {
+  userId: string;
+  nickname: string;
+  isSelf: boolean;
+};
+export type DmListForUserRow = {
+  conversation: ConversationRow;
+  participants: DmParticipantRow[];
+};
+
+// R15 批 B：DM 会话查重键——两个 user id 归一化（小写）后排序，再拼 'dm:' 前缀。同一对用户与顺序无关
+// 得到同一个 key（workspace 维度由容器项目 id 天然限定，见 dmKey 列/唯一索引注释）。导出供单测直接覆盖。
+export function normalizeDmKey(userIdA: string, userIdB: string): string {
+  const normalized = [userIdA.trim().toLowerCase(), userIdB.trim().toLowerCase()].sort();
+  return `dm:${normalized[0]}:${normalized[1]}`;
+}
+
+// R15 批 B：DM 容器项目的固定命名与 slug——slug 带 workspace 短 id（前 8 位），(workspace_id, slug)
+// 既有唯一索引 + is_dm_container 部分唯一索引双重兜底「每工作区至多一个容器」。
+const DM_CONTAINER_PROJECT_NAME = "直达消息";
+const DM_CONTAINER_OWNER_NICKNAME = "系统";
+function dmContainerSlug(workspaceId: string): string {
+  return `dm-container-${workspaceId.slice(0, 8)}`;
+}
 
 export type ConversationMessagePage = {
   rows: ConversationMessageRow[];
@@ -319,6 +407,13 @@ export type ConversationRepository = {
   ) => Promise<VisibleConversationListResult | null>;
   findVisibleAccessRecord: (input: FindConversationAccessInput) => Promise<ConversationAccessRecord | null>;
   createCollab: (input: CreateCollabConversationInput) => Promise<CreatedCollabConversation>;
+  // R15 批 B（人对人私聊）：查/开一对用户的 DM——惰性建工作区级容器项目、按 dm_key 查重、未命中则事务内
+  // 建 collab 会话（cuu_enabled=false）+ 2 参与者，并发双开撞唯一约束后回退查询既有。新增方法，不改动
+  // 上面任何既有方法的签名/行为。
+  openOrCreateDm: (input: OpenOrCreateDmInput) => Promise<OpenOrCreateDmResult>;
+  // R15 批 B（人对人私聊）：actor 参与的 DM 列表（参与者门控、含两名参与者昵称）。新增只读方法，不改动
+  // 上面任何既有方法的签名/行为——rail「私聊」分组的唯一数据源，桌面 chat 视图据此拿到真实参与者集合。
+  listDmsForUser: (input: ListDmsForUserInput) => Promise<DmListForUserRow[]>;
   createUserMessage: (input: CreateUserMessageInput) => Promise<ConversationMessageRow>;
   // R12 批4a：新增，不改动上面任何既有方法的签名/行为。
   createCuuMessage: (input: CreateCuuMessageInput) => Promise<ConversationMessageRow>;
@@ -333,6 +428,13 @@ export type ConversationRepository = {
   updateContextSummary: (input: UpdateContextSummaryInput) => Promise<void>;
   // R14FIX 批 workbench：新增，不改动上面任何既有方法——协同会话改名（返回改名后的会话行）。
   renameConversation: (input: RenameConversationInput) => Promise<ConversationRow>;
+  // R15 批 cuu-toggle：新增，不改动上面任何既有方法——会话级 Cuu 参与开关翻转（返回翻转后的会话行）。
+  updateCuuEnabled: (input: UpdateConversationCuuEnabledInput) => Promise<ConversationRow>;
+  // R15 批 cuu-toggle：新增，不改动上面任何既有方法——列出一条会话的全部参与者（user id + 昵称 + 角色），
+  // 只给已判定为 collab（含 DM）的会话调用（main 由服务层短路，不查这个方法）。
+  listParticipantsWithNickname: (input: {
+    conversationId: string;
+  }) => Promise<ConversationParticipantWithNicknameRow[]>;
   // R14 批 CHAT：以下全部新增，不改动上面任何既有方法。语义红线在服务层强制（见 apps/api/src/
   // services/conversations.ts），仓库层负责租户安全的原子写与页级无 N+1 聚合。
   editMessage: (input: EditMessageInput) => Promise<ConversationMessageRow>;
@@ -361,6 +463,37 @@ export type ConversationRepository = {
     conversationId: string;
     messageId: string;
   }) => Promise<ConversationMessageRow | null>;
+  // R15 批 A（A4 未读聚合）：一条聚合 SQL 算齐 viewer 在一批会话里的未读数（禁 N+1）。未读 = seq > 读游标
+  // （无游标 = 0）、未删除（墓碑不计）、且 sender 不是 viewer 自己的消息数。返回 Map<conversationId, count>，
+  // 未读为 0 的会话不出现在 Map 里（调用方 `?? 0` 兜底）。新增方法，不改动任何既有方法。
+  unreadCountsForViewer: (input: {
+    viewerUserId: string;
+    conversationIds: string[];
+  }) => Promise<Map<string, number>>;
+  // R15 批 A（A5 消息通知）：一条聚合 SQL 算齐一条会话里一批收件人各自的未读数（禁 N+1）——口径同上
+  // （seq > 各自读游标、墓碑不计、不含自己发的）。返回 Map<recipientUserId, count>。新增方法。
+  unreadCountsForRecipients: (input: {
+    conversationId: string;
+    recipientUserIds: string[];
+  }) => Promise<Map<string, number>>;
+  // R15 批 A（A5 消息通知）：列出一条会话的全部参与者 user id（小写）。DM=2、collab=N。新增方法。
+  listParticipantUserIds: (input: { conversationId: string }) => Promise<string[]>;
+  // R15 批 D2（Cuu 主动开口）：解析目标用户「个人空间主区」——is_personal=true 且 owner=目标用户的项目
+  // 的 main 会话（R13 S3 语义：个人空间主区是用户↔Cuu 的 1:1 落点）。一个用户可能有多个个人空间
+  // （每次「+新建个人空间」新建一条），取最早创建的那个（默认的「我的空间」）作为主动开口的天然落点。
+  // 查不到（用户从未建过个人空间）返回 null —— 调用方据此降级回 notification 通道，绝不硬造个人空间。
+  // 系统级只读定位（无 viewerUserId 门控：owner 判定已收在 owner_user_id=targetUserId 这一条件上）。
+  findPersonalMainConversation: (input: {
+    workspaceId: string;
+    targetUserId: string;
+  }) => Promise<{ conversationId: string; projectId: string; title: string } | null>;
+  // R15 批 D4（找人交互卡投递）：定位一个【真项目】（非个人空间、非 DM 容器、未归档未删除）的 main 会话，
+  // 供 ddl-chase 找人在项目主区插系统行动卡。按 (projectId, workspaceId) 定位，查不到（项目主区缺失/
+  // 项目非真项目）返回 null，调用方据此降级回通知通道。系统级只读定位（无 viewerUserId 门控）。
+  findProjectMainConversation: (input: {
+    projectId: string;
+    workspaceId: string;
+  }) => Promise<{ conversationId: string; projectId: string; title: string } | null>;
 };
 
 class NamedConversationRepositoryError extends Error {
@@ -394,6 +527,11 @@ export class ConversationMessageDeletedError extends NamedConversationRepository
 export class ConversationMessageMutationFailedError extends NamedConversationRepositoryError {}
 // R14 批 CHAT（引用回复）：reply_to 目标跨会话/不存在/已删除——服务层映射到 400。
 export class ConversationReplyTargetError extends NamedConversationRepositoryError {}
+// R15 批 B（人对人私聊）：openOrCreateDm 的目标用户不是本工作区的活跃成员——服务层映射到 404
+// （跨工作区 DM 不存在；不泄漏「这个人存在但不在你工作区」的细节，与既有 fail-closed 口径一致）。
+export class ConversationDmTargetError extends NamedConversationRepositoryError {}
+// R15 批 B：DM 容器项目惰性创建/回查都落空的兜底（理论上不该发生：唯一索引兜底并发后必能回查到）。
+export class ConversationDmContainerError extends NamedConversationRepositoryError {}
 
 const conversationSelection = {
   id: projectConversations.id,
@@ -413,6 +551,9 @@ const conversationSelection = {
   // context_summary_through_seq 就是 undefined，压缩触发判定与摘要注入都会悄悄失效。
   contextSummaryMd: projectConversations.contextSummaryMd,
   contextSummaryThroughSeq: projectConversations.contextSummaryThroughSeq,
+  // R15 批 B（人对人私聊）：dm_key 必须显式投影——不加进 conversationSelection，DM 会话读回的
+  // dmKey 运行时就是 undefined（同 cuuEnabled/contextSummary 的教训），VM 的 is_dm 推导与查重都会失效。
+  dmKey: projectConversations.dmKey,
   createdBy: projectConversations.createdBy,
   deletedAt: projectConversations.deletedAt,
   deletedByUserId: projectConversations.deletedByUserId,
@@ -458,6 +599,9 @@ const CONVERSATION_READ_RECEIPTS_CAP = 500;
 // 页级富化（reactions/reply 预览）的 IN 列表上限——正常调用方传的是一页消息（≤100）或置顶清单
 // （≤50），这里只做防御性封顶，防止误用把无界 id 列表拼进 IN。
 const CONVERSATION_PAGE_ENRICH_CAP = 200;
+// R15 批 cuu-toggle：会话参与者列表上限——与 createCollab「至多 99 名被邀请成员 + 1 名创建者」的既有
+// 上限对称（同 @workhub/contracts 的 CONVERSATION_PARTICIPANTS_LIST_CAP），纯防御性封顶。
+const CONVERSATION_PARTICIPANTS_LIST_CAP = 100;
 
 function assertCursor(afterSeq: number) {
   if (!Number.isSafeInteger(afterSeq) || afterSeq < 0) {
@@ -617,6 +761,8 @@ async function readVisibleAccess(
       conversation: conversationSelection,
       projectOwnerUserId: projects.ownerUserId,
       projectIsPersonal: projects.isPersonal,
+      projectInstructionsMd: projects.instructionsMd,
+      projectIsDmContainer: projects.isDmContainer,
       membershipRole: workspaceMemberships.role,
       participantRole: conversationParticipants.role
     })
@@ -688,7 +834,9 @@ async function lockActiveProject(
     .select({
       projectId: projects.id,
       projectOwnerUserId: projects.ownerUserId,
-      isPersonal: projects.isPersonal
+      isPersonal: projects.isPersonal,
+      // R15 批 B：显式投影容器标记——createCollab 据此拒绝在 DM 容器项目内新建普通协同会话。
+      isDmContainer: projects.isDmContainer
     })
     .from(projects)
     .where(
@@ -723,6 +871,68 @@ async function lockActiveMembershipSet(
     )
     .orderBy(asc(workspaceMemberships.userId))
     .for("share", { of: workspaceMemberships });
+}
+
+// R15 批 B（人对人私聊）：惰性取/建工作区级 DM 容器项目，返回容器项目 id。原子创建复用「项目 main
+// 会话原子创建」的既有先例（ensureActiveMain）：先 onConflictDoNothing 插入（(workspace_id, slug)
+// 既有唯一索引 + is_dm_container 部分唯一索引双重兜底并发），落空则回查已存在的那条。事务内调用。
+async function lockOrCreateDmContainer(
+  db: WorkHubDb,
+  input: { workspaceId: string; at: Date }
+): Promise<string> {
+  const inserted = await db
+    .insert(projects)
+    .values({
+      id: randomUUID(),
+      workspaceId: input.workspaceId,
+      name: DM_CONTAINER_PROJECT_NAME,
+      slug: dmContainerSlug(input.workspaceId),
+      ownerNickname: DM_CONTAINER_OWNER_NICKNAME,
+      isDmContainer: true,
+      archived: false,
+      nextSeq: 0,
+      createdAt: input.at,
+      updatedAt: input.at
+    })
+    .onConflictDoNothing({ target: [projects.workspaceId, projects.slug] })
+    .returning({ id: projects.id });
+  if (inserted[0]) {
+    return inserted[0].id;
+  }
+  const [existing] = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(
+      and(
+        eq(projects.workspaceId, input.workspaceId),
+        eq(projects.isDmContainer, true),
+        isNull(projects.deletedAt)
+      )
+    )
+    .limit(1);
+  if (!existing) {
+    throw new ConversationDmContainerError("dm container project could not be resolved");
+  }
+  return existing.id;
+}
+
+// R15 批 B：按 (容器项目 id, dm_key) 查既有 DM 会话（未删除）。命中即返回既有会话行（含 dmKey 投影）。
+async function findDmConversationByKey(
+  db: WorkHubDb,
+  input: { projectId: string; dmKey: string }
+): Promise<ConversationRow | null> {
+  const [row] = await db
+    .select(conversationSelection)
+    .from(projectConversations)
+    .where(
+      and(
+        eq(projectConversations.projectId, input.projectId),
+        eq(projectConversations.dmKey, input.dmKey),
+        isNull(projectConversations.deletedAt)
+      )
+    )
+    .limit(1);
+  return (row as ConversationRow | undefined) ?? null;
 }
 
 async function lockConversationParticipant(
@@ -951,6 +1161,11 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
         if (!project) {
           throw new ConversationAccessDeniedError("creator cannot access the active project");
         }
+        // R15 批 B：DM 容器项目不接受普通协同会话——DM 会话只能经 openOrCreateDm 建（固定 2 人 +
+        // dm_key + cuu_enabled=false）。fail-closed 与个人空间同款（404），不给用户「在容器里建群」的入口。
+        if (project.isDmContainer) {
+          throw new ConversationAccessDeniedError("creator cannot access the active project");
+        }
         // R13 批 S3：个人空间成员语义=仅本人——即便发起人是正常工作区成员，也不能在别人的个人空间
         // 下新建协同会话。fail-closed 语义与上面的 !project 分支一致（同一个错误/同一个 404）。
         if (project.isPersonal && project.projectOwnerUserId !== creatorUserId) {
@@ -1070,6 +1285,184 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
         }
         return { conversation: created, participants: insertedParticipants };
       });
+    },
+
+    // R15 批 B（人对人私聊）：查/开一对用户的 DM。刻意不复用 createCollab——DM 不是「在某项目里建群」，
+    // 而是「在工作区级容器项目里，对一对用户查重开聊」：容器惰性创建、按 dm_key 查重、固定 2 人、
+    // cuu_enabled=false（B5 拍板）。整段在一个事务里，与「项目 main 会话原子创建」同一套幂等模式
+    // （onConflictDoNothing + returning 落空回查），并发双开靠 (project_id, dm_key) 部分唯一索引兜底。
+    async openOrCreateDm(input) {
+      const actorUserId = input.actorUserId.trim().toLowerCase();
+      const targetUserId = input.targetUserId.trim().toLowerCase();
+      if (!actorUserId || !targetUserId) {
+        throw new ConversationRepositoryInputError("direct message requires both actor and target users");
+      }
+      // 自聊在服务层已先行 400；仓库层再兜一次，保证任何调用方都拿不到「和自己开聊」的会话。
+      if (actorUserId === targetUserId) {
+        throw new ConversationRepositoryInputError("cannot open a direct message with yourself");
+      }
+      const at = input.at ?? new Date();
+      const dmKey = normalizeDmKey(actorUserId, targetUserId);
+      return db.transaction(async (tx) => {
+        // 1. 惰性取/建工作区级 DM 容器项目。
+        const containerProjectId = await lockOrCreateDmContainer(tx, { workspaceId: input.workspaceId, at });
+        // 2. 锁双方 workspace 成员行——二人须同工作区活跃成员（跨工作区 DM 不存在，复用 createCollab
+        //    的 lockActiveMembershipSet 校验模式）。
+        const memberships = await lockActiveMembershipSet(tx, {
+          workspaceId: input.workspaceId,
+          userIds: [actorUserId, targetUserId]
+        });
+        const activeIds = new Set(memberships.map((row) => row.userId.toLowerCase()));
+        if (!activeIds.has(actorUserId)) {
+          throw new ConversationAccessDeniedError("actor is not an active workspace member");
+        }
+        if (!activeIds.has(targetUserId)) {
+          throw new ConversationDmTargetError("target user is not an active member of this workspace");
+        }
+        // 3. 查既有 DM——命中直接返回（幂等：点头像开聊不越点越多）。
+        const existing = await findDmConversationByKey(tx, { projectId: containerProjectId, dmKey });
+        if (existing) {
+          return { conversation: existing, created: false };
+        }
+        // 4. 未命中：事务内建 collab 会话（cuu_enabled=false）+ dm_key。onConflictDoNothing 兜并发双开：
+        //    撞 (project_id, dm_key) 部分唯一索引则 returning 落空 → 回查既有。
+        const conversationId = randomUUID();
+        const [created] = await tx
+          .insert(projectConversations)
+          .values({
+            id: conversationId,
+            workspaceId: input.workspaceId,
+            projectId: containerProjectId,
+            kind: "collab",
+            title: "私聊",
+            visibility: "private",
+            nextSeq: 0,
+            cuuEnabled: false,
+            dmKey,
+            createdBy: actorUserId,
+            createdAt: at,
+            updatedAt: at
+          })
+          .onConflictDoNothing({
+            target: [projectConversations.projectId, projectConversations.dmKey],
+            where: sql`${projectConversations.dmKey} is not null`
+          })
+          .returning();
+        if (!created) {
+          // 并发双开：另一发已抢先建好——回查返回既有（不再插参与者，避免重复）。
+          const raced = await findDmConversationByKey(tx, { projectId: containerProjectId, dmKey });
+          if (!raced) {
+            throw new ConversationInsertFailedError("dm conversation insert conflict could not be resolved");
+          }
+          return { conversation: raced, created: false };
+        }
+        // 5. 固定 2 参与者：发起者 owner、对方 member。
+        await tx.insert(conversationParticipants).values([
+          {
+            id: randomUUID(),
+            conversationId,
+            userId: actorUserId,
+            role: "owner" as const,
+            createdAt: at,
+            updatedAt: at
+          },
+          {
+            id: randomUUID(),
+            conversationId,
+            userId: targetUserId,
+            role: "member" as const,
+            createdAt: at,
+            updatedAt: at
+          }
+        ]);
+        return { conversation: created, created: true };
+      });
+    },
+
+    // R15 批 B（人对人私聊）：actor 参与的 DM 列表——两步查询（禁 N+1）：
+    //  1) 工作区级 DM 容器项目里、dm_key 非空、未删除、actor 是 participant 的会话（按 updatedAt 倒序，
+    //     最近聊过的排前）；容器还没被任何人建过（没有 DM）时直接空列表。
+    //  2) 对这批会话 id 一次性取回全部活跃参与者 + 昵称（join users 过滤已注销）。
+    // 对方账号已注销 → 活跃参与者 < 2 → 整条 DM 不进列表（不能给一个点了打不开的死会话）。
+    async listDmsForUser(input) {
+      const actorUserId = input.userId.trim().toLowerCase();
+      if (!actorUserId) {
+        throw new ConversationRepositoryInputError("dm list requires an actor user id");
+      }
+      if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 500) {
+        throw new ConversationRepositoryInputError("dm list limit must be an integer from 1 through 500");
+      }
+      const [container] = await db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(
+          and(
+            eq(projects.workspaceId, input.workspaceId),
+            eq(projects.isDmContainer, true),
+            isNull(projects.deletedAt)
+          )
+        )
+        .limit(1);
+      if (!container) {
+        return [];
+      }
+      const conversationRows = await db
+        .select(conversationSelection)
+        .from(projectConversations)
+        .innerJoin(
+          conversationParticipants,
+          and(
+            eq(conversationParticipants.conversationId, projectConversations.id),
+            eq(conversationParticipants.userId, actorUserId)
+          )
+        )
+        .where(
+          and(
+            eq(projectConversations.projectId, container.id),
+            eq(projectConversations.workspaceId, input.workspaceId),
+            isNotNull(projectConversations.dmKey),
+            isNull(projectConversations.deletedAt)
+          )
+        )
+        .orderBy(desc(projectConversations.updatedAt), desc(projectConversations.id))
+        .limit(input.limit);
+      if (conversationRows.length === 0) {
+        return [];
+      }
+      const conversations = conversationRows as ConversationRow[];
+      const conversationIds = conversations.map((row) => row.id);
+      const participantRows = await db
+        .select({
+          conversationId: conversationParticipants.conversationId,
+          userId: users.id,
+          nickname: users.nickname
+        })
+        .from(conversationParticipants)
+        .innerJoin(
+          users,
+          and(eq(users.id, conversationParticipants.userId), isNull(users.deletedAt))
+        )
+        .where(inArray(conversationParticipants.conversationId, conversationIds));
+      const byConversation = new Map<string, DmParticipantRow[]>();
+      for (const row of participantRows) {
+        const bucket = byConversation.get(row.conversationId) ?? [];
+        bucket.push({
+          userId: row.userId,
+          nickname: row.nickname,
+          isSelf: row.userId.toLowerCase() === actorUserId
+        });
+        byConversation.set(row.conversationId, bucket);
+      }
+      const result: DmListForUserRow[] = [];
+      for (const conversation of conversations) {
+        const participants = byConversation.get(conversation.id) ?? [];
+        // 固定 2 人：actor 自己 + 对方都必须是活跃用户。任一注销（活跃行 < 2）就跳过——不给死会话入口。
+        if (participants.length !== 2 || !participants.some((participant) => participant.isSelf)) {
+          continue;
+        }
+        result.push({ conversation, participants });
+      }
+      return result;
     },
 
     async createUserMessage(input) {
@@ -1575,6 +1968,52 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
       return updated;
     },
 
+    // ── R15 批 cuu-toggle：会话级 Cuu 参与开关翻转 ────────────────────────────────────
+    // 只更新 cuu_enabled（+ updatedAt），workspace + 未删除围栏——同 renameConversation 一样的租户安全
+    // 原子写。命中 0 行（会话不存在/跨租户/已删）→ ConversationAccessDeniedError（服务层映射 404）。
+    // 会话种类（仅 collab 含 DM）/参与者鉴权在服务层已把关；重复翻到同一个值不特殊处理——就是一次
+    // 普通的 UPDATE，天然幂等（updated_at 照常前进，不是"无变化就跳过"的短路）。
+    async updateCuuEnabled(input) {
+      const [updated] = await db
+        .update(projectConversations)
+        .set({ cuuEnabled: input.enabled, updatedAt: input.at ?? new Date() })
+        .where(
+          and(
+            eq(projectConversations.id, input.conversationId),
+            eq(projectConversations.workspaceId, input.workspaceId),
+            isNull(projectConversations.deletedAt)
+          )
+        )
+        .returning();
+      if (!updated) {
+        throw new ConversationAccessDeniedError("conversation not found for cuu toggle");
+      }
+      return updated;
+    },
+
+    // ── R15 批 cuu-toggle：会话参与者列表（含昵称） ───────────────────────────────────
+    // 单条 join 查询（conversation_participants join users，过滤已注销账号——同 listDmsForUser 的既有
+    // join 模式），按 user id 稳定排序（同 listParticipantUserIds 的既有排序口径）。只给已判定为 collab
+    // （含 DM）的会话调用；租户/可见性围栏已经在服务层的 visibleConversation() 做过，这里不重复。
+    async listParticipantsWithNickname(input) {
+      const rows = await db
+        .select({
+          userId: users.id,
+          nickname: users.nickname,
+          role: conversationParticipants.role
+        })
+        .from(conversationParticipants)
+        .innerJoin(users, and(eq(users.id, conversationParticipants.userId), isNull(users.deletedAt)))
+        .where(eq(conversationParticipants.conversationId, input.conversationId))
+        .orderBy(asc(users.id))
+        .limit(CONVERSATION_PARTICIPANTS_LIST_CAP);
+      return rows.map((row) => ({
+        userId: row.userId,
+        nickname: row.nickname,
+        role: row.role as ConversationParticipantRole
+      }));
+    },
+
     // ── R14 批 CHAT：编辑 ────────────────────────────────────────────────────────────
     // 仅本人（sender_type='user' 且 sender_user_id=自己）、仅 kind='text'、created_at+window 内、
     // 目标未删除。四道判定在锁住消息行后的同一次事务里做，不跨调用留 TOCTOU 缝。
@@ -1981,6 +2420,172 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
         )
         .limit(1);
       return row?.message ?? null;
+    },
+
+    // ── R15 批 A（A4 未读聚合 / A5 消息通知）：读游标口径的未读数聚合，禁 N+1 ──────────────────
+    // 共同口径：未读 = seq > coalesce(读游标, 0)、deleted_at is null（墓碑不计）、且 sender 不是本人
+    // （sender_user_id 为 NULL 的 Cuu/system 消息一律计入——它们不是「你发的」）。
+    async unreadCountsForViewer(input) {
+      const conversationIds = [...new Set(input.conversationIds)];
+      const counts = new Map<string, number>();
+      if (conversationIds.length === 0) {
+        return counts;
+      }
+      // 一条 GROUP BY 查询算齐这一批会话的未读数：leftJoin 本人读游标（无游标→last_read_seq 为 NULL→
+      // coalesce 兜 0）。未读为 0 的会话在 GROUP BY 下不产出行，Map 里不出现（调用方 `?? 0` 兜底）。
+      const rows = await db
+        .select({
+          conversationId: conversationMessages.conversationId,
+          unread: sql<number>`count(*)::int`
+        })
+        .from(conversationMessages)
+        .leftJoin(
+          conversationReadCursors,
+          and(
+            eq(conversationReadCursors.conversationId, conversationMessages.conversationId),
+            eq(conversationReadCursors.userId, input.viewerUserId)
+          )
+        )
+        .where(
+          and(
+            inArray(conversationMessages.conversationId, conversationIds),
+            isNull(conversationMessages.deletedAt),
+            or(
+              isNull(conversationMessages.senderUserId),
+              ne(conversationMessages.senderUserId, input.viewerUserId)
+            ),
+            sql`${conversationMessages.seq} > coalesce(${conversationReadCursors.lastReadSeq}, 0)`
+          )
+        )
+        .groupBy(conversationMessages.conversationId);
+      for (const row of rows) {
+        counts.set(row.conversationId, Number(row.unread));
+      }
+      return counts;
+    },
+
+    async unreadCountsForRecipients(input) {
+      const recipientUserIds = [...new Set(input.recipientUserIds.map((id) => id.toLowerCase()))];
+      const counts = new Map<string, number>();
+      if (recipientUserIds.length === 0) {
+        return counts;
+      }
+      // 从 conversation_participants 驱动（每个参与者恒有一行 → 从未读过的参与者也被算进来，未读=全部
+      // 非自己非墓碑消息），leftJoin 各自读游标 + leftJoin 命中的未读消息，一条 GROUP BY 算齐这条会话里
+      // 这批收件人各自的未读数（禁 N+1；count(message.id) 在无命中时 LEFT JOIN 产出 NULL → 计 0）。
+      const rows = await db
+        .select({
+          userId: conversationParticipants.userId,
+          unread: sql<number>`count(${conversationMessages.id})::int`
+        })
+        .from(conversationParticipants)
+        .leftJoin(
+          conversationReadCursors,
+          and(
+            eq(conversationReadCursors.conversationId, conversationParticipants.conversationId),
+            eq(conversationReadCursors.userId, conversationParticipants.userId)
+          )
+        )
+        .leftJoin(
+          conversationMessages,
+          and(
+            eq(conversationMessages.conversationId, conversationParticipants.conversationId),
+            isNull(conversationMessages.deletedAt),
+            or(
+              isNull(conversationMessages.senderUserId),
+              ne(conversationMessages.senderUserId, conversationParticipants.userId)
+            ),
+            sql`${conversationMessages.seq} > coalesce(${conversationReadCursors.lastReadSeq}, 0)`
+          )
+        )
+        .where(
+          and(
+            eq(conversationParticipants.conversationId, input.conversationId),
+            inArray(conversationParticipants.userId, recipientUserIds)
+          )
+        )
+        .groupBy(conversationParticipants.userId);
+      for (const row of rows) {
+        counts.set(row.userId.toLowerCase(), Number(row.unread));
+      }
+      return counts;
+    },
+
+    async listParticipantUserIds(input) {
+      const rows = await db
+        .select({ userId: conversationParticipants.userId })
+        .from(conversationParticipants)
+        .where(eq(conversationParticipants.conversationId, input.conversationId))
+        .orderBy(asc(conversationParticipants.userId))
+        .limit(CONVERSATION_READ_RECEIPTS_CAP);
+      return rows.map((row) => row.userId.toLowerCase());
+    },
+
+    async findPersonalMainConversation(input) {
+      const rows = await db
+        .select({
+          conversationId: projectConversations.id,
+          projectId: projectConversations.projectId,
+          title: projectConversations.title
+        })
+        .from(projectConversations)
+        .innerJoin(
+          projects,
+          and(
+            eq(projects.id, projectConversations.projectId),
+            eq(projects.workspaceId, projectConversations.workspaceId)
+          )
+        )
+        .where(
+          and(
+            eq(projectConversations.workspaceId, input.workspaceId),
+            eq(projectConversations.kind, "main"),
+            isNull(projectConversations.deletedAt),
+            eq(projects.isPersonal, true),
+            eq(projects.ownerUserId, input.targetUserId),
+            eq(projects.archived, false),
+            isNull(projects.deletedAt)
+          )
+        )
+        // 多个个人空间时取最早建的（默认「我的空间」）——稳定、可预期的单一落点。
+        .orderBy(asc(projects.createdAt), asc(projectConversations.createdAt))
+        .limit(1);
+      const row = rows[0];
+      return row ? { conversationId: row.conversationId, projectId: row.projectId, title: row.title } : null;
+    },
+
+    async findProjectMainConversation(input) {
+      const rows = await db
+        .select({
+          conversationId: projectConversations.id,
+          projectId: projectConversations.projectId,
+          title: projectConversations.title
+        })
+        .from(projectConversations)
+        .innerJoin(
+          projects,
+          and(
+            eq(projects.id, projectConversations.projectId),
+            eq(projects.workspaceId, projectConversations.workspaceId)
+          )
+        )
+        .where(
+          and(
+            eq(projectConversations.projectId, input.projectId),
+            eq(projectConversations.workspaceId, input.workspaceId),
+            eq(projectConversations.kind, "main"),
+            isNull(projectConversations.deletedAt),
+            // 只认真项目：个人空间 / DM 容器 / 已归档已删除项目都不是找人卡的落点。
+            eq(projects.isPersonal, false),
+            eq(projects.isDmContainer, false),
+            eq(projects.archived, false),
+            isNull(projects.deletedAt)
+          )
+        )
+        .orderBy(asc(projectConversations.createdAt))
+        .limit(1);
+      const row = rows[0];
+      return row ? { conversationId: row.conversationId, projectId: row.projectId, title: row.title } : null;
     }
   };
 }

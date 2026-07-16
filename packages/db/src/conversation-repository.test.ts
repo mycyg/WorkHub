@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   ConversationAccessDeniedError,
+  ConversationDmTargetError,
   ConversationInsertFailedError,
   ConversationMessageActorMismatchError,
   ConversationMessageDeletedError,
@@ -21,6 +22,7 @@ import {
   ConversationSourceMessageMismatchError,
   ConversationThreadRootMismatchError,
   createConversationRepository,
+  normalizeDmKey,
   type ConversationAccessRecord,
   type ConversationMessageRow,
   type ConversationParticipantRow,
@@ -33,6 +35,7 @@ import {
   messageReactions,
   projectConversations,
   projects,
+  users,
   workspaceMemberships
 } from "./schema/index.js";
 import {
@@ -75,6 +78,8 @@ function conversation(overrides: Partial<ConversationRow> = {}): ConversationRow
     // ConversationRow 现在多出的两个必需字段（这个 fixture 没有 `as ConversationRow` 兜底断言）。
     contextSummaryMd: null,
     contextSummaryThroughSeq: 0,
+    // R15 批 B：project_conversations 加了 dm_key 列——默认 null（普通会话），DM 用例按需 override。
+    dmKey: null,
     createdBy: creatorUserId,
     deletedAt: null,
     deletedByUserId: null,
@@ -128,6 +133,9 @@ function accessRecord(overrides: Partial<ConversationAccessRecord> = {}): Conver
     conversation: conversation(),
     projectOwnerUserId: creatorUserId,
     projectIsPersonal: false,
+    // R16 批 W4a：projects 加了 instructions_md/is_dm_container 的显式投影——机械补齐（默认空/非容器）。
+    projectInstructionsMd: null,
+    projectIsDmContainer: false,
     membershipRole: "member",
     participantRole: "owner",
     participantCount: 1,
@@ -261,6 +269,28 @@ test("R12 access record fails closed on deleted or cross-workspace visibility", 
   assertFullConversationAccessPredicates(queries[0], { viewerUserId: memberUserId, conversationId });
   assert.equal(allParams(queries[0]).includes(otherWorkspaceId), false);
   assert.equal(queries[0]?.limit, 1);
+});
+
+// R16 批 W4a（项目级自定义指令）：projects.instructions_md / projects.is_dm_container 必须显式投影——
+// 同 projectIsPersonal 当初的教训（见 ConversationAccessRecord 顶部注释），不加进 readVisibleAccess 的
+// select，conversation-turns.ts 读到的这两个字段运行时就是 undefined，注入判定悄悄失效。
+test("R16 W4a findVisibleAccessRecord projects instructions_md and is_dm_container and returns them on the record", async () => {
+  const row = accessRecord({
+    projectInstructionsMd: "遇到发布相关的工单，先问一句要不要拉发布负责人。",
+    projectIsDmContainer: false
+  });
+  const { db, queries } = createQueryRecorder([[row]]);
+
+  const result = await createConversationRepository(db).findVisibleAccessRecord({
+    workspaceId,
+    viewerUserId: creatorUserId,
+    conversationId
+  });
+
+  assert.equal(result?.projectInstructionsMd, "遇到发布相关的工单，先问一句要不要拉发布负责人。");
+  assert.equal(result?.projectIsDmContainer, false);
+  assert.ok(queryReferences(queries[0]?.selection, projects.instructionsMd), "select must project projects.instructions_md");
+  assert.ok(queryReferences(queries[0]?.selection, projects.isDmContainer), "select must project projects.is_dm_container");
 });
 
 test("R12 authorized conversation list returns an empty tail page instead of access denial", async () => {
@@ -1789,6 +1819,81 @@ test("R14FIX renameConversation rejects an empty or too-long title before any wr
   assert.equal(queries.length, 0);
 });
 
+// ── R15 批 cuu-toggle：会话级 Cuu 开关翻转 + 参与者列表 ─────────────────────────────────
+
+test("R15 updateCuuEnabled writes only cuu_enabled inside the tenant fence and returns the flipped row", async () => {
+  const flippedRow = conversation({ cuuEnabled: false, updatedAt: new Date("2026-07-15T09:00:00.000Z") });
+  const { db, queries } = createQueryRecorder([[flippedRow]]);
+
+  const result = await createConversationRepository(db).updateCuuEnabled({
+    workspaceId,
+    conversationId,
+    enabled: false,
+    at: now
+  });
+
+  assert.equal(result.cuuEnabled, false);
+  const update = queries[0];
+  assert.equal(update?.operation, "update");
+  assert.equal(update?.targetTable, projectConversations);
+  assert.equal(update?.returningCalled, true);
+  const setValue = update?.setValue as Record<string, unknown>;
+  assert.equal(setValue["cuuEnabled"], false);
+  assert.equal(setValue["updatedAt"], now);
+  // 租户 + 未删除围栏（workspaceId + id + deletedAt IS NULL），同 renameConversation 的既有围栏。
+  for (const column of [projectConversations.id, projectConversations.workspaceId, projectConversations.deletedAt]) {
+    assert.ok(queryReferences(update?.where, column), "cuu toggle must fence on tenant + id + not-deleted");
+  }
+});
+
+test("R15 updateCuuEnabled re-flipping to the same value is still a plain update (idempotent, no special-casing)", async () => {
+  const sameRow = conversation({ cuuEnabled: true, updatedAt: now });
+  const { db, queries } = createQueryRecorder([[sameRow]]);
+
+  const result = await createConversationRepository(db).updateCuuEnabled({
+    workspaceId,
+    conversationId,
+    enabled: true,
+    at: now
+  });
+
+  assert.equal(result.cuuEnabled, true);
+  assert.equal(queries.length, 1);
+  assert.equal(queries[0]?.operation, "update");
+});
+
+test("R15 updateCuuEnabled 404s (ConversationAccessDeniedError) when no active row matches", async () => {
+  const { db } = createQueryRecorder([[]]);
+  await assert.rejects(
+    createConversationRepository(db).updateCuuEnabled({ workspaceId, conversationId, enabled: true, at: now }),
+    (error: unknown) => error instanceof ConversationAccessDeniedError
+  );
+});
+
+test("R15 listParticipantsWithNickname joins active users, filters by conversation, and caps at 100", async () => {
+  const { db, queries } = createQueryRecorder([
+    [
+      { userId: creatorUserId, nickname: "阿曼", role: "owner" },
+      { userId: memberUserId, nickname: "小赵", role: "member" }
+    ]
+  ]);
+
+  const result = await createConversationRepository(db).listParticipantsWithNickname({ conversationId });
+
+  assert.deepEqual(result, [
+    { userId: creatorUserId, nickname: "阿曼", role: "owner" },
+    { userId: memberUserId, nickname: "小赵", role: "member" }
+  ]);
+  const query = queries[0];
+  assert.equal(query?.fromTable, conversationParticipants);
+  assert.ok(
+    query?.joins.some((join) => join.table === users),
+    "participants list must join users for nicknames"
+  );
+  assert.ok(queryReferences(query?.where, conversationParticipants.conversationId));
+  assert.equal(query?.limit, 100);
+});
+
 test("R14 listReceipts is tenant-joined, ordered, and capped", async () => {
   const { db, queries } = createQueryRecorder([
     [
@@ -1957,4 +2062,297 @@ test("R14 createUserMessage rejects a reply to a target outside the conversation
     }),
     (error: unknown) => error instanceof ConversationReplyTargetError
   );
+});
+
+// ── R15 批 B（人对人私聊）：dm_key 归一化 + openOrCreateDm（容器惰性创建/查重/并发回退/守卫） ──
+
+const dmContainerProjectId = "13000000-0000-4000-8000-000000000020";
+const dmActorUserId = creatorUserId;
+const dmTargetUserId = memberUserId;
+const dmKey = normalizeDmKey(dmActorUserId, dmTargetUserId);
+
+function dmMembershipRow(userId: string) {
+  return { id: `53000000-0000-4000-8000-0000000000${userId === dmActorUserId ? "01" : "02"}`, userId };
+}
+
+test("R15 B normalizeDmKey is order-insensitive, case-insensitive, and dm-prefixed", () => {
+  const [low, high] = [dmActorUserId, dmTargetUserId].sort();
+  assert.equal(normalizeDmKey(dmActorUserId, dmTargetUserId), `dm:${low}:${high}`);
+  // 顺序无关：交换两个 user id 得到同一个 key。
+  assert.equal(normalizeDmKey(dmTargetUserId, dmActorUserId), normalizeDmKey(dmActorUserId, dmTargetUserId));
+  // 大小写无关：大写输入归一到同一个 key（DB 里 user id 恒小写，这里守住调用方大小写不一致的情形）。
+  assert.equal(normalizeDmKey(dmActorUserId.toUpperCase(), dmTargetUserId), normalizeDmKey(dmActorUserId, dmTargetUserId));
+});
+
+test("R15 B openOrCreateDm creates the container, dedups by dm_key, and builds a 2-person cuu-off DM", async () => {
+  const createdDm = conversation({
+    id: conversationId,
+    projectId: dmContainerProjectId,
+    kind: "collab",
+    visibility: "private",
+    cuuEnabled: false,
+    dmKey
+  });
+  const { db, queries, transactions } = createQueryRecorder([
+    [{ id: dmContainerProjectId }], // 容器项目 insert returning → 新建成功
+    [dmMembershipRow(dmActorUserId), dmMembershipRow(dmTargetUserId)], // 双方成员锁
+    [], // findDmConversationByKey → 未命中
+    [createdDm], // DM 会话 insert returning
+    [] // 参与者 insert（结果不使用）
+  ]);
+
+  const result = await createConversationRepository(db).openOrCreateDm({
+    workspaceId,
+    actorUserId: dmActorUserId,
+    targetUserId: dmTargetUserId,
+    at: now
+  });
+
+  assert.deepEqual(result, { conversation: createdDm, created: true });
+  assert.deepEqual(transactions, [{ outcome: "resolved" }]);
+
+  // 容器项目惰性创建：is_dm_container=true、固定命名、onConflictDoNothing 兜并发、returning。
+  const containerInsert = queries[0];
+  assert.equal(containerInsert?.targetTable, projects);
+  assert.equal(containerInsert?.returningCalled, true);
+  assert.equal((containerInsert?.valuesValue as Record<string, unknown>).isDmContainer, true);
+  assert.equal((containerInsert?.valuesValue as Record<string, unknown>).name, "直达消息");
+  assert.equal((containerInsert?.valuesValue as Record<string, unknown>).workspaceId, workspaceId);
+  assert.ok(containerInsert?.onConflict, "container insert must be conflict-safe for concurrent lazy creation");
+
+  // 双方成员锁：share 锁、workspace 过滤。
+  const membershipLock = queries[1];
+  assert.equal(membershipLock?.fromTable, workspaceMemberships);
+  assert.equal(membershipLock?.lock, "share");
+
+  // 查重查询锁定在容器项目 + dm_key。
+  const findDm = queries[2];
+  assert.equal(findDm?.fromTable, projectConversations);
+  assert.ok(queryReferences(findDm?.where, projectConversations.dmKey));
+  assert.ok(queryReferences(findDm?.where, projectConversations.projectId));
+  assert.ok(queryParamValues(findDm?.where).includes(dmKey));
+
+  // DM 会话 insert：kind=collab、cuu_enabled=false、dm_key、容器项目内、部分唯一索引冲突安全。
+  const dmInsert = queries[3];
+  assert.equal(dmInsert?.targetTable, projectConversations);
+  assert.equal(dmInsert?.returningCalled, true);
+  const dmValues = dmInsert?.valuesValue as Record<string, unknown>;
+  assert.equal(dmValues.kind, "collab");
+  assert.equal(dmValues.cuuEnabled, false);
+  assert.equal(dmValues.dmKey, dmKey);
+  assert.equal(dmValues.projectId, dmContainerProjectId);
+  assert.ok(dmInsert?.onConflict, "dm conversation insert must be conflict-safe for concurrent double-open");
+
+  // 固定 2 参与者：发起者 owner、对方 member。
+  const participantInsert = queries[4];
+  assert.equal(participantInsert?.targetTable, conversationParticipants);
+  assert.deepEqual(
+    (participantInsert?.valuesValue as Array<Record<string, unknown>>).map(({ userId, role }) => ({ userId, role })),
+    [
+      { userId: dmActorUserId, role: "owner" },
+      { userId: dmTargetUserId, role: "member" }
+    ]
+  );
+});
+
+test("R15 B openOrCreateDm is idempotent — an existing DM is returned without a second insert", async () => {
+  const existingDm = conversation({
+    projectId: dmContainerProjectId,
+    kind: "collab",
+    cuuEnabled: false,
+    dmKey
+  });
+  const { db, queries, transactions } = createQueryRecorder([
+    [{ id: dmContainerProjectId }],
+    [dmMembershipRow(dmActorUserId), dmMembershipRow(dmTargetUserId)],
+    [existingDm] // findDmConversationByKey → 命中既有
+  ]);
+
+  const result = await createConversationRepository(db).openOrCreateDm({
+    workspaceId,
+    actorUserId: dmActorUserId,
+    targetUserId: dmTargetUserId,
+    at: now
+  });
+
+  assert.deepEqual(result, { conversation: existingDm, created: false });
+  assert.deepEqual(transactions, [{ outcome: "resolved" }]);
+  // 命中既有 → 绝不再插会话/参与者（点头像开聊不越点越多）。
+  assert.equal(queries.some((query) => query.targetTable === projectConversations && query.operation === "insert"), false);
+  assert.equal(queries.some((query) => query.targetTable === conversationParticipants), false);
+});
+
+test("R15 B openOrCreateDm falls back to the existing DM when a concurrent double-open loses the unique race", async () => {
+  const racedDm = conversation({
+    projectId: dmContainerProjectId,
+    kind: "collab",
+    cuuEnabled: false,
+    dmKey
+  });
+  const { db, queries, transactions } = createQueryRecorder([
+    [{ id: dmContainerProjectId }],
+    [dmMembershipRow(dmActorUserId), dmMembershipRow(dmTargetUserId)],
+    [], // 首次查重未命中
+    [], // DM insert returning 空 → 撞唯一约束（另一发抢先建好）
+    [racedDm] // 回退查询命中既有
+  ]);
+
+  const result = await createConversationRepository(db).openOrCreateDm({
+    workspaceId,
+    actorUserId: dmActorUserId,
+    targetUserId: dmTargetUserId,
+    at: now
+  });
+
+  assert.deepEqual(result, { conversation: racedDm, created: false });
+  assert.deepEqual(transactions, [{ outcome: "resolved" }]);
+  // 撞并发后不插参与者（避免给别人建好的会话重复挂人）。
+  assert.equal(queries.some((query) => query.targetTable === conversationParticipants), false);
+});
+
+test("R15 B openOrCreateDm rejects a target who is not an active member of the workspace", async () => {
+  const { db, queries, transactions } = createQueryRecorder([
+    [{ id: dmContainerProjectId }],
+    [dmMembershipRow(dmActorUserId)] // 只有发起者是成员，目标缺席
+  ]);
+
+  await assert.rejects(
+    createConversationRepository(db).openOrCreateDm({
+      workspaceId,
+      actorUserId: dmActorUserId,
+      targetUserId: dmTargetUserId,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationDmTargetError
+  );
+
+  assert.deepEqual(transactions, [{ outcome: "rejected", errorName: "ConversationDmTargetError" }]);
+  assert.equal(queries.some((query) => query.targetTable === projectConversations && query.operation === "insert"), false);
+});
+
+test("R15 B openOrCreateDm rejects opening a DM with yourself before touching the database", async () => {
+  const { db, queries, transactions } = createQueryRecorder([]);
+
+  await assert.rejects(
+    createConversationRepository(db).openOrCreateDm({
+      workspaceId,
+      actorUserId: dmActorUserId,
+      targetUserId: dmActorUserId,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationRepositoryInputError
+  );
+
+  // 自聊在事务之前就被拦下——不开事务、不发任何查询。
+  assert.deepEqual(transactions, []);
+  assert.equal(queries.length, 0);
+});
+
+test("R15 B createCollab refuses to create a normal collab conversation inside a DM container project", async () => {
+  const { db, queries, transactions } = createQueryRecorder([
+    [{ projectId: dmContainerProjectId, projectOwnerUserId: dmActorUserId, isDmContainer: true }]
+  ]);
+
+  await assert.rejects(
+    createConversationRepository(db).createCollab({
+      workspaceId,
+      projectId: dmContainerProjectId,
+      creatorUserId: dmActorUserId,
+      title: "想在容器里建群",
+      visibility: "private",
+      participantUserIds: [],
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationAccessDeniedError
+  );
+
+  assert.deepEqual(transactions, [{ outcome: "rejected", errorName: "ConversationAccessDeniedError" }]);
+  // 容器守卫在锁到项目后立即 fail-closed——绝不插会话/参与者。
+  assert.equal(queries.some((query) => query.operation === "insert"), false);
+});
+
+// ── R15 批 A（A4/A5 未读聚合）：读游标口径的未读数聚合 + 参与者列举 ─────────────────────────
+test("R15 A4 unreadCountsForViewer aggregates per-conversation in one grouped query with tombstone/self/cursor guards", async () => {
+  const conversationA = "13000000-0000-4000-8000-0000000000a1";
+  const conversationB = "13000000-0000-4000-8000-0000000000a2";
+  const { db, queries } = createQueryRecorder([
+    // 未读为 0 的会话在 GROUP BY 下不产出行——只回有未读的两条，调用方 `?? 0` 兜底其余。
+    [
+      { conversationId: conversationA, unread: 3 },
+      { conversationId: conversationB, unread: 1 }
+    ]
+  ]);
+
+  const result = await createConversationRepository(db).unreadCountsForViewer({
+    viewerUserId: memberUserId,
+    conversationIds: [conversationA, conversationB, conversationId]
+  });
+
+  assert.deepEqual(
+    [...result.entries()].sort(),
+    [
+      [conversationA, 3],
+      [conversationB, 1]
+    ]
+  );
+  const query = queries[0];
+  // 一条查询算齐（禁 N+1）：单 select + 左连读游标 + GROUP BY 会话。
+  assert.equal(queries.length, 1);
+  assert.equal(query?.operation, "select");
+  assert.equal(query?.joins.length, 1);
+  assert.equal(query?.joins[0]?.kind, "left");
+  assert.ok((query?.groupBy.length ?? 0) > 0);
+  assert.ok(queryReferences(query?.groupBy[0], conversationMessages.conversationId));
+  // 墓碑不计 / 自己发的不计 / 游标缺失兜 0（coalesce）。
+  assert.ok(queryReferences(query?.where, conversationMessages.deletedAt), "must filter tombstones");
+  assert.ok(queryReferences(query?.where, conversationMessages.senderUserId), "must exclude own messages");
+  assert.ok(queryTextFragments(query?.where).join("").includes("coalesce"), "missing cursor coalesces to 0");
+});
+
+test("R15 A4 unreadCountsForViewer short-circuits an empty conversation set without querying", async () => {
+  const { db, queries } = createQueryRecorder([]);
+  const result = await createConversationRepository(db).unreadCountsForViewer({
+    viewerUserId: memberUserId,
+    conversationIds: []
+  });
+  assert.equal(result.size, 0);
+  assert.equal(queries.length, 0);
+});
+
+test("R15 A5 unreadCountsForRecipients aggregates per-recipient in one grouped query driven from participants", async () => {
+  const { db, queries } = createQueryRecorder([
+    [
+      { userId: memberUserId, unread: 2 },
+      { userId: secondMemberUserId, unread: 0 }
+    ]
+  ]);
+
+  const result = await createConversationRepository(db).unreadCountsForRecipients({
+    conversationId,
+    recipientUserIds: [memberUserId, secondMemberUserId]
+  });
+
+  assert.equal(result.get(memberUserId), 2);
+  assert.equal(result.get(secondMemberUserId), 0);
+  const query = queries[0];
+  assert.equal(queries.length, 1);
+  assert.equal(query?.operation, "select");
+  // 从参与者驱动（含从未读过的收件人）+ 两条左连（读游标、命中消息）。
+  assert.ok(queryReferences(query?.fromTable, conversationParticipants), "must drive from participants");
+  assert.equal(query?.joins.length, 2);
+  assert.ok(query?.joins.every((join) => join.kind === "left"));
+  assert.ok((query?.groupBy.length ?? 0) > 0);
+  assert.ok(queryReferences(query?.groupBy[0], conversationParticipants.userId));
+  assert.ok(queryReferences(query?.where, conversationParticipants.conversationId));
+  assert.ok(queryTextFragments(query?.joins[1]?.on).join("").includes("coalesce"), "missing cursor coalesces to 0");
+});
+
+test("R15 A5 listParticipantUserIds lowercases and reads the conversation's participants with a bounded cap", async () => {
+  const upperCaseUser = "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA";
+  const { db, queries } = createQueryRecorder([[{ userId: upperCaseUser }, { userId: secondMemberUserId }]]);
+  const result = await createConversationRepository(db).listParticipantUserIds({ conversationId });
+  assert.deepEqual(result, [upperCaseUser.toLowerCase(), secondMemberUserId]);
+  const query = queries[0];
+  assert.ok(queryReferences(query?.where, conversationParticipants.conversationId));
+  assert.equal(query?.limit, 500);
 });

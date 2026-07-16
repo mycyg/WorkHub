@@ -2,7 +2,9 @@
 // 批 1 只需要「当前选中项目 + 项目树数据 + 右栏收放」这点状态；批 2 起的会话消息流/军团 run 切片会往这个
 // store 上加字段，但不在这里预先设计——先留一个足够薄的订阅容器，避免过度设计（02 §3 明确要求）。
 
-import type { ProjectListItemVM, WorkbenchPageVM } from "@workhub/contracts";
+import type { DmListItemVM, ProjectListItemVM, WorkbenchPageVM } from "@workhub/contracts";
+
+import type { OpenConversationTab } from "./conversation-tabs/model.js";
 
 export type WorkbenchLoadState = "idle" | "loading" | "ready" | "error";
 
@@ -13,7 +15,32 @@ export type WorkbenchLoadState = "idle" | "loading" | "ready" | "error";
 // 点开后中栏切到跨项目军团卡片流（army/overview.ts），这个视图不依赖 selectedProjectId。
 // R13 批 P3 加 "project-settings"——rail 项目行的设置按钮（仅项目负责人渲染，见 rail.ts）点开后，
 // 中栏切到该项目的 AI 治理表单（settings/view.ts），依赖 selectedProjectId + vm。
-export type WorkbenchCenterTab = "chat" | "drive" | "collab" | "army-overview" | "project-settings";
+// R15 批 B（人对人私聊）加 "dm"——rail「私聊」分组的会话点开后，中栏切到某条 DM（哪一条由
+// activeDmConversationId 指出）。DM 容器项目对项目树/工作台 VM 全线围栏，DM 走「按会话直开」路径
+// （不拉容器项目的 VM，见 shell.ts 的 renderCenter 的 "dm" 分支）——数据源是 store.dmList 里那条
+// DmListItemVM（会话 + 两名参与者），而不是 selectedProjectId/vm。
+// R15 批 I1（决策收件箱进 workbench）加 "inbox"——rail 顶部「待拍板」一级入口点开后，中栏切到跨项目的
+// 决策收件箱（workbench/inbox/view.ts，复用 spotlight attention 的全类型决策渲染/动作）。同 army-overview，
+// 这个视图不依赖 selectedProjectId（是「所有要你拍板的」总览，横跨项目）。
+// R15 批 E2（项目时间线 / 甘特）加 "timeline"——rail 项目行的「时间线」树叶（与主区/网盘同级）点开后，
+// 中栏切到该项目的甘特时间线（workbench/timeline/view.ts），依赖 selectedProjectId + vm（同 drive/settings）。
+// R16 批 W2 加 "kanban" / "schedule"——rail 项目行的「任务看板」「日程」两叶（与时间线同级）点开后，中栏
+// 分别切到该项目的看板（workbench/kanban/view.ts，四列按真实状态归组 + 派发拖拽）与周历日程
+// （workbench/schedule/view.ts，左计划摘要 + 右 7 列周历），都依赖 selectedProjectId + vm（同 timeline）。
+// R16-W3 加 "editor"——右栏「文件」模式的变动文件行点开后，中栏切到该文件的 tracked-changes 审阅器
+// （workbench/editor/view.ts，据 editorTarget 打开）。入口走右栏点击而非 rail 叶;两批都是 append 不重排。
+export type WorkbenchCenterTab =
+  | "chat"
+  | "drive"
+  | "collab"
+  | "dm"
+  | "army-overview"
+  | "project-settings"
+  | "inbox"
+  | "timeline"
+  | "kanban"
+  | "schedule"
+  | "editor";
 
 // 右栏情境面板的内容——刻意保持不透明（ownerId + 预渲染好的 html），store.ts 不认识任何具体视图
 // 的类型（drive 的版本历史/军团卡片等），谁在挂载期间持有内容所有权就把自己的 ownerId 写进来、
@@ -44,9 +71,42 @@ export type WorkbenchStoreState = {
   // 里哪一个 kind==='collab' 的会话（rail.ts 的协同会话树叶点击写入这个字段，见 shell.ts 的
   // onOpenCollabConversation）。其它 centerTab 下这个字段不参与渲染决策，不必清空。
   activeConversationId: string | undefined;
+  // R15 批 B（人对人私聊）：rail「私聊」分组的数据源——GET /api/dm/list 回的 actor 参与的 DM 列表
+  // （每条 = 会话 + 两名参与者，含对方昵称/is_self）。DM 容器项目对项目树/工作台 VM 全线围栏，DM 会话
+  // 没有任何常规入口，这个列表是唯一入口。centerTab === "dm" 时中栏据 activeDmConversationId 从这里
+  // 找到那条 DM 直接挂 chat 视图（不拉容器 VM）。rail 拉一次 + SSE/轮询刷；shell 的「发私聊」新建后
+  // 也会把新会话并进这里（openDm 只回会话本体，昵称由发起端已知的 roster 补齐）。
+  dmList: DmListItemVM[];
+  dmListLoad: WorkbenchLoadState;
+  // centerTab === "dm" 时，中栏具体打开的是 dmList 里哪一条 DM 会话（rail 私聊行点击/「发私聊」写入）。
+  activeDmConversationId: string | undefined;
+  // R16-W4b2（中栏「已打开会话」tab 条 · 温和增强，不改单实例挂载模型）：已打开会话的有序集合——rail 点选
+  // 某会话即激活并加入（已在集合则只激活），点 tab 的 x 移出（关的是当前活跃则激活相邻），上限 8（超限挤掉
+  //「最久未激活的非当前」）。会话内容区仍一次挂一个（切 tab 走现状 selectProject/openDm 的重挂路径）。tab 条
+  // 只是「已打开的快捷切换」，rail 仍是唯一「发现」入口；活跃 tab 从 centerTab + active*ConversationId 派生，
+  // 因此与 rail 选中态天然双向同步。集合语义/渲染/持久化全在 conversation-tabs/ 模块（纯函数）。
+  openConversationTabs: OpenConversationTab[];
+  // R15 批 B（在线两态）：rail 成员 roster + 私聊行 + 头像资料卡共用的在线 user id 集合——rail 30s 轮询
+  // GET /api/presence（≤50 一批，分批）后写这里（只收 is_online===true，不编造离线）。存成数组便于
+  // store patch 浅合并/序列化，读侧转成 Set。空数组 = 谁都不在线（或还没拉到）——渲染层据此不画绿点。
+  onlineUserIds: string[];
+  // R15 批 B：当前 viewer 的 user id——vm 就绪时取 viewer.user_id、DM 列表就绪时取 is_self 参与者兜底。
+  // 头像资料卡据此判自己（不显示「发私聊」），roster 据此排除自己。没有任何数据源时 undefined。
+  currentUserId: string | undefined;
+  // R15 批 I1（决策收件箱）：rail 顶部「待拍板」入口的计数徽标数据源——GET /api/pages/attention 的 queue
+  // 长度（与主窗 refreshApprovalsBadge 同源）。shell 首帧拉一次 + me-stream 收到决策类 notification.created
+  // 时刷新 + 收件箱内动作落定后刷新 + 30s 兜底轮询。0 时 rail 不渲徽标。
+  inboxCount: number;
   // 右栏情境面板收放（批 5 起有真内容，见 WorkbenchSidePanelContent 注释）。
   sidePanelOpen: boolean;
   sidePanelContent: WorkbenchSidePanelContent;
+  // R16-W3：右栏「提议 / 文件」模式（顶部 chip，shell renderSideTabs 渲染）。"proposals"=军团/提议详情
+  // （既有默认），"files"=变动文件 + 所有文件（workbench/files 面板）。只在会话情境（chat/collab/editor）
+  // 下的 chip 有意义；切到 drive/timeline/设置等 tab 时随 clearContextPanels 复位成 "proposals"。
+  sideContextMode: "proposals" | "files";
+  // R16-W3：中栏编辑器当前打开的变动文件——右栏变动文件行点击写入（proposalId + manifest change 的
+  // target_ref.path + 文件名），关闭时回到 returnTab（打开编辑器前的中栏视图）。
+  editorTarget: { proposalId: string; path: string; filename: string; returnTab: WorkbenchCenterTab } | undefined;
   // 新建项目模态开关。
   newProjectModalOpen: boolean;
   // R13 批 S3：新建个人空间模态开关——与团队项目模态分开的独立状态（拍板：个人空间创建只填
@@ -75,8 +135,17 @@ export function initialWorkbenchStoreState(): WorkbenchStoreState {
     vmError: undefined,
     centerTab: "chat",
     activeConversationId: undefined,
+    dmList: [],
+    dmListLoad: "idle",
+    activeDmConversationId: undefined,
+    openConversationTabs: [],
+    onlineUserIds: [],
+    currentUserId: undefined,
+    inboxCount: 0,
     sidePanelOpen: true,
     sidePanelContent: undefined,
+    sideContextMode: "proposals",
+    editorTarget: undefined,
     newProjectModalOpen: false,
     newPersonalSpaceModalOpen: false
   };

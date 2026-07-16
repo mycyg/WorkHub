@@ -116,7 +116,48 @@ export const envSchema = z.object({
   AGENT_RUN_SKILL_CURATION_INTERVAL_MS: z.coerce.number().int().min(0).default(86400000),
   AGENT_RUN_PROJECT_HYDRATE_ENABLED: booleanString.default(true),
   AGENT_RUN_PROJECT_HYDRATE_MAX_FILES: z.coerce.number().int().positive().default(200),
-  AGENT_RUN_PROJECT_HYDRATE_MAX_BYTES: z.coerce.number().int().positive().default(33554432)
+  AGENT_RUN_PROJECT_HYDRATE_MAX_BYTES: z.coerce.number().int().positive().default(33554432),
+  // R15 批 C（pi 引擎绞杀者迁移 Phase 2）：agent-run 循环实现开关。off=现状（loop.ts，生产默认，零行为变化）；
+  // on=单路走 loop2（pi 引擎适配器）；shadow-assert=同输入双跑 loop.ts 与 loop2 并断言 loop-core 等价（仅测试
+  // 环境用，需确定性可重放 stub client，绝不在生产双倍调 LLM）。默认 off——把真实 task role 切到 on 需先补齐
+  // L3（manifest/评审在 Phase 2 由 loop2 复用 loop.ts 的 finalizeL3 产出，见 03-batch-c-engine.md）。
+  AGENT_RUN_LOOP2_MODE: z.enum(["off", "shadow-assert", "on"]).default("off"),
+  // R15 批 C Phase 4（Cuu 对话轮次迁 loop2 + steering/follow-up 队列）。默认 off=生产零变化。
+  CONVERSATION_TURN_LOOP2_MODE: z.enum(["off", "on"]).default("off"),
+  CONVERSATION_TURN_QUEUE_MAX_DEPTH: z.coerce.number().int().positive().default(3),
+
+  // R15 批 A（统一调度器 Pulse）：周期任务总开关（默认开）+ 各任务 tick 间隔。间隔置 0 = 该任务不启
+  // （沿用 AGENT_RUN_RECOVERY_INTERVAL_MS 的 min(0) 语义）。审批 SLA 巡检 5 分钟一 tick；提醒阶梯
+  // 是 24h 粗粒度，1 小时扫一次足够覆盖到期行且开销小。
+  PULSE_SCHEDULER_ENABLED: booleanString.default(true),
+  PULSE_APPROVAL_SLA_INTERVAL_MS: z.coerce.number().int().min(0).default(300000),
+  PULSE_NOTIFICATION_REMINDER_INTERVAL_MS: z.coerce.number().int().min(0).default(3600000),
+  // R15 批 A（A3 会话 digest 卡）：审批 digest 巡检间隔（默认 15 分钟）。0=不挂定时器（仅手动 tick）。
+  PULSE_APPROVAL_DIGEST_INTERVAL_MS: z.coerce.number().int().min(0).default(900000),
+
+  // R15 批 D（主动性 MVP · 追 DDL 阶梯）：ddl-chase pulse 任务巡检间隔（默认 30 分钟）。0=不挂定时器。
+  // 纯规则、无 LLM，扫未完成/有 due_at/有责任人的工作项，按 T-3d→T-1d→逾期→升级 阶梯投递提醒。
+  PULSE_DDL_CHASE_INTERVAL_MS: z.coerce.number().int().min(0).default(1800000),
+  // R15 批 D（频控闸）：静默时段（服务器本地时区），形如 "22-08"=22:00–08:00 不投递。空串=不启用静默。
+  PROACTIVE_QUIET_HOURS: z.string().default("22-08"),
+  // R15 批 D（频控闸）：每人每日主动打扰上限——当日该 target 已投递 intent 达此数则后续 suppressed。
+  PROACTIVE_DAILY_CAP_PER_USER: z.coerce.number().int().positive().default(10),
+  // R15 批 D2（Cuu 主动开口）：开启时 ddl-chase 的 t1d/overdue 两档对有责任人的工作项改走「Cuu 在个人
+  // 空间主区主动说话」通道（个人空间不可用则降级回 notification）；t3d/escalate/找人始终走 notification。
+  // 关闭=全部走 notification（回到批 D 的行为）。默认 true。
+  PROACTIVE_CUU_DELIVERY_ENABLED: booleanString.default(true),
+
+  // R15 批 F（主动关怀 · care-scan pulse 任务）：默认 6 小时一 tick（关怀是低频关切，不必勤扫）。
+  // 0=不挂定时器（仅手动 tick，等于关掉关怀）。与 ddl-chase 同档：纯规则、无 LLM 判定。
+  PULSE_CARE_SCAN_INTERVAL_MS: z.coerce.number().int().min(0).default(21600000),
+  // R15 批 F（关怀周频总闸）：每人每周至多 N 条关怀消息——比每人每日上限更严的第二层闸（默认 2）。
+  PROACTIVE_CARE_WEEKLY_CAP: z.coerce.number().int().positive().default(2),
+  // R15 批 F（关怀信号阈值 · 高负荷）：责任人未完成工作项数达此阈值且其中含逾期（默认 8）。
+  PROACTIVE_CARE_HIGH_LOAD_THRESHOLD: z.coerce.number().int().positive().default(8),
+  // R15 批 F（关怀信号阈值 · 深夜活跃）：近 7 天内 ≥ 此数个不同深夜(23:00–06:00 本地)日历日有活动（默认 3）。
+  PROACTIVE_CARE_LATE_NIGHT_MIN_NIGHTS: z.coerce.number().int().positive().default(3),
+  // R15 批 F（关怀信号阈值 · 连续受挫）：近 7 天该用户提案被打回达此次数（默认 2）。
+  PROACTIVE_CARE_FRUSTRATION_THRESHOLD: z.coerce.number().int().positive().default(2)
 });
 
 type ParsedEnv = z.infer<typeof envSchema>;
@@ -196,6 +237,33 @@ export type Settings = {
     projectHydrateEnabled: boolean;
     projectHydrateMaxFiles: number;
     projectHydrateMaxBytes: number;
+    loop2Mode: "off" | "shadow-assert" | "on";
+  };
+  conversationTurns: {
+    // R15 批 C（pi 引擎绞杀者迁移 Phase 4）：Cuu 协同对话轮次循环实现开关。off=现状（conversation-turns.ts
+    // 内联轮次循环，生产默认，零行为变化）；on=走 loop2（pi 引擎）+ steering/follow-up 队列（同会话连发不再 409，
+    // 消息注入进行中的一轮）。无 shadow-assert 档：对话轮次面向用户实时流式，双跑会双倍打 LLM 且延迟翻倍。
+    loop2Mode: "off" | "on";
+    // steering 队列深度上限：同会话已有一轮在跑时，新到的 turn 请求排队等注入；排到这个深度还没轮到就退回
+    // 409 conversation_turn_busy（兜底，队列满/异常）。进程内内存态（与 activeTurns 同）。
+    queueMaxDepth: number;
+  };
+  pulse: {
+    enabled: boolean;
+    approvalSlaIntervalMs: number;
+    notificationReminderIntervalMs: number;
+    approvalDigestIntervalMs: number;
+    ddlChaseIntervalMs: number;
+    careScanIntervalMs: number;
+  };
+  proactive: {
+    quietHours: string;
+    dailyCapPerUser: number;
+    cuuDeliveryEnabled: boolean;
+    careWeeklyCap: number;
+    careHighLoadThreshold: number;
+    careLateNightMinNights: number;
+    careFrustrationThreshold: number;
   };
 };
 
@@ -281,7 +349,29 @@ export function loadSettings(env: EnvInput = process.env): Settings {
       skillCurationIntervalMs: parsed.AGENT_RUN_SKILL_CURATION_INTERVAL_MS,
       projectHydrateEnabled: parsed.AGENT_RUN_PROJECT_HYDRATE_ENABLED,
       projectHydrateMaxFiles: parsed.AGENT_RUN_PROJECT_HYDRATE_MAX_FILES,
-      projectHydrateMaxBytes: parsed.AGENT_RUN_PROJECT_HYDRATE_MAX_BYTES
+      projectHydrateMaxBytes: parsed.AGENT_RUN_PROJECT_HYDRATE_MAX_BYTES,
+      loop2Mode: parsed.AGENT_RUN_LOOP2_MODE
+    },
+    conversationTurns: {
+      loop2Mode: parsed.CONVERSATION_TURN_LOOP2_MODE,
+      queueMaxDepth: parsed.CONVERSATION_TURN_QUEUE_MAX_DEPTH
+    },
+    pulse: {
+      enabled: parsed.PULSE_SCHEDULER_ENABLED,
+      approvalSlaIntervalMs: parsed.PULSE_APPROVAL_SLA_INTERVAL_MS,
+      notificationReminderIntervalMs: parsed.PULSE_NOTIFICATION_REMINDER_INTERVAL_MS,
+      approvalDigestIntervalMs: parsed.PULSE_APPROVAL_DIGEST_INTERVAL_MS,
+      ddlChaseIntervalMs: parsed.PULSE_DDL_CHASE_INTERVAL_MS,
+      careScanIntervalMs: parsed.PULSE_CARE_SCAN_INTERVAL_MS
+    },
+    proactive: {
+      quietHours: parsed.PROACTIVE_QUIET_HOURS,
+      dailyCapPerUser: parsed.PROACTIVE_DAILY_CAP_PER_USER,
+      cuuDeliveryEnabled: parsed.PROACTIVE_CUU_DELIVERY_ENABLED,
+      careWeeklyCap: parsed.PROACTIVE_CARE_WEEKLY_CAP,
+      careHighLoadThreshold: parsed.PROACTIVE_CARE_HIGH_LOAD_THRESHOLD,
+      careLateNightMinNights: parsed.PROACTIVE_CARE_LATE_NIGHT_MIN_NIGHTS,
+      careFrustrationThreshold: parsed.PROACTIVE_CARE_FRUSTRATION_THRESHOLD
     }
   };
 

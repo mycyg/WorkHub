@@ -4,6 +4,7 @@ import type {
   ApprovalCenterVM,
   AttentionHomeVM,
   CalendarPageVM,
+  ConversationMessageVM,
   CostDashboardVM,
   DrivePageVM,
   EvidenceBubble,
@@ -12,6 +13,7 @@ import type {
   ProjectHealthPageVM,
   ProjectHomePageVM,
   ProjectListVM,
+  ProjectTimelinePageVM,
   ProposalConflict,
   ProposalDetailVM,
   ReplayTraceVM,
@@ -88,11 +90,23 @@ export type WebRouteSurface =
   | { key: "home"; attention: AttentionHomeVM; projects?: ProjectListVM | undefined }
   | { key: "projects"; projects: ProjectListVM }
   | { key: "project-home"; project: ProjectHomePageVM }
+  | { key: "project-timeline"; timeline: ProjectTimelinePageVM }
   | { key: "intake"; session: SessionVM }
   | { key: "intake"; start: true; project?: { id: string; name: string }; project_unavailable?: boolean; projects?: ProjectListVM | undefined }
   | { key: "approvals"; approvals: ApprovalCenterVM }
   | { key: "workitem"; workitem: WorkItemDetailVM }
   | { key: "proposal"; proposal: ProposalDetailVM; proposal_conflicts: ProposalConflict[]; proposal_conflicts_check_failed?: boolean | undefined }
+  | {
+      key: "conversation";
+      conversationId: string;
+      messages: ConversationMessageVM[];
+      members: Array<{ id: string; nickname: string }>;
+      targetSeq?: number | undefined;
+      olderBeforeSeq?: number | undefined;
+      newerAfterSeq?: number | undefined;
+      isLatest: boolean;
+      refreshHref: string;
+    }
   | { key: "drive"; drive: DrivePageVM; projects: ProjectListVM }
   | { key: "meetings"; meetings: MeetingPageVM; projects?: ProjectListVM }
   | { key: "notifications"; notifications: NotificationPageVM }
@@ -132,6 +146,15 @@ const routeMatchers = [
     paramNames: ["id"]
   },
   {
+    // R15 批 E2c：项目时间线只读页。锚定 /projects/:id/timeline——正则带 /timeline 后缀，不会与
+    // project-home（^/projects/:id$）相撞。
+    key: "project-timeline",
+    pattern: "/projects/:id/timeline",
+    apiBaseLabel: "/api/pages/project/:id/timeline",
+    regex: /^\/projects\/([^/]+)\/timeline$/u,
+    paramNames: ["id"]
+  },
+  {
     key: "intake",
     pattern: "/intake/:sessionId",
     apiBaseLabel: "/api/sessions",
@@ -157,6 +180,14 @@ const routeMatchers = [
     pattern: "/proposals/:id",
     apiBaseLabel: "/api/pages/proposals/:id",
     regex: /^\/proposals\/([^/]+)$/u,
+    paramNames: ["id"]
+  },
+  {
+    // R15 批 web-mirror：只读会话镜像。消费既有会话消息读端点（参与者门控在服务端）。
+    key: "conversation",
+    pattern: "/conversations/:id",
+    apiBaseLabel: "/api/conversations/:id/messages",
+    regex: /^\/conversations\/([^/]+)$/u,
     paramNames: ["id"]
   },
   {
@@ -264,10 +295,12 @@ type WebRouteTreePageVm =
   | "attention"
   | "projects"
   | "project-home"
+  | "project-timeline"
   | "session"
   | "approvals"
   | "workitem"
   | "proposal"
+  | "conversation"
   | "drive"
   | "meetings"
   | "notifications"
@@ -314,10 +347,12 @@ const routeTreePageVmByKey = {
   home: "attention",
   projects: "projects",
   "project-home": "project-home",
+  "project-timeline": "project-timeline",
   intake: "session",
   approvals: "approvals",
   workitem: "workitem",
   proposal: "proposal",
+  conversation: "conversation",
   drive: "drive",
   meetings: "meetings",
   notifications: "notifications",
@@ -517,10 +552,15 @@ const shellPageOrder = [
   "home",
   "projects",
   "project-home",
+  // R15 批 E2c：时间线是 project-home 的下钻（detail-only），紧邻它。
+  "project-timeline",
   "intake",
   "approvals",
   "workitem",
   "proposal",
+  // R15 批 web-mirror：只读会话镜像是 detail-only 页（仅激活时出现在壳导航），紧邻 proposal——
+  // 与 product-shell.ts productNavGroups 的 "work" 组顺序一致。
+  "conversation",
   "drive",
   "meetings",
   "notifications",
@@ -541,8 +581,10 @@ const shellPageOrder = [
 // intake 不算 detail-only：/intake（无 sessionId）就是"提需求"起点页，应常驻导航,让用户随处可发起新活。
 const detailOnlyShellPages = new Set<GoldPathRenderedPage["key"]>([
   "project-home",
+  "project-timeline",
   "workitem",
   "proposal",
+  "conversation",
   "replay"
 ]);
 
@@ -550,10 +592,13 @@ const shellDefaultRoutes = {
   home: "/",
   projects: "/projects",
   "project-home": "/projects",
+  "project-timeline": "/projects",
   intake: "/intake",
   approvals: "/approvals",
   workitem: "/",
   proposal: "/approvals",
+  // 会话镜像无 web 列表页——非激活时的兜底回链回首页（同 workitem/replay）。
+  conversation: "/",
   drive: "/drive",
   meetings: "/meetings",
   notifications: "/notifications",
@@ -574,11 +619,13 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     home: "总览",
     projects: "项目",
     "project-home": "项目主页",
+    "project-timeline": "时间线",
     // NAMING pass：导航项与所有 CTA（新任务）对齐——「接入」是工程词。
     intake: "新任务",
     approvals: "审批",
     workitem: "任务详情",
     proposal: "变更申请",
+    conversation: "会话镜像",
     drive: "项目网盘",
     meetings: "会议洞察",
     notifications: "通知中心",
@@ -597,10 +644,12 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     home: "Overview",
     projects: "Projects",
     "project-home": "Project home",
+    "project-timeline": "Timeline",
     intake: "New task",
     approvals: "Approvals",
     workitem: "Task detail",
     proposal: "Change request",
+    conversation: "Conversation mirror",
     drive: "Project drive",
     meetings: "Meeting insights",
     notifications: "Notifications",
@@ -666,7 +715,9 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     memoriesActive: "AI 记住",
     acceptedDeliverables: "已采纳",
     activeProjects: "有进展",
-    query: "搜索词"
+    query: "搜索词",
+    messages: "消息",
+    milestones: "里程碑"
   },
   "en-US": {
     primary: "Focus",
@@ -716,7 +767,9 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     memoriesActive: "AI remembers",
     acceptedDeliverables: "Accepted",
     activeProjects: "Active",
-    query: "Query"
+    query: "Query",
+    messages: "Messages",
+    milestones: "Milestones"
   }
 };
 
@@ -797,6 +850,15 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
       metric(locale, "status", surface.project.project.status === "archived" ? (zh ? "已归档" : "Archived") : (zh ? "活跃中" : "Active"))
     ];
   }
+  if (surface.key === "project-timeline") {
+    // 只读时间线速览：里程碑数 / 工作项数 / 逾期数（后者与正文关键路径同口径）。
+    const overdue = surface.timeline.items.filter((item) => item.overdue).length;
+    return [
+      metric(locale, "milestones", String(surface.timeline.milestones.length)),
+      metric(locale, "events", String(surface.timeline.items.length)),
+      metric(locale, "overdue", String(overdue))
+    ];
+  }
   if (surface.key === "intake") {
     if ("start" in surface) {
       // runtime 指示当前接入起点：绑定项目时显示项目名(截断，避免长 CJK 名撑爆 chip)，否则「试点/Pilot」。
@@ -842,6 +904,13 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
       metric(locale, "checks", String(surface.proposal.manifest.checks.length)),
       metric(locale, "evidence", String(surface.proposal.evidence_refs.length)),
       metric(locale, "comments", String(surface.proposal.comments.length))
+    ];
+  }
+  if (surface.key === "conversation") {
+    // 只读镜像 masthead：本页拉到的消息条数 + 「只读镜像」状态（诚实标注：这是镜像，不是全量）。
+    return [
+      metric(locale, "messages", String(surface.messages.length)),
+      metric(locale, "runtime", locale === "zh-CN" ? "只读镜像" : "Read-only")
     ];
   }
   if (surface.key === "drive") {
@@ -951,6 +1020,9 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
   if (surface.key === "project-home") {
     return renderWebRouteComponent({ key: "project-home", project: surface.project }, { locale });
   }
+  if (surface.key === "project-timeline") {
+    return renderWebRouteComponent({ key: "project-timeline", timeline: surface.timeline }, { locale });
+  }
   if (surface.key === "intake") {
     if ("start" in surface) {
       return renderWebRouteComponent(
@@ -978,6 +1050,21 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
       proposal: surface.proposal,
       proposalConflicts: surface.proposal_conflicts,
       proposalConflictsCheckFailed: surface.proposal_conflicts_check_failed ?? false
+    }, { locale });
+  }
+  if (surface.key === "conversation") {
+    return renderWebRouteComponent({
+      key: "conversation",
+      conversation: {
+        conversationId: surface.conversationId,
+        messages: surface.messages,
+        members: surface.members,
+        ...(surface.targetSeq !== undefined ? { targetSeq: surface.targetSeq } : {}),
+        ...(surface.olderBeforeSeq !== undefined ? { olderBeforeSeq: surface.olderBeforeSeq } : {}),
+        ...(surface.newerAfterSeq !== undefined ? { newerAfterSeq: surface.newerAfterSeq } : {}),
+        isLatest: surface.isLatest,
+        refreshHref: surface.refreshHref
+      }
     }, { locale });
   }
   if (surface.key === "drive") {
@@ -1079,6 +1166,26 @@ function knowledgeScopeLandingBubble(query: string | undefined, locale: WorkHubL
   };
 }
 
+// G-web 止血批：home/projects/drive/meetings/知识 403 落地页/intake 起点六处路由分支各自独立调用
+// client.listProjects()——当两次导航前后脚打进来(比如上一次还没落地,用户又点了别的导航项)，会并发
+// 撞出多个一模一样的 GET /api/projects。这里只做 Promise 级 in-flight 去重：同一时刻只放行一个
+// 真实请求，其余等它落地共享结果；请求一落地(无论成功失败)就清空，绝不做 TTL 缓存——不违反
+// 「每次导航都要新鲜数据」的既有纪律，下一次导航仍会发出全新请求。按 client 实例隔离，避免测试里
+// 不同 fake client 之间串味。
+const listProjectsInFlight = new WeakMap<WorkHubApiClient, Promise<ProjectListVM>>();
+
+function listProjectsDeduped(client: WorkHubApiClient): Promise<ProjectListVM> {
+  const inFlight = listProjectsInFlight.get(client);
+  if (inFlight) {
+    return inFlight;
+  }
+  const request = client.listProjects().finally(() => {
+    listProjectsInFlight.delete(client);
+  });
+  listProjectsInFlight.set(client, request);
+  return request;
+}
+
 async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, locale: WorkHubLocale) {
   if (match.notFound) {
     // 未匹配的 URL(打错/失效链接)= 找不到,不是服务器出错。给「没有找到这个页面」+ 回首页,
@@ -1092,7 +1199,7 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     // listProjects 的失败语义保持不变：not_identified 冒泡去重认证，其余退化为 undefined。
     const [attention, projectsSettled] = await Promise.all([
       client.pages.attention(withLocale(locale)),
-      client.listProjects().then(
+      listProjectsDeduped(client).then(
         (value): ProjectListVM | undefined => value,
         (error: unknown): ProjectListVM | undefined => {
           if (error instanceof WorkHubApiError && error.code === "not_identified") {
@@ -1120,7 +1227,7 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     return { key: "home", attention, projects: projectsSettled } satisfies WebRouteSurface;
   }
   if (match.key === "projects") {
-    const projects = await client.listProjects();
+    const projects = await listProjectsDeduped(client);
     return { key: "projects", projects } satisfies WebRouteSurface;
   }
   if (match.key === "project-home") {
@@ -1128,6 +1235,16 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     // 始终渲染项目头 + 入口动作本身,而不是给叶子路由用的"回到项目"死胡同。
     const project = await client.pages.project(match.params["id"] ?? "", withLocale(locale));
     return { key: "project-home", project } satisfies WebRouteSurface;
+  }
+  if (match.key === "project-timeline") {
+    // R15 批 E2c：只读时间线。projectTimeline 在 PageClient 上是可选字段（同 workbench，见 api-client
+    // types.ts 注释）；真实 createApiClient() 一定实现它，这里仍老实处理「万一没有」——报真错误，不假装能拿到数据。
+    const fetchTimeline = client.pages.projectTimeline;
+    if (!fetchTimeline) {
+      return "error" as const;
+    }
+    const timeline = await fetchTimeline(match.params["id"] ?? "", withLocale(locale));
+    return { key: "project-timeline", timeline } satisfies WebRouteSurface;
   }
   if (match.key === "intake") {
     const sessionId = match.params["sessionId"] ?? "";
@@ -1208,7 +1325,7 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
         // 非管理员选定项目即可就地检索（服务端单项目口径不变）。清单拉取失败退化为无选择器。
         let landingProjects: ProjectListVM | undefined;
         try {
-          landingProjects = await client.listProjects();
+          landingProjects = await listProjectsDeduped(client);
         } catch {
           landingProjects = undefined;
         }
@@ -1241,6 +1358,80 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     }
     return { key: "proposal", proposal, proposal_conflicts: conflicts, proposal_conflicts_check_failed: conflictsCheckFailed } satisfies WebRouteSurface;
   }
+  if (match.key === "conversation") {
+    // R15 批 web-mirror：只读会话镜像。翻页语义照 conversationMessageListQuerySchema：
+    //   无游标 → beforeSeq=MAX（最新一页，O(1)，同桌面首屏策略）；?before= → 更早一页；
+    //   ?after= → 更新一页；?seq= → 定位到含该 seq 的一页（beforeSeq=seq+1，高亮该条）。
+    // 只读边界：只 GET 消息与成员目录，绝不 POST（不发消息/不反应/不推进已读游标）。
+    const conversationId = match.params["id"] ?? "";
+    const CONVERSATION_PAGE_LIMIT = 50;
+    const beforeParam = nonnegativeIntSearchParam(match.search, "before");
+    const afterParam = nonnegativeIntSearchParam(match.search, "after");
+    const seqParam = nonnegativeIntSearchParam(match.search, "seq");
+    let mode: "latest" | "before" | "after" | "seq";
+    let requestOptions: { beforeSeq?: number; afterSeq?: number; limit: number };
+    if (beforeParam !== undefined) {
+      mode = "before";
+      requestOptions = { beforeSeq: beforeParam, limit: CONVERSATION_PAGE_LIMIT };
+    } else if (afterParam !== undefined) {
+      mode = "after";
+      requestOptions = { afterSeq: afterParam, limit: CONVERSATION_PAGE_LIMIT };
+    } else if (seqParam !== undefined) {
+      mode = "seq";
+      requestOptions = { beforeSeq: seqParam + 1, limit: CONVERSATION_PAGE_LIMIT };
+    } else {
+      mode = "latest";
+      requestOptions = { beforeSeq: Number.MAX_SAFE_INTEGER, limit: CONVERSATION_PAGE_LIMIT };
+    }
+    // 消息（主数据，参与者门控在服务端——非参与者 404 走既有 notFound 态）与成员目录并行拉。
+    // 成员目录仅用于发送者昵称解析，失败 fail-soft（消息照常渲，昵称退化为「未知成员」）；
+    // not_identified 仍冒泡去重认证。
+    const [page, members] = await Promise.all([
+      client.listConversationMessages(conversationId, requestOptions),
+      client.listUsers().then(
+        (value) => value.users.map((user) => ({ id: user.id, nickname: user.nickname })),
+        (error: unknown): Array<{ id: string; nickname: string }> => {
+          if (error instanceof WorkHubApiError && error.code === "not_identified") {
+            throw error;
+          }
+          return [];
+        }
+      )
+    ]);
+    const messages = page.messages;
+    const firstSeq = messages[0]?.seq;
+    const lastSeq = messages[messages.length - 1]?.seq;
+    let olderBeforeSeq: number | undefined;
+    let newerAfterSeq: number | undefined;
+    if (mode === "after") {
+      // 正向翻页：has_more=更新的还有；更早方向用页内最旧 seq 回溯。
+      if (firstSeq !== undefined && firstSeq > 0) {
+        olderBeforeSeq = firstSeq;
+      }
+      if (page.has_more) {
+        newerAfterSeq = page.next_after_seq;
+      }
+    } else {
+      // beforeSeq 家族（latest/before/seq）：has_more=更早的还有；非最新页可用页内最新 seq 往后翻。
+      if (page.has_more) {
+        olderBeforeSeq = page.next_before_seq ?? firstSeq;
+      }
+      if (mode !== "latest" && lastSeq !== undefined) {
+        newerAfterSeq = lastSeq;
+      }
+    }
+    return {
+      key: "conversation",
+      conversationId,
+      messages,
+      members,
+      ...(mode === "seq" && seqParam !== undefined ? { targetSeq: seqParam } : {}),
+      ...(olderBeforeSeq !== undefined ? { olderBeforeSeq } : {}),
+      ...(newerAfterSeq !== undefined ? { newerAfterSeq } : {}),
+      isLatest: mode === "latest",
+      refreshHref: `${match.pathname}${match.search}`
+    } satisfies WebRouteSurface;
+  }
   if (match.key === "drive") {
     const params = new URLSearchParams(match.search);
     const projectId = params.get("project_id") ?? params.get("projectId") ?? undefined;
@@ -1257,7 +1448,7 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
         ...(itemId ? { itemId } : {}),
         ...(driveQuery ? { q: driveQuery } : {})
       }),
-      client.listProjects().then(
+      listProjectsDeduped(client).then(
         (value): ProjectListVM => value,
         (error: unknown): ProjectListVM => {
           if (error instanceof WorkHubApiError && error.code === "not_identified") {
@@ -1284,7 +1475,7 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
         ...(projectId ? { projectId } : {}),
         ...(meetingId ? { meetingId } : {})
       }),
-      client.listProjects().then(
+      listProjectsDeduped(client).then(
         (value): ProjectListVM => value,
         (): ProjectListVM => ({ generated_at: new Date().toISOString(), projects: [] })
       )
@@ -1406,6 +1597,11 @@ function forbiddenOwnerLabel(error: unknown, locale: WorkHubLocale) {
 // 而非把用户丢到首页死胡同。网盘/会议是项目级能力，没选到项目(空工作区)时回链也应去 /projects
 // 让用户先建/选项目，而不是回总览("回到总览"对"还没有项目"是误导)。其余路由保持回首页。
 function routeStateBackHref(match: WebRouteMatch): string {
+  // R15 批 E2c：时间线是项目主页的下钻——非 Ready 态回链回到具体项目主页（有 id 时），而不是项目列表死胡同。
+  if (match.key === "project-timeline") {
+    const id = match.params["id"];
+    return id ? `/projects/${id}` : "/projects";
+  }
   if (match.key === "project-home" || match.key === "drive" || match.key === "meetings") {
     return "/projects";
   }
@@ -1446,7 +1642,7 @@ function routeStateBackLabel(match: WebRouteMatch, locale: WorkHubLocale): strin
 // R10-0c：intake 起点的项目清单（fail-soft）。会话过期仍要冒泡去重认证。
 async function intakeProjectChoices(client: WorkHubApiClient): Promise<{ projects?: ProjectListVM }> {
   try {
-    return { projects: await client.listProjects() };
+    return { projects: await listProjectsDeduped(client) };
   } catch (error) {
     if (error instanceof WorkHubApiError && error.code === "not_identified") {
       throw error;

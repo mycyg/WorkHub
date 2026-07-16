@@ -67,6 +67,53 @@ test("project drive hydration is on by default and can be explicitly disabled", 
   assert.equal(loadSettings({ AGENT_RUN_PROJECT_HYDRATE_ENABLED: "false" }).agentRun.projectHydrateEnabled, false);
 });
 
+test("R15 批 D: proactivity + ddl-chase settings have sensible defaults and are overridable", () => {
+  const defaults = loadSettings({});
+  // 追 DDL 巡检默认 30 分钟；静默时段默认 22:00–08:00；每人每日上限默认 10。
+  assert.equal(defaults.pulse.ddlChaseIntervalMs, 1800000);
+  assert.equal(defaults.proactive.quietHours, "22-08");
+  assert.equal(defaults.proactive.dailyCapPerUser, 10);
+
+  const overridden = loadSettings({
+    PULSE_DDL_CHASE_INTERVAL_MS: "600000",
+    PROACTIVE_QUIET_HOURS: "23-07",
+    PROACTIVE_DAILY_CAP_PER_USER: "3"
+  });
+  assert.equal(overridden.pulse.ddlChaseIntervalMs, 600000);
+  assert.equal(overridden.proactive.quietHours, "23-07");
+  assert.equal(overridden.proactive.dailyCapPerUser, 3);
+
+  // 间隔置 0 = 不挂定时器（沿用其他 pulse 任务的 min(0) 语义）；空静默串 = 不启用静默。
+  assert.equal(loadSettings({ PULSE_DDL_CHASE_INTERVAL_MS: "0" }).pulse.ddlChaseIntervalMs, 0);
+  assert.equal(loadSettings({ PROACTIVE_QUIET_HOURS: "" }).proactive.quietHours, "");
+});
+
+test("R15 批 F: care-scan settings have sensible defaults and are overridable", () => {
+  const defaults = loadSettings({});
+  // 关怀扫描默认 6 小时一 tick；周频总闸默认 2；三类信号阈值默认 8/3/2。
+  assert.equal(defaults.pulse.careScanIntervalMs, 21600000);
+  assert.equal(defaults.proactive.careWeeklyCap, 2);
+  assert.equal(defaults.proactive.careHighLoadThreshold, 8);
+  assert.equal(defaults.proactive.careLateNightMinNights, 3);
+  assert.equal(defaults.proactive.careFrustrationThreshold, 2);
+
+  const overridden = loadSettings({
+    PULSE_CARE_SCAN_INTERVAL_MS: "3600000",
+    PROACTIVE_CARE_WEEKLY_CAP: "1",
+    PROACTIVE_CARE_HIGH_LOAD_THRESHOLD: "12",
+    PROACTIVE_CARE_LATE_NIGHT_MIN_NIGHTS: "4",
+    PROACTIVE_CARE_FRUSTRATION_THRESHOLD: "3"
+  });
+  assert.equal(overridden.pulse.careScanIntervalMs, 3600000);
+  assert.equal(overridden.proactive.careWeeklyCap, 1);
+  assert.equal(overridden.proactive.careHighLoadThreshold, 12);
+  assert.equal(overridden.proactive.careLateNightMinNights, 4);
+  assert.equal(overridden.proactive.careFrustrationThreshold, 3);
+
+  // 间隔置 0 = 不挂定时器（关掉关怀）。
+  assert.equal(loadSettings({ PULSE_CARE_SCAN_INTERVAL_MS: "0" }).pulse.careScanIntervalMs, 0);
+});
+
 test("provider registry config keeps API keys out of public metadata", () => {
   const value = loadSettings({
     LLM_API_KEY: "secret-key",

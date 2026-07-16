@@ -6,10 +6,12 @@ export type R4WebRouteKey =
   | "home"
   | "projects"
   | "project-home"
+  | "project-timeline"
   | "intake"
   | "approvals"
   | "workitem"
   | "proposal"
+  | "conversation"
   | "drive"
   | "meetings"
   | "notifications"
@@ -45,10 +47,12 @@ export const r4WebRouteKeys = [
   "home",
   "projects",
   "project-home",
+  "project-timeline",
   "intake",
   "approvals",
   "workitem",
   "proposal",
+  "conversation",
   "drive",
   "meetings",
   "notifications",
@@ -90,10 +94,12 @@ const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; ro
     home: { label: "总览", route: "/" },
     projects: { label: "项目", route: "/projects" },
     "project-home": { label: "项目主页", route: "/projects/:id" },
+    "project-timeline": { label: "时间线", route: "/projects/:id/timeline" },
     intake: { label: "快捷入口", route: "/intake/:sessionId" },
     approvals: { label: "审批中心", route: "/approvals" },
     workitem: { label: "工作项详情", route: "/workitems/:id" },
     proposal: { label: "变更申请", route: "/proposals/:id" },
+    conversation: { label: "会话镜像", route: "/conversations/:id" },
     drive: { label: "项目网盘", route: "/drive" },
     meetings: { label: "会议洞察", route: "/meetings" },
     notifications: { label: "通知中心", route: "/notifications" },
@@ -112,10 +118,12 @@ const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; ro
     home: { label: "Overview", route: "/" },
     projects: { label: "Projects", route: "/projects" },
     "project-home": { label: "Project home", route: "/projects/:id" },
+    "project-timeline": { label: "Timeline", route: "/projects/:id/timeline" },
     intake: { label: "Intake", route: "/intake/:sessionId" },
     approvals: { label: "Approval center", route: "/approvals" },
     workitem: { label: "Work item detail", route: "/workitems/:id" },
     proposal: { label: "Change request", route: "/proposals/:id" },
+    conversation: { label: "Conversation mirror", route: "/conversations/:id" },
     drive: { label: "Project drive", route: "/drive" },
     meetings: { label: "Meeting insights", route: "/meetings" },
     notifications: { label: "Notifications", route: "/notifications" },

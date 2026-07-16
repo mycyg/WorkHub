@@ -4,6 +4,7 @@
 
 import {
   conversationActionCardUpdatedEventSchema,
+  conversationCuuUpdatedEventSchema,
   conversationMessageCreatedEventSchema,
   conversationMessageDeltaEventSchema,
   conversationMessageUpdatedEventSchema,
@@ -160,6 +161,21 @@ export function parseIncomingReadUpdated(raw: unknown, conversationId: string): 
     userId: parsed.data.data.user_id,
     lastReadSeq: parsed.data.data.last_read_seq
   };
+}
+
+// R15 批 cuu-toggle：conversation.cuu.updated——会话级 Cuu 参与开关翻转后广播，data 只带翻转后的布尔值。
+// 同 parseIncomingReadUpdated：未过 zod 校验/会话 id 不匹配一律 undefined，调用方本地更新头部开关状态 +
+// 重算 isCollabConversation（composer 模式 chip/流式气泡随之显隐），接不上就等下次挂载时用会话 VM 里的
+// cuu_enabled 兜底。
+export function parseIncomingConversationCuuUpdated(raw: unknown, conversationId: string): boolean | undefined {
+  const parsed = conversationCuuUpdatedEventSchema.safeParse(raw);
+  if (!parsed.success) {
+    return undefined;
+  }
+  if (parsed.data.data.conversation_id !== conversationId) {
+    return undefined;
+  }
+  return parsed.data.data.cuu_enabled;
 }
 
 // R14 批 CHAT：conversation.observer.analyzing——瞬态（照 typing 模式，ttl 30s），观察者开始整理讨论时

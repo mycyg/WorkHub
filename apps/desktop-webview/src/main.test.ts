@@ -268,6 +268,9 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
     async completeNotification() {
       throw new Error("not needed");
     },
+    async snoozeNotification() {
+      throw new Error("not needed");
+    },
     async getNotificationPreferences() {
       return { muted_notification_types: [] };
     },
@@ -443,6 +446,9 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
       throw new Error("not needed");
     },
     async listUsers(): Promise<never> {
+      throw new Error("not needed");
+    },
+    async listConversationMessages(): Promise<never> {
       throw new Error("not needed");
     },
     async createMeetingInsightDraft() {

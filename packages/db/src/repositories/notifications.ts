@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, desc, eq, inArray, isNull, lt, or, sql, like, ne } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, lte, or, sql, like, ne } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { notifications } from "../schema/index.js";
@@ -18,6 +18,9 @@ export type CreateNotificationInput = {
   projectId?: string;
   workItemId?: string;
   dedupeKey?: string;
+  // R15 批 A（提醒阶梯）：置了此值的通知（当前仅 approval.routed）进 24h 提醒阶梯，reminder pulse 复活它。
+  // 未置（其它所有通知类型）则 next_remind_at 保持 NULL，永不进提醒扫描。
+  nextRemindAt?: Date;
 };
 
 export type NotificationWriteResult = {
@@ -41,6 +44,13 @@ export type NotificationRepository = {
   archive: (id: string, userId: string, at: Date) => Promise<NotificationRow | null>;
   archiveByDedupeKey: (dedupeKey: string, at: Date) => Promise<number>;
   archiveStaleLifecycleForWorkItem: (workItemId: string, keepType: string, at: Date) => Promise<number>;
+  // R15 批 A（提醒阶梯）：扫「到期该提醒且仍未读未归档」的通知（已读/归档天然退出阶梯——扫描条件排除）。
+  listDueReminders: (at: Date, limit: number) => Promise<NotificationRow[]>;
+  // 落一次提醒：reminder_count++，next_remind_at 续到 nextRemindAt（NULL=达上限停止续期），并把 updated_at
+  // 顶到 at 使其在列表回到最前（复活语义）。WHERE 仍带未读未归档守卫：扫描与更新之间若被读/归档则跳过。
+  applyReminderTick: (id: string, params: { nextRemindAt: Date | null; at: Date }) => Promise<NotificationRow | null>;
+  // 被提醒人「暂停提醒」：置 next_remind_at=NULL，不动读/归档态（仍留在待决策队列，只停 24h 叮嘱）。
+  snoozeReminder: (id: string, userId: string, at: Date) => Promise<NotificationRow | null>;
 };
 
 // M10：导出供读路径（schedule-notify-pages.ensureMeetingInsightNotifications）做"内容未变则跳过 upsert"的门，
@@ -87,6 +97,9 @@ export function createNotificationRepository(db: WorkHubDb): NotificationReposit
                 workItemId: input.workItemId,
                 readAt: null,
                 archivedAt: null,
+                // R15 批 A：仅当调用方带了 nextRemindAt（approval.routed）才重置提醒阶梯（复活=新一轮 24h
+                // 叮嘱）；其它类型不带此字段，next_remind_at/reminder_count 原样不动（保持 NULL/0）。
+                ...(input.nextRemindAt !== undefined ? { nextRemindAt: input.nextRemindAt, reminderCount: 0 } : {}),
                 updatedAt: at
               })
               .where(eq(notifications.id, existing.id))
@@ -112,6 +125,8 @@ export function createNotificationRepository(db: WorkHubDb): NotificationReposit
             projectId: input.projectId,
             workItemId: input.workItemId,
             dedupeKey: input.dedupeKey,
+            // R15 批 A：进提醒阶梯的通知带上首个 next_remind_at（其余类型为 undefined→列默认 NULL，不进扫描）。
+            nextRemindAt: input.nextRemindAt,
             // findings[14]：显式把两个时间戳钉成同一个 `at`，让「真插入 ⇒ created_at === updated_at」成为确定不变式；
             // 冲突更新分支只改 updated_at（见下），据此精确区分真插入与并发收敛的更新。
             createdAt: at,
@@ -133,6 +148,8 @@ export function createNotificationRepository(db: WorkHubDb): NotificationReposit
                 workItemId: input.workItemId,
                 readAt: null,
                 archivedAt: null,
+                // R15 批 A：同上——只有带 nextRemindAt 的调用（approval.routed）在并发收敛时重置阶梯。
+                ...(input.nextRemindAt !== undefined ? { nextRemindAt: input.nextRemindAt, reminderCount: 0 } : {}),
                 updatedAt: at
               }
             })
@@ -258,6 +275,55 @@ export function createNotificationRepository(db: WorkHubDb): NotificationReposit
         ))
         .returning();
       return rows.length;
+    },
+
+    // R15 批 A（提醒阶梯）：扫到期该提醒的通知——next_remind_at 到点、且仍未读未归档。
+    // 已读/已归档天然退出阶梯（这两个条件把它们排除在扫描外，无需单独的抑制状态）。按 next_remind_at
+    // 升序取最久没提醒的先处理，limit 封顶单 tick 处理量。
+    async listDueReminders(at: Date, limit: number) {
+      return db
+        .select()
+        .from(notifications)
+        .where(and(
+          isNotNull(notifications.nextRemindAt),
+          lte(notifications.nextRemindAt, at),
+          isNull(notifications.readAt),
+          isNull(notifications.archivedAt)
+        ))
+        .orderBy(asc(notifications.nextRemindAt))
+        .limit(Math.max(1, Math.min(limit, 500)));
+    },
+
+    // R15 批 A：落一次提醒。reminder_count++；next_remind_at 续到 params.nextRemindAt（NULL=达上限停止续期）；
+    // updated_at 顶到 at 让通知回到列表最前（复活语义，service 层据此推 SSE）。WHERE 再带一次未读未归档
+    // 守卫：listDueReminders 与本更新之间若通知被读/归档，则这条更新落空返回 null（跳过，不复活已处理项）。
+    async applyReminderTick(id: string, params: { nextRemindAt: Date | null; at: Date }) {
+      const rows = await db
+        .update(notifications)
+        .set({
+          reminderCount: sql`${notifications.reminderCount} + 1`,
+          nextRemindAt: params.nextRemindAt,
+          updatedAt: params.at
+        })
+        .where(and(
+          eq(notifications.id, id),
+          isNull(notifications.readAt),
+          isNull(notifications.archivedAt)
+        ))
+        .returning();
+      return rows[0] ?? null;
+    },
+
+    // R15 批 A：被提醒人「暂停提醒」——只把 next_remind_at 置空，读/归档态不动（通知仍在待决策队列里，
+    // 只是不再 24h 叮嘱）。既有的已读/归档动作本就能停提醒（扫描条件排除），此动作专门服务「我知道了，
+    // 但先别催我，也别把它从队列里划掉」的诉求。
+    async snoozeReminder(id: string, userId: string, at: Date) {
+      const rows = await db
+        .update(notifications)
+        .set({ nextRemindAt: null, updatedAt: at })
+        .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
+        .returning();
+      return rows[0] ?? null;
     }
   };
 }

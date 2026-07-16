@@ -1,5 +1,6 @@
 import {
   ConversationAccessDeniedError,
+  ConversationDmTargetError,
   ConversationMessageActorMismatchError,
   ConversationMessageDeletedError,
   ConversationMessageEditWindowError,
@@ -19,6 +20,7 @@ import {
   type AiFeedbackRow,
   type ConversationMessageRow,
   type ConversationParticipantRow,
+  type ConversationParticipantWithNicknameRow,
   type ConversationReactionKey,
   type ConversationRepository,
   type ConversationRow,
@@ -29,12 +31,14 @@ import {
   type WorkHubDatabaseClient
 } from "@workhub/db";
 import {
+  conversationCuuUpdatedEventSchema,
   conversationFileCardContentSchema,
   conversationMessageCreatedEventSchema,
   conversationMessageUpdatedEventSchema,
   conversationListPageVmSchema,
   conversationMessagePageVmSchema,
   conversationMessageVmSchema,
+  conversationParticipantsVmSchema,
   conversationPinsVmSchema,
   conversationReactionKeySchema,
   conversationReactionUpdatedEventSchema,
@@ -42,7 +46,11 @@ import {
   conversationReadReceiptsVmSchema,
   conversationReadUpdatedEventSchema,
   createConversationResultVmSchema,
+  openDmResultVmSchema,
+  dmListVmSchema,
+  DM_LIST_CAP,
   renameConversationResultVmSchema,
+  updateConversationCuuResultVmSchema,
   eventTypes,
   MAX_CONVERSATION_REPLY_PREVIEW_CODE_UNITS,
   type AdvanceReadCursorRequest,
@@ -52,15 +60,20 @@ import {
   type ConversationMessagePageVM,
   type ConversationMessageReplyPreviewVM,
   type ConversationMessageVM,
+  type ConversationParticipantsVM,
   type ConversationPinsVM,
   type ConversationReadCursorVM,
   type ConversationReadReceiptsVM,
   type CreateConversationMessageRequest,
   type CreateConversationRequest,
   type CreateConversationResultVM,
+  type DmListVM,
   type EditConversationMessageRequest,
+  type OpenDmResultVM,
   type RenameConversationRequest,
-  type RenameConversationResultVM
+  type RenameConversationResultVM,
+  type UpdateConversationCuuRequest,
+  type UpdateConversationCuuResultVM
 } from "@workhub/contracts";
 import { makeWorkHubEvent, topics } from "@workhub/events";
 
@@ -69,10 +82,13 @@ const CONVERSATION_EDIT_WINDOW_MS = 15 * 60 * 1000;
 // R14 批 CHAT：置顶清单读取上限（设计 §3：seq 降序 cap 50）。
 const CONVERSATION_PINS_CAP = 50;
 
-import { getDefaultPushBus, type PushBus } from "../broker/index.js";
+import { getDefaultPushBus, getDefaultPresenceStore, type PushBus } from "../broker/index.js";
+import type { PresenceStore } from "../broker/types.js";
 import { getDefaultStructuredLogger, type StructuredLogger } from "../logging.js";
 import type { AuthActor } from "../middleware/auth.js";
 import { parseOutputContract } from "../pages/output-contract.js";
+import { notifyConversationMessage } from "./conversation-message-notify.js";
+import { createNotificationService, type NotificationService } from "./notifications.js";
 import { getDefaultConversationReplyJudgeService } from "./conversation-reply-judge.js";
 import {
   getDefaultConversationTurnService,
@@ -115,12 +131,28 @@ export type ConversationService = {
     projectId: string;
     payload: CreateConversationRequest;
   }): Promise<CreateConversationResultVM>;
+  // R15 批 B（人对人私聊）：查/开一对用户的 DM——返回既有会话列表同款的 conversation VM（带 is_dm）。
+  // 目标须与调用者同工作区活跃成员、且不是自己（校验在实现/仓库层，映射到 400/404）。
+  openDm(input: { actor: AuthActor; targetUserId: string }): Promise<OpenDmResultVM>;
+  // R15 批 B（人对人私聊）：actor 参与的 DM 列表（参与者门控、含对方昵称+is_self）——rail「私聊」分组
+  // 的唯一数据源。DM 容器项目对项目树/工作台 VM 全线围栏，DM 会话没有任何常规入口，靠这个窄口列出。
+  listDms(input: { actor: AuthActor }): Promise<DmListVM>;
   // R14FIX 批 workbench：协同会话改名——仅 collab 会话、仅参与者/owner（红线在实现里强制）。
   renameConversation(input: {
     actor: AuthActor;
     conversationId: string;
     payload: RenameConversationRequest;
   }): Promise<RenameConversationResultVM>;
+  // R15 批 cuu-toggle：会话级 Cuu 参与开关翻转——同 renameConversation 一样仅 collab（含 DM）、仅
+  // 参与者/owner；main 一律 409（Cuu 在主区的参与语义不同，见实现处注释）。
+  updateCuuEnabled(input: {
+    actor: AuthActor;
+    conversationId: string;
+    payload: UpdateConversationCuuRequest;
+  }): Promise<UpdateConversationCuuResultVM>;
+  // R15 批 cuu-toggle：会话参与者列表——main 诚实回 scope:"workspace" + 空列表，collab（含 DM）回真实
+  // 参与者。参与者门控与消息可见性同口径（非参与者在 visibleConversation() 就已经 404）。
+  listParticipants(input: { actor: AuthActor; conversationId: string }): Promise<ConversationParticipantsVM>;
   listMessages(input: {
     actor: AuthActor;
     conversationId: string;
@@ -192,6 +224,13 @@ export type ConversationServiceOptions = {
   // §5.1/§5.3）。可选依赖：省略时（既有测试的 createConversationService 调用点）读聚合整体跳过、
   // my_feedback / items[].feedback 一律不出现，行为与本批之前逐字一致，不会因缺依赖抛错。
   aiFeedback?: Pick<AiFeedbackRepository, "listForSubjects">;
+  // R15 批 A（A5 消息通知）：人类消息落库 + 广播后，给其他参与者 fire-and-forget 扇出 conversation.message
+  // 通知（在线正在看该会话的人被抑制，见 conversation-message-notify.ts）。可选依赖——省略时（既有测试的
+  // createConversationService 调用点）整个扇出跳过，行为零回归，不会因缺依赖抛错。
+  messageNotify?: {
+    presence: Pick<PresenceStore, "isViewingConversation">;
+    notifications: Pick<NotificationService, "createConversationMessageNotification">;
+  };
 };
 
 function requireHumanActor(actor: AuthActor): HumanConversationActor {
@@ -207,7 +246,14 @@ function requireHumanActor(actor: AuthActor): HumanConversationActor {
   return { actor, userId, workspaceId };
 }
 
-function conversationToVm(row: ConversationRow | VisibleConversationRow, participantRole?: "owner" | "member" | null) {
+function conversationToVm(
+  row: ConversationRow | VisibleConversationRow,
+  participantRole?: "owner" | "member" | null,
+  // R15 批 A（A4 未读聚合）：会话列表 VM 组装时透传的未读数（一条聚合 SQL 一次算齐，见
+  // listConversations）。additive optional——省略时（单条 create/open/rename 结果 VM）VM 不带这个键，
+  // 存量行为零回归；给了具体数（含 0）时才输出 unread_count。
+  unreadCount?: number
+) {
   return {
     id: row.id,
     workspace_id: row.workspaceId,
@@ -222,6 +268,11 @@ function conversationToVm(row: ConversationRow | VisibleConversationRow, partici
     participant_role: participantRole ?? ("participantRole" in row ? row.participantRole : null),
     // R13 批 G1（小群）：会话级 Cuu 硬开关——additive 输出字段，直接透传 DB 列。
     cuu_enabled: row.cuuEnabled,
+    // R15 批 B（人对人私聊）：由 dm_key 非空推导——只在 DM 会话上输出 is_dm=true，普通会话不带这个键
+    // （契约层 is_dm 是 optional，见 conversationVmSchema）。
+    ...(row.dmKey ? { is_dm: true as const } : {}),
+    // R15 批 A（A4 未读聚合）：给了具体数（含 0）时才输出——单条结果 VM 传 undefined 则不带这个键。
+    ...(unreadCount !== undefined ? { unread_count: unreadCount } : {}),
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString()
   };
@@ -410,6 +461,10 @@ function mapRepositoryError(error: unknown): never {
   }
   if (error instanceof ConversationAccessDeniedError) {
     throw new ConversationServiceError(404, "conversation_not_found", "没有找到这个会话。");
+  }
+  // R15 批 B（人对人私聊）：私聊对象不是本工作区活跃成员——404，不泄漏「这个人存在但不在你工作区」。
+  if (error instanceof ConversationDmTargetError) {
+    throw new ConversationServiceError(404, "conversation_dm_target_not_found", "没有找到这个工作区里的这个人。");
   }
   if (error instanceof ConversationSequenceExhaustedError) {
     throw new ConversationServiceError(409, "conversation_sequence_exhausted", "这个会话的消息序号已经耗尽。");
@@ -605,6 +660,34 @@ export function createConversationService(
     }
   }
 
+  // R15 批 cuu-toggle：会话级 Cuu 参与开关翻转后广播——同 publishReadUpdated 的既有取舍（best-effort，
+  // 发布失败仅 warn，翻转本身已经落库成功，不因广播失败回滚）。让别的开着这个会话的客户端头部即时同步
+  // 开关状态，接不上就等下次挂载时用会话 VM 里的 cuu_enabled 兜底。
+  async function publishConversationCuuUpdated(access: ConversationRow, cuuEnabled: boolean) {
+    const conversationTopic = topics.conversation(access.id).topic;
+    const event = parseOutputContract(
+      conversationCuuUpdatedEventSchema,
+      makeWorkHubEvent({
+        type: eventTypes.conversationCuuUpdated,
+        topic: conversationTopic,
+        ts: now(),
+        data: { conversation_id: access.id, cuu_enabled: cuuEnabled }
+      }),
+      "conversations.cuu.event.updated"
+    );
+    try {
+      await bus.publish(conversationTopic, eventTypes.conversationCuuUpdated, event);
+    } catch (error) {
+      logger.warn("conversation_cuu_updated_publish_failed", {
+        event_id: event.event_id,
+        topic: conversationTopic,
+        conversation_id: access.id,
+        broker_backend: bus.backend,
+        error
+      });
+    }
+  }
+
   function parseReactionKey(rawKey: string): ConversationReactionKey {
     const parsed = conversationReactionKeySchema.safeParse(rawKey);
     if (!parsed.success) {
@@ -646,8 +729,23 @@ export function createConversationService(
       if (!result) {
         throw new ConversationServiceError(404, "conversation_project_not_found", "没有找到这个项目会话区。");
       }
+      // R15 批 A（A4 未读聚合）：一条聚合 SQL 算齐本页所有会话在当前 viewer 视角的未读数（禁 N+1——
+      // 不逐会话查）。聚合失败只降级成"不带未读数"，绝不因为红点算不出来而让整页会话列表 500。
+      let unreadCounts = new Map<string, number>();
+      try {
+        unreadCounts = await repository.unreadCountsForViewer({
+          viewerUserId: human.userId,
+          conversationIds: result.rows.map((row) => row.id)
+        });
+      } catch (error) {
+        logger.warn("conversation_unread_aggregate_failed", {
+          projectId: input.projectId,
+          viewerUserId: human.userId,
+          error
+        });
+      }
       return parseOutputContract(conversationListPageVmSchema, {
-        conversations: result.rows.map((row) => conversationToVm(row)),
+        conversations: result.rows.map((row) => conversationToVm(row, undefined, unreadCounts.get(row.id) ?? 0)),
         capped: result.capped,
         next_cursor: result.nextCursor
           ? { afterCreatedAt: result.nextCursor.createdAt, afterId: result.nextCursor.id }
@@ -682,6 +780,87 @@ export function createConversationService(
       } catch (error) {
         mapRepositoryError(error);
       }
+    },
+
+    // ── R15 批 B（人对人私聊）：查/开一对用户的 DM ───────────────────────────────────
+    // 自聊在这里先行 400（不进仓库）；目标不在工作区由仓库抛 ConversationDmTargetError → 404。
+    // 返回既有会话列表同款的 conversation VM——发起者天然是 owner（新建时如此；命中既有 DM 时也可能是
+    // member，取 DB 里的真实角色，见下）。cuu_enabled=false（DM 默认 Cuu 不在场，B5 拍板）由仓库写死。
+    async openDm(input) {
+      const human = requireHumanActor(input.actor);
+      const targetUserId = input.targetUserId.trim().toLowerCase();
+      if (!targetUserId) {
+        throw new ConversationServiceError(400, "conversation_dm_target_required", "请选择一个私聊对象。");
+      }
+      if (targetUserId === human.userId.toLowerCase()) {
+        throw new ConversationServiceError(400, "conversation_dm_self", "不能和自己开私聊。");
+      }
+      let result: Awaited<ReturnType<ConversationRepository["openOrCreateDm"]>>;
+      try {
+        result = await repository.openOrCreateDm({
+          workspaceId: human.workspaceId,
+          actorUserId: human.userId,
+          targetUserId,
+          at: now()
+        });
+      } catch (error) {
+        mapRepositoryError(error);
+      }
+      // participant_role：DM 里发起者一定是两名参与者之一——命中既有 DM 时，取「本 actor 相对这条 DM」的
+      // 真实角色（发起过的那方是 owner、被开聊的那方是 member）。这里按 created_by 判定：会话 createdBy===
+      // 本 actor 即 owner，否则 member。不额外查参与者表（VM 只需要一个 owner/member 标签）。
+      const participantRole =
+        result.conversation.createdBy?.toLowerCase() === human.userId.toLowerCase() ? "owner" : "member";
+      return parseOutputContract(
+        openDmResultVmSchema,
+        { conversation: conversationToVm(result.conversation, participantRole) },
+        "conversations.dm.open"
+      );
+    },
+
+    // ── R15 批 B（人对人私聊）：actor 参与的 DM 列表 ─────────────────────────────────────
+    // 参与者门控在仓库层做（只回 actor 是 participant 的 DM）。participant_role 与 openDm 同款按
+    // created_by 判定（发起过的那方 owner、被开聊的那方 member），不额外查参与者角色列。
+    async listDms(input) {
+      const human = requireHumanActor(input.actor);
+      const rows = await repository.listDmsForUser({
+        workspaceId: human.workspaceId,
+        userId: human.userId,
+        limit: DM_LIST_CAP
+      });
+      // R15 批 A6（rail 未读红点）：复用 A4 的同一条聚合 SQL（unreadCountsForViewer，禁 N+1）给每条 DM 会话
+      // 带上当前 viewer 的未读数——DM 列表复用 conversationVmSchema，unread_count 是 additive optional，与
+      // listConversations 同口径。聚合失败只降级成"不带未读数"，绝不因为红点算不出来而让整份 DM 列表 500。
+      let unreadCounts = new Map<string, number>();
+      try {
+        unreadCounts = await repository.unreadCountsForViewer({
+          viewerUserId: human.userId,
+          conversationIds: rows.map((row) => row.conversation.id)
+        });
+      } catch (error) {
+        logger.warn("dm_list_unread_aggregate_failed", {
+          viewerUserId: human.userId,
+          error
+        });
+      }
+      return parseOutputContract(
+        dmListVmSchema,
+        {
+          items: rows.map((row) => ({
+            conversation: conversationToVm(
+              row.conversation,
+              row.conversation.createdBy?.toLowerCase() === human.userId.toLowerCase() ? "owner" : "member",
+              unreadCounts.get(row.conversation.id) ?? 0
+            ),
+            participants: row.participants.map((participant) => ({
+              user_id: participant.userId,
+              nickname: participant.nickname,
+              is_self: participant.isSelf
+            }))
+          }))
+        },
+        "conversations.dm.list"
+      );
     },
 
     // ── R14FIX 批 workbench：协同会话改名 ─────────────────────────────────────────────
@@ -723,6 +902,79 @@ export function createConversationService(
         renameConversationResultVmSchema,
         { conversation: conversationToVm(updated, access.participantRole) },
         "conversations.rename"
+      );
+    },
+
+    // ── R15 批 cuu-toggle：会话级 Cuu 参与开关翻转 ────────────────────────────────────
+    // 红线（G1 设计 + 本批用户拍板，见批次交付报告的"main 的两处取舍"一节）：
+    //   1. 会话可见（visibleConversation 已 404 挡住不可见者）；
+    //   2. 仅 collab 会话（含 DM——DM 就是 kind='collab' 的一种）可翻——main（团队主区/个人空间单聊）
+    //      的 Cuu 参与语义不一样（主区归静默观察者处理，没有"这一群人手动开关 Cuu"这件事），一律 409，
+    //      不给一个点了必失败的入口；
+    //   3. 仅参与者/owner（participantRole !== null）——project 可见的 collab 里的旁观者不能翻。
+    // 幂等：重复翻到同一个值不特殊处理，仓库层就是一次普通的 UPDATE，成功返回、正常广播。
+    // 广播 conversation.cuu.updated（best-effort）——让其它开着这个会话的客户端头部即时同步开关状态。
+    async updateCuuEnabled(input) {
+      const { human, access } = await visibleConversation(input);
+      const conversation = access.conversation;
+      if (conversation.kind !== "collab") {
+        throw new ConversationServiceError(
+          409,
+          "conversation_cuu_not_collab",
+          "主区不支持切换 Cuu 是否参与，只有协同会话（含私聊）可以。"
+        );
+      }
+      if (access.participantRole === null) {
+        throw new ConversationServiceError(
+          403,
+          "conversation_cuu_forbidden",
+          "只有会话的参与者才能切换 Cuu 是否参与。"
+        );
+      }
+      let updated: ConversationRow;
+      try {
+        updated = await repository.updateCuuEnabled({
+          workspaceId: human.workspaceId,
+          conversationId: conversation.id,
+          enabled: input.payload.enabled,
+          at: now()
+        });
+      } catch (error) {
+        mapRepositoryError(error);
+      }
+      await publishConversationCuuUpdated(updated, updated.cuuEnabled);
+      return parseOutputContract(
+        updateConversationCuuResultVmSchema,
+        { conversation: conversationToVm(updated, access.participantRole) },
+        "conversations.cuu.update"
+      );
+    },
+
+    // ── R15 批 cuu-toggle：会话参与者列表 ──────────────────────────────────────────────
+    // main 会话没有 conversation_participants 行（01-chat-design 的既有语义：主区对整个工作区可见）——
+    // 诚实回 scope:"workspace" + 空列表，不假装能凑出一份"主区参与者名单"（那份名单其实是"当前工作区
+    // 全体成员"，与协同会话的参与者概念不是一回事，混在一起会误导客户端）。collab（含 DM）回
+    // scope:"participants" + 真实参与者。参与者门控与消息可见性同口径——visibleConversation() 对
+    // 不可见的 collab 已经 404，这里不重复判断。
+    async listParticipants(input) {
+      const { access } = await visibleConversation(input);
+      if (access.conversation.kind !== "collab") {
+        return parseOutputContract(
+          conversationParticipantsVmSchema,
+          { scope: "workspace", participants: [] },
+          "conversations.participants.list"
+        );
+      }
+      const rows: ConversationParticipantWithNicknameRow[] = await repository.listParticipantsWithNickname({
+        conversationId: access.conversation.id
+      });
+      return parseOutputContract(
+        conversationParticipantsVmSchema,
+        {
+          scope: "participants",
+          participants: rows.map((row) => ({ user_id: row.userId, nickname: row.nickname, role: row.role }))
+        },
+        "conversations.participants.list"
       );
     },
 
@@ -868,6 +1120,25 @@ export function createConversationService(
           broker_backend: bus.backend,
           error
         });
+      }
+
+      // R15 批 A（A5 消息通知）：给其他参与者扇出 conversation.message 通知——fire-and-forget，绝不阻塞/
+      // 拖垮这次消息创建的 HTTP 响应（内部已全程 try/catch 吞错，这里的 void+catch 是双保险）。DM/协同天然
+      // 生效（参与者=2/N）；主区无 participant 行 → 无收件人 → 内部短路不发。
+      if (options.messageNotify) {
+        const notify = options.messageNotify;
+        void notifyConversationMessage(
+          { repository, presence: notify.presence, notifications: notify.notifications, logger },
+          {
+            conversationId: access.conversation.id,
+            projectId: access.conversation.projectId,
+            conversationTitle: access.conversation.title,
+            senderUserId: human.userId,
+            senderLabel: human.actor.label ?? "",
+            messageKind: message.kind,
+            previewText
+          }
+        ).catch(() => {});
       }
 
       // R14 FIX批10（被 @ 的回复延迟：事件驱动直通）——见 ConversationMentionTriggerDeps 顶部注释。
@@ -1134,6 +1405,12 @@ export function getDefaultConversationService(): ConversationService {
         mentionTrigger: {
           turns: getDefaultConversationTurnService(),
           markMentionHandled: (input) => getDefaultConversationReplyJudgeService().markMentionHandled(input)
+        },
+        // R15 批 A（A5 消息通知）：人类消息落库后扇出 conversation.message 通知。presence 用会话级「正在看」
+        // 注册表（同 SSE 流写的那个单例），notifications 用默认通知服务（自带静音检查 + dedupe 复活推送）。
+        messageNotify: {
+          presence: getDefaultPresenceStore(),
+          notifications: createNotificationService()
         }
       }
     );

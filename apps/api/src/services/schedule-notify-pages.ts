@@ -333,6 +333,10 @@ function notificationItem(
     project_id: row.projectId ?? undefined,
     work_item_id: visibleWorkItemId,
     ...(conversationId ? { conversation_id: conversationId } : {}),
+    // R15 批 A（A2 提醒阶梯）：提醒态——与 notifications.ts 的 toNotificationResponse 同口径。next_remind_at
+    // 非空 = 还挂在 24h 叮嘱阶梯上（spotlight/web 通知页据此渲「暂停提醒」）；reminder_count 只有 >0 才带。
+    ...(row.nextRemindAt ? { next_remind_at: row.nextRemindAt.toISOString() } : {}),
+    ...(typeof row.reminderCount === "number" && row.reminderCount > 0 ? { reminder_count: row.reminderCount } : {}),
     dedupe_key: row.dedupeKey ?? undefined,
     source_context: sourceContextForNotification(row, context),
     read_at: row.readAt?.toISOString(),

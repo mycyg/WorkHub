@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   applyPendingWorkbenchDeepLink,
   bindWorkbenchDeepLinkListener,
+  bindWorkbenchLoggedOutListener,
   clientToken,
   isWorkbenchDesktopLoggedOut,
   resolveWorkbenchApiBase,
@@ -161,4 +162,34 @@ test("bindWorkbenchDeepLinkListener ignores deep links that target a different w
   });
 
   assert.deepEqual(calls, []);
+});
+
+// G-desktop 止血批 3（跨窗口登出广播）——照 bindWorkbenchDeepLinkListener 同一套断言纪律：
+// 无 Tauri 时优雅降级、有 Tauri 时订阅正确的事件名并把回调转发给调用方。
+test("bindWorkbenchLoggedOutListener no-ops without a Tauri listen bridge instead of throwing", () => {
+  const calls: number[] = [];
+  assert.doesNotThrow(() => bindWorkbenchLoggedOutListener(() => calls.push(1), {}));
+  assert.deepEqual(calls, []);
+});
+
+test("bindWorkbenchLoggedOutListener subscribes to the workhub-logged-out event and forwards it to the callback", () => {
+  const calls: number[] = [];
+  let handler: ((event: { payload: unknown }) => void) | undefined;
+  const scope = {
+    __TAURI__: {
+      event: {
+        listen: (eventName: string, cb: (event: { payload: unknown }) => void) => {
+          assert.equal(eventName, "workhub-logged-out");
+          handler = cb;
+          return () => {};
+        }
+      }
+    }
+  };
+
+  bindWorkbenchLoggedOutListener(() => calls.push(1), scope);
+  assert.ok(handler);
+  handler?.({ payload: undefined });
+
+  assert.deepEqual(calls, [1]);
 });

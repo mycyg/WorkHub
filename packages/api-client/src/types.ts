@@ -17,6 +17,7 @@ import type {
   CostDashboardVM,
   CalendarPageVM,
   CostSummaryVM,
+  ConversationMessagePageVM,
   CreateWorkItemRequest,
   CreateProposalFromManifestRequest,
   CreateSessionRequest,
@@ -32,6 +33,7 @@ import type {
   ProjectHealthPageVM,
   ProjectHomePageVM,
   ProjectListVM,
+  ProjectTimelinePageVM,
   NotificationList,
   Proposal,
   ProposalConflictListResult,
@@ -179,6 +181,16 @@ export type PilotDay1MetricsRequestOptions = {
   to?: string;
 };
 
+// R15 批 web-mirror（web 只读会话镜像）：会话消息读端点 GET /api/conversations/:id/messages 的
+// 分页参数——契约层是 beforeSeq（反向：早于该 seq 的最新一页）与 afterSeq（正向：晚于该 seq）互斥
+// 的联合（见 packages/contracts 的 conversationMessageListQuerySchema）。web 镜像只消费这个既有读
+// 端点，不新增任何服务端能力。
+export type ConversationMessageListRequestOptions = {
+  beforeSeq?: number;
+  afterSeq?: number;
+  limit?: number;
+};
+
 // R14 批 MEM：用户记忆列表可选按 category 过滤（服务端 GET /api/me/memories?category=）。
 export type UserMemoryListRequestOptions = {
   category?: "preference" | "correction" | "recurring_context";
@@ -272,6 +284,10 @@ export type PageClient = {
   // apps/web 等其它 workspace 里已有的完整 PageClient 字面量 mock 也补一个用不到的桩——那些文件不在
   // 本批改动范围内（apps/desktop-webview/**、packages/api-client/**、报告文件），不能顺手改。
   workbench?: (projectId: string, options?: PageRequestOptions) => Promise<WorkbenchPageVM>;
+  // R15 批 E2（项目时间线 / 甘特）：里程碑分组的排期条 + 关键路径 VM（GET /api/pages/project/:id/timeline）。
+  // 桌面工作台「时间线」标签与 web /projects/:id/timeline 只读页共用这一个只读端点。可选（同 workbench）：
+  // 只有这两处消费，标必填会强迫既有 PageClient 字面量 mock 补一个用不到的桩。
+  projectTimeline?: (projectId: string, options?: PageRequestOptions) => Promise<ProjectTimelinePageVM>;
 };
 
 export type PushStreamClient = {
@@ -304,6 +320,8 @@ export type WorkHubApiClient = {
   markAllNotificationsRead: () => Promise<{ updated: number }>;
   dismissNotification: (id: string) => Promise<Notification>;
   completeNotification: (id: string) => Promise<Notification>;
+  // R15 批 A（A2 提醒阶梯）：暂停一条通知的 24h 提醒（POST /snooze，服务端置 next_remind_at=null）。
+  snoozeNotification: (id: string) => Promise<Notification>;
   getNotificationPreferences: () => Promise<{ muted_notification_types: string[] }>;
   setNotificationPreferences: (
     mutedNotificationTypes: string[]
@@ -374,8 +392,13 @@ export type WorkHubApiClient = {
   createMeetingInsightDraft: (projectId: string, insightId: string, options?: PageRequestOptions) => Promise<MeetingPageVM>;
   // R10-P2-2：导入会议转写。
   importMeetingTranscript: (projectId: string, payload: { title: string; transcript_text: string }, options?: PageRequestOptions) => Promise<MeetingPageVM>;
-  // R10-P2-5：委派选人器的数据源——活跃成员简表。
+  // R10-P2-5：委派选人器的数据源——活跃成员简表。web 会话镜像也复用它做发送者昵称解析。
   listUsers: () => Promise<{ users: Array<{ id: string; nickname: string; is_admin: boolean }> }>;
+  // R15 批 web-mirror：只读会话镜像消费的既有会话消息读端点（参与者门控在服务端）。
+  listConversationMessages: (
+    conversationId: string,
+    options?: ConversationMessageListRequestOptions
+  ) => Promise<ConversationMessagePageVM>;
   dismissMeetingInsight: (projectId: string, insightId: string, options?: PageRequestOptions) => Promise<MeetingPageVM>;
   createMeetingDraftProposal: (workItemId: string, options?: PageRequestOptions) => Promise<WorkItemDetailVM>;
   costUsage: () => Promise<CostSummaryVM>;

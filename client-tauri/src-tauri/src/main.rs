@@ -1,7 +1,10 @@
 use workhub_client_tauri::config::{load_shell_config_from_json_and_env, WorkHubShellConfig};
 use workhub_client_tauri::deep_link::{deep_link_plan_from_url, describe_deep_link_error};
 use workhub_client_tauri::events::{event_channel_name, ShellEvent};
-use workhub_client_tauri::locale::{normalize_workhub_locale, WorkHubLocale};
+use workhub_client_tauri::locale::{
+    normalize_optional_workhub_locale, normalize_workhub_locale, WorkHubLocale,
+    DEFAULT_WORKHUB_LOCALE,
+};
 use workhub_client_tauri::pet_commands::{
     body_position_from_window_position_with_settings, pet_window_rect_from_position_with_settings,
     restore_saved_body_position, sample_pet_cursor_near_command_plan,
@@ -17,9 +20,10 @@ use workhub_client_tauri::pet_window::{
 use workhub_client_tauri::single_instance::single_instance_plan_from_args_for_locale;
 use workhub_client_tauri::sse_worker::{spawn_default_shell_sse_workers, ShellClientToken};
 use workhub_client_tauri::tray::{
-    tray_menu_action_plan_by_id_for_locale, tray_tooltip, TRAY_HIDE_MAIN_ID, TRAY_OPEN_INBOX_ID,
-    TRAY_OPEN_SETTINGS_ID, TRAY_OPEN_WORKBENCH_ID, TRAY_QUIT_ID, TRAY_RESTORE_PET_INTERACTION_ID,
-    TRAY_SHOW_MAIN_ID, TRAY_TOGGLE_PET_ID, WORKHUB_TRAY_ID,
+    shell_badge_count, tray_menu_action_plan_by_id_for_locale, tray_tooltip,
+    tray_tooltip_with_badge, TRAY_HIDE_MAIN_ID, TRAY_OPEN_INBOX_ID, TRAY_OPEN_SETTINGS_ID,
+    TRAY_OPEN_WORKBENCH_ID, TRAY_QUIT_ID, TRAY_RESTORE_PET_INTERACTION_ID, TRAY_SHOW_MAIN_ID,
+    TRAY_TOGGLE_PET_ID, WORKHUB_TRAY_ID,
 };
 use workhub_client_tauri::window_controls::{
     focus_main_route as focus_main_route_plan, hide_main_window as hide_main_window_plan,
@@ -43,6 +47,7 @@ use tauri::{
     PhysicalPosition as TauriPhysicalPosition, State, WebviewUrl, WebviewWindowBuilder,
 };
 use tauri_plugin_deep_link::DeepLinkExt;
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 #[cfg(target_os = "macos")]
 use objc2_app_kit::NSWindow;
@@ -524,6 +529,27 @@ fn set_spotlight_size(app: tauri::AppHandle, width: f64, height: f64) -> Result<
     Ok(())
 }
 
+// R15 批 A6（托盘/Dock 角标）：把「有几件待办/未读」推到系统托盘 + macOS Dock 层——workbench 关着、聚焦盒
+// 收着时也能一眼看到有事要处理。由 browser.ts 既有的 refreshApprovalsBadge 30s 轮询顺带 invoke（它已经算了
+// attention 队列数，再加上未读通知数）。count<=0 清角标（macOS set_badge_count(None) 清 dock 角标）；托盘
+// tooltip 带上计数（0 回到基线「Cuu 已就绪」）。托盘/tooltip 拿不到时 best-effort 不致命——Dock 角标是主承诺。
+#[tauri::command]
+fn set_shell_badge(app: tauri::AppHandle, count: i64, locale: Option<String>) -> Result<(), String> {
+    let resolved_locale = normalize_optional_workhub_locale(locale).unwrap_or(DEFAULT_WORKHUB_LOCALE);
+    // Dock 角标（macOS）——app 级，用 main 窗句柄设置。main 窗还没建好（冷启动竞态）时静默跳过，下一拍再来。
+    if let Some(window) = app.get_webview_window("main") {
+        window
+            .set_badge_count(shell_badge_count(count))
+            .map_err(|error| format!("failed to set shell dock badge: {error}"))?;
+    }
+    // 托盘 tooltip 带数——best-effort：没有托盘（无 tray-icon feature / 尚未装好）时不报错。
+    if let Some(tray) = app.tray_by_id(WORKHUB_TRAY_ID) {
+        let badge = i64::max(count, 0).min(u32::MAX as i64) as u32;
+        let _ = tray.set_tooltip(Some(tray_tooltip_with_badge(resolved_locale, badge)));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn start_main_window_drag(window: tauri::Window) -> Result<(), String> {
     if window.label() != "main" {
@@ -803,6 +829,45 @@ fn execute_window_control(
     }
 
     Ok(plan)
+}
+
+// R15：全局热键 Option+Space（macOS 上 Alt 键位即 Option；不占系统级 Cmd+Space）唤起/收起聚焦盒——
+// 桌宠常驻小窗/托盘之外补上"聚焦盒"这个名字暗示的 Spotlight 心智模型的第二条召唤路径。用
+// on_shortcut() 而非插件 Builder::with_shortcut()：后者在插件自己的 setup 阶段用 `?` 直接把
+// register() 的失败上抛，会让整个 tauri::Builder::run() 失败（应用起不来）；on_shortcut() 把
+// Result 交回调用方，可以自行降级——热键被别的应用占用时只记日志，应用照常启动。
+fn install_workhub_global_hotkey(app: &tauri::AppHandle) -> Result<(), String> {
+    let shortcut = Shortcut::new(Some(Modifiers::ALT), Code::Space);
+    app.global_shortcut()
+        .on_shortcut(shortcut, |app, _shortcut, event| {
+            // 全局热键的按下/松开各触发一次事件；只在按下时切换，否则一次按键会触发两次 toggle
+            // （按下唤起、松开又立刻收起）。
+            if event.state == ShortcutState::Pressed {
+                toggle_main_window_from_global_hotkey(app);
+            }
+        })
+        .map_err(|error| format!("failed to register global hotkey Option+Space: {error}"))
+}
+
+// Spotlight 手感：主窗已聚焦（前台且拿到焦点）→ 收起；否则（不可见，或可见但焦点被别的应用抢走）
+// → 唤起并聚焦。故意用 is_focused() 而非泛用的 ShellWindowControlAction::Toggle（它只看 is_visible()）
+// ——聚焦盒常驻可见、alwaysOnTop，"可见但没聚焦"是最常见的起点，此时应当唤起而不是被 Toggle 藏起来。
+// 复用既有的 show_main_window_plan/hide_main_window_plan + execute_window_control 执行路径
+// （跟托盘/深链/通知同一条控制协议），不另造第二套窗口控制协议。
+fn toggle_main_window_from_global_hotkey(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        eprintln!("WorkHub: global hotkey fired but the main window is unavailable");
+        return;
+    };
+    let is_focused = window.is_focused().unwrap_or(false);
+    let plan = if is_focused {
+        hide_main_window_plan(ShellWindowControlSource::Setting)
+    } else {
+        show_main_window_plan(ShellWindowControlSource::Setting)
+    };
+    if let Err(error) = execute_window_control(app, plan) {
+        eprintln!("WorkHub: failed to apply global hotkey window control: {error}");
+    }
 }
 
 fn prepare_pet_window_on_startup(app: &tauri::App) -> Result<(), String> {
@@ -1596,6 +1661,11 @@ fn main() {
         }))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
+        // R15：全局热键宿主插件——只登记插件本身（不预注册任何 accelerator,见插件的
+        // Builder::with_shortcut，那条路径会在 setup 阶段用 `?` 直接让 register() 失败上抛,
+        // 导致整个 .run() 失败/应用起不来）。真正的 Option+Space 注册放在下面 .setup() 里，
+        // 用 on_shortcut() 的 Result 手动兜底降级，绝不让"热键被别的应用占用"炸掉整个启动。
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(Mutex::new(PetWindowRuntimeState::default()))
         .manage(Mutex::new(WorkHubLocale::default()))
         // R8：webview bootstrap 拿到的设备令牌经 set_client_token 写入此处，供 Rust SSE worker 鉴权（修 Cuu 重连中）。
@@ -1636,6 +1706,13 @@ fn main() {
             prepare_pet_window_on_startup(app)?;
             install_workhub_tray(app, shell_config.locale)?;
             install_workhub_deep_links(app)?;
+            // R15：全局热键唤起聚焦盒（交互规划 04 §二第 2 项）——注册失败（多半是 Option+Space 被
+            // 别的应用占用）只记日志降级，绝不 panic/绝不让应用起不来：托盘/常驻小窗仍是保底触达路径。
+            if let Err(error) = install_workhub_global_hotkey(&app.handle()) {
+                eprintln!(
+                    "WorkHub: {error}; continuing without the global hotkey (tray icon and the docked spotlight window remain available)"
+                );
+            }
             if workhub_sse_disabled_from_env(|name| std::env::var(name).ok()) {
                 eprintln!("WorkHub SSE worker disabled by {WORKHUB_DISABLE_SSE_ENV}.");
             } else {
@@ -1715,6 +1792,7 @@ fn main() {
             set_pet_window_click_through,
             set_client_token,
             set_spotlight_size,
+            set_shell_badge,
             start_main_window_drag,
             move_main_window_by,
             show_main_window,

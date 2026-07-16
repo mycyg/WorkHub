@@ -21,6 +21,12 @@ export const notificationSchema = z.object({
   // apps/api/src/services/notifications.ts 的 extractConversationIdFromTargetUrl）；旧数据/其它
   // 通知类型没有这个参数时，这个字段就不出现，老调用方不受影响。
   conversation_id: idSchema.optional(),
+  // R15 批 A（A2 提醒阶梯）：additive optional——提醒态。next_remind_at=下次复活提醒时刻（NULL/不出现=不再
+  // 提醒，或本就不进 24h 叮嘱阶梯）；reminder_count=已提醒次数。只有进阶梯的通知类型（如 approval.routed）
+  // 才带非空 next_remind_at；聊天消息通知等刻意不进阶梯，这两个字段不出现（或 reminder_count=0）。前端据
+  // next_remind_at 非空渲「暂停提醒」轻按钮（POST /api/notifications/:id/snooze 置空即抑制）。老调用方不受影响。
+  next_remind_at: isoDateTimeSchema.optional(),
+  reminder_count: z.number().int().nonnegative().optional(),
   dedupe_key: z.string().max(256).optional(),
   read_at: isoDateTimeSchema.optional(),
   archived_at: isoDateTimeSchema.optional(),

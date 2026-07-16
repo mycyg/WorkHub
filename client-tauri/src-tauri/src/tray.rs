@@ -121,6 +121,28 @@ pub fn tray_tooltip(locale: WorkHubLocale) -> &'static str {
     }
 }
 
+/// R15 批 A6（托盘/Dock 角标）：托盘 tooltip 带上「待处理」计数——0 时回到基线 tooltip（Cuu 已就绪），
+/// 让「有待办/未读」在托盘悬停时也可见。纯函数，可单测。
+pub fn tray_tooltip_with_badge(locale: WorkHubLocale, badge_count: u32) -> String {
+    if badge_count == 0 {
+        return tray_tooltip(locale).to_string();
+    }
+    match locale {
+        WorkHubLocale::ZhCn => format!("WorkHub · {badge_count} 项待处理"),
+        WorkHubLocale::EnUs => format!("WorkHub · {badge_count} pending"),
+    }
+}
+
+/// R15 批 A6：Dock 角标计数归一——正数才显示，<=0 清空（None）。macOS 上 set_badge_count(None) 清 dock
+/// 角标（tauri-runtime-wry 把 count 映射到 NSApp.dockTile.badgeLabel）。纯函数，可单测。
+pub fn shell_badge_count(raw: i64) -> Option<i64> {
+    if raw > 0 {
+        Some(raw)
+    } else {
+        None
+    }
+}
+
 fn tray_label(locale: WorkHubLocale, kind: TrayMenuActionKind) -> &'static str {
     match (locale, kind) {
         (WorkHubLocale::ZhCn, TrayMenuActionKind::ShowMain) => "打开 WorkHub",
@@ -178,6 +200,33 @@ mod tests {
     use super::*;
     use crate::window_controls::ShellWindowControlAction;
     use std::collections::HashSet;
+
+    #[test]
+    fn tray_tooltip_with_badge_shows_pending_count_and_falls_back_to_baseline_at_zero() {
+        assert_eq!(
+            tray_tooltip_with_badge(WorkHubLocale::ZhCn, 0),
+            "WorkHub - Cuu 已就绪"
+        );
+        assert_eq!(
+            tray_tooltip_with_badge(WorkHubLocale::EnUs, 0),
+            "WorkHub - Cuu is ready"
+        );
+        assert_eq!(
+            tray_tooltip_with_badge(WorkHubLocale::ZhCn, 3),
+            "WorkHub · 3 项待处理"
+        );
+        assert_eq!(
+            tray_tooltip_with_badge(WorkHubLocale::EnUs, 3),
+            "WorkHub · 3 pending"
+        );
+    }
+
+    #[test]
+    fn shell_badge_count_only_shows_positive_counts() {
+        assert_eq!(shell_badge_count(0), None);
+        assert_eq!(shell_badge_count(-2), None);
+        assert_eq!(shell_badge_count(5), Some(5));
+    }
 
     #[test]
     fn keeps_tray_ids_stable_and_unique() {

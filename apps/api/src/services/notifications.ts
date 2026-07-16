@@ -41,6 +41,28 @@ export class NotificationServiceError extends Error {
   }
 }
 
+// R15 批 A（提醒阶梯 · 01-batch-a-pipeline.md §A2）：硬编码策略。approval.routed 类通知创建即置
+// next_remind_at = 创建时刻 + 24h；此后每次 notification-reminder tick 复活推送并把 next_remind_at 再 +24h，
+// reminder_count 达上限 3 后置空停止续期（approval 类的进一步升级交给 expireDueApprovals 既有分流，
+// 不在此重复造）。approvals.ts 创建 approval.routed 时复用同一个间隔常量。
+export const APPROVAL_REMINDER_INTERVAL_MS = 24 * 60 * 60 * 1000;
+export const REMINDER_MAX_COUNT = 3;
+
+// R15 批 F（主动关怀 · opt-out）：关怀消息走会话通道、不走通知，但「不想收关怀」这个偏好复用既有
+// 「通知按类型静音」列（users.muted_notification_types）——保留一个专用伪类型承载它，无新列、无迁移，
+// 复用既有 GET/PUT /notifications/preferences 端点。默认（清单里没有它）= 开启关怀。care-scan 与偏好
+// 端点都引用这个常量作单一真相（放在 notifications 是因它本质是保留的通知类型名，且避免 import 环）。
+export const CARE_MESSAGE_MUTE_TYPE = "care.message";
+
+export type NotificationReminderRunResult = {
+  // 本 tick 扫到的到期待提醒行数。
+  scanned: number;
+  // 成功落一次提醒（复活 + 推 SSE）的行数（扫描与更新之间被读/归档的会落空，不计入）。
+  reminded: number;
+  // 本 tick 里达阶梯上限、next_remind_at 被置空的行数（此后不再提醒）。
+  stopped: number;
+};
+
 export type NotificationServiceDependencies = {
   notifications: NotificationRepository;
   audit?: AuditLogRepository;
@@ -180,6 +202,15 @@ export function toNotificationResponse(row: NotificationRow, options: {
   }
   if (row.dedupeKey) {
     notification.dedupe_key = row.dedupeKey;
+  }
+  // R15 批 A（A2 提醒阶梯）：提醒态——next_remind_at 非空说明这条通知还挂在 24h 叮嘱阶梯上，前端据此渲
+  // 「暂停提醒」按钮；reminder_count 已提醒次数，只有 >0 才带（0 是默认、无信息量）。不进阶梯的通知
+  // （next_remind_at=NULL）这两个字段就不出现，additive 零回归。
+  if (row.nextRemindAt) {
+    notification.next_remind_at = row.nextRemindAt.toISOString();
+  }
+  if (typeof row.reminderCount === "number" && row.reminderCount > 0) {
+    notification.reminder_count = row.reminderCount;
   }
   if (row.readAt) {
     notification.read_at = row.readAt.toISOString();
@@ -338,7 +369,11 @@ export function createNotificationService(
     }
   }
 
-  async function flushDraft(draft: NotificationDraft): Promise<NotificationRow | null> {
+  async function flushDraft(
+    // R15 批 F：workItemId 放宽为可选——主动性 intent（如关怀）不一定挂工作项。底层
+    // createOrUpdateNotification 本就接受可选 workItemId（见 createMentionNotification 先例）。
+    draft: Omit<NotificationDraft, "workItemId"> & { workItemId?: string; nextRemindAt?: Date }
+  ): Promise<NotificationRow | null> {
     // 团队就绪 must-have：收件人静音了该类型则跳过、不建（DEFAULT-OFF：查询不可用/空则照建）。
     if (await isMutedForRecipient(draft.userId, draft.type)) {
       return null;
@@ -351,9 +386,11 @@ export function createNotificationService(
         title: draft.title,
         body: draft.body,
         targetUrl: draft.targetUrl,
-        workItemId: draft.workItemId,
+        ...(draft.workItemId ? { workItemId: draft.workItemId } : {}),
         dedupeKey: draft.dedupeKey,
-        ...(draft.projectId ? { projectId: draft.projectId } : {})
+        ...(draft.projectId ? { projectId: draft.projectId } : {}),
+        // R15 批 A：进 24h 提醒阶梯的通知（approval.routed）带上首个 next_remind_at；其余不带。
+        ...(draft.nextRemindAt ? { nextRemindAt: draft.nextRemindAt } : {})
       },
       now()
     );
@@ -406,7 +443,9 @@ export function createNotificationService(
       return deps.notifications.archiveByDedupeKey(dedupeKey, now());
     },
 
-    async createNotification(draft: NotificationDraft): Promise<Notification | null> {
+    async createNotification(
+      draft: Omit<NotificationDraft, "workItemId"> & { workItemId?: string; nextRemindAt?: Date }
+    ): Promise<Notification | null> {
       // 团队就绪 must-have：收件人静音了该类型则返回 null（未建）。
       const row = await flushDraft(draft);
       return row ? toNotificationResponse(row) : null;
@@ -440,6 +479,59 @@ export function createNotificationService(
           ...(input.targetUrl ? { targetUrl: input.targetUrl } : {}),
           ...(input.workItemId ? { workItemId: input.workItemId } : {}),
           ...(input.projectId ? { projectId: input.projectId } : {})
+        },
+        now()
+      );
+      if (result.resurfaced) {
+        await publishNotification(deps.bus, result.notification);
+      }
+      return toNotificationResponse(result.notification);
+    },
+
+    // R15 批 A（A5 消息通知）：给会话里一个「其他参与者」落一条新消息通知。dedupe_key 按会话+收件人
+    // 聚合——同会话多条未读复活成同一条（body 更新为最新预览 + 累计未读条数，复用 createOrUpdateNotification
+    // 的 resurfaced 推送语义）。**不设 next_remind_at**（聊天不进 24h 叮嘱阶梯，见设计 A5）。在线抑制
+    // （收件人是否正打开该会话）由调用方（conversation-message-notify.ts）在此之前判定，这里只负责静音
+    // 检查 + 落库 + 复活推送。@mention 升格（conversation.mention，severity 高一档、独立 dedupe_key）预留
+    // isMention 开关——本批消息 schema 无结构化 mention 数据，调用方不会传 true（见交付报告）。
+    async createConversationMessageNotification(input: {
+      userId: string;
+      conversationId: string;
+      projectId: string;
+      conversationTitle: string;
+      senderLabel: string;
+      previewText: string;
+      unreadCount: number;
+      isMention?: boolean;
+    }): Promise<Notification | null> {
+      const type = input.isMention ? "conversation.mention" : "conversation.message";
+      if (await isMutedForRecipient(input.userId, type)) {
+        return null;
+      }
+      const dedupeKey = `${input.isMention ? "conversation_mention" : "conversation_msg"}:${input.conversationId}:${input.userId}`;
+      const preview = input.previewText.trim().slice(0, 140);
+      const count = Number.isFinite(input.unreadCount) && input.unreadCount > 0 ? Math.floor(input.unreadCount) : 1;
+      const senderPrefix = input.senderLabel ? `${input.senderLabel}：` : "";
+      const body = count > 1 ? `${senderPrefix}${preview}（${count} 条未读）` : `${senderPrefix}${preview}`;
+      // 桌面既有深链格式：/workbench/<projectId>/<conversationId>（见 client-tauri window_controls
+      // safe_route + desktop-webview buildWorkbenchDeepLinkHref）——notify.rs 的 OS 桥直接拿 target_url 当
+      // 路由聚焦主窗到这条会话。额外附 ?conversation_id= 让 extractConversationIdFromTargetUrl 解出结构化
+      // conversation_id（桌面 Cuu 气泡按 project_id+conversation_id 拼深链、web 通知页据此标注「在桌面
+      // 工作台打开」）。web 端没有 /workbench 路由，退化为在 /notifications 列表里看到这条（web fallback）。
+      const targetUrl =
+        `/workbench/${encodeURIComponent(input.projectId)}/${encodeURIComponent(input.conversationId)}` +
+        `?conversation_id=${encodeURIComponent(input.conversationId)}`;
+      const result = await deps.notifications.createOrUpdateNotification(
+        {
+          userId: input.userId,
+          type,
+          severity: input.isMention ? "high" : "normal",
+          title: input.conversationTitle,
+          body,
+          targetUrl,
+          dedupeKey,
+          projectId: input.projectId
+          // 刻意不带 nextRemindAt：聊天消息不进 24h 提醒阶梯。
         },
         now()
       );
@@ -496,22 +588,45 @@ export function createNotificationService(
     },
 
     // 团队就绪 must-have（通知偏好-按类型静音）：读该用户被静音的类型清单（DEFAULT-OFF：缺仓库/无行回 []）。
-    async getPreferences(userId: string): Promise<{ muted_notification_types: string[] }> {
+    // R15 批 F：额外派生 care_messages_enabled（关怀开关，默认 true）。关怀伪类型（CARE_MESSAGE_MUTE_TYPE）
+    // 从用户可见的静音清单里剥离——它不是真正的通知类型，只用布尔字段表达，避免既有通知偏好 UI 把它当
+    // 一条「静音类型」误显示/误清。
+    async getPreferences(userId: string): Promise<{ muted_notification_types: string[]; care_messages_enabled: boolean }> {
       const muted = deps.users?.getMutedNotificationTypes
         ? await deps.users.getMutedNotificationTypes(userId)
         : [];
-      return { muted_notification_types: Array.isArray(muted) ? normalizeMutedNotificationTypes(muted) : [] };
+      const normalized = Array.isArray(muted) ? normalizeMutedNotificationTypes(muted) : [];
+      return {
+        muted_notification_types: normalized.filter((type) => type !== CARE_MESSAGE_MUTE_TYPE),
+        care_messages_enabled: !normalized.includes(CARE_MESSAGE_MUTE_TYPE)
+      };
     },
 
-    // 写静音类型清单。入参须先经路由校验为去重的非空字符串数组。仓库未实现则回 501。
+    // 写静音类型清单。入参 mutedNotificationTypes 是【用户可见清单】（不含关怀伪类型），须先经路由校验为
+    // 去重的非空字符串数组。仓库未实现则回 501。R15 批 F：关怀开关单独承载——options.careMessagesEnabled
+    // 显式给了就按它，没给则沿用当前存量（避免用户只想改通知静音时把关怀开关误重置）。最终把关怀伪类型
+    // 按开关合并进持久化清单。
     async setPreferences(
       userId: string,
-      mutedNotificationTypes: string[]
-    ): Promise<{ muted_notification_types: string[] }> {
+      mutedNotificationTypes: string[],
+      options: { careMessagesEnabled?: boolean } = {}
+    ): Promise<{ muted_notification_types: string[]; care_messages_enabled: boolean }> {
       if (!deps.users?.setMutedNotificationTypes) {
         throw new NotificationServiceError(501, "not_implemented", "当前部署不支持通知偏好设置。");
       }
-      const updated = await deps.users.setMutedNotificationTypes(userId, mutedNotificationTypes);
+      let careEnabled: boolean;
+      if (options.careMessagesEnabled !== undefined) {
+        careEnabled = options.careMessagesEnabled;
+      } else {
+        const current = deps.users.getMutedNotificationTypes
+          ? await deps.users.getMutedNotificationTypes(userId)
+          : [];
+        careEnabled = !(Array.isArray(current) && current.includes(CARE_MESSAGE_MUTE_TYPE));
+      }
+      // 可见静音清单（剔除任何混入的关怀伪类型）+ 关怀开关决定是否加回伪类型。
+      const visible = normalizeMutedNotificationTypes(mutedNotificationTypes).filter((type) => type !== CARE_MESSAGE_MUTE_TYPE);
+      const persisted = careEnabled ? visible : [...visible, CARE_MESSAGE_MUTE_TYPE];
+      const updated = await deps.users.setMutedNotificationTypes(userId, persisted);
       if (!updated) {
         throw new NotificationServiceError(404, "not_found", "没有找到这个用户。");
       }
@@ -519,9 +634,13 @@ export function createNotificationService(
         userId,
         entityId: userId,
         action: "notification.set_preferences",
-        detailJson: { muted_notification_types: mutedNotificationTypes }
+        detailJson: { muted_notification_types: visible, care_messages_enabled: careEnabled }
       });
-      return { muted_notification_types: normalizeMutedNotificationTypes(updated.mutedNotificationTypes) };
+      const persistedNormalized = normalizeMutedNotificationTypes(updated.mutedNotificationTypes);
+      return {
+        muted_notification_types: persistedNormalized.filter((type) => type !== CARE_MESSAGE_MUTE_TYPE),
+        care_messages_enabled: !persistedNormalized.includes(CARE_MESSAGE_MUTE_TYPE)
+      };
     },
 
     async markRead(id: string, userId: string, options: NotificationMutationOptions = {}) {
@@ -623,6 +742,60 @@ export function createNotificationService(
         row,
         visibility.stripUnreadableWorkItemTarget ? { stripUnreadableWorkItemTarget: true } : {}
       );
+    },
+
+    // R15 批 A（提醒阶梯）：被提醒人「暂停提醒」——置 next_remind_at=NULL，不动读/归档态。
+    // 已读/归档本就会停提醒（扫描条件排除），此动作专门服务「知道了、先别催、但也别把它移出待决策队列」。
+    async snooze(id: string, userId: string, options: NotificationMutationOptions = {}) {
+      const existing = await deps.notifications.findByIdForUser(id, userId);
+      if (!existing) {
+        throw new NotificationServiceError(404, "not_found", "没有找到这条通知。");
+      }
+      const visibility = await requireVisibleNotification(existing, options.actor);
+      const row = await deps.notifications.snoozeReminder(id, userId, now());
+      if (!row) {
+        throw new NotificationServiceError(404, "not_found", "没有找到这条通知。");
+      }
+      await auditNotificationAction({
+        userId,
+        entityId: id,
+        action: "notification.snooze"
+      });
+      return toNotificationResponse(
+        row,
+        visibility.stripUnreadableWorkItemTarget ? { stripUnreadableWorkItemTarget: true } : {}
+      );
+    },
+
+    // R15 批 A（提醒阶梯）：notification-reminder pulse 任务的一次 tick 主体。扫到期该提醒的通知，逐条
+    // reminder_count++、next_remind_at +24h（达上限 3 则置空停止续期），并用 createOrUpdateNotification 之外
+    // 的直更 + 同一条 publishNotification 复活推 SSE（updated_at 顶到 now 使其回到列表最前）。
+    // 已读/已归档的通知在 listDueReminders 就被排除，天然退出阶梯，无需单独抑制状态。
+    async runNotificationReminders(options: { limit?: number } = {}): Promise<NotificationReminderRunResult> {
+      const at = now();
+      const limit = Math.max(1, Math.min(options.limit ?? 200, 500));
+      const due = await deps.notifications.listDueReminders(at, limit);
+      let reminded = 0;
+      let stopped = 0;
+      for (const row of due) {
+        const nextCount = row.reminderCount + 1;
+        // 达上限：本次是最后一提，next_remind_at 置空——此后不再进扫描（approval 类的进一步升级
+        // 由 expireDueApprovals 既有 escalate_pm/notify_reviewer 分流负责，不在这里重复造）。
+        const nextRemindAt = nextCount >= REMINDER_MAX_COUNT
+          ? null
+          : new Date(at.getTime() + APPROVAL_REMINDER_INTERVAL_MS);
+        const updated = await deps.notifications.applyReminderTick(row.id, { nextRemindAt, at });
+        // listDueReminders 与本更新之间通知被读/归档 → applyReminderTick 落空返回 null，跳过（不复活已处理项）。
+        if (!updated) {
+          continue;
+        }
+        reminded += 1;
+        if (nextRemindAt === null) {
+          stopped += 1;
+        }
+        await publishNotification(deps.bus, updated);
+      }
+      return { scanned: due.length, reminded, stopped };
     }
   };
 }

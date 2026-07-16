@@ -31,7 +31,17 @@ export const workbenchIcons = {
   reply: ic('<path d="M10 8V4l-7 7 7 7v-4c4.5 0 7.5 1.5 9 5 0-7-3.5-11-9-11Z"/>'),
   edit: ic('<path d="M4 20h4l10-10-4-4L4 16Z"/><path d="M13.5 6.5l4 4"/>'),
   trash: ic('<path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/>'),
-  pin: ic('<path d="M9 3h6l-1 6 3 3H7l3-3-1-6Z"/><path d="M12 15v6"/>')
+  pin: ic('<path d="M9 3h6l-1 6 3 3H7l3-3-1-6Z"/><path d="M12 15v6"/>'),
+  // R15 批 E2（项目时间线 / 甘特）：rail 项目行的「时间线」树叶——横向排期条示意（三条错位的甘特条）。
+  timeline: ic('<path d="M4 5h10M4 12h14M4 19h7"/><path d="M14 5v0M18 12v0M11 19v0"/>'),
+  // R16-W1（工作台聊天流升级）：Cuu 消息尾部操作条的「复制」（照 prototype 的重叠方框）；工具活动折叠组
+  // 摘要行的「工具」扳手图标。
+  copy: ic('<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>'),
+  tool: ic('<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.4 2.4-2-2Z"/>'),
+  // R16 批 W2：rail 项目行的「任务看板」树叶——三列看板柱示意（照 prototype 的 kanban 图标）。
+  kanban: ic('<rect x="3" y="4.5" width="5" height="15" rx="1.4"/><rect x="10" y="4.5" width="5" height="10" rx="1.4"/><rect x="17" y="4.5" width="4" height="13" rx="1.4"/>'),
+  // R16 批 W2：rail 项目行的「日程」树叶——月历外框 + 顶部挂钉（照 prototype 的 calendar 图标）。
+  calendar: ic('<rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9h18M8 2.5v4M16 2.5v4"/>')
 } as const;
 
 export type WorkbenchIconKey = keyof typeof workbenchIcons;

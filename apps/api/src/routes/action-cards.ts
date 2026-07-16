@@ -15,8 +15,8 @@ import {
 import { readJsonObject } from "./json-body.js";
 import { isUuidParam } from "./uuid-param.js";
 
-// R12 批3：行动卡条目的决策/撤销端点。这个模块**不挂载**到 app.ts——由批3之后的集成者决定挂在哪个
-// 路由前缀下（见 r12-desktop-workbench/reports/batch-3-server.md「未挂载清单」）。
+// R12 批3：行动卡条目的决策/撤销端点。已挂载——app.ts:271 `app.route("/api", createActionCardRoutes())`，
+// 实际路径为 POST /api/action-card-items/:id/decide 与 POST /api/action-card-items/:id/undo。
 
 export type ActionCardRoutesDependencies = {
   auth?: AuthDependencySource;

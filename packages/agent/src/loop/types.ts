@@ -117,6 +117,12 @@ export type AgentLoopInput = {
    * 'review' 任务类路由到独立模型。不传则回退 client（行为与配置前一致，保持后向兼容）。
    */
   reviewClient?: AgentLoopClient;
+  /**
+   * 补丁2：压缩摘要用的独立客户端（部署经 'context_compact' 任务类路由，与工人/评审分开记账）。提供时，压缩
+   * 会先做一次独立 LLM 调用产出结构化摘要（Goal/Constraints/Progress/Decisions/NextSteps）；调用失败/超时/空
+   * 文本一律优雅退化回机械摘要。不提供则始终走机械摘要（行为与改造前一致，保持后向兼容）。
+   */
+  compactionClient?: AgentLoopClient;
   /** findings[#7]：评审用的已解析任务标题（如 run.title）。不传则回退 initialUserMessage 首行（旧行为）。 */
   reviewTaskTitle?: string;
   /** findings[#5]：评审用的验收标准清单，作为评分依据传给评审员。不传则不附加。 */

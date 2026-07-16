@@ -27,6 +27,7 @@ import {
   workHubLocaleStorageKey,
   type AgentRunLiveVM,
   type AttentionItem,
+  type CuuState,
   type ProposalConflict,
   type WorkHubLocale
 } from "@workhub/contracts";
@@ -806,6 +807,31 @@ function primaryDesktopCuuAction(card: CuuCard, actionId: string, freeText?: str
   return resolved;
 }
 
+// G-desktop 止血批 3（跨窗口登出广播）：登出发生在主窗（spotlight 设置视图）时,主窗自己
+// `window.location.reload()` 就够了——重新走 boot() 会自然命中 desktopLoggedOut() 的重新绑定屏。但桌宠窗是
+// 一个已经在跑的独立进程,不会跟着主窗一起 reload,原来完全没有 handler 去处理"我手里的 client token 刚被
+// 主窗清空了"这件事,只会在下一次调用时静默拿着空 token 打 401。现在监听同一个 workhub-logged-out 事件
+// （见 boot.ts/workbench/interrupt-broadcast.ts 同款 emit/listen 通路),换成一张诚实的「已登出」卡片——
+// 不再假装 Cuu 还能干活,也把 setCard 里"新卡没有 run id 就关掉旧 run 订阅"的既有逻辑顺带用上,不用
+// 另外手写一次 close()。
+export function createDesktopPetLoggedOutCard(locale: WorkHubLocale): CuuCard {
+  const zh = locale === "zh-CN";
+  const state: CuuState = "offline";
+  return {
+    id: "pet-logged-out",
+    kind: "offline",
+    state,
+    motion: cuuMotionForState(state),
+    title: zh ? "已登出" : "Signed out",
+    message: zh
+      ? "这台设备已经登出，去主窗口重新登录后 Cuu 才能继续帮你。"
+      : "This device signed out — sign back in from the main window before Cuu can help again.",
+    priority: "high",
+    actions: [],
+    chips: []
+  };
+}
+
 export async function bootDesktopPetSurface(
   root: HTMLElement,
   input: {
@@ -1561,6 +1587,17 @@ export async function bootDesktopPetSurface(
     attentionRefreshUnlisten = maybeAttentionRefreshUnlisten;
   }
 
+  // G-desktop 止血批 3：跨窗口登出广播——见 createDesktopPetLoggedOutCard 顶部注释。换卡即可，
+  // setCard 已有的"新卡没有关联 run id 就关掉旧订阅"逻辑顺带停掉这个窗口手里可能还开着的 run 流，
+  // 不用另外手写一次 runStreamSubscription?.close()。
+  let loggedOutUnlisten: DesktopShellUnlisten | undefined;
+  const maybeLoggedOutUnlisten = await shellListen?.("workhub-logged-out", () => {
+    setCard(createDesktopPetLoggedOutCard(locale), undefined, { persist: false });
+  });
+  if (typeof maybeLoggedOutUnlisten === "function") {
+    loggedOutUnlisten = maybeLoggedOutUnlisten;
+  }
+
   const runtime = await bindDesktopShellCuuRuntime({
     listen: shellListen,
     controller,
@@ -1717,6 +1754,7 @@ export async function bootDesktopPetSurface(
       petSettingsUnlisten?.();
       trayActionUnlisten?.();
       attentionRefreshUnlisten?.();
+      loggedOutUnlisten?.();
       await runtime.dispose();
     }
   };

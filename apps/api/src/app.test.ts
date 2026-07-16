@@ -369,6 +369,7 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["post", "/api/notifications/read-all"],
     ["post", "/api/notifications/{id}/dismiss"],
     ["post", "/api/notifications/{id}/complete"],
+    ["post", "/api/notifications/{id}/snooze"],
     ["get", "/api/projects"],
     ["post", "/api/projects/bootstrap"],
     ["get", "/api/projects/{id}/conversations"],
@@ -379,6 +380,8 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["patch", "/api/me/ai-profile"],
     ["get", "/api/projects/{id}/ai-governance"],
     ["patch", "/api/projects/{id}/ai-governance"],
+    ["get", "/api/projects/{id}/instructions"],
+    ["patch", "/api/projects/{id}/instructions"],
     ["post", "/api/workitems/{id}/proposals"],
     ["get", "/api/workitems/{id}/proposals"],
     ["get", "/api/workitems/{id}/conflicts"],
@@ -819,7 +822,8 @@ test("R12 AI settings runtime and OpenAPI expose four strict secret-free operati
 
   for (const path of [
     "/api/me/ai-profile",
-    `/api/projects/14000000-0000-4000-8000-000000000004/ai-governance`
+    `/api/projects/14000000-0000-4000-8000-000000000004/ai-governance`,
+    `/api/projects/14000000-0000-4000-8000-000000000004/instructions`
   ]) {
     const overLimit = await app.request(path, {
       method: "PATCH",
@@ -874,6 +878,59 @@ test("templated OpenAPI paths declare their required path parameters", async () 
   }
 
   assert.deepEqual(missing, []);
+});
+
+// R16 批 W4a（项目级自定义指令）：GET/PATCH /api/projects/{id}/instructions——权限门与
+// /api/projects/{id}/milestones 同门（canManageProjectDrive），错误码复用 project_forbidden/
+// project_not_found；长度校验在契约层（.trim().max()），超限走全局 ZodError→422 validation_error。
+test("R16 W4a project instructions runtime and OpenAPI expose a strict GET/PATCH pair", async () => {
+  const response = await app.request("/api/openapi.json");
+  const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
+  const instructionsPath = body.paths["/api/projects/{id}/instructions"] as {
+    get?: { parameters?: unknown[]; responses?: Record<string, unknown> };
+    patch?: {
+      parameters?: unknown[];
+      requestBody?: { content?: { "application/json"?: { schema?: Record<string, unknown> } } };
+      responses?: Record<string, unknown>;
+    };
+  } | undefined;
+
+  assert.deepEqual(Object.keys(instructionsPath ?? {}).sort(), ["get", "patch"]);
+  assert.deepEqual(
+    parameterByName(body.paths, "/api/projects/{id}/instructions", "get", "id"),
+    { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }
+  );
+  assert.deepEqual(
+    parameterByName(body.paths, "/api/projects/{id}/instructions", "patch", "id"),
+    { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }
+  );
+
+  assert.deepEqual(Object.keys(instructionsPath?.get?.responses ?? {}).sort(), ["200", "401", "403", "404"]);
+  assert.deepEqual(
+    Object.keys(instructionsPath?.patch?.responses ?? {}).sort(),
+    ["200", "401", "403", "404", "422"]
+  );
+  assertJsonErrorCodes(body.paths, "/api/projects/{id}/instructions", "get", "403", ["project_forbidden"]);
+  assertJsonErrorCodes(body.paths, "/api/projects/{id}/instructions", "get", "404", ["project_not_found"]);
+  assertJsonErrorCodes(body.paths, "/api/projects/{id}/instructions", "patch", "422", ["validation_error"]);
+
+  const instructionsRequest = jsonRequestSchema(body.paths, "/api/projects/{id}/instructions", "patch") as {
+    required?: string[];
+    additionalProperties?: boolean;
+    properties?: Record<string, unknown>;
+  } | undefined;
+  assert.deepEqual(instructionsRequest?.required, ["instructions_md"]);
+  assert.equal(instructionsRequest?.additionalProperties, false);
+  assert.deepEqual(Object.keys(instructionsRequest?.properties ?? {}), ["instructions_md"]);
+  assert.deepEqual(instructionsRequest?.properties?.instructions_md, { type: "string", maxLength: 4000 });
+
+  const instructionsResponse = jsonResponseSchema(body.paths, "/api/projects/{id}/instructions", "get", "200");
+  const instructionsData = instructionsResponse?.properties?.data as {
+    required?: string[];
+    additionalProperties?: boolean;
+  } | undefined;
+  assert.deepEqual(instructionsData?.required, ["project_id", "instructions_md", "updated_at"]);
+  assert.equal(instructionsData?.additionalProperties, false);
 });
 
 test("core JSON mutation routes document their request body fields", async () => {
@@ -3432,20 +3489,24 @@ test("notification OpenAPI routes document list, preferences, and action payload
   ] as const) {
     const schema = jsonResponseSchema(body.paths, path, method, "200");
     const data = schema?.properties?.data as { required?: string[]; properties?: Record<string, unknown> } | undefined;
-    assert.deepEqual(data?.required, ["muted_notification_types"], `${method.toUpperCase()} ${path} missing preferences response`);
+    // R15 批 F：响应新增必填的 care_messages_enabled（主动关怀 opt-out 开关）。
+    assert.deepEqual(data?.required, ["muted_notification_types", "care_messages_enabled"], `${method.toUpperCase()} ${path} missing preferences response`);
     assert.deepEqual(data?.properties?.muted_notification_types, {
       type: "array",
       maxItems: 100,
       items: { type: "string", minLength: 1, maxLength: 64 }
     });
+    assert.deepEqual(data?.properties?.care_messages_enabled, { type: "boolean" });
   }
 
+  // PUT 请求体：muted_notification_types 必填，care_messages_enabled 可选。
   assert.deepEqual(jsonRequestSchema(body.paths, "/api/notifications/preferences", "put")?.required, ["muted_notification_types"]);
   assert.deepEqual(jsonRequestProperties(body.paths, "/api/notifications/preferences", "put").muted_notification_types, {
     type: "array",
     maxItems: 100,
     items: { type: "string", minLength: 1, maxLength: 64 }
   });
+  assert.deepEqual(jsonRequestProperties(body.paths, "/api/notifications/preferences", "put").care_messages_enabled, { type: "boolean" });
   for (const [path, method] of [
     ["/api/notifications/preferences", "get"],
     ["/api/notifications/preferences", "put"],

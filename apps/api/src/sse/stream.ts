@@ -27,6 +27,23 @@ export function writeEventStream(
   const heartbeatMs = options.heartbeatMs ?? 30000;
   const presenceRefreshMs = options.presenceRefreshMs ?? heartbeatMs;
   const lastEventId = c.req.header("Last-Event-ID") ?? c.req.query("last_event_id") ?? "";
+  // R15 批 A（A5 在线抑制）：会话流（topic=`conversation:<id>`）额外登记「此刻正在看这条会话」——
+  // A5 通知生成时据此精确抑制（正在看的人不落 OS 通知，只靠已广播的 conversation.message.created 动红点）。
+  // 其它 topic（all/user/workitem/…）不登记。全部 best-effort：presence 抖动绝不拆掉一条健康的 SSE。
+  const CONVERSATION_TOPIC_PREFIX = "conversation:";
+  const viewerConversationId = topic.startsWith(CONVERSATION_TOPIC_PREFIX)
+    ? topic.slice(CONVERSATION_TOPIC_PREFIX.length)
+    : undefined;
+  async function refreshConversationViewer() {
+    if (!viewerConversationId) {
+      return;
+    }
+    try {
+      await presence.refreshConversationViewer(user.id, viewerConversationId);
+    } catch (error) {
+      getDefaultStructuredLogger().warn("sse_conversation_viewer_refresh_failed", { error });
+    }
+  }
 
   c.header("Content-Type", "text/event-stream; charset=utf-8");
   c.header("Cache-Control", "no-cache");
@@ -52,6 +69,14 @@ export function writeEventStream(
       // findings[#low]：只有 markStreamOpen 真正成功后才允许 finally 里 markStreamClosed，
       // 否则 open 抛错时会跑一次没有配对 open 的 close，把 Redis 在线计数减成负数。
       opened = true;
+      if (viewerConversationId) {
+        // best-effort：登记失败只是这次「正在看」抑制不生效（顶多多发一条已 dedupe 的通知），不拆流。
+        try {
+          await presence.markConversationViewer(user.id, viewerConversationId);
+        } catch (error) {
+          getDefaultStructuredLogger().warn("sse_conversation_viewer_open_failed", { error });
+        }
+      }
       subscription = await bus.subscribe(topic);
       const iterator = subscription[Symbol.asyncIterator]();
       await output.write(encoder.encode(formatSseEvent("connected", {
@@ -83,6 +108,8 @@ export function writeEventStream(
           } catch (error) {
             getDefaultStructuredLogger().warn("sse_heartbeat_presence_touch_failed", { error });
           }
+          // 空闲会话流也要续「正在看」TTL，否则盯着一个没新消息的会话看久了 TTL 到期、抑制失效。
+          await refreshConversationViewer();
           await output.write(encoder.encode(formatSseComment("ping")));
           continue;
         }
@@ -103,6 +130,7 @@ export function writeEventStream(
           } catch (error) {
             getDefaultStructuredLogger().warn("sse_active_stream_presence_refresh_failed", { error });
           }
+          await refreshConversationViewer();
         }
       }
     } finally {
@@ -118,6 +146,13 @@ export function writeEventStream(
           await presence.markStreamClosed(user.id);
         } catch (error) {
           getDefaultStructuredLogger().warn("sse_stream_close_presence_failed", { userId: user.id, error });
+        }
+        if (viewerConversationId) {
+          try {
+            await presence.markConversationViewerClosed(user.id, viewerConversationId);
+          } catch (error) {
+            getDefaultStructuredLogger().warn("sse_conversation_viewer_close_failed", { userId: user.id, error });
+          }
         }
       }
     }

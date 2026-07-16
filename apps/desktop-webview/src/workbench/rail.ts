@@ -4,6 +4,7 @@
 import type { WorkHubApiClient } from "@workhub/api-client";
 import type {
   CreateConversationResultVM,
+  DmListItemVM,
   ProjectListItemVM,
   RenameConversationResultVM,
   WorkbenchPageVM
@@ -12,8 +13,12 @@ import { escapeHtml } from "@workhub/web-runtime";
 
 import { avatarTileHtml } from "./chat/render.js";
 import { hydrateAvatarPhotos } from "./chat/view.js";
+import { dmPeerParticipant, fetchDmList, fetchOnlineUserIds } from "./dm.js";
 import { workbenchIcons } from "./icons.js";
 import type { WorkbenchCenterTab, WorkbenchStore } from "./store.js";
+
+// R15 批 B：rail 的 presence 轮询周期——同 chat/view.ts 成员条的 30s 节奏。
+const RAIL_PRESENCE_POLL_INTERVAL_MS = 30_000;
 
 // R13 批 P2（拍板链路收尾）：协同会话「+ 新建」真按钮需要 client.request——同 chat/api.ts 顶部注释的
 // 既有取舍(不为一个批次特性扩大 WorkHubApiClient 具名方法面，POST /projects/:id/conversations 走
@@ -141,6 +146,70 @@ export function renameCollabConversationInVm(
   };
 }
 
+// —— R15 批 A6（rail 未读红点）：会话未读数的本地更新纯函数 —— //
+// 左栏树叶/私聊行现在渲的是「未读数」而不是消息总数。未读的权威来源是服务端（listConversations /
+// listDms 的 unread_count，A4/A6 后端），但实时性只靠一条 /api/push/stream/me 订阅：收到某会话新消息
+// 的 notification.created 时本地 +1（近似，不知道服务端精确聚合数），30s 会话列表兜底刷新 + 打开会话
+// 清零把它拉回权威。以下四个纯函数是这套本地更新的可测那一半（imperative 的订阅/清零在 shell.ts）。
+
+// 把 vm.conversations 里某条会话（主区/协同）的 unread_count 设为 count；找不到就原样返回（引用不变，
+// 调用方据此判断是否真的变了、要不要重渲）。count<0 归零，防御性。
+export function setConversationUnreadInVm(
+  vm: WorkbenchPageVM,
+  conversationId: string,
+  count: number
+): WorkbenchPageVM {
+  const safe = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+  let changed = false;
+  const conversations = vm.conversations.conversations.map((conversation) => {
+    if (conversation.id === conversationId && (conversation.unread_count ?? 0) !== safe) {
+      changed = true;
+      return { ...conversation, unread_count: safe };
+    }
+    return conversation;
+  });
+  if (!changed) {
+    return vm;
+  }
+  return { ...vm, conversations: { ...vm.conversations, conversations } };
+}
+
+// 某条会话未读 +1（本地近似，见上方注释）。找不到就原样返回。
+export function bumpConversationUnreadInVm(vm: WorkbenchPageVM, conversationId: string): WorkbenchPageVM {
+  const target = vm.conversations.conversations.find((conversation) => conversation.id === conversationId);
+  if (!target) {
+    return vm;
+  }
+  return setConversationUnreadInVm(vm, conversationId, (target.unread_count ?? 0) + 1);
+}
+
+// 把 dmList 里某条 DM 会话的 unread_count 设为 count；找不到就原样返回（引用不变）。
+export function setDmUnread(
+  dmList: readonly DmListItemVM[],
+  conversationId: string,
+  count: number
+): DmListItemVM[] {
+  const safe = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+  let changed = false;
+  const next = dmList.map((dm) => {
+    if (dm.conversation.id === conversationId && (dm.conversation.unread_count ?? 0) !== safe) {
+      changed = true;
+      return { ...dm, conversation: { ...dm.conversation, unread_count: safe } };
+    }
+    return dm;
+  });
+  return changed ? next : (dmList as DmListItemVM[]);
+}
+
+// 某条 DM 未读 +1。找不到就原样返回。
+export function bumpDmUnread(dmList: readonly DmListItemVM[], conversationId: string): DmListItemVM[] {
+  const target = dmList.find((dm) => dm.conversation.id === conversationId);
+  if (!target) {
+    return dmList as DmListItemVM[];
+  }
+  return setDmUnread(dmList, conversationId, (target.conversation.unread_count ?? 0) + 1);
+}
+
 // 项目行下的树叶——批 1 全部只读(没有任何视图能接)。批 2 把主区群聊接进这个窗口后，「主区」升级成
 // 真按钮(会话点击路由：点它把焦点交回已经挂载好的 chat composer，见 shell.ts 的 onOpenMainConversation)；
 // 批 6 把网盘视图接进这个窗口后，「网盘」同样升级成真按钮(data-wb-open-drive，切中栏到 drive 标签，
@@ -174,7 +243,7 @@ function renderProjectTreeLeavesHtml(
   const main = vm.conversations.conversations.find((conversation) => conversation.kind === "main");
   const mainLeaf = main
     ? `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "chat" ? " sel" : ""}" data-wb-open-main-chat>${workbenchIcons.chat}<span>${escapeHtml(main.title)}</span>${
-        main.next_seq > 0 ? `<span class="wh-wb-leaf-count">${main.next_seq}</span>` : ""
+        (main.unread_count ?? 0) > 0 ? `<span class="wh-wb-leaf-count wh-wb-leaf-count--unread">${main.unread_count}</span>` : ""
       }</button>`
     : "";
   const collabLeaves = vm.conversations.conversations
@@ -185,7 +254,7 @@ function renderProjectTreeLeavesHtml(
       // 不套在 open 按钮里——按钮里不能套按钮，同项目设置齿轮的既有取舍）。data-wb-rename-collab 带上
       // 当前标题，mountWorkbenchRail 据此预填重命名弹窗。
       return `<div class="wh-wb-collab-leaf"><button type="button" class="wh-wb-leaf wh-wb-leaf--live${selected ? " sel" : ""}" data-wb-open-collab-chat="${escapeHtml(conversation.id)}">${workbenchIcons.collab}<span>${escapeHtml(conversation.title)}</span>${
-        conversation.next_seq > 0 ? `<span class="wh-wb-leaf-count">${conversation.next_seq}</span>` : ""
+        (conversation.unread_count ?? 0) > 0 ? `<span class="wh-wb-leaf-count wh-wb-leaf-count--unread">${conversation.unread_count}</span>` : ""
       }</button><button type="button" class="wh-wb-collab-rename" data-wb-rename-collab="${escapeHtml(conversation.id)}" data-wb-rename-collab-title="${escapeHtml(conversation.title)}" title="${zh ? "重命名" : "Rename"}" aria-label="${zh ? "重命名会话" : "Rename chat"}">${workbenchIcons.edit}</button></div>`;
     })
     .join("");
@@ -203,7 +272,16 @@ function renderProjectTreeLeavesHtml(
   const driveLeaf = `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "drive" ? " sel" : ""}" data-wb-open-drive>${workbenchIcons.folder}<span>${zh ? "网盘" : "Drive"}</span>${
     fileCount > 0 ? `<span class="wh-wb-leaf-count">${fileCount}</span>` : ""
   }</button>`;
-  return `<div class="wh-wb-tree">${mainLeaf}${collabLeaves}${newCollabButton}${driveLeaf}</div>`;
+  // R15 批 E2（项目时间线 / 甘特）：与网盘同级的「时间线」树叶——切中栏到 timeline 标签（见 shell.ts 的
+  // onOpenTimeline）。选中态跟 centerTab === "timeline" 走，同其它树叶的 sel 约定。
+  const timelineLeaf = `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "timeline" ? " sel" : ""}" data-wb-open-timeline>${workbenchIcons.timeline}<span>${zh ? "时间线" : "Timeline"}</span></button>`;
+  // R16 批 W2：与时间线同级的「任务看板」树叶——切中栏到 kanban 标签（见 shell.ts 的 onOpenKanban）。
+  // 首发带「新」小徽标（复用现有 wh-wb-leaf-count 徽标体系，不造新样式；可后续摘除）。
+  const kanbanLeaf = `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "kanban" ? " sel" : ""}" data-wb-open-kanban>${workbenchIcons.kanban}<span>${zh ? "任务看板" : "Board"}</span><span class="wh-wb-leaf-count">${zh ? "新" : "New"}</span></button>`;
+  // R16 批 W2：与时间线同级的「日程」树叶——切中栏到 schedule 标签（见 shell.ts 的 onOpenSchedule）。
+  // 首发同样带「新」小徽标（复用现有 wh-wb-leaf-count 徽标体系）。
+  const scheduleLeaf = `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "schedule" ? " sel" : ""}" data-wb-open-schedule>${workbenchIcons.calendar}<span>${zh ? "日程" : "Schedule"}</span><span class="wh-wb-leaf-count">${zh ? "新" : "New"}</span></button>`;
+  return `<div class="wh-wb-tree">${mainLeaf}${collabLeaves}${newCollabButton}${driveLeaf}${timelineLeaf}${kanbanLeaf}${scheduleLeaf}</div>`;
 }
 
 // R13 批 S3（个人空间）：项目行 + 树叶的渲染逻辑从 renderProjectTreeHtml 里提出来，供团队项目分组
@@ -343,6 +421,106 @@ export function renderArmyOverviewNavHtml(zh: boolean, active: boolean): string 
       <span class="wh-wb-army-nav-label">${zh ? "军团总览" : "Army overview"}</span>
     </button>
   </div>`;
+}
+
+// R15 批 I1（决策收件箱）：rail 顶部「待拍板」一级入口——横跨项目的决策总览（中栏切到 workbench/inbox）。
+// count 来自 store.inboxCount（GET /api/pages/attention 的 queue 长度，shell 维护），>0 才渲红色计数徽标，
+// 是「一眼看到有几条待拍板」的核心承诺（对齐主窗聚焦盒的审批角标）。active 由 centerTab === "inbox" 决定，
+// 同 army-nav/leaf 的选中态约定。放在 rail 最顶（项目树之上），决策面是全桌面最高优先的日常入口。
+export function renderInboxNavHtml(zh: boolean, active: boolean, count: number): string {
+  const safeCount = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+  const badge = safeCount > 0
+    ? `<span class="wh-wb-inbox-nav-count" data-wb-inbox-count="${safeCount}">${safeCount > 99 ? "99+" : safeCount}</span>`
+    : "";
+  return `<div class="wh-wb-rail-group wh-wb-rail-group--inbox">
+    <button type="button" class="wh-wb-inbox-nav${active ? " active" : ""}" data-wb-open-inbox aria-current="${active ? "true" : "false"}">
+      ${workbenchIcons.check}
+      <span class="wh-wb-inbox-nav-label">${zh ? "待拍板" : "Decisions"}</span>
+      ${badge}
+    </button>
+  </div>`;
+}
+
+// —— R15 批 B（人对人私聊）：成员 roster + 私聊分组 —— //
+
+type WorkbenchMemberVM = WorkbenchPageVM["workspace_members"]["items"][number];
+
+// 成员 roster 排序：排除自己（自己不进这个「找谁聊」的列表），在线者排前——在线优先是稳定排序（同在线
+// 态内保持服务端已给的顺序：负责人在前、再按昵称）。纯函数，可单测。
+export function sortRosterMembers(
+  members: readonly WorkbenchMemberVM[],
+  currentUserId: string | undefined,
+  onlineUserIds: ReadonlySet<string>
+): WorkbenchMemberVM[] {
+  const others = members.filter((member) => (currentUserId ? member.user_id !== currentUserId : !member.is_self));
+  return others
+    .map((member, index) => ({ member, index, online: onlineUserIds.has(member.user_id) }))
+    .sort((a, b) => (a.online === b.online ? a.index - b.index : a.online ? -1 : 1))
+    .map((entry) => entry.member);
+}
+
+// 成员 roster 分组：workspace_members（工作台 VM 已带，工作区级、cap 100）+ 在线绿点，点成员行 → 头像
+// 资料卡（data-wb-open-profile，popover 在 shell 根委托打开）。VM 还没就绪（没选任何项目）时不渲染这个
+// 分组（成员列表来自 VM，没有 VM 就没有可靠成员数据，不摆空壳）。
+export function renderRosterGroupHtml(input: {
+  members: readonly WorkbenchMemberVM[];
+  currentUserId: string | undefined;
+  onlineUserIds: ReadonlySet<string>;
+  locale: Locale;
+}): string {
+  const zh = input.locale === "zh-CN";
+  const sorted = sortRosterMembers(input.members, input.currentUserId, input.onlineUserIds);
+  if (sorted.length === 0) {
+    return "";
+  }
+  const rows = sorted
+    .map((member) => {
+      const online = input.onlineUserIds.has(member.user_id);
+      return `<button type="button" class="wh-wb-roster-row" data-wb-open-profile="${escapeHtml(member.user_id)}">${avatarTileHtml(
+        { label: member.nickname, id: member.user_id, ...(online ? { online: true } : {}) }
+      )}<span class="wh-wb-roster-name">${escapeHtml(member.nickname)}</span></button>`;
+    })
+    .join("");
+  return `<div class="wh-wb-rail-group"><div class="wh-wb-rail-head wh-wb-rail-head--flush">${
+    zh ? "成员" : "Members"
+  }</div>${rows}</div>`;
+}
+
+// 私聊分组：actor 参与的 DM 会话（GET /api/dm/list → store.dmList）。每行 = 对方头像（在线绿点）+ 对方
+// 昵称，点击打开该 DM（data-wb-open-dm=会话 id）。空态一行淡字点破「怎么发起私聊」。
+export function renderDmGroupHtml(input: {
+  dmList: readonly DmListItemVM[];
+  currentUserId: string | undefined;
+  onlineUserIds: ReadonlySet<string>;
+  activeDmConversationId?: string;
+  centerTab: WorkbenchCenterTab;
+  locale: Locale;
+}): string {
+  const zh = input.locale === "zh-CN";
+  const head = `<div class="wh-wb-rail-head wh-wb-rail-head--flush">${zh ? "私聊" : "Direct messages"}</div>`;
+  if (input.dmList.length === 0) {
+    const hint = `<p class="wh-wb-dm-empty">${zh ? "点成员头像发起私聊" : "Click a member's avatar to start a chat"}</p>`;
+    return `<div class="wh-wb-rail-group">${head}${hint}</div>`;
+  }
+  const rows = input.dmList
+    .map((dm) => {
+      const peer = dmPeerParticipant(dm, input.currentUserId);
+      const nickname = peer?.nickname ?? (zh ? "私聊" : "Direct message");
+      const peerId = peer?.user_id ?? dm.conversation.id;
+      const online = peer ? input.onlineUserIds.has(peer.user_id) : false;
+      const selected = input.centerTab === "dm" && input.activeDmConversationId === dm.conversation.id;
+      const unread = dm.conversation.unread_count ?? 0;
+      const unreadBadge = unread > 0 ? `<span class="wh-wb-dm-count">${unread}</span>` : "";
+      return `<button type="button" class="wh-wb-dm-row${selected ? " sel" : ""}" data-wb-open-dm="${escapeHtml(
+        dm.conversation.id
+      )}" aria-current="${selected ? "true" : "false"}">${avatarTileHtml({
+        label: nickname,
+        id: peerId,
+        ...(online ? { online: true } : {})
+      })}<span class="wh-wb-dm-name">${escapeHtml(nickname)}</span>${unreadBadge}</button>`;
+    })
+    .join("");
+  return `<div class="wh-wb-rail-group">${head}${rows}</div>`;
 }
 
 export function renderNewProjectModalHtml(input: {
@@ -547,6 +725,8 @@ export function renderRenameCollabModalHtml(input: { locale: Locale; state: Rena
 
 export type WorkbenchRailHandle = {
   refresh: () => void;
+  // R15 批 B（人对人私聊）：只重拉 DM 列表——shell「发私聊」新建后回流对齐服务端权威。
+  refreshDms: () => void;
   // 开新建项目模态、重置上一次遗留的输入/错误态。中栏的空态 CTA 也调这个（不是自己拼一份重复逻辑），
   // 不然从中栏重开模态会显示上次在这里输入过又取消的残留文本。
   openNewProjectModal: () => void;
@@ -568,10 +748,21 @@ export function mountWorkbenchRail(
     // vm.conversations.conversations 里找到对应的 collab 会话并挂载 chat 视图）。
     onOpenCollabConversation?: (conversationId: string) => void;
     onOpenDrive?: () => void;
+    // R15 批 E2（项目时间线 / 甘特）：项目行的「时间线」树叶点击——shell.ts 把它接成 store.centerTab = "timeline"。
+    onOpenTimeline?: () => void;
+    // R16 批 W2：项目行的「任务看板」树叶点击——shell.ts 把它接成 store.centerTab = "kanban"。
+    onOpenKanban?: () => void;
+    // R16 批 W2：项目行的「日程」树叶点击——shell.ts 把它接成 store.centerTab = "schedule"。
+    onOpenSchedule?: () => void;
     // R13 批 P1：军团总览一级入口点击——shell.ts 把它接成 store.centerTab = "army-overview"。
     onOpenArmyOverview?: () => void;
+    // R15 批 I1（决策收件箱）：rail 顶部「待拍板」一级入口点击——shell.ts 把它接成 store.centerTab = "inbox"。
+    onOpenInbox?: () => void;
     // R13 批 P3：项目行的「项目设置」齿轮点击——shell.ts 把它接成 store.centerTab = "project-settings"。
     onOpenProjectSettings?: () => void;
+    // R15 批 B（人对人私聊）：私聊分组某条 DM 会话被点开——传的是该 DM 会话的真实 id（shell.ts 用它去
+    // store.dmList 里找到那条 DmListItemVM，走「按会话直开」路径挂 chat 视图，不拉容器 VM）。
+    onOpenDmConversation?: (conversationId: string) => void;
   }
 ): WorkbenchRailHandle {
   let modalName = "";
@@ -610,7 +801,10 @@ export function mountWorkbenchRail(
       : undefined;
     const activeConversationIdField =
       state.activeConversationId !== undefined ? { activeConversationId: state.activeConversationId } : {};
-    container.innerHTML = `${renderPersonalSpaceSectionHtml({
+    // R15 批 B：成员 roster / 私聊分组共用的在线集合 + 当前 viewer。
+    const onlineUserIds = new Set(state.onlineUserIds);
+    const currentUserId = state.currentUserId ?? state.vm?.viewer.user_id;
+    container.innerHTML = `${renderInboxNavHtml(zh, state.centerTab === "inbox", state.inboxCount)}${renderPersonalSpaceSectionHtml({
       personalProjects: state.personalProjects,
       selectedProjectId: state.selectedProjectId,
       vm: state.vm,
@@ -628,7 +822,19 @@ export function mountWorkbenchRail(
       // view.ts toPendingRenderModel 的既有取舍），state.activeConversationId 没值时干脆不传这个键。
       ...activeConversationIdField,
       newCollab: { submitting: newCollabSubmitting, error: newCollabError }
-    })}${renderArmyOverviewNavHtml(zh, state.centerTab === "army-overview")}${renderRailFootHtml(zh, viewerLabel)}${renderNewProjectModalHtml({
+    })}${renderArmyOverviewNavHtml(zh, state.centerTab === "army-overview")}${renderRosterGroupHtml({
+      members: state.vm?.workspace_members.items ?? [],
+      currentUserId,
+      onlineUserIds,
+      locale: input.locale
+    })}${renderDmGroupHtml({
+      dmList: state.dmList,
+      currentUserId,
+      onlineUserIds,
+      ...(state.activeDmConversationId !== undefined ? { activeDmConversationId: state.activeDmConversationId } : {}),
+      centerTab: state.centerTab,
+      locale: input.locale
+    })}${renderRailFootHtml(zh, viewerLabel)}${renderNewProjectModalHtml({
       locale: input.locale,
       open: state.newProjectModalOpen,
       name: modalName,
@@ -697,6 +903,66 @@ export function mountWorkbenchRail(
         return;
       }
       input.store.setState({ projectsLoad: "error" });
+    }
+  };
+
+  // R15 批 B（人对人私聊）：拉 actor 参与的 DM 列表（私聊分组数据源）。没选任何项目也能拉（不依赖 VM）。
+  // 顺手兜一次 currentUserId（VM 还没就绪时，从 DM 的 is_self 参与者拿），供 roster 排除自己/资料卡判自己。
+  const loadDms = async () => {
+    input.store.setState({ dmListLoad: "loading" });
+    try {
+      const result = await fetchDmList(input.client);
+      if (disposed) {
+        return;
+      }
+      const state = input.store.getState();
+      const selfFromDm = result.items
+        .flatMap((item) => item.participants)
+        .find((participant) => participant.is_self)?.user_id;
+      input.store.setState({
+        dmList: result.items,
+        dmListLoad: "ready",
+        ...(state.currentUserId === undefined && selfFromDm ? { currentUserId: selfFromDm } : {})
+      });
+      // 拉到新的一批人（DM 对方）后立即刷一次在线态，不干等 30s 轮询。
+      void loadPresence();
+    } catch {
+      if (disposed) {
+        return;
+      }
+      input.store.setState({ dmListLoad: "error" });
+    }
+  };
+
+  // R15 批 B（在线两态）：为 roster 成员 + DM 对方拉在线态（≤50 一批，分批并集，见 dm.ts 的
+  // fetchOnlineUserIds）。排除自己（自己不显示在线点）。空集不打网络。
+  const loadPresence = async () => {
+    const state = input.store.getState();
+    const self = state.currentUserId ?? state.vm?.viewer.user_id;
+    const ids = new Set<string>();
+    for (const member of state.vm?.workspace_members.items ?? []) {
+      if (member.user_id !== self) {
+        ids.add(member.user_id);
+      }
+    }
+    for (const dm of state.dmList) {
+      for (const participant of dm.participants) {
+        if (participant.user_id !== self) {
+          ids.add(participant.user_id);
+        }
+      }
+    }
+    if (ids.size === 0) {
+      return;
+    }
+    try {
+      const online = await fetchOnlineUserIds(input.client, [...ids]);
+      if (disposed) {
+        return;
+      }
+      input.store.setState({ onlineUserIds: [...online] });
+    } catch {
+      // best-effort：拉不到就保持上一次的在线集合，不清成「全离线」骚扰视觉。
     }
   };
 
@@ -991,6 +1257,12 @@ export function mountWorkbenchRail(
       input.onOpenCollabConversation?.(collabLeaf.dataset.wbOpenCollabChat);
       return;
     }
+    // R15 批 B（人对人私聊）：私聊分组的 DM 行点击——把该 DM 会话 id 抛给 shell 走「按会话直开」路径。
+    const dmRow = target.closest<HTMLElement>("[data-wb-open-dm]");
+    if (dmRow?.dataset.wbOpenDm) {
+      input.onOpenDmConversation?.(dmRow.dataset.wbOpenDm);
+      return;
+    }
     // R14FIX 批 workbench：「和 Cuu 单独聊」快捷入口。
     if (target.closest("[data-wb-new-solo-cuu]")) {
       void submitSoloCuuConversation();
@@ -1002,6 +1274,22 @@ export function mountWorkbenchRail(
     }
     if (target.closest("[data-wb-open-drive]")) {
       input.onOpenDrive?.();
+      return;
+    }
+    if (target.closest("[data-wb-open-timeline]")) {
+      input.onOpenTimeline?.();
+      return;
+    }
+    if (target.closest("[data-wb-open-kanban]")) {
+      input.onOpenKanban?.();
+      return;
+    }
+    if (target.closest("[data-wb-open-schedule]")) {
+      input.onOpenSchedule?.();
+      return;
+    }
+    if (target.closest("[data-wb-open-inbox]")) {
+      input.onOpenInbox?.();
       return;
     }
     if (target.closest("[data-wb-open-army-overview]")) {
@@ -1146,15 +1434,31 @@ export function mountWorkbenchRail(
   render();
   void loadProjects();
   void loadPersonalProjects();
+  // R15 批 B（人对人私聊）：拉 DM 列表 + 起 presence 轮询（成员 roster / 私聊行的在线绿点）。
+  void loadDms();
+  // R15 批 A6：与在线态同 30s 节奏兜底刷 DM 列表——把私聊行的未读数拉回服务端权威（me-stream 的本地 +1
+  // 只是近似）。loadDms 内部拉完列表会顺手刷一次在线态（见 loadDms 尾部），所以这条 tick 同时覆盖了原来
+  // 单独 loadPresence 的职责；DM 拉取失败那一拍在线态不刷，下一拍重试即可（都是 best-effort）。
+  const presencePollTimer = setInterval(() => {
+    if (!disposed) {
+      void loadDms();
+    }
+  }, RAIL_PRESENCE_POLL_INTERVAL_MS);
 
   return {
     refresh: () => {
       void loadProjects();
       void loadPersonalProjects();
+      void loadDms();
+    },
+    // R15 批 B：shell 的「发私聊」新建 DM 后回流——重拉列表把服务端权威顺序/参与者对齐。
+    refreshDms: () => {
+      void loadDms();
     },
     openNewProjectModal,
     dispose: () => {
       disposed = true;
+      clearInterval(presencePollTimer);
       unsubscribe();
     }
   };

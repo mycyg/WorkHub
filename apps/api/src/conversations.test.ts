@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   ConversationAccessDeniedError,
+  ConversationDmTargetError,
   ConversationParticipantMembershipError,
   ConversationParentAccessError,
   ConversationRepositoryInputError,
@@ -69,6 +70,8 @@ function conversationRow(overrides: Partial<ConversationRow> = {}): Conversation
     // ConversationRow 现在多出的两个必需字段。
     contextSummaryMd: null,
     contextSummaryThroughSeq: 0,
+    // R15 批 B：project_conversations 新增 dm_key（nullable）——普通会话默认 null，DM 用例按需 override。
+    dmKey: null,
     createdBy: userId,
     deletedAt: null,
     deletedByUserId: null,
@@ -125,6 +128,9 @@ function accessRecord(overrides: Partial<ConversationAccessRecord> = {}): Conver
     conversation: conversationRow(),
     projectOwnerUserId: userId,
     projectIsPersonal: false,
+    // R16 批 W4a：projects 加了 instructions_md/is_dm_container 的显式投影——机械补齐（默认空/非容器）。
+    projectInstructionsMd: null,
+    projectIsDmContainer: false,
     membershipRole: "member",
     participantRole: "owner",
     participantCount: 1,
@@ -142,6 +148,14 @@ function repository(overrides: Partial<ConversationRepository> = {}): Conversati
     },
     async createCollab() {
       throw new Error("createCollab not expected");
+    },
+    // R15 批 B：新增 openOrCreateDm（人对人私聊）——本套件按需 override，未 override 给拒绝桩。
+    async openOrCreateDm() {
+      throw new Error("openOrCreateDm not expected");
+    },
+    // R15 批 B：新增 listDmsForUser（私聊列表）——同上，按需 override。
+    async listDmsForUser() {
+      throw new Error("listDmsForUser not expected");
     },
     async createUserMessage() {
       throw new Error("createUserMessage not expected");
@@ -172,6 +186,14 @@ function repository(overrides: Partial<ConversationRepository> = {}): Conversati
     // 的给拒绝桩（同其它未测方法）。
     async renameConversation() {
       throw new Error("renameConversation not expected");
+    },
+    // R15 批 cuu-toggle：新增 updateCuuEnabled/listParticipantsWithNickname——本套件按需 override，
+    // 未 override 的给拒绝桩（同其它未测方法）。
+    async updateCuuEnabled() {
+      throw new Error("updateCuuEnabled not expected");
+    },
+    async listParticipantsWithNickname() {
+      throw new Error("listParticipantsWithNickname not expected");
     },
     // R14 批 CHAT：新增的编辑/删除/置顶/反应/已读/富化仓库方法——本套件按需 override，未 override 的
     // 给拒绝桩（同其它未测方法）。
@@ -214,6 +236,23 @@ function repository(overrides: Partial<ConversationRepository> = {}): Conversati
     // 同其它未测方法一样给个拒绝桩（要测反馈资格判定的用例在 ai-feedback.test.ts 自带假仓库）。
     async findMessageForFeedback() {
       throw new Error("findMessageForFeedback not expected");
+    },
+    // R15 批 A（A4/A5 未读聚合）：新增的未读数聚合 / 参与者列举方法。listConversations 现在会调
+    // unreadCountsForViewer——默认给空 Map（未读 0），要测未读数的用例自行 override；另两个默认空。
+    async unreadCountsForViewer() {
+      return new Map();
+    },
+    async unreadCountsForRecipients() {
+      return new Map();
+    },
+    async listParticipantUserIds() {
+      return [];
+    },
+    async findPersonalMainConversation() {
+      return null;
+    },
+    async findProjectMainConversation() {
+      return null;
     },
     ...overrides
   };
@@ -382,6 +421,58 @@ test("project access and conversation lists use bounded tenant-safe repository i
   assert.equal(page.capped, true);
 });
 
+// ── R15 批 A（A4 未读聚合）：会话列表 VM 带上当前 viewer 的未读数（一次聚合、禁 N+1、聚合失败降级 ──
+test("A4 conversation list attaches per-viewer unread_count from one aggregate call and degrades to 0", async () => {
+  const otherId = "30000000-0000-4000-8000-0000000000ff";
+  let unreadCalls = 0;
+  const repo = repository({
+    async listVisibleForProject() {
+      return {
+        rows: [visibleConversationRow(), visibleConversationRow({ id: otherId, participantRole: "member" })],
+        capped: false,
+        nextCursor: null
+      };
+    },
+    async unreadCountsForViewer(input) {
+      unreadCalls += 1;
+      assert.deepEqual([...input.conversationIds].sort(), [conversationId, otherId].sort());
+      // 只回有未读的会话；未列出的走 `?? 0`。
+      return new Map([[conversationId, 4]]);
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    })
+  });
+
+  const page = await service.listConversations({ actor: actor(), projectId, query: { limit: 25 } });
+  assert.equal(unreadCalls, 1, "unread must be one aggregate call, not per-conversation");
+  const byId = new Map(page.conversations.map((c) => [c.id, c.unread_count]));
+  assert.equal(byId.get(conversationId), 4);
+  assert.equal(byId.get(otherId), 0);
+});
+
+test("A4 conversation list still renders (unread_count 0) when the unread aggregate throws", async () => {
+  const repo = repository({
+    async listVisibleForProject() {
+      return { rows: [visibleConversationRow()], capped: false, nextCursor: null };
+    },
+    async unreadCountsForViewer() {
+      throw new Error("aggregate exploded");
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    logger: { warn() {} }
+  });
+
+  const page = await service.listConversations({ actor: actor(), projectId, query: { limit: 25 } });
+  assert.equal(page.conversations[0]?.unread_count, 0);
+});
+
 test("access preflights map invisible projects and conversations to stable non-oracular 404 errors", async () => {
   const service = createConversationService(repository({
     async listVisibleForProject() {
@@ -418,6 +509,230 @@ test("access preflights map invisible projects and conversations to stable non-o
       && error.status === 404
       && error.code === "conversation_not_found"
   );
+});
+
+// ── R15 批 B（人对人私聊）：openDm 服务方法 ────────────────────────────────────────────
+test("openDm returns the DM conversation VM with is_dm=true, cuu off, and owner role", async () => {
+  let received: unknown;
+  const dmConversation = conversationRow({
+    projectId: "70000000-0000-4000-8000-000000000099",
+    kind: "collab",
+    visibility: "private",
+    cuuEnabled: false,
+    dmKey: `dm:${[userId, participantUserId].sort().join(":")}`,
+    createdBy: userId
+  });
+  const repo = repository({
+    async openOrCreateDm(input) {
+      received = input;
+      return { conversation: dmConversation, created: true };
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now
+  });
+
+  const result = await service.openDm({ actor: actor(), targetUserId: participantUserId });
+
+  // 转发发起者/对方/工作区/时钟——目标归一由服务层小写化（这里已是小写）。
+  assert.deepEqual(received, {
+    workspaceId,
+    actorUserId: userId,
+    targetUserId: participantUserId,
+    at: now
+  });
+  assert.equal(result.conversation.is_dm, true);
+  assert.equal(result.conversation.cuu_enabled, false);
+  assert.equal(result.conversation.participant_role, "owner");
+  assert.equal(result.conversation.kind, "collab");
+});
+
+test("openDm rejects opening a DM with yourself before calling the repository", async () => {
+  let called = false;
+  const repo = repository({
+    async openOrCreateDm() {
+      called = true;
+      throw new Error("repository must not be called for a self-DM");
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now
+  });
+
+  await assert.rejects(
+    () => service.openDm({ actor: actor(), targetUserId: userId }),
+    (error) =>
+      error instanceof ConversationServiceError && error.status === 400 && error.code === "conversation_dm_self"
+  );
+  assert.equal(called, false);
+});
+
+test("openDm maps a non-member target to a stable 404 (no leak that the user exists elsewhere)", async () => {
+  const repo = repository({
+    async openOrCreateDm() {
+      throw new ConversationDmTargetError("target user is not an active member of this workspace");
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now
+  });
+
+  await assert.rejects(
+    () => service.openDm({ actor: actor(), targetUserId: participantUserId }),
+    (error) =>
+      error instanceof ConversationServiceError
+      && error.status === 404
+      && error.code === "conversation_dm_target_not_found"
+  );
+});
+
+test("listDms forwards the actor/workspace + cap and shapes each item with is_dm + 2 participants", async () => {
+  let received: unknown;
+  const dmConversation = conversationRow({
+    projectId: "70000000-0000-4000-8000-000000000099",
+    kind: "collab",
+    visibility: "private",
+    cuuEnabled: false,
+    dmKey: `dm:${[userId, participantUserId].sort().join(":")}`,
+    createdBy: userId
+  });
+  const repo = repository({
+    async listDmsForUser(input) {
+      received = input;
+      return [
+        {
+          conversation: dmConversation,
+          participants: [
+            { userId, nickname: "me", isSelf: true },
+            { userId: participantUserId, nickname: "peer", isSelf: false }
+          ]
+        }
+      ];
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now
+  });
+
+  const result = await service.listDms({ actor: actor() });
+
+  assert.deepEqual(received, { workspaceId, userId, limit: 200 });
+  assert.equal(result.items.length, 1);
+  const item = result.items[0]!;
+  assert.equal(item.conversation.is_dm, true);
+  // 发起者（created_by === self）→ owner。
+  assert.equal(item.conversation.participant_role, "owner");
+  assert.deepEqual(item.participants, [
+    { user_id: userId, nickname: "me", is_self: true },
+    { user_id: participantUserId, nickname: "peer", is_self: false }
+  ]);
+});
+
+test("listDms attaches the viewer's unread_count per DM via one aggregate (R15 A6 rail red dot)", async () => {
+  const dmConversation = conversationRow({
+    projectId: "70000000-0000-4000-8000-000000000099",
+    kind: "collab",
+    visibility: "private",
+    cuuEnabled: false,
+    dmKey: `dm:${[userId, participantUserId].sort().join(":")}`,
+    createdBy: userId
+  });
+  let unreadInput: unknown;
+  const repo = repository({
+    async listDmsForUser() {
+      return [
+        {
+          conversation: dmConversation,
+          participants: [
+            { userId, nickname: "me", isSelf: true },
+            { userId: participantUserId, nickname: "peer", isSelf: false }
+          ]
+        }
+      ];
+    },
+    async unreadCountsForViewer(input) {
+      unreadInput = input;
+      return new Map([[dmConversation.id, 3]]);
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now
+  });
+
+  const result = await service.listDms({ actor: actor() });
+  // 一条聚合查询（禁 N+1）——viewer + 本页会话 id 集合。
+  assert.deepEqual(unreadInput, { viewerUserId: userId, conversationIds: [dmConversation.id] });
+  assert.equal(result.items[0]!.conversation.unread_count, 3);
+});
+
+test("listDms degrades to unread 0 when the aggregate throws, never 500s the list", async () => {
+  const dmConversation = conversationRow({
+    projectId: "70000000-0000-4000-8000-000000000099",
+    kind: "collab",
+    visibility: "private",
+    cuuEnabled: false,
+    dmKey: `dm:${[userId, participantUserId].sort().join(":")}`,
+    createdBy: userId
+  });
+  const repo = repository({
+    async listDmsForUser() {
+      return [
+        {
+          conversation: dmConversation,
+          participants: [
+            { userId, nickname: "me", isSelf: true },
+            { userId: participantUserId, nickname: "peer", isSelf: false }
+          ]
+        }
+      ];
+    },
+    async unreadCountsForViewer() {
+      throw new Error("aggregate boom");
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now
+  });
+
+  const result = await service.listDms({ actor: actor() });
+  assert.equal(result.items.length, 1);
+  // 未读算不出来时降级成 0（不带红点），而不是让整份 DM 列表崩掉。
+  assert.equal(result.items[0]!.conversation.unread_count, 0);
+});
+
+test("listDms returns an empty list unchanged (no DM container / no DMs)", async () => {
+  const repo = repository({
+    async listDmsForUser() {
+      return [];
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now
+  });
+
+  const result = await service.listDms({ actor: actor() });
+  assert.deepEqual(result, { items: [] });
 });
 
 test("conversation create maps rows and forwards only actor-scoped repository fields", async () => {
@@ -1629,4 +1944,255 @@ test("renameConversation 404s an invisible conversation before any write", async
       error.code === "conversation_not_found"
   );
   assert.equal(renameCalls, 0);
+});
+
+// ── R15 批 cuu-toggle：会话级 Cuu 开关翻转 + 参与者列表 ─────────────────────────────────
+
+test("updateCuuEnabled forwards a tenant-safe write, broadcasts cuu.updated, and returns the flipped VM", async () => {
+  let writeInput: unknown;
+  const capture = capturingBus();
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return accessRecord({ participantRole: "owner" });
+      },
+      async updateCuuEnabled(input) {
+        writeInput = input;
+        return conversationRow({ cuuEnabled: input.enabled, updatedAt: new Date("2026-07-15T09:00:00.000Z") });
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      bus: capture.bus,
+      now: () => now
+    }
+  );
+
+  const result = await service.updateCuuEnabled({
+    actor: actor(),
+    conversationId,
+    payload: { enabled: false }
+  });
+
+  assert.deepEqual(writeInput, {
+    workspaceId,
+    conversationId,
+    enabled: false,
+    at: now
+  });
+  assert.equal(result.conversation.cuu_enabled, false);
+  assert.equal(result.conversation.participant_role, "owner");
+  assert.equal(capture.published[0]?.type, "conversation.cuu.updated");
+  const publishedEvent = capture.published[0]?.data as { data: { conversation_id: string; cuu_enabled: boolean } };
+  assert.deepEqual(publishedEvent.data, { conversation_id: conversationId, cuu_enabled: false });
+});
+
+test("updateCuuEnabled toggling twice to the same value is idempotent (no special-casing, both calls write)", async () => {
+  let writeCalls = 0;
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return accessRecord({ participantRole: "member" });
+      },
+      async updateCuuEnabled(input) {
+        writeCalls += 1;
+        return conversationRow({ cuuEnabled: input.enabled });
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now
+    }
+  );
+
+  const first = await service.updateCuuEnabled({ actor: actor(), conversationId, payload: { enabled: true } });
+  const second = await service.updateCuuEnabled({ actor: actor(), conversationId, payload: { enabled: true } });
+
+  assert.equal(first.conversation.cuu_enabled, true);
+  assert.equal(second.conversation.cuu_enabled, true);
+  assert.equal(writeCalls, 2);
+});
+
+test("updateCuuEnabled refuses a non-collab (main) conversation with 409 and never writes", async () => {
+  let writeCalls = 0;
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return accessRecord({ conversation: conversationRow({ kind: "main" }), participantRole: null });
+      },
+      async updateCuuEnabled() {
+        writeCalls += 1;
+        throw new Error("main conversations must not toggle cuu_enabled");
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now
+    }
+  );
+
+  await assert.rejects(
+    () => service.updateCuuEnabled({ actor: actor(), conversationId, payload: { enabled: true } }),
+    (error: unknown) =>
+      error instanceof ConversationServiceError &&
+      error.status === 409 &&
+      error.code === "conversation_cuu_not_collab"
+  );
+  assert.equal(writeCalls, 0);
+});
+
+test("updateCuuEnabled refuses a non-participant viewer with 403 and never writes", async () => {
+  let writeCalls = 0;
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        // A project-visible collab that this viewer can see but is not a participant of.
+        return accessRecord({ participantRole: null });
+      },
+      async updateCuuEnabled() {
+        writeCalls += 1;
+        throw new Error("non-participants must not toggle cuu_enabled");
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now
+    }
+  );
+
+  await assert.rejects(
+    () => service.updateCuuEnabled({ actor: actor(), conversationId, payload: { enabled: true } }),
+    (error: unknown) =>
+      error instanceof ConversationServiceError &&
+      error.status === 403 &&
+      error.code === "conversation_cuu_forbidden"
+  );
+  assert.equal(writeCalls, 0);
+});
+
+test("updateCuuEnabled 404s an invisible conversation before any write", async () => {
+  let writeCalls = 0;
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return null;
+      },
+      async updateCuuEnabled() {
+        writeCalls += 1;
+        throw new Error("invisible conversations must not toggle cuu_enabled");
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now
+    }
+  );
+
+  await assert.rejects(
+    () => service.updateCuuEnabled({ actor: actor(), conversationId, payload: { enabled: true } }),
+    (error: unknown) =>
+      error instanceof ConversationServiceError &&
+      error.status === 404 &&
+      error.code === "conversation_not_found"
+  );
+  assert.equal(writeCalls, 0);
+});
+
+test("listParticipants returns scope=workspace with an empty list for the main conversation without querying the repository", async () => {
+  let listCalls = 0;
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return accessRecord({ conversation: conversationRow({ kind: "main" }), participantRole: null });
+      },
+      async listParticipantsWithNickname() {
+        listCalls += 1;
+        return [];
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now
+    }
+  );
+
+  const result = await service.listParticipants({ actor: actor(), conversationId });
+
+  assert.deepEqual(result, { scope: "workspace", participants: [] });
+  assert.equal(listCalls, 0);
+});
+
+test("listParticipants returns scope=participants with real rows for a collab (and DM) conversation", async () => {
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return accessRecord({ participantRole: "owner" });
+      },
+      async listParticipantsWithNickname(input) {
+        assert.equal(input.conversationId, conversationId);
+        return [
+          { userId, nickname: "阿曼", role: "owner" },
+          { userId: participantUserId, nickname: "小赵", role: "member" }
+        ];
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now
+    }
+  );
+
+  const result = await service.listParticipants({ actor: actor(), conversationId });
+
+  assert.deepEqual(result, {
+    scope: "participants",
+    participants: [
+      { user_id: userId, nickname: "阿曼", role: "owner" },
+      { user_id: participantUserId, nickname: "小赵", role: "member" }
+    ]
+  });
+});
+
+test("listParticipants 404s an invisible (or non-participant) conversation before any query", async () => {
+  let listCalls = 0;
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return null;
+      },
+      async listParticipantsWithNickname() {
+        listCalls += 1;
+        return [];
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now
+    }
+  );
+
+  await assert.rejects(
+    () => service.listParticipants({ actor: actor(), conversationId }),
+    (error: unknown) =>
+      error instanceof ConversationServiceError &&
+      error.status === 404 &&
+      error.code === "conversation_not_found"
+  );
+  assert.equal(listCalls, 0);
 });

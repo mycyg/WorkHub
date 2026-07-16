@@ -161,6 +161,21 @@ function pushClientTokenToShell(token: string): void {
   }
 }
 
+// R15 批 A6（托盘/Dock 角标）：把「有几件待办/未读」推到 Rust 壳层的 set_shell_badge（macOS Dock 角标 +
+// 托盘 tooltip）。浏览器 dev 态无 __TAURI__ → 优雅降级为 no-op（同 pushClientTokenToShell 的既有取舍）。
+function pushShellBadgeToShell(count: number, locale: WorkHubLocale): void {
+  const tauri = (globalThis as {
+    __TAURI__?: {
+      core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
+      invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
+    };
+  }).__TAURI__;
+  const invoke = tauri?.core?.invoke ?? tauri?.invoke;
+  if (typeof invoke === "function") {
+    void invoke("set_shell_badge", { count: Math.max(0, Math.floor(count)), locale }).catch(() => undefined);
+  }
+}
+
 async function bootstrapDesktopClientToken(client: BrowserApiClient): Promise<void> {
   try {
     const result = await client.bootstrapDesktop({
@@ -1353,7 +1368,18 @@ async function bootSpotlight() {
     const refreshApprovalsBadge = async () => {
       try {
         const att = await client.pages.attention({ locale });
-        spotlight.setBadges({ approvals: att.queue?.length ?? 0 });
+        const approvals = att.queue?.length ?? 0;
+        spotlight.setBadges({ approvals });
+        // R15 批 A6（托盘/Dock 角标）：把「待你拍板 + 未读通知」推到系统托盘/Dock 层（workbench 关着、
+        // 聚焦盒收着也能看到有事要处理）。未读走既有 GET /api/notifications 的 counts.unread（不新造端点），
+        // 拉不到就只用 attention 数，不阻塞 Dock 角标（best-effort，与 spotlight 角标同一节奏刷/聚焦归零）。
+        let unread = 0;
+        try {
+          unread = (await client.notifications()).counts?.unread ?? 0;
+        } catch {
+          // 未读拉不到就当 0（只用待拍板数），不因此让 Dock 角标失败。
+        }
+        pushShellBadgeToShell(approvals + unread, locale);
       } catch {
         // 角标尽力而为。
       }

@@ -91,6 +91,11 @@ test("R4.21 shared runtime parses route action hrefs without app-specific code",
     notificationId: "n-1",
     action: "complete"
   });
+  // R15 批 A（A2 提醒阶梯）：暂停提醒。
+  assert.deepEqual(notificationActionFromHref("/api/notifications/n-1/snooze"), {
+    notificationId: "n-1",
+    action: "snooze"
+  });
   assert.deepEqual(escalationActionFromHref("/api/escalations/e%201/resolve"), {
     escalationId: "e 1",
     action: "resolve"

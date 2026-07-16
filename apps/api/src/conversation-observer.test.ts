@@ -87,6 +87,10 @@ function projectRow(overrides: Partial<WorkItemProjectRow> = {}): WorkItemProjec
     nextSeq: 1,
     // R13 批 S3：projects 加了 is_personal 列——机械补齐，不是本文件测的功能改动。
     isPersonal: false,
+    // R15 批 B：projects 加了 is_dm_container 列——机械补齐（普通项目固定 false）。
+    isDmContainer: false,
+    // R16 批 W4a：projects 加了 instructions_md 列——机械补齐（这份 fixture 不关心它，默认空）。
+    instructionsMd: null,
     createdAt: now,
     updatedAt: now,
     ...overrides
@@ -114,6 +118,7 @@ function workItemRow(overrides: Partial<WorkItemRow> = {}): WorkItemRow {
     dueAt: null,
     sourceMeetingId: null,
     sourceWorkItemId: null,
+    milestoneId: null,
     claimedAt: null,
     doneAt: null,
     deliveredAt: null,
@@ -166,6 +171,8 @@ function notificationRow(overrides: Partial<NotificationRow> = {}): Notification
     dedupeKey: "dedupe-1",
     readAt: null,
     archivedAt: null,
+    nextRemindAt: null,
+    reminderCount: 0,
     createdAt: now,
     updatedAt: now,
     ...overrides
@@ -211,6 +218,7 @@ function actionCardRow(overrides: Partial<ActionCardRow> = {}): ActionCardRow {
     conversationId,
     messageId,
     status: "active",
+    origin: "observer",
     analyzedToSeq: 6,
     createdAt: now,
     updatedAt: now,

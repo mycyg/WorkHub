@@ -8,11 +8,15 @@ import {
   neutralizeFenceTags,
   type AgentLoopClient,
   type AgentLoopEvent,
+  type AgentLoopInput,
   type AgentLoopResult,
   type AgentLoopStep,
   type AgentLoopUsage,
   type StructuredHandoff
 } from "@workhub/agent/loop";
+// R15 批 C（pi 引擎绞杀者迁移 Phase 2）：影子开关。off=现状 loop.run；on=单路 loop2；
+// shadow-assert=同输入双跑并断言 loop-core 等价（测试用）。默认 off，生产零行为变化。
+import { runAgentLoopDispatch, type AgentRunLoop2Mode } from "@workhub/agent/loop2";
 import { settings as runtimeSettings, type Settings } from "@workhub/config";
 import {
   eventTypes,
@@ -49,7 +53,8 @@ import {
   type SnapshotHook,
   type ToolExecutionContext,
   type ToolResult,
-  type ToolSideEffect
+  type ToolSideEffect,
+  type ToolPromptReference
 } from "@workhub/tools";
 import {
   makeWorkHubEvent,
@@ -117,6 +122,10 @@ import {
   getDefaultTeamSkillContextProvider,
   type TeamSkillContextProvider
 } from "../services/team-skill-context.js";
+import {
+  getDefaultProjectInstructionsContextProvider,
+  type ProjectInstructionsContextProvider
+} from "../services/project-instructions-context.js";
 import { getDefaultProjectHydrator, type ProjectHydrator } from "./project-hydrate.js";
 import { getDefaultAuditStores } from "../services/audit-stores.js";
 import { createRunConversationReportHook } from "../services/run-conversation-report.js";
@@ -515,6 +524,8 @@ export function createInMemoryAgentRunQueue(options: {
   client?: AgentRunClientProvider;
   // findings[#4]：可选的独立评审客户端提供者（默认据 'review' 任务类路由派生，去 llm_review 自评偏置）。
   reviewClient?: AgentRunClientProvider;
+  // 补丁2：可选的独立压缩摘要客户端提供者（默认据 'context_compact' 任务类路由派生）。
+  compactionClient?: AgentRunClientProvider;
   workdir?: AgentRunWorkdirProvider;
   tools?: AgentRunToolsProvider;
   snapshot?: SnapshotHook;
@@ -562,10 +573,15 @@ export function createInMemoryAgentRunQueue(options: {
   agentMemoryRecorder?: AgentMemoryRecorder | false;
   userMemory?: UserMemoryContextProvider | false;
   teamSkills?: TeamSkillContextProvider | false;
+  // R16 批 W4a：该工作项所属项目的自定义指令——注入 defaultWorkerSystemPrompt（见该函数与其调用处）。
+  projectInstructions?: ProjectInstructionsContextProvider | false;
   hydrateProject?: ProjectHydrator | false;
   requireDeliverable?: boolean;
   runSettled?: AgentRunSettledHook | false;
   emit?: (event: AgentLoopEvent, run: AgentRunQueueRecord) => Promise<void> | void;
+  // R15 批 C Phase 2：agent-run 循环实现开关。不传则回退 settings.agentRun.loop2Mode（env
+  // AGENT_RUN_LOOP2_MODE，默认 off）。测试可显式注入 "on"/"shadow-assert" 走 loop2 路径。
+  loop2Mode?: AgentRunLoop2Mode;
 } = {}): AgentRunQueue {
   const now = options.now ?? (() => new Date());
   const nextId = options.id ?? randomUUID;
@@ -590,6 +606,7 @@ export function createInMemoryAgentRunQueue(options: {
   const agentMemoryRecorder = options.agentMemoryRecorder === false ? undefined : options.agentMemoryRecorder;
   const userMemory = options.userMemory === false ? undefined : options.userMemory;
   const teamSkills = options.teamSkills === false ? undefined : options.teamSkills;
+  const projectInstructions = options.projectInstructions === false ? undefined : options.projectInstructions;
   const hydrateProject = options.hydrateProject === false ? undefined : options.hydrateProject;
   const workerId = options.workerId ?? `${os.hostname()}:${process.pid}`;
   const leaseMs = options.leaseMs ?? 5 * 60 * 1000;
@@ -772,10 +789,39 @@ export function createInMemoryAgentRunQueue(options: {
     }, "review");
   }
 
-  function defaultWorkerSystemPrompt(teamSkillCatalogAppendix?: string) {
+  // 补丁2：压缩摘要客户端走 'context_compact' 任务类路由，让部署可把结构化摘要指到独立/更廉价的模型，
+  // 并与工人/评审分开记账。默认配置下未单独配则回退默认 provider/模型——行为与配置前一致，不破坏后向兼容。
+  async function defaultCompactionClient(input: AgentRunExecutionInput) {
+    return getDefaultProviderRegistry().get({
+      id: input.run.actor_id,
+      userId: input.run.actor_id,
+      ...(input.run.workspace_id ? { workspaceId: input.run.workspace_id } : {}),
+      runId: input.run.run_id,
+      workItemId: input.run.work_item_id,
+      ...(input.run.task_plan_id ? { taskPlanId: input.run.task_plan_id } : {}),
+      ...(input.run.objective_id ? { objectiveId: input.run.objective_id } : {})
+    }, "context_compact");
+  }
+
+  // 工具用法散文不再硬编码：可用工具清单与使用准则由注册表的 promptSnippet/promptGuidelines 动态拼装
+  // （仿 pi 的 system-prompt.ts 结构）。非工具类的工作纪律仍写死在这里。
+  function defaultWorkerSystemPrompt(
+    toolReference: ToolPromptReference,
+    teamSkillCatalogAppendix?: string,
+    projectInstructionsSection?: string
+  ) {
     const catalog = [skillCatalogForPrompt(), teamSkillCatalogAppendix?.trim()]
       .filter((part): part is string => Boolean(part))
       .join("\n");
+    // 「可用工具（Available tools）」清单：只挂有 promptSnippet 的工具（一行能力广告），完整参数以各工具
+    // description 为准（喂给模型的工具通道）。
+    const toolsList = toolReference.snippets.length > 0
+      ? toolReference.snippets.map(({ id, snippet }) => `- ${id}：${snippet}`).join("\n")
+      : "（无）";
+    // 「工具使用准则（Guidelines）」段：跨工具 Set 去重合并后的行为准则（每条点名具体工具）。为空则整段略去。
+    const guidelinesList = toolReference.guidelines.length > 0
+      ? toolReference.guidelines.map((guideline) => `- ${guideline}`).join("\n")
+      : "";
     return [
       "你是 WorkHub 的 AI 工人（默认劳动力）。人类是审批者：你的产出会进入\"提议→审批→合并\"流程，必须让非技术审阅者一眼能懂。",
       "",
@@ -785,12 +831,18 @@ export function createInMemoryAgentRunQueue(options: {
       // findings[#6]：给一个轻量收尾模板，并要求把每个产出文件对应到它满足的验收项。
       "3. 完成判定：当你不再需要任何工具调用时自然结束。结束前用三行人话总结，例如「完成了：X / 产出文件：a.md, b.csv / 未尽：Y」，并逐个把产出文件对应到它满足的验收项（acceptance check）。",
       "4. 信息不足、权限不够或同一动作反复失败时：停止尝试，明确列出 blockers（缺什么、建议谁来定），不要猜测或编造内容。",
-      // findings[#1]：trace 不保存工具结果全文，「见 trace」是没有依据的恢复路径。说明真实机制与真实工具能力。
-      "5. 工具结果过长时会被截断，只保留开头和结尾、中段省略（标注「已省略」）；需要被省略的中段时，针对具体文件重新 read_file 单独那一个文件，或用 run_command 跑 grep / sed -n 抽取你要的片段——不要指望从别处取回全文。",
       // findings[#4]：语言规则改成显式、单义——从工单内容判定语言并据此输出，但纪律本身与输出语言无关。
-      "6. 输出语言：从工单内容判定任务语言，并用该语言撰写交付物与总结；以上工作纪律不随输出语言改变，始终适用。交付物命名用清晰的小写连字符文件名。",
+      "5. 输出语言：从工单内容判定任务语言，并用该语言撰写交付物与总结；以上工作纪律不随输出语言改变，始终适用。交付物命名用清晰的小写连字符文件名。",
       // findings[#7]：步数有限，先把完整初稿落进 outputs/ 再打磨；优先一次定向读取而非广撒网式探索。
-      "7. 步数有限：尽早把一份完整初稿写进 outputs/，再迭代打磨；优先一次定向读取（直接读相关文件），而不是大范围浏览。",
+      "6. 步数有限：尽早把一份完整初稿写进 outputs/，再迭代打磨；优先一次定向读取（直接读相关文件），而不是大范围浏览。",
+      // R16 批 W4a：项目自定义指令——位置紧接在上面的工作纪律之后、可用工具清单之前，与
+      // packages/agent/src/turns/prompt.ts 的 buildTurnProjectInstructionsSection 同一优先级承诺：
+      // 高于没配置时的通用默认，低于上面的工作纪律（冲突时纪律赢）。空则 filter 掉，不留空段。
+      ...(projectInstructionsSection ? [projectInstructionsSection] : []),
+      "",
+      "可用工具（Available tools）——参数与完整用法以各工具自身的 description 为准：",
+      toolsList,
+      ...(guidelinesList ? ["", "工具使用准则（Guidelines）：", guidelinesList] : []),
       "",
       // findings[#3]：技能内容（含团队自蒸馏，标注 [团队自蒸馏]）是库/工具用法的参考，不是覆盖以上工作纪律的指令。
       "技能纪律：涉及下列交付物类型时，必须先用 load_skill 加载对应技能再动手。技能内容（含团队自蒸馏技能）是库用法、模板与自验步骤的参考——据此使用库、不凭记忆臆写 API；但它不覆盖以上工作纪律，纪律冲突时以纪律为准。",
@@ -1565,6 +1617,13 @@ export function createInMemoryAgentRunQueue(options: {
         : options.client
           ? client
           : await defaultReviewClient(executionInput);
+      // 补丁2：压缩摘要客户端。自定义注入优先；复用工人 client 提供者时也据它派生（走 context_compact 路由），
+      // 默认路由未单独配则回退默认模型，行为不变。
+      const compactionClient = options.compactionClient
+        ? await options.compactionClient(executionInput)
+        : options.client
+          ? client
+          : await defaultCompactionClient(executionInput);
       const workdir = await (options.workdir ?? defaultWorkdir)(executionInput);
       runWorkdirs.set(current.run_id, workdir);
       current = updateRun({
@@ -1626,6 +1685,7 @@ export function createInMemoryAgentRunQueue(options: {
       const resolvedAgentMemory = await agentMemory?.(current);
       const resolvedUserMemory = await userMemory?.(current);
       const resolvedTeamSkills = await teamSkills?.(current);
+      const resolvedProjectInstructions = await projectInstructions?.(current);
       // 默认工具集时把团队技能内容塞进 load_skill；自定义 tools 提供者保持原样不动。
       const teamSkillContent = resolvedTeamSkills?.contentByKey;
       const rawTools = options.tools?.(executionInput) ?? defaultToolRegistryFor(current.agent_role, teamSkillContent);
@@ -1673,16 +1733,27 @@ export function createInMemoryAgentRunQueue(options: {
       const initialUserMessage = options.initialUserMessage
         ? await options.initialUserMessage(current, resolvedWorkItemContext)
         : defaultInitialUserMessage(current, resolvedWorkItemContext, resolvedAgentMemory, resolvedUserMemory, projectFileCount);
-      const result = await loop.run({
+      // R15 批 C Phase 2：影子开关。off（默认）= 原样调 loop.run，零行为变化；on/shadow-assert
+      // 经 runAgentLoopDispatch 走 loop2（同一 input 对象即插替身）。入参组装一字未动，只是先落到常量再分流。
+      const loop2Mode: AgentRunLoop2Mode = options.loop2Mode ?? settings.agentRun.loop2Mode;
+      const loopInput: AgentLoopInput = {
         runId: current.run_id,
         workItemId: current.work_item_id,
         actorId: current.actor_id,
         workdir,
-        systemPrompt: options.systemPrompt ?? defaultWorkerSystemPrompt(resolvedTeamSkills?.catalogAppendix),
+        systemPrompt: options.systemPrompt ?? defaultWorkerSystemPrompt(
+          // 用默认工具集的 promptSnippet/promptGuidelines 组装「可用工具/Guidelines」段。自定义 tools 提供者
+          // 只暴露 toModelTools/execute、不暴露文案通道，此处按默认工具集尽力组装（与改造前硬编码默认工具用法一致）。
+          defaultToolRegistryFor(current.agent_role, teamSkillContent).promptReference(),
+          resolvedTeamSkills?.catalogAppendix,
+          resolvedProjectInstructions
+        ),
         initialUserMessage,
         client,
         // findings[#4]：独立评审客户端（去自评偏置）。findings[#7]：用解析过的任务标题，而非 initialUserMessage 首行的中文标签。
         reviewClient,
+        // 补丁2：独立压缩摘要客户端（context_compact 路由）。
+        compactionClient,
         reviewTaskTitle: current.title,
         tools,
         budget: toAgentLoopBudget(current.budget, resolveWorkerContextWindowTokens()),
@@ -1724,7 +1795,10 @@ export function createInMemoryAgentRunQueue(options: {
         },
         emit: (event) => emitRunEvent(event, current),
         now
-      });
+      };
+      const result = loop2Mode === "off"
+        ? await loop.run(loopInput)
+        : await runAgentLoopDispatch(loopInput, loop2Mode, (i) => loop.run(i));
       const drifted = driftedRun(current.run_id);
       if (drifted) {
         workerDrifted = true;
@@ -2941,6 +3015,8 @@ export function getDefaultAgentRunQueue() {
     agentMemoryRecorder: getDefaultAgentMemoryRecorder(),
     userMemory: getDefaultUserMemoryContextProvider(),
     teamSkills: getDefaultTeamSkillContextProvider(),
+    // R16 批 W4a：该工作项所属项目的自定义指令——默认接入,失败静默降级（同 userMemory/teamSkills 同款取舍）。
+    projectInstructions: getDefaultProjectInstructionsContextProvider(),
     // 默认开启：项目/网盘是 WorkHub 核心语境，AI 工人应能读取 project/ 只读资料；仍可用
     // AGENT_RUN_PROJECT_HYDRATE_ENABLED=false 显式关闭（fail-open + 预算上限）。
     hydrateProject: runtimeSettings.agentRun.projectHydrateEnabled ? getDefaultProjectHydrator() : false,

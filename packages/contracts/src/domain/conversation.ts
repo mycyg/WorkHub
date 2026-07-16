@@ -357,7 +357,21 @@ export const conversationTextContentSchema = z
     memory_citations: z.array(conversationMemoryCitationSchema).max(MAX_CONVERSATION_MEMORY_CITATIONS).optional(),
     is_clarifying_question: z.boolean().optional(),
     clarify_options: z.array(z.string().min(1).max(200)).max(MAX_CONVERSATION_CLARIFY_OPTIONS).optional(),
-    clarify_placeholder: z.string().min(1).max(200).optional()
+    clarify_placeholder: z.string().min(1).max(200).optional(),
+    // R15 批 D2（Cuu 主动开口）：一条 Cuu 消息若由主动性闸（ProactiveIntent）投递到个人空间主区，带上
+    // 产它的 intent id 做审计溯源（读侧 VM strict 校验必须认识这个键，故在此 additive 声明）。普通
+    // 会话回复（走 conversation-turns 的 turn 循环）不带此字段——它只出现在 conversation_message 通道
+    // 投递物上。optional，存量消息不受影响。
+    proactive_intent_id: idSchema.optional(),
+    // R16-W1（工作台聊天流升级）：Cuu 回应的展示元信息——全部 additive optional，只由服务端 turn 结算时
+    // 写入（见 apps/api/src/services/conversation-turns.ts）。存量消息 / 人类消息不带这些字段，读侧缺省
+    // 不渲染（04 §4 铁律 3：没有真数据就不渲染，历史消息没有这些字段就不显示 pill/元信息行）。
+    //   model：这一轮实际使用的模型 id（provider 路由处 route.model.model），渲染成 Cuu 气泡头部的模型 pill。
+    //   usage_tokens：这一轮累计 token（输入+输出之和），渲染进消息尾部元信息行「N tokens」。
+    //   elapsed_ms：这一轮从进循环到落定的耗时（毫秒），渲染进消息尾部元信息行「Ns」。
+    model: z.string().min(1).max(128).optional(),
+    usage_tokens: z.number().int().min(0).max(1_000_000_000).optional(),
+    elapsed_ms: z.number().int().min(0).max(86_400_000).optional()
   })
   .strict();
 export type ConversationTextContent = z.infer<typeof conversationTextContentSchema>;
@@ -460,6 +474,17 @@ export type RenameConversationRequest = z.infer<typeof renameConversationRequest
 // 重命名成功的响应 VM 定义在 conversationVmSchema 之后（引用它），避免 const 使用前声明——同
 // conversationPinsVmSchema 的既有取舍。见本文件下方 renameConversationResultVmSchema。
 
+// R15 批 cuu-toggle：PATCH /api/conversations/:id/cuu 的请求体——只带目标布尔值（幂等：重复翻到同一个
+// 值不是错误，仓库层就是一次普通的 UPDATE）。语义红线（仅 collab 含 DM 可翻、main 一律拒绝、仅参与者
+// 可翻）在服务层强制，见 apps/api/src/services/conversations.ts updateCuuEnabled。
+export const updateConversationCuuRequestSchema = z
+  .object({
+    enabled: z.boolean()
+  })
+  .strict();
+export type UpdateConversationCuuRequest = z.infer<typeof updateConversationCuuRequestSchema>;
+// 响应 VM 定义在 conversationVmSchema 之后（引用它）——见本文件下方 updateConversationCuuResultVmSchema。
+
 // R14 批 CHAT：编辑消息请求体——只带新正文（仅 text 消息可编辑，kind 判定在服务/仓库层）。text 的
 // 长度约束与创建侧对齐（min 1、上限同 MAX_CONVERSATION_TEXT_CODE_UNITS）。
 export const editConversationMessageRequestSchema = z
@@ -539,11 +564,98 @@ export const conversationVmSchema = z
     // R13 批 G1（小群）：与请求侧 cuu_enabled 对称——服务端总是产出一个具体值（DB 列 default true，
     // 存量行迁移时全部回填 true），VM 输出侧不是 optional。
     cuu_enabled: z.boolean(),
+    // R15 批 B（人对人私聊）：additive optional——由 dm_key 非空推导，只在 DM 会话上输出 true，普通
+    // 会话（团队主区/协同/个人空间）这个键完全不出现（不是出现后填 false）。存量客户端读不带这个键
+    // 的会话 VM 行为零回归；认识它的客户端据此渲染「私聊」而非「协同会话」形态。
+    is_dm: z.boolean().optional(),
+    // R15 批 A（A4 未读聚合）：additive optional——当前 viewer 在这条会话里的未读消息数（seq > 读游标、
+    // 未删除的墓碑不计、不含自己发的消息）。只在会话列表 VM（workbench 页面的 conversations 段）组装时
+    // 由一条聚合 SQL 一次算齐所有可见会话（禁 N+1），单条 create/open/rename 结果 VM 不带这个键
+    // （新建/刚开的会话未读恒 0，无需查询）。存量客户端读不带这个键的 VM 行为零回归。
+    unread_count: safeIntegerOutputSchema.optional(),
     created_at: isoDateTimeSchema,
     updated_at: isoDateTimeSchema
   })
   .strict();
 export type ConversationVM = z.infer<typeof conversationVmSchema>;
+
+// R15 批 B（人对人私聊）：POST /api/dm/open 的请求体——只带私聊对象的 user_id（目标须与调用者同工作区
+// 活跃成员、且不是自己；校验在服务/仓库层）。
+export const openDmRequestSchema = z
+  .object({
+    user_id: idSchema
+  })
+  .strict();
+export type OpenDmRequest = z.infer<typeof openDmRequestSchema>;
+
+// 开聊成功的响应——回既有会话列表接口同款的 conversation VM（带 is_dm=true、participant_role=owner），
+// 客户端据此直接打开该会话。定义在 conversationVmSchema 之后（引用它），避免 const 使用前声明——同
+// renameConversationResultVmSchema/conversationPinsVmSchema 的既有取舍。
+export const openDmResultVmSchema = z
+  .object({
+    conversation: conversationVmSchema
+  })
+  .strict();
+export type OpenDmResultVM = z.infer<typeof openDmResultVmSchema>;
+
+// R15 批 B（人对人私聊）：GET /api/dm/list —— 当前 actor 参与的 DM 会话列表。DM 容器项目对项目树/项目
+// 列表/工作台 VM 全线围栏（findWorkbenchAccess/listProjects fail-closed），所以 DM 会话在左栏没有任何
+// 常规入口——这个窄口是「私聊」分组唯一的数据源，参与者门控（服务层只回 actor 是 participant 的 DM）。
+// 每条 DM 固定 2 名活跃参与者（self + 对方），participants 同时给了「对方昵称」（rail 私聊行渲染）与
+// 「本会话真实参与者集合」（桌面 chat 视图据此把已读 N/M 的分母收敛成 1/1，而不是拿全工作区成员当分母）。
+const dmListParticipantVmSchema = z
+  .object({
+    user_id: idSchema,
+    nickname: z.string().min(1),
+    // 恰好一名参与者 is_self=true（见 dmListItemVmSchema 的 superRefine）——客户端据此挑出「对方」。
+    is_self: z.boolean()
+  })
+  .strict();
+export type DmListParticipantVM = z.infer<typeof dmListParticipantVmSchema>;
+
+export const dmListItemVmSchema = z
+  .object({
+    conversation: conversationVmSchema,
+    // 固定 2 人（DM 不可拉人）——两名都是活跃用户；对方账号被删则整条 DM 不出现在列表（服务层过滤）。
+    participants: z.array(dmListParticipantVmSchema).length(2)
+  })
+  .strict()
+  .superRefine((item, ctx) => {
+    // DM 会话一定带 is_dm=true（由 dm_key 非空推导）——列表接口不该混进普通会话。
+    if (item.conversation.is_dm !== true) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["conversation", "is_dm"],
+        message: "a dm list item must carry a dm conversation (is_dm=true)"
+      });
+    }
+    const selfCount = item.participants.filter((participant) => participant.is_self).length;
+    if (selfCount !== 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["participants"],
+        message: "a dm must contain exactly one self participant"
+      });
+    }
+    const userIds = new Set(item.participants.map((participant) => participant.user_id));
+    if (userIds.size !== item.participants.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["participants"],
+        message: "dm participants must be distinct users"
+      });
+    }
+  });
+export type DmListItemVM = z.infer<typeof dmListItemVmSchema>;
+
+// 列表上限——同 capped 三件套口径（前 N 名），DM 数量对内部团队规模远低于此，纯防御性封顶。
+export const DM_LIST_CAP = 200;
+export const dmListVmSchema = z
+  .object({
+    items: z.array(dmListItemVmSchema).max(DM_LIST_CAP)
+  })
+  .strict();
+export type DmListVM = z.infer<typeof dmListVmSchema>;
 
 // R14FIX 批 workbench：重命名成功的响应——回改名后的完整会话 VM（客户端就地更新左栏树叶，见
 // rail.ts renameCollabConversationInVm）。定义在 conversationVmSchema 之后（引用它），避免 const
@@ -554,6 +666,42 @@ export const renameConversationResultVmSchema = z
   })
   .strict();
 export type RenameConversationResultVM = z.infer<typeof renameConversationResultVmSchema>;
+
+// R15 批 cuu-toggle：PATCH /cuu 成功的响应——回翻转后的完整会话 VM（客户端就地更新 cuu_enabled + 头部
+// 开关状态），同 renameConversationResultVmSchema 的既有取舍。
+export const updateConversationCuuResultVmSchema = z
+  .object({
+    conversation: conversationVmSchema
+  })
+  .strict();
+export type UpdateConversationCuuResultVM = z.infer<typeof updateConversationCuuResultVmSchema>;
+
+// R15 批 cuu-toggle：GET /api/conversations/:id/participants —— 会话参与者列表（供桌面端小群「已读 N/M」
+// 分母修复：真实参与者集合，而不是把整个工作区成员当分母）。main 会话没有 conversation_participants 行
+// （全员可见，01-chat-design 的既有语义），诚实回 scope:"workspace" + 空列表，不假装 main 也有一份
+// "参与者名单"；collab（含 DM）回 scope:"participants" + 真实参与者（user_id/昵称/角色）。参与者门控
+// 与消息可见性同口径——非参与者在服务层的 visibleConversation() 就已经 404，不会走到这里。
+export const conversationParticipantsScopeSchema = z.enum(["workspace", "participants"]);
+export type ConversationParticipantsScope = z.infer<typeof conversationParticipantsScopeSchema>;
+
+export const conversationParticipantListItemVmSchema = z
+  .object({
+    user_id: idSchema,
+    nickname: z.string().min(1),
+    role: conversationParticipantRoleSchema
+  })
+  .strict();
+export type ConversationParticipantListItemVM = z.infer<typeof conversationParticipantListItemVmSchema>;
+
+// 上限 100——同 createCollab 的「至多 99 名被邀请成员 + 1 名创建者」上限对称，纯防御性封顶。
+export const CONVERSATION_PARTICIPANTS_LIST_CAP = 100;
+export const conversationParticipantsVmSchema = z
+  .object({
+    scope: conversationParticipantsScopeSchema,
+    participants: z.array(conversationParticipantListItemVmSchema).max(CONVERSATION_PARTICIPANTS_LIST_CAP)
+  })
+  .strict();
+export type ConversationParticipantsVM = z.infer<typeof conversationParticipantsVmSchema>;
 
 export const conversationParticipantVmSchema = z
   .object({

@@ -129,6 +129,10 @@ function projectRow(overrides: Partial<GithubBindingProjectRow> = {}): GithubBin
     deletedByNickname: null,
     nextSeq: 0,
     isPersonal: false,
+    // R15 批 B：projects 加了 is_dm_container 列——机械补齐（普通项目固定 false）。
+    isDmContainer: false,
+    // R16 批 W4a：projects 加了 instructions_md 列——机械补齐（这份 fixture 不关心它，默认空）。
+    instructionsMd: null,
     createdAt: now,
     updatedAt: now,
     ...overrides

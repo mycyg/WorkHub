@@ -9,8 +9,11 @@
 //      已注册的真实 command,会走统一的深链管线(段校验/窗口分流/deep-link 事件),不是伪造的第二条协议。
 //   2. invoke 之前先 stashPendingWorkbenchDeepLink(...)——冷启动竞态兜底(见 workbench/pending-deep-link.ts
 //      顶部注释),同一个已验证过的机制,不另起炉灶。
-// invoke 不可用时(浏览器 dev 预览 / capabilities 尚未把气泡所在窗口加进 windows 列表)诚实降级返回
-// false,调用方据此显示「打不开」文案，不假装已经跳转。
+// invoke 不可用时(浏览器 dev 预览 / 完全没有 Tauri)诚实降级返回 false,调用方据此显示「打不开」
+// 文案,不假装已经跳转。气泡所在窗口是 pet,capabilities/default.json 的 windows 列表早就含
+// ["main","pet"]（不是待办缺口）；open_workbench 又是自定义 app command 而不是 core:* 权限,
+// 这个仓库的 build.rs 没有为 app command 生成 ACL 权限条目,所以真机上 capabilities 不会挡这条
+// invoke——上面这条降级分支覆盖的只是"这个环境压根没有 __TAURI__"这一种真实场景。
 
 import { resolveDesktopTauriInvoke, type DesktopWindowControlsScope } from "../desktop-window-controls.js";
 import { stashPendingWorkbenchDeepLink, type PendingWorkbenchDeepLinkTarget } from "./pending-deep-link.js";

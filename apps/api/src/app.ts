@@ -27,6 +27,9 @@ import { createDriveRoutes } from "./routes/drive.js";
 import { createMeetingRoutes } from "./routes/meetings.js";
 import { createPilotRoutes } from "./routes/pilot.js";
 import { createProjectRoutes } from "./routes/projects.js";
+import { createProjectTimelineRoutes } from "./routes/project-timeline.js";
+import { createProjectInstructionsRoutes } from "./routes/project-instructions.js";
+import { createProjectPlannerRoutes } from "./routes/project-planner.js";
 import { createSessionRoutes } from "./routes/sessions.js";
 import { createKnowledgeRoutes } from "./routes/knowledge.js";
 import { createWorkItemRoutes } from "./routes/workitems.js";
@@ -34,6 +37,7 @@ import { createTaskPlanRoutes } from "./routes/task-plans.js";
 import { createProposalRoutes, createWorkItemProposalRoutes } from "./routes/proposals.js";
 import { createCostRoutes } from "./routes/cost.js";
 import { createConversationRoutes } from "./routes/conversations.js";
+import { createDmRoutes } from "./routes/dm.js";
 import { createAiSettingsRoutes } from "./routes/ai-settings.js";
 import { createUserProfileRoutes } from "./routes/user-profile.js";
 import { createUserAvatarRoutes } from "./routes/user-avatar.js";
@@ -44,6 +48,8 @@ import { createConversationTypingRoutes } from "./routes/conversation-typing.js"
 import { createConversationMessageActionRoutes } from "./routes/conversation-message-actions.js";
 import { createConversationReadRoutes } from "./routes/conversation-read.js";
 import { createConversationRenameRoutes } from "./routes/conversation-rename.js";
+import { createConversationCuuRoutes } from "./routes/conversation-cuu.js";
+import { createConversationParticipantsRoutes } from "./routes/conversation-participants.js";
 import { createPresenceRoutes } from "./routes/presence.js";
 import { createSearchRoutes } from "./routes/search.js";
 import { createUserMemoryGovernanceRoutes } from "./routes/user-memory-governance.js";
@@ -72,6 +78,9 @@ import {
   ProposalServiceRebaseRequiredError
 } from "./services/proposals.js";
 import { WorkItemServiceError } from "./services/work-items.js";
+import { ProjectTimelineServiceError } from "./services/project-timeline.js";
+import { ProjectInstructionsServiceError } from "./services/project-instructions.js";
+import { ProjectPlannerServiceError } from "./services/project-planner.js";
 import { InternalContractError } from "./pages/output-contract.js";
 import { ConversationServiceError } from "./services/conversations.js";
 import { AiSettingsServiceError } from "./services/ai-settings.js";
@@ -261,7 +270,12 @@ app.route("/api/pages", createPageRoutes());
 app.route("/api/drive", createDriveRoutes());
 app.route("/api/meetings", createMeetingRoutes());
 app.route("/api/projects", createProjectRoutes());
+app.route("/api", createProjectTimelineRoutes());
+// R16 批 W4a：项目级自定义指令——GET/PATCH /api/projects/:id/instructions，权限与上面的里程碑写同门。
+app.route("/api", createProjectInstructionsRoutes());
+app.route("/api", createProjectPlannerRoutes());
 app.route("/api", createConversationRoutes());
+app.route("/api/dm", createDmRoutes());
 app.route("/api", createAiSettingsRoutes());
 // R13 批 A2（派人推荐 v2）：GET/PATCH /me/profile ——「我是谁」资料面（title/bio/技能标签）。
 app.route("/api", createUserProfileRoutes());
@@ -276,6 +290,10 @@ app.route("/api", createConversationMessageActionRoutes());
 app.route("/api", createConversationReadRoutes());
 // R14 验收修复批 A：协同会话重命名（main 主区不可改名，服务层强制）。
 app.route("/api", createConversationRenameRoutes());
+// R15 批 cuu-toggle：会话级 Cuu 参与开关（PATCH /cuu，main 一律 409）+ 参与者列表
+// （GET /participants，main 回 scope:"workspace" 空列表）。
+app.route("/api", createConversationCuuRoutes());
+app.route("/api", createConversationParticipantsRoutes());
 app.route("/api", createPresenceRoutes());
 // R14 批 SEARCH：全局搜索统一读端点（四 scope 鉴权在 SQL 内逐 actor 收口）。
 app.route("/api", createSearchRoutes());
@@ -551,6 +569,47 @@ app.onError((error, c) => {
   }
 
   if (error instanceof WorkItemServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
+    );
+  }
+
+  // R15 批 E1：项目时间线（里程碑 / 依赖 / 挂里程碑）的类型化 403/404/422——不进这张表会被兜底压成 500。
+  if (error instanceof ProjectTimelineServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
+    );
+  }
+
+  // R16 批 W4a：项目级自定义指令的类型化 403/404——不进这张表会被兜底压成 500。
+  if (error instanceof ProjectInstructionsServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
+    );
+  }
+
+  if (error instanceof ProjectPlannerServiceError) {
     return c.json(
       {
         ok: false,

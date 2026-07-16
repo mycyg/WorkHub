@@ -5,6 +5,8 @@ import type { ConversationMessageVM, WorkbenchPageVM } from "@workhub/contracts"
 
 import {
   avatarTileHtml,
+  formatTurnElapsed,
+  formatTurnTokens,
   membersById,
   modePatchFailedText,
   renderChatEmptyStateHtml,
@@ -12,6 +14,7 @@ import {
   renderComposerHtml,
   renderConnectionBannerHtml,
   renderConversationAccessDeniedHtml,
+  renderCuuToggleHtml,
   renderCuuTurnErrorHtml,
   renderCuuTurnPendingHtml,
   renderDaySeparatorHtml,
@@ -20,6 +23,7 @@ import {
   renderJumpToUnreadHtml,
   renderLoadEarlierHtml,
   renderMemberBarHtml,
+  renderDmHeadBarHtml,
   renderMentionPickerHtml,
   renderMessageHtml,
   renderModeChipHtml,
@@ -32,6 +36,7 @@ import {
   renderPinBarHtml,
   renderReadReceiptHtml,
   renderStreamingCuuBubbleHtml,
+  renderToolActivityGroupHtml,
   renderTypingIndicatorHtml,
   renderUnreadDividerHtml,
   type ChatRenderContext,
@@ -50,7 +55,12 @@ function member(input: Partial<WorkbenchMemberVM> & { user_id: string; nickname:
 function ctxWith(
   members: WorkbenchMemberVM[],
   currentUserId?: string,
-  extra?: Partial<Pick<ChatRenderContext, "now" | "openReassignItemId" | "actionCardRunProgress">>
+  extra?: Partial<
+    Pick<
+      ChatRenderContext,
+      "now" | "openReassignItemId" | "actionCardRunProgress" | "actionCardItemBusyAction" | "expandedMessageIds"
+    >
+  >
 ): ChatRenderContext {
   return { locale: "zh-CN", members: membersById(members), currentUserId, ...extra };
 }
@@ -98,6 +108,54 @@ test("renderMemberBarHtml caps the rendered avatar row at 6 members but keeps th
   const html = renderMemberBarHtml({ members, locale: "zh-CN" });
   assert.match(html, /10 位成员/u);
   assert.equal((html.match(/class="wh-wb-chat-avatar"/gu) ?? []).length, 6);
+});
+
+// R15 批 B（人对人私聊）：DM 会话头显示对方昵称 + 在线态，不渲染「+ Cuu · 全员群聊」。
+test("renderDmHeadBarHtml shows the peer nickname + online state, without the group / Cuu label", () => {
+  const online = renderDmHeadBarHtml({ peerUserId: "u2", peerNickname: "阿曼", online: true, locale: "zh-CN" });
+  assert.match(online, /阿曼/u);
+  assert.match(online, /在线/u);
+  assert.match(online, /wh-wb-chat-head-status--online/u);
+  assert.doesNotMatch(online, /全员群聊/u);
+  assert.doesNotMatch(online, /位成员/u);
+  // 只画一枚对方头像（不叠 Cuu 的猫）。
+  assert.equal((online.match(/class="wh-wb-chat-avatar"/gu) ?? []).length, 1);
+
+  const offline = renderDmHeadBarHtml({ peerUserId: "u2", peerNickname: "阿曼", online: false, locale: "zh-CN" });
+  assert.match(offline, /离线/u);
+  assert.doesNotMatch(offline, /wh-wb-chat-head-status--online/u);
+});
+
+// R15 批 cuu-toggle：DM / 协同会话头部的「请 Cuu 进来」开关——三态（off/on/busy）+ 双语，纯展示函数
+// 不做会话种类判断（main 不渲这个控件是 view.ts 挂载点的责任，见 view.ts renderHead）。
+test("renderCuuToggleHtml shows an invite affordance when off and a remove affordance when on, in both locales", () => {
+  const off = renderCuuToggleHtml({ enabled: false, busy: false, locale: "zh-CN" });
+  assert.match(off, /data-wb-chat-cuu-toggle/u);
+  assert.match(off, /请 Cuu 进来/u);
+  assert.doesNotMatch(off, /wh-wb-chat-cuu-toggle--on/u);
+  assert.match(off, /aria-pressed="false"/u);
+  assert.doesNotMatch(off, /disabled/u);
+
+  const on = renderCuuToggleHtml({ enabled: true, busy: false, locale: "zh-CN" });
+  assert.match(on, /Cuu 已在场/u);
+  assert.match(on, /wh-wb-chat-cuu-toggle--on/u);
+  assert.match(on, /aria-pressed="true"/u);
+
+  const onEn = renderCuuToggleHtml({ enabled: true, busy: false, locale: "en-US" });
+  assert.match(onEn, /Cuu is here/u);
+  const offEn = renderCuuToggleHtml({ enabled: false, busy: false, locale: "en-US" });
+  assert.match(offEn, /Invite Cuu/u);
+});
+
+test("renderCuuToggleHtml disables the control and swaps in a working label while busy (markBusy hand-feel)", () => {
+  const busy = renderCuuToggleHtml({ enabled: false, busy: true, locale: "zh-CN" });
+  assert.match(busy, /disabled/u);
+  assert.match(busy, /处理中/u);
+  assert.doesNotMatch(busy, /请 Cuu 进来/u);
+
+  const busyEn = renderCuuToggleHtml({ enabled: true, busy: true, locale: "en-US" });
+  assert.match(busyEn, /disabled/u);
+  assert.match(busyEn, /Working/u);
 });
 
 // R13 批 G1（小群）：senderLabel/renderMessageHtml 按 sender_user_id 查 ctx.members（一个纯 Map 查找，
@@ -192,6 +250,136 @@ test("renderMessageHtml escapes text content — no raw HTML injection from mess
   const html = renderMessageHtml(baseMessage({ content: { text: "<img src=x onerror=alert(1)>" } }), ctxWith([]));
   assert.doesNotMatch(html, /<img/u);
   assert.match(html, /&lt;img/u);
+});
+
+// —— R16-W1（工作台聊天流升级）：模型归因 pill + 尾部元信息行（复制 · 耗时 · tokens） —— //
+
+test("renderMessageHtml renders the model pill + copy + elapsed·tokens meta row on a Cuu text reply that carries the metadata", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { text: "重写好了", model: "deepseek-v4", usage_tokens: 12_400, elapsed_ms: 42_000 }
+    }),
+    ctxWith([])
+  );
+  assert.match(html, /wh-wb-chat-model-pill/u);
+  assert.match(html, /deepseek-v4/u);
+  assert.match(html, /data-wb-chat-copy="m1"/u);
+  assert.match(html, /42s/u);
+  assert.match(html, /12\.4k tokens/u);
+});
+
+test("renderMessageHtml omits the model pill and stats when a Cuu reply lacks the metadata, but still offers copy", () => {
+  const html = renderMessageHtml(
+    baseMessage({ sender_type: "cuu", sender_user_id: null, content: { text: "好的" } }),
+    ctxWith([])
+  );
+  assert.doesNotMatch(html, /wh-wb-chat-model-pill/u);
+  assert.doesNotMatch(html, /wh-wb-chat-cuu-meta-stats/u);
+  // 复制按钮对任何 Cuu 文字回应都在（现成剪贴板便利），只是没有耗时/tokens 数据可显示。
+  assert.match(html, /data-wb-chat-copy="m1"/u);
+});
+
+test("renderMessageHtml renders only the tokens stat (no elapsed) when usage is present but elapsed is not", () => {
+  const html = renderMessageHtml(
+    baseMessage({ sender_type: "cuu", sender_user_id: null, content: { text: "查到了", usage_tokens: 800 } }),
+    ctxWith([])
+  );
+  assert.match(html, /800 tokens/u);
+  assert.doesNotMatch(html, / · /u);
+});
+
+test("renderMessageHtml does not attach the model pill or meta row to a human message", () => {
+  const html = renderMessageHtml(
+    baseMessage({ sender_type: "user", sender_user_id: "user-1", content: { text: "hi", model: "deepseek-v4" } }),
+    ctxWith([member({ user_id: "user-1", nickname: "张三" })])
+  );
+  assert.doesNotMatch(html, /wh-wb-chat-model-pill/u);
+  assert.doesNotMatch(html, /wh-wb-chat-cuu-meta/u);
+});
+
+test("formatTurnElapsed / formatTurnTokens produce compact human-readable turn stats across ranges", () => {
+  assert.equal(formatTurnElapsed(400), "0.4s");
+  assert.equal(formatTurnElapsed(3_400), "3.4s");
+  assert.equal(formatTurnElapsed(42_000), "42s");
+  assert.equal(formatTurnElapsed(90_000), "1m 30s");
+  assert.equal(formatTurnElapsed(120_000), "2m");
+  assert.equal(formatTurnElapsed(-5), "");
+  assert.equal(formatTurnTokens(800), "800");
+  assert.equal(formatTurnTokens(12_400), "12.4k");
+  assert.equal(formatTurnTokens(2_500_000), "2.5M");
+  assert.equal(formatTurnTokens(-1), "");
+});
+
+test("renderMessageHtml keeps the model pill but drops the meta row on a Cuu clarifying question", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { text: "你指的是哪个项目？", is_clarifying_question: true, model: "deepseek-v4", elapsed_ms: 3000 }
+    }),
+    ctxWith([])
+  );
+  assert.match(html, /wh-wb-chat-model-pill/u);
+  assert.doesNotMatch(html, /wh-wb-chat-cuu-meta/u);
+});
+
+// —— R16-W1（工作台聊天流升级）：工具活动折叠组 —— //
+
+function toolNote(id: string, tool: string, summary: string): ConversationMessageVM {
+  return baseMessage({ id, sender_type: "cuu", sender_user_id: null, kind: "tool_note", content: { tool, summary } });
+}
+
+test("renderToolActivityGroupHtml folds consecutive tool notes into one collapsed summary bar with per-tool counts", () => {
+  const notes = [
+    toolNote("n1", "drive_search", '检索"预算"，命中 3 条'),
+    toolNote("n2", "drive_search", '检索"排期"，命中 1 条'),
+    toolNote("n3", "send_file_card", "发送文件卡：方案.md")
+  ] as Extract<ConversationMessageVM, { kind: "tool_note" }>[];
+  const html = renderToolActivityGroupHtml(notes, ctxWith([]));
+  assert.match(html, /wh-wb-chat-toolgroup/u);
+  // 聚合计数：检索网盘 ×2，发送文件 ×1。
+  assert.match(html, /检索网盘 ×2/u);
+  assert.match(html, /发送文件 ×1/u);
+  // 折叠态：不渲染逐条工具行，展开键挂在第一条 note 的 id 上。
+  assert.doesNotMatch(html, /wh-wb-chat-toolgroup-body/u);
+  assert.match(html, /data-wb-chat-expand-message="n1"/u);
+});
+
+test("renderToolActivityGroupHtml expands into per-tool rows when the group id is in expandedMessageIds", () => {
+  const notes = [
+    toolNote("n1", "drive_search", "检索预算：命中 3 条"),
+    toolNote("n2", "create_work_item", "建工单：整理季度预算")
+  ] as Extract<ConversationMessageVM, { kind: "tool_note" }>[];
+  const html = renderToolActivityGroupHtml(notes, ctxWith([], undefined, { expandedMessageIds: new Set(["n1"]) }));
+  assert.match(html, /wh-wb-chat-toolgroup-body/u);
+  assert.match(html, /data-wb-chat-collapse-message="n1"/u);
+  assert.match(html, /检索预算：命中 3 条/u);
+  assert.match(html, /建工单：整理季度预算/u);
+});
+
+test("renderToolActivityGroupHtml labels an unknown tool neutrally and never fabricates a name", () => {
+  const notes = [toolNote("n1", "mystery_tool", "做了点什么")] as Extract<
+    ConversationMessageVM,
+    { kind: "tool_note" }
+  >[];
+  const html = renderToolActivityGroupHtml(notes, ctxWith([]));
+  assert.match(html, /工具调用 ×1/u);
+});
+
+test("renderToolActivityGroupHtml escapes tool-note detail text in the expanded body", () => {
+  const notes = [toolNote("n1", "drive_search", '<img src=x onerror=alert(1)>')] as Extract<
+    ConversationMessageVM,
+    { kind: "tool_note" }
+  >[];
+  const html = renderToolActivityGroupHtml(notes, ctxWith([], undefined, { expandedMessageIds: new Set(["n1"]) }));
+  assert.doesNotMatch(html, /<img/u);
+  assert.match(html, /&lt;img/u);
+});
+
+test("renderToolActivityGroupHtml returns empty string for an empty run", () => {
+  assert.equal(renderToolActivityGroupHtml([], ctxWith([])), "");
 });
 
 // —— R12 批8：超长文本消息折叠 —— //
@@ -367,6 +555,29 @@ test("renderMessageHtml renders a proposal_opened system_event as a deliverable 
   assert.doesNotMatch(html, /已处理 · 见落定消息/u);
 });
 
+test("renderMessageHtml renders the 'open in editor' link only with a host callback and diffstat present", () => {
+  const openedWithDiff = baseMessage({
+    kind: "system_event",
+    sender_type: "system",
+    sender_user_id: null,
+    content: { event: "proposal_opened", proposal_id: "proposal-9", run_id: "run-9", title: "隐私区文案", adds: 18, dels: 11 }
+  });
+  // 宿主接了编辑器回调 + 卡带 diffstat → 渲「在编辑器中查看」轻链。
+  const withLink = renderMessageHtml(openedWithDiff, { ...ctxWith([]), proposalEditorLinkEnabled: true });
+  assert.match(withLink, /<button[^>]*data-wb-chat-open-editor="proposal-9"[^>]*>/u);
+  assert.match(withLink, /在编辑器中查看/u);
+  // 没接回调 → 不渲轻链（不摆假入口）。
+  assert.doesNotMatch(renderMessageHtml(openedWithDiff, ctxWith([])), /data-wb-chat-open-editor/u);
+  // 接了回调但卡没有 diffstat（无 diff 数据）→ 不渲轻链。
+  const noDiff = baseMessage({
+    kind: "system_event",
+    sender_type: "system",
+    sender_user_id: null,
+    content: { event: "proposal_opened", proposal_id: "proposal-9", run_id: "run-9", title: "隐私区文案" }
+  });
+  assert.doesNotMatch(renderMessageHtml(noDiff, { ...ctxWith([]), proposalEditorLinkEnabled: true }), /data-wb-chat-open-editor/u);
+});
+
 test("renderMessageHtml renders a proposal_auto_merged system_event with the full-autonomy badge instead of the pending-review note", () => {
   const html = renderMessageHtml(
     baseMessage({
@@ -438,6 +649,74 @@ test("renderMessageHtml overlays a local settled marker on a deliverable card wh
   // 覆盖标只针对命中的提议——别的提议 id 命中不影响这张卡。
   const otherSettled = renderMessageHtml(message, { ...ctxWith([]), settledProposalIds: new Set(["proposal-other"]) });
   assert.doesNotMatch(otherSettled, /已处理 · 见落定消息/u);
+});
+
+// R15 批 A6（产出卡内联批准）：opened、未落定、且宿主接了内联回调时，产出卡直接给「批准」「打回」内联按钮。
+test("renderMessageHtml renders inline approve/deny buttons on an opened deliverable card when inline actions are enabled", () => {
+  const message = baseMessage({
+    kind: "system_event",
+    sender_type: "system",
+    sender_user_id: null,
+    content: { event: "proposal_opened", proposal_id: "proposal-a6", run_id: "run-a6", title: "选题报告", adds: 4, dels: 1 }
+  });
+  // 宿主没接内联回调（proposalInlineActionsEnabled 缺省）→ 只有「看提议」，绝不摆假的批准/打回按钮。
+  const noInline = renderMessageHtml(message, ctxWith([]));
+  assert.doesNotMatch(noInline, /data-wb-chat-approve-proposal/u);
+  assert.doesNotMatch(noInline, /data-wb-chat-deny-proposal/u);
+  assert.match(noInline, /data-wb-chat-open-proposal="proposal-a6"/u);
+
+  // 宿主接了内联回调 → 批准（内联）+ 打回（打开右栏写理由）+ 看提议。
+  const withInline = renderMessageHtml(message, { ...ctxWith([]), proposalInlineActionsEnabled: true });
+  assert.match(withInline, /<button[^>]*data-wb-chat-approve-proposal="proposal-a6"[^>]*>[^<]*批准/u);
+  assert.match(withInline, /<button[^>]*data-wb-chat-deny-proposal="proposal-a6"[^>]*>[^<]*打回/u);
+  assert.match(withInline, /data-wb-chat-open-proposal="proposal-a6"/u);
+});
+
+test("renderMessageHtml shows a busy approve button and never inline buttons on settled/auto_merged deliverable cards", () => {
+  const opened = baseMessage({
+    kind: "system_event",
+    sender_type: "system",
+    sender_user_id: null,
+    content: { event: "proposal_opened", proposal_id: "proposal-busy", run_id: "r", title: "报告", adds: 1, dels: 0 }
+  });
+  // 忙态：批准中… + disabled。
+  const busy = renderMessageHtml(opened, {
+    ...ctxWith([]),
+    proposalInlineActionsEnabled: true,
+    busyProposalIds: new Set(["proposal-busy"])
+  });
+  assert.match(busy, /<button[^>]*data-wb-chat-approve-proposal="proposal-busy"[^>]*disabled[^>]*>[^<]*批准中…/u);
+
+  // 内联批准失败 → 温和行内提示。
+  const errored = renderMessageHtml(opened, {
+    ...ctxWith([]),
+    proposalInlineActionsEnabled: true,
+    proposalActionErrors: new Map([["proposal-busy", "批准失败，稍后重试"]])
+  });
+  assert.match(errored, /批准失败，稍后重试/u);
+
+  // 已落定（settledProposalIds 命中）→ 不再渲批准/打回，只留看提议 + 已处理覆盖标。
+  const settled = renderMessageHtml(opened, {
+    ...ctxWith([]),
+    proposalInlineActionsEnabled: true,
+    settledProposalIds: new Set(["proposal-busy"])
+  });
+  assert.doesNotMatch(settled, /data-wb-chat-approve-proposal/u);
+  assert.doesNotMatch(settled, /data-wb-chat-deny-proposal/u);
+  assert.match(settled, /已处理 · 见落定消息/u);
+
+  // auto_merged 变体即使开了内联也不渲批准/打回（它已经合并了）。
+  const autoMerged = renderMessageHtml(
+    baseMessage({
+      kind: "system_event",
+      sender_type: "system",
+      sender_user_id: null,
+      content: { event: "proposal_auto_merged", proposal_id: "proposal-auto", run_id: "r", title: "报告", adds: 1, dels: 0 }
+    }),
+    { ...ctxWith([]), proposalInlineActionsEnabled: true }
+  );
+  assert.doesNotMatch(autoMerged, /data-wb-chat-approve-proposal/u);
+  assert.doesNotMatch(autoMerged, /data-wb-chat-deny-proposal/u);
 });
 
 test("renderMessageHtml still renders a non-deliverable system_event (e.g. drive_version_restored) as the plain collapsed sysline", () => {
@@ -744,6 +1023,70 @@ test("renderMessageHtml renders claim/reassign/defer buttons for a decide item a
   assert.doesNotMatch(html, /data-wb-chat-actioncard-reassign-to=/u);
 });
 
+// G-desktop 止血批 6：decide 三键在飞时的 markBusy 手感——命中的按钮换「…中」文案，三键全部禁用
+// （同一条目不许并发提交两个决定），照 spotlight/views/attention.ts:491-505 的既有手感。
+test("renderMessageHtml disables all three decide buttons and swaps the claim label to 认领中… while a claim is in flight for that item", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { card_id: "card-1", items: [actionCardItem({ assignee_user_id: "me" })] }
+    }),
+    ctxWith([member({ user_id: "me", nickname: "张三" })], "me", { actionCardItemBusyAction: new Map([["i1", "claim"]]) })
+  );
+  assert.match(html, /认领中…/u);
+  assert.doesNotMatch(html, /交给我干/u);
+  // 三键（认领/改派切换/先不动）全部禁用，不止命中的那一个。
+  assert.equal((html.match(/ disabled/gu) ?? []).length, 3);
+  assert.match(html, /data-wb-chat-actioncard-decide="defer"[^>]*disabled/u);
+});
+
+test("renderMessageHtml swaps the reassign-toggle label to 指派中… while a reassign is in flight, and keeps the member picker closed even if openReassignItemId still matches", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { card_id: "card-1", items: [actionCardItem({ assignee_user_id: "me" })] }
+    }),
+    ctxWith([member({ user_id: "me", nickname: "张三" }), member({ user_id: "other", nickname: "李四" })], "me", {
+      openReassignItemId: "i1",
+      actionCardItemBusyAction: new Map([["i1", "reassign"]])
+    })
+  );
+  assert.match(html, /指派中…/u);
+  assert.doesNotMatch(html, /data-wb-chat-actioncard-reassign-to=/u);
+});
+
+test("renderMessageHtml swaps the defer label to 处理中… while a defer is in flight", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { card_id: "card-1", items: [actionCardItem({ assignee_user_id: "me" })] }
+    }),
+    ctxWith([member({ user_id: "me", nickname: "张三" })], "me", { actionCardItemBusyAction: new Map([["i1", "defer"]]) })
+  );
+  assert.match(html, /处理中…/u);
+  assert.doesNotMatch(html, /先不动/u);
+});
+
+test("renderMessageHtml leaves a different item's decide buttons untouched while another item is busy", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { card_id: "card-1", items: [actionCardItem({ id: "i2", assignee_user_id: "me" })] }
+    }),
+    ctxWith([member({ user_id: "me", nickname: "张三" })], "me", { actionCardItemBusyAction: new Map([["i1", "claim"]]) })
+  );
+  assert.match(html, /交给我干/u);
+  assert.doesNotMatch(html, / disabled/u);
+});
+
 test("renderMessageHtml renders a plain 等 @昵称 拍板 text (no buttons) for a decide item assigned to someone else", () => {
   const html = renderMessageHtml(
     baseMessage({
@@ -865,6 +1208,36 @@ test("renderMessageHtml renders an undo button with remaining minutes for a runn
   assert.match(html, /data-wb-chat-actioncard-undo="i2"/u);
   assert.match(html, /9 分钟内/u);
   assert.match(html, /wh-wb-act--danger/u);
+});
+
+// G-desktop 止血批 6：撤销往返在飞时按钮禁用 + 文案换「撤销中…」，同 decide 三键的 markBusy 手感。
+test("renderMessageHtml disables the undo button and swaps its label to 撤销中… while the undo is in flight", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: {
+        card_id: "card-1",
+        items: [
+          actionCardItem({
+            id: "i2",
+            kind: "execute",
+            status: "running",
+            assignee_user_id: "me",
+            undo_deadline_at: "2026-07-12T09:09:00.000Z"
+          })
+        ]
+      }
+    }),
+    ctxWith([], "me", {
+      now: new Date("2026-07-12T09:00:00.000Z"),
+      actionCardItemBusyAction: new Map([["i2", "undo"]])
+    })
+  );
+  assert.match(html, /撤销中…/u);
+  assert.doesNotMatch(html, /9 分钟内/u);
+  assert.match(html, /data-wb-chat-actioncard-undo="i2"[^>]*disabled/u);
 });
 
 test("renderMessageHtml renders no undo button once the undo window has passed", () => {
@@ -1303,15 +1676,16 @@ test("renderComposerHtml behaves exactly as before when turnActive is omitted (m
   assert.equal(withoutTurnActive, withExplicitFalse);
 });
 
-// R14 批 CHAT：撤掉「/ 技能」灰 chip（01-chat-design.md §5 点名的顺路项——技能唤起归 SEARCH 批，不摆
-// 点了没反应的假 affordance）。`#会话` 灰态保留；`/` chip 必须不再出现。这条断言从「# 和 / 都在」收窄成
-// 「# 在、/ 不在」，属设计点名批准的既有断言修改。
-test("renderComposerHtml keeps the # tag as not-yet-available but no longer renders the / skill tag", () => {
+// G-desktop 止血批 1：撤掉「#会话」灰 chip——R14 批 CHAT 当时已经撤掉了同款的「/技能」假 affordance，
+// 只留「#会话」在原地摆着等 SEARCH 批接线；SEARCH 批至今没有真的接上，这个 chip 点了/打了 # 只会弹
+// 一句「即将上线」，仍然违反 04 §4 铁律 3。现在两个 chip 都不再出现，composer 占位符里的 "# 会话"
+// 提示语也一并去掉。这条断言从「# 在、/ 不在」收窄成「# 和 / 都不在」。
+test("renderComposerHtml no longer renders either the # or the / not-yet-available tag", () => {
   const html = renderComposerHtml({ locale: "zh-CN", draftText: "", attachments: [], sending: false });
   assert.match(html, /data-wb-chat-tool-trigger="@"/u);
-  assert.match(html, /wh-wb-chat-ctag--soon"[^>]*><b>#<\/b>/u);
-  assert.doesNotMatch(html, /wh-wb-chat-ctag--soon"[^>]*><b>\/<\/b>/u);
+  assert.doesNotMatch(html, /wh-wb-chat-ctag--soon/u);
   assert.doesNotMatch(html, /技能/u);
+  assert.doesNotMatch(html, /# 会话/u);
 });
 
 // —— pickers —— //
@@ -1901,6 +2275,74 @@ test("renderMessageHtml does not mistake an unrelated system_event for a risk_di
   );
   assert.match(html, /wh-wb-chat-sysline"/u);
   assert.doesNotMatch(html, /wh-wb-risk-digest/u);
+});
+
+// —— R15 批 I2：决策 digest 卡（pending_digest system_event，判据 content.kind）—— //
+
+function pendingDigestMessage(overrides: Partial<Record<string, unknown>> = {}): ConversationMessageVM {
+  return baseMessage({
+    id: "m-digest-1",
+    kind: "system_event",
+    sender_type: "cuu",
+    sender_user_id: null,
+    content: {
+      kind: "pending_digest",
+      pending_count: 3,
+      oldest_days: 2,
+      summary: "待你拍板 3 件，最久 2 天",
+      target_url: "/approvals",
+      ...overrides
+    }
+  });
+}
+
+test("renderMessageHtml renders a pending_digest as its own card with count + oldest age and an Open-inbox button when the host wires it", () => {
+  const ctx: ChatRenderContext = { ...ctxWith([]), pendingDigestInboxEnabled: true };
+  const html = renderMessageHtml(pendingDigestMessage(), ctx);
+  assert.match(html, /待你拍板/u);
+  assert.match(html, /待拍板 3 件 · 最久 2 天/u);
+  assert.match(html, /data-wb-chat-open-inbox/u);
+  assert.match(html, /打开收件箱/u);
+  // 是专属卡，不是通用系统事件单行。
+  assert.doesNotMatch(html, /wh-wb-chat-sysline"/u);
+});
+
+test("renderMessageHtml drops the oldest-age clause when oldest_days is 0 (today's items)", () => {
+  const ctx: ChatRenderContext = { ...ctxWith([]), pendingDigestInboxEnabled: true };
+  const html = renderMessageHtml(pendingDigestMessage({ pending_count: 1, oldest_days: 0 }), ctx);
+  assert.match(html, /待拍板 1 件/u);
+  assert.doesNotMatch(html, /最久/u);
+});
+
+test("renderMessageHtml does not render the Open-inbox button when the host did not wire onOpenInbox (no dead button)", () => {
+  const html = renderMessageHtml(pendingDigestMessage(), ctxWith([]));
+  assert.match(html, /待拍板 3 件 · 最久 2 天/u);
+  assert.doesNotMatch(html, /data-wb-chat-open-inbox/u);
+  assert.doesNotMatch(html, /打开收件箱/u);
+});
+
+test("renderMessageHtml renders a zeroed pending_digest as a low-key single line, not a card", () => {
+  const ctx: ChatRenderContext = { ...ctxWith([]), pendingDigestInboxEnabled: true };
+  const html = renderMessageHtml(pendingDigestMessage({ pending_count: 0, oldest_days: 0, summary: "待你拍板 0 件" }), ctx);
+  assert.match(html, /wh-wb-chat-sysline"/u);
+  assert.match(html, /待拍板已清空/u);
+  assert.doesNotMatch(html, /data-wb-chat-open-inbox/u);
+  assert.doesNotMatch(html, /wh-wb-chat-actioncard--deliverable/u);
+});
+
+test("renderMessageHtml renders the pending_digest in English too", () => {
+  const ctx: ChatRenderContext = { locale: "en-US", members: new Map(), currentUserId: undefined, pendingDigestInboxEnabled: true };
+  const html = renderMessageHtml(pendingDigestMessage({ pending_count: 5, oldest_days: 1 }), ctx);
+  assert.match(html, /5 waiting on you · oldest 1 day/u);
+  assert.match(html, /Open inbox/u);
+});
+
+test("renderMessageHtml falls back to the plain sysline for a pending_digest with a malformed field (honest degrade)", () => {
+  const html = renderMessageHtml(pendingDigestMessage({ pending_count: "three" }), ctxWith([]));
+  assert.match(html, /wh-wb-chat-sysline"/u);
+  assert.doesNotMatch(html, /wh-wb-chat-actioncard--deliverable/u);
+  // The plain sysline still reads the summary field honestly.
+  assert.match(html, /待你拍板 3 件，最久 2 天/u);
 });
 
 // —— R14 批 PERF（§3 方案 B）：渲染输出的结构性哨兵 —— //

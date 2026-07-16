@@ -109,19 +109,32 @@ export class DoomLoopDetector {
   }
 }
 
+/**
+ * 判定一批 assistant 块是否来自被 max_tokens 截断、参数不可信的消息：stopReason=max_tokens 且至少一个
+ * tool_use 的 input 退化成残缺 partial_json 字符串（provider 无法把流式增量解析成对象时的降级表现）。
+ * 命中时整条消息的 tool_use 都不可信、都不该执行——由 loop 逐个回 error tool_result 让模型重发完整参数
+ * （仿 pi failToolCallsFromTruncatedMessage）。检测放在这里与 controlFromAssistant 同源，便于测试。
+ */
+export function isTruncatedToolBatch(blocks: AgentAssistantBlock[], stopReason: string | undefined): boolean {
+  if (stopReason !== "max_tokens") {
+    return false;
+  }
+  const toolUses = blocks.filter((block): block is Extract<AgentAssistantBlock, { type: "tool_use" }> => block.type === "tool_use");
+  return toolUses.length > 0 && toolUses.some((block) => typeof block.input === "string");
+}
+
 export function controlFromAssistant(blocks: AgentAssistantBlock[], stopReason: string | undefined): AgentLoopControlSignal {
   const toolUses = blocks.filter((block): block is Extract<AgentAssistantBlock, { type: "tool_use" }> => block.type === "tool_use");
-  // L#65：max_tokens 截断时 tool_use 的 input 可能是没解析完的 partial_json（退化成 string）。
-  // 直接执行会把残缺输入喂给工具。这种情况下走 compact 重来，而不是 continue 后执行垃圾输入。
-  if (stopReason === "max_tokens" && toolUses.some((block) => typeof block.input === "string")) {
-    return "compact";
-  }
+  // 有 tool_use 就 continue——包括被 max_tokens 截断的批次。截断批次不再走 compact 烧压缩配额，而是由 loop
+  // 侧（isTruncatedToolBatch）给每个 tool_use 回一条「因截断未执行、请重发完整参数」的 error tool_result，
+  // 保住「每个 tool_use 必配 tool_result」的不变量并 continue，让模型重发完整调用。
   if (toolUses.length > 0) {
     return "continue";
   }
   if (!stopReason || stopReason === "end_turn") {
     return "stop";
   }
+  // 纯文本回复被 max_tokens 截断（无 tool_use）：仍走 compact 重来。
   if (stopReason === "max_tokens") {
     return "compact";
   }

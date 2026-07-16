@@ -113,6 +113,45 @@ export function renderMemberBarHtml(input: {
   return `<div class="wh-wb-chat-head"><div class="wh-wb-chat-avs">${avatars}${cuuAvatar}</div><span class="wh-wb-chat-head-label">${escapeHtml(label)}</span></div>`;
 }
 
+// R15 批 B（人对人私聊）：DM 会话头——对方头像（在线绿点）+ 对方昵称 + 在线两态文字。不渲染「+ Cuu」
+// （DM 默认 Cuu 不在场），也不渲染「N 位成员」（就两个人）。peerNickname 为空（对方昵称还没解析出来）时
+// 退回「私聊」，不摆一个空名。
+export function renderDmHeadBarHtml(input: {
+  peerUserId: string;
+  peerNickname: string;
+  online: boolean;
+  locale: Locale;
+}): string {
+  const zh = input.locale === "zh-CN";
+  const name = input.peerNickname.trim() || (zh ? "私聊" : "Direct message");
+  const avatar = avatarTileHtml({ label: name, id: input.peerUserId, ...(input.online ? { online: true } : {}) });
+  const statusText = input.online ? (zh ? "在线" : "Online") : zh ? "离线" : "Offline";
+  const statusClass = input.online ? "wh-wb-chat-head-status wh-wb-chat-head-status--online" : "wh-wb-chat-head-status";
+  return `<div class="wh-wb-chat-head"><div class="wh-wb-chat-avs">${avatar}</div><span class="wh-wb-chat-head-label">${escapeHtml(
+    name
+  )}</span><span class="${statusClass}">${statusText}</span></div>`;
+}
+
+// R15 批 cuu-toggle：DM / 非主区协同会话头部的「请 Cuu 进来」开关——main 不渲这个控件（在 view.ts 的
+// 挂载点收紧，这个函数本身不做会话种类判断，纯展示：给定当前状态渲染对应文案 + data 钩子）。busy 时
+// 禁用并换成温和的「处理中…」文案，照 render.ts 既有的 markBusy 手感（同 actionCardItemBusyAction
+// 按钮禁用 + 换文案的既有取舍）。
+export function renderCuuToggleHtml(input: { enabled: boolean; busy: boolean; locale: Locale }): string {
+  const zh = input.locale === "zh-CN";
+  const label = input.enabled
+    ? zh
+      ? "Cuu 已在场 · 点击请出"
+      : "Cuu is here · tap to remove"
+    : zh
+      ? "请 Cuu 进来"
+      : "Invite Cuu";
+  const busyLabel = zh ? "处理中…" : "Working…";
+  const stateClass = input.enabled ? "wh-wb-chat-cuu-toggle wh-wb-chat-cuu-toggle--on" : "wh-wb-chat-cuu-toggle";
+  return `<button type="button" class="${stateClass}" data-wb-chat-cuu-toggle${input.busy ? " disabled" : ""} aria-pressed="${input.enabled}">${escapeHtml(
+    input.busy ? busyLabel : label
+  )}</button>`;
+}
+
 // —— 日期分隔 —— //
 
 export function renderDaySeparatorHtml(label: string): string {
@@ -138,9 +177,14 @@ export type ChatRenderContext = {
   //    操作发起时 view.ts 会先清掉旧提示。
   //  - reassignHighlightIndex（R13 H1 键盘可达性）：改派选择器当前方向键高亮到第几行（下标对齐
   //    reassignPickerMemberIds 的返回顺序），瞬态、不落库，只在 openReassignItemId 有值时才有意义。
+  //  - actionCardItemBusyAction（G-desktop 止血批 6）：条目当前正在飞的 decide/undo 动作，按条目 id
+  //    索引，值是具体动作名——markBusy 手感照 spotlight/views/attention.ts 的 markBusy：命中的按钮立即
+  //    disabled + 文案换成对应的「…中」，其余同一条目的按钮一并禁用（防止同一条目并发提交两个决定），
+  //    往返落定（成功或失败）后 view.ts 清掉这个 key，按钮恢复可点。
   now?: Date;
   openReassignItemId?: string;
   actionCardItemErrors?: ReadonlyMap<string, string>;
+  actionCardItemBusyAction?: ReadonlyMap<string, "claim" | "reassign" | "defer" | "undo">;
   reassignHighlightIndex?: number;
   // R13 批 S2（Cuu 异步化与进度可视）：execute 条目(status=running)的阶段流进度——按条目 id 索引，
   // 由 view.ts 从该会话军团面板节流拉取后喂进来（见 chat/run-progress.ts 的
@@ -158,6 +202,22 @@ export type ChatRenderContext = {
   // 「已通过/已打回/已合并」覆盖标（乐观、仅本机、刷新即依 VM/服务端档③ 的 proposal_settled 系统消息重判）。
   // 由 view.ts 持有（onSettled 回调把 id 塞进来），缺省（既有调用点/测试）不渲覆盖标。
   settledProposalIds?: ReadonlySet<string>;
+  // R15 批 A6（产出卡内联批准）：产出卡直接加「批准」内联按钮（复用右栏 reviewProposalWithoutMerge），
+  // 「打回」不内联（要写理由）→ 打开右栏并聚焦理由输入。以下三个字段由 view.ts 持有，都缺省安全：
+  //  - proposalInlineActionsEnabled：宿主（shell.ts）是否接了内联批准/打回回调——没接（测试/其它宿主）
+  //    就只渲「看提议」，绝不摆一个点了没反应的假按钮（04 §4 铁律 3）；
+  //  - busyProposalIds：某份提议的内联批准正在飞——命中的卡按钮立即 disabled + 「批准中…」（markBusy 手感）；
+  //  - proposalActionErrors：内联批准失败的温和行内提示，按 proposal id 索引，瞬态不落库。
+  proposalInlineActionsEnabled?: boolean;
+  busyProposalIds?: ReadonlySet<string>;
+  proposalActionErrors?: ReadonlyMap<string, string>;
+  // R15 批 I2（决策 digest 卡）：pending_digest 系统卡的「打开收件箱」按钮是否可点——宿主（shell.ts）
+  // 接了 onOpenInbox 才渲这个按钮（挂 I1 的中栏收件箱视图），没接（测试/其它宿主）就只渲文案，不摆一个
+  // 点了没反应的假入口（04 §4 铁律 3）。缺省安全（既有调用点/测试不渲按钮）。
+  pendingDigestInboxEnabled?: boolean;
+  // R16-W3（变更编辑器）：产出卡的「在编辑器中查看」轻链是否可点——宿主（shell.ts）接了 onOpenProposalInEditor
+  // 才渲，且只在卡带 diffstat（有 diff 数据）时出现（见 renderDeliverableCardHtml），没接/没数据就不摆假链接。
+  proposalEditorLinkEnabled?: boolean;
   // R14 批 FEEDBACK：Cuu 文字消息反馈的一句话备注编辑框——点击持久 badge 展开（一次只展开一条），
   // draft 是当前草稿，error 是保存失败（如 note 超长/命中注入短语拦截）的温和行内提示。缺省（没有正在
   // 编辑的备注）时只渲染 badge，不渲输入框。瞬态、不落库，由 view.ts 持有（同 ctx.editing 的既有模式）。
@@ -344,12 +404,22 @@ function renderReassignPickerHtml(
 function renderDecideItemActionsHtml(row: ActionCardItemRow, ctx: ChatRenderContext, zh: boolean): string {
   if (row.assigneeUserId && row.assigneeUserId === ctx.currentUserId) {
     const reassignOpen = ctx.openReassignItemId === row.id;
+    // G-desktop 止血批 6：三键任一在飞时全部禁用（同一条目不许并发提交两个决定），命中的那一键换
+    // 「…中」文案，照 spotlight/views/attention.ts:491-505 的 markBusy 手感。
+    const busyAction = ctx.actionCardItemBusyAction?.get(row.id);
+    const disabledAttr = busyAction ? " disabled" : "";
+    const claimLabel = busyAction === "claim" ? (zh ? "认领中…" : "Claiming…") : zh ? "交给我干" : "I'll do it";
+    const reassignToggleLabel =
+      busyAction === "reassign" ? (zh ? "指派中…" : "Assigning…") : zh ? "派给别人" : "Assign to someone else";
+    const deferLabel = busyAction === "defer" ? (zh ? "处理中…" : "Working…") : zh ? "先不动" : "Leave it for now";
     const actions = `<div class="wh-wb-chat-actioncard-actions" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">` +
-      `<button type="button" class="wh-wb-act" data-wb-chat-actioncard-decide="claim" data-wb-chat-actioncard-item="${escapeHtml(row.id)}">${zh ? "交给我干" : "I'll do it"}</button>` +
-      `<button type="button" class="wh-wb-act" data-wb-chat-actioncard-reassign-toggle="${escapeHtml(row.id)}">${zh ? "派给别人" : "Assign to someone else"}</button>` +
-      `<button type="button" class="wh-wb-act" data-wb-chat-actioncard-decide="defer" data-wb-chat-actioncard-item="${escapeHtml(row.id)}">${zh ? "先不动" : "Leave it for now"}</button>` +
+      `<button type="button" class="wh-wb-act" data-wb-chat-actioncard-decide="claim" data-wb-chat-actioncard-item="${escapeHtml(row.id)}"${disabledAttr}>${escapeHtml(claimLabel)}</button>` +
+      `<button type="button" class="wh-wb-act" data-wb-chat-actioncard-reassign-toggle="${escapeHtml(row.id)}"${disabledAttr}>${escapeHtml(reassignToggleLabel)}</button>` +
+      `<button type="button" class="wh-wb-act" data-wb-chat-actioncard-decide="defer" data-wb-chat-actioncard-item="${escapeHtml(row.id)}"${disabledAttr}>${escapeHtml(deferLabel)}</button>` +
       `</div>`;
-    const picker = reassignOpen
+    // busy 时 openReassignItemId 早已被 submitActionCardDecision 同步清空（见 view.ts），这里的 !busyAction
+    // 只是双重保险——即便某处日后忘了清，也不会在提交已发出后还渲一份可点的成员选择器。
+    const picker = reassignOpen && !busyAction
       ? renderReassignPickerHtml(row.id, ctx.members, ctx.currentUserId, zh, ctx.reassignHighlightIndex)
       : "";
     return `${actions}${picker}`;
@@ -372,8 +442,10 @@ function renderExecuteItemActionsHtml(row: ActionCardItemRow, ctx: ChatRenderCon
   if (remaining === undefined) {
     return "";
   }
-  const label = zh ? `撤销（${remaining} 分钟内）` : `Undo (within ${remaining} min)`;
-  return `<div class="wh-wb-chat-actioncard-actions" style="margin-top:6px"><button type="button" class="wh-wb-act wh-wb-act--danger" data-wb-chat-actioncard-undo="${escapeHtml(row.id)}">${escapeHtml(label)}</button></div>`;
+  // G-desktop 止血批 6：撤销往返在飞时按钮立即禁用 + 文案换「撤销中…」，同 decide 三键的 markBusy 手感。
+  const busy = ctx.actionCardItemBusyAction?.get(row.id) === "undo";
+  const label = busy ? (zh ? "撤销中…" : "Undoing…") : zh ? `撤销（${remaining} 分钟内）` : `Undo (within ${remaining} min)`;
+  return `<div class="wh-wb-chat-actioncard-actions" style="margin-top:6px"><button type="button" class="wh-wb-act wh-wb-act--danger" data-wb-chat-actioncard-undo="${escapeHtml(row.id)}"${busy ? " disabled" : ""}>${escapeHtml(label)}</button></div>`;
 }
 
 // decide/undo 失败后的温和行内提示（见 action-card-decision.ts 的 mapActionCardDecisionError）——
@@ -523,13 +595,41 @@ function renderDeliverableCardHtml(
   const settledOverlay = settled
     ? `<div class="wh-wb-chat-actioncard-note" style="color:var(--ds-success);font-weight:700">${zh ? "已处理 · 见落定消息" : "Handled · see the settled note"}</div>`
     : "";
-  const openButton = proposalId
-    ? `<div class="wh-wb-chat-actioncard-actions"><button type="button" class="wh-wb-chat-actioncard-open" data-wb-chat-open-proposal="${escapeHtml(proposalId)}">${
+  // R15 批 A6（产出卡内联批准）：opened（非 auto_merged）、未落定、且宿主接了内联回调时，产出卡直接给
+  // 「批准」（内联，复用右栏 reviewProposalWithoutMerge 动作）+「打回」（不内联——打回要写理由，点它打开右栏并
+  // 聚焦理由输入）+「看提议」（打开右栏详情，合并仍只在右栏）。已落定 / auto_merged / 宿主没接内联回调时
+  // 退回只有「看提议」的既有形态（04 §4 铁律 3：没真接线不摆假按钮）。
+  const inlineEnabled = ctx.proposalInlineActionsEnabled === true;
+  const busy = proposalId ? ctx.busyProposalIds?.has(proposalId) === true : false;
+  const actionError = proposalId ? ctx.proposalActionErrors?.get(proposalId) : undefined;
+  const viewButton = proposalId
+    ? `<button type="button" class="wh-wb-chat-actioncard-open" data-wb-chat-open-proposal="${escapeHtml(proposalId)}">${
         autoMerged ? (zh ? "看已采纳的提议" : "View the adopted proposal") : zh ? "看提议" : "View proposal"
-      }</button></div>`
+      }</button>`
+    : "";
+  const inlineButtons =
+    proposalId && !autoMerged && !settled && inlineEnabled
+      ? `<button type="button" class="wh-wb-chat-actioncard-approve" data-wb-chat-approve-proposal="${escapeHtml(proposalId)}"${
+          busy ? " disabled" : ""
+        }>${busy ? (zh ? "批准中…" : "Approving…") : zh ? "批准" : "Approve"}</button><button type="button" class="wh-wb-chat-actioncard-deny" data-wb-chat-deny-proposal="${escapeHtml(proposalId)}"${
+          busy ? " disabled" : ""
+        }>${zh ? "打回" : "Request changes"}</button>`
+      : "";
+  // R16-W3：「在编辑器中查看」轻链——只在卡带 diffstat（有 diff 数据）且宿主接了编辑器回调时渲染
+  // （没数据/没接就不摆假链接，04 §4 铁律 3）。点击 → 中栏打开变更编辑器（逐句 tracked changes）。
+  const hasDiffData = adds !== undefined && dels !== undefined;
+  const editorLink =
+    proposalId && hasDiffData && ctx.proposalEditorLinkEnabled === true
+      ? `<button type="button" class="wh-wb-chat-actioncard-editorlink" data-wb-chat-open-editor="${escapeHtml(proposalId)}">${zh ? "在编辑器中查看" : "Open in editor"}</button>`
+      : "";
+  const openButton = proposalId
+    ? `<div class="wh-wb-chat-actioncard-actions">${inlineButtons}${viewButton}${editorLink}</div>`
+    : "";
+  const errorLine = actionError
+    ? `<div class="wh-wb-chat-actioncard-note" style="color:var(--ds-danger)">${escapeHtml(actionError)}</div>`
     : "";
   const timestamp = `<div class="wh-wb-chat-actioncard-note">${formatMessageTime(message.created_at, ctx.locale)}</div>`;
-  return `<div class="wh-wb-chat-actioncard wh-wb-chat-actioncard--deliverable"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${diffLine}${statusLine}${settledOverlay}${openButton}${timestamp}</div>`;
+  return `<div class="wh-wb-chat-actioncard wh-wb-chat-actioncard--deliverable"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${diffLine}${statusLine}${settledOverlay}${openButton}${errorLine}${timestamp}</div>`;
 }
 
 // R14 批 APPROVE-CHAT 档③（审批落定回流）：review/merge 落定后，服务端往来源会话 post 一条 system_event，
@@ -708,6 +808,70 @@ function renderRiskDigestCardHtml(
   const detailNote = `<div class="wh-wb-chat-actioncard-note">${zh ? "完整清单见通知列表。" : "See the notification inbox for the full list."}</div>`;
   const collapseToggle = `<button type="button" class="wh-wb-chat-text-toggle" data-wb-chat-collapse-message="${escapeHtml(message.id)}">${zh ? "收起" : "Show less"}</button>`;
   return `<div class="wh-wb-chat-actioncard wh-wb-risk-digest"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${summaryLine}${sectionsHtml}${detailNote}${collapseToggle}${timestamp}</div>`;
+}
+
+// R15 批 I2（决策 digest 卡专属渲染）：批 A3 的 pending_digest system_event（apps/api/src/services/
+// approval-digest.ts 的 buildPendingDigestContent，content = {kind:'pending_digest', pending_count,
+// oldest_days, summary:'待你拍板 N 件…', target_url:'/approvals', previous_digest_message_id?}）此前走
+// 通用 system_event 单行渲染。这里给它专属卡：「待拍板 N 件 · 最久 X 天」+「打开收件箱」（挂 I1 的中栏
+// 收件箱视图，data-wb-chat-open-inbox → view.ts → shell 切 centerTab='inbox'）。注意判据是 content.kind
+// （不是其它 digest 用的 content.event）。归零态（pending_count===0——服务端归零其实是墓碑收尾、不发新卡，
+// 见 approval-digest.ts 的收窄机制，这里仍防御性处理）渲成低调一行。墓碑旧卡（数字变化时服务端墓碑再发
+// 新卡）已被服务层归一成 kind:'text'+deleted_at，走既有 renderTombstoneRowHtml，不进这个分支（见
+// renderMessageHtml 的 deleted_at 判断在 system_event 归一之后——system_event 只在活卡上出现）。
+type PendingDigestContent = {
+  pendingCount: number;
+  oldestDays: number;
+};
+
+function pendingDigestContentFrom(content: Record<string, unknown>): PendingDigestContent | undefined {
+  if (content["kind"] !== "pending_digest") {
+    return undefined;
+  }
+  const pendingCount = content["pending_count"];
+  const oldestDays = content["oldest_days"];
+  if (
+    typeof pendingCount !== "number"
+    || !Number.isFinite(pendingCount)
+    || pendingCount < 0
+    || typeof oldestDays !== "number"
+    || !Number.isFinite(oldestDays)
+    || oldestDays < 0
+  ) {
+    // 形状不对/缺字段——诚实降级回既有单行渲染（renderSystemEventLineHtml 会读 content.summary，只要
+    // summary 还在，降级后依然可读），不假装认识一份残缺的 digest。
+    return undefined;
+  }
+  return { pendingCount: Math.floor(pendingCount), oldestDays: Math.floor(oldestDays) };
+}
+
+function renderPendingDigestCardHtml(
+  message: Extract<ConversationMessageVM, { kind: "system_event" }>,
+  digest: PendingDigestContent,
+  ctx: ChatRenderContext
+): string {
+  const zh = ctx.locale === "zh-CN";
+  const timestamp = `<div class="wh-wb-chat-actioncard-note">${formatMessageTime(message.created_at, ctx.locale)}</div>`;
+  // 归零态：低调一行（同系统事件单行布局），不摆一张「0 件」的空卡骚扰。
+  if (digest.pendingCount === 0) {
+    const text = zh ? "待拍板已清空" : "All caught up on decisions";
+    return `<div class="wh-wb-chat-sysline"><span>${escapeHtml(text)}</span><span class="wh-wb-chat-sysline-tm">${formatMessageTime(message.created_at, ctx.locale)}</span></div>`;
+  }
+  const header = zh ? "待你拍板" : "Decisions waiting on you";
+  const countText = zh ? `待拍板 ${digest.pendingCount} 件` : `${digest.pendingCount} waiting on you`;
+  const oldestText =
+    digest.oldestDays > 0
+      ? zh
+        ? ` · 最久 ${digest.oldestDays} 天`
+        : ` · oldest ${digest.oldestDays} ${digest.oldestDays === 1 ? "day" : "days"}`
+      : "";
+  const summaryLine = `<div class="wh-wb-chat-actioncard-note">${escapeHtml(`${countText}${oldestText}`)}</div>`;
+  // 「打开收件箱」只在宿主接了 onOpenInbox 时才渲（04 §4 铁律 3：没真接线不摆假按钮）。
+  const openButton =
+    ctx.pendingDigestInboxEnabled === true
+      ? `<div class="wh-wb-chat-actioncard-actions"><button type="button" class="wh-wb-chat-actioncard-open" data-wb-chat-open-inbox>${zh ? "打开收件箱" : "Open inbox"}</button></div>`
+      : "";
+  return `<div class="wh-wb-chat-actioncard wh-wb-chat-actioncard--deliverable"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${summaryLine}${openButton}${timestamp}</div>`;
 }
 
 // R12 批8：长消息折叠——超过阈值的文本消息默认只渲染预览片段 + 「展开全文」，避免超长粘贴/观察者
@@ -956,6 +1120,152 @@ function renderTombstoneRowHtml(message: ConversationMessageVM, ctx: ChatRenderC
   return `<div class="wh-wb-chat-msg wh-wb-chat-msg--tombstone" data-wb-chat-message-id="${escapeHtml(message.id)}"><div class="wh-wb-chat-tombstone">${escapeHtml(text)}</div></div>`;
 }
 
+// —— R16-W1（工作台聊天流升级）：Cuu 回应的模型归因 pill + 尾部元信息行（复制 · 耗时 · tokens） —— //
+//
+// 后端在 turn 结算时把实际路由到的模型 id / 累计 token / 耗时写进了 Cuu 文字消息的 content（additive
+// optional，见 @workhub/contracts 的 conversationTextContentSchema）。渲染层只在这些字段真的存在时才渲
+// （04 §4 铁律 3：历史消息没有这些字段 → 不显示 pill / 不显示对应元信息，绝不编造）。视觉照 prototype 的
+// .model-pill / .msg-actions：mono 模型 pill + 一行细弱的复制按钮和「Ns · N tokens」。样式贴现有玻璃体系，
+// 沿用 render.ts 既有「行内样式 + design-system CSS 变量」的做法（同澄清追问气泡，不新增 css.ts 规则）。
+
+// 毫秒 → 人读耗时：<10s 保一位小数（3.4s），<60s 取整（42s），更长走「Xm Ys」。
+export function formatTurnElapsed(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) {
+    return "";
+  }
+  const seconds = ms / 1000;
+  if (seconds < 60) {
+    return seconds < 10 ? `${seconds.toFixed(1)}s` : `${Math.round(seconds)}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.round(seconds - minutes * 60);
+  return rest > 0 ? `${minutes}m ${rest}s` : `${minutes}m`;
+}
+
+// token 计数 → 紧凑写法：>=1e6 用 M，>=1000 用 k（一位小数，12.4k），否则原样。
+export function formatTurnTokens(n: number): string {
+  if (!Number.isFinite(n) || n < 0) {
+    return "";
+  }
+  if (n >= 1_000_000) {
+    return `${(n / 1_000_000).toFixed(1)}M`;
+  }
+  if (n >= 1000) {
+    return `${(n / 1000).toFixed(1)}k`;
+  }
+  return `${Math.round(n)}`;
+}
+
+function renderModelPillHtml(model: string): string {
+  const trimmed = model.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return `<span class="wh-wb-chat-model-pill" style="margin-left:6px;font:600 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--wb-cuu);background:var(--wb-cuu-soft);border:1px solid rgba(255,171,94,.35);border-radius:99px;padding:2px 7px;vertical-align:middle">${escapeHtml(trimmed)}</span>`;
+}
+
+// Cuu 文字回应尾部的操作条：复制（现成剪贴板，view.ts 按 message id 取 content.text 写入）+「耗时 · tokens」
+// （只渲真有的那几项）。澄清追问气泡有自己的选项按钮，不挂这条；只对落定的普通文字回应渲染。
+function renderCuuMetaRowHtml(message: Extract<ConversationMessageVM, { kind: "text" }>, ctx: ChatRenderContext): string {
+  const zh = ctx.locale === "zh-CN";
+  const copyLabel = zh ? "复制" : "Copy";
+  const copyBtn = `<button type="button" class="wh-wb-chat-cuu-copy" data-wb-chat-copy="${escapeHtml(message.id)}" aria-label="${copyLabel}" title="${copyLabel}" style="display:inline-flex;padding:3px;border:0;background:transparent;color:var(--ds-ink-faint);border-radius:6px;cursor:pointer">${workbenchIcons.copy}</button>`;
+  const stats: string[] = [];
+  if (typeof message.content.elapsed_ms === "number") {
+    const elapsed = formatTurnElapsed(message.content.elapsed_ms);
+    if (elapsed) {
+      stats.push(elapsed);
+    }
+  }
+  if (typeof message.content.usage_tokens === "number") {
+    const tokens = formatTurnTokens(message.content.usage_tokens);
+    if (tokens) {
+      stats.push(`${tokens} tokens`);
+    }
+  }
+  const statsHtml = stats.length > 0 ? `<span class="wh-wb-chat-cuu-meta-stats">${escapeHtml(stats.join(" · "))}</span>` : "";
+  return `<div class="wh-wb-chat-cuu-meta" style="display:flex;align-items:center;gap:8px;margin-top:6px;color:var(--ds-ink-faint);font:500 11px/1 var(--ds-font)">${copyBtn}${statsHtml}</div>`;
+}
+
+// —— R16-W1（工作台聊天流升级）：工具活动折叠组 —— //
+//
+// 一轮 turn 期间产生的 tool_note 消息（检索网盘/发文件/建工单）在渲染层归组为一条可折叠摘要行
+// 「检索网盘 ×N，发送文件 ×M」（样式照 prototype 的 .fold：细边玻璃条 + chevron），展开=逐条工具行
+// （现状 tool_note 内容）。纯渲染层归组：消息数据不动，仍逐条落库/广播（web 镜像逐条渲染可接受）。
+// 折叠态由 ctx.expandedMessageIds 承载、以「这一组第一条 tool_note 的 id」为键——直接复用 view.ts 既有的
+// data-wb-chat-expand-message / collapse-message 挂钩与状态集合，落定后默认折叠（不在展开集合里）。
+//
+// tool 字段的取值由后端 tryPersistToolNote 写死（services/conversation-turns.ts）：drive_search /
+// send_file_card / create_work_item。这里镜像这三个字面量做人话标签；认不出的 tool 退回中性「工具调用」，
+// 不猜。
+type ToolActivityNote = Extract<ConversationMessageVM, { kind: "tool_note" }>;
+
+const TOOL_ACTIVITY_LABEL: Record<string, { zh: string; en: string; key: string }> = {
+  drive_search: { zh: "检索网盘", en: "Searched drive", key: "search" },
+  send_file_card: { zh: "发送文件", en: "Sent a file", key: "file" },
+  create_work_item: { zh: "建工单", en: "Created a task", key: "task" }
+};
+
+function toolActivityDescriptor(tool: string, zh: boolean): { label: string; key: string } {
+  const known = TOOL_ACTIVITY_LABEL[tool];
+  if (known) {
+    return { label: zh ? known.zh : known.en, key: known.key };
+  }
+  return { label: zh ? "工具调用" : "Tool call", key: "tool" };
+}
+
+function toolActivityToolName(note: ToolActivityNote): string {
+  const tool = note.content["tool"];
+  return typeof tool === "string" && tool.trim() ? tool : "";
+}
+
+export function renderToolActivityGroupHtml(notes: readonly ToolActivityNote[], ctx: ChatRenderContext): string {
+  if (notes.length === 0) {
+    return "";
+  }
+  const zh = ctx.locale === "zh-CN";
+  const groupId = notes[0]!.id;
+  const open = ctx.expandedMessageIds?.has(groupId) ?? false;
+
+  // 摘要行：按 tool 类型聚合计数，保持首次出现顺序（Map 天然保序）。
+  const counts = new Map<string, number>();
+  for (const note of notes) {
+    const tool = toolActivityToolName(note);
+    counts.set(tool, (counts.get(tool) ?? 0) + 1);
+  }
+  const summaryLine = [...counts.entries()]
+    .map(([tool, count]) => `${toolActivityDescriptor(tool, zh).label} ×${count}`)
+    .join(zh ? "，" : ", ");
+
+  const caretRotate = open ? "rotate(90deg)" : "rotate(0deg)";
+  const toggleAttr = open
+    ? `data-wb-chat-collapse-message="${escapeHtml(groupId)}"`
+    : `data-wb-chat-expand-message="${escapeHtml(groupId)}"`;
+  const header =
+    `<button type="button" class="wh-wb-chat-toolgroup-h" ${toggleAttr} aria-expanded="${open}" ` +
+    `style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:6px 11px;border:0;background:transparent;` +
+    `font:600 11.5px/1.3 var(--ds-font);color:var(--ds-ink-muted);cursor:pointer">` +
+    `<span style="display:flex;width:13px;height:13px;color:var(--ds-ink-faint)" aria-hidden="true">${workbenchIcons.tool}</span>` +
+    `<span class="wh-wb-chat-toolgroup-summary">${escapeHtml(summaryLine)}</span>` +
+    `<span class="wh-wb-chat-toolgroup-caret" aria-hidden="true" style="margin-left:auto;display:flex;color:var(--ds-ink-faint);transform:${caretRotate};transition:transform var(--ds-dur-fast,.16s) var(--ds-ease,ease)">${workbenchIcons.chevronRight}</span>` +
+    `</button>`;
+
+  const body = open
+    ? `<div class="wh-wb-chat-toolgroup-body" style="padding:2px 12px 8px 32px;font:500 12px/1.7 var(--ds-font);color:var(--ds-ink-muted)">${notes
+        .map((note) => {
+          const { key } = toolActivityDescriptor(toolActivityToolName(note), zh);
+          const detail = bestEffortNoteText(note.content, zh ? "（一次工具调用）" : "(a tool call)");
+          return `<div class="wh-wb-chat-toolgroup-row" style="display:flex;gap:8px;padding:1px 0"><span class="wh-wb-chat-toolgroup-k" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--ds-ink-faint);flex:0 0 auto">${escapeHtml(
+            key
+          )}</span><span>${escapeHtml(detail)}</span></div>`;
+        })
+        .join("")}</div>`
+    : "";
+
+  const openClass = open ? " wh-wb-chat-toolgroup--open" : "";
+  return `<div class="wh-wb-chat-toolgroup${openClass}" style="max-width:min(600px,88%);margin:0 0 6px 40px;border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-sm,10px);background:var(--ds-glass-quiet);overflow:hidden">${header}${body}</div>`;
+}
+
 export function renderMessageHtml(message: ConversationMessageVM, ctx: ChatRenderContext): string {
   if (message.kind === "system_event") {
     const deliverableEvent = deliverableSystemEventKind(message.content);
@@ -975,6 +1285,11 @@ export function renderMessageHtml(message: ConversationMessageVM, ctx: ChatRende
     const riskDigest = riskDigestContentFrom(message.content);
     if (riskDigest) {
       return renderRiskDigestCardHtml(message, riskDigest, ctx);
+    }
+    // R15 批 I2：决策 digest 卡（pending_digest，判据 content.kind）——见 renderPendingDigestCardHtml 顶部注释。
+    const pendingDigest = pendingDigestContentFrom(message.content);
+    if (pendingDigest) {
+      return renderPendingDigestCardHtml(message, pendingDigest, ctx);
     }
     return renderSystemEventLineHtml(message, ctx);
   }
@@ -999,6 +1314,14 @@ export function renderMessageHtml(message: ConversationMessageVM, ctx: ChatRende
       ? `<span class="wh-wb-chat-edited">${ctx.locale === "zh-CN" ? "已编辑" : "edited"}</span>`
       : "";
   const body = editing ? renderMessageEditBoxHtml(message.id, ctx) : messageBodyHtml(message, ctx);
+  // R16-W1：模型归因 pill（Cuu 文字回应，content.model 存在时）+ 尾部元信息行（复制 · 耗时 · tokens）。
+  // 澄清追问气泡有自己的选项按钮，不挂尾部操作条；编辑态下不渲。历史消息没有 model → 不渲 pill。
+  const isCuuTextReply = isCuu && message.kind === "text" && message.content.is_clarifying_question !== true;
+  const modelPill =
+    isCuu && message.kind === "text" && typeof message.content.model === "string"
+      ? renderModelPillHtml(message.content.model)
+      : "";
+  const cuuMetaRow = !editing && isCuuTextReply ? renderCuuMetaRowHtml(message, ctx) : "";
   const reactionRow = editing ? "" : renderReactionRowHtml(message.id, message.reactions, ctx);
   // 编辑态下不渲工具条（正在编辑就不该再点回复/删除/置顶去打断）；删除确认命中时用确认块替换工具条。
   const toolbar = editing
@@ -1014,7 +1337,7 @@ export function renderMessageHtml(message: ConversationMessageVM, ctx: ChatRende
     !editing && ctx.feedbackNoteEditor?.messageId === message.id ? renderMessageFeedbackNoteBoxHtml(message.id, ctx) : "";
   // R13 批 P2：data-wb-chat-message-id——稳定 DOM 锚点，供 dispatch_ask 追赶/引用跳转/置顶跳转/未读
   // 分割线定位反查具体消息节点。
-  return `<div class="${rowClass}" data-wb-chat-message-id="${escapeHtml(message.id)}">${avatar}<div class="wh-wb-chat-bub"><div class="wh-wb-chat-who">${escapeHtml(senderLabel(message, ctx))}<span class="wh-wb-chat-tm">${formatMessageTime(message.created_at, ctx.locale)}</span>${editedLabel}${feedbackBadge}</div>${replyRef}${body}${reactionRow}${feedbackNoteBox}</div>${toolbar}</div>`;
+  return `<div class="${rowClass}" data-wb-chat-message-id="${escapeHtml(message.id)}">${avatar}<div class="wh-wb-chat-bub"><div class="wh-wb-chat-who">${escapeHtml(senderLabel(message, ctx))}${modelPill}<span class="wh-wb-chat-tm">${formatMessageTime(message.created_at, ctx.locale)}</span>${editedLabel}${feedbackBadge}</div>${replyRef}${body}${cuuMetaRow}${reactionRow}${feedbackNoteBox}</div>${toolbar}</div>`;
 }
 
 // —— R14 批 CHAT：置顶条（聊天区顶部可折叠 pin bar；点击跳消息/取消置顶） —— //
@@ -1312,8 +1635,8 @@ export function renderComposerHtml(input: {
       ? "Cuu 回完这条就好…"
       : "Just a moment — Cuu is replying to the last one…"
     : zh
-      ? "发消息给项目组和 Cuu…(@ 引用网盘文件/成员 · # 会话)"
-      : "Message the team and Cuu… (@ file/member · # conversation)";
+      ? "发消息给项目组和 Cuu…(@ 引用网盘文件/成员)"
+      : "Message the team and Cuu… (@ file/member)";
   const modeChip = input.modeChipHtml ?? "";
   // data-wb-chat-picker-slot：@/#// picker 的挂载点，特意留空——view.ts 单独更新这一个子节点的
   // innerHTML（每次按键都可能要开关/刷新 picker），绝不重建整个 composer（那会打断 textarea 的
@@ -1321,9 +1644,14 @@ export function renderComposerHtml(input: {
   // data-wb-chat-mode-pop-slot：模式五档弹层的挂载点，同一套"独立子节点刷新"取舍——主区会话里这个
   // 节点永远是空的（view.ts 从不在那里写入），有节点但不写内容，比"这个节点本身按会话种类条件渲染"
   // 更简单也更安全（不会因为切换会话种类漏挂/漏卸载一个挂载点）。
-  // R14 批 CHAT：撤掉「/ 技能」灰 chip（01-chat-design.md §5 点名的顺路项——技能唤起归 SEARCH 批，
-  // 摆一个点了没反应的假 affordance 违反 04 §4 铁律 3）。`#会话` 灰态保留（等 SEARCH 批接线）。
-  return `<div class="wh-wb-chat-composer">${errorHtml}${replyBannerHtml}${attachmentsHtml}<div class="wh-wb-chat-cbox"><textarea class="wh-wb-chat-input" rows="1" placeholder="${escapeHtml(placeholder)}" data-wb-chat-input${input.sending ? " disabled" : ""}>${escapeHtml(input.draftText)}</textarea><div class="wh-wb-chat-ctools"><button type="button" class="wh-wb-chat-ctag" data-wb-chat-tool-trigger="@"><b>@</b> ${zh ? "文件·成员" : "file · member"}</button><span class="wh-wb-chat-ctag wh-wb-chat-ctag--soon" title="${zh ? "即将上线" : "Coming soon"}"><b>#</b> ${zh ? "会话" : "conversation"}</span>${modeChip}<button type="button" class="wh-wb-chat-send" data-wb-chat-send${canSend ? "" : " disabled"} aria-label="${zh ? "发送" : "Send"}">${workbenchIcons.send}</button></div><div data-wb-chat-mode-pop-slot></div><div data-wb-chat-picker-slot></div></div></div>`;
+  // G-desktop 止血批 1：撤掉「#会话」灰 chip——上一批（R14 CHAT）已经撤掉了同款的「/技能」假
+  // affordance，只留「#会话」在原地摆着（当时点名"等 SEARCH 批接线"），但会话引用搜索至今没有真的
+  // 接上，这个 chip 点了/打了 # 只会弹一句「即将上线」，仍然是 04 §4 铁律 3 禁止的「没有真接线的
+  // 控件不能看起来能点」。现在一并撤掉，composer 占位符里"# 会话"的提示语同理去掉——不再暗示一个
+  // 打不通的功能。真正的解析器（trigger-parser.ts 的 detectComposerTrigger）和这个 chip / picker
+  // 用过的 CSS 类（.wh-wb-chat-ctag--soon /.wh-wb-chat-picker--soon）都原样保留在 css.ts，接线时
+  // 直接复用现成视觉，见 view.ts renderPicker() 顶部注释。
+  return `<div class="wh-wb-chat-composer">${errorHtml}${replyBannerHtml}${attachmentsHtml}<div class="wh-wb-chat-cbox"><textarea class="wh-wb-chat-input" rows="1" placeholder="${escapeHtml(placeholder)}" data-wb-chat-input${input.sending ? " disabled" : ""}>${escapeHtml(input.draftText)}</textarea><div class="wh-wb-chat-ctools"><button type="button" class="wh-wb-chat-ctag" data-wb-chat-tool-trigger="@"><b>@</b> ${zh ? "文件·成员" : "file · member"}</button>${modeChip}<button type="button" class="wh-wb-chat-send" data-wb-chat-send${canSend ? "" : " disabled"} aria-label="${zh ? "发送" : "Send"}">${workbenchIcons.send}</button></div><div data-wb-chat-mode-pop-slot></div><div data-wb-chat-picker-slot></div></div></div>`;
 }
 
 // —— R12（模式五档）：仅协同会话（conversationKind === 'collab'）composer 出现——2026-07-12 纠偏后
@@ -1517,7 +1845,11 @@ export function renderMentionPickerHtml(input: {
   return `<div class="wh-wb-chat-picker" data-wb-chat-picker="mention" role="listbox">${memberSection}${fileSection}${empty}</div>`;
 }
 
-// —— # / picker：本批只做外壳，「即将可用」灰态，不发真实搜索请求（见批 2 汇报的范围说明）。 —— //
+// —— # / picker：G-desktop 止血批 1 起不再被 view.ts 调用——打「#会话」/「/技能」现在诚实地不弹任何
+// picker（不是「即将可用」的假 UI，是真的什么都还没有），composer 工具条的「#会话」灰 chip 也一并
+// 撤了（见 renderComposerHtml 顶部注释）。这个函数本身留着不删——纯函数、有单测、# / 触发符解析
+// （trigger-parser.ts）和它用的 CSS 类都原样保留，等会话引用搜索真的接线时，直接在 view.ts 的
+// renderPicker() 里把 slot.innerHTML = "" 换回调用这个函数即可，不用重新设计这块 UI。 —— //
 
 export function renderComingSoonPickerHtml(input: { locale: Locale; trigger: "#" | "/" }): string {
   const zh = input.locale === "zh-CN";

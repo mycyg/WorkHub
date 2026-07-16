@@ -1077,6 +1077,65 @@ const proposalChangePreviewResponse = {
     ]).responses
   }
 } as const;
+// R16-W3（变更编辑器）：base vs proposed 逐行 tracked-changes 视图。
+const proposalChangeDiffResponse = {
+  responses: {
+    "200": jsonDataResponse(
+      {
+        type: "object",
+        required: [
+          "proposal_id",
+          "change_id",
+          "path",
+          "filename",
+          "change_type",
+          "status",
+          "title",
+          "base_available",
+          "truncated",
+          "segments"
+        ],
+        properties: {
+          proposal_id: uuidStringSchema,
+          change_id: uuidStringSchema,
+          path: { type: "string" },
+          filename: { type: "string", minLength: 1 },
+          change_type: {
+            type: "string",
+            enum: ["created", "updated", "deleted", "renamed", "moved", "replaced", "generated"]
+          },
+          status: { type: "string", enum: ["opened", "reviewed", "merged", "rejected"] },
+          title: { type: "string", minLength: 1 },
+          base_available: { type: "boolean" },
+          truncated: { type: "boolean" },
+          segments: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["type", "lines"],
+              properties: {
+                type: { type: "string", enum: ["context", "add", "del"] },
+                lines: { type: "array", items: { type: "string" } }
+              },
+              additionalProperties: false
+            }
+          }
+        },
+        additionalProperties: false
+      },
+      "Tracked-changes diff between base and proposed content of a manifest change"
+    ).responses["200"],
+    "401": proposalNotIdentifiedResponse,
+    "403": proposalForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Proposal or manifest change was not found", [
+      "not_found",
+      "proposal_change_not_found"
+    ]).responses["404"],
+    ...jsonErrorStatusResponse("415", "Proposal change has no diffable text content", [
+      "proposal_change_diff_unsupported"
+    ]).responses
+  }
+} as const;
 const createProposalConflictResponse = jsonErrorStatusResponse(
   "409",
   "Proposal manifest cannot create a new proposal in the current state",
@@ -2086,6 +2145,8 @@ const notificationItemResponseSchema = {
     project_id: uuidStringSchema,
     work_item_id: uuidStringSchema,
     conversation_id: uuidStringSchema,
+    next_remind_at: { ...dateTimeStringSchema, description: "Next reminder-ladder resurface time; present only while the notification is still on the 24h nudge ladder (drives the 'snooze reminders' button)." },
+    reminder_count: { type: "integer", minimum: 0, description: "How many times this notification has been resurfaced by the reminder ladder." },
     dedupe_key: { type: "string", maxLength: 256 },
     read_at: dateTimeStringSchema,
     archived_at: dateTimeStringSchema,
@@ -2116,13 +2177,29 @@ const notificationListResponseSchema = {
 } as const;
 const notificationPreferencesResponseSchema = {
   type: "object",
+  required: ["muted_notification_types", "care_messages_enabled"],
+  properties: {
+    muted_notification_types: {
+      type: "array",
+      maxItems: 100,
+      items: { type: "string", minLength: 1, maxLength: 64 }
+    },
+    // R15 批 F（主动关怀 opt-out）：是否接收 Cuu 的主动关怀消息（默认 true）。
+    care_messages_enabled: { type: "boolean" }
+  },
+  additionalProperties: false
+} as const;
+// PUT 请求体：muted_notification_types 必填，care_messages_enabled 可选（缺省=不动关怀开关）。
+const notificationPreferencesRequestBodySchema = {
+  type: "object",
   required: ["muted_notification_types"],
   properties: {
     muted_notification_types: {
       type: "array",
       maxItems: 100,
       items: { type: "string", minLength: 1, maxLength: 64 }
-    }
+    },
+    care_messages_enabled: { type: "boolean" }
   },
   additionalProperties: false
 } as const;
@@ -2590,6 +2667,8 @@ const notificationPageItemResponseSchema = {
     project_id: uuidStringSchema,
     work_item_id: uuidStringSchema,
     conversation_id: uuidStringSchema,
+    next_remind_at: { ...dateTimeStringSchema, description: "Next reminder-ladder resurface time; present only while the notification is still on the 24h nudge ladder (drives the 'snooze reminders' button)." },
+    reminder_count: { type: "integer", minimum: 0, description: "How many times this notification has been resurfaced by the reminder ladder." },
     dedupe_key: { type: "string", maxLength: 256 },
     read_at: dateTimeStringSchema,
     archived_at: dateTimeStringSchema,
@@ -3549,6 +3628,215 @@ const projectHomePageResponse = {
     ]).responses["404"]
   }
 } as const;
+// R15 批 E1（项目时间线 / 甘特）：里程碑 VM——CRUD 与时间线 VM 共用。
+const timelineMilestoneSchema = {
+  type: "object",
+  required: ["id", "project_id", "title", "due_at", "sort", "status"],
+  properties: {
+    id: uuidStringSchema,
+    project_id: uuidStringSchema,
+    title: { type: "string", minLength: 1 },
+    due_at: { anyOf: [dateTimeStringSchema, { type: "null" }] },
+    sort: { type: "integer", minimum: 0 },
+    status: { type: "string", enum: ["open", "done"] }
+  },
+  additionalProperties: false
+} as const;
+const timelineForbiddenResponse = jsonErrorStatusResponse("403", "Timeline resource is not mutable by the current user", [
+  "project_forbidden",
+  "forbidden"
+]).responses["403"];
+const timelineNotFoundResponse = jsonErrorStatusResponse("404", "Timeline project, milestone, or work item was not found", [
+  "project_not_found",
+  "milestone_not_found",
+  "work_item_not_found",
+  "not_found",
+  "dependency_work_item_not_found"
+]).responses["404"];
+const timelineValidationResponse = jsonErrorStatusResponse("422", "Timeline mutation violated a scope, cycle, or self-reference rule", [
+  "validation_error",
+  "dependency_self_dependency",
+  "dependency_cross_project",
+  "dependency_cycle",
+  "milestone_scope_mismatch"
+]).responses["422"];
+// R15 批 E3（项目规划 agent）：项目计划草案 VM——起草 / 列表 / 详情 / 审批 / 物化共用。
+const projectPlanDraftMilestoneSchema = {
+  type: "object",
+  required: ["ref", "title", "due_at", "sort"],
+  properties: {
+    ref: { type: "string", minLength: 1 },
+    title: { type: "string", minLength: 1 },
+    due_at: { anyOf: [dateTimeStringSchema, { type: "null" }] },
+    sort: { type: "integer", minimum: 0 }
+  },
+  additionalProperties: false
+} as const;
+const projectPlanDraftItemSchema = {
+  type: "object",
+  required: ["ref", "title", "objective_md", "due_at", "milestone_ref", "depends_on_refs", "assignee_suggestion"],
+  properties: {
+    ref: { type: "string", minLength: 1 },
+    title: { type: "string", minLength: 1 },
+    objective_md: { type: "string", minLength: 1 },
+    due_at: { anyOf: [dateTimeStringSchema, { type: "null" }] },
+    milestone_ref: { anyOf: [{ type: "string" }, { type: "null" }] },
+    depends_on_refs: { type: "array", items: { type: "string" } },
+    assignee_suggestion: { anyOf: [{ type: "string" }, { type: "null" }] }
+  },
+  additionalProperties: false
+} as const;
+const projectPlanDraftResultSchema = {
+  type: "object",
+  required: ["milestone_ids", "work_item_ids", "dependency_count"],
+  properties: {
+    milestone_ids: { type: "array", items: uuidStringSchema },
+    work_item_ids: { type: "array", items: uuidStringSchema },
+    dependency_count: { type: "integer", minimum: 0 }
+  },
+  additionalProperties: false
+} as const;
+const projectPlanDraftSchema = {
+  type: "object",
+  required: [
+    "id", "project_id", "workspace_id", "status", "intent_md",
+    "rationale_md", "review_reason_md", "milestones", "items", "result",
+    "created_by", "reviewed_by", "created_at", "updated_at", "reviewed_at", "materialized_at"
+  ],
+  properties: {
+    id: uuidStringSchema,
+    project_id: uuidStringSchema,
+    workspace_id: uuidStringSchema,
+    status: { type: "string", enum: ["draft", "pending_review", "approved", "rejected", "materialized"] },
+    intent_md: { type: "string" },
+    rationale_md: { anyOf: [{ type: "string" }, { type: "null" }] },
+    review_reason_md: { anyOf: [{ type: "string" }, { type: "null" }] },
+    milestones: { type: "array", items: projectPlanDraftMilestoneSchema },
+    items: { type: "array", items: projectPlanDraftItemSchema },
+    result: { anyOf: [projectPlanDraftResultSchema, { type: "null" }] },
+    created_by: uuidStringSchema,
+    reviewed_by: { anyOf: [uuidStringSchema, { type: "null" }] },
+    created_at: dateTimeStringSchema,
+    updated_at: dateTimeStringSchema,
+    reviewed_at: { anyOf: [dateTimeStringSchema, { type: "null" }] },
+    materialized_at: { anyOf: [dateTimeStringSchema, { type: "null" }] }
+  },
+  additionalProperties: false
+} as const;
+const projectPlannerForbiddenResponse = jsonErrorStatusResponse("403", "Project is not manageable by the current user", [
+  "project_forbidden"
+]).responses["403"];
+const projectPlannerNotFoundResponse = jsonErrorStatusResponse("404", "Project or plan draft was not found", [
+  "project_not_found",
+  "project_plan_draft_not_found"
+]).responses["404"];
+const projectPlannerConflictResponse = jsonErrorStatusResponse("409", "Plan draft state does not allow this action", [
+  "project_plan_needs_human",
+  "project_plan_review_conflict",
+  "project_plan_not_approved",
+  "project_plan_cycle_detected"
+]).responses["409"];
+const projectPlannerValidationResponse = jsonErrorStatusResponse("422", "Planning intent or workspace was missing", [
+  "validation_error",
+  "project_plan_intent_required",
+  "project_plan_reject_reason_required",
+  "project_plan_workspace_missing"
+]).responses["422"];
+const projectPlannerUnavailableResponse = jsonErrorStatusResponse("503", "AI planning is not configured", [
+  "project_plan_llm_unavailable"
+]).responses["503"];
+const projectTimelinePageResponseSchema = {
+  type: "object",
+  required: ["generated_at", "project", "milestones", "items", "critical"],
+  properties: {
+    generated_at: dateTimeStringSchema,
+    project: {
+      type: "object",
+      required: ["id", "name", "slug"],
+      properties: {
+        id: uuidStringSchema,
+        name: { type: "string", minLength: 1 },
+        slug: { type: "string", minLength: 1 }
+      },
+      additionalProperties: false
+    },
+    milestones: { type: "array", items: timelineMilestoneSchema },
+    items: { type: "array", items: { type: "object", additionalProperties: true } },
+    critical: {
+      type: "object",
+      required: ["blocking", "overdue_blocking"],
+      properties: {
+        blocking: { type: "array", items: { type: "object", additionalProperties: true } },
+        overdue_blocking: { type: "array", items: { type: "object", additionalProperties: true } }
+      },
+      additionalProperties: false
+    },
+    capped: { type: "boolean" },
+    empty_state: { type: "string", enum: ["no_work_items"] }
+  },
+  additionalProperties: false
+} as const;
+const projectTimelinePageResponse = {
+  responses: {
+    "200": jsonOkResponse(projectTimelinePageResponseSchema).responses["200"],
+    "403": jsonErrorStatusResponse("403", "Project timeline is not readable by the current user", [
+      "project_forbidden"
+    ]).responses["403"],
+    "404": jsonErrorStatusResponse("404", "Project timeline target was not found", [
+      "project_not_found"
+    ]).responses["404"]
+  }
+} as const;
+// R16 批 W4a（项目级自定义指令）：权限门与上面的里程碑写同一道 canManageProjectDrive fence——
+// 403/404 复用同款 timelineForbiddenResponse/timelineNotFoundResponse 的错误码集合（project_forbidden /
+// project_not_found），不重开一套。
+const projectInstructionsResponseSchema = {
+  type: "object",
+  required: ["project_id", "instructions_md", "updated_at"],
+  properties: {
+    project_id: uuidStringSchema,
+    instructions_md: { type: "string", maxLength: 4000 },
+    updated_at: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
+const patchProjectInstructionsRequestBodySchema = {
+  type: "object",
+  required: ["instructions_md"],
+  properties: {
+    instructions_md: { type: "string", maxLength: 4000 }
+  },
+  additionalProperties: false
+} as const;
+const projectInstructionsForbiddenResponse = jsonErrorStatusResponse(
+  "403",
+  "Project instructions are not manageable by the current user",
+  ["project_forbidden"]
+).responses["403"];
+const projectInstructionsNotFoundResponse = jsonErrorStatusResponse(
+  "404",
+  "Project instructions target was not found",
+  ["project_not_found"]
+).responses["404"];
+const projectInstructionsReadResponses = {
+  responses: {
+    "200": jsonDataResponse(projectInstructionsResponseSchema, "Project custom instructions for its manager").responses["200"],
+    "401": proposalNotIdentifiedResponse,
+    "403": projectInstructionsForbiddenResponse,
+    "404": projectInstructionsNotFoundResponse
+  }
+} as const;
+const projectInstructionsPatchResponses = {
+  responses: {
+    "200": jsonDataResponse(projectInstructionsResponseSchema, "Updated project custom instructions").responses["200"],
+    "401": proposalNotIdentifiedResponse,
+    "403": projectInstructionsForbiddenResponse,
+    "404": projectInstructionsNotFoundResponse,
+    "422": jsonErrorStatusResponse("422", "Project instructions body does not match the contract", [
+      "validation_error"
+    ]).responses["422"]
+  }
+} as const;
 const openApiHttpMethods = new Set(["delete", "get", "head", "options", "patch", "post", "put"]);
 type OpenApiParameter = {
   name: string;
@@ -4474,6 +4762,10 @@ const conversationResponseSchema = {
     source_message_id: conversationNullableUuidSchema,
     visibility: { type: "string", enum: ["project", "private"] },
     cuu_enabled: { type: "boolean" },
+    // R15 批 B（人对人私聊）：additive optional——只在 DM 会话上出现且恒为 true，普通会话不带这个键。
+    is_dm: { type: "boolean", description: "Present and true only for direct-message conversations." },
+    // R15 批 A（A4 未读聚合）：additive optional——viewer 在这条会话里的未读消息数（会话列表 VM 一次聚合算齐）。
+    unread_count: { type: "integer", minimum: 0, description: "Viewer's unread message count in this conversation; present only on conversation-list VMs." },
     next_seq: conversationSafeSequenceSchema,
     created_by: conversationNullableUuidSchema,
     participant_role: conversationNullableParticipantRoleSchema,
@@ -4520,7 +4812,11 @@ const conversationTextContentResponseSchema = {
       maxItems: 8,
       items: { type: "string", minLength: 1, maxLength: 200 }
     },
-    clarify_placeholder: { type: "string", minLength: 1, maxLength: 200 }
+    clarify_placeholder: { type: "string", minLength: 1, maxLength: 200 },
+    // R16-W1（工作台聊天流升级）：Cuu 回应展示元信息，additive optional（服务端 turn 结算时写入）。
+    model: { type: "string", minLength: 1, maxLength: 128 },
+    usage_tokens: { type: "integer", minimum: 0, maximum: 1_000_000_000 },
+    elapsed_ms: { type: "integer", minimum: 0, maximum: 86_400_000 }
   },
   additionalProperties: false
 } as const;
@@ -5008,6 +5304,92 @@ const conversationMessageCreateResponses = {
   }
 } as const;
 
+// R15 批 B（人对人私聊）：POST /api/dm/open 的请求体与响应集——与 routes/dm.ts + services/conversations.ts
+// 的 openDm 真实状态码逐条对齐（自聊 400、目标不在工作区 404）。
+const openDmRequestBodySchema = {
+  type: "object",
+  required: ["user_id"],
+  properties: { user_id: uuidStringSchema },
+  additionalProperties: false
+} as const;
+const openDmResultResponseSchema = {
+  type: "object",
+  required: ["conversation"],
+  properties: { conversation: conversationResponseSchema },
+  additionalProperties: false
+} as const;
+const dmOpenResponses = {
+  responses: {
+    "201": jsonDataStatusResponse(
+      openDmResultResponseSchema,
+      "201",
+      "Opened or reused the direct-message conversation with the target user"
+    ).responses["201"],
+    "400": jsonErrorStatusResponse("400", "Direct-message target is malformed or is the caller themselves", [
+      "malformed_json",
+      "json_object_required",
+      "conversation_dm_target_required",
+      "conversation_dm_self",
+      "conversation_invalid_input"
+    ]).responses["400"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Direct-message target is not an active member of this workspace", [
+      "conversation_dm_target_not_found"
+    ]).responses["404"],
+    "413": conversationPayloadTooLargeResponse,
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+
+// R15 批 B（人对人私聊）：GET /api/dm/list 的响应集——actor 参与的 DM 列表（参与者门控），每条 = 会话 VM
+// + 恰好 2 名参与者（含对方昵称/is_self），与 services/conversations.ts 的 listDms 逐字段对齐。
+const dmListResponses = {
+  responses: {
+    "200": jsonDataResponse(
+      {
+        type: "object",
+        required: ["items"],
+        properties: {
+          items: {
+            type: "array",
+            maxItems: 200,
+            items: {
+              type: "object",
+              required: ["conversation", "participants"],
+              properties: {
+                conversation: conversationResponseSchema,
+                participants: {
+                  type: "array",
+                  minItems: 2,
+                  maxItems: 2,
+                  items: {
+                    type: "object",
+                    required: ["user_id", "nickname", "is_self"],
+                    properties: {
+                      user_id: uuidStringSchema,
+                      nickname: { type: "string", minLength: 1 },
+                      is_self: { type: "boolean" }
+                    },
+                    additionalProperties: false
+                  }
+                }
+              },
+              additionalProperties: false
+            }
+          }
+        },
+        additionalProperties: false
+      },
+      "Direct-message conversations the caller participates in"
+    ).responses["200"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+
 // R14 批 CHAT：消息动作（编辑/删除/reaction/置顶）、已读游标与 presence 的手写 schema——
 // 与 routes/conversation-message-actions.ts / conversation-read.ts / presence.ts 的真实状态码逐条对齐。
 const conversationReactionKeyPathParameter = {
@@ -5248,6 +5630,89 @@ const conversationReceiptsResponses = {
     "500": conversationInternalResponse
   }
 } as const;
+
+// R15 批 cuu-toggle：PATCH /api/conversations/:id/cuu 的请求体与响应集——与 routes/conversation-cuu.ts +
+// services/conversations.ts 的 updateCuuEnabled 真实状态码逐条对齐（main 一律 409、非参与者 403）。
+const updateConversationCuuRequestBodySchema = {
+  type: "object",
+  required: ["enabled"],
+  properties: { enabled: { type: "boolean" } },
+  additionalProperties: false
+} as const;
+const conversationCuuUpdateResponses = {
+  responses: {
+    "200": jsonDataResponse(
+      {
+        type: "object",
+        required: ["conversation"],
+        properties: { conversation: conversationResponseSchema },
+        additionalProperties: false
+      },
+      "The conversation VM after the Cuu-participation toggle was flipped"
+    ).responses["200"],
+    "400": jsonErrorStatusResponse("400", "Cuu toggle payload is malformed", [
+      "malformed_json",
+      "json_object_required"
+    ]).responses["400"],
+    "401": conversationAuthRequiredResponse,
+    "403": jsonErrorStatusResponse("403", "Only collab (including DM) participants may toggle Cuu participation", [
+      "invalid_client_token",
+      "forbidden",
+      "human_required",
+      "conversation_cuu_forbidden"
+    ]).responses["403"],
+    "404": jsonErrorStatusResponse("404", "Conversation was not found", ["conversation_not_found"]).responses[
+      "404"
+    ],
+    "409": jsonErrorStatusResponse("409", "The main area does not support toggling Cuu participation", [
+      "conversation_cuu_not_collab"
+    ]).responses["409"],
+    "413": conversationPayloadTooLargeResponse,
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+
+// R15 批 cuu-toggle：GET /api/conversations/:id/participants 的响应集——main 诚实回
+// scope:"workspace" + 空列表，collab（含 DM）回 scope:"participants" + 真实参与者。参与者门控与消息
+// 可见性同口径（非参与者的 collab 已经 404，与其它会话读端点一致）。
+const conversationParticipantListItemResponseSchema = {
+  type: "object",
+  required: ["user_id", "nickname", "role"],
+  properties: {
+    user_id: uuidStringSchema,
+    nickname: { type: "string", minLength: 1 },
+    role: conversationParticipantRoleSchema
+  },
+  additionalProperties: false
+} as const;
+const conversationParticipantsResponses = {
+  responses: {
+    "200": jsonDataResponse(
+      {
+        type: "object",
+        required: ["scope", "participants"],
+        properties: {
+          scope: { type: "string", enum: ["workspace", "participants"] },
+          participants: {
+            type: "array",
+            maxItems: 100,
+            items: conversationParticipantListItemResponseSchema
+          }
+        },
+        additionalProperties: false
+      },
+      "Conversation participants (main: scope=workspace with an empty list; collab/DM: scope=participants with real rows)"
+    ).responses["200"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Conversation was not found", ["conversation_not_found"]).responses[
+      "404"
+    ],
+    "500": conversationInternalResponse
+  }
+} as const;
+
 const presenceUserIdsQueryParameter = {
   name: "user_ids",
   in: "query",
@@ -6797,6 +7262,17 @@ export function getOpenApiDocument() {
           ...projectHomePageResponse
         }
       },
+      "/api/pages/project/{id}/timeline": {
+        get: {
+          tags: ["pages"],
+          summary: "Project timeline (gantt) page VM: milestones, scheduled items, and critical path",
+          parameters: [
+            pathUuidParameter("id"),
+            localeQueryParameter
+          ],
+          ...projectTimelinePageResponse
+        }
+      },
       "/api/pages/workbench/{projectId}": {
         get: {
           tags: ["pages"],
@@ -7183,7 +7659,7 @@ export function getOpenApiDocument() {
         put: {
           tags: ["notifications"],
           summary: "Update notification mute preferences",
-          ...jsonRequestBody(notificationPreferencesResponseSchema),
+          ...jsonRequestBody(notificationPreferencesRequestBodySchema),
           ...notificationPreferencesUpdateResponse
         }
       },
@@ -7209,6 +7685,15 @@ export function getOpenApiDocument() {
           description: "Notifications that still require a decision must be opened at their source; the runtime returns notification_needs_decision instead of archiving them.",
           parameters: [pathUuidParameter("id")],
           ...notificationCompleteResponse
+        }
+      },
+      "/api/notifications/{id}/snooze": {
+        post: {
+          tags: ["notifications"],
+          summary: "Pause reminders for one notification",
+          description: "Clears the reminder ladder (next_remind_at) without marking the notification read or archived, so it stays in the decision queue but stops the 24h nudges.",
+          parameters: [pathUuidParameter("id")],
+          ...notificationItemMutationResponse("Notification with reminders paused")
         }
       },
       "/api/workitems/{id}/proposals": {
@@ -7351,6 +7836,21 @@ export function getOpenApiDocument() {
           ...conversationMessageCreateResponses
         }
       },
+      "/api/dm/open": {
+        post: {
+          tags: ["conversations"],
+          summary: "Open (or reuse) the direct-message conversation with another workspace member",
+          ...jsonRequestBody(openDmRequestBodySchema),
+          ...dmOpenResponses
+        }
+      },
+      "/api/dm/list": {
+        get: {
+          tags: ["conversations"],
+          summary: "List the direct-message conversations the caller participates in",
+          ...dmListResponses
+        }
+      },
       "/api/conversations/{id}": {
         patch: {
           tags: ["conversations"],
@@ -7457,6 +7957,23 @@ export function getOpenApiDocument() {
           summary: "List every read cursor for the aggregate read indicator",
           parameters: [pathUuidParameter("id")],
           ...conversationReceiptsResponses
+        }
+      },
+      "/api/conversations/{id}/cuu": {
+        patch: {
+          tags: ["conversations"],
+          summary: "Toggle whether Cuu participates in a collab conversation (main is 409)",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(updateConversationCuuRequestBodySchema),
+          ...conversationCuuUpdateResponses
+        }
+      },
+      "/api/conversations/{id}/participants": {
+        get: {
+          tags: ["conversations"],
+          summary: "List conversation participants (main: scope=workspace + empty list; collab/DM: real rows)",
+          parameters: [pathUuidParameter("id")],
+          ...conversationParticipantsResponses
         }
       },
       "/api/presence": {
@@ -8071,6 +8588,17 @@ export function getOpenApiDocument() {
           ...proposalChangePreviewResponse
         }
       },
+      "/api/proposals/{id}/files/{path}/diff": {
+        get: {
+          tags: ["proposals"],
+          summary: "Tracked-changes diff (base vs proposed) for one manifest change, keyed by URL-encoded path",
+          parameters: [
+            pathUuidParameter("id"),
+            { name: "path", in: "path", required: true, schema: { type: "string" } }
+          ],
+          ...proposalChangeDiffResponse
+        }
+      },
       "/api/proposals/{id}/review": {
         post: {
           tags: ["proposals"],
@@ -8151,6 +8679,290 @@ export function getOpenApiDocument() {
             "403": proposalForbiddenResponse,
             "404": proposalNotFoundResponse,
             "422": proposalValidationResponse
+          }
+        }
+      },
+      "/api/projects/{id}/milestones": {
+        post: {
+          tags: ["projects"],
+          summary: "Create a project milestone (timeline / gantt)",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody({
+            type: "object",
+            required: ["title"],
+            properties: {
+              title: { type: "string", minLength: 1, maxLength: 256 },
+              due_at: { anyOf: [dateTimeStringSchema, { type: "null" }] },
+              sort: { type: "integer", minimum: 0, maximum: 1000000 }
+            },
+            additionalProperties: false
+          }),
+          responses: {
+            "201": jsonDataResponse(timelineMilestoneSchema, "Created milestone").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": timelineForbiddenResponse,
+            "404": timelineNotFoundResponse,
+            "422": timelineValidationResponse
+          }
+        }
+      },
+      "/api/projects/{id}/milestones/{milestoneId}": {
+        patch: {
+          tags: ["projects"],
+          summary: "Update a project milestone (title, due date, sort, or open/done status)",
+          parameters: [pathUuidParameter("id"), pathUuidParameter("milestoneId")],
+          ...jsonRequestBody({
+            type: "object",
+            properties: {
+              title: { type: "string", minLength: 1, maxLength: 256 },
+              due_at: { anyOf: [dateTimeStringSchema, { type: "null" }] },
+              sort: { type: "integer", minimum: 0, maximum: 1000000 },
+              status: { type: "string", enum: ["open", "done"] }
+            },
+            additionalProperties: false
+          }),
+          responses: {
+            "200": jsonDataResponse(timelineMilestoneSchema, "Updated milestone").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": timelineForbiddenResponse,
+            "404": timelineNotFoundResponse,
+            "422": timelineValidationResponse
+          }
+        },
+        delete: {
+          tags: ["projects"],
+          summary: "Soft-delete a project milestone",
+          parameters: [pathUuidParameter("id"), pathUuidParameter("milestoneId")],
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["milestone_id"],
+              properties: { milestone_id: uuidStringSchema },
+              additionalProperties: false
+            }, "Deleted milestone").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": timelineForbiddenResponse,
+            "404": timelineNotFoundResponse
+          }
+        }
+      },
+      "/api/projects/{id}/instructions": {
+        get: {
+          tags: ["projects"],
+          summary: "Read a project's custom instructions (injected into Cuu turns and agent-run worker prompts)",
+          parameters: [pathUuidParameter("id")],
+          ...projectInstructionsReadResponses
+        },
+        patch: {
+          tags: ["projects"],
+          summary: "Update a project's custom instructions",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(patchProjectInstructionsRequestBodySchema),
+          ...projectInstructionsPatchResponses
+        }
+      },
+      "/api/workitems/{id}/dependencies": {
+        post: {
+          tags: ["work-items"],
+          summary: "Add a work item dependency (same-project, no self-reference, no cycle)",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody({
+            type: "object",
+            required: ["depends_on"],
+            properties: { depends_on: uuidStringSchema },
+            additionalProperties: false
+          }),
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["work_item_id", "depends_on", "created"],
+              properties: {
+                work_item_id: uuidStringSchema,
+                depends_on: uuidStringSchema,
+                created: { type: "boolean" }
+              },
+              additionalProperties: false
+            }, "Dependency already present (idempotent)").responses["200"],
+            "201": jsonDataResponse({
+              type: "object",
+              required: ["work_item_id", "depends_on", "created"],
+              properties: {
+                work_item_id: uuidStringSchema,
+                depends_on: uuidStringSchema,
+                created: { type: "boolean" }
+              },
+              additionalProperties: false
+            }, "Dependency created").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": timelineForbiddenResponse,
+            "404": timelineNotFoundResponse,
+            "422": timelineValidationResponse
+          }
+        },
+        delete: {
+          tags: ["work-items"],
+          summary: "Remove a work item dependency",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody({
+            type: "object",
+            required: ["depends_on"],
+            properties: { depends_on: uuidStringSchema },
+            additionalProperties: false
+          }),
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["work_item_id", "depends_on", "removed"],
+              properties: {
+                work_item_id: uuidStringSchema,
+                depends_on: uuidStringSchema,
+                removed: { type: "boolean" }
+              },
+              additionalProperties: false
+            }, "Dependency removed (or already absent)").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": timelineForbiddenResponse,
+            "404": timelineNotFoundResponse
+          }
+        }
+      },
+      "/api/workitems/{id}/milestone": {
+        patch: {
+          tags: ["work-items"],
+          summary: "Attach or detach a work item's milestone (same-project)",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody({
+            type: "object",
+            required: ["milestone_id"],
+            properties: { milestone_id: { anyOf: [uuidStringSchema, { type: "null" }] } },
+            additionalProperties: false
+          }),
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["work_item_id", "milestone_id"],
+              properties: {
+                work_item_id: uuidStringSchema,
+                milestone_id: { anyOf: [uuidStringSchema, { type: "null" }] }
+              },
+              additionalProperties: false
+            }, "Milestone attachment updated").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": timelineForbiddenResponse,
+            "404": timelineNotFoundResponse,
+            "422": timelineValidationResponse
+          }
+        }
+      },
+      "/api/projects/{id}/plan-drafts": {
+        post: {
+          tags: ["projects"],
+          summary: "Draft a project plan (milestones + work items + dependencies) with the planning agent",
+          parameters: [pathUuidParameter("id"), localeQueryParameter],
+          ...jsonRequestBody({
+            type: "object",
+            required: ["intent"],
+            properties: {
+              intent: { type: "string", minLength: 1, maxLength: 4000 }
+            },
+            additionalProperties: false
+          }),
+          responses: {
+            "201": jsonDataResponse(projectPlanDraftSchema, "Created project plan draft (pending review)").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": projectPlannerForbiddenResponse,
+            "404": projectPlannerNotFoundResponse,
+            "409": projectPlannerConflictResponse,
+            "422": projectPlannerValidationResponse,
+            "503": projectPlannerUnavailableResponse
+          }
+        },
+        get: {
+          tags: ["projects"],
+          summary: "List a project's plan drafts",
+          parameters: [pathUuidParameter("id"), localeQueryParameter],
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["drafts"],
+              properties: { drafts: { type: "array", items: projectPlanDraftSchema } },
+              additionalProperties: false
+            }, "Project plan drafts").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": projectPlannerForbiddenResponse,
+            "404": projectPlannerNotFoundResponse
+          }
+        }
+      },
+      "/api/plan-drafts/{draftId}": {
+        get: {
+          tags: ["projects"],
+          summary: "Get a project plan draft",
+          parameters: [pathUuidParameter("draftId"), localeQueryParameter],
+          responses: {
+            "200": jsonDataResponse(projectPlanDraftSchema, "Project plan draft").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": projectPlannerForbiddenResponse,
+            "404": projectPlannerNotFoundResponse
+          }
+        }
+      },
+      "/api/plan-drafts/{draftId}/approve": {
+        post: {
+          tags: ["projects"],
+          summary: "Approve a project plan draft (human review)",
+          parameters: [pathUuidParameter("draftId"), localeQueryParameter],
+          responses: {
+            "200": jsonDataResponse(projectPlanDraftSchema, "Approved project plan draft").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": projectPlannerForbiddenResponse,
+            "404": projectPlannerNotFoundResponse,
+            "409": projectPlannerConflictResponse
+          }
+        }
+      },
+      "/api/plan-drafts/{draftId}/reject": {
+        post: {
+          tags: ["projects"],
+          summary: "Reject a project plan draft with a reason (fed back into the next draft)",
+          parameters: [pathUuidParameter("draftId"), localeQueryParameter],
+          ...jsonRequestBody({
+            type: "object",
+            required: ["reason"],
+            properties: {
+              reason: { type: "string", minLength: 1, maxLength: 2000 }
+            },
+            additionalProperties: false
+          }),
+          responses: {
+            "200": jsonDataResponse(projectPlanDraftSchema, "Rejected project plan draft").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": projectPlannerForbiddenResponse,
+            "404": projectPlannerNotFoundResponse,
+            "409": projectPlannerConflictResponse,
+            "422": projectPlannerValidationResponse
+          }
+        }
+      },
+      "/api/plan-drafts/{draftId}/materialize": {
+        post: {
+          tags: ["projects"],
+          summary: "Materialize an approved plan draft into milestones, work items, and dependencies",
+          parameters: [pathUuidParameter("draftId"), localeQueryParameter],
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["draft", "result"],
+              properties: {
+                draft: projectPlanDraftSchema,
+                result: projectPlanDraftResultSchema
+              },
+              additionalProperties: false
+            }, "Materialized plan draft with created ids").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": projectPlannerForbiddenResponse,
+            "404": projectPlannerNotFoundResponse,
+            "409": projectPlannerConflictResponse
           }
         }
       },

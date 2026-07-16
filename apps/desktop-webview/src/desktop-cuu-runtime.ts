@@ -60,7 +60,13 @@ export type DesktopShellEventName =
   // R12 批7:工作台窗口(interrupt-broadcast.ts)广播"该弹气泡了"的结论用的事件名——桌宠/主窗自己的
   // SSE worker 目前只订阅 /api/push/stream/me，收不到 conversation:<id> 话题的事件（见批7汇报），
   // 所以这条广播只能由已经在看这些事件的工作台窗口发起，走同一套通用 Tauri 事件桥。
-  | "workbench-interrupt";
+  | "workbench-interrupt"
+  // G-desktop 止血批 3:登出动作（spotlight 设置视图/browser.ts）发起的跨窗口登出广播——登出只在
+  // 发起动作的那个窗口清 token + reload，别的已经开着的窗口（工作台/桌宠）不会跟着 reload，之前完全
+  // 没有信号告诉它们"手里的 client token 刚被清空了"，只会拿着废 token 静默连环 401。这个事件让
+  // workbench（boot.ts/shell.ts）切到「已登出」全屏态并停止后续请求，桌宠（pet-surface.ts）换成一张
+  // 诚实的「已登出」卡片——两边共用这同一条通用 Tauri 事件桥，不另起协议。
+  | "workhub-logged-out";
 
 export type DesktopShellListen = (
   eventName: DesktopShellEventName,
