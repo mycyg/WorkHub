@@ -275,7 +275,10 @@ function renderProjectTreeLeavesHtml(
   // R15 批 E2（项目时间线 / 甘特）：与网盘同级的「时间线」树叶——切中栏到 timeline 标签（见 shell.ts 的
   // onOpenTimeline）。选中态跟 centerTab === "timeline" 走，同其它树叶的 sel 约定。
   const timelineLeaf = `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "timeline" ? " sel" : ""}" data-wb-open-timeline>${workbenchIcons.timeline}<span>${zh ? "时间线" : "Timeline"}</span></button>`;
-  return `<div class="wh-wb-tree">${mainLeaf}${collabLeaves}${newCollabButton}${driveLeaf}${timelineLeaf}</div>`;
+  // R16 批 W2：与时间线同级的「任务看板」树叶——切中栏到 kanban 标签（见 shell.ts 的 onOpenKanban）。
+  // 首发带「新」小徽标（复用现有 wh-wb-leaf-count 徽标体系，不造新样式；可后续摘除）。
+  const kanbanLeaf = `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "kanban" ? " sel" : ""}" data-wb-open-kanban>${workbenchIcons.kanban}<span>${zh ? "任务看板" : "Board"}</span><span class="wh-wb-leaf-count">${zh ? "新" : "New"}</span></button>`;
+  return `<div class="wh-wb-tree">${mainLeaf}${collabLeaves}${newCollabButton}${driveLeaf}${timelineLeaf}${kanbanLeaf}</div>`;
 }
 
 // R13 批 S3（个人空间）：项目行 + 树叶的渲染逻辑从 renderProjectTreeHtml 里提出来，供团队项目分组
@@ -744,6 +747,8 @@ export function mountWorkbenchRail(
     onOpenDrive?: () => void;
     // R15 批 E2（项目时间线 / 甘特）：项目行的「时间线」树叶点击——shell.ts 把它接成 store.centerTab = "timeline"。
     onOpenTimeline?: () => void;
+    // R16 批 W2：项目行的「任务看板」树叶点击——shell.ts 把它接成 store.centerTab = "kanban"。
+    onOpenKanban?: () => void;
     // R13 批 P1：军团总览一级入口点击——shell.ts 把它接成 store.centerTab = "army-overview"。
     onOpenArmyOverview?: () => void;
     // R15 批 I1（决策收件箱）：rail 顶部「待拍板」一级入口点击——shell.ts 把它接成 store.centerTab = "inbox"。
@@ -1268,6 +1273,10 @@ export function mountWorkbenchRail(
     }
     if (target.closest("[data-wb-open-timeline]")) {
       input.onOpenTimeline?.();
+      return;
+    }
+    if (target.closest("[data-wb-open-kanban]")) {
+      input.onOpenKanban?.();
       return;
     }
     if (target.closest("[data-wb-open-inbox]")) {

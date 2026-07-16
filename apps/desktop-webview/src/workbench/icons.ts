@@ -33,7 +33,11 @@ export const workbenchIcons = {
   trash: ic('<path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/>'),
   pin: ic('<path d="M9 3h6l-1 6 3 3H7l3-3-1-6Z"/><path d="M12 15v6"/>'),
   // R15 批 E2（项目时间线 / 甘特）：rail 项目行的「时间线」树叶——横向排期条示意（三条错位的甘特条）。
-  timeline: ic('<path d="M4 5h10M4 12h14M4 19h7"/><path d="M14 5v0M18 12v0M11 19v0"/>')
+  timeline: ic('<path d="M4 5h10M4 12h14M4 19h7"/><path d="M14 5v0M18 12v0M11 19v0"/>'),
+  // R16 批 W2：rail 项目行的「任务看板」树叶——三列看板柱示意（照 prototype 的 kanban 图标）。
+  kanban: ic('<rect x="3" y="4.5" width="5" height="15" rx="1.4"/><rect x="10" y="4.5" width="5" height="10" rx="1.4"/><rect x="17" y="4.5" width="4" height="13" rx="1.4"/>'),
+  // R16 批 W2：rail 项目行的「日程」树叶——月历外框 + 顶部挂钉（照 prototype 的 calendar 图标）。
+  calendar: ic('<rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9h18M8 2.5v4M16 2.5v4"/>')
 } as const;
 
 export type WorkbenchIconKey = keyof typeof workbenchIcons;

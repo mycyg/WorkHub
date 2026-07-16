@@ -26,6 +26,7 @@ import { mountDriveView, type DriveTabApiClient, type DriveViewHandle } from "./
 import { workbenchIcons } from "./icons.js";
 import { mountInboxView, type InboxViewHandle } from "./inbox/view.js";
 import { mountTimelineView, type TimelineViewHandle } from "./timeline/view.js";
+import { mountKanbanView, type KanbanViewHandle } from "./kanban/view.js";
 import { mountProposalSidePanel, type ProposalSidePanelApiClient, type ProposalSidePanelHandle } from "./proposal/panel.js";
 import { reviewProposalWithoutMerge } from "../spotlight/views/proposals.js";
 import { createWorkbenchInterruptBroadcaster } from "./interrupt-broadcast.js";
@@ -243,6 +244,11 @@ export function mountWorkbenchShell(
   // R15 批 E2（项目时间线 / 甘特）：中栏时间线标签——同 drive 的「key 没变就不重挂」纪律（timelineMountKey）。
   let timelineHandle: TimelineViewHandle | undefined;
   let timelineMountKey: string | undefined;
+  // R16 批 W2：从看板/日程卡片点进来时预约的时间线定位行——切到 timeline 前写入，timeline 分支消费一次。
+  let pendingTimelineFocus: string | undefined;
+  // R16 批 W2：中栏任务看板标签——同 timeline 的「key 没变就不重挂」纪律（kanbanMountKey）。
+  let kanbanHandle: KanbanViewHandle | undefined;
+  let kanbanMountKey: string | undefined;
   let armyOverviewHandle: ArmyOverviewViewHandle | undefined;
   let projectSettingsHandle: ProjectSettingsViewHandle | undefined;
   let projectSettingsMountKey: string | undefined;
@@ -284,6 +290,12 @@ export function mountWorkbenchShell(
     timelineHandle?.dispose();
     timelineHandle = undefined;
     timelineMountKey = undefined;
+  };
+
+  const disposeKanban = () => {
+    kanbanHandle?.dispose();
+    kanbanHandle = undefined;
+    kanbanMountKey = undefined;
   };
 
   const disposeArmyOverview = () => {
@@ -672,6 +684,7 @@ export function mountWorkbenchShell(
       disposeProjectSettings();
       disposeInbox();
       disposeTimeline();
+      disposeKanban();
       clearContextPanels();
       centerEl.className = "wh-wb-center wh-wb-center--army-overview";
       if (!armyOverviewHandle) {
@@ -689,6 +702,7 @@ export function mountWorkbenchShell(
       disposeProjectSettings();
       disposeArmyOverview();
       disposeTimeline();
+      disposeKanban();
       clearContextPanels();
       if (!inboxHandle) {
         inboxHandle = mountInboxView(centerEl, {
@@ -711,6 +725,7 @@ export function mountWorkbenchShell(
       disposeDrive();
       disposeProjectSettings();
       disposeTimeline();
+      disposeKanban();
       clearContextPanels();
       const dm = state.dmList.find((item) => item.conversation.id === state.activeDmConversationId);
       if (!dm) {
@@ -770,6 +785,7 @@ export function mountWorkbenchShell(
       disposeDrive();
       disposeProjectSettings();
       disposeTimeline();
+      disposeKanban();
       clearContextPanels();
       centerEl.className = "wh-wb-center";
       centerEl.innerHTML = renderEmptyStateHtml(input.locale, state.projects.length > 0);
@@ -780,6 +796,7 @@ export function mountWorkbenchShell(
       disposeDrive();
       disposeProjectSettings();
       disposeTimeline();
+      disposeKanban();
       clearContextPanels();
       centerEl.className = "wh-wb-center";
       centerEl.innerHTML = renderCenterErrorHtml(input.locale);
@@ -791,6 +808,7 @@ export function mountWorkbenchShell(
         disposeChat();
         disposeProjectSettings();
         disposeTimeline();
+        disposeKanban();
         const key = `${vm.project.id}:drive`;
         if (driveHandle && driveMountKey === key) {
           return; // 已经是这个项目的网盘标签——它自己的 store 在内部持续更新，无需重挂。
@@ -818,8 +836,14 @@ export function mountWorkbenchShell(
         disposeChat();
         disposeDrive();
         disposeProjectSettings();
+        disposeKanban();
         const key = `${vm.project.id}:timeline`;
         if (timelineHandle && timelineMountKey === key) {
+          // R16 批 W2：已挂着这个项目的时间线——若是从看板/日程带着定位行跳进来，消费一次焦点即可，不重挂。
+          if (pendingTimelineFocus) {
+            timelineHandle.focusRow(pendingTimelineFocus);
+            pendingTimelineFocus = undefined;
+          }
           return; // 已经是这个项目的时间线标签——它自己的瞬态状态在内部持续更新，无需重挂。
         }
         disposeTimeline();
@@ -829,9 +853,40 @@ export function mountWorkbenchShell(
           client: input.client,
           locale: input.locale,
           projectId: vm.project.id,
-          projectName: vm.project.name
+          projectName: vm.project.name,
+          // R16 批 W2：带着预约的定位行冷挂——timeline 首次加载完成后自己消费一次。
+          ...(pendingTimelineFocus ? { initialFocusWorkItemId: pendingTimelineFocus } : {})
         });
+        pendingTimelineFocus = undefined;
         timelineMountKey = key;
+        driveSidePanel.showIdle();
+        return;
+      }
+      // R16 批 W2：任务看板标签——同 timeline 的「key 没变就不重挂」纪律。看板不占右栏（交互全在中栏拖拽/
+      // 提示里），进入时把右栏三个 owner 放手回 idle（clearContextPanels）。卡片点击 → 跳时间线并定位该行。
+      if (state.centerTab === "kanban") {
+        disposeChat();
+        disposeDrive();
+        disposeProjectSettings();
+        disposeTimeline();
+        const key = `${vm.project.id}:kanban`;
+        if (kanbanHandle && kanbanMountKey === key) {
+          return; // 已经是这个项目的看板标签——瞬态状态在内部持续更新，无需重挂。
+        }
+        disposeKanban();
+        clearContextPanels();
+        centerEl.className = "wh-wb-center wh-wb-center--kanban";
+        kanbanHandle = mountKanbanView(centerEl, {
+          client: input.client,
+          locale: input.locale,
+          projectId: vm.project.id,
+          projectName: vm.project.name,
+          onOpenTimelineRow: (workItemId) => {
+            pendingTimelineFocus = workItemId;
+            store.setState({ centerTab: "timeline" });
+          }
+        });
+        kanbanMountKey = key;
         driveSidePanel.showIdle();
         return;
       }
@@ -842,6 +897,7 @@ export function mountWorkbenchShell(
         disposeChat();
         disposeDrive();
         disposeTimeline();
+        disposeKanban();
         const key = `${vm.project.id}:project-settings`;
         if (projectSettingsHandle && projectSettingsMountKey === key) {
           return;
@@ -862,6 +918,7 @@ export function mountWorkbenchShell(
       disposeDrive();
       disposeProjectSettings();
       disposeTimeline();
+      disposeKanban();
       // final-turns-wiring：centerTab === "collab" 时中栏挂的是某个具体的协同会话（单聊），不是主区。
       // 在 vm 里找 activeConversationId 对应的那个 kind='collab' 会话——找不到（树叶指向的会话已经不在
       // 这次 VM 快照里，比如权限变化/深链过期）就不假装能渲染它，静默落回下面的主区分支，而不是渲染一个
@@ -969,6 +1026,7 @@ export function mountWorkbenchShell(
     disposeDrive();
     disposeProjectSettings();
     disposeTimeline();
+    disposeKanban();
     clearContextPanels();
     centerEl.className = "wh-wb-center";
     centerEl.innerHTML = renderCenterLoadingHtml(input.locale);
@@ -1037,6 +1095,8 @@ export function mountWorkbenchShell(
     onOpenDrive: () => store.setState({ centerTab: "drive" }),
     // R15 批 E2（项目时间线 / 甘特）：「时间线」树叶点击路由——切 store.centerTab，renderCenter 挂 timeline/view.ts。
     onOpenTimeline: () => store.setState({ centerTab: "timeline" }),
+    // R16 批 W2：「任务看板」树叶点击路由——切 store.centerTab，renderCenter 挂 kanban/view.ts。
+    onOpenKanban: () => store.setState({ centerTab: "kanban" }),
     // R13 批 P1：左栏一级入口「军团总览」点击路由——切 store.centerTab，renderCenter 的订阅回调
     // 负责挂 army/overview.ts 真视图。
     onOpenArmyOverview: () => store.setState({ centerTab: "army-overview" }),
@@ -1173,6 +1233,7 @@ export function mountWorkbenchShell(
     disposeChat();
     disposeDrive();
     disposeTimeline();
+    disposeKanban();
     disposeArmyOverview();
     disposeProjectSettings();
     disposeInbox();
