@@ -346,6 +346,12 @@ export const projects = pgTable(
     // 工作台 VM，不可归档/建工单/建普通会话——围栏在 repository/service 层强制（listForWorkspace、
     // createCollab、findProjectById、findFirstActiveProject* 等逐个过滤，见对应仓库）。
     isDmContainer: boolean("is_dm_container").notNull().default(false),
+    // R16 批 W4a（项目级自定义指令）：项目设置里的一段自由文本，注入该项目所有 Cuu 对话回复与
+    // agent-run 的 worker system prompt（优先级=高于通用默认、低于系统工作纪律）——可空，留空即不注入
+    // （见 apps/api/src/services/project-instructions.ts 与 packages/agent/src/turns/prompt.ts 的
+    // buildTurnProjectInstructionsSection）。长度上限 4000 字符在契约层（PROJECT_INSTRUCTIONS_MAX_CHARS）
+    // 校验，DB 侧不加 CHECK——additive-only 迁移，纯加列。
+    instructionsMd: text("instructions_md"),
     ...timestamps()
   },
   (table) => [
