@@ -43,6 +43,7 @@ import {
   type AuthEnv
 } from "../middleware/auth.js";
 import {
+  drivePathFromTargetPath,
   getDefaultProposalService,
   ProposalServiceError,
   ProposalServiceMergeConflictError,
@@ -51,6 +52,8 @@ import {
   type ProposalService,
   type StoredProposal
 } from "../services/proposals.js";
+import { buildProposalChangeDiffVm } from "../services/proposal-change-diff.js";
+import { readSnapshotFile } from "@workhub/audit";
 import {
   getDefaultWorkItemService,
   type WorkItemService
@@ -881,6 +884,56 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
         truncated: text.length > maxPreviewChars
       }
     });
+  });
+
+  // R16-W3（变更编辑器 · tracked changes 视图）：一份提议里某个变动文件的「base vs proposed」逐行 diff。
+  // 语义映射到 P-COLLAB——不是新能力：base=本次运行起点 project 快照里的该文件（findMergeContext→
+  // readSnapshotFile），proposed=manifest change 的 machine_summary.generated_content_md（与上面 preview 同源），
+  // diff 由 contracts 共享的 trackedTextSegments（复用 P-COLLAB 的 LCS diffHunksFromBase）唯一产出。
+  // :path 走 URL 编码整段（Drive 路径含 "/"，客户端 encodeURIComponent 成单段传入，Hono 解回原路径）。
+  // 权限=能看该提议的人（与 preview 共用 readProposalForActor→assertCanReadWorkItem，不新开鉴权面）。
+  routes.get("/:id/files/:path/diff", authMiddleware, async (c) => {
+    const proposalId = c.req.param("id");
+    const proposal = await readProposalForActor(proposalId, c.var.actor);
+    const targetPath = c.req.param("path");
+    const change = proposal.diff_manifest.changes.find((item) => item.target_ref.path === targetPath);
+    if (!change) {
+      throw new ProposalServiceError(404, "proposal_change_not_found", "没有找到这条变更记录。");
+    }
+    if (typeof change.machine_summary?.generated_content_md !== "string") {
+      throw new ProposalServiceError(
+        415,
+        "proposal_change_diff_unsupported",
+        "这条变更没有可比对的文本内容。采纳后可到工作项或网盘查看正式版。"
+      );
+    }
+    // 解析 base 全文：created 变更 base 天然为空不用读；其它类型从快照读，读不到/DB 未就绪时 fail-open
+    // 成 null（编辑器渲染「无法比对改动前版本」而不是把 proposed 冒充全新增）。
+    let baseText: string | null = null;
+    if (change.change_type !== "created") {
+      try {
+        const mergeContext = await createProposalRepository(getSharedDatabaseClient().db).findMergeContext(proposalId);
+        const drivePath = drivePathFromTargetPath(change.target_ref.path);
+        if (mergeContext?.baseSnapshotRef && drivePath) {
+          const read = await readSnapshotFile({ ref: mergeContext.baseSnapshotRef }, drivePath);
+          if (read) {
+            // manifest 记了改动前 sha 就核对一致才采信（防路径映射喂错祖先），没记则直接采信读到的内容。
+            const expected = change.target_ref.sha256_before;
+            baseText = !expected || expected === read.sha256 ? read.text : null;
+          }
+        }
+      } catch {
+        baseText = null;
+      }
+    }
+    const vm = buildProposalChangeDiffVm({
+      proposalId,
+      status: proposal.status,
+      title: proposal.title,
+      change,
+      baseText
+    });
+    return c.json({ ok: true, data: vm });
   });
 
   routes.post("/:id/review", authMiddleware, async (c) => {

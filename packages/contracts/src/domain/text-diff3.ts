@@ -237,3 +237,51 @@ export function textDiff3HunkBaseRange(current: TextDiffHunk, incoming: TextDiff
     end_line: Math.max(start + 1, end)
   };
 }
+
+// R16-W3（变更编辑器 · tracked changes 视图）：把「base 与 proposed 两份全量文本」摊成一串按顺序排列的
+// 行级段落——context（未变更，编辑器可折叠成「…未变更 N 行」）/ del（红底删除线）/ add（绿底新增）。
+// 这是「变更审阅器」右栏 diff 端点与桌面编辑器共享的唯一 diff 语义来源：复用本文件既有的 LCS
+// diffHunksFromBase（P-COLLAB 三方合并同一套逐 hunk 算法），不另造一份 diff。纯函数、无副作用、可单测。
+export type TrackedTextSegment =
+  | { type: "context"; lines: string[] }
+  | { type: "del"; lines: string[] }
+  | { type: "add"; lines: string[] };
+
+// 超过这个行数就不做 O(base×changed) 的 LCS（与 MAX_DIFF3_LINES 同精神，铁律#4「循环不发无上限重活」）——
+// 调用方据 undefined 回退到「只展示 proposed 全文、不逐行比对」的诚实降级，不硬算把编辑器卡死。
+const MAX_TRACKED_DIFF_LINES = 5000;
+
+export function trackedTextSegments(baseText: string, changedText: string): TrackedTextSegment[] | undefined {
+  // 空 base（新建文件）= 全量新增；空 proposed（删空）= 全量删除——不落进 LCS 里把一个空行当成
+  // 「删了一行空的」这种误导性噪声。两边都空 = 无段落。
+  if (baseText.length === 0) {
+    return changedText.length === 0 ? [] : [{ type: "add", lines: splitTextLines(changedText) }];
+  }
+  if (changedText.length === 0) {
+    return [{ type: "del", lines: splitTextLines(baseText) }];
+  }
+  const baseLines = splitTextLines(baseText);
+  const changedLines = splitTextLines(changedText);
+  if (baseLines.length > MAX_TRACKED_DIFF_LINES || changedLines.length > MAX_TRACKED_DIFF_LINES) {
+    return undefined;
+  }
+  const hunks = diffHunksFromBase(baseText, changedText);
+  const segments: TrackedTextSegment[] = [];
+  let cursor = 0;
+  for (const hunk of hunks) {
+    if (hunk.baseStart > cursor) {
+      segments.push({ type: "context", lines: baseLines.slice(cursor, hunk.baseStart) });
+    }
+    if (hunk.original.length > 0) {
+      segments.push({ type: "del", lines: hunk.original });
+    }
+    if (hunk.replacement.length > 0) {
+      segments.push({ type: "add", lines: hunk.replacement });
+    }
+    cursor = hunk.baseEnd;
+  }
+  if (cursor < baseLines.length) {
+    segments.push({ type: "context", lines: baseLines.slice(cursor) });
+  }
+  return segments;
+}

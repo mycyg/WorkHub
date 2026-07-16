@@ -1337,6 +1337,33 @@ export const proposalDetailVmSchema = z.object({
 });
 export type ProposalDetailVM = z.infer<typeof proposalDetailVmSchema>;
 
+// R16-W3（变更编辑器）：一份提议里某个变动文件的「base vs proposed」逐行 tracked-changes 视图。
+// 语义映射到 P-COLLAB：base=本次运行起点快照里的该文件（读不到则 base_available=false，编辑器诚实降级
+// 成「仅显示提议内容」不冒充全绿新增），proposed=manifest change 的 machine_summary.generated_content_md。
+// segments 按顺序摊平（context/del/add），diff 由 contracts 的 trackedTextSegments 唯一产出，前后端共享。
+export const proposalChangeDiffSegmentSchema = z.object({
+  type: z.enum(["context", "add", "del"]),
+  lines: z.array(z.string())
+});
+export type ProposalChangeDiffSegment = z.infer<typeof proposalChangeDiffSegmentSchema>;
+
+export const proposalChangeDiffVmSchema = z.object({
+  proposal_id: idSchema,
+  change_id: idSchema,
+  path: z.string(),
+  filename: z.string().min(1),
+  change_type: z.enum(["created", "updated", "deleted", "renamed", "moved", "replaced", "generated"]),
+  status: z.enum(["opened", "reviewed", "merged", "rejected"]),
+  title: z.string().min(1),
+  // false = 改动前版本没能从快照读出来（历史提议/快照已清理/非文本）——编辑器据此渲染「无法比对改动前
+  // 版本，仅显示提议内容」而不是把整份 proposed 当成全新增。created 变更 base 天然为空，仍为 true。
+  base_available: z.boolean(),
+  // proposed 或 base 任一超字符/行数上限被截断——诚实标注，不假装是完整全文比对。
+  truncated: z.boolean(),
+  segments: z.array(proposalChangeDiffSegmentSchema)
+});
+export type ProposalChangeDiffVM = z.infer<typeof proposalChangeDiffVmSchema>;
+
 export const replayTraceVmSchema = z.object({
   run: agentRunSchema,
   steps: z.array(agentStepSchema),

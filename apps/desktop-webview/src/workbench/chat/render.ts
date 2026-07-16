@@ -215,6 +215,9 @@ export type ChatRenderContext = {
   // 接了 onOpenInbox 才渲这个按钮（挂 I1 的中栏收件箱视图），没接（测试/其它宿主）就只渲文案，不摆一个
   // 点了没反应的假入口（04 §4 铁律 3）。缺省安全（既有调用点/测试不渲按钮）。
   pendingDigestInboxEnabled?: boolean;
+  // R16-W3（变更编辑器）：产出卡的「在编辑器中查看」轻链是否可点——宿主（shell.ts）接了 onOpenProposalInEditor
+  // 才渲，且只在卡带 diffstat（有 diff 数据）时出现（见 renderDeliverableCardHtml），没接/没数据就不摆假链接。
+  proposalEditorLinkEnabled?: boolean;
   // R14 批 FEEDBACK：Cuu 文字消息反馈的一句话备注编辑框——点击持久 badge 展开（一次只展开一条），
   // draft 是当前草稿，error 是保存失败（如 note 超长/命中注入短语拦截）的温和行内提示。缺省（没有正在
   // 编辑的备注）时只渲染 badge，不渲输入框。瞬态、不落库，由 view.ts 持有（同 ctx.editing 的既有模式）。
@@ -612,8 +615,15 @@ function renderDeliverableCardHtml(
           busy ? " disabled" : ""
         }>${zh ? "打回" : "Request changes"}</button>`
       : "";
+  // R16-W3：「在编辑器中查看」轻链——只在卡带 diffstat（有 diff 数据）且宿主接了编辑器回调时渲染
+  // （没数据/没接就不摆假链接，04 §4 铁律 3）。点击 → 中栏打开变更编辑器（逐句 tracked changes）。
+  const hasDiffData = adds !== undefined && dels !== undefined;
+  const editorLink =
+    proposalId && hasDiffData && ctx.proposalEditorLinkEnabled === true
+      ? `<button type="button" class="wh-wb-chat-actioncard-editorlink" data-wb-chat-open-editor="${escapeHtml(proposalId)}">${zh ? "在编辑器中查看" : "Open in editor"}</button>`
+      : "";
   const openButton = proposalId
-    ? `<div class="wh-wb-chat-actioncard-actions">${inlineButtons}${viewButton}</div>`
+    ? `<div class="wh-wb-chat-actioncard-actions">${inlineButtons}${viewButton}${editorLink}</div>`
     : "";
   const errorLine = actionError
     ? `<div class="wh-wb-chat-actioncard-note" style="color:var(--ds-danger)">${escapeHtml(actionError)}</div>`

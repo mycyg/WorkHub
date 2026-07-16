@@ -25,6 +25,8 @@ export type WorkbenchLoadState = "idle" | "loading" | "ready" | "error";
 // R16 批 W2 加 "kanban" / "schedule"——rail 项目行的「任务看板」「日程」两叶（与时间线同级）点开后，中栏
 // 分别切到该项目的看板（workbench/kanban/view.ts，四列按真实状态归组 + 派发拖拽）与周历日程
 // （workbench/schedule/view.ts，左计划摘要 + 右 7 列周历），都依赖 selectedProjectId + vm（同 timeline）。
+// R16-W3 加 "editor"——右栏「文件」模式的变动文件行点开后，中栏切到该文件的 tracked-changes 审阅器
+// （workbench/editor/view.ts，据 editorTarget 打开）。入口走右栏点击而非 rail 叶;两批都是 append 不重排。
 export type WorkbenchCenterTab =
   | "chat"
   | "drive"
@@ -35,7 +37,8 @@ export type WorkbenchCenterTab =
   | "inbox"
   | "timeline"
   | "kanban"
-  | "schedule";
+  | "schedule"
+  | "editor";
 
 // 右栏情境面板的内容——刻意保持不透明（ownerId + 预渲染好的 html），store.ts 不认识任何具体视图
 // 的类型（drive 的版本历史/军团卡片等），谁在挂载期间持有内容所有权就把自己的 ownerId 写进来、
@@ -89,6 +92,13 @@ export type WorkbenchStoreState = {
   // 右栏情境面板收放（批 5 起有真内容，见 WorkbenchSidePanelContent 注释）。
   sidePanelOpen: boolean;
   sidePanelContent: WorkbenchSidePanelContent;
+  // R16-W3：右栏「提议 / 文件」模式（顶部 chip，shell renderSideTabs 渲染）。"proposals"=军团/提议详情
+  // （既有默认），"files"=变动文件 + 所有文件（workbench/files 面板）。只在会话情境（chat/collab/editor）
+  // 下的 chip 有意义；切到 drive/timeline/设置等 tab 时随 clearContextPanels 复位成 "proposals"。
+  sideContextMode: "proposals" | "files";
+  // R16-W3：中栏编辑器当前打开的变动文件——右栏变动文件行点击写入（proposalId + manifest change 的
+  // target_ref.path + 文件名），关闭时回到 returnTab（打开编辑器前的中栏视图）。
+  editorTarget: { proposalId: string; path: string; filename: string; returnTab: WorkbenchCenterTab } | undefined;
   // 新建项目模态开关。
   newProjectModalOpen: boolean;
   // R13 批 S3：新建个人空间模态开关——与团队项目模态分开的独立状态（拍板：个人空间创建只填
@@ -125,6 +135,8 @@ export function initialWorkbenchStoreState(): WorkbenchStoreState {
     inboxCount: 0,
     sidePanelOpen: true,
     sidePanelContent: undefined,
+    sideContextMode: "proposals",
+    editorTarget: undefined,
     newProjectModalOpen: false,
     newPersonalSpaceModalOpen: false
   };

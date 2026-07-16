@@ -29,6 +29,8 @@ import { mountTimelineView, type TimelineViewHandle } from "./timeline/view.js";
 import { mountKanbanView, type KanbanViewHandle } from "./kanban/view.js";
 import { mountScheduleView, type ScheduleViewHandle } from "./schedule/view.js";
 import { mountProposalSidePanel, type ProposalSidePanelApiClient, type ProposalSidePanelHandle } from "./proposal/panel.js";
+import { mountFilesSidePanel, type FilesSidePanelHandle } from "./files/panel.js";
+import { mountEditorView, type EditorViewHandle } from "./editor/view.js";
 import { reviewProposalWithoutMerge } from "../spotlight/views/proposals.js";
 import { createWorkbenchInterruptBroadcaster } from "./interrupt-broadcast.js";
 import {
@@ -131,6 +133,7 @@ export function renderWorkbenchShellHtml(locale: Locale, chrome: WorkbenchShellC
             <div class="wh-wb-titlebar-spacer"></div>
             <button type="button" class="wh-wb-winbtn" data-wb-toggle-side aria-label="${zh ? "收起情境面板" : "Collapse context panel"}">${workbenchIcons.chevronRight}</button>
           </div>
+          <div class="wh-wb-side-tabs" data-wb-side-tabs hidden></div>
           <div class="wh-wb-side-body" data-wb-side-body></div>
         </div>
       </div>
@@ -258,6 +261,9 @@ export function mountWorkbenchShell(
   let projectSettingsMountKey: string | undefined;
   // R15 批 I1（决策收件箱）：中栏收件箱视图（跨项目，不依赖 selectedProjectId，同 army-overview）。
   let inboxHandle: InboxViewHandle | undefined;
+  // R16-W3：中栏变更编辑器（tracked-changes 审阅器）——同 drive/chat 的「key 没变就不重挂」纪律（editorMountKey）。
+  let editorHandle: EditorViewHandle | undefined;
+  let editorMountKey: string | undefined;
 
   // R12 批7:打扰矩阵——windowBridge.isFocused() 告诉我们"用户是否正看着这个工作台窗口"；
   // resolveDesktopShellEmitter 是桌宠/主窗共用的通用 Tauri 事件桥(__TAURI__.event.emit),这里复用它
@@ -322,6 +328,12 @@ export function mountWorkbenchShell(
   const disposeInbox = () => {
     inboxHandle?.dispose();
     inboxHandle = undefined;
+  };
+
+  const disposeEditor = () => {
+    editorHandle?.dispose();
+    editorHandle = undefined;
+    editorMountKey = undefined;
   };
 
   // R13 批 V2:macOS 上 Rust 侧把 workbench 窗切成原生红绿灯（decorations:true + titleBarStyle
@@ -392,11 +404,92 @@ export function mountWorkbenchShell(
     proposalPanel.showForProposal({ proposalId, focusReason: true });
   };
 
-  // 会话情境切换（切项目/标签/会话）时，drive/army/proposal 三个右栏 owner 都要一起放手——proposal 详情是
-  // 会话内的下钻，导航走开就不该残留在新视图旁边（army 面板已有这套「切走就 clear」纪律，proposal 跟上）。
+  // R16-W3：右栏第五个 owner——「文件」模式（变动文件 / 所有文件）。变动文件行点击 → 打开中栏编辑器；
+  // 所有文件的文件行点击 → 走既有 drive 预览（driveSidePanel.showPreview，与聊天 file_card 同一个 owner）。
+  const filesSidePanel: FilesSidePanelHandle = mountFilesSidePanel(sideBodyEl, store, {
+    client: input.client,
+    locale: input.locale,
+    onOpenEditor: (target) => openEditor(target),
+    onOpenDriveFile: (target) => driveSidePanel.showPreview(target)
+  });
+
+  // R16-W3：右栏「提议 / 文件」chip 的当前会话情境（军团/文件两个 owner 共用同一个 projectId+conversationId）。
+  // 在 renderCenter 的会话分支里随 armyPanel.showForConversation 一起写入；离开会话情境时 clearContextPanels 清空。
+  let sideContextTarget: { projectId: string; conversationId: string } | undefined;
+  // 文件面板当前已加载的是哪个会话——切会话要重拉，同会话内 chip 往返只 republish 缓存态（不 refetch）。
+  let filesLoadedForConversationId: string | undefined;
+
+  // 会话情境切换（切项目/标签/会话）时，drive/army/proposal/files 四个右栏 owner 都要一起放手——proposal
+  // 详情/变动文件都是会话内的下钻，导航走开就不该残留在新视图旁边；顺带把 chip 模式复位成 proposals（默认）。
   const clearContextPanels = () => {
     armyPanel.clear();
     proposalPanel.clear();
+    filesSidePanel.clear();
+    sideContextTarget = undefined;
+    filesLoadedForConversationId = undefined;
+    if (store.getState().sideContextMode !== "proposals") {
+      store.setState({ sideContextMode: "proposals" });
+    }
+  };
+
+  // R16-W3：右栏进入会话情境——记下 target 供「提议 / 文件」chip 用，并按当前 chip 模式认领右栏。默认
+  // proposals 模式由 armyPanel.showForConversation 认领（调用方已调）；若模式停在 files（同一会话内切了
+  // tab 又回来）就改由文件面板认领。
+  const enterSideContext = (target: { projectId: string; conversationId: string }) => {
+    sideContextTarget = target;
+    if (store.getState().sideContextMode === "files") {
+      ensureFilesShown();
+    }
+  };
+
+  // 「文件」chip：文件面板认领右栏。同会话内往返只 republish 缓存态，切了会话才重拉。
+  function ensureFilesShown(): void {
+    if (!sideContextTarget) {
+      return;
+    }
+    if (filesLoadedForConversationId === sideContextTarget.conversationId) {
+      filesSidePanel.reshow();
+    } else {
+      filesSidePanel.showForContext(sideContextTarget);
+      filesLoadedForConversationId = sideContextTarget.conversationId;
+    }
+  }
+
+  // R16-W3：右栏变动文件行 / 编辑器内切文件 → 打开中栏变更编辑器。returnTab = 打开前的中栏视图
+  // （关闭编辑器时回去）；已经在编辑器里再开另一个文件时保留最初的 returnTab。
+  function openEditor(target: { proposalId: string; path: string; filename: string }): void {
+    const state = store.getState();
+    const returnTab =
+      state.centerTab === "editor" ? state.editorTarget?.returnTab ?? "chat" : state.centerTab;
+    store.setState({ centerTab: "editor", editorTarget: { ...target, returnTab } });
+  }
+
+  // R16-W3：聊天产出卡「在编辑器中查看」——卡只带 proposal_id（无具体文件路径），这里拉一次提议详情，
+  // 取第一个可逐行对照的文本变更（target_ref.path + machine_summary.generated_content_md）开编辑器；
+  // 没有可对照的文本变更就诚实退回右栏提议详情，绝不开一个空编辑器。
+  const openProposalInEditor = (proposalId: string) => {
+    void input.client.pages
+      .proposal(proposalId, { locale: input.locale })
+      .then((detail) => {
+        if (disposed) {
+          return;
+        }
+        const change = detail.manifest.changes.find(
+          (item) => item.target_ref.path && typeof item.machine_summary?.generated_content_md === "string"
+        );
+        const path = change?.target_ref.path;
+        if (path) {
+          openEditor({ proposalId, path, filename: path.split("/").filter(Boolean).pop() ?? path });
+        } else {
+          proposalPanel.showForProposal({ proposalId });
+        }
+      })
+      .catch(() => {
+        if (disposed) {
+          return;
+        }
+        proposalPanel.showForProposal({ proposalId });
+      });
   };
 
   // ── R15 批 B（人对人私聊）：DM 的「按会话直开」路径 ─────────────────────────────────────
@@ -686,6 +779,54 @@ export function mountWorkbenchShell(
   // 非活动那个视图会被销毁（chat 的 SSE 订阅/composer 草稿、drive 的当前文件夹都会丢），这是已知的
   // 简化取舍（两个标签共用同一个中栏挂载位，不常驻）——留给后续批次决定要不要改成隐藏而不是销毁。
   const renderCenter = (state: WorkbenchStoreState) => {
+    // R16-W3：变更编辑器（中栏全宽 tracked-changes 审阅器）——入口走右栏「文件」模式的变动文件行点击
+    // （非 rail 叶），据 editorTarget 打开。必须在"没选项目"的空态判断之前拦下（editorTarget 自带
+    // proposalId/path，不依赖 vm）。与其它中栏视图不同：打开编辑器不 clearContextPanels——右栏保留「文件」
+    // 模式的变动文件列表，方便在多个变动文件之间跳。
+    if (state.centerTab === "editor") {
+      disposeChat();
+      disposeDrive();
+      disposeProjectSettings();
+      disposeArmyOverview();
+      disposeInbox();
+      disposeTimeline();
+      const target = state.editorTarget;
+      if (!target) {
+        // editorTarget 丢了（不该发生）——诚实回到群聊，而不是渲一个空编辑器。
+        disposeEditor();
+        store.setState({ centerTab: "chat", editorTarget: undefined });
+        return;
+      }
+      const key = `${target.proposalId}:${target.path}`;
+      if (editorHandle && editorMountKey === key) {
+        return; // 已经是这个变动文件的编辑器——无需重挂。
+      }
+      disposeEditor();
+      centerEl.className = "wh-wb-center wh-wb-center--editor";
+      editorHandle = mountEditorView(centerEl, {
+        client: input.client,
+        locale: input.locale,
+        target: { proposalId: target.proposalId, path: target.path, filename: target.filename },
+        // 打回要写理由——切右栏回提议模式并打开既有提议详情的聚焦理由器（不在编辑器里另造一份理由器）。
+        onRequestChanges: (proposalId) => {
+          store.setState({ sideContextMode: "proposals" });
+          proposalPanel.showForProposal({ proposalId, focusReason: true });
+        },
+        // 批准/合并落定回流——与右栏 proposalPanel.onSettled 同一条管线（聊天产出卡覆盖标 + 军团/变动文件重拉）。
+        onSettled: (proposalId) => {
+          chatHandle?.markProposalSettled(proposalId);
+          armyPanel.refresh();
+          filesSidePanel.refresh();
+        },
+        onClose: () => {
+          const returnTab = store.getState().editorTarget?.returnTab ?? "chat";
+          store.setState({ centerTab: returnTab, editorTarget: undefined });
+        }
+      });
+      editorMountKey = key;
+      return;
+    }
+    disposeEditor();
     // R13 批 P1：军团总览是一个不依赖 selectedProjectId 的跨项目视图——必须在"没选项目"的空态判断
     // 之前拦下来，否则用户还没选过任何项目时点「军团总览」会先撞见空态页。
     if (state.centerTab === "army-overview") {
@@ -787,6 +928,8 @@ export function mountWorkbenchShell(
         onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId }),
         onApproveProposal: approveProposalFromChat,
         onRequestChangesProposal: requestChangesProposalFromChat,
+        // R16-W3：产出卡「在编辑器中查看」→ 中栏变更编辑器。
+        onOpenProposalInEditor: openProposalInEditor,
         // R15 批 I2（决策 digest 卡）：聊天流里的 pending_digest 卡「打开收件箱」→ 切中栏到 I1 收件箱视图。
         onOpenInbox: openInbox
       });
@@ -1011,12 +1154,15 @@ export function mountWorkbenchShell(
           // R15 批 A6：产出卡内联「批准」/「打回」——批准复用 reviewProposalWithoutMerge，打回打开右栏聚焦理由。
           onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId }),
           onApproveProposal: approveProposalFromChat,
-          onRequestChangesProposal: requestChangesProposalFromChat
+          onRequestChangesProposal: requestChangesProposalFromChat,
+          // R16-W3：产出卡「在编辑器中查看」→ 中栏变更编辑器。
+          onOpenProposalInEditor: openProposalInEditor
         });
         chatMountKey = key;
         // R13 批 P1：情境面板默认态挂军团三区——会话情境存在时（这里是刚挂上这个协同会话的 chat 视图）
         // 就该拉这个会话的军团面板，取代批 5 之前的通用占位文案。
         armyPanel.showForConversation({ projectId: vm.project.id, conversationId: collabConversation.id });
+        enterSideContext({ projectId: vm.project.id, conversationId: collabConversation.id });
         return;
       }
       const mainConversation = vm.conversations.conversations.find((conversation) => conversation.kind === "main");
@@ -1063,12 +1209,15 @@ export function mountWorkbenchShell(
         onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId }),
         onApproveProposal: approveProposalFromChat,
         onRequestChangesProposal: requestChangesProposalFromChat,
+        // R16-W3：产出卡「在编辑器中查看」→ 中栏变更编辑器（拉提议详情取第一个可对照文本变更）。
+        onOpenProposalInEditor: openProposalInEditor,
         // R15 批 I2（决策 digest 卡）：聊天流里的 pending_digest 卡「打开收件箱」→ 切中栏到 I1 收件箱视图。
         onOpenInbox: openInbox
       });
       chatMountKey = key;
       // R13 批 P1：见上面协同会话分支同款注释——主区会话情境存在时，情境面板默认态挂军团三区。
       armyPanel.showForConversation({ projectId: vm.project.id, conversationId: mainConversation.id });
+      enterSideContext({ projectId: vm.project.id, conversationId: mainConversation.id });
       return;
     }
     disposeChat();
@@ -1094,6 +1243,46 @@ export function mountWorkbenchShell(
     sideBodyEl.innerHTML = state.sidePanelContent?.html ?? renderArmySidePanelIdleHtml(input.locale);
   };
 
+  // R16-W3：右栏顶部「提议 / 文件」模式 chip（外壳 chrome，非任何 owner 的 body 内容）——只在会话情境
+  // （chat/collab/editor 且已 enterSideContext）下出现；其它 tab（drive/timeline/设置/收件箱/军团总览/DM）
+  // 隐藏，右栏交回各自管理。点击切 sideContextMode 并让对应 owner 认领右栏。
+  const sideTabsEl = root.querySelector<HTMLElement>("[data-wb-side-tabs]");
+  const renderSideTabs = (state: WorkbenchStoreState) => {
+    if (!sideTabsEl) {
+      return;
+    }
+    const inConversationContext =
+      (state.centerTab === "chat" || state.centerTab === "collab" || state.centerTab === "editor") &&
+      sideContextTarget !== undefined;
+    sideTabsEl.hidden = !inConversationContext;
+    if (!inConversationContext) {
+      sideTabsEl.innerHTML = "";
+      return;
+    }
+    const zh = input.locale === "zh-CN";
+    const mode = state.sideContextMode;
+    sideTabsEl.innerHTML = `
+      <button type="button" class="wh-wb-smode${mode === "proposals" ? " is-active" : ""}" data-wb-side-mode="proposals" aria-pressed="${mode === "proposals"}">${zh ? "提议" : "Proposals"}</button>
+      <button type="button" class="wh-wb-smode${mode === "files" ? " is-active" : ""}" data-wb-side-mode="files" aria-pressed="${mode === "files"}">${zh ? "文件" : "Files"}</button>`;
+  };
+
+  sideTabsEl?.addEventListener("click", (event) => {
+    if (!(event.target instanceof HTMLElement)) {
+      return;
+    }
+    const btn = event.target.closest<HTMLElement>("[data-wb-side-mode]");
+    const mode = btn?.dataset.wbSideMode;
+    if (mode === "proposals") {
+      store.setState({ sideContextMode: "proposals" });
+      // 提议模式 = 军团面板认领右栏（盖过文件/提议详情 owner）。
+      filesSidePanel.clear();
+      armyPanel.reshow();
+    } else if (mode === "files") {
+      store.setState({ sideContextMode: "files" });
+      ensureFilesShown();
+    }
+  });
+
   const crumbEl = root.querySelector<HTMLElement>("[data-wb-crumb]");
   const renderCrumb = (state: WorkbenchStoreState) => {
     if (!crumbEl) {
@@ -1109,10 +1298,12 @@ export function mountWorkbenchShell(
 
   const unsubscribe = store.subscribe((state) => {
     renderCenter(state);
+    renderSideTabs(state);
     renderSide(state);
     renderCrumb(state);
   });
   renderCenter(store.getState());
+  renderSideTabs(store.getState());
   renderSide(store.getState());
   renderCrumb(store.getState());
 
@@ -1290,9 +1481,11 @@ export function mountWorkbenchShell(
     disposeArmyOverview();
     disposeProjectSettings();
     disposeInbox();
+    disposeEditor();
     driveSidePanel.dispose();
     armyPanel.dispose();
     proposalPanel.dispose();
+    filesSidePanel.dispose();
     profilePopoverHandle.dispose();
   };
 
