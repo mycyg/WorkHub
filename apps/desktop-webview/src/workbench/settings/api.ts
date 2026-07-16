@@ -10,7 +10,9 @@ import type {
   GithubTestConnectionRequest,
   GithubTestConnectionResult,
   PatchProjectAiGovernanceRequest,
-  ProjectAiGovernanceVM
+  PatchProjectInstructionsRequest,
+  ProjectAiGovernanceVM,
+  ProjectInstructionsVM
 } from "@workhub/contracts";
 
 export type ProjectSettingsApiClient = {
@@ -78,5 +80,32 @@ export function testGithubBindingConnection(
   return client.request<GithubTestConnectionResult>(`${githubBindingPath(projectId)}/test`, {
     method: "POST",
     body: JSON.stringify(payload)
+  });
+}
+
+// R16 批 W4b1（项目自定义指令 · 桌面 UI）：同上面两组端点一个手法——走 client.request<T>，不为这一个
+// 分区扩大 api-client 的具名方法面。后端 W4a 已合并（GET/PATCH /api/projects/:id/instructions，
+// apps/api/src/routes/project-instructions.ts）。
+export type ProjectInstructionsApiClient = ProjectSettingsApiClient;
+
+function projectInstructionsPath(projectId: string): string {
+  return `/api/projects/${encodeURIComponent(projectId)}/instructions`;
+}
+
+export function fetchProjectInstructions(
+  client: ProjectInstructionsApiClient,
+  projectId: string
+): Promise<ProjectInstructionsVM> {
+  return client.request<ProjectInstructionsVM>(projectInstructionsPath(projectId));
+}
+
+export function patchProjectInstructions(
+  client: ProjectInstructionsApiClient,
+  projectId: string,
+  patch: PatchProjectInstructionsRequest
+): Promise<ProjectInstructionsVM> {
+  return client.request<ProjectInstructionsVM>(projectInstructionsPath(projectId), {
+    method: "PATCH",
+    body: JSON.stringify(patch)
   });
 }

@@ -17,7 +17,7 @@ import type {
   ProjectAiGovernanceVM,
   RiskMonitorSettings
 } from "@workhub/contracts";
-import { DEFAULT_RISK_MONITOR_SETTINGS } from "@workhub/contracts";
+import { DEFAULT_RISK_MONITOR_SETTINGS, PROJECT_INSTRUCTIONS_MAX_CHARS } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 type Locale = "zh-CN" | "en-US";
@@ -522,5 +522,128 @@ export function renderGithubBindingSectionHtml(input: {
       <button type="button" class="wh-wb-btn" data-wb-gh-edit-cta${busy ? " disabled" : ""}>${zh ? "更换仓库 / PAT" : "Change repo / PAT"}</button>
       <button type="button" class="wh-wb-btn wh-wb-btn--ghost${input.unbindArmed ? " wh-wb-pset-gh-unbind--armed" : ""}" data-wb-gh-unbind${busy ? " disabled" : ""}>${unbindLabel}</button>
     </div>
+  </section>`;
+}
+
+// —— R16 批 W4b1（项目自定义指令 · 桌面 UI）：项目设置里的第三个独立分区——同 GH 绑定卡一个道理，
+// 后端 GET/PATCH /api/projects/:id/instructions（apps/api/src/services/project-instructions.ts）的
+// 权限门是 canManageProjectDrive（跟 GH 写路径同一道守卫，见该服务顶部注释），GET 也锁在这道门后面
+// （不像 governance 的"读锁负责人"，也不像 GH 的"读放开、写收紧"——这里读写同一道门），所以只有两种
+// 加载结局：拿到数据（编辑态由 input.editable 控制是否渲可写 textarea）或者 403/其它错误。403 时不
+// 渲任何"看起来能编辑"的假象——直接整个分区收成只读说明（04 §4 铁律 3）。纯渲染，DOM 事件在 view.ts。 —— //
+
+export type ProjectInstructionsSectionLoadState = "loading" | "ready" | "forbidden" | "error";
+export type ProjectInstructionsSaveErrorKind = "validation" | "network";
+
+// 4000 字符是后端 trim 后的硬上限（PROJECT_INSTRUCTIONS_MAX_CHARS，同 packages/contracts 那份数字，
+// 不是这里另定一套）；90% 处开始给警示色，纯前端体验提示，不是契约边界。
+const PROJECT_INSTRUCTIONS_WARN_RATIO = 0.9;
+
+export function projectInstructionsCounterState(length: number): "normal" | "warn" | "over" {
+  if (length > PROJECT_INSTRUCTIONS_MAX_CHARS) {
+    return "over";
+  }
+  if (length >= Math.round(PROJECT_INSTRUCTIONS_MAX_CHARS * PROJECT_INSTRUCTIONS_WARN_RATIO)) {
+    return "warn";
+  }
+  return "normal";
+}
+
+export function renderProjectInstructionsSectionHtml(input: {
+  locale: Locale;
+  editable: boolean;
+  loadState: ProjectInstructionsSectionLoadState;
+  // 当前 textarea 里应该显示的内容——挂载时=GET 回来的 instructions_md，失焦保存尝试之后（无论成功/
+  // 失败）都同步成用户刚敲的内容，绝不在保存失败时悄悄替换回旧值把用户的输入吞掉（见 view.ts
+  // attemptSaveFromTextarea 顶部注释）。
+  draft: string;
+  saving: boolean;
+  savedPillVisible: boolean;
+  saveErrorKind?: ProjectInstructionsSaveErrorKind | undefined;
+  saveErrorText?: string | undefined;
+}): string {
+  const zh = input.locale === "zh-CN";
+  const savedPill = input.loadState === "ready" && input.savedPillVisible
+    ? `<span class="wh-wb-pset-saved-pill ds-anim-pop" data-wb-instr-saved-pill="true">${zh ? "已保存" : "Saved"}</span>`
+    : "";
+  const head = `<div class="wh-wb-pset-row">
+    <div class="wh-wb-pset-row-main">
+      <div class="wh-wb-pset-row-title">${zh ? "自定义指令" : "Custom instructions"}</div>
+      <div class="wh-wb-pset-row-sub">${
+        zh
+          ? "该项目的所有 Cuu 对话与 agent-run 都会读到这段指令；与系统工作纪律冲突时以纪律为准。"
+          : "Every Cuu conversation and agent-run in this project reads this text; when it conflicts with the system's working discipline, the discipline wins."
+      }</div>
+    </div>
+    ${savedPill}
+  </div>`;
+
+  if (input.loadState === "loading") {
+    return `<section class="wh-wb-pset-group" data-wb-instr-section="true" data-wb-instr-state="loading">
+      ${head}
+      <div class="wh-wb-pset-gh-loading-row"><span class="wh-wb-spinner"></span>${zh ? "正在拉自定义指令…" : "Loading custom instructions…"}</div>
+    </section>`;
+  }
+
+  if (input.loadState === "forbidden") {
+    return `<section class="wh-wb-pset-group" data-wb-instr-section="true" data-wb-instr-state="forbidden">
+      ${head}
+      <p class="wh-wb-pset-readonly-note" data-wb-instr-forbidden="true">${
+        zh
+          ? "需要项目管理权限才能查看和修改自定义指令。"
+          : "You need project management permission to view or change custom instructions."
+      }</p>
+    </section>`;
+  }
+
+  if (input.loadState === "error") {
+    return `<section class="wh-wb-pset-group" data-wb-instr-section="true" data-wb-instr-state="error">
+      ${head}
+      <p class="wh-wb-pset-error">${zh ? "自定义指令没拉到，稍后重试" : "Couldn't load custom instructions — retry"}</p>
+      <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-instr-retry-load>${zh ? "重试" : "Retry"}</button>
+    </section>`;
+  }
+
+  // ready
+  if (!input.editable) {
+    const body = input.draft
+      ? `<pre class="wh-wb-pset-instr-readonly" data-wb-instr-readonly="true">${escapeHtml(input.draft)}</pre>`
+      : `<p class="wh-wb-pset-note" data-wb-instr-empty="true">${zh ? "还没有配置自定义指令。" : "No custom instructions configured yet."}</p>`;
+    return `<section class="wh-wb-pset-group" data-wb-instr-section="true" data-wb-instr-state="ready" data-wb-instr-editable="false">
+      ${head}
+      ${body}
+      <p class="wh-wb-pset-readonly-note">${zh ? "只有项目负责人能修改自定义指令。" : "Only the project owner can change custom instructions."}</p>
+    </section>`;
+  }
+
+  const length = input.draft.length;
+  const counterState = projectInstructionsCounterState(length);
+  const counterClass = counterState === "over" ? " wh-wb-pset-instr-count--over" : counterState === "warn" ? " wh-wb-pset-instr-count--warn" : "";
+  const counter = `<span class="wh-wb-pset-instr-count${counterClass}" data-wb-instr-count="${length}">${length} / ${PROJECT_INSTRUCTIONS_MAX_CHARS}</span>`;
+
+  const placeholder = zh
+    ? "例如：\n- 所有输出用简体中文，避免技术黑话\n- 引用数据时标注来源，不夸大能力\n- 未经批准禁止调用网络搜索工具"
+    : "e.g.\n- Reply in plain English, no jargon\n- Cite sources when quoting data\n- Don't call the web search tool without approval";
+
+  const errorRow = input.saveErrorText
+    ? `<div class="${input.saveErrorKind === "validation" ? "wh-wb-pset-error" : "wh-wb-pset-note"}" data-wb-instr-error="${input.saveErrorKind ?? "generic"}">${escapeHtml(
+        input.saveErrorText
+      )}${
+        input.saveErrorKind === "network"
+          ? ` <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-instr-retry-save${input.saving ? " disabled" : ""}>${zh ? "重试" : "Retry"}</button>`
+          : ""
+      }</div>`
+    : "";
+
+  return `<section class="wh-wb-pset-group" data-wb-instr-section="true" data-wb-instr-state="ready" data-wb-instr-editable="true">
+    ${head}
+    <textarea class="wh-wb-pset-instr-area" data-wb-instr-textarea rows="8" placeholder="${escapeHtml(placeholder)}"${
+      input.saving ? " disabled" : ""
+    }>${escapeHtml(input.draft)}</textarea>
+    <div class="wh-wb-pset-instr-foot">
+      ${counter}
+      ${input.saving ? `<span class="wh-wb-pset-note" data-wb-instr-saving="true">${zh ? "保存中…" : "Saving…"}</span>` : `<span class="wh-wb-pset-note">${zh ? "失焦自动保存。留空则不注入项目级指令。" : "Saves automatically when you leave the field. Leave it blank to skip project-level instructions."}</span>`}
+    </div>
+    ${errorRow}
   </section>`;
 }

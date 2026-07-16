@@ -324,6 +324,26 @@ export const workbenchCss = [
   ".wh-wb-pset-gh-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}",
   ".wh-wb-pset-gh-unbind--armed{border-color:rgba(255,69,58,.4);color:var(--ds-danger);background:var(--ds-danger-soft,rgba(255,69,58,.12))}",
 
+  // —— R16 批 W4b1：项目设置里的「自定义指令」分区——等宽字体 textarea（区别于上面的 .wh-wb-pset-text
+  // 单行输入，视觉延续同一套浅色玻璃语言）+ 字符计数（4000 上限，靠近/超限变警示色）+「已保存」小药丸
+  // （复用 .ds-pill 的形状语汇，换成成功绿；ds-anim-pop 是既有 design-system.ts 的弹出动效，不新增
+  // keyframes）。 —— //
+  ".wh-wb-pset-instr-area{width:100%;min-height:168px;box-sizing:border-box;margin-top:10px;padding:12px 14px;" +
+    "background:rgba(15,23,42,.045);border:1px solid rgba(15,23,42,.14);border-radius:var(--ds-radius-md);" +
+    "color:var(--ds-ink);font:500 12.5px/1.7 var(--ds-mono,ui-monospace,\"SF Mono\",monospace);resize:vertical;outline:none}",
+  ".wh-wb-pset-instr-area:focus{border-color:rgba(10,132,255,.45);box-shadow:0 0 0 3px rgba(10,132,255,.14)}",
+  ".wh-wb-pset-instr-area:disabled{opacity:.6}",
+  ".wh-wb-pset-instr-area::placeholder{color:var(--ds-ink-faint)}",
+  ".wh-wb-pset-instr-readonly{margin:10px 0 0;padding:12px 14px;white-space:pre-wrap;word-break:break-word;" +
+    "background:rgba(15,23,42,.045);border:1px solid rgba(15,23,42,.14);border-radius:var(--ds-radius-md);" +
+    "color:var(--ds-ink-soft);font:500 12.5px/1.7 var(--ds-mono,ui-monospace,\"SF Mono\",monospace)}",
+  ".wh-wb-pset-instr-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px}",
+  ".wh-wb-pset-instr-count{font:600 11px/1 var(--ds-mono,ui-monospace,monospace);color:var(--ds-ink-faint)}",
+  ".wh-wb-pset-instr-count--warn{color:var(--ds-warn)}",
+  ".wh-wb-pset-instr-count--over{color:var(--ds-danger)}",
+  ".wh-wb-pset-saved-pill{flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;border-radius:var(--ds-radius-pill);" +
+    "background:var(--ds-success-soft);color:var(--ds-success);font:700 11px/1 var(--ds-font);padding:5px 10px}",
+
   // —— 新建项目模态 —— //
   // 遮罩层保留深色 scrim（这是弹窗遮罩的通用惯例，跟壳体本身是浅是深无关，只是把注意力摁到模态上；
   // 比原深色主题版本调淡一档，别在浅色壳体上显得突兀）。
