@@ -6,7 +6,9 @@ import type { GithubBindingStatusVM, ProjectAiGovernanceVM } from "@workhub/cont
 import {
   hhmmToMinute,
   minuteToHhmm,
+  projectInstructionsCounterState,
   renderGithubBindingSectionHtml,
+  renderProjectInstructionsSectionHtml,
   renderProjectSettingsHtml,
   renderProjectSettingsOwnerOnlyHtml,
   resolveRiskMonitorForDisplay
@@ -346,4 +348,166 @@ test("resolveRiskMonitorForDisplay fills in every field from DEFAULT_RISK_MONITO
     cost_spike_ratio_pct: 300,
     cost_spike_min_cny: 20
   });
+});
+
+// —— R16 批 W4b1（项目自定义指令 · 桌面 UI）—— //
+
+test("projectInstructionsCounterState reports normal below the warn ratio, warn near 4000, and over past it", () => {
+  assert.equal(projectInstructionsCounterState(0), "normal");
+  assert.equal(projectInstructionsCounterState(3599), "normal");
+  assert.equal(projectInstructionsCounterState(3600), "warn");
+  assert.equal(projectInstructionsCounterState(4000), "warn");
+  assert.equal(projectInstructionsCounterState(4001), "over");
+});
+
+test("the instructions section shows a spinner while loading", () => {
+  const html = renderProjectInstructionsSectionHtml({
+    locale: "zh-CN",
+    editable: true,
+    loadState: "loading",
+    draft: "",
+    saving: false,
+    savedPillVisible: false
+  });
+  assert.match(html, /data-wb-instr-state="loading"/u);
+  assert.match(html, /正在拉自定义指令/u);
+  assert.doesNotMatch(html, /data-wb-instr-textarea/u);
+});
+
+test("an editable, loaded instructions section renders the textarea prefilled with the draft, a character counter, and the saved pill when requested", () => {
+  const html = renderProjectInstructionsSectionHtml({
+    locale: "zh-CN",
+    editable: true,
+    loadState: "ready",
+    draft: "所有输出用简体中文",
+    saving: false,
+    savedPillVisible: true
+  });
+  assert.match(html, /data-wb-instr-state="ready" data-wb-instr-editable="true"/u);
+  assert.match(html, /<textarea class="wh-wb-pset-instr-area" data-wb-instr-textarea[^>]*>所有输出用简体中文<\/textarea>/u);
+  assert.match(html, /data-wb-instr-count="9">9 \/ 4000/u);
+  assert.match(html, /data-wb-instr-saved-pill="true"/u);
+  assert.match(html, /已保存/u);
+  assert.doesNotMatch(html, /wh-wb-pset-instr-count--warn|wh-wb-pset-instr-count--over/u);
+});
+
+test("an empty draft renders the placeholder hint text (not a literal empty string) and no saved pill when not requested", () => {
+  const html = renderProjectInstructionsSectionHtml({
+    locale: "zh-CN",
+    editable: true,
+    loadState: "ready",
+    draft: "",
+    saving: false,
+    savedPillVisible: false
+  });
+  assert.match(html, /placeholder="[^"]*简体中文/u);
+  assert.match(html, /data-wb-instr-count="0">0 \/ 4000/u);
+  assert.doesNotMatch(html, /data-wb-instr-saved-pill/u);
+});
+
+test("a non-editable, loaded instructions section renders read-only text with no write hooks and an owner-only note", () => {
+  const html = renderProjectInstructionsSectionHtml({
+    locale: "zh-CN",
+    editable: false,
+    loadState: "ready",
+    draft: "别用黑话",
+    saving: false,
+    savedPillVisible: false
+  });
+  assert.match(html, /data-wb-instr-editable="false"/u);
+  assert.match(html, /<pre class="wh-wb-pset-instr-readonly" data-wb-instr-readonly="true">别用黑话<\/pre>/u);
+  assert.doesNotMatch(html, /data-wb-instr-textarea/u);
+  assert.match(html, /只有项目负责人能修改自定义指令/u);
+});
+
+test("a non-editable, loaded instructions section with an empty draft says honestly that nothing is configured, not a blank box", () => {
+  const html = renderProjectInstructionsSectionHtml({
+    locale: "zh-CN",
+    editable: false,
+    loadState: "ready",
+    draft: "",
+    saving: false,
+    savedPillVisible: false
+  });
+  assert.doesNotMatch(html, /wh-wb-pset-instr-readonly/u);
+  assert.match(html, /data-wb-instr-empty="true"/u);
+  assert.match(html, /还没有配置自定义指令/u);
+});
+
+test("the forbidden state renders only an honest permission note — no textarea, no stale content", () => {
+  const html = renderProjectInstructionsSectionHtml({
+    locale: "zh-CN",
+    editable: true,
+    loadState: "forbidden",
+    draft: "leftover draft that must never leak",
+    saving: false,
+    savedPillVisible: false
+  });
+  assert.match(html, /data-wb-instr-state="forbidden"/u);
+  assert.match(html, /data-wb-instr-forbidden="true"/u);
+  assert.match(html, /需要项目管理权限/u);
+  assert.doesNotMatch(html, /data-wb-instr-textarea/u);
+  assert.doesNotMatch(html, /leftover draft/u);
+});
+
+test("the error state renders a scoped retry button", () => {
+  const html = renderProjectInstructionsSectionHtml({
+    locale: "en-US",
+    editable: true,
+    loadState: "error",
+    draft: "",
+    saving: false,
+    savedPillVisible: false
+  });
+  assert.match(html, /data-wb-instr-state="error"/u);
+  assert.match(html, /data-wb-instr-retry-load/u);
+  assert.match(html, /Couldn't load custom instructions/u);
+});
+
+test("a validation save error renders in the danger tone with no retry button (client already knows what's wrong)", () => {
+  const html = renderProjectInstructionsSectionHtml({
+    locale: "zh-CN",
+    editable: true,
+    loadState: "ready",
+    draft: "x".repeat(4001),
+    saving: false,
+    savedPillVisible: false,
+    saveErrorKind: "validation",
+    saveErrorText: "指令长度超过 4000 字符上限，请精简后再试。"
+  });
+  assert.match(html, /data-wb-instr-error="validation"/u);
+  assert.match(html, /class="wh-wb-pset-error" data-wb-instr-error="validation"/u);
+  assert.doesNotMatch(html, /data-wb-instr-retry-save/u);
+  // 4001 chars is past the limit — the counter itself must also read the danger tone.
+  assert.match(html, /wh-wb-pset-instr-count--over" data-wb-instr-count="4001"/u);
+});
+
+test("a network save error preserves the user's typed draft in the textarea and offers a retry button", () => {
+  const html = renderProjectInstructionsSectionHtml({
+    locale: "zh-CN",
+    editable: true,
+    loadState: "ready",
+    draft: "刚打的字不能丢",
+    saving: false,
+    savedPillVisible: false,
+    saveErrorKind: "network",
+    saveErrorText: "没保存成功，你刚才写的内容还在——点重试，或者再改一下、失焦即可重新保存。"
+  });
+  assert.match(html, /<textarea class="wh-wb-pset-instr-area" data-wb-instr-textarea[^>]*>刚打的字不能丢<\/textarea>/u);
+  assert.match(html, /data-wb-instr-error="network"/u);
+  assert.match(html, /data-wb-instr-retry-save/u);
+});
+
+test("saving disables the textarea and shows a saving indicator instead of the idle hint", () => {
+  const html = renderProjectInstructionsSectionHtml({
+    locale: "zh-CN",
+    editable: true,
+    loadState: "ready",
+    draft: "内容",
+    saving: true,
+    savedPillVisible: false
+  });
+  assert.match(html, /<textarea class="wh-wb-pset-instr-area" data-wb-instr-textarea[^>]* disabled>/u);
+  assert.match(html, /data-wb-instr-saving="true"/u);
+  assert.match(html, /保存中…/u);
 });

@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { WorkHubApiError } from "@workhub/api-client/client";
-import type { GithubBindingStatusVM, GithubTestConnectionResult, ProjectAiGovernanceVM } from "@workhub/contracts";
+import type {
+  GithubBindingStatusVM,
+  GithubTestConnectionResult,
+  ProjectAiGovernanceVM,
+  ProjectInstructionsVM
+} from "@workhub/contracts";
 
 import { defaultEnabledQuietHours, mountProjectSettingsView } from "./view.js";
 
@@ -86,10 +91,27 @@ function githubBindingVm(over: Partial<GithubBindingStatusVM> = {}): GithubBindi
   return { project_id: "90000000-0000-4000-8000-000000000001", bound: false, ...over };
 }
 
+// R16 批 W4b1：自定义指令分区的默认 VM——空串（未配置），跟服务端 DB NULL 折成 "" 的口径一致
+// （见 apps/api/src/services/project-instructions.ts 的 instructionsVm）。
+function projectInstructionsVm(over: Partial<ProjectInstructionsVM> = {}): ProjectInstructionsVM {
+  return {
+    project_id: "90000000-0000-4000-8000-000000000001",
+    instructions_md: "",
+    updated_at: "2026-07-01T00:00:00.000Z",
+    ...over
+  };
+}
+
 // R14 批 GH：clientReturning 现在也要路由 /github-binding 请求——mountProjectSettingsView 挂载时
 // 会并行拉 GH 绑定卡的独立状态（见 view.ts 顶部注释：两个分区权限口径不同，不能共用一个 loadState）。
 // 现有（非 GH 相关）测试没有提供任何 onGithub* 处理器，此时默认回落"未绑定"，让它们的 governance
 // 断言不受影响；GH 专项测试通过 onGithub* 覆盖默认值。
+//
+// R16 批 W4b1：同样的道理再加一路——mountProjectSettingsView 挂载时还会并行拉自定义指令分区
+// （loadInstructions()，见 view.ts）。/instructions 路径必须在 /github-binding 判断之后单独分支
+// （两个路径字符串互不包含，判断顺序其实不敏感，这里放第二路只是保持"先写的先判"的可读顺序）——
+// 不提供 onInstructions* 时默认回落"空指令"，不影响非本分区测试的既有断言；PATCH 无默认值，未提供
+// onInstructionsPatch 时抛错，逼着专项测试显式声明期望的写路径行为。
 function clientReturning(input: {
   onGet?: () => ProjectAiGovernanceVM | Promise<ProjectAiGovernanceVM>;
   onPatch?: (body: Record<string, unknown>) => ProjectAiGovernanceVM | Promise<ProjectAiGovernanceVM>;
@@ -97,6 +119,8 @@ function clientReturning(input: {
   onGithubPut?: (body: Record<string, unknown>) => GithubBindingStatusVM | Promise<GithubBindingStatusVM>;
   onGithubDelete?: () => void | Promise<void>;
   onGithubTest?: (body: Record<string, unknown>) => GithubTestConnectionResult | Promise<GithubTestConnectionResult>;
+  onInstructionsGet?: () => ProjectInstructionsVM | Promise<ProjectInstructionsVM>;
+  onInstructionsPatch?: (body: Record<string, unknown>) => ProjectInstructionsVM | Promise<ProjectInstructionsVM>;
   requests?: RecordedRequest[];
 }) {
   return {
@@ -125,6 +149,15 @@ function clientReturning(input: {
         }
         return (await (input.onGithubGet ? input.onGithubGet() : githubBindingVm())) as unknown as T;
       }
+      if (path.includes("/instructions")) {
+        if (init?.method === "PATCH") {
+          if (!input.onInstructionsPatch) {
+            throw new Error("unexpected instructions PATCH");
+          }
+          return (await input.onInstructionsPatch(body)) as unknown as T;
+        }
+        return (await (input.onInstructionsGet ? input.onInstructionsGet() : projectInstructionsVm())) as unknown as T;
+      }
       if (init?.method === "PATCH") {
         if (!input.onPatch) {
           throw new Error("unexpected PATCH");
@@ -143,16 +176,23 @@ async function withFakeDomGlobals<T>(run: () => Promise<T>): Promise<T> {
   const globals = globalThis as typeof globalThis & {
     HTMLElement: typeof HTMLElement;
     HTMLInputElement: typeof HTMLInputElement;
+    // R16 批 W4b1：instructions textarea 的 focusout/input 委托监听器用 `instanceof HTMLTextAreaElement`
+    // 判定事件源（同这个文件既有的 HTMLInputElement 套路）——Node 测试环境本来没有这个全局，跟
+    // HTMLElement/HTMLInputElement 一起临时接到 FakeElement 上。
+    HTMLTextAreaElement: typeof HTMLTextAreaElement;
   };
   const previousElement = globals.HTMLElement;
   const previousInput = globals.HTMLInputElement;
+  const previousTextArea = globals.HTMLTextAreaElement;
   globals.HTMLElement = FakeElement as unknown as typeof HTMLElement;
   globals.HTMLInputElement = FakeElement as unknown as typeof HTMLInputElement;
+  globals.HTMLTextAreaElement = FakeElement as unknown as typeof HTMLTextAreaElement;
   try {
     return await run();
   } finally {
     globals.HTMLElement = previousElement;
     globals.HTMLInputElement = previousInput;
+    globals.HTMLTextAreaElement = previousTextArea;
   }
 }
 
@@ -782,4 +822,305 @@ test("defaultEnabledQuietHours produces a contract-valid enabled block", () => {
   assert.notEqual(quiet.start_minute, quiet.end_minute);
   assert.equal(new Set(quiet.weekdays).size, quiet.weekdays.length);
   assert.ok(quiet.weekdays.length >= 1);
+});
+
+// —— R16 批 W4b1（项目自定义指令 · 桌面 UI）—— //
+
+test("mounts, loads instructions over the real endpoint path, and prefills the textarea", async () => {
+  await withFakeDomGlobals(async () => {
+    const container = new FakeContainer();
+    const requests: RecordedRequest[] = [];
+    mountProjectSettingsView(container as unknown as HTMLElement, {
+      client: clientReturning({
+        onGet: () => governanceVm(),
+        onInstructionsGet: () => projectInstructionsVm({ instructions_md: "所有输出用简体中文" }),
+        requests
+      }),
+      locale: "zh-CN",
+      projectId: "90000000-0000-4000-8000-000000000001",
+      projectName: "星尘短剧",
+      editable: true
+    });
+    await tick();
+
+    const instructionsGets = requests.filter(
+      (r) => r.path === "/api/projects/90000000-0000-4000-8000-000000000001/instructions" && r.init?.method === undefined
+    );
+    assert.equal(instructionsGets.length, 1);
+    assert.match(
+      container.innerHTML,
+      /<textarea class="wh-wb-pset-instr-area" data-wb-instr-textarea[^>]*>所有输出用简体中文<\/textarea>/u
+    );
+  });
+});
+
+test("a changed value on focusout PATCHes the trimmed instructions_md and shows the saved pill", async () => {
+  await withFakeDomGlobals(async () => {
+    const container = new FakeContainer();
+    const requests: RecordedRequest[] = [];
+    mountProjectSettingsView(container as unknown as HTMLElement, {
+      client: clientReturning({
+        onGet: () => governanceVm(),
+        onInstructionsGet: () => projectInstructionsVm({ instructions_md: "" }),
+        onInstructionsPatch: (body) =>
+          projectInstructionsVm({ instructions_md: body.instructions_md as string, updated_at: "2026-07-16T09:00:00.000Z" }),
+        requests
+      }),
+      locale: "zh-CN",
+      projectId: "90000000-0000-4000-8000-000000000001",
+      projectName: "星尘短剧",
+      editable: true
+    });
+    await tick();
+
+    // Deliberately padded with incidental whitespace — the server trims, and so should what we send.
+    const textarea = Object.assign(new FakeElement(new Set(["[data-wb-instr-textarea]"])), {
+      value: "  记得用中文回复，别用黑话  "
+    });
+    container.dispatch("focusout", textarea);
+    await tick();
+
+    const instructionsPatches = requests.filter((r) => r.path.endsWith("/instructions") && r.init?.method === "PATCH");
+    assert.equal(instructionsPatches.length, 1);
+    assert.deepEqual(JSON.parse(String(instructionsPatches[0]?.init?.body)), { instructions_md: "记得用中文回复，别用黑话" });
+    assert.match(container.innerHTML, /data-wb-instr-saved-pill="true"/u);
+  });
+});
+
+test("focusing out without a real change is idempotent and issues no PATCH", async () => {
+  await withFakeDomGlobals(async () => {
+    const container = new FakeContainer();
+    const requests: RecordedRequest[] = [];
+    mountProjectSettingsView(container as unknown as HTMLElement, {
+      client: clientReturning({
+        onGet: () => governanceVm(),
+        onInstructionsGet: () => projectInstructionsVm({ instructions_md: "已有的指令" }),
+        requests
+      }),
+      locale: "zh-CN",
+      projectId: "90000000-0000-4000-8000-000000000001",
+      projectName: "星尘短剧",
+      editable: true
+    });
+    await tick();
+
+    // Same content as loaded, just with incidental surrounding whitespace — trim() must make this a no-op.
+    const textarea = Object.assign(new FakeElement(new Set(["[data-wb-instr-textarea]"])), { value: "  已有的指令  " });
+    container.dispatch("focusout", textarea);
+    await tick();
+
+    assert.equal(requests.filter((r) => r.init?.method === "PATCH").length, 0);
+
+    // A second, truly no-op focusout (identical to the confirmed value, no incidental whitespace either) must
+    // also stay silent.
+    const textareaAgain = Object.assign(new FakeElement(new Set(["[data-wb-instr-textarea]"])), { value: "已有的指令" });
+    container.dispatch("focusout", textareaAgain);
+    await tick();
+    assert.equal(requests.filter((r) => r.init?.method === "PATCH").length, 0);
+  });
+});
+
+test("exceeding the 4000-character limit blocks the save client-side and never issues a PATCH", async () => {
+  await withFakeDomGlobals(async () => {
+    const container = new FakeContainer();
+    const requests: RecordedRequest[] = [];
+    mountProjectSettingsView(container as unknown as HTMLElement, {
+      client: clientReturning({
+        onGet: () => governanceVm(),
+        onInstructionsGet: () => projectInstructionsVm({ instructions_md: "" }),
+        requests
+      }),
+      locale: "zh-CN",
+      projectId: "90000000-0000-4000-8000-000000000001",
+      projectName: "星尘短剧",
+      editable: true
+    });
+    await tick();
+
+    const textarea = Object.assign(new FakeElement(new Set(["[data-wb-instr-textarea]"])), { value: "x".repeat(4001) });
+    container.dispatch("focusout", textarea);
+    await tick();
+
+    assert.equal(requests.filter((r) => r.path.endsWith("/instructions") && r.init?.method === "PATCH").length, 0);
+    assert.match(container.innerHTML, /data-wb-instr-error="validation"/u);
+    assert.match(container.innerHTML, /wh-wb-pset-instr-count--over/u);
+  });
+});
+
+test("a 403 on GET renders the honest forbidden state — no editable textarea, no stale data", async () => {
+  await withFakeDomGlobals(async () => {
+    const container = new FakeContainer();
+    mountProjectSettingsView(container as unknown as HTMLElement, {
+      client: clientReturning({
+        onGet: () => governanceVm(),
+        onInstructionsGet: () => {
+          throw new WorkHubApiError(403, "project_forbidden", "你没有权限管理这个项目的自定义指令。");
+        }
+      }),
+      locale: "zh-CN",
+      projectId: "90000000-0000-4000-8000-000000000001",
+      projectName: "星尘短剧",
+      editable: true
+    });
+    await tick();
+
+    assert.match(container.innerHTML, /data-wb-instr-forbidden="true"/u);
+    assert.doesNotMatch(container.innerHTML, /data-wb-instr-textarea/u);
+  });
+});
+
+test("a 403 on PATCH revokes trust mid-session and flips the whole section to the read-only forbidden state", async () => {
+  await withFakeDomGlobals(async () => {
+    const container = new FakeContainer();
+    mountProjectSettingsView(container as unknown as HTMLElement, {
+      client: clientReturning({
+        onGet: () => governanceVm(),
+        onInstructionsGet: () => projectInstructionsVm({ instructions_md: "" }),
+        onInstructionsPatch: () => {
+          throw new WorkHubApiError(403, "project_forbidden", "你没有权限管理这个项目的自定义指令。");
+        }
+      }),
+      locale: "zh-CN",
+      projectId: "90000000-0000-4000-8000-000000000001",
+      projectName: "星尘短剧",
+      editable: true
+    });
+    await tick();
+
+    const textarea = Object.assign(new FakeElement(new Set(["[data-wb-instr-textarea]"])), { value: "新指令" });
+    container.dispatch("focusout", textarea);
+    await tick();
+
+    assert.match(container.innerHTML, /data-wb-instr-state="forbidden"/u);
+    assert.doesNotMatch(container.innerHTML, /data-wb-instr-textarea/u);
+  });
+});
+
+test("a 422 from the server shows the validation message without discarding what was typed", async () => {
+  await withFakeDomGlobals(async () => {
+    const container = new FakeContainer();
+    mountProjectSettingsView(container as unknown as HTMLElement, {
+      client: clientReturning({
+        onGet: () => governanceVm(),
+        onInstructionsGet: () => projectInstructionsVm({ instructions_md: "" }),
+        onInstructionsPatch: () => {
+          throw new WorkHubApiError(422, "validation_error", "Request payload does not match the WorkHub API contract.");
+        }
+      }),
+      locale: "zh-CN",
+      projectId: "90000000-0000-4000-8000-000000000001",
+      projectName: "星尘短剧",
+      editable: true
+    });
+    await tick();
+
+    const textarea = Object.assign(new FakeElement(new Set(["[data-wb-instr-textarea]"])), {
+      value: "改了但服务端还是嫌太长"
+    });
+    container.dispatch("focusout", textarea);
+    await tick();
+
+    assert.match(container.innerHTML, /data-wb-instr-error="validation"/u);
+    assert.match(container.innerHTML, /改了但服务端还是嫌太长/u);
+  });
+});
+
+test("a network error on PATCH keeps the typed draft on screen, and its retry button resubmits successfully", async () => {
+  await withFakeDomGlobals(async () => {
+    const container = new FakeContainer();
+    const requests: RecordedRequest[] = [];
+    let patchCalls = 0;
+    mountProjectSettingsView(container as unknown as HTMLElement, {
+      client: clientReturning({
+        onGet: () => governanceVm(),
+        onInstructionsGet: () => projectInstructionsVm({ instructions_md: "" }),
+        onInstructionsPatch: (body) => {
+          patchCalls += 1;
+          if (patchCalls === 1) {
+            throw new Error("network blip");
+          }
+          return projectInstructionsVm({ instructions_md: body.instructions_md as string, updated_at: "2026-07-16T09:00:00.000Z" });
+        },
+        requests
+      }),
+      locale: "zh-CN",
+      projectId: "90000000-0000-4000-8000-000000000001",
+      projectName: "星尘短剧",
+      editable: true
+    });
+    await tick();
+
+    const textarea = Object.assign(new FakeElement(new Set(["[data-wb-instr-textarea]"])), {
+      value: "网络不稳时也不能丢字"
+    });
+    container.dispatch("focusout", textarea);
+    await tick();
+
+    assert.match(container.innerHTML, /data-wb-instr-error="network"/u);
+    assert.match(container.innerHTML, /网络不稳时也不能丢字/u);
+    assert.match(container.innerHTML, /data-wb-instr-retry-save/u);
+
+    container.dispatch("click", new FakeElement(new Set(["[data-wb-instr-retry-save]"])));
+    await tick();
+
+    assert.equal(patchCalls, 2);
+    assert.match(container.innerHTML, /data-wb-instr-saved-pill="true"/u);
+    assert.equal(requests.filter((r) => r.path.endsWith("/instructions") && r.init?.method === "PATCH").length, 2);
+  });
+});
+
+test("a non-editable mount renders read-only instructions text and never issues a PATCH no matter what fires", async () => {
+  await withFakeDomGlobals(async () => {
+    const container = new FakeContainer();
+    const requests: RecordedRequest[] = [];
+    mountProjectSettingsView(container as unknown as HTMLElement, {
+      client: clientReturning({
+        onGet: () => governanceVm(),
+        onInstructionsGet: () => projectInstructionsVm({ instructions_md: "只读内容" }),
+        requests
+      }),
+      locale: "zh-CN",
+      projectId: "90000000-0000-4000-8000-000000000001",
+      projectName: "星尘短剧",
+      editable: false
+    });
+    await tick();
+
+    assert.match(container.innerHTML, /data-wb-instr-readonly="true"/u);
+    assert.doesNotMatch(container.innerHTML, /data-wb-instr-textarea/u);
+
+    // Even if something manages to dispatch the write hooks directly, the editable guard must hold.
+    const textarea = Object.assign(new FakeElement(new Set(["[data-wb-instr-textarea]"])), { value: "试图硬改" });
+    container.dispatch("focusout", textarea);
+    container.dispatch("click", new FakeElement(new Set(["[data-wb-instr-retry-save]"])));
+    await tick();
+
+    assert.equal(requests.filter((r) => r.path.endsWith("/instructions") && r.init?.method === "PATCH").length, 0);
+  });
+});
+
+test("the saved pill appears after a successful save and disappears on its own after ~1.8s", async () => {
+  await withFakeDomGlobals(async () => {
+    const container = new FakeContainer();
+    mountProjectSettingsView(container as unknown as HTMLElement, {
+      client: clientReturning({
+        onGet: () => governanceVm(),
+        onInstructionsGet: () => projectInstructionsVm({ instructions_md: "" }),
+        onInstructionsPatch: (body) => projectInstructionsVm({ instructions_md: body.instructions_md as string })
+      }),
+      locale: "zh-CN",
+      projectId: "90000000-0000-4000-8000-000000000001",
+      projectName: "星尘短剧",
+      editable: true
+    });
+    await tick();
+
+    const textarea = Object.assign(new FakeElement(new Set(["[data-wb-instr-textarea]"])), { value: "先保存一下" });
+    container.dispatch("focusout", textarea);
+    await tick();
+    assert.match(container.innerHTML, /data-wb-instr-saved-pill="true"/u);
+
+    await new Promise((resolve) => setTimeout(resolve, 1850));
+    assert.doesNotMatch(container.innerHTML, /data-wb-instr-saved-pill/u);
+  });
 });

@@ -16,14 +16,18 @@ import type {
   GithubTestConnectionRequest,
   GithubTestConnectionResult,
   PatchProjectAiGovernanceRequest,
-  ProjectAiGovernanceVM
+  ProjectAiGovernanceVM,
+  ProjectInstructionsVM
 } from "@workhub/contracts";
+import { PROJECT_INSTRUCTIONS_MAX_CHARS } from "@workhub/contracts";
 
 import {
   deleteGithubBinding,
   fetchGithubBindingStatus,
   fetchProjectAiGovernance,
+  fetchProjectInstructions,
   patchProjectAiGovernance,
+  patchProjectInstructions,
   putGithubBinding,
   testGithubBindingConnection,
   type ProjectSettingsApiClient
@@ -34,11 +38,13 @@ import {
   hhmmToMinute,
   projectGranularEffective,
   renderGithubBindingSectionHtml,
+  renderProjectInstructionsSectionHtml,
   renderProjectSettingsErrorHtml,
   renderProjectSettingsHtml,
   renderProjectSettingsLoadingHtml,
   renderProjectSettingsOwnerOnlyHtml,
-  resolveRiskMonitorForDisplay
+  resolveRiskMonitorForDisplay,
+  type ProjectInstructionsSectionLoadState
 } from "./render.js";
 
 // R14 批 GH 解绑武装态自动复原时长——同 drive/side-panel.ts 版本回滚两段式确认的既有先例（5 秒）。
@@ -112,6 +118,153 @@ export function mountProjectSettingsView(
   let githubLoadGeneration = 0;
   let githubUnbindArmTimer: ReturnType<typeof setTimeout> | undefined;
 
+  // R16 批 W4b1（项目自定义指令 · 桌面 UI）：第三个独立分区/状态机——GET 和 PATCH 同一道权限门
+  // （canManageProjectDrive，见 apps/api/src/services/project-instructions.ts 顶部注释），跟上面
+  // governance「读锁负责人」、GH「读放开写收紧」都不是同一个口径，所以也不能挂在既有的两个 loadState
+  // 上，必须自己一套。instructionsDraft 是"当前该在 textarea 里显示的内容"——挂载时=GET 回来的
+  // instructions_md，之后每次失焦保存尝试（无论成不成功）都同步成用户刚敲的内容：保存失败绝不能把
+  // 这个值改回旧的，那等于替用户把刚写的东西吞了（见 attemptSaveFromTextarea）。
+  let instructions: ProjectInstructionsVM | undefined;
+  let instructionsLoadState: ProjectInstructionsSectionLoadState = "loading";
+  let instructionsDraft = "";
+  let instructionsSaving = false;
+  let instructionsSavedPillVisible = false;
+  let instructionsSaveErrorKind: "validation" | "network" | undefined;
+  let instructionsSaveErrorText: string | undefined;
+  let instructionsLoadGeneration = 0;
+  let instructionsSavedPillTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function clearInstructionsSavedPillTimer(): void {
+    if (instructionsSavedPillTimer !== undefined) {
+      clearTimeout(instructionsSavedPillTimer);
+      instructionsSavedPillTimer = undefined;
+    }
+  }
+
+  function instructionsValidationMessage(): string {
+    return zh
+      ? `指令长度超过 ${PROJECT_INSTRUCTIONS_MAX_CHARS} 字符上限，请精简后再试。`
+      : `Instructions exceed the ${PROJECT_INSTRUCTIONS_MAX_CHARS}-character limit — trim it and try again.`;
+  }
+
+  function instructionsSectionHtml(): string {
+    return renderProjectInstructionsSectionHtml({
+      locale: input.locale,
+      editable: input.editable,
+      loadState: instructionsLoadState,
+      draft: instructionsDraft,
+      saving: instructionsSaving,
+      savedPillVisible: instructionsSavedPillVisible,
+      saveErrorKind: instructionsSaveErrorKind,
+      saveErrorText: instructionsSaveErrorText
+    });
+  }
+
+  function loadInstructions(): void {
+    const generation = ++instructionsLoadGeneration;
+    instructionsLoadState = "loading";
+    instructionsSaveErrorKind = undefined;
+    instructionsSaveErrorText = undefined;
+    render();
+    void fetchProjectInstructions(input.client, input.projectId)
+      .then((vm) => {
+        if (disposed || generation !== instructionsLoadGeneration) {
+          return;
+        }
+        instructions = vm;
+        instructionsDraft = vm.instructions_md;
+        instructionsLoadState = "ready";
+        render();
+      })
+      .catch((error: unknown) => {
+        if (disposed || generation !== instructionsLoadGeneration) {
+          return;
+        }
+        instructionsLoadState = error instanceof WorkHubApiError && error.status === 403 ? "forbidden" : "error";
+        render();
+      });
+  }
+
+  // 失焦保存的落地函数——trimmed 已经在调用方（attemptSaveFromTextarea / 重试按钮）里做过幂等与
+  // 客户端长度校验，这里只管发请求 + 三路错误分支：403（权限中途没了）把整个分区收成只读态；422
+  // （服务端 trim 后仍超限的边界情况，客户端校验理论上已经拦住多数场景，这里是兜底）标红计数+提示；
+  // 其它一律按网络错处理——绝不回滚 instructionsDraft，用户刚写的内容原样留在 textarea 里，只给一个
+  // 可点的「重试」。
+  function saveInstructions(trimmed: string): void {
+    instructionsSaving = true;
+    instructionsSaveErrorKind = undefined;
+    instructionsSaveErrorText = undefined;
+    render();
+    patchProjectInstructions(input.client, input.projectId, { instructions_md: trimmed })
+      .then((next) => {
+        if (disposed) {
+          return;
+        }
+        instructions = next;
+        instructionsDraft = next.instructions_md;
+        instructionsSaving = false;
+        instructionsSavedPillVisible = true;
+        render();
+        clearInstructionsSavedPillTimer();
+        instructionsSavedPillTimer = setTimeout(() => {
+          instructionsSavedPillTimer = undefined;
+          if (disposed) {
+            return;
+          }
+          instructionsSavedPillVisible = false;
+          render();
+        }, 1800);
+      })
+      .catch((error: unknown) => {
+        if (disposed) {
+          return;
+        }
+        instructionsSaving = false;
+        if (error instanceof WorkHubApiError && error.status === 403) {
+          instructionsLoadState = "forbidden";
+          render();
+          return;
+        }
+        if (error instanceof WorkHubApiError && error.status === 422) {
+          instructionsSaveErrorKind = "validation";
+          instructionsSaveErrorText = instructionsValidationMessage();
+          render();
+          return;
+        }
+        instructionsSaveErrorKind = "network";
+        instructionsSaveErrorText = zh
+          ? "没保存成功，你刚才写的内容还在——点重试，或者再改一下、失焦即可重新保存。"
+          : "Couldn't save — what you typed is still here. Retry, or edit and leave the field again.";
+        render();
+      });
+  }
+
+  // textarea 失焦时的落地——先把 instructionsDraft 同步成用户刚敲的原始内容（哪怕后面判定为不用发
+  // 请求或者校验不过，这一步都先做，DOM 已经是这个内容了，状态跟着对齐，不是"假装没看见"）。
+  function attemptSaveFromTextarea(raw: string): void {
+    instructionsDraft = raw;
+    const trimmed = raw.trim();
+    const confirmed = instructions?.instructions_md ?? "";
+    if (trimmed === confirmed) {
+      // 幂等：跟上一次确认保存的值一样（用户改了又改回去，或者单纯失焦了一下），不发这趟请求。
+      // 只有此前挂着一条错误提示时才重绘去清掉它——真的什么都没变就不用白重建一次 DOM。
+      const hadError = instructionsSaveErrorKind !== undefined;
+      instructionsSaveErrorKind = undefined;
+      instructionsSaveErrorText = undefined;
+      if (hadError) {
+        render();
+      }
+      return;
+    }
+    if (trimmed.length > PROJECT_INSTRUCTIONS_MAX_CHARS) {
+      instructionsSaveErrorKind = "validation";
+      instructionsSaveErrorText = instructionsValidationMessage();
+      render();
+      return;
+    }
+    saveInstructions(trimmed);
+  }
+
   function clearGithubUnbindTimer(): void {
     if (githubUnbindArmTimer !== undefined) {
       clearTimeout(githubUnbindArmTimer);
@@ -144,7 +297,7 @@ export function mountProjectSettingsView(
     if (disposed) {
       return;
     }
-    container.innerHTML = `${governanceSectionHtml()}${renderGithubBindingSectionHtml({
+    container.innerHTML = `${governanceSectionHtml()}${instructionsSectionHtml()}${renderGithubBindingSectionHtml({
       locale: input.locale,
       editable: input.editable,
       loadState: githubLoadState,
@@ -642,13 +795,91 @@ export function mountProjectSettingsView(
     }
   });
 
+  // R16 批 W4b1：自定义指令分区的点击处理器——同 GH 那个一样独立设监听器（这个分区的加载态跟
+  // governance/GH 都不是同一权限口径，见顶部状态声明处的注释）。重试加载（读）不挂在 editable 早退
+  // 上——同 GH 的 data-wb-gh-retry 一个道理，只读查看者遇到网络错误也该能重试读；但重试保存（写）
+  // 必须在 editable 守卫之后，否则只读会话里一次"假装点了这个钩子"的事件就能触发一次 PATCH。
+  container.addEventListener("click", (event) => {
+    if (!(event.target instanceof HTMLElement)) {
+      return;
+    }
+    const target = event.target;
+    if (target.closest("[data-wb-instr-retry-load]")) {
+      loadInstructions();
+      return;
+    }
+    if (!input.editable) {
+      return;
+    }
+    if (target.closest("[data-wb-instr-retry-save]")) {
+      if (instructionsSaving) {
+        return;
+      }
+      const trimmed = instructionsDraft.trim();
+      if (trimmed.length > PROJECT_INSTRUCTIONS_MAX_CHARS) {
+        instructionsSaveErrorKind = "validation";
+        instructionsSaveErrorText = instructionsValidationMessage();
+        render();
+        return;
+      }
+      saveInstructions(trimmed);
+    }
+  });
+
+  // R16 批 W4b1：textarea 失焦即保存——focusout 会冒泡（blur 不会），走委托监听同 governance 的
+  // change 监听器一个套路；同 spotlight/views/settings.ts「我的资料」自由文本字段的既有先例：
+  // 这套整段 innerHTML 重绘架构下，逐击键的 input 事件重绘会在用户还在打字时打断输入焦点，
+  // focusout 本身就意味着用户已经离开这个字段，这时候重绘不会有体验代价。
+  container.addEventListener("focusout", (event) => {
+    if (!(event.target instanceof HTMLTextAreaElement)) {
+      return;
+    }
+    const target = event.target;
+    if (!target.matches("[data-wb-instr-textarea]")) {
+      return;
+    }
+    if (!input.editable || instructionsLoadState !== "ready") {
+      return;
+    }
+    // attemptSaveFromTextarea 自己按分支决定要不要 render()——幂等分支（内容没变）故意不重绘，
+    // 避免在没有任何视觉变化时白白重建一次整棵 DOM。
+    attemptSaveFromTextarea(target.value);
+  });
+
+  // R16 批 W4b1：字符计数的逐击键实时更新——不走 render()（会在用户还在打字时重建整棵 DOM、打断
+  // 焦点/光标位置），只直接改这一个 <span> 的文本和 class。真正的保存仍然只在失焦时发生（上面的
+  // focusout 监听器），这里纯粹是"4000 上限，接近时变警示色"的即时视觉反馈。
+  container.addEventListener("input", (event) => {
+    if (!(event.target instanceof HTMLTextAreaElement)) {
+      return;
+    }
+    const target = event.target;
+    if (!target.matches("[data-wb-instr-textarea]")) {
+      return;
+    }
+    const counterEl = container.querySelector<HTMLElement>("[data-wb-instr-count]");
+    if (!counterEl) {
+      return;
+    }
+    const length = target.value.length;
+    counterEl.textContent = `${length} / ${PROJECT_INSTRUCTIONS_MAX_CHARS}`;
+    counterEl.classList.remove("wh-wb-pset-instr-count--warn", "wh-wb-pset-instr-count--over");
+    if (length > PROJECT_INSTRUCTIONS_MAX_CHARS) {
+      counterEl.classList.add("wh-wb-pset-instr-count--over");
+    } else if (length >= Math.round(PROJECT_INSTRUCTIONS_MAX_CHARS * 0.9)) {
+      counterEl.classList.add("wh-wb-pset-instr-count--warn");
+    }
+  });
+
   load();
   loadGithub();
+  loadInstructions();
 
   return {
     dispose: () => {
       disposed = true;
       clearGithubUnbindTimer();
+      clearInstructionsSavedPillTimer();
     }
   };
 }
