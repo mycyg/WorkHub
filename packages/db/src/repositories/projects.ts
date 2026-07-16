@@ -65,6 +65,16 @@ export type ListPersonalProjectsInput = {
   ownerUserId: string;
 };
 
+// R16 批 W4a（项目级自定义指令）：单列条件更新——只改 instructions_md（+updatedAt）,按 id 定位并且
+// 只对活跃项目（未归档、未软删）生效,呼应 apps/api/src/services/project-instructions.ts 的
+// requireManageableProject 活跃性判定（canManageProjectDrive 内部同一条 projectIsActive）。
+// instructionsMd 传 null 即清空（留空不注入,由调用方把 trim 后的空串折成 null）。
+export type UpdateProjectInstructionsInput = {
+  projectId: string;
+  instructionsMd: string | null;
+  now?: Date;
+};
+
 export class ProjectSlugOccupiedError extends Error {
   constructor(public readonly slug: string) {
     super("Project slug is occupied by an archived or deleted project in this workspace");
@@ -78,6 +88,8 @@ export type ProjectRepository = {
   // 用户点一次「+新建个人空间」就该多一个空间）与列（仅 owner 本人名下、is_personal=true 的项目）。
   bootstrapPersonalProject: (input: BootstrapPersonalProjectInput) => Promise<BootstrapProjectResultRow>;
   listPersonalForUser: (input: ListPersonalProjectsInput) => Promise<ProjectListRow[]>;
+  // R16 批 W4a：写路径——返回更新后的完整行（含 instructionsMd），未命中活跃项目返回 null。
+  updateInstructions: (input: UpdateProjectInstructionsInput) => Promise<ProjectRow | null>;
 };
 
 async function ensureActiveMain(
@@ -342,6 +354,22 @@ export function createProjectRepository(db: WorkHubDb): ProjectRepository {
         await ensureActiveMain(tx, raced, input, at);
         return { project: raced, created: false };
       });
+    },
+
+    async updateInstructions(input) {
+      const at = input.now ?? new Date();
+      const [row] = await db
+        .update(projects)
+        .set({ instructionsMd: input.instructionsMd, updatedAt: at })
+        .where(
+          and(
+            eq(projects.id, input.projectId),
+            eq(projects.archived, false),
+            isNull(projects.deletedAt)
+          )
+        )
+        .returning();
+      return row ?? null;
     }
   };
 }
