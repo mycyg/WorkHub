@@ -122,6 +122,10 @@ import {
   getDefaultTeamSkillContextProvider,
   type TeamSkillContextProvider
 } from "../services/team-skill-context.js";
+import {
+  getDefaultProjectInstructionsContextProvider,
+  type ProjectInstructionsContextProvider
+} from "../services/project-instructions-context.js";
 import { getDefaultProjectHydrator, type ProjectHydrator } from "./project-hydrate.js";
 import { getDefaultAuditStores } from "../services/audit-stores.js";
 import { createRunConversationReportHook } from "../services/run-conversation-report.js";
@@ -569,6 +573,8 @@ export function createInMemoryAgentRunQueue(options: {
   agentMemoryRecorder?: AgentMemoryRecorder | false;
   userMemory?: UserMemoryContextProvider | false;
   teamSkills?: TeamSkillContextProvider | false;
+  // R16 批 W4a：该工作项所属项目的自定义指令——注入 defaultWorkerSystemPrompt（见该函数与其调用处）。
+  projectInstructions?: ProjectInstructionsContextProvider | false;
   hydrateProject?: ProjectHydrator | false;
   requireDeliverable?: boolean;
   runSettled?: AgentRunSettledHook | false;
@@ -600,6 +606,7 @@ export function createInMemoryAgentRunQueue(options: {
   const agentMemoryRecorder = options.agentMemoryRecorder === false ? undefined : options.agentMemoryRecorder;
   const userMemory = options.userMemory === false ? undefined : options.userMemory;
   const teamSkills = options.teamSkills === false ? undefined : options.teamSkills;
+  const projectInstructions = options.projectInstructions === false ? undefined : options.projectInstructions;
   const hydrateProject = options.hydrateProject === false ? undefined : options.hydrateProject;
   const workerId = options.workerId ?? `${os.hostname()}:${process.pid}`;
   const leaseMs = options.leaseMs ?? 5 * 60 * 1000;
@@ -798,7 +805,11 @@ export function createInMemoryAgentRunQueue(options: {
 
   // 工具用法散文不再硬编码：可用工具清单与使用准则由注册表的 promptSnippet/promptGuidelines 动态拼装
   // （仿 pi 的 system-prompt.ts 结构）。非工具类的工作纪律仍写死在这里。
-  function defaultWorkerSystemPrompt(toolReference: ToolPromptReference, teamSkillCatalogAppendix?: string) {
+  function defaultWorkerSystemPrompt(
+    toolReference: ToolPromptReference,
+    teamSkillCatalogAppendix?: string,
+    projectInstructionsSection?: string
+  ) {
     const catalog = [skillCatalogForPrompt(), teamSkillCatalogAppendix?.trim()]
       .filter((part): part is string => Boolean(part))
       .join("\n");
@@ -824,6 +835,10 @@ export function createInMemoryAgentRunQueue(options: {
       "5. 输出语言：从工单内容判定任务语言，并用该语言撰写交付物与总结；以上工作纪律不随输出语言改变，始终适用。交付物命名用清晰的小写连字符文件名。",
       // findings[#7]：步数有限，先把完整初稿落进 outputs/ 再打磨；优先一次定向读取而非广撒网式探索。
       "6. 步数有限：尽早把一份完整初稿写进 outputs/，再迭代打磨；优先一次定向读取（直接读相关文件），而不是大范围浏览。",
+      // R16 批 W4a：项目自定义指令——位置紧接在上面的工作纪律之后、可用工具清单之前，与
+      // packages/agent/src/turns/prompt.ts 的 buildTurnProjectInstructionsSection 同一优先级承诺：
+      // 高于没配置时的通用默认，低于上面的工作纪律（冲突时纪律赢）。空则 filter 掉，不留空段。
+      ...(projectInstructionsSection ? [projectInstructionsSection] : []),
       "",
       "可用工具（Available tools）——参数与完整用法以各工具自身的 description 为准：",
       toolsList,
@@ -1670,6 +1685,7 @@ export function createInMemoryAgentRunQueue(options: {
       const resolvedAgentMemory = await agentMemory?.(current);
       const resolvedUserMemory = await userMemory?.(current);
       const resolvedTeamSkills = await teamSkills?.(current);
+      const resolvedProjectInstructions = await projectInstructions?.(current);
       // 默认工具集时把团队技能内容塞进 load_skill；自定义 tools 提供者保持原样不动。
       const teamSkillContent = resolvedTeamSkills?.contentByKey;
       const rawTools = options.tools?.(executionInput) ?? defaultToolRegistryFor(current.agent_role, teamSkillContent);
@@ -1729,7 +1745,8 @@ export function createInMemoryAgentRunQueue(options: {
           // 用默认工具集的 promptSnippet/promptGuidelines 组装「可用工具/Guidelines」段。自定义 tools 提供者
           // 只暴露 toModelTools/execute、不暴露文案通道，此处按默认工具集尽力组装（与改造前硬编码默认工具用法一致）。
           defaultToolRegistryFor(current.agent_role, teamSkillContent).promptReference(),
-          resolvedTeamSkills?.catalogAppendix
+          resolvedTeamSkills?.catalogAppendix,
+          resolvedProjectInstructions
         ),
         initialUserMessage,
         client,
@@ -2998,6 +3015,8 @@ export function getDefaultAgentRunQueue() {
     agentMemoryRecorder: getDefaultAgentMemoryRecorder(),
     userMemory: getDefaultUserMemoryContextProvider(),
     teamSkills: getDefaultTeamSkillContextProvider(),
+    // R16 批 W4a：该工作项所属项目的自定义指令——默认接入,失败静默降级（同 userMemory/teamSkills 同款取舍）。
+    projectInstructions: getDefaultProjectInstructionsContextProvider(),
     // 默认开启：项目/网盘是 WorkHub 核心语境，AI 工人应能读取 project/ 只读资料；仍可用
     // AGENT_RUN_PROJECT_HYDRATE_ENABLED=false 显式关闭（fail-open + 预算上限）。
     hydrateProject: runtimeSettings.agentRun.projectHydrateEnabled ? getDefaultProjectHydrator() : false,

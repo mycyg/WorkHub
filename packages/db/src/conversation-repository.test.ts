@@ -133,6 +133,9 @@ function accessRecord(overrides: Partial<ConversationAccessRecord> = {}): Conver
     conversation: conversation(),
     projectOwnerUserId: creatorUserId,
     projectIsPersonal: false,
+    // R16 批 W4a：projects 加了 instructions_md/is_dm_container 的显式投影——机械补齐（默认空/非容器）。
+    projectInstructionsMd: null,
+    projectIsDmContainer: false,
     membershipRole: "member",
     participantRole: "owner",
     participantCount: 1,
@@ -266,6 +269,28 @@ test("R12 access record fails closed on deleted or cross-workspace visibility", 
   assertFullConversationAccessPredicates(queries[0], { viewerUserId: memberUserId, conversationId });
   assert.equal(allParams(queries[0]).includes(otherWorkspaceId), false);
   assert.equal(queries[0]?.limit, 1);
+});
+
+// R16 批 W4a（项目级自定义指令）：projects.instructions_md / projects.is_dm_container 必须显式投影——
+// 同 projectIsPersonal 当初的教训（见 ConversationAccessRecord 顶部注释），不加进 readVisibleAccess 的
+// select，conversation-turns.ts 读到的这两个字段运行时就是 undefined，注入判定悄悄失效。
+test("R16 W4a findVisibleAccessRecord projects instructions_md and is_dm_container and returns them on the record", async () => {
+  const row = accessRecord({
+    projectInstructionsMd: "遇到发布相关的工单，先问一句要不要拉发布负责人。",
+    projectIsDmContainer: false
+  });
+  const { db, queries } = createQueryRecorder([[row]]);
+
+  const result = await createConversationRepository(db).findVisibleAccessRecord({
+    workspaceId,
+    viewerUserId: creatorUserId,
+    conversationId
+  });
+
+  assert.equal(result?.projectInstructionsMd, "遇到发布相关的工单，先问一句要不要拉发布负责人。");
+  assert.equal(result?.projectIsDmContainer, false);
+  assert.ok(queryReferences(queries[0]?.selection, projects.instructionsMd), "select must project projects.instructions_md");
+  assert.ok(queryReferences(queries[0]?.selection, projects.isDmContainer), "select must project projects.is_dm_container");
 });
 
 test("R12 authorized conversation list returns an empty tail page instead of access denial", async () => {

@@ -46,6 +46,12 @@ export type ConversationAccessRecord = {
   // "个人项目的 main 会话"这一单聊特例（团队项目的 main 仍归观察者，turns 恒 409）。跟着
   // readVisibleAccess 的 select 一起加（不显式投影运行时就是 undefined，教训同 cuuEnabled）。
   projectIsPersonal: boolean;
+  // R16 批 W4a（项目级自定义指令）：该会话所属项目的指令原文（未 trim，可能为 null）与「是否 DM 容器
+  // 项目」标记——apps/api/src/services/conversation-turns.ts 据此判定要不要把项目指令注入这一轮
+  // system prompt（DM 容器项目永远跳过，见该文件里 buildTurnProjectInstructionsSection 调用处的注释）。
+  // 同 projectIsPersonal 当初的教训：不在这里显式投影，readVisibleAccess 读回的值运行时就是 undefined。
+  projectInstructionsMd: string | null;
+  projectIsDmContainer: boolean;
   membershipRole: string;
   participantRole: ConversationParticipantRole | null;
   // R13 批 G1（小群）：conversation_participants 的真实行数（含创建者）——服务端回话判定的
@@ -749,6 +755,8 @@ async function readVisibleAccess(
       conversation: conversationSelection,
       projectOwnerUserId: projects.ownerUserId,
       projectIsPersonal: projects.isPersonal,
+      projectInstructionsMd: projects.instructionsMd,
+      projectIsDmContainer: projects.isDmContainer,
       membershipRole: workspaceMemberships.role,
       participantRole: conversationParticipants.role
     })
