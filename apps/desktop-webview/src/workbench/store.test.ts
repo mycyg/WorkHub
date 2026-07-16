@@ -13,6 +13,8 @@ test("initialWorkbenchStoreState starts empty with the side panel open and no mo
   assert.equal(state.newProjectModalOpen, false);
   assert.equal(state.centerTab, "chat");
   assert.equal(state.activeConversationId, undefined);
+  // R16-W4b2（中栏会话 tab 条）：已打开会话集合初始为空。
+  assert.deepEqual(state.openConversationTabs, []);
   // R13 批 S3（个人空间）：独立于团队项目树的数据源/模态状态，初始态同样空/关闭。
   assert.deepEqual(state.personalProjects, []);
   assert.equal(state.personalProjectsLoad, "idle");
