@@ -1077,6 +1077,65 @@ const proposalChangePreviewResponse = {
     ]).responses
   }
 } as const;
+// R16-W3（变更编辑器）：base vs proposed 逐行 tracked-changes 视图。
+const proposalChangeDiffResponse = {
+  responses: {
+    "200": jsonDataResponse(
+      {
+        type: "object",
+        required: [
+          "proposal_id",
+          "change_id",
+          "path",
+          "filename",
+          "change_type",
+          "status",
+          "title",
+          "base_available",
+          "truncated",
+          "segments"
+        ],
+        properties: {
+          proposal_id: uuidStringSchema,
+          change_id: uuidStringSchema,
+          path: { type: "string" },
+          filename: { type: "string", minLength: 1 },
+          change_type: {
+            type: "string",
+            enum: ["created", "updated", "deleted", "renamed", "moved", "replaced", "generated"]
+          },
+          status: { type: "string", enum: ["opened", "reviewed", "merged", "rejected"] },
+          title: { type: "string", minLength: 1 },
+          base_available: { type: "boolean" },
+          truncated: { type: "boolean" },
+          segments: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["type", "lines"],
+              properties: {
+                type: { type: "string", enum: ["context", "add", "del"] },
+                lines: { type: "array", items: { type: "string" } }
+              },
+              additionalProperties: false
+            }
+          }
+        },
+        additionalProperties: false
+      },
+      "Tracked-changes diff between base and proposed content of a manifest change"
+    ).responses["200"],
+    "401": proposalNotIdentifiedResponse,
+    "403": proposalForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Proposal or manifest change was not found", [
+      "not_found",
+      "proposal_change_not_found"
+    ]).responses["404"],
+    ...jsonErrorStatusResponse("415", "Proposal change has no diffable text content", [
+      "proposal_change_diff_unsupported"
+    ]).responses
+  }
+} as const;
 const createProposalConflictResponse = jsonErrorStatusResponse(
   "409",
   "Proposal manifest cannot create a new proposal in the current state",
@@ -8477,6 +8536,17 @@ export function getOpenApiDocument() {
           summary: "Preview a proposal manifest change inline when it carries generated text",
           parameters: [pathUuidParameter("id"), pathUuidParameter("changeId")],
           ...proposalChangePreviewResponse
+        }
+      },
+      "/api/proposals/{id}/files/{path}/diff": {
+        get: {
+          tags: ["proposals"],
+          summary: "Tracked-changes diff (base vs proposed) for one manifest change, keyed by URL-encoded path",
+          parameters: [
+            pathUuidParameter("id"),
+            { name: "path", in: "path", required: true, schema: { type: "string" } }
+          ],
+          ...proposalChangeDiffResponse
         }
       },
       "/api/proposals/{id}/review": {
