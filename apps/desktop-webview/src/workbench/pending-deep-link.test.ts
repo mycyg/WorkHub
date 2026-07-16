@@ -40,6 +40,40 @@ test("stash then consume round-trips project + conversation id together", () => 
   assert.deepEqual(result, { projectId: "project-1", conversationId: "conv-1" });
 });
 
+// R17-G5 #30：seq 随会话一起 round-trip（搜索命中会话消息的深链定位）。
+test("stash then consume round-trips project + conversation + seq together", () => {
+  const storage = fakeStorage();
+  stashPendingWorkbenchDeepLink({ projectId: "project-1", conversationId: "conv-1", seq: 42 }, { storage, now: () => 0 });
+
+  const result = consumePendingWorkbenchDeepLink({ storage, now: () => 0 });
+
+  assert.deepEqual(result, { projectId: "project-1", conversationId: "conv-1", seq: 42 });
+});
+
+test("seq is dropped when there is no conversation context (seq only means something within a conversation)", () => {
+  const storage = fakeStorage();
+  stashPendingWorkbenchDeepLink({ projectId: "project-1", seq: 42 }, { storage, now: () => 0 });
+
+  const result = consumePendingWorkbenchDeepLink({ storage, now: () => 0 });
+
+  assert.deepEqual(result, { projectId: "project-1" });
+});
+
+test("a malformed seq is ignored, falling back to conversation-level (no bogus positioning)", () => {
+  const storage = fakeStorage({
+    workhub_workbench_pending_deep_link: JSON.stringify({
+      projectId: "project-1",
+      conversationId: "conv-1",
+      seq: "not-a-number",
+      stashedAt: 0
+    })
+  });
+
+  const result = consumePendingWorkbenchDeepLink({ storage, now: () => 0 });
+
+  assert.deepEqual(result, { projectId: "project-1", conversationId: "conv-1" });
+});
+
 test("consuming clears the stash — it is a one-time token, not replayed on a second read", () => {
   const storage = fakeStorage();
   stashPendingWorkbenchDeepLink({ projectId: "project-1" }, { storage, now: () => 0 });

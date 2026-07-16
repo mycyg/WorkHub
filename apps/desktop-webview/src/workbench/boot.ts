@@ -172,7 +172,8 @@ export function applyPendingWorkbenchDeepLink(
 ): void {
   const target = consumePendingWorkbenchDeepLink({ storage, ...(now ? { now } : {}) });
   if (target) {
-    shell.selectProject(target.projectId, target.conversationId);
+    // #30：会话命中带 seq 时透传——工作台打开会话后定位到该消息并短暂高亮。
+    shell.selectProject(target.projectId, target.conversationId, target.seq);
   }
 }
 

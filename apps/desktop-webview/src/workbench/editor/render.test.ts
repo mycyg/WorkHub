@@ -95,3 +95,50 @@ test("renderEditorHtml renders the 415 unsupported state without action buttons"
   assert.match(html, /没有可逐行对照/u);
   assert.doesNotMatch(html, /data-wb-ed-approve/u);
 });
+
+// R17-G5 #13：同提议多文件切换条。
+test("renderEditorHtml renders the file switcher only when a proposal has more than one text file", () => {
+  const single = renderEditorHtml(
+    ready({ files: { activePath: "/a.md", tabs: [{ path: "/a.md", filename: "a.md", changeType: "updated" }] } }),
+    "zh-CN"
+  );
+  assert.doesNotMatch(single, /data-wb-ed-files/u);
+
+  const multi = renderEditorHtml(
+    ready({
+      diff: diff({ path: "/a.md", filename: "a.md" }),
+      files: {
+        activePath: "/a.md",
+        tabs: [
+          { path: "/a.md", filename: "a.md", changeType: "updated", adds: 3, dels: 1 },
+          { path: "/b.md", filename: "b.md", changeType: "created" }
+        ]
+      }
+    }),
+    "zh-CN"
+  );
+  assert.match(multi, /data-wb-ed-files/u);
+  assert.match(multi, /data-wb-ed-file="\/a\.md"/u);
+  assert.match(multi, /data-wb-ed-file="\/b\.md"/u);
+  assert.match(multi, /data-wb-ed-file-prev/u);
+  assert.match(multi, /data-wb-ed-file-next/u);
+  // 加载过 diff 的文件显真实 +/−；没加载过的 b.md 退回 change_type 短标签。
+  assert.match(multi, /\+3/u);
+  assert.match(multi, /−1/u);
+  assert.match(multi, /wh-wb-ed-ftab--active/u);
+  assert.match(multi, /1\/2/u);
+});
+
+// R17-G5 #12：合并冲突面板复用（conflict 模式渲传入的可信 HTML，无动作条）。
+test("renderEditorHtml renders the reused merge-conflict panel in conflict mode", () => {
+  const html = renderEditorHtml(
+    { mode: "conflict", filename: "privacy-section.md", conflictHtml: '<div data-prop-conflict-panel="true">冲突面板</div>' },
+    "zh-CN"
+  );
+  assert.match(html, /wh-wb-ed-conflict/u);
+  assert.match(html, /data-prop-conflict-panel/u);
+  assert.match(html, /冲突面板/u);
+  // 冲突态不渲常规批准/合并动作条。
+  assert.doesNotMatch(html, /data-wb-ed-approve/u);
+  assert.doesNotMatch(html, /data-wb-ed-merge/u);
+});

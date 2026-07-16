@@ -476,6 +476,9 @@ export function mountChatView(
     // R15 批 B：会话级 Cuu 硬开关（G1）——false 时不自动请 Cuu 回话（isCollabConversation 收紧，见下）。
     // DM 默认 false（B5 拍板），普通协同/主区缺省当 true（既有行为不变，不特判 DM——纯由 cuu_enabled 驱动）。
     cuuEnabled?: boolean;
+    // R17-G5 #30：搜索命中会话消息的深链定位——首屏历史加载完成后滚动到该 seq 的消息并短暂高亮
+    // （复用引用/置顶跳转的 jumpToMessage：本地无就 beforeSeq 翻页加载到为止）。缺省不定位。
+    focusSeq?: number;
     currentUserId: string;
     members: readonly WorkbenchMemberVM[];
     getClientToken: () => string | undefined;
@@ -523,6 +526,8 @@ export function mountChatView(
   let hasOlderHistory = false;
   let oldestKnownBeforeSeq: number | undefined;
   let olderLoad: "idle" | "loading" | "error" = "idle";
+  // R17-G5 #30：深链定位只在首屏就绪后执行一次（loadHistory 可能重试，别重复跳）。
+  let focusConsumed = false;
   let renderWindowSize = DEFAULT_MESSAGE_RENDER_WINDOW;
   let expandedMessageIds = new Set<string>();
   // R14 批 APPROVE-CHAT（档① 本地乐观回流）：本机在右栏审批过的提议 id——产出卡据此追加「已处理」覆盖标。
@@ -1457,6 +1462,11 @@ export function mountChatView(
       olderLoad = "idle";
       historyLoad = "ready";
       renderScroll();
+      // R17-G5 #30：深链定位——首屏就绪后滚动到搜索命中的那条消息并高亮（一次性，本地无则翻页加载到为止）。
+      if (input.focusSeq !== undefined && !focusConsumed) {
+        focusConsumed = true;
+        void jumpToMessageBySeq(input.focusSeq);
+      }
       connectStream();
       // R13 批 S2：首屏就顺带查一次执行进度，不必等第一条 action_card.updated 事件才第一次看到阶段流
       // （否则一张已经在跑的执行卡在这个视图刚打开时会一直显示旧的纯文字"进行中"，直到下一次观察者
@@ -2416,6 +2426,24 @@ export function mountChatView(
       node.scrollIntoView({ behavior: "smooth", block: "center" });
       flashMessage(node);
     }
+  }
+
+  // R17-G5 #30：按消息 seq 定位（深链）——先把含该 seq 的页翻进本地（照 jumpToMessage 的 beforeSeq
+  // 翻页 + 硬熔断），解析成 message id 后委托 jumpToMessage 复用其「撑窗口 + 滚动 + 高亮」全套。
+  async function jumpToMessageBySeq(seq: number): Promise<void> {
+    const idForSeq = () => messages.find((entry) => entry.seq === seq)?.id;
+    let id = idForSeq();
+    let pages = 0;
+    while (!disposed && id === undefined && hasOlderHistory && pages < REPLY_JUMP_MAX_OLDER_PAGES) {
+      pages += 1;
+      await loadOlderHistory();
+      id = idForSeq();
+    }
+    if (disposed || id === undefined) {
+      // 目标消息不在本地也翻不到（已删/超熔断）——诚实不定位，会话已打开在最新一屏，不假装能跳到。
+      return;
+    }
+    await jumpToMessage(id);
   }
 
   function jumpToUnread(): void {

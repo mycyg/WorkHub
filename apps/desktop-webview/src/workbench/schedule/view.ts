@@ -23,9 +23,11 @@ import {
   renderScheduleErrorHtml,
   renderScheduleHtml,
   renderScheduleLoadingHtml,
+  weekOffsetForDay,
   type SchedulePlanDraftsState,
   type SchedulePlanUiState,
-  type ScheduleUiState
+  type ScheduleUiState,
+  type ScheduleViewMode
 } from "./render.js";
 import type { ProjectTimelinePageVM } from "@workhub/contracts";
 
@@ -145,16 +147,35 @@ export function mountScheduleView(
     return fallback;
   }
 
-  function shiftWeek(delta: number): void {
-    ui = { ...ui, weekOffset: ui.weekOffset + delta };
+  // #28：上一/下一——按当前视图模式移动一周或一个月。
+  function shiftPeriod(delta: number): void {
+    ui = ui.viewMode === "month" ? { ...ui, monthOffset: ui.monthOffset + delta } : { ...ui, weekOffset: ui.weekOffset + delta };
     render();
   }
 
   function goToday(): void {
-    if (ui.weekOffset === 0) {
+    if (ui.weekOffset === 0 && ui.monthOffset === 0) {
       return;
     }
-    ui = { ...ui, weekOffset: 0 };
+    ui = { ...ui, weekOffset: 0, monthOffset: 0 };
+    render();
+  }
+
+  // #28：周/月切换。
+  function setViewMode(mode: ScheduleViewMode): void {
+    if (ui.viewMode === mode) {
+      return;
+    }
+    ui = { ...ui, viewMode: mode };
+    render();
+  }
+
+  // #28：点月历某天 → 切回周视图并定位到那一周。
+  function openWeekForDay(dayKeyStr: string): void {
+    if (!vm) {
+      return;
+    }
+    ui = { ...ui, viewMode: "week", weekOffset: weekOffsetForDay(vm.generated_at, dayKeyStr) };
     render();
   }
 
@@ -358,16 +379,28 @@ export function mountScheduleView(
       void load();
       return;
     }
+    // #28：周/月切换 chip。
+    const modeChip = target.closest<HTMLElement>("[data-wb-sc-mode]");
+    if (modeChip?.dataset.wbScMode) {
+      setViewMode(modeChip.dataset.wbScMode as ScheduleViewMode);
+      return;
+    }
     if (target.closest("[data-wb-sc-prev]")) {
-      shiftWeek(-1);
+      shiftPeriod(-1);
       return;
     }
     if (target.closest("[data-wb-sc-next]")) {
-      shiftWeek(1);
+      shiftPeriod(1);
       return;
     }
     if (target.closest("[data-wb-sc-today]")) {
       goToday();
+      return;
+    }
+    // #28：月历单元格点击 → 切回周视图定位到那周。放在通用卡片处理之前（月单元格没有 data-wb-sc-id）。
+    const monthCell = target.closest<HTMLElement>("[data-wb-sc-day]");
+    if (monthCell?.dataset.wbScDay) {
+      openWeekForDay(monthCell.dataset.wbScDay);
       return;
     }
     // 计划草案控件。
@@ -437,6 +470,13 @@ export function mountScheduleView(
     if (card?.dataset.wbScId) {
       event.preventDefault();
       input.onOpenTimelineRow?.(card.dataset.wbScId);
+      return;
+    }
+    // #28：月历单元格键盘可达（role=button tabindex=0）。
+    const monthCell = event.target.closest<HTMLElement>("[data-wb-sc-day]");
+    if (monthCell?.dataset.wbScDay) {
+      event.preventDefault();
+      openWeekForDay(monthCell.dataset.wbScDay);
     }
   });
 
