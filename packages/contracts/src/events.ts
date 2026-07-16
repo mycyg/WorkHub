@@ -458,3 +458,32 @@ export const conversationCuuUpdatedEventSchema = z
     }
   });
 export type ConversationCuuUpdatedEvent = z.infer<typeof conversationCuuUpdatedEventSchema>;
+
+// R17 批 G1（群成员管理）：conversation.participants.updated——参与者集合变化后广播（加人/退群/移出）。
+// data 只带 conversation_id + 变化类型 + 受影响 user_id（不带全量参与者列表，客户端据此按需重拉 GET
+// /participants，同 cuu.updated 只带布尔值、不带全量会话 VM 的既有取舍：接不上就等下次重挂时兜底）。
+export const conversationParticipantsUpdatedEventSchema = z
+  .object({
+    event_id: idSchema,
+    type: z.literal("conversation.participants.updated"),
+    topic: z.string().min(1),
+    ts: isoDateTimeSchema,
+    data: z
+      .object({
+        conversation_id: idSchema,
+        change: z.enum(["added", "removed"]),
+        user_id: idSchema
+      })
+      .strict()
+  })
+  .strict()
+  .superRefine((event, ctx) => {
+    if (event.topic !== `conversation:${event.data.conversation_id}`) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["topic"],
+        message: "participants-updated topic must match data.conversation_id"
+      });
+    }
+  });
+export type ConversationParticipantsUpdatedEvent = z.infer<typeof conversationParticipantsUpdatedEventSchema>;

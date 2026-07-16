@@ -321,3 +321,74 @@ test("R15 conversation participants VM: main is scope=workspace + empty, collab/
   );
   assert.equal(schema.safeParse({ scope: "workspace", participants: [], extra: true }).success, false);
 });
+
+// ── R17 批 G1（群成员管理）契约 ─────────────────────────────────────────────────────────────
+
+test("R17 G1 add participant request: only user_id, rejects extras and missing", () => {
+  const schema = requiredSchema<Record<string, unknown>>("addConversationParticipantRequestSchema");
+  assert.equal(schema.safeParse({ user_id: userId }).success, true);
+  assert.equal(schema.safeParse({}).success, false);
+  assert.equal(schema.safeParse({ user_id: "not-a-uuid" }).success, false);
+  assert.equal(schema.safeParse({ user_id: userId, role: "member" }).success, false);
+});
+
+test("R17 G1 add participant result: added flag + nested participants VM, extras rejected", () => {
+  const schema = requiredSchema<Record<string, unknown>>("addConversationParticipantResultVmSchema");
+  const ok = {
+    added: true,
+    participants: {
+      scope: "participants",
+      participants: [{ user_id: userId, nickname: "阿曼", role: "owner" }]
+    }
+  };
+  assert.equal(schema.safeParse(ok).success, true);
+  assert.equal(schema.safeParse({ ...ok, extra: 1 }).success, false);
+  assert.equal(schema.safeParse({ participants: ok.participants }).success, false);
+});
+
+test("R17 G1 remove participant result: self_left + nullable new owner, extras rejected", () => {
+  const schema = requiredSchema<Record<string, unknown>>("removeConversationParticipantResultVmSchema");
+  assert.equal(
+    schema.safeParse({ removed_user_id: userId, self_left: true, new_owner_user_id: null }).success,
+    true
+  );
+  assert.equal(
+    schema.safeParse({ removed_user_id: userId, self_left: false, new_owner_user_id: otherUserId }).success,
+    true
+  );
+  assert.equal(schema.safeParse({ removed_user_id: userId, self_left: true }).success, false);
+  assert.equal(
+    schema.safeParse({ removed_user_id: userId, self_left: true, new_owner_user_id: null, extra: 1 }).success,
+    false
+  );
+});
+
+test("R17 G1 participants.updated event: topic must match conversation_id, change is an enum", () => {
+  const schema = requiredSchema<Record<string, unknown>>("conversationParticipantsUpdatedEventSchema");
+  const base = {
+    event_id: eventId,
+    type: "conversation.participants.updated",
+    topic: `conversation:${conversationId}`,
+    ts,
+    data: { conversation_id: conversationId, change: "added", user_id: userId }
+  };
+  assert.equal(schema.safeParse(base).success, true);
+  assert.equal(schema.safeParse({ ...base, data: { ...base.data, change: "removed" } }).success, true);
+  assert.equal(schema.safeParse({ ...base, topic: "conversation:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }).success, false);
+  assert.equal(schema.safeParse({ ...base, data: { ...base.data, change: "joined" } }).success, false);
+});
+
+test("R17 G1 workspace member role request + result schemas", () => {
+  const roleReq = requiredSchema<Record<string, unknown>>("updateWorkspaceMemberRoleRequestSchema");
+  assert.equal(roleReq.safeParse({ role: "admin" }).success, true);
+  assert.equal(roleReq.safeParse({ role: "superuser" }).success, false);
+  assert.equal(roleReq.safeParse({ role: "member", extra: 1 }).success, false);
+
+  const removeVm = requiredSchema<Record<string, unknown>>("removeWorkspaceMemberResultVmSchema");
+  assert.equal(removeVm.safeParse({ removed_user_id: userId }).success, true);
+  assert.equal(removeVm.safeParse({ removed_user_id: userId, extra: 1 }).success, false);
+
+  const roleVm = requiredSchema<Record<string, unknown>>("updateWorkspaceMemberRoleResultVmSchema");
+  assert.equal(roleVm.safeParse({ user_id: userId, role: "owner" }).success, true);
+  assert.equal(roleVm.safeParse({ user_id: userId, role: "boss" }).success, false);
+});

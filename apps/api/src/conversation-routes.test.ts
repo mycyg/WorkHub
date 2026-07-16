@@ -185,6 +185,12 @@ function service(overrides: Partial<ConversationService> = {}): ConversationServ
     async listParticipants() {
       throw new Error("listParticipants not expected");
     },
+    async addParticipant() {
+      throw new Error("addParticipant not expected");
+    },
+    async removeParticipant() {
+      throw new Error("removeParticipant not expected");
+    },
     async listMessages() {
       return { messages: [], has_more: false, next_after_seq: 0 };
     },

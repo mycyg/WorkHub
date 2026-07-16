@@ -1,6 +1,10 @@
 import {
   ConversationAccessDeniedError,
   ConversationDmTargetError,
+  ConversationNotGroupError,
+  ConversationParticipantCapError,
+  ConversationParticipantNotFoundError,
+  ConversationLastParticipantError,
   ConversationMessageActorMismatchError,
   ConversationMessageDeletedError,
   ConversationMessageEditWindowError,
@@ -32,6 +36,9 @@ import {
 } from "@workhub/db";
 import {
   conversationCuuUpdatedEventSchema,
+  conversationParticipantsUpdatedEventSchema,
+  addConversationParticipantResultVmSchema,
+  removeConversationParticipantResultVmSchema,
   conversationFileCardContentSchema,
   conversationMessageCreatedEventSchema,
   conversationMessageUpdatedEventSchema,
@@ -53,6 +60,8 @@ import {
   updateConversationCuuResultVmSchema,
   eventTypes,
   MAX_CONVERSATION_REPLY_PREVIEW_CODE_UNITS,
+  type AddConversationParticipantResultVM,
+  type RemoveConversationParticipantResultVM,
   type AdvanceReadCursorRequest,
   type ConversationListPageVM,
   type ConversationListQuery,
@@ -76,6 +85,20 @@ import {
   type UpdateConversationCuuResultVM
 } from "@workhub/contracts";
 import { makeWorkHubEvent, topics } from "@workhub/events";
+
+// ── R17 批 G1（群成员管理 · 拍板 A：项目成员=会话参与者的可管理化） ─────────────────────────
+// 决策（06-gap-fix-plan.md 拍板 A，负责人代决可逆）：当前产品单工作区形态下不新建「项目团队」数据层。
+// 「项目成员」不作为独立概念存在——工作区花名册（workspace_members）≈项目候选池，「谁在这个项目里」以
+// 「该项目各协同会话的参与者集合」的可管理化落地。本服务因此把参与者集合从「建群那一刻冻结的快照」升级
+// 为可增删的管理对象：
+//   * addParticipant（POST /participants）—— 建群后往普通协同会话加人（main 全员语义/DM 2 人不变量各自
+//     409）；
+//   * removeParticipant（DELETE /participants/:userId）—— 退群（自删）/移出（owner 删他人），owner 退群
+//     时最早加入者自动升 owner，最后一人 409。
+// 未来扩展点：若多项目隔离需求变强需要独立「项目团队」层（project_members 表 + 项目级角色/邀请），本批的
+// 参与者增删端点可整体复用为「会话级成员」子概念，届时在其上叠一层「项目成员 → 默认拉进主区/各协同会话」
+// 的物化规则即可，不必推翻这里的会话参与者模型。
+// ───────────────────────────────────────────────────────────────────────────────────────────
 
 // R14 批 CHAT：编辑窗（15 分钟）——服务端策略常量，传给仓库层并进同一次原子判定。
 const CONVERSATION_EDIT_WINDOW_MS = 15 * 60 * 1000;
@@ -153,6 +176,21 @@ export type ConversationService = {
   // R15 批 cuu-toggle：会话参与者列表——main 诚实回 scope:"workspace" + 空列表，collab（含 DM）回真实
   // 参与者。参与者门控与消息可见性同口径（非参与者在 visibleConversation() 就已经 404）。
   listParticipants(input: { actor: AuthActor; conversationId: string }): Promise<ConversationParticipantsVM>;
+  // R17 批 G1（#1 建群后加人）：往普通协同会话加人——仅 collab 非 DM（main/DM 各自 409）、调用者须为
+  // 该会话参与者（visibleConversation 已挡住非参与者）、目标须同工作区活跃成员、上限沿用建群 cap、
+  // 唯一约束幂等（已在群里回 added=false + 现有列表）。回刷新后的完整参与者列表。
+  addParticipant(input: {
+    actor: AuthActor;
+    conversationId: string;
+    addUserId: string;
+  }): Promise<AddConversationParticipantResultVM>;
+  // R17 批 G1（#16 退群/移出）：自删=退群（任何参与者可）、owner 删他人=移出；main/DM 各自 409；owner
+  // 退群且群里还有他人 → 最早加入者自动升 owner；只剩自己 409（最后一人不能退出）。
+  removeParticipant(input: {
+    actor: AuthActor;
+    conversationId: string;
+    targetUserId: string;
+  }): Promise<RemoveConversationParticipantResultVM>;
   listMessages(input: {
     actor: AuthActor;
     conversationId: string;
@@ -466,6 +504,19 @@ function mapRepositoryError(error: unknown): never {
   if (error instanceof ConversationDmTargetError) {
     throw new ConversationServiceError(404, "conversation_dm_target_not_found", "没有找到这个工作区里的这个人。");
   }
+  // R17 批 G1（群成员管理）：加人/退群/移出的结构性失败映射。
+  if (error instanceof ConversationNotGroupError) {
+    throw new ConversationServiceError(409, "conversation_not_group", "这个会话不支持单独增删成员。");
+  }
+  if (error instanceof ConversationParticipantCapError) {
+    throw new ConversationServiceError(409, "conversation_participant_cap", "这个群的成员已经满了。");
+  }
+  if (error instanceof ConversationParticipantNotFoundError) {
+    throw new ConversationServiceError(404, "conversation_participant_not_found", "这个人不在这个会话里。");
+  }
+  if (error instanceof ConversationLastParticipantError) {
+    throw new ConversationServiceError(409, "conversation_last_participant", "你是最后一名成员，不能退出。");
+  }
   if (error instanceof ConversationSequenceExhaustedError) {
     throw new ConversationServiceError(409, "conversation_sequence_exhausted", "这个会话的消息序号已经耗尽。");
   }
@@ -679,6 +730,38 @@ export function createConversationService(
       await bus.publish(conversationTopic, eventTypes.conversationCuuUpdated, event);
     } catch (error) {
       logger.warn("conversation_cuu_updated_publish_failed", {
+        event_id: event.event_id,
+        topic: conversationTopic,
+        conversation_id: access.id,
+        broker_backend: bus.backend,
+        error
+      });
+    }
+  }
+
+  // R17 批 G1（群成员管理）：参与者集合变化后广播 conversation.participants.updated（best-effort，同
+  // publishConversationCuuUpdated 的既有取舍——加人/移出本身已经落库成功，不因广播失败回滚）。让别的开着
+  // 这个会话的客户端就地重拉参与者（成员条 / 已读 N/M 分母），接不上就等下次重挂时用 GET /participants 兜底。
+  async function publishParticipantsUpdated(
+    access: ConversationRow,
+    change: "added" | "removed",
+    userId: string
+  ) {
+    const conversationTopic = topics.conversation(access.id).topic;
+    const event = parseOutputContract(
+      conversationParticipantsUpdatedEventSchema,
+      makeWorkHubEvent({
+        type: eventTypes.conversationParticipantsUpdated,
+        topic: conversationTopic,
+        ts: now(),
+        data: { conversation_id: access.id, change, user_id: userId.toLowerCase() }
+      }),
+      "conversations.participants.event.updated"
+    );
+    try {
+      await bus.publish(conversationTopic, eventTypes.conversationParticipantsUpdated, event);
+    } catch (error) {
+      logger.warn("conversation_participants_updated_publish_failed", {
         event_id: event.event_id,
         topic: conversationTopic,
         conversation_id: access.id,
@@ -975,6 +1058,116 @@ export function createConversationService(
           participants: rows.map((row) => ({ user_id: row.userId, nickname: row.nickname, role: row.role }))
         },
         "conversations.participants.list"
+      );
+    },
+
+    // ── R17 批 G1（#1 建群后加人） ────────────────────────────────────────────────────
+    // 红线：
+    //   1. 会话可见（visibleConversation 已 404 挡住不可见者——collab 只对参与者可见，因此调用者天然是
+    //      参与者，无需再判 participantRole）；
+    //   2. 仅 collab 非 DM——main（全员语义）409，DM（2 人不变量）409；
+    //   3. 目标须同工作区活跃成员（仓库层 lockActiveMembershipSet 校验，映射到 400）；
+    //   4. 上限沿用建群 cap、唯一约束幂等（已在群里回 added=false + 现有列表）——仓库层。
+    // 真加人才广播 participants.updated（幂等命中既有成员不广播，避免无意义刷新）。回刷新后完整列表。
+    async addParticipant(input) {
+      const { human, access } = await visibleConversation(input);
+      const conversation = access.conversation;
+      if (conversation.kind !== "collab") {
+        throw new ConversationServiceError(
+          409,
+          "conversation_not_group",
+          "主区是全员会话，不需要也不能单独加人。"
+        );
+      }
+      if (conversation.dmKey) {
+        throw new ConversationServiceError(409, "conversation_dm_no_add", "私聊只能是两个人，不能再加人。");
+      }
+      const addUserId = input.addUserId.trim().toLowerCase();
+      if (!addUserId) {
+        throw new ConversationServiceError(400, "conversation_add_target_required", "请选择要加入的成员。");
+      }
+      let result: Awaited<ReturnType<ConversationRepository["addParticipant"]>>;
+      try {
+        result = await repository.addParticipant({
+          workspaceId: human.workspaceId,
+          conversationId: conversation.id,
+          addedUserId: addUserId,
+          at: now()
+        });
+      } catch (error) {
+        mapRepositoryError(error);
+      }
+      if (result.added) {
+        await publishParticipantsUpdated(conversation, "added", result.participant.userId);
+      }
+      const rows = await repository.listParticipantsWithNickname({ conversationId: conversation.id });
+      return parseOutputContract(
+        addConversationParticipantResultVmSchema,
+        {
+          added: result.added,
+          participants: {
+            scope: "participants" as const,
+            participants: rows.map((row) => ({ user_id: row.userId, nickname: row.nickname, role: row.role }))
+          }
+        },
+        "conversations.participants.add"
+      );
+    },
+
+    // ── R17 批 G1（#16 退群/移出） ────────────────────────────────────────────────────
+    // 红线：
+    //   1. 会话可见（visibleConversation 已 404 挡住不可见者，collab 调用者天然是参与者）；
+    //   2. 仅 collab 非 DM——main（全员语义）409，DM（2 人不变量）409；
+    //   3. 自己删自己=退群（任何参与者可）；删别人=移出，仅 owner 可做（access.participantRole==='owner'）；
+    //   4. owner 退群且群里还有他人 → 最早加入者自动升 owner（仓库层事务内）；只剩自己 409（最后一人）。
+    // 被移出者的读游标/消息保留（仓库层只删 participant 行）。真移除才广播 participants.updated。
+    async removeParticipant(input) {
+      const { human, access } = await visibleConversation(input);
+      const conversation = access.conversation;
+      if (conversation.kind !== "collab") {
+        throw new ConversationServiceError(
+          409,
+          "conversation_not_group",
+          "主区是全员会话，不能退出或移出成员。"
+        );
+      }
+      if (conversation.dmKey) {
+        throw new ConversationServiceError(409, "conversation_dm_no_remove", "私聊只能是两个人，不能移出或退出。");
+      }
+      const targetUserId = input.targetUserId.trim().toLowerCase();
+      if (!targetUserId) {
+        throw new ConversationServiceError(400, "conversation_remove_target_required", "请选择要移出的成员。");
+      }
+      const selfLeft = targetUserId === human.userId.toLowerCase();
+      if (!selfLeft && access.participantRole !== "owner") {
+        throw new ConversationServiceError(
+          403,
+          "conversation_remove_forbidden",
+          "只有群主可以移出其他成员。"
+        );
+      }
+      let result: Awaited<ReturnType<ConversationRepository["removeParticipant"]>>;
+      try {
+        result = await repository.removeParticipant({
+          workspaceId: human.workspaceId,
+          conversationId: conversation.id,
+          targetUserId,
+          at: now()
+        });
+      } catch (error) {
+        mapRepositoryError(error);
+      }
+      if (result.removed) {
+        await publishParticipantsUpdated(conversation, "removed", targetUserId);
+      }
+      return parseOutputContract(
+        removeConversationParticipantResultVmSchema,
+        {
+          removed_user_id: targetUserId,
+          self_left: selfLeft,
+          new_owner_user_id: result.newOwnerUserId
+        },
+        "conversations.participants.remove"
       );
     },
 

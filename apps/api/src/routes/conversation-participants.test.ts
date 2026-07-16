@@ -120,6 +120,8 @@ function service(overrides: Partial<ConversationService> = {}): ConversationServ
     renameConversation: reject("renameConversation"),
     updateCuuEnabled: reject("updateCuuEnabled"),
     listParticipants: reject("listParticipants"),
+    addParticipant: reject("addParticipant"),
+    removeParticipant: reject("removeParticipant"),
     listMessages: reject("listMessages"),
     createMessage: reject("createMessage"),
     editMessage: reject("editMessage"),
@@ -260,4 +262,206 @@ test("the route preserves the service's typed 404 for an invisible (or non-parti
   const response = await app.request(`/api/conversations/${conversationId}/participants`, { headers });
 
   assert.equal(response.status, 404);
+});
+
+// ── R17 批 G1（群成员管理 · #1 建群后加人）POST /participants ─────────────────────────────────
+
+test("POST participants requires authentication before reaching the service", async () => {
+  const runtimeSettings = settings();
+  const app = routeApp(
+    runtimeSettings,
+    service({
+      async addParticipant() {
+        throw new Error("anonymous request must not reach the service");
+      }
+    })
+  );
+
+  const response = await app.request(`/api/conversations/${conversationId}/participants`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ user_id: otherUserId })
+  });
+
+  assert.equal(response.status, 401);
+});
+
+test("POST participants forwards the target user id and returns the refreshed list", async () => {
+  const runtimeSettings = settings();
+  let seen: unknown;
+  const app = routeApp(
+    runtimeSettings,
+    service({
+      async addParticipant(input) {
+        seen = input;
+        return {
+          added: true,
+          participants: {
+            scope: "participants",
+            participants: [
+              { user_id: userId, nickname: "阿曼", role: "owner" },
+              { user_id: otherUserId, nickname: "小赵", role: "member" }
+            ]
+          }
+        };
+      }
+    })
+  );
+  const headers = { Cookie: await cookie(runtimeSettings), "content-type": "application/json" };
+
+  const response = await app.request(`/api/conversations/${conversationId}/participants`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ user_id: otherUserId })
+  });
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as { ok: boolean; data: { added: boolean } };
+  assert.equal(body.ok, true);
+  assert.equal(body.data.added, true);
+  assert.deepEqual(seen, { actor: (seen as { actor: unknown }).actor, conversationId, addUserId: otherUserId });
+});
+
+test("POST participants rejects a malformed body with 422 before the service", async () => {
+  const runtimeSettings = settings();
+  let calls = 0;
+  const app = routeApp(
+    runtimeSettings,
+    service({
+      async addParticipant() {
+        calls += 1;
+        throw new Error("invalid body must not reach the service");
+      }
+    })
+  );
+  const headers = { Cookie: await cookie(runtimeSettings), "content-type": "application/json" };
+
+  const response = await app.request(`/api/conversations/${conversationId}/participants`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ user_id: "not-a-uuid" })
+  });
+
+  assert.equal(response.status, 422);
+  assert.equal(calls, 0);
+});
+
+test("POST participants preserves the service's typed 409 for a dm/main conversation", async () => {
+  const runtimeSettings = settings();
+  const app = routeApp(
+    runtimeSettings,
+    service({
+      async addParticipant() {
+        throw new ConversationServiceError(409, "conversation_dm_no_add", "私聊只能是两个人，不能再加人。");
+      }
+    })
+  );
+  const headers = { Cookie: await cookie(runtimeSettings), "content-type": "application/json" };
+
+  const response = await app.request(`/api/conversations/${conversationId}/participants`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ user_id: otherUserId })
+  });
+
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    error: { code: "conversation_dm_no_add", message: "私聊只能是两个人，不能再加人。" }
+  });
+});
+
+// ── R17 批 G1（#16 退群/移出）DELETE /participants/:userId ────────────────────────────────────
+
+test("DELETE participant requires authentication before reaching the service", async () => {
+  const runtimeSettings = settings();
+  const app = routeApp(
+    runtimeSettings,
+    service({
+      async removeParticipant() {
+        throw new Error("anonymous request must not reach the service");
+      }
+    })
+  );
+
+  const response = await app.request(`/api/conversations/${conversationId}/participants/${otherUserId}`, {
+    method: "DELETE"
+  });
+
+  assert.equal(response.status, 401);
+});
+
+test("DELETE participant 404s a malformed target user id without entering the service", async () => {
+  const runtimeSettings = settings();
+  let calls = 0;
+  const app = routeApp(
+    runtimeSettings,
+    service({
+      async removeParticipant() {
+        calls += 1;
+        throw new Error("invalid target must not reach the service");
+      }
+    })
+  );
+  const headers = { Cookie: await cookie(runtimeSettings) };
+
+  const response = await app.request(`/api/conversations/${conversationId}/participants/not-a-uuid`, {
+    method: "DELETE",
+    headers
+  });
+
+  assert.equal(response.status, 404);
+  assert.equal(calls, 0);
+});
+
+test("DELETE participant forwards the target and returns the self_left / new owner result", async () => {
+  const runtimeSettings = settings();
+  let seen: unknown;
+  const app = routeApp(
+    runtimeSettings,
+    service({
+      async removeParticipant(input) {
+        seen = input;
+        return { removed_user_id: otherUserId, self_left: false, new_owner_user_id: null };
+      }
+    })
+  );
+  const headers = { Cookie: await cookie(runtimeSettings) };
+
+  const response = await app.request(`/api/conversations/${conversationId}/participants/${otherUserId}`, {
+    method: "DELETE",
+    headers
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    ok: true,
+    data: { removed_user_id: otherUserId, self_left: false, new_owner_user_id: null }
+  });
+  assert.equal((seen as { conversationId: string }).conversationId, conversationId);
+  assert.equal((seen as { targetUserId: string }).targetUserId, otherUserId);
+});
+
+test("DELETE participant preserves the service's typed 409 for the last remaining member", async () => {
+  const runtimeSettings = settings();
+  const app = routeApp(
+    runtimeSettings,
+    service({
+      async removeParticipant() {
+        throw new ConversationServiceError(409, "conversation_last_participant", "你是最后一名成员，不能退出。");
+      }
+    })
+  );
+  const headers = { Cookie: await cookie(runtimeSettings) };
+
+  const response = await app.request(`/api/conversations/${conversationId}/participants/${otherUserId}`, {
+    method: "DELETE",
+    headers
+  });
+
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    error: { code: "conversation_last_participant", message: "你是最后一名成员，不能退出。" }
+  });
 });
