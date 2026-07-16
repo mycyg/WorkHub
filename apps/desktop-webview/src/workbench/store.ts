@@ -4,6 +4,8 @@
 
 import type { DmListItemVM, ProjectListItemVM, WorkbenchPageVM } from "@workhub/contracts";
 
+import type { OpenConversationTab } from "./conversation-tabs/model.js";
+
 export type WorkbenchLoadState = "idle" | "loading" | "ready" | "error";
 
 // 中栏当前显示哪个能力视图。批 2 只有 "chat"；批 6 加 "drive"（rail 的「网盘」树叶接真视图）；
@@ -78,6 +80,12 @@ export type WorkbenchStoreState = {
   dmListLoad: WorkbenchLoadState;
   // centerTab === "dm" 时，中栏具体打开的是 dmList 里哪一条 DM 会话（rail 私聊行点击/「发私聊」写入）。
   activeDmConversationId: string | undefined;
+  // R16-W4b2（中栏「已打开会话」tab 条 · 温和增强，不改单实例挂载模型）：已打开会话的有序集合——rail 点选
+  // 某会话即激活并加入（已在集合则只激活），点 tab 的 x 移出（关的是当前活跃则激活相邻），上限 8（超限挤掉
+  //「最久未激活的非当前」）。会话内容区仍一次挂一个（切 tab 走现状 selectProject/openDm 的重挂路径）。tab 条
+  // 只是「已打开的快捷切换」，rail 仍是唯一「发现」入口；活跃 tab 从 centerTab + active*ConversationId 派生，
+  // 因此与 rail 选中态天然双向同步。集合语义/渲染/持久化全在 conversation-tabs/ 模块（纯函数）。
+  openConversationTabs: OpenConversationTab[];
   // R15 批 B（在线两态）：rail 成员 roster + 私聊行 + 头像资料卡共用的在线 user id 集合——rail 30s 轮询
   // GET /api/presence（≤50 一批，分批）后写这里（只收 is_online===true，不编造离线）。存成数组便于
   // store patch 浅合并/序列化，读侧转成 Set。空数组 = 谁都不在线（或还没拉到）——渲染层据此不画绿点。
@@ -130,6 +138,7 @@ export function initialWorkbenchStoreState(): WorkbenchStoreState {
     dmList: [],
     dmListLoad: "idle",
     activeDmConversationId: undefined,
+    openConversationTabs: [],
     onlineUserIds: [],
     currentUserId: undefined,
     inboxCount: 0,

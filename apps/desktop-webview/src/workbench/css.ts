@@ -146,7 +146,31 @@ export const workbenchCss = [
   ".wh-wb-chat-head-status--online{color:var(--ds-success)}",
 
   // —— 中栏 —— //
-  ".wh-wb-center{flex:1 1 auto;min-width:0;overflow-y:auto;padding:20px 26px}",
+  // R16-W4b2：中栏列容器（会话 tab 条 + 中栏视图纵向排布）——tab 条 flex:none 常驻顶部，视图 flex:1 填满。
+  ".wh-wb-center-col{flex:1 1 auto;min-width:0;min-height:0;display:flex;flex-direction:column}",
+  ".wh-wb-center{flex:1 1 auto;min-width:0;min-height:0;overflow-y:auto;padding:20px 26px}",
+  // —— R16-W4b2：中栏「已打开会话」tab 条（温和增强，位置照原型、贴玻璃体系；只在会话类视图且集合非空时现身） —— //
+  ".wh-wb-sess-strip{display:none;flex:0 0 auto;align-items:flex-end;gap:3px;padding:7px 14px 0;" +
+    "border-bottom:1px solid var(--ds-glass-border);overflow-x:auto;scrollbar-width:none}",
+  ".wh-wb-sess-strip::-webkit-scrollbar{height:0}",
+  ".wh-wb-sess-strip.is-visible{display:flex}",
+  ".wh-wb-sess-tab{flex:0 0 auto;display:flex;align-items:center;border-radius:9px 9px 0 0}",
+  ".wh-wb-sess-tab:hover{background:var(--ds-glass)}",
+  ".wh-wb-sess-tab.is-active{background:var(--ds-glass-strong);box-shadow:inset 0 -2px 0 var(--ds-accent)}",
+  ".wh-wb-sess-open{display:flex;align-items:center;gap:7px;height:30px;padding:0 4px 0 12px;border-radius:9px 9px 0 0;" +
+    "color:var(--ds-ink-muted);font:500 12.5px/1 var(--ds-font)}",
+  ".wh-wb-sess-open svg{width:13px;height:13px;color:var(--ds-ink-faint);flex:0 0 auto}",
+  ".wh-wb-sess-tab.is-active .wh-wb-sess-open{color:var(--ds-ink);font-weight:600}",
+  ".wh-wb-sess-tab.is-active .wh-wb-sess-open svg{color:var(--ds-accent)}",
+  ".wh-wb-sess-name{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+  ".wh-wb-sess-unread{flex:0 0 auto;min-width:15px;height:15px;padding:0 4px;box-sizing:border-box;border-radius:99px;" +
+    "font:700 9.5px/15px var(--ds-font);text-align:center;color:#fff;background:var(--ds-danger);box-shadow:0 0 8px var(--ds-danger)}",
+  ".wh-wb-sess-dot{width:7px;height:7px;flex:0 0 auto;border-radius:50%;background:var(--ds-ink-faint);opacity:.5}",
+  ".wh-wb-sess-dot.is-online{background:var(--ds-success);opacity:1;box-shadow:0 0 6px var(--ds-success)}",
+  ".wh-wb-sess-close{flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:20px;height:20px;" +
+    "margin:0 4px 3px 1px;border-radius:6px;color:var(--ds-ink-faint)}",
+  ".wh-wb-sess-close svg{width:12px;height:12px}",
+  ".wh-wb-sess-close:hover{background:var(--ds-danger-soft);color:var(--ds-danger)}",
   ".wh-wb-empty{max-width:420px;margin:14vh auto 0;text-align:center}",
   ".wh-wb-empty-icon{display:inline-flex;width:34px;height:34px;color:var(--ds-accent)}",
   ".wh-wb-empty-icon svg{width:34px;height:34px}",

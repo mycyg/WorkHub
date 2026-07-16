@@ -18,6 +18,15 @@ import { mountArmyContextPanel, type ArmyContextPanelApiClient, type ArmyContext
 import { renderArmySidePanelIdleHtml } from "./army/render.js";
 import { connectConversationStream, type ConversationStreamHandle } from "./chat/stream.js";
 import { mountChatView, type ChatViewApiClient, type ChatViewHandle } from "./chat/view.js";
+import {
+  closeConversationTab,
+  openConversationTab,
+  refreshTabs,
+  type ConversationTabDescriptor,
+  type OpenConversationTab
+} from "./conversation-tabs/model.js";
+import { renderConversationTabsHtml } from "./conversation-tabs/render.js";
+import { loadOpenConversationTabs, saveOpenConversationTabs } from "./conversation-tabs/storage.js";
 import { workbenchCss } from "./css.js";
 import { dmMembersFromParticipants, dmPeerParticipant, fetchDmList, openDirectMessage, upsertDmListItem } from "./dm.js";
 import { mountProfilePopover, type ProfilePopoverHandle } from "./profile-popover.js";
@@ -125,7 +134,10 @@ export function renderWorkbenchShellHtml(locale: Locale, chrome: WorkbenchShellC
       </div>
       <div class="wh-wb-body">
         <div class="wh-wb-rail" data-wb-rail></div>
-        <div class="wh-wb-center" data-wb-center></div>
+        <div class="wh-wb-center-col" data-wb-center-col>
+          <div class="wh-wb-sess-strip" data-wb-sess-strip></div>
+          <div class="wh-wb-center" data-wb-center></div>
+        </div>
         <div class="wh-wb-side" data-wb-side data-open="true">
           <div class="wh-wb-side-head">
             ${workbenchIcons.army}
@@ -264,6 +276,11 @@ export function mountWorkbenchShell(
   // R16-W3：中栏变更编辑器（tracked-changes 审阅器）——同 drive/chat 的「key 没变就不重挂」纪律（editorMountKey）。
   let editorHandle: EditorViewHandle | undefined;
   let editorMountKey: string | undefined;
+  // R16-W4b2（中栏会话 tab 条）：单调递增的激活序号——喂给 openConversationTab 当 lastActiveAt，保证被激活的
+  // tab 唯一最大（LRU 淘汰/幂等判定都靠它）。tabsRestored：localStorage 恢复只做一次（首个 vm/dm 就绪时）。
+  let tabActivationSeq = 0;
+  let tabsRestored = false;
+  const nextTabSeq = () => (tabActivationSeq += 1);
 
   // R12 批7:打扰矩阵——windowBridge.isFocused() 告诉我们"用户是否正看着这个工作台窗口"；
   // resolveDesktopShellEmitter 是桌宠/主窗共用的通用 Tauri 事件桥(__TAURI__.event.emit),这里复用它
@@ -343,6 +360,9 @@ export function mountWorkbenchShell(
   root.innerHTML = renderWorkbenchDocumentHead() + renderWorkbenchShellHtml(input.locale, { nativeWindowChrome });
   const railEl = root.querySelector<HTMLElement>("[data-wb-rail]");
   const centerEl = root.querySelector<HTMLElement>("[data-wb-center]");
+  // R16-W4b2：中栏顶部「已打开会话」tab 条——是 centerEl 的兄弟（不放 centerEl 里，否则中栏视图重挂时
+  // innerHTML 会把它冲掉），活过所有中栏视图切换。
+  const sessStripEl = root.querySelector<HTMLElement>("[data-wb-sess-strip]");
   const sideEl = root.querySelector<HTMLElement>("[data-wb-side]");
   const sideBodyEl = root.querySelector<HTMLElement>("[data-wb-side-body]");
   const sideToggleBtn = root.querySelector<HTMLElement>("[data-wb-toggle-side]");
@@ -514,6 +534,8 @@ export function mountWorkbenchShell(
           dmListLoad: "ready",
           ...(store.getState().currentUserId === undefined && selfFromDm ? { currentUserId: selfFromDm } : {})
         });
+        // R16-W4b2：DM 列表就绪也能给出 workspace/user 作用域（dm-only 冷启动 vm 还没加载时的兜底恢复点）。
+        maybeRestoreTabs();
       })
       .catch(() => {
         if (disposed || my !== dmListRequestGen) {
@@ -738,6 +760,8 @@ export function mountWorkbenchShell(
         if (openedConversationId) {
           clearConversationUnread(openedConversationId);
         }
+        // R16-W4b2：vm 就绪即拿到 workspace/user 作用域——首次到达时恢复一次 localStorage 里的已打开会话集合。
+        maybeRestoreTabs();
       })
       .catch((error) => {
         if (disposed || my !== vmRequestGen) {
@@ -1296,16 +1320,225 @@ export function mountWorkbenchShell(
     crumbEl.innerHTML = `WorkHub ${zh ? "工作台" : "Workbench"} · <b>${escapeHtml(state.vm.project.name)}</b>`;
   };
 
+  // ── R16-W4b2（中栏「已打开会话」tab 条） ───────────────────────────────────────────────
+  const tabStorage = (): Pick<Storage, "getItem" | "setItem" | "removeItem"> | undefined => {
+    try {
+      return doc.defaultView?.localStorage;
+    } catch {
+      return undefined;
+    }
+  };
+  // 当前中栏正打开的那条会话（主区/协同/私聊）的完整描述——集合据此激活/加入。vm/dmList 还没就绪时返回
+  // undefined（等它们回来 store 通知会再跑一次），绝不凭空造 tab。
+  const describeActiveConversation = (state: WorkbenchStoreState): ConversationTabDescriptor | undefined => {
+    const zh = input.locale === "zh-CN";
+    if (state.centerTab === "dm") {
+      const id = state.activeDmConversationId;
+      if (!id) {
+        return undefined;
+      }
+      const dm = state.dmList.find((item) => item.conversation.id === id);
+      if (!dm) {
+        return undefined;
+      }
+      const peer = dmPeerParticipant(dm, state.currentUserId);
+      return {
+        kind: "dm",
+        conversationId: id,
+        projectId: dm.conversation.project_id,
+        title: peer?.nickname ?? (zh ? "私聊" : "Direct message")
+      };
+    }
+    const vm = state.vm;
+    if (!vm) {
+      return undefined;
+    }
+    if (state.centerTab === "collab") {
+      const id = state.activeConversationId;
+      if (!id) {
+        return undefined;
+      }
+      const conv = vm.conversations.conversations.find((item) => item.kind === "collab" && item.id === id);
+      if (!conv) {
+        return undefined;
+      }
+      return { kind: "collab", conversationId: id, projectId: vm.project.id, title: conv.title };
+    }
+    if (state.centerTab === "chat") {
+      const main = vm.conversations.conversations.find((item) => item.kind === "main");
+      if (!main) {
+        return undefined;
+      }
+      return { kind: "main", conversationId: main.id, projectId: vm.project.id, title: vm.project.name };
+    }
+    return undefined;
+  };
+  // 持久化作用域（每用户 · 工作区维度）——工作区 id 优先取 vm，dm-only 冷启动兜底取任一 DM 的容器工作区。
+  const tabScope = (state: WorkbenchStoreState): { workspaceId: string; userId: string } | undefined => {
+    const userId = state.currentUserId ?? state.vm?.viewer.user_id;
+    const workspaceId = state.vm?.project.workspace_id ?? state.dmList[0]?.conversation.workspace_id;
+    if (!userId || !workspaceId) {
+      return undefined;
+    }
+    return { workspaceId, userId };
+  };
+  const persistTabs = (state: WorkbenchStoreState): void => {
+    const scope = tabScope(state);
+    if (!scope) {
+      return;
+    }
+    saveOpenConversationTabs({
+      storage: tabStorage(),
+      workspaceId: scope.workspaceId,
+      userId: scope.userId,
+      tabs: state.openConversationTabs
+    });
+  };
+  // 首个 vm/dm 就绪时从 localStorage 恢复一次已打开集合。与「渲染同步刚加进来的当前 tab」谁先谁后都收敛：
+  // 恢复的历史 tab 铺底，再把已在集合里的（通常是刚打开的当前 tab）逐条叠上去激活到最前——去重 + 保上限。
+  const maybeRestoreTabs = (): void => {
+    if (tabsRestored) {
+      return;
+    }
+    const scope = tabScope(store.getState());
+    if (!scope) {
+      return;
+    }
+    tabsRestored = true;
+    const restored = loadOpenConversationTabs({
+      storage: tabStorage(),
+      workspaceId: scope.workspaceId,
+      userId: scope.userId
+    });
+    if (restored.length === 0) {
+      return;
+    }
+    // 让后续激活序号跑在恢复值之上，保证「新激活」永远比「历史」新。
+    tabActivationSeq = Math.max(tabActivationSeq, ...restored.map((tab) => tab.lastActiveAt));
+    let merged: OpenConversationTab[] = restored;
+    for (const tab of store.getState().openConversationTabs) {
+      merged = openConversationTab(
+        merged,
+        {
+          kind: tab.kind,
+          conversationId: tab.conversationId,
+          ...(tab.projectId !== undefined ? { projectId: tab.projectId } : {}),
+          title: tab.title
+        },
+        nextTabSeq()
+      );
+    }
+    store.setState({ openConversationTabs: merged });
+    persistTabs(store.getState());
+  };
+  // 会话 tab 条渲染（含集合同步）——只在 centerTab 为会话类且集合非空时挂出来。
+  const renderSessStrip = (state: WorkbenchStoreState) => {
+    if (!sessStripEl) {
+      return;
+    }
+    let tabs = state.openConversationTabs;
+    const descriptor = describeActiveConversation(state);
+    if (descriptor) {
+      tabs = openConversationTab(tabs, descriptor, nextTabSeq());
+    }
+    tabs = refreshTabs(tabs, {
+      selectedProjectId: state.selectedProjectId,
+      vm: state.vm,
+      dmList: state.dmList,
+      dmListReady: state.dmListLoad === "ready",
+      currentUserId: state.currentUserId
+    });
+    if (tabs !== state.openConversationTabs) {
+      // 幂等：openConversationTab/refreshTabs 无变化时都返回同引用——这轮 setState 触发的补发再跑一遍不会
+      // 再改动集合，收敛不打转（见 store.ts 的 notifying/pendingRenotify）。
+      store.setState({ openConversationTabs: tabs });
+      persistTabs(store.getState());
+    }
+    const isConversationTab =
+      state.centerTab === "chat" || state.centerTab === "collab" || state.centerTab === "dm";
+    const show = isConversationTab && tabs.length > 0;
+    sessStripEl.classList.toggle("is-visible", show);
+    if (!show) {
+      sessStripEl.innerHTML = "";
+      return;
+    }
+    sessStripEl.innerHTML = renderConversationTabsHtml({
+      tabs,
+      activeConversationId: currentlyOpenConversationId(),
+      dmList: state.dmList,
+      currentUserId: state.currentUserId,
+      onlineUserIds: new Set(state.onlineUserIds),
+      locale: input.locale
+    });
+  };
+  // 点某条 tab = 激活它（走现状 selectProject/openDm 重挂路径，不并存多实例）。
+  const activateSessTab = (conversationId: string): void => {
+    const state = store.getState();
+    const tab = state.openConversationTabs.find((item) => item.conversationId === conversationId);
+    if (!tab) {
+      return;
+    }
+    if (tab.kind === "dm") {
+      openDmConversation(conversationId);
+      return;
+    }
+    if (!tab.projectId) {
+      return;
+    }
+    // 同一个已加载项目内：只切中栏标签（复用已挂好的 chat 视图，不重拉 vm/不重连 SSE，同 rail 叶点击手感）。
+    if (tab.projectId === state.selectedProjectId && state.vm) {
+      if (tab.kind === "collab") {
+        store.setState({ centerTab: "collab", activeConversationId: conversationId });
+      } else {
+        store.setState({ centerTab: "chat" });
+      }
+      clearConversationUnread(conversationId);
+      chatHandle?.focusComposer();
+      return;
+    }
+    // 跨项目：走 selectProject 重挂路径（collab 带上会话 id 精确落到那条，main 落到主区）。
+    selectProject(tab.projectId, tab.kind === "collab" ? conversationId : undefined);
+  };
+  // 点 tab 的 x = 移出集合；若关的是当前活跃则激活相邻（无相邻则中栏原样留着，tab 条自动隐藏）。
+  const closeSessTab = (conversationId: string): void => {
+    const wasActive = currentlyOpenConversationId() === conversationId;
+    const { tabs, neighborConversationId } = closeConversationTab(
+      store.getState().openConversationTabs,
+      conversationId
+    );
+    store.setState({ openConversationTabs: tabs });
+    persistTabs(store.getState());
+    if (wasActive && neighborConversationId) {
+      activateSessTab(neighborConversationId);
+    }
+  };
+  sessStripEl?.addEventListener("click", (event) => {
+    if (!(event.target instanceof HTMLElement)) {
+      return;
+    }
+    const closeTarget = event.target.closest<HTMLElement>("[data-wb-tab-close]");
+    if (closeTarget?.dataset.wbTabClose) {
+      closeSessTab(closeTarget.dataset.wbTabClose);
+      return;
+    }
+    const openTarget = event.target.closest<HTMLElement>("[data-wb-tab]");
+    if (openTarget?.dataset.wbTab) {
+      activateSessTab(openTarget.dataset.wbTab);
+    }
+  });
+
   const unsubscribe = store.subscribe((state) => {
     renderCenter(state);
     renderSideTabs(state);
     renderSide(state);
     renderCrumb(state);
+    renderSessStrip(state);
   });
   renderCenter(store.getState());
   renderSideTabs(store.getState());
   renderSide(store.getState());
   renderCrumb(store.getState());
+  renderSessStrip(store.getState());
 
   const railHandle = mountWorkbenchRail(railEl, {
     client: input.client,
