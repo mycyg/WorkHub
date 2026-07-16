@@ -1330,6 +1330,16 @@ export function createInMemoryAgentRunQueue(options: {
         const workItemTopic = topics.workitem(run.work_item_id).topic;
         await eventBus.publish(workItemTopic, event.type, { ...envelope, topic: workItemTopic });
       }
+      // R17 G3（#7 军团面板实时性）：run 生命周期事件此前只发 topics.run/topics.workitem——军团【会话情境
+      // 面板】订的是所属会话流（chat/view.ts 转发给 armyPanel.handleRawConversationEvent），纯执行推进（未触发
+      // 任何人工决策/action_card.updated）时那条面板会长期停在打开会话那一刻的旧快照。把与工作项流同一个
+      // 状态级子集（started/failed/escalated + 成功终态 agent_run.step[kind:'done']，**不含**逐 step 高频增量）
+      // 双发到 run 血缘会话（source_conversation_id）的 topic，面板收到即局部后台重拉对应卡。逐 step 不双发：
+      // 避免把高频增量灌进会话流、放大扇出/触发整面刷新（与上面 workitem 流同一取舍）。
+      if (run.source_conversation_id && isRunLifecycleKeyEvent) {
+        const conversationTopic = topics.conversation(run.source_conversation_id).topic;
+        await eventBus.publish(conversationTopic, event.type, { ...envelope, topic: conversationTopic });
+      }
     } catch (error) {
       getDefaultStructuredLogger().warn("agent_run_event_emit_failed", { error });
     }

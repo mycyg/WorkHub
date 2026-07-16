@@ -6596,6 +6596,90 @@ test("FIX#4 + R14: a run with no conversation source omits conversationId from t
   assert.equal("conversationId" in (milestoneNotifications[0] ?? {}), false);
 });
 
+// R17 G3（#7 军团面板实时性）：一个带 source_conversation_id 的 run，其【状态级】生命周期事件
+// （started/failed/escalated + 成功终态 agent_run.step[kind:'done']）除了发 topics.run/topics.workitem，
+// 还要双发到血缘会话 topic——军团会话情境面板订的是会话流，据此局部重拉，纯执行推进不再停在旧快照。
+// 逐 step 高频增量（step.tool_result / step.snapshot / 非 done 的 agent_run.step）**不**双发到会话，
+// 避免放大扇出/触发整面刷新（与 workitem 流同一取舍）。
+test("R17 G3 #7: a run sourced from a conversation dual-publishes only status-level lifecycle events to the conversation topic", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-g3-conversation-run-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-g3-conversation-snapshot-test-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const decisions = new MemoryAiDecisions();
+  const publishedEvents: { topic: string; type: string; data: WorkHubEvent<Record<string, unknown>> }[] = [];
+  const sourceConversationId = "60000000-0000-4000-8000-000000000701";
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000045",
+    workdir: () => workdir,
+    client: () => executableAgentClient(),
+    snapshotRoot,
+    snapshotId: () => snapshotId,
+    snapshots,
+    auditLogs,
+    confidence: createAgentRunConfidenceRecorder({ decisions, auditLogs, settings: runtimeSettings }),
+    proposals: false,
+    notificationWorkItem: async () => ({
+      id: workItemId,
+      code: "WH-21",
+      title: "Conversation-sourced worker run",
+      projectId: "50000000-0000-4000-8000-000000000099",
+      submitterUserId: userId,
+      projectOwnerUserId: projectOwnerId
+    }),
+    eventBus: {
+      async publish(topic, type, data) {
+        publishedEvents.push({ topic, type, data: data as WorkHubEvent<Record<string, unknown>> });
+      }
+    }
+  });
+
+  const queued = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Conversation-sourced worker run",
+    sourceConversationId
+  });
+  const executed = await queue.runNext();
+  assert.equal(executed?.run_id, queued.run_id);
+  assert.equal(executed?.status, "succeeded", JSON.stringify(executed?.trace.at(-1)));
+
+  const runTopic = topics.run(queued.run_id).topic;
+  const workItemTopic = topics.workitem(workItemId).topic;
+  const conversationTopic = topics.conversation(sourceConversationId).topic;
+
+  const isLifecycleKey = (event: { type: string; data: WorkHubEvent<Record<string, unknown>> }) =>
+    /(?:started|failed|escalated)/u.test(event.type)
+    || (event.type === eventTypes.agentRunStep && event.data.data["kind"] === "done");
+
+  const conversationEvents = publishedEvents.filter((event) => event.topic === conversationTopic);
+  // 会话 topic 只该收到状态级子集：至少 started + 成功终态；且【每一条】都是 lifecycle-key。
+  assert.equal(conversationEvents.length > 0, true);
+  assert.equal(conversationEvents.every(isLifecycleKey), true);
+  assert.equal(conversationEvents.some((event) => event.type === eventTypes.agentRunStarted), true);
+  assert.equal(
+    conversationEvents.some((event) => event.type === eventTypes.agentRunStep && event.data.data["kind"] === "done"),
+    true
+  );
+  // 逐 step 增量（tool_result / snapshot）只在 run topic 上，绝不出现在会话 topic。
+  assert.equal(publishedEvents.some((event) => event.topic === runTopic && event.type === eventTypes.stepToolResult), true);
+  assert.equal(conversationEvents.some((event) => event.type === eventTypes.stepToolResult), false);
+  assert.equal(conversationEvents.some((event) => event.type === eventTypes.stepSnapshot), false);
+  // 会话 topic 收到的条数严格少于 run topic（证明高频增量被过滤，没有整流照搬）。
+  const runEvents = publishedEvents.filter((event) => event.topic === runTopic);
+  assert.equal(conversationEvents.length < runEvents.length, true);
+  // envelope.topic 与投递 topic 一致（与 workitem 双发同一改写）。
+  for (const event of conversationEvents) {
+    assert.equal(event.data.topic, conversationTopic);
+    assert.equal(event.data.run_id, queued.run_id);
+  }
+  // 对照：workitem topic 仍照旧双发（本改动不动它）。
+  assert.equal(publishedEvents.some((event) => event.topic === workItemTopic && event.type === eventTypes.agentRunStarted), true);
+});
+
 test("FIX#7: POST /workitems/:id/agent-runs on a spec_ready item kicks it to ai_working and reaches in_review (not stuck)", async () => {
   const runtimeSettings = settings();
   const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-fix7-test-"));
