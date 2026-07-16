@@ -276,7 +276,7 @@ test("searchResultsHtml gives meetings an honest degrade note (no per-meeting de
 
 test("searchResultsHtml wires drive/workitem/conversation rows with the exact dataset the click handler expects", () => {
   const html = searchResultsHtml(fixtureVm(), true);
-  assert.match(html, new RegExp(`data-search-kind="conversation"[^>]*data-search-project-id="${PROJECT_ID}"[^>]*data-search-conversation-id="${CONVERSATION_ID}"`, "u"));
+  assert.match(html, new RegExp(`data-search-kind="conversation"[^>]*data-search-project-id="${PROJECT_ID}"[^>]*data-search-conversation-id="${CONVERSATION_ID}"[^>]*data-search-seq="5"`, "u"));
   assert.match(html, new RegExp(`data-search-kind="drive"[^>]*data-search-project-id="${PROJECT_ID}"[^>]*data-search-item-id="${ITEM_ID}"`, "u"));
   assert.match(html, new RegExp(`data-search-kind="workitem"[^>]*data-search-work-item-id="${WORK_ITEM_ID}"`, "u"));
 });
@@ -286,6 +286,15 @@ test("searchResultsHtml wires drive/workitem/conversation rows with the exact da
 test("resolveSearchRowAction resolves each kind from its dataset, and rejects incomplete ones", () => {
   assert.deepEqual(
     resolveSearchRowAction({ searchKind: "conversation", searchProjectId: "p1", searchConversationId: "c1" }),
+    { kind: "conversation", projectId: "p1", conversationId: "c1" }
+  );
+  // R17-G5 #30：带合法 seq 时透传；缺省或非法 seq 退回会话级、不带定位。
+  assert.deepEqual(
+    resolveSearchRowAction({ searchKind: "conversation", searchProjectId: "p1", searchConversationId: "c1", searchSeq: "7" }),
+    { kind: "conversation", projectId: "p1", conversationId: "c1", seq: 7 }
+  );
+  assert.deepEqual(
+    resolveSearchRowAction({ searchKind: "conversation", searchProjectId: "p1", searchConversationId: "c1", searchSeq: "oops" }),
     { kind: "conversation", projectId: "p1", conversationId: "c1" }
   );
   assert.equal(resolveSearchRowAction({ searchKind: "conversation", searchProjectId: "p1" }), undefined);
@@ -662,15 +671,19 @@ test("clicking a conversation row invokes open_workbench with a project+conversa
         searchRow: "true",
         searchKind: "conversation",
         searchProjectId: PROJECT_ID,
-        searchConversationId: CONVERSATION_ID
+        searchConversationId: CONVERSATION_ID,
+        searchSeq: "5"
       };
       body.click(row);
       const stashed = JSON.parse(storageValues.get("workhub_workbench_pending_deep_link")!) as {
         projectId?: string;
         conversationId?: string;
+        seq?: number;
       };
       assert.equal(stashed.projectId, PROJECT_ID);
       assert.equal(stashed.conversationId, CONVERSATION_ID);
+      // R17-G5 #30：命中消息的 seq 一并 stash，工作台打开会话后据此定位滚动 + 高亮。
+      assert.equal(stashed.seq, 5);
       await tick();
       assert.deepEqual(calls, [["open_workbench", { projectId: PROJECT_ID }]]);
       assert.equal(toasts.length, 1);

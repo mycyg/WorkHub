@@ -223,7 +223,9 @@ function isDesktopLoggedOutFlagSet(storage: Pick<Storage, "getItem"> | undefined
 export type WorkbenchShellHandle = {
   store: WorkbenchStore;
   // 选中项目（rail 点击 / Spotlight「打开工作台」/ 深链三路共用）。conversationId 目前只落库，批 2 起消费。
-  selectProject: (projectId: string, conversationId?: string) => void;
+  // R17-G5 #30：focusSeq＝会话内要定位滚动 + 高亮的消息序号（搜索命中会话消息的 deep_link 带来），
+  // 只在同时给了 conversationId 时有意义；打开对应会话的 chat 视图后消费一次。
+  selectProject: (projectId: string, conversationId?: string, focusSeq?: number) => void;
   // R15 批 B（人对人私聊）：按会话直开一条 DM（rail 私聊行 / 头像资料卡「发私聊」/ 未来 DM 深链共用）。
   openDmConversation: (conversationId: string) => void;
   // G-desktop 止血批 3：跨窗口登出广播——boot.ts 在两处调用它：①mount 那一刻标记本来就已登出
@@ -256,6 +258,9 @@ export function mountWorkbenchShell(
   let vmRequestGen = 0;
   let chatHandle: ChatViewHandle | undefined;
   let chatMountKey: string | undefined;
+  // R17-G5 #30：搜索命中会话消息的 deep_link 带来的定位目标——打开对应会话的 chat 视图时消费一次
+  // （focusSeq 传给 mountChatView，加载完成后滚动到该消息并短暂高亮）。
+  let pendingChatFocus: { conversationId: string; seq: number } | undefined;
   let driveHandle: DriveViewHandle | undefined;
   let driveMountKey: string | undefined;
   // R15 批 E2（项目时间线 / 甘特）：中栏时间线标签——同 drive 的「key 没变就不重挂」纪律（timelineMountKey）。
@@ -714,7 +719,7 @@ export function mountWorkbenchShell(
     return false;
   };
 
-  const selectProject = (projectId: string, conversationId?: string) => {
+  const selectProject = (projectId: string, conversationId?: string, focusSeq?: number) => {
     // G-desktop 止血批 3：本窗正显示「已登出」整窗态时，任何想让它去拉数据的调用（rail 点击/深链/
     // 冷启动兜底,见 boot.ts 的三路调用方）都先在这里截住——不能顺着往下发一个带废 token 的请求。
     // 如果登出标记这时候已经被清掉（用户从主窗重新登录过了），最简单可靠的恢复路径是整窗重载：
@@ -728,6 +733,8 @@ export function mountWorkbenchShell(
       }
       return;
     }
+    // #30：预约会话消息定位——打开对应会话的 chat 视图时消费一次（focusSeq 只在同时给了会话时有意义）。
+    pendingChatFocus = conversationId && typeof focusSeq === "number" ? { conversationId, seq: focusSeq } : undefined;
     // R15 批 B（人对人私聊）：深链/调用方给的 conversationId 已知是一条 DM（容器项目被围栏，走不了 VM
     // 路径）——直开这条 DM，不去拉容器 VM（会 404）。列表还没加载时，交给下面 VM 404 的 .catch 兜底。
     if (conversationId && store.getState().dmList.some((dm) => dm.conversation.id === conversationId)) {
@@ -833,6 +840,16 @@ export function mountWorkbenchShell(
   // 上（和 chat 视图同款"只在 key 真变化时才重挂"纪律，见下 driveMountKey/chatMountKey）。切标签时
   // 非活动那个视图会被销毁（chat 的 SSE 订阅/composer 草稿、drive 的当前文件夹都会丢），这是已知的
   // 简化取舍（两个标签共用同一个中栏挂载位，不常驻）——留给后续批次决定要不要改成隐藏而不是销毁。
+  // #30：某条 chat 视图挂载时取出并消费为它预约的消息定位 seq（会话 id 匹配才给，一次性）。
+  const takeChatFocusSeq = (conversationId: string): number | undefined => {
+    if (pendingChatFocus?.conversationId !== conversationId) {
+      return undefined;
+    }
+    const seq = pendingChatFocus.seq;
+    pendingChatFocus = undefined;
+    return seq;
+  };
+
   const renderCenter = (state: WorkbenchStoreState) => {
     // R16-W3：变更编辑器（中栏全宽 tracked-changes 审阅器）——入口走右栏「文件」模式的变动文件行点击
     // （非 rail 叶），据 editorTarget 打开。必须在"没选项目"的空态判断之前拦下（editorTarget 自带
@@ -954,6 +971,7 @@ export function mountWorkbenchShell(
       // DM 的成员集合 = 两名真实参与者——已读 N/M 的分母因此收敛成 1/1（见 dm.ts dmMembersFromParticipants）。
       const members = dmMembersFromParticipants(dm);
       const peer = dmPeerParticipant(dm, currentUserId);
+      const dmFocusSeq = takeChatFocusSeq(dm.conversation.id);
       centerEl.className = "wh-wb-center wh-wb-center--chat";
       chatHandle = mountChatView(centerEl, {
         client: input.client,
@@ -962,6 +980,7 @@ export function mountWorkbenchShell(
         projectName: peer?.nickname ?? (zh ? "私聊" : "Direct message"),
         conversationId: dm.conversation.id,
         conversationKind: "collab",
+        ...(dmFocusSeq !== undefined ? { focusSeq: dmFocusSeq } : {}),
         // DM 头显示对方昵称 + 在线点（而非「N 位成员 + Cuu」的群聊条）。
         isDm: true,
         // DM 默认 cuu_enabled=false（B5 拍板）——chat 视图据此不自动请 Cuu 回话（不特判 DM，纯由
@@ -1185,6 +1204,7 @@ export function mountWorkbenchShell(
           return; // 已经是这个协同会话的 chat 视图——同主区分支的"key 没变就不重挂"纪律。
         }
         disposeChat();
+        const collabFocusSeq = takeChatFocusSeq(collabConversation.id);
         centerEl.className = "wh-wb-center wh-wb-center--chat";
         chatHandle = mountChatView(centerEl, {
           client: input.client,
@@ -1193,6 +1213,7 @@ export function mountWorkbenchShell(
           projectName: vm.project.name,
           conversationId: collabConversation.id,
           conversationKind: "collab",
+          ...(collabFocusSeq !== undefined ? { focusSeq: collabFocusSeq } : {}),
           // R15 批 B：透传会话级 Cuu 硬开关（cuu_enabled=false 的协同会话不自动请 Cuu 回话，见
           // view.ts 的 isCollabConversation）——additive，cuu_enabled=true 的既有会话行为不变。
           cuuEnabled: collabConversation.cuu_enabled,
@@ -1235,6 +1256,7 @@ export function mountWorkbenchShell(
         return; // 已经是这个会话的 chat 视图——它自己的 store/SSE 订阅在内部持续更新，无需重挂。
       }
       disposeChat();
+      const mainFocusSeq = takeChatFocusSeq(mainConversation.id);
       centerEl.className = "wh-wb-center wh-wb-center--chat";
       chatHandle = mountChatView(centerEl, {
         client: input.client,
@@ -1243,6 +1265,7 @@ export function mountWorkbenchShell(
         projectName: vm.project.name,
         conversationId: mainConversation.id,
         conversationKind: "main",
+        ...(mainFocusSeq !== undefined ? { focusSeq: mainFocusSeq } : {}),
         // R15 批 B：透传会话级 Cuu 硬开关——团队主区 conversationKind=main 本就不自动 turn，个人空间单聊
         // （下方 projectIsPersonal）随 cuu_enabled 决定，additive，既有默认 cuu_enabled=true 行为不变。
         cuuEnabled: mainConversation.cuu_enabled,

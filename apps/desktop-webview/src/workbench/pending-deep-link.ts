@@ -31,6 +31,9 @@ export const PENDING_WORKBENCH_DEEP_LINK_TTL_MS = 15_000;
 export type PendingWorkbenchDeepLinkTarget = {
   projectId: string;
   conversationId?: string;
+  // R17-G5 #30：搜索命中会话消息时，deep_link 带的 seq——工作台打开会话后据此定位滚动 + 高亮那条消息。
+  // 只在带 conversationId 时有意义（seq 是某个会话内的消息序号）。
+  seq?: number;
 };
 
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -57,6 +60,8 @@ export function stashPendingWorkbenchDeepLink(
   const payload = JSON.stringify({
     projectId: target.projectId,
     ...(target.conversationId ? { conversationId: target.conversationId } : {}),
+    // seq 只在有会话上下文时才有意义，随会话一起写；无会话就不带。
+    ...(target.conversationId && typeof target.seq === "number" ? { seq: target.seq } : {}),
     stashedAt: now()
   });
   try {
@@ -110,5 +115,11 @@ export function consumePendingWorkbenchDeepLink(
     return undefined;
   }
   const conversationId = typeof record.conversationId === "string" ? record.conversationId : undefined;
-  return conversationId ? { projectId, conversationId } : { projectId };
+  if (!conversationId) {
+    return { projectId };
+  }
+  // seq 仅在同时有会话时透传，且必须是非负整数（消息序号）；不合法就只回到会话级、不带定位。
+  const seq =
+    typeof record.seq === "number" && Number.isInteger(record.seq) && record.seq >= 0 ? record.seq : undefined;
+  return seq !== undefined ? { projectId, conversationId, seq } : { projectId, conversationId };
 }

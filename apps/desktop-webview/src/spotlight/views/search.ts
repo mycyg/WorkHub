@@ -151,7 +151,7 @@ function conversationSenderLabel(result: ConversationSearchResult, zh: boolean):
 
 function conversationRowHtml(r: ConversationSearchResult, zh: boolean, query: string): string {
   const sender = conversationSenderLabel(r, zh);
-  return `<button type="button" role="option" tabindex="-1" class="wh-spot-row" data-search-row="true" data-search-kind="conversation" data-search-project-id="${escapeHtml(r.deep_link.project_id)}" data-search-conversation-id="${escapeHtml(r.deep_link.conversation_id)}">
+  return `<button type="button" role="option" tabindex="-1" class="wh-spot-row" data-search-row="true" data-search-kind="conversation" data-search-project-id="${escapeHtml(r.deep_link.project_id)}" data-search-conversation-id="${escapeHtml(r.deep_link.conversation_id)}" data-search-seq="${escapeHtml(String(r.deep_link.seq))}">
     <div class="wh-spot-row-main">
       <div class="wh-spot-row-title">${escapeHtml(r.project_name)} · ${escapeHtml(r.conversation_title)}</div>
       <div class="wh-spot-row-sub">${escapeHtml(sender)}：${highlightSnippet(r.snippet, query)}</div>
@@ -249,7 +249,8 @@ export function searchShellHtml(zh: boolean): string {
 // 不依赖真实 DOM，纯逻辑可单测。 ────────────────────────────────────────────────────────────
 
 export type SearchOpenAction =
-  | { kind: "conversation"; projectId: string; conversationId: string }
+  // #30：会话命中带 seq——工作台打开会话后按 seq 定位滚动 + 高亮该消息。
+  | { kind: "conversation"; projectId: string; conversationId: string; seq?: number }
   | { kind: "drive"; projectId: string; itemId: string }
   | { kind: "workitem"; workItemId: string }
   | { kind: "meeting"; projectId: string };
@@ -258,16 +259,26 @@ export type SearchRowDataset = {
   searchKind?: string;
   searchProjectId?: string;
   searchConversationId?: string;
+  searchSeq?: string;
   searchItemId?: string;
   searchWorkItemId?: string;
 };
 
 export function resolveSearchRowAction(dataset: SearchRowDataset): SearchOpenAction | undefined {
   switch (dataset.searchKind) {
-    case "conversation":
-      return dataset.searchProjectId && dataset.searchConversationId
-        ? { kind: "conversation", projectId: dataset.searchProjectId, conversationId: dataset.searchConversationId }
-        : undefined;
+    case "conversation": {
+      if (!dataset.searchProjectId || !dataset.searchConversationId) {
+        return undefined;
+      }
+      const parsedSeq = dataset.searchSeq === undefined ? Number.NaN : Number(dataset.searchSeq);
+      const seq = Number.isInteger(parsedSeq) && parsedSeq >= 0 ? parsedSeq : undefined;
+      return {
+        kind: "conversation",
+        projectId: dataset.searchProjectId,
+        conversationId: dataset.searchConversationId,
+        ...(seq !== undefined ? { seq } : {})
+      };
+    }
     case "drive":
       return dataset.searchProjectId && dataset.searchItemId
         ? { kind: "drive", projectId: dataset.searchProjectId, itemId: dataset.searchItemId }
@@ -400,8 +411,13 @@ export function createSearchView(): SpotlightCapabilityView {
           return;
         }
         // 冷启动竞态兜底：invoke 之前同步写 stash（见 workbench/pending-deep-link.ts 顶部注释）。
+        // #30：会话命中把 seq 一并 stash，工作台打开会话后据此定位滚动 + 高亮该消息。
         if (action.kind === "conversation") {
-          stashPendingWorkbenchDeepLink({ projectId: action.projectId, conversationId: action.conversationId });
+          stashPendingWorkbenchDeepLink({
+            projectId: action.projectId,
+            conversationId: action.conversationId,
+            ...(action.seq !== undefined ? { seq: action.seq } : {})
+          });
         } else {
           stashPendingWorkbenchDeepLink({ projectId: action.projectId });
         }
