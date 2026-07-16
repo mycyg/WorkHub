@@ -1788,3 +1788,59 @@ export const armyOverviewPageVmSchema = z
   })
   .strict();
 export type ArmyOverviewPageVM = z.infer<typeof armyOverviewPageVmSchema>;
+
+// R17 G3（#8 军团后台任务区接真 · 拍板 B）：军团面板「后台任务」区此前契约锁死 not_yet_available 永远空
+// （见上 armyBackgroundTasksVmSchema 注释——那块仍保留，用于会话情境面板旧字段的向后兼容）。真实的 pulse
+// 统一调度器（审批 SLA / 通知提醒 / 审批 digest / 追 DDL / 关怀）与主动性投递（proactive_intents）一直在跑
+// 却完全不可见。GET /api/army/background 把两块摆上台面：
+//   * scheduler —— pulse 调度器的每任务运行统计（name/间隔/上次 tick/tick 计数/跳过计数/错误计数）。这是
+//     进程级心跳，不含任何工作区/用户数据、不含错误文本（last_error_message 有意不进 VM，避免把内部错误
+//     细节泄漏给普通成员），任何已登录工作区成员都可看。enabled=false 表示总开关（PULSE_SCHEDULER_ENABLED）
+//     未开，tasks 为空。
+//   * proactive —— 最近投向【当前用户】的主动性动态（listRecentProactiveIntentsForUser 的 workspace+target_user
+//     双重收窄口径，见该仓库函数注释）。delivered/suppressed 都展示，诚实反映「机器动过 / 克制住了」。
+// 定时任务区永不为「空态谎言」：enabled=true 但 tasks 空只会发生在还没注册任何任务的极端情况；proactive
+// 空数组是诚实的「最近没有主动性投向你」。
+export const armyBackgroundSchedulerTaskVmSchema = z
+  .object({
+    name: z.string().min(1).max(64),
+    interval_ms: z.number().int().nonnegative(),
+    running: z.boolean(),
+    tick_count: z.number().int().nonnegative(),
+    skipped_count: z.number().int().nonnegative(),
+    error_count: z.number().int().nonnegative(),
+    last_tick_at: isoDateTimeSchema.nullable()
+  })
+  .strict();
+export type ArmyBackgroundSchedulerTaskVM = z.infer<typeof armyBackgroundSchedulerTaskVmSchema>;
+
+export const armyBackgroundProactiveItemVmSchema = z
+  .object({
+    id: idSchema,
+    kind: z.string().min(1).max(64),
+    stage: z.string().min(1).max(64).nullable(),
+    status: z.enum(["delivered", "suppressed"]),
+    delivered_via: z.string().min(1).max(64).nullable(),
+    created_at: isoDateTimeSchema
+  })
+  .strict();
+export type ArmyBackgroundProactiveItemVM = z.infer<typeof armyBackgroundProactiveItemVmSchema>;
+
+export const armyBackgroundPageVmSchema = z
+  .object({
+    generated_at: isoDateTimeSchema,
+    scheduler: z
+      .object({
+        enabled: z.boolean(),
+        tasks: z.array(armyBackgroundSchedulerTaskVmSchema).max(32)
+      })
+      .strict(),
+    proactive: z
+      .object({
+        items: z.array(armyBackgroundProactiveItemVmSchema).max(10),
+        capped: z.boolean()
+      })
+      .strict()
+  })
+  .strict();
+export type ArmyBackgroundPageVM = z.infer<typeof armyBackgroundPageVmSchema>;

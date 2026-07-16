@@ -1,16 +1,21 @@
+import { settings } from "@workhub/config";
 import {
   createConversationRunRepository,
   getSharedDatabaseClient,
+  listRecentProactiveIntentsForUser,
   type ArmyOverviewRunCardRow,
   type ConversationRunCardRow,
   type ConversationRunRepository,
   type ProposalDiffStatsFile,
+  type RecentProactiveIntentRow,
   type WorkHubDatabaseClient
 } from "@workhub/db";
 import {
+  armyBackgroundPageVmSchema,
   armyOverviewPageVmSchema,
   catCodename,
   conversationArmyPanelVmSchema,
+  type ArmyBackgroundPageVM,
   type ArmyChangedFileVM,
   type ArmyOverviewPageVM,
   type ArmyRunListQuery,
@@ -19,6 +24,11 @@ import {
 
 import type { AuthActor } from "../middleware/auth.js";
 import { parseOutputContract } from "../pages/output-contract.js";
+import { getDefaultPulseScheduler, type PulseSchedulerStats } from "../workers/pulse-scheduler.js";
+
+// R17 G3（#8 后台任务区接真）：最近主动性动态展示上限（拍板 B）。多取 1 条用来精确判定 capped（拿到
+// 第 11 条即说明「还有更多没显示」），VM 只回前 10。
+const ARMY_BACKGROUND_PROACTIVE_LIMIT = 10;
 
 // R12 批 5(军团面板,服务端读侧切片):只读聚合，不碰派发写路径。
 // GET /conversations/:id/army 与 GET /me/army 两个 handler 消费这个 service（见 routes/conversation-army.ts）。
@@ -56,6 +66,18 @@ export type ConversationArmyRepositorySources = Pick<
   "listRunsForConversation" | "listArmyOverviewForUser" | "listOutputLinksForConversation"
 >;
 
+// R17 G3（#8）：后台任务区的两个只读数据源端口——都可注入，便于单测不碰真库/真调度器。
+//  * pulse.stats() —— 统一调度器每任务运行统计（进程级心跳，无工作区/用户数据）。enabled=false 时不调用。
+//  * listRecentProactiveIntents —— 最近投向某用户的主动性动态（workspace+target_user 收窄，见仓库函数注释）。
+export type ConversationArmyBackgroundSources = {
+  pulse: { enabled: boolean; stats: () => PulseSchedulerStats };
+  listRecentProactiveIntents: (input: {
+    workspaceId: string;
+    targetUserId: string;
+    limit: number;
+  }) => Promise<RecentProactiveIntentRow[]>;
+};
+
 export type ConversationArmyService = {
   conversationArmyPanel(input: {
     actor: AuthActor;
@@ -63,10 +85,14 @@ export type ConversationArmyService = {
     query: ArmyRunListQuery;
   }): Promise<ConversationArmyPanelVM>;
   armyOverview(input: { actor: AuthActor; query: ArmyRunListQuery }): Promise<ArmyOverviewPageVM>;
+  armyBackground(input: { actor: AuthActor }): Promise<ArmyBackgroundPageVM>;
 };
 
 export type ConversationArmyServiceDependencies = {
   repo: ConversationArmyRepositorySources;
+  // 可选：只有 armyBackground() 用得到（#8）。conversationArmyPanel/armyOverview 不依赖它——不注入时
+  // 那两个方法照常工作，只有 armyBackground 会在缺依赖时抛错（默认工厂恒注入，生产永不缺）。
+  background?: ConversationArmyBackgroundSources;
   now?: () => Date;
 };
 
@@ -130,6 +156,31 @@ function cursorFromQuery(query: ArmyRunListQuery) {
   return query.afterCreatedAt && query.afterId
     ? { createdAt: query.afterCreatedAt, id: query.afterId }
     : undefined;
+}
+
+// R17 G3（#8）：pulse stats() 的 Record<name, taskStats> → VM 数组（保留注册顺序）。有意丢弃
+// last_error_message——它可能带内部错误细节，不该泄漏给普通成员；error_count 数字足够表达「健康度」。
+function schedulerStatsToVm(stats: PulseSchedulerStats): ArmyBackgroundPageVM["scheduler"]["tasks"] {
+  return Object.entries(stats.tasks).map(([name, task]) => ({
+    name,
+    interval_ms: task.interval_ms,
+    running: task.running,
+    tick_count: task.tick_count,
+    skipped_count: task.skipped_count,
+    error_count: task.error_count,
+    last_tick_at: task.last_tick_at ?? null
+  }));
+}
+
+function proactiveIntentToVm(row: RecentProactiveIntentRow): ArmyBackgroundPageVM["proactive"]["items"][number] {
+  return {
+    id: row.id,
+    kind: row.kind,
+    stage: row.stage,
+    status: row.status,
+    delivered_via: row.deliveredVia,
+    created_at: row.createdAt.toISOString()
+  };
 }
 
 export function createConversationArmyService(deps: ConversationArmyServiceDependencies): ConversationArmyService {
@@ -220,6 +271,37 @@ export function createConversationArmyService(deps: ConversationArmyServiceDepen
         },
         "conversation-army.overview"
       );
+    },
+
+    async armyBackground(input) {
+      const human = humanScope(input.actor);
+      const background = deps.background;
+      if (!background) {
+        // 只有当调用方漏注入 background 端口时才会到这（默认工厂恒注入）——大声报错，不静默返回假空。
+        throw new Error("conversation army service missing background sources for armyBackground()");
+      }
+      // 定时任务：总开关未开时不去实例化调度器（避免副作用），诚实回 enabled=false + 空表。
+      const scheduler = background.pulse.enabled
+        ? { enabled: true, tasks: schedulerStatsToVm(background.pulse.stats()) }
+        : { enabled: false, tasks: [] };
+      // 主动性动态：多取 1 条精确判定 capped（拿到第 11 条即「还有更多」），VM 只回前 10。
+      const proactiveRows = await background.listRecentProactiveIntents({
+        workspaceId: human.workspaceId,
+        targetUserId: human.userId,
+        limit: ARMY_BACKGROUND_PROACTIVE_LIMIT + 1
+      });
+      const capped = proactiveRows.length > ARMY_BACKGROUND_PROACTIVE_LIMIT;
+      const items = proactiveRows.slice(0, ARMY_BACKGROUND_PROACTIVE_LIMIT).map(proactiveIntentToVm);
+
+      return parseOutputContract(
+        armyBackgroundPageVmSchema,
+        {
+          generated_at: now().toISOString(),
+          scheduler,
+          proactive: { items, capped }
+        },
+        "conversation-army.background"
+      );
     }
   };
 }
@@ -230,8 +312,18 @@ let defaultConversationArmyService: ConversationArmyService | undefined;
 export function getDefaultConversationArmyService(): ConversationArmyService {
   if (!defaultConversationArmyService) {
     defaultConversationArmyDbClient = getSharedDatabaseClient();
+    const db = defaultConversationArmyDbClient.db;
     defaultConversationArmyService = createConversationArmyService({
-      repo: createConversationRunRepository(defaultConversationArmyDbClient.db)
+      repo: createConversationRunRepository(db),
+      background: {
+        // pulse 总开关未开时不调 getDefaultPulseScheduler()（避免为一个只读端点实例化调度器 + 其依赖的
+        // 审批/通知服务）。开启时拿到的正是 server.ts 已 start 的同一个 memoized 单例，stats 反映真实 tick。
+        pulse: {
+          enabled: settings.pulse.enabled,
+          stats: () => getDefaultPulseScheduler().stats()
+        },
+        listRecentProactiveIntents: (input) => listRecentProactiveIntentsForUser(db, input)
+      }
     });
   }
   return defaultConversationArmyService;
