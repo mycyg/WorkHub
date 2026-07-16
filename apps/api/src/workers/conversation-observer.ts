@@ -150,7 +150,11 @@ export type ConversationObserverDeps = {
     | "recordAnalysisFailure"
     | "postSystemMessage"
   >;
-  workItems: Pick<WorkItemDataRepository, "createWorkItem" | "findProjectById">;
+  // #4：execute 类派发失败时也要能把工作项推进 escalated（与 createEscalationEvent 一起让失败进决策收件箱）。
+  // transitionWorkItemStatus 声明为可选：生产默认注入完整仓库（见 getDefaultConversationObserverScheduler），
+  // 纯读单测不提供时优雅跳过状态回写（escalation_event 已落库，仍会进收件箱，只是工作项状态不同步）。
+  workItems: Pick<WorkItemDataRepository, "createWorkItem" | "findProjectById"> &
+    Partial<Pick<WorkItemDataRepository, "transitionWorkItemStatus">>;
   agentRuns: Pick<AgentRunQueue, "enqueue">;
   notifications: Pick<NotificationRepository, "createOrUpdateNotification">;
   decisions: Pick<AiDecisionRepository, "createEscalationEvent">;
@@ -364,6 +368,81 @@ function assigneeAutoSelectedNote(itemId: string, assignee: AssigneeResolution):
   };
 }
 
+// #4（execute 失败进决策收件箱）：execute 类派发失败但工作项已建成时——落一条真实 escalation_event 并把
+// 工作项推进 escalated，让这次失败像 decide 类一样出现在决策收件箱、且有恢复入口（resolve/retry）。此前
+// execute 失败只把行标 escalated、从不落 ai_decisions 行，彻底不进队列也无恢复入口（decide 类却总会落）。
+// 全程 best-effort：escalation 落库自身失败也不把这次分析算成 tick 级 failed（返回无 systemNote 的 escalated
+// 行，与既有优雅降级一致），避免一次派发失败连累整条会话的观察者分析。
+async function escalateExecuteDispatchFailure(
+  deps: ConversationObserverDeps,
+  candidate: ObserverCandidateRow,
+  planItem: ObserverPlanItem,
+  itemId: string,
+  at: Date,
+  assignee: AssigneeResolution,
+  workItemId: string
+): Promise<DispatchOutcome> {
+  try {
+    await deps.decisions.createEscalationEvent({
+      workItemId,
+      trigger: "unqualified",
+      reasonMd: planItem.title_md,
+      suggestedLeadUserId: assignee.userId,
+      handoffJson: {
+        source: "conversation_observer",
+        conversation_id: candidate.conversationId,
+        action_card_item_id: itemId,
+        // 与 decide 类升级区分：这条是 execute 自动派发没跑通后转人的失败升级，供后续遥测/UI 需要时辨识。
+        execute_dispatch_failed: true
+      }
+    });
+    // 工作项从 ai_working/spec_ready 推进 escalated（CAS 守卫在仓库层，非法前驱 no-op）——让工作项状态诚实反映
+    // "在等人"，同时 escalated 是 pm_mode/ai_working/cancelled 的合法前驱，resolve 升级时的状态迁移才走得通。
+    // fire-and-forget：状态写失败不回滚已落库的 escalation（下一次 resolve 仍按 escalation 走）。
+    await deps.workItems.transitionWorkItemStatus?.({ workItemId, to: "escalated" satisfies WorkItemStatus, at }).catch((error) => {
+      deps.logger?.warn?.("conversation_observer_execute_escalate_transition_failed", {
+        conversationId: candidate.conversationId,
+        error
+      });
+    });
+    return {
+      item: {
+        id: itemId,
+        kind: "execute",
+        titleMd: planItem.title_md,
+        confidence: planItem.confidence,
+        assigneeUserId: assignee.userId,
+        workItemId,
+        status: "escalated"
+      },
+      systemNote: {
+        content: {
+          event: "execute_item_escalated",
+          action_card_item_id: itemId,
+          assignee_user_id: assignee.userId,
+          summary: `@${assignee.nickname} 这件事我没能自动派下去，转给你决定：${planItem.title_md}`
+        }
+      }
+    };
+  } catch (error) {
+    deps.logger?.warn?.("conversation_observer_execute_escalation_create_failed", {
+      conversationId: candidate.conversationId,
+      error
+    });
+    return {
+      item: {
+        id: itemId,
+        kind: "execute",
+        titleMd: planItem.title_md,
+        confidence: planItem.confidence,
+        assigneeUserId: assignee.userId,
+        workItemId,
+        status: "escalated"
+      }
+    };
+  }
+}
+
 async function dispatchExecuteItem(
   deps: ConversationObserverDeps,
   candidate: ObserverCandidateRow,
@@ -374,6 +453,9 @@ async function dispatchExecuteItem(
 ): Promise<DispatchOutcome> {
   const assignee = await resolveAssignee(deps, candidate, planItem, roster);
   if (!assignee) {
+    // 连项目负责人都解析不出（owner-less 项目的退化角落）——没有可当 submitter 的真人，建不出 work_item，
+    // 因而也落不了 escalation_event（escalation_events.work_item_id NOT NULL）。这与 decide 类的 !assignee
+    // 分支行为一致（同样只标 escalated），故不算 execute 相对 decide 的分叉；#4 修的是"有负责人但派发失败"那支。
     return {
       item: {
         id: itemId,
@@ -393,8 +475,11 @@ async function dispatchExecuteItem(
   });
   const dispatchPolicy: DispatchPolicy = profileAccess?.profile?.dispatchPolicy ?? DEFAULT_USER_AI_PROFILE.dispatch_policy;
 
+  // #4：先把工作项建出来、与"派发"（enqueue/notify）分离——这样派发失败时手里仍有 work_item.id 可挂 escalation。
+  // 工作项创建本身失败则和既有行为一致（标 escalated、无 work_item，无处可挂 escalation）。
+  let workItem: Awaited<ReturnType<typeof deps.workItems.createWorkItem>>;
   try {
-    const workItem = await deps.workItems.createWorkItem({
+    workItem = await deps.workItems.createWorkItem({
       projectId: candidate.projectId,
       workspaceId: candidate.workspaceId,
       submitterUserId: assignee.userId,
@@ -405,7 +490,24 @@ async function dispatchExecuteItem(
       mode: "worker" satisfies WorkItemMode,
       at
     });
+  } catch (error) {
+    deps.logger?.warn?.("conversation_observer_execute_work_item_failed", {
+      conversationId: candidate.conversationId,
+      error
+    });
+    return {
+      item: {
+        id: itemId,
+        kind: "execute",
+        titleMd: planItem.title_md,
+        confidence: planItem.confidence,
+        assigneeUserId: assignee.userId,
+        status: "escalated"
+      }
+    };
+  }
 
+  try {
     if (dispatchPolicy === "auto") {
       const run = await deps.agentRuns.enqueue({
         workItemId: workItem.id,
@@ -467,16 +569,8 @@ async function dispatchExecuteItem(
       conversationId: candidate.conversationId,
       error
     });
-    return {
-      item: {
-        id: itemId,
-        kind: "execute",
-        titleMd: planItem.title_md,
-        confidence: planItem.confidence,
-        assigneeUserId: assignee.userId,
-        status: "escalated"
-      }
-    };
+    // #4：派发失败但工作项已存在——落 escalation 让这次失败进决策收件箱（对齐 decide 类总会落 ai_decisions 行）。
+    return escalateExecuteDispatchFailure(deps, candidate, planItem, itemId, at, assignee, workItem.id);
   }
 }
 
