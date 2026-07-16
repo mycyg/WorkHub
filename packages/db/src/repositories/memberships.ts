@@ -38,6 +38,11 @@ export type WorkspaceMembershipRepository = {
   create: (input: CreateWorkspaceMembershipInput) => Promise<WorkspaceMembershipRow>;
   /** 软删成员（退出工作区 / 停用）——释放 (ws,user) 与 default 的 partial unique，可重新加入。 */
   softDelete: (id: string, at: Date) => Promise<WorkspaceMembershipRow | null>;
+  /** R17 批 G1（#15 成员移出）：某工作区全部 active 成员行——供移出/角色变更前统计特权成员数（防移出/
+   *  降级最后一名 admin/owner），成员规模对内部团队远低于任何实际上限，无需分页。 */
+  listActiveByWorkspace: (workspaceId: string) => Promise<WorkspaceMembershipRow[]>;
+  /** R17 批 G1（#15 角色变更）：更新一条 active 成员行的角色（幂等：改到同值也照常前进 updated_at）。 */
+  updateRole: (id: string, role: MembershipRole, at: Date) => Promise<WorkspaceMembershipRow | null>;
 };
 
 export function createWorkspaceMembershipRepository(db: WorkHubDb): WorkspaceMembershipRepository {
@@ -118,6 +123,24 @@ export function createWorkspaceMembershipRepository(db: WorkHubDb): WorkspaceMem
       const rows = await db
         .update(workspaceMemberships)
         .set({ deletedAt: at, updatedAt: at })
+        .where(and(eq(workspaceMemberships.id, id), isNull(workspaceMemberships.deletedAt)))
+        .returning();
+      return rows[0] ?? null;
+    },
+
+    async listActiveByWorkspace(workspaceId) {
+      return db
+        .select()
+        .from(workspaceMemberships)
+        .where(
+          and(eq(workspaceMemberships.workspaceId, workspaceId), isNull(workspaceMemberships.deletedAt))
+        );
+    },
+
+    async updateRole(id, role, at) {
+      const rows = await db
+        .update(workspaceMemberships)
+        .set({ role, updatedAt: at })
         .where(and(eq(workspaceMemberships.id, id), isNull(workspaceMemberships.deletedAt)))
         .returning();
       return rows[0] ?? null;

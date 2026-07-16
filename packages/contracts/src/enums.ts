@@ -207,6 +207,11 @@ export const eventTypes = {
   // R15 批 cuu-toggle：会话级 Cuu 参与开关翻转后广播（PATCH /cuu），让其它开着这个会话的客户端头部
   // 同步开关状态，不必等下次重挂才看到。
   conversationCuuUpdated: "conversation.cuu.updated",
+  // R17 批 G1（群成员管理）：会话参与者集合变化后广播——加人（POST /participants）、退群/移出（DELETE
+  // /participants/:userId）。让其它开着这个会话的客户端就地重拉参与者（成员条 / 已读 N/M 分母）；同
+  // cuu.updated 的既有取舍——只带 conversation_id + 变化类型 + 受影响 user_id，客户端据此按需重拉
+  // GET /participants，接不上就等下次重挂时兜底，不强求必达。
+  conversationParticipantsUpdated: "conversation.participants.updated",
   /** @deprecated 无生产者也无消费者：仅 r12-workbench 契约测试快照枚举，工具流实际走 conversation.tool.* 之外的既有事件。 */
   conversationToolBegin: "conversation.tool.begin",
   /** @deprecated 无生产者也无消费者：同上，仅契约测试引用。 */

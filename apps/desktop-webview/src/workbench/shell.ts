@@ -1181,7 +1181,19 @@ export function mountWorkbenchShell(
           locale: input.locale,
           projectId: vm.project.id,
           projectName: vm.project.name,
-          editable: vm.viewer.is_project_owner
+          editable: vm.viewer.is_project_owner,
+          // R17 批 G1（#2）：成员分区数据从已就绪的 workbench VM 直接派生——全员数 + 本项目的协同会话列表
+          // （主区不列，主区=全员；DM 容器被围栏，本就不在 workbench 会话里）。不额外取数。
+          memberOverview: {
+            totalMembers: vm.workspace_members.total,
+            collabConversations: vm.conversations.conversations
+              .filter((conversation) => conversation.kind === "collab")
+              .map((conversation) => ({ id: conversation.id, title: conversation.title }))
+          },
+          // 「管理成员」按钮 → 跳到该协同会话（同 rail 打开协同会话的既有路径）。
+          onOpenConversation: (conversationId) => {
+            store.setState({ centerTab: "collab", activeConversationId: conversationId });
+          }
         });
         projectSettingsMountKey = key;
         return;
