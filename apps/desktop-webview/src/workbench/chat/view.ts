@@ -117,6 +117,7 @@ import {
   renderModeErrorHintHtml,
   renderModeObserveOnlyHintHtml,
   renderModePopoverHtml,
+  renderToolActivityGroupHtml,
   renderNoAiProviderBannerHtml,
   renderObserverAnalyzingHtml,
   renderPendingOutgoingHtml,
@@ -979,14 +980,40 @@ export function mountChatView(
     let html = renderLoadEarlierHtml(currentLoadEarlierState(), input.locale);
     for (const group of groups) {
       html += renderDaySeparatorHtml(group.label);
-      for (const message of group.messages) {
+      // R16-W1（工作台聊天流升级）：把一轮 turn 里连续的 tool_note 消息在渲染层归组成一条可折叠摘要行
+      // （renderToolActivityGroupHtml）。消息数据不动，仍逐条落库/广播——这里只是把相邻的活 tool_note
+      // 折进一个玻璃条。未读分割线可能命中 Cuu 的 tool_note（sender_user_id=null，不算「自己发的」，见
+      // read-state.ts unreadDividerBeforeMessageId），所以在组内遇到分割线目标就截断这一组、让分割线正常
+      // 落在下一组之前（已读回执的锚点只会是本人消息，永远不是 tool_note，组内无需处理）。
+      const items = group.messages;
+      let i = 0;
+      while (i < items.length) {
+        const message = items[i]!;
         if (dividerBeforeId !== undefined && message.id === dividerBeforeId) {
           html += renderUnreadDividerHtml(input.locale);
+        }
+        if (message.kind === "tool_note" && message.deleted_at === undefined) {
+          const run: Array<Extract<ConversationMessageVM, { kind: "tool_note" }>> = [];
+          let j = i;
+          while (
+            j < items.length &&
+            items[j]!.kind === "tool_note" &&
+            items[j]!.deleted_at === undefined &&
+            // 分割线目标（非本组第一条）截断本组：让它成为下一组的起点，分割线在下一轮迭代照常渲。
+            (j === i || items[j]!.id !== dividerBeforeId)
+          ) {
+            run.push(items[j] as Extract<ConversationMessageVM, { kind: "tool_note" }>);
+            j += 1;
+          }
+          html += renderToolActivityGroupHtml(run, ctx);
+          i = j;
+          continue;
         }
         html += renderMessageHtml(message, ctx);
         if (readSummary && message.id === readSummary.messageId) {
           html += renderReadReceiptHtml({ readCount: readSummary.readCount, total: readSummary.total, locale: input.locale });
         }
+        i += 1;
       }
     }
     for (const record of pending) {

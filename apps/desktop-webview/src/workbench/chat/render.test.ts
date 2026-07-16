@@ -36,6 +36,7 @@ import {
   renderPinBarHtml,
   renderReadReceiptHtml,
   renderStreamingCuuBubbleHtml,
+  renderToolActivityGroupHtml,
   renderTypingIndicatorHtml,
   renderUnreadDividerHtml,
   type ChatRenderContext,
@@ -55,7 +56,10 @@ function ctxWith(
   members: WorkbenchMemberVM[],
   currentUserId?: string,
   extra?: Partial<
-    Pick<ChatRenderContext, "now" | "openReassignItemId" | "actionCardRunProgress" | "actionCardItemBusyAction">
+    Pick<
+      ChatRenderContext,
+      "now" | "openReassignItemId" | "actionCardRunProgress" | "actionCardItemBusyAction" | "expandedMessageIds"
+    >
   >
 ): ChatRenderContext {
   return { locale: "zh-CN", members: membersById(members), currentUserId, ...extra };
@@ -319,6 +323,63 @@ test("renderMessageHtml keeps the model pill but drops the meta row on a Cuu cla
   );
   assert.match(html, /wh-wb-chat-model-pill/u);
   assert.doesNotMatch(html, /wh-wb-chat-cuu-meta/u);
+});
+
+// —— R16-W1（工作台聊天流升级）：工具活动折叠组 —— //
+
+function toolNote(id: string, tool: string, summary: string): ConversationMessageVM {
+  return baseMessage({ id, sender_type: "cuu", sender_user_id: null, kind: "tool_note", content: { tool, summary } });
+}
+
+test("renderToolActivityGroupHtml folds consecutive tool notes into one collapsed summary bar with per-tool counts", () => {
+  const notes = [
+    toolNote("n1", "drive_search", '检索"预算"，命中 3 条'),
+    toolNote("n2", "drive_search", '检索"排期"，命中 1 条'),
+    toolNote("n3", "send_file_card", "发送文件卡：方案.md")
+  ] as Extract<ConversationMessageVM, { kind: "tool_note" }>[];
+  const html = renderToolActivityGroupHtml(notes, ctxWith([]));
+  assert.match(html, /wh-wb-chat-toolgroup/u);
+  // 聚合计数：检索网盘 ×2，发送文件 ×1。
+  assert.match(html, /检索网盘 ×2/u);
+  assert.match(html, /发送文件 ×1/u);
+  // 折叠态：不渲染逐条工具行，展开键挂在第一条 note 的 id 上。
+  assert.doesNotMatch(html, /wh-wb-chat-toolgroup-body/u);
+  assert.match(html, /data-wb-chat-expand-message="n1"/u);
+});
+
+test("renderToolActivityGroupHtml expands into per-tool rows when the group id is in expandedMessageIds", () => {
+  const notes = [
+    toolNote("n1", "drive_search", "检索预算：命中 3 条"),
+    toolNote("n2", "create_work_item", "建工单：整理季度预算")
+  ] as Extract<ConversationMessageVM, { kind: "tool_note" }>[];
+  const html = renderToolActivityGroupHtml(notes, ctxWith([], undefined, { expandedMessageIds: new Set(["n1"]) }));
+  assert.match(html, /wh-wb-chat-toolgroup-body/u);
+  assert.match(html, /data-wb-chat-collapse-message="n1"/u);
+  assert.match(html, /检索预算：命中 3 条/u);
+  assert.match(html, /建工单：整理季度预算/u);
+});
+
+test("renderToolActivityGroupHtml labels an unknown tool neutrally and never fabricates a name", () => {
+  const notes = [toolNote("n1", "mystery_tool", "做了点什么")] as Extract<
+    ConversationMessageVM,
+    { kind: "tool_note" }
+  >[];
+  const html = renderToolActivityGroupHtml(notes, ctxWith([]));
+  assert.match(html, /工具调用 ×1/u);
+});
+
+test("renderToolActivityGroupHtml escapes tool-note detail text in the expanded body", () => {
+  const notes = [toolNote("n1", "drive_search", '<img src=x onerror=alert(1)>')] as Extract<
+    ConversationMessageVM,
+    { kind: "tool_note" }
+  >[];
+  const html = renderToolActivityGroupHtml(notes, ctxWith([], undefined, { expandedMessageIds: new Set(["n1"]) }));
+  assert.doesNotMatch(html, /<img/u);
+  assert.match(html, /&lt;img/u);
+});
+
+test("renderToolActivityGroupHtml returns empty string for an empty run", () => {
+  assert.equal(renderToolActivityGroupHtml([], ctxWith([])), "");
 });
 
 // —— R12 批8：超长文本消息折叠 —— //

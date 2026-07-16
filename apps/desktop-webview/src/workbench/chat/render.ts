@@ -1177,6 +1177,85 @@ function renderCuuMetaRowHtml(message: Extract<ConversationMessageVM, { kind: "t
   return `<div class="wh-wb-chat-cuu-meta" style="display:flex;align-items:center;gap:8px;margin-top:6px;color:var(--ds-ink-faint);font:500 11px/1 var(--ds-font)">${copyBtn}${statsHtml}</div>`;
 }
 
+// —— R16-W1（工作台聊天流升级）：工具活动折叠组 —— //
+//
+// 一轮 turn 期间产生的 tool_note 消息（检索网盘/发文件/建工单）在渲染层归组为一条可折叠摘要行
+// 「检索网盘 ×N，发送文件 ×M」（样式照 prototype 的 .fold：细边玻璃条 + chevron），展开=逐条工具行
+// （现状 tool_note 内容）。纯渲染层归组：消息数据不动，仍逐条落库/广播（web 镜像逐条渲染可接受）。
+// 折叠态由 ctx.expandedMessageIds 承载、以「这一组第一条 tool_note 的 id」为键——直接复用 view.ts 既有的
+// data-wb-chat-expand-message / collapse-message 挂钩与状态集合，落定后默认折叠（不在展开集合里）。
+//
+// tool 字段的取值由后端 tryPersistToolNote 写死（services/conversation-turns.ts）：drive_search /
+// send_file_card / create_work_item。这里镜像这三个字面量做人话标签；认不出的 tool 退回中性「工具调用」，
+// 不猜。
+type ToolActivityNote = Extract<ConversationMessageVM, { kind: "tool_note" }>;
+
+const TOOL_ACTIVITY_LABEL: Record<string, { zh: string; en: string; key: string }> = {
+  drive_search: { zh: "检索网盘", en: "Searched drive", key: "search" },
+  send_file_card: { zh: "发送文件", en: "Sent a file", key: "file" },
+  create_work_item: { zh: "建工单", en: "Created a task", key: "task" }
+};
+
+function toolActivityDescriptor(tool: string, zh: boolean): { label: string; key: string } {
+  const known = TOOL_ACTIVITY_LABEL[tool];
+  if (known) {
+    return { label: zh ? known.zh : known.en, key: known.key };
+  }
+  return { label: zh ? "工具调用" : "Tool call", key: "tool" };
+}
+
+function toolActivityToolName(note: ToolActivityNote): string {
+  const tool = note.content["tool"];
+  return typeof tool === "string" && tool.trim() ? tool : "";
+}
+
+export function renderToolActivityGroupHtml(notes: readonly ToolActivityNote[], ctx: ChatRenderContext): string {
+  if (notes.length === 0) {
+    return "";
+  }
+  const zh = ctx.locale === "zh-CN";
+  const groupId = notes[0]!.id;
+  const open = ctx.expandedMessageIds?.has(groupId) ?? false;
+
+  // 摘要行：按 tool 类型聚合计数，保持首次出现顺序（Map 天然保序）。
+  const counts = new Map<string, number>();
+  for (const note of notes) {
+    const tool = toolActivityToolName(note);
+    counts.set(tool, (counts.get(tool) ?? 0) + 1);
+  }
+  const summaryLine = [...counts.entries()]
+    .map(([tool, count]) => `${toolActivityDescriptor(tool, zh).label} ×${count}`)
+    .join(zh ? "，" : ", ");
+
+  const caretRotate = open ? "rotate(90deg)" : "rotate(0deg)";
+  const toggleAttr = open
+    ? `data-wb-chat-collapse-message="${escapeHtml(groupId)}"`
+    : `data-wb-chat-expand-message="${escapeHtml(groupId)}"`;
+  const header =
+    `<button type="button" class="wh-wb-chat-toolgroup-h" ${toggleAttr} aria-expanded="${open}" ` +
+    `style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:6px 11px;border:0;background:transparent;` +
+    `font:600 11.5px/1.3 var(--ds-font);color:var(--ds-ink-muted);cursor:pointer">` +
+    `<span style="display:flex;width:13px;height:13px;color:var(--ds-ink-faint)" aria-hidden="true">${workbenchIcons.tool}</span>` +
+    `<span class="wh-wb-chat-toolgroup-summary">${escapeHtml(summaryLine)}</span>` +
+    `<span class="wh-wb-chat-toolgroup-caret" aria-hidden="true" style="margin-left:auto;display:flex;color:var(--ds-ink-faint);transform:${caretRotate};transition:transform var(--ds-dur-fast,.16s) var(--ds-ease,ease)">${workbenchIcons.chevronRight}</span>` +
+    `</button>`;
+
+  const body = open
+    ? `<div class="wh-wb-chat-toolgroup-body" style="padding:2px 12px 8px 32px;font:500 12px/1.7 var(--ds-font);color:var(--ds-ink-muted)">${notes
+        .map((note) => {
+          const { key } = toolActivityDescriptor(toolActivityToolName(note), zh);
+          const detail = bestEffortNoteText(note.content, zh ? "（一次工具调用）" : "(a tool call)");
+          return `<div class="wh-wb-chat-toolgroup-row" style="display:flex;gap:8px;padding:1px 0"><span class="wh-wb-chat-toolgroup-k" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--ds-ink-faint);flex:0 0 auto">${escapeHtml(
+            key
+          )}</span><span>${escapeHtml(detail)}</span></div>`;
+        })
+        .join("")}</div>`
+    : "";
+
+  const openClass = open ? " wh-wb-chat-toolgroup--open" : "";
+  return `<div class="wh-wb-chat-toolgroup${openClass}" style="max-width:min(600px,88%);margin:0 0 6px 40px;border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-sm,10px);background:var(--ds-glass-quiet);overflow:hidden">${header}${body}</div>`;
+}
+
 export function renderMessageHtml(message: ConversationMessageVM, ctx: ChatRenderContext): string {
   if (message.kind === "system_event") {
     const deliverableEvent = deliverableSystemEventKind(message.content);
