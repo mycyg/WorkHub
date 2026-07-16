@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { AgentRunLiveVM, ArmyOverviewPageVM, ConversationArmyPanelVM } from "@workhub/contracts";
+import type { AgentRunLiveVM, ArmyBackgroundPageVM, ArmyOverviewPageVM, ConversationArmyPanelVM } from "@workhub/contracts";
 
-import { fetchAgentRunTrace, fetchArmyOverview, fetchConversationArmyPanel } from "./api.js";
+import { abortAgentRun, fetchAgentRunTrace, fetchArmyBackground, fetchArmyOverview, fetchConversationArmyPanel } from "./api.js";
 
 function fakePanel(): ConversationArmyPanelVM {
   return {
@@ -102,4 +102,38 @@ test("fetchAgentRunTrace forwards to the client's existing getAgentRun method (t
 
   assert.deepEqual(calls, ["run-1"]);
   assert.equal(result, trace);
+});
+
+test("fetchArmyBackground requests the read-only background endpoint", async () => {
+  const calls: string[] = [];
+  const vm: ArmyBackgroundPageVM = {
+    generated_at: "2026-07-13T00:00:00.000000Z",
+    scheduler: { enabled: true, tasks: [] },
+    proactive: { items: [], capped: false }
+  };
+  const client = fakeRequestClient((path) => {
+    calls.push(path);
+    return vm;
+  });
+
+  const result = await fetchArmyBackground(client);
+
+  assert.deepEqual(calls, ["/api/army/background"]);
+  assert.deepEqual(result, vm);
+});
+
+test("abortAgentRun forwards to the client's existing abortAgentRun method (POST /agent-runs/:id/abort)", async () => {
+  const calls: string[] = [];
+  const cancelled = { run_id: "run-1", status: "cancelled" } as unknown as AgentRunLiveVM;
+  const client = {
+    abortAgentRun: async (runId: string) => {
+      calls.push(runId);
+      return cancelled;
+    }
+  };
+
+  const result = await abortAgentRun(client, "run-1");
+
+  assert.deepEqual(calls, ["run-1"]);
+  assert.equal(result, cancelled);
 });

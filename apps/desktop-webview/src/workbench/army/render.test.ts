@@ -12,6 +12,7 @@ import type {
 
 import type { ChatRenderMembers } from "../chat/render.js";
 import {
+  armyDataAgeLabel,
   collectArmyChangedFiles,
   groupArmyOverviewRunsByProject,
   mergeArmyRunPages,
@@ -93,7 +94,7 @@ function outputWithFiles(
 const noMembers: ChatRenderMembers = new Map();
 
 test("renderArmyRunCardHtml renders an interactive button carrying the run id when interactive", () => {
-  const html = renderArmyRunCardHtml(baseRun(), "zh-CN", { showProject: false, interactive: true });
+  const html = renderArmyRunCardHtml(baseRun(), "zh-CN", { showProject: false, interaction: { mode: "open-run" } });
   assert.match(html, /<button[^>]*data-wb-army-open-run="run-1"[^>]*>/u);
   assert.match(html, /阿墨/u);
   assert.match(html, /云端/u);
@@ -101,53 +102,53 @@ test("renderArmyRunCardHtml renders an interactive button carrying the run id wh
 });
 
 test("renderArmyRunCardHtml renders a non-interactive, non-clickable div when interactive is false (04 rule 3: no fake wiring)", () => {
-  const html = renderArmyRunCardHtml(baseRun(), "zh-CN", { showProject: false, interactive: false });
+  const html = renderArmyRunCardHtml(baseRun(), "zh-CN", { showProject: false, interaction: { mode: "none" } });
   assert.doesNotMatch(html, /data-wb-army-open-run/u);
   assert.match(html, /<div class="wh-wb-army-rc wh-wb-army-rc--run wh-wb-army-rc--static">/u);
 });
 
 test("renderArmyRunCardHtml shows a project badge only when showProject is true and the run carries a project_name", () => {
-  const withBadge = renderArmyRunCardHtml(overviewRun(), "zh-CN", { showProject: true, interactive: false });
+  const withBadge = renderArmyRunCardHtml(overviewRun(), "zh-CN", { showProject: true, interaction: { mode: "none" } });
   assert.match(withBadge, /星尘短剧/u);
-  const withoutBadge = renderArmyRunCardHtml(baseRun(), "zh-CN", { showProject: true, interactive: true });
+  const withoutBadge = renderArmyRunCardHtml(baseRun(), "zh-CN", { showProject: true, interaction: { mode: "open-run" } });
   assert.doesNotMatch(withoutBadge, /wh-wb-army-rc-project/u);
 });
 
 test("renderArmyRunCardHtml distinguishes null cost (no billing yet) from a confirmed zero cost", () => {
-  const noCost = renderArmyRunCardHtml(baseRun({ cost_cny: null }), "zh-CN", { showProject: false, interactive: true });
+  const noCost = renderArmyRunCardHtml(baseRun({ cost_cny: null }), "zh-CN", { showProject: false, interaction: { mode: "open-run" } });
   assert.match(noCost, /还没有花费/u);
-  const zeroCost = renderArmyRunCardHtml(baseRun({ cost_cny: "0" }), "zh-CN", { showProject: false, interactive: true });
+  const zeroCost = renderArmyRunCardHtml(baseRun({ cost_cny: "0" }), "zh-CN", { showProject: false, interaction: { mode: "open-run" } });
   assert.match(zeroCost, /¥0(?!\.021)/u);
 });
 
 test("renderArmyRunCardHtml labels execution_hint as cloud vs local", () => {
-  const serverHtml = renderArmyRunCardHtml(baseRun({ execution_hint: "server" }), "zh-CN", { showProject: false, interactive: true });
+  const serverHtml = renderArmyRunCardHtml(baseRun({ execution_hint: "server" }), "zh-CN", { showProject: false, interaction: { mode: "open-run" } });
   assert.match(serverHtml, /云端/u);
-  const localHtml = renderArmyRunCardHtml(baseRun({ execution_hint: "local" }), "zh-CN", { showProject: false, interactive: true });
+  const localHtml = renderArmyRunCardHtml(baseRun({ execution_hint: "local" }), "zh-CN", { showProject: false, interaction: { mode: "open-run" } });
   assert.match(localHtml, /本机/u);
 });
 
 test("renderArmyRunCardHtml surfaces the assignee nickname only when one was resolved", () => {
-  const withAssignee = renderArmyRunCardHtml(baseRun(), "zh-CN", { showProject: false, interactive: true, assigneeNickname: "阿曼" });
+  const withAssignee = renderArmyRunCardHtml(baseRun(), "zh-CN", { showProject: false, interaction: { mode: "open-run" }, assigneeNickname: "阿曼" });
   assert.match(withAssignee, /执行身份/u);
   assert.match(withAssignee, /阿曼/u);
-  const withoutAssignee = renderArmyRunCardHtml(baseRun(), "zh-CN", { showProject: false, interactive: true });
+  const withoutAssignee = renderArmyRunCardHtml(baseRun(), "zh-CN", { showProject: false, interaction: { mode: "open-run" } });
   assert.doesNotMatch(withoutAssignee, /wh-wb-army-rc-assignee/u);
 });
 
 test("renderArmyRunCardHtml labels provenance honestly from the fields it actually has (no invented action-card titles)", () => {
-  const fromActionCard = renderArmyRunCardHtml(baseRun(), "zh-CN", { showProject: false, interactive: true });
+  const fromActionCard = renderArmyRunCardHtml(baseRun(), "zh-CN", { showProject: false, interaction: { mode: "open-run" } });
   assert.match(fromActionCard, /来自本会话行动卡/u);
   const fromConversationOnly = renderArmyRunCardHtml(
     baseRun({ source_action_card_item_id: null }),
     "zh-CN",
-    { showProject: false, interactive: true }
+    { showProject: false, interaction: { mode: "open-run" } }
   );
   assert.match(fromConversationOnly, /来自本会话对话/u);
   const systemDispatched = renderArmyRunCardHtml(
     baseRun({ source_action_card_item_id: null, source_conversation_id: null }),
     "zh-CN",
-    { showProject: false, interactive: true }
+    { showProject: false, interaction: { mode: "open-run" } }
   );
   assert.match(systemDispatched, /系统派发/u);
 });
@@ -165,14 +166,59 @@ test("renderArmyPanelHtml renders outputs and runs in list mode", () => {
   assert.match(html, /阿墨/u);
 });
 
-// G-desktop 止血批 2：后台任务区契约锁死 not_yet_available——items 永远是空数组，这是一块永远不会有
-// 内容的固定区块，不是偶尔为空的正常态。之前这里渲染一条永远显示的「即将上线」空态，现在整块不渲染
-// （renderArmyBackgroundTasksSectionHtml 这个函数还在，只是没人调用它了，等真数据源接上再放开）。
-test("renderArmyPanelHtml no longer renders the background-tasks section at all (it's a permanently empty, contract-locked block)", () => {
+// R17 G3(#8 拍板 B)：后台任务区接真数据源后恢复渲染。没传 background(还没拉到)时诚实显示「正在拉」；
+// ready 时渲两块（定时任务 + 主动性动态）。此前那条「永远不渲染」的止血断言随本批接活作废。
+test("renderArmyPanelHtml shows a loading note for the background section when background data hasn't arrived yet", () => {
   const state: ArmyPanelViewState = { mode: "list", vm: panelVm(), loadingMore: false };
   const html = renderArmyPanelHtml(state, "zh-CN", noMembers);
-  assert.doesNotMatch(html, /后台任务/u);
-  assert.doesNotMatch(html, /Background tasks/u);
+  assert.match(html, /后台任务/u);
+  assert.match(html, /正在拉后台任务/u);
+});
+
+test("renderArmyPanelHtml renders the scheduled-tasks and proactivity blocks from real background data", () => {
+  const state: ArmyPanelViewState = { mode: "list", vm: panelVm(), loadingMore: false };
+  const html = renderArmyPanelHtml(state, "zh-CN", noMembers, {
+    status: "ready",
+    vm: {
+      generated_at: "2026-07-13T00:00:00.000000Z",
+      scheduler: {
+        enabled: true,
+        tasks: [
+          { name: "approval-sla", interval_ms: 60_000, running: false, tick_count: 7, skipped_count: 0, error_count: 0, last_tick_at: "2026-07-13T00:00:00.000000Z" },
+          { name: "care-scan", interval_ms: 3_600_000, running: false, tick_count: 0, skipped_count: 0, error_count: 2, last_tick_at: null }
+        ]
+      },
+      proactive: {
+        items: [
+          { id: "pi-1", kind: "care", stage: "high_load", status: "delivered", delivered_via: "conversation_message", created_at: "2026-07-13T00:00:00.000000Z" },
+          { id: "pi-2", kind: "ddl_chase", stage: "overdue", status: "suppressed", delivered_via: null, created_at: "2026-07-12T23:00:00.000000Z" }
+        ],
+        capped: false
+      }
+    }
+  });
+  assert.match(html, /定时任务/u);
+  assert.match(html, /审批超时巡检/u);
+  assert.match(html, /主动关怀扫描/u);
+  assert.match(html, /还没跑过/u); // care-scan last_tick_at null
+  assert.match(html, /主动性动态/u);
+  assert.match(html, /主动关怀/u);
+  assert.match(html, /已送达/u);
+  assert.match(html, /已克制/u); // suppressed
+});
+
+test("renderArmyPanelHtml background section honestly reports a disabled scheduler instead of faking activity", () => {
+  const state: ArmyPanelViewState = { mode: "list", vm: panelVm(), loadingMore: false };
+  const html = renderArmyPanelHtml(state, "zh-CN", noMembers, {
+    status: "ready",
+    vm: {
+      generated_at: "2026-07-13T00:00:00.000000Z",
+      scheduler: { enabled: false, tasks: [] },
+      proactive: { items: [], capped: false }
+    }
+  });
+  assert.match(html, /后台调度器当前未启用/u);
+  assert.match(html, /最近没有主动性动态/u);
 });
 
 // R14 批 APPROVE-CHAT：输出行从「<details> 折叠 + 深链死文本（跳转后续批次开放）」翻成真接线的可点按钮——
@@ -305,7 +351,8 @@ test("renderArmyPanelHtml detail mode enlarges the recent step and offers a real
     mode: "detail",
     vm: panelVm(),
     run: baseRun(),
-    trace: { status: "idle" }
+    trace: { status: "idle" },
+    abort: { status: "idle" }
   };
   const html = renderArmyPanelHtml(state, "zh-CN", noMembers);
   assert.match(html, /data-wb-army-back/u);
@@ -325,7 +372,8 @@ test("renderArmyPanelHtml detail mode renders the full trace timeline once the r
     mode: "detail",
     vm: panelVm(),
     run: baseRun(),
-    trace: { status: "ready", data: trace }
+    trace: { status: "ready", data: trace },
+    abort: { status: "idle" }
   };
   const html = renderArmyPanelHtml(state, "zh-CN", noMembers);
   assert.match(html, /时间线/u);
@@ -364,19 +412,41 @@ test("groupArmyOverviewRunsByProject groups by project_id, preserving first-seen
   assert.deepEqual(groups[1]!.runs.map((r) => r.id), ["r2"]);
 });
 
-test("renderArmyOverviewHtml renders a group heading per project and non-interactive cards (overview has no drill-in yet)", () => {
+// R17 G3(#21)：总览卡片现在可下钻——每张卡携 project/run/conversation id 的 drilldown 数据属性
+// （不是会话面板的 open-run，是跨项目下钻）。
+test("renderArmyOverviewHtml renders a group heading per project and drilldown cards carrying project/run/conversation ids", () => {
   const state: ArmyOverviewViewState = {
     mode: "ready",
     vm: {
       generated_at: "2026-07-13T00:00:00.000000Z",
       viewer_user_id: "user-1",
-      runs: { runs: [overviewRun()], capped: false, next_cursor: null }
+      runs: { runs: [overviewRun({ id: "run-9", project_id: "proj-9", source_conversation_id: "conv-9" })], capped: false, next_cursor: null }
     },
     loadingMore: false
   };
   const html = renderArmyOverviewHtml(state, "zh-CN");
   assert.match(html, /星尘短剧/u);
+  assert.match(html, /data-wb-army-ov-drilldown/u);
+  assert.match(html, /data-wb-army-run-id="run-9"/u);
+  assert.match(html, /data-wb-army-project-id="proj-9"/u);
+  assert.match(html, /data-wb-army-conversation-id="conv-9"/u);
+  // 下钻不是会话面板的 open-run。
   assert.doesNotMatch(html, /data-wb-army-open-run/u);
+});
+
+test("renderArmyOverviewHtml omits the conversation-id attribute for a system-dispatched run with no source conversation", () => {
+  const state: ArmyOverviewViewState = {
+    mode: "ready",
+    vm: {
+      generated_at: "2026-07-13T00:00:00.000000Z",
+      viewer_user_id: "user-1",
+      runs: { runs: [overviewRun({ source_conversation_id: null, source_action_card_item_id: null })], capped: false, next_cursor: null }
+    },
+    loadingMore: false
+  };
+  const html = renderArmyOverviewHtml(state, "zh-CN");
+  assert.match(html, /data-wb-army-ov-drilldown/u);
+  assert.doesNotMatch(html, /data-wb-army-conversation-id/u);
 });
 
 test("renderArmyOverviewHtml shows the honest empty state when the viewer has no army runs across any project", () => {
@@ -400,4 +470,56 @@ test("renderArmyOverviewHtml renders a load-more control exactly when capped", (
     loadingMore: false
   };
   assert.match(renderArmyOverviewHtml(cappedState, "zh-CN"), /data-wb-army-ov-load-more/u);
+});
+
+// —— R17 G3 新增覆盖 —— //
+
+test("renderArmyRunCardHtml gives an escalated run its own danger 'waiting on you' badge, not the generic wait bucket", () => {
+  const html = renderArmyRunCardHtml(baseRun({ status: "escalated" }), "zh-CN", { showProject: false, interaction: { mode: "open-run" } });
+  assert.match(html, /wh-wb-army-rc-status--escalated/u);
+  assert.match(html, /等你拍板/u);
+  // 不再和 queued 同归 wait 桶。
+  assert.doesNotMatch(html, /wh-wb-army-rc-status--wait/u);
+});
+
+test("renderArmyRunCardHtml open-run card offers a cancel entry for a running run and a 'handle' entry for an escalated one (no button nesting)", () => {
+  const running = renderArmyRunCardHtml(baseRun({ status: "running" }), "zh-CN", { showProject: false, interaction: { mode: "open-run" } });
+  assert.match(running, /data-wb-army-abort-run="run-1"/u);
+  // 主体是内层按钮、动作在外层同级 foot——open-run 卡外层是 div 不是 button。
+  assert.match(running, /^<div class="wh-wb-army-rc/u);
+  const escalated = renderArmyRunCardHtml(baseRun({ status: "escalated" }), "zh-CN", { showProject: false, interaction: { mode: "open-run" } });
+  assert.match(escalated, /data-wb-army-handle-escalation/u);
+  assert.doesNotMatch(escalated, /data-wb-army-abort-run/u);
+});
+
+test("renderArmyRunCardHtml does not offer a cancel entry for a terminal run", () => {
+  const done = renderArmyRunCardHtml(baseRun({ status: "succeeded" }), "zh-CN", { showProject: false, interaction: { mode: "open-run" } });
+  assert.doesNotMatch(done, /data-wb-army-abort-run/u);
+  assert.doesNotMatch(done, /data-wb-army-handle-escalation/u);
+});
+
+test("renderArmyPanelHtml detail mode offers a cancel control for a running run and steps through the confirm/aborting states", () => {
+  const idle = renderArmyPanelHtml({ mode: "detail", vm: panelVm(), run: baseRun({ status: "running" }), trace: { status: "idle" }, abort: { status: "idle" } }, "zh-CN", noMembers);
+  assert.match(idle, /data-wb-army-abort-open/u);
+  const confirming = renderArmyPanelHtml({ mode: "detail", vm: panelVm(), run: baseRun({ status: "running" }), trace: { status: "idle" }, abort: { status: "confirming" } }, "zh-CN", noMembers);
+  assert.match(confirming, /确定取消这次执行/u);
+  assert.match(confirming, /data-wb-army-abort-confirm/u);
+  assert.match(confirming, /data-wb-army-abort-dismiss/u);
+  const aborting = renderArmyPanelHtml({ mode: "detail", vm: panelVm(), run: baseRun({ status: "running" }), trace: { status: "idle" }, abort: { status: "aborting" } }, "zh-CN", noMembers);
+  assert.match(aborting, /正在取消/u);
+});
+
+test("renderArmyPanelHtml detail mode offers 'handle' (not cancel) for an escalated run", () => {
+  const html = renderArmyPanelHtml({ mode: "detail", vm: panelVm(), run: baseRun({ status: "escalated" }), trace: { status: "idle" }, abort: { status: "idle" } }, "zh-CN", noMembers);
+  assert.match(html, /data-wb-army-handle-escalation/u);
+  assert.match(html, /等你拍板/u);
+  assert.doesNotMatch(html, /data-wb-army-abort-open/u);
+});
+
+test("armyDataAgeLabel renders honest minute/hour ages and a 'just now' floor", () => {
+  const base = Date.parse("2026-07-13T00:00:00.000000Z");
+  assert.match(armyDataAgeLabel("2026-07-13T00:00:00.000000Z", base + 30 * 1000, true), /刚刚/u);
+  assert.match(armyDataAgeLabel("2026-07-13T00:00:00.000000Z", base + 3 * 60 * 1000, true), /3 分钟前/u);
+  assert.match(armyDataAgeLabel("2026-07-13T00:00:00.000000Z", base + 2 * 60 * 60 * 1000, true), /2 小时前/u);
+  assert.equal(armyDataAgeLabel("not-a-date", base, true), "");
 });

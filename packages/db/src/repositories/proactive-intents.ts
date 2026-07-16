@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, eq, inArray, isNull, lte, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lte, notInArray, sql } from "drizzle-orm";
 
 import type { WorkItemStatus } from "@workhub/contracts";
 
@@ -104,6 +104,60 @@ export async function countDeliveredCareIntentsForUser(
       )
     );
   return rows[0]?.value ?? 0;
+}
+
+// R17 G3（#8 军团后台任务区接真 · 主动性动态）：某工作区内、投给某个用户的最近【已落终态】主动性动态
+// （delivered / suppressed，不含 created 这个瞬态中间态）——军团面板「后台任务」区据此展示 Cuu 的主动性
+// 机器最近为「你」做了什么（追 DDL / 关怀 / 找人），delivered/suppressed 都展示（被频控/静音挡下的也是
+// 一种诚实的「机器动过、但克制住了」）。可见口径：workspace + target_user 双重收窄——每个成员只看到投向
+// 自己的动态，无需 admin 概念；target_user 为空的 intent（不针对具体人）天然不在此口径内。只读，无副作用。
+export type RecentProactiveIntentRow = {
+  id: string;
+  kind: string;
+  stage: string | null;
+  status: "delivered" | "suppressed";
+  deliveredVia: string | null;
+  projectId: string | null;
+  workItemId: string | null;
+  createdAt: Date;
+};
+
+export async function listRecentProactiveIntentsForUser(
+  db: WorkHubDb,
+  input: { workspaceId: string; targetUserId: string; limit: number }
+): Promise<RecentProactiveIntentRow[]> {
+  const rows = await db
+    .select({
+      id: proactiveIntents.id,
+      kind: proactiveIntents.kind,
+      stage: proactiveIntents.stage,
+      status: proactiveIntents.status,
+      deliveredVia: proactiveIntents.deliveredVia,
+      projectId: proactiveIntents.projectId,
+      workItemId: proactiveIntents.workItemId,
+      createdAt: proactiveIntents.createdAt
+    })
+    .from(proactiveIntents)
+    .where(
+      and(
+        eq(proactiveIntents.workspaceId, input.workspaceId),
+        eq(proactiveIntents.targetUserId, input.targetUserId),
+        inArray(proactiveIntents.status, ["delivered", "suppressed"])
+      )
+    )
+    .orderBy(desc(proactiveIntents.createdAt), desc(proactiveIntents.id))
+    .limit(input.limit);
+  return rows.map((row) => ({
+    id: row.id,
+    kind: row.kind,
+    stage: row.stage,
+    // status 列有 check 约束限定 created/delivered/suppressed，WHERE 又只取后两者——收窄类型。
+    status: row.status === "suppressed" ? "suppressed" : "delivered",
+    deliveredVia: row.deliveredVia,
+    projectId: row.projectId,
+    workItemId: row.workItemId,
+    createdAt: row.createdAt
+  }));
 }
 
 // 投递闸走完后把 intent 从 created 顶到终态：delivered（附 delivered_via）或 suppressed（频控/静音挡下）。

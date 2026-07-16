@@ -277,6 +277,35 @@ export const workbenchCss = [
   ".wh-wb-army-tl-phase{font:700 10px/1 var(--ds-font);letter-spacing:.05em;text-transform:uppercase;color:var(--ds-ink-faint);margin-bottom:2px}",
   ".wh-wb-army-tl-out{color:var(--ds-ink)}",
   ".wh-wb-army-tl-tm{margin-left:6px;font:500 10.5px/1 var(--ds-font);color:var(--ds-ink-faint)}",
+  // R17 G3(#20)：escalated 独立危色徽标 + 卡片描边——「等你拍板」一眼可辨，不再与 queued(wait) 同色。
+  ".wh-wb-army-rc-status--escalated{color:var(--ds-danger);background:var(--ds-danger-soft)}",
+  ".wh-wb-army-rc--escalated{border-color:rgba(255,69,58,.34)}",
+  // R17 G3(#19/#20)：交互卡拆成「主体内层按钮 + 底部动作行」——避免 button 套 button。主体按钮铺满、无边、
+  // 透明、继承排版；卡片本身接管 padding/border/hover。
+  ".wh-wb-army-rc-hit{display:block;width:100%;box-sizing:border-box;text-align:left;font:inherit;color:inherit;" +
+    "border:0;background:transparent;padding:0;cursor:pointer}",
+  ".wh-wb-army-rc-act{font:600 11px/1 var(--ds-font);color:var(--ds-ink-muted);background:var(--ds-glass);" +
+    "border:1px solid var(--ds-glass-border);border-radius:99px;padding:4px 11px;cursor:pointer;margin-left:auto}",
+  ".wh-wb-army-rc-act:hover{background:var(--ds-glass-strong)}",
+  ".wh-wb-army-rc-act--danger{color:var(--ds-danger);background:var(--ds-danger-soft);border-color:transparent}",
+  ".wh-wb-army-rc-act--danger:hover{background:var(--ds-danger-soft);border-color:rgba(255,69,58,.34)}",
+  // R17 G3(#19/#20)：run 详情动作区（取消确认层 / 去处理）。
+  ".wh-wb-army-rd-actions{margin:0 0 14px;display:flex;flex-direction:column;gap:8px}",
+  ".wh-wb-army-abort-note{margin:0;font:600 12px/1.5 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-army-abort-error{margin:0;font:500 12px/1.5 var(--ds-font);color:var(--ds-danger)}",
+  ".wh-wb-army-abort-btns{display:flex;gap:8px}",
+  // R17 G3(#8)：后台任务区（定时任务 + 主动性动态）行样式。
+  ".wh-wb-army-bg-list{display:flex;flex-direction:column;gap:7px;margin-bottom:8px}",
+  ".wh-wb-army-bg-row{border:1px solid var(--ds-glass-border);background:var(--ds-glass);border-radius:var(--ds-radius-md);padding:9px 11px}",
+  ".wh-wb-army-bg-row--warn{border-color:rgba(255,159,10,.34)}",
+  ".wh-wb-army-bg-main{display:flex;align-items:center;gap:8px;margin-bottom:3px}",
+  ".wh-wb-army-bg-name{font:700 11.5px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-army-bg-int{font:600 10px/1 var(--ds-font);color:var(--ds-ink-muted);border:1px solid var(--ds-glass-border);padding:2px 7px;border-radius:99px}",
+  ".wh-wb-army-bg-status{margin-left:auto;font:700 10px/1 var(--ds-font);color:var(--ds-success);background:var(--ds-success-soft);padding:2px 8px;border-radius:99px}",
+  ".wh-wb-army-bg-status--muted{color:var(--ds-ink-muted);background:var(--ds-glass)}",
+  ".wh-wb-army-bg-meta{font:500 10.5px/1.4 var(--ds-font);color:var(--ds-ink-faint)}",
+  // R17 G3(#32)：总览头部「数据加载于 N 分钟前」。
+  ".wh-wb-army-ov-age{font:500 11px/1 var(--ds-font);color:var(--ds-ink-faint)}",
 
   // —— R13 批 P1：军团总览（跨项目卡片流，中栏 centerTab === "army-overview"）—— //
   ".wh-wb-center.wh-wb-center--army-overview{padding:0;display:flex;flex-direction:column;overflow:hidden}",
@@ -431,6 +460,10 @@ export const workbenchCss = [
   ".wh-wb-btn:disabled{opacity:.5;cursor:default}",
   ".wh-wb-btn--primary{border:0;color:#fff;background:linear-gradient(135deg,#0a84ff,#64d2ff);box-shadow:var(--ds-shadow-glow);font-weight:700}",
   ".wh-wb-btn--ghost{color:var(--ds-ink-muted);background:transparent;border-color:transparent}",
+  // R17 G3(#19)：危险动作按钮（取消 run / 确认取消）——危色描边填充，与 primary 的中性蓝区分开。
+  ".wh-wb-btn--danger{color:var(--ds-danger);background:var(--ds-danger-soft);border-color:transparent}",
+  ".wh-wb-btn--danger:hover{background:var(--ds-danger)}",
+  "@media(prefers-color-scheme:light){.wh-wb-btn--danger:hover{color:#fff}}",
 
   // —— 批 2：主区群聊。中栏在渲染群聊时切成 flex 列布局，自己管内部滚动区（composer 常驻底部），
   // 不再吃 .wh-wb-center 默认的整体滚动+内边距。 —— //

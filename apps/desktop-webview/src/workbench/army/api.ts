@@ -7,7 +7,7 @@
 // 视图（spotlight/views/replay.ts）就是靠同一个端点/同一份 AgentRunLiveVM 渲出时间线的，这里只是第二个
 // 消费方。「看回放」按钮因此可以是一次真实调用，而不是一个假装能深链却没接线的按钮（04 §4 铁律 3）。
 
-import type { AgentRunLiveVM, ArmyOverviewPageVM, ConversationArmyPanelVM } from "@workhub/contracts";
+import type { AgentRunLiveVM, ArmyBackgroundPageVM, ArmyOverviewPageVM, ConversationArmyPanelVM } from "@workhub/contracts";
 
 export type ArmyRunListQueryInput = {
   afterCreatedAt?: string;
@@ -18,6 +18,8 @@ export type ArmyRunListQueryInput = {
 export type ArmyPanelApiClient = {
   request: <T>(path: string, init?: RequestInit) => Promise<T>;
   getAgentRun: (runId: string) => Promise<AgentRunLiveVM>;
+  // R17 G3(#19)：既有具名方法(POST /agent-runs/:id/abort)——军团面板取消一个 queued/running 的 run。
+  abortAgentRun: (runId: string) => Promise<AgentRunLiveVM>;
 };
 
 function buildArmyRunListQuery(input: ArmyRunListQueryInput): string {
@@ -52,9 +54,26 @@ export function fetchArmyOverview(
   return client.request<ArmyOverviewPageVM>(`/api/me/army${buildArmyRunListQuery(input)}`);
 }
 
+// R17 G3(#8)：后台任务区(定时任务 + 主动性动态)只读端点——走 client.request<T> 既有转发口(同上，不为
+// 一个特性扩大 api-client 公共方法面)。无查询参数。
+export function fetchArmyBackground(
+  client: Pick<ArmyPanelApiClient, "request">
+): Promise<ArmyBackgroundPageVM> {
+  return client.request<ArmyBackgroundPageVM>("/api/army/background");
+}
+
 export function fetchAgentRunTrace(
   client: Pick<ArmyPanelApiClient, "getAgentRun">,
   runId: string
 ): Promise<AgentRunLiveVM> {
   return client.getAgentRun(runId);
+}
+
+// R17 G3(#19)：取消一个 run——既有具名方法 client.abortAgentRun(runId)(POST /agent-runs/:id/abort)，
+// 与 fetchAgentRunTrace 同款薄封装，返回落定后的 run 快照(status 通常翻成 cancelled)。
+export function abortAgentRun(
+  client: Pick<ArmyPanelApiClient, "abortAgentRun">,
+  runId: string
+): Promise<AgentRunLiveVM> {
+  return client.abortAgentRun(runId);
 }

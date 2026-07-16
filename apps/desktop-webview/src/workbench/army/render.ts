@@ -7,7 +7,7 @@
 
 import type {
   AgentRunLiveVM,
-  ArmyBackgroundTasksVM,
+  ArmyBackgroundPageVM,
   ArmyChangedFileVM,
   ArmyOutputsVM,
   ArmyOverviewPageVM,
@@ -42,11 +42,26 @@ export type ArmyRunTraceState =
   | { status: "ready"; data: AgentRunLiveVM }
   | { status: "error"; message: string };
 
+// R17 G3(#19)：run 详情里「取消(abort)」的多步态——idle(还没点)→confirming(确认弹层)→aborting(忙态)→
+// error(失败可重试)。成功后 run 直接落 cancelled 终态，abort 控件随之消失(见 renderArmyRunActionsHtml)。
+export type ArmyRunAbortState =
+  | { status: "idle" }
+  | { status: "confirming" }
+  | { status: "aborting" }
+  | { status: "error"; message: string };
+
+// R17 G3(#8)：后台任务区(定时任务 + 主动性动态)——独立于会话 run 列表的全局机器状态，懒加载一次并缓存
+// （见 panel.ts backgroundState）。渲染在会话面板 list 模式的最底部。
+export type ArmyBackgroundViewState =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; vm: ArmyBackgroundPageVM };
+
 export type ArmyPanelViewState =
   | { mode: "loading" }
   | { mode: "error"; message: string }
   | { mode: "list"; vm: ConversationArmyPanelVM; loadingMore: boolean; loadMoreError?: string }
-  | { mode: "detail"; vm: ConversationArmyPanelVM; run: ArmyRunCardVM; trace: ArmyRunTraceState };
+  | { mode: "detail"; vm: ConversationArmyPanelVM; run: ArmyRunCardVM; trace: ArmyRunTraceState; abort: ArmyRunAbortState };
 
 function executionHintLabel(hint: string, zh: boolean): string {
   if (hint === "server") {
@@ -59,19 +74,47 @@ function executionHintLabel(hint: string, zh: boolean): string {
 }
 
 // 00 §9/契约不变量：succeeded/cancelled 都是"已经不再动了"的终态，视觉上归一为中性(done)；
-// failed 是唯一的危险态；queued/escalated 是"等待"态(escalated 等的是人拍板,不是系统故障)。
-function armyRunStatusVariant(status: string): "run" | "wait" | "done" | "fail" {
+// failed 是唯一的系统危险态；queued 是正常排队(wait)。
+// R17 G3(#20)：escalated 从 wait 桶拆出独立徽标——它等的是【人】拍板(不是系统故障也不是普通排队)，
+// 视觉上要一眼看出「这条在等你」，故给它独立的危色变体，不再和 queued 同归 wait。
+function armyRunStatusVariant(status: string): "run" | "wait" | "done" | "fail" | "escalated" {
   switch (status) {
     case "running":
       return "run";
     case "queued":
-    case "escalated":
       return "wait";
+    case "escalated":
+      return "escalated";
     case "failed":
       return "fail";
     default:
       return "done";
   }
+}
+
+// R17 G3(#20)：状态徽标——escalated 单独渲成「等你拍板」(危色)，其余用通用状态标签。
+function armyRunStatusBadgeHtml(status: string, zh: boolean): string {
+  const variant = armyRunStatusVariant(status);
+  const text = status === "escalated"
+    ? (zh ? "等你拍板" : "Waiting on you")
+    : agentRunStatusLabel(status, zh);
+  return `<span class="wh-wb-army-rc-status wh-wb-army-rc-status--${variant}">${escapeHtml(text)}</span>`;
+}
+
+// R17 G3(#19/#20)：卡片底部内联动作——
+//   * escalated → 「去处理」(打开决策收件箱，data-wb-army-handle-escalation)。
+//   * queued/running → 「取消」(打开该 run 详情并进入取消确认，data-wb-army-abort-run)。取消是有状态的
+//     多步动作(确认→忙态→回流)，实际确认流在 run 详情里做(见 renderArmyRunAbortControlHtml)——卡上这个
+//     按钮是入口，点了就把详情打开到确认态，避免在紧凑的卡片里塞一整套确认 UI。
+//   * 其它终态无内联动作。
+function armyRunCardActionsHtml(run: ArmyRunCardLike, zh: boolean): string {
+  if (run.status === "escalated") {
+    return `<button type="button" class="wh-wb-army-rc-act wh-wb-army-rc-act--danger" data-wb-army-handle-escalation>${zh ? "去处理" : "Handle"}</button>`;
+  }
+  if (run.status === "queued" || run.status === "running") {
+    return `<button type="button" class="wh-wb-army-rc-act" data-wb-army-abort-run="${escapeHtml(run.id)}">${zh ? "取消" : "Cancel"}</button>`;
+  }
+  return "";
 }
 
 function armySourceLabelHtml(run: { source_conversation_id: string | null; source_action_card_item_id: string | null }, zh: boolean): string {
@@ -95,10 +138,21 @@ function armyRunCostLabel(costCny: string | null, zh: boolean): string {
   return costCny === null ? (zh ? "还没有花费" : "No cost yet") : `¥${escapeHtml(costCny)}`;
 }
 
+// R17 G3(#19/#20/#21)：卡片的三种交互形态——
+//   * open-run  —— 会话情境面板：点主体打开右栏 run 详情；底部内联「取消/去处理」动作(见 armyRunCardActionsHtml)。
+//     主体是内层 <button>、动作在外层同级的 foot 里，避免 button 套 button 的非法嵌套。
+//   * drilldown —— 军团总览(#21)：整卡可点，跨项目下钻(selectProject + 右栏定位该 run 详情)，携 run/project/
+//     conversation id。无内联动作(下钻到详情后再操作)。
+//   * none      —— 静态展示(不可点)，04 铁律#3：没有真接线就不装可点。
+export type ArmyRunCardInteraction =
+  | { mode: "none" }
+  | { mode: "open-run" }
+  | { mode: "drilldown"; projectId: string };
+
 export function renderArmyRunCardHtml(
   run: ArmyRunCardLike,
   locale: Locale,
-  opts: { assigneeNickname?: string | undefined; showProject: boolean; interactive: boolean }
+  opts: { assigneeNickname?: string | undefined; showProject: boolean; interaction: ArmyRunCardInteraction }
 ): string {
   const zh = locale === "zh-CN";
   const variant = armyRunStatusVariant(run.status);
@@ -117,20 +171,36 @@ export function renderArmyRunCardHtml(
         )
       )}</div>`
     : "";
-  const body = `<div class="wh-wb-army-rc-top">
+  const bodyInner = `<div class="wh-wb-army-rc-top">
       <span class="wh-wb-army-rc-cat">${workbenchIcons.cat}</span>
       <b class="wh-wb-army-rc-name">${escapeHtml(run.cat_codename)}</b>
       ${projectBadge}
       <span class="wh-wb-army-rc-exec">${escapeHtml(executionHintLabel(run.execution_hint, zh))}</span>
-      <span class="wh-wb-army-rc-status wh-wb-army-rc-status--${variant}">${escapeHtml(agentRunStatusLabel(run.status, zh))}</span>
+      ${armyRunStatusBadgeHtml(run.status, zh)}
     </div>
     <div class="wh-wb-army-rc-goal">${escapeHtml(run.goal_summary)}</div>
     <div class="wh-wb-army-rc-meta">${assigneeLine}${armySourceLabelHtml(run, zh)}</div>
-    ${stepLine}
-    <div class="wh-wb-army-rc-foot"><span>${armyRunCostLabel(run.cost_cny, zh)}</span></div>`;
-  return opts.interactive
-    ? `<button type="button" class="wh-wb-army-rc wh-wb-army-rc--${variant}" data-wb-army-open-run="${escapeHtml(run.id)}">${body}</button>`
-    : `<div class="wh-wb-army-rc wh-wb-army-rc--${variant} wh-wb-army-rc--static">${body}</div>`;
+    ${stepLine}`;
+  const costHtml = `<span>${armyRunCostLabel(run.cost_cny, zh)}</span>`;
+
+  if (opts.interaction.mode === "open-run") {
+    const actions = armyRunCardActionsHtml(run, zh);
+    return `<div class="wh-wb-army-rc wh-wb-army-rc--${variant}">
+      <button type="button" class="wh-wb-army-rc-hit" data-wb-army-open-run="${escapeHtml(run.id)}">${bodyInner}</button>
+      <div class="wh-wb-army-rc-foot">${costHtml}${actions}</div>
+    </div>`;
+  }
+  if (opts.interaction.mode === "drilldown") {
+    const conversationAttr = run.source_conversation_id
+      ? ` data-wb-army-conversation-id="${escapeHtml(run.source_conversation_id)}"`
+      : "";
+    return `<button type="button" class="wh-wb-army-rc wh-wb-army-rc--${variant}" data-wb-army-ov-drilldown data-wb-army-run-id="${escapeHtml(run.id)}" data-wb-army-project-id="${escapeHtml(opts.interaction.projectId)}"${conversationAttr}>${bodyInner}
+      <div class="wh-wb-army-rc-foot">${costHtml}</div>
+    </button>`;
+  }
+  return `<div class="wh-wb-army-rc wh-wb-army-rc--${variant} wh-wb-army-rc--static">${bodyInner}
+    <div class="wh-wb-army-rc-foot">${costHtml}</div>
+  </div>`;
 }
 
 const PROPOSAL_STATUS_LABEL: Record<string, [string, string]> = {
@@ -272,7 +342,7 @@ function renderArmyRunsSectionHtml(
       renderArmyRunCardHtml(run, locale, {
         assigneeNickname: run.assignee_user_id ? members.get(run.assignee_user_id)?.nickname : undefined,
         showProject: opts.showProject,
-        interactive: true
+        interaction: { mode: "open-run" }
       })
     )
     .join("");
@@ -287,15 +357,122 @@ function renderArmyRunsSectionHtml(
   return `${header}<div class="wh-wb-army-runs">${cards}</div>${loadMore}${loadMoreErr}`;
 }
 
-// 后台任务区：契约锁死 not_yet_available(00 §9/批5)——items 恒为空数组，永远没有真内容可看。之前这里
-// 照实渲染一条「即将上线」空态，但 G-desktop 止血批 2 发现这在实践里是一块永远存在、永远空的固定区块
-// （不是偶尔为空的正常态，是契约保证的恒空），跟composer 的死 chip 是同一类问题——不留一个只会说
-// 「即将上线」的区块占位置。renderArmyPanelListHtml 现在不再调用这个函数，整块区不渲染；函数本身连同
-// ArmyBackgroundTasksVM 类型都保留，等真的接上后台任务数据源（定时任务/后台巡检等）那天，把
-// renderArmyPanelListHtml 里的调用加回来即可，不用重新设计这块 UI。
-function renderArmyBackgroundTasksSectionHtml(_tasks: ArmyBackgroundTasksVM, zh: boolean): string {
+// R17 G3(#8 拍板 B)：后台任务区接真——两块真实数据(定时任务 pulse 统计 + 最近主动性动态)。此前这块
+// 契约锁死 not_yet_available 永远空、已停止渲染；现在 GET /api/army/background 提供真数据源，恢复渲染。
+// 定时任务：每条一行(名称 + 间隔 + 上次 tick + tick/错误计数)，pulse 总开关未开时诚实标注「未启用」。
+// 主动性动态：Cuu 最近为「你」做的主动性(追 DDL/关怀/找人)，delivered/suppressed 都展示，空态诚实。
+
+function backgroundIntervalLabel(intervalMs: number, zh: boolean): string {
+  if (intervalMs <= 0) {
+    return zh ? "手动触发" : "Manual";
+  }
+  const seconds = Math.round(intervalMs / 1000);
+  if (seconds < 60) {
+    return zh ? `每 ${seconds} 秒` : `every ${seconds}s`;
+  }
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) {
+    return zh ? `每 ${minutes} 分钟` : `every ${minutes}m`;
+  }
+  const hours = Math.round(minutes / 60);
+  return zh ? `每 ${hours} 小时` : `every ${hours}h`;
+}
+
+// 定时任务名 → 人话(与 pulse-scheduler.ts 注册的 name 一一对应)。未映射的名字诚实回退原串，不编造。
+const BACKGROUND_TASK_LABEL: Record<string, [string, string]> = {
+  "approval-sla": ["审批超时巡检", "Approval SLA sweep"],
+  "notification-reminder": ["通知提醒阶梯", "Notification reminders"],
+  "approval-digest": ["待拍板汇总卡", "Approval digest"],
+  "ddl-chase": ["追截止日期", "Deadline chase"],
+  "care-scan": ["主动关怀扫描", "Care scan"]
+};
+
+function backgroundTaskLabel(name: string, zh: boolean): string {
+  const entry = BACKGROUND_TASK_LABEL[name];
+  return entry ? (zh ? entry[0] : entry[1]) : name;
+}
+
+// 主动性 kind → 人话(与 proactive-intents.ts 的 ProactiveIntentKind 对应)。
+const PROACTIVE_KIND_LABEL: Record<string, [string, string]> = {
+  ddl_chase: ["追截止日期", "Deadline chase"],
+  find_owner: ["找负责人", "Find owner"],
+  care: ["主动关怀", "Care"]
+};
+
+function proactiveKindLabel(kind: string, zh: boolean): string {
+  const entry = PROACTIVE_KIND_LABEL[kind];
+  return entry ? (zh ? entry[0] : entry[1]) : kind;
+}
+
+function proactiveStatusLabel(status: "delivered" | "suppressed", zh: boolean): string {
+  return status === "delivered" ? (zh ? "已送达" : "Delivered") : zh ? "已克制" : "Held back";
+}
+
+function renderArmyBackgroundSchedulerHtml(scheduler: ArmyBackgroundPageVM["scheduler"], locale: Locale): string {
+  const zh = locale === "zh-CN";
+  const header = `<div class="wh-wb-army-sec-h">${zh ? "定时任务" : "Scheduled tasks"}<span class="wh-wb-army-sec-n">${scheduler.tasks.length}</span></div>`;
+  if (!scheduler.enabled) {
+    return `${header}<p class="wh-wb-army-empty-note">${zh ? "后台调度器当前未启用。" : "The background scheduler is currently disabled."}</p>`;
+  }
+  if (scheduler.tasks.length === 0) {
+    return `${header}<p class="wh-wb-army-empty-note">${zh ? "还没有登记任何定时任务。" : "No scheduled tasks registered yet."}</p>`;
+  }
+  const rows = scheduler.tasks
+    .map((task) => {
+      const lastTick = task.last_tick_at
+        ? (zh ? `上次 ${formatMessageTime(task.last_tick_at, locale)}` : `last ${formatMessageTime(task.last_tick_at, locale)}`)
+        : (zh ? "还没跑过" : "never run");
+      const counts = zh
+        ? `跑了 ${task.tick_count} 次${task.error_count > 0 ? ` · ${task.error_count} 次出错` : ""}`
+        : `${task.tick_count} ticks${task.error_count > 0 ? ` · ${task.error_count} errors` : ""}`;
+      return `<div class="wh-wb-army-bg-row${task.error_count > 0 ? " wh-wb-army-bg-row--warn" : ""}">
+        <div class="wh-wb-army-bg-main">
+          <span class="wh-wb-army-bg-name">${escapeHtml(backgroundTaskLabel(task.name, zh))}</span>
+          <span class="wh-wb-army-bg-int">${escapeHtml(backgroundIntervalLabel(task.interval_ms, zh))}</span>
+        </div>
+        <div class="wh-wb-army-bg-meta">${escapeHtml(lastTick)} · ${escapeHtml(counts)}</div>
+      </div>`;
+    })
+    .join("");
+  return `${header}<div class="wh-wb-army-bg-list">${rows}</div>`;
+}
+
+function renderArmyBackgroundProactiveHtml(proactive: ArmyBackgroundPageVM["proactive"], locale: Locale): string {
+  const zh = locale === "zh-CN";
+  const header = `<div class="wh-wb-army-sec-h">${zh ? "主动性动态" : "Proactivity"}<span class="wh-wb-army-sec-n">${proactive.items.length}</span></div>`;
+  if (proactive.items.length === 0) {
+    return `${header}<p class="wh-wb-army-empty-note">${zh ? "最近没有主动性动态。" : "No recent proactivity."}</p>`;
+  }
+  const rows = proactive.items
+    .map((item) => {
+      const statusClass = item.status === "suppressed" ? " wh-wb-army-bg-status--muted" : "";
+      const stage = item.stage ? ` · ${escapeHtml(item.stage)}` : "";
+      return `<div class="wh-wb-army-bg-row">
+        <div class="wh-wb-army-bg-main">
+          <span class="wh-wb-army-bg-name">${escapeHtml(proactiveKindLabel(item.kind, zh))}${stage}</span>
+          <span class="wh-wb-army-bg-status${statusClass}">${escapeHtml(proactiveStatusLabel(item.status, zh))}</span>
+        </div>
+        <div class="wh-wb-army-bg-meta">${escapeHtml(formatMessageTime(item.created_at, locale))}</div>
+      </div>`;
+    })
+    .join("");
+  const cappedNote = proactive.capped
+    ? `<p class="wh-wb-army-capped-note">${zh ? "还有更多主动性动态没有在这里显示。" : "There is more proactivity than shown here."}</p>`
+    : "";
+  return `${header}<div class="wh-wb-army-bg-list">${rows}</div>${cappedNote}`;
+}
+
+// 后台任务区外壳——懒加载态。loading/error 诚实标注(不拿空态冒充)；ready 时渲染两块。
+export function renderArmyBackgroundSectionHtml(background: ArmyBackgroundViewState | undefined, locale: Locale): string {
+  const zh = locale === "zh-CN";
   const header = `<div class="wh-wb-army-sec-h">${zh ? "后台任务" : "Background tasks"}</div>`;
-  return `${header}<p class="wh-wb-army-empty-note">${zh ? "后台任务还没有接入真实数据源，即将上线。" : "Background tasks aren't wired to a real data source yet — coming soon."}</p>`;
+  if (!background || background.status === "loading") {
+    return `${header}<p class="wh-wb-army-empty-note">${zh ? "正在拉后台任务…" : "Loading background tasks…"}</p>`;
+  }
+  if (background.status === "error") {
+    return `${header}<p class="wh-wb-army-loadmore-error">${escapeHtml(background.message)}</p>`;
+  }
+  return `${renderArmyBackgroundSchedulerHtml(background.vm.scheduler, locale)}${renderArmyBackgroundProactiveHtml(background.vm.proactive, locale)}`;
 }
 
 export function renderArmyPanelLoadingHtml(locale: Locale): string {
@@ -311,7 +488,8 @@ export function renderArmyPanelErrorHtml(message: string, locale: Locale): strin
 function renderArmyPanelListHtml(
   state: Extract<ArmyPanelViewState, { mode: "list" }>,
   locale: Locale,
-  members: ChatRenderMembers
+  members: ChatRenderMembers,
+  background: ArmyBackgroundViewState | undefined
 ): string {
   const zh = locale === "zh-CN";
   const outputsHtml = renderArmyOutputsSectionHtml(state.vm.outputs, zh);
@@ -323,9 +501,9 @@ function renderArmyPanelListHtml(
     scopeLabel: zh ? `本会话 ${state.vm.runs.runs.length}` : `${state.vm.runs.runs.length} here`,
     loadMoreDataAttr: "data-wb-army-load-more"
   });
-  // G-desktop 止血批 2：后台任务区永远空（契约锁死 not_yet_available），不再渲染这块永远说「即将上线」
-  // 的固定区块——见 renderArmyBackgroundTasksSectionHtml 顶部注释，函数留着，真数据源接上再放开。
-  return `<div class="wh-wb-army">${outputsHtml}${changedFilesHtml}${runsHtml}</div>`;
+  // R17 G3(#8)：后台任务区接真数据源——恢复渲染（定时任务 + 主动性动态），懒加载态由 panel.ts 传入。
+  const backgroundHtml = renderArmyBackgroundSectionHtml(background, locale);
+  return `<div class="wh-wb-army">${outputsHtml}${changedFilesHtml}${runsHtml}${backgroundHtml}</div>`;
 }
 
 function renderArmyReplaySectionHtml(trace: ArmyRunTraceState, locale: Locale): string {
@@ -354,11 +532,49 @@ function renderArmyReplaySectionHtml(trace: ArmyRunTraceState, locale: Locale): 
   return `<div class="wh-wb-army-sec-h" style="padding-left:0">${zh ? "时间线" : "Timeline"}</div><div class="wh-wb-army-timeline">${items}</div>`;
 }
 
+// R17 G3(#19/#20)：run 详情的动作区——escalated 给「去处理」(→ 决策收件箱)；queued/running 给带确认的
+// 「取消」(→ /agent-runs/:id/abort)。其它终态无动作。
+function renderArmyRunActionsHtml(run: ArmyRunCardVM, abort: ArmyRunAbortState, zh: boolean): string {
+  if (run.status === "escalated") {
+    return `<div class="wh-wb-army-rd-actions">
+      <button type="button" class="wh-wb-btn wh-wb-btn--danger" data-wb-army-handle-escalation>${zh ? "去处理" : "Handle"}</button>
+    </div>`;
+  }
+  if (run.status !== "queued" && run.status !== "running") {
+    return "";
+  }
+  if (abort.status === "confirming") {
+    return `<div class="wh-wb-army-rd-actions wh-wb-army-abort-confirm">
+      <p class="wh-wb-army-abort-note">${zh ? "确定取消这次执行？取消后它会立即停下。" : "Cancel this run? It will stop immediately."}</p>
+      <div class="wh-wb-army-abort-btns">
+        <button type="button" class="wh-wb-btn wh-wb-btn--danger" data-wb-army-abort-confirm>${zh ? "确定取消" : "Cancel run"}</button>
+        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-army-abort-dismiss>${zh ? "返回" : "Back"}</button>
+      </div>
+    </div>`;
+  }
+  if (abort.status === "aborting") {
+    return `<div class="wh-wb-army-rd-actions"><div class="wh-wb-army-replay-loading"><span class="wh-wb-spinner"></span>${zh ? "正在取消…" : "Cancelling…"}</div></div>`;
+  }
+  if (abort.status === "error") {
+    return `<div class="wh-wb-army-rd-actions">
+      <p class="wh-wb-army-abort-error">${escapeHtml(abort.message)}</p>
+      <div class="wh-wb-army-abort-btns">
+        <button type="button" class="wh-wb-btn wh-wb-btn--danger" data-wb-army-abort-confirm>${zh ? "重试取消" : "Retry"}</button>
+        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-army-abort-dismiss>${zh ? "返回" : "Back"}</button>
+      </div>
+    </div>`;
+  }
+  return `<div class="wh-wb-army-rd-actions">
+    <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-army-abort-open>${zh ? "取消这次执行" : "Cancel this run"}</button>
+  </div>`;
+}
+
 function renderArmyRunDetailHtml(state: Extract<ArmyPanelViewState, { mode: "detail" }>, locale: Locale): string {
   const zh = locale === "zh-CN";
-  const { run, trace } = state;
+  const { run, trace, abort } = state;
   const chips = [
-    agentRunStatusLabel(run.status, zh),
+    // R17 G3(#20)：escalated 详情头也用「等你拍板」口径，与卡片徽标一致，不再裸显「已升级」。
+    run.status === "escalated" ? (zh ? "等你拍板" : "Waiting on you") : agentRunStatusLabel(run.status, zh),
     executionHintLabel(run.execution_hint, zh),
     armyRunCostLabel(run.cost_cny, zh)
   ];
@@ -380,6 +596,7 @@ function renderArmyRunDetailHtml(state: Extract<ArmyPanelViewState, { mode: "det
     <div class="wh-wb-army-rd-goal">${escapeHtml(run.goal_summary)}</div>
     <div class="wh-wb-army-rd-meta">${chipsHtml}</div>
     ${stepHtml}
+    ${renderArmyRunActionsHtml(run, abort, zh)}
     ${renderArmyReplaySectionHtml(trace, locale)}
   </div>`;
 }
@@ -391,7 +608,12 @@ export function renderArmySidePanelIdleHtml(locale: Locale): string {
   return `<p class="wh-wb-army-empty-note">${zh ? "选一个会话查看输出与军团。" : "Pick a conversation to see its outputs and army."}</p>`;
 }
 
-export function renderArmyPanelHtml(state: ArmyPanelViewState | undefined, locale: Locale, members: ChatRenderMembers): string {
+export function renderArmyPanelHtml(
+  state: ArmyPanelViewState | undefined,
+  locale: Locale,
+  members: ChatRenderMembers,
+  background?: ArmyBackgroundViewState | undefined
+): string {
   if (!state) {
     return renderArmySidePanelIdleHtml(locale);
   }
@@ -401,7 +623,7 @@ export function renderArmyPanelHtml(state: ArmyPanelViewState | undefined, local
     case "error":
       return renderArmyPanelErrorHtml(state.message, locale);
     case "list":
-      return renderArmyPanelListHtml(state, locale, members);
+      return renderArmyPanelListHtml(state, locale, members, background);
     case "detail":
       return renderArmyRunDetailHtml(state, locale);
     default:
@@ -437,6 +659,24 @@ export function groupArmyOverviewRunsByProject(runs: readonly ArmyOverviewRunCar
     group.runs.push(run);
   }
   return order.map((id) => byProject.get(id)!);
+}
+
+// R17 G3(#32)：总览是跨项目聚合、无天然 SSE 刷新——头部标注「数据加载于 N 分钟前」，让用户知道手里
+// 这份是多久前的快照(配合既有的手动刷新按钮)。纯函数，now 注入便于单测。
+export function armyDataAgeLabel(generatedAtIso: string, nowMs: number, zh: boolean): string {
+  const genMs = Date.parse(generatedAtIso);
+  if (!Number.isFinite(genMs)) {
+    return "";
+  }
+  const diffMin = Math.max(0, Math.floor((nowMs - genMs) / 60000));
+  if (diffMin < 1) {
+    return zh ? "数据刚刚加载" : "Loaded just now";
+  }
+  if (diffMin < 60) {
+    return zh ? `数据加载于 ${diffMin} 分钟前` : `Loaded ${diffMin}m ago`;
+  }
+  const diffHr = Math.floor(diffMin / 60);
+  return zh ? `数据加载于 ${diffHr} 小时前` : `Loaded ${diffHr}h ago`;
 }
 
 export function renderArmyOverviewLoadingHtml(locale: Locale): string {
@@ -475,7 +715,7 @@ export function renderArmyOverviewHtml(state: ArmyOverviewViewState, locale: Loc
       (group) => `<div class="wh-wb-army-ov-group">
         <div class="wh-wb-army-ov-group-h">${escapeHtml(group.projectName)}<span class="wh-wb-army-sec-n">${group.runs.length}</span></div>
         <div class="wh-wb-army-runs">${group.runs
-          .map((run) => renderArmyRunCardHtml(run, locale, { showProject: false, interactive: false }))
+          .map((run) => renderArmyRunCardHtml(run, locale, { showProject: false, interaction: { mode: "drilldown", projectId: group.projectId } }))
           .join("")}</div>
       </div>`
     )

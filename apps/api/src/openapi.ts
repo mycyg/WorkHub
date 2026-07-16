@@ -6276,6 +6276,89 @@ const armyOverviewResponses = {
     "500": conversationInternalResponse
   }
 } as const;
+// R17 G3(#8 后台任务区接真)——与 packages/contracts/src/pages.ts 的 armyBackgroundPageVmSchema 逐字段对齐。
+const armyBackgroundPageResponseSchema = {
+  type: "object",
+  properties: {
+    generated_at: { type: "string", format: "date-time" },
+    scheduler: {
+      type: "object",
+      properties: {
+        enabled: { type: "boolean" },
+        tasks: {
+          type: "array",
+          maxItems: 32,
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", minLength: 1, maxLength: 64 },
+              interval_ms: { type: "integer", minimum: 0 },
+              running: { type: "boolean" },
+              tick_count: { type: "integer", minimum: 0 },
+              skipped_count: { type: "integer", minimum: 0 },
+              error_count: { type: "integer", minimum: 0 },
+              last_tick_at: { type: ["string", "null"], format: "date-time" }
+            },
+            required: [
+              "name",
+              "interval_ms",
+              "running",
+              "tick_count",
+              "skipped_count",
+              "error_count",
+              "last_tick_at"
+            ],
+            additionalProperties: false
+          }
+        }
+      },
+      required: ["enabled", "tasks"],
+      additionalProperties: false
+    },
+    proactive: {
+      type: "object",
+      properties: {
+        items: {
+          type: "array",
+          maxItems: 10,
+          items: {
+            type: "object",
+            properties: {
+              id: uuidStringSchema,
+              kind: { type: "string", minLength: 1, maxLength: 64 },
+              stage: { type: ["string", "null"], minLength: 1, maxLength: 64 },
+              status: { type: "string", enum: ["delivered", "suppressed"] },
+              delivered_via: { type: ["string", "null"], minLength: 1, maxLength: 64 },
+              created_at: { type: "string", format: "date-time" }
+            },
+            required: ["id", "kind", "stage", "status", "delivered_via", "created_at"],
+            additionalProperties: false
+          }
+        },
+        capped: { type: "boolean" }
+      },
+      required: ["items", "capped"],
+      additionalProperties: false
+    }
+  },
+  required: ["generated_at", "scheduler", "proactive"],
+  additionalProperties: false,
+  description:
+    "Read-only army background machinery: pulse scheduler heartbeat (process-level, no per-workspace data, no error text) plus the current user's most recent proactive intents (workspace + target-user scoped)."
+} as const;
+const armyBackgroundResponses = {
+  responses: {
+    "200": jsonDataResponse(armyBackgroundPageResponseSchema, "Army background tasks and proactivity feed").responses[
+      "200"
+    ],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Army background is inaccessible or was not found", [
+      "conversation_army_not_found"
+    ]).responses["404"],
+    "500": conversationInternalResponse
+  }
+} as const;
 
 // R12 批3(行动卡 decide/undo)——与 routes/action-cards.ts 的 zod 请求与 ActionCardItemVM 对齐。
 const actionCardItemVmJsonSchema = {
@@ -8341,6 +8424,13 @@ export function getOpenApiDocument() {
             armyLimitQueryParameter
           ],
           ...armyOverviewResponses
+        }
+      },
+      "/api/army/background": {
+        get: {
+          tags: ["conversations"],
+          summary: "Army background: pulse scheduler heartbeat + current user's recent proactive intents",
+          ...armyBackgroundResponses
         }
       },
       "/api/drive/projects/{projectId}/items/{itemId}/versions": {

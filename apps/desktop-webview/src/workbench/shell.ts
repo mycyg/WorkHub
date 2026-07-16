@@ -270,6 +270,9 @@ export function mountWorkbenchShell(
   let scheduleHandle: ScheduleViewHandle | undefined;
   let scheduleMountKey: string | undefined;
   let armyOverviewHandle: ArmyOverviewViewHandle | undefined;
+  // R17 G3(#21)：从军团总览下钻带来的「加载完该会话军团面板后要打开的 run 详情 id」——drilldown 时写入，
+  // 会话情境挂载时透传给 armyPanel.showForConversation 并即清（consumeArmyRunDetailId）。
+  let pendingArmyRunDetailId: string | undefined;
   let projectSettingsHandle: ProjectSettingsViewHandle | undefined;
   let projectSettingsMountKey: string | undefined;
   // R15 批 I1（决策收件箱）：中栏收件箱视图（跨项目，不依赖 selectedProjectId，同 army-overview）。
@@ -393,8 +396,17 @@ export function mountWorkbenchShell(
     client: input.client,
     locale: input.locale,
     // R14 批 APPROVE-CHAT：军团输出行点击 → 右栏打开提议详情（军团面板不认识提议详情，把 id 抛给这里）。
-    onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId })
+    onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId }),
+    // R17 G3(#20)：escalated run 卡/详情「去处理」→ 决策收件箱（openInbox 是下方 const，闭包内延迟引用不触 TDZ）。
+    onHandleEscalation: () => openInbox()
   });
+
+  // R17 G3(#21)：会话情境挂载时取一次下钻带来的 run 详情 id（用后即清，避免误用到下一次普通导航）。
+  const consumeArmyRunDetailId = (): string | undefined => {
+    const id = pendingArmyRunDetailId;
+    pendingArmyRunDetailId = undefined;
+    return id;
+  };
 
   // R14 批 APPROVE-CHAT：情境面板的第四个 owner——提议详情控制器（M1 只读 + M2 通过/打回/合并）。同样挂载
   // 一次、活过项目/会话切换，与 drive/army 共用同一个 store.sidePanelContent 插槽，靠 ownerId 互斥（见
@@ -895,7 +907,20 @@ export function mountWorkbenchShell(
       clearContextPanels();
       centerEl.className = "wh-wb-center wh-wb-center--army-overview";
       if (!armyOverviewHandle) {
-        armyOverviewHandle = mountArmyOverviewView(centerEl, { client: input.client, locale: input.locale });
+        armyOverviewHandle = mountArmyOverviewView(centerEl, {
+          client: input.client,
+          locale: input.locale,
+          // R17 G3(#21)：卡片下钻——selectProject(该项目)；带血缘会话就顺带 stash run id，会话情境挂载时
+          // armyPanel 加载完自动打开该 run 详情（consumeArmyRunDetailId）。无血缘会话的 run 只 selectProject。
+          onOpenRun: ({ projectId, runId, conversationId }) => {
+            if (conversationId) {
+              pendingArmyRunDetailId = runId;
+              selectProject(projectId, conversationId);
+            } else {
+              selectProject(projectId);
+            }
+          }
+        });
       }
       return;
     }
@@ -1216,7 +1241,13 @@ export function mountWorkbenchShell(
         chatMountKey = key;
         // R13 批 P1：情境面板默认态挂军团三区——会话情境存在时（这里是刚挂上这个协同会话的 chat 视图）
         // 就该拉这个会话的军团面板，取代批 5 之前的通用占位文案。
-        armyPanel.showForConversation({ projectId: vm.project.id, conversationId: collabConversation.id });
+        // R17 G3(#21)：若是从军团总览下钻进来的，透传 openRunId，面板加载完自动打开该 run 详情。
+        const collabOpenRunId = consumeArmyRunDetailId();
+        armyPanel.showForConversation({
+          projectId: vm.project.id,
+          conversationId: collabConversation.id,
+          ...(collabOpenRunId ? { openRunId: collabOpenRunId } : {})
+        });
         enterSideContext({ projectId: vm.project.id, conversationId: collabConversation.id });
         return;
       }
@@ -1271,7 +1302,13 @@ export function mountWorkbenchShell(
       });
       chatMountKey = key;
       // R13 批 P1：见上面协同会话分支同款注释——主区会话情境存在时，情境面板默认态挂军团三区。
-      armyPanel.showForConversation({ projectId: vm.project.id, conversationId: mainConversation.id });
+      // R17 G3(#21)：主区会话也可能是下钻目标（run 血缘会话就是项目主区）——同样透传 openRunId。
+      const mainOpenRunId = consumeArmyRunDetailId();
+      armyPanel.showForConversation({
+        projectId: vm.project.id,
+        conversationId: mainConversation.id,
+        ...(mainOpenRunId ? { openRunId: mainOpenRunId } : {})
+      });
       enterSideContext({ projectId: vm.project.id, conversationId: mainConversation.id });
       return;
     }
