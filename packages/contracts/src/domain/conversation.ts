@@ -715,6 +715,39 @@ export const conversationParticipantVmSchema = z
   .strict();
 export type ConversationParticipantVM = z.infer<typeof conversationParticipantVmSchema>;
 
+// R17 批 G1（群成员管理 · #1 建群后加人）：POST /api/conversations/:id/participants 的请求体——只带要
+// 加入的成员 user_id。语义红线（仅 collab 非 DM、调用者须为该会话参与者、目标须同工作区活跃成员、上限
+// 沿用建群 cap、唯一约束幂等）在服务/仓库层强制，见 apps/api/src/services/conversations.ts addParticipant。
+export const addConversationParticipantRequestSchema = z
+  .object({
+    user_id: idSchema
+  })
+  .strict();
+export type AddConversationParticipantRequest = z.infer<typeof addConversationParticipantRequestSchema>;
+
+// 加人成功的响应——回刷新后的完整参与者列表（scope:"participants"），客户端据此直接替换成员条。
+// 幂等：目标已在群里时也回 200 + 现有列表（added=false），不报错（撞唯一约束 = 既有成员）。
+export const addConversationParticipantResultVmSchema = z
+  .object({
+    added: z.boolean(),
+    participants: conversationParticipantsVmSchema
+  })
+  .strict();
+export type AddConversationParticipantResultVM = z.infer<typeof addConversationParticipantResultVmSchema>;
+
+// R17 批 G1（#16 退群/移出）：DELETE /api/conversations/:id/participants/:userId 的响应。
+//   * self_left：这次是不是自己退群（客户端据此关会话/回列表 vs 就地刷新成员条）。
+//   * new_owner_user_id：owner 退群且群里还有他人时，最早加入的 member 自动升 owner（事务内），带上
+//     继任者 id；其余情况（普通 member 退群、owner 移出别人、群里只剩自己已被 409 挡住）为 null。
+export const removeConversationParticipantResultVmSchema = z
+  .object({
+    removed_user_id: idSchema,
+    self_left: z.boolean(),
+    new_owner_user_id: idSchema.nullable()
+  })
+  .strict();
+export type RemoveConversationParticipantResultVM = z.infer<typeof removeConversationParticipantResultVmSchema>;
+
 export const createConversationResultVmSchema = z
   .object({
     conversation: conversationVmSchema,

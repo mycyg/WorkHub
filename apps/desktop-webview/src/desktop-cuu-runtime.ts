@@ -1699,6 +1699,11 @@ function startModeFromUnknown(value: unknown): StartAgentRunRequest["mode"] | un
   return value === "worker" || value === "pm" ? value : undefined;
 }
 
+// 每个 run 的 SSE 流（/api/push/stream/run/:id）只承载 topics.run(runId) 上发布的事件——即 agent-runner
+// 的 emitRunEvent 发到 run 话题的生命周期类。R17 #25（桌面 per-run 死订阅清理）：budget.* / proposal.* 曾
+// 在此订阅，但它们只发到 topics.workitem / topics.user（emitBudgetNotice / proposalOpenedTopics / 提议合并），
+// **从不发到 topics.run**——在这条 per-run 流上是永不触发的死订阅，删除。桌面仍从 /me 通道（经
+// bindDesktopShellCuuRuntime 的 push-event 桥）收到这些预算/提议卡，不受影响。
 const desktopCuuRunStreamEventNames = [
   "message",
   eventTypes.agentRunStarted,
@@ -1706,11 +1711,7 @@ const desktopCuuRunStreamEventNames = [
   eventTypes.stepToolResult,
   eventTypes.agentRunCompacting,
   eventTypes.agentRunFailed,
-  eventTypes.agentRunEscalated,
-  eventTypes.budgetWarning,
-  eventTypes.budgetExhausted,
-  eventTypes.proposalOpened,
-  eventTypes.proposalMerged
+  eventTypes.agentRunEscalated
 ] as const;
 
 function resolveDesktopCuuEventSource(): DesktopCuuEventSourceConstructor | undefined {

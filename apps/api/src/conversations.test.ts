@@ -195,6 +195,13 @@ function repository(overrides: Partial<ConversationRepository> = {}): Conversati
     async listParticipantsWithNickname() {
       throw new Error("listParticipantsWithNickname not expected");
     },
+    // R17 批 G1（群成员管理）：新增 addParticipant/removeParticipant——本套件按需 override。
+    async addParticipant() {
+      throw new Error("addParticipant not expected");
+    },
+    async removeParticipant() {
+      throw new Error("removeParticipant not expected");
+    },
     // R14 批 CHAT：新增的编辑/删除/置顶/反应/已读/富化仓库方法——本套件按需 override，未 override 的
     // 给拒绝桩（同其它未测方法）。
     async editMessage() {
@@ -2195,4 +2202,315 @@ test("listParticipants 404s an invisible (or non-participant) conversation befor
       error.code === "conversation_not_found"
   );
   assert.equal(listCalls, 0);
+});
+// ── R17 批 G1（群成员管理 · #1 建群后加人 / #16 退群/移出）服务层 ─────────────────────────────
+
+test("addParticipant adds to a non-dm collab, broadcasts participants.updated, and returns the refreshed list", async () => {
+  const capture = capturingBus();
+  let writeInput: unknown;
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return accessRecord({ participantRole: "owner" });
+      },
+      async addParticipant(input) {
+        writeInput = input;
+        return {
+          participant: {
+            id: "23000000-0000-4000-8000-000000000002",
+            conversationId,
+            userId: participantUserId,
+            role: "member",
+            createdAt: now,
+            updatedAt: now
+          },
+          added: true
+        };
+      },
+      async listParticipantsWithNickname() {
+        return [
+          { userId, nickname: "阿曼", role: "owner" },
+          { userId: participantUserId, nickname: "小赵", role: "member" }
+        ];
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      bus: capture.bus,
+      now: () => now
+    }
+  );
+
+  const result = await service.addParticipant({ actor: actor(), conversationId, addUserId: participantUserId });
+
+  assert.deepEqual(writeInput, { workspaceId, conversationId, addedUserId: participantUserId, at: now });
+  assert.equal(result.added, true);
+  assert.equal(result.participants.scope, "participants");
+  assert.equal(result.participants.participants.length, 2);
+  assert.equal(capture.published[0]?.type, "conversation.participants.updated");
+  const event = capture.published[0]?.data as { data: { conversation_id: string; change: string; user_id: string } };
+  assert.deepEqual(event.data, { conversation_id: conversationId, change: "added", user_id: participantUserId });
+});
+
+test("addParticipant is idempotent — an existing member returns added=false and does not broadcast", async () => {
+  const capture = capturingBus();
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return accessRecord({ participantRole: "member" });
+      },
+      async addParticipant() {
+        return {
+          participant: {
+            id: "23000000-0000-4000-8000-000000000002",
+            conversationId,
+            userId: participantUserId,
+            role: "member",
+            createdAt: now,
+            updatedAt: now
+          },
+          added: false
+        };
+      },
+      async listParticipantsWithNickname() {
+        return [{ userId, nickname: "阿曼", role: "owner" }];
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      bus: capture.bus,
+      now: () => now
+    }
+  );
+
+  const result = await service.addParticipant({ actor: actor(), conversationId, addUserId: participantUserId });
+
+  assert.equal(result.added, false);
+  assert.equal(capture.published.length, 0, "idempotent re-add must not broadcast");
+});
+
+test("addParticipant refuses the main conversation with 409 and never writes", async () => {
+  let writeCalls = 0;
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return accessRecord({ conversation: conversationRow({ kind: "main" }), participantRole: null });
+      },
+      async addParticipant() {
+        writeCalls += 1;
+        throw new Error("main must not accept new participants");
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now
+    }
+  );
+
+  await assert.rejects(
+    () => service.addParticipant({ actor: actor(), conversationId, addUserId: participantUserId }),
+    (error: unknown) =>
+      error instanceof ConversationServiceError && error.status === 409 && error.code === "conversation_not_group"
+  );
+  assert.equal(writeCalls, 0);
+});
+
+test("addParticipant refuses a dm conversation with 409 and never writes", async () => {
+  let writeCalls = 0;
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return accessRecord({
+          conversation: conversationRow({ dmKey: "dm:a:b" }),
+          participantRole: "owner"
+        });
+      },
+      async addParticipant() {
+        writeCalls += 1;
+        throw new Error("dm must not accept new participants");
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now
+    }
+  );
+
+  await assert.rejects(
+    () => service.addParticipant({ actor: actor(), conversationId, addUserId: participantUserId }),
+    (error: unknown) =>
+      error instanceof ConversationServiceError && error.status === 409 && error.code === "conversation_dm_no_add"
+  );
+  assert.equal(writeCalls, 0);
+});
+
+test("addParticipant 404s an invisible (or non-participant) conversation before any write", async () => {
+  let writeCalls = 0;
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return null;
+      },
+      async addParticipant() {
+        writeCalls += 1;
+        throw new Error("must not write");
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now
+    }
+  );
+
+  await assert.rejects(
+    () => service.addParticipant({ actor: actor(), conversationId, addUserId: participantUserId }),
+    (error: unknown) =>
+      error instanceof ConversationServiceError && error.status === 404 && error.code === "conversation_not_found"
+  );
+  assert.equal(writeCalls, 0);
+});
+
+test("removeParticipant lets a member leave themselves (self_left=true) and broadcasts removed", async () => {
+  const capture = capturingBus();
+  let writeInput: unknown;
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return accessRecord({ participantRole: "member" });
+      },
+      async removeParticipant(input) {
+        writeInput = input;
+        return { removed: true, newOwnerUserId: null };
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      bus: capture.bus,
+      now: () => now
+    }
+  );
+
+  const result = await service.removeParticipant({ actor: actor(), conversationId, targetUserId: userId });
+
+  assert.deepEqual(writeInput, { workspaceId, conversationId, targetUserId: userId, at: now });
+  assert.deepEqual(result, { removed_user_id: userId, self_left: true, new_owner_user_id: null });
+  assert.equal(capture.published[0]?.type, "conversation.participants.updated");
+  const event = capture.published[0]?.data as { data: { change: string; user_id: string } };
+  assert.equal(event.data.change, "removed");
+});
+
+test("removeParticipant lets an owner remove another member (move-out)", async () => {
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return accessRecord({ participantRole: "owner" });
+      },
+      async removeParticipant() {
+        return { removed: true, newOwnerUserId: null };
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now
+    }
+  );
+
+  const result = await service.removeParticipant({ actor: actor(), conversationId, targetUserId: participantUserId });
+
+  assert.deepEqual(result, { removed_user_id: participantUserId, self_left: false, new_owner_user_id: null });
+});
+
+test("removeParticipant refuses a non-owner removing someone else with 403 and never writes", async () => {
+  let writeCalls = 0;
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return accessRecord({ participantRole: "member" });
+      },
+      async removeParticipant() {
+        writeCalls += 1;
+        throw new Error("only the owner can remove others");
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now
+    }
+  );
+
+  await assert.rejects(
+    () => service.removeParticipant({ actor: actor(), conversationId, targetUserId: participantUserId }),
+    (error: unknown) =>
+      error instanceof ConversationServiceError && error.status === 403 && error.code === "conversation_remove_forbidden"
+  );
+  assert.equal(writeCalls, 0);
+});
+
+test("removeParticipant surfaces the promoted successor when the owner leaves", async () => {
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return accessRecord({ participantRole: "owner" });
+      },
+      async removeParticipant() {
+        return { removed: true, newOwnerUserId: participantUserId };
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now
+    }
+  );
+
+  const result = await service.removeParticipant({ actor: actor(), conversationId, targetUserId: userId });
+
+  assert.deepEqual(result, { removed_user_id: userId, self_left: true, new_owner_user_id: participantUserId });
+});
+
+test("removeParticipant refuses main (all-member) and dm (2-person) conversations with 409", async () => {
+  const mainService = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return accessRecord({ conversation: conversationRow({ kind: "main" }), participantRole: null });
+      }
+    }),
+    { driveFiles: driveFiles(async () => { throw new Error("no drive"); }), now: () => now }
+  );
+  await assert.rejects(
+    () => mainService.removeParticipant({ actor: actor(), conversationId, targetUserId: userId }),
+    (error: unknown) =>
+      error instanceof ConversationServiceError && error.status === 409 && error.code === "conversation_not_group"
+  );
+
+  const dmService = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return accessRecord({ conversation: conversationRow({ dmKey: "dm:a:b" }), participantRole: "owner" });
+      }
+    }),
+    { driveFiles: driveFiles(async () => { throw new Error("no drive"); }), now: () => now }
+  );
+  await assert.rejects(
+    () => dmService.removeParticipant({ actor: actor(), conversationId, targetUserId: participantUserId }),
+    (error: unknown) =>
+      error instanceof ConversationServiceError && error.status === 409 && error.code === "conversation_dm_no_remove"
+  );
 });

@@ -158,6 +158,12 @@ function conversationsService(overrides: Partial<ConversationService> = {}): Con
     async listParticipants() {
       throw new Error("not needed");
     },
+    async addParticipant() {
+      throw new Error("not needed");
+    },
+    async removeParticipant() {
+      throw new Error("not needed");
+    },
     async listMessages(): Promise<ConversationMessagePageVM> {
       throw new Error("not needed");
     },

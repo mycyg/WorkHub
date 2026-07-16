@@ -295,16 +295,16 @@ function renderRowHtml(
 }
 
 // E2b OKR 挂钩：工作项挂了目标（objective_ids 非空）时，就近在行标题右侧渲一枚 OKR tile。
-// 缺口（见报告）：E1 的时间线 VM 只带 objective_ids、不带目标名，也没有可批量取名的公开端点
-// （listObjectiveTitlesByIds 只在成本页服务端内部用，未暴露给前端），本批不改 api——所以 tile 的
-// 悬停（title）先显 id，不编造名字。目标名接入等 E1 补 VM 字段或开只读取名端点后再补（additive）。
+// G4 #36：VM 现带 objective_titles（服务端 join listObjectiveTitlesByIds），悬停（title/aria-label）显目标名；
+// 缺省或取名失败时回落成裸 id（与旧行为一致，不编造名字）。
 function renderOkrTile(item: TimelineWorkItemVM, zh: boolean): string {
   const ids = item.objective_ids;
   if (!ids || ids.length === 0) {
     return "";
   }
+  const names = item.objective_titles && item.objective_titles.length === ids.length ? item.objective_titles : ids;
   const label = ids.length > 1 ? `OKR ×${ids.length}` : "OKR";
-  const hover = zh ? `目标 ${ids.join("、")}` : `Objectives ${ids.join(", ")}`;
+  const hover = zh ? `目标 ${names.join("、")}` : `Objectives ${names.join(", ")}`;
   return `<span class="wh-wb-tl-okr" title="${escapeHtml(hover)}" aria-label="${escapeHtml(hover)}">${label}</span>`;
 }
 

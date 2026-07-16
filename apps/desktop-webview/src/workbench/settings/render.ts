@@ -295,6 +295,67 @@ export function renderProjectSettingsHtml(input: {
   </div>`;
 }
 
+// —— R17 批 G1（#2 兑现「项目设置里调成员」的承诺）：项目成员分区 ——
+// 拍板 A（项目成员=会话参与者的可管理化）下，这个分区是「概览 + 跳转」而非独立成员数据层：
+//   * 主区 = 全员（工作区所有成员都能进主区群聊）——诚实说明，不摆一份假的「项目成员名单」；
+//   * 该项目各协同会话概览（会话名 + 跳到该会话成员条管理）——加人/退群/移出在会话成员条里操作。
+// 数据由 shell 从已就绪的 workbench VM 直接传入（全员数 + collab 会话列表），本分区不额外取数。
+export type ProjectMembersOverview = {
+  totalMembers: number;
+  collabConversations: ReadonlyArray<{ id: string; title: string }>;
+};
+
+export function renderProjectMembersSectionHtml(input: {
+  locale: Locale;
+  overview: ProjectMembersOverview;
+}): string {
+  const zh = input.locale === "zh-CN";
+  const { totalMembers, collabConversations } = input.overview;
+  const mainRow = `<div class="wh-wb-pset-row">
+    <div class="wh-wb-pset-row-main">
+      <div class="wh-wb-pset-row-title">${zh ? "主区群聊 · 全员" : "Main chat · everyone"}</div>
+      <div class="wh-wb-pset-row-sub">${
+        zh
+          ? `工作区全部 ${totalMembers} 名成员都能进主区群聊，无需单独拉人。`
+          : `All ${totalMembers} workspace members can join the main chat — no invite needed.`
+      }</div>
+    </div>
+  </div>`;
+  const collabRows = collabConversations.length
+    ? collabConversations
+        .map(
+          (conversation) => `<div class="wh-wb-pset-row">
+      <div class="wh-wb-pset-row-main">
+        <div class="wh-wb-pset-row-title">${escapeHtml(conversation.title)}</div>
+        <div class="wh-wb-pset-row-sub">${zh ? "协同会话——在会话成员条里加人/退群/移出" : "Collab chat — add or remove members from its member bar"}</div>
+      </div>
+      <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-pset-open-conversation="${escapeHtml(
+        conversation.id
+      )}">${zh ? "管理成员" : "Manage members"}</button>
+    </div>`
+        )
+        .join("")
+    : `<p class="wh-wb-pset-readonly-note">${
+        zh
+          ? "还没有协同会话——在左栏「新建协同会话」建群时选人，之后可在会话成员条里加人/退群。"
+          : "No collab chats yet — create one from the sidebar and pick members; manage them later in its member bar."
+      }</p>`;
+  return `<section class="wh-wb-pset-group" data-wb-pset-members-section="true">
+    <div class="wh-wb-pset-row">
+      <div class="wh-wb-pset-row-main">
+        <div class="wh-wb-pset-row-title">${zh ? "成员" : "Members"}</div>
+        <div class="wh-wb-pset-row-sub">${
+          zh
+            ? "谁在这个项目里：主区对全员开放，协同会话各有参与者。"
+            : "Who's in this project: the main chat is open to everyone; each collab chat has its own participants."
+        }</div>
+      </div>
+    </div>
+    ${mainRow}
+    ${collabRows}
+  </section>`;
+}
+
 export function renderProjectSettingsLoadingHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
   return `<div class="wh-wb-loading"><span class="wh-wb-spinner"></span>${zh ? "正在拉项目设置…" : "Loading project settings…"}</div>`;

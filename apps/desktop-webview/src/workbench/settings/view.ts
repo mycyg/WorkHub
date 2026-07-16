@@ -39,12 +39,14 @@ import {
   projectGranularEffective,
   renderGithubBindingSectionHtml,
   renderProjectInstructionsSectionHtml,
+  renderProjectMembersSectionHtml,
   renderProjectSettingsErrorHtml,
   renderProjectSettingsHtml,
   renderProjectSettingsLoadingHtml,
   renderProjectSettingsOwnerOnlyHtml,
   resolveRiskMonitorForDisplay,
-  type ProjectInstructionsSectionLoadState
+  type ProjectInstructionsSectionLoadState,
+  type ProjectMembersOverview
 } from "./render.js";
 
 // R14 批 GH 解绑武装态自动复原时长——同 drive/side-panel.ts 版本回滚两段式确认的既有先例（5 秒）。
@@ -89,6 +91,11 @@ export function mountProjectSettingsView(
     // vm.viewer.is_project_owner——非负责人理论上到不了这个视图（rail 只对负责人渲染入口），但所有权
     // 可能在会话中途变更，这里仍按只读渲染兜底（服务端 404 时另有 owner-only 诚实态）。
     editable: boolean;
+    // R17 批 G1（#2）：项目成员分区数据——由 shell 从已就绪的 workbench VM 直接传入（全员数 + collab
+    // 会话列表），本视图不额外取数。缺省时不渲成员分区（兼容存量测试/调用点）。
+    memberOverview?: ProjectMembersOverview | undefined;
+    // 成员分区里「管理成员」按钮点击——跳到对应协同会话（shell 切 centerTab=collab）。缺省则按钮无效。
+    onOpenConversation?: ((conversationId: string) => void) | undefined;
   }
 ): ProjectSettingsViewHandle {
   const zh = input.locale === "zh-CN";
@@ -293,11 +300,20 @@ export function mountProjectSettingsView(
     });
   }
 
+  // R17 批 G1（#2）：项目成员分区——独立块（同 GitHub 分区），由传入的 memberOverview 渲染，不依赖
+  // governance 的 loadState（非负责人也能看到成员概览）。缺省 memberOverview 时不渲这个分区。
+  function memberSectionHtml(): string {
+    if (!input.memberOverview) {
+      return "";
+    }
+    return renderProjectMembersSectionHtml({ locale: input.locale, overview: input.memberOverview });
+  }
+
   function render(): void {
     if (disposed) {
       return;
     }
-    container.innerHTML = `${governanceSectionHtml()}${instructionsSectionHtml()}${renderGithubBindingSectionHtml({
+    container.innerHTML = `${governanceSectionHtml()}${memberSectionHtml()}${instructionsSectionHtml()}${renderGithubBindingSectionHtml({
       locale: input.locale,
       editable: input.editable,
       loadState: githubLoadState,
@@ -514,6 +530,15 @@ export function mountProjectSettingsView(
   }
 
   container.addEventListener("click", (event) => {
+    // R17 批 G1（#2）：成员分区「管理成员」跳转——navigation only，任何 viewer 都可用（不受 governance/
+    // editable 门控），所以放在下面「非负责人早退」判断之前。
+    if (event.target instanceof HTMLElement) {
+      const openConversationBtn = event.target.closest<HTMLElement>("[data-wb-pset-open-conversation]");
+      if (openConversationBtn?.dataset.wbPsetOpenConversation) {
+        input.onOpenConversation?.(openConversationBtn.dataset.wbPsetOpenConversation);
+        return;
+      }
+    }
     if (!(event.target instanceof HTMLElement) || !governance || !input.editable) {
       if (event.target instanceof HTMLElement && event.target.closest("[data-wb-pset-retry]")) {
         load();

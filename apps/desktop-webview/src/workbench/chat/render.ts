@@ -95,6 +95,11 @@ export function renderMemberBarHtml(input: {
   // R14 批 CHAT：在线成员 id 集合（GET /api/presence 拉回，view.ts 30s 轮询 + 重连刷新后重渲成员条）。
   // 缺省/空集 = 谁都不在线（或还没拉到）——一个点都不画，不编造在线态。
   onlineUserIds?: ReadonlySet<string>;
+  // R17 批 G1（群成员管理）：仅非 DM 的 collab 会话为 true——成员条追加「成员」「加人」两个入口按钮
+  // （main/DM 不渲，由 view.ts 挂载点 canManageMembers 把关，见 renderHead）。缺省 false：既有调用点/
+  // 既有测试完全不受影响（bar 只多两个按钮，头像行/计数标签一字不改）。
+  // 加人 / manage members: only non-DM collab conversations render these two entry buttons.
+  manage?: boolean;
 }): string {
   const zh = input.locale === "zh-CN";
   const avatars = input.members
@@ -110,7 +115,215 @@ export function renderMemberBarHtml(input: {
   const cuuAvatar = avatarTileHtml({ label: "Cuu", id: "cuu", variant: "cuu" });
   const count = input.members.length;
   const label = zh ? `${count} 位成员 + Cuu · 全员群聊` : `${count} member${count === 1 ? "" : "s"} + Cuu · everyone`;
-  return `<div class="wh-wb-chat-head"><div class="wh-wb-chat-avs">${avatars}${cuuAvatar}</div><span class="wh-wb-chat-head-label">${escapeHtml(label)}</span></div>`;
+  // R17 批 G1：「成员」打开成员管理面板（看名单 / 退出 / 移出），「加人」打开同一面板（加人区已内联在面板里）。
+  // 两个按钮都只是入口，真正的名单 + 加人候选由 renderMemberManageModalHtml 渲染（挂在成员条旁，见 renderHead）。
+  const manageHtml = input.manage
+    ? `<button type="button" class="wh-wb-chat-members-btn" data-wb-chat-member-manage-open>${escapeHtml(
+        zh ? "成员" : "Members"
+      )}</button><button type="button" class="wh-wb-chat-members-btn wh-wb-chat-members-btn--add" data-wb-chat-member-add-open>${escapeHtml(
+        zh ? "加人" : "Add"
+      )}</button>`
+    : "";
+  return `<div class="wh-wb-chat-head"><div class="wh-wb-chat-avs">${avatars}${cuuAvatar}</div><span class="wh-wb-chat-head-label">${escapeHtml(
+    label
+  )}</span>${manageHtml}</div>`;
+}
+
+// —— R17 批 G1（群成员管理 · #1 建群后加人 / #16 退群·移出） —— //
+
+export type MemberManageParticipantRow = { userId: string; nickname: string; role: "owner" | "member" };
+export type MemberManageCandidate = { userId: string; nickname: string };
+
+// Cuu 的哨兵 id（同 view.ts CUU_MENTION_SENTINEL_USER_ID）——她不是真实工作区成员，本就不该出现在
+// input.members 里；这里对这个 id 再做一道防御性排除，万一将来 members 混进 Cuu 也不会把她列成可加成员。
+const CUU_SENTINEL_USER_ID = "cuu";
+
+// R17 批 G1（#1 建群后加人）：加人候选 = 工作区成员里「还不在这条会话参与者集合里」的那些人（排除 Cuu）。
+// 纯 map/filter，可单测（"candidates exclude existing participants"）。
+export function memberManageCandidates(
+  workspaceMembers: readonly WorkbenchMemberVM[],
+  participantUserIds: ReadonlySet<string>
+): MemberManageCandidate[] {
+  return workspaceMembers
+    .filter((member) => member.user_id !== CUU_SENTINEL_USER_ID && !participantUserIds.has(member.user_id))
+    .map((member) => ({ userId: member.user_id, nickname: member.nickname }));
+}
+
+// R17 批 G1（#16 退群/移出）：某一行参与者该渲什么退出/移出控件——自己那行永远是「退出」（leave）；
+// 别人那行只有当前查看者是群主（owner）才渲「移出」（remove），非群主看别人那行没有任何控件（none）。
+// 纯决策函数，可单测（"remove control renders per permission"）。服务端仍有 403（非 owner 删他人）/409
+// （最后一人）兜底，前端这里更窄一步：不摆一个点了会被拒的按钮（04 §4 铁律 3）。
+export function participantRemoveKind(
+  row: { userId: string; role: "owner" | "member" },
+  viewerUserId: string,
+  viewerIsOwner: boolean
+): "leave" | "remove" | "none" {
+  if (row.userId === viewerUserId) {
+    return "leave";
+  }
+  return viewerIsOwner ? "remove" : "none";
+}
+
+// 加人/退群/移出失败后的温和行内提示——照 action-card-decision.ts 的 mapActionCardDecisionError 同款取舍：
+// 维护一份口语化的桌面端文案（服务端 message 是给 API 消费者的通用文案），未识别的 code 落通用重试句，
+// 不暴露内部错误码。错误码来源见 apps/api/src/services/conversations.ts 的 addParticipant/removeParticipant。
+export type MemberManageErrorSource = { status?: number; code?: string } | undefined;
+
+const MEMBER_MANAGE_ERROR_TEXT: Record<Locale, Record<string, string>> = {
+  "zh-CN": {
+    conversation_participant_cap: "这个群的成员已经满了。",
+    conversation_participant_invalid: "这个人不是当前工作区的活跃成员。",
+    conversation_dm_target_not_found: "没找到工作区里的这个人。",
+    conversation_add_target_required: "先选一个要加入的人。",
+    conversation_remove_forbidden: "只有群主可以移出其他成员。",
+    conversation_last_participant: "你是最后一名成员，不能退出。",
+    conversation_participant_not_found: "这个人已经不在这个群里了。",
+    conversation_not_group: "这个会话不支持单独增删成员。",
+    human_required: "这个操作需要你用真实账号登录。"
+  },
+  "en-US": {
+    conversation_participant_cap: "This chat is already full.",
+    conversation_participant_invalid: "That person isn't an active member of this workspace.",
+    conversation_dm_target_not_found: "Couldn't find that person in the workspace.",
+    conversation_add_target_required: "Pick someone to add first.",
+    conversation_remove_forbidden: "Only the owner can remove other members.",
+    conversation_last_participant: "You're the last member — you can't leave.",
+    conversation_participant_not_found: "That person is no longer in this chat.",
+    conversation_not_group: "This chat doesn't support adding or removing members one by one.",
+    human_required: "This action needs you to be signed in as a real user."
+  }
+};
+
+const MEMBER_MANAGE_FALLBACK_ERROR_TEXT: Record<Locale, string> = {
+  "zh-CN": "没弄成，稍后再试一次。",
+  "en-US": "That didn't go through — try again in a moment."
+};
+
+export function memberManageErrorText(source: MemberManageErrorSource, locale: Locale): string {
+  const table = MEMBER_MANAGE_ERROR_TEXT[locale];
+  const code = source?.code;
+  if (code && Object.prototype.hasOwnProperty.call(table, code)) {
+    return table[code]!;
+  }
+  return MEMBER_MANAGE_FALLBACK_ERROR_TEXT[locale];
+}
+
+// R17 批 G1：成员管理面板——复用 .wh-wb-modal-overlay/.wh-wb-modal 弹窗底盘（不新造），上半是当前参与者
+// 名单（每行按权限渲「退出/移出」控件；点后就地内联确认，不弹 window.confirm），下半是「加人」候选清单
+// （点一个加一个，飞行中该行忙态、其余候选一并禁用防并发）。纯函数，imperative 的 POST/DELETE 在 view.ts。
+export function renderMemberManageModalHtml(input: {
+  locale: Locale;
+  open: boolean;
+  participants: readonly MemberManageParticipantRow[];
+  candidates: readonly MemberManageCandidate[];
+  viewerUserId: string;
+  viewerIsOwner: boolean;
+  // #1 加人：正在飞的候选 user_id（markBusy 手感——该行换「添加中…」，其余候选一并禁用，见下）+ 失败行内提示。
+  addBusyUserId?: string | undefined;
+  addError?: string | undefined;
+  // #16 退群/移出：当前展开了行内确认的那一行 user_id（一次只确认一行）+ 正在飞的删除 user_id + 失败提示。
+  removeConfirmUserId?: string | undefined;
+  removeBusyUserId?: string | undefined;
+  removeError?: string | undefined;
+}): string {
+  const zh = input.locale === "zh-CN";
+  const rosterRows = input.participants
+    .map((row) => {
+      const kind = participantRemoveKind(row, input.viewerUserId, input.viewerIsOwner);
+      const roleTag =
+        row.role === "owner" ? `<span class="wh-wb-member-role">${escapeHtml(zh ? "群主" : "Owner")}</span>` : "";
+      let control = "";
+      if (kind !== "none") {
+        const confirming = input.removeConfirmUserId === row.userId;
+        const busy = input.removeBusyUserId === row.userId;
+        if (confirming) {
+          const question =
+            kind === "leave" ? (zh ? "退出这个群？" : "Leave this chat?") : zh ? "把 TA 移出？" : "Remove them?";
+          const yesLabel = busy
+            ? kind === "leave"
+              ? zh
+                ? "退出中…"
+                : "Leaving…"
+              : zh
+                ? "移出中…"
+                : "Removing…"
+            : kind === "leave"
+              ? zh
+                ? "退出"
+                : "Leave"
+              : zh
+                ? "移出"
+                : "Remove";
+          control =
+            `<span class="wh-wb-member-confirm"><span class="wh-wb-member-confirm-q">${escapeHtml(question)}</span>` +
+            `<button type="button" class="wh-wb-member-confirm-yes" data-wb-chat-member-remove-confirm="${escapeHtml(
+              row.userId
+            )}"${busy ? " disabled" : ""}>${escapeHtml(yesLabel)}</button>` +
+            `<button type="button" class="wh-wb-member-confirm-no" data-wb-chat-member-remove-cancel${
+              busy ? " disabled" : ""
+            }>${escapeHtml(zh ? "取消" : "Cancel")}</button></span>`;
+        } else {
+          const triggerLabel = kind === "leave" ? (zh ? "退出" : "Leave") : zh ? "移出" : "Remove";
+          control = `<button type="button" class="wh-wb-member-remove" data-wb-chat-member-remove-open="${escapeHtml(
+            row.userId
+          )}">${escapeHtml(triggerLabel)}</button>`;
+        }
+      }
+      return `<div class="wh-wb-member-row">${avatarTileHtml({ label: row.nickname, id: row.userId })}<span class="wh-wb-member-name">${escapeHtml(
+        row.nickname
+      )}</span>${roleTag}${control}</div>`;
+    })
+    .join("");
+  const addDisabled = input.addBusyUserId !== undefined; // 一次加一个：任一加人在飞时，所有候选一并禁用防并发。
+  const candidateRows =
+    input.candidates.length > 0
+      ? input.candidates
+          .map((candidate) => {
+            const busy = input.addBusyUserId === candidate.userId;
+            const hint = busy ? (zh ? "添加中…" : "Adding…") : zh ? "加入" : "Add";
+            return `<button type="button" class="wh-wb-member-add-row" data-wb-chat-member-add="${escapeHtml(
+              candidate.userId
+            )}"${addDisabled ? " disabled" : ""}>${avatarTileHtml({ label: candidate.nickname, id: candidate.userId })}<span class="wh-wb-member-name">${escapeHtml(
+              candidate.nickname
+            )}</span><span class="wh-wb-member-add-hint">${escapeHtml(hint)}</span></button>`;
+          })
+          .join("")
+      : `<p class="wh-wb-member-empty">${escapeHtml(
+          zh ? "工作区里的人都已经在这个群里了" : "Everyone in the workspace is already here"
+        )}</p>`;
+  const addErrorHtml = input.addError
+    ? `<p class="wh-wb-modal-error">${escapeHtml(input.addError)}</p>`
+    : "";
+  const removeErrorHtml = input.removeError
+    ? `<p class="wh-wb-modal-error">${escapeHtml(input.removeError)}</p>`
+    : "";
+  return `<div class="wh-wb-modal-overlay" data-wb-chat-member-manage-overlay data-open="${input.open ? "true" : "false"}">
+    <div class="wh-wb-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(zh ? "群成员" : "Members")}">
+      <h3 class="wh-wb-modal-title">${escapeHtml(zh ? "群成员" : "Members")}</h3>
+      <div class="wh-wb-member-roster">${rosterRows}</div>
+      ${removeErrorHtml}
+      <p class="wh-wb-member-add-label">${escapeHtml(zh ? "加人" : "Add member")}</p>
+      <div class="wh-wb-member-add-list">${candidateRows}</div>
+      ${addErrorHtml}
+      <div class="wh-wb-modal-actions">
+        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-chat-member-manage-close>${escapeHtml(
+          zh ? "关闭" : "Close"
+        )}</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// R17 批 G1（#16 退群）：自己退出会话后的终态——本人已不再是参与者，会话对本人不再可见。桌面 shell 没有
+// 给 chat 视图传「退出后回到哪」的回调（见 view.ts mountChatView 的 input 形状），least-surprising：就地
+// 用一句温和的终态替换中栏内容（不弹窗、不跳转），用户点左栏其它会话/项目即自然重挂。
+export function renderConversationLeftHtml(locale: Locale): string {
+  const zh = locale === "zh-CN";
+  return `<div class="wh-wb-chat-left-terminal"><p class="wh-wb-chat-left-terminal-title">${escapeHtml(
+    zh ? "你已退出这个群聊" : "You've left this chat"
+  )}</p><p class="wh-wb-chat-left-terminal-note">${escapeHtml(
+    zh ? "选择左侧其它会话继续。" : "Pick another chat on the left to continue."
+  )}</p></div>`;
 }
 
 // R15 批 B（人对人私聊）：DM 会话头——对方头像（在线绿点）+ 对方昵称 + 在线两态文字。不渲染「+ Cuu」

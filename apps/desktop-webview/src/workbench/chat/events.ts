@@ -5,6 +5,7 @@
 import {
   conversationActionCardUpdatedEventSchema,
   conversationCuuUpdatedEventSchema,
+  conversationParticipantsUpdatedEventSchema,
   conversationMessageCreatedEventSchema,
   conversationMessageDeltaEventSchema,
   conversationMessageUpdatedEventSchema,
@@ -176,6 +177,26 @@ export function parseIncomingConversationCuuUpdated(raw: unknown, conversationId
     return undefined;
   }
   return parsed.data.data.cuu_enabled;
+}
+
+// R17 批 G1（群成员管理）：conversation.participants.updated——参与者集合变化（加人/退群/移出）后广播。
+// data 只带 change + 受影响 user_id（不带全量参与者列表），调用方（view.ts）据此按需重拉 GET /participants
+// （同 parseIncomingConversationCuuUpdated 只带布尔值、不带全量会话 VM 的既有取舍：接不上就等下次重挂兜底）。
+// 未过 zod 校验/会话 id 不匹配一律 undefined，静默丢弃。
+export type IncomingParticipantsUpdate = { change: "added" | "removed"; userId: string };
+
+export function parseIncomingConversationParticipantsUpdated(
+  raw: unknown,
+  conversationId: string
+): IncomingParticipantsUpdate | undefined {
+  const parsed = conversationParticipantsUpdatedEventSchema.safeParse(raw);
+  if (!parsed.success) {
+    return undefined;
+  }
+  if (parsed.data.data.conversation_id !== conversationId) {
+    return undefined;
+  }
+  return { change: parsed.data.data.change, userId: parsed.data.data.user_id };
 }
 
 // R14 批 CHAT：conversation.observer.analyzing——瞬态（照 typing 模式，ttl 30s），观察者开始整理讨论时

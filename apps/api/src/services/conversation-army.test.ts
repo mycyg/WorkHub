@@ -6,15 +6,18 @@ import type {
   ArmyOverviewRunCardRow,
   ConversationRunCardRow,
   ConversationRunListResult,
-  ConversationRunOutputLinkResult
+  ConversationRunOutputLinkResult,
+  RecentProactiveIntentRow
 } from "@workhub/db";
 import { catCodename } from "@workhub/contracts";
 
 import type { AuthActor } from "../middleware/auth.js";
 import { InternalContractError } from "../pages/output-contract.js";
+import type { PulseSchedulerStats } from "../workers/pulse-scheduler.js";
 import {
   ConversationArmyServiceError,
   createConversationArmyService,
+  type ConversationArmyBackgroundSources,
   type ConversationArmyRepositorySources
 } from "./conversation-army.js";
 
@@ -309,5 +312,144 @@ test("a malformed repository row fails closed as an InternalContractError, not a
   await assert.rejects(
     service.armyOverview({ actor: humanActor(), query: defaultQuery() }),
     (error: unknown) => error instanceof InternalContractError
+  );
+});
+
+// ── R17 G3(#8 后台任务区接真 · 拍板 B) ──────────────────────────────────────────────────
+
+function pulseStats(overrides: Partial<PulseSchedulerStats["tasks"][string]> = {}): PulseSchedulerStats {
+  return {
+    running: false,
+    tasks: {
+      "approval-sla": {
+        running: false,
+        interval_ms: 60_000,
+        tick_count: 7,
+        skipped_count: 1,
+        error_count: 0,
+        last_tick_at: now.toISOString(),
+        last_error_message: "secret internal detail that must not leak",
+        ...overrides
+      },
+      "care-scan": {
+        running: false,
+        interval_ms: 3_600_000,
+        tick_count: 3,
+        skipped_count: 0,
+        error_count: 2,
+        last_error_message: "another internal error"
+      }
+    }
+  };
+}
+
+function proactiveRow(overrides: Partial<RecentProactiveIntentRow> = {}): RecentProactiveIntentRow {
+  return {
+    id: "32000000-0000-4000-8000-000000000101",
+    kind: "care",
+    stage: "high_load",
+    status: "delivered",
+    deliveredVia: "conversation_message",
+    projectId: null,
+    workItemId: null,
+    createdAt: now,
+    ...overrides
+  };
+}
+
+function background(overrides: Partial<ConversationArmyBackgroundSources> = {}): ConversationArmyBackgroundSources {
+  return {
+    pulse: { enabled: true, stats: () => pulseStats() },
+    async listRecentProactiveIntents() {
+      return [proactiveRow()];
+    },
+    ...overrides
+  };
+}
+
+test("armyBackground maps pulse stats to tasks (dropping last_error_message) and lists the user's recent proactive intents", async () => {
+  const service = createConversationArmyService({ repo: repo(), background: background(), now: () => now });
+
+  const page = await service.armyBackground({ actor: humanActor() });
+
+  assert.equal(page.generated_at, now.toISOString());
+  assert.equal(page.scheduler.enabled, true);
+  assert.equal(page.scheduler.tasks.length, 2);
+  const slaTask = page.scheduler.tasks.find((task) => task.name === "approval-sla");
+  assert.equal(slaTask?.interval_ms, 60_000);
+  assert.equal(slaTask?.tick_count, 7);
+  assert.equal(slaTask?.skipped_count, 1);
+  assert.equal(slaTask?.error_count, 0);
+  assert.equal(slaTask?.last_tick_at, now.toISOString());
+  // last_error_message 有意不进 VM——普通成员看不到内部错误细节。
+  assert.equal("last_error_message" in (slaTask ?? {}), false);
+  const careTask = page.scheduler.tasks.find((task) => task.name === "care-scan");
+  assert.equal(careTask?.error_count, 2);
+  assert.equal(careTask?.last_tick_at, null, "a task that never ticked reports null, not a fabricated timestamp");
+
+  assert.equal(page.proactive.items.length, 1);
+  assert.deepEqual(page.proactive.items[0], {
+    id: "32000000-0000-4000-8000-000000000101",
+    kind: "care",
+    stage: "high_load",
+    status: "delivered",
+    delivered_via: "conversation_message",
+    created_at: now.toISOString()
+  });
+  assert.equal(page.proactive.capped, false);
+});
+
+test("armyBackground reports enabled=false with an empty task list and never instantiates the scheduler when pulse is off", async () => {
+  let statsCalled = false;
+  const service = createConversationArmyService({
+    repo: repo(),
+    background: background({
+      pulse: {
+        enabled: false,
+        stats: () => {
+          statsCalled = true;
+          return pulseStats();
+        }
+      }
+    }),
+    now: () => now
+  });
+
+  const page = await service.armyBackground({ actor: humanActor() });
+  assert.equal(page.scheduler.enabled, false);
+  assert.deepEqual(page.scheduler.tasks, []);
+  assert.equal(statsCalled, false, "pulse disabled → stats() must not be called (no scheduler instantiation)");
+});
+
+test("armyBackground scopes proactive intents to the caller's workspace and user, and caps at 10", async () => {
+  const captured: { workspaceId: string; targetUserId: string; limit: number }[] = [];
+  const service = createConversationArmyService({
+    repo: repo(),
+    background: background({
+      async listRecentProactiveIntents(input) {
+        captured.push(input);
+        // 仓库拿到 limit+1=11 条 → capped=true，VM 只回前 10。
+        return Array.from({ length: input.limit }, (_unused, index) =>
+          proactiveRow({ id: `32000000-0000-4000-8000-0000000001${(index + 10).toString().padStart(2, "0")}` })
+        );
+      }
+    }),
+    now: () => now
+  });
+
+  const page = await service.armyBackground({ actor: humanActor() });
+  assert.equal(captured.length, 1);
+  assert.equal(captured[0]?.workspaceId, workspaceId);
+  assert.equal(captured[0]?.targetUserId, userId);
+  assert.equal(captured[0]?.limit, 11, "fetches one extra row to precisely determine capped");
+  assert.equal(page.proactive.items.length, 10);
+  assert.equal(page.proactive.capped, true);
+});
+
+test("armyBackground fails closed (404) for a non-human actor with no workspace scope", async () => {
+  const service = createConversationArmyService({ repo: repo(), background: background(), now: () => now });
+  await assert.rejects(
+    service.armyBackground({ actor: nonHumanActor() }),
+    (error: unknown) => error instanceof ConversationArmyServiceError && error.status === 404
   );
 });

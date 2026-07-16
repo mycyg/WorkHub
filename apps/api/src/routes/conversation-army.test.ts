@@ -13,7 +13,7 @@ import type {
   UserAuthRow,
   UserRepository
 } from "@workhub/db";
-import type { ArmyOverviewPageVM, ArmyRunCardVM, ConversationArmyPanelVM } from "@workhub/contracts";
+import type { ArmyBackgroundPageVM, ArmyOverviewPageVM, ArmyRunCardVM, ConversationArmyPanelVM } from "@workhub/contracts";
 
 import { httpErrorCodeFor } from "../http-error-codes.js";
 import {
@@ -170,6 +170,35 @@ function armyOverviewVm(): ArmyOverviewPageVM {
   };
 }
 
+function armyBackgroundVm(): ArmyBackgroundPageVM {
+  return {
+    generated_at: now.toISOString(),
+    scheduler: {
+      enabled: true,
+      tasks: [{
+        name: "approval-sla",
+        interval_ms: 60_000,
+        running: false,
+        tick_count: 7,
+        skipped_count: 1,
+        error_count: 0,
+        last_tick_at: now.toISOString()
+      }]
+    },
+    proactive: {
+      items: [{
+        id: "31000000-0000-4000-8000-000000000101",
+        kind: "care",
+        stage: "high_load",
+        status: "delivered",
+        delivered_via: "conversation_message",
+        created_at: now.toISOString()
+      }],
+      capped: false
+    }
+  };
+}
+
 function service(overrides: Partial<ConversationArmyService> = {}): ConversationArmyService {
   return {
     async conversationArmyPanel() {
@@ -177,6 +206,9 @@ function service(overrides: Partial<ConversationArmyService> = {}): Conversation
     },
     async armyOverview() {
       return armyOverviewVm();
+    },
+    async armyBackground() {
+      return armyBackgroundVm();
     },
     ...overrides
   };
@@ -215,10 +247,13 @@ test("conversation army routes require authentication before reaching the servic
     },
     async armyOverview() {
       throw new Error("anonymous request must not reach the service");
+    },
+    async armyBackground() {
+      throw new Error("anonymous request must not reach the service");
     }
   }));
 
-  for (const path of [`/api/conversations/${conversationId}/army`, "/api/me/army"]) {
+  for (const path of [`/api/conversations/${conversationId}/army`, "/api/me/army", "/api/army/background"]) {
     const response = await app.request(path);
     assert.equal(response.status, 401);
   }
@@ -288,6 +323,26 @@ test("army overview route defaults limit to 20 and returns the service VM verbat
   assert.equal(seen.length, 1);
   const call = seen[0] as { query: unknown };
   assert.deepEqual(call.query, { limit: 20 });
+});
+
+test("army background route forwards the authed actor to the service and returns its VM verbatim", async () => {
+  const runtimeSettings = settings();
+  const seen: unknown[] = [];
+  const app = routeApp(runtimeSettings, service({
+    async armyBackground(input) {
+      seen.push(input);
+      return armyBackgroundVm();
+    }
+  }));
+  const headers = { Cookie: await cookie(runtimeSettings) };
+
+  const response = await app.request("/api/army/background", { headers });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, data: armyBackgroundVm() });
+  assert.equal(seen.length, 1);
+  const call = seen[0] as { actor: { id: string } };
+  assert.equal(call.actor.id, userId);
 });
 
 test("army routes reject an out-of-range limit with a 422 validation envelope before the service runs", async () => {

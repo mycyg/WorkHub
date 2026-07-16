@@ -7,9 +7,11 @@
 // escalate 文案带 blocks_count 的接缝（见 services/ddl-chase.ts 的注释与 listDependencyEdgesByProject 导出）。
 import {
   computeBlockingCounts,
+  createObjectiveRepository,
   createProjectTimelineRepository,
   createWorkItemRepository,
   getSharedDatabaseClient,
+  type ObjectiveRepository,
   type ProjectTimelineRepository,
   type TimelineWorkItemRow,
   type WorkItemDataRepository,
@@ -47,6 +49,9 @@ export type ProjectTimelinePageServiceDependencies = {
     "listActiveMilestonesByProject" | "listTimelineWorkItems" | "listDependencyEdgesByProject" | "listObjectiveIdsByWorkItemIds"
   >;
   projectRepo: Pick<WorkItemDataRepository, "findProjectById">;
+  // G4 #36：OKR pill 悬停要显目标名。可选依赖——缺省时（旧测试不注入）VM 只带 objective_ids、不带
+  // objective_titles，前端回落显裸 id（additive，不破坏既有行为）。
+  objectives?: Pick<ObjectiveRepository, "listObjectiveTitlesByIds">;
   now?: () => Date;
 };
 
@@ -146,6 +151,21 @@ export function createProjectTimelinePageService(
         })
         : new Map<string, string[]>();
 
+      // G4 #36：对本页出现的全部目标 id 批量取名（listObjectiveTitlesByIds，成本页同源），一次查询。
+      // 缺省依赖或取名失败时 objectiveTitleById 为空 Map——逐项回落成 id，前端照旧显裸 id（不拖垮时间线）。
+      const allObjectiveIds = [...new Set([...objectiveIdsByItem.values()].flat())];
+      let objectiveTitleById = new Map<string, string>();
+      if (deps.objectives && objectiveWorkspaceId && allObjectiveIds.length > 0) {
+        try {
+          objectiveTitleById = await deps.objectives.listObjectiveTitlesByIds({
+            workspaceId: objectiveWorkspaceId,
+            objectiveIds: allObjectiveIds
+          });
+        } catch {
+          objectiveTitleById = new Map<string, string>();
+        }
+      }
+
       const at = now();
       const items: TimelineWorkItemVM[] = visibleItems.map((item) => {
         const blocksCount = blockingCounts.get(item.id) ?? 0;
@@ -165,7 +185,15 @@ export function createProjectTimelinePageService(
           vm.assignee = { user_id: item.claimedByUserId, label: item.claimedByNickname };
         }
         if (item.milestoneId) vm.milestone_id = item.milestoneId;
-        if (objectiveIds && objectiveIds.length > 0) vm.objective_ids = objectiveIds;
+        if (objectiveIds && objectiveIds.length > 0) {
+          vm.objective_ids = objectiveIds;
+          // G4 #36：与 objective_ids 一一对应的标题（未命中回落成 id，保证等长）；只有真拿到名字时才带
+          // objective_titles，全都回落成 id 时省略该字段（前端拿不到就照旧显裸 id，行为不变）。
+          const titles = objectiveIds.map((id) => objectiveTitleById.get(id) ?? id);
+          if (titles.some((title, index) => title !== objectiveIds[index])) {
+            vm.objective_titles = titles;
+          }
+        }
         return vm;
       });
 
@@ -208,7 +236,8 @@ export function getDefaultProjectTimelinePageService(): ProjectTimelinePageServi
     defaultTimelinePageDbClient = getSharedDatabaseClient();
     defaultProjectTimelinePageService = createProjectTimelinePageService({
       repo: createProjectTimelineRepository(defaultTimelinePageDbClient.db),
-      projectRepo: createWorkItemRepository(defaultTimelinePageDbClient.db)
+      projectRepo: createWorkItemRepository(defaultTimelinePageDbClient.db),
+      objectives: createObjectiveRepository(defaultTimelinePageDbClient.db)
     });
   }
   return defaultProjectTimelinePageService;

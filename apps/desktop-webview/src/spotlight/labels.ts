@@ -29,13 +29,15 @@ const workItemPriorityMap: Record<string, [string, string]> = {
   urgent: ["紧急", "Urgent"]
 };
 
+// R17 G3（#34）：agentRunStatuses 契约只有 queued/running/succeeded/failed/escalated/cancelled——
+// budget_exhausted 从来不是合法的 AgentRunStatus（那是 budget notice reason 的枚举，不是 run 状态），
+// 这条标签永远匹配不到任何真实 run 状态，是死标签，删掉。
 const agentRunStatusMap: Record<string, [string, string]> = {
   queued: ["排队中", "Queued"],
   running: ["进行中", "In progress"],
   succeeded: ["已完成", "Succeeded"],
   failed: ["失败", "Failed"],
   escalated: ["已升级", "Escalated"],
-  budget_exhausted: ["预算已用尽", "Budget exhausted"],
   cancelled: ["已取消", "Cancelled"]
 };
 

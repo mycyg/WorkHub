@@ -2142,6 +2142,8 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindRouteLineEditor(root, { signal, markDirty: markActiveRouteDirty });
   bindGoldPathNavigation(root, result.shell, client, locale, (href) => navigateWebRoute(href, client, locale), signal);
   bindNotificationMutePanel(root, result, client, locale, signal);
+  bindProjectHomePlansPanel(root, result, client, locale, signal);
+  bindProjectHomeInstructionsPanel(root, result, client, locale, signal);
   bindSearchRoutePanel(root, result, client, locale, signal);
   bindSettingsAiProfilePanel(root, result, client, locale, signal);
   bindSettingsMyProfilePanel(root, result, client, locale, signal);
@@ -2219,9 +2221,14 @@ function bindNotificationMutePanel(
   // R10-P1-7：水合竞态收口——SSR 开关是禁用的，只有 GET 成功回填后才解禁；GET 失败保持锁定+
   // 显式错误+重试按钮（此前失败被静默吞掉，用户在「假的全不勾」上点一下就把已有静音整组覆盖丢了）。
   const retryButton = panel.querySelector<HTMLButtonElement>("[data-r10-notification-mute-retry]");
+  // G4 #10（关怀 opt-out）：Cuu 关怀私聊开关——与 mute 复选框共用同一份偏好 GET/PUT，故一起水合/一起锁禁用。
+  const careToggle = panel.querySelector<HTMLInputElement>("[data-r17-notification-care-toggle]");
   const setEnabled = (enabled: boolean) => {
     for (const checkbox of checkboxes) {
       checkbox.disabled = !enabled;
+    }
+    if (careToggle) {
+      careToggle.disabled = !enabled;
     }
   };
   const hydrate = async () => {
@@ -2238,6 +2245,10 @@ function bindNotificationMutePanel(
       const muted = new Set(prefs.muted_notification_types ?? []);
       for (const checkbox of checkboxes) {
         checkbox.checked = muted.has(checkbox.getAttribute("data-r5-notification-mute-type") ?? "");
+      }
+      if (careToggle) {
+        // 勾选＝开启关怀（默认 true）；旧后端不带该字段时回落成开启，与服务端默认一致。
+        careToggle.checked = prefs.care_messages_enabled !== false;
       }
       setEnabled(true);
       if (status) {
@@ -2257,15 +2268,19 @@ function bindNotificationMutePanel(
   retryButton?.addEventListener("click", () => void hydrate(), { signal });
 
   // 保存按到达顺序串行（PUT 是整体替换，乱序完成会用旧勾选覆盖新勾选）；每次执行时现读 DOM，最后写赢。
+  // includeCare=true 时把关怀开关也一并提交（care 行变更）；否则省略该字段＝不动关怀（mute 行变更）。
   let saveChain: Promise<void> = Promise.resolve();
-  const doSave = async () => {
+  const doSave = async (includeCare: boolean) => {
     const muted = checkboxes
       .filter((checkbox) => checkbox.checked)
       .map((checkbox) => checkbox.getAttribute("data-r5-notification-mute-type") ?? "")
       .filter((type) => type.length > 0);
     setStatus(zh ? "保存中…" : "Saving…", "saving");
     try {
-      await client.setNotificationPreferences(muted);
+      await client.setNotificationPreferences(
+        muted,
+        includeCare && careToggle ? { careMessagesEnabled: careToggle.checked } : undefined
+      );
       if (signal.aborted) {
         return;
       }
@@ -2277,14 +2292,233 @@ function bindNotificationMutePanel(
       setStatus(zh ? "保存失败，请重试" : "Save failed, please retry", "error");
     }
   };
-  const save = () => {
-    saveChain = saveChain.then(doSave);
+  const save = (includeCare: boolean) => {
+    saveChain = saveChain.then(() => doSave(includeCare));
     return saveChain;
   };
 
   for (const checkbox of checkboxes) {
-    checkbox.addEventListener("change", () => void save(), { signal });
+    checkbox.addEventListener("change", () => void save(false), { signal });
   }
+  careToggle?.addEventListener("change", () => void save(true), { signal });
+}
+
+// G4 #9（E3 web 只读入口）：项目主页「规划草案」小区块——拉 GET /api/projects/:id/plan-drafts，
+// 只读展示 pending_review 计数 + 最新草案状态；起草/审批/物化都在桌面客户端（web 是管理者控制台定位，
+// 不给假点击）。无权/取数失败 → 静默降级成一句「暂无规划草案」，不拖垮整个项目主页（同 army pill 手法）。
+function bindProjectHomePlansPanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "project-home") {
+    return;
+  }
+  const section = container.querySelector<HTMLElement>("[data-r17-project-home-plans]");
+  const body = section?.querySelector<HTMLElement>("[data-r17-project-home-plans-body]");
+  const projectId = section?.getAttribute("data-r17-project-home-plans-project") ?? "";
+  if (!section || !body || !projectId) {
+    return;
+  }
+  const zh = locale === "zh-CN";
+  type PlanDraftSlice = { id: string; status: string; updated_at: string };
+  const statusLabel = (status: string): string => {
+    const map: Record<string, [string, string]> = {
+      draft: ["草稿", "Draft"],
+      pending_review: ["待审阅", "Pending review"],
+      approved: ["已批准", "Approved"],
+      rejected: ["已驳回", "Rejected"],
+      materialized: ["已物化", "Materialized"]
+    };
+    const hit = map[status];
+    return hit ? (zh ? hit[0] : hit[1]) : status;
+  };
+  void (async () => {
+    try {
+      const data = await client.request<{ drafts?: PlanDraftSlice[] }>(
+        `/api/projects/${encodeURIComponent(projectId)}/plan-drafts?locale=${encodeURIComponent(locale)}`
+      );
+      if (signal.aborted) {
+        return;
+      }
+      const drafts = Array.isArray(data.drafts) ? data.drafts : [];
+      if (drafts.length === 0) {
+        body.innerHTML = `<p class="wh-subtle" data-r17-project-home-plans-empty="true">${escapeHtml(
+          zh
+            ? "暂无规划草案。让 AI 起草项目计划在桌面客户端进行。"
+            : "No plan drafts yet. Drafting a project plan with AI happens in the desktop app."
+        )}</p>`;
+        return;
+      }
+      const pending = drafts.filter((draft) => draft.status === "pending_review").length;
+      const latest = [...drafts].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0]!;
+      const pendingLine = pending > 0
+        ? `<p data-r17-project-home-plans-pending="${escapeHtml(String(pending))}"><strong>${escapeHtml(
+            zh ? `${pending} 份待审阅` : `${pending} pending review`
+          )}</strong></p>`
+        : "";
+      body.innerHTML = `${pendingLine}
+        <div class="wh-r4-route-meta">
+          <span class="wh-pill">${escapeHtml(zh ? `共 ${drafts.length} 份` : `${drafts.length} total`)}</span>
+          <span class="wh-pill" data-r17-project-home-plans-latest="${escapeHtml(latest.status)}">${escapeHtml(
+            zh ? `最新：${statusLabel(latest.status)}` : `Latest: ${statusLabel(latest.status)}`
+          )}</span>
+        </div>
+        <p class="wh-subtle">${escapeHtml(
+          zh
+            ? "查看详情、审批与物化在桌面客户端的日程标签进行。"
+            : "View details, approve and materialize from the Schedule tab in the desktop app."
+        )}</p>`;
+    } catch {
+      if (signal.aborted) {
+        return;
+      }
+      // 无权（403）/端点报错——静默降级成中性空态说明，不暴露存在性、不报错。
+      body.innerHTML = `<p class="wh-subtle" data-r17-project-home-plans-empty="true">${escapeHtml(
+        zh ? "暂无规划草案。" : "No plan drafts yet."
+      )}</p>`;
+    }
+  })();
+}
+
+// G4 #24（项目自定义指令 web 入口）：项目主页「自定义指令」卡——GET /api/projects/:id/instructions
+// 展示；能管项目（GET 成功）→ 可编辑 textarea + 失焦 PATCH 保存；无权（403）→ 只读说明。错误矩阵对齐
+// 桌面 W4b1（403 forbidden / 422 validation / 其它 network，保存失败绝不回滚用户刚敲的内容）。
+const PROJECT_INSTRUCTIONS_MAX_CHARS = 4000;
+function bindProjectHomeInstructionsPanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "project-home") {
+    return;
+  }
+  const section = container.querySelector<HTMLElement>("[data-r17-project-home-instructions]");
+  const body = section?.querySelector<HTMLElement>("[data-r17-project-home-instructions-body]");
+  const projectId = section?.getAttribute("data-r17-project-home-instructions-project") ?? "";
+  if (!section || !body || !projectId) {
+    return;
+  }
+  const zh = locale === "zh-CN";
+  type InstructionsSlice = { project_id: string; instructions_md: string; updated_at: string };
+  const path = `/api/projects/${encodeURIComponent(projectId)}/instructions`;
+  // confirmed = 上一次服务端确认过的值（幂等判定基线）；保存失败不回滚 textarea（用户刚敲的还在）。
+  let confirmed = "";
+
+  const renderForbidden = () => {
+    body.innerHTML = `<p class="wh-subtle" data-r17-project-home-instructions-forbidden="true">${escapeHtml(
+      zh ? "需要项目管理权限才能查看和修改自定义指令。" : "You need project management permission to view or change custom instructions."
+    )}</p>`;
+  };
+  const renderError = () => {
+    body.innerHTML = `<p class="wh-subtle" data-r17-project-home-instructions-error="true">${escapeHtml(
+      zh ? "自定义指令没拉到，稍后重试。" : "Couldn't load custom instructions — retry later."
+    )}</p><button type="button" class="wh-btn" data-r17-project-home-instructions-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+    body.querySelector<HTMLButtonElement>("[data-r17-project-home-instructions-retry]")
+      ?.addEventListener("click", () => void hydrate(), { signal });
+  };
+
+  const renderEditor = () => {
+    body.innerHTML = `<textarea class="wh-r17-instructions-area" style="width:100%;box-sizing:border-box;resize:vertical" data-r17-project-home-instructions-textarea rows="6" maxlength="${PROJECT_INSTRUCTIONS_MAX_CHARS + 200}" placeholder="${escapeHtml(
+      zh ? "例如：所有输出用简体中文，避免技术黑话。" : "e.g. Reply in plain English, no jargon."
+    )}"></textarea>
+      <div class="wh-r4-route-meta">
+        <span class="wh-subtle" data-r17-project-home-instructions-status hidden></span>
+        <span class="wh-subtle">${escapeHtml(zh ? "失焦自动保存，留空则不注入项目级指令。" : "Saves on blur; leave blank to skip project-level instructions.")}</span>
+      </div>`;
+    const textarea = body.querySelector<HTMLTextAreaElement>("[data-r17-project-home-instructions-textarea]");
+    const status = body.querySelector<HTMLElement>("[data-r17-project-home-instructions-status]");
+    if (!textarea) {
+      return;
+    }
+    textarea.value = confirmed;
+    const setStatus = (text: string, tone: "saving" | "saved" | "error") => {
+      if (!status) {
+        return;
+      }
+      status.hidden = false;
+      status.textContent = text;
+      status.setAttribute("data-r17-project-home-instructions-status", tone);
+    };
+    let saveChain: Promise<void> = Promise.resolve();
+    const doSave = async (trimmed: string) => {
+      setStatus(zh ? "保存中…" : "Saving…", "saving");
+      try {
+        const next = await client.request<InstructionsSlice>(path, {
+          method: "PATCH",
+          body: JSON.stringify({ instructions_md: trimmed })
+        });
+        if (signal.aborted) {
+          return;
+        }
+        confirmed = next.instructions_md;
+        setStatus(zh ? "已保存" : "Saved", "saved");
+      } catch (error) {
+        if (signal.aborted) {
+          return;
+        }
+        if (error instanceof WorkHubApiError && error.status === 403) {
+          // 权限中途没了——整卡收成只读说明（不留「看起来能编辑」的假象）。
+          renderForbidden();
+          return;
+        }
+        if (error instanceof WorkHubApiError && error.status === 422) {
+          setStatus(
+            zh ? `超出 ${PROJECT_INSTRUCTIONS_MAX_CHARS} 字上限，删短一点再试。` : `Over the ${PROJECT_INSTRUCTIONS_MAX_CHARS}-character limit — trim it and try again.`,
+            "error"
+          );
+          return;
+        }
+        // 网络等：保留用户输入，只给错误提示（不回滚 textarea）。
+        setStatus(zh ? "没保存成功，你写的内容还在——改一下、失焦即可重试。" : "Couldn't save — what you typed is still here. Edit and blur to retry.", "error");
+      }
+    };
+    textarea.addEventListener(
+      "blur",
+      () => {
+        const trimmed = textarea.value.trim();
+        if (trimmed === confirmed) {
+          return; // 幂等：与上次确认值相同，不发请求。
+        }
+        if (trimmed.length > PROJECT_INSTRUCTIONS_MAX_CHARS) {
+          setStatus(
+            zh ? `超出 ${PROJECT_INSTRUCTIONS_MAX_CHARS} 字上限，删短一点再试。` : `Over the ${PROJECT_INSTRUCTIONS_MAX_CHARS}-character limit — trim it and try again.`,
+            "error"
+          );
+          return;
+        }
+        saveChain = saveChain.then(() => doSave(trimmed));
+      },
+      { signal }
+    );
+  };
+
+  const hydrate = async () => {
+    body.innerHTML = `<p class="wh-subtle">${escapeHtml(zh ? "正在加载自定义指令…" : "Loading custom instructions…")}</p>`;
+    try {
+      const vm = await client.request<InstructionsSlice>(path);
+      if (signal.aborted) {
+        return;
+      }
+      confirmed = vm.instructions_md;
+      renderEditor();
+    } catch (error) {
+      if (signal.aborted) {
+        return;
+      }
+      // GET 与 PATCH 同一道 canManageProjectDrive 门：403＝无权（读写都不行）→ 只读说明；其它＝取数错。
+      if (error instanceof WorkHubApiError && error.status === 403) {
+        renderForbidden();
+        return;
+      }
+      renderError();
+    }
+  };
+  void hydrate();
 }
 
 // R14 批 SEARCH（web-search-page，02-search-design.md §7）：顶栏搜索页的客户端水合。SSR

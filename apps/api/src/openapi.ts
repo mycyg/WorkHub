@@ -5713,6 +5713,139 @@ const conversationParticipantsResponses = {
   }
 } as const;
 
+// R17 批 G1（群成员管理）：POST /participants（加人）与 DELETE /participants/:userId（退群/移出）。
+const addConversationParticipantRequestBodySchema = {
+  type: "object",
+  required: ["user_id"],
+  properties: { user_id: uuidStringSchema },
+  additionalProperties: false
+} as const;
+const addConversationParticipantResponses = {
+  responses: {
+    "200": jsonDataResponse(
+      {
+        type: "object",
+        required: ["added", "participants"],
+        properties: {
+          added: { type: "boolean" },
+          participants: {
+            type: "object",
+            required: ["scope", "participants"],
+            properties: {
+              scope: { type: "string", enum: ["workspace", "participants"] },
+              participants: { type: "array", maxItems: 100, items: conversationParticipantListItemResponseSchema }
+            },
+            additionalProperties: false
+          }
+        },
+        additionalProperties: false
+      },
+      "Refreshed participant list after adding a member (added=false when already present)"
+    ).responses["200"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Conversation was not found", ["conversation_not_found"]).responses[
+      "404"
+    ],
+    "409": jsonErrorStatusResponse("409", "Only non-dm collab conversations accept new participants", [
+      "conversation_not_group",
+      "conversation_dm_no_add",
+      "conversation_participant_cap"
+    ]).responses["409"],
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+const removeConversationParticipantResponses = {
+  responses: {
+    "200": jsonDataResponse(
+      {
+        type: "object",
+        required: ["removed_user_id", "self_left", "new_owner_user_id"],
+        properties: {
+          removed_user_id: uuidStringSchema,
+          self_left: { type: "boolean" },
+          new_owner_user_id: { ...uuidStringSchema, nullable: true }
+        },
+        additionalProperties: false
+      },
+      "Result of leaving/removing a member (new_owner_user_id set when the owner left and a successor was promoted)"
+    ).responses["200"],
+    "401": conversationAuthRequiredResponse,
+    "403": jsonErrorStatusResponse("403", "Only the owner may remove other members", [
+      "conversation_remove_forbidden"
+    ]).responses["403"],
+    "404": jsonErrorStatusResponse("404", "Conversation or participant was not found", [
+      "conversation_not_found",
+      "conversation_participant_not_found"
+    ]).responses["404"],
+    "409": jsonErrorStatusResponse("409", "Main/DM conversations and the last member cannot leave", [
+      "conversation_not_group",
+      "conversation_dm_no_remove",
+      "conversation_last_participant"
+    ]).responses["409"],
+    "500": conversationInternalResponse
+  }
+} as const;
+
+// R17 批 G1（#15 工作区成员移出/角色变更）：DELETE / PATCH /api/workspace/members/:userId。
+const workspaceMemberRoleSchema = { type: "string", enum: ["member", "admin", "owner"] } as const;
+const updateWorkspaceMemberRoleRequestBodySchema = {
+  type: "object",
+  required: ["role"],
+  properties: { role: workspaceMemberRoleSchema },
+  additionalProperties: false
+} as const;
+const removeWorkspaceMemberResponses = {
+  responses: {
+    "200": jsonDataResponse(
+      {
+        type: "object",
+        required: ["removed_user_id"],
+        properties: { removed_user_id: uuidStringSchema },
+        additionalProperties: false
+      },
+      "The removed member's user id"
+    ).responses["200"],
+    "401": conversationAuthRequiredResponse,
+    "403": jsonErrorStatusResponse("403", "Only workspace admins/owners may manage members", [
+      "member_manage_forbidden",
+      "human_required"
+    ]).responses["403"],
+    "404": jsonErrorStatusResponse("404", "Member was not found", ["member_not_found"]).responses["404"],
+    "409": jsonErrorStatusResponse("409", "Cannot remove yourself or the last admin", [
+      "member_manage_self",
+      "member_last_admin"
+    ]).responses["409"],
+    "500": conversationInternalResponse
+  }
+} as const;
+const updateWorkspaceMemberRoleResponses = {
+  responses: {
+    "200": jsonDataResponse(
+      {
+        type: "object",
+        required: ["user_id", "role"],
+        properties: { user_id: uuidStringSchema, role: workspaceMemberRoleSchema },
+        additionalProperties: false
+      },
+      "The member's new role"
+    ).responses["200"],
+    "401": conversationAuthRequiredResponse,
+    "403": jsonErrorStatusResponse("403", "Only workspace admins/owners may manage members", [
+      "member_manage_forbidden",
+      "human_required"
+    ]).responses["403"],
+    "404": jsonErrorStatusResponse("404", "Member was not found", ["member_not_found"]).responses["404"],
+    "409": jsonErrorStatusResponse("409", "Cannot change your own role or demote the last admin", [
+      "member_manage_self",
+      "member_last_admin"
+    ]).responses["409"],
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+
 const presenceUserIdsQueryParameter = {
   name: "user_ids",
   in: "query",
@@ -6273,6 +6406,89 @@ const armyOverviewResponses = {
     "401": conversationAuthRequiredResponse,
     "403": conversationForbiddenResponse,
     "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+// R17 G3(#8 后台任务区接真)——与 packages/contracts/src/pages.ts 的 armyBackgroundPageVmSchema 逐字段对齐。
+const armyBackgroundPageResponseSchema = {
+  type: "object",
+  properties: {
+    generated_at: { type: "string", format: "date-time" },
+    scheduler: {
+      type: "object",
+      properties: {
+        enabled: { type: "boolean" },
+        tasks: {
+          type: "array",
+          maxItems: 32,
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", minLength: 1, maxLength: 64 },
+              interval_ms: { type: "integer", minimum: 0 },
+              running: { type: "boolean" },
+              tick_count: { type: "integer", minimum: 0 },
+              skipped_count: { type: "integer", minimum: 0 },
+              error_count: { type: "integer", minimum: 0 },
+              last_tick_at: { type: ["string", "null"], format: "date-time" }
+            },
+            required: [
+              "name",
+              "interval_ms",
+              "running",
+              "tick_count",
+              "skipped_count",
+              "error_count",
+              "last_tick_at"
+            ],
+            additionalProperties: false
+          }
+        }
+      },
+      required: ["enabled", "tasks"],
+      additionalProperties: false
+    },
+    proactive: {
+      type: "object",
+      properties: {
+        items: {
+          type: "array",
+          maxItems: 10,
+          items: {
+            type: "object",
+            properties: {
+              id: uuidStringSchema,
+              kind: { type: "string", minLength: 1, maxLength: 64 },
+              stage: { type: ["string", "null"], minLength: 1, maxLength: 64 },
+              status: { type: "string", enum: ["delivered", "suppressed"] },
+              delivered_via: { type: ["string", "null"], minLength: 1, maxLength: 64 },
+              created_at: { type: "string", format: "date-time" }
+            },
+            required: ["id", "kind", "stage", "status", "delivered_via", "created_at"],
+            additionalProperties: false
+          }
+        },
+        capped: { type: "boolean" }
+      },
+      required: ["items", "capped"],
+      additionalProperties: false
+    }
+  },
+  required: ["generated_at", "scheduler", "proactive"],
+  additionalProperties: false,
+  description:
+    "Read-only army background machinery: pulse scheduler heartbeat (process-level, no per-workspace data, no error text) plus the current user's most recent proactive intents (workspace + target-user scoped)."
+} as const;
+const armyBackgroundResponses = {
+  responses: {
+    "200": jsonDataResponse(armyBackgroundPageResponseSchema, "Army background tasks and proactivity feed").responses[
+      "200"
+    ],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Army background is inaccessible or was not found", [
+      "conversation_army_not_found"
+    ]).responses["404"],
     "500": conversationInternalResponse
   }
 } as const;
@@ -7974,6 +8190,36 @@ export function getOpenApiDocument() {
           summary: "List conversation participants (main: scope=workspace + empty list; collab/DM: real rows)",
           parameters: [pathUuidParameter("id")],
           ...conversationParticipantsResponses
+        },
+        post: {
+          tags: ["conversations"],
+          summary: "Add a member to a non-dm collab conversation (main/DM are 409, idempotent on duplicates)",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(addConversationParticipantRequestBodySchema),
+          ...addConversationParticipantResponses
+        }
+      },
+      "/api/conversations/{id}/participants/{userId}": {
+        delete: {
+          tags: ["conversations"],
+          summary: "Leave (self) or remove (owner) a member; owner leaving promotes the earliest successor",
+          parameters: [pathUuidParameter("id"), pathUuidParameter("userId")],
+          ...removeConversationParticipantResponses
+        }
+      },
+      "/api/workspace/members/{userId}": {
+        delete: {
+          tags: ["conversations"],
+          summary: "Remove a workspace member (admin/owner only; cannot remove self or the last admin)",
+          parameters: [pathUuidParameter("userId")],
+          ...removeWorkspaceMemberResponses
+        },
+        patch: {
+          tags: ["conversations"],
+          summary: "Change a workspace member's role (admin/owner only; cannot demote the last admin)",
+          parameters: [pathUuidParameter("userId")],
+          ...jsonRequestBody(updateWorkspaceMemberRoleRequestBodySchema),
+          ...updateWorkspaceMemberRoleResponses
         }
       },
       "/api/presence": {
@@ -8341,6 +8587,13 @@ export function getOpenApiDocument() {
             armyLimitQueryParameter
           ],
           ...armyOverviewResponses
+        }
+      },
+      "/api/army/background": {
+        get: {
+          tags: ["conversations"],
+          summary: "Army background: pulse scheduler heartbeat + current user's recent proactive intents",
+          ...armyBackgroundResponses
         }
       },
       "/api/drive/projects/{projectId}/items/{itemId}/versions": {

@@ -52,5 +52,13 @@ export function createConversationArmyRoutes(deps: ConversationArmyRoutesDepende
     return c.json({ ok: true, data });
   });
 
+  // R17 G3（#8 后台任务区接真 · 拍板 B）：军团面板「后台任务」区的只读数据源——pulse 统一调度器的每任务
+  // 运行统计 + 最近投向当前用户的主动性动态。权限=工作区成员（requireCurrentUser 已保证；service 的
+  // humanScope 再收窄 human/workspace/user）。无查询参数、无写副作用。
+  routes.get("/army/background", requireCurrentUser, async (c) => {
+    const data = await conversationArmy.armyBackground({ actor: c.var.actor });
+    return c.json({ ok: true, data });
+  });
+
   return routes;
 }

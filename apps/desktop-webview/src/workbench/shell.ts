@@ -8,6 +8,7 @@
 // 不是 CSS 藏起来，两套控件叠一起是 bug 不是冗余保险。非 macOS 维持 decorations:false 全套自绘。
 
 import type { WorkHubApiClient } from "@workhub/api-client";
+import { eventTypes } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { appleGlassDesignSystemCss } from "../design-system.js";
@@ -222,7 +223,9 @@ function isDesktopLoggedOutFlagSet(storage: Pick<Storage, "getItem"> | undefined
 export type WorkbenchShellHandle = {
   store: WorkbenchStore;
   // 选中项目（rail 点击 / Spotlight「打开工作台」/ 深链三路共用）。conversationId 目前只落库，批 2 起消费。
-  selectProject: (projectId: string, conversationId?: string) => void;
+  // R17-G5 #30：focusSeq＝会话内要定位滚动 + 高亮的消息序号（搜索命中会话消息的 deep_link 带来），
+  // 只在同时给了 conversationId 时有意义；打开对应会话的 chat 视图后消费一次。
+  selectProject: (projectId: string, conversationId?: string, focusSeq?: number) => void;
   // R15 批 B（人对人私聊）：按会话直开一条 DM（rail 私聊行 / 头像资料卡「发私聊」/ 未来 DM 深链共用）。
   openDmConversation: (conversationId: string) => void;
   // G-desktop 止血批 3：跨窗口登出广播——boot.ts 在两处调用它：①mount 那一刻标记本来就已登出
@@ -255,6 +258,9 @@ export function mountWorkbenchShell(
   let vmRequestGen = 0;
   let chatHandle: ChatViewHandle | undefined;
   let chatMountKey: string | undefined;
+  // R17-G5 #30：搜索命中会话消息的 deep_link 带来的定位目标——打开对应会话的 chat 视图时消费一次
+  // （focusSeq 传给 mountChatView，加载完成后滚动到该消息并短暂高亮）。
+  let pendingChatFocus: { conversationId: string; seq: number } | undefined;
   let driveHandle: DriveViewHandle | undefined;
   let driveMountKey: string | undefined;
   // R15 批 E2（项目时间线 / 甘特）：中栏时间线标签——同 drive 的「key 没变就不重挂」纪律（timelineMountKey）。
@@ -269,6 +275,9 @@ export function mountWorkbenchShell(
   let scheduleHandle: ScheduleViewHandle | undefined;
   let scheduleMountKey: string | undefined;
   let armyOverviewHandle: ArmyOverviewViewHandle | undefined;
+  // R17 G3(#21)：从军团总览下钻带来的「加载完该会话军团面板后要打开的 run 详情 id」——drilldown 时写入，
+  // 会话情境挂载时透传给 armyPanel.showForConversation 并即清（consumeArmyRunDetailId）。
+  let pendingArmyRunDetailId: string | undefined;
   let projectSettingsHandle: ProjectSettingsViewHandle | undefined;
   let projectSettingsMountKey: string | undefined;
   // R15 批 I1（决策收件箱）：中栏收件箱视图（跨项目，不依赖 selectedProjectId，同 army-overview）。
@@ -392,8 +401,17 @@ export function mountWorkbenchShell(
     client: input.client,
     locale: input.locale,
     // R14 批 APPROVE-CHAT：军团输出行点击 → 右栏打开提议详情（军团面板不认识提议详情，把 id 抛给这里）。
-    onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId })
+    onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId }),
+    // R17 G3(#20)：escalated run 卡/详情「去处理」→ 决策收件箱（openInbox 是下方 const，闭包内延迟引用不触 TDZ）。
+    onHandleEscalation: () => openInbox()
   });
+
+  // R17 G3(#21)：会话情境挂载时取一次下钻带来的 run 详情 id（用后即清，避免误用到下一次普通导航）。
+  const consumeArmyRunDetailId = (): string | undefined => {
+    const id = pendingArmyRunDetailId;
+    pendingArmyRunDetailId = undefined;
+    return id;
+  };
 
   // R14 批 APPROVE-CHAT：情境面板的第四个 owner——提议详情控制器（M1 只读 + M2 通过/打回/合并）。同样挂载
   // 一次、活过项目/会话切换，与 drive/army 共用同一个 store.sidePanelContent 插槽，靠 ownerId 互斥（见
@@ -608,6 +626,11 @@ export function mountWorkbenchShell(
       .catch(() => {
         // 角标尽力而为——拉不到保持上一次的计数，不清零骚扰。
       });
+    // #17：中栏正开着决策收件箱时，随角标一起重拉列表——让开着的列表随实时事件/轮询同步刷新，不必切走再
+    // 切回。inboxHandle.refresh 内部有 disposed/单飞守卫，中栏不是 inbox / 未挂载时是无害空操作。
+    if (store.getState().centerTab === "inbox") {
+      inboxHandle?.refresh();
+    }
   };
 
   // R15 批 I1/I2：切中栏到决策收件箱——rail 顶部「待拍板」入口与聊天流 digest 卡「打开收件箱」共用一处，
@@ -617,16 +640,41 @@ export function mountWorkbenchShell(
     refreshInboxBadge();
   };
 
-  // R15 批 A6（rail 未读红点 · 实时性）：workbench 订一条 /api/push/stream/me，只消费会话消息类
-  // notification.created（带 conversation_id）——收到就给对应会话的未读本地 +1（近似，不知道服务端精确
-  // 聚合数，30s DM 兜底刷新 + 打开清零把它拉回权威），让左栏红点在 workbench 只开着、没打开那条会话时
-  // 也能动。当前正打开的那条会话不加（见 currentlyOpenConversationId）。断线重连语义复用会话流同一套
-  // connectConversationStream（指数退避 + 心跳看门狗）。浏览器 dev 无 fetch 时 connect 内部优雅降级。
+  // R15 批 A6（rail 未读红点 · 实时性）：workbench 订一条 /api/push/stream/me，消费两类信号——会话消息类
+  // notification.created（带 conversation_id）动左栏未读红点，决策类事件刷「待拍板」角标（见下）。断线重连
+  // 语义复用会话流同一套 connectConversationStream（指数退避 + 心跳看门狗）。浏览器 dev 无 fetch 时优雅降级。
+  //
+  // R17 #6（决策推送链）：此前 onEvent 用 `event.type !== "notification.created"` 硬过滤——escalation/budget/
+  // sync_conflict 这些真会到 /me 流的决策类事件被整条丢弃，角标只能靠 30s 轮询兜底；而同一 /me 话题在桌宠
+  // 气泡通道（desktop-cuu-runtime 的 cardFromEvent/toAttentionItem）却能正常出卡，两个消费者行为不一致。改成
+  // 决策类白名单：下面这些正是 push 路由里真会发到 topics.user(=/me) 且进 GET /attention 决策队列的类型
+  //（notifications.ts / approvals.ts / agent-memory.ts / agent-runner.ts / human-reserved-guard[#5] 的
+  // topics.user 发布面）——收到任一即刷角标（+ 中栏开着收件箱时随之刷列表，见 refreshInboxBadge）。刷新是
+  // 幂等的 GET attention，权威数仍以响应为准；决策事件稀疏，不像聊天消息高频。
+  const decisionRefreshEventTypes = new Set<string>([
+    eventTypes.escalationOpened,
+    eventTypes.budgetWarning,
+    eventTypes.budgetExhausted,
+    eventTypes.syncConflict,
+    eventTypes.permissionAsk,
+    eventTypes.permissionDecided,
+    eventTypes.permissionReassigned,
+    eventTypes.permissionExpired,
+    eventTypes.proposalOpened
+  ]);
   const meStream: ConversationStreamHandle = connectConversationStream({
     url: input.client.streams.me(),
     getClientToken,
     onEvent: (event) => {
-      if (disposed || event.type !== "notification.created") {
+      if (disposed) {
+        return;
+      }
+      // 决策类事件（升级/预算/偏好冲突/审批/提议）：全是进决策队列的类型，收到即刷角标——它们不带会话未读语义。
+      if (decisionRefreshEventTypes.has(event.type)) {
+        refreshInboxBadge();
+        return;
+      }
+      if (event.type !== eventTypes.notificationCreated) {
         return;
       }
       const data = event.data as { type?: string; conversation_id?: string } | null | undefined;
@@ -683,7 +731,7 @@ export function mountWorkbenchShell(
     return false;
   };
 
-  const selectProject = (projectId: string, conversationId?: string) => {
+  const selectProject = (projectId: string, conversationId?: string, focusSeq?: number) => {
     // G-desktop 止血批 3：本窗正显示「已登出」整窗态时，任何想让它去拉数据的调用（rail 点击/深链/
     // 冷启动兜底,见 boot.ts 的三路调用方）都先在这里截住——不能顺着往下发一个带废 token 的请求。
     // 如果登出标记这时候已经被清掉（用户从主窗重新登录过了），最简单可靠的恢复路径是整窗重载：
@@ -697,6 +745,8 @@ export function mountWorkbenchShell(
       }
       return;
     }
+    // #30：预约会话消息定位——打开对应会话的 chat 视图时消费一次（focusSeq 只在同时给了会话时有意义）。
+    pendingChatFocus = conversationId && typeof focusSeq === "number" ? { conversationId, seq: focusSeq } : undefined;
     // R15 批 B（人对人私聊）：深链/调用方给的 conversationId 已知是一条 DM（容器项目被围栏，走不了 VM
     // 路径）——直开这条 DM，不去拉容器 VM（会 404）。列表还没加载时，交给下面 VM 404 的 .catch 兜底。
     if (conversationId && store.getState().dmList.some((dm) => dm.conversation.id === conversationId)) {
@@ -802,6 +852,16 @@ export function mountWorkbenchShell(
   // 上（和 chat 视图同款"只在 key 真变化时才重挂"纪律，见下 driveMountKey/chatMountKey）。切标签时
   // 非活动那个视图会被销毁（chat 的 SSE 订阅/composer 草稿、drive 的当前文件夹都会丢），这是已知的
   // 简化取舍（两个标签共用同一个中栏挂载位，不常驻）——留给后续批次决定要不要改成隐藏而不是销毁。
+  // #30：某条 chat 视图挂载时取出并消费为它预约的消息定位 seq（会话 id 匹配才给，一次性）。
+  const takeChatFocusSeq = (conversationId: string): number | undefined => {
+    if (pendingChatFocus?.conversationId !== conversationId) {
+      return undefined;
+    }
+    const seq = pendingChatFocus.seq;
+    pendingChatFocus = undefined;
+    return seq;
+  };
+
   const renderCenter = (state: WorkbenchStoreState) => {
     // R16-W3：变更编辑器（中栏全宽 tracked-changes 审阅器）——入口走右栏「文件」模式的变动文件行点击
     // （非 rail 叶），据 editorTarget 打开。必须在"没选项目"的空态判断之前拦下（editorTarget 自带
@@ -864,7 +924,20 @@ export function mountWorkbenchShell(
       clearContextPanels();
       centerEl.className = "wh-wb-center wh-wb-center--army-overview";
       if (!armyOverviewHandle) {
-        armyOverviewHandle = mountArmyOverviewView(centerEl, { client: input.client, locale: input.locale });
+        armyOverviewHandle = mountArmyOverviewView(centerEl, {
+          client: input.client,
+          locale: input.locale,
+          // R17 G3(#21)：卡片下钻——selectProject(该项目)；带血缘会话就顺带 stash run id，会话情境挂载时
+          // armyPanel 加载完自动打开该 run 详情（consumeArmyRunDetailId）。无血缘会话的 run 只 selectProject。
+          onOpenRun: ({ projectId, runId, conversationId }) => {
+            if (conversationId) {
+              pendingArmyRunDetailId = runId;
+              selectProject(projectId, conversationId);
+            } else {
+              selectProject(projectId);
+            }
+          }
+        });
       }
       return;
     }
@@ -923,6 +996,7 @@ export function mountWorkbenchShell(
       // DM 的成员集合 = 两名真实参与者——已读 N/M 的分母因此收敛成 1/1（见 dm.ts dmMembersFromParticipants）。
       const members = dmMembersFromParticipants(dm);
       const peer = dmPeerParticipant(dm, currentUserId);
+      const dmFocusSeq = takeChatFocusSeq(dm.conversation.id);
       centerEl.className = "wh-wb-center wh-wb-center--chat";
       chatHandle = mountChatView(centerEl, {
         client: input.client,
@@ -931,6 +1005,7 @@ export function mountWorkbenchShell(
         projectName: peer?.nickname ?? (zh ? "私聊" : "Direct message"),
         conversationId: dm.conversation.id,
         conversationKind: "collab",
+        ...(dmFocusSeq !== undefined ? { focusSeq: dmFocusSeq } : {}),
         // DM 头显示对方昵称 + 在线点（而非「N 位成员 + Cuu」的群聊条）。
         isDm: true,
         // DM 默认 cuu_enabled=false（B5 拍板）——chat 视图据此不自动请 Cuu 回话（不特判 DM，纯由
@@ -1125,7 +1200,19 @@ export function mountWorkbenchShell(
           locale: input.locale,
           projectId: vm.project.id,
           projectName: vm.project.name,
-          editable: vm.viewer.is_project_owner
+          editable: vm.viewer.is_project_owner,
+          // R17 批 G1（#2）：成员分区数据从已就绪的 workbench VM 直接派生——全员数 + 本项目的协同会话列表
+          // （主区不列，主区=全员；DM 容器被围栏，本就不在 workbench 会话里）。不额外取数。
+          memberOverview: {
+            totalMembers: vm.workspace_members.total,
+            collabConversations: vm.conversations.conversations
+              .filter((conversation) => conversation.kind === "collab")
+              .map((conversation) => ({ id: conversation.id, title: conversation.title }))
+          },
+          // 「管理成员」按钮 → 跳到该协同会话（同 rail 打开协同会话的既有路径）。
+          onOpenConversation: (conversationId) => {
+            store.setState({ centerTab: "collab", activeConversationId: conversationId });
+          }
         });
         projectSettingsMountKey = key;
         return;
@@ -1154,6 +1241,7 @@ export function mountWorkbenchShell(
           return; // 已经是这个协同会话的 chat 视图——同主区分支的"key 没变就不重挂"纪律。
         }
         disposeChat();
+        const collabFocusSeq = takeChatFocusSeq(collabConversation.id);
         centerEl.className = "wh-wb-center wh-wb-center--chat";
         chatHandle = mountChatView(centerEl, {
           client: input.client,
@@ -1162,6 +1250,7 @@ export function mountWorkbenchShell(
           projectName: vm.project.name,
           conversationId: collabConversation.id,
           conversationKind: "collab",
+          ...(collabFocusSeq !== undefined ? { focusSeq: collabFocusSeq } : {}),
           // R15 批 B：透传会话级 Cuu 硬开关（cuu_enabled=false 的协同会话不自动请 Cuu 回话，见
           // view.ts 的 isCollabConversation）——additive，cuu_enabled=true 的既有会话行为不变。
           cuuEnabled: collabConversation.cuu_enabled,
@@ -1185,7 +1274,13 @@ export function mountWorkbenchShell(
         chatMountKey = key;
         // R13 批 P1：情境面板默认态挂军团三区——会话情境存在时（这里是刚挂上这个协同会话的 chat 视图）
         // 就该拉这个会话的军团面板，取代批 5 之前的通用占位文案。
-        armyPanel.showForConversation({ projectId: vm.project.id, conversationId: collabConversation.id });
+        // R17 G3(#21)：若是从军团总览下钻进来的，透传 openRunId，面板加载完自动打开该 run 详情。
+        const collabOpenRunId = consumeArmyRunDetailId();
+        armyPanel.showForConversation({
+          projectId: vm.project.id,
+          conversationId: collabConversation.id,
+          ...(collabOpenRunId ? { openRunId: collabOpenRunId } : {})
+        });
         enterSideContext({ projectId: vm.project.id, conversationId: collabConversation.id });
         return;
       }
@@ -1204,6 +1299,7 @@ export function mountWorkbenchShell(
         return; // 已经是这个会话的 chat 视图——它自己的 store/SSE 订阅在内部持续更新，无需重挂。
       }
       disposeChat();
+      const mainFocusSeq = takeChatFocusSeq(mainConversation.id);
       centerEl.className = "wh-wb-center wh-wb-center--chat";
       chatHandle = mountChatView(centerEl, {
         client: input.client,
@@ -1212,6 +1308,7 @@ export function mountWorkbenchShell(
         projectName: vm.project.name,
         conversationId: mainConversation.id,
         conversationKind: "main",
+        ...(mainFocusSeq !== undefined ? { focusSeq: mainFocusSeq } : {}),
         // R15 批 B：透传会话级 Cuu 硬开关——团队主区 conversationKind=main 本就不自动 turn，个人空间单聊
         // （下方 projectIsPersonal）随 cuu_enabled 决定，additive，既有默认 cuu_enabled=true 行为不变。
         cuuEnabled: mainConversation.cuu_enabled,
@@ -1240,7 +1337,13 @@ export function mountWorkbenchShell(
       });
       chatMountKey = key;
       // R13 批 P1：见上面协同会话分支同款注释——主区会话情境存在时，情境面板默认态挂军团三区。
-      armyPanel.showForConversation({ projectId: vm.project.id, conversationId: mainConversation.id });
+      // R17 G3(#21)：主区会话也可能是下钻目标（run 血缘会话就是项目主区）——同样透传 openRunId。
+      const mainOpenRunId = consumeArmyRunDetailId();
+      armyPanel.showForConversation({
+        projectId: vm.project.id,
+        conversationId: mainConversation.id,
+        ...(mainOpenRunId ? { openRunId: mainOpenRunId } : {})
+      });
       enterSideContext({ projectId: vm.project.id, conversationId: mainConversation.id });
       return;
     }
@@ -1526,6 +1629,56 @@ export function mountWorkbenchShell(
       activateSessTab(openTarget.dataset.wbTab);
     }
   });
+  // #37：会话 tab 中键点击关闭（浏览器/编辑器通用手感）——auxclick 的 button===1 即中键；点在 tab 任意处
+  // （不必命中那个小 x）都关掉整条 tab。
+  sessStripEl?.addEventListener("auxclick", (event) => {
+    if (event.button !== 1 || !(event.target instanceof HTMLElement)) {
+      return;
+    }
+    const tabTarget = event.target.closest<HTMLElement>("[data-wb-tab]");
+    if (tabTarget?.dataset.wbTab) {
+      event.preventDefault();
+      closeSessTab(tabTarget.dataset.wbTab);
+    }
+  });
+
+  // #38：会话 tab 的应用级快捷键。Cmd/Ctrl+W 关当前会话 tab；Cmd/Ctrl+1..9 切到第 N 个已开 tab。取窄：
+  // 只在「会话类中栏 + 确有对应 tab」时才 preventDefault 拦下——否则一律放行，绝不抢浏览器/系统在其它场景
+  // （非会话中栏、没有可关的 tab、组合键带 Shift/Alt）的关窗/切标签语义。桌面壳里这正是原生 tab 手感，浏览器
+  // dev 下也只有真有会话 tab 可操作时才接管。
+  const isConversationCenterTab = (tab: WorkbenchStoreState["centerTab"]): boolean =>
+    tab === "chat" || tab === "collab" || tab === "dm";
+  const onShellTabKeydown = (event: KeyboardEvent) => {
+    if (disposed || loggedOut) {
+      return;
+    }
+    // 主修饰键：mac 上是 Cmd(metaKey)、其它平台是 Ctrl；两者都收下以兼容桌面壳与浏览器 dev。带 Shift/Alt
+    // 的组合（如 Cmd+Shift+W 关整窗）不拦，留给系统。
+    const primaryModifier = event.metaKey || event.ctrlKey;
+    if (!primaryModifier || event.altKey || event.shiftKey) {
+      return;
+    }
+    const state = store.getState();
+    if (!isConversationCenterTab(state.centerTab)) {
+      return;
+    }
+    if (event.key === "w" || event.key === "W") {
+      const current = currentlyOpenConversationId();
+      if (current && state.openConversationTabs.some((tab) => tab.conversationId === current)) {
+        event.preventDefault();
+        closeSessTab(current);
+      }
+      return;
+    }
+    if (/^[1-9]$/u.test(event.key)) {
+      const tab = state.openConversationTabs[Number.parseInt(event.key, 10) - 1];
+      if (tab) {
+        event.preventDefault();
+        activateSessTab(tab.conversationId);
+      }
+    }
+  };
+  doc.addEventListener("keydown", onShellTabKeydown);
 
   const unsubscribe = store.subscribe((state) => {
     renderCenter(state);
@@ -1702,6 +1855,8 @@ export function mountWorkbenchShell(
   // 不再是各写一份、两处容易悄悄漂移。
   const disposeActiveSubviews = () => {
     railHandle.dispose();
+    // #38：撤下文档级 tab 快捷键监听（doc 生命周期长于本 shell 实例，登出/卸载都要摘掉防泄漏）。
+    doc.removeEventListener("keydown", onShellTabKeydown);
     // R15 批 A6：停掉 /api/push/stream/me 未读订阅（登出/卸载都要放手，否则登出后仍会拿废 token 重连）。
     meStream.close();
     // R15 批 I1：停掉「待拍板」计数轮询定时器。

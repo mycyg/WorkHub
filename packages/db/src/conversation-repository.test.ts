@@ -6,6 +6,10 @@ import {
   ConversationAccessDeniedError,
   ConversationDmTargetError,
   ConversationInsertFailedError,
+  ConversationLastParticipantError,
+  ConversationNotGroupError,
+  ConversationParticipantCapError,
+  ConversationParticipantNotFoundError,
   ConversationMessageActorMismatchError,
   ConversationMessageDeletedError,
   ConversationMessageEditWindowError,
@@ -2355,4 +2359,250 @@ test("R15 A5 listParticipantUserIds lowercases and reads the conversation's part
   const query = queries[0];
   assert.ok(queryReferences(query?.where, conversationParticipants.conversationId));
   assert.equal(query?.limit, 500);
+});
+
+// ── R17 批 G1（群成员管理 · #1 建群后加人 / #16 退群/移出） ─────────────────────────────────
+
+test("R17 G1 addParticipant inserts a member into a non-dm collab and returns added=true", async () => {
+  const created = participant(secondMemberUserId, "member");
+  const { db, queries, transactions } = createQueryRecorder([
+    [{ projectId }], // readConversationProjectId
+    [conversation()], // lockActiveConversation (collab, dm_key null)
+    [{ id: "43000000-0000-4000-8000-000000000009", userId: secondMemberUserId }], // lockActiveMembershipSet
+    [], // existing participant (not present)
+    [{ value: 2 }], // participant count
+    [created] // insert returning
+  ]);
+
+  const result = await createConversationRepository(db).addParticipant({
+    workspaceId,
+    conversationId,
+    addedUserId: secondMemberUserId.toUpperCase(),
+    at: now
+  });
+
+  assert.deepEqual(result, { participant: created, added: true });
+  assert.deepEqual(transactions, [{ outcome: "resolved" }]);
+  const insert = queries.find((query) => query.operation === "insert");
+  assert.equal(insert?.targetTable, conversationParticipants);
+  assert.equal(insert?.returningCalled, true);
+  const values = insert?.valuesValue as Record<string, unknown>;
+  assert.equal(values.role, "member");
+  assert.equal(values.userId, secondMemberUserId.toLowerCase());
+});
+
+test("R17 G1 addParticipant is idempotent — an existing participant returns added=false without inserting", async () => {
+  const existing = participant(secondMemberUserId, "member");
+  const { db, queries } = createQueryRecorder([
+    [{ projectId }],
+    [conversation()],
+    [{ id: "43000000-0000-4000-8000-000000000009", userId: secondMemberUserId }],
+    [existing] // existing participant present → short-circuit
+  ]);
+
+  const result = await createConversationRepository(db).addParticipant({
+    workspaceId,
+    conversationId,
+    addedUserId: secondMemberUserId,
+    at: now
+  });
+
+  assert.deepEqual(result, { participant: existing, added: false });
+  assert.equal(queries.some((query) => query.operation === "insert"), false);
+});
+
+test("R17 G1 addParticipant rejects a main conversation (all-member semantics)", async () => {
+  const { db, queries, transactions } = createQueryRecorder([
+    [{ projectId }],
+    [conversation({ kind: "main" })]
+  ]);
+
+  await assert.rejects(
+    createConversationRepository(db).addParticipant({
+      workspaceId,
+      conversationId,
+      addedUserId: secondMemberUserId,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationNotGroupError
+  );
+  assert.deepEqual(transactions, [{ outcome: "rejected", errorName: "ConversationNotGroupError" }]);
+  assert.equal(queries.some((query) => query.operation === "insert"), false);
+});
+
+test("R17 G1 addParticipant rejects a dm conversation (2-person invariant)", async () => {
+  const { db } = createQueryRecorder([
+    [{ projectId }],
+    [conversation({ dmKey: normalizeDmKey(creatorUserId, memberUserId) })]
+  ]);
+
+  await assert.rejects(
+    createConversationRepository(db).addParticipant({
+      workspaceId,
+      conversationId,
+      addedUserId: secondMemberUserId,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationNotGroupError
+  );
+});
+
+test("R17 G1 addParticipant rejects a target that is not an active workspace member", async () => {
+  const { db } = createQueryRecorder([
+    [{ projectId }],
+    [conversation()],
+    [] // membership lock returns nothing → not a member
+  ]);
+
+  await assert.rejects(
+    createConversationRepository(db).addParticipant({
+      workspaceId,
+      conversationId,
+      addedUserId: secondMemberUserId,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationParticipantMembershipError
+  );
+});
+
+test("R17 G1 addParticipant rejects once the participant cap (100) is reached", async () => {
+  const { db } = createQueryRecorder([
+    [{ projectId }],
+    [conversation()],
+    [{ id: "43000000-0000-4000-8000-000000000009", userId: secondMemberUserId }],
+    [], // not an existing participant
+    [{ value: 100 }] // already at cap
+  ]);
+
+  await assert.rejects(
+    createConversationRepository(db).addParticipant({
+      workspaceId,
+      conversationId,
+      addedUserId: secondMemberUserId,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationParticipantCapError
+  );
+});
+
+test("R17 G1 removeParticipant lets a plain member leave without promoting a new owner", async () => {
+  const owner = participant(creatorUserId, "owner");
+  const leaving = participant(memberUserId, "member");
+  const { db, queries, transactions } = createQueryRecorder([
+    [{ projectId }],
+    [conversation()],
+    [owner, leaving], // participants lock (createdAt asc)
+    [] // delete target
+  ]);
+
+  const result = await createConversationRepository(db).removeParticipant({
+    workspaceId,
+    conversationId,
+    targetUserId: memberUserId,
+    at: now
+  });
+
+  assert.deepEqual(result, { removed: true, newOwnerUserId: null });
+  assert.deepEqual(transactions, [{ outcome: "resolved" }]);
+  assert.equal(queries.some((query) => query.operation === "update"), false, "no owner handover for a member leaving");
+  const del = queries.find((query) => query.operation === "delete");
+  assert.equal(del?.targetTable, conversationParticipants);
+});
+
+test("R17 G1 removeParticipant promotes the earliest-joined remaining participant when the owner leaves", async () => {
+  const owner = participant(creatorUserId, "owner");
+  const firstMember = participant(memberUserId, "member", {
+    id: "23000000-0000-4000-8000-000000000041",
+    createdAt: new Date("2026-07-12T09:01:00.000Z")
+  });
+  const secondMember = participant(secondMemberUserId, "member", {
+    id: "23000000-0000-4000-8000-000000000042",
+    createdAt: new Date("2026-07-12T09:02:00.000Z")
+  });
+  const { db, queries } = createQueryRecorder([
+    [{ projectId }],
+    [conversation()],
+    [owner, firstMember, secondMember], // ordered createdAt asc; owner is the target below
+    [], // update successor
+    [] // delete target
+  ]);
+
+  const result = await createConversationRepository(db).removeParticipant({
+    workspaceId,
+    conversationId,
+    targetUserId: creatorUserId,
+    at: now
+  });
+
+  assert.deepEqual(result, { removed: true, newOwnerUserId: memberUserId });
+  const update = queries.find((query) => query.operation === "update");
+  assert.equal(update?.targetTable, conversationParticipants);
+  assert.deepEqual(update?.setValue, { role: "owner", updatedAt: now });
+});
+
+test("R17 G1 removeParticipant refuses to remove the last remaining member", async () => {
+  const soleOwner = participant(creatorUserId, "owner");
+  const { db, transactions } = createQueryRecorder([
+    [{ projectId }],
+    [conversation()],
+    [soleOwner] // only one participant
+  ]);
+
+  await assert.rejects(
+    createConversationRepository(db).removeParticipant({
+      workspaceId,
+      conversationId,
+      targetUserId: creatorUserId,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationLastParticipantError
+  );
+  assert.deepEqual(transactions, [{ outcome: "rejected", errorName: "ConversationLastParticipantError" }]);
+});
+
+test("R17 G1 removeParticipant 404s a target that is not a participant", async () => {
+  const owner = participant(creatorUserId, "owner");
+  const other = participant(memberUserId, "member");
+  const { db } = createQueryRecorder([
+    [{ projectId }],
+    [conversation()],
+    [owner, other]
+  ]);
+
+  await assert.rejects(
+    createConversationRepository(db).removeParticipant({
+      workspaceId,
+      conversationId,
+      targetUserId: secondMemberUserId,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationParticipantNotFoundError
+  );
+});
+
+test("R17 G1 removeParticipant rejects main and dm conversations", async () => {
+  const mainRecorder = createQueryRecorder([[{ projectId }], [conversation({ kind: "main" })]]);
+  await assert.rejects(
+    createConversationRepository(mainRecorder.db).removeParticipant({
+      workspaceId,
+      conversationId,
+      targetUserId: creatorUserId,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationNotGroupError
+  );
+
+  const dmRecorder = createQueryRecorder([
+    [{ projectId }],
+    [conversation({ dmKey: normalizeDmKey(creatorUserId, memberUserId) })]
+  ]);
+  await assert.rejects(
+    createConversationRepository(dmRecorder.db).removeParticipant({
+      workspaceId,
+      conversationId,
+      targetUserId: creatorUserId,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationNotGroupError
+  );
 });

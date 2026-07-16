@@ -6,6 +6,8 @@
 // 的薄封装 + 首屏/向上翻页策略。
 
 import type {
+  AddConversationParticipantResultVM,
+  RemoveConversationParticipantResultVM,
   AiFeedbackVerdict,
   AiMode,
   ConversationMessagePageVM,
@@ -379,6 +381,33 @@ export function fetchConversationParticipants(
   conversationId: string
 ): Promise<ConversationParticipantsVM> {
   return client.request<ConversationParticipantsVM>(conversationPath(conversationId, "participants"));
+}
+
+// R17 批 G1（群成员管理 · #1 建群后加人）：POST /participants {user_id} → 200 { added, participants }
+// （刷新后的完整参与者列表）。仅非 DM collab 会话可加人（main/DM 各自 409）；已在群里幂等回 added=false。
+export function postConversationParticipant(
+  client: ChatApiClient,
+  conversationId: string,
+  userId: string
+): Promise<AddConversationParticipantResultVM> {
+  return client.request<AddConversationParticipantResultVM>(conversationPath(conversationId, "participants"), {
+    method: "POST",
+    body: JSON.stringify({ user_id: userId })
+  });
+}
+
+// R17 批 G1（#16 退群/移出）：DELETE /participants/:userId → 200 { removed_user_id, self_left,
+// new_owner_user_id }。自删=退群、owner 删他人=移出；owner 退群时 new_owner_user_id 带继任者；
+// main/DM/最后一人各自 409；非 owner 删他人 403。
+export function deleteConversationParticipant(
+  client: ChatApiClient,
+  conversationId: string,
+  userId: string
+): Promise<RemoveConversationParticipantResultVM> {
+  return client.request<RemoveConversationParticipantResultVM>(
+    conversationPath(conversationId, `participants/${encodeURIComponent(userId)}`),
+    { method: "DELETE" }
+  );
 }
 
 // 小群「已读 N/M」分母修复的纯逻辑：从 GET /participants 的真实参与者集合里去掉自己，得到"他人成员 id"

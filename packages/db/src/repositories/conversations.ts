@@ -265,6 +265,38 @@ export type DmListForUserRow = {
   participants: DmParticipantRow[];
 };
 
+// R17 批 G1（群成员管理 · #1 建群后加人）：POST /participants 的仓库输入。语义红线（仅 collab 非 DM、
+// 调用者须为参与者、目标须同工作区活跃成员）由服务层先行把关；仓库只负责租户安全的原子写 + 上限 +
+// 唯一约束幂等。addedUserId 加入后角色恒 member（owner 只在建群/DM 首建时产生）。
+export type AddConversationParticipantInput = {
+  workspaceId: string;
+  conversationId: string;
+  addedUserId: string;
+  at?: Date;
+};
+
+// added=true 表示这次真的新增了参与者；false 表示目标已在群里（撞唯一约束 → 幂等回既有行）。
+export type AddConversationParticipantResult = {
+  participant: ConversationParticipantRow;
+  added: boolean;
+};
+
+// R17 批 G1（#16 退群/移出）：DELETE /participants/:userId 的仓库输入。actorUserId=发起人；
+// targetUserId=被移出者（自删=退群、owner 删他人=移出）。owner 退群且群里还有他人时事务内把最早加入的
+// member 升 owner（见实现）。语义红线（main/DM 409、owner 才能移出他人、最后一人 409）在服务层强制。
+export type RemoveConversationParticipantInput = {
+  workspaceId: string;
+  conversationId: string;
+  targetUserId: string;
+  at?: Date;
+};
+
+// removed=true 表示这次真的移除了一行；newOwnerUserId 在「owner 退群 → 继任者升 owner」时带继任者 id。
+export type RemoveConversationParticipantResult = {
+  removed: boolean;
+  newOwnerUserId: string | null;
+};
+
 // R15 批 B：DM 会话查重键——两个 user id 归一化（小写）后排序，再拼 'dm:' 前缀。同一对用户与顺序无关
 // 得到同一个 key（workspace 维度由容器项目 id 天然限定，见 dmKey 列/唯一索引注释）。导出供单测直接覆盖。
 export function normalizeDmKey(userIdA: string, userIdB: string): string {
@@ -435,6 +467,11 @@ export type ConversationRepository = {
   listParticipantsWithNickname: (input: {
     conversationId: string;
   }) => Promise<ConversationParticipantWithNicknameRow[]>;
+  // R17 批 G1（群成员管理）：新增，不改动上面任何既有方法——加人/退群/移出。语义红线在服务层强制
+  // （见 apps/api/src/services/conversations.ts），仓库层负责租户安全的原子写、上限、唯一约束幂等与
+  // owner 退群时的继任者升迁（都在同一事务里做，不跨调用留 TOCTOU 缝）。
+  addParticipant: (input: AddConversationParticipantInput) => Promise<AddConversationParticipantResult>;
+  removeParticipant: (input: RemoveConversationParticipantInput) => Promise<RemoveConversationParticipantResult>;
   // R14 批 CHAT：以下全部新增，不改动上面任何既有方法。语义红线在服务层强制（见 apps/api/src/
   // services/conversations.ts），仓库层负责租户安全的原子写与页级无 N+1 聚合。
   editMessage: (input: EditMessageInput) => Promise<ConversationMessageRow>;
@@ -532,6 +569,15 @@ export class ConversationReplyTargetError extends NamedConversationRepositoryErr
 export class ConversationDmTargetError extends NamedConversationRepositoryError {}
 // R15 批 B：DM 容器项目惰性创建/回查都落空的兜底（理论上不该发生：唯一索引兜底并发后必能回查到）。
 export class ConversationDmContainerError extends NamedConversationRepositoryError {}
+// R17 批 G1（群成员管理）：目标会话不是可加人的普通协同会话——main（全员语义）/DM（2 人不变量）
+// /已删除会话命中这条，服务层映射到 409。
+export class ConversationNotGroupError extends NamedConversationRepositoryError {}
+// 加人后总人数会超过建群上限（99 名成员 + 1 名 owner = 100）——服务层映射到 409。
+export class ConversationParticipantCapError extends NamedConversationRepositoryError {}
+// 退群/移出时目标不是这个会话的参与者——服务层映射到 404。
+export class ConversationParticipantNotFoundError extends NamedConversationRepositoryError {}
+// 退群时群里只剩自己一名参与者（最后一人不能退出，取窄不做归档旁路）——服务层映射到 409。
+export class ConversationLastParticipantError extends NamedConversationRepositoryError {}
 
 const conversationSelection = {
   id: projectConversations.id,
@@ -2012,6 +2058,168 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
         nickname: row.nickname,
         role: row.role as ConversationParticipantRole
       }));
+    },
+
+    // ── R17 批 G1（群成员管理 · #1 建群后加人） ───────────────────────────────────────
+    // 只普通协同会话可加人：main（全员语义，无 participant 行）与 DM（dm_key 非空、2 人不变量）都拒。
+    // 目标须为同工作区活跃成员；上限沿用建群 cap（99 名成员 + 1 名 owner = 100 总人数）；唯一约束
+    // (conversation_id, user_id) 兜重复——目标已在群里则幂等回既有行（added=false），不受上限影响。
+    // 语义红线里的「调用者须为参与者」由服务层的 visibleConversation() 先行把关（collab 只对参与者
+    // 可见），仓库层不重复判定；这里只负责租户安全的原子写。
+    async addParticipant(input) {
+      const at = input.at ?? new Date();
+      const addedUserId = input.addedUserId.trim().toLowerCase();
+      if (!addedUserId) {
+        throw new ConversationRepositoryInputError("add participant requires a target user id");
+      }
+      return db.transaction(async (tx) => {
+        const locator = await readConversationProjectId(tx, {
+          workspaceId: input.workspaceId,
+          conversationId: input.conversationId
+        });
+        if (!locator) {
+          throw new ConversationAccessDeniedError("conversation is not active");
+        }
+        const conversation = await lockActiveConversation(tx, {
+          workspaceId: input.workspaceId,
+          projectId: locator.projectId,
+          conversationId: input.conversationId
+        });
+        if (!conversation) {
+          throw new ConversationAccessDeniedError("conversation is not active");
+        }
+        if (conversation.kind !== "collab" || conversation.dmKey !== null) {
+          throw new ConversationNotGroupError("only non-dm collab conversations accept new participants");
+        }
+        const memberships = await lockActiveMembershipSet(tx, {
+          workspaceId: input.workspaceId,
+          userIds: [addedUserId]
+        });
+        if (!memberships.some((row) => row.userId.toLowerCase() === addedUserId)) {
+          throw new ConversationParticipantMembershipError("target user must be an active workspace member");
+        }
+        // 幂等短路：目标已在群里 → 回既有行（不受上限影响）。for update 与并发加人/移出串行化。
+        const [existing] = await tx
+          .select()
+          .from(conversationParticipants)
+          .where(
+            and(
+              eq(conversationParticipants.conversationId, input.conversationId),
+              eq(conversationParticipants.userId, addedUserId)
+            )
+          )
+          .for("update", { of: conversationParticipants })
+          .limit(1);
+        if (existing) {
+          return { participant: existing, added: false };
+        }
+        const [countRow] = await tx
+          .select({ value: sql<number>`count(*)::int` })
+          .from(conversationParticipants)
+          .where(eq(conversationParticipants.conversationId, input.conversationId));
+        if ((countRow?.value ?? 0) >= CONVERSATION_PARTICIPANTS_LIST_CAP) {
+          throw new ConversationParticipantCapError("conversation participant cap reached");
+        }
+        const [created] = await tx
+          .insert(conversationParticipants)
+          .values({
+            id: randomUUID(),
+            conversationId: input.conversationId,
+            userId: addedUserId,
+            role: "member" as const,
+            createdAt: at,
+            updatedAt: at
+          })
+          .onConflictDoNothing({
+            target: [conversationParticipants.conversationId, conversationParticipants.userId]
+          })
+          .returning();
+        if (!created) {
+          // 并发双加：另一发抢先插入 → 回查既有（幂等，不再插）。
+          const [raced] = await tx
+            .select()
+            .from(conversationParticipants)
+            .where(
+              and(
+                eq(conversationParticipants.conversationId, input.conversationId),
+                eq(conversationParticipants.userId, addedUserId)
+              )
+            )
+            .limit(1);
+          if (!raced) {
+            throw new ConversationParticipantInsertFailedError(
+              "add participant insert conflict could not be resolved"
+            );
+          }
+          return { participant: raced, added: false };
+        }
+        return { participant: created, added: true };
+      });
+    },
+
+    // ── R17 批 G1（#16 退群/移出） ────────────────────────────────────────────────────
+    // 只普通协同会话可退群/移出：main（全员语义）与 DM（2 人不变量）都拒。锁全部参与者行（人数 ≤ cap
+    // 100）一次判存在/最后一人/继任者，避免多次查询留竞态。owner 退群且群里还有他人 → 最早加入的
+    // 参与者自动升 owner（仅当没有其它 owner 残留时）；只剩自己一人则 409（最后一人不能退出，取窄不做
+    // 归档旁路）。被移出者的读游标/消息保留（留痕，只删 participant 行）。语义红线里的「自己删自己=退群、
+    // owner 才能移出他人」由服务层把关，仓库只负责租户安全的原子写与继任者升迁。
+    async removeParticipant(input) {
+      const at = input.at ?? new Date();
+      const targetUserId = input.targetUserId.trim().toLowerCase();
+      if (!targetUserId) {
+        throw new ConversationRepositoryInputError("remove participant requires a target user id");
+      }
+      return db.transaction(async (tx) => {
+        const locator = await readConversationProjectId(tx, {
+          workspaceId: input.workspaceId,
+          conversationId: input.conversationId
+        });
+        if (!locator) {
+          throw new ConversationAccessDeniedError("conversation is not active");
+        }
+        const conversation = await lockActiveConversation(tx, {
+          workspaceId: input.workspaceId,
+          projectId: locator.projectId,
+          conversationId: input.conversationId
+        });
+        if (!conversation) {
+          throw new ConversationAccessDeniedError("conversation is not active");
+        }
+        if (conversation.kind !== "collab" || conversation.dmKey !== null) {
+          throw new ConversationNotGroupError(
+            "only non-dm collab conversations support leaving or removing members"
+          );
+        }
+        const participants = await tx
+          .select()
+          .from(conversationParticipants)
+          .where(eq(conversationParticipants.conversationId, input.conversationId))
+          .for("update", { of: conversationParticipants })
+          .orderBy(asc(conversationParticipants.createdAt), asc(conversationParticipants.id));
+        const target = participants.find((row) => row.userId.toLowerCase() === targetUserId);
+        if (!target) {
+          throw new ConversationParticipantNotFoundError("target is not a participant of this conversation");
+        }
+        if (participants.length <= 1) {
+          throw new ConversationLastParticipantError("the last remaining member cannot leave");
+        }
+        const remaining = participants.filter((row) => row.id !== target.id);
+        let newOwnerUserId: string | null = null;
+        // 继任只在 owner 退群、且没有其它 owner 残留时发生——正常协同会话恰好一名 owner，此分支即
+        // 「最早加入的参与者升 owner」；万一存在多 owner（历史数据），有其它 owner 就不再另立。
+        if (target.role === "owner" && !remaining.some((row) => row.role === "owner")) {
+          const successor = remaining[0];
+          if (successor) {
+            await tx
+              .update(conversationParticipants)
+              .set({ role: "owner" as const, updatedAt: at })
+              .where(eq(conversationParticipants.id, successor.id));
+            newOwnerUserId = successor.userId.toLowerCase();
+          }
+        }
+        await tx.delete(conversationParticipants).where(eq(conversationParticipants.id, target.id));
+        return { removed: true, newOwnerUserId };
+      });
     },
 
     // ── R14 批 CHAT：编辑 ────────────────────────────────────────────────────────────

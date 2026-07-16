@@ -9,6 +9,7 @@ import {
   projectInstructionsCounterState,
   renderGithubBindingSectionHtml,
   renderProjectInstructionsSectionHtml,
+  renderProjectMembersSectionHtml,
   renderProjectSettingsHtml,
   renderProjectSettingsOwnerOnlyHtml,
   resolveRiskMonitorForDisplay
@@ -510,4 +511,35 @@ test("saving disables the textarea and shows a saving indicator instead of the i
   assert.match(html, /<textarea class="wh-wb-pset-instr-area" data-wb-instr-textarea[^>]* disabled>/u);
   assert.match(html, /data-wb-instr-saving="true"/u);
   assert.match(html, /保存中…/u);
+});
+
+// ── R17 批 G1（#2 项目设置成员分区）─────────────────────────────────────────────────────────
+
+test("renderProjectMembersSectionHtml shows main=everyone plus per-collab jump-to-manage rows", () => {
+  const html = renderProjectMembersSectionHtml({
+    locale: "zh-CN",
+    overview: {
+      totalMembers: 7,
+      collabConversations: [
+        { id: "30000000-0000-4000-8000-000000000001", title: "改第三幕" },
+        { id: "30000000-0000-4000-8000-000000000002", title: "发布评审" }
+      ]
+    }
+  });
+  assert.match(html, /data-wb-pset-members-section="true"/u);
+  // 主区=全员，带真实总数。
+  assert.match(html, /全部 7 名成员/u);
+  // 每条协同会话一行「管理成员」跳转按钮，带会话 id。
+  assert.match(html, /data-wb-pset-open-conversation="30000000-0000-4000-8000-000000000001"/u);
+  assert.match(html, /data-wb-pset-open-conversation="30000000-0000-4000-8000-000000000002"/u);
+  assert.match(html, /改第三幕/u);
+});
+
+test("renderProjectMembersSectionHtml explains the empty state when there are no collab chats", () => {
+  const html = renderProjectMembersSectionHtml({
+    locale: "zh-CN",
+    overview: { totalMembers: 3, collabConversations: [] }
+  });
+  assert.doesNotMatch(html, /data-wb-pset-open-conversation=/u);
+  assert.match(html, /还没有协同会话/u);
 });

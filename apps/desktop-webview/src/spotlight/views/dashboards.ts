@@ -15,7 +15,7 @@ import type {
   ProjectListItemVM,
   ScheduleBlockVM
 } from "@workhub/contracts";
-import { uiFormatCny } from "@workhub/ui";
+import { notificationTypeLabel, uiFormatCny } from "@workhub/ui";
 import { escapeHtml, safeHref } from "@workhub/web-runtime";
 
 import type { CommandId } from "../../command-palette.js";
@@ -648,7 +648,7 @@ function notificationRow(item: NotificationPageVM["items"][number], zh: boolean)
       <div class="wh-spot-row-sub">${escapeHtml([when, item.body ?? ""].filter(Boolean).join(" · "))}</div>
     </div>
     ${snoozeBtn}
-    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-notif-mute="${escapeHtml(item.type)}" title="${escapeHtml(zh ? `不再接收「${item.type}」类通知` : `Mute “${item.type}” notifications`)}">${escapeHtml(zh ? "静音此类" : "Mute type")}</button>
+    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-notif-mute="${escapeHtml(item.type)}" title="${escapeHtml(zh ? `不再接收「${notificationTypeLabel(item.type, zh)}」类通知` : `Mute “${notificationTypeLabel(item.type, zh)}” notifications`)}">${escapeHtml(zh ? "静音此类" : "Mute type")}</button>
   </div>`;
 }
 
@@ -664,7 +664,7 @@ export function createNotificationsView(): SpotlightCapabilityView {
         ctx.client.pages.notifications({ locale: ctx.locale }) as Promise<NotificationPageVM>,
         ctx.client.getNotificationPreferences().catch(() => {
           prefsFailed = true;
-          return { muted_notification_types: [] as string[] };
+          return { muted_notification_types: [] as string[], care_messages_enabled: true };
         })
       ]);
       const rows = [...vm.buckets.needs_decision, ...vm.buckets.fyi, ...vm.buckets.done].slice(0, 12);
@@ -674,15 +674,30 @@ export function createNotificationsView(): SpotlightCapabilityView {
       const muted = prefs.muted_notification_types;
       const mutedPanel = muted.length
         ? `<div class="wh-spot-list" data-notif-muted-panel><p class="wh-spot-card-desc">${escapeHtml(zh ? "已静音类型：" : "Muted types:")}</p>${muted
-          .map((type) => `<div class="wh-spot-row"><div class="wh-spot-row-main"><div class="wh-spot-row-sub">${escapeHtml(type)}</div></div><button type="button" class="wh-spot-act ds-pressable" data-notif-unmute="${escapeHtml(type)}">${escapeHtml(zh ? "恢复接收" : "Unmute")}</button></div>`)
+          .map((type) => `<div class="wh-spot-row"><div class="wh-spot-row-main"><div class="wh-spot-row-sub">${escapeHtml(notificationTypeLabel(type, zh))}</div></div><button type="button" class="wh-spot-act ds-pressable" data-notif-unmute="${escapeHtml(type)}">${escapeHtml(zh ? "恢复接收" : "Unmute")}</button></div>`)
           .join("")}</div>`
         : "";
       const prefsFailedNote = prefsFailed
         ? `<p class="wh-spot-card-desc">${escapeHtml(zh ? "静音设置没读取到——为避免覆盖你已有的静音，静音按钮暂时不可用。" : "Couldn't load mute settings — mute buttons are locked so we don't overwrite what you saved.")}</p>`
         : "";
-      const html = rows.length || muted.length
+      // G4 #10（关怀 opt-out）：Cuu 关怀私聊开关（默认开）。始终渲染（是持久偏好，不随收件箱空/满而消失），
+      // 携带当前 muted 快照以便 PUT 时不误清静音；prefs 没读到时锁禁用+诚实提示（不装作已关/已开）。
+      const careEnabled = prefs.care_messages_enabled !== false;
+      const careCard = `<div class="wh-spot-list" data-notif-care data-notif-care-enabled="${careEnabled ? "true" : "false"}" data-notif-muted="${escapeHtml(JSON.stringify(muted))}"${prefsFailed ? " data-notif-prefs-failed=\"true\"" : ""}>
+        <div class="wh-spot-row">
+          <div class="wh-spot-row-main">
+            <div class="wh-spot-row-title">${escapeHtml(zh ? "Cuu 关怀消息" : "Cuu care check-ins")}</div>
+            <div class="wh-spot-row-sub">${escapeHtml(zh ? "Cuu 会在你负荷高、或连续深夜工作时私下问候一句，可随时关闭。" : "Cuu privately checks in when your load is high or you're working late nights — turn it off anytime.")}</div>
+          </div>
+          <button type="button" class="wh-spot-act ds-pressable" data-notif-care-toggle="${careEnabled ? "off" : "on"}"${prefsFailed ? " disabled" : ""}>${escapeHtml(
+            prefsFailed ? (zh ? "暂不可用" : "Unavailable") : careEnabled ? (zh ? "关闭" : "Turn off") : (zh ? "开启" : "Turn on")
+          )}</button>
+        </div>
+      </div>`;
+      const listHtml = rows.length || muted.length
         ? `<div class="wh-spot-list ds-stagger" data-notif-list data-notif-muted="${escapeHtml(JSON.stringify(muted))}"${prefsFailed ? " data-notif-prefs-failed=\"true\"" : ""}>${prefsFailedNote}${rows.map((item) => notificationRow(item, zh)).join("")}${overflow}${mutedPanel}</div>`
         : emptyHtml("🔔", zh ? "通知箱是空的" : "Inbox is empty", zh ? "审批、军团收工和升级会出现在这里" : "Approvals, team completions and escalations show here");
+      const html = `${careCard}${listHtml}`;
       const subtitle = zh
         ? `未读 ${vm.summary.unread_count} · 待决策 ${vm.summary.needs_decision_count}`
         : `${vm.summary.unread_count} unread · ${vm.summary.needs_decision_count} need a call`;
@@ -714,6 +729,43 @@ export function createNotificationsView(): SpotlightCapabilityView {
           });
         return;
       }
+      // G4 #10（关怀 opt-out）：切换 Cuu 关怀私聊开关。PUT 时带上当前 muted 快照（不误清静音）+
+      // careMessagesEnabled；成功后重开面板让状态一致。prefs 没读到时禁用（按钮已 disabled，这里兜底）。
+      const careBtn = target.closest<HTMLButtonElement>("[data-notif-care-toggle]");
+      if (careBtn?.dataset.notifCareToggle) {
+        if (careBtn.disabled) {
+          return;
+        }
+        const careEl = ctx.body.querySelector<HTMLElement>("[data-notif-care]");
+        if (careEl?.dataset.notifPrefsFailed === "true") {
+          ctx.toast(zh ? "偏好没读取到，先重开通知面板再改关怀开关。" : "Preferences didn't load — reopen notifications before changing this.", "error");
+          return;
+        }
+        const nextEnabled = careBtn.dataset.notifCareToggle === "on";
+        let careMuted: string[] = [];
+        try {
+          careMuted = JSON.parse(careEl?.dataset.notifMuted ?? "[]") as string[];
+        } catch {
+          careMuted = [];
+        }
+        careBtn.disabled = true;
+        void ctx.client
+          .setNotificationPreferences(careMuted, { careMessagesEnabled: nextEnabled })
+          .then(() => {
+            ctx.toast(
+              nextEnabled
+                ? (zh ? "已开启 Cuu 关怀消息" : "Cuu care check-ins turned on")
+                : (zh ? "已关闭 Cuu 关怀消息" : "Cuu care check-ins turned off"),
+              "ok"
+            );
+            ctx.open("notifications", {});
+          })
+          .catch(() => {
+            careBtn.disabled = false;
+            ctx.toast(zh ? "偏好没保存上，稍后重试" : "Couldn't save the preference. Try again.", "error");
+          });
+        return;
+      }
       const muteBtn = target.closest<HTMLButtonElement>("[data-notif-mute]");
       const unmuteBtn = target.closest<HTMLButtonElement>("[data-notif-unmute]");
       const type = muteBtn?.dataset.notifMute ?? unmuteBtn?.dataset.notifUnmute;
@@ -735,8 +787,8 @@ export function createNotificationsView(): SpotlightCapabilityView {
       void ctx.client.setNotificationPreferences(next)
         .then(() => {
           ctx.toast(muteBtn
-            ? (zh ? `已静音「${type}」类通知` : `Muted “${type}” notifications`)
-            : (zh ? `已恢复接收「${type}」` : `Unmuted “${type}”`), "ok");
+            ? (zh ? `已静音「${notificationTypeLabel(type, zh)}」类通知` : `Muted “${notificationTypeLabel(type, zh)}” notifications`)
+            : (zh ? `已恢复接收「${notificationTypeLabel(type, zh)}」` : `Unmuted “${notificationTypeLabel(type, zh)}”`), "ok");
           // 重挂载最省事且状态一定一致：静音面板/按钮态全部随 VM 重渲。
           ctx.open("notifications", {});
         })

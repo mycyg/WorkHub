@@ -23,6 +23,11 @@ import {
   renderJumpToUnreadHtml,
   renderLoadEarlierHtml,
   renderMemberBarHtml,
+  renderMemberManageModalHtml,
+  renderConversationLeftHtml,
+  memberManageCandidates,
+  memberManageErrorText,
+  participantRemoveKind,
   renderDmHeadBarHtml,
   renderMentionPickerHtml,
   renderMessageHtml,
@@ -40,6 +45,7 @@ import {
   renderTypingIndicatorHtml,
   renderUnreadDividerHtml,
   type ChatRenderContext,
+  type MemberManageParticipantRow,
   type WorkbenchMemberVM
 } from "./render.js";
 
@@ -156,6 +162,185 @@ test("renderCuuToggleHtml disables the control and swaps in a working label whil
   const busyEn = renderCuuToggleHtml({ enabled: true, busy: true, locale: "en-US" });
   assert.match(busyEn, /disabled/u);
   assert.match(busyEn, /Working/u);
+});
+
+// —— R17 批 G1（群成员管理 · #1 加人 / #16 退群·移出） —— //
+
+test("renderMemberBarHtml renders the manage entries only when manage is enabled (non-DM collab)", () => {
+  const members = [member({ user_id: "u1", nickname: "张三" })];
+  const plain = renderMemberBarHtml({ members, locale: "zh-CN" });
+  assert.doesNotMatch(plain, /data-wb-chat-member-add-open/u);
+  assert.doesNotMatch(plain, /data-wb-chat-member-manage-open/u);
+
+  const managed = renderMemberBarHtml({ members, locale: "zh-CN", manage: true });
+  assert.match(managed, /data-wb-chat-member-manage-open/u);
+  assert.match(managed, /data-wb-chat-member-add-open/u);
+  assert.match(managed, /加人/u);
+  // 既有头像/计数标签不受 manage 影响。
+  assert.match(managed, /1 位成员 \+ Cuu/u);
+});
+
+test("memberManageCandidates excludes members already in the participant set and Cuu", () => {
+  const workspace = [
+    member({ user_id: "u1", nickname: "张三" }),
+    member({ user_id: "u2", nickname: "李四" }),
+    member({ user_id: "u3", nickname: "王五" }),
+    member({ user_id: "cuu", nickname: "Cuu" })
+  ];
+  const candidates = memberManageCandidates(workspace, new Set(["u1", "u2"]));
+  // u1/u2 已在群里被排除；u3 保留；哨兵 id "cuu" 永远排除。
+  assert.deepEqual(candidates, [{ userId: "u3", nickname: "王五" }]);
+});
+
+test("memberManageCandidates returns everyone (minus Cuu) when nobody is a participant yet", () => {
+  const workspace = [member({ user_id: "u1", nickname: "张三" }), member({ user_id: "u2", nickname: "李四" })];
+  const candidates = memberManageCandidates(workspace, new Set());
+  assert.deepEqual(candidates.map((candidate) => candidate.userId), ["u1", "u2"]);
+});
+
+test("participantRemoveKind renders the remove control per permission (self=leave, others owner-only)", () => {
+  const me = { userId: "me", role: "member" as const };
+  const other = { userId: "other", role: "member" as const };
+  // 自己那行永远是「退出」，跟自己是不是 owner 无关。
+  assert.equal(participantRemoveKind(me, "me", false), "leave");
+  assert.equal(participantRemoveKind(me, "me", true), "leave");
+  // 别人那行：当前查看者是 owner 才能「移出」，否则没有控件。
+  assert.equal(participantRemoveKind(other, "me", true), "remove");
+  assert.equal(participantRemoveKind(other, "me", false), "none");
+});
+
+function participantRow(over: Partial<MemberManageParticipantRow> & { userId: string }): MemberManageParticipantRow {
+  return { nickname: over.userId, role: "member", ...over };
+}
+
+test("renderMemberManageModalHtml lists participants and marks the owner, gating remove controls by viewer role", () => {
+  const participants = [
+    participantRow({ userId: "owner", nickname: "群主甲", role: "owner" }),
+    participantRow({ userId: "me", nickname: "我", role: "member" }),
+    participantRow({ userId: "other", nickname: "他人", role: "member" })
+  ];
+  // 查看者是普通成员：只有自己那行有「退出」，别人两行都没有移出控件。
+  const asMember = renderMemberManageModalHtml({
+    locale: "zh-CN",
+    open: true,
+    participants,
+    candidates: [],
+    viewerUserId: "me",
+    viewerIsOwner: false
+  });
+  assert.match(asMember, /群主/u); // owner 角色标
+  assert.match(asMember, /data-wb-chat-member-remove-open="me"/u);
+  assert.doesNotMatch(asMember, /data-wb-chat-member-remove-open="other"/u);
+  assert.doesNotMatch(asMember, /data-wb-chat-member-remove-open="owner"/u);
+
+  // 查看者是群主：自己那行「退出」，别人两行「移出」。
+  const asOwner = renderMemberManageModalHtml({
+    locale: "zh-CN",
+    open: true,
+    participants,
+    candidates: [],
+    viewerUserId: "owner",
+    viewerIsOwner: true
+  });
+  assert.match(asOwner, /data-wb-chat-member-remove-open="owner"/u);
+  assert.match(asOwner, /data-wb-chat-member-remove-open="me"/u);
+  assert.match(asOwner, /data-wb-chat-member-remove-open="other"/u);
+});
+
+test("renderMemberManageModalHtml shows an inline confirm (not window.confirm) with a busy label while removing", () => {
+  const participants = [participantRow({ userId: "other", nickname: "他人", role: "member" })];
+  const confirming = renderMemberManageModalHtml({
+    locale: "zh-CN",
+    open: true,
+    participants,
+    candidates: [],
+    viewerUserId: "owner",
+    viewerIsOwner: true,
+    removeConfirmUserId: "other"
+  });
+  // 确认层出现，原「移出」触发按钮被替换。
+  assert.match(confirming, /data-wb-chat-member-remove-confirm="other"/u);
+  assert.match(confirming, /data-wb-chat-member-remove-cancel/u);
+  assert.doesNotMatch(confirming, /data-wb-chat-member-remove-open="other"/u);
+
+  const busy = renderMemberManageModalHtml({
+    locale: "zh-CN",
+    open: true,
+    participants,
+    candidates: [],
+    viewerUserId: "owner",
+    viewerIsOwner: true,
+    removeConfirmUserId: "other",
+    removeBusyUserId: "other"
+  });
+  assert.match(busy, /移出中/u);
+  assert.match(busy, /disabled/u);
+});
+
+test("renderMemberManageModalHtml self row confirm uses a leave (退出) label, not remove", () => {
+  const participants = [participantRow({ userId: "me", nickname: "我", role: "member" })];
+  const html = renderMemberManageModalHtml({
+    locale: "en-US",
+    open: true,
+    participants,
+    candidates: [],
+    viewerUserId: "me",
+    viewerIsOwner: false,
+    removeConfirmUserId: "me"
+  });
+  assert.match(html, /Leave this chat\?/u);
+  assert.doesNotMatch(html, /Remove them\?/u);
+});
+
+test("renderMemberManageModalHtml add list marks the busy candidate and disables the rest (one at a time)", () => {
+  const candidates = [
+    { userId: "c1", nickname: "候选甲" },
+    { userId: "c2", nickname: "候选乙" }
+  ];
+  const html = renderMemberManageModalHtml({
+    locale: "zh-CN",
+    open: true,
+    participants: [],
+    candidates,
+    viewerUserId: "me",
+    viewerIsOwner: false,
+    addBusyUserId: "c1"
+  });
+  assert.match(html, /data-wb-chat-member-add="c1"/u);
+  assert.match(html, /data-wb-chat-member-add="c2"/u);
+  assert.match(html, /添加中/u);
+  // 任一加人在飞时所有候选一并禁用（防并发）。
+  assert.equal((html.match(/wh-wb-member-add-row[^>]*disabled/gu) ?? []).length, 2);
+});
+
+test("renderMemberManageModalHtml shows an empty state when everyone is already in the chat", () => {
+  const html = renderMemberManageModalHtml({
+    locale: "en-US",
+    open: false,
+    participants: [participantRow({ userId: "me", nickname: "我", role: "owner" })],
+    candidates: [],
+    viewerUserId: "me",
+    viewerIsOwner: true
+  });
+  assert.match(html, /Everyone in the workspace is already here/u);
+  assert.match(html, /data-open="false"/u);
+});
+
+test("memberManageErrorText maps known participant error codes and falls back for the unknown", () => {
+  assert.match(memberManageErrorText({ status: 409, code: "conversation_participant_cap" }, "zh-CN"), /满了/u);
+  assert.match(memberManageErrorText({ status: 403, code: "conversation_remove_forbidden" }, "en-US"), /owner/u);
+  assert.match(memberManageErrorText({ status: 409, code: "conversation_last_participant" }, "zh-CN"), /最后一名/u);
+  // 未识别的 code 落通用重试文案，不暴露内部错误码。
+  const fallback = memberManageErrorText({ status: 500, code: "boom_internal" }, "zh-CN");
+  assert.doesNotMatch(fallback, /boom_internal/u);
+  assert.match(fallback, /再试/u);
+  assert.match(memberManageErrorText(undefined, "en-US"), /try again/u);
+});
+
+test("renderConversationLeftHtml shows a terminal 'you left' state in both locales", () => {
+  assert.match(renderConversationLeftHtml("zh-CN"), /你已退出/u);
+  // 撇号被 escapeHtml 转成 &#39;，断言避开它只匹配无歧义子串。
+  assert.match(renderConversationLeftHtml("en-US"), /left this chat/u);
 });
 
 // R13 批 G1（小群）：senderLabel/renderMessageHtml 按 sender_user_id 查 ctx.members（一个纯 Map 查找，
