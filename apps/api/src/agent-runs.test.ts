@@ -3610,9 +3610,11 @@ test("agent run enqueue opens user_forbidden escalation for human-reserved worke
   assert.equal(auditLogs.rows.some((row) => row.action === "escalation.opened"), true);
   // findings[#tenancy]：全局 escalation 发到按工作区隔离的话题 `all:<workspaceId>`（不再裸 'all'），
   // 与订阅侧对齐。单租户下解析到默认工作区。
+  // #5：升级除工作项流 + 工作区全局流外，也发到升级目标人（认领人优先、否则提交人=userId）的 per-user /me 流。
   assert.deepEqual(events.map((event) => [event.topic, event.type]), [
     [`workitem:${workItemId}`, "escalation.opened"],
-    [`all:${runtimeSettings.auth.defaultWorkspaceId}`, "escalation.opened"]
+    [`all:${runtimeSettings.auth.defaultWorkspaceId}`, "escalation.opened"],
+    [`user:${userId}`, "escalation.opened"]
   ]);
   assert.equal(workItems.rows.get(workItemId)?.status, "pm_mode");
   assert.equal(workItems.rows.get(workItemId)?.mode, "pm");
@@ -3665,7 +3667,42 @@ test("human-reserved guard audits and publishes escalation in the work item's wo
   assert.equal(audit?.orgId, runtimeSettings.auth.defaultOrgId);
   assert.deepEqual(events.map((event) => [event.topic, event.type]), [
     [`workitem:${workItemId}`, "escalation.opened"],
-    [`all:${nonDefaultWorkspaceId}`, "escalation.opened"]
+    [`all:${nonDefaultWorkspaceId}`, "escalation.opened"],
+    // #5：目标人取该工作项的当前真人负责人（提交人=userId，认领人为空）。
+    [`user:${userId}`, "escalation.opened"]
+  ]);
+});
+
+test("#5 human-reserved escalation routes the per-user /me publish to the claimant when the work item is claimed", async () => {
+  const runtimeSettings = settings();
+  const claimantUserId = "10000000-0000-4000-8000-000000000099";
+  assert.notEqual(claimantUserId, userId);
+  const workItems = new MemoryWorkItems([
+    humanReservedWorkItemRow({ claimedByUserId: claimantUserId })
+  ]);
+  const decisions = new MemoryAiDecisions();
+  const auditLogs = new MemoryAuditLogs();
+  const events: { topic: string; type: string }[] = [];
+  const guard = createHumanReservedGuard({
+    workItems,
+    decisions,
+    auditLogs,
+    settings: runtimeSettings,
+    now: () => now,
+    bus: {
+      async publish(topic, type) {
+        events.push({ topic, type });
+      }
+    }
+  });
+
+  const result = await guard({ workItemId, actorId: userId, mode: "worker", settings: runtimeSettings });
+  assert.equal(result?.trigger, "user_forbidden");
+  // 目标人：认领人优先于提交人——被转人接手的正是当前认领人。
+  assert.deepEqual(events.map((event) => [event.topic, event.type]), [
+    [`workitem:${workItemId}`, "escalation.opened"],
+    [`all:${runtimeSettings.auth.defaultWorkspaceId}`, "escalation.opened"],
+    [`user:${claimantUserId}`, "escalation.opened"]
   ]);
 });
 
@@ -3787,7 +3824,9 @@ test("R9.7 high-risk legal, finance, identity, and publishing tool calls are sto
     assert.equal(auditLogs.rows.some((row) => row.action === "escalation.opened"), true);
     assert.deepEqual(events.map((event) => [event.topic, event.type]), [
       [`workitem:${caseWorkItemId}`, "escalation.opened"],
-      [`all:${runtimeSettings.auth.defaultWorkspaceId}`, "escalation.opened"]
+      [`all:${runtimeSettings.auth.defaultWorkspaceId}`, "escalation.opened"],
+      // #5：高风险工具调用升级同样发到目标人（提交人=userId）的 per-user /me 流。
+      [`user:${userId}`, "escalation.opened"]
     ]);
   }
 });
@@ -3971,10 +4010,12 @@ test("R9.7 high-risk tool calls create durable evidence instead of reusing a gen
     tool_id: "finance_payment_release",
     risk_category: "finance"
   });
-  assert.equal(events.length, 4, "the tool-specific escalation is published alongside the existing generic card");
-  assert.deepEqual(events.slice(2).map((event) => [event.topic, event.type, event.data.source, event.data.tool_id]), [
+  // #5：每次升级现发 3 条（工作项流 + 工作区全局流 + 目标人 per-user /me 流）——generic + tool-call 各 3 条 = 6。
+  assert.equal(events.length, 6, "the tool-specific escalation is published alongside the existing generic card");
+  assert.deepEqual(events.slice(3).map((event) => [event.topic, event.type, event.data.source, event.data.tool_id]), [
     [`workitem:${workItemId}`, "escalation.opened", "human_reserved_tool_call", "finance_payment_release"],
-    [`all:${runtimeSettings.auth.defaultWorkspaceId}`, "escalation.opened", "human_reserved_tool_call", "finance_payment_release"]
+    [`all:${runtimeSettings.auth.defaultWorkspaceId}`, "escalation.opened", "human_reserved_tool_call", "finance_payment_release"],
+    [`user:${userId}`, "escalation.opened", "human_reserved_tool_call", "finance_payment_release"]
   ]);
 });
 

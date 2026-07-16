@@ -328,6 +328,15 @@ export function createHumanReservedGuard(options: HumanReservedGuardOptions = {}
         topics.all(workItem.workspaceId ?? settings.auth.defaultWorkspaceId).topic,
         eventPayload
       );
+      // #5（决策推送链）：除工作项流 + 工作区全局流外，把升级也发到"升级目标人"的 per-user /me 流——
+      // 否则被转人处理的负责人（普通成员，非 admin，收不到 all:<workspace> 全局流）只有恰好停在该工作项详情页
+      // 才收得到，桌面工作台的「待拍板」角标/收件箱无从实时感知这条升级。目标人取窄：人工预留升级本就没有
+      // suggested_lead，落到该工作项的当前真人负责人——认领人优先、否则提交人，正是这次要接手 pm 模式的人。
+      // 该人对自己的工作项恒有读权限，故这条升级也确实会出现在其 GET /attention 队列里，两处口径一致。
+      const escalationTargetUserId = workItem.claimedByUserId ?? workItem.submitterUserId;
+      if (escalationTargetUserId) {
+        await publishEscalationEvent(bus, topics.user(escalationTargetUserId).topic, eventPayload);
+      }
     }
 
     return {
