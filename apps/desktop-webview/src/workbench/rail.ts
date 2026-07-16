@@ -459,31 +459,125 @@ export function sortRosterMembers(
     .map((entry) => entry.member);
 }
 
+// R17 批 G1（#14 邀请 / #15 成员移出）：roster「管理」模式与「邀请成员」入口的瞬态 UI 状态。canManage=
+// 当前 viewer 是工作区 admin/owner（viewer.membership_role !== 'member'）时才渲这两个入口；invite 是内联
+// 生成邀请的表单态（无未过期邀请列表读端点，只做生成 + 复制 token）。都是 additive optional——不传时
+// renderRosterGroupHtml 行为与本批之前逐字一致（既有测试/调用点零回归）。
+export type RosterInviteUiState = {
+  open: boolean;
+  email: string;
+  submitting: boolean;
+  note?: string | undefined;
+  error?: string | undefined;
+};
+
 // 成员 roster 分组：workspace_members（工作台 VM 已带，工作区级、cap 100）+ 在线绿点，点成员行 → 头像
 // 资料卡（data-wb-open-profile，popover 在 shell 根委托打开）。VM 还没就绪（没选任何项目）时不渲染这个
 // 分组（成员列表来自 VM，没有 VM 就没有可靠成员数据，不摆空壳）。
+// R17 批 G1：admin/owner 额外渲「管理」开关 + 「邀请成员」入口——管理模式下每行末尾出「移出」（走
+// DELETE /api/workspace/members/:userId，带内联确认 + 忙态 + 刷新）。
 export function renderRosterGroupHtml(input: {
   members: readonly WorkbenchMemberVM[];
   currentUserId: string | undefined;
   onlineUserIds: ReadonlySet<string>;
   locale: Locale;
+  canManage?: boolean;
+  manage?: boolean;
+  busyUserId?: string | undefined;
+  confirmRemoveUserId?: string | undefined;
+  manageError?: string | undefined;
+  invite?: RosterInviteUiState | undefined;
 }): string {
   const zh = input.locale === "zh-CN";
   const sorted = sortRosterMembers(input.members, input.currentUserId, input.onlineUserIds);
   if (sorted.length === 0) {
     return "";
   }
+  const canManage = input.canManage ?? false;
+  const manage = canManage && (input.manage ?? false);
   const rows = sorted
     .map((member) => {
       const online = input.onlineUserIds.has(member.user_id);
-      return `<button type="button" class="wh-wb-roster-row" data-wb-open-profile="${escapeHtml(member.user_id)}">${avatarTileHtml(
-        { label: member.nickname, id: member.user_id, ...(online ? { online: true } : {}) }
-      )}<span class="wh-wb-roster-name">${escapeHtml(member.nickname)}</span></button>`;
+      const tile = avatarTileHtml({ label: member.nickname, id: member.user_id, ...(online ? { online: true } : {}) });
+      const profileBtn = `<button type="button" class="wh-wb-roster-row" data-wb-open-profile="${escapeHtml(
+        member.user_id
+      )}">${tile}<span class="wh-wb-roster-name">${escapeHtml(member.nickname)}</span></button>`;
+      if (!manage) {
+        return profileBtn;
+      }
+      const busy = input.busyUserId === member.user_id;
+      let control: string;
+      if (input.confirmRemoveUserId === member.user_id) {
+        control = `<span class="wh-wb-roster-confirm">${zh ? "确认移出？" : "Remove?"}<button type="button" class="wh-wb-roster-confirm-yes" data-wb-remove-member-confirm="${escapeHtml(
+          member.user_id
+        )}"${busy ? " disabled" : ""}>${busy ? (zh ? "移出中…" : "Removing…") : zh ? "确认" : "Yes"}</button><button type="button" class="wh-wb-roster-confirm-no" data-wb-remove-member-cancel${busy ? " disabled" : ""}>${zh ? "取消" : "No"}</button></span>`;
+      } else {
+        control = `<button type="button" class="wh-wb-roster-remove" data-wb-remove-member="${escapeHtml(
+          member.user_id
+        )}"${busy ? " disabled" : ""}>${zh ? "移出" : "Remove"}</button>`;
+      }
+      return `<div class="wh-wb-roster-row-wrap">${profileBtn}${control}</div>`;
     })
     .join("");
-  return `<div class="wh-wb-rail-group"><div class="wh-wb-rail-head wh-wb-rail-head--flush">${
-    zh ? "成员" : "Members"
-  }</div>${rows}</div>`;
+  let head = `<div class="wh-wb-rail-head wh-wb-rail-head--flush">${zh ? "成员" : "Members"}`;
+  if (canManage) {
+    head += `<span class="wh-wb-roster-actions"><button type="button" class="wh-wb-roster-action" data-wb-roster-manage-toggle>${
+      manage ? (zh ? "完成" : "Done") : zh ? "管理" : "Manage"
+    }</button><button type="button" class="wh-wb-roster-action" data-wb-invite-member>${zh ? "邀请" : "Invite"}</button></span>`;
+  }
+  head += "</div>";
+  const inviteBox = canManage && input.invite?.open ? renderRosterInviteBoxHtml(input.invite, zh) : "";
+  const errorLine =
+    manage && input.manageError ? `<p class="wh-wb-roster-invite-error">${escapeHtml(input.manageError)}</p>` : "";
+  return `<div class="wh-wb-rail-group">${head}${inviteBox}${errorLine}${rows}</div>`;
+}
+
+// R17 批 G1（#14 邀请成员）：内联邀请表单——填被邀请人邮箱 → 生成邀请（POST /invites）→ 一次性 token
+// 复制到剪贴板 + 提示。没有未过期邀请列表读端点，故只做生成 + 复制，不渲列表（见交付报告）。
+function renderRosterInviteBoxHtml(state: RosterInviteUiState, zh: boolean): string {
+  const note = state.error
+    ? `<p class="wh-wb-roster-invite-error">${escapeHtml(state.error)}</p>`
+    : state.note
+      ? `<p class="wh-wb-roster-invite-note">${escapeHtml(state.note)}</p>`
+      : "";
+  return `<div class="wh-wb-roster-invite">
+    <input class="wh-wb-roster-invite-input" type="email" inputmode="email" maxlength="320" placeholder="${
+      zh ? "被邀请人邮箱" : "Invitee email"
+    }" data-wb-invite-email value="${escapeHtml(state.email)}"${state.submitting ? " disabled" : ""} />
+    <div class="wh-wb-roster-invite-actions">
+      <button type="button" class="wh-wb-roster-action" data-wb-invite-cancel${state.submitting ? " disabled" : ""}>${
+        zh ? "取消" : "Cancel"
+      }</button>
+      <button type="button" class="wh-wb-roster-action wh-wb-roster-action--primary" data-wb-invite-submit${
+        state.submitting || !state.email.trim() ? " disabled" : ""
+      }>${state.submitting ? (zh ? "生成中…" : "Creating…") : zh ? "生成邀请" : "Create invite"}</button>
+    </div>
+    ${note}
+  </div>`;
+}
+
+// R17 批 G1（#14 邀请成员）：POST /api/auth/invites {email} → 201 { invite_id, token, email, expires_at }。
+// 一次性明文 token 只返回这一次（服务端只存 hash）。管理员据 token 自行拼 out-of-band 链接分发（无 SMTP）。
+// 仅 admin + 密码模式可用（否则 403/404，UI 诚实透传服务端错误）。
+export function createWorkspaceInvite(
+  client: Pick<WorkbenchRailApiClient, "request">,
+  email: string
+): Promise<{ invite_id: string; token: string; email: string; expires_at: string }> {
+  return client.request<{ invite_id: string; token: string; email: string; expires_at: string }>("/api/auth/invites", {
+    method: "POST",
+    body: JSON.stringify({ email })
+  });
+}
+
+// R17 批 G1（#15 成员移出）：DELETE /api/workspace/members/:userId → 200 { removed_user_id }。仅 admin/
+// owner 可调（否则 403）；不能移出自己/最后一名 admin（409）。UI 诚实透传服务端错误。
+export function removeWorkspaceMember(
+  client: Pick<WorkbenchRailApiClient, "request">,
+  userId: string
+): Promise<{ removed_user_id: string }> {
+  return client.request<{ removed_user_id: string }>(`/api/workspace/members/${encodeURIComponent(userId)}`, {
+    method: "DELETE"
+  });
 }
 
 // 私聊分组：actor 参与的 DM 会话（GET /api/dm/list → store.dmList）。每行 = 对方头像（在线绿点）+ 对方
@@ -545,8 +639,8 @@ export function renderNewProjectModalHtml(input: {
       />
       <p class="wh-wb-modal-note">${
         zh
-          ? "创建即自动配好：<b>主区群聊（全员可聊）· 项目网盘 · Cuu 入驻 · 模式默认「分级自动」</b>。成员邀请和权限之后在项目设置里调。"
-          : "Creating it wires up <b>a team chat, project drive, and Cuu — mode defaults to \"tiered auto\"</b>. Invite members and adjust permissions later in project settings."
+          ? "创建即自动配好：<b>主区群聊（全员可聊）· 项目网盘 · Cuu 入驻 · 模式默认「分级自动」</b>。项目成员在设置的「成员」分区查看，加人/退群在各协同会话里管理。"
+          : "Creating it wires up <b>a team chat, project drive, and Cuu — mode defaults to \"tiered auto\"</b>. See project members under Settings; add or remove people inside each collab chat."
       }</p>
       ${input.error ? `<p class="wh-wb-modal-error">${escapeHtml(input.error)}</p>` : ""}
       <div class="wh-wb-modal-actions">
@@ -788,6 +882,13 @@ export function mountWorkbenchRail(
   let renameModalTitle = "";
   let renameSubmitting = false;
   let renameError: string | undefined;
+  // R17 批 G1（#14 邀请 / #15 成员移出）：roster 管理模式 + 邀请表单的瞬态本地状态（同其它弹窗，不进
+  // 共享 store——只有这个组件的渲染读它）。canManage 由 VM 的 viewer.membership_role 派生（见 render）。
+  let rosterManage = false;
+  let rosterBusyUserId: string | undefined;
+  let rosterConfirmRemoveUserId: string | undefined;
+  let rosterManageError: string | undefined;
+  let rosterInvite: RosterInviteUiState = { open: false, email: "", submitting: false };
   let disposed = false;
 
   const render = () => {
@@ -826,7 +927,14 @@ export function mountWorkbenchRail(
       members: state.vm?.workspace_members.items ?? [],
       currentUserId,
       onlineUserIds,
-      locale: input.locale
+      locale: input.locale,
+      // R17 批 G1：只有工作区 admin/owner 才渲「管理」/「邀请」入口（viewer.membership_role !== 'member'）。
+      canManage: state.vm ? state.vm.viewer.membership_role !== "member" : false,
+      manage: rosterManage,
+      busyUserId: rosterBusyUserId,
+      confirmRemoveUserId: rosterConfirmRemoveUserId,
+      manageError: rosterManageError,
+      invite: rosterInvite
     })}${renderDmGroupHtml({
       dmList: state.dmList,
       currentUserId,
@@ -1223,6 +1331,137 @@ export function mountWorkbenchRail(
     }
   };
 
+  // ── R17 批 G1（#14 邀请 / #15 成员移出）：roster 管理/邀请处理器 ────────────────────────────
+  const toggleRosterManage = () => {
+    rosterManage = !rosterManage;
+    rosterConfirmRemoveUserId = undefined;
+    rosterManageError = undefined;
+    render();
+  };
+
+  const openRosterInvite = () => {
+    rosterInvite = { open: true, email: "", submitting: false };
+    render();
+    const emailInput = container.querySelector<HTMLInputElement>("[data-wb-invite-email]");
+    emailInput?.focus();
+  };
+
+  const closeRosterInvite = () => {
+    rosterInvite = { open: false, email: "", submitting: false };
+    render();
+  };
+
+  const submitRosterInvite = async () => {
+    if (rosterInvite.submitting) {
+      return;
+    }
+    const email = rosterInvite.email.trim();
+    if (!email) {
+      return;
+    }
+    rosterInvite = { ...rosterInvite, submitting: true, note: undefined, error: undefined };
+    render();
+    try {
+      const result = await createWorkspaceInvite(input.client, email);
+      if (disposed) {
+        return;
+      }
+      // 一次性 token 复制到剪贴板——复制失败就把 token 落进提示文案，绝不让它丢失（只能取回这一次）。
+      let copied = false;
+      try {
+        await globalThis.navigator?.clipboard?.writeText(result.token);
+        copied = true;
+      } catch {
+        copied = false;
+      }
+      const zh = input.locale === "zh-CN";
+      const note = copied
+        ? zh
+          ? `已生成邀请并复制 token，发给 ${result.email} 即可加入。`
+          : `Invite created and token copied — send it to ${result.email}.`
+        : zh
+          ? `邀请 token（复制失败，请手动复制）：${result.token}`
+          : `Invite token (copy failed, copy manually): ${result.token}`;
+      rosterInvite = { open: true, email: "", submitting: false, note };
+      render();
+    } catch (error) {
+      if (disposed) {
+        return;
+      }
+      rosterInvite = {
+        ...rosterInvite,
+        submitting: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : input.locale === "zh-CN"
+              ? "生成邀请失败，请重试"
+              : "Couldn't create the invite — retry"
+      };
+      render();
+    }
+  };
+
+  const requestRemoveMember = (userId: string) => {
+    rosterConfirmRemoveUserId = userId;
+    rosterManageError = undefined;
+    render();
+  };
+
+  const cancelRemoveMember = () => {
+    rosterConfirmRemoveUserId = undefined;
+    render();
+  };
+
+  const confirmRemoveMember = async (userId: string) => {
+    if (rosterBusyUserId) {
+      return;
+    }
+    rosterBusyUserId = userId;
+    rosterManageError = undefined;
+    render();
+    try {
+      await removeWorkspaceMember(input.client, userId);
+      if (disposed) {
+        return;
+      }
+      rosterBusyUserId = undefined;
+      rosterConfirmRemoveUserId = undefined;
+      // 乐观就地从 roster 剔除（工作区花名册在 VM 里，无独立轻量重拉端点）——顺带把计数对齐。
+      const vm = input.store.getState().vm;
+      if (vm) {
+        const items = vm.workspace_members.items.filter((member) => member.user_id !== userId);
+        if (items.length !== vm.workspace_members.items.length) {
+          input.store.setState({
+            vm: {
+              ...vm,
+              workspace_members: {
+                ...vm.workspace_members,
+                items,
+                total: Math.max(items.length, vm.workspace_members.total - 1),
+                returned: items.length
+              }
+            }
+          });
+        }
+      }
+      render();
+    } catch (error) {
+      if (disposed) {
+        return;
+      }
+      rosterBusyUserId = undefined;
+      rosterConfirmRemoveUserId = undefined;
+      rosterManageError =
+        error instanceof Error
+          ? error.message
+          : input.locale === "zh-CN"
+            ? "移出失败，请重试"
+            : "Couldn't remove them — retry";
+      render();
+    }
+  };
+
   container.addEventListener("click", (event) => {
     if (!(event.target instanceof HTMLElement)) {
       return;
@@ -1298,6 +1537,37 @@ export function mountWorkbenchRail(
     }
     if (target.closest("[data-wb-open-project-settings]")) {
       input.onOpenProjectSettings?.();
+      return;
+    }
+    // R17 批 G1（#14 邀请 / #15 成员移出）：roster 管理模式切换 / 邀请入口 / 移出确认。
+    if (target.closest("[data-wb-roster-manage-toggle]")) {
+      toggleRosterManage();
+      return;
+    }
+    if (target.closest("[data-wb-invite-member]")) {
+      openRosterInvite();
+      return;
+    }
+    if (target.closest("[data-wb-invite-cancel]")) {
+      closeRosterInvite();
+      return;
+    }
+    if (target.closest("[data-wb-invite-submit]")) {
+      void submitRosterInvite();
+      return;
+    }
+    const removeConfirmBtn = target.closest<HTMLElement>("[data-wb-remove-member-confirm]");
+    if (removeConfirmBtn?.dataset.wbRemoveMemberConfirm) {
+      void confirmRemoveMember(removeConfirmBtn.dataset.wbRemoveMemberConfirm);
+      return;
+    }
+    if (target.closest("[data-wb-remove-member-cancel]")) {
+      cancelRemoveMember();
+      return;
+    }
+    const removeBtn = target.closest<HTMLElement>("[data-wb-remove-member]");
+    if (removeBtn?.dataset.wbRemoveMember) {
+      requestRemoveMember(removeBtn.dataset.wbRemoveMember);
       return;
     }
     // 取消按钮，或直接点在遮罩背景上（不是点在模态框内容里冒泡出来的）都关闭模态。
@@ -1400,6 +1670,22 @@ export function mountWorkbenchRail(
         const end = renameInput.value.length;
         try {
           renameInput.setSelectionRange(end, end);
+        } catch {
+          // ignore: some input rendering modes reject setSelectionRange.
+        }
+      }
+      return;
+    }
+    // R17 批 G1（#14 邀请成员）：邀请邮箱输入——重渲后把焦点/光标位置还给输入框（innerHTML 重建会丢焦点）。
+    if (target instanceof HTMLInputElement && target.matches("[data-wb-invite-email]")) {
+      rosterInvite = { ...rosterInvite, email: target.value };
+      render();
+      const emailInput = container.querySelector<HTMLInputElement>("[data-wb-invite-email]");
+      if (emailInput) {
+        emailInput.focus();
+        const end = emailInput.value.length;
+        try {
+          emailInput.setSelectionRange(end, end);
         } catch {
           // ignore: some input rendering modes reject setSelectionRange.
         }

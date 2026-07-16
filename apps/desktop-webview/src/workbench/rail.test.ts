@@ -989,6 +989,70 @@ test("renderRosterGroupHtml renders nothing when there is no VM member data (no 
   assert.equal(renderRosterGroupHtml({ members: [], currentUserId: undefined, onlineUserIds: new Set(), locale: "zh-CN" }), "");
 });
 
+// ── R17 批 G1（#14 邀请 / #15 成员移出）roster 管理入口 ─────────────────────────────────────
+
+test("renderRosterGroupHtml shows Manage + Invite entries only when the viewer canManage", () => {
+  const base = {
+    members: [rosterMember(R15_SELF, "阿曼", true), rosterMember(R15_PEER_A, "甲", false)],
+    currentUserId: R15_SELF,
+    onlineUserIds: new Set<string>(),
+    locale: "zh-CN" as const
+  };
+  const plain = renderRosterGroupHtml(base);
+  assert.doesNotMatch(plain, /data-wb-roster-manage-toggle/);
+  assert.doesNotMatch(plain, /data-wb-invite-member/);
+
+  const managed = renderRosterGroupHtml({ ...base, canManage: true });
+  assert.match(managed, /data-wb-roster-manage-toggle/);
+  assert.match(managed, /data-wb-invite-member/);
+  // 未进管理模式时不渲移出按钮。
+  assert.doesNotMatch(managed, /data-wb-remove-member=/);
+});
+
+test("renderRosterGroupHtml in manage mode renders a per-member Remove control (never for self)", () => {
+  const html = renderRosterGroupHtml({
+    members: [rosterMember(R15_SELF, "阿曼", true), rosterMember(R15_PEER_A, "甲", false)],
+    currentUserId: R15_SELF,
+    onlineUserIds: new Set<string>(),
+    locale: "zh-CN",
+    canManage: true,
+    manage: true
+  });
+  assert.match(html, /data-wb-remove-member="90000000-0000-4000-8000-0000000000a1"/);
+  // 自己不在 roster，所以永远没有对自己的移出控件。
+  assert.doesNotMatch(html, /data-wb-remove-member="90000000-0000-4000-8000-000000000009"/);
+});
+
+test("renderRosterGroupHtml shows an inline confirm (with busy state) for the pending removal target", () => {
+  const html = renderRosterGroupHtml({
+    members: [rosterMember(R15_SELF, "阿曼", true), rosterMember(R15_PEER_A, "甲", false)],
+    currentUserId: R15_SELF,
+    onlineUserIds: new Set<string>(),
+    locale: "zh-CN",
+    canManage: true,
+    manage: true,
+    confirmRemoveUserId: R15_PEER_A,
+    busyUserId: R15_PEER_A
+  });
+  assert.match(html, /data-wb-remove-member-confirm="90000000-0000-4000-8000-0000000000a1"/);
+  assert.match(html, /移出中…/);
+});
+
+test("renderRosterGroupHtml renders the invite box only when canManage and invite.open", () => {
+  const base = {
+    members: [rosterMember(R15_SELF, "阿曼", true), rosterMember(R15_PEER_A, "甲", false)],
+    currentUserId: R15_SELF,
+    onlineUserIds: new Set<string>(),
+    locale: "zh-CN" as const,
+    invite: { open: true, email: "new@team.dev", submitting: false }
+  };
+  // canManage 缺省 → 邀请框不渲（即便 invite.open）。
+  assert.doesNotMatch(renderRosterGroupHtml(base), /data-wb-invite-email/);
+  const managed = renderRosterGroupHtml({ ...base, canManage: true });
+  assert.match(managed, /data-wb-invite-email/);
+  assert.match(managed, /value="new@team.dev"/);
+});
+
 test("renderDmGroupHtml lists DMs with peer name + open hook, marking the active one", () => {
   const html = renderDmGroupHtml({
     dmList: [r15DmItem("30000000-0000-4000-8000-000000000031", R15_PEER_A, "甲")],
