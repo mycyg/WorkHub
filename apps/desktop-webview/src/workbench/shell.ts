@@ -442,6 +442,34 @@ export function mountWorkbenchShell(
     store.setState({ centerTab: "editor", editorTarget: { ...target, returnTab } });
   }
 
+  // R16-W3：聊天产出卡「在编辑器中查看」——卡只带 proposal_id（无具体文件路径），这里拉一次提议详情，
+  // 取第一个可逐行对照的文本变更（target_ref.path + machine_summary.generated_content_md）开编辑器；
+  // 没有可对照的文本变更就诚实退回右栏提议详情，绝不开一个空编辑器。
+  const openProposalInEditor = (proposalId: string) => {
+    void input.client.pages
+      .proposal(proposalId, { locale: input.locale })
+      .then((detail) => {
+        if (disposed) {
+          return;
+        }
+        const change = detail.manifest.changes.find(
+          (item) => item.target_ref.path && typeof item.machine_summary?.generated_content_md === "string"
+        );
+        const path = change?.target_ref.path;
+        if (path) {
+          openEditor({ proposalId, path, filename: path.split("/").filter(Boolean).pop() ?? path });
+        } else {
+          proposalPanel.showForProposal({ proposalId });
+        }
+      })
+      .catch(() => {
+        if (disposed) {
+          return;
+        }
+        proposalPanel.showForProposal({ proposalId });
+      });
+  };
+
   // ── R15 批 B（人对人私聊）：DM 的「按会话直开」路径 ─────────────────────────────────────
   // DM 容器项目对项目树/工作台 VM 全线围栏（findWorkbenchAccess fail-closed），DM 会话不经 selectProject
   // /workbench VM（那条路径会去拉容器 VM 拿到 404）。改走：store.dmList 里那条 DmListItemVM 本身就带了
@@ -872,6 +900,8 @@ export function mountWorkbenchShell(
         onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId }),
         onApproveProposal: approveProposalFromChat,
         onRequestChangesProposal: requestChangesProposalFromChat,
+        // R16-W3：产出卡「在编辑器中查看」→ 中栏变更编辑器。
+        onOpenProposalInEditor: openProposalInEditor,
         // R15 批 I2（决策 digest 卡）：聊天流里的 pending_digest 卡「打开收件箱」→ 切中栏到 I1 收件箱视图。
         onOpenInbox: openInbox
       });
@@ -1018,7 +1048,9 @@ export function mountWorkbenchShell(
           // R15 批 A6：产出卡内联「批准」/「打回」——批准复用 reviewProposalWithoutMerge，打回打开右栏聚焦理由。
           onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId }),
           onApproveProposal: approveProposalFromChat,
-          onRequestChangesProposal: requestChangesProposalFromChat
+          onRequestChangesProposal: requestChangesProposalFromChat,
+          // R16-W3：产出卡「在编辑器中查看」→ 中栏变更编辑器。
+          onOpenProposalInEditor: openProposalInEditor
         });
         chatMountKey = key;
         // R13 批 P1：情境面板默认态挂军团三区——会话情境存在时（这里是刚挂上这个协同会话的 chat 视图）
@@ -1071,6 +1103,8 @@ export function mountWorkbenchShell(
         onOpenProposal: (proposalId) => proposalPanel.showForProposal({ proposalId }),
         onApproveProposal: approveProposalFromChat,
         onRequestChangesProposal: requestChangesProposalFromChat,
+        // R16-W3：产出卡「在编辑器中查看」→ 中栏变更编辑器（拉提议详情取第一个可对照文本变更）。
+        onOpenProposalInEditor: openProposalInEditor,
         // R15 批 I2（决策 digest 卡）：聊天流里的 pending_digest 卡「打开收件箱」→ 切中栏到 I1 收件箱视图。
         onOpenInbox: openInbox
       });

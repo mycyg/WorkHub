@@ -790,6 +790,10 @@ export const workbenchCss = [
   ".wh-wb-chat-actioncard-open{font:600 12px/1 var(--ds-font);padding:6px 12px;border-radius:99px;" +
     "border:1px solid var(--ds-glass-border);background:var(--ds-glass);color:var(--ds-accent);cursor:pointer}",
   ".wh-wb-chat-actioncard-open:hover{background:var(--ds-glass-strong)}",
+  // R16-W3：「在编辑器中查看」轻链——比「看提议」更轻（无边框透明底 accent 文字），不抢主动作。
+  ".wh-wb-chat-actioncard-editorlink{font:600 12px/1 var(--ds-font);padding:6px 8px;border-radius:99px;" +
+    "border:0;background:transparent;color:var(--ds-accent);cursor:pointer}",
+  ".wh-wb-chat-actioncard-editorlink:hover{background:var(--ds-glass);text-decoration:underline}",
   // R15 批 A6：产出卡内联批准/打回——批准是主按钮（accent 实底白字），打回是轻按钮（打开右栏写理由，
   // 不内联提交）。忙态/落定后置灰不可点，同 spotlight markBusy 手感。
   ".wh-wb-chat-actioncard-approve{font:600 12px/1 var(--ds-font);padding:6px 12px;border-radius:99px;border:1px solid var(--ds-accent);" +

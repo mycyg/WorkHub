@@ -555,6 +555,29 @@ test("renderMessageHtml renders a proposal_opened system_event as a deliverable 
   assert.doesNotMatch(html, /已处理 · 见落定消息/u);
 });
 
+test("renderMessageHtml renders the 'open in editor' link only with a host callback and diffstat present", () => {
+  const openedWithDiff = baseMessage({
+    kind: "system_event",
+    sender_type: "system",
+    sender_user_id: null,
+    content: { event: "proposal_opened", proposal_id: "proposal-9", run_id: "run-9", title: "隐私区文案", adds: 18, dels: 11 }
+  });
+  // 宿主接了编辑器回调 + 卡带 diffstat → 渲「在编辑器中查看」轻链。
+  const withLink = renderMessageHtml(openedWithDiff, { ...ctxWith([]), proposalEditorLinkEnabled: true });
+  assert.match(withLink, /<button[^>]*data-wb-chat-open-editor="proposal-9"[^>]*>/u);
+  assert.match(withLink, /在编辑器中查看/u);
+  // 没接回调 → 不渲轻链（不摆假入口）。
+  assert.doesNotMatch(renderMessageHtml(openedWithDiff, ctxWith([])), /data-wb-chat-open-editor/u);
+  // 接了回调但卡没有 diffstat（无 diff 数据）→ 不渲轻链。
+  const noDiff = baseMessage({
+    kind: "system_event",
+    sender_type: "system",
+    sender_user_id: null,
+    content: { event: "proposal_opened", proposal_id: "proposal-9", run_id: "run-9", title: "隐私区文案" }
+  });
+  assert.doesNotMatch(renderMessageHtml(noDiff, { ...ctxWith([]), proposalEditorLinkEnabled: true }), /data-wb-chat-open-editor/u);
+});
+
 test("renderMessageHtml renders a proposal_auto_merged system_event with the full-autonomy badge instead of the pending-review note", () => {
   const html = renderMessageHtml(
     baseMessage({

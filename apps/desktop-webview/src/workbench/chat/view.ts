@@ -487,6 +487,9 @@ export function mountChatView(
     onApproveProposal?: (proposalId: string) => Promise<void>;
     // R15 批 A6：产出卡「打回」按钮点击——打回要写理由，不内联提交，宿主打开右栏并聚焦理由输入。可选。
     onRequestChangesProposal?: (proposalId: string) => void;
+    // R16-W3：产出卡「在编辑器中查看」轻链点击——宿主（shell.ts）在中栏打开变更编辑器（逐句 tracked
+    // changes）。可选：不接（测试/其它宿主）时轻链不渲（proposalEditorLinkEnabled 据此判定）。
+    onOpenProposalInEditor?: (proposalId: string) => void;
     // R15 批 I2（决策 digest 卡）：pending_digest 卡「打开收件箱」按钮点击——宿主（shell.ts）切中栏到 I1
     // 的决策收件箱视图（centerTab='inbox'）。可选：不接（测试/其它宿主）时 digest 卡不渲这个按钮。
     onOpenInbox?: () => void;
@@ -680,7 +683,9 @@ export function mountChatView(
     busyProposalIds,
     proposalActionErrors,
     // R15 批 I2（决策 digest 卡）：只有宿主接了 onOpenInbox 才在 pending_digest 卡上渲「打开收件箱」按钮。
-    pendingDigestInboxEnabled: input.onOpenInbox !== undefined
+    pendingDigestInboxEnabled: input.onOpenInbox !== undefined,
+    // R16-W3：只有宿主接了 onOpenProposalInEditor 才在产出卡上渲「在编辑器中查看」轻链（且卡带 diffstat）。
+    proposalEditorLinkEnabled: input.onOpenProposalInEditor !== undefined
   });
 
   container.innerHTML = `<div class="wh-wb-chat">
@@ -3092,6 +3097,12 @@ export function mountChatView(
     const denyProposalBtn = target.closest<HTMLElement>("[data-wb-chat-deny-proposal]");
     if (denyProposalBtn?.dataset.wbChatDenyProposal) {
       input.onRequestChangesProposal?.(denyProposalBtn.dataset.wbChatDenyProposal);
+      return;
+    }
+    // R16-W3：产出卡「在编辑器中查看」→ 宿主在中栏打开变更编辑器（抛给 shell，同 onOpenProposal 模式）。
+    const openEditorBtn = target.closest<HTMLElement>("[data-wb-chat-open-editor]");
+    if (openEditorBtn?.dataset.wbChatOpenEditor) {
+      input.onOpenProposalInEditor?.(openEditorBtn.dataset.wbChatOpenEditor);
       return;
     }
     const clarifyOptionBtn = target.closest<HTMLElement>("[data-wb-chat-clarify-option]");
