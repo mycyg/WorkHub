@@ -162,6 +162,10 @@ export const deliverableTargetKinds = [
 export const deliverableTargetKindSchema = z.enum(deliverableTargetKinds);
 export type DeliverableTargetKind = z.infer<typeof deliverableTargetKindSchema>;
 
+// R17 #25（零生产者事件类型核查）：下列标 @deprecated 的成员在生产路径从未被 publish（仅测试夹具/
+// schema/UI 消费分支引用）。**枚举值一律保留**——eventTypeSchema 由 Object.values 生成，删值会破坏
+// contracts 兼容面（旧事件反序列化、跨版本客户端）。仅打注释示警，别新写生产者时误用；确要恢复某类，
+// 补上真实 publish 点后移除本注释即可。核查依据见 06-gap-fix-plan.md G2 行。
 export const eventTypes = {
   agentRunStarted: "agent_run.started",
   agentRunStep: "agent_run.step",
@@ -170,6 +174,7 @@ export const eventTypes = {
   agentRunFailed: "agent_run.failed",
   agentRunEscalated: "agent_run.escalated",
   sessionQuestion: "session.question",
+  /** @deprecated 无生产者：`confidence.scored` 只作审计动作名与 toCuuState 映射存在，从不作为 SSE 事件 publish。 */
   confidenceScored: "confidence.scored",
   escalationOpened: "escalation.opened",
   permissionAsk: "permission.ask",
@@ -181,9 +186,12 @@ export const eventTypes = {
   proposalMerged: "proposal.merged",
   revisionFedback: "revision.fedback",
   stepSnapshot: "step.snapshot",
+  /** @deprecated 无生产者：喂 knowledge_result AttentionItem 死分支，仅 toAttentionItem/toCuuState/夹具引用，无 publish。 */
   knowledgeEvidenceReady: "knowledge.evidence.ready",
+  /** @deprecated 无生产者：仅 toCuuState 映射引用（兄弟 sync.conflict 有真实生产者，本类无）。 */
   syncProgress: "sync.progress",
   syncConflict: "sync.conflict",
+  /** @deprecated 无生产者也无消费者：仅 gold-path 夹具引用，整类惰性。 */
   usageRecorded: "usage.recorded",
   budgetWarning: "budget.warning",
   budgetExhausted: "budget.exhausted",
@@ -199,11 +207,16 @@ export const eventTypes = {
   // R15 批 cuu-toggle：会话级 Cuu 参与开关翻转后广播（PATCH /cuu），让其它开着这个会话的客户端头部
   // 同步开关状态，不必等下次重挂才看到。
   conversationCuuUpdated: "conversation.cuu.updated",
+  /** @deprecated 无生产者也无消费者：仅 r12-workbench 契约测试快照枚举，工具流实际走 conversation.tool.* 之外的既有事件。 */
   conversationToolBegin: "conversation.tool.begin",
+  /** @deprecated 无生产者也无消费者：同上，仅契约测试引用。 */
   conversationToolOutputDelta: "conversation.tool.output_delta",
+  /** @deprecated 无生产者也无消费者：同上，仅契约测试引用。 */
   conversationToolEnd: "conversation.tool.end",
   conversationActionCardUpdated: "conversation.action_card.updated",
+  /** @deprecated 无生产者也无消费者：仅契约测试引用。 */
   conversationItemStarted: "conversation.item.started",
+  /** @deprecated 无生产者也无消费者：仅契约测试引用。 */
   conversationItemCompleted: "conversation.item.completed",
   conversationPresenceTyping: "conversation.presence.typing",
   // R14 CHAT 批（presence-observer 工包）：观察者 worker 真正调用 LLM 分析某会话消息窗之前发布的

@@ -1,11 +1,13 @@
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import {
   approvalRequests,
   conversationMessages,
+  escalationEvents,
   projectConversations,
   projects,
+  proposals,
   workItems
 } from "../schema/index.js";
 
@@ -23,27 +25,62 @@ export type PendingApprovalDigestRow = {
   oldestPendingAt: Date;
 };
 
-// §A3：每个「有待办审批」的项目一行——待审批数 + 最久一条的创建时刻 + main 会话 id。个人空间
-// （is_personal=true）、已归档/已删除、无待办审批的项目天然不出现（不是巡检时跳过，是压根不产出候选）。
-// 只统计挂在工作项上、进而挂在项目上的 pending 审批（work_item_id 为空的审批无法归到项目，不计）。
+// §A3 + R17 #18：每个「有待拍板决策」的项目一行——待决总数 + 最久一条的创建时刻 + main 会话 id。
+//
+// ── 计数口径（务必读懂再改）──────────────────────────────────────────────────────────────
+// digest 卡是项目 main 会话里的一张项目级卡片（该项目所有成员都看得到），数的是「这个项目里还有几件事
+// 在等人拍板」。此前只数 approval_requests，系统性小于决策收件箱（GET /attention）真实条数——收件箱聚合
+// 四源：升级(含预算) + 偏好冲突 + 审批 + 待评审提议。这里把 digest 扩到与收件箱**同源**，但按「能否归到本
+// 项目」取窄：
+//   * 审批 approval_requests(status='pending')      —— 经 work_item 挂到项目。（work_item_id 为空的个人
+//     审批无法归属项目，天然不计——正是"跨项目个人审批不塞进项目 digest"。）
+//   * 升级 escalation_events(resolved_at is null)    —— 经 work_item 挂到项目；含预算类升级(trigger/handoff)。
+//   * 待评审提议 proposals(status in opened/reviewed) —— 经 work_item 挂到项目。
+//   * 偏好冲突 memory conflicts 不计——它是 per-user（agent 记忆冲突）、无 work_item/project 归属，塞进项目
+//     卡会张冠李戴。这与收件箱按 actor 可见性过滤的差异是**有意的**：digest 是项目级计数（全员一张卡），
+//     不做 per-actor 收窄，故它数的是"本项目待决总数"而非"某个人能看到的条数"。
+// 个人空间(is_personal)、已归档/已删除、无任何待决的项目天然不出现（压根不产出候选）。
 export async function listProjectsWithPendingApprovals(
   db: WorkHubDb,
   input: { limit: number }
 ): Promise<PendingApprovalDigestRow[]> {
+  // 三源统一成 (projectId, createdAt) 的行流后再按项目聚合——每一行是一件待决。work_items.project_id
+  // NOT NULL，故 count(projectId)=count(*)=真实待决条数；min(createdAt) 取全部三源里最久的一条。
+  const pendingDecisions = db
+    .select({ projectId: workItems.projectId, createdAt: approvalRequests.createdAt })
+    .from(approvalRequests)
+    .innerJoin(workItems, and(eq(workItems.id, approvalRequests.workItemId), isNull(workItems.deletedAt)))
+    .where(eq(approvalRequests.status, "pending"))
+    .unionAll(
+      db
+        .select({ projectId: workItems.projectId, createdAt: escalationEvents.createdAt })
+        .from(escalationEvents)
+        .innerJoin(workItems, and(eq(workItems.id, escalationEvents.workItemId), isNull(workItems.deletedAt)))
+        .where(isNull(escalationEvents.resolvedAt))
+    )
+    .unionAll(
+      db
+        .select({ projectId: workItems.projectId, createdAt: proposals.createdAt })
+        .from(proposals)
+        .innerJoin(workItems, and(eq(workItems.id, proposals.workItemId), isNull(workItems.deletedAt)))
+        // 待评审 = opened/reviewed（与 GET /attention 的 proposals 源、listReviewable 同口径）。
+        .where(inArray(proposals.status, ["opened", "reviewed"]))
+    )
+    .as("pending_decisions");
+
   const rows = await db
     .select({
       projectId: projects.id,
       workspaceId: projects.workspaceId,
       mainConversationId: projectConversations.id,
-      pendingCount: sql<number>`count(${approvalRequests.id})::int`,
-      oldestPendingAt: sql<Date>`min(${approvalRequests.createdAt})`
+      pendingCount: sql<number>`count(${pendingDecisions.projectId})::int`,
+      oldestPendingAt: sql<Date>`min(${pendingDecisions.createdAt})`
     })
-    .from(approvalRequests)
-    .innerJoin(workItems, and(eq(workItems.id, approvalRequests.workItemId), isNull(workItems.deletedAt)))
+    .from(pendingDecisions)
     .innerJoin(
       projects,
       and(
-        eq(projects.id, workItems.projectId),
+        eq(projects.id, pendingDecisions.projectId),
         isNull(projects.deletedAt),
         eq(projects.archived, false),
         eq(projects.isPersonal, false)
@@ -57,7 +94,6 @@ export async function listProjectsWithPendingApprovals(
         isNull(projectConversations.deletedAt)
       )
     )
-    .where(eq(approvalRequests.status, "pending"))
     .groupBy(projects.id, projects.workspaceId, projectConversations.id)
     .orderBy(asc(projects.id))
     .limit(input.limit);

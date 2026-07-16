@@ -719,6 +719,79 @@ test("a per-item work-item creation failure escalates only that item and does no
   assert.equal(items[0]?.status, "escalated");
 });
 
+// #4：execute 类派发失败（工作项已建成、enqueue 抛错）时补落真实 escalation_event，让这次失败进决策收件箱、
+// 有恢复入口——对齐 decide 类总会落 ai_decisions 行的语义。同时把工作项推进 escalated、往会话里发一条转人系统提示。
+test("execute dispatch failure after the work item exists opens a real escalation so the failure reaches the decision inbox", async () => {
+  let cardInput: unknown;
+  let escalationInput: unknown;
+  let transitionInput: unknown;
+  let systemNoteInput: unknown;
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate()];
+      },
+      async createOrAppendCard(input) {
+        cardInput = input;
+        return baseDeps().actionCards.createOrAppendCard(input);
+      },
+      async postSystemMessage(input) {
+        systemNoteInput = input;
+        return cardMessageRow({ id: "system-message-escalated", kind: "system_event" });
+      }
+    },
+    workItems: {
+      async createWorkItem(input) {
+        return workItemRow({ id: "work-item-execute-failed", submitterUserId: input.submitterUserId });
+      },
+      async findProjectById() {
+        return projectRow();
+      },
+      async transitionWorkItemStatus(input) {
+        transitionInput = input;
+        return { id: input.workItemId, status: input.to, transitioned: true };
+      }
+    },
+    agentRuns: {
+      async enqueue() {
+        throw new Error("queue is down");
+      }
+    },
+    aiSettings: {
+      async findUserProfileAccessRecord() {
+        return { membershipRole: "member", profile: { workspaceId, userId: assigneeUserId, defaultMode: 3, granularJson: {}, dispatchPolicy: "auto", cuuProactivity: "balanced", modelTierPref: null, createdAt: now, updatedAt: now } as UserAiProfileRow };
+      }
+    },
+    decisions: {
+      async createEscalationEvent(input) {
+        escalationInput = input;
+        return escalationRow();
+      }
+    },
+    client: llmClientReturning({
+      items: [{ kind: "execute", title_md: "重写第三节", confidence: "high", suggested_assignee_nickname: "张三" }]
+    })
+  });
+
+  const result = await createConversationObserverScheduler(deps).tick();
+  assert.equal(result.failed, 0, "a dispatch failure that we recover into an escalation is not a tick-level analysis failure");
+  assert.equal(result.cards_created, 1);
+  const items = (cardInput as { items: Array<Record<string, unknown>> }).items;
+  assert.equal(items[0]?.status, "escalated");
+  assert.equal(items[0]?.workItemId, "work-item-execute-failed", "the item keeps the work-item lineage so the inbox can resolve it");
+  // 真落了一条 escalation（进决策收件箱的驱动数据），指向失败工作项、带负责人与来源溯源。
+  assert.equal((escalationInput as { workItemId: string }).workItemId, "work-item-execute-failed");
+  assert.equal((escalationInput as { trigger: string }).trigger, "unqualified");
+  assert.equal((escalationInput as { suggestedLeadUserId: string }).suggestedLeadUserId, assigneeUserId);
+  assert.equal((escalationInput as { handoffJson: { execute_dispatch_failed?: boolean } }).handoffJson.execute_dispatch_failed, true);
+  // 工作项被推进 escalated（状态诚实反映"在等人"）。
+  assert.equal((transitionInput as { workItemId: string }).workItemId, "work-item-execute-failed");
+  assert.equal((transitionInput as { to: string }).to, "escalated");
+  // 会话里落一条转人系统提示。
+  assert.equal((systemNoteInput as { content: { event?: string } }).content.event, "execute_item_escalated");
+});
+
 // ── tick: decide dispatch ────────────────────────────────────────────────────────────
 
 test("decide items open a pm-mode work item, create an escalation, and post a threaded @-mention", async () => {

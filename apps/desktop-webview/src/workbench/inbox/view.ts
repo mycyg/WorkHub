@@ -23,6 +23,9 @@ export type InboxViewApiClient = AttentionInboxApiClient;
 
 export type InboxViewHandle = {
   dispose: () => void;
+  // #17：宿主（shell.refreshInboxBadge，当 centerTab==='inbox' 时）在角标随 SSE/轮询刷新时同步调这个，
+  // 让开着的收件箱列表随角标一起活——不必切走再切回。
+  refresh: () => void;
 };
 
 export function mountInboxView(
@@ -86,7 +89,7 @@ export function mountInboxView(
     toast(zh ? "这项去主窗口对应能力查看" : "Open this in its capability in the main window", "info");
   };
 
-  const disposeMount = mountAttentionInbox({
+  const mountHandle = mountAttentionInbox({
     client: input.client,
     locale: input.locale,
     body: bodyEl,
@@ -104,11 +107,13 @@ export function mountInboxView(
 
   return {
     dispose: () => {
-      disposeMount();
+      mountHandle.dispose();
       if (toastTimer) {
         clearTimeout(toastTimer);
         toastTimer = undefined;
       }
-    }
+    },
+    // #17：透传共用 mount 的重拉句柄——shell 在角标刷新且中栏正是收件箱时调它同步列表。
+    refresh: () => mountHandle.refresh()
   };
 }

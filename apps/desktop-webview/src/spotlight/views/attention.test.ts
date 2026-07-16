@@ -280,7 +280,7 @@ test("mountAttentionInbox is a decoupled two-window entry: renders the queue and
   } as unknown as AttentionHomeVM;
 
   try {
-    const dispose = mountAttentionInbox({
+    const handle = mountAttentionInbox({
       body: body as unknown as HTMLElement,
       locale: "zh-CN",
       client: {
@@ -314,7 +314,7 @@ test("mountAttentionInbox is a decoupled two-window entry: renders the queue and
     await tick();
 
     assert.deepEqual(opened, [{ view: "proposals", target: { id: "p-1", route: "/proposals/p-1" } }]);
-    dispose();
+    handle.dispose();
   } finally {
     globals.HTMLElement = previousHTMLElement;
   }
