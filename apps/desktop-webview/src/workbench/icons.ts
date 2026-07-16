@@ -33,7 +33,11 @@ export const workbenchIcons = {
   trash: ic('<path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/>'),
   pin: ic('<path d="M9 3h6l-1 6 3 3H7l3-3-1-6Z"/><path d="M12 15v6"/>'),
   // R15 批 E2（项目时间线 / 甘特）：rail 项目行的「时间线」树叶——横向排期条示意（三条错位的甘特条）。
-  timeline: ic('<path d="M4 5h10M4 12h14M4 19h7"/><path d="M14 5v0M18 12v0M11 19v0"/>')
+  timeline: ic('<path d="M4 5h10M4 12h14M4 19h7"/><path d="M14 5v0M18 12v0M11 19v0"/>'),
+  // R16-W1（工作台聊天流升级）：Cuu 消息尾部操作条的「复制」（照 prototype 的重叠方框）；工具活动折叠组
+  // 摘要行的「工具」扳手图标。
+  copy: ic('<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>'),
+  tool: ic('<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.4 2.4-2-2Z"/>')
 } as const;
 
 export type WorkbenchIconKey = keyof typeof workbenchIcons;

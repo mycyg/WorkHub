@@ -1110,6 +1110,152 @@ function renderTombstoneRowHtml(message: ConversationMessageVM, ctx: ChatRenderC
   return `<div class="wh-wb-chat-msg wh-wb-chat-msg--tombstone" data-wb-chat-message-id="${escapeHtml(message.id)}"><div class="wh-wb-chat-tombstone">${escapeHtml(text)}</div></div>`;
 }
 
+// —— R16-W1（工作台聊天流升级）：Cuu 回应的模型归因 pill + 尾部元信息行（复制 · 耗时 · tokens） —— //
+//
+// 后端在 turn 结算时把实际路由到的模型 id / 累计 token / 耗时写进了 Cuu 文字消息的 content（additive
+// optional，见 @workhub/contracts 的 conversationTextContentSchema）。渲染层只在这些字段真的存在时才渲
+// （04 §4 铁律 3：历史消息没有这些字段 → 不显示 pill / 不显示对应元信息，绝不编造）。视觉照 prototype 的
+// .model-pill / .msg-actions：mono 模型 pill + 一行细弱的复制按钮和「Ns · N tokens」。样式贴现有玻璃体系，
+// 沿用 render.ts 既有「行内样式 + design-system CSS 变量」的做法（同澄清追问气泡，不新增 css.ts 规则）。
+
+// 毫秒 → 人读耗时：<10s 保一位小数（3.4s），<60s 取整（42s），更长走「Xm Ys」。
+export function formatTurnElapsed(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) {
+    return "";
+  }
+  const seconds = ms / 1000;
+  if (seconds < 60) {
+    return seconds < 10 ? `${seconds.toFixed(1)}s` : `${Math.round(seconds)}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.round(seconds - minutes * 60);
+  return rest > 0 ? `${minutes}m ${rest}s` : `${minutes}m`;
+}
+
+// token 计数 → 紧凑写法：>=1e6 用 M，>=1000 用 k（一位小数，12.4k），否则原样。
+export function formatTurnTokens(n: number): string {
+  if (!Number.isFinite(n) || n < 0) {
+    return "";
+  }
+  if (n >= 1_000_000) {
+    return `${(n / 1_000_000).toFixed(1)}M`;
+  }
+  if (n >= 1000) {
+    return `${(n / 1000).toFixed(1)}k`;
+  }
+  return `${Math.round(n)}`;
+}
+
+function renderModelPillHtml(model: string): string {
+  const trimmed = model.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return `<span class="wh-wb-chat-model-pill" style="margin-left:6px;font:600 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--wb-cuu);background:var(--wb-cuu-soft);border:1px solid rgba(255,171,94,.35);border-radius:99px;padding:2px 7px;vertical-align:middle">${escapeHtml(trimmed)}</span>`;
+}
+
+// Cuu 文字回应尾部的操作条：复制（现成剪贴板，view.ts 按 message id 取 content.text 写入）+「耗时 · tokens」
+// （只渲真有的那几项）。澄清追问气泡有自己的选项按钮，不挂这条；只对落定的普通文字回应渲染。
+function renderCuuMetaRowHtml(message: Extract<ConversationMessageVM, { kind: "text" }>, ctx: ChatRenderContext): string {
+  const zh = ctx.locale === "zh-CN";
+  const copyLabel = zh ? "复制" : "Copy";
+  const copyBtn = `<button type="button" class="wh-wb-chat-cuu-copy" data-wb-chat-copy="${escapeHtml(message.id)}" aria-label="${copyLabel}" title="${copyLabel}" style="display:inline-flex;padding:3px;border:0;background:transparent;color:var(--ds-ink-faint);border-radius:6px;cursor:pointer">${workbenchIcons.copy}</button>`;
+  const stats: string[] = [];
+  if (typeof message.content.elapsed_ms === "number") {
+    const elapsed = formatTurnElapsed(message.content.elapsed_ms);
+    if (elapsed) {
+      stats.push(elapsed);
+    }
+  }
+  if (typeof message.content.usage_tokens === "number") {
+    const tokens = formatTurnTokens(message.content.usage_tokens);
+    if (tokens) {
+      stats.push(`${tokens} tokens`);
+    }
+  }
+  const statsHtml = stats.length > 0 ? `<span class="wh-wb-chat-cuu-meta-stats">${escapeHtml(stats.join(" · "))}</span>` : "";
+  return `<div class="wh-wb-chat-cuu-meta" style="display:flex;align-items:center;gap:8px;margin-top:6px;color:var(--ds-ink-faint);font:500 11px/1 var(--ds-font)">${copyBtn}${statsHtml}</div>`;
+}
+
+// —— R16-W1（工作台聊天流升级）：工具活动折叠组 —— //
+//
+// 一轮 turn 期间产生的 tool_note 消息（检索网盘/发文件/建工单）在渲染层归组为一条可折叠摘要行
+// 「检索网盘 ×N，发送文件 ×M」（样式照 prototype 的 .fold：细边玻璃条 + chevron），展开=逐条工具行
+// （现状 tool_note 内容）。纯渲染层归组：消息数据不动，仍逐条落库/广播（web 镜像逐条渲染可接受）。
+// 折叠态由 ctx.expandedMessageIds 承载、以「这一组第一条 tool_note 的 id」为键——直接复用 view.ts 既有的
+// data-wb-chat-expand-message / collapse-message 挂钩与状态集合，落定后默认折叠（不在展开集合里）。
+//
+// tool 字段的取值由后端 tryPersistToolNote 写死（services/conversation-turns.ts）：drive_search /
+// send_file_card / create_work_item。这里镜像这三个字面量做人话标签；认不出的 tool 退回中性「工具调用」，
+// 不猜。
+type ToolActivityNote = Extract<ConversationMessageVM, { kind: "tool_note" }>;
+
+const TOOL_ACTIVITY_LABEL: Record<string, { zh: string; en: string; key: string }> = {
+  drive_search: { zh: "检索网盘", en: "Searched drive", key: "search" },
+  send_file_card: { zh: "发送文件", en: "Sent a file", key: "file" },
+  create_work_item: { zh: "建工单", en: "Created a task", key: "task" }
+};
+
+function toolActivityDescriptor(tool: string, zh: boolean): { label: string; key: string } {
+  const known = TOOL_ACTIVITY_LABEL[tool];
+  if (known) {
+    return { label: zh ? known.zh : known.en, key: known.key };
+  }
+  return { label: zh ? "工具调用" : "Tool call", key: "tool" };
+}
+
+function toolActivityToolName(note: ToolActivityNote): string {
+  const tool = note.content["tool"];
+  return typeof tool === "string" && tool.trim() ? tool : "";
+}
+
+export function renderToolActivityGroupHtml(notes: readonly ToolActivityNote[], ctx: ChatRenderContext): string {
+  if (notes.length === 0) {
+    return "";
+  }
+  const zh = ctx.locale === "zh-CN";
+  const groupId = notes[0]!.id;
+  const open = ctx.expandedMessageIds?.has(groupId) ?? false;
+
+  // 摘要行：按 tool 类型聚合计数，保持首次出现顺序（Map 天然保序）。
+  const counts = new Map<string, number>();
+  for (const note of notes) {
+    const tool = toolActivityToolName(note);
+    counts.set(tool, (counts.get(tool) ?? 0) + 1);
+  }
+  const summaryLine = [...counts.entries()]
+    .map(([tool, count]) => `${toolActivityDescriptor(tool, zh).label} ×${count}`)
+    .join(zh ? "，" : ", ");
+
+  const caretRotate = open ? "rotate(90deg)" : "rotate(0deg)";
+  const toggleAttr = open
+    ? `data-wb-chat-collapse-message="${escapeHtml(groupId)}"`
+    : `data-wb-chat-expand-message="${escapeHtml(groupId)}"`;
+  const header =
+    `<button type="button" class="wh-wb-chat-toolgroup-h" ${toggleAttr} aria-expanded="${open}" ` +
+    `style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:6px 11px;border:0;background:transparent;` +
+    `font:600 11.5px/1.3 var(--ds-font);color:var(--ds-ink-muted);cursor:pointer">` +
+    `<span style="display:flex;width:13px;height:13px;color:var(--ds-ink-faint)" aria-hidden="true">${workbenchIcons.tool}</span>` +
+    `<span class="wh-wb-chat-toolgroup-summary">${escapeHtml(summaryLine)}</span>` +
+    `<span class="wh-wb-chat-toolgroup-caret" aria-hidden="true" style="margin-left:auto;display:flex;color:var(--ds-ink-faint);transform:${caretRotate};transition:transform var(--ds-dur-fast,.16s) var(--ds-ease,ease)">${workbenchIcons.chevronRight}</span>` +
+    `</button>`;
+
+  const body = open
+    ? `<div class="wh-wb-chat-toolgroup-body" style="padding:2px 12px 8px 32px;font:500 12px/1.7 var(--ds-font);color:var(--ds-ink-muted)">${notes
+        .map((note) => {
+          const { key } = toolActivityDescriptor(toolActivityToolName(note), zh);
+          const detail = bestEffortNoteText(note.content, zh ? "（一次工具调用）" : "(a tool call)");
+          return `<div class="wh-wb-chat-toolgroup-row" style="display:flex;gap:8px;padding:1px 0"><span class="wh-wb-chat-toolgroup-k" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--ds-ink-faint);flex:0 0 auto">${escapeHtml(
+            key
+          )}</span><span>${escapeHtml(detail)}</span></div>`;
+        })
+        .join("")}</div>`
+    : "";
+
+  const openClass = open ? " wh-wb-chat-toolgroup--open" : "";
+  return `<div class="wh-wb-chat-toolgroup${openClass}" style="max-width:min(600px,88%);margin:0 0 6px 40px;border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-sm,10px);background:var(--ds-glass-quiet);overflow:hidden">${header}${body}</div>`;
+}
+
 export function renderMessageHtml(message: ConversationMessageVM, ctx: ChatRenderContext): string {
   if (message.kind === "system_event") {
     const deliverableEvent = deliverableSystemEventKind(message.content);
@@ -1158,6 +1304,14 @@ export function renderMessageHtml(message: ConversationMessageVM, ctx: ChatRende
       ? `<span class="wh-wb-chat-edited">${ctx.locale === "zh-CN" ? "已编辑" : "edited"}</span>`
       : "";
   const body = editing ? renderMessageEditBoxHtml(message.id, ctx) : messageBodyHtml(message, ctx);
+  // R16-W1：模型归因 pill（Cuu 文字回应，content.model 存在时）+ 尾部元信息行（复制 · 耗时 · tokens）。
+  // 澄清追问气泡有自己的选项按钮，不挂尾部操作条；编辑态下不渲。历史消息没有 model → 不渲 pill。
+  const isCuuTextReply = isCuu && message.kind === "text" && message.content.is_clarifying_question !== true;
+  const modelPill =
+    isCuu && message.kind === "text" && typeof message.content.model === "string"
+      ? renderModelPillHtml(message.content.model)
+      : "";
+  const cuuMetaRow = !editing && isCuuTextReply ? renderCuuMetaRowHtml(message, ctx) : "";
   const reactionRow = editing ? "" : renderReactionRowHtml(message.id, message.reactions, ctx);
   // 编辑态下不渲工具条（正在编辑就不该再点回复/删除/置顶去打断）；删除确认命中时用确认块替换工具条。
   const toolbar = editing
@@ -1173,7 +1327,7 @@ export function renderMessageHtml(message: ConversationMessageVM, ctx: ChatRende
     !editing && ctx.feedbackNoteEditor?.messageId === message.id ? renderMessageFeedbackNoteBoxHtml(message.id, ctx) : "";
   // R13 批 P2：data-wb-chat-message-id——稳定 DOM 锚点，供 dispatch_ask 追赶/引用跳转/置顶跳转/未读
   // 分割线定位反查具体消息节点。
-  return `<div class="${rowClass}" data-wb-chat-message-id="${escapeHtml(message.id)}">${avatar}<div class="wh-wb-chat-bub"><div class="wh-wb-chat-who">${escapeHtml(senderLabel(message, ctx))}<span class="wh-wb-chat-tm">${formatMessageTime(message.created_at, ctx.locale)}</span>${editedLabel}${feedbackBadge}</div>${replyRef}${body}${reactionRow}${feedbackNoteBox}</div>${toolbar}</div>`;
+  return `<div class="${rowClass}" data-wb-chat-message-id="${escapeHtml(message.id)}">${avatar}<div class="wh-wb-chat-bub"><div class="wh-wb-chat-who">${escapeHtml(senderLabel(message, ctx))}${modelPill}<span class="wh-wb-chat-tm">${formatMessageTime(message.created_at, ctx.locale)}</span>${editedLabel}${feedbackBadge}</div>${replyRef}${body}${cuuMetaRow}${reactionRow}${feedbackNoteBox}</div>${toolbar}</div>`;
 }
 
 // —— R14 批 CHAT：置顶条（聊天区顶部可折叠 pin bar；点击跳消息/取消置顶） —— //
