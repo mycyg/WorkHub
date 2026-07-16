@@ -245,9 +245,42 @@ export function mountKanbanView(
       void load();
       return;
     }
+    // #27：清除筛选。
+    if (target.closest("[data-wb-kb-filter-clear]")) {
+      ui = { ...ui, assigneeUserId: undefined, keyword: undefined };
+      render();
+      return;
+    }
     const card = target.closest<HTMLElement>("[data-wb-kb-card]");
     if (card?.dataset.wbKbId) {
       input.onOpenTimelineRow?.(card.dataset.wbKbId);
+    }
+  });
+
+  // #27：负责人下拉切换（纯前端过滤，不重新取数）。
+  container.addEventListener("change", (event) => {
+    if (!(event.target instanceof HTMLSelectElement) || !event.target.closest("[data-wb-kb-filter-assignee]")) {
+      return;
+    }
+    ui = { ...ui, assigneeUserId: event.target.value || undefined };
+    render();
+  });
+
+  // #27：关键词输入（标题/编号）。整窗重渲会重建输入框，重渲后把焦点与光标位置还原回去，避免每敲一下就跳。
+  container.addEventListener("input", (event) => {
+    if (!(event.target instanceof HTMLInputElement) || !event.target.closest("[data-wb-kb-filter-keyword]")) {
+      return;
+    }
+    const caret = event.target.selectionStart;
+    ui = { ...ui, keyword: event.target.value };
+    render();
+    const next = container.querySelector<HTMLInputElement>("[data-wb-kb-filter-keyword]");
+    if (next) {
+      next.focus();
+      if (caret !== null) {
+        const pos = Math.min(caret, next.value.length);
+        next.setSelectionRange(pos, pos);
+      }
     }
   });
 

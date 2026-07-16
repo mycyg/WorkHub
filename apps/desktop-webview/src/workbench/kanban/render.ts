@@ -22,14 +22,61 @@ export type KanbanColumn = "todo" | "doing" | "review" | "done";
 
 // 看板本地 UI 态——由 view.ts 持有，render 只读。busy = 正在派发；notice = 上一次拖拽的人话提示
 // （合法转移的错误，或不合法转移的「该去哪儿办」说明），非空时在看板顶部渲一条可读横幅。
+// R17-G5 #27：assigneeUserId/keyword = 纯前端过滤态（不重新取数）——assigneeUserId 空＝全部，
+// UNASSIGNED_FILTER＝只看未指派；keyword 匹配标题/编号（大小写不敏感）。列计数随过滤更新。
 export type KanbanUiState = {
   busy: boolean;
   notice?: string | undefined;
   noticeTone?: "info" | "error" | undefined;
+  assigneeUserId?: string | undefined;
+  keyword?: string | undefined;
 };
 
 export function emptyKanbanUiState(): KanbanUiState {
   return { busy: false };
+}
+
+// #27：负责人下拉里「只看未指派」的哨兵值（真实 user_id 不会是这个串）。
+export const KANBAN_UNASSIGNED_FILTER = "__unassigned__";
+
+// #27：卡片集合去重出负责人下拉选项（按 label 排序，稳定）。
+export function kanbanAssigneeOptions(items: readonly TimelineWorkItemVM[]): { userId: string; label: string }[] {
+  const map = new Map<string, string>();
+  for (const item of items) {
+    if (item.assignee) {
+      map.set(item.assignee.user_id, item.assignee.label);
+    }
+  }
+  return [...map.entries()]
+    .map(([userId, label]) => ({ userId, label }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+// #27：纯前端过滤——负责人（含「未指派」）+ 关键词（标题/编号）。纯函数，便于单测。
+export function filterKanbanItems(
+  items: readonly TimelineWorkItemVM[],
+  filter: { assigneeUserId?: string | undefined; keyword?: string | undefined }
+): TimelineWorkItemVM[] {
+  const keyword = (filter.keyword ?? "").trim().toLowerCase();
+  return items.filter((item) => {
+    if (filter.assigneeUserId) {
+      if (filter.assigneeUserId === KANBAN_UNASSIGNED_FILTER) {
+        if (item.assignee) {
+          return false;
+        }
+      } else if (item.assignee?.user_id !== filter.assigneeUserId) {
+        return false;
+      }
+    }
+    if (keyword && !`${item.title} ${item.code}`.toLowerCase().includes(keyword)) {
+      return false;
+    }
+    return true;
+  });
+}
+
+export function isKanbanFilterActive(ui: KanbanUiState): boolean {
+  return Boolean(ui.assigneeUserId) || Boolean(ui.keyword && ui.keyword.trim());
 }
 
 const COLUMN_OF_STATUS: Record<WorkItemStatus, KanbanColumn> = {
@@ -246,6 +293,32 @@ export function renderKanbanErrorHtml(locale: Locale): string {
   }</button></div></div>`;
 }
 
+// #27：负责人下拉 + 关键词输入 + 清除按钮（纯前端过滤条）。整个项目没工作项时不渲（无可筛内容）。
+function renderFilterBarHtml(vm: ProjectTimelinePageVM, ui: KanbanUiState, zh: boolean): string {
+  const options = kanbanAssigneeOptions(vm.items);
+  const hasUnassigned = vm.items.some((item) => !item.assignee);
+  const optionHtml = [
+    `<option value=""${!ui.assigneeUserId ? " selected" : ""}>${zh ? "全部负责人" : "All assignees"}</option>`,
+    hasUnassigned
+      ? `<option value="${KANBAN_UNASSIGNED_FILTER}"${ui.assigneeUserId === KANBAN_UNASSIGNED_FILTER ? " selected" : ""}>${zh ? "未指派" : "Unassigned"}</option>`
+      : "",
+    ...options.map(
+      (opt) =>
+        `<option value="${escapeHtml(opt.userId)}"${ui.assigneeUserId === opt.userId ? " selected" : ""}>${escapeHtml(opt.label)}</option>`
+    )
+  ].join("");
+  const clear = isKanbanFilterActive(ui)
+    ? `<button type="button" class="wh-wb-kb-filter-clear" data-wb-kb-filter-clear>${zh ? "清除筛选" : "Clear"}</button>`
+    : "";
+  return `<div class="wh-wb-kb-filters" data-wb-kb-filters>
+    <select class="wh-wb-kb-select" data-wb-kb-filter-assignee aria-label="${zh ? "按负责人筛选" : "Filter by assignee"}">${optionHtml}</select>
+    <input type="search" class="wh-wb-kb-search" data-wb-kb-filter-keyword value="${escapeHtml(ui.keyword ?? "")}" placeholder="${
+      zh ? "搜索标题 / 编号" : "Search title / code"
+    }" aria-label="${zh ? "按关键词筛选" : "Filter by keyword"}" />
+    ${clear}
+  </div>`;
+}
+
 export function renderKanbanHtml(input: {
   vm: ProjectTimelinePageVM;
   locale: Locale;
@@ -254,11 +327,14 @@ export function renderKanbanHtml(input: {
   const { vm, ui } = input;
   const zh = input.locale === "zh-CN";
 
+  const filterActive = isKanbanFilterActive(ui);
+  const filtered = filterActive ? filterKanbanItems(vm.items, ui) : [...vm.items];
+
   const byColumn = new Map<KanbanColumn, TimelineWorkItemVM[]>();
   for (const spec of COLUMNS) {
     byColumn.set(spec.key, []);
   }
-  for (const item of vm.items) {
+  for (const item of filtered) {
     byColumn.get(columnOfStatus(item.status))?.push(item);
   }
 
@@ -266,8 +342,17 @@ export function renderKanbanHtml(input: {
     ? `<div class="wh-wb-kb-notice wh-wb-kb-notice--${ui.noticeTone ?? "info"}">${escapeHtml(ui.notice)}</div>`
     : "";
 
+  // 计数：无过滤照旧「N 个任务」；过滤时显「命中 / 总数」，诚实标已筛选。
+  const total = vm.items.length;
+  const totalHtml = filterActive
+    ? zh
+      ? `${filtered.length} / ${total} 个任务（已筛选）`
+      : `${filtered.length} / ${total} tasks (filtered)`
+    : zh
+      ? `${total} 个任务`
+      : `${total} tasks`;
   const header = `<div class="wh-wb-kb-top">
-    <span class="wh-wb-kb-total">${zh ? `${vm.items.length} 个任务` : `${vm.items.length} tasks`}</span>
+    <span class="wh-wb-kb-total">${totalHtml}</span>
     <span class="wh-wb-kb-hint">${
       zh
         ? "拖「待开工」卡到「进行中」即派 AI 开工；其它移动会说明该去哪儿办"
@@ -288,6 +373,16 @@ export function renderKanbanHtml(input: {
     </div></div>`;
   }
 
+  const filterBar = renderFilterBarHtml(vm, ui, zh);
+
+  // 过滤后一条不剩（但项目本身有任务）——给「无匹配 / 清除筛选」提示，而不是四个空列让人以为没数据。
+  if (filterActive && filtered.length === 0) {
+    return `<div class="wh-wb-kb">${header}${filterBar}${notice}<div class="wh-wb-kb-empty">
+      <h3 class="wh-wb-kb-empty-title">${zh ? "没有匹配的任务" : "No matching tasks"}</h3>
+      <p class="wh-wb-kb-empty-sub">${zh ? "换个负责人或关键词，或清除筛选。" : "Try another assignee or keyword, or clear the filter."}</p>
+    </div></div>`;
+  }
+
   const columns = COLUMNS.map((spec) => renderColumnHtml(spec, byColumn.get(spec.key) ?? [], zh, ui.busy)).join("");
-  return `<div class="wh-wb-kb">${header}${notice}<div class="wh-wb-kb-board">${columns}</div></div>`;
+  return `<div class="wh-wb-kb">${header}${filterBar}${notice}<div class="wh-wb-kb-board">${columns}</div></div>`;
 }

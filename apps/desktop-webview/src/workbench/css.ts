@@ -1169,6 +1169,16 @@ export const workbenchCss = [
   ".wh-wb-kb-top{flex:0 0 auto;display:flex;align-items:baseline;gap:12px;padding:12px 18px 10px;flex-wrap:wrap}",
   ".wh-wb-kb-total{font:700 15px/1.3 var(--ds-font);color:var(--ds-ink)}",
   ".wh-wb-kb-hint{font:500 11.5px/1.4 var(--ds-font);color:var(--ds-ink-faint)}",
+  // R17-G5 #27：看板顶部过滤条（负责人下拉 + 关键词 + 清除）。
+  ".wh-wb-kb-filters{flex:0 0 auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:0 18px 10px}",
+  ".wh-wb-kb-select,.wh-wb-kb-search{font:500 12px/1.3 var(--ds-font);color:var(--ds-ink);background:var(--ds-glass);" +
+    "border:1px solid var(--ds-glass-border);border-radius:8px;padding:6px 10px;height:30px;box-sizing:border-box}",
+  ".wh-wb-kb-select{cursor:pointer;max-width:200px}",
+  ".wh-wb-kb-search{min-width:170px;flex:0 1 240px}",
+  ".wh-wb-kb-select:focus-visible,.wh-wb-kb-search:focus-visible{outline:2px solid var(--ds-accent);outline-offset:1px}",
+  ".wh-wb-kb-filter-clear{font:600 11.5px/1 var(--ds-font);color:var(--ds-ink-muted);background:transparent;" +
+    "border:1px solid var(--ds-glass-border);border-radius:8px;padding:7px 11px;cursor:pointer}",
+  ".wh-wb-kb-filter-clear:hover{background:var(--ds-glass-strong);color:var(--ds-ink)}",
   ".wh-wb-kb-notice{margin:0 18px 8px;padding:8px 12px;border-radius:var(--ds-radius-sm);font:600 12px/1.5 var(--ds-font)}",
   ".wh-wb-kb-notice--info{background:var(--ds-accent-soft);color:var(--ds-accent);border:1px solid rgba(10,132,255,.24)}",
   ".wh-wb-kb-notice--error{background:var(--ds-danger-soft);color:var(--ds-danger);border:1px solid rgba(255,69,58,.24)}",

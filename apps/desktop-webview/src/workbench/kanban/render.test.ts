@@ -6,6 +6,9 @@ import type { ProjectTimelinePageVM, TimelineWorkItemVM } from "@workhub/contrac
 import {
   columnOfStatus,
   emptyKanbanUiState,
+  filterKanbanItems,
+  kanbanAssigneeOptions,
+  KANBAN_UNASSIGNED_FILTER,
   renderKanbanErrorHtml,
   renderKanbanHtml,
   renderKanbanLoadingHtml,
@@ -148,6 +151,64 @@ test("notice banner surfaces a humanized drag message with its tone", () => {
   });
   assert.equal(html.includes("wh-wb-kb-notice--info"), true);
   assert.equal(html.includes("评审是 AI 跑完自动进入的"), true);
+});
+
+// —— R17-G5 #27：负责人 + 关键词纯前端过滤 ——
+test("kanbanAssigneeOptions dedups assignees by user_id and sorts by label", () => {
+  const options = kanbanAssigneeOptions([
+    item({ id: "a", assignee: { user_id: "u2", label: "Bob" } }),
+    item({ id: "b", assignee: { user_id: "u1", label: "Alice" } }),
+    item({ id: "c", assignee: { user_id: "u1", label: "Alice" } }),
+    item({ id: "d" })
+  ]);
+  assert.deepEqual(options, [
+    { userId: "u1", label: "Alice" },
+    { userId: "u2", label: "Bob" }
+  ]);
+});
+
+test("filterKanbanItems narrows by assignee, unassigned sentinel, and keyword (title/code)", () => {
+  const items = [
+    item({ id: "a", code: "WH-A", title: "打通登录", assignee: { user_id: "u1", label: "Alice" } }),
+    item({ id: "b", code: "WH-B", title: "支付回调", assignee: { user_id: "u2", label: "Bob" } }),
+    item({ id: "c", code: "WH-C", title: "登录埋点" })
+  ];
+  assert.deepEqual(filterKanbanItems(items, { assigneeUserId: "u1" }).map((i) => i.id), ["a"]);
+  assert.deepEqual(filterKanbanItems(items, { assigneeUserId: KANBAN_UNASSIGNED_FILTER }).map((i) => i.id), ["c"]);
+  assert.deepEqual(filterKanbanItems(items, { keyword: "登录" }).map((i) => i.id), ["a", "c"]);
+  assert.deepEqual(filterKanbanItems(items, { keyword: "wh-b" }).map((i) => i.id), ["b"]);
+  assert.deepEqual(filterKanbanItems(items, { assigneeUserId: "u1", keyword: "支付" }).map((i) => i.id), []);
+});
+
+test("board renders the filter bar and updates counts under an active filter", () => {
+  const built = renderKanbanHtml({
+    locale: "zh-CN",
+    ui: ui({ assigneeUserId: "u1" }),
+    vm: vm({
+      items: [
+        item({ id: "a", code: "WH-A", status: "spec_ready", assignee: { user_id: "u1", label: "Alice" } }),
+        item({ id: "b", code: "WH-B", status: "ai_working", assignee: { user_id: "u2", label: "Bob" } })
+      ]
+    })
+  });
+  assert.equal(built.includes("data-wb-kb-filter-assignee"), true);
+  assert.equal(built.includes("data-wb-kb-filter-keyword"), true);
+  assert.equal(built.includes("data-wb-kb-filter-clear"), true);
+  // 只剩 u1 的一张卡；总数显示「命中 / 总数（已筛选）」。
+  assert.equal(built.includes('data-wb-kb-id="a"'), true);
+  assert.equal(built.includes('data-wb-kb-id="b"'), false);
+  assert.equal(built.includes("1 / 2 个任务（已筛选）"), true);
+});
+
+test("filter with no matches shows a clear-filter hint instead of four empty columns", () => {
+  const built = renderKanbanHtml({
+    locale: "zh-CN",
+    ui: ui({ keyword: "zzz" }),
+    vm: vm({ items: [item({ id: "a", code: "WH-A", title: "打通登录", status: "spec_ready" })] })
+  });
+  assert.equal(built.includes("没有匹配的任务"), true);
+  assert.equal(built.includes("data-wb-kb-filter-keyword"), true);
+  assert.equal(built.includes("wh-wb-kb-board"), false);
 });
 
 // —— 状态机映射（resolveKanbanDrop）：唯一合法转移 = 待开工→进行中 = 派发；其余弹回 ——
