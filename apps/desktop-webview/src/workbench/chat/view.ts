@@ -20,6 +20,7 @@ import type {
   AiMode,
   ConversationKind,
   ConversationMessageVM,
+  ConversationParticipantsVM,
   ConversationReactionKey,
   Notification
 } from "@workhub/contracts";
@@ -48,6 +49,8 @@ import {
   patchMyAiMode,
   pinConversationMessage,
   pingConversationTyping,
+  postConversationParticipant,
+  deleteConversationParticipant,
   putActionCardItemFeedback,
   putConversationMessageFeedback,
   removeConversationReaction,
@@ -66,6 +69,7 @@ import { pickDispatchAskCatchupNotification, renderDispatchAskCatchupBannerHtml 
 import {
   parseIncomingActionCardUpdated,
   parseIncomingConversationCuuUpdated,
+  parseIncomingConversationParticipantsUpdated,
   parseIncomingMessageCreated,
   parseIncomingMessageDelta,
   parseIncomingMessageUpdated,
@@ -95,13 +99,17 @@ import {
 } from "./read-state.js";
 import {
   membersById,
+  memberManageCandidates,
+  memberManageErrorText,
   modePatchFailedText,
   reassignPickerMemberIds,
   renderChatEmptyStateHtml,
   renderComposerHtml,
   renderConnectionBannerHtml,
   renderConversationAccessDeniedHtml,
+  renderConversationLeftHtml,
   renderCuuToggleHtml,
+  renderMemberManageModalHtml,
   renderCuuTurnErrorHtml,
   renderCuuTurnPendingHtml,
   renderDaySeparatorHtml,
@@ -130,6 +138,7 @@ import {
   type ComposerAttachmentChip,
   type ConnectionBannerState,
   type LoadEarlierState,
+  type MemberManageParticipantRow,
   type MentionPickerFile,
   type MentionPickerMember,
   type PendingOutgoingMessage,
@@ -655,6 +664,29 @@ export function mountChatView(
   let otherMemberIds = input.members.map((member) => member.user_id).filter((id) => id !== input.currentUserId);
   const memberUserIds = input.members.map((member) => member.user_id);
 
+  // R17 批 G1（群成员管理）：只有非 DM 的 collab 会话才渲加人/退群/移出（main=全员语义、DM=2 人不变量，
+  // 服务端各自 409；前端这里就不摆入口，04 §4 铁律 3）。isDm 缺省 undefined 视为非 DM——普通协同群 shell.ts
+  // 不传 isDm（见 shell.ts 的 collab 挂载点），恰好落在这条闸内。main 由 conversationKind 挡在外面。
+  const canManageMembers = input.conversationKind === "collab" && input.isDm !== true;
+  // 这条会话的真实参与者集合（GET /participants 拉回，加人/退群/移出后就地更新，SSE
+  // conversation.participants.updated 触发重拉）——带 role（owner/member），据此判断当前查看者是不是群主。
+  let conversationParticipants: MemberManageParticipantRow[] = [];
+  // 成员管理面板的瞬态 UI 状态（都不落库，重挂视图自然清空）：
+  //  - memberManageOpen：面板是否打开（成员条「成员」/「加人」按钮开、关闭/点遮罩背景/退群成功关）；
+  //  - memberAddBusyUserId：正在飞的加人候选 id（markBusy——该行「添加中…」，其余候选一并禁用防并发）；
+  //  - memberAddError：加人失败的温和行内提示（cap/非成员/权限），下一次加人前清掉；
+  //  - memberRemoveConfirmUserId：当前展开行内确认的参与者 id（一次一行）；
+  //  - memberRemoveBusyUserId：正在飞的删除 id（markBusy）；memberRemoveError：删除/退群失败提示。
+  let memberManageOpen = false;
+  let memberAddBusyUserId: string | undefined;
+  let memberAddError: string | undefined;
+  let memberRemoveConfirmUserId: string | undefined;
+  let memberRemoveBusyUserId: string | undefined;
+  let memberRemoveError: string | undefined;
+  // #16 退群成功（self_left）后的终态——本人已不再可见这条会话，中栏改渲「你已退出」（见 renderScroll/
+  // renderHead/renderComposerChrome 顶部的 leftConversation 早退），SSE 也停掉，等用户切走自然重挂。
+  let leftConversation = false;
+
   const membersMap = membersById(input.members);
   const renderCtx = (): ChatRenderContext => ({
     locale: input.locale,
@@ -732,6 +764,11 @@ export function mountChatView(
   }
 
   function renderHead(): void {
+    // R17 批 G1（#16 退群）：自己退出后头部收成空——不再渲成员条/开关（会话对本人已不可见）。
+    if (leftConversation) {
+      headEl!.innerHTML = "";
+      return;
+    }
     let headBarHtml: string;
     if (input.isDm) {
       // DM：会话头显示对方昵称 + 在线点（对方 = 成员集合里非本人那一位）。
@@ -743,7 +780,13 @@ export function mountChatView(
         locale: input.locale
       });
     } else {
-      headBarHtml = renderMemberBarHtml({ members: input.members, locale: input.locale, onlineUserIds });
+      // R17 批 G1：非 DM 的 collab 成员条追加「成员」「加人」两个入口按钮（manage）；main/DM 不给。
+      headBarHtml = renderMemberBarHtml({
+        members: input.members,
+        locale: input.locale,
+        onlineUserIds,
+        ...(canManageMembers ? { manage: true } : {})
+      });
     }
     // R15 批 cuu-toggle：main 一律不渲这个开关（主区的 Cuu 参与语义不一样，包括个人空间单聊——保持
     // "main 一律不渲"这一条简单心智模型，不额外特判个人空间，同服务端 updateCuuEnabled 的取舍对称）；
@@ -752,10 +795,35 @@ export function mountChatView(
       input.conversationKind === "collab"
         ? renderCuuToggleHtml({ enabled: cuuEnabled, busy: cuuToggleBusy, locale: input.locale })
         : "";
-    headEl!.innerHTML = headBarHtml + toggleHtml;
+    // R17 批 G1（群成员管理面板）：仅非 DM 的 collab 会话渲染这个弹层（position:fixed，不影响成员条 flex
+    // 布局）——始终在 DOM 里、由 data-open 控制显隐（同 rail.ts 建群弹窗的既有取舍），memberManageOpen 等
+    // 瞬态状态跨 renderHead 重渲（含 presence 30s 轮询触发的重渲）不丢，因为都是闭包变量。
+    const manageModalHtml = canManageMembers
+      ? renderMemberManageModalHtml({
+          locale: input.locale,
+          open: memberManageOpen,
+          participants: conversationParticipants,
+          candidates: memberManageCandidates(input.members, new Set(conversationParticipants.map((row) => row.userId))),
+          viewerUserId: input.currentUserId,
+          viewerIsOwner: viewerIsConversationOwner(),
+          addBusyUserId: memberAddBusyUserId,
+          addError: memberAddError,
+          removeConfirmUserId: memberRemoveConfirmUserId,
+          removeBusyUserId: memberRemoveBusyUserId,
+          removeError: memberRemoveError
+        })
+      : "";
+    headEl!.innerHTML = headBarHtml + toggleHtml + manageModalHtml;
     hydrateAvatarPhotos(headEl!);
   }
   renderHead();
+
+  // R17 批 G1（#16 移出）：当前查看者是不是这条会话的群主（owner）——决定别人那行能不能渲「移出」控件。
+  // 参与者集合还没拉到（conversationParticipants 为空）时返回 false：诚实地不摆移出控件，等 loadParticipants
+  // 拉回真实角色后重渲（服务端 access.participantRole 才是权威，前端这里只是不摆点了会被 403 拒的按钮）。
+  function viewerIsConversationOwner(): boolean {
+    return conversationParticipants.some((row) => row.userId === input.currentUserId && row.role === "owner");
+  }
 
   // R15 批 cuu-toggle：cuuEnabled 翻转后的统一收尾——重算 isCollabConversation、重渲头部开关 + 依赖它的
   // composer 模式 chip（renderComposerChrome 内部按 isCollabConversation 决定要不要渲模式 chip；
@@ -804,6 +872,141 @@ export function mountChatView(
         cuuToggleBusy = false;
         renderHead();
       });
+  }
+
+  // —— R17 批 G1（群成员管理 · #1 加人 / #16 退群·移出） —— //
+
+  // 加人/退群/移出的 HTTP 响应回来的权威参与者集合（POST /participants 回 { added, participants }；
+  // GET /participants 回同款 { scope, participants }）——就地替换本地参与者快照 + otherMemberIds（已读 N/M
+  // 分母），重渲成员条 + 滚动区。scope 不是 "participants"（理论上非 collab 才会，这里到不了）时只重渲头部。
+  function applyParticipantsVM(vm: ConversationParticipantsVM): void {
+    if (vm.scope !== "participants") {
+      renderHead();
+      return;
+    }
+    conversationParticipants = vm.participants.map((row) => ({
+      userId: row.user_id,
+      nickname: row.nickname,
+      role: row.role
+    }));
+    otherMemberIds = otherParticipantUserIds(vm.participants, input.currentUserId);
+    renderHead();
+    renderScroll();
+  }
+
+  function openMemberManage(): void {
+    if (!canManageMembers) {
+      return;
+    }
+    memberManageOpen = true;
+    memberAddError = undefined;
+    memberRemoveError = undefined;
+    memberRemoveConfirmUserId = undefined;
+    renderHead();
+  }
+
+  function closeMemberManage(): void {
+    memberManageOpen = false;
+    memberRemoveConfirmUserId = undefined;
+    memberAddError = undefined;
+    memberRemoveError = undefined;
+    renderHead();
+  }
+
+  // #16：点「退出/移出」→ 展开行内确认（不弹 window.confirm，同 R14 批 CHAT 删除二次确认的既有手感）。
+  function openRemoveConfirm(userId: string): void {
+    memberRemoveConfirmUserId = userId;
+    memberRemoveError = undefined;
+    renderHead();
+  }
+
+  function cancelRemoveConfirm(): void {
+    memberRemoveConfirmUserId = undefined;
+    renderHead();
+  }
+
+  // #1 加人：点一个候选加一个（markBusy——飞行中该行「添加中…」+ 其余候选一并禁用，见渲染层 addDisabled）。
+  // 成功即用响应里刷新后的完整参与者列表就地替换；失败落温和行内提示（cap/非成员/权限），不弹阻断。
+  function addMember(userId: string): void {
+    if (!canManageMembers || memberAddBusyUserId !== undefined) {
+      return;
+    }
+    memberAddBusyUserId = userId;
+    memberAddError = undefined;
+    renderHead();
+    postConversationParticipant(input.client, input.conversationId, userId)
+      .then((result) => {
+        if (disposed) {
+          return;
+        }
+        memberAddBusyUserId = undefined;
+        applyParticipantsVM(result.participants);
+      })
+      .catch((error) => {
+        if (disposed) {
+          return;
+        }
+        memberAddBusyUserId = undefined;
+        memberAddError = memberManageErrorText(
+          error instanceof WorkHubApiError ? { status: error.status, code: error.code } : undefined,
+          input.locale
+        );
+        renderHead();
+      });
+  }
+
+  // #16 退群/移出：行内确认的「退出/移出」被点后发 DELETE。self_left=true（自己退群，含 owner 退群触发继任）
+  // → 切到「你已退出」终态；否则（owner 移出别人）就地把这个人从参与者集合去掉并重渲。失败落温和行内提示。
+  function removeMember(userId: string): void {
+    if (!canManageMembers || memberRemoveBusyUserId !== undefined) {
+      return;
+    }
+    memberRemoveBusyUserId = userId;
+    memberRemoveError = undefined;
+    renderHead();
+    deleteConversationParticipant(input.client, input.conversationId, userId)
+      .then((result) => {
+        if (disposed) {
+          return;
+        }
+        memberRemoveBusyUserId = undefined;
+        memberRemoveConfirmUserId = undefined;
+        if (result.self_left) {
+          enterLeftConversationTerminalState();
+          return;
+        }
+        conversationParticipants = conversationParticipants.filter((row) => row.userId !== result.removed_user_id);
+        otherMemberIds = otherMemberIds.filter((id) => id !== result.removed_user_id);
+        renderHead();
+        renderScroll();
+      })
+      .catch((error) => {
+        if (disposed) {
+          return;
+        }
+        memberRemoveBusyUserId = undefined;
+        memberRemoveError = memberManageErrorText(
+          error instanceof WorkHubApiError ? { status: error.status, code: error.code } : undefined,
+          input.locale
+        );
+        renderHead();
+      });
+  }
+
+  // 自己退出（或被别的客户端移出，见 SSE 分支）后的终态收尾：停 SSE、关面板、把中栏/头部/输入区都切到
+  // 「你已退出」态。least-surprising——桌面 shell 没有给 chat 视图「退出后回到哪」的回调（见 mountChatView
+  // input 形状），就地告诉用户已退出，切走即自然重挂。
+  function enterLeftConversationTerminalState(): void {
+    if (leftConversation) {
+      return;
+    }
+    leftConversation = true;
+    memberManageOpen = false;
+    streamHandle?.close();
+    streamHandle = undefined;
+    renderHead();
+    renderScroll();
+    renderComposerChrome();
   }
 
   function textareaEl(): HTMLTextAreaElement | null {
@@ -1040,6 +1243,12 @@ export function mountChatView(
   // 合并后不管触发源是 loadOlderHistory / reaction 回流 / turn delta，不贴底时都做同一套补偿。
   function renderScroll(): void {
     const el = scrollEl!;
+    // R17 批 G1（#16 退群）：自己退出后中栏改渲「你已退出」终态——早于历史加载态判定（会话对本人已不可见，
+    // 不该再渲消息流/加载态）。
+    if (leftConversation) {
+      el.innerHTML = renderConversationLeftHtml(input.locale);
+      return;
+    }
     const wasNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
     const beforeHeight = el.scrollHeight;
     const beforeTop = el.scrollTop;
@@ -1162,6 +1371,12 @@ export function mountChatView(
   // 重建整个 composer chrome（attachments 行/send 禁用态变化时才需要）——重建前后原样保留 textarea
   // 的当前值/光标/焦点，innerHTML 重建本身会把它们清空（rail.ts 的新建项目输入框踩过同一个坑）。
   function renderComposerChrome(): void {
+    // R17 批 G1（#16 退群）：自己退出后清空输入区——不能再往已退出的会话里发消息（同 renderHead/renderScroll
+    // 的 leftConversation 早退）。
+    if (leftConversation) {
+      composerWrapEl!.innerHTML = "";
+      return;
+    }
     const previousTa = textareaEl();
     const savedValue = previousTa?.value ?? draftFallback;
     const savedStart = previousTa?.selectionStart ?? savedValue.length;
@@ -1371,7 +1586,15 @@ export function mountChatView(
       if (disposed || result.scope !== "participants") {
         return;
       }
+      // R17 批 G1：留住完整参与者集合（带 role）——成员管理面板的名单 + 加人候选 + 「移出」权限判定都靠它，
+      // 不再像旧版只算 otherMemberIds 就把列表丢掉。renderHead 一并重渲（成员条按钮/面板随真实名单更新）。
+      conversationParticipants = result.participants.map((row) => ({
+        userId: row.user_id,
+        nickname: row.nickname,
+        role: row.role
+      }));
       otherMemberIds = otherParticipantUserIds(result.participants, input.currentUserId);
+      renderHead();
       renderScroll();
     } catch {
       // best-effort：拉不到就保持挂载时算的降级分母（workspace_members），不重试轰炸（同
@@ -2357,6 +2580,21 @@ export function mountChatView(
         const cuuUpdate = parseIncomingConversationCuuUpdated(event.data, input.conversationId);
         if (cuuUpdate !== undefined) {
           applyCuuEnabledChange(cuuUpdate);
+          return;
+        }
+        // R17 批 G1（群成员管理）：conversation.participants.updated——别的客户端加/退/移了成员。镜像
+        // cuu.updated 的接线（只带增量信号、不带全量列表）：按需重拉一次 GET /participants，更新参与者名单 +
+        // otherMemberIds（已读 N/M 分母）+ 重渲成员条/面板。若这条增量说的是「本人被移出」，直接切「你已退出」
+        // 终态（owner 从另一台客户端把我踢了）——不必再去重拉一个我已经看不到的会话（那次 GET 会 404）。不缓冲：
+        // 只是参与者状态同步，不产生消息/气泡。main/DM 收不到这个事件（服务端只在非 DM collab 广播），
+        // loadParticipants 内部也短路，双保险。
+        const participantsUpdate = parseIncomingConversationParticipantsUpdated(event.data, input.conversationId);
+        if (participantsUpdate !== undefined) {
+          if (participantsUpdate.change === "removed" && participantsUpdate.userId === input.currentUserId) {
+            enterLeftConversationTerminalState();
+            return;
+          }
+          void loadParticipants();
           return;
         }
         // R14 批 CHAT：conversation.observer.analyzing（瞬态指示灯）——不缓冲（渲在独立指示行区域，不进
@@ -3455,8 +3693,40 @@ export function mountChatView(
     if (!(event.target instanceof HTMLElement)) {
       return;
     }
-    if (event.target.closest("[data-wb-chat-cuu-toggle]")) {
+    const target = event.target;
+    if (target.closest("[data-wb-chat-cuu-toggle]")) {
       toggleCuuParticipation();
+      return;
+    }
+    // R17 批 G1（群成员管理）：成员条「成员」/「加人」入口、面板关闭/点遮罩背景关闭、加人候选、退群/移出
+    // 的行内确认——都是 headEl 内的委托监听（成员管理面板随 renderHead() 整块重渲，绑元素上的监听器会丢）。
+    if (target.closest("[data-wb-chat-member-manage-open]") || target.closest("[data-wb-chat-member-add-open]")) {
+      openMemberManage();
+      return;
+    }
+    // 点遮罩背景（不是点到面板本体）也关——hasAttribute 判定命中的是遮罩层本身，同 rail.ts 建群弹窗的取舍。
+    if (target.closest("[data-wb-chat-member-manage-close]") || target.hasAttribute("data-wb-chat-member-manage-overlay")) {
+      closeMemberManage();
+      return;
+    }
+    const addEl = target.closest<HTMLElement>("[data-wb-chat-member-add]");
+    if (addEl?.dataset.wbChatMemberAdd) {
+      addMember(addEl.dataset.wbChatMemberAdd);
+      return;
+    }
+    const removeOpenEl = target.closest<HTMLElement>("[data-wb-chat-member-remove-open]");
+    if (removeOpenEl?.dataset.wbChatMemberRemoveOpen) {
+      openRemoveConfirm(removeOpenEl.dataset.wbChatMemberRemoveOpen);
+      return;
+    }
+    if (target.closest("[data-wb-chat-member-remove-cancel]")) {
+      cancelRemoveConfirm();
+      return;
+    }
+    const removeConfirmEl = target.closest<HTMLElement>("[data-wb-chat-member-remove-confirm]");
+    if (removeConfirmEl?.dataset.wbChatMemberRemoveConfirm) {
+      removeMember(removeConfirmEl.dataset.wbChatMemberRemoveConfirm);
+      return;
     }
   });
 

@@ -450,6 +450,48 @@ export const workbenchCss = [
     "color:var(--ds-ink-muted);cursor:pointer}",
   ".wh-wb-chat-cuu-toggle--on{border-color:rgba(255,171,94,.4);background:var(--wb-cuu-soft);color:var(--wb-cuu)}",
   ".wh-wb-chat-cuu-toggle:disabled{opacity:.6;cursor:default}",
+  // R17 批 G1（群成员管理）：成员条右侧「成员」「加人」两个 pill 入口（仅非 DM collab 渲染，见 render.ts
+  // renderMemberBarHtml 的 manage）——复用 cuu-toggle 同款胶囊外观，「加人」用强调色描边区分主次。
+  ".wh-wb-chat-members-btn{flex:none;padding:4px 10px;border-radius:999px;border:1px solid var(--ds-glass-border);" +
+    "background:var(--ds-glass);font:600 11px/1.2 var(--ds-font);color:var(--ds-ink-muted);cursor:pointer}",
+  ".wh-wb-chat-members-btn:hover{color:var(--ds-ink)}",
+  ".wh-wb-chat-members-btn--add{border-color:rgba(10,132,255,.35);color:var(--ds-accent)}",
+  // 成员管理面板（弹在 .wh-wb-modal 里）：上半名单行 + 下半加人候选行，都照建群选人器 .wh-wb-new-collab-member-row
+  // 同款 flex 行手感（头像 tile + 名字省略 + 右侧控件）。
+  ".wh-wb-member-roster{display:flex;flex-direction:column;gap:1px;max-height:220px;overflow-y:auto;margin:6px 0 4px}",
+  ".wh-wb-member-row{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:9px;" +
+    "font:500 13px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-member-row:hover{background:rgba(20,30,50,.05)}",
+  ".wh-wb-member-row .wh-wb-chat-avatar{margin-right:0}",
+  ".wh-wb-member-name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+  ".wh-wb-member-role{flex:0 0 auto;padding:1px 7px;border-radius:999px;background:var(--wb-cuu-soft);color:var(--wb-cuu);" +
+    "font:600 10px/1.5 var(--ds-font)}",
+  ".wh-wb-member-remove{flex:0 0 auto;padding:3px 10px;border-radius:999px;border:1px solid var(--ds-glass-border);" +
+    "background:transparent;font:600 11px/1.2 var(--ds-font);color:var(--ds-ink-muted);cursor:pointer}",
+  ".wh-wb-member-remove:hover{border-color:var(--ds-danger);color:var(--ds-danger)}",
+  ".wh-wb-member-confirm{flex:0 0 auto;display:flex;align-items:center;gap:6px}",
+  ".wh-wb-member-confirm-q{font:600 11px/1.2 var(--ds-font);color:var(--ds-ink-muted)}",
+  ".wh-wb-member-confirm-yes{padding:3px 10px;border-radius:999px;border:1px solid var(--ds-danger);" +
+    "background:var(--ds-danger-soft);color:var(--ds-danger);font:600 11px/1.2 var(--ds-font);cursor:pointer}",
+  ".wh-wb-member-confirm-yes:disabled{opacity:.6;cursor:default}",
+  ".wh-wb-member-confirm-no{padding:3px 10px;border-radius:999px;border:1px solid var(--ds-glass-border);" +
+    "background:transparent;color:var(--ds-ink-muted);font:600 11px/1.2 var(--ds-font);cursor:pointer}",
+  ".wh-wb-member-confirm-no:disabled{opacity:.6;cursor:default}",
+  ".wh-wb-member-add-label{margin:10px 0 4px;font:600 11.5px/1.5 var(--ds-font);color:var(--ds-ink-muted)}",
+  ".wh-wb-member-add-list{display:flex;flex-direction:column;gap:1px;max-height:180px;overflow-y:auto}",
+  ".wh-wb-member-add-row{display:flex;align-items:center;gap:9px;width:100%;box-sizing:border-box;padding:6px 8px;" +
+    "border-radius:9px;border:0;background:transparent;text-align:left;font:500 13px/1.3 var(--ds-font);" +
+    "color:var(--ds-ink);cursor:pointer}",
+  ".wh-wb-member-add-row:hover{background:rgba(20,30,50,.05)}",
+  ".wh-wb-member-add-row:disabled{opacity:.55;cursor:default}",
+  ".wh-wb-member-add-row .wh-wb-chat-avatar{margin-right:0}",
+  ".wh-wb-member-add-hint{flex:0 0 auto;font:600 11px/1.2 var(--ds-font);color:var(--ds-accent)}",
+  ".wh-wb-member-empty{margin:2px 0;padding:6px 8px;font:500 12px/1.5 var(--ds-font);color:var(--ds-ink-faint)}",
+  // R17 批 G1（#16 退群）：自己退出后的中栏终态——一句温和的居中说明（不弹窗、不跳转，见 view.ts leftConversation）。
+  ".wh-wb-chat-left-terminal{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;" +
+    "height:100%;padding:40px 20px;text-align:center}",
+  ".wh-wb-chat-left-terminal-title{margin:0;font:700 14px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-chat-left-terminal-note{margin:0;font:500 12.5px/1.5 var(--ds-font);color:var(--ds-ink-muted)}",
   ".wh-wb-chat-avs{display:flex}",
   // 头像堆叠的描边用白色（新壳体底色本就是近白的浅色玻璃），照 .wh-wb-chat-avatar--cuu/render.ts
   // avatarTileHtml 的深底色块配白字在浅底上依然成立——这条边框只是让重叠头像有「切出来」的轮廓感。
