@@ -22,7 +22,20 @@ export type WorkbenchLoadState = "idle" | "loading" | "ready" | "error";
 // 这个视图不依赖 selectedProjectId（是「所有要你拍板的」总览，横跨项目）。
 // R15 批 E2（项目时间线 / 甘特）加 "timeline"——rail 项目行的「时间线」树叶（与主区/网盘同级）点开后，
 // 中栏切到该项目的甘特时间线（workbench/timeline/view.ts），依赖 selectedProjectId + vm（同 drive/settings）。
-export type WorkbenchCenterTab = "chat" | "drive" | "collab" | "dm" | "army-overview" | "project-settings" | "inbox" | "timeline";
+// R16 批 W2 加 "kanban" / "schedule"——rail 项目行的「任务看板」「日程」两叶（与时间线同级）点开后，中栏
+// 分别切到该项目的看板（workbench/kanban/view.ts，四列按真实状态归组 + 派发拖拽）与周历日程
+// （workbench/schedule/view.ts，左计划摘要 + 右 7 列周历），都依赖 selectedProjectId + vm（同 timeline）。
+export type WorkbenchCenterTab =
+  | "chat"
+  | "drive"
+  | "collab"
+  | "dm"
+  | "army-overview"
+  | "project-settings"
+  | "inbox"
+  | "timeline"
+  | "kanban"
+  | "schedule";
 
 // 右栏情境面板的内容——刻意保持不透明（ownerId + 预渲染好的 html），store.ts 不认识任何具体视图
 // 的类型（drive 的版本历史/军团卡片等），谁在挂载期间持有内容所有权就把自己的 ownerId 写进来、

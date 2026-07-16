@@ -37,7 +37,11 @@ export const workbenchIcons = {
   // R16-W1（工作台聊天流升级）：Cuu 消息尾部操作条的「复制」（照 prototype 的重叠方框）；工具活动折叠组
   // 摘要行的「工具」扳手图标。
   copy: ic('<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>'),
-  tool: ic('<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.4 2.4-2-2Z"/>')
+  tool: ic('<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.4 2.4-2-2Z"/>'),
+  // R16 批 W2：rail 项目行的「任务看板」树叶——三列看板柱示意（照 prototype 的 kanban 图标）。
+  kanban: ic('<rect x="3" y="4.5" width="5" height="15" rx="1.4"/><rect x="10" y="4.5" width="5" height="10" rx="1.4"/><rect x="17" y="4.5" width="4" height="13" rx="1.4"/>'),
+  // R16 批 W2：rail 项目行的「日程」树叶——月历外框 + 顶部挂钉（照 prototype 的 calendar 图标）。
+  calendar: ic('<rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9h18M8 2.5v4M16 2.5v4"/>')
 } as const;
 
 export type WorkbenchIconKey = keyof typeof workbenchIcons;

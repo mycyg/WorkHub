@@ -30,6 +30,8 @@ export type TimelineViewApiClient = TimelineApiClient;
 export type TimelineViewHandle = {
   dispose: () => void;
   refresh: () => void;
+  // R16 批 W2：外部（看板/日程卡片点击）跳到时间线时，把某个工作项这一行滚入视野并闪一下。
+  focusRow: (workItemId: string) => void;
 };
 
 // yyyy-mm-dd（表单 <input type=date>）→ ISO datetime（服务端要带偏移的 datetime）。空串 → null。
@@ -48,6 +50,8 @@ export function mountTimelineView(
     locale: Locale;
     projectId: string;
     projectName: string;
+    // R16 批 W2：从看板/日程跳进来时预约的初始定位行——首次加载完成后消费一次（滚入 + 闪一下）。
+    initialFocusWorkItemId?: string | undefined;
   }
 ): TimelineViewHandle {
   let disposed = false;
@@ -55,6 +59,7 @@ export function mountTimelineView(
   let vmLoad: "loading" | "ready" | "error" = "loading";
   let ui: TimelineUiState = emptyTimelineUiState();
   let loadGeneration = 0;
+  let pendingFocus = input.initialFocusWorkItemId;
 
   const zh = input.locale === "zh-CN";
 
@@ -85,6 +90,12 @@ export function mountTimelineView(
       vm = page;
       vmLoad = "ready";
       render();
+      // 首次进入若带了预约定位行——渲染完成后消费一次（一次性，不在后续重拉里重复滚动）。
+      if (pendingFocus) {
+        const target = pendingFocus;
+        pendingFocus = undefined;
+        focusRow(target);
+      }
     } catch {
       if (disposed || generation !== loadGeneration) {
         return;
@@ -270,6 +281,17 @@ export function mountTimelineView(
     },
     refresh: () => {
       void load();
+    },
+    // 若行还没渲出来（VM 未就绪）——把它记成待消费的初始焦点，加载完成后再滚。
+    focusRow: (workItemId: string) => {
+      if (disposed) {
+        return;
+      }
+      if (vmLoad === "ready" && vm) {
+        focusRow(workItemId);
+      } else {
+        pendingFocus = workItemId;
+      }
     }
   };
 }
