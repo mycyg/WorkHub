@@ -1,0 +1,1810 @@
+{
+  "stats": {
+    "pipeline_raw": 64,
+    "pipeline_deduped": 57,
+    "verifier_confirmed": 47,
+    "verifier_rejected": 10,
+    "lead_withdrawn": 3,
+    "lead_corrected": 2,
+    "final_confirmed": 44,
+    "note": "处置状态唯一事实源=02-ssot-2026-07-17.md;confirmed[] 内含 lead_verdict.withdrawn 的条目不计入 final_confirmed"
+  },
+  "confirmed": [
+    {
+      "title": "学到的自动通过/权限策略在任何端都无法撤销或编辑（DELETE /api/permissions/:id 存在但零 UI 接线）",
+      "category": "fe-no-backend",
+      "surface": "cross",
+      "severity": "medium",
+      "detail": "网页设置页渲染每条自动通过策略的『撤销』按钮,带 data-requires-desktop=\"true\"、DELETE 方法,旁边文案写『撤销需在桌面端操作』。browser.ts 的委派分发在 requires-desktop=true 时直接 preventDefault + 弹 desktopRequiredNotice,从不发请求。服务端 DELETE /api/permissions/:id 确实存在且要求本地(桌面)客户端。问题是:桌面 desktop-webview 里没有任何渲染 permission_policies 或调用撤销的代码(grep 全空),api-client 也没有 revokePolicy/删除策略的方法。于是网页把用户指向桌面,桌面却没有这个能力——用户能创建常驻自动通过规则,却在任何客户端都无法撤销,是治理层的死胡同。",
+      "suggestion": "在桌面端补策略列表+撤销控件(调 DELETE /api/permissions/:id),并给 api-client 加对应方法;否则网页『撤销需在桌面端操作』的文案是在指向不存在的能力。",
+      "evidence": [
+        {
+          "file": "packages/ui/src/gold-path/route-components.ts",
+          "line": 4256,
+          "note": "revoke 按钮 data-requires-desktop=\"true\" data-method=\"DELETE\",href=policy.revoke_href"
+        },
+        {
+          "file": "packages/ui/src/gold-path/route-components.ts",
+          "line": 4249,
+          "note": "文案『撤销需在桌面端操作』/『revoking requires the desktop app』"
+        },
+        {
+          "file": "apps/web/src/browser.ts",
+          "line": 1103,
+          "note": "requiresDesktop==='true' → preventDefault + desktopRequiredNotice,从不发 DELETE"
+        },
+        {
+          "file": "apps/api/src/pages/settings.ts",
+          "line": 40,
+          "note": "revoke_href = /api/permissions/${policy.id}"
+        },
+        {
+          "file": "apps/api/src/routes/permissions.ts",
+          "line": 91,
+          "note": "DELETE /:id 存在但 createRequireLocalClientMiddleware 限本地客户端;桌面/ api-client 均无对应 UI/方法(grep 全空)"
+        },
+        {
+          "file": "apps/api/src/routes/permissions.ts",
+          "line": 91,
+          "note": "DELETE /api/permissions/:id (M24) revokes a permission policy including learned allow-grants; local-client + admin gated"
+        },
+        {
+          "file": "apps/api/src/routes/permissions.ts",
+          "line": 83,
+          "note": "PUT /api/permissions creates a policy; POST /ask (line 101) requests an approval"
+        },
+        {
+          "file": "packages/ui/src/gold-path/route-components.ts",
+          "line": 4247,
+          "note": "settings page lists permission_policies read-only (data-r9-settings-policy rows) with no revoke/edit control"
+        }
+      ],
+      "dim": "web-unbacked",
+      "merged_from": [
+        "web-unbacked:自动通过规则『撤销』是三端皆无的死胡同:网页按钮弹『需桌面端』,桌面无撤销 UI,客户端无撤销方法",
+        "api-orphans:Learned permission policies can be viewed but never revoked/edited from any UI"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "medium",
+        "reason": "核实无误:web撤销按钮指向桌面(route-components.ts:4256/browser.ts:1103 preventDefault)、DELETE /:id 本地客户端门控(permissions.ts:91),而 desktop-webview 与 client-tauri 全库 grep 均无渲染 permission_policies 或调用撤销的任何代码(仅 test 命中),学到的自动通过规则确成三端不可撤销的治理死胡同,medium 诚实。"
+      }
+    },
+    {
+      "title": "网页成本页组件不渲染后端已填充的多个 CostDashboardVM 维度（by_workitem/trend/by_team）",
+      "category": "dataflow",
+      "surface": "cross",
+      "severity": "medium",
+      "detail": "后端 cost 服务在 admin 口径下真实聚合并填充 CostDashboardVM.by_workitem(逐工作项花费+turns)。桌面 spotlight 成本视图渲染前 5 条 by_workitem,并在超出时打出文案「还有 N 个事项的花费,去网页版成本页细看」,把用户显式指向网页成本页。但网页成本组件 renderCostRouteComponent 通篇没有任何 by_workitem 卡片——它只渲 by_user/by_objective/by_task_plan(军团)/model_breakdown。React 适配器的 props 也不含 by_workitem。用户按桌面提示跳到网页 /dashboard/cost 找逐事项明细,那里根本没有这块,是一条断掉的跨端承诺。",
+      "suggestion": "在网页成本组件补一张「按事项花费」卡渲染 vm.by_workitem(admin 可见),或把桌面文案的指向改到确实展示该维度的位置。",
+      "evidence": [
+        {
+          "file": "apps/desktop-webview/src/spotlight/views/dashboards.ts",
+          "line": 466,
+          "note": "topItems = vm.by_workitem.slice(0,5) 渲染逐事项行"
+        },
+        {
+          "file": "apps/desktop-webview/src/spotlight/views/dashboards.ts",
+          "line": 480,
+          "note": "超过 5 条时文案『还有 N 个事项的花费,去网页版成本页细看』——把用户指向网页成本页"
+        },
+        {
+          "file": "apps/api/src/pages/cost.ts",
+          "line": 177,
+          "note": "后端 by_workitem: input.isAdmin ? byWorkitem.map(...) 真实填充"
+        },
+        {
+          "file": "packages/ui/src/gold-path/route-components.ts",
+          "line": 4107,
+          "note": "网页成本组件最终装配(4107-4135)只含 metrics/risks/budget/models/army/labor/byUser/byObjective,无 by_workitem"
+        },
+        {
+          "file": "packages/ui/src/gold-path/route-react-components.ts",
+          "line": 346,
+          "note": "cost React props(346-360)不含 by_workitem/by_team,仅计数字段"
+        },
+        {
+          "file": "packages/ui/src/gold-path/route-components.ts",
+          "line": 4113,
+          "note": "网页只渲 `${routeT('cost.trend')}: ${props.trendCount}` 一个裸计数 pill"
+        },
+        {
+          "file": "packages/ui/src/gold-path/route-react-components.ts",
+          "line": 357,
+          "note": "trendCount = vm.trend.length —— props 只带条数,不带序列"
+        },
+        {
+          "file": "apps/desktop-webview/src/spotlight/views/dashboards.ts",
+          "line": 444,
+          "note": "桌面 const trend = vm.trend.slice(-14) → 画柱状图+峰值(457-479)"
+        },
+        {
+          "file": "apps/api/src/pages/cost.ts",
+          "line": 162,
+          "note": "后端 trend: aggregateTrend(uniqueEntries) 填充逐日序列"
+        },
+        {
+          "file": "apps/api/src/pages/cost.ts",
+          "line": 171,
+          "note": "by_team: input.isAdmin ? byTeam.map(...) 真实填充"
+        },
+        {
+          "file": "packages/contracts/src/pages.ts",
+          "line": 1024,
+          "note": "CostDashboardVM.by_team schema 定义"
+        },
+        {
+          "file": "packages/ui/src/gold-path/route-components.ts",
+          "line": 4135,
+          "note": "成本组件按 byUserCard/byObjectiveCard 装配,无 byTeam(全仓 grep by_team 在 ui/desktop 零命中)"
+        }
+      ],
+      "dim": "web-unbacked",
+      "merged_from": [
+        "web-unbacked:成本页 by_workitem 破裂的跨端指路:桌面把用户导向网页成本页看逐事项花费,网页却从不渲染它",
+        "web-unbacked:成本趋势序列:桌面画成 14 天柱状图,网页只渲一个『趋势: N』的裸数字",
+        "web-unbacked:成本 by_team 分组由后端(admin)真实聚合,却在网页和桌面都无处渲染——死负载"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "medium",
+        "reason": "核实无误：桌面 dashboards.ts:480 显式把用户导向网页成本页看逐事项花费，但网页成本组件装配段(route-components.ts:4107-4135)及 React props(route-react-components.ts:346-360)均无 by_workitem，全仓 by_workitem/by_team 仅在测试 fixture 命中、无渲染，而后端 cost.ts:177/171 admin 口径真实填充——跨端承诺断裂且 by_team 为死负载，medium 成立。"
+      }
+    },
+    {
+      "title": "团队邀请生命周期（创建/接受/撤销）后端就绪却缺前端接线",
+      "category": "be-no-frontend",
+      "surface": "cross",
+      "severity": "medium",
+      "evidence": [
+        {
+          "file": "apps/api/src/routes/auth.ts",
+          "line": 535,
+          "note": "POST /api/auth/invites mints a workspace invite"
+        },
+        {
+          "file": "apps/api/src/routes/auth.ts",
+          "line": 576,
+          "note": "POST /api/auth/invites/accept redeems an invite token"
+        },
+        {
+          "file": "packages/contracts/src/auth.ts",
+          "line": 46,
+          "note": "inviteCreateRequestSchema / inviteAcceptRequestSchema (line 51) exist in the contract"
+        },
+        {
+          "file": "packages/db/src/repositories/invites.ts",
+          "line": 31,
+          "note": "revoke 接口+实现(89)已存在,注释「管理员撤销邀请(软删)」——是刻意为管理员设计的能力"
+        },
+        {
+          "file": "apps/api/src/routes/auth.ts",
+          "line": 594,
+          "note": "GET /invites 列出待接受邀请供面板追踪,但没有配套的撤销路由"
+        }
+      ],
+      "detail": "Token-based team onboarding has endpoints and contract schemas, but grep for 'invite' across apps/web/src, apps/desktop-webview/src and packages/ui/src returns nothing and no SDK method wraps it. There is no 'invite a teammate' screen and no invite-accept landing flow, so the documented member-onboarding path cannot be exercised from the product on this branch.",
+      "suggestion": "Add an invite-create action to the member-management/settings surface and an invite-accept screen (deep-linkable from the token), wired to the two endpoints.",
+      "dim": "api-orphans",
+      "merged_from": [
+        "api-orphans:Team invite create/accept flow is fully backed but has no UI on either client",
+        "product-missing:管理员能看到待接受邀请、却无法撤销:revoke 函数在仓库里但没有任何路由接线"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "medium",
+        "reason": "POST /invites(:535)与/accept(:576)真实且生产注入invites仓库、revoke(:83)无路由调用,三端grep invite零命中确无UI,be-no-frontend核心成立;仅证据594行「GET /invites面板追踪」有误(无此路由)削弱次要合并项,不推翻主发现,medium公允。"
+      },
+      "lead_verdict": {
+        "corrected": true,
+        "reason": "web 创建+待接受清单已由 R18-H1 交付(browser.ts:2849+,密码模式),原「三端零接线」不实;真实缺口=接受落地页/撤销路由/桌面入口,且 codex P1-05 证实 token 被列表重渲抹掉"
+      }
+    },
+    {
+      "title": "webview 已算出的待处理数从未桥接到原生托盘 tooltip 与 Dock 角标（缺 webview→shell 计数命令）",
+      "category": "missing",
+      "surface": "desktop",
+      "severity": "medium",
+      "detail": "The tray is installed once with a constant tooltip: main.rs:1174 `.tooltip(tray_tooltip(locale))`, and tray_tooltip returns a hard-coded string ('WorkHub - Cuu 已就绪' / 'Cuu is ready', tray.rs:104-109). No `set_tooltip`/`set_title`/`set_icon` call exists anywhere in src-tauri (grep is empty), so the menu-bar presence is static for the whole session. The design doc explicitly specifies the opposite — tasks-reminders-notifications.md:238: '托盘 tooltip/title 同步未读数（防抖 250ms）'. The webview does compute the pending-approvals count and paints an in-app command badge (browser.ts:1342-1345 refreshApprovalsBadge → spotlight.setBadges), but that count never reaches the tray. When the main window is hidden to tray, the user has no menu-bar signal that decisions are waiting.",
+      "suggestion": "Add a shell command (e.g. set_tray_pending_count) the webview calls from refreshApprovalsBadge, and update the TrayIcon tooltip/title (and optionally icon overlay) on change.",
+      "evidence": [
+        {
+          "file": "client-tauri/src-tauri/src/tray.rs",
+          "line": 104,
+          "note": "tray_tooltip returns a static constant; no runtime update path"
+        },
+        {
+          "file": "client-tauri/src-tauri/src/main.rs",
+          "line": 1174,
+          "note": "tooltip set once at install; TrayIcon never mutated afterward"
+        },
+        {
+          "file": "docs/workhub/04-modules/tasks-reminders-notifications.md",
+          "line": 238,
+          "note": "spec requires tray tooltip/title to sync unread count"
+        },
+        {
+          "file": "apps/desktop-webview/src/browser.ts",
+          "line": 1345,
+          "note": "pending count painted only as in-app badge; no native Dock badge"
+        },
+        {
+          "file": "client-tauri/src-tauri/src/main.rs",
+          "line": 1494,
+          "note": "no set_badge command exists in the shell command surface"
+        }
+      ],
+      "dim": "native-shell",
+      "merged_from": [
+        "native-shell:Tray tooltip/title never reflects pending-decision count (documented feature unimplemented)",
+        "native-shell:No OS Dock badge for pending decisions when the app is hidden"
+      ],
+      "verdict": {
+        "real": true,
+        "reason": "证据全部核实：tray tooltip 为静态常量、src-tauri 无任何运行时更新/set_badge 命令、webview 算出的待决策数只落页内角标不桥接原生，且文档 238 行明文规定该同步，属未实现的文档化能力，medium 合理。",
+        "adjusted_severity": "medium"
+      },
+      "lead_verdict": {
+        "withdrawn": true,
+        "reason": "set_shell_badge(main.rs:537)同时更新 Dock 角标与托盘 tooltip 计数(tray_tooltip_with_badge),browser.ts:175 每 30s 真实调用——能力已存在(R15 A6)"
+      }
+    },
+    {
+      "title": "工作台网盘删除是破坏性操作却无回收站/恢复入口（restoreDriveItem 已接入客户端但工作台从不调用）",
+      "category": "ux",
+      "surface": "desktop",
+      "severity": "medium",
+      "detail": "工作台网盘标签页里删除文件是「一点即删、零确认」：删除按钮渲成危险色、文案只有裸「删除」/「Delete」（drive/render.ts:92），点击后直接调 deleteDriveItem（drive/view.ts:158），成功只 .then(load) 静默重拉、没有任何『已移到回收站，可恢复』的回执（drive/view.ts:161），失败也只贴一句『删除失败』。更关键的是：renderDriveListHtml 只从 items 里筛 folders+files 渲染（drive/render.ts:112-115），从不渲染契约里带的 deleted_items；整个 workbench/drive/ 目录里搜不到任何『回收/deleted/recycle/移到』字样，restoreDriveItem 虽被 Pick 进客户端类型却从没在任何工作台模块里被调用（真正调用只在 spotlight/views/drive.ts:434）。也就是说工作台用户删错文件后，在工作台内既得不到撤销、也找不到恢复路径。这与产品自身的其它约定自相矛盾：同一个右栏里『版本回滚』这种覆盖性动作反而做了两段式确认（drive/render.ts 版本区注释明确『回滚这种覆盖性动作不该无确认』），web 端删除按钮直接叫『移到回收站』并在成功后提示『已把「X」移到回收站，可在回收站中恢复』（apps/web/src/browser.ts:1405 附近）＋整套回收站列表，Spotlight 桌面端删除 toast 也是『已删除（在回收站可恢复）』。唯独主力界面工作台把最具破坏性的删除做成了无确认、无回执、无恢复入口、还用了误导性的『删除』字样。",
+      "evidence": [
+        {
+          "file": "apps/desktop-webview/src/workbench/drive/render.ts",
+          "line": 92,
+          "note": "删除按钮：wh-wb-act--danger 危险色，文案裸写『删除』/『Delete』（非 web 的『移到回收站』）"
+        },
+        {
+          "file": "apps/desktop-webview/src/workbench/drive/view.ts",
+          "line": 158,
+          "note": "点击『删除』→ 立即 deleteDriveItem，无任何确认；.then(load) 静默重拉、无『可恢复』回执"
+        },
+        {
+          "file": "apps/desktop-webview/src/workbench/drive/render.ts",
+          "line": 112,
+          "note": "渲染函数只筛 folders+files，从不渲染 deleted_items → 工作台无回收站/恢复入口"
+        },
+        {
+          "file": "apps/web/src/browser.ts",
+          "line": 1405,
+          "note": "对照：web 删除后提示『已把「X」移到回收站，可在回收站中恢复』——诚实告知可恢复"
+        },
+        {
+          "file": "apps/desktop-webview/src/spotlight/views/drive.ts",
+          "line": 434,
+          "note": "对照：restoreDriveItem 的唯一真实调用点在 Spotlight（工作台内无）；Spotlight 有『最近删除』恢复区"
+        },
+        {
+          "file": "apps/desktop-webview/src/workbench/drive/view.ts",
+          "line": 22,
+          "note": "DriveTabApiClient Pick includes restoreDriveItem, but grep shows no call site anywhere in the workbench (only version rollback exists, which is a different endpoint)"
+        },
+        {
+          "file": "apps/desktop-webview/src/workbench/drive/view.ts",
+          "line": 158,
+          "note": "delete is fully wired (deleteDriveItem); the drive list only shows live items filtered by parent_id — a deleted item just disappears with no recovery path in this surface"
+        },
+        {
+          "file": "apps/api/src/routes/drive.ts",
+          "line": 481,
+          "note": "backend POST /projects/:projectId/items/:itemId/restore exists (drivePages.restoreItem); client.restoreDriveItem (packages/api-client/src/client.ts:596) wraps it and shell.ts:79 explicitly Picks it into the workbench client"
+        }
+      ],
+      "dim": "ux-polish",
+      "merged_from": [
+        "ux-polish:桌面工作台网盘删除文件：无确认、按钮裸写「删除」、删完无回执、且工作台内根本没有回收站/恢复入口",
+        "desktop-unbacked:Workbench drive can delete files but has no restore/trash affordance, though restoreDriveItem is wired into its client"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "medium",
+        "reason": "逐条核实全部属实：工作台删除(view.ts:153-168)零确认+仅静默重拉+失败只贴「删除失败」，render.ts只渲folders+files从不渲deleted_items，restoreDriveItem虽Pick进客户端却全工作台无调用点(仅spotlight:434/web:1424调用)，而契约有deleted_items、web诚实提示「移到回收站可恢复」、spotlight有恢复区——工作台确实是唯一无确认/无回执/无恢复入口的破坏性删除，非裁除项，medium成立。"
+      }
+    },
+    {
+      "title": "设置 VM 的 budgets（8 项上限）被后端填充却无任何界面渲染",
+      "category": "be-no-frontend",
+      "surface": "cross",
+      "severity": "low",
+      "detail": "settings 页服务把 8 个预算上限字段(run/user/team 的 token 与成本上限)填进 SettingsPageVM.budgets。但网页设置组件 renderSettingsRouteComponent 只渲语言/设备/运行时/LLM/权限策略五块,从不渲 budgets;桌面设置视图也不渲。这些配置上限值算出来后没有任何界面消费,是又一份死负载(用户想核对团队日/月预算上限,在设置页看不到)。",
+      "suggestion": "在网页设置的『系统诊断』区补一张预算上限只读卡渲染 vm.budgets,或从 VM 移除无人消费的 budgets。",
+      "evidence": [
+        {
+          "file": "apps/api/src/pages/settings.ts",
+          "line": 62,
+          "note": "budgets: { run_tokens/user_daily_tokens/.../team_monthly_cost_cny } 8 项全填充"
+        },
+        {
+          "file": "packages/contracts/src/pages.ts",
+          "line": 1113,
+          "note": "SettingsPageVM.budgets schema(8 字段)"
+        },
+        {
+          "file": "packages/ui/src/gold-path/route-components.ts",
+          "line": 4217,
+          "note": "设置组件(4217-4281)只渲 language/device/runtime/llm/policies,无 budgets"
+        }
+      ],
+      "dim": "web-unbacked",
+      "merged_from": [
+        "web-unbacked:设置 VM 的 budgets(8 项 token/成本上限)被后端填充却无任何界面渲染"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "low",
+        "reason": "证据全部核实无误：settings.ts:62-71 填充 8 项预算上限进 SettingsPageVM.budgets，contracts pages.ts:1113 有 schema，但全库 grep vm.budgets 无任何消费方，web 设置组件(route-components.ts)与桌面 spotlight/views/settings.ts 均不渲染，属真实死负载，low 恰当。"
+      }
+    },
+    {
+      "title": "军团面板 oldest_blocker 后端给了跳转 href，网页只渲成不可点灰字",
+      "category": "ux",
+      "surface": "web",
+      "severity": "low",
+      "detail": "agent-army 页服务给每个卡住的军团计划填 oldest_blocker.href='/attention',让用户能一键跳去处理这个『最老的阻塞(等人)』。网页军团组件却只渲 plan.oldest_blocker.label 成一段 <p> 灰字,完全忽略 href——一条告诉用户『有子任务卡住等你』的信息,是死文本而非可点入口。桌面同资源的可操作性更强,网页此处的可点性被丢了。",
+      "suggestion": "把网页 oldest_blocker 那段 <p> 包成指向 plan.oldest_blocker.href 的链接(与该卡其它 href 一致走 primaryHrefs)。",
+      "evidence": [
+        {
+          "file": "apps/api/src/pages/agent-army.ts",
+          "line": 283,
+          "note": "oldest_blocker 填 { kind, label, age_seconds, href: '/attention' }"
+        },
+        {
+          "file": "packages/ui/src/gold-path/route-components.ts",
+          "line": 3576,
+          "note": "网页只渲 `<p>${plan.oldest_blocker.label}</p>`,从不使用 href"
+        }
+      ],
+      "dim": "web-unbacked",
+      "merged_from": [
+        "web-unbacked:军团面板 oldest_blocker 后端给了跳转 href,网页只渲成不可点的灰字"
+      ],
+      "verdict": {
+        "real": true,
+        "reason": "核对属实:agent-army.ts:287 后端给 oldest_blocker 填了 href:'/attention',而 route-components.ts:3576-3577 网页只渲 label 成 <p> 灰字丢了 href(同卡 budget_href/work_item_href 都做成了 <a>),确为可点入口缺失,但仅 low 打磨级。",
+        "adjusted_severity": "low"
+      }
+    },
+    {
+      "title": "Objectives(OKR) 创建+关联端点在任何前端都不可达",
+      "category": "be-no-frontend",
+      "surface": "cross",
+      "severity": "medium",
+      "evidence": [
+        {
+          "file": "apps/api/src/routes/objectives.ts",
+          "line": 52,
+          "note": "POST /api/objectives creates an objective with key_results; the file's own comment (line 23) says it 'adds the minimal loop' for objective creation/linking"
+        },
+        {
+          "file": "apps/api/src/routes/objectives.ts",
+          "line": 81,
+          "note": "POST /api/objectives/:id/link attaches a work item to an objective, gated by assertCanMutateWorkItem"
+        },
+        {
+          "file": "packages/ui/src/gold-path/route-components.ts",
+          "line": 3571,
+          "note": "agent-plan cards DISPLAY objective title + progress % (data-r9-agent-plan-objective) read-only"
+        },
+        {
+          "file": "packages/ui/src/gold-path/route-components.ts",
+          "line": 4034,
+          "note": "cost page renders by_objective breakdown read-only"
+        }
+      ],
+      "detail": "POST /api/objectives and POST /api/objectives/:id/link exist with full validation and work-item-write authorization, but there is no client-SDK method (packages/api-client/src/client.ts defines none for objectives) and grep across apps/web/src, apps/desktop-webview/src and packages/ui/src finds zero callers. Objective titles/progress are shown as read-only labels sourced from task-plan data, so a user sees objectives referenced but can never create one or link a work item to it from either the web or desktop client.",
+      "suggestion": "Add an objective-create form and a 'link to objective' action on the work-item detail surface, wired to a new SDK method; or, if OKRs are not yet a shipped feature, drop the read-only objective labels so the concept is not dangled without an entry point.",
+      "dim": "api-orphans",
+      "merged_from": [
+        "api-orphans:Objectives (OKR) create + link endpoints are entirely unreachable from any frontend"
+      ],
+      "verdict": {
+        "real": true,
+        "reason": "核对属实:POST /api/objectives 与 /:id/link 在 objectives.ts:52/81 带完整校验和工作项写鉴权,但 api-client/web/desktop/ui 全量 grep 无任何调用者或 SDK 方法,route-components 仅只读展示 objective_title/progress,用户能看见目标却无从创建或挂链,属真实 backend-orphan,medium 合理。",
+        "adjusted_severity": "medium"
+      }
+    },
+    {
+      "title": "AI 预算策略的查看+编辑（cost/policies）无任何 UI 接线，管理员无法设/改上限",
+      "category": "be-no-frontend",
+      "surface": "cross",
+      "severity": "medium",
+      "evidence": [
+        {
+          "file": "apps/api/src/routes/cost.ts",
+          "line": 82,
+          "note": "GET /api/cost/policies lists budget policies (admin-only)"
+        },
+        {
+          "file": "apps/api/src/routes/cost.ts",
+          "line": 89,
+          "note": "PUT /api/cost/policies/:scope/:id edits caps/warning-critical ratios/on_exhausted with atomic audit logging"
+        },
+        {
+          "file": "packages/api-client/src/client.ts",
+          "line": 573,
+          "note": "SDK costPolicies() / updateCostPolicy() (lines 573-575) exist but have 0 non-test callers"
+        }
+      ],
+      "detail": "The whole budget-governance write surface is backend-only. costPolicies, updateCostPolicy and costUsage are declared in the SDK (client.ts:572-575) and covered by API smoke tests, but no web/desktop/ui code invokes them. The cost page (/api/pages/cost) renders usage read-only and never surfaces the editable policy objects, so an admin has no way to set or change an AI budget cap, warning ratio, or exhausted-behavior through the product despite the endpoint doing careful atomic policy+audit writes.",
+      "suggestion": "Add an admin budget-policy editor (list + per-scope edit form) to the cost/settings surface, wired to costPolicies/updateCostPolicy.",
+      "dim": "api-orphans",
+      "merged_from": [
+        "api-orphans:AI budget-policy management (view + edit caps) is inaccessible — no UI wires cost/policies or cost/usage"
+      ],
+      "verdict": {
+        "real": true,
+        "reason": "三处 file:line 均核实属实：GET/PUT /api/cost/policies 为 admin-only 写面，SDK costPolicies/updateCostPolicy 全库零非测试调用者（仅 client.ts 实现+types.ts 声明），cost 页面只读渲染 usage 无策略编辑表单，管理员确无 UI 可设/改预算上限，非裁除项，medium 恰当。",
+        "adjusted_severity": "medium"
+      }
+    },
+    {
+      "title": "『撤销 AI 的文件改动』(snapshot revert) 端点存在但任何界面都无按钮",
+      "category": "be-no-frontend",
+      "surface": "cross",
+      "severity": "medium",
+      "evidence": [
+        {
+          "file": "apps/api/src/routes/audit.ts",
+          "line": 106,
+          "note": "POST /api/agent-runs/:id/revert reverts a file snapshot, marks the audit row undone, and writes a snapshot.reverted audit entry; local-client gated"
+        },
+        {
+          "file": "packages/ui/src/replay/render.ts",
+          "line": 1,
+          "note": "replay view renders snapshots/audit facts but offers no revert action (no revert SDK method exists in packages/api-client)"
+        }
+      ],
+      "detail": "The destructive-change undo capability is fully implemented backend (file revert + audit reconciliation) and local-client gated for the desktop shell, but there is no SDK method (revertAgentRun) and no caller in apps/desktop-webview/src, apps/web/src, packages/ui/src, or client-tauri. Users can view what the AI changed via replay but can never roll it back through the product.",
+      "suggestion": "Add a 'Revert this change' action on the desktop replay/snapshot surface (it must run on the local client), wired to POST /api/agent-runs/:id/revert with a confirm step.",
+      "dim": "api-orphans",
+      "merged_from": [
+        "api-orphans:'Undo the AI's file changes' (snapshot revert) has no button anywhere"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "medium",
+        "reason": "经核对 audit.ts:106 确有本地门控的 POST /agent-runs/:id/revert 完整实现,而 api-client 无 revert 方法、全端(desktop/web/ui/tauri)无任何调用者、replay 只只读渲染快照数,非裁除项,孤儿端点判定成立。"
+      }
+    },
+    {
+      "title": "工作项跨 run 汇总审计时间线端点被计算却从未被渲染",
+      "category": "be-no-frontend",
+      "surface": "cross",
+      "severity": "low",
+      "evidence": [
+        {
+          "file": "apps/api/src/routes/audit.ts",
+          "line": 80,
+          "note": "GET /api/audit/workitems/:id/audit returns snapshots + audit_logs + buildReplayManifestFacts() across ALL runs for a work item"
+        },
+        {
+          "file": "apps/api/src/routes/pages.ts",
+          "line": 666,
+          "note": "the work-item detail page (GET /api/pages/workitems/:id) does not embed audit/snapshot/manifest_facts; only per-run replay (/agent-runs/:id/replay) is wired in the clients"
+        }
+      ],
+      "detail": "This endpoint assembles a whole-work-item history (every run's snapshots, audit logs, and derived manifest_facts) but has no SDK method and no frontend caller. The clients only ever fetch per-run replay, so the aggregated cross-run governance trail — the exact thing a reviewer would want on a work item — is calculated on request but shown nowhere.",
+      "suggestion": "Surface an 'Audit / history' tab on the work-item detail page backed by this endpoint, or fold its manifest_facts into the work-item page VM.",
+      "dim": "api-orphans",
+      "merged_from": [
+        "api-orphans:Work-item consolidated audit timeline endpoint is computed but never rendered"
+      ],
+      "verdict": {
+        "real": true,
+        "reason": "audit.ts:80 确返回跨run聚合快照/审计/manifest_facts,而replay渲染器(replay/render.ts)不读evidence_refs、客户端也无任何fetch该端点,唯一href(replay.ts:256)从不被渲染,per-run replay又filter到单run,故此聚合治理轨迹确实算而不现,low属实(note里路径多写了/audit段为无伤大雅的小瑕疵)。",
+        "adjusted_severity": "low"
+      }
+    },
+    {
+      "title": "合并融合候选『选择/预览』步骤从不被调用，客户端直接 apply",
+      "category": "be-no-frontend",
+      "surface": "cross",
+      "severity": "low",
+      "evidence": [
+        {
+          "file": "apps/api/src/routes/proposals.ts",
+          "line": 1062,
+          "note": "POST /api/merge-proposals/:id/choose selects/previews an AI fusion candidate (option_key) before applying"
+        },
+        {
+          "file": "packages/api-client/src/client.ts",
+          "line": 497,
+          "note": "SDK chooseMergeProposalCandidate exists but has 0 UI callers; both web (browser.ts) and desktop only call applyMergeProposalCandidate (/merge-proposals/:id/apply)"
+        }
+      ],
+      "detail": "The merge-conflict flow supports picking/previewing among AI fusion candidates via /choose, but neither client uses it — they call /apply directly with a payload. The 'compare candidates before committing' affordance is backend-only, so users cannot preview alternative fusion outcomes.",
+      "suggestion": "Either wire a candidate-preview step (chooseMergeProposalCandidate) into the merge UI before apply, or remove the endpoint + SDK stub if apply-direct is the intended UX.",
+      "dim": "api-orphans",
+      "merged_from": [
+        "api-orphans:Merge fusion-candidate 'choose/preview' step is never invoked (clients jump straight to apply)"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "low",
+        "reason": "核实无误：/merge-proposals/:id/choose(proposals.ts:1062)与SDK chooseMergeProposalCandidate(client.ts:497)确实存在，但全端源码(web/desktop browser.ts、spotlight views、desktop-cuu-runtime)仅调用applyMergeProposalCandidate，choose零调用方，属真实的后端孤儿端点/未接线SDK桩，low级诚实。"
+      }
+    },
+    {
+      "title": "三个冗余死读端点（agent-run handoff / ai-worklog today / list-work-item-proposals）无前端消费",
+      "category": "be-no-frontend",
+      "surface": "api",
+      "severity": "low",
+      "evidence": [
+        {
+          "file": "apps/api/src/routes/agent-runs.ts",
+          "line": 362,
+          "note": "GET /api/agent-runs/:id/handoff; SDK getAgentRunHandoff (types.ts:289) has 0 callers — handoff is already rendered from the run live-VM in packages/ui/src/agent-run/render.ts:92"
+        },
+        {
+          "file": "apps/api/src/routes/ai-worklog.ts",
+          "line": 25,
+          "note": "GET /api/ai-worklog/today computes today's AI metrics; no SDK method, no UI caller — the same metrics are surfaced via /api/pages/attention"
+        },
+        {
+          "file": "apps/api/src/routes/proposals.ts",
+          "line": 1044,
+          "note": "GET /api/workitems/:id/proposals; SDK listWorkItemProposals (types.ts:306) has 0 callers — proposals are embedded in the work-item page VM instead"
+        }
+      ],
+      "detail": "Three read endpoints (and two SDK stubs) exist whose data is already delivered to the clients through page/live VMs, so no frontend ever calls the dedicated endpoints. They are harmless but dead surface area that implies capabilities the UI reaches a different way.",
+      "suggestion": "Remove the unused endpoints/SDK stubs, or repoint the clients to them if the goal is a single canonical fetch path.",
+      "dim": "api-orphans",
+      "merged_from": [
+        "api-orphans:Dead redundant read endpoints: agent-run handoff, ai-worklog/today, and list-work-item-proposals"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "low",
+        "reason": "三处 file:line 属实，getAgentRunHandoff/listWorkItemProposals 两个 SDK 方法只在 client.ts/types.ts 声明、无任何非测试调用者，/api/ai-worklog/today 的 getTodayMetrics 只被 pages.ts 的页面 VM 路径复用而非该专用端点，数据确经 live-VM/页面 VM 交付，是真实死冗余读端点，low 严重度诚实。"
+      }
+    },
+    {
+      "title": "增量 trace 游标(?after=) 被支持但前端从不传",
+      "category": "be-no-frontend",
+      "surface": "api",
+      "severity": "low",
+      "evidence": [
+        {
+          "file": "apps/api/src/routes/agent-runs.ts",
+          "line": 331,
+          "note": "GET /api/agent-runs/:id/trace parses an 'after' non-negative-integer cursor for incremental step fetch"
+        },
+        {
+          "file": "packages/ui/src/agent-run/render.ts",
+          "line": 125,
+          "note": "clients render the trace from the embedded VM (vm.trace) and rely on the SSE push stream; no caller passes ?after="
+        }
+      ],
+      "detail": "The trace endpoint supports cursor-based incremental polling via ?after=, but every frontend either renders the full trace from the page/live VM or subscribes to the SSE stream, so the pagination parameter is never exercised. Minor: unused query-param capability.",
+      "suggestion": "Either drop the cursor param or use it for a lightweight incremental-trace fallback when SSE is unavailable.",
+      "dim": "api-orphans",
+      "merged_from": [
+        "api-orphans:Incremental trace cursor (?after=) is supported but the frontends never send it"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "low",
+        "reason": "核实无误:agent-runs.ts:331 确解析 after 游标并于 337 传入 queue.trace,而前端一律从内嵌 vm.trace(render.ts:112/125)渲染或订 SSE,全库 grep 无任何调用方传 ?after=,确系无前端消费的孤儿参数,low 打磨级恰当。"
+      }
+    },
+    {
+      "title": "spec_docs 表从不写入，work_items.current_spec_id 只读恒为空",
+      "category": "dataflow",
+      "surface": "api",
+      "severity": "low",
+      "detail": "spec_docs 表(schema core.ts:1123，带 project/work_item/content_sha256 索引)在整个仓库里从没有 insert 或 select——唯一的引用是 relations/core.ts:71 声明的 currentSpec 关系，而 drizzle 的关系查询 API(db.query.*/with:{})在生产代码里从未被调用(全局 0 处)。work_items.current_spec_id(FK→spec_docs，core.ts:336)也从没有任何写点:work-items.ts:1138 把它读进 DTO(row.currentSpecId→workItem.current_spec_id)、契约 work-item.ts:55 也导出该字段，但没有一行代码 set 过它。结果:spec_ready 状态暗示存在一份 spec 文档，但该文档从未被持久化，API 响应里 current_spec_id 永远缺席。对比 main_branch_id 在 proposals.ts:1428 有真实写点——current_spec_id 是残缺的另一半。",
+      "suggestion": "要么把 spec 生成落库(写 spec_docs 并回填 current_spec_id)，要么删掉 spec_docs 表、current_spec_id 列与契约字段，避免 API 消费方对着永远为空的字段编程。",
+      "evidence": [
+        {
+          "file": "packages/db/src/schema/core.ts",
+          "line": 1123,
+          "note": "spec_docs 表定义，全仓无 insert/select"
+        },
+        {
+          "file": "packages/db/src/schema/core.ts",
+          "line": 336,
+          "note": "work_items.current_spec_id FK 声明，无写点"
+        },
+        {
+          "file": "apps/api/src/services/work-items.ts",
+          "line": 1138,
+          "note": "只读:把 currentSpecId 映射进响应 DTO"
+        },
+        {
+          "file": "packages/contracts/src/domain/work-item.ts",
+          "line": 55,
+          "note": "契约导出 current_spec_id，实际恒为空"
+        }
+      ],
+      "dim": "data-event-orphans",
+      "merged_from": [
+        "data-event-orphans:spec_docs 表从不写入，work_items.current_spec_id 只读不写、恒为空"
+      ],
+      "verdict": {
+        "real": true,
+        "reason": "grep 证实全仓无 insert(specDocs)/db.query 关系查询/currentSpecId 赋值,work-items.ts:1138 只读、契约导出该 optional 字段——spec_docs 表与 current_spec_id 列确为无写点孤儿;但字段 optional 且恒 absent,不撞死主流程也不产错数据,属残余脚手架,故降为 low。",
+        "adjusted_severity": "low"
+      }
+    },
+    {
+      "title": "人工协作工作台三张表全孤儿（work_item_workspaces/_items/progress_updates）",
+      "category": "dataflow",
+      "surface": "api",
+      "severity": "medium",
+      "detail": "三张表在 0000 迁移里建好并带完整 FK+索引，建模了一整套'人类队友工作台+进度追踪'能力:work_item_workspaces(phase/progress_percent/status_note/blocked_reason，core.ts:646)、work_item_workspace_items(todo 清单+sort_order，core.ts:665)、work_item_progress_updates(actor/kind/body/phase/progress 活动流，core.ts:681)。但三者在 apps/**、packages/db/src/repositories/**、packages/contracts/** 全部 0 引用——没有任何 insert/select/update，连 relations 里都没声明。这是被设计但从未接线的子系统:任何读 schema 做规划的人都会以为进度/协作工作台是真的，实际后端与前端都不存在。",
+      "suggestion": "确认是废弃设计后从 schema+PG 删除(减少每次迁移携带的死表)，或补上 repository/service/UI 真正落地这套协作进度追踪。",
+      "evidence": [
+        {
+          "file": "packages/db/src/schema/core.ts",
+          "line": 646,
+          "note": "work_item_workspaces 定义，全仓 0 引用"
+        },
+        {
+          "file": "packages/db/src/schema/core.ts",
+          "line": 665,
+          "note": "work_item_workspace_items 定义，全仓 0 引用"
+        },
+        {
+          "file": "packages/db/src/schema/core.ts",
+          "line": 681,
+          "note": "work_item_progress_updates 定义，全仓 0 引用"
+        }
+      ],
+      "dim": "data-event-orphans",
+      "merged_from": [
+        "data-event-orphans:人工协作工作台三张表全孤儿:work_item_workspaces / _items / progress_updates"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "medium",
+        "reason": "亲验：三表在 core.ts:646/665/681 建模齐全，全仓仅 schema 定义+export 桶(1687-89)+迁移锁触发器表名清单引用，repositories/contracts/apps 无任何读写与 relations，确系被设计从未接线的孤儿；无用户主流程撞死但明显残缺且误导 schema 读者，medium 成立。"
+      }
+    },
+    {
+      "title": "background_jobs 表从不写入，三处 job_id 外键恒为 NULL",
+      "category": "dataflow",
+      "surface": "api",
+      "severity": "low",
+      "detail": "background_jobs 表(core.ts:280)从没有 insert/select——生产代码里对它零操作(连测试/qa/seed 都不碰)。三张表挂了指向它的 job_id 外键:knowledge_ask_runs.job_id(core.ts:391)、meeting_records.job_id(core.ts:590)、work_item_task_plans.job_id(core.ts:820)。因为 background_jobs 永远是空表，这些 job_id 列只能是 NULL(写非空值会违反 FK 约束)，且全仓也确实没有任何 jobId 非空写点。也就是说 schema 建模了一套持久化异步任务队列，但根本没实现——会议转写等异步流程实际靠各自记录上的 status 列('processing'→done)自管，与这张表无关。",
+      "suggestion": "删除 background_jobs 表及三处 job_id 死列(它们制造了误导性的'有 job 队列'假象)，或让异步流程真正落 background_jobs 并回填 job_id。",
+      "evidence": [
+        {
+          "file": "packages/db/src/schema/core.ts",
+          "line": 280,
+          "note": "background_jobs 表定义，无 insert/select"
+        },
+        {
+          "file": "packages/db/src/schema/core.ts",
+          "line": 391,
+          "note": "knowledge_ask_runs.job_id FK 恒 NULL"
+        },
+        {
+          "file": "packages/db/src/schema/core.ts",
+          "line": 590,
+          "note": "meeting_records.job_id FK 恒 NULL"
+        }
+      ],
+      "dim": "data-event-orphans",
+      "merged_from": [
+        "data-event-orphans:background_jobs 表从不写入，三处 job_id 外键恒为 NULL"
+      ],
+      "verdict": {
+        "real": true,
+        "reason": "核对属实：background_jobs 表(core.ts:280)全仓无 insert/select，三处 job_id 外键(391/590/820)无任何非空写点(唯一读点 meeting-pages.ts:299 条件读、测试均置 null)，确为建模但未实现的孤儿表；无用户影响，low 诚实。",
+        "adjusted_severity": "low"
+      }
+    },
+    {
+      "title": "knowledge_ask_runs 表从不落库，知识问答无历史/审计出口",
+      "category": "dataflow",
+      "surface": "api",
+      "severity": "low",
+      "detail": "knowledge_ask_runs 表(core.ts:384)建模了知识问答的完整历史:question、answer_md、citations_json、trace_json、status。但全仓对它零 insert/select(连测试都没有)。知识问答实际是即时/瞬态计算的(knowledge.evidence.ready 事件由 agent loop 直接发出，不落这张表)，用户问完即走、拿不到任何问答历史或引用溯源，尽管 schema 明确为此建了表和四个索引。这是 worker/服务产出的数据没有任何持久化出口的典型。",
+      "suggestion": "若要提供问答历史/引用审计，让知识 ask 流程写 knowledge_ask_runs 并加一个列表出口;否则删表。",
+      "evidence": [
+        {
+          "file": "packages/db/src/schema/core.ts",
+          "line": 384,
+          "note": "knowledge_ask_runs 定义(question/answer_md/citations/trace)，全仓 0 读写"
+        }
+      ],
+      "dim": "data-event-orphans",
+      "merged_from": [
+        "data-event-orphans:knowledge_ask_runs 表从不落库:知识问答无历史/审计出口"
+      ],
+      "verdict": {
+        "real": true,
+        "reason": "grep 确认 knowledgeAskRuns 仅在 core.ts:384 定义与 1676 barrel 导出出现,全仓零 insert/select,知识问答走 knowledge.evidence.ready 事件即时计算不落表,孤儿表属实,low 级诚实。",
+        "adjusted_severity": "low"
+      }
+    },
+    {
+      "title": "四张遗留 schema 死表（deliveries/attachments/comments/user_profiles）",
+      "category": "dataflow",
+      "surface": "api",
+      "severity": "low",
+      "detail": "四张表定义并从 schema 索引导出，但没有任何 repository/service/route 对它们做 insert/select/update:deliveries(core.ts:914)、attachments(core.ts:877)、comments(core.ts:937，注意与在用的 approval_comments/project_drive_comments 是不同的表)、user_profiles(core.ts:238)。它们唯一的'引用'是 relations/core.ts 里的关系声明(profile: one(userProfiles)、deliveries: many(deliveries)、comments、currentSpec 等)——但 drizzle 关系查询 API(db.query.* / with:{})在生产代码全局 0 调用(见 packages/db/src/index.ts 只 export 关系但无人 query)，所以这些关系声明是惰性的、运行期从不触发。四张表纯属早期 schema 遗留，随每次迁移携带进 PG。",
+      "suggestion": "确认废弃后从 schema+PG 清除;或在关系声明处加注释标注'预留/未接线'，避免误导。",
+      "evidence": [
+        {
+          "file": "packages/db/src/schema/core.ts",
+          "line": 914,
+          "note": "deliveries 表，仅 relations 声明，无 query"
+        },
+        {
+          "file": "packages/db/src/schema/core.ts",
+          "line": 877,
+          "note": "attachments 表，全仓 0 引用"
+        },
+        {
+          "file": "packages/db/src/schema/core.ts",
+          "line": 937,
+          "note": "comments 表(非 approval/drive comments)，无 query"
+        },
+        {
+          "file": "packages/db/src/schema/core.ts",
+          "line": 238,
+          "note": "user_profiles 表，仅 relations 声明"
+        }
+      ],
+      "dim": "data-event-orphans",
+      "merged_from": [
+        "data-event-orphans:四张遗留 schema 死表:deliveries / attachments / comments / user_profiles"
+      ],
+      "verdict": {
+        "real": true,
+        "reason": "grep 证实 deliveries/attachments/comments/user_profiles 四表除 core.ts 定义与 relations 声明外全仓无任何 repo/service/route 读写，且 db.query.* 关系查询 API 生产代码零调用，关系声明确属惰性遗留，file:line 与描述全部属实，low 级不夸大。",
+        "adjusted_severity": "low"
+      },
+      "lead_verdict": {
+        "corrected": true,
+        "reason": "user_profiles 有真实仓库(user-profiles.ts)+GET/PATCH 路由,从死表清单移除(codex 反馈);deliveries/attachments/comments 复核维持"
+      }
+    },
+    {
+      "title": "三个 SSE 事件类型死枚举（usage.recorded 全死，confidence.scored/sync.progress 订而无发）",
+      "category": "dataflow",
+      "surface": "cuu",
+      "severity": "low",
+      "detail": "事件层存在订阅方无发布方的孤儿。(1) usage.recorded(eventTypes.usageRecorded，enums.ts:187)既不被任何生产代码发布，也不被 toCuuState/toAttentionItem/桌面白名单消费——只出现在 gold-path 夹具(fixtures/gold-path.ts:1133);用量直接写入 usage_records 表，从不发事件。(2) confidence.scored 在 toCuuState.ts:9 被映射为桌宠'thinking'态，但从没有一处 bus.publish 发它——agent-run-confidence.ts:128 的 'confidence.scored' 只是审计日志 action 字符串,不是事件。(3) sync.progress 在 toCuuState.ts:20 被映射为 'syncing_files' 态，但全仓无发布方(仅出现在 openapi 文档枚举与桌面 QA 场景)。结果:桌宠的'思考(来自打分)'与'同步文件'动画永远不会因真实事件触发。",
+      "suggestion": "要么在打分/同步流程真正发这两个事件(补齐 CuuState 反馈)，要么从 eventTypes 与 toCuuState 里删掉这三个死枚举，避免维护者以为它们是活的。",
+      "evidence": [
+        {
+          "file": "packages/contracts/src/enums.ts",
+          "line": 187,
+          "note": "usage.recorded 定义，全仓无发布/消费"
+        },
+        {
+          "file": "packages/events/src/toCuuState.ts",
+          "line": 9,
+          "note": "confidence.scored→thinking，但无发布方"
+        },
+        {
+          "file": "packages/events/src/toCuuState.ts",
+          "line": 20,
+          "note": "sync.progress→syncing_files，但无发布方"
+        },
+        {
+          "file": "apps/api/src/services/agent-run-confidence.ts",
+          "line": 128,
+          "note": "'confidence.scored' 只是审计 action，非事件"
+        }
+      ],
+      "dim": "data-event-orphans",
+      "merged_from": [
+        "data-event-orphans:三个 SSE 事件类型是死枚举:usage.recorded 全死，confidence.scored / sync.progress 订而无发"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "low",
+        "reason": "三条证据逐一核实成立:usage.recorded 除文档外无生产发布方也无消费方(cost 文档自认未落),confidence.scored 在 toCuuState:9 映射但 agent-run-confidence:128 只是 audit action 字符串非 bus.publish,sync.progress 在 toCuuState:20 映射但仅 QA 脚本发、无真实发布方,均为订而无发的死枚举,low 诚实。"
+      },
+      "lead_verdict": {
+        "withdrawn": true,
+        "reason": "非新发现:enums.ts:165 起为 R17 G2 所加 @deprecated 标注,明文枚举值一律保留(契约兼容面),删除建议违背既档约束(codex 反馈后复核坐实)"
+      }
+    },
+    {
+      "title": "step.snapshot 事件被桌面 run-stream 具名白名单丢弃",
+      "category": "dataflow",
+      "surface": "desktop",
+      "severity": "low",
+      "detail": "agent loop 在 loop.ts:907 发出 step.snapshot(eventTypes.stepSnapshot，检查点/回滚快照标记)，runner 会把它连同其他事件一并 publish 到 run 主题与 workitem 主题(agent-runner.ts 的 emit 路径)。web 端订阅全部事件类型(Object.values(eventTypes)，browser.ts:154)故能触发刷新;但桌面 CUU run-stream 用具名事件监听白名单 desktopCuuRunStreamEventNames(desktop-cuu-runtime.ts:1397-1409)——该列表含 agent_run.step / step.tool_result / budget.* 等，唯独遗漏 step.snapshot。EventSource 的具名事件不会触发默认 onmessage，所以桌面工作台在实时运行视图里永远收不到 step.snapshot，快照落点对桌面用户不可见(只能事后走 REST replay)。",
+      "suggestion": "若桌面运行视图希望标示'已保存检查点'，把 eventTypes.stepSnapshot 加入 desktopCuuRunStreamEventNames;否则确认此遗漏是有意的并加注释。",
+      "evidence": [
+        {
+          "file": "packages/agent/src/loop/loop.ts",
+          "line": 907,
+          "note": "发出 step.snapshot 事件"
+        },
+        {
+          "file": "apps/desktop-webview/src/desktop-cuu-runtime.ts",
+          "line": 1401,
+          "note": "run-stream 具名白名单含 stepToolResult 却漏 stepSnapshot"
+        }
+      ],
+      "dim": "data-event-orphans",
+      "merged_from": [
+        "data-event-orphans:step.snapshot 事件被桌面 run-stream 白名单丢弃"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "low",
+        "reason": "核对属实:loop.ts:907 确发 stepSnapshot,web(browser.ts:154 全量订阅+render.ts:85 渲 snapshot pill)能收,而桌面具名白名单(desktop-cuu-runtime.ts:1397-1409)含 stepToolResult 却独漏 stepSnapshot,EventSource 具名事件不触发 onmessage,桌面实时视图确收不到,只能事后 REST replay 看到检查点标记,属真实低级事件孤儿。"
+      }
+    },
+    {
+      "title": "主动 Cuu 会话消息投递后无任何端能提示（桌宠/rail/OS 通知全静默丢失）",
+      "category": "dataflow",
+      "surface": "cross",
+      "severity": "medium",
+      "evidence": [
+        {
+          "file": "apps/api/src/services/proactive-cuu-delivery.ts",
+          "line": 110,
+          "note": "主动Cuu消息只 publish 到 topics.conversation(会话话题);文件头26-29行明确刻意不调 notifyConversationMessage、不落任何 notification(个人空间主区无 participant 行,扇出天然短路)"
+        },
+        {
+          "file": "apps/desktop-webview/src/desktop-cuu-runtime.ts",
+          "line": 61,
+          "note": "桌宠 SSE worker『目前只订阅 /api/push/stream/me,收不到 conversation:<id> 话题的事件』——桌宠永远看不到会话话题上的主动消息"
+        },
+        {
+          "file": "apps/desktop-webview/src/workbench/rail.ts",
+          "line": 151,
+          "note": "rail 未读红点『实时性只靠一条 /api/push/stream/me 订阅:收到某会话新消息的 notification.created 时本地+1』;主动Cuu消息不产 notification,故红点永不+1"
+        },
+        {
+          "file": "apps/api/src/services/ddl-chase.ts",
+          "line": 250,
+          "note": "cuuDeliveryEnabled 时 t1d/overdue 两档对有责任人的工作项改走 conversation_message 通道(个人空间可用即不降级到通知)"
+        },
+        {
+          "file": "packages/config/src/env.ts",
+          "line": 148,
+          "note": "PROACTIVE_CUU_DELIVERY_ENABLED 默认 true——上述会话通道是默认行为,不是实验开关"
+        },
+        {
+          "file": "apps/desktop-webview/src/workbench/rail.ts",
+          "line": 314,
+          "note": "个人空间项目行(未选中时)只渲 open_work_item_count>0 的小圆点,没有未读徽标;main 会话的 unread_count 只在该项目被选中(activeVm)时才随叶子渲出"
+        }
+      ],
+      "detail": "链路:pulse-scheduler 的 ddl-chase(默认开)对『有责任人』工作项的 T-1d/逾期两档,以及 care-scan 的全部关怀消息,都通过 proactive-intents 的 conversation_message 通道,由 proactive-cuu-delivery 直接 createCuuMessage 落进用户个人空间主区,并只向该会话话题广播。这条投递刻意不落 notification(见 delivery 文件头),也不向 topics.user(即 /stream/me)发任何事件。而三处呈现端都只吃 /stream/me 上的 notification.created:桌宠 runtime(desktop-cuu-runtime.ts:61 只订 /stream/me)、rail 未读红点(rail.ts:151 只靠 notification.created 本地+1)。个人空间项目行本身也不渲未读徽标(rail.ts:314),main 会话未读数只在进入该个人空间后才可见。综合结果:用户建过个人空间后,截止提醒(『明天就到期了』/『已经逾期了』)和关怀问候被静默塞进一个他可能几天都不打开的空间,桌宠——Cuu 唯一的常驻『主动开口』载体——一声不吭。追DDL的核心目的(主动把截止日顶到用户面前)在最常见场景(有个人空间、没盯着它看)下完全落空。逾期档的24h重复叮嘱阶梯(nextRemindAt)在会话通道下『天然不生效』(ddl-chase.ts:32-34注释),suppression_key=ddl:{id}:overdue 保证每件逾期只发一次,连补救的重复提醒也没了。关怀默认开(careWeeklyCap=2),但个人空间不可用即 suppressed 不降级,可用则静默投递——realized 到达率极低。缺的是:主动会话通道投递成功后向 topics.user 补一条轻量『你的空间有新动态』信号(或让桌宠/rail 订阅个人空间会话话题),让至少一个端能提示。",
+      "suggestion": "主动会话消息投递成功后,额外向 topics.user(targetUserId) 广播一条轻量提示事件(不等于系统OS通知,可做成桌宠轻点头/rail个人空间行红点),或让桌宠 runtime 与 rail 订阅当前用户个人空间会话话题;至少让追DDL的逾期档保留可感知的重复提醒。",
+      "dim": "cuu-proactive",
+      "merged_from": [
+        "cuu-proactive:Cuu 主动会话消息(追DDL的t1d/逾期 + 全部关怀)投出去后没有任何端能提示——桌宠收不到、rail不亮红点、无系统通知,提醒静默丢失"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "medium",
+        "reason": "证据逐条在 main 核实为真:主动 Cuu 消息仅广播 conversation 话题、不落 notification、不发 topics.user,而桌宠/rail/OS 三端都只吃 /stream/me 的 notification.created(源码注释自认),用户有个人空间但没盯着看时截止提醒与关怀确会静默投递、无任何端提示;但消息已落库、进空间即可见非数据丢失/崩溃,故降为 medium。"
+      }
+    },
+    {
+      "title": "设置里『Cuu 主动性』三档是死控件，无任何代码读取，选『安静』照样收全量主动打扰",
+      "category": "fe-no-backend",
+      "surface": "desktop",
+      "severity": "low",
+      "evidence": [
+        {
+          "file": "apps/desktop-webview/src/spotlight/views/settings.ts",
+          "line": 149,
+          "note": "proactivityValues=[quiet,balanced,proactive] 渲成可点 chip,点击 patchAiProfile({cuu_proactivity}) 真持久化;文案(94-100行)承诺 quiet=『很少主动开口,等你来问』"
+        },
+        {
+          "file": "apps/api/src/services/ai-settings.ts",
+          "line": 282,
+          "note": "cuu_proactivity 仅被读出/回写返回,服务层无任何据它分支的行为"
+        },
+        {
+          "file": "packages/db/src/schema/core.ts",
+          "line": 895,
+          "note": "cuu_proactivity 列 + check 约束存在,但全库只有 存/取/展示 三类引用"
+        },
+        {
+          "file": "apps/api/src/services/proactive-intents.ts",
+          "line": 161,
+          "note": "主动打扰唯一闸门 recordAndDeliver 的频控只有『每人每日上限+用户级静音』,从不查 cuuProactivity;ddl-chase/care-scan/conversation-observer 同样零引用(全库 grep 无行为消费者)"
+        }
+      ],
+      "detail": "cuu_proactivity(R12 引入)在桌面设置里是一个可交互、会写库的三档选择器,文案明确承诺它控制 Cuu 主动开口的频率(quiet『很少主动开口,等你来问』)。但 R15 的主动性管线(pulse-scheduler → proactive-intents 闸 → ddl-chase/care-scan)完全另起一套频控(每日上限 dailyCapPerUser=10、关怀 opt-out、静默时段),从不读 cuu_proactivity;反应式的 conversation-observer 也不读。结果:用户把 Cuu 设成『安静』——正是在明确表达『别主动烦我』——却仍会照常收到追DDL的Cuu私聊和每周关怀。这是 R15 新建主动性系统时没有把既有的主动性偏好接进去的集成缺口,是一个『调了等于没调』的误导控件。缺的是:让 proactive-intents 闸(或各扫描任务)按 target 用户的 cuu_proactivity 调节频率/阈值(quiet 收紧甚至只留升级类、proactive 放宽)。",
+      "suggestion": "在 recordAndDeliver 或各 pulse 任务里按 target 用户的 cuu_proactivity 分档:quiet 降到只保留升级/找人这类必要打扰,proactive 放宽每日上限;或先把该控件在桌面标注为暂未生效,避免骗用户。",
+      "dim": "cuu-proactive",
+      "merged_from": [
+        "cuu-proactive:设置里的『Cuu 主动性』三档(安静/均衡/主动)是死控件——没有任何代码读它,选『安静』照样收全量追DDL和关怀"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "low",
+        "reason": "跨所有可核对分支确认 cuu_proactivity 仅存/取/展示、agent/workers/services 无行为消费者,该偏好控件确有\"调了不生效\"的误导性(real 成立);但危害所依赖的 R15 投递管线(recordAndDeliver/ddl-chase/care-scan)在可访问的任何树中都不存在、无法坐实\"选安静照样收全量打扰\",且此偏好是否应节流 R15(已自带静音/每日上限等独立控件)属设计判断,故 medium 夸大,降为 low。"
+      }
+    },
+    {
+      "title": "web 会话镜像把『找人』决策卡渲成标题张冠李戴的只读摘要，无 claim/reassign/defer",
+      "category": "be-no-frontend",
+      "surface": "web",
+      "severity": "low",
+      "evidence": [
+        {
+          "file": "packages/ui/src/gold-path/route-components.ts",
+          "line": 5176,
+          "note": "mirrorActionCardHtml 对所有 action_card 一律套死标题『Cuu 从讨论里拎出 N 件事』,item 只渲成静态 wh-mirror-clarify-opt 文字片,无任何 decide 按钮"
+        },
+        {
+          "file": "apps/api/src/services/proactive-find-owner-card-delivery.ts",
+          "line": 74,
+          "note": "找人卡是一条 decide 条目(assignee=项目负责人,work_item=逾期无主项),桌面按同一VM渲成 claim/reassign/defer 三动作走 POST /decide"
+        },
+        {
+          "file": "apps/api/src/services/ddl-chase.ts",
+          "line": 227,
+          "note": "无责任人的逾期项走 action_card 通道投到项目主区(needs_owner);项目主区可用即不降级到通知"
+        }
+      ],
+      "detail": "追DDL对『逾期且无人认领』的工作项,通过 action_card 通道在项目主区插一张系统 decide 卡(标题『XX 已逾期且无人认领』,三动作 claim/reassign/defer,发给项目负责人定夺)。桌面工作台按 VM 渲成可决策卡。但 web 会话镜像的 mirrorActionCardHtml 对任何 action_card 都硬套标题『Cuu 从讨论里拎出 N 件事 / Cuu pulled N items out of the discussion』,并把条目只渲成不可点的文字 chip——既没有决策按钮,标题也与找人卡语义完全不符(这卡根本不是从讨论里拎出来的)。项目负责人若在 web 上看到这张卡,会以为只是一条 Cuu 从讨论提炼的摘要,无法认领/改派/延期,找人卡的整个目的在 web 端落空。缺的是:web 镜像对 decide 类卡至少给出跳转到桌面/工作项去处理的入口,并按卡实际来源出对的标题。",
+      "suggestion": "mirrorActionCardHtml 按 item.kind/来源区分标题(找人卡用『逾期无人认领』等真实语义),对 decide 卡提供跳到工作项或提示『去桌面/工作项处理』的可点入口,而非套死『从讨论拎出』的只读摘要。",
+      "dim": "cuu-proactive",
+      "merged_from": [
+        "cuu-proactive:web 会话镜像把『找人』决策卡渲成只读摘要且标题张冠李戴(『Cuu 从讨论里拎出N件事』),无 claim/reassign/defer 任何动作"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "low",
+        "reason": "证据全部核实无误：mirrorActionCardHtml(route-components.ts:5170-5184)对所有 action_card 硬套「从讨论里拎出N件事」标题且渲成无按钮只读chip，而找人卡确是走同款 action_card 通道的 decide 卡(delivery.ts:74/ddl-chase.ts:227)，且 listMessages 按成员而非kind鉴权、项目负责人确能在 web 镜像看到该主区卡——标题张冠李戴属真误导；但 web 镜像本就是只读次要面(desktop卡+通知深链/workitems/:id 才是真决策入口)、条目真实标题仍以chip渲出，故降为 low。"
+      }
+    },
+    {
+      "title": "web 端无进入个人空间/私聊的导航，web 用户够不到投给自己的主动消息",
+      "category": "missing",
+      "surface": "web",
+      "severity": "medium",
+      "evidence": [
+        {
+          "file": "apps/desktop-webview/src/workbench/rail.ts",
+          "line": 361,
+          "note": "个人空间是桌面 rail 专属分组(renderPersonalSpaceSectionHtml,数据源 GET /api/me/personal-projects)"
+        },
+        {
+          "file": "apps/web/src/routes.ts",
+          "line": 187,
+          "note": "web 有 /conversations/:id 只读镜像路由,但需已知会话 id"
+        },
+        {
+          "file": "packages/ui/src/gold-path/product-shell.ts",
+          "line": 270,
+          "note": "web 外壳/导航(product-shell、render)对 personal/个人空间/DM/会话入口零引用——没有任何链到个人空间主区的入口"
+        }
+      ],
+      "detail": "个人空间(主动Cuu消息的落点)只有桌面 rail 有创建入口和导航;web 是项目中心式外壳,product-shell/render 里完全没有个人空间、私聊或会话列表的导航 chrome,只有一个需要预先知道会话 id 的 /conversations/:id 只读镜像。于是:一个在桌面建过个人空间、日常用 web 的用户,他的追DDL(t1d/逾期走Cuu会话)和关怀消息被投进 web 根本无法导航到的个人空间;又因会话通道刻意不产通知(无 targetUrl 可点),web 用户永远看不到这些主动消息。缺的是:web 侧的个人空间/主动动态入口(哪怕先做成一个『我的空间』只读镜像列表)。",
+      "suggestion": "web 外壳补一个『我的空间/主动动态』入口(列出个人空间主区会话、复用现有 /conversations 镜像),让 web 用户至少能读到 Cuu 投给自己的主动消息。",
+      "dim": "cuu-proactive",
+      "merged_from": [
+        "cuu-proactive:web 端没有任何进入个人空间/私聊的导航,web 用户根本够不到投给他的主动 Cuu 消息"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "medium",
+        "reason": "在 r18/h1-web-members 集成树三条证据行号全精确吻合,且 proactive-cuu-delivery.ts:26-28 刻意不产通知、proactive-intents.ts 会话通道投成后不降级发通知,web 的 product-shell/render/productNavGroups 对 personal/conversation 零引用、无任何 /api/me/personal-projects 消费方,个人空间项目又被 /api/projects 过滤——web 用户确实无路径读到投给自己个人空间的主动 Cuu 消息,缺口真实且非裁除项。"
+      }
+    },
+    {
+      "title": "唯一的主动性透明窗口（军团后台）桌面独占且内容单薄，web 有端点无渲染",
+      "category": "be-no-frontend",
+      "surface": "desktop",
+      "severity": "low",
+      "evidence": [
+        {
+          "file": "apps/desktop-webview/src/workbench/army/render.ts",
+          "line": 440,
+          "note": "renderArmyBackgroundProactiveHtml 只渲 kind 标签+stage+delivered/suppressed 状态,不含消息正文/工作项链接/任何动作"
+        },
+        {
+          "file": "apps/api/src/routes/conversation-army.ts",
+          "line": 58,
+          "note": "GET /api/army/background 端点存在(供 listRecentProactiveIntentsForUser)"
+        },
+        {
+          "file": "packages/ui/src/gold-path/route-components.ts",
+          "line": 5346,
+          "note": "web 侧无 army background 渲染(product-shell/route-components 对 armyBackground 零引用),web 用户看不到主动性动态"
+        }
+      ],
+      "detail": "listRecentProactiveIntentsForUser 已把当前用户最近的 delivered+suppressed 主动意图取出,但唯一的呈现是桌面军团后台的『主动性动态』小节,且只渲 kind/stage/状态(delivered/suppressed),既看不到 Cuu 到底说了什么、指向哪件事,也无从据此复看或调节。web 端有 /api/army/background 端点却无任何渲染。结果:用户几乎没有窗口理解 Cuu 主动做了什么、为什么某条被 suppressed(每日上限/静音),更谈不上从这里反馈。这是 finding 1『投递静默』之外的另一层——连事后审计透明度也很薄。缺的是:把主动性动态做成可读正文+可跳工作项/会话+可调节的面板,并让 web 也能看。",
+      "suggestion": "把主动性动态扩成含摘要文本、跳转与静音动作的面板,并在 web 复用同一端点渲染,给用户一个统一的『Cuu 最近替我操了哪些心』视图。",
+      "dim": "cuu-proactive",
+      "merged_from": [
+        "cuu-proactive:唯一的主动性透明窗口(军团后台『主动性动态』)是桌面独占且内容单薄,web 有端点无渲染"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "low",
+        "reason": "核对属实:desktop army/render.ts 的主动性动态区仅渲 kind/stage/status/时间(VM 甚至丢弃了 repo 已取的 workItemId,无正文无跳转无动作),而 gold-path 全库对 armyBackground/proactive 零引用,/api/army/background 端点存在却无 web 渲染,系真实的端到端透明度缝隙,low 诚实。"
+      }
+    },
+    {
+      "title": "项目树主区/协同会话未读只本地+1，同项目内不与服务端对账、重连不补缺（仅 DM 有兜底）",
+      "category": "dataflow",
+      "surface": "cross",
+      "severity": "medium",
+      "detail": "权威未读 unread_count 只在 selectProject() 拉 workbench VM 时到手（shell.ts:784，唯一的 pages.workbench 调用点）。停在同一个项目期间，主区/协同会话树叶的未读角标只靠 /me 流的 notification.created 做本地 +1（shell.ts:702 bumpConversationUnreadInVm），既没有周期性重拉 VM，也不会在 /me 流重连后补缺口：meStream 只配了 url/getClientToken/onEvent，没有 onReconnected 回调（shell.ts:665-715），而 broker 明确 resume_mode:\"fresh\"、不重放漏事件（stream.ts:7-9）。rail 的 30s 轮询只调 loadDms（rail.ts:1728-1732），只把 DM 行未读拉回权威——rail.ts:149-153 注释却宣称『30s 会话列表兜底刷新』覆盖了会话未读，对主区/协同叶其实是空头支票。复现：项目 P 里协同会话 B 收到消息时你正开着会话 A → B 叶 +1；期间 /me 流抖动重连一次（漏掉 B 的若干 notification.created，或某条因在线抑制根本没发通知），B 的角标就永久少算，只有切到别的项目再切回 P 才会被新 VM 纠正。DM 未读能自愈、主区/协同不能，同一『未读』事实两套新鲜度。",
+      "evidence": [
+        {
+          "file": "apps/desktop-webview/src/workbench/rail.ts",
+          "line": 1728,
+          "note": "30s 轮询只 loadDms()，不重拉 workbench VM"
+        },
+        {
+          "file": "apps/desktop-webview/src/workbench/rail.ts",
+          "line": 153,
+          "note": "注释声称 30s 会话列表兜底刷新会话未读——对主区/协同叶不成立"
+        },
+        {
+          "file": "apps/desktop-webview/src/workbench/shell.ts",
+          "line": 784,
+          "note": "pages.workbench 唯一调用点，仅 selectProject 触发；无周期/重连重拉"
+        },
+        {
+          "file": "apps/desktop-webview/src/workbench/shell.ts",
+          "line": 665,
+          "note": "meStream 无 onReconnected，重连不补缺口"
+        },
+        {
+          "file": "apps/desktop-webview/src/workbench/chat/stream.ts",
+          "line": 7,
+          "note": "broker resume_mode:fresh，不重放漏事件"
+        }
+      ],
+      "suggestion": "给 workbench VM 加 30s/重获焦点的周期性重拉，或给 meStream 配 onReconnected 走 GET attention/未读聚合补缺口，让主区/协同叶与 DM 同源自愈。",
+      "dim": "dataflow-consistency",
+      "merged_from": [
+        "dataflow-consistency:项目树会话未读角标只本地 +1，同项目内永不与服务端对账（仅 DM 有 30s 兜底）"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "medium",
+        "reason": "在 r18/h1-web-members 逐行核实:meStream(shell.ts:665-715)确无 onReconnected 而该回调是既有能力(stream.ts:34/226)、pages.workbench 唯一调用点在 selectProject(shell.ts:784)无周期/重连/焦点重拉、rail 30s 轮询只 loadDms 刷 DM 不碰 workbench VM(rail.ts:1019/1728)、broker resume_mode:fresh 不回放(stream.ts:7),主区/协同叶未读只本地+1不与服务端对账、重连不补缺,与 DM 自愈形成真实新鲜度不一致,证据全部属实。"
+      }
+    },
+    {
+      "title": "读完会话只推进读游标不清 notification 未读，Dock/通知中心长期虚高",
+      "category": "dataflow",
+      "surface": "cross",
+      "severity": "medium",
+      "detail": "每收到一条会话消息（未在看时）都会落一条 conversation.message 通知、severity=normal（notifications.ts:507,528），它计入 GET /api/notifications 的 counts.unread。但在工作台打开会话读消息只调 PUT /conversations/:id/read → advanceReadCursor，只推进读游标 + 发 conversation.read.updated，完全不碰 notifications（conversation-read.ts:42-47；conversations.ts:1533-1553）。chat 视图里唯一会 POST /notifications/:id/read 的是 dispatch-ask 追赶条、且要用户点一下（view.ts:1088）。而 Dock/托盘角标 = attention.queue + notifications.counts.unread（browser.ts:1382）。复现：别人给你发 3 条团队/私聊消息（你不在看那条会话）→ Dock 角标 +3、web/主窗 /notifications 列出 3 条未读；你在工作台把会话点开读完 → rail 叶红点归零、别人看到你『已读 N/M』，但 Dock 角标仍显示 3、通知中心仍标未读，非得再跑去主窗通知中心手动标已读才消。同一批消息存在『读游标已读』与『通知未读』两套自相矛盾的未读真相。",
+      "evidence": [
+        {
+          "file": "apps/api/src/routes/conversation-read.ts",
+          "line": 42,
+          "note": "PUT /read 只 advanceReadCursor，无 notifications 联动"
+        },
+        {
+          "file": "apps/api/src/services/conversations.ts",
+          "line": 1533,
+          "note": "advanceReadCursor 只推进游标 + publishReadUpdated，不 markRead 通知"
+        },
+        {
+          "file": "apps/api/src/services/notifications.ts",
+          "line": 528,
+          "note": "conversation.message 通知 severity=normal，计入 counts.unread"
+        },
+        {
+          "file": "apps/desktop-webview/src/browser.ts",
+          "line": 1382,
+          "note": "Dock 角标 = approvals + notifications.counts.unread"
+        },
+        {
+          "file": "apps/desktop-webview/src/workbench/chat/view.ts",
+          "line": 1088,
+          "note": "唯一的 notification mark-read 只针对 dispatch-ask 追赶条且需手动点"
+        }
+      ],
+      "suggestion": "读游标推进到会话末尾时，服务端顺带把该会话该用户的 conversation.message/mention 通知按 conversation_id 批量标已读（或从 counts.unread 口径中扣除已读会话），让 Dock/通知中心与读游标同源。",
+      "dim": "dataflow-consistency",
+      "merged_from": [
+        "dataflow-consistency:在工作台读完会话只推进读游标，不清 notification 未读——Dock 角标与通知中心长期虚高"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "medium",
+        "reason": "在 main 逐点核实：advanceReadCursor(conversations.ts:1532)只推进游标+发 read.updated 全不碰通知，无任何订阅 read.updated 或按 conversation_id 批量标已读的对端；conversation.message(notifications.ts:497)severity=normal 计入 counts.unread(:582)；Dock 角标=approvals+counts.unread(browser.ts:1382)；chat 唯一 mark-read 仅针对追赶条需手点(view.ts:1088)——读完会话确实不清通知未读、Dock/通知中心长期虚高；仅\"+3\"表述因 dedupe 折叠成 1 条略有出入但不损核心，medium 诚实。"
+      }
+    },
+    {
+      "title": "在线状态两套各自轮询来源（聊天条 vs rail/资料卡），同一人两处圆点打架",
+      "category": "dataflow",
+      "surface": "desktop",
+      "severity": "medium",
+      "detail": "chat 视图维护自己的局部 onlineUserIds（view.ts:658），由它自己的 30s 定时器 loadPresence 刷新（view.ts:1568-1577、3772），SSE 重连时还会额外即时补一次（view.ts:2697-2698）——聊天成员条和 DM 头像的绿点用它。rail 名册/私聊行、以及头像资料卡（profile-popover.ts:49 读 state.onlineUserIds）用的是另一套 store.onlineUserIds，由 rail 独立的 30s loadDms→loadPresence 写入（rail.ts:1047-1071）。两个消费者各自打 GET /api/presence、相位不同、且 chat 视图重连后的更鲜活在线态从不回写 store。复现：对方刚上线，你在 DM 里（chat 视图这一侧因重连已刷到『在线』绿点），但左栏那条 DM 行/资料卡（store 侧）还停在离线，最长可差 30s（chat 重连后甚至更久，直到 rail 下一拍）。同一个人、同一时刻，界面上两颗自相矛盾的在线点。",
+      "evidence": [
+        {
+          "file": "apps/desktop-webview/src/workbench/chat/view.ts",
+          "line": 658,
+          "note": "chat 视图私有 onlineUserIds，独立于 store"
+        },
+        {
+          "file": "apps/desktop-webview/src/workbench/chat/view.ts",
+          "line": 3772,
+          "note": "chat 视图自带 30s presence 轮询 + 重连即时刷新"
+        },
+        {
+          "file": "apps/desktop-webview/src/workbench/rail.ts",
+          "line": 1047,
+          "note": "rail 另一套 loadPresence 写 store.onlineUserIds"
+        },
+        {
+          "file": "apps/desktop-webview/src/workbench/profile-popover.ts",
+          "line": 49,
+          "note": "资料卡在线态取 store.onlineUserIds，与聊天成员条不同源"
+        }
+      ],
+      "suggestion": "统一 presence 为单一来源（chat 视图刷到的在线态也写回 store.onlineUserIds，或都从 store 读），避免同一 user 的在线点在两个界面间漂移。",
+      "dim": "dataflow-consistency",
+      "merged_from": [
+        "dataflow-consistency:在线状态有两个各自轮询的来源：聊天成员条/DM 头 vs rail 名册/私聊行/资料卡，同一人两处圆点会打架"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "medium",
+        "reason": "源码逐行核实无误:view.ts:658 私有 onlineUserIds 全文件从不回写 store,自带 30s 轮询(3776)+重连即刷(2698);rail.ts:1047 另写 store.onlineUserIds 由独立 30s 轮询驱动;profile-popover.ts:49 读 store——两套相位不同的 presence 来源确实会让同一人在聊天条与 rail/资料卡两处在线点漂移最长约30s,属真实且非裁除项的 dataflow 一致性缝隙,medium 恰当。"
+      }
+    },
+    {
+      "title": "全新私聊要等 30s 轮询才进左栏（me 流 bump 对未知会话是空操作）",
+      "category": "dataflow",
+      "surface": "desktop",
+      "severity": "low",
+      "detail": "/me 流收到会话消息通知时对 DM 未读的处理是 bumpDmUnread(dmList, conversationId)（shell.ts:707），而 bumpDmUnread 在 dmList 里找不到该会话时原样返回、什么也不做（rail.ts:205-211）；此路径也不会去 ensureDmListLoaded 把这条新 DM 拉进来。DM 消息 severity=normal 又不触发 OS 通知（notify.rs 只对 high/urgent 出通知）。复现：某人第一次给你发私聊 → 你此刻左栏私聊分组里还没有这条会话 → me 流 bump 空转、不建行、不出角标、无 OS 通知 → 这条 DM 与它的未读红点最长要等 rail 的 30s loadDms 轮询（rail.ts:1728）才冒出来。新私聊的到达在左栏有最长 30s 的盲区。",
+      "evidence": [
+        {
+          "file": "apps/desktop-webview/src/workbench/shell.ts",
+          "line": 707,
+          "note": "me 流对未知会话只 bumpDmUnread，无补拉列表"
+        },
+        {
+          "file": "apps/desktop-webview/src/workbench/rail.ts",
+          "line": 205,
+          "note": "bumpDmUnread 找不到会话即原样返回（空操作）"
+        },
+        {
+          "file": "apps/desktop-webview/src/workbench/rail.ts",
+          "line": 1728,
+          "note": "新 DM 只能靠 30s loadDms 才进列表"
+        }
+      ],
+      "suggestion": "me 流拿到带 conversation_id 的会话消息通知、但 dmList 里没有该会话时，触发一次 ensureDmListLoaded/refreshDms，让新私聊即时上墙。",
+      "dim": "dataflow-consistency",
+      "merged_from": [
+        "dataflow-consistency:全新进来的私聊要等 30s 轮询才出现在左栏（me 流 bump 是空操作、无 OS 通知）"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "low",
+        "reason": "经核对:rail.ts:205-211 的 bumpDmUnread 对未在 dmList 的会话确为空操作,shell.ts:707 me流 conversation.message 分支只 bump 不补拉 ensureDmListLoaded,notify.rs urgency_for_event 对 conversation.message 返回 None 故 normal DM 不出 OS 通知,唯一补拉是 rail.ts:1732 的 30s loadDms 轮询——首条私聊左栏 ≤30s 盲区成立,非裁除项,low 诚实(最终一致无数据丢失)。"
+      }
+    },
+    {
+      "title": "隐藏的主窗口无法靠点 Dock 图标恢复（缺 RunEvent::Reopen 处理）",
+      "category": "missing",
+      "surface": "desktop",
+      "severity": "medium",
+      "detail": "The main window has decorations:false (tauri.conf.json:32) and a custom in-app close button (browser.ts:239/291) whose handler invokes hide_main_window (dismissMainWindow → dismissDesktopMainWindow, browser.ts:1235); Cmd+W is likewise intercepted and turned into a hide (main.rs:1423-1428 prevent_close + window.hide()). So users routinely hide the main window. But main() ends with `.run(tauri::generate_context!())` (main.rs:1515) and registers NO RunEvent callback, so macOS `RunEvent::Reopen` (Dock-icon click / applicationShouldHandleReopen) is never handled. After hiding the window, clicking the app's Dock icon — the single most natural way to bring a macOS app back — does nothing. The window is only recoverable via the menu-bar tray, a deep link, or a notification. This is a standard-behavior violation users will hit constantly.",
+      "suggestion": "Switch to `.build(context)?.run(|app, event| …)` and handle `RunEvent::Reopen { .. }` by calling show_main_window (show + set_focus); also consider showing the window on macOS Dock activation.",
+      "evidence": [
+        {
+          "file": "client-tauri/src-tauri/src/main.rs",
+          "line": 1515,
+          "note": ".run(generate_context!()) with no RunEvent handler — Reopen unhandled"
+        },
+        {
+          "file": "client-tauri/src-tauri/src/main.rs",
+          "line": 1424,
+          "note": "main window CloseRequested → prevent_close + hide (routine hide-to-tray)"
+        },
+        {
+          "file": "apps/desktop-webview/src/browser.ts",
+          "line": 1235,
+          "note": "in-app close button hides the main window via hide_main_window"
+        }
+      ],
+      "dim": "native-shell",
+      "merged_from": [
+        "native-shell:Closed/dismissed main window can't be recovered by Dock-icon click (no RunEvent::Reopen handler)"
+      ],
+      "verdict": {
+        "real": true,
+        "reason": "证据全部核实:tauri.conf.json:32 decorations:false、main.rs 主窗 CloseRequested→hide 收托盘、main.rs:1515 裸 .run(generate_context!()) 且 src/ 内无任何 Reopen 处理,故隐藏后点 Dock 图标确无响应,仅托盘/深链/通知可恢复,medium 合理。",
+        "adjusted_severity": "medium"
+      }
+    },
+    {
+      "title": "OS 通知点击不打开目标页（路由被算出但无生产消费者）",
+      "category": "dataflow",
+      "surface": "native",
+      "severity": "medium",
+      "detail": "The Rust SSE worker shows real OS notifications for urgent events via `notifications.builder().title().body().show()` (notify.rs:126-131, called at sse_worker.rs:237) — with NO action identifier or click handler. The carefully-computed target route + window_control (notify.rs:154-176, e.g. permission.ask → /approvals?approvalId=…) travels only inside the `system-notification` Tauri event emitted at sse_worker.rs:235. But the only production binding of the shell runtime, pet-surface.ts:1545 `bindDesktopShellCuuRuntime({...})`, does NOT pass an `onSystemNotification` callback (the main-window entry in browser.ts never binds the runtime at all), so shell-events.ts:294 / desktop-cuu-runtime.ts:904 forward the plan to a no-op. Net: clicking an urgent 'Cuu needs your approval' notification does not deep-link to the approval — at best macOS activates the app, but with the main window hidden and no Reopen handler nothing appears. The proactive-push→act loop dead-ends. The route is also only delivered at notification-creation time, not on click, so it can't represent a user click even if consumed.",
+      "suggestion": "Wire the native notification click to focus_main_route/show_main_window — e.g. use tauri-plugin-notification action/permissions to receive click events (or register the plan's route as a pending deep link), so clicking the OS notification shows the main window and navigates to plan.route.",
+      "evidence": [
+        {
+          "file": "client-tauri/src-tauri/src/notify.rs",
+          "line": 126,
+          "note": "notification built with title/body only — no action/click handler"
+        },
+        {
+          "file": "client-tauri/src-tauri/src/sse_worker.rs",
+          "line": 235,
+          "note": "route-bearing system-notification event emitted; show_system_notification at :237"
+        },
+        {
+          "file": "apps/desktop-webview/src/pet-surface.ts",
+          "line": 1545,
+          "note": "sole runtime binding omits onSystemNotification → route dropped in production"
+        }
+      ],
+      "dim": "native-shell",
+      "merged_from": [
+        "native-shell:OS notification click does not open the target screen (route computed but has no production consumer)"
+      ],
+      "verdict": {
+        "real": true,
+        "reason": "证据全部核实:notify.rs只.show()无action/click handler、system-notification事件在创建时(sse_worker.rs:235)携route发出而非点击时、唯一生产绑定pet-surface.ts:1545漏传onSystemNotification致路由丢弃、主窗关闭即hide且无Reopen handler,OS通知点击确实无法深链且非裁除项,medium诚实。",
+        "adjusted_severity": "medium"
+      }
+    },
+    {
+      "title": "原生外壳 locale 启动即冻结，应用内切语言到不了外壳（托盘/通知仍旧语言）",
+      "category": "dataflow",
+      "surface": "desktop",
+      "severity": "medium",
+      "detail": "The WorkHubLocale mutex is set exactly once in setup from the config file/env (main.rs:1432-1434), and the tray menu labels + tooltip are built once from it (install_workhub_tray, main.rs:1446). There is NO command to update the shell locale at runtime — the invoke_handler list (main.rs:1494-1514) has no locale setter — so current_workhub_locale() always returns the launch-time value, driving tray menu text, deep-link error messages, and OS-notification fallback strings. Meanwhile the webview language switch only writes localStorage and reloads (browser.ts:1321-1332) and cannot write workhub-shell-config.json (the webview has no fs capability — capabilities/default.json grants only core:default + start-dragging). Result: a user who switches WorkHub to English still gets a Chinese tray menu, Chinese tooltip, and Chinese notification fallback text — and because the two sides persist locale differently (config JSON vs localStorage), the mismatch survives restarts until the config file is hand-edited.",
+      "suggestion": "Add a set_shell_locale command that updates the WorkHubLocale state and rebuilds/relabels the tray menu + tooltip; have the webview call it (and/or persist locale into workhub-shell-config.json) whenever the in-app language changes.",
+      "evidence": [
+        {
+          "file": "client-tauri/src-tauri/src/main.rs",
+          "line": 1432,
+          "note": "locale set once in setup; never updated at runtime"
+        },
+        {
+          "file": "client-tauri/src-tauri/src/main.rs",
+          "line": 1494,
+          "note": "invoke_handler has no locale command bridging webview→shell"
+        },
+        {
+          "file": "apps/desktop-webview/src/browser.ts",
+          "line": 1327,
+          "note": "language switch writes localStorage + reload only; cannot reach shell"
+        }
+      ],
+      "dim": "native-shell",
+      "merged_from": [
+        "native-shell:Native shell locale is frozen at launch; in-app language toggle never reaches the shell"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "medium",
+        "reason": "证据全部核实:WorkHubLocale mutex 仅 setup 从 config 写一次(main.rs:1433)、invoke_handler(1494-1514)无 locale setter、current_workhub_locale 只读该冻结值驱动托盘/深链/通知文案;webview 切语言(browser.ts:379-382)只写 localStorage+服务端 prefs+reload,capabilities 仅 core:default 无 fs,确实到不了原生壳,切英文后托盘/通知仍中文且重启后不一致。"
+      }
+    },
+    {
+      "title": "Spotlight 式启动器没有全局唤起热键",
+      "category": "missing",
+      "surface": "desktop",
+      "severity": "medium",
+      "detail": "The main window is explicitly built as an Apple-Spotlight-style launcher — positioned top-center on startup (position_main_window_top_center, main.rs:1094-1113), grows/shrinks with content (clamp_spotlight_size / set_spotlight_size), and hides to tray on close. Yet there is no global shortcut: Cargo.toml (deps at :11-23) does not include tauri-plugin-global-shortcut, and no shortcut is registered anywhere. Once the window is hidden (which happens routinely via Cmd+W or the in-app close button), there is no keyboard way to summon it — defeating the core affordance of the Spotlight metaphor it emulates (Cmd+Space). The only re-entry is a menu-bar tray click.",
+      "suggestion": "Add tauri-plugin-global-shortcut, register a configurable summon accelerator, and bind it to show_main_window; expose the binding in settings.",
+      "evidence": [
+        {
+          "file": "client-tauri/src-tauri/Cargo.toml",
+          "line": 16,
+          "note": "no tauri-plugin-global-shortcut among dependencies"
+        },
+        {
+          "file": "client-tauri/src-tauri/src/main.rs",
+          "line": 1094,
+          "note": "main window framed/positioned as a Spotlight launcher that hides to tray"
+        }
+      ],
+      "dim": "native-shell",
+      "merged_from": [
+        "native-shell:Spotlight-style launcher has no global summon hotkey"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "medium",
+        "reason": "核实无误:Cargo.toml 无 global-shortcut 插件、全库无热键注册,主窗为 Spotlight 顶部居中且 CloseRequested 拦截为隐藏收托盘,再入口仅托盘菜单,缺 Cmd+Space 式全局唤起确成立且非裁除项,medium 合理。"
+      },
+      "lead_verdict": {
+        "withdrawn": true,
+        "reason": "tauri-plugin-global-shortcut 2.3.2 在 Cargo.toml:19,main.rs:841/1668 注册 Option+Space——能力已存在(R15 热键批)"
+      }
+    },
+    {
+      "title": "桌面应用缺自动更新、开机自启与崩溃/panic 上报",
+      "category": "missing",
+      "surface": "desktop",
+      "severity": "low",
+      "detail": "Standard shipping-desktop capabilities are absent: Cargo.toml (:11-23) has no tauri-plugin-updater / tauri-plugin-autostart / tauri-plugin-log; the bundle config (tauri.conf.json:62-75) declares no updater endpoints or createUpdaterArtifacts; and there is no panic hook — startup and worker errors are written with eprintln! to stderr (e.g. main.rs:1519, sse_worker.rs:238), which is invisible in a bundled .app. An old plan deferred these (F11-headless-daemon-client-rewire-plan.md:36/62 push '自动更新、autostart' to P1+), but for a release-hardening pass the shell still cannot self-update, start with the OS (needed for the always-on proactive/SSE/notification loop), or leave a diagnosable crash trail.",
+      "suggestion": "Add tauri-plugin-updater with signed artifacts + endpoint, tauri-plugin-autostart (opt-in from settings), and a file/log sink (tauri-plugin-log) plus a panic hook so field crashes are recoverable/diagnosable.",
+      "evidence": [
+        {
+          "file": "client-tauri/src-tauri/Cargo.toml",
+          "line": 11,
+          "note": "no updater/autostart/log plugins in dependency set"
+        },
+        {
+          "file": "client-tauri/src-tauri/tauri.conf.json",
+          "line": 62,
+          "note": "bundle config declares no updater artifacts/endpoints"
+        },
+        {
+          "file": "docs/plans/p0-foundation/F11-headless-daemon-client-rewire-plan.md",
+          "line": 62,
+          "note": "auto-update + autostart wiring explicitly deferred to P1+"
+        }
+      ],
+      "dim": "native-shell",
+      "merged_from": [
+        "native-shell:No auto-update, launch-at-login, or crash/panic reporting for the desktop app"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "low",
+        "reason": "核对属实:Cargo.toml(:11-23)无 tauri-plugin-updater/autostart/log,tauri.conf.json bundle 无 updater 端点,src 内无 panic::set_hook,错误全走 eprintln 到 stderr(main.rs:1519、sse_worker.rs:238),这些出货级桌面能力确实缺失,severity=low 诚实。"
+      }
+    },
+    {
+      "title": "外壳声明拥有 local_file_sync 却无实现（spec_watch.rs 不存在）",
+      "category": "missing",
+      "surface": "desktop",
+      "severity": "low",
+      "detail": "lib.rs:16-32 RUST_SHELL_OWNS lists 'local_file_sync' as a capability owned by the native shell, and the product glossary names client-tauri/src-tauri/src/spec_watch.rs as the foundation for spec-folder↔server sync (glossary-dejargon.md:85). But no such module exists — `find client-tauri -name spec_watch*` returns nothing, and there is no filesystem watcher, inotify, or sync code anywhere in src-tauri/src (only the lib.rs string references it). Either the contract/doc is stale or a promised native capability (local spec/file sync) was dropped. As-is, the shell claims to own a feature it does not implement, which will mislead anyone relying on RUST_SHELL_OWNS as the source of truth for shell responsibilities.",
+      "suggestion": "Either implement the local file/spec sync module or remove 'local_file_sync' from RUST_SHELL_OWNS and correct the glossary reference to spec_watch.rs.",
+      "evidence": [
+        {
+          "file": "client-tauri/src-tauri/src/lib.rs",
+          "line": 31,
+          "note": "'local_file_sync' declared as shell-owned with no backing module"
+        },
+        {
+          "file": "docs/workhub/00-overview/glossary-dejargon.md",
+          "line": 85,
+          "note": "doc names client-tauri/.../spec_watch.rs as the sync foundation — file does not exist"
+        }
+      ],
+      "dim": "native-shell",
+      "merged_from": [
+        "native-shell:Shell advertises `local_file_sync` ownership but no implementation (spec_watch.rs) exists"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "low",
+        "reason": "核实无误:lib.rs:31 确列 local_file_sync 为壳所有,而 src-tauri/src 下无 spec_watch.rs/sync.rs、无任何 watcher 或双向同步实现,glossary(85/153/261)仍把不存在的文件当同步地基,属真实的契约/文档陈旧,low 级恰当。"
+      }
+    },
+    {
+      "title": "没有人发起的『指派/认领工作项』动作，归属只能靠系统主动发的找人卡被动落地",
+      "category": "missing",
+      "surface": "cross",
+      "severity": "medium",
+      "detail": "经理旅程「派发」与成员旅程「领任务」都撞墙。工作项的人类归属只有两条列:多角色的 work_item_assignments 表 与 单认领人 claimedByUserId。work_item_assignments 在整个生产代码里【只被 SELECT、从不 INSERT】——唯一的两处 insert 都在测试/QA(workbench-repository.test.ts:520、qa/r14-search-smoke.ts:151),即富模型(lead/collaborator/reviewer)是死列。claimedByUserId 的唯一写入口是 claimOwnerlessWorkItem(work-items.ts:310/781),而它只被 R15「找人交互卡」的 decide(claim=认领给自己 / reassign=改派他人)调用;action-cards 路由只暴露 /decide 与 /undo(action-cards.ts:62,74),找人卡本身只由 proactive-intents 主动扫描管线生成(proactive-find-owner-card-delivery.ts)。结论:经理建任务/审批计划草案落地工作项时无法「指派给张三」,成员也无法从一个待领池里主动认领某条任务——只能等系统碰巧对某条任务发出找人卡时才谈得上归属。workitems POST 创建请求(workitems.ts:167)也不接受 assignee 字段。",
+      "suggestion": "补一个人发起的指派/认领端点(如 POST /workitems/:id/assign 与 /claim),在工作项详情与看板卡上给「指派」「认领」按钮;或至少允许经理在计划草案 materialize 时为每条工作项选负责人。",
+      "evidence": [
+        {
+          "file": "packages/db/src/repositories/work-items.ts",
+          "line": 310,
+          "note": "claimOwnerlessWorkItem 是 claimedByUserId 唯一写入口,注释明说只服务「找人卡」的 claim/reassign"
+        },
+        {
+          "file": "apps/api/src/routes/action-cards.ts",
+          "line": 62,
+          "note": "action-card 路由只有 /decide 与 /undo(74),人无法主动创建找人卡或直接指派"
+        },
+        {
+          "file": "apps/api/src/services/proactive-find-owner-card-delivery.ts",
+          "line": 85,
+          "note": "找人卡仅由主动扫描管线投递,归属完全是被动触发"
+        },
+        {
+          "file": "apps/api/src/routes/workitems.ts",
+          "line": 167,
+          "note": "POST /workitems 创建时不接受负责人字段,work_item_assignments 生产零 INSERT"
+        }
+      ],
+      "dim": "product-missing",
+      "merged_from": [
+        "product-missing:没有「把任务派给某个人 / 认领待办」的直接动作——工作项归属只能靠系统主动发的「找人卡」被动落地"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "medium",
+        "reason": "在R19审查检出(main含R15-R18)核实:work_item_assignments生产零INSERT、claimedByUserId唯一写口claimOwnerlessWorkItem只服务找人卡、action-cards仅/decide+/undo、POST /workitems无assignee字段、全routes无人工assign/claim端点,人发起的指派/认领动作确实缺失,归属只能靠主动找人卡被动落地。"
+      }
+    },
+    {
+      "title": "项目没有关闭/归档/删除，archived/deletedAt 列从无写路径",
+      "category": "missing",
+      "surface": "cross",
+      "severity": "medium",
+      "detail": "projects 表已经预留了 archived 布尔列和 deletedAt 软删列,而且列表/时间线/网盘等所有查询都在 WHERE 里过滤 archived=false ∧ deletedAt IS NULL(如 projects.ts 仓库多处)——说明产品设计预期项目可归档。但生产代码里【从没有任何一条路径把 archived 置 true 或写 deletedAt】:唯一置 archived:true 的两处都在测试(workbench-repository.test.ts:766、work-items-service.test.ts:2065)。projects 路由整个文件只注册 2 条:GET /(列表)和 POST /bootstrap(建/复用),没有归档/关闭/删除/改名。ProjectRepository 接口的写方法只有 bootstrapPilotProject、bootstrapPersonalProject、updateInstructions(projects.ts:85-92),没有 archive/delete/rename。经理做完一个项目想收尾归档、或删掉一个建错的项目,界面与后端都无从下手,项目列表只会无限增长。",
+      "suggestion": "补 POST /projects/:id/archive 与 /delete(软删),把 archived 写路径接上;在项目主页/设置给「归档项目」「删除项目」;列表加已归档分区。",
+      "evidence": [
+        {
+          "file": "apps/api/src/routes/projects.ts",
+          "line": 35,
+          "note": "projects 路由只有 GET /(35)与 POST /bootstrap(44),grep 全文件仅 2 条 route 注册,无归档/删除/改名"
+        },
+        {
+          "file": "packages/db/src/repositories/projects.ts",
+          "line": 92,
+          "note": "仓库写方法仅 bootstrap*/updateInstructions,无 archive/delete;archived 列(27)只被读取过滤"
+        },
+        {
+          "file": "packages/db/src/schema/core.ts",
+          "line": 326,
+          "note": "projects 表有 archived 与 deletedAt 列,列表查询全程过滤它们,但生产无任何写 true 的路径"
+        }
+      ],
+      "dim": "product-missing",
+      "merged_from": [
+        "product-missing:项目没有关闭/归档/删除:经理旅程「项目收尾」无落点,项目永远堆积"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "medium",
+        "reason": "证据全部核实:projects 路由仅 GET/与 POST/bootstrap 两条,仓库无 archive/delete/rename 写方法,全库对 projects.archived/deletedAt 皆为 WHERE 过滤读取无写 true 路径,project-home-pages.ts:176 注释更自认 archived 分支「暂不可达」为将来预留——项目收尾无落点属真实 medium 缺口。"
+      }
+    },
+    {
+      "title": "文件在线预览只支持纯文本，图片/PDF/Office 一律只能下载",
+      "category": "missing",
+      "surface": "cross",
+      "severity": "medium",
+      "detail": "预览闸门 isTextPreview/isDriveTextPreview 只放行 text/*、json、xml、yaml 及 .csv/.md/.txt/.tsv/.html 等纯文本(drive-pages.ts:230)。三个预览端点全用同一闸门,非文本一律 415 拒绝并提示「请下载查看」:网盘文件预览(drive.ts:390 → drive_preview_unsupported)、工作项交付物预览(workitems.ts:227 → deliverable_preview_unsupported)、提议变更预览(proposals.ts:872 → proposal_change_preview_unsupported)。而系统本身认识 image/png、image/jpeg、image/gif、application/pdf 这些 mime(proposals.ts:280-287,用于下载头),说明这些文件会真实存在于网盘/交付物里。对一个 AI 军团产出交付物、以文件为核心的产品,经理审阅一张设计图/一份 PDF 报告、成员查看图片交付物时,都只能被迫下载到本地再打开,无法在产品内预览。",
+      "suggestion": "至少为 image/* 与 application/pdf 加内联预览(图片直出、PDF 用 data-uri 或分页渲染);预览端点按 mime 分派 preview_type 而非只 text。",
+      "evidence": [
+        {
+          "file": "apps/api/src/services/drive-pages.ts",
+          "line": 230,
+          "note": "isDriveTextPreview 只放行文本族 mime/扩展名,图片/PDF 全落到不支持分支"
+        },
+        {
+          "file": "apps/api/src/routes/drive.ts",
+          "line": 390,
+          "note": "网盘预览:非文本 415 drive_preview_unsupported「请下载查看」"
+        },
+        {
+          "file": "apps/api/src/routes/workitems.ts",
+          "line": 227,
+          "note": "交付物预览同一闸门 → deliverable_preview_unsupported(230)"
+        },
+        {
+          "file": "apps/api/src/routes/proposals.ts",
+          "line": 872,
+          "note": "提议变更预览同款 415 proposal_change_preview_unsupported"
+        }
+      ],
+      "dim": "product-missing",
+      "merged_from": [
+        "product-missing:文件在线预览只支持纯文本——图片、PDF、Office 一律只能下载"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "medium",
+        "reason": "三个预览端点(drive.ts:390、workitems.ts:227、proposals.ts:645)均经同款文本闸门,非文本 mime 一律 415 拒绝且前端 preview_type 仅 text、图片/PDF 只能下载,内联预览对端确不存在,属真实产品缺口,个别行号偏移不影响成立。"
+      }
+    },
+    {
+      "title": "没有工作区级审计/操作日志界面，审计只能逐个工作项翻",
+      "category": "missing",
+      "surface": "cross",
+      "severity": "medium",
+      "detail": "审计日志仓库只提供两个读方法:listAuditLogsForEntity 与 listAuditLogsForWorkItem(audit.ts:54,55),没有按工作区/按用户/按时间范围的列表方法。审计路由也只暴露 GET /workitems/:id/audit(audit.ts:80)——即审计只能逐个工作项地看。而写审计时是带 workspaceId 的(如 auth.ts:826 user_deactivated、审批/指派/停用等都落审计),数据存在,只是没有汇总读出口。工作区管理员想做治理审计(谁邀请了谁、谁改了谁的角色、谁批准了哪次合并、谁停用了谁),没有任何「工作区活动日志/操作审计」页面可以纵览,只能一个工作项一个工作项翻。",
+      "suggestion": "补 listAuditLogsForWorkspace(带 actor/action/时间范围过滤)+ 一个管理员审计页(/settings 下或独立路由),按时间倒序展示全工作区关键操作。",
+      "evidence": [
+        {
+          "file": "packages/db/src/repositories/audit.ts",
+          "line": 54,
+          "note": "审计仓库只有 forEntity/forWorkItem 两个读方法,无工作区级列表"
+        },
+        {
+          "file": "apps/api/src/routes/audit.ts",
+          "line": 80,
+          "note": "审计路由只有 GET /workitems/:id/audit,无工作区汇总端点/页面"
+        }
+      ],
+      "dim": "product-missing",
+      "merged_from": [
+        "product-missing:没有工作区级审计/操作日志界面:管理员「治理审计」无处可查"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "medium",
+        "reason": "核实属实:audit.ts:54-55 仅有 forEntity/forWorkItem 两读方法,路由仅 GET /workitems/:id/audit(audit.ts:80),全库 grep 确认无 listAuditLogsForWorkspace 及任何工作区级审计端点/页面,而写审计带 workspaceId(数据存在),管理员治理审计确实只能逐工作项翻,非裁除项,中级合理。"
+      }
+    },
+    {
+      "title": "工作项没有人对人评论/讨论区（comments 表建了却是死表）",
+      "category": "missing",
+      "surface": "cross",
+      "severity": "medium",
+      "detail": "schema 里有一张显然是为「工作项讨论」准备的通用 comments 表(work_item_id + author_nickname + body,core.ts:1520),但它【没被任何仓库/路由/UI 使用】:全库搜不到对它的 insert/select(唯一的 comment 相关读写都是 project_drive_comments 与 approval_comments 两张不同的表)。也就是说,人对人的评论只存在于两处:网盘文件评论(且它主要用来触发 AI 起草)与审批评论。一个成员领了任务、想在这条任务下问同事一句、留一条进展备注、或经理想在任务上留审阅意见,除了跟 Cuu 的 AI 会话外没有轻量的任务级讨论串。任务(工作项)作为核心协作单元缺少最基本的评论区。",
+      "suggestion": "接上 comments 表:补 GET/POST /workitems/:id/comments 与工作项详情里的讨论串,或在契约里明确废弃该表并说明讨论只在会话进行。",
+      "evidence": [
+        {
+          "file": "packages/db/src/schema/core.ts",
+          "line": 1520,
+          "note": "comments 表按 work_item_id 建好,但全库无任何仓库/路由/查询引用,是死 schema"
+        },
+        {
+          "file": "apps/api/src/routes/approvals.ts",
+          "line": 200,
+          "note": "人对人评论只覆盖审批(approval_comments)与网盘文件,工作项本身没有讨论入口"
+        }
+      ],
+      "dim": "product-missing",
+      "merged_from": [
+        "product-missing:工作项没有人对人的评论/讨论区:comments 表建了却是死表"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "medium",
+        "reason": "通用 comments 表实存(真实位置 core.ts:937,非原文 1520,列名与描述一致)且全库无任何 insert/select/import 引用为死 schema,工作项确无 /workitems/:id/comments 端点或讨论 UI,人对人评论仅覆盖 drive 与 approval(approvals.ts:200 已核实),DM/协同均非任务级线程,构成真实 medium 缺口;仅证据行号有误不影响实质。"
+      }
+    },
+    {
+      "title": "全产品无数据导出（成本/用量/审计/工作项均无 CSV/报表）",
+      "category": "missing",
+      "surface": "cross",
+      "severity": "low",
+      "detail": "工作区管理员做成本/用量核算是核心诉求,但成本路由只有 GET /cost、GET /usage、GET /policies、PUT /policies/:scope/:id(cost.ts),没有任何导出端点;设置页把预算数字也只是只读展示(settings.ts:62-70)。全库搜不到 CSV 导出/报表下载(text/csv 仅出现在 proposals.ts:280 的预览 mime 映射,不是导出)。管理员想把按人/按项目的花费拉成表交给财务、或导出一段时间的用量趋势,产品内无路可走,只能靠人工截屏抄数。工作项列表、审计记录同理无导出。",
+      "suggestion": "为成本仪表盘的 by_user/by_team/by_workitem 明细、用量、审计各加一个 CSV 导出(Content-Disposition),前端加「导出」按钮。",
+      "evidence": [
+        {
+          "file": "apps/api/src/routes/cost.ts",
+          "line": 139,
+          "note": "成本路由只有 policies/usage/cost 读端点,无导出;全库无 text/csv 导出实现"
+        },
+        {
+          "file": "apps/api/src/pages/settings.ts",
+          "line": 62,
+          "note": "预算在设置页只读展示,无导出/无编辑入口"
+        }
+      ],
+      "dim": "product-missing",
+      "merged_from": [
+        "product-missing:全产品没有数据导出:成本/用量、审计、工作项都无法导出 CSV/报表"
+      ],
+      "verdict": {
+        "real": true,
+        "reason": "核实无误:cost.ts(199行)仅有 policies/usage/cost 读端点无导出,全库 Content-Disposition 只服务于 drive/workitem 上传文件下载而非成本/用量/审计报表,settings.ts:62-70 预算确为只读 VM,管理员无内置 CSV/报表导出路径,属真实但打磨级缺口。",
+        "adjusted_severity": "low"
+      }
+    },
+    {
+      "title": "通知偏好只有『按类型静音』，无渠道/免打扰时段/按项目粒度",
+      "category": "missing",
+      "surface": "cross",
+      "severity": "low",
+      "detail": "通知偏好的整个可配置面只有 muted_notification_types 一个数组(notifications.ts:26,GET/PUT /preferences 只读写这一项)。没有按渠道的偏好(站内 vs Web Push vs 邮件——实际上系统压根没有邮件通知渠道)、没有免打扰/静音时段(DND/quiet hours)、没有按项目或按重要度的细分静音。R15 上线了主动性关怀、审批 SLA 提醒、DDL 追踪等大量主动推送,用户想「非工作时段别推」「只关键审批推 push、其余只留站内」都做不到,只能整类静音——要么全收要么全静,颗粒度过粗容易导致要么被打扰要么漏关键通知。",
+      "suggestion": "扩展偏好模型:加免打扰时段、按渠道开关、按项目/按类型的细分静音;主动性推送尊重这些偏好。",
+      "evidence": [
+        {
+          "file": "apps/api/src/routes/notifications.ts",
+          "line": 26,
+          "note": "偏好 schema 仅 muted_notification_types,GET/PUT /preferences(61/67)只读写这一项"
+        }
+      ],
+      "dim": "product-missing",
+      "merged_from": [
+        "product-missing:通知偏好只有「按类型静音」一个旋钮:没有渠道、免打扰时段、按项目粒度"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "low",
+        "reason": "证据属实：notifications.ts:26 偏好 schema 仅 muted_notification_types，GET/PUT /preferences 只读写这一项，全库无 quiet-hours/按渠道/按项目静音（Cuu 的 do_not_disturb 是桌宠打扰模式而非通知投递偏好，无时段/渠道粒度），确为低级别打磨缺口。"
+      }
+    },
+    {
+      "title": "用户只能停用不能恢复，停用是不可逆终态",
+      "category": "missing",
+      "surface": "api",
+      "severity": "low",
+      "detail": "管理员角色治理里,POST /api/auth/users/:id/deactivate 停用成员(软删+审计,auth.ts:796),但【没有任何恢复/重新启用端点】(搜 reactivate/activate/restore 在 auth 路由与 users 仓库均无)。管理员误停用一个人、或某人离职后又回归,没有一键恢复的路径,只能靠重新注册/走数据库。停用是单向终态,治理操作缺少可逆性。",
+      "suggestion": "补 POST /users/:id/reactivate(清空软删标记)与成员面板的「恢复」动作。",
+      "evidence": [
+        {
+          "file": "apps/api/src/routes/auth.ts",
+          "line": 796,
+          "note": "只有 deactivate 端点,全文件无 reactivate/restore 对应项"
+        }
+      ],
+      "dim": "product-missing",
+      "merged_from": [
+        "product-missing:用户只能停用、不能恢复:停用是终态,误操作/回归无法撤销"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "low",
+        "reason": "核对属实：auth 路由仅 /users/:id/deactivate 走 softDelete(deletedAt 墓碑)，users 仓库无 undelete/reactivate，全库 restore 端点只针对 drive 文件与 workitem 交付物，用户账号停用确为不可逆终态，属真实但低优的治理可逆性缺口。"
+      }
+    },
+    {
+      "title": "项目没有成员/访问控制，工作区所有人都能看所有项目",
+      "category": "missing",
+      "surface": "cross",
+      "severity": "low",
+      "detail": "经理旅程「拉人(进项目)」实际无对应能力。没有 project_members 之类的项目级成员表(全库搜不到),访问控制只到工作区级 + 协同子会话参与者级。桌面项目设置直接写明「工作区全部 N 名成员都能进主区群聊,无需单独拉人」(settings/render.ts:319),「拉人」只发生在新建协同子会话选人时(rail.ts:759)。这是有意的扁平设计,但代价是:无法建一个只有部分人可见的保密/受限项目,也无法把某人从某个项目移除(只能从工作区整体移除)。对 PM 工具这是真实的能力缺口,虽属设计取舍。",
+      "suggestion": "若要支持保密项目,引入项目级成员/可见性;否则至少在 UI 明确「项目对全工作区可见」的心智,避免经理误以为能限制项目可见范围。",
+      "evidence": [
+        {
+          "file": "apps/desktop-webview/src/workbench/settings/render.ts",
+          "line": 319,
+          "note": "明说全工作区成员都能进主区,项目成员分区是「概览+跳转」而非真实成员数据层"
+        },
+        {
+          "file": "packages/db/src/schema/core.ts",
+          "line": 326,
+          "note": "projects 无成员关联表,访问控制只到 workspace 与协同会话参与者两级"
+        }
+      ],
+      "dim": "product-missing",
+      "merged_from": [
+        "product-missing:项目没有成员/访问控制:工作区所有人都能看所有项目,做不出保密项目"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "low",
+        "reason": "在真实审查树核对无误:projects 表(core.ts:326)与全库均无项目级成员表,readActiveProjectMembership 实为工作区成员+项目 join,访问控制确只到工作区级与协同参与者级;settings/render.ts:319 与 rail.ts:759 文案证据属实;不属裁除项,是真实的扁平设计能力缺口,low 级诚实。"
+      }
+    },
+    {
+      "title": "web 端移出成员/退群及工作区成员移出均无二次确认（桌面同操作有两段式确认）",
+      "category": "ux",
+      "surface": "web",
+      "severity": "medium",
+      "detail": "web 会话镜像的成员条里，点『退出』直接 doRemove(selfUserId,true)、点『移出』直接 doRemove(targetId,false)（browser.ts:2765/2768），doRemove 二话不说就发 DELETE（browser.ts:2739-2743），没有任何确认。自己退群是对用户不可逆的——doRemove 里自退后还提示『刷新页面后你将无法再看到它』，用户误点一下就丢了整个会话的访问权、还无法自行加回。/settings 管理员控制台的『移出』工作区成员同理：点击即发 DELETE /api/workspace/members/:id（browser.ts:2963-2971），把人从整个工作区踢掉，零确认；旁边的角色下拉改 admin↔member 也是 change 事件即提交（虽失败会回滚下拉）。而桌面工作台对同一类操作是有护栏的：聊天成员条移出/退群走两段式确认，先弹『退出这个群？』/『把 TA 移出？』再点一次才执行（chat/render.ts:241）。web 端把这道护栏整体丢了，破坏性操作与桌面端不一致。",
+      "evidence": [
+        {
+          "file": "apps/web/src/browser.ts",
+          "line": 2765,
+          "note": "『退出』按钮 click 直接 doRemove(selfUserId,true)，无确认"
+        },
+        {
+          "file": "apps/web/src/browser.ts",
+          "line": 2768,
+          "note": "『移出』按钮 click 直接 doRemove(targetId,false)，无确认"
+        },
+        {
+          "file": "apps/web/src/browser.ts",
+          "line": 2739,
+          "note": "doRemove 立即发 DELETE /participants/:id（2742-2743），自退后『刷新后你将无法再看到它』=对用户不可逆"
+        },
+        {
+          "file": "apps/web/src/browser.ts",
+          "line": 2963,
+          "note": "/settings 工作区成员『移出』：click 即发 DELETE /api/workspace/members/:id（2971），无确认，踢出整个工作区"
+        },
+        {
+          "file": "apps/desktop-webview/src/workbench/chat/render.ts",
+          "line": 241,
+          "note": "对照：桌面端同操作有两段式确认『退出这个群？』/『把 TA 移出？』"
+        }
+      ],
+      "dim": "ux-polish",
+      "merged_from": [
+        "ux-polish:web 端『移出成员/退群』和工作区成员移出均无二次确认，直接发 DELETE（桌面端同样操作有两段式确认）"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "medium",
+        "reason": "main 上逐行核实无误：web 端 doRemove(browser.ts:2739-2770)与工作区成员移出(2963-2971)点击即发 DELETE 零确认、自退不可逆，而桌面 chat/render.ts:241 确有两段式内联确认(退出这个群?/把 TA 移出?)，护栏确实缺失且双端不一致，非裁除项。"
+      }
+    },
+    {
+      "title": "工作台网盘行是不可聚焦的 <div>，键盘用户无法打开文件/进子文件夹",
+      "category": "ux",
+      "surface": "desktop",
+      "severity": "medium",
+      "detail": "网盘标签页每一行渲成 `<div class=\"wh-wb-drive-row\" ${openAttr}>`（drive/render.ts:96），openAttr 只是 data-wb-drive-open-item / data-wb-drive-open-folder，行本身没有 role=button、没有 tabindex、view.ts 里也没有针对行的 keydown 处理（只有容器级 click 委托）。行内的『版本/下载/删除』是真 button/a 可聚焦，但『打开预览』和『进入文件夹』这两个主交互只挂在不可聚焦的 div 上——尤其文件夹行通常没有任何 action 按钮，键盘用户完全没有可达控件去进入子目录，等于被挡在浏览流程外。这不是平台限制：同样是网盘项，右栏『文件』面板把每一项渲成了真正的 `<button type=\"button\" class=\"wh-wb-files-row\" data-wb-files-open-drive>`（files/render.ts:71、102），键盘可达。说明代码库知道该用 button，只是网盘标签页这一处漏了，形成端内不一致。看板卡片也明确做了 role=button tabindex=0 + 回车/空格（kanban/view.ts 注释），进一步反衬网盘行的键盘缺口。",
+      "evidence": [
+        {
+          "file": "apps/desktop-webview/src/workbench/drive/render.ts",
+          "line": 96,
+          "note": "行 = `<div class=\"wh-wb-drive-row\" ${openAttr}>`，openAttr 为 data-wb-drive-open-item/-folder，无 role/tabindex"
+        },
+        {
+          "file": "apps/desktop-webview/src/workbench/drive/view.ts",
+          "line": 154,
+          "note": "仅容器级 click 委托处理 open-item/open-folder，无任何 keydown → 键盘不可触发打开/进入文件夹"
+        },
+        {
+          "file": "apps/desktop-webview/src/workbench/files/render.ts",
+          "line": 102,
+          "note": "对照：同为网盘项，Files 面板用真 `<button ... data-wb-files-open-drive>`，键盘可达"
+        }
+      ],
+      "dim": "ux-polish",
+      "merged_from": [
+        "ux-polish:工作台网盘标签页文件/文件夹行是不可聚焦的 <div>（无 role/tabindex/键盘处理），键盘用户无法打开文件或进入子文件夹"
+      ],
+      "verdict": {
+        "real": true,
+        "adjusted_severity": "medium",
+        "reason": "已核实:drive/render.ts 的行确为无 role/tabindex 的 div、openAttr 仅挂 data-wb-drive-open-folder/-item,view.ts 只有容器级 click 无任何 keydown,且文件夹行 actions 数组只对 file 填充导致文件夹行零可聚焦控件,键盘用户确实无法进入子目录,是真实的 a11y 残缺(非裁除项)。"
+      }
+    }
+  ],
+  "rejected": [
+    {
+      "title": "审批与升级的『委派他人』后端就绪却缺选人 UI，动作在两端被剥离/从不调用",
+      "reason": "发现核心论断\"全产品无任何转交入口\"站不住:route-components.ts:1920-1925 在 web 审批页渲染了专门的转交选人面板(details+成员select+确认转交钮),browser.ts:802-856 完整接线调用 client.delegateApproval 打 POST /api/approvals/:id/delegate;被两端剥掉的只是审批卡上无上下文的裸 delegate 动作按钮,真正能力有独立 UI 且端到端接通。"
+    },
+    {
+      "title": "工作台决策收件箱把导航类决策打成『去主窗口看』的 toast 死胡同",
+      "reason": "代码事实属实,但影响被夸大:各类决策的拍板主动作(approval/budget resolveBudgetDecision/escalation resolve/sync_conflict 可编辑合并/proposal)均就地 submit 可用,仅辅助性 GET 导航按钮 bounce 到 toast,且该 toast 是 view.ts 明文\"铁律3:不摆假按钮\"的有意诚实降级(主窗口已接全,UX-M7),非\"决策不可操作的死胡同\"。"
+    },
+    {
+      "title": "军团总览对无源会话的 run（看板/时间线派发）钻取静默失灵，卡片却像可打开",
+      "reason": "证据虚构:军团总览 render.ts 对每张 run 卡传 interactive:false,渲染为静态 div 而非可点按钮(:131-133,472-473),根本不可钻取;发现所称的 data-wb-army-ov-drilldown / data-wb-army-conversation-id / pendingArmyRunDetailId / onOpenRun 分支在全仓(含所有 worktree)均不存在,且所引 render.ts:194 实为无关的变更类型标签常量。"
+    },
+    {
+      "title": "时间线空态把已上线的 E3『Cuu 起草整份计划』误标为即将上线",
+      "reason": "证据链在本 main 检出中完全不存在：apps/desktop-webview/src 下没有 workbench/timeline 或 schedule 目录，grep 全库也搜不到「起草整份计划」「coming soon (E3)」「createPlanDraft」「plan-drafts」等任一字符串，所引 file:line 均属虚构。"
+    },
+    {
+      "title": "主动 Cuu 消息与普通回复无差别渲染，缺归因/深链/就地静音（proactive_intent_id 未消费）",
+      "reason": "发现前提虚构：全仓库（含所有 worktree）grep `proactive_intent_id` 零命中，被引 conversation.ts 第365行实为 `clarify_placeholder`，conversationTextContentSchema 里根本没有 proactive_intent_id 字段，\"契约带此标记待前端消费\"不成立，无从谈\"未被消费\"。"
+    },
+    {
+      "title": "三处『需要处理』角标口径不一，且工作台窗从不推 Dock",
+      "reason": "证据伪造:全仓库无 set_shell_badge、browser.ts 仅 1371 行(引用的 1382 行不存在),桌面根本没有含未读通知的 OS Dock/托盘角标,唯一角标是聚焦盒内 setBadges({approvals}) 且只吃 attention.queue.length,所谓\"Dock 口径不一\"的对比对象不存在。"
+    },
+    {
+      "title": "后台但已打开的会话被当作『正在看』，新消息在所有端被抑制（无 Dock/OS 通知）",
+      "reason": "三条证据文件在本检出全部不存在(conversation-message-notify.ts 及 workbench/chat/view.ts 均无,isViewingConversation 全库零命中),file:line 无从核对,发现前提不成立。"
+    },
+    {
+      "title": "通知/气泡/digest 的会话深链不带消息 seq，落到会话却落不到那条未读",
+      "reason": "承重证据无法证实:全仓库 grep focusSeq 零命中、conversation.message 通知类型不存在、pending-deep-link 实际版本无 seq 字段、cited shell.ts:748 行超出实际文件长度——该发现引用的是本处未检出的更新分支代码,file:line 与「shell 已具备 focusSeq 定位」的前提均站不住。"
+    },
+    {
+      "title": "R18 web 成员/邀请面板状态与报错写进非 aria-live 的本地 <p>，读屏用户无播报",
+      "reason": "证据全对不上：browser.ts 仅 2417 行，所引 2725/2951/3074 行越界，且 data-r18-* 属性与\"已复制令牌/最后一名管理员/私聊不能移出\"等所有状态串在全仓 grep 皆无——该 R18 web 成员/邀请面板在本检出根本不存在，发现基于不存在的代码。"
+    },
+    {
+      "title": "web 审批列表选中行后详情面板去 hidden 但焦点不跟随",
+      "reason": "证据行号错位——browser.ts:793-798 实为会议转写导入错误处理,审批面板去hidden/更新textContent实际在741-755;且行732已对选中行设置aria-current提供读屏语境,焦点强移属可辩护形态。"
+    }
+  ],
+  "lead_review": {
+    "date": "2026-07-17",
+    "withdrawn": [
+      "R19-14 托盘角标",
+      "R19-17 全局热键",
+      "R19-38 死枚举"
+    ],
+    "corrected": [
+      "R19-4 邀请范围",
+      "R19-37 死表范围"
+    ],
+    "spot_checked_true": [
+      "R19-12",
+      "R19-13",
+      "R19-16",
+      "R19-41",
+      "R19-42",
+      "R19-19",
+      "R19-22",
+      "R19-37(三张维持)"
+    ],
+    "external_crosscheck": "codex 2026-07-17 反馈已并入"
+  }
+}
