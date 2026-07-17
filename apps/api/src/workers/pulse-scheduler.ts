@@ -6,9 +6,11 @@ import { getDefaultApprovalDigestService } from "../services/approval-digest.js"
 import { createNotificationService, type NotificationService } from "../services/notifications.js";
 import { getDefaultDdlChaseService } from "../services/ddl-chase.js";
 import { getDefaultCareScanService } from "../services/care-scan.js";
+import { getDefaultProactiveIntentService } from "../services/proactive-intents.js";
 import type { ApprovalDigestRunResult } from "../services/approval-digest.js";
 import type { CareScanRunResult } from "../services/care-scan.js";
 import type { DdlChaseRunResult } from "../services/ddl-chase.js";
+import type { ProactiveIntentService } from "../services/proactive-intents.js";
 
 // R15 批 A（统一调度器 · 01-batch-a-pipeline.md §A1）：通用周期任务注册器。审批 SLA、通知提醒阶梯、
 // 后续主动性投递三家共用一条水管，不再各自手搓 setInterval（agent-run-recovery / session-sweep /
@@ -188,12 +190,23 @@ let defaultPulseScheduler: PulseScheduler | undefined;
 //  - notification-reminder：调 runNotificationReminders（24h 提醒阶梯复活推送）。
 // 二者纯 DB 驱动的确定性巡检，无 LLM 依赖，与 risk-monitor/github-poll 同档；仅 PULSE_SCHEDULER_ENABLED
 // 总开关门控（见 server.ts）。依赖可注入，便于单测直驱。
+// R20 REL-2（#P1-11 主动性 intent 崩溃恢复）兜底扫描的节拍/口径。独立常量而非 config——恢复扫描是整条
+// proactive-intent 管线的崩溃安全网，不该被任一投递源（ddl-chase/care-scan）的间隔置 0 顺带关掉；整个
+// 调度器已由 PULSE_SCHEDULER_ENABLED 总开关门控，够用。
+//   * INTERVAL：5 分钟一扫（崩溃后的滞留 intent 要相对及时救回，不等 30 分钟）。
+//   * STALE：只碰 created_at 早于 5 分钟的行，给直投路径留足完成窗口，避免抢在途中刚落库的行。
+//   * MAX_ATTEMPTS：同一行至多重投 3 次，仍投不成则封顶判 suppressed(stalled)，不永久重扫。
+const PROACTIVE_INTENT_RECOVERY_INTERVAL_MS = 5 * 60 * 1000;
+const PROACTIVE_INTENT_RECOVERY_STALE_MS = 5 * 60 * 1000;
+const PROACTIVE_INTENT_RECOVERY_MAX_ATTEMPTS = 3;
+
 export function getDefaultPulseScheduler(deps: {
   approvals?: Pick<ApprovalService, "expireDueApprovals">;
   notifications?: Pick<NotificationService, "runNotificationReminders">;
   approvalDigest?: { runOnce: () => Promise<ApprovalDigestRunResult> };
   ddlChase?: { runOnce: () => Promise<DdlChaseRunResult> };
   careScan?: { runOnce: () => Promise<CareScanRunResult> };
+  proactiveRecovery?: Pick<ProactiveIntentService, "recoverStalled">;
 } = {}): PulseScheduler {
   if (defaultPulseScheduler) {
     return defaultPulseScheduler;
@@ -203,6 +216,7 @@ export function getDefaultPulseScheduler(deps: {
   const approvalDigest = deps.approvalDigest ?? getDefaultApprovalDigestService();
   const ddlChase = deps.ddlChase ?? getDefaultDdlChaseService();
   const careScan = deps.careScan ?? getDefaultCareScanService();
+  const proactiveRecovery = deps.proactiveRecovery ?? getDefaultProactiveIntentService();
   const scheduler = createPulseScheduler();
 
   scheduler.register({
@@ -304,6 +318,33 @@ export function getDefaultPulseScheduler(deps: {
           suppressed_no_personal_space: result.suppressed_no_personal_space,
           skipped_opted_out: result.skipped_opted_out,
           skipped_quiet_hours: result.skipped_quiet_hours
+        });
+      }
+      return result;
+    }
+  });
+
+  scheduler.register({
+    name: "proactive-intent-recovery",
+    intervalMs: PROACTIVE_INTENT_RECOVERY_INTERVAL_MS,
+    // R20 REL-2（#P1-11）：崩溃恢复兜底。扫「落 intent 后、投递前进程崩溃」而永远停在 created 的陈旧行，
+    // 复用 proactive-intents 闸的 deliver 腿重投；达重投上限仍不成则封顶判 suppressed(stalled)。同 key
+    // 重试能在服务层就地救回大部分，本任务兜住没有重试的那些。纯 DB 驱动、无 LLM，与 ddl-chase 同档。
+    maxDrainPerTick: 200,
+    tick: async (ctx) => {
+      const result = await proactiveRecovery.recoverStalled({
+        now: ctx.now,
+        olderThanMs: PROACTIVE_INTENT_RECOVERY_STALE_MS,
+        maxAttempts: PROACTIVE_INTENT_RECOVERY_MAX_ATTEMPTS,
+        limit: ctx.maxDrainPerTick ?? 200
+      });
+      if (result.recovered > 0 || result.stalled > 0 || result.suppressed > 0) {
+        getDefaultStructuredLogger().info("pulse_proactive_intent_recovery_swept", {
+          scanned: result.scanned,
+          recovered: result.recovered,
+          suppressed: result.suppressed,
+          stalled: result.stalled,
+          retryable: result.retryable
         });
       }
       return result;

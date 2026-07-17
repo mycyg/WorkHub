@@ -4,7 +4,9 @@ import test from "node:test";
 import { proactiveIntents } from "./schema/index.js";
 import {
   countDeliveredProactiveIntentsForUser,
+  incrementProactiveIntentAttempt,
   listDdlChaseCandidates,
+  listRecoverableProactiveIntents,
   markProactiveIntentStatus,
   recordProactiveIntent
 } from "./repositories/proactive-intents.js";
@@ -39,8 +41,9 @@ test("recordProactiveIntent inserts with ON CONFLICT (suppression_key) DO NOTHIN
   assert.equal(values["status"], "created");
 });
 
-test("recordProactiveIntent treats an empty returning (conflict) as already-processed (created=false)", async () => {
-  const { db } = createQueryRecorder([[]]);
+test("recordProactiveIntent on a conflict re-reads the existing row's id + status (R20 REL-2 crash recovery)", async () => {
+  // 首查（insert ... returning）撞唯一约束返回空 → 回查既有行拿到 id + status。
+  const { db, queries } = createQueryRecorder([[], [{ id: "existing-1", status: "created" }]]);
   const result = await recordProactiveIntent(db, {
     workspaceId,
     projectId,
@@ -52,7 +55,47 @@ test("recordProactiveIntent treats an empty returning (conflict) as already-proc
     payload: {},
     at
   });
-  assert.deepEqual(result, { created: false });
+  // 既有行还停在 created = 投递前崩溃的可恢复行——回带 id + status 让服务层据此恢复投递。
+  assert.deepEqual(result, { created: false, id: "existing-1", status: "created" });
+  const select = queries.find((q) => q.operation === "select");
+  assert.ok(select, "conflict must trigger a follow-up SELECT for the existing row");
+  assert.ok(queryParamValues(select?.where).includes(`ddl:${workItemId}:t3d`), "re-read scopes by suppression_key");
+});
+
+test("recordProactiveIntent maps a delivered existing row to a true duplicate (status delivered)", async () => {
+  const { db } = createQueryRecorder([[], [{ id: "existing-1", status: "delivered" }]]);
+  const result = await recordProactiveIntent(db, {
+    workspaceId,
+    projectId,
+    workItemId,
+    kind: "ddl_chase",
+    stage: "t3d",
+    targetUserId,
+    suppressionKey: `ddl:${workItemId}:t3d`,
+    payload: {},
+    at
+  });
+  assert.deepEqual(result, { created: false, id: "existing-1", status: "delivered" });
+});
+
+test("recordProactiveIntent persists delivery_payload when provided (crash-recovery context)", async () => {
+  const { db, queries } = createQueryRecorder([[{ id: "intent-1" }]]);
+  await recordProactiveIntent(db, {
+    workspaceId,
+    projectId,
+    workItemId,
+    kind: "ddl_chase",
+    stage: "overdue",
+    targetUserId,
+    suppressionKey: `ddl:${workItemId}:overdue`,
+    payload: { stage: "overdue" },
+    deliveryPayload: { channel: "notification", notification: { type: "work_item.overdue" } },
+    at,
+    id: "intent-1"
+  });
+  const insert = queries.find((q) => q.operation === "insert");
+  const values = insert?.valuesValue as Record<string, unknown>;
+  assert.deepEqual(values["deliveryPayload"], { channel: "notification", notification: { type: "work_item.overdue" } });
 });
 
 test("countDeliveredProactiveIntentsForUser filters to the target's delivered rows in the window", async () => {
@@ -74,6 +117,71 @@ test("markProactiveIntentStatus flips to delivered with delivered_via", async ()
   const setValue = update?.setValue as Record<string, unknown>;
   assert.equal(setValue["status"], "delivered");
   assert.equal(setValue["deliveredVia"], "notification");
+});
+
+test("listRecoverableProactiveIntents scans created rows that are stale and under the attempt cap, oldest first", async () => {
+  const createdAt = new Date("2026-07-15T09:00:00.000Z");
+  const row = {
+    id: "intent-1",
+    workspaceId,
+    projectId,
+    workItemId,
+    kind: "ddl_chase",
+    stage: "overdue",
+    targetUserId,
+    suppressionKey: `ddl:${workItemId}:overdue`,
+    payload: { stage: "overdue" },
+    deliveryPayload: { channel: "notification" },
+    attemptCount: 1,
+    createdAt
+  };
+  const { db, queries } = createQueryRecorder([[row]]);
+  const rows = await listRecoverableProactiveIntents(db, {
+    now: at,
+    olderThanMs: 5 * 60 * 1000,
+    maxAttempts: 3,
+    limit: 200
+  });
+  assert.equal(rows.length, 1);
+  assert.deepEqual(rows[0]?.deliveryPayload, { channel: "notification" });
+  assert.equal(rows[0]?.attemptCount, 1);
+  const select = queries.find((q) => q.operation === "select");
+  // 只碰 created 行；attempt_count 上界；created_at 上界都进 where。
+  assert.ok(queryReferences(select?.where, proactiveIntents.status), "must scope by status");
+  assert.ok(queryReferences(select?.where, proactiveIntents.attemptCount), "must bound attempt_count");
+  assert.ok(queryReferences(select?.where, proactiveIntents.createdAt), "must bound created_at (staleness)");
+  assert.ok(queryParamValues(select?.where).includes("created"), "must filter status = created");
+  assert.equal(select?.limit, 200);
+});
+
+test("listRecoverableProactiveIntents coalesces a null delivery_payload to null (legacy rows)", async () => {
+  const row = {
+    id: "intent-1",
+    workspaceId,
+    projectId: null,
+    workItemId: null,
+    kind: "care",
+    stage: null,
+    targetUserId,
+    suppressionKey: "care:u1",
+    payload: {},
+    deliveryPayload: null,
+    attemptCount: 0,
+    createdAt: at
+  };
+  const { db } = createQueryRecorder([[row]]);
+  const rows = await listRecoverableProactiveIntents(db, { now: at, olderThanMs: 0, maxAttempts: 3, limit: 10 });
+  assert.equal(rows[0]?.deliveryPayload, null);
+});
+
+test("incrementProactiveIntentAttempt bumps attempt_count by one via SQL", async () => {
+  const { db, queries } = createQueryRecorder([[]]);
+  await incrementProactiveIntentAttempt(db, { id: "intent-1" });
+  const update = queries.find((q) => q.operation === "update");
+  assert.ok(update, "must issue an UPDATE");
+  // set 用 SQL 表达式 attempt_count + 1（引用 attempt_count 列）而非读到的旧值。
+  assert.ok(queryReferences(update?.setValue, proactiveIntents.attemptCount), "increment must reference the attempt_count column");
+  assert.ok(queryReferences(update?.where, proactiveIntents.id), "must target the row by id");
 });
 
 test("listDdlChaseCandidates groups assignments (lead/collaborator) and coalesces workspace from the project", async () => {

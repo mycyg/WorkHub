@@ -5,10 +5,13 @@ import {
   createActionCardRepository,
   createConversationRepository,
   getSharedDatabaseClient,
+  incrementProactiveIntentAttempt,
+  listRecoverableProactiveIntents,
   markProactiveIntentStatus,
   recordProactiveIntent,
   type CareSignalType,
   type RecordProactiveIntentResult,
+  type RecoverableProactiveIntentRow,
   type WorkHubDatabaseClient
 } from "@workhub/db";
 
@@ -98,6 +101,45 @@ export type ProactiveIntentRepositoryDeps = {
   recordIntent: (input: Parameters<typeof recordProactiveIntent>[1]) => Promise<RecordProactiveIntentResult>;
   countDeliveredForUserOnDay: (input: { targetUserId: string; from: Date; to: Date }) => Promise<number>;
   markStatus: (input: { id: string; status: "delivered" | "suppressed"; deliveredVia?: string }) => Promise<void>;
+  // R20 REL-2（#P1-11 崩溃恢复兜底扫描）：列出停在 created 的陈旧行 + 每次重投自增 attempt_count。
+  listRecoverable: (input: {
+    now: Date;
+    olderThanMs: number;
+    maxAttempts: number;
+    limit: number;
+  }) => Promise<RecoverableProactiveIntentRow[]>;
+  incrementAttempt: (input: { id: string }) => Promise<void>;
+};
+
+// R20 REL-2（#P1-11）：record 时落库、恢复扫描重投时据以重建 intent 的投递上下文。存进 delivery_payload
+// 列（jsonb）。日期以 ISO 串存（jsonb 无 Date 概念），重建时再 new Date()。
+export type ProactiveDeliveryPayload = {
+  channel: ProactiveDeliveryChannel;
+  conversationText?: string;
+  degradeToNotification?: boolean;
+  notification: {
+    type: string;
+    severity: NotificationSeverity;
+    title: string;
+    body: string;
+    targetUrl: string;
+    dedupeKey: string;
+    nextRemindAt?: string;
+  };
+};
+
+// R20 REL-2：恢复扫描一 tick 的结算。
+export type ProactiveIntentRecoveryRunResult = {
+  // 扫到的陈旧 created 行数。
+  scanned: number;
+  // 重投成功（顶到 delivered）。
+  recovered: number;
+  // 重投走到 suppressed 终态（频控/静音/无个人空间）——正常终态，不是坏事。
+  suppressed: number;
+  // 达重投上限仍投不成（或无法重建）→ 封顶判死（delivered_via='stalled'）。
+  stalled: number;
+  // 本次重投又抛、但未达上限 → 仍留 created，等下个 tick 再来。
+  retryable: number;
 };
 
 export type ProactiveIntentServiceDeps = {
@@ -143,6 +185,14 @@ export type ProactiveActionCardDelivery = {
 
 export type ProactiveIntentService = {
   recordAndDeliver: (intent: ProactiveIntentInput) => Promise<ProactiveDeliverResult>;
+  // R20 REL-2（#P1-11）：兜底恢复扫描一 tick——扫回崩溃后停在 created 的陈旧行重投。pulse 任务
+  // proactive-intent-recovery 驱动。
+  recoverStalled: (input: {
+    now: Date;
+    olderThanMs: number;
+    maxAttempts: number;
+    limit: number;
+  }) => Promise<ProactiveIntentRecoveryRunResult>;
 };
 
 // 服务器本地日的 [00:00, 次日 00:00)——每人每日上限的统计区间（当日=服务器本地日，见设计 D2）。
@@ -153,14 +203,138 @@ function localDayBounds(now: Date): { from: Date; to: Date } {
   return { from, to };
 }
 
+// R20 REL-2（#P1-11）：把 record 时该落库的投递上下文攒成 delivery_payload——恢复扫描手里只有 DB 行、
+// 拿不到原 intent 对象，故一并落库以便重投时重建。exactOptionalPropertyTypes 下可空字段惰性置入。
+function buildDeliveryPayload(intent: ProactiveIntentInput): ProactiveDeliveryPayload {
+  return {
+    channel: intent.channel ?? "notification",
+    ...(intent.conversationText !== undefined ? { conversationText: intent.conversationText } : {}),
+    ...(intent.degradeToNotification !== undefined ? { degradeToNotification: intent.degradeToNotification } : {}),
+    notification: {
+      type: intent.notification.type,
+      severity: intent.notification.severity,
+      title: intent.notification.title,
+      body: intent.notification.body,
+      targetUrl: intent.notification.targetUrl,
+      dedupeKey: intent.notification.dedupeKey,
+      ...(intent.notification.nextRemindAt ? { nextRemindAt: intent.notification.nextRemindAt.toISOString() } : {})
+    }
+  };
+}
+
 export function createProactiveIntentService(deps: ProactiveIntentServiceDeps): ProactiveIntentService {
   const now = deps.now ?? (() => new Date());
   const logger = deps.logger ?? getDefaultStructuredLogger();
 
+  // R20 REL-2（#P1-11）：投递腿（从 created 顶到终态）。直投路径与崩溃恢复扫描共用同一份——三通道逻辑
+  // 只此一处，不复制粘贴。入口是 intentId + 完整 intent（恢复路径从 delivery_payload 重建后再进来），
+  // 走完必把行推到 delivered/suppressed 某个终态（除非中途抛错，那正是崩溃窗口，行仍停在 created）。
+  async function deliver(intentId: string, intent: ProactiveIntentInput, at: Date): Promise<ProactiveDeliverResult> {
+    // 每人每日上限：当日该 target 的已投递 intent 数达上限 → 记 suppressed，不投。
+    const { from, to } = localDayBounds(at);
+    const deliveredToday = await deps.repository.countDeliveredForUserOnDay({
+      targetUserId: intent.targetUserId,
+      from,
+      to
+    });
+    if (deliveredToday >= deps.dailyCapPerUser) {
+      await deps.repository.markStatus({ id: intentId, status: "suppressed" });
+      return { status: "suppressed", reason: "daily_cap", intentId };
+    }
+
+    // 投递。通道由调用方选（缺省 notification）：conversation_message（D2，Cuu 在个人空间主区说话）
+    // / action_card（D4，项目主区插系统「找人」卡）。非通知通道投不成时的兜底由 degradeToNotification
+    // 决定（缺省 true）：
+    //   * true（DDL 追人/找人）：降级回 notification 通道（fail-open：宁可用系统通知补上，不吞主动性）；
+    //   * false（关怀）：直接 suppressed，绝不降级到系统通知（关怀走系统通知反而尴尬，见类型定义处注释）。
+    // 注意：非通知通道不经通知的按类型静音（个人空间/项目主区没有对应的通知类型可静音）——静音只在
+    // notification 通道生效。
+    const channel = intent.channel ?? "notification";
+    const degradeToNotification = intent.degradeToNotification ?? true;
+    if (channel === "conversation_message") {
+      if (intent.conversationText && deps.conversationDelivery) {
+        try {
+          const outcome = await deps.conversationDelivery.deliverCuuMessage({
+            workspaceId: intent.workspaceId,
+            targetUserId: intent.targetUserId,
+            text: intent.conversationText,
+            proactiveIntentId: intentId
+          });
+          if (outcome.delivered) {
+            await deps.repository.markStatus({ id: intentId, status: "delivered", deliveredVia: "conversation_message" });
+            return { status: "delivered", intentId };
+          }
+          logger.warn?.("proactive_conversation_delivery_degraded", {
+            intentId,
+            targetUserId: intent.targetUserId,
+            reason: outcome.reason
+          });
+        } catch (error) {
+          logger.warn?.("proactive_conversation_delivery_failed", { intentId, error });
+        }
+      }
+      // 到这里 = 会话通道没投成（个人空间缺失 / 未注入端口 / 缺文案 / 抛错）。
+      if (!degradeToNotification) {
+        // 关怀：不降级到系统通知——直接 suppressed。
+        await deps.repository.markStatus({ id: intentId, status: "suppressed" });
+        return { status: "suppressed", reason: "no_personal_space", intentId };
+      }
+      // 否则继续走下面的 notification 降级路径（DDL 行为）。
+    }
+
+    // D4：项目主区插系统「找人」行动卡。projectId/workItemId 对找人 intent 必非空；缺任一则直接走通知。
+    if (channel === "action_card" && deps.actionCardDelivery && intent.projectId && intent.workItemId) {
+      try {
+        const outcome = await deps.actionCardDelivery.deliverFindOwnerCard({
+          workspaceId: intent.workspaceId,
+          projectId: intent.projectId,
+          workItemId: intent.workItemId,
+          targetUserId: intent.targetUserId,
+          titleMd: intent.notification.title,
+          proactiveIntentId: intentId
+        });
+        if (outcome.delivered) {
+          await deps.repository.markStatus({ id: intentId, status: "delivered", deliveredVia: "action_card" });
+          return { status: "delivered", intentId };
+        }
+        logger.warn?.("proactive_action_card_delivery_degraded", {
+          intentId,
+          projectId: intent.projectId,
+          reason: outcome.reason
+        });
+      } catch (error) {
+        logger.warn?.("proactive_action_card_delivery_failed", { intentId, error });
+      }
+      // 落到这里 = 行动卡通道没投成，继续走下面的 notification 降级路径（找人 degradeToNotification 恒缺省 true）。
+    }
+
+    // notification 通道（也是非通知通道的降级目标）。关怀（degradeToNotification=false）在上面已
+    // suppressed 返回，不会落到这。createNotification 内部按类型静音返回 null → 记 suppressed。
+    const notification = await deps.notifications.createNotification({
+      userId: intent.targetUserId,
+      type: intent.notification.type,
+      severity: intent.notification.severity,
+      title: intent.notification.title,
+      body: intent.notification.body,
+      targetUrl: intent.notification.targetUrl,
+      ...(intent.projectId ? { projectId: intent.projectId } : {}),
+      ...(intent.workItemId ? { workItemId: intent.workItemId } : {}),
+      dedupeKey: intent.notification.dedupeKey,
+      ...(intent.notification.nextRemindAt ? { nextRemindAt: intent.notification.nextRemindAt } : {})
+    });
+    if (!notification) {
+      await deps.repository.markStatus({ id: intentId, status: "suppressed" });
+      return { status: "suppressed", reason: "muted", intentId };
+    }
+
+    await deps.repository.markStatus({ id: intentId, status: "delivered", deliveredVia: "notification" });
+    return { status: "delivered", intentId };
+  }
+
   return {
     async recordAndDeliver(intent: ProactiveIntentInput): Promise<ProactiveDeliverResult> {
       const at = now();
-      // 1) 先记 intent。撞 suppression_key 唯一约束 → 这件事此前已处理过，幂等跳过（不重投）。
+      // 1) 先记 intent（连投递上下文一并落库，供崩溃后恢复扫描重建）。
       const recorded = await deps.repository.recordIntent({
         workspaceId: intent.workspaceId,
         projectId: intent.projectId,
@@ -170,113 +344,110 @@ export function createProactiveIntentService(deps: ProactiveIntentServiceDeps): 
         targetUserId: intent.targetUserId,
         suppressionKey: intent.suppressionKey,
         payload: intent.payload,
+        deliveryPayload: buildDeliveryPayload(intent),
         at
       });
-      if (!recorded.created || !recorded.id) {
+      if (!recorded.created) {
+        // 撞 suppression_key 唯一约束。R20 REL-2（#P1-11）：区分「真 duplicate」与「投递前崩溃、行停在
+        // created」——后者是可恢复态，同 key 重试即恢复投递（手里的 intent 就是完整投递上下文，直接复用
+        // deliver 腿，不必等兜底扫描）。既有行已 delivered/suppressed 才是真 duplicate，幂等跳过。
+        if (recorded.id && recorded.status === "created") {
+          return deliver(recorded.id, intent, at);
+        }
         return { status: "suppressed", reason: "duplicate" };
       }
-      const intentId = recorded.id;
+      if (!recorded.id) {
+        // 理论到不了（created=true 必带 id）——防御性兜底，不投。
+        return { status: "suppressed", reason: "duplicate" };
+      }
 
-      // 2) 每人每日上限：当日该 target 的已投递 intent 数达上限 → 记 suppressed，不投。
-      const { from, to } = localDayBounds(at);
-      const deliveredToday = await deps.repository.countDeliveredForUserOnDay({
-        targetUserId: intent.targetUserId,
-        from,
-        to
+      // 2) 投递（每人每日上限 + 三通道 + 顶终态）。
+      return deliver(recorded.id, intent, at);
+    },
+
+    async recoverStalled(input): Promise<ProactiveIntentRecoveryRunResult> {
+      const rows = await deps.repository.listRecoverable({
+        now: input.now,
+        olderThanMs: input.olderThanMs,
+        maxAttempts: input.maxAttempts,
+        limit: input.limit
       });
-      if (deliveredToday >= deps.dailyCapPerUser) {
-        await deps.repository.markStatus({ id: intentId, status: "suppressed" });
-        return { status: "suppressed", reason: "daily_cap", intentId };
-      }
-
-      // 3) 投递。通道由调用方选（缺省 notification）：conversation_message（D2，Cuu 在个人空间主区说话）
-      //    / action_card（D4，项目主区插系统「找人」卡）。非通知通道投不成时的兜底由 degradeToNotification
-      //    决定（缺省 true）：
-      //      * true（DDL 追人/找人）：降级回 notification 通道（fail-open：宁可用系统通知补上，不吞主动性）；
-      //      * false（关怀）：直接 suppressed，绝不降级到系统通知（关怀走系统通知反而尴尬，见类型定义处注释）。
-      //    注意：非通知通道不经通知的按类型静音（个人空间/项目主区没有对应的通知类型可静音）——静音只在
-      //    notification 通道生效。
-      const channel = intent.channel ?? "notification";
-      const degradeToNotification = intent.degradeToNotification ?? true;
-      if (channel === "conversation_message") {
-        if (intent.conversationText && deps.conversationDelivery) {
-          try {
-            const outcome = await deps.conversationDelivery.deliverCuuMessage({
-              workspaceId: intent.workspaceId,
-              targetUserId: intent.targetUserId,
-              text: intent.conversationText,
-              proactiveIntentId: intentId
-            });
-            if (outcome.delivered) {
-              await deps.repository.markStatus({ id: intentId, status: "delivered", deliveredVia: "conversation_message" });
-              return { status: "delivered", intentId };
-            }
-            logger.warn?.("proactive_conversation_delivery_degraded", {
-              intentId,
-              targetUserId: intent.targetUserId,
-              reason: outcome.reason
-            });
-          } catch (error) {
-            logger.warn?.("proactive_conversation_delivery_failed", { intentId, error });
-          }
+      const result: ProactiveIntentRecoveryRunResult = {
+        scanned: rows.length,
+        recovered: 0,
+        suppressed: 0,
+        stalled: 0,
+        retryable: 0
+      };
+      for (const row of rows) {
+        // 每次尝试先自增 attempt_count（即便本次又崩，attempt_count 已 +1，达上限后不会被反复重扫）。
+        await deps.repository.incrementAttempt({ id: row.id });
+        const attempt = row.attemptCount + 1;
+        const reconstructed = reconstructIntent(row);
+        if (!reconstructed) {
+          // 缺 target_user 或 delivery_payload（多为迁移前的历史 created 行）——重建不出、无从重投，直接
+          // 封顶判死，别让它永远滞留 created。
+          await deps.repository.markStatus({ id: row.id, status: "suppressed", deliveredVia: "stalled" });
+          result.stalled += 1;
+          continue;
         }
-        // 到这里 = 会话通道没投成（个人空间缺失 / 未注入端口 / 缺文案 / 抛错）。
-        if (!degradeToNotification) {
-          // 关怀：不降级到系统通知——直接 suppressed。
-          await deps.repository.markStatus({ id: intentId, status: "suppressed" });
-          return { status: "suppressed", reason: "no_personal_space", intentId };
-        }
-        // 否则继续走下面的 notification 降级路径（DDL 行为）。
-      }
-
-      // D4：项目主区插系统「找人」行动卡。projectId/workItemId 对找人 intent 必非空；缺任一则直接走通知。
-      if (channel === "action_card" && deps.actionCardDelivery && intent.projectId && intent.workItemId) {
         try {
-          const outcome = await deps.actionCardDelivery.deliverFindOwnerCard({
-            workspaceId: intent.workspaceId,
-            projectId: intent.projectId,
-            workItemId: intent.workItemId,
-            targetUserId: intent.targetUserId,
-            titleMd: intent.notification.title,
-            proactiveIntentId: intentId
-          });
-          if (outcome.delivered) {
-            await deps.repository.markStatus({ id: intentId, status: "delivered", deliveredVia: "action_card" });
-            return { status: "delivered", intentId };
+          const outcome = await deliver(row.id, reconstructed, input.now);
+          if (outcome.status === "delivered") {
+            result.recovered += 1;
+          } else {
+            // deliver 已把行推到 suppressed 终态（频控/静音/无个人空间）——正常终态。
+            result.suppressed += 1;
           }
-          logger.warn?.("proactive_action_card_delivery_degraded", {
-            intentId,
-            projectId: intent.projectId,
-            reason: outcome.reason
-          });
         } catch (error) {
-          logger.warn?.("proactive_action_card_delivery_failed", { intentId, error });
+          // 本次重投又抛（进程若在此崩溃则行仍停在 created，attempt_count 已 +1，下个 tick 再来）。
+          logger.warn?.("proactive_intent_recovery_delivery_failed", { intentId: row.id, attempt, error });
+          if (attempt >= input.maxAttempts) {
+            // 已达重投上限仍投不成 → 封顶判死（delivered_via='stalled'）。
+            await deps.repository.markStatus({ id: row.id, status: "suppressed", deliveredVia: "stalled" });
+            result.stalled += 1;
+          } else {
+            result.retryable += 1;
+          }
         }
-        // 落到这里 = 行动卡通道没投成，继续走下面的 notification 降级路径（找人 degradeToNotification 恒缺省 true）。
       }
-
-      // notification 通道（也是非通知通道的降级目标）。关怀（degradeToNotification=false）在上面已
-      // suppressed 返回，不会落到这。createNotification 内部按类型静音返回 null → 记 suppressed。
-      const notification = await deps.notifications.createNotification({
-        userId: intent.targetUserId,
-        type: intent.notification.type,
-        severity: intent.notification.severity,
-        title: intent.notification.title,
-        body: intent.notification.body,
-        targetUrl: intent.notification.targetUrl,
-        ...(intent.projectId ? { projectId: intent.projectId } : {}),
-        ...(intent.workItemId ? { workItemId: intent.workItemId } : {}),
-        dedupeKey: intent.notification.dedupeKey,
-        ...(intent.notification.nextRemindAt ? { nextRemindAt: intent.notification.nextRemindAt } : {})
-      });
-      if (!notification) {
-        await deps.repository.markStatus({ id: intentId, status: "suppressed" });
-        return { status: "suppressed", reason: "muted", intentId };
-      }
-
-      await deps.repository.markStatus({ id: intentId, status: "delivered", deliveredVia: "notification" });
-      return { status: "delivered", intentId };
+      return result;
     }
+  };
+}
+
+// R20 REL-2（#P1-11）：从恢复扫描行重建投递用的 intent。缺 target_user 或 delivery_payload → 返回 null
+// （不可重建，由调用方判 stalled）。
+function reconstructIntent(row: RecoverableProactiveIntentRow): ProactiveIntentInput | null {
+  if (!row.targetUserId || !row.deliveryPayload) {
+    return null;
+  }
+  const dp = row.deliveryPayload as ProactiveDeliveryPayload;
+  const n = dp.notification;
+  if (!n) {
+    return null;
+  }
+  return {
+    workspaceId: row.workspaceId,
+    projectId: row.projectId,
+    workItemId: row.workItemId,
+    kind: row.kind as ProactiveIntentKind,
+    stage: row.stage ?? "",
+    targetUserId: row.targetUserId,
+    suppressionKey: row.suppressionKey,
+    payload: row.payload,
+    notification: {
+      type: n.type,
+      severity: n.severity,
+      title: n.title,
+      body: n.body,
+      targetUrl: n.targetUrl,
+      dedupeKey: n.dedupeKey,
+      ...(n.nextRemindAt ? { nextRemindAt: new Date(n.nextRemindAt) } : {})
+    },
+    ...(dp.channel ? { channel: dp.channel } : {}),
+    ...(dp.conversationText !== undefined ? { conversationText: dp.conversationText } : {}),
+    ...(dp.degradeToNotification !== undefined ? { degradeToNotification: dp.degradeToNotification } : {})
   };
 }
 
@@ -380,7 +551,10 @@ export function getDefaultProactiveIntentService(): ProactiveIntentService {
       repository: {
         recordIntent: (input) => recordProactiveIntent(db, input),
         countDeliveredForUserOnDay: (input) => countDeliveredProactiveIntentsForUser(db, input),
-        markStatus: (input) => markProactiveIntentStatus(db, input)
+        markStatus: (input) => markProactiveIntentStatus(db, input),
+        // R20 REL-2（#P1-11）：崩溃恢复兜底扫描的两条原语。
+        listRecoverable: (input) => listRecoverableProactiveIntents(db, input),
+        incrementAttempt: (input) => incrementProactiveIntentAttempt(db, input)
       },
       notifications: createNotificationService(),
       // R15 批 D2：会话通道端口——复用同一个共享 DB 的会话仓库（个人空间主区定位 + Cuu 消息落库）与

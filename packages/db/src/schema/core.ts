@@ -2400,8 +2400,14 @@ export const proactiveIntents = pgTable(
     payload: jsonb("payload").$type<JsonObject>().notNull().default(sql`'{}'::jsonb`),
     // created(已记未投) / delivered(已投递) / suppressed(被频控/静音/重复挡下)。
     status: text("status").notNull().default("created"),
-    // 本批唯一投递通道='notification'；未来会话卡/SSE 各有自己的值。
+    // 本批唯一投递通道='notification'；未来会话卡/SSE 各有自己的值。恢复扫描封顶判死时写 'stalled'。
     deliveredVia: text("delivered_via"),
+    // R20 REL-2（#P1-11 崩溃恢复，见 0068 迁移）：兜底恢复扫描每重投一次 +1；达上限仍投不成则封顶判
+    // suppressed(delivered_via='stalled')，不让崩溃后的行永远滞留 created。
+    attemptCount: integer("attempt_count").notNull().default(0),
+    // 重投所需的投递上下文（通道/会话文案/是否降级/通知草稿）——恢复扫描手里只有 DB 行、没有原 intent
+    // 对象，故 record 时落库，重投时据此重建。可空：迁移前历史行没有它，重建不出直接判 stalled。
+    deliveryPayload: jsonb("delivery_payload").$type<JsonObject>(),
     createdAt: createdAt()
   },
   (table) => [

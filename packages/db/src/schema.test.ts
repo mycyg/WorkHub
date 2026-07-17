@@ -682,7 +682,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0067 project instructions", () => {
+test("migration journal ends with 0068 proactive intent recovery", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -694,20 +694,22 @@ test("migration journal ends with 0067 project instructions", () => {
       idx: finalEntry.idx,
       version: finalEntry.version,
       tag: finalEntry.tag,
-      breakpoints: finalEntry.breakpoints
+      breakpoints: finalEntry.breakpoints,
+      when: finalEntry.when
     },
     {
-      // R16 批 W4a（项目级自定义指令）：0067(project_instructions,when=1783928000000)接在 D4 的
-      // 0066(action_card_origin,when=1783926000000)之后,journal 收于 0067,when 严格递增(0065→0066→0067)。
-      idx: 67,
+      // R20 REL-2（#P1-11 主动性 intent 崩溃恢复）：0068(proactive_intent_recovery,when=1783929000000)
+      // 接在 W4a 的 0067(project_instructions,when=1783928000000)之后,journal 收于 0068,when 严格递增。
+      idx: 68,
       version: "7",
-      tag: "0067_project_instructions",
-      breakpoints: true
+      tag: "0068_proactive_intent_recovery",
+      breakpoints: true,
+      when: 1783929000000
     }
   );
-  // when 严格递增——0067 的时间戳必须大于 0066 的 1783926000000。
-  const originEntry = journal.entries.find((entry) => entry.tag === "0066_action_card_origin");
-  assert.ok(originEntry && finalEntry && finalEntry.when > originEntry.when);
+  // when 严格递增——0068 的时间戳必须大于 0067 的 1783928000000。
+  const priorEntry = journal.entries.find((entry) => entry.tag === "0067_project_instructions");
+  assert.ok(priorEntry && finalEntry && finalEntry.when > priorEntry.when);
 });
 
 test("R15 批 A migration 0061 adds the reminder-ladder columns additively", () => {
@@ -896,6 +898,30 @@ test("R16 批 W4a migration 0067 adds projects.instructions_md additively", () =
   assert.equal(projectsTable.instructionsMd.name, "instructions_md");
   assert.equal(projectsTable.instructionsMd.notNull, false);
   assert.equal(projectsTable.instructionsMd.hasDefault, false);
+});
+
+test("R20 REL-2 migration 0068 adds proactive_intents recovery columns additively", () => {
+  const migrationUrl = new URL("../migrations/0068_proactive_intent_recovery.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0068_proactive_intent_recovery.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+
+  // 只加两列（additive，ADD COLUMN IF NOT EXISTS 保证 replay 安全）：attempt_count 有默认 0、非空；
+  // delivery_payload 可空、无默认。
+  assert.match(migration, /ALTER TABLE "proactive_intents" ADD COLUMN IF NOT EXISTS "attempt_count" integer NOT NULL DEFAULT 0;/u);
+  assert.match(migration, /ALTER TABLE "proactive_intents" ADD COLUMN IF NOT EXISTS "delivery_payload" jsonb;/u);
+  assert.doesNotMatch(migration, /DROP COLUMN|DROP CONSTRAINT|DROP INDEX|ALTER COLUMN/u, "migration 0068 must be additive-only");
+  assert.doesNotMatch(migration, /UNIQUE INDEX|CREATE INDEX|CREATE TABLE/iu, "migration 0068 must only add columns");
+  assert.doesNotMatch(migration, /CONCURRENTLY/iu, "migration 0068 must not use CONCURRENTLY (single-tx replay)");
+  assert.doesNotMatch(migration, /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u, "migration must not contain emoji glyphs");
+
+  // Drizzle schema 与迁移同步：attemptCount 非空默认 0；deliveryPayload 可空、无默认。
+  const table = requiredTable("proactiveIntents") as WorkHubTable & Record<string, any>;
+  assert.equal(table.attemptCount.name, "attempt_count");
+  assert.equal(table.attemptCount.notNull, true);
+  assert.equal(table.attemptCount.hasDefault, true);
+  assert.equal(table.deliveryPayload.name, "delivery_payload");
+  assert.equal(table.deliveryPayload.notNull, false);
+  assert.equal(table.deliveryPayload.hasDefault, false);
 });
 
 test("R14 批 FEEDBACK migration 0058 adds the ai_feedback table with a self-idempotency unique index", () => {
