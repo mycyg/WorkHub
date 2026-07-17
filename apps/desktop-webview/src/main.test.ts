@@ -226,6 +226,9 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
     async identify() {
       throw new Error("not needed");
     },
+    async login() {
+      throw new Error("not needed");
+    },
     async bootstrapDesktop() {
       throw new Error("not needed");
     },

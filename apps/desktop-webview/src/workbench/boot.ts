@@ -11,6 +11,12 @@ import type { WorkHubLocale } from "@workhub/ui/gold-path";
 import { applyIdentityLocale, browserLocale, setDocumentLocale } from "@workhub/web-runtime";
 
 import { isStaleDesktopClientTokenError } from "../auth-recovery.js";
+import {
+  bindDesktopCredentialGate,
+  isPasswordModeBootstrapError,
+  readDesktopAuthModeHint,
+  rememberDesktopAuthModeHint
+} from "../desktop-login.js";
 import { resolveDesktopTauriInvoke } from "../desktop-window-controls.js";
 import { consumePendingWorkbenchDeepLink } from "./pending-deep-link.js";
 import { mountWorkbenchShell, renderWorkbenchDocumentHead, type WorkbenchShellHandle } from "./shell.js";
@@ -54,34 +60,49 @@ function pushClientTokenToShell(token: string): void {
   }
 }
 
-// 和 browser.ts 的 ensureDesktopClientToken 同语义：登出态不重新自动绑定；有 token 就探活一次，
-// 陈旧/吊销(not_identified/invalid_client_token)才清掉重铸；网络/后端问题不动 token。
+// 和 browser.ts 的 ensureDesktopClientToken 同语义（含 P1-02 凭据登录门状态）：登出态不重新自动绑定；
+// 有 token 就探活一次，陈旧/吊销(not_identified/invalid_client_token)才清掉重铸；网络/后端问题不动 token。
 // 顺带把探活拿到的 identity 返回，给 boot() 复用去解析 locale，省一次重复往返（R12 首帧同款优化）。
-export async function ensureWorkbenchClientToken(client: WorkHubApiClient): Promise<IdentityResponse | null> {
+// gate 语义同 browser.ts：ready/needs-credentials/logged-out/offline——密码/hybrid 模式 desktop-bootstrap
+// 会 404 → needs-credentials，boot() 据此渲凭据登录门而非静默无 token。
+export type WorkbenchAuthGateState = "ready" | "needs-credentials" | "logged-out" | "offline";
+
+export async function ensureWorkbenchClientToken(
+  client: WorkHubApiClient
+): Promise<{ identity: IdentityResponse | null; gate: WorkbenchAuthGateState }> {
   if (isWorkbenchDesktopLoggedOut()) {
-    return null;
+    // 登出态绝不自动昵称 rebind。密码模式按上次探得的模式提示渲凭据登录门；昵称/未知保持既有行为。
+    const gate = readDesktopAuthModeHint(window.localStorage) === "password" ? "needs-credentials" : "logged-out";
+    return { identity: null, gate };
   }
   let identity: IdentityResponse | null = null;
   if (!clientToken()) {
-    await bootstrapWorkbenchClientToken(client);
+    if ((await bootstrapWorkbenchClientToken(client)) === "needs-credentials") {
+      return { identity: null, gate: "needs-credentials" };
+    }
   } else {
     try {
       identity = await client.me();
     } catch (error) {
       if (isStaleDesktopClientTokenError(error)) {
         window.localStorage.removeItem("workhub_client_token");
-        await bootstrapWorkbenchClientToken(client);
+        if ((await bootstrapWorkbenchClientToken(client)) === "needs-credentials") {
+          return { identity: null, gate: "needs-credentials" };
+        }
       }
     }
   }
   const token = clientToken();
   if (token) {
     pushClientTokenToShell(token);
+    return { identity, gate: "ready" };
   }
-  return identity;
+  return { identity, gate: "offline" };
 }
 
-async function bootstrapWorkbenchClientToken(client: WorkHubApiClient): Promise<void> {
+type WorkbenchBootstrapOutcome = "ready" | "needs-credentials" | "unavailable";
+
+async function bootstrapWorkbenchClientToken(client: WorkHubApiClient): Promise<WorkbenchBootstrapOutcome> {
   try {
     const result = await client.bootstrapDesktop({
       nickname: "WorkHub Desktop",
@@ -90,9 +111,17 @@ async function bootstrapWorkbenchClientToken(client: WorkHubApiClient): Promise<
     });
     if (result?.client_token) {
       window.localStorage.setItem("workhub_client_token", result.client_token);
+      rememberDesktopAuthModeHint(window.localStorage, "nickname");
+      return "ready";
     }
+    return "unavailable";
   } catch (error) {
+    if (isPasswordModeBootstrapError(error)) {
+      rememberDesktopAuthModeHint(window.localStorage, "password");
+      return "needs-credentials";
+    }
     console.warn("WorkHub workbench desktop bootstrap failed; continuing without client token", error);
+    return "unavailable";
   }
 }
 
@@ -193,7 +222,20 @@ async function boot(): Promise<void> {
     getClientToken: clientToken
   });
 
-  const identity = await ensureWorkbenchClientToken(client).catch(() => null);
+  const auth = await ensureWorkbenchClientToken(client).catch(
+    () => ({ identity: null, gate: "offline" as const })
+  );
+  // P1-02（REL-5）：密码/hybrid 模式渲凭据登录门（login → device-token exchange），成功后 reload 走既有 token 流。
+  if (auth.gate === "needs-credentials") {
+    bindDesktopCredentialGate(root, {
+      client,
+      locale,
+      storage: window.localStorage,
+      onSuccess: () => window.location.reload()
+    });
+    return;
+  }
+  const identity = auth.identity;
   locale = applyIdentityLocale(identity, locale);
   setDocumentLocale(locale);
 

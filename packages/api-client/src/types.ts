@@ -228,6 +228,13 @@ export type IdentifyRequest = {
   admin_secret?: string;
 };
 
+// R2 auth epic（密码登录）：桌面在密码/hybrid 模式先用凭据登录建会话，再走 bootstrapDesktop 换设备令牌。
+// 明文密码只走请求体（POST /api/auth/login），绝不进 URL/query。
+export type PasswordLoginRequest = {
+  email: string;
+  password: string;
+};
+
 export type IdentityResponse = {
   id: string;
   nickname: string;
@@ -304,7 +311,9 @@ export type WorkHubApiClient = {
   health: () => Promise<HealthResponse>;
   openapi: () => Promise<unknown>;
   identify: (payload: IdentifyRequest) => Promise<IdentityResponse>;
-  // 桌面首启引导：昵称 identify + 设备注册一步到位，返回 client_token（仅昵称模式）。
+  // 桌面凭据登录（密码/hybrid 模式）：POST /api/auth/login 建会话 cookie，随后 bootstrapDesktop 据会话换 client_token。
+  login: (payload: PasswordLoginRequest) => Promise<IdentityResponse>;
+  // 桌面首启引导：昵称模式=昵称 identify + 设备注册一步到位；密码/hybrid 模式=凭已登录会话换设备令牌。均返回 client_token。
   bootstrapDesktop: (payload: DesktopBootstrapRequest) => Promise<DesktopBootstrapResponse>;
   // 设备管理（需已鉴权）：注册 / 列表 / 当前 / 吊销。
   registerClientDevice: (payload: ClientDeviceRegisterRequest) => Promise<ClientDeviceRegisterResponse>;

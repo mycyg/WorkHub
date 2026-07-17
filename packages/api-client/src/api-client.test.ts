@@ -32,6 +32,64 @@ test("api client unwraps WorkHub envelopes and injects the desktop token headers
   assert.equal(seenHeaders.legacy, "device-token");
 });
 
+test("login posts credentials to /api/auth/login in the body (never the URL) and returns identity", async () => {
+  // P1-02（REL-5）：桌面密码/hybrid 模式先用凭据登录建会话，再走 bootstrapDesktop 换设备令牌。
+  let seenUrl: string | undefined;
+  let seenMethod: string | undefined;
+  let seenBody: string | undefined;
+  const client = createApiClient({
+    baseUrl: "http://127.0.0.1:8787",
+    fetchFn: async (input, init) => {
+      seenUrl = typeof input === "string" ? input : String(input);
+      seenMethod = init?.method;
+      seenBody = typeof init?.body === "string" ? init.body : undefined;
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          data: {
+            id: "u1",
+            nickname: "alice",
+            display_name: "alice",
+            created: false,
+            locale: "zh-CN",
+            preferences: { locale: "zh-CN" },
+            is_admin: false,
+            availability_status: "online"
+          }
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+  });
+
+  const identity = await client.login({ email: "alice@example.com", password: "hunter2-strong-pass" });
+  assert.equal(identity.id, "u1");
+  assert.equal(identity.nickname, "alice");
+  assert.equal(seenMethod, "POST");
+  assert.equal(seenUrl, "http://127.0.0.1:8787/api/auth/login");
+  assert.ok(!seenUrl?.includes("hunter2-strong-pass"), "password must never appear in the URL");
+  assert.ok(!seenUrl?.includes("email="), "credentials must not be in the query string");
+  assert.deepEqual(JSON.parse(seenBody ?? "{}"), {
+    email: "alice@example.com",
+    password: "hunter2-strong-pass"
+  });
+});
+
+test("login surfaces a 401 from the backend as a WorkHubApiError (bad credentials, retryable)", async () => {
+  const client = createApiClient({
+    fetchFn: async () =>
+      new Response(JSON.stringify({ ok: false, error: { code: "auth_error", message: "邮箱或密码不正确" } }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" }
+      })
+  });
+
+  await assert.rejects(
+    () => client.login({ email: "alice@example.com", password: "wrong" }),
+    (error) => error instanceof WorkHubApiError && error.status === 401
+  );
+});
+
 test("api client preserves raw ok health payloads that are not WorkHub envelopes", async () => {
   const client = createApiClient({
     fetchFn: async () =>

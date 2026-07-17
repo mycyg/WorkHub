@@ -2489,7 +2489,8 @@ test("desktop-bootstrap mints a device token for an existing admin nickname with
   assert.deepEqual(await who.json(), { id: admin.id, is_admin: true });
 });
 
-test("desktop-bootstrap is disabled (404) in password mode", async () => {
+test("desktop-bootstrap (password mode) refuses nickname self-provision without a session (404)", async () => {
+  // P1-02（REL-5）：密码模式不再无条件 404——但无会话（首启尚未凭据登录）仍拒。桌面据此 404 渲凭据登录门。
   const app = withErrors(new Hono<AuthEnv>());
   app.route("/api/auth", createAuthRoutes(deps([], [], settings({ AUTH_MODE: "password" }))));
   const res = await app.request("/api/auth/desktop-bootstrap", {
@@ -2498,4 +2499,56 @@ test("desktop-bootstrap is disabled (404) in password mode", async () => {
     body: JSON.stringify({ nickname: "anyone", device_name: "x" })
   });
   assert.equal(res.status, 404, "password mode must require credentials, not nickname self-provision");
+});
+
+test("desktop-bootstrap (password mode) exchanges a valid session for a device token", async () => {
+  // 修复前：密码模式对本请求无条件 404（无可用登录链路）。修复后：已凭据登录（持有效会话）→ 换设备令牌。
+  const runtimeSettings = settings({ AUTH_MODE: "password" });
+  const alice = user({ nickname: "alice" });
+  const sessions = new MemorySessions();
+  const authDeps: AuthDependencies = { ...deps([alice], [], runtimeSettings), sessions };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+  app.get("/who", createCurrentUserMiddleware(authDeps), (c) => c.json({ id: c.var.currentUser.id }));
+
+  // 模拟「已通过 /api/auth/login」：建一条会话，其 secret 走 signed cookie（与 issueSessionCookie 同键）。
+  const { token: sessionToken } = await mintSession(authDeps, alice, { authMethod: "password" });
+  const res = await app.request("/api/auth/desktop-bootstrap", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      Cookie: await signedCookie(sessionToken, runtimeSettings)
+    },
+    // nickname 在密码模式被忽略（身份来自会话）；仍按 schema 传占位值（nickname 必填）。
+    body: JSON.stringify({ nickname: "ignored-in-password-mode", device_name: "Alice Mac", platform: "desktop" })
+  });
+  assert.equal(res.status, 201, "valid session must exchange for a device token in password mode");
+  const body = (await res.json()) as {
+    client_token: string;
+    identity: { id: string };
+    device: { device_name: string; user_id: string };
+  };
+  assert.ok(body.client_token.length >= 32, "returns a usable device client token in the body");
+  assert.equal(body.identity.id, alice.id);
+  assert.equal(body.device.user_id, alice.id);
+  assert.equal(body.device.device_name, "Alice Mac");
+
+  // 换到的设备令牌无 cookie 即可鉴权后续请求——这正是桌面跨源所需（同 nickname 引导的最终形态）。
+  const who = await app.request("/who", { headers: { [LOCAL_CLIENT_HEADER]: body.client_token } });
+  assert.equal(who.status, 200, "minted device token authenticates a follow-up request with no cookie");
+  assert.deepEqual(await who.json(), { id: alice.id });
+});
+
+test("desktop-bootstrap (password mode) rejects a garbage client token with 403", async () => {
+  // 呈递了 client-token header 却解析不到设备 → fail-closed 403（绝不落到 404/静默签发设备令牌）。
+  const runtimeSettings = settings({ AUTH_MODE: "password" });
+  const authDeps: AuthDependencies = { ...deps([], [], runtimeSettings), sessions: new MemorySessions() };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+  const res = await app.request("/api/auth/desktop-bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json", [LOCAL_CLIENT_HEADER]: "garbage-token" },
+    body: JSON.stringify({ nickname: "x", device_name: "x" })
+  });
+  assert.equal(res.status, 403, "bad client token must fail closed, not exchange for a device token");
 });
