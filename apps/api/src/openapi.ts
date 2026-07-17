@@ -5913,6 +5913,51 @@ const updateWorkspaceMemberRoleResponses = {
     "500": conversationInternalResponse
   }
 } as const;
+// R20 P2A（P1-08 修复 · workspace-scoped roster）：GET /api/workspace/roster —— 任意工作区成员分页读本
+// 工作区花名册（取代消费端误用的全局 /api/users）。limit/offset 分页，回工作区成员总数 + 头像/在线态占位。
+const workspaceRosterQueryParameters = [
+  { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 50 } },
+  { name: "offset", in: "query", required: false, schema: { type: "integer", minimum: 0, default: 0 } }
+] as const;
+const listWorkspaceRosterResponses = {
+  responses: {
+    "200": jsonDataResponse(
+      {
+        type: "object",
+        required: ["members", "total", "limit", "offset"],
+        properties: {
+          members: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["user_id", "nickname", "role", "joined_at", "is_self", "avatar_updated_at", "online"],
+              properties: {
+                user_id: uuidStringSchema,
+                nickname: { type: "string", minLength: 1, maxLength: 96 },
+                role: workspaceMemberRoleSchema,
+                joined_at: dateTimeStringSchema,
+                is_self: { type: "boolean" },
+                avatar_updated_at: { ...dateTimeStringSchema, nullable: true },
+                online: { type: "boolean", nullable: true }
+              },
+              additionalProperties: false
+            }
+          },
+          total: { type: "integer", minimum: 0 },
+          limit: { type: "integer", minimum: 1, maximum: 100 },
+          offset: { type: "integer", minimum: 0 }
+        },
+        additionalProperties: false
+      },
+      "A page of the caller's workspace member roster"
+    ).responses["200"],
+    "401": conversationAuthRequiredResponse,
+    "403": jsonErrorStatusResponse("403", "Only members of the workspace may read its roster", [
+      "roster_forbidden"
+    ]).responses["403"],
+    "500": conversationInternalResponse
+  }
+} as const;
 
 const presenceUserIdsQueryParameter = {
   name: "user_ids",
@@ -8294,6 +8339,14 @@ export function getOpenApiDocument() {
           tags: ["conversations"],
           summary: "List the workspace member roster (admin/owner only): nickname, role, joined-at, is-self",
           ...listWorkspaceMembersResponses
+        }
+      },
+      "/api/workspace/roster": {
+        get: {
+          tags: ["conversations"],
+          summary: "Page the caller's workspace roster (any member): nickname, role, joined-at, is-self, avatar/online placeholders",
+          parameters: [...workspaceRosterQueryParameters],
+          ...listWorkspaceRosterResponses
         }
       },
       "/api/workspace/members/{userId}": {
