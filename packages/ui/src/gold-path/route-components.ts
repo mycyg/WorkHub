@@ -4442,6 +4442,13 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
       </section>`;
   // G4 #24（项目自定义指令 web 入口）：SSR 出骨架，browser.ts 拉 GET /api/projects/:id/instructions
   // 后按权限渲可编辑 textarea（失焦 PATCH 保存）或只读说明（403）。与桌面 W4b1 同一错误矩阵。
+  // R18 批 H1（项目设置成员分区镜像）：项目主页（管理者视角）「成员」摘要小块——SSR 出骨架，browser.ts
+  // bindProjectHomeMembersPanel 拉 /api/users（主区全员计数）与 /api/projects/:id/conversations（协同
+  // 会话数 + 主区会话 id）后填数并链到主区会话镜像。轻量镜像，不复制桌面工作台的成员全功能。
+  const membersSection = `<section class="wh-card wh-r4-route-card" data-r18-project-home-members="true" data-r18-project-home-members-project="${escapeHtml(project.id)}">
+        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "成员" : "Members")}</h3>
+        <div data-r18-project-home-members-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载成员摘要…" : "Loading member summary…")}</p></div>
+      </section>`;
   const instructionsSection = `<section class="wh-card wh-r4-route-card" data-r17-project-home-instructions="true" data-r17-project-home-instructions-project="${escapeHtml(project.id)}">
         <h3 role="heading" aria-level="2">${escapeHtml(zh ? "自定义指令" : "Custom instructions")}</h3>
         <p class="wh-subtle">${escapeHtml(
@@ -4502,6 +4509,7 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
       </section>
       ${githubSection}
       ${plansSection}
+      ${membersSection}
       ${instructionsSection}
       <a class="wh-r4-route-kicker" href="/projects" data-r8-project-home-back="true">${escapeHtml(routeT(locale, "projectHome.back"))}</a>
     </section>`

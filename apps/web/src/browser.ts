@@ -2144,6 +2144,7 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindNotificationMutePanel(root, result, client, locale, signal);
   bindProjectHomePlansPanel(root, result, client, locale, signal);
   bindProjectHomeInstructionsPanel(root, result, client, locale, signal);
+  bindProjectHomeMembersPanel(root, result, client, locale, signal);
   bindConversationParticipantsPanel(root, result, client, locale, signal);
   bindSearchRoutePanel(root, result, client, locale, signal);
   bindSettingsAiProfilePanel(root, result, client, locale, signal);
@@ -2518,6 +2519,84 @@ function bindProjectHomeInstructionsPanel(
         return;
       }
       renderError();
+    }
+  };
+  void hydrate();
+}
+
+// R18 批 H1（项目设置成员分区镜像）：项目主页「成员」摘要小块的客户端水合。SSR 只出加载态骨架；这里拉
+// /api/users（主区全员计数，任何成员可读）与 /api/projects/:id/conversations（协同会话数 + 主区会话 id）
+// 后填数并链到主区会话镜像 /conversations/:id。轻量镜像——不复制桌面工作台的成员全功能。取数失败静默降级。
+type ProjectHomeConversationLite = { id: string; kind: "main" | "collab"; is_dm?: boolean };
+type ProjectHomeConversationsVM = { conversations: ProjectHomeConversationLite[]; capped: boolean };
+
+function bindProjectHomeMembersPanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "project-home") {
+    return;
+  }
+  const section = container.querySelector<HTMLElement>("[data-r18-project-home-members]");
+  const body = section?.querySelector<HTMLElement>("[data-r18-project-home-members-body]");
+  const projectId = section?.getAttribute("data-r18-project-home-members-project") ?? "";
+  if (!section || !body || !projectId) {
+    return;
+  }
+  const zh = locale === "zh-CN";
+
+  const hydrate = async () => {
+    try {
+      const [memberCount, convos] = await Promise.all([
+        client.listUsers().then(
+          (value) => value.users.length,
+          (): number | null => null
+        ),
+        client.request<ProjectHomeConversationsVM>(`/api/projects/${encodeURIComponent(projectId)}/conversations`).then(
+          (value) => value,
+          (): ProjectHomeConversationsVM | null => null
+        )
+      ]);
+      if (signal.aborted) {
+        return;
+      }
+      // 协同会话数 = collab 且非 DM（DM 是 is_dm=true 的 collab，不算团队协同会话）。
+      const collabCount = convos ? convos.conversations.filter((c) => c.kind === "collab" && c.is_dm !== true).length : null;
+      const capped = convos?.capped ?? false;
+      const mainId = convos?.conversations.find((c) => c.kind === "main")?.id ?? "";
+
+      const pills: string[] = [];
+      if (memberCount !== null) {
+        pills.push(`<span class="wh-pill" data-r18-project-home-members-count="${escapeHtml(String(memberCount))}">${escapeHtml(zh ? `主区 ${memberCount} 名成员` : `${memberCount} in main channel`)}</span>`);
+      }
+      if (collabCount !== null) {
+        const label = zh ? `${collabCount}${capped ? "+" : ""} 个协同会话` : `${collabCount}${capped ? "+" : ""} collab conversation${collabCount === 1 && !capped ? "" : "s"}`;
+        pills.push(`<span class="wh-pill" data-r18-project-home-collab-count="${escapeHtml(String(collabCount))}">${escapeHtml(label)}</span>`);
+      }
+      if (!pills.length) {
+        body.innerHTML = `<p class="wh-subtle" data-r18-project-home-members-error="true">${escapeHtml(
+          zh ? "成员摘要没拉到，稍后重试。" : "Couldn't load the member summary — retry later."
+        )}</p><button type="button" class="wh-btn" data-r18-project-home-members-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+        body.querySelector<HTMLButtonElement>("[data-r18-project-home-members-retry]")
+          ?.addEventListener("click", () => void hydrate(), { signal });
+        return;
+      }
+      const link = mainId
+        ? `<a class="wh-r4-route-kicker" href="/conversations/${encodeURIComponent(mainId)}" data-r18-project-home-members-mirror="true">${escapeHtml(zh ? "查看主区会话镜像 →" : "Open the main-channel conversation mirror →")}</a>`
+        : "";
+      body.innerHTML = `<div class="wh-r4-route-meta">${pills.join("")}</div>
+        <p class="wh-subtle">${escapeHtml(zh ? "主区会话对工作区全员可见；协同会话与成员的完整管理在桌面工作台。" : "The main channel is visible to the whole workspace; full member and collab management lives in the desktop workbench.")}</p>
+        ${link}`;
+    } catch {
+      if (signal.aborted) {
+        return;
+      }
+      body.innerHTML = `<p class="wh-subtle" data-r18-project-home-members-error="true">${escapeHtml(
+        zh ? "成员摘要没拉到，稍后重试。" : "Couldn't load the member summary — retry later."
+      )}</p>`;
     }
   };
   void hydrate();

@@ -2157,6 +2157,11 @@ test("B-R9.6 project home rows show the army progress pill only for armied work 
   // NAMING pass：pill 文案带「子任务」限定词，新人不再猜 2/4 是什么。
   assert.equal(projectHome.html.includes("军团子任务 2/4"), true);
   assert.equal(projectHome.html.includes('data-r9-project-army-pill="94000000-0000-4000-8000-000000000002"'), false);
+  // R18-H1：项目主页「成员」摘要小块——SSR 骨架 + hydration 锚点（真计数/主区会话链接由 browser.ts 注入）。
+  assert.equal(projectHome.html.includes('data-r18-project-home-members="true"'), true);
+  assert.equal(projectHome.html.includes('data-r18-project-home-members-project="93000000-0000-4000-8000-000000000001"'), true);
+  assert.equal(projectHome.html.includes('data-r18-project-home-members-body="true"'), true);
+  assert.equal(projectHome.html.includes("正在加载成员摘要"), true);
   assertNoMainWindowBoundaryLeak(projectHome.html);
 });
 
