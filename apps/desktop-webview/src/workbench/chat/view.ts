@@ -80,6 +80,7 @@ import {
   type IncomingReactionUpdate
 } from "./events.js";
 import { onlineUserIdsFromPresence, type OnlineUserIds } from "./presence-state.js";
+import type { PresenceHandle } from "../presence-store.js";
 import { pickCuuReactionEmotion, type CuuReactionEmotion } from "./reaction-emotion.js";
 import { toggleOwnReaction } from "./reactions.js";
 import {
@@ -510,6 +511,11 @@ export function mountChatView(
     // 有上一份 reactions 快照的 view.ts 能 diff 出「新增了哪个键」（reaction.updated 是全量聚合，无增量）。
     // 可选：宿主不接（浏览器预览/桌宠桥不可用）就是纯本地渲染，emit 端后续接线，见完成汇报「桌宠彩蛋」。
     onCuuReactionEmotion?: (emotion: CuuReactionEmotion) => void;
+    // R20 DSK-UX（R19-11 presence 单源）：宿主（shell.ts）注入的共享 presence handle——聊天区把自己刷到的
+    // 在线态写回它（applyPresence），也从它读（getOnline）、订阅它的变化重渲成员条/DM 头像的在线圆点。
+    // 这样聊天区（含 SSE 重连即时刷）与 rail/资料卡读同一个 store.onlineUserIds，不再各刷各的、圆点打架。
+    // 可选：不注入（既有测试/其它宿主）时退回本视图私有 onlineUserIds（旧行为，本地自洽）。
+    presence?: PresenceHandle;
   }
 ): ChatViewHandle {
   const doc = container.ownerDocument ?? document;
@@ -781,7 +787,7 @@ export function mountChatView(
       headBarHtml = renderDmHeadBarHtml({
         peerUserId: peer?.user_id ?? "",
         peerNickname: peer?.nickname ?? "",
-        online: peer ? onlineUserIds.has(peer.user_id) : false,
+        online: peer ? currentOnlineIds().has(peer.user_id) : false,
         locale: input.locale
       });
     } else {
@@ -789,7 +795,7 @@ export function mountChatView(
       headBarHtml = renderMemberBarHtml({
         members: input.members,
         locale: input.locale,
-        onlineUserIds,
+        onlineUserIds: currentOnlineIds(),
         ...(canManageMembers ? { manage: true } : {})
       });
     }
@@ -1565,6 +1571,12 @@ export function mountChatView(
     }
   }
 
+  // R20 DSK-UX（R19-11 presence 单源）：读侧统一入口——注入了共享 presence handle 就从单源 store 读，
+  // 否则退回本视图私有集合（既有测试/无宿主场景）。渲染层（renderHead）一律走它，不再直读 onlineUserIds。
+  function currentOnlineIds(): OnlineUserIds {
+    return input.presence ? input.presence.getOnline() : onlineUserIds;
+  }
+
   async function loadPresence(): Promise<void> {
     if (memberUserIds.length === 0) {
       return;
@@ -1574,8 +1586,14 @@ export function mountChatView(
       if (disposed) {
         return;
       }
-      onlineUserIds = onlineUserIdsFromPresence(result.presence);
-      renderHead();
+      // R20 DSK-UX（R19-11）：写回共享单源（per-user 合并，惠及 rail/资料卡）；无 handle 时退回本地集合。
+      // 有 handle 时不在这里 renderHead——store 通知会经 presenceUnsub 触发一次统一重渲（避免双重渲染）。
+      if (input.presence) {
+        input.presence.applyPresence(result.presence);
+      } else {
+        onlineUserIds = onlineUserIdsFromPresence(result.presence);
+        renderHead();
+      }
     } catch {
       // best-effort：拉不到就保持上一次的在线集合（或空集），不清成「全离线」骚扰视觉，也不重试轰炸。
     }
@@ -3774,10 +3792,18 @@ export function mountChatView(
       void loadPresence();
     }
   }, PRESENCE_POLL_INTERVAL_MS);
+  // R20 DSK-UX（R19-11 presence 单源）：订阅共享 store 的在线集合变化——rail 的 30s 轮询/别处刷到的在线态
+  // 也会即时反映到这条会话的成员条/DM 头像圆点上（单源双向同步）。无 handle 时不订阅（旧本地行为）。
+  const presenceUnsub = input.presence?.subscribe(() => {
+    if (!disposed) {
+      renderHead();
+    }
+  });
 
   return {
     dispose() {
       disposed = true;
+      presenceUnsub?.();
       streamHandle?.close();
       // R14 批 PERF（切片①）：取消尚未 flush 的那一帧，别在视图卸载后往已 detach 的滚动容器写 innerHTML。
       renderScrollScheduler.cancel();

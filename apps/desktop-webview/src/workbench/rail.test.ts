@@ -11,6 +11,7 @@ import {
   IDLE_NEW_COLLAB_MODAL_STATE,
   IDLE_RENAME_COLLAB_MODAL_STATE,
   nextCollabConversationTitle,
+  reconcileConversationUnreadFromVm,
   setConversationUnreadInVm,
   setDmUnread,
   renameCollabConversation,
@@ -1157,6 +1158,31 @@ test("bumpConversationUnreadInVm increments by one and no-ops for unknown conver
   const fresh = workbenchVm();
   assert.equal(bumpConversationUnreadInVm(fresh, fresh.conversations.conversations[0]!.id).conversations.conversations[0]!.unread_count, 1);
   assert.equal(bumpConversationUnreadInVm(vm, "no-such-id"), vm);
+});
+
+test("reconcileConversationUnreadFromVm aligns each conversation's unread to the fresh authoritative VM (R19-9)", () => {
+  const conversationId = workbenchVm().conversations.conversations[0]!.id;
+  // current: locally-bumped main to 5 (may have over/under-counted while disconnected).
+  const current = setConversationUnreadInVm(workbenchVm(), conversationId, 5);
+  // fresh authoritative VM says the real unread is 2 for the same conversation.
+  const fresh = setConversationUnreadInVm(workbenchVm(), conversationId, 2);
+  const next = reconcileConversationUnreadFromVm(current, fresh);
+  assert.equal(next.conversations.conversations[0]!.unread_count, 2, "unread must be corrected to the server truth");
+});
+
+test("reconcileConversationUnreadFromVm skips the currently-open conversation so its cleared badge is not re-lit", () => {
+  const conversationId = workbenchVm().conversations.conversations[0]!.id;
+  // User is reading this conversation: its badge is locally 0 (cleared on open).
+  const current = setConversationUnreadInVm(workbenchVm(), conversationId, 0);
+  // Server's snapshot still shows historical unread of 3 (read receipt not processed yet).
+  const fresh = setConversationUnreadInVm(workbenchVm(), conversationId, 3);
+  const next = reconcileConversationUnreadFromVm(current, fresh, conversationId);
+  assert.equal(next, current, "skipping the open conversation must be a no-op (identity preserved)");
+});
+
+test("reconcileConversationUnreadFromVm returns the same VM ref when nothing needs correcting", () => {
+  const vm = setConversationUnreadInVm(workbenchVm(), workbenchVm().conversations.conversations[0]!.id, 4);
+  assert.equal(reconcileConversationUnreadFromVm(vm, vm), vm);
 });
 
 test("setDmUnread / bumpDmUnread update the matching DM and no-op otherwise", () => {

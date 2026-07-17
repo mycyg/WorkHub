@@ -13,7 +13,8 @@ import { escapeHtml } from "@workhub/web-runtime";
 
 import { avatarTileHtml } from "./chat/render.js";
 import { hydrateAvatarPhotos } from "./chat/view.js";
-import { dmPeerParticipant, fetchDmList, fetchOnlineUserIds } from "./dm.js";
+import { applyPresenceToOnlineIds } from "./chat/presence-state.js";
+import { dmPeerParticipant, fetchDmList, fetchPresenceEntries } from "./dm.js";
 import { workbenchIcons } from "./icons.js";
 import type { WorkbenchCenterTab, WorkbenchStore } from "./store.js";
 
@@ -208,6 +209,27 @@ export function bumpDmUnread(dmList: readonly DmListItemVM[], conversationId: st
     return dmList as DmListItemVM[];
   }
   return setDmUnread(dmList, conversationId, (target.conversation.unread_count ?? 0) + 1);
+}
+
+// R20 DSK-UX（R19-9 未读重连补缺）：用一份新拉的权威 VM 把 current VM 里每条会话（主区/协同）的 unread_count
+// 对齐到服务端真值。此前主区/协同未读只靠 /me 流本地 +1，从不周期对账、/me 重连也不补缺口（broker
+// resume_mode:fresh 不重放），一旦漏事件就永久少算，只有切项目再切回才被新 VM 纠正（DM 有 30s 兜底、
+// 主区/协同没有）。重连后拉一次 workbench VM 走这个纯函数把真值收敛回来。skipConversationId=当前正开着的
+// 会话（用户在读、chat 视图有自己的 afterSeq 对账并已清零），不拿服务端拉取那一刻的历史未读把它的红点又点亮。
+// 无变化时原样返回 current 引用（identity 稳定），调用方据此判断要不要 setState。
+export function reconcileConversationUnreadFromVm(
+  current: WorkbenchPageVM,
+  fresh: WorkbenchPageVM,
+  skipConversationId?: string
+): WorkbenchPageVM {
+  let vm = current;
+  for (const conversation of fresh.conversations.conversations) {
+    if (conversation.id === skipConversationId) {
+      continue;
+    }
+    vm = setConversationUnreadInVm(vm, conversation.id, conversation.unread_count ?? 0);
+  }
+  return vm;
 }
 
 // 项目行下的树叶——批 1 全部只读(没有任何视图能接)。批 2 把主区群聊接进这个窗口后，「主区」升级成
@@ -1064,11 +1086,18 @@ export function mountWorkbenchRail(
       return;
     }
     try {
-      const online = await fetchOnlineUserIds(input.client, [...ids]);
+      // R20 DSK-UX（R19-11 presence 单源）：拿每个 user 的 is_online 原值，per-user 合并进单源
+      // store.onlineUserIds（不再整列替换）——这样聊天区经同一 presence handle 写进来的、rail 本批没查的
+      // user 不会被 rail 这拍误清成离线。rail 每拍都查全 roster+DM 对方，离线者本就在批里，会被正常移除。
+      const entries = await fetchPresenceEntries(input.client, [...ids]);
       if (disposed) {
         return;
       }
-      input.store.setState({ onlineUserIds: [...online] });
+      const current = input.store.getState().onlineUserIds;
+      const next = applyPresenceToOnlineIds(current, entries);
+      if (next !== current) {
+        input.store.setState({ onlineUserIds: next });
+      }
     } catch {
       // best-effort：拉不到就保持上一次的在线集合，不清成「全离线」骚扰视觉。
     }
