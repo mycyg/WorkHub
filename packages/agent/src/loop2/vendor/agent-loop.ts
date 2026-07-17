@@ -10,6 +10,11 @@
  * - two `!` non-null assertions on `context.messages[...]` reads in the
  *   continuation guards, required by WorkHub's `noUncheckedIndexedAccess`
  *   (annotated inline). No behavior changes.
+ * - `prepareToolCall` consults an OPT-IN `config.resolveMissingTool(name)` before the
+ *   "tool not found" fallback, so a tool call absent from the model-visible list can
+ *   still be executed via WorkHub's registry — parity with `loop.ts`, which delegates
+ *   every model-named tool call to `input.tools.execute` unconditionally. Behavior is
+ *   unchanged when the hook is undefined (the vendored default). Annotated inline.
  */
 
 import {
@@ -617,7 +622,16 @@ async function prepareToolCall(
 	config: AgentLoopConfig,
 	signal: AbortSignal | undefined,
 ): Promise<PreparedToolCall | ImmediateToolCallOutcome> {
-	const tool = currentContext.tools?.find((t) => t.name === toolCall.name);
+	// WorkHub adaptation: the vendored pi loop conflates the model-visible tool list
+	// (`context.tools`) with the executable registry — a tool call whose name is absent
+	// from `context.tools` short-circuits to "not found" without ever invoking an executor.
+	// WorkHub's legacy `loop.ts` instead delegates EVERY model-named tool call to its
+	// return-based registry (`input.tools.execute`), which is the real gatekeeper for
+	// unknown tools. To keep loop2 a faithful stand-in, `resolveMissingTool` lets the
+	// config recover an executable tool for a name that is not in the visible list. It is
+	// opt-in: when the config does not provide it (the vendored default), the original
+	// "not found" behavior is preserved exactly.
+	const tool = currentContext.tools?.find((t) => t.name === toolCall.name) ?? config.resolveMissingTool?.(toolCall.name);
 	if (!tool) {
 		return {
 			kind: "immediate",

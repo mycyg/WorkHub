@@ -293,6 +293,22 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * The hook receives the agent abort signal and is responsible for honoring it.
 	 */
 	afterToolCall?: (context: AfterToolCallContext, signal?: AbortSignal) => Promise<AfterToolCallResult | undefined>;
+
+	/**
+	 * WorkHub adaptation (not in vendored pi). Resolves an executable tool for a tool
+	 * call whose name is NOT present in the model-visible `context.tools` list, before
+	 * the loop falls back to a "tool not found" error result.
+	 *
+	 * WorkHub's legacy loop separates the model-visible tool set from execution: it hands
+	 * every model-named tool call to a single return-based registry (`input.tools.execute`)
+	 * regardless of the visible list, letting that registry decide (and error) for unknown
+	 * tools. This hook restores that parity in loop2 by synthesizing a tool that delegates
+	 * to the registry. Opt-in: leaving it undefined preserves the vendored "not found"
+	 * behavior exactly.
+	 *
+	 * Return `undefined` to keep the "tool not found" fallback for a given name.
+	 */
+	resolveMissingTool?: (name: string) => AgentTool<any> | undefined;
 }
 
 /**

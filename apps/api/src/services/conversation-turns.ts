@@ -1382,6 +1382,13 @@ async function runConversationTurnSegment(
   let ordinal = 0;
   let fatalError: unknown;
   let budgetExhausted = false;
+  // R16-W1 结算尾部元信息「Ns · N tokens」——与 runLegacyTurnLoop 同口径：startedAt=进段时刻；usage 跨轮
+  // 累加（多轮工具调用把每一次模型调用的 token 都算进这一段 turn 的成本，不是只报最后一轮）；sawUsage 只在
+  // 真从 provider 拿到过 usage 时才置位（铁律：没有真数据不写 usage_tokens）。loop2 段路径此前漏戳，聊天 UI
+  // 的 token 数会丢。
+  const startedAt = now().getTime();
+  let usageTokensTotal = 0;
+  let sawUsage = false;
 
   const controller = new AbortController();
   const timeoutMs = deps.turnTimeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
@@ -1527,6 +1534,11 @@ async function runConversationTurnSegment(
         }
       }
       const final = await turnStream.getFinalMessage();
+      // 与 runLegacyTurnLoop 同口径：累加每一轮模型调用的 usage（input+output），供最终文本消息戳 usage_tokens。
+      if (final.usage) {
+        usageTokensTotal += (final.usage.inputTokens ?? 0) + (final.usage.outputTokens ?? 0);
+        sawUsage = true;
+      }
       const content = workhubAssistantContentToPi(final.content);
       const hasToolCalls = content.some((block) => block.type === "toolCall");
       const finalMessage: AssistantMessage = { ...base, content, stopReason: toPiStopReason(undefined, hasToolCalls), timestamp: Date.now() };
@@ -1624,8 +1636,17 @@ async function runConversationTurnSegment(
     const hasToolCalls = last.content.some((block) => block.type === "toolCall");
     const text = piAssistantText(last);
     if (!hasToolCalls && text.length > 0) {
-      const contentJson: { text: string; memory_citations?: TurnMemoryCitation[] } = { text };
+      const contentJson: {
+        text: string;
+        memory_citations?: TurnMemoryCitation[];
+        usage_tokens?: number;
+        elapsed_ms?: number;
+      } = { text };
       if (prepared.memorySection.citations.length > 0) contentJson.memory_citations = prepared.memorySection.citations;
+      // R16-W1：只在真拿到过 usage 时写 usage_tokens；elapsed_ms 是本机时钟差恒可得。model 由
+      // persistAndBroadcastCuuMessage 统一补，这里不重复（与 runLegacyTurnLoop 最终文本落点同口径）。
+      if (sawUsage) contentJson.usage_tokens = usageTokensTotal;
+      contentJson.elapsed_ms = Math.max(0, now().getTime() - startedAt);
       try {
         finalMessageVm = await prepared.persistAndBroadcastCuuMessage({ kind: "text", contentJson });
       } catch (error) {
