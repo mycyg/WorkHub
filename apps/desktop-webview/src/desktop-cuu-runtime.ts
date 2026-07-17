@@ -327,7 +327,7 @@ type DesktopShellGlobal = {
   __YQGL_MOCK_EMIT_TO__?: DesktopShellEmitTo;
 };
 
-type TimerId = ReturnType<typeof globalThis.setTimeout>;
+export type TimerId = ReturnType<typeof globalThis.setTimeout>;
 type GoldPathEvent = GoldPathSurfaceVM["events"][number];
 type DesktopCuuActionClient = Pick<
   WorkHubApiClient,
@@ -560,8 +560,15 @@ export function subscribeDesktopCuuAgentRunStream(input: {
   onStatus?: (status: DesktopCuuRunStreamStatus) => void;
   locale?: CuuLocaleOptions["locale"];
   fallbackRefreshMs?: number;
+  // 可注入时钟，便于用假时钟单测兜底轮询的退避/续跑，不依赖真定时器。
+  timers?: {
+    setTimeout?: (handler: () => void, delayMs: number) => TimerId;
+    clearTimeout?: (id: TimerId) => void;
+  };
 }): DesktopCuuRunStreamSubscription {
   const runId = input.run.run_id;
+  const setTimeoutFn = input.timers?.setTimeout ?? ((handler, delayMs) => globalThis.setTimeout(handler, delayMs));
+  const clearTimeoutFn = input.timers?.clearTimeout ?? ((id: TimerId) => globalThis.clearTimeout(id));
   const EventSourceCtor = input.EventSourceCtor ?? resolveDesktopCuuEventSource();
   if (!EventSourceCtor) {
     input.onStatus?.({ state: "unavailable", runId, reason: "event_source_unavailable" });
@@ -580,7 +587,7 @@ export function subscribeDesktopCuuAgentRunStream(input: {
   let refreshAgain = false;
   let errorCardShown = false;
   let fallbackRefreshTimer: TimerId | undefined;
-  // L#84：兜底轮询带退避 + 失败上限，避免离线时永远每 2s 打一次 API。
+  // L#84 / R20 P1-03：兜底轮询带退避，连续失败只退避到慢节拍（封顶 60s）继续轮询，**永不永久停摆**。
   let consecutiveRefreshFailures = 0;
 
   const close = (reason = "closed") => {
@@ -589,7 +596,7 @@ export function subscribeDesktopCuuAgentRunStream(input: {
     }
     closed = true;
     if (fallbackRefreshTimer !== undefined) {
-      globalThis.clearTimeout(fallbackRefreshTimer);
+      clearTimeoutFn(fallbackRefreshTimer);
       fallbackRefreshTimer = undefined;
     }
     source.close();
@@ -642,6 +649,21 @@ export function subscribeDesktopCuuAgentRunStream(input: {
   for (const eventName of desktopCuuRunStreamEventNames) {
     source.addEventListener(eventName, (event) => handleRunEvent(eventName, event));
   }
+  // R20 P1-03：（重）连成功即做一次终态对账。自制 fetch 源与原生 EventSource 都在连上时派发 open。
+  // 断网期间 run 可能已在服务端推进/终结，而重连后的流不回放漏掉的事件——这里复用既有 refresh/getAgentRun
+  // 路径把 run 卡收敛到服务端真实状态，并复位错误闩 + 失败计数、取消慢节拍定时器回到正常轮询节拍。
+  source.addEventListener("open", () => {
+    if (closed) {
+      return;
+    }
+    errorCardShown = false;
+    consecutiveRefreshFailures = 0;
+    if (fallbackRefreshTimer !== undefined) {
+      clearTimeoutFn(fallbackRefreshTimer);
+      fallbackRefreshTimer = undefined;
+    }
+    void refresh().finally(() => scheduleFallbackRefresh());
+  });
   source.addEventListener("error", () => {
     if (closed) {
       return;
@@ -654,19 +676,16 @@ export function subscribeDesktopCuuAgentRunStream(input: {
   });
   input.onStatus?.({ state: "subscribed", runId, streamUrl });
   const fallbackRefreshMs = input.fallbackRefreshMs ?? 2000;
-  const MAX_FALLBACK_FAILURES = 10;
-  const MAX_FALLBACK_DELAY_MS = 15_000;
-  // 自调度退避：连续失败时间隔翻倍（封顶 15s），连续失败超过上限就停摆——
-  // 等下一个 SSE 事件或 close 再恢复，不再离线空转打 API。
+  const MAX_FALLBACK_DELAY_MS = 60_000;
+  // R20 P1-03：自调度退避，连续失败时间隔翻倍（封顶 60s）**继续轮询**，成功刷新或 SSE（重）连即把失败
+  // 计数复位回正常节拍。删除旧「连续失败 10 次后停摆」的死亡分支——它假定后续 SSE 事件会来唤醒轮询，但
+  // 自制 SSE 源断流后（修复前）永不再来事件，于是 run 卡在约两分钟断网后永久停更、只能 reload。
   const scheduleFallbackRefresh = () => {
     if (fallbackRefreshMs <= 0 || closed || fallbackRefreshTimer !== undefined) {
       return;
     }
-    if (consecutiveRefreshFailures >= MAX_FALLBACK_FAILURES) {
-      return;
-    }
-    const delay = Math.min(fallbackRefreshMs * 2 ** Math.min(consecutiveRefreshFailures, 3), MAX_FALLBACK_DELAY_MS);
-    fallbackRefreshTimer = globalThis.setTimeout(() => {
+    const delay = Math.min(fallbackRefreshMs * 2 ** Math.min(consecutiveRefreshFailures, 6), MAX_FALLBACK_DELAY_MS);
+    fallbackRefreshTimer = setTimeoutFn(() => {
       fallbackRefreshTimer = undefined;
       void refresh().finally(scheduleFallbackRefresh);
     }, delay);
@@ -1721,15 +1740,50 @@ function resolveDesktopCuuEventSource(): DesktopCuuEventSourceConstructor | unde
   return (globalThis as typeof globalThis & { EventSource?: DesktopCuuEventSourceConstructor }).EventSource;
 }
 
-class DesktopCuuFetchEventSource implements DesktopCuuEventSourceLike {
+// R20 P1-03：桌面自制 SSE 源改为「可恢复状态机」。旧实现只 open() 一次：EOF（服务端/网络关流）
+// 直接静默返回、不派发任何事件也不重连，fetch 异常也只派发一次 error 就永久死掉——流一断就再也不回来，
+// 约两分钟断网后网络恢复了 run 卡也不再更新，只能 reload。现在 EOF 与 fetch 异常都派发 error 事件并按
+// 退避调度重连；成功建流（拿到响应体）即把退避复位回基准，并派发 open（对齐原生 EventSource 语义，
+// 供订阅层做终态对账）。参照 client-tauri sse_worker：连上=基准、逐次翻倍、封顶 60s。
+export type DesktopCuuFetchEventSourceHooks = {
+  // 可注入 fetch / 时钟 / 随机源，便于用假时钟+假 fetch 单测重连状态机，不依赖真网络。
+  fetch?: typeof fetch;
+  setTimeout?: (handler: () => void, delayMs: number) => TimerId;
+  clearTimeout?: (id: TimerId) => void;
+  random?: () => number;
+  baseReconnectMs?: number;
+  maxReconnectMs?: number;
+};
+
+const DESKTOP_CUU_FETCH_BASE_RECONNECT_MS = 1_000;
+const DESKTOP_CUU_FETCH_MAX_RECONNECT_MS = 60_000;
+
+export class DesktopCuuFetchEventSource implements DesktopCuuEventSourceLike {
   private readonly listeners = new Map<string, Set<(event: DesktopCuuEventSourceEvent) => void>>();
-  private readonly controller = new AbortController();
+  // 每次（重）连都换一个新的 AbortController：上一轮 EOF/异常后旧控制器可能已 abort。
+  private controller = new AbortController();
   private closed = false;
+  private reconnectTimer: TimerId | undefined;
+  // 连续（重）连失败计数：成功建流即复位为 0，作为指数退避的指数。
+  private consecutiveFailures = 0;
+  private readonly fetchFn: typeof fetch | undefined;
+  private readonly setTimeoutFn: (handler: () => void, delayMs: number) => TimerId;
+  private readonly clearTimeoutFn: (id: TimerId) => void;
+  private readonly randomFn: () => number;
+  private readonly baseReconnectMs: number;
+  private readonly maxReconnectMs: number;
 
   constructor(
     private readonly url: string,
-    private readonly init: { withCredentials?: boolean } = {}
+    private readonly init: { withCredentials?: boolean } = {},
+    hooks: DesktopCuuFetchEventSourceHooks = {}
   ) {
+    this.fetchFn = hooks.fetch;
+    this.setTimeoutFn = hooks.setTimeout ?? ((handler, delayMs) => globalThis.setTimeout(handler, delayMs));
+    this.clearTimeoutFn = hooks.clearTimeout ?? ((id) => globalThis.clearTimeout(id));
+    this.randomFn = hooks.random ?? (() => Math.random());
+    this.baseReconnectMs = hooks.baseReconnectMs ?? DESKTOP_CUU_FETCH_BASE_RECONNECT_MS;
+    this.maxReconnectMs = hooks.maxReconnectMs ?? DESKTOP_CUU_FETCH_MAX_RECONNECT_MS;
     void this.open();
   }
 
@@ -1744,10 +1798,19 @@ class DesktopCuuFetchEventSource implements DesktopCuuEventSourceLike {
       return;
     }
     this.closed = true;
+    // 视图卸载：清掉待触发的重连定时器 + 中断在途连接，绝不泄漏定时器/连接。
+    if (this.reconnectTimer !== undefined) {
+      this.clearTimeoutFn(this.reconnectTimer);
+      this.reconnectTimer = undefined;
+    }
     this.controller.abort();
   }
 
   private async open() {
+    if (this.closed) {
+      return;
+    }
+    this.controller = new AbortController();
     try {
       const token = desktopCuuBrowserClientToken();
       const headers = new Headers({ Accept: "text/event-stream" });
@@ -1755,7 +1818,8 @@ class DesktopCuuFetchEventSource implements DesktopCuuEventSourceLike {
         headers.set("X-WorkHub-Client-Token", token);
         headers.set("X-YQGL-Client-Token", token);
       }
-      const response = await fetch(this.url, {
+      const doFetch = this.fetchFn ?? fetch;
+      const response = await doFetch(this.url, {
         credentials: this.init.withCredentials ? "include" : "same-origin",
         headers,
         signal: this.controller.signal
@@ -1763,6 +1827,9 @@ class DesktopCuuFetchEventSource implements DesktopCuuEventSourceLike {
       if (!response.ok || !response.body) {
         throw new Error(`event_source_http_${response.status}`);
       }
+      // 成功建流 → 退避复位（连上后即便流随后中断也按基准快速重连）+ 派发 open 供终态对账。
+      this.consecutiveFailures = 0;
+      this.dispatch("open", {});
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -1776,11 +1843,40 @@ class DesktopCuuFetchEventSource implements DesktopCuuEventSourceLike {
       }
       buffer += decoder.decode();
       this.flushFrames(`${buffer}\n\n`);
+      // EOF：服务端/网络关闭了流 → 与 fetch 异常同等对待，派发 error 并按退避重连（不再静默死掉）。
+      this.handleDisconnect(new Error("event_source_eof"));
     } catch (error) {
-      if (!this.closed) {
-        this.dispatch("error", { data: error instanceof Error ? error.message : String(error) });
-      }
+      this.handleDisconnect(error);
     }
+  }
+
+  private handleDisconnect(error: unknown) {
+    if (this.closed) {
+      return;
+    }
+    this.dispatch("error", { data: error instanceof Error ? error.message : String(error) });
+    this.scheduleReconnect();
+  }
+
+  private scheduleReconnect() {
+    if (this.closed || this.reconnectTimer !== undefined) {
+      return;
+    }
+    const delay = this.reconnectDelayMs();
+    this.consecutiveFailures += 1;
+    this.reconnectTimer = this.setTimeoutFn(() => {
+      this.reconnectTimer = undefined;
+      void this.open();
+    }, delay);
+  }
+
+  // 指数退避 + 抖动：0 次连续失败=基准；每多一次翻倍（移位封顶 4 = ×16）；总时长封顶 60s；
+  // 再叠加最多 +25% 抖动，避免多流同时重连造成惊群。纯计算，便于注入随机源做确定性单测。
+  private reconnectDelayMs() {
+    const factor = 2 ** Math.min(this.consecutiveFailures, 4);
+    const capped = Math.min(this.baseReconnectMs * factor, this.maxReconnectMs);
+    const jitter = capped * 0.25 * this.randomFn();
+    return capped + jitter;
   }
 
   private flushFrames(input: string) {
