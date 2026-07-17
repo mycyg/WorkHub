@@ -5077,7 +5077,7 @@ test("R9.7 recovery scheduler retries unsettled terminal task-plan runs before s
   assert.equal(scheduler.stats().unsettled_settled_count, 1);
 });
 
-test("#25: recovery drain budget counts only requeued runs, not dead-lettered ones", async () => {
+test("#25/P1-10: recovery drain loops runNext to empty regardless of requeued count, dead-lettered runs never drain", async () => {
   const requeuedRun: AgentRunQueueRecord = {
     run_id: "40000000-0000-4000-8000-000000000042",
     work_item_id: workItemId,
@@ -5110,7 +5110,8 @@ test("#25: recovery drain budget counts only requeued runs, not dead-lettered on
     created_at: now.toISOString(),
     updated_at: now.toISOString()
   };
-  // 死信记录：超过重试上限后落入 status='failed'，runNext 永远不会放行它。
+  // 死信记录：超过重试上限后落入 status='failed'，runNext（走 claimNextQueued，谓词固定
+  // status='queued'）永远不会放行它——即便它出现在 recoverExpiredClaims 的返回集合里。
   const deadLetteredRun: AgentRunQueueRecord = {
     ...requeuedRun,
     run_id: "40000000-0000-4000-8000-000000000043",
@@ -5129,6 +5130,7 @@ test("#25: recovery drain budget counts only requeued runs, not dead-lettered on
       },
       async runNext() {
         runNextCalls += 1;
+        // 模拟 claimNextQueued：只有 requeuedRun 是 status='queued'，死信 run 从不会被这个方法选中。
         if (drained) {
           return null;
         }
@@ -5143,9 +5145,10 @@ test("#25: recovery drain budget counts only requeued runs, not dead-lettered on
   assert.equal(result.recovered, 2, "both records counted as recovered");
   assert.equal(result.requeued, 1, "only the queued record is requeued");
   assert.equal(result.dead_lettered, 1, "the failed record is dead-lettered");
-  assert.equal(result.drained, 1, "only the requeued run drains");
-  // 关键：drain 预算按 requeued(=1) 而非 recovered(=2) 计，runNext 不会为死信白跑。
-  assert.equal(runNextCalls, 1, "runNext is not called for the dead-lettered run");
+  assert.equal(result.drained, 1, "only the requeued run actually drains");
+  // P1-10：drain 循环不再按 requeued(=1) 卡预算——它无条件调用 runNext() 直到队列报空（null）或撞
+  // maxDrainPerTick 硬上限，因此这里会多打一次「确认队列已空」的调用（2 次），而不是旧代码固定 1 次。
+  assert.equal(runNextCalls, 2, "runNext keeps polling until it reports the queue empty");
   assert.deepEqual(scheduler.stats(), {
     running: false,
     tick_count: 1,
@@ -5156,6 +5159,196 @@ test("#25: recovery drain budget counts only requeued runs, not dead-lettered on
     error_count: 0,
     last_tick_at: now.toISOString()
   });
+});
+
+test("P1-10: crash-window recovery — requeued===0 but a persisted, never-claimed queued run still drains", async () => {
+  // 复现根因：请求进程在 enqueue 落库、claim 之前崩溃——这条 run 从始至终都是 status='queued'，
+  // 从未进入 running，所以 recoverExpiredClaims（只处理过期租约的 running run）压根看不到它，
+  // requeued 恒为 0。旧代码 `if (autoDrain && requeued > 0)` 会因此整轮跳过 drain，run 永久卡住。
+  const crashWindowRun: AgentRunQueueRecord = {
+    run_id: "40000000-0000-4000-8000-000000000044",
+    work_item_id: workItemId,
+    actor_id: userId,
+    mode: "worker",
+    status: "queued",
+    title: "Enqueued before crash, never claimed",
+    budget: {
+      max_steps: 15,
+      total_timeout_s: 300,
+      max_tokens: 120000,
+      max_cost_cny: "5"
+    },
+    budget_decision: {
+      decision_id: "budget-1",
+      allowed: true,
+      model_route: {
+        provider: "test",
+        model: "test",
+        reason: "default"
+      }
+    },
+    usage: {
+      steps_used: 0,
+      token_in: 0,
+      token_out: 0,
+      estimated_cost_cny: "0"
+    },
+    trace: [],
+    created_at: now.toISOString(),
+    updated_at: now.toISOString()
+  };
+  let runNextCalls = 0;
+  let claimed = false;
+  const scheduler = createAgentRunRecoveryScheduler({
+    intervalMs: 0,
+    now: () => now,
+    queue: {
+      async recoverExpiredClaims() {
+        // 没有过期租约要恢复——crash-window run 从未被 claim，不在这个集合里。
+        return [];
+      },
+      async runNext() {
+        runNextCalls += 1;
+        if (claimed) {
+          return null;
+        }
+        claimed = true;
+        return crashWindowRun;
+      }
+    }
+  });
+
+  const result = await scheduler.tick();
+
+  assert.equal(result.requeued, 0, "no expired claim was requeued this tick");
+  assert.equal(result.drained, 1, "the never-claimed queued run must still be drained");
+  assert.equal(runNextCalls, 2, "polls once to claim, once to confirm the queue is empty");
+  assert.equal(scheduler.stats().drained_count, 1);
+});
+
+test("P1-10: drain respects the maxDrainPerTick hard cap even when far more queued runs are available", async () => {
+  const makeRun = (id: string): AgentRunQueueRecord => ({
+    run_id: id,
+    work_item_id: workItemId,
+    actor_id: userId,
+    mode: "worker",
+    status: "queued",
+    title: `Queued run ${id}`,
+    budget: {
+      max_steps: 15,
+      total_timeout_s: 300,
+      max_tokens: 120000,
+      max_cost_cny: "5"
+    },
+    budget_decision: {
+      decision_id: "budget-1",
+      allowed: true,
+      model_route: {
+        provider: "test",
+        model: "test",
+        reason: "default"
+      }
+    },
+    usage: {
+      steps_used: 0,
+      token_in: 0,
+      token_out: 0,
+      estimated_cost_cny: "0"
+    },
+    trace: [],
+    created_at: now.toISOString(),
+    updated_at: now.toISOString()
+  });
+  // 供应远超硬上限：10 条待认领的 queued run，maxDrainPerTick 只放 3。
+  const backlog = Array.from({ length: 10 }, (_, index) =>
+    makeRun(`40000000-0000-4000-8000-0000000000${50 + index}`)
+  );
+  let runNextCalls = 0;
+  const scheduler = createAgentRunRecoveryScheduler({
+    intervalMs: 0,
+    maxDrainPerTick: 3,
+    now: () => now,
+    queue: {
+      async recoverExpiredClaims() {
+        return [];
+      },
+      async runNext() {
+        runNextCalls += 1;
+        return backlog[runNextCalls - 1] ?? null;
+      }
+    }
+  });
+
+  const result = await scheduler.tick();
+
+  assert.equal(result.drained, 3, "drain stops at the hard cap, not at queue exhaustion");
+  assert.equal(runNextCalls, 3, "runNext is not called beyond the hard cap in a single tick");
+});
+
+test("P1-10: scheduler.start() fires an immediate tick without waiting for the first interval", async () => {
+  const crashWindowRun: AgentRunQueueRecord = {
+    run_id: "40000000-0000-4000-8000-000000000045",
+    work_item_id: workItemId,
+    actor_id: userId,
+    mode: "worker",
+    status: "queued",
+    title: "Enqueued before crash, never claimed",
+    budget: {
+      max_steps: 15,
+      total_timeout_s: 300,
+      max_tokens: 120000,
+      max_cost_cny: "5"
+    },
+    budget_decision: {
+      decision_id: "budget-1",
+      allowed: true,
+      model_route: {
+        provider: "test",
+        model: "test",
+        reason: "default"
+      }
+    },
+    usage: {
+      steps_used: 0,
+      token_in: 0,
+      token_out: 0,
+      estimated_cost_cny: "0"
+    },
+    trace: [],
+    created_at: now.toISOString(),
+    updated_at: now.toISOString()
+  };
+  let claimed = false;
+  // 刻意配一个「肉眼可见很长」的 interval——如果启动不立即 tick，这条 crash-window run
+  // 在测试的时间尺度内永远等不到 drain。
+  const scheduler = createAgentRunRecoveryScheduler({
+    intervalMs: 3_600_000,
+    now: () => now,
+    queue: {
+      async recoverExpiredClaims() {
+        return [];
+      },
+      async runNext() {
+        if (claimed) {
+          return null;
+        }
+        claimed = true;
+        return crashWindowRun;
+      }
+    }
+  });
+
+  try {
+    scheduler.start();
+    // start() 内部用 `void tick()` 触发首轮 tick，不等待其完成；这里让出一个宏任务，
+    // 等异步链（await recoverExpiredClaims / runNext）跑完，再断言结果。
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.equal(scheduler.stats().tick_count, 1, "start() must trigger a tick immediately");
+    assert.equal(scheduler.stats().drained_count, 1, "the crash-window run drains on the immediate tick");
+  } finally {
+    scheduler.stop();
+  }
 });
 
 test("agent run queue keeps the lease alive during a long provider call", async () => {
