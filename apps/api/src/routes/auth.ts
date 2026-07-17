@@ -588,6 +588,40 @@ export function createAuthRoutes(
     );
   });
 
+  // R18 批 H1（成员管理面板 · 未过期邀请清单）：管理员列出本工作区仍可用的邀请（未接受 ∧ 未撤销 ∧
+  // 未过期，最新在前）。门控与错误码同 POST /invites（鉴权先行 401 → 非管理员 403 → 非密码模式 404 →
+  // 运行时不支持 501）。绝不回 token——服务端只存 sha256(token)，明文取不回（POST 创建时一次性回过）。
+  routes.get("/invites", async (c) => {
+    const deps = resolveAuthDependencies(source);
+    const actingUser = await resolveCurrentUser(c, deps); // 鉴权先行 → 未鉴权 401 fail-closed
+    if (!actingUser.isAdmin) {
+      throw new HTTPException(403, { message: "需要管理员权限" });
+    }
+    if (!passwordModeEnabled(deps)) {
+      throw new HTTPException(404, { message: "邀请功能未启用" });
+    }
+    if (!deps.invites) {
+      throw new HTTPException(501, { message: "当前运行时不支持邀请" });
+    }
+    // ?status=pending 是目前唯一支持的取值（默认 pending）——收窄查询面，其它取值直接 400，
+    // 避免客户端误以为 status=accepted 等也能查（本端点只服务成员管理面板的未过期邀请追踪）。
+    const status = c.req.query("status") ?? "pending";
+    if (status !== "pending") {
+      throw new HTTPException(400, { message: "只支持 status=pending" });
+    }
+    const at = (deps.now ?? (() => new Date()))();
+    const actor = await resolveHumanActor(deps, actingUser);
+    const rows = await deps.invites.listPending(actor.workspaceId, at);
+    return c.json({
+      invites: rows.map((row) => ({
+        invite_id: row.id,
+        email: row.email,
+        expires_at: row.expiresAt.toISOString(),
+        created_at: row.createdAt.toISOString()
+      }))
+    });
+  });
+
   // 公开入口：收件人凭 out-of-band token 接受邀请 → 建账号 + 凭据 + 默认成员 + 会话。
   routes.post("/invites/accept", async (c) => {
     const deps = resolveAuthDependencies(source);

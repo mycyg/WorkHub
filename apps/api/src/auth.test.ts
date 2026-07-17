@@ -479,6 +479,17 @@ class MemoryMemberships implements WorkspaceMembershipRepository {
     return this.rows.filter((row) => row.workspaceId === workspaceId && row.deletedAt === null);
   }
 
+  async listActiveWithNicknameByWorkspace(workspaceId: string) {
+    return this.rows
+      .filter((row) => row.workspaceId === workspaceId && row.deletedAt === null)
+      .map((row) => ({
+        userId: row.userId,
+        nickname: `user-${row.userId.slice(0, 8)}`,
+        role: row.role as MembershipRole,
+        joinedAt: row.createdAt
+      }));
+  }
+
   async updateRole(id: string, role: MembershipRole, at: Date) {
     const row = this.rows.find((candidate) => candidate.id === id && candidate.deletedAt === null);
     if (!row) {
@@ -549,6 +560,18 @@ class MemoryInvites implements InviteRepository {
     return this.rows.filter(
       (row) => row.email.toLowerCase() === email.toLowerCase() && row.acceptedAt === null && row.deletedAt === null
     );
+  }
+
+  async listPending(workspaceId: string, at: Date) {
+    return this.rows
+      .filter(
+        (row) =>
+          row.workspaceId === workspaceId &&
+          row.acceptedAt === null &&
+          row.deletedAt === null &&
+          row.expiresAt > at
+      )
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 }
 
@@ -1977,6 +2000,65 @@ test("invite create derives tenant and role from the server-side admin context",
   assert.equal(response.status, 201);
   assert.equal(invites.rows[0]?.role, "member");
   assert.equal(invites.rows[0]?.workspaceId, "22220000-0000-4000-8000-0000000000ad");
+});
+
+// R18 批 H1：GET /api/auth/invites?status=pending —— 列未过期邀请（未接受∧未撤销∧未过期），绝不回 token。
+test("invite list returns pending invites without tokens, excluding accepted/revoked/expired", async () => {
+  const admin = user({ id: "10000000-0000-4000-8000-0000000000ae", nickname: "admin", isAdmin: true });
+  const { deps, invites, runtimeSettings } = inviteCtx(admin);
+  const workspaceId = runtimeSettings.auth.defaultWorkspaceId;
+  const { token: adminToken } = await mintSession(deps, admin, { authMethod: "password" });
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+  const cookie = await signedCookie(adminToken, runtimeSettings);
+
+  // 一条活跃邀请（POST 创建，workspaceId = actor 默认工作区）。
+  const createRes = await app.request("/auth/invites", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify({ email: "pending@example.com" })
+  });
+  assert.equal(createRes.status, 201);
+  // 一条已过期、一条已接受、一条已撤销——都不该出现在清单里。
+  await invites.create({ email: "expired@example.com", tokenHash: "hash-expired", workspaceId, expiresAt: new Date(now.getTime() - 1000) });
+  const accepted = await invites.create({ email: "accepted@example.com", tokenHash: "hash-accepted", workspaceId, expiresAt: new Date(now.getTime() + 1_000_000) });
+  await invites.accept(accepted.id, admin.id, now);
+  const revoked = await invites.create({ email: "revoked@example.com", tokenHash: "hash-revoked", workspaceId, expiresAt: new Date(now.getTime() + 1_000_000) });
+  await invites.revoke(revoked.id, now);
+
+  const listRes = await app.request("/auth/invites?status=pending", { headers: { Cookie: cookie } });
+  assert.equal(listRes.status, 200);
+  const body = (await listRes.json()) as { invites: Array<Record<string, unknown>> };
+  assert.equal(body.invites.length, 1, "only the single active invite is listed");
+  const only = body.invites[0]!;
+  assert.equal(only["email"], "pending@example.com");
+  assert.ok(typeof only["invite_id"] === "string" && (only["invite_id"] as string).length > 0);
+  assert.ok(typeof only["expires_at"] === "string");
+  assert.ok(typeof only["created_at"] === "string");
+  assert.equal("token" in only, false, "list never leaks the invite token");
+});
+
+test("invite list requires admin (403) and rejects non-pending status (400)", async () => {
+  const admin = user({ id: "10000000-0000-4000-8000-0000000000af", nickname: "admin", isAdmin: true });
+  const member = user({ id: "10000000-0000-4000-8000-0000000000b0", nickname: "member" });
+  const { deps, users, runtimeSettings } = inviteCtx(admin);
+  (users as unknown as { rows: UserAuthRow[] }).rows.push(member);
+  const { token: adminToken } = await mintSession(deps, admin, { authMethod: "password" });
+  const { token: memberToken } = await mintSession(deps, member, { authMethod: "password" });
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const byMember = await app.request("/auth/invites?status=pending", {
+    headers: { Cookie: await signedCookie(memberToken, runtimeSettings) }
+  });
+  assert.equal(byMember.status, 403);
+
+  const badStatus = await app.request("/auth/invites?status=accepted", {
+    headers: { Cookie: await signedCookie(adminToken, runtimeSettings) }
+  });
+  assert.equal(badStatus.status, 400);
 });
 
 // ——— 团队就绪 gap[41]：安全/身份事件审计 ———

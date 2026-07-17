@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { idSchema } from "./domain/common.js";
+import { idSchema, isoDateTimeSchema } from "./domain/common.js";
 import { clientDeviceSchema, userSchema } from "./domain/identity.js";
 import { identityContextSchema } from "./identity.js";
 import { workHubLocaleInputSchema, workHubLocaleSchema } from "./locale.js";
@@ -56,6 +56,26 @@ export const inviteAcceptRequestSchema = z.object({
 });
 export type InviteAcceptRequest = z.infer<typeof inviteAcceptRequestSchema>;
 
+// R18 批 H1（成员管理面板 · 未过期邀请清单）：GET /api/auth/invites?status=pending 的一条邀请。
+// 绝不带 token——服务端只存 sha256(token)，明文取不回（POST 创建时一次性回过），这里如实只暴露
+// invite_id/email/过期时间/创建时间，供管理员在 web 成员分区追踪尚未被接受、且还没过期的邀请。
+export const pendingInviteVmSchema = z
+  .object({
+    invite_id: idSchema,
+    email: z.string().email().max(320),
+    expires_at: isoDateTimeSchema,
+    created_at: isoDateTimeSchema
+  })
+  .strict();
+export type PendingInviteVM = z.infer<typeof pendingInviteVmSchema>;
+
+export const listPendingInvitesResultVmSchema = z
+  .object({
+    invites: z.array(pendingInviteVmSchema)
+  })
+  .strict();
+export type ListPendingInvitesResultVM = z.infer<typeof listPendingInvitesResultVmSchema>;
+
 // R17 批 G1（群成员管理 · #15 工作区成员移出/角色变更）：工作区成员角色枚举——与 db
 // memberships.role（'member'|'admin'|'owner'）对齐。
 export const workspaceMemberRoleSchema = z.enum(["member", "admin", "owner"]);
@@ -86,6 +106,27 @@ export const updateWorkspaceMemberRoleResultVmSchema = z
   })
   .strict();
 export type UpdateWorkspaceMemberRoleResultVM = z.infer<typeof updateWorkspaceMemberRoleResultVmSchema>;
+
+// R18 批 H1（web 成员管理面板 · 成员清单）：GET /api/workspace/members 的一行成员——昵称/角色/加入时间。
+// is_self 供客户端把自己那行去掉管理动作（服务端也会以 member_manage_self 兜底，不依赖客户端自觉）。
+// 只读窄端点，管理员门控（同 DELETE/PATCH），供 web /settings 成员分区渲染 roster。
+export const workspaceMemberSummaryVmSchema = z
+  .object({
+    user_id: idSchema,
+    nickname: z.string().min(1).max(96),
+    role: workspaceMemberRoleSchema,
+    joined_at: isoDateTimeSchema,
+    is_self: z.boolean()
+  })
+  .strict();
+export type WorkspaceMemberSummaryVM = z.infer<typeof workspaceMemberSummaryVmSchema>;
+
+export const listWorkspaceMembersResultVmSchema = z
+  .object({
+    members: z.array(workspaceMemberSummaryVmSchema)
+  })
+  .strict();
+export type ListWorkspaceMembersResultVM = z.infer<typeof listWorkspaceMembersResultVmSchema>;
 
 export const identifyResponseSchema = userSchema.pick({
   id: true,

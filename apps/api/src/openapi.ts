@@ -638,6 +638,29 @@ const inviteCreateResponseSchema = {
   },
   additionalProperties: false
 } as const;
+// R18 批 H1（成员管理面板 · 未过期邀请清单）：GET /api/auth/invites?status=pending 的响应。绝不带
+// token——服务端只存 sha256，明文取不回；只回 invite_id/email/过期时间/创建时间。
+const pendingInvitesListResponseSchema = {
+  type: "object",
+  required: ["invites"],
+  properties: {
+    invites: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["invite_id", "email", "expires_at", "created_at"],
+        properties: {
+          invite_id: uuidStringSchema,
+          email: { type: "string", format: "email", maxLength: 320 },
+          expires_at: dateTimeStringSchema,
+          created_at: dateTimeStringSchema
+        },
+        additionalProperties: false
+      }
+    }
+  },
+  additionalProperties: false
+} as const;
 const inviteAcceptRequestBodySchema = {
   type: "object",
   required: ["token", "nickname", "password"],
@@ -773,6 +796,15 @@ const authInviteAcceptResponses = {
     "404": authNotFoundResponse,
     "409": authConflictResponse,
     "422": authValidationResponse
+  }
+} as const;
+const authInviteListResponses = {
+  responses: {
+    "200": rawJsonResponse(pendingInvitesListResponseSchema, "Pending (unexpired, unaccepted) invites for the workspace").responses["200"],
+    "400": authBadRequestResponse,
+    "401": authNotIdentifiedResponse,
+    "403": authForbiddenResponse,
+    "404": authNotFoundResponse
   }
 } as const;
 const authDeactivateResponses = {
@@ -5820,6 +5852,42 @@ const removeWorkspaceMemberResponses = {
     "500": conversationInternalResponse
   }
 } as const;
+// R18 批 H1（成员清单）：GET /api/workspace/members —— 管理员读 roster（昵称/角色/加入时间/是否本人）。
+const listWorkspaceMembersResponses = {
+  responses: {
+    "200": jsonDataResponse(
+      {
+        type: "object",
+        required: ["members"],
+        properties: {
+          members: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["user_id", "nickname", "role", "joined_at", "is_self"],
+              properties: {
+                user_id: uuidStringSchema,
+                nickname: { type: "string", minLength: 1, maxLength: 96 },
+                role: workspaceMemberRoleSchema,
+                joined_at: dateTimeStringSchema,
+                is_self: { type: "boolean" }
+              },
+              additionalProperties: false
+            }
+          }
+        },
+        additionalProperties: false
+      },
+      "Workspace member roster"
+    ).responses["200"],
+    "401": conversationAuthRequiredResponse,
+    "403": jsonErrorStatusResponse("403", "Only workspace admins/owners may list members", [
+      "member_manage_forbidden",
+      "human_required"
+    ]).responses["403"],
+    "500": conversationInternalResponse
+  }
+} as const;
 const updateWorkspaceMemberRoleResponses = {
   responses: {
     "200": jsonDataResponse(
@@ -7186,6 +7254,20 @@ export function getOpenApiDocument() {
         }
       },
       "/api/auth/invites": {
+        get: {
+          tags: ["auth"],
+          summary: "Admin: list pending (unexpired, unaccepted) invites for the workspace (never returns tokens)",
+          parameters: [
+            {
+              name: "status",
+              in: "query",
+              required: false,
+              schema: { type: "string", enum: ["pending"], default: "pending" },
+              description: "Only 'pending' is supported"
+            }
+          ],
+          ...authInviteListResponses
+        },
         post: {
           tags: ["auth"],
           summary: "Admin: create an out-of-band invite, returns a one-time token",
@@ -8205,6 +8287,13 @@ export function getOpenApiDocument() {
           summary: "Leave (self) or remove (owner) a member; owner leaving promotes the earliest successor",
           parameters: [pathUuidParameter("id"), pathUuidParameter("userId")],
           ...removeConversationParticipantResponses
+        }
+      },
+      "/api/workspace/members": {
+        get: {
+          tags: ["conversations"],
+          summary: "List the workspace member roster (admin/owner only): nickname, role, joined-at, is-self",
+          ...listWorkspaceMembersResponses
         }
       },
       "/api/workspace/members/{userId}": {

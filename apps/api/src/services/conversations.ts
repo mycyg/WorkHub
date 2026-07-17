@@ -1055,6 +1055,9 @@ export function createConversationService(
         conversationParticipantsVmSchema,
         {
           scope: "participants",
+          // R18 批 H1：DM 判别位从 dm_key 非空如实推导（供 web 会话镜像区分「可管理的群」与「不可增删的
+          // 2 人 DM」）；main 走上面的 scope:"workspace" 分支，不带 is_dm。
+          is_dm: Boolean(access.conversation.dmKey),
           participants: rows.map((row) => ({ user_id: row.userId, nickname: row.nickname, role: row.role }))
         },
         "conversations.participants.list"
@@ -1107,6 +1110,8 @@ export function createConversationService(
           added: result.added,
           participants: {
             scope: "participants" as const,
+            // 加人只在非 DM 群成功（DM 已在上面 409），dm_key 恒空 → is_dm:false，与 listParticipants 同口径。
+            is_dm: Boolean(conversation.dmKey),
             participants: rows.map((row) => ({ user_id: row.userId, nickname: row.nickname, role: row.role }))
           }
         },

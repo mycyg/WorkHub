@@ -308,6 +308,18 @@ test("R15 conversation participants VM: main is scope=workspace + empty, collab/
     }).success,
     true
   );
+  // R18 批 H1：additive/optional is_dm 判别位——带上时接受（web 会话镜像据此区分群 vs DM）。
+  assert.equal(
+    schema.safeParse({
+      scope: "participants",
+      is_dm: true,
+      participants: [
+        { user_id: userId, nickname: "阿曼", role: "owner" },
+        { user_id: otherUserId, nickname: "小赵", role: "member" }
+      ]
+    }).success,
+    true
+  );
   assert.equal(schema.safeParse({ scope: "team", participants: [] }).success, false);
   assert.equal(
     schema.safeParse({ scope: "participants", participants: [{ user_id: userId, nickname: "", role: "owner" }] })

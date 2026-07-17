@@ -45,6 +45,16 @@ function memberships(rows: WorkspaceMembershipRow[]): WorkspaceMembershipReposit
     async listActiveByWorkspace(ws) {
       return store.filter((row) => row.workspaceId === ws && row.deletedAt === null);
     },
+    async listActiveWithNicknameByWorkspace(ws) {
+      return store
+        .filter((row) => row.workspaceId === ws && row.deletedAt === null)
+        .map((row) => ({
+          userId: row.userId,
+          nickname: `user-${row.userId.slice(-4)}`,
+          role: row.role,
+          joinedAt: row.createdAt
+        }));
+    },
     async softDelete(id, at) {
       const row = store.find((candidate) => candidate.id === id && candidate.deletedAt === null);
       if (!row) {
@@ -226,5 +236,38 @@ test("updateMemberRole refuses changing your own role with 409", async () => {
     () => service.updateMemberRole({ actor: actor(), targetUserId: adminUserId, role: "member" }),
     (error: unknown) =>
       error instanceof WorkspaceMemberServiceError && error.status === 409 && error.code === "member_manage_self"
+  );
+});
+
+test("listMembers returns the roster with roles, join times, and is_self, gated to managers", async () => {
+  const repo = memberships([
+    membershipRow({ userId: adminUserId, role: "admin" }),
+    membershipRow({ userId: memberUserId, role: "member" })
+  ]);
+  const service = createWorkspaceMemberService({ memberships: repo, now: () => now });
+
+  const result = await service.listMembers({ actor: actor() });
+
+  assert.equal(result.members.length, 2);
+  const self = result.members.find((m) => m.user_id === adminUserId);
+  const other = result.members.find((m) => m.user_id === memberUserId);
+  assert.equal(self?.is_self, true);
+  assert.equal(self?.role, "admin");
+  assert.equal(self?.joined_at, now.toISOString());
+  assert.equal(other?.is_self, false);
+  assert.equal(other?.role, "member");
+});
+
+test("listMembers rejects a non-manager with 403", async () => {
+  const repo = memberships([
+    membershipRow({ userId: adminUserId, role: "owner" }),
+    membershipRow({ userId: memberUserId, role: "member" })
+  ]);
+  const service = createWorkspaceMemberService({ memberships: repo, now: () => now });
+
+  await assert.rejects(
+    () => service.listMembers({ actor: actor({ id: memberUserId, userId: memberUserId, isAdmin: false }) }),
+    (error: unknown) =>
+      error instanceof WorkspaceMemberServiceError && error.status === 403 && error.code === "member_manage_forbidden"
   );
 });

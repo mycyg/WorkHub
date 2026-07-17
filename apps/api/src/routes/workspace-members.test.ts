@@ -107,6 +107,7 @@ function memberService(overrides: Partial<WorkspaceMemberService> = {}): Workspa
     throw new Error(`${name} not expected`);
   };
   return {
+    listMembers: reject("listMembers"),
     removeMember: reject("removeMember"),
     updateMemberRole: reject("updateMemberRole"),
     ...overrides
@@ -134,6 +135,67 @@ function routeApp(runtimeSettings: Settings, members: WorkspaceMemberService) {
   app.route("/api", createWorkspaceMemberRoutes({ auth: authDeps(runtimeSettings), members }));
   return app;
 }
+
+test("GET members requires authentication before reaching the service", async () => {
+  const runtimeSettings = settings();
+  const app = routeApp(
+    runtimeSettings,
+    memberService({
+      async listMembers() {
+        throw new Error("anonymous request must not reach the service");
+      }
+    })
+  );
+
+  const response = await app.request("/api/workspace/members");
+
+  assert.equal(response.status, 401);
+});
+
+test("GET members returns the roster from the service", async () => {
+  const runtimeSettings = settings();
+  let seen: unknown;
+  const roster = {
+    members: [
+      { user_id: adminUserId, nickname: "r17-admin", role: "owner" as const, joined_at: now.toISOString(), is_self: true },
+      { user_id: targetUserId, nickname: "小赵", role: "member" as const, joined_at: now.toISOString(), is_self: false }
+    ]
+  };
+  const app = routeApp(
+    runtimeSettings,
+    memberService({
+      async listMembers(input) {
+        seen = input;
+        return roster;
+      }
+    })
+  );
+  const headers = { Cookie: await cookie(runtimeSettings) };
+
+  const response = await app.request("/api/workspace/members", { headers });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, data: roster });
+  assert.ok((seen as { actor: unknown }).actor, "the actor is forwarded to the service");
+});
+
+test("GET members preserves the service's typed 403 for non-managers", async () => {
+  const runtimeSettings = settings();
+  const app = routeApp(
+    runtimeSettings,
+    memberService({
+      async listMembers() {
+        throw new WorkspaceMemberServiceError(403, "member_manage_forbidden", "只有工作区管理员可以管理成员。");
+      }
+    })
+  );
+  const headers = { Cookie: await cookie(runtimeSettings) };
+
+  const response = await app.request("/api/workspace/members", { headers });
+
+  assert.equal(response.status, 403);
+  assert.equal(((await response.json()) as { error: { code: string } }).error.code, "member_manage_forbidden");
+});
 
 test("DELETE member requires authentication before reaching the service", async () => {
   const runtimeSettings = settings();

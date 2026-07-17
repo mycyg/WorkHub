@@ -1,15 +1,24 @@
 import { randomUUID } from "node:crypto";
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
-import { workspaceMemberships, workspaces } from "../schema/index.js";
+import { users, workspaceMemberships, workspaces } from "../schema/index.js";
 
 // R2 多租户 epic Phase 1：工作区成员仓库。纯数据访问层，Phase 1 不接线（actor 仍走常量）；
 // Phase 2 的 TenantResolver 用 resolveDefaultWorkspace / listForUser 从成员关系派生 actor 租户。
 
 export type WorkspaceMembershipRow = typeof workspaceMemberships.$inferSelect;
 export type MembershipRole = "member" | "admin" | "owner";
+
+// R18 批 H1（web 成员管理面板 · 成员清单）：一行含昵称与加入时间的成员——供 GET /api/workspace/members
+// 渲染 roster（昵称在 users 表、角色/加入时间在 memberships 表，一趟 join 取全）。
+export type WorkspaceMemberWithNickname = {
+  userId: string;
+  nickname: string;
+  role: MembershipRole;
+  joinedAt: Date;
+};
 
 // actor 租户 = 默认成员行的工作区 + 其 org（workspaces.org_id 派生，本 epic 无独立 org_memberships）。
 export type ResolvedTenant = {
@@ -41,6 +50,9 @@ export type WorkspaceMembershipRepository = {
   /** R17 批 G1（#15 成员移出）：某工作区全部 active 成员行——供移出/角色变更前统计特权成员数（防移出/
    *  降级最后一名 admin/owner），成员规模对内部团队远低于任何实际上限，无需分页。 */
   listActiveByWorkspace: (workspaceId: string) => Promise<WorkspaceMembershipRow[]>;
+  /** R18 批 H1（成员清单）：某工作区全部 active 成员 + 昵称（join users），按昵称字典序——供 web 成员分区
+   *  roster。成员规模对内部团队远低于任何上限，无需分页。 */
+  listActiveWithNicknameByWorkspace: (workspaceId: string) => Promise<WorkspaceMemberWithNickname[]>;
   /** R17 批 G1（#15 角色变更）：更新一条 active 成员行的角色（幂等：改到同值也照常前进 updated_at）。 */
   updateRole: (id: string, role: MembershipRole, at: Date) => Promise<WorkspaceMembershipRow | null>;
 };
@@ -135,6 +147,32 @@ export function createWorkspaceMembershipRepository(db: WorkHubDb): WorkspaceMem
         .where(
           and(eq(workspaceMemberships.workspaceId, workspaceId), isNull(workspaceMemberships.deletedAt))
         );
+    },
+
+    async listActiveWithNicknameByWorkspace(workspaceId) {
+      const rows = await db
+        .select({
+          userId: workspaceMemberships.userId,
+          nickname: users.nickname,
+          role: workspaceMemberships.role,
+          joinedAt: workspaceMemberships.createdAt
+        })
+        .from(workspaceMemberships)
+        .innerJoin(users, eq(users.id, workspaceMemberships.userId))
+        .where(
+          and(
+            eq(workspaceMemberships.workspaceId, workspaceId),
+            isNull(workspaceMemberships.deletedAt),
+            isNull(users.deletedAt)
+          )
+        )
+        .orderBy(asc(sql`lower(${users.nickname})`), asc(users.id));
+      return rows.map((row) => ({
+        userId: row.userId,
+        nickname: row.nickname,
+        role: row.role as MembershipRole,
+        joinedAt: row.joinedAt
+      }));
     },
 
     async updateRole(id, role, at) {

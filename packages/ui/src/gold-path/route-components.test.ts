@@ -2157,6 +2157,11 @@ test("B-R9.6 project home rows show the army progress pill only for armied work 
   // NAMING pass：pill 文案带「子任务」限定词，新人不再猜 2/4 是什么。
   assert.equal(projectHome.html.includes("军团子任务 2/4"), true);
   assert.equal(projectHome.html.includes('data-r9-project-army-pill="94000000-0000-4000-8000-000000000002"'), false);
+  // R18-H1：项目主页「成员」摘要小块——SSR 骨架 + hydration 锚点（真计数/主区会话链接由 browser.ts 注入）。
+  assert.equal(projectHome.html.includes('data-r18-project-home-members="true"'), true);
+  assert.equal(projectHome.html.includes('data-r18-project-home-members-project="93000000-0000-4000-8000-000000000001"'), true);
+  assert.equal(projectHome.html.includes('data-r18-project-home-members-body="true"'), true);
+  assert.equal(projectHome.html.includes("正在加载成员摘要"), true);
   assertNoMainWindowBoundaryLeak(projectHome.html);
 });
 
@@ -2715,6 +2720,28 @@ test("R4.11 Settings route component uses a typed Settings Page VM without leaki
   assert.equal(settings.html.includes("legacy-cuu-pack"), false);
   assert.deepEqual(settings.primaryHrefs, [vm.page_vms.settings?.device.restore_href]);
   assertNoMainWindowBoundaryLeak(settings.html);
+});
+
+test("R18-H1 settings members section is admin-gated: SSR skeleton only when isAdmin", () => {
+  const vm = surfaceVm();
+  const settingsVm = vm.page_vms.settings;
+  assert.ok(settingsVm);
+
+  const asMember = renderWebRouteComponent({ key: "settings", settings: settingsVm, isAdmin: false }, { locale: "zh-CN" });
+  assert.equal(asMember.html.includes('data-r18-settings-members="true"'), false);
+  assert.equal(asMember.html.includes('data-r18-settings-invites="true"'), false);
+
+  const asAdmin = renderWebRouteComponent({ key: "settings", settings: settingsVm, isAdmin: true }, { locale: "zh-CN" });
+  // SSR 只出加载态骨架 + hydration 锚点（真 roster / 邀请由 browser.ts 拉端点后注入）。
+  assert.equal(asAdmin.html.includes('data-r18-settings-members="true"'), true);
+  assert.equal(asAdmin.html.includes('data-r18-settings-members-body="true"'), true);
+  assert.equal(asAdmin.html.includes('data-r18-settings-invites="true"'), true);
+  assert.equal(asAdmin.html.includes('data-r18-settings-invites-body="true"'), true);
+  assert.equal(asAdmin.html.includes("正在加载成员"), true);
+
+  const asAdminEn = renderWebRouteComponent({ key: "settings", settings: settingsVm, isAdmin: true }, { locale: "en-US" });
+  assert.equal(asAdminEn.html.includes("Loading members"), true);
+  assert.equal(asAdminEn.html.includes("Invite members"), true);
 });
 
 // R13 批 P3（功能审查 B4）：web /settings 的「AI 助手」区块——default_mode 与 dispatch_policy 两个
@@ -4111,6 +4138,36 @@ test("R15 web-mirror conversation component shows an honest empty state and pagi
   assert.equal(paged.html.includes('href="/conversations/c-1?after=20"'), true);
   assert.equal(paged.html.includes('data-r15-mirror-latest="true"'), true);
   assert.equal(paged.html.includes('data-r15-conversation-target-seq="12"'), true);
+});
+
+test("R18 web-mirror conversation component renders a participants side-region skeleton for hydration", () => {
+  const zh = renderWebRouteComponent({
+    key: "conversation",
+    conversation: {
+      conversationId: "c-9",
+      messages: [],
+      members: [],
+      isLatest: true,
+      refreshHref: "/conversations/c-9"
+    }
+  }, { locale: "zh-CN" });
+  // SSR 只出加载态骨架 + hydration 锚点（真参与者与群管理动作由 browser.ts 拉 GET /participants 后注入）。
+  assert.equal(zh.html.includes('data-r18-conversation-participants="true"'), true);
+  assert.equal(zh.html.includes('data-r18-conversation-id="c-9"'), true);
+  assert.equal(zh.html.includes('data-r18-conversation-participants-body="true"'), true);
+  assert.equal(zh.html.includes("正在加载参与者"), true);
+
+  const en = renderWebRouteComponent({
+    key: "conversation",
+    conversation: {
+      conversationId: "c-9",
+      messages: [],
+      members: [],
+      isLatest: true,
+      refreshHref: "/conversations/c-9"
+    }
+  }, { locale: "en-US" });
+  assert.equal(en.html.includes("Loading participants"), true);
 });
 
 test("R15 web-mirror conversation component renders system_event risk digest and tool_note plainly", () => {
