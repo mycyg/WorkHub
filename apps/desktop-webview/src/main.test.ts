@@ -1247,9 +1247,10 @@ class FakeRevertRoot implements ReplayRevertRoot {
   }
 }
 
-test("bindDesktopAgentRunReplayRevert forwards a confirmed undo to client.revertAgentRun", async () => {
+test("bindDesktopAgentRunReplayRevert forwards a confirmed undo and fires the re-fetch callback", async () => {
   const button = new FakeRevertButton({ replayRevertSnapshot: "snap-1", replayRevertRun: "run-7" });
   const calls: Array<{ runId: string; payload: { snapshot_id: string } }> = [];
+  const reFetched: Array<true> = [];
   const client = {
     revertAgentRun: (runId: string, payload: { snapshot_id: string }) => {
       calls.push({ runId, payload });
@@ -1257,12 +1258,23 @@ test("bindDesktopAgentRunReplayRevert forwards a confirmed undo to client.revert
     }
   } as unknown as WorkHubApiClient;
 
-  bindDesktopAgentRunReplayRevert(new FakeRevertRoot([button]), client);
+  // 基线：没绑定前点击不发任何请求（对齐 live 壳「渲了按钮但无 handler」的修前态）。
+  button.click();
+  button.click();
+  assert.equal(calls.length, 0);
+
+  // 绑定后：桌面挂载点传的正是 client + onReverted 重拉回调（renderLiveGoldPathPanel 的 replay 分支即此形状）。
+  bindDesktopAgentRunReplayRevert(new FakeRevertRoot([button]), client, {
+    onReverted: () => reFetched.push(true)
+  });
   button.click(); // 武装
   assert.equal(calls.length, 0);
   button.click(); // 执行
   await Promise.resolve();
+  await Promise.resolve();
   assert.deepEqual(calls, [{ runId: "run-7", payload: { snapshot_id: "snap-1" } }]);
+  // 成功后触发重拉——live 壳据此重渲 replay 面板，让被撤销的快照翻「已回滚」。
+  assert.deepEqual(reFetched, [true]);
 });
 
 test("bindDesktopAgentRunReplayRevert is a no-op when the client lacks revertAgentRun", () => {
