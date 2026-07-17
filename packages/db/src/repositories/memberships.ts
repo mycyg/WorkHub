@@ -20,6 +20,23 @@ export type WorkspaceMemberWithNickname = {
   joinedAt: Date;
 };
 
+// R20 P2A（P1-08 修复 · workspace-scoped roster）：分页花名册的一行。较 WorkspaceMemberWithNickname 多带
+// 头像时间戳占位（avatarUpdatedAt 非空=有头像，兼作头像端点缓存键；只取时间戳、不带 bytea 二进制）。
+export type WorkspaceRosterMember = {
+  userId: string;
+  nickname: string;
+  role: MembershipRole;
+  joinedAt: Date;
+  avatarUpdatedAt: Date | null;
+};
+
+// R20 P2A：一页花名册 + 工作区 active 成员总数（total 供客户端翻页与「成员数」显示，修 /api/users 全局
+// 计数封顶 200 的「计数错」）。
+export type WorkspaceRosterPage = {
+  members: WorkspaceRosterMember[];
+  total: number;
+};
+
 // actor 租户 = 默认成员行的工作区 + 其 org（workspaces.org_id 派生，本 epic 无独立 org_memberships）。
 export type ResolvedTenant = {
   workspaceId: string;
@@ -56,6 +73,18 @@ export type WorkspaceMembershipRepository = {
   /** R18 批 H1（成员清单）：某工作区全部 active 成员 + 昵称（join users），按昵称字典序——供 web 成员分区
    *  roster。成员规模对内部团队远低于任何上限，无需分页。 */
   listActiveWithNicknameByWorkspace: (workspaceId: string) => Promise<WorkspaceMemberWithNickname[]>;
+  /** R20 P2A（P1-08 修复 · workspace-scoped roster）：按 workspaceId join membership+users 分页列本工作区
+   *  active 成员（limit/offset），并回工作区 active 成员总数。取代消费端误用的全局 /api/users：
+   *    - 工作区隔离：WHERE 绑定 workspaceId + 排除 membership/user 双软删，杜绝跨租户泄露；
+   *    - 无硬上限：不再像 users.listActiveRefs 那样硬 .limit(200) 截断，任意 offset 可翻至全量成员；
+   *    - 稳定序：按 lower(nickname), user id 排序，翻页无重复/漏项。
+   *  只取头像时间戳（非 bytea），避免把二进制带进列表查询。
+   *  OPTIONAL：与 UserRepository 的 listActiveRefs 等同范式——标可选以免逼各处内存假仓库都实现（生产
+   *  createWorkspaceMembershipRepository 恒实现；roster 端点的默认读者会做存在性兜底）。 */
+  listActiveRosterPageByWorkspace?: (
+    workspaceId: string,
+    page: { limit: number; offset: number }
+  ) => Promise<WorkspaceRosterPage>;
   /** R17 批 G1（#15 角色变更）：更新一条 active 成员行的角色（幂等：改到同值也照常前进 updated_at）。 */
   updateRole: (id: string, role: MembershipRole, at: Date) => Promise<WorkspaceMembershipRow | null>;
 };
@@ -200,6 +229,48 @@ export function createWorkspaceMembershipRepository(db: WorkHubDb): WorkspaceMem
         role: row.role as MembershipRole,
         joinedAt: row.joinedAt
       }));
+    },
+
+    async listActiveRosterPageByWorkspace(workspaceId, page) {
+      // 防御性夹取：真实上下限由调用方（契约 limit 1..100）保证，这里只兜非法值。刻意不设 200 上限——
+      // offset 可翻至任意深度，全量成员皆可达，这正是对 users.listActiveRefs 硬 .limit(200) 截断的修复。
+      const limit = Math.max(1, Math.floor(page.limit));
+      const offset = Math.max(0, Math.floor(page.offset));
+      // 工作区隔离 + 双软删排除：一条 WHERE 复用于计数与取页，确保两者同一口径（total 与 members 不打架）。
+      const scope = and(
+        eq(workspaceMemberships.workspaceId, workspaceId),
+        isNull(workspaceMemberships.deletedAt),
+        isNull(users.deletedAt)
+      );
+      const countRows = await db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(workspaceMemberships)
+        .innerJoin(users, eq(users.id, workspaceMemberships.userId))
+        .where(scope);
+      const rows = await db
+        .select({
+          userId: workspaceMemberships.userId,
+          nickname: users.nickname,
+          role: workspaceMemberships.role,
+          joinedAt: workspaceMemberships.createdAt,
+          avatarUpdatedAt: users.avatarUpdatedAt
+        })
+        .from(workspaceMemberships)
+        .innerJoin(users, eq(users.id, workspaceMemberships.userId))
+        .where(scope)
+        .orderBy(asc(sql`lower(${users.nickname})`), asc(users.id))
+        .limit(limit)
+        .offset(offset);
+      return {
+        total: countRows[0]?.total ?? 0,
+        members: rows.map((row) => ({
+          userId: row.userId,
+          nickname: row.nickname,
+          role: row.role as MembershipRole,
+          joinedAt: row.joinedAt,
+          avatarUpdatedAt: row.avatarUpdatedAt
+        }))
+      };
     },
 
     async updateRole(id, role, at) {
