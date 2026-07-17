@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { idSchema } from "./domain/common.js";
+import { idSchema, isoDateTimeSchema } from "./domain/common.js";
 import { clientDeviceSchema, userSchema } from "./domain/identity.js";
 import { identityContextSchema } from "./identity.js";
 import { workHubLocaleInputSchema, workHubLocaleSchema } from "./locale.js";
@@ -55,6 +55,26 @@ export const inviteAcceptRequestSchema = z.object({
   password: z.string().min(8).max(1024)
 });
 export type InviteAcceptRequest = z.infer<typeof inviteAcceptRequestSchema>;
+
+// R18 批 H1（成员管理面板 · 未过期邀请清单）：GET /api/auth/invites?status=pending 的一条邀请。
+// 绝不带 token——服务端只存 sha256(token)，明文取不回（POST 创建时一次性回过），这里如实只暴露
+// invite_id/email/过期时间/创建时间，供管理员在 web 成员分区追踪尚未被接受、且还没过期的邀请。
+export const pendingInviteVmSchema = z
+  .object({
+    invite_id: idSchema,
+    email: z.string().email().max(320),
+    expires_at: isoDateTimeSchema,
+    created_at: isoDateTimeSchema
+  })
+  .strict();
+export type PendingInviteVM = z.infer<typeof pendingInviteVmSchema>;
+
+export const listPendingInvitesResultVmSchema = z
+  .object({
+    invites: z.array(pendingInviteVmSchema)
+  })
+  .strict();
+export type ListPendingInvitesResultVM = z.infer<typeof listPendingInvitesResultVmSchema>;
 
 // R17 批 G1（群成员管理 · #15 工作区成员移出/角色变更）：工作区成员角色枚举——与 db
 // memberships.role（'member'|'admin'|'owner'）对齐。

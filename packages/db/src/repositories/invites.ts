@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, isNull } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { userInvites } from "../schema/index.js";
@@ -31,6 +31,12 @@ export type InviteRepository = {
   revoke: (id: string, at: Date) => Promise<UserInviteRow | null>;
   /** 某邮箱的待接受邀请（未接受 ∧ 未撤销）。 */
   listPendingForEmail: (email: string) => Promise<UserInviteRow[]>;
+  /**
+   * R18 批 H1（成员管理面板 · 未过期邀请清单）：某工作区仍可用的邀请——未接受 ∧ 未撤销 ∧ 未过期，
+   * 最新在前。供管理员在 web 成员分区追踪已发出、尚未被接受、且还没过期的邀请（token 只回过一次、
+   * 服务端只存 sha256 取不回，所以这里绝不带 token——只带 id/email/过期时间/创建时间）。
+   */
+  listPending: (workspaceId: string, now: Date) => Promise<UserInviteRow[]>;
 };
 
 export function createInviteRepository(db: WorkHubDb): InviteRepository {
@@ -94,6 +100,21 @@ export function createInviteRepository(db: WorkHubDb): InviteRepository {
         .select()
         .from(userInvites)
         .where(and(eq(userInvites.email, email), isNull(userInvites.acceptedAt), isNull(userInvites.deletedAt)));
+    },
+
+    async listPending(workspaceId, now) {
+      return db
+        .select()
+        .from(userInvites)
+        .where(
+          and(
+            eq(userInvites.workspaceId, workspaceId),
+            isNull(userInvites.acceptedAt),
+            isNull(userInvites.deletedAt),
+            gt(userInvites.expiresAt, now)
+          )
+        )
+        .orderBy(desc(userInvites.createdAt));
     }
   };
 }

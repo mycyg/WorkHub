@@ -638,6 +638,29 @@ const inviteCreateResponseSchema = {
   },
   additionalProperties: false
 } as const;
+// R18 批 H1（成员管理面板 · 未过期邀请清单）：GET /api/auth/invites?status=pending 的响应。绝不带
+// token——服务端只存 sha256，明文取不回；只回 invite_id/email/过期时间/创建时间。
+const pendingInvitesListResponseSchema = {
+  type: "object",
+  required: ["invites"],
+  properties: {
+    invites: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["invite_id", "email", "expires_at", "created_at"],
+        properties: {
+          invite_id: uuidStringSchema,
+          email: { type: "string", format: "email", maxLength: 320 },
+          expires_at: dateTimeStringSchema,
+          created_at: dateTimeStringSchema
+        },
+        additionalProperties: false
+      }
+    }
+  },
+  additionalProperties: false
+} as const;
 const inviteAcceptRequestBodySchema = {
   type: "object",
   required: ["token", "nickname", "password"],
@@ -773,6 +796,15 @@ const authInviteAcceptResponses = {
     "404": authNotFoundResponse,
     "409": authConflictResponse,
     "422": authValidationResponse
+  }
+} as const;
+const authInviteListResponses = {
+  responses: {
+    "200": rawJsonResponse(pendingInvitesListResponseSchema, "Pending (unexpired, unaccepted) invites for the workspace").responses["200"],
+    "400": authBadRequestResponse,
+    "401": authNotIdentifiedResponse,
+    "403": authForbiddenResponse,
+    "404": authNotFoundResponse
   }
 } as const;
 const authDeactivateResponses = {
@@ -7186,6 +7218,20 @@ export function getOpenApiDocument() {
         }
       },
       "/api/auth/invites": {
+        get: {
+          tags: ["auth"],
+          summary: "Admin: list pending (unexpired, unaccepted) invites for the workspace (never returns tokens)",
+          parameters: [
+            {
+              name: "status",
+              in: "query",
+              required: false,
+              schema: { type: "string", enum: ["pending"], default: "pending" },
+              description: "Only 'pending' is supported"
+            }
+          ],
+          ...authInviteListResponses
+        },
         post: {
           tags: ["auth"],
           summary: "Admin: create an out-of-band invite, returns a one-time token",
