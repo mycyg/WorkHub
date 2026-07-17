@@ -22,3 +22,30 @@ export function onlineUserIdsFromPresence(entries: readonly PresenceEntryVm[]): 
   }
   return online;
 }
+
+// R20 DSK-UX（R19-11 presence 单源）：把一批 presence 响应合并进既有的在线集合——per-user 权威：
+// is_online=true 的加入、is_online=false 的移除，本批没查到的 user 原样保留。这样聊天区（只查这条会话的
+// 成员）和 rail（查 roster+DM 对方）两个消费者可以写同一个 store 集合而不互相把对方查过、本批没查的 user
+// 误清成离线——修掉「同一人两处圆点打架」（此前 chat 视图私有 onlineUserIds vs rail 写的 store 各刷各的）。
+// 无变化时原样返回入参数组引用（identity 稳定），调用方据此跳过多余 setState/重渲。
+export function applyPresenceToOnlineIds(
+  current: readonly string[],
+  entries: readonly PresenceEntryVm[]
+): string[] {
+  if (entries.length === 0) {
+    return current as string[];
+  }
+  const set = new Set(current);
+  let changed = false;
+  for (const entry of entries) {
+    if (entry.is_online) {
+      if (!set.has(entry.user_id)) {
+        set.add(entry.user_id);
+        changed = true;
+      }
+    } else if (set.delete(entry.user_id)) {
+      changed = true;
+    }
+  }
+  return changed ? [...set] : (current as string[]);
+}

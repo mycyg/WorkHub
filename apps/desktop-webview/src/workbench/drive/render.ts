@@ -31,8 +31,23 @@ export function renderDriveBarHtml(input: {
   locale: Locale;
   breadcrumb: readonly DriveBreadcrumbCrumb[];
   canUpload: boolean;
+  // R20 DSK-UX（R19-23）：回收站里有几项（deleted_items 长度）。>0 时在文件视图右侧给一个「回收站」入口；
+  // 回收站视图激活时（recycleActive）整条 bar 改成「← 返回文件」+「回收站」标题，不再渲面包屑/上传。
+  deletedCount?: number;
+  recycleActive?: boolean;
 }): string {
   const zh = input.locale === "zh-CN";
+  if (input.recycleActive) {
+    return `<div class="wh-wb-drive-bar">
+      <div class="wh-wb-drive-path">
+        <button type="button" class="wh-wb-drive-crumb-link" data-wb-drive-recycle-back>${zh ? "← 返回文件" : "← Back to files"}</button>
+        <span class="wh-wb-drive-crumb-sep">/</span>
+        <b>${zh ? "回收站" : "Recycle bin"}</b>
+        <span class="wh-wb-drive-note">${zh ? "删除的文件先进这里，可以随时找回" : "Deleted files land here — recover them anytime"}</span>
+      </div>
+      <div class="wh-wb-drive-bar-spacer"></div>
+    </div>`;
+  }
   const crumbs = input.breadcrumb
     .map((crumb, index) => {
       const isLast = index === input.breadcrumb.length - 1;
@@ -46,11 +61,17 @@ export function renderDriveBarHtml(input: {
   const uploadBtn = input.canUpload
     ? `<label class="wh-wb-btn wh-wb-btn--primary wh-wb-drive-upload-label"><span data-wb-drive-upload-label>${zh ? "上传文件" : "Upload"}</span><input class="wh-wb-drive-upload-input" type="file" data-wb-drive-upload-picker /></label>`
     : "";
+  // 回收站入口只在真有已删项时出现（否则不给一个点进去空空如也的入口）。
+  const deletedCount = input.deletedCount ?? 0;
+  const recycleBtn = deletedCount > 0
+    ? `<button type="button" class="wh-wb-btn wh-wb-btn--ghost wh-wb-drive-recycle-btn" data-wb-drive-recycle-open>${workbenchIcons.history}${zh ? `回收站 · ${deletedCount}` : `Recycle bin · ${deletedCount}`}</button>`
+    : "";
   return `<div class="wh-wb-drive-bar">
     <div class="wh-wb-drive-path">${crumbs}<span class="wh-wb-drive-note">${
       zh ? "全部文件自动留版本 · 可回滚" : "Every file keeps versions automatically — always recoverable"
     }</span></div>
     <div class="wh-wb-drive-bar-spacer"></div>
+    ${recycleBtn}
     ${uploadBtn}
   </div>`;
 }
@@ -66,7 +87,13 @@ function driveRowMeta(item: DriveItemVM, zh: boolean): string {
   return [size, when].filter(Boolean).join(" · ") + tag;
 }
 
-function driveRowHtml(item: DriveItemVM, zh: boolean, canManage: boolean, apiBaseUrl: string | undefined): string {
+function driveRowHtml(
+  item: DriveItemVM,
+  zh: boolean,
+  canManage: boolean,
+  apiBaseUrl: string | undefined,
+  deleteArmedItemId: string | undefined
+): string {
   const icon = item.kind === "folder" ? workbenchIcons.folder : workbenchIcons.file;
   const openAttr = item.kind === "folder"
     ? `data-wb-drive-open-folder="${escapeHtml(item.id)}"`
@@ -88,11 +115,22 @@ function driveRowHtml(item: DriveItemVM, zh: boolean, canManage: boolean, apiBas
     }
   }
   if (canManage && item.delete_href) {
+    // R20 DSK-UX（R19-23）：删除是破坏性动作——照版本回滚的两段式确认（先武装、5 秒内再点一次才真发请求，
+    // 见 side-panel.ts 的 armedVersionId 先例）。文案用「移到回收站」而不是裸「删除」——它本就是软删可恢复
+    // （与 web/Spotlight 两端一致），别再用误导性的「删除」+ 危险红骗用户以为不可逆。
+    const armed = deleteArmedItemId === item.id;
     actions.push(
-      `<button type="button" class="wh-wb-act wh-wb-act--danger" data-wb-drive-delete="${escapeHtml(item.id)}" data-wb-drive-delete-version="${escapeHtml(item.current_version_id ?? "")}">${zh ? "删除" : "Delete"}</button>`
+      `<button type="button" class="wh-wb-act${armed ? " wh-wb-act--danger wh-wb-drive-delete-btn--armed" : ""}" data-wb-drive-delete="${escapeHtml(item.id)}" data-wb-drive-delete-version="${escapeHtml(item.current_version_id ?? "")}">${
+        armed ? (zh ? "确定？再点一次" : "Sure? Click again") : (zh ? "移到回收站" : "Move to trash")
+      }</button>`
     );
   }
-  return `<div class="wh-wb-drive-row" ${openAttr}>
+  // R20 DSK-UX（R19-25）：行本身可聚焦（role=button + tabindex=0），回车/空格等同点击打开/进目录——
+  // 照 kanban 卡片（kanban/render.ts:250 role=button tabindex=0 + view.ts:288 回车/空格）的既有先例。
+  // 行内的版本/下载/删除是真 button/a，自带原生键盘激活，不与行的 keydown 冲突（view.ts 只在焦点落在
+  // 行本身时才把回车/空格当「打开」）。
+  const rowTitle = item.kind === "folder" ? (zh ? "打开文件夹" : "Open folder") : (zh ? "预览文件" : "Preview file");
+  return `<div class="wh-wb-drive-row" ${openAttr} role="button" tabindex="0" title="${escapeHtml(rowTitle)}">
     <span class="wh-wb-drive-row-icon">${icon}</span>
     <div class="wh-wb-drive-row-main"><div class="wh-wb-drive-row-name">${escapeHtml(item.name)}</div><div class="wh-wb-drive-row-meta">${driveRowMeta(item, zh)}</div></div>
     <div class="wh-wb-drive-row-actions">${actions.join("")}</div>
@@ -104,6 +142,8 @@ export function renderDriveListHtml(input: {
   items: readonly DriveItemVM[];
   canManage: boolean;
   apiBaseUrl?: string;
+  // R20 DSK-UX（R19-23）：正处在删除两段式确认第一下的那个 item——它的「移到回收站」按钮换成「确定？再点一次」。
+  deleteArmedItemId?: string;
 }): string {
   const zh = input.locale === "zh-CN";
   if (input.items.length === 0) {
@@ -111,7 +151,46 @@ export function renderDriveListHtml(input: {
   }
   const folders = input.items.filter((item) => item.kind === "folder");
   const files = input.items.filter((item) => item.kind === "file");
-  const rows = [...folders, ...files].map((item) => driveRowHtml(item, zh, input.canManage, input.apiBaseUrl)).join("");
+  const rows = [...folders, ...files]
+    .map((item) => driveRowHtml(item, zh, input.canManage, input.apiBaseUrl, input.deleteArmedItemId))
+    .join("");
+  return `<div class="wh-wb-drive-list">${rows}</div>`;
+}
+
+// R20 DSK-UX（R19-23）：回收站视图——列出 deleted_items，每项一个「找回」按钮（restore_href 存在时）。
+// 被阻塞的还原（父级也在回收站/同名冲突）给出人话原因、不渲空按钮（restore_blocked_reason）。
+export function renderDriveRecycleHtml(input: {
+  locale: Locale;
+  items: readonly DriveItemVM[];
+  restoreBusyId?: string;
+  restoreErrorId?: string;
+  restoreErrorText?: string;
+}): string {
+  const zh = input.locale === "zh-CN";
+  if (input.items.length === 0) {
+    return `<div class="wh-wb-drive-list"><p class="wh-wb-drive-empty">${zh ? "回收站是空的" : "The recycle bin is empty"}</p></div>`;
+  }
+  const rows = input.items
+    .map((item) => {
+      const icon = item.kind === "folder" ? workbenchIcons.folder : workbenchIcons.file;
+      const busy = input.restoreBusyId === item.id;
+      const restoreBtn = item.restore_href
+        ? `<button type="button" class="wh-wb-act" data-wb-drive-restore="${escapeHtml(item.id)}" ${busy ? "disabled" : ""}>${
+            busy ? (zh ? "找回中…" : "Recovering…") : (zh ? "找回" : "Recover")
+          }</button>`
+        : item.restore_blocked_reason
+          ? `<span class="wh-wb-drive-row-meta">${escapeHtml(item.restore_blocked_reason)}</span>`
+          : "";
+      const rowError = input.restoreErrorId === item.id && input.restoreErrorText
+        ? `<div class="wh-wb-drive-row-meta wh-wb-drive-restore-error">${escapeHtml(input.restoreErrorText)}</div>`
+        : "";
+      return `<div class="wh-wb-drive-row wh-wb-drive-row--deleted">
+        <span class="wh-wb-drive-row-icon">${icon}</span>
+        <div class="wh-wb-drive-row-main"><div class="wh-wb-drive-row-name">${escapeHtml(item.name)}</div><div class="wh-wb-drive-row-meta">${zh ? "已删除" : "deleted"}</div>${rowError}</div>
+        <div class="wh-wb-drive-row-actions">${restoreBtn}</div>
+      </div>`;
+    })
+    .join("");
   return `<div class="wh-wb-drive-list">${rows}</div>`;
 }
 

@@ -9,6 +9,7 @@ import {
   renderDriveErrorHtml,
   renderDriveListHtml,
   renderDriveLoadingHtml,
+  renderDriveRecycleHtml,
   renderDriveSidePanelHtml,
   type DriveSidePanelState
 } from "./render.js";
@@ -163,6 +164,79 @@ test("renderDriveListHtml flags AI-delivered files without claiming an ordinary 
   const ordinary = renderDriveListHtml({ locale: "zh-CN", items: [fileItem()], canManage: false });
   assert.match(delivered, /AI 交付/u);
   assert.doesNotMatch(ordinary, /AI 交付/u);
+});
+
+// —— R20 DSK-UX（R19-25）：网盘行键盘可达 —— //
+
+test("renderDriveListHtml makes every row keyboard-focusable (role=button + tabindex) with an activation title", () => {
+  const html = renderDriveListHtml({ locale: "zh-CN", items: [folderItem(), fileItem()], canManage: false });
+  // 两行都要能被键盘聚焦——此前文件夹行是纯 <div>，键盘用户完全进不去子目录。
+  const rowMatches = html.match(/class="wh-wb-drive-row"[^>]*role="button"[^>]*tabindex="0"/gu) ?? [];
+  assert.equal(rowMatches.length, 2, "both folder and file rows must be focusable buttons");
+  assert.match(html, /title="打开文件夹"/u);
+  assert.match(html, /title="预览文件"/u);
+});
+
+// —— R20 DSK-UX（R19-23）：删除两段式确认 + 回收站 —— //
+
+test("renderDriveListHtml labels the delete action 'move to trash' (honest soft-delete), not a bare 'delete'", () => {
+  const item = fileItem({ delete_href: "/api/drive/projects/p1/items/file-1/delete" });
+  const html = renderDriveListHtml({ locale: "zh-CN", items: [item], canManage: true });
+  assert.match(html, /data-wb-drive-delete="file-1"/u);
+  assert.match(html, /移到回收站/u);
+  assert.doesNotMatch(html, />删除</u, "the bare misleading '删除' label must be gone");
+});
+
+test("renderDriveListHtml arms exactly the delete button whose item is armed, switching its copy to a confirm prompt", () => {
+  const a = fileItem({ id: "file-a", delete_href: "/d/a" });
+  const b = fileItem({ id: "file-b", delete_href: "/d/b" });
+  const html = renderDriveListHtml({ locale: "zh-CN", items: [a, b], canManage: true, deleteArmedItemId: "file-a" });
+  assert.match(html, /data-wb-drive-delete="file-a"[^>]*wh-wb-drive-delete-btn--armed|wh-wb-drive-delete-btn--armed[^>]*data-wb-drive-delete="file-a"/u);
+  assert.match(html, /确定？再点一次/u);
+  // 只有被武装的那一项换文案；另一项仍是普通「移到回收站」。
+  const armedCount = (html.match(/确定？再点一次/gu) ?? []).length;
+  assert.equal(armedCount, 1, "only the armed item shows the confirm prompt");
+});
+
+test("renderDriveBarHtml surfaces a recycle-bin entry only when there are deleted items", () => {
+  const withDeleted = renderDriveBarHtml({ locale: "zh-CN", breadcrumb: [{ id: undefined, name: "P" }], canUpload: true, deletedCount: 3 });
+  const none = renderDriveBarHtml({ locale: "zh-CN", breadcrumb: [{ id: undefined, name: "P" }], canUpload: true, deletedCount: 0 });
+  assert.match(withDeleted, /data-wb-drive-recycle-open[^>]*>[^<]*回收站 · 3|回收站 · 3/u);
+  assert.doesNotMatch(none, /data-wb-drive-recycle-open/u, "no recycle entry when the bin is empty");
+});
+
+test("renderDriveBarHtml in recycle mode shows a back affordance and the recycle title, no breadcrumb/upload", () => {
+  const html = renderDriveBarHtml({ locale: "zh-CN", breadcrumb: [], canUpload: true, recycleActive: true });
+  assert.match(html, /data-wb-drive-recycle-back/u);
+  assert.match(html, /回收站/u);
+  assert.doesNotMatch(html, /data-wb-drive-upload-picker/u, "upload is hidden in the recycle view");
+});
+
+test("renderDriveRecycleHtml lists deleted items each with a restore button when restore_href is present", () => {
+  const deleted = fileItem({ id: "file-x", name: "gone.md", deleted_at: "2026-07-16T09:00:00.000000Z", restore_href: "/api/drive/projects/p1/items/file-x/restore" });
+  const html = renderDriveRecycleHtml({ locale: "zh-CN", items: [deleted] });
+  assert.match(html, /gone\.md/u);
+  assert.match(html, /data-wb-drive-restore="file-x"/u);
+  assert.match(html, /找回/u);
+});
+
+test("renderDriveRecycleHtml shows the blocked reason instead of a restore button when restore is blocked", () => {
+  const blocked = fileItem({ id: "file-y", name: "stuck.md", restore_blocked_reason: "父级也在回收站，先还原它" });
+  const html = renderDriveRecycleHtml({ locale: "zh-CN", items: [blocked] });
+  assert.doesNotMatch(html, /data-wb-drive-restore="file-y"/u);
+  assert.match(html, /父级也在回收站，先还原它/u);
+});
+
+test("renderDriveRecycleHtml shows an empty-state when the bin has nothing", () => {
+  const html = renderDriveRecycleHtml({ locale: "zh-CN", items: [] });
+  assert.match(html, /回收站是空的/u);
+});
+
+test("renderDriveRecycleHtml disables the restore button of the item currently being recovered", () => {
+  const deleted = fileItem({ id: "file-z", name: "z.md", restore_href: "/r/z" });
+  const html = renderDriveRecycleHtml({ locale: "zh-CN", items: [deleted], restoreBusyId: "file-z" });
+  assert.match(html, /data-wb-drive-restore="file-z"[^>]*disabled/u);
+  assert.match(html, /找回中…/u);
 });
 
 // —— loading/error —— //

@@ -231,6 +231,82 @@ function profileSectionHtml(profile: UserProfileVM | undefined, profileFailed: b
   </div>`;
 }
 
+// —— R20 DSK-UX（R19-5 撤销学到的自动通过策略）—— //
+// 病灶：web 设置页把每条自动通过策略的「撤销」按钮标了 data-requires-desktop=true、指向桌面端，但桌面端
+// 从来没有渲染 permission_policies 或调 DELETE /api/permissions/:id 的代码——用户能攒下常驻自动通过规则，却
+// 在任何客户端都撤不掉，是治理死胡同。这里在桌面唯一的账户级设置面里补上：列出策略 + 两段式确认撤销
+// （DELETE /api/permissions/:id，本地客户端 + 管理员门；桌面天然满足本地客户端，策略列表本身也只有管理员
+// 能从 settings VM 拿到，见 apps/api/src/routes/pages.ts 的 /settings）。
+
+type PermissionPolicyVM = NonNullable<SettingsPageVM["permission_policies"]>[number];
+
+function permissionPolicyEffectLabel(effect: PermissionPolicyVM["effect"], zh: boolean): string {
+  const table: Record<PermissionPolicyVM["effect"], { zh: string; en: string }> = {
+    allow: { zh: "自动通过", en: "Auto-approve" },
+    deny: { zh: "自动拒绝", en: "Auto-deny" },
+    ask: { zh: "每次询问", en: "Always ask" }
+  };
+  return zh ? table[effect].zh : table[effect].en;
+}
+
+// 撤销两段式确认的纯判定（照 side-panel.ts decideRollbackConfirmation / drive view.ts
+// decideDriveDeleteConfirmation 的同款先例）：同一条已武装的再点=真撤销；未武装或点了另一条=（重新）武装它。
+export function decidePolicyRevokeConfirmation(
+  armedId: string | undefined,
+  clickedId: string
+): { kind: "arm" | "execute"; id: string } {
+  if (armedId === clickedId) {
+    return { kind: "execute", id: clickedId };
+  }
+  return { kind: "arm", id: clickedId };
+}
+
+export function permissionPoliciesSectionHtml(input: {
+  policies: readonly PermissionPolicyVM[] | undefined;
+  armedId: string | undefined;
+  busyId: string | undefined;
+  errorText: string | undefined;
+  zh: boolean;
+}): string {
+  // 非管理员：settings VM 结构性不含 permission_policies（服务端只给管理员填）——整个治理区不渲染。
+  if (!input.policies) {
+    return "";
+  }
+  const { policies, armedId, busyId, zh } = input;
+  const body = policies.length === 0
+    ? `<div class="wh-spot-row-sub">${zh ? "还没有学到的自动通过策略。" : "No learned auto-approve policies yet."}</div>`
+    : policies
+        .map((policy) => {
+          const armed = armedId === policy.id;
+          const busy = busyId === policy.id;
+          const effect = permissionPolicyEffectLabel(policy.effect, zh);
+          const learned = policy.learned_from_session ? (zh ? " · 从会话里学到的" : " · learned from a session") : "";
+          const label = busy
+            ? (zh ? "撤销中…" : "Revoking…")
+            : armed
+              ? (zh ? "确定？再点一次撤销" : "Sure? Click again")
+              : (zh ? "撤销" : "Revoke");
+          const revokeBtn = `<button type="button" class="wh-spot-act ds-pressable ${armed ? "wh-spot-act--danger" : "wh-spot-act--quiet"}" data-set-revoke-policy="${escapeHtml(policy.id)}" ${busy ? "disabled" : ""}>${label}</button>`;
+          return `<div class="wh-spot-row" style="cursor:default">
+            <div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(policy.action_pattern)}</div><div class="wh-spot-row-sub">${escapeHtml(effect)}${learned}</div></div>
+            ${revokeBtn}
+          </div>`;
+        })
+        .join("");
+  const error = input.errorText
+    ? `<div class="wh-spot-row-sub" data-spot-policy-error="true" style="color:var(--ds-danger)">${escapeHtml(input.errorText)}</div>`
+    : "";
+  return `<div class="wh-spot-set-group" data-spot-policies-section="true">
+    <div class="wh-spot-set-label">${zh ? "自动通过策略" : "Auto-approve policies"}</div>
+    <div class="wh-spot-row-sub">${zh
+      ? "这些是「以后同类自动通过」的常驻规则。撤销后，同类操作会重新回到你这里等你拍板。"
+      : "Standing 'auto-approve similar' rules. Revoke one and those actions come back to you for review."
+    }</div>
+    ${body}
+    ${error}
+  </div>`;
+}
+
 function settingsHtml(
   vm: SettingsPageVM,
   zh: boolean,
@@ -239,7 +315,8 @@ function settingsHtml(
   aiErrorText: string | undefined,
   profile: UserProfileVM | undefined,
   profileFailed: boolean,
-  profileErrorText: string | undefined
+  profileErrorText: string | undefined,
+  policiesHtml: string
 ): string {
   const lang = vm.language;
   const langChips = lang.supported_locales
@@ -263,6 +340,7 @@ function settingsHtml(
     ${avatarSectionHtml(profile, profileFailed, zh)}
     ${profileSectionHtml(profile, profileFailed, zh)}
     ${profileErrorText ? `<div class="wh-spot-row-sub" data-spot-profile-error="true" style="color:var(--ds-danger)">${escapeHtml(profileErrorText)}</div>` : ""}
+    ${policiesHtml}
     <button type="button" class="wh-spot-row" data-set-open-memory="true">
       <div class="wh-spot-row-main">
         <div class="wh-spot-row-title">${zh ? "Cuu 的记忆" : "Cuu's memory"}</div>
@@ -663,6 +741,18 @@ export function createSettingsView(): SpotlightCapabilityView {
       let profile: UserProfileVM | undefined;
       let profileFailed = false;
       let profileErrorText: string | undefined;
+      // R20 DSK-UX（R19-5）：自动通过策略撤销的两段式确认武装态 / 撤销进行中 / 失败提示。
+      let policyRevokeArmedId: string | undefined;
+      let policyRevokeBusyId: string | undefined;
+      let policyRevokeError: string | undefined;
+      let policyRevokeArmTimer: ReturnType<typeof setTimeout> | undefined;
+      const clearPolicyRevokeArm = () => {
+        policyRevokeArmedId = undefined;
+        if (policyRevokeArmTimer !== undefined) {
+          clearTimeout(policyRevokeArmTimer);
+          policyRevokeArmTimer = undefined;
+        }
+      };
       // R14 批 AVATAR：头像预览走鉴权 fetch（见文件头 avatarHref 注释），拿到的 blob URL 只在
       // 本次挂载生命周期内有效——单调代次防止连续快速重渲（比如连点 AI 分区开关）时晚到的预览
       // 覆盖新一轮渲染；dispose 时连同最后一个 blob URL 一起释放，不留内存泄漏。
@@ -720,7 +810,14 @@ export function createSettingsView(): SpotlightCapabilityView {
         if (!vm) {
           return;
         }
-        ctx.body.innerHTML = settingsHtml(vm, zh, aiProfile, aiFailed, aiErrorText, profile, profileFailed, profileErrorText);
+        const policiesHtml = permissionPoliciesSectionHtml({
+          policies: vm.permission_policies,
+          armedId: policyRevokeArmedId,
+          busyId: policyRevokeBusyId,
+          errorText: policyRevokeError,
+          zh
+        });
+        ctx.body.innerHTML = settingsHtml(vm, zh, aiProfile, aiFailed, aiErrorText, profile, profileFailed, profileErrorText, policiesHtml);
         ctx.requestResize();
         hydrateAvatarPreview();
       };
@@ -805,6 +902,34 @@ export function createSettingsView(): SpotlightCapabilityView {
           });
       }
 
+      // R20 DSK-UX（R19-5）：撤销一条自动通过策略（DELETE /api/permissions/:id）。成功后从本地 vm 里把它摘掉
+      // 并重渲（乐观），失败给行内错误 + toast，不吞。桌面天然满足本地客户端门；能读到这个列表本身就意味着
+      // 当前身份是管理员（服务端只给管理员填 permission_policies）。
+      function revokePolicy(policyId: string): void {
+        clearPolicyRevokeArm();
+        policyRevokeBusyId = policyId;
+        policyRevokeError = undefined;
+        renderAll();
+        void ctx.client
+          .revokePermissionPolicy!(policyId)
+          .then(() => {
+            if (disposed) return;
+            policyRevokeBusyId = undefined;
+            if (vm) {
+              vm = { ...vm, permission_policies: (vm.permission_policies ?? []).filter((policy) => policy.id !== policyId) };
+            }
+            ctx.toast(zh ? "已撤销这条自动通过策略" : "Auto-approve policy revoked", "ok");
+            renderAll();
+          })
+          .catch(() => {
+            if (disposed) return;
+            policyRevokeBusyId = undefined;
+            policyRevokeError = zh ? "撤销失败，请重试。" : "Couldn't revoke — try again.";
+            ctx.toast(zh ? "撤销失败" : "Revoke failed", "error");
+            renderAll();
+          });
+      }
+
       // R20 SEC P1-01：登出的生产副作用（摸真 window/__TAURI__/壳层广播）。状态机本身 (runDesktopLogout) 与
       // 这些副作用解耦，单测直接注入假 effects 断言顺序/失败停位；这里只在真实桌面环境执行。
       const logoutEffects: DesktopLogoutEffects = {
@@ -867,6 +992,31 @@ export function createSettingsView(): SpotlightCapabilityView {
             if (disposed) return;
             renderAll();
           });
+          return;
+        }
+        // R20 DSK-UX（R19-5）：撤销自动通过策略——两段式确认（decidePolicyRevokeConfirmation）：第一下武装、
+        // 5 秒内对同一条再点一次才真发 DELETE。武装超时自动解除。
+        const revokePolicyBtn = target.closest<HTMLElement>("[data-set-revoke-policy]");
+        if (revokePolicyBtn?.dataset.setRevokePolicy) {
+          const policyId = revokePolicyBtn.dataset.setRevokePolicy;
+          if (policyRevokeBusyId) {
+            return;
+          }
+          const decision = decidePolicyRevokeConfirmation(policyRevokeArmedId, policyId);
+          if (decision.kind === "execute") {
+            revokePolicy(policyId);
+            return;
+          }
+          clearPolicyRevokeArm();
+          policyRevokeArmedId = policyId;
+          policyRevokeError = undefined;
+          policyRevokeArmTimer = setTimeout(() => {
+            policyRevokeArmTimer = undefined;
+            if (disposed) return;
+            policyRevokeArmedId = undefined;
+            renderAll();
+          }, 5000);
+          renderAll();
           return;
         }
         // R14 批 MEM：设置区旁挂的记忆管理面入口——独立能力视图（views/memory.ts），不是内联区块。
@@ -1060,6 +1210,7 @@ export function createSettingsView(): SpotlightCapabilityView {
 
       return () => {
         disposed = true;
+        clearPolicyRevokeArm();
         revokeAvatarObjectUrl();
       };
     }

@@ -812,9 +812,15 @@ export const workbenchCss = [
   ".wh-wb-drive-upload-label:hover{background:var(--ds-accent-soft);border-color:rgba(10,132,255,.3)}",
   ".wh-wb-drive-upload-input{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0 0 0 0)}",
   ".wh-wb-drive-list{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-height:0}",
-  ".wh-wb-drive-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--ds-radius-sm);cursor:default}",
+  ".wh-wb-drive-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--ds-radius-sm);cursor:pointer}",
   ".wh-wb-drive-row[data-wb-drive-open],.wh-wb-drive-row[data-wb-drive-preview]{cursor:pointer}",
   ".wh-wb-drive-row:hover{background:var(--ds-glass)}",
+  // R20 DSK-UX（R19-25）：键盘焦点可见——照 kanban 卡片 focus-visible 的既有口径（accent 描边）。
+  ".wh-wb-drive-row:focus-visible{outline:2px solid var(--ds-accent);outline-offset:1px}",
+  ".wh-wb-drive-row--deleted .wh-wb-drive-row-icon{background:var(--ds-glass);color:var(--ds-ink-faint)}",
+  ".wh-wb-drive-restore-error{color:var(--ds-danger)}",
+  ".wh-wb-drive-recycle-btn{display:inline-flex;align-items:center;gap:5px}",
+  ".wh-wb-drive-recycle-btn svg{width:13px;height:13px}",
   ".wh-wb-drive-row-icon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;" +
     "background:var(--ds-accent-soft);color:var(--ds-accent);flex:0 0 auto}",
   ".wh-wb-drive-row-icon svg{width:15px;height:15px}",
@@ -829,6 +835,9 @@ export const workbenchCss = [
   ".wh-wb-drive-empty{padding:36px 20px;text-align:center;font:500 12.5px/1.6 var(--ds-font);color:var(--ds-ink-faint)}",
   ".wh-wb-drive-action-error{margin:6px 18px;padding:8px 12px;border-radius:var(--ds-radius-sm);" +
     "background:var(--ds-danger-soft);border:1px solid rgba(255,69,58,.3);color:var(--ds-danger);font:500 12px/1.4 var(--ds-font)}",
+  // R20 DSK-UX（R19-23）：删除成功「已移到回收站」回执 banner——中性成功色，与危险的 error banner 区分。
+  ".wh-wb-drive-action-notice{margin:6px 18px;padding:8px 12px;border-radius:var(--ds-radius-sm);" +
+    "background:var(--ds-glass);border:1px solid var(--ds-glass-border);color:var(--ds-ink-muted);font:500 12px/1.4 var(--ds-font)}",
   ".wh-wb-drive-side-head{display:flex;align-items:center;gap:8px;padding:0 0 8px;border-bottom:1px solid var(--ds-glass-border);margin-bottom:10px}",
   ".wh-wb-drive-side-title{font:700 12.5px/1.3 var(--ds-font);color:var(--ds-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
   ".wh-wb-drive-side-note{font:500 11px/1.5 var(--ds-font);color:var(--ds-ink-faint);margin:4px 0 8px}",
