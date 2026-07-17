@@ -3,7 +3,14 @@ import test from "node:test";
 
 import type { SettingsPageVM, UserAiProfileVM, UserProfileVM } from "@workhub/contracts";
 
-import { createSettingsView } from "./settings.js";
+import {
+  createSettingsView,
+  logoutErrorPanelHtml,
+  runDesktopLogout,
+  type DesktopLogoutEffects,
+  type DesktopLogoutStage,
+  type DesktopLogoutView
+} from "./settings.js";
 import type { SpotlightViewContext } from "../view-context.js";
 
 function tick() {
@@ -757,6 +764,165 @@ test("hydrateAvatarPreview stays on the fallback tile (no crash, no error flash)
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+// ── R20 SEC P1-01（桌面 logout 吞错伪装成功）──────────────────────────────────────────────
+// 登出必须是有序状态机：①服务端登出（失败即停、可见、可重试）②清 Rust 壳层令牌 ③清本地→广播→reload。
+// 副作用注入，故可脱离真实 window/__TAURI__ 直接断言顺序与失败停位。
+
+function recordingLogout(opts: { failServer?: boolean; failShell?: boolean } = {}) {
+  const calls: string[] = [];
+  const effects: DesktopLogoutEffects = {
+    serverLogout: async () => {
+      calls.push("serverLogout");
+      if (opts.failServer) throw new Error("network down");
+    },
+    clearShellToken: async () => {
+      calls.push("clearShellToken");
+      if (opts.failShell) throw new Error("tauri ipc unavailable");
+    },
+    clearLocalIdentity: () => {
+      calls.push("clearLocalIdentity");
+    },
+    broadcastLoggedOut: () => {
+      calls.push("broadcastLoggedOut");
+    },
+    reload: () => {
+      calls.push("reload");
+    }
+  };
+  return { calls, effects };
+}
+
+function recordingLogoutView() {
+  const errors: DesktopLogoutStage[] = [];
+  let progressShown = 0;
+  const view: DesktopLogoutView = {
+    showProgress: () => {
+      progressShown += 1;
+    },
+    showError: (stage) => {
+      errors.push(stage);
+    }
+  };
+  return { errors, view, progress: () => progressShown };
+}
+
+test("runDesktopLogout success path runs server → shell → local → broadcast → reload in order", async () => {
+  const { calls, effects } = recordingLogout();
+  const { errors, view } = recordingLogoutView();
+
+  const result = await runDesktopLogout(effects, view, { force: false });
+
+  assert.equal(result, "done");
+  assert.deepEqual(calls, [
+    "serverLogout",
+    "clearShellToken",
+    "clearLocalIdentity",
+    "broadcastLoggedOut",
+    "reload"
+  ]);
+  assert.deepEqual(errors, [], "a clean logout shows no error");
+});
+
+test("runDesktopLogout stops before touching the local identity when the server logout fails", async () => {
+  const { calls, effects } = recordingLogout({ failServer: true });
+  const { errors, view } = recordingLogoutView();
+
+  const result = await runDesktopLogout(effects, view, { force: false });
+
+  assert.equal(result, "server-failed");
+  // 关键：服务端登出失败 → 只尝试了服务端一步，绝不清壳层令牌/本地/广播/reload（那正是"伪装成功"缺陷）。
+  assert.deepEqual(calls, ["serverLogout"], "no local state may be cleared when the server sign-out failed");
+  assert.ok(!calls.includes("clearLocalIdentity") && !calls.includes("reload"));
+  assert.deepEqual(errors, ["server"], "the failure is surfaced, not swallowed");
+});
+
+test("runDesktopLogout stops before clearing local identity when the shell-token clear fails", async () => {
+  const { calls, effects } = recordingLogout({ failShell: true });
+  const { errors, view } = recordingLogoutView();
+
+  const result = await runDesktopLogout(effects, view, { force: false });
+
+  assert.equal(result, "shell-failed");
+  // 服务端已登出，但清壳层令牌失败 → 停在本地清理之前，错误可见可重试。
+  assert.deepEqual(calls, ["serverLogout", "clearShellToken"]);
+  assert.ok(!calls.includes("clearLocalIdentity") && !calls.includes("reload"));
+  assert.deepEqual(errors, ["shell"]);
+});
+
+test("runDesktopLogout with force=true skips the server call (explicit local-only fallback)", async () => {
+  // 即便服务端仍不可达，force 也不调用它——用户显式选择"仍要本地退出"。
+  const { calls, effects } = recordingLogout({ failServer: true });
+  const { errors, view } = recordingLogoutView();
+
+  const result = await runDesktopLogout(effects, view, { force: true });
+
+  assert.equal(result, "done");
+  // force 跳过①：不调 serverLogout，直接做本地清理。
+  assert.deepEqual(calls, [
+    "clearShellToken",
+    "clearLocalIdentity",
+    "broadcastLoggedOut",
+    "reload"
+  ]);
+  assert.equal(calls.includes("serverLogout"), false);
+  assert.deepEqual(errors, []);
+});
+
+test("logoutErrorPanelHtml surfaces a visible error with a retry, and a local-only fallback only for server failures", () => {
+  const server = logoutErrorPanelHtml(true, "server");
+  assert.match(server, /data-spot-logout-error="server"/u);
+  // server 阶段警示：服务端登录可能仍有效。
+  assert.match(server, /可能仍然有效/u);
+  // 重试重跑完整流程（含服务端）→ force=false。
+  assert.match(server, /data-set-logout-retry data-logout-force="false"/u);
+  // 服务端不可达兜底：仍要本地退出。
+  assert.match(server, /data-set-logout-local/u);
+  assert.match(server, /仍要本地退出/u);
+
+  const shell = logoutErrorPanelHtml(true, "shell");
+  assert.match(shell, /data-spot-logout-error="shell"/u);
+  // shell 阶段服务端已登出，重试只重跑本地清理 → force=true；不提供"仍要本地退出"（服务端已安全）。
+  assert.match(shell, /data-set-logout-retry data-logout-force="true"/u);
+  assert.doesNotMatch(shell, /data-set-logout-local/u);
+});
+
+test("clicking Sign out with a failing server logout renders a visible, retryable error and does not clear anything", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = settingsVm();
+    let logoutCalls = 0;
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          },
+          async logout() {
+            logoutCalls += 1;
+            throw new Error("network down");
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+
+    assert.match(body.innerHTML, /data-set-logout="true"/u);
+
+    body.click(new FakeElement(new Set(["[data-set-logout]"])));
+    await tick();
+    await tick();
+
+    assert.equal(logoutCalls, 1, "the server logout must actually be attempted");
+    // 服务端失败 → 渲错误面板（可见 + 可重试 + 本地退出兜底）；因为没走到 window.* 本地清理，node 无 window 也不炸。
+    assert.match(body.innerHTML, /data-spot-logout-error="server"/u);
+    assert.match(body.innerHTML, /data-set-logout-retry/u);
+    assert.match(body.innerHTML, /data-set-logout-local/u);
+  });
 });
 
 // R14 批 MEM：设置区旁挂的「Cuu 的记忆」导航行——独立能力视图（views/memory.ts），settings.ts 本身
