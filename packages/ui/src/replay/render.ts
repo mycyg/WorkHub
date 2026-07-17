@@ -42,6 +42,8 @@ export const replayCss = [
   ".wh-title{font-size:30px;line-height:1.35;margin:8px 0}.wh-subtle{color:var(--muted);line-height:1.55}.wh-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-top:18px}",
   ".wh-card{border:1px solid rgba(255,255,255,.75);background:rgba(255,255,255,.66);border-radius:16px;padding:16px;min-width:0;overflow-wrap:anywhere}.wh-list{display:grid;gap:10px;margin-top:14px}.wh-row{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding:12px 0}.wh-row:first-child{border-top:0}.wh-row>div{min-width:0}",
   ".wh-title,.wh-subtle{overflow-wrap:anywhere}.wh-pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:var(--soft);padding:5px 9px;font-size:12px;color:var(--muted);max-width:100%;white-space:normal;text-align:left;overflow-wrap:anywhere}.wh-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.wh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:12px;border:1px solid var(--line);padding:9px 12px;color:var(--ink);text-decoration:none;background:rgba(255,255,255,.92);font-weight:650}.wh-btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}.wh-btn-danger{background:#fff4f3;color:#a94137;border-color:#f3c5c0}",
+  // R20 DSK-UX（R19-3）：撤销按钮武装态（首点后）翻成更实的警示色；已回滚/执行中禁用态压暗，和网盘删除武装同款语言。
+  ".wh-btn-danger[data-replay-revert-armed=\"true\"]{background:#ffe3df;color:#8f2f27;border-color:#e7a49c}.wh-btn-danger[aria-disabled=\"true\"]{opacity:.6;pointer-events:none}",
   richPatchViewerCss,
   ".wh-row .wh-patch{margin-top:10px}",
   overlapHunkReviewCss,
@@ -119,7 +121,23 @@ const replayCopy = {
   "replay.recommendedBadge": { "zh-CN": "推荐", "en-US": "Recommended" },
   "replay.chosenBadge": { "zh-CN": "已选择", "en-US": "Chosen" },
   "replay.noChoiceLabel": { "zh-CN": "未选择", "en-US": "Not chosen" },
-  "replay.conflictAtPrefix": { "zh-CN": "冲突位置", "en-US": "Conflict at" }
+  "replay.conflictAtPrefix": { "zh-CN": "冲突位置", "en-US": "Conflict at" },
+  // R20 DSK-UX（R19-3）：改动快照的「撤销此次改动」动作——把文件还原到某个快照。二次确认（武装→再点执行）
+  // 沿用仓库既有 5 秒先例（decideRollbackConfirmation/网盘删除），文案键在这里统一，binder 只读 data-* 取字。
+  "replay.snapshotListTitle": { "zh-CN": "改动快照", "en-US": "Change snapshots" },
+  "replay.snapshotListHint": {
+    "zh-CN": "撤销会把文件还原到该快照、覆盖之后的改动；此操作需在桌面客户端执行。",
+    "en-US": "Undoing restores files to that snapshot and overwrites later changes; do it in the desktop app."
+  },
+  "replay.snapshotRevert": { "zh-CN": "撤销此次改动", "en-US": "Undo these changes" },
+  "replay.snapshotRevertArm": { "zh-CN": "确认撤销？再点一次", "en-US": "Undo? Click again" },
+  "replay.snapshotReverting": { "zh-CN": "撤销中…", "en-US": "Undoing…" },
+  "replay.snapshotReverted": { "zh-CN": "已回滚", "en-US": "Reverted" },
+  "replay.snapshotRevertRetry": { "zh-CN": "撤销失败，点此重试", "en-US": "Undo failed — retry" },
+  "replay.snapshotKindPreStep": { "zh-CN": "执行前快照", "en-US": "Pre-step snapshot" },
+  "replay.snapshotKindMerge": { "zh-CN": "合并快照", "en-US": "Merge snapshot" },
+  "replay.snapshotKindManual": { "zh-CN": "手动快照", "en-US": "Manual snapshot" },
+  "replay.snapshotKindBase": { "zh-CN": "基线快照", "en-US": "Base snapshot" }
 } satisfies Record<string, ReplayCopy>;
 
 type ReplayCopyKey = keyof typeof replayCopy;
@@ -329,6 +347,46 @@ function renderMergeTimeline(vm: ReplayTraceVM, locale: WorkHubLocale) {
     .join("");
 }
 
+function snapshotKindLabel(locale: WorkHubLocale, kind: string) {
+  if (kind === "pre_step") {
+    return t(locale, "replay.snapshotKindPreStep");
+  }
+  if (kind === "merge") {
+    return t(locale, "replay.snapshotKindMerge");
+  }
+  if (kind === "manual") {
+    return t(locale, "replay.snapshotKindManual");
+  }
+  if (kind === "base") {
+    return t(locale, "replay.snapshotKindBase");
+  }
+  return kind;
+}
+
+// R20 DSK-UX（R19-3）：改动快照列表——每个「未回滚」快照给一颗「撤销此次改动」按钮（POST /api/agent-runs/:id/revert，
+// snapshot_id 走 body），已回滚的只显示「已回滚」态不给按钮。按钮标 data-requires-desktop=true：web 端点它由既有
+// 拦截渲成「需在桌面端操作」提示（对齐 R19-5 撤销策略、restore/revoke 同款），桌面端才由 bindReplayRevertActions
+// 接真回调执行。二次确认（武装→再点执行）与刷新都在 binder 里，纯渲染层只吐带 data-* 的静态标记。
+function renderSnapshots(vm: ReplayTraceVM, locale: WorkHubLocale, runId: string) {
+  const snapshots = vm.snapshots ?? [];
+  if (!runId || snapshots.length === 0) {
+    return "";
+  }
+  const revertHref = safeHref(`/api/agent-runs/${encodeURIComponent(runId)}/revert`);
+  const rows = snapshots
+    .map((snap) => {
+      const reverted = Boolean(snap.reverted_at);
+      const createdAt = snap.created_at ? snap.created_at.slice(0, 16).replace("T", " ") : "";
+      const meta = [snapshotKindLabel(locale, snap.kind), createdAt].filter(Boolean).join(" · ");
+      const action = reverted
+        ? `<span class="wh-pill" data-replay-snapshot-reverted="true">${escapeHtml(t(locale, "replay.snapshotReverted"))}</span>`
+        : `<a class="wh-btn wh-btn-danger" href="${escapeHtml(revertHref)}" data-action-id="revert_agent_run" data-method="POST" data-requires-desktop="true" data-replay-revert-snapshot="${escapeHtml(snap.id)}" data-replay-revert-run="${escapeHtml(runId)}" data-revert-label-idle="${escapeHtml(t(locale, "replay.snapshotRevert"))}" data-revert-label-arm="${escapeHtml(t(locale, "replay.snapshotRevertArm"))}" data-revert-label-reverting="${escapeHtml(t(locale, "replay.snapshotReverting"))}" data-revert-label-reverted="${escapeHtml(t(locale, "replay.snapshotReverted"))}" data-revert-label-retry="${escapeHtml(t(locale, "replay.snapshotRevertRetry"))}">${escapeHtml(t(locale, "replay.snapshotRevert"))}</a>`;
+      return `<div class="wh-row" data-replay-snapshot="${escapeHtml(snap.id)}" data-replay-snapshot-kind="${escapeHtml(snap.kind)}"><div><strong>${escapeHtml(snap.ref)}</strong><p class="wh-subtle">${escapeHtml(meta)}</p></div>${action}</div>`;
+    })
+    .join("");
+  return `<h2>${escapeHtml(t(locale, "replay.snapshotListTitle"))}</h2><p class="wh-subtle">${escapeHtml(t(locale, "replay.snapshotListHint"))}</p><div class="wh-card wh-replay-snapshots" data-replay-snapshot-list="true">${rows}</div>`;
+}
+
 function renderRail(vm: ReplayTraceVM, locale: WorkHubLocale) {
   return `<aside class="wh-replay-rail">
     <span class="wh-kicker">${escapeHtml(t(locale, "replay.railKicker"))}</span>
@@ -346,6 +404,7 @@ export function renderAgentRunReplay(
   const locale = uiLocale(options);
   const rootClass = surface === "desktop" ? "wh-desktop" : "wh-web";
   const run = vm.run as ReplayTraceVM["run"] & { id?: string; work_item_id?: string };
+  const runId = run.id ?? "";
   const steps = vm.steps
     .map((step) => `<div class="wh-row"><div><strong>${escapeHtml(agentStepPhaseLabel(locale, step.phase))}</strong><p class="wh-subtle">${escapeHtml(agentStepPublicSummary(locale, step))}</p></div><span class="wh-pill">#${escapeHtml(String(step.step_no))}</span></div>`)
     .join("");
@@ -384,11 +443,12 @@ export function renderAgentRunReplay(
     <h2>${escapeHtml(t(locale, "replay.keyStepsTitle"))}</h2><div class="wh-card">${steps}</div>
     ${deliverables ? `<h2>${escapeHtml(t(locale, "replay.acceptedDeliverablesTitle"))}</h2><div class="wh-list">${deliverables}</div>` : ""}
     ${mergeTimeline ? `<h2>${escapeHtml(t(locale, "replay.decisionRecordTitle"))}</h2><div class="wh-list">${mergeTimeline}</div>` : ""}
+    ${renderSnapshots(vm, locale, runId)}
     ${auditDetails ? `<h2>${escapeHtml(t(locale, "replay.fieldWritebackAuditTitle"))}</h2>${auditDetails}` : ""}
   </section>`;
   return {
     surface,
-    runId: run.id ?? "",
+    runId,
     ...(run.work_item_id ? { workItemId: run.work_item_id } : {}),
     title: t(locale, "replay.title"),
     css: replayCss,
@@ -399,5 +459,149 @@ export function renderAgentRunReplay(
     mergeAttemptCount: (vm.merge_timeline ?? []).length,
     structuredAuditCount,
     cuuState: run.status === "succeeded" ? "celebrating" : "thinking"
+  };
+}
+
+// ── R20 DSK-UX（R19-3）：撤销改动的运行期接线 ──────────────────────────────────────────────
+// 纯渲染层（renderSnapshots）只吐带 data-* 的静态按钮；真正的二次确认状态机 + 调 revert + 刷新在这里。
+// 设计沿用仓库既有分工（apps 各视图：纯判定抽成不碰 DOM 的 decideXxxConfirmation + 一个薄 DOM binder）：
+// - decideSnapshotRevertConfirmation：武装/执行的纯判定，单测直接钉死。
+// - bindReplayRevertActions：薄 binder，revert 用注入回调（不让 @workhub/ui 直依赖 SDK），成功走 onReverted
+//   让宿主重拉。用自定义最小元素接口（真实 HTMLElement 结构上满足，宿主侧 as 一下即可），
+//   这样无 jsdom 也能用假 DOM 单测这条编排逻辑。
+
+// 同一快照在武装态下再点=执行；未武装或点了另一颗按钮=（重新）武装那一颗。
+export function decideSnapshotRevertConfirmation(
+  armedSnapshotId: string | undefined,
+  clickedSnapshotId: string
+): { kind: "arm" | "execute"; snapshotId: string } {
+  return armedSnapshotId === clickedSnapshotId
+    ? { kind: "execute", snapshotId: clickedSnapshotId }
+    : { kind: "arm", snapshotId: clickedSnapshotId };
+}
+
+export interface ReplayRevertClickEvent {
+  preventDefault(): void;
+  stopPropagation(): void;
+}
+
+// binder 用到的最小按钮接口——真实 DOM 的 HTMLAnchorElement/HTMLElement 结构上都满足。
+export interface ReplayRevertButton {
+  readonly dataset: { [key: string]: string | undefined };
+  textContent: string | null;
+  setAttribute(name: string, value: string): void;
+  removeAttribute(name: string): void;
+  addEventListener(type: string, handler: (event: ReplayRevertClickEvent) => void): void;
+}
+
+export interface ReplayRevertRoot {
+  querySelectorAll(selector: string): Iterable<ReplayRevertButton>;
+}
+
+export interface ReplayRevertDeps {
+  // 注入的撤销回调——宿主把 client.revertAgentRun 传进来（不在纯渲染包里直依赖 SDK）。
+  revert: (runId: string, payload: { snapshot_id: string }) => Promise<unknown>;
+  // 撤销成功后回调——宿主据此重拉/重渲 replay（纯 binder 不知道怎么重渲整页）。
+  onReverted?: (info: { runId: string; snapshotId: string }) => void;
+  // 可注入计时器（测试里用替身，免真实 5 秒等待）；默认走全局 setTimeout/clearTimeout。
+  setArmTimer?: (fn: () => void, ms: number) => unknown;
+  clearArmTimer?: (handle: unknown) => void;
+}
+
+// 武装态 5 秒后自动解除——与网盘删除/版本回滚同一先例。
+const REVERT_ARM_TIMEOUT_MS = 5000;
+
+// data-* 缺失时的兜底文案（正常路径由 renderSnapshots 注入本地化文案，binder 保持 locale 无关）。
+const REVERT_LABEL_FALLBACK = {
+  idle: "撤销此次改动",
+  arm: "确认撤销？再点一次",
+  reverting: "撤销中…",
+  reverted: "已回滚",
+  retry: "撤销失败，点此重试"
+} as const;
+
+export function bindReplayRevertActions(root: ReplayRevertRoot, deps: ReplayRevertDeps): () => void {
+  const setArmTimer = deps.setArmTimer ?? ((fn: () => void, ms: number) => setTimeout(fn, ms));
+  const clearArmTimer = deps.clearArmTimer ?? ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>));
+  let armedSnapshotId: string | undefined;
+  let armTimer: unknown;
+  let disposed = false;
+
+  const clearTimer = () => {
+    if (armTimer !== undefined) {
+      clearArmTimer(armTimer);
+      armTimer = undefined;
+    }
+  };
+
+  for (const button of Array.from(root.querySelectorAll("[data-replay-revert-snapshot]"))) {
+    const snapshotId = button.dataset["replayRevertSnapshot"];
+    const runId = button.dataset["replayRevertRun"];
+    if (!snapshotId || !runId) {
+      continue;
+    }
+    const labels = {
+      idle: button.dataset["revertLabelIdle"] ?? REVERT_LABEL_FALLBACK.idle,
+      arm: button.dataset["revertLabelArm"] ?? REVERT_LABEL_FALLBACK.arm,
+      reverting: button.dataset["revertLabelReverting"] ?? REVERT_LABEL_FALLBACK.reverting,
+      reverted: button.dataset["revertLabelReverted"] ?? REVERT_LABEL_FALLBACK.reverted,
+      retry: button.dataset["revertLabelRetry"] ?? REVERT_LABEL_FALLBACK.retry
+    };
+    button.addEventListener("click", (event: ReplayRevertClickEvent) => {
+      event.preventDefault();
+      // 桌面壳的 gold-path 点击管线也在根上委托——武装/执行都自己处理，别让它再兜底走一遍。
+      event.stopPropagation();
+      if (disposed || button.dataset["replayRevertBusy"] === "true" || button.dataset["replayRevertDone"] === "true") {
+        return;
+      }
+      const decision = decideSnapshotRevertConfirmation(armedSnapshotId, snapshotId);
+      if (decision.kind === "arm") {
+        clearTimer();
+        armedSnapshotId = snapshotId;
+        button.dataset["replayRevertArmed"] = "true";
+        button.textContent = labels.arm;
+        armTimer = setArmTimer(() => {
+          armTimer = undefined;
+          if (!disposed && armedSnapshotId === snapshotId) {
+            armedSnapshotId = undefined;
+            delete button.dataset["replayRevertArmed"];
+            button.textContent = labels.idle;
+          }
+        }, REVERT_ARM_TIMEOUT_MS);
+        return;
+      }
+      clearTimer();
+      armedSnapshotId = undefined;
+      delete button.dataset["replayRevertArmed"];
+      button.dataset["replayRevertBusy"] = "true";
+      button.textContent = labels.reverting;
+      button.setAttribute("aria-disabled", "true");
+      void Promise.resolve(deps.revert(runId, { snapshot_id: snapshotId }))
+        .then(() => {
+          if (disposed) {
+            return;
+          }
+          delete button.dataset["replayRevertBusy"];
+          button.dataset["replayRevertDone"] = "true";
+          button.textContent = labels.reverted;
+          button.setAttribute("data-replay-snapshot-reverted", "true");
+          button.setAttribute("aria-disabled", "true");
+          deps.onReverted?.({ runId, snapshotId });
+        })
+        .catch(() => {
+          if (disposed) {
+            return;
+          }
+          // 失败：解除忙态、去掉禁用，把文案换成可见的「点此重试」——再点一次会重新走武装→执行。
+          delete button.dataset["replayRevertBusy"];
+          button.removeAttribute("aria-disabled");
+          button.textContent = labels.retry;
+        });
+    });
+  }
+
+  return () => {
+    disposed = true;
+    clearTimer();
   };
 }

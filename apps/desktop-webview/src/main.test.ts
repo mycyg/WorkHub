@@ -12,7 +12,10 @@ import {
   type WorkHubEvent
 } from "@workhub/contracts";
 
+import type { ReplayRevertButton, ReplayRevertClickEvent, ReplayRevertRoot } from "@workhub/ui/replay";
+
 import {
+  bindDesktopAgentRunReplayRevert,
   loadDesktopAgentRunCuuCard,
   loadDesktopAgentRunReplay,
   loadDesktopAgentRunTrace,
@@ -1212,4 +1215,61 @@ test("Spotlight boot starts transparent without a legacy boot card or capture ba
   assert.match(html, /\.wh-spot/u);
   assert.doesNotMatch(html, /wh-app-root/u);
   assert.doesNotMatch(html, /#0f1117/u);
+});
+
+// ── R20 DSK-UX（R19-3）：桌面 replay 撤销接线 ─────────────────────────────────────────────
+class FakeRevertButton implements ReplayRevertButton {
+  dataset: { [key: string]: string | undefined };
+  textContent: string | null = "撤销此次改动";
+  private handlers: Array<(event: ReplayRevertClickEvent) => void> = [];
+  constructor(dataset: Record<string, string>) {
+    this.dataset = { ...dataset };
+  }
+  setAttribute(): void {}
+  removeAttribute(name: string): void {
+    delete this.dataset[name];
+  }
+  addEventListener(_type: string, handler: (event: ReplayRevertClickEvent) => void): void {
+    this.handlers.push(handler);
+  }
+  click(): void {
+    const event: ReplayRevertClickEvent = { preventDefault() {}, stopPropagation() {} };
+    for (const handler of this.handlers) {
+      handler(event);
+    }
+  }
+}
+
+class FakeRevertRoot implements ReplayRevertRoot {
+  constructor(private readonly buttons: FakeRevertButton[]) {}
+  querySelectorAll(): Iterable<ReplayRevertButton> {
+    return this.buttons;
+  }
+}
+
+test("bindDesktopAgentRunReplayRevert forwards a confirmed undo to client.revertAgentRun", async () => {
+  const button = new FakeRevertButton({ replayRevertSnapshot: "snap-1", replayRevertRun: "run-7" });
+  const calls: Array<{ runId: string; payload: { snapshot_id: string } }> = [];
+  const client = {
+    revertAgentRun: (runId: string, payload: { snapshot_id: string }) => {
+      calls.push({ runId, payload });
+      return Promise.resolve({ status: "reverted" as const, snapshot: {} as never });
+    }
+  } as unknown as WorkHubApiClient;
+
+  bindDesktopAgentRunReplayRevert(new FakeRevertRoot([button]), client);
+  button.click(); // 武装
+  assert.equal(calls.length, 0);
+  button.click(); // 执行
+  await Promise.resolve();
+  assert.deepEqual(calls, [{ runId: "run-7", payload: { snapshot_id: "snap-1" } }]);
+});
+
+test("bindDesktopAgentRunReplayRevert is a no-op when the client lacks revertAgentRun", () => {
+  const button = new FakeRevertButton({ replayRevertSnapshot: "snap-1", replayRevertRun: "run-7" });
+  const dispose = bindDesktopAgentRunReplayRevert(new FakeRevertRoot([button]), {} as unknown as WorkHubApiClient);
+  button.click();
+  button.click();
+  assert.equal(typeof dispose, "function");
+  dispose();
 });
