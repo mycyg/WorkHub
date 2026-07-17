@@ -66,6 +66,7 @@ type RouteClientOverrides = {
   knowledgeError?: Error;
   conversationMessagesError?: Error;
   usersError?: Error;
+  projectsError?: Error;
 };
 
 type ApprovalRouteRequestOptions = {
@@ -748,6 +749,9 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
       }
     },
     async listProjects() {
+      if (overrides.projectsError) {
+        throw overrides.projectsError;
+      }
       return overrides.projects ?? projectListVm();
     },
     async listUsers() {
@@ -1690,7 +1694,9 @@ test("home keeps the attention queue usable when the project list is temporarily
   assert.equal(result.status, "ready");
   assert.equal(result.html.includes('data-r8-home-project-desk="true"'), true);
   assert.equal(result.html.includes('data-r8-home-projects-loaded="false"'), true);
-  assert.equal(result.html.includes("Project list syncing"), true);
+  // P1-07：诚实文案——「未加载」而非此前像还在加载的「稍后同步」，且显式警示条露出失败 + 重试。
+  assert.equal(result.html.includes("Project list unavailable"), true);
+  assert.equal(result.html.includes('data-r20-home-projects-failed="true"'), true);
   assert.equal(result.html.includes('data-r4-home-decision="true"'), true);
 });
 
@@ -1702,6 +1708,49 @@ test("home loader rethrows not_identified from listProjects (re-auth, not a stal
   };
   const match = resolveWebRoute("/");
   assert.ok(match);
+  await assert.rejects(() => loadWebRoute(client, match, "en-US"), /identify first/u);
+});
+
+test("P1-07: home renders honestly when the project list fails (warning + retry, not a silent 0)", async () => {
+  const surface = goldPathSurfaceVm();
+  // 非认证类失败（5xx）——项目清单拉不到，但 attention 照常。
+  const { client } = fakeRouteClient(surface, { projectsError: new WorkHubApiError(500, "server_error", "boom") });
+  const match = resolveWebRoute("/");
+  assert.ok(match);
+  const result = await loadWebRoute(client, match, "en-US");
+  // 首页仍可用（决策/运行区照常），不整页塌。
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.includes('data-r4-home-decision="true"'), true);
+  // 项目桌标注「未加载」（loaded=false），而不是谎报成「0 个项目」的空态。
+  assert.equal(result.html.includes('data-r8-home-projects-loaded="false"'), true);
+  assert.equal(result.html.includes('data-r8-home-projects-empty="true"'), false, "failure must not masquerade as the empty state");
+  assert.equal(result.html.includes("Project list unavailable"), true);
+  // 显式警示条 + 重试按钮，而非静默降级成看不出是失败的软空态。
+  assert.equal(result.html.includes('data-r20-home-projects-failed="true"'), true);
+  assert.equal(result.html.includes('data-r20-home-projects-retry="true"'), true);
+});
+
+test("P1-07: home with an empty (but loaded) project list is the empty state, NOT the failure warning", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client } = fakeRouteClient(surface, { projects: { generated_at: new Date().toISOString(), projects: [] } });
+  const match = resolveWebRoute("/");
+  assert.ok(match);
+  const result = await loadWebRoute(client, match, "en-US");
+  assert.equal(result.status, "ready");
+  // 空态：0 个项目是真实事实（loaded=true），渲真空态，且绝不渲失败警示条。
+  assert.equal(result.html.includes('data-r8-home-projects-loaded="true"'), true);
+  assert.equal(result.html.includes('data-r8-home-projects-empty="true"'), true);
+  assert.equal(result.html.includes('data-r20-home-projects-failed="true"'), false);
+});
+
+test("P1-07: meetings loader rethrows not_identified from listProjects (re-auth, not a swallowed empty switcher)", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client } = fakeRouteClient(surface, {
+    projectsError: new WorkHubApiError(401, "not_identified", "identify first")
+  });
+  const match = resolveWebRoute("/meetings");
+  assert.ok(match);
+  // 修复前：会议页把 listProjects 的 not_identified 一并吞掉 → 掉线用户看到空项目切换器而非重新登录。
   await assert.rejects(() => loadWebRoute(client, match, "en-US"), /identify first/u);
 });
 
@@ -2016,6 +2065,21 @@ test("R14 批 MEM: nav shell surfaces the memory route in the team group, not ad
   const result = await loadWebRoute(client, match, "en-US", { nickname: "member", isAdmin: false });
   assert.equal(result.status, "ready");
   assert.equal(result.html.includes('data-wh-page-key="memory"'), true);
+});
+
+test("R20 P1-06: a normal member sees the settings nav entry (personal settings, not admin-only)", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client } = fakeRouteClient(surface);
+  const match = resolveWebRoute("/settings");
+  assert.ok(match);
+  // 普通成员（isAdmin=false）也必须能在导航里点到 /settings——头像/资料/语言/AI 模式是个人设置。
+  const result = await loadWebRoute(client, match, "en-US", { nickname: "member", isAdmin: false });
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.includes('data-wh-page-key="settings"'), true);
+  // settings 不再落在 adminOnly 的 admin 组——productNavGroups 里它归 team。
+  const settingsGroup = productNavGroups.find((group) => group.keys.has("settings"));
+  assert.ok(settingsGroup, "settings is assigned to a nav group");
+  assert.equal(settingsGroup?.adminOnly ?? false, false, "settings' group is not admin-only");
 });
 
 test("R8 S4b intake start binds to an existing project when ?project_id is present", async () => {

@@ -8,8 +8,9 @@ import {
   type WorkHubLocale
 } from "@workhub/ui/gold-path";
 import { renderProposalConflictCards } from "@workhub/ui/proposal";
-import { renderOnboardingScreen } from "@workhub/ui";
+import { renderOnboardingScreen, renderInviteAcceptScreen } from "@workhub/ui";
 import { openAvatarCropModal } from "./avatar-crop-modal.js";
+import { armConfirmButton } from "./confirm-button.js";
 import {
   acceptedDeliverableRestoreFromHref,
   actionElementApplyPayload,
@@ -2142,6 +2143,7 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindRouteLineEditor(root, { signal, markDirty: markActiveRouteDirty });
   bindGoldPathNavigation(root, result.shell, client, locale, (href) => navigateWebRoute(href, client, locale), signal);
   bindNotificationMutePanel(root, result, client, locale, signal);
+  bindHomeProjectsRetry(root, client, locale, signal);
   bindProjectHomePlansPanel(root, result, client, locale, signal);
   bindProjectHomeInstructionsPanel(root, result, client, locale, signal);
   bindProjectHomeMembersPanel(root, result, client, locale, signal);
@@ -2306,6 +2308,32 @@ function bindNotificationMutePanel(
   careToggle?.addEventListener("change", () => void save(true), { signal });
 }
 
+// P1-07：首页「项目清单加载失败」警示条的重试按钮——项目清单与 attention 是并行独立拉取，前者失败
+// 时首页仍渲出（决策/运行照常），这里给失败区一个真的重试出路：整路由重渲（renderCurrentRoute 会重新
+// 并行拉 attention + 项目清单），而不是把用户困在一个静默降级、看不出是失败的软空态里。
+function bindHomeProjectsRetry(
+  container: HTMLElement,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  const retry = container.querySelector<HTMLButtonElement>("[data-r20-home-projects-retry]");
+  if (!retry) {
+    return;
+  }
+  retry.addEventListener(
+    "click",
+    () => {
+      retry.disabled = true;
+      void renderCurrentRoute(client, locale).catch(() => {
+        // 重试本身失败（如整页取数错）交由 renderCurrentRoute 内既有错误态处理；这里只兜底解禁按钮。
+        retry.disabled = false;
+      });
+    },
+    { signal }
+  );
+}
+
 // G4 #9（E3 web 只读入口）：项目主页「规划草案」小区块——拉 GET /api/projects/:id/plan-drafts，
 // 只读展示 pending_review 计数 + 最新草案状态；起草/审批/物化都在桌面客户端（web 是管理者控制台定位，
 // 不给假点击）。无权/取数失败 → 静默降级成一句「暂无规划草案」，不拖垮整个项目主页（同 army pill 手法）。
@@ -2338,7 +2366,7 @@ function bindProjectHomePlansPanel(
     const hit = map[status];
     return hit ? (zh ? hit[0] : hit[1]) : status;
   };
-  void (async () => {
+  const load = async () => {
     try {
       const data = await client.request<{ drafts?: PlanDraftSlice[] }>(
         `/api/projects/${encodeURIComponent(projectId)}/plan-drafts?locale=${encodeURIComponent(locale)}`
@@ -2374,16 +2402,27 @@ function bindProjectHomePlansPanel(
             ? "查看详情、审批与物化在桌面客户端的日程标签进行。"
             : "View details, approve and materialize from the Schedule tab in the desktop app."
         )}</p>`;
-    } catch {
+    } catch (error) {
       if (signal.aborted) {
         return;
       }
-      // 无权（403）/端点报错——静默降级成中性空态说明，不暴露存在性、不报错。
-      body.innerHTML = `<p class="wh-subtle" data-r17-project-home-plans-empty="true">${escapeHtml(
-        zh ? "暂无规划草案。" : "No plan drafts yet."
-      )}</p>`;
+      // P1-07：把「无权」和「取数失败」分开——此前两者都静默降级成「暂无规划草案」，把加载失败谎报成空。
+      //   * 403（无权）：如实说明「你没有查看权限」，与「加载成功但 0 份草案」的空态区分（不暴露是否真有草案）。
+      //   * 其它（5xx/网络）：渲警示条 + 重试，不当空态糊弄。
+      if (error instanceof WorkHubApiError && error.status === 403) {
+        body.innerHTML = `<p class="wh-subtle" data-r17-project-home-plans-forbidden="true">${escapeHtml(
+          zh ? "你没有查看规划草案的权限。" : "You don't have permission to view plan drafts."
+        )}</p>`;
+        return;
+      }
+      body.innerHTML = `<p class="wh-subtle" data-r17-project-home-plans-error="true">${escapeHtml(
+        zh ? "规划草案加载失败，稍后重试。" : "Couldn't load plan drafts — retry later."
+      )}</p><button type="button" class="wh-btn" data-r17-project-home-plans-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+      body.querySelector<HTMLButtonElement>("[data-r17-project-home-plans-retry]")
+        ?.addEventListener("click", () => void load(), { signal });
     }
-  })();
+  };
+  void load();
 }
 
 // G4 #24（项目自定义指令 web 入口）：项目主页「自定义指令」卡——GET /api/projects/:id/instructions
@@ -2530,6 +2569,13 @@ function bindProjectHomeInstructionsPanel(
 type ProjectHomeConversationLite = { id: string; kind: "main" | "collab"; is_dm?: boolean };
 type ProjectHomeConversationsVM = { conversations: ProjectHomeConversationLite[]; capped: boolean };
 
+// R20 P1-08：工作区花名册（GET /api/workspace/roster，分页）——按调用者所在工作区 join 列成员，
+// 替代此前误当花名册用的全局 /api/users（跨租户泄露 + 硬 200 截断 + 全局昵称排序）。此处只取
+// total（本工作区活跃成员真实总数，无 200 截断）与 members（加人选择器数据源）。响应经 client.request
+// 拆掉 { ok, data } 信封后即此形状。
+type WorkspaceRosterMemberSlice = { user_id: string; nickname: string };
+type WorkspaceRosterVM = { members: WorkspaceRosterMemberSlice[]; total: number; limit: number; offset: number };
+
 function bindProjectHomeMembersPanel(
   container: HTMLElement,
   result: WebRouteReadyResult,
@@ -2551,8 +2597,9 @@ function bindProjectHomeMembersPanel(
   const hydrate = async () => {
     try {
       const [memberCount, convos] = await Promise.all([
-        client.listUsers().then(
-          (value) => value.users.length,
+        // 成员数取工作区花名册的 total（本工作区活跃成员真实总数），而非全局用户目录长度。limit=1 只为拿 total。
+        client.request<WorkspaceRosterVM>("/api/workspace/roster?limit=1").then(
+          (value) => value.total,
           (): number | null => null
         ),
         client.request<ProjectHomeConversationsVM>(`/api/projects/${encodeURIComponent(projectId)}/conversations`).then(
@@ -2736,7 +2783,9 @@ function bindConversationParticipantsPanel(
       status.setAttribute("data-r18-participant-status", tone);
     };
 
-    const doRemove = async (targetId: string, isSelf: boolean) => {
+    // P2-08：退出/移出是破坏性动作——请求期间禁用触发按钮（防重复提交），失败复位。
+    const doRemove = async (targetId: string, button: HTMLButtonElement) => {
+      button.disabled = true;
       setStatus(zh ? "处理中…" : "Working…", "saving");
       try {
         const res = await client.request<MirrorRemoveResult>(`${participantsPath}/${encodeURIComponent(targetId)}`, {
@@ -2756,16 +2805,31 @@ function bindConversationParticipantsPanel(
         if (signal.aborted) {
           return;
         }
+        button.disabled = false;
         setStatus(humanize(error), "error");
       }
-      void isSelf;
     };
 
-    body.querySelector<HTMLButtonElement>("[data-r18-participant-leave]")
-      ?.addEventListener("click", () => void doRemove(selfUserId, true), { signal });
+    // P2-08：退出/移出加两段式确认——单击只武装（改标签，5 秒回退），再点一次才真正 DELETE。
+    const leaveBtn = body.querySelector<HTMLButtonElement>("[data-r18-participant-leave]");
+    leaveBtn?.addEventListener(
+      "click",
+      () => armConfirmButton(leaveBtn, {
+        confirmLabel: zh ? "确认退出？再点一次" : "Leave — click again",
+        onConfirm: () => void doRemove(selfUserId, leaveBtn)
+      }),
+      { signal }
+    );
     body.querySelectorAll<HTMLButtonElement>("[data-r18-participant-remove]").forEach((btn) => {
       const targetId = btn.getAttribute("data-r18-participant-remove") ?? "";
-      btn.addEventListener("click", () => void doRemove(targetId, false), { signal });
+      btn.addEventListener(
+        "click",
+        () => armConfirmButton(btn, {
+          confirmLabel: zh ? "确认移出？再点一次" : "Remove — click again",
+          onConfirm: () => void doRemove(targetId, btn)
+        }),
+        { signal }
+      );
     });
     body.querySelector<HTMLButtonElement>("[data-r18-participant-refresh]")
       ?.addEventListener("click", () => void reload(), { signal });
@@ -2823,8 +2887,9 @@ function bindConversationParticipantsPanel(
       const [me, vm, users] = await Promise.all([
         client.me().catch(() => null),
         client.request<MirrorParticipantsVM>(participantsPath),
-        client.listUsers().then(
-          (value) => value.users.map((u) => ({ id: u.id, nickname: u.nickname })),
+        // 加人选择器数据源取工作区花名册（本工作区成员，非全局用户目录）。limit=100 取首页（roster 上限）。
+        client.request<WorkspaceRosterVM>("/api/workspace/roster?limit=100").then(
+          (value) => value.members.map((m) => ({ id: m.user_id, nickname: m.nickname })),
           () => [] as Array<{ id: string; nickname: string }>
         )
       ]);
@@ -2941,7 +3006,8 @@ function bindSettingsMembersRoster(
         return `<div class="wh-r4-route-row" data-r18-settings-member="${escapeHtml(member.user_id)}" data-r18-settings-member-role="${escapeHtml(member.role)}">
           <div><strong>${escapeHtml(member.nickname)}</strong><div class="wh-r4-route-meta"><span class="wh-pill">${escapeHtml(zh ? `加入于 ${joined}` : `Joined ${joined}`)}</span></div></div>
           <div class="wh-r4-route-meta">
-            <select data-r18-settings-member-role-select="${escapeHtml(member.user_id)}" aria-label="${escapeHtml(zh ? "角色" : "Role")}">${options}</select>
+            <select data-r18-settings-member-role-select="${escapeHtml(member.user_id)}" data-r18-settings-member-role-current="${escapeHtml(member.role)}" aria-label="${escapeHtml(zh ? "角色" : "Role")}">${options}</select>
+            <button type="button" class="wh-btn" data-r18-settings-member-role-confirm="${escapeHtml(member.user_id)}" hidden>${escapeHtml(zh ? "确认改角色" : "Confirm role")}</button>
             <button type="button" class="wh-btn" data-r18-settings-member-remove="${escapeHtml(member.user_id)}">${escapeHtml(zh ? "移出" : "Remove")}</button>
           </div>
         </div>`;
@@ -2960,39 +3026,101 @@ function bindSettingsMembersRoster(
       status.setAttribute("data-r18-settings-members-status", tone);
     };
 
+    // P2-08：破坏性成员动作加二次确认 + 请求期间锁整行控件（防误触、防重复提交）。移出走两段式确认按钮；
+    // 改角色走「选新角色（第一步）→ 点确认改角色（第二步）」——select 不再一改即提交。
+    // 按成员 id 定位同排的 select / 确认改角色 / 移出三个控件，请求期间一并禁用。
+    const rowControls = (targetId: string) => ({
+      select: body.querySelector<HTMLSelectElement>(`[data-r18-settings-member-role-select="${CSS.escape(targetId)}"]`),
+      roleConfirm: body.querySelector<HTMLButtonElement>(`[data-r18-settings-member-role-confirm="${CSS.escape(targetId)}"]`),
+      remove: body.querySelector<HTMLButtonElement>(`[data-r18-settings-member-remove="${CSS.escape(targetId)}"]`)
+    });
+    const setRowDisabled = (targetId: string, disabled: boolean) => {
+      const ctrls = rowControls(targetId);
+      if (ctrls.select) {
+        ctrls.select.disabled = disabled;
+      }
+      if (ctrls.roleConfirm) {
+        ctrls.roleConfirm.disabled = disabled;
+      }
+      if (ctrls.remove) {
+        ctrls.remove.disabled = disabled;
+      }
+    };
+
     body.querySelectorAll<HTMLButtonElement>("[data-r18-settings-member-remove]").forEach((btn) => {
       const targetId = btn.getAttribute("data-r18-settings-member-remove") ?? "";
       btn.addEventListener(
         "click",
         () => {
-          void (async () => {
-            setStatus(zh ? "处理中…" : "Working…", "saving");
-            try {
-              await client.request(`/api/workspace/members/${encodeURIComponent(targetId)}`, { method: "DELETE" });
-              if (signal.aborted) {
-                return;
-              }
-              void hydrate();
-            } catch (error) {
-              if (signal.aborted) {
-                return;
-              }
-              setStatus(humanize(error), "error");
+          armConfirmButton(btn, {
+            confirmLabel: zh ? "确认移出？再点一次" : "Remove — click again",
+            onConfirm: () => {
+              void (async () => {
+                setRowDisabled(targetId, true);
+                setStatus(zh ? "处理中…" : "Working…", "saving");
+                try {
+                  await client.request(`/api/workspace/members/${encodeURIComponent(targetId)}`, { method: "DELETE" });
+                  if (signal.aborted) {
+                    return;
+                  }
+                  void hydrate();
+                } catch (error) {
+                  if (signal.aborted) {
+                    return;
+                  }
+                  setRowDisabled(targetId, false);
+                  setStatus(humanize(error), "error");
+                }
+              })();
             }
-          })();
+          });
         },
         { signal }
       );
     });
 
+    // 改角色第一步：选新值即揭示「确认改角色」按钮（标出目标角色）；选回原值则收起——不 PATCH。
     body.querySelectorAll<HTMLSelectElement>("[data-r18-settings-member-role-select]").forEach((select) => {
       const targetId = select.getAttribute("data-r18-settings-member-role-select") ?? "";
-      const previous = select.value;
+      const originalRole = select.getAttribute("data-r18-settings-member-role-current") ?? select.value;
+      const confirmBtn = rowControls(targetId).roleConfirm;
       select.addEventListener(
         "change",
         () => {
+          if (!confirmBtn) {
+            return;
+          }
+          if (select.value === originalRole) {
+            confirmBtn.hidden = true;
+            return;
+          }
+          const nextLabel = roleLabels[select.value as SettingsMemberSummary["role"]]?.[zh ? 0 : 1] ?? select.value;
+          confirmBtn.textContent = zh ? `确认改为${nextLabel}` : `Confirm: ${nextLabel}`;
+          confirmBtn.hidden = false;
+        },
+        { signal }
+      );
+    });
+
+    // 改角色第二步：点确认才真正 PATCH，请求期间锁整行；失败回滚下拉、收起确认，不留「看起来改成功了」的假象。
+    body.querySelectorAll<HTMLButtonElement>("[data-r18-settings-member-role-confirm]").forEach((confirmBtn) => {
+      const targetId = confirmBtn.getAttribute("data-r18-settings-member-role-confirm") ?? "";
+      confirmBtn.addEventListener(
+        "click",
+        () => {
+          const ctrls = rowControls(targetId);
+          const select = ctrls.select;
+          if (!select) {
+            return;
+          }
+          const originalRole = select.getAttribute("data-r18-settings-member-role-current") ?? "";
           const nextRole = select.value;
+          if (nextRole === originalRole) {
+            confirmBtn.hidden = true;
+            return;
+          }
           void (async () => {
+            setRowDisabled(targetId, true);
             setStatus(zh ? "处理中…" : "Working…", "saving");
             try {
               await client.request(`/api/workspace/members/${encodeURIComponent(targetId)}`, {
@@ -3007,7 +3135,9 @@ function bindSettingsMembersRoster(
               if (signal.aborted) {
                 return;
               }
-              select.value = previous; // 改角色失败：回滚下拉，不留「看起来改成功了」的假象。
+              select.value = originalRole; // 回滚下拉
+              confirmBtn.hidden = true;
+              setRowDisabled(targetId, false);
               setStatus(humanize(error), "error");
             }
           })();
@@ -3037,11 +3167,52 @@ function bindSettingsMembersRoster(
 function bindSettingsInvites(container: HTMLElement, client: BrowserApiClient, zh: boolean, signal: AbortSignal) {
   const section = container.querySelector<HTMLElement>("[data-r18-settings-invites]");
   const body = section?.querySelector<HTMLElement>("[data-r18-settings-invites-body]");
+  // R20 P1-05：令牌展示区是 body 的持久兄弟节点（SSR 骨架里 [data-r18-settings-invite-token]），不在
+  // render() 重建 body.innerHTML 的域内——生成邀请后 showToken 写它、随即 hydrate() 重拉清单重建 body，
+  // 令牌盒毫发无损，始终可见可复制（修复此前 render 重建把令牌盒销毁的断链）。
+  const tokenBox = section?.querySelector<HTMLElement>("[data-r18-settings-invite-token]");
   if (!section || !body) {
     return;
   }
 
+  const clearToken = () => {
+    if (tokenBox) {
+      tokenBox.hidden = true;
+      tokenBox.innerHTML = "";
+    }
+  };
+  const showToken = (invite: SettingsInviteCreateResult) => {
+    if (!tokenBox) {
+      return;
+    }
+    tokenBox.hidden = false;
+    // 令牌盒自带状态行——复制反馈不依赖 body 内那条随 render 重建的状态行（否则重拉清单后引用即失效）。
+    tokenBox.innerHTML = `<p><strong>${escapeHtml(zh ? "邀请令牌（只显示这一次，请立即复制转交）：" : "Invite token (shown once — copy and hand it off now):")}</strong></p>
+      <code class="wh-r18-invite-token" data-r18-settings-invite-token-value style="word-break:break-all">${escapeHtml(invite.token)}</code>
+      <div class="wh-r4-route-meta"><button type="button" class="wh-btn" data-r18-settings-invite-copy="true">${escapeHtml(zh ? "复制令牌" : "Copy token")}</button></div>
+      <p class="wh-subtle">${escapeHtml(zh ? `发给 ${invite.email}，${formatDayStamp(invite.expires_at)} 前有效。` : `Send to ${invite.email}; valid until ${formatDayStamp(invite.expires_at)}.`)}</p>
+      <p class="wh-subtle" data-r18-settings-invite-token-status hidden></p>`;
+    const tokenStatus = tokenBox.querySelector<HTMLElement>("[data-r18-settings-invite-token-status]");
+    const setTokenStatus = (text: string) => {
+      if (tokenStatus) {
+        tokenStatus.hidden = false;
+        tokenStatus.textContent = text;
+      }
+    };
+    tokenBox.querySelector<HTMLButtonElement>("[data-r18-settings-invite-copy]")?.addEventListener(
+      "click",
+      () => {
+        void navigator.clipboard?.writeText(invite.token).then(
+          () => setTokenStatus(zh ? "已复制令牌。" : "Token copied."),
+          () => setTokenStatus(zh ? "复制失败，请手动选中复制。" : "Copy failed — select and copy manually.")
+        );
+      },
+      { signal }
+    );
+  };
+
   const renderDisabled = () => {
+    clearToken();
     body.innerHTML = `<p class="wh-subtle" data-r18-settings-invites-disabled="true">${escapeHtml(
       zh
         ? "邀请功能需要密码登录模式（当前工作区为昵称模式，无需邀请即可加入）。"
@@ -3062,7 +3233,7 @@ function bindSettingsInvites(container: HTMLElement, client: BrowserApiClient, z
           .map(
             (invite) => `<div class="wh-r4-route-row" data-r18-settings-invite="${escapeHtml(invite.invite_id)}">
               <div><strong>${escapeHtml(invite.email)}</strong></div>
-              <span class="wh-pill">${escapeHtml(zh ? `${formatDayStamp(invite.expires_at)} 过期` : `expires ${formatDayStamp(invite.expires_at)}`)}</span>
+              <div class="wh-r4-route-meta"><span class="wh-pill">${escapeHtml(zh ? `${formatDayStamp(invite.expires_at)} 过期` : `expires ${formatDayStamp(invite.expires_at)}`)}</span><button type="button" class="wh-btn" data-r18-settings-invite-revoke="${escapeHtml(invite.invite_id)}">${escapeHtml(zh ? "撤销" : "Revoke")}</button></div>
             </div>`
           )
           .join("")}</div>`
@@ -3072,12 +3243,10 @@ function bindSettingsInvites(container: HTMLElement, client: BrowserApiClient, z
         <button type="submit" class="wh-btn wh-btn-primary" data-r18-settings-invite-submit="true">${escapeHtml(zh ? "邀请" : "Invite")}</button>
       </form>
       <p class="wh-subtle" data-r18-settings-invite-status hidden></p>
-      <div data-r18-settings-invite-token hidden></div>
       <h4 role="heading" aria-level="3">${escapeHtml(zh ? "未过期邀请" : "Pending invites")}</h4>
       ${listHtml}`;
 
     const status = body.querySelector<HTMLElement>("[data-r18-settings-invite-status]");
-    const tokenBox = body.querySelector<HTMLElement>("[data-r18-settings-invite-token]");
     const setStatus = (text: string, tone: "saving" | "error") => {
       if (!status) {
         return;
@@ -3085,26 +3254,6 @@ function bindSettingsInvites(container: HTMLElement, client: BrowserApiClient, z
       status.hidden = false;
       status.textContent = text;
       status.setAttribute("data-r18-settings-invite-status", tone);
-    };
-    const showToken = (invite: SettingsInviteCreateResult) => {
-      if (!tokenBox) {
-        return;
-      }
-      tokenBox.hidden = false;
-      tokenBox.innerHTML = `<p><strong>${escapeHtml(zh ? "邀请令牌（只显示这一次，请立即复制转交）：" : "Invite token (shown once — copy and hand it off now):")}</strong></p>
-        <code class="wh-r18-invite-token" data-r18-settings-invite-token-value style="word-break:break-all">${escapeHtml(invite.token)}</code>
-        <div class="wh-r4-route-meta"><button type="button" class="wh-btn" data-r18-settings-invite-copy="true">${escapeHtml(zh ? "复制令牌" : "Copy token")}</button></div>
-        <p class="wh-subtle">${escapeHtml(zh ? `发给 ${invite.email}，${formatDayStamp(invite.expires_at)} 前有效。` : `Send to ${invite.email}; valid until ${formatDayStamp(invite.expires_at)}.`)}</p>`;
-      tokenBox.querySelector<HTMLButtonElement>("[data-r18-settings-invite-copy]")?.addEventListener(
-        "click",
-        () => {
-          void navigator.clipboard?.writeText(invite.token).then(
-            () => setStatus(zh ? "已复制令牌。" : "Token copied.", "saving"),
-            () => setStatus(zh ? "复制失败，请手动选中复制。" : "Copy failed — select and copy manually.", "error")
-          );
-        },
-        { signal }
-      );
     };
 
     body.querySelector<HTMLFormElement>("[data-r18-settings-invite-form]")?.addEventListener(
@@ -3127,11 +3276,11 @@ function bindSettingsInvites(container: HTMLElement, client: BrowserApiClient, z
             if (signal.aborted) {
               return;
             }
-            showToken(created);
+            showToken(created); // 写持久令牌盒（body 兄弟节点）
             if (input) {
               input.value = "";
             }
-            void hydrate(); // 重拉未过期清单，纳入刚建的这条。
+            void hydrate(); // 重拉未过期清单，纳入刚建的这条——重建 body，但令牌盒安然无恙。
           } catch (error) {
             if (signal.aborted) {
               return;
@@ -3150,6 +3299,40 @@ function bindSettingsInvites(container: HTMLElement, client: BrowserApiClient, z
       },
       { signal }
     );
+
+    // R20 P1-05：撤销未过期邀请——单击即软删（管理员操作，非用户可见破坏性动作，无需二段式），
+    // 请求期间禁用本行撤销按钮防重复提交，成功后重拉清单。
+    body.querySelectorAll<HTMLButtonElement>("[data-r18-settings-invite-revoke]").forEach((btn) => {
+      const inviteId = btn.getAttribute("data-r18-settings-invite-revoke") ?? "";
+      btn.addEventListener(
+        "click",
+        () => {
+          void (async () => {
+            btn.disabled = true;
+            setStatus(zh ? "撤销中…" : "Revoking…", "saving");
+            try {
+              await client.request(`/api/auth/invites/${encodeURIComponent(inviteId)}`, { method: "DELETE" });
+              if (signal.aborted) {
+                return;
+              }
+              void hydrate();
+            } catch (error) {
+              if (signal.aborted) {
+                return;
+              }
+              btn.disabled = false;
+              if (error instanceof WorkHubApiError && error.status === 404) {
+                // 已被别处撤销/接受——直接刷新清单，不当错误吓人。
+                void hydrate();
+                return;
+              }
+              setStatus(zh ? "撤销失败，请稍后重试。" : "Couldn't revoke — try again later.", "error");
+            }
+          })();
+        },
+        { signal }
+      );
+    });
   };
 
   const hydrate = async () => {
@@ -4410,6 +4593,132 @@ async function submitOnboarding(client: BrowserApiClient, locale: WorkHubLocale)
   }
 }
 
+// R20 P1-05：邀请接受落地页（/invite，未登录可达）。boot() 在识别流之前特判此路径，渲染独立接受屏，
+// 不进 SPA 路由注册表（避免动 routeMatchers/routeTree 计数）。成功后服务端已 mint 会话 cookie，
+// location.assign("/") 触发一次全新 boot()，以新账号身份进入工作台。
+function inviteTokenFromLocation(): string {
+  try {
+    return new URLSearchParams(window.location.search).get("token")?.trim() ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function showInviteAcceptScreen(
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  input: { errorText?: string; presetToken?: string } = {}
+) {
+  if (!root) {
+    return;
+  }
+  activeRouteRenderId += 1;
+  clearReadyRouteBindings();
+  liveRuntime?.closeAllLiveEventSources();
+  liveRuntime = undefined;
+  unmountReactRouteIsland();
+  clearLiveDirtyMetrics();
+  currentIdentity = undefined;
+  activeLocale = locale;
+  setDocumentLocale(locale);
+  const token = input.presetToken ?? inviteTokenFromLocation();
+  root.innerHTML = renderInviteAcceptScreen({
+    locale,
+    ...(token ? { token } : {}),
+    ...(input.errorText ? { errorText: input.errorText } : {})
+  }).html;
+  bindInviteAcceptScreen(client, locale);
+}
+
+function bindInviteAcceptScreen(client: BrowserApiClient, locale: WorkHubLocale) {
+  if (!root) {
+    return;
+  }
+  const tokenInput = root.querySelector<HTMLInputElement>("[data-r20-invite-accept-token]");
+  (tokenInput?.value.trim()
+    ? root.querySelector<HTMLInputElement>("[data-r20-invite-accept-nickname]")
+    : tokenInput)?.focus();
+  for (const option of root.querySelectorAll<HTMLButtonElement>("[data-r20-invite-accept-locale-option]")) {
+    option.addEventListener("click", (event) => {
+      event.preventDefault();
+      const nextLocale = normalizeWorkHubLocale(option.getAttribute("data-r20-invite-accept-locale-option"));
+      if (nextLocale === locale) {
+        return;
+      }
+      persistBrowserLocale(nextLocale);
+      // 切语言重渲染时保留已填的令牌（昵称/密码敏感字段不跨渲染搬运）。
+      showInviteAcceptScreen(client, nextLocale, {
+        ...(tokenInput?.value.trim() ? { presetToken: tokenInput.value.trim() } : {})
+      });
+    });
+  }
+  root.querySelector<HTMLFormElement>("[data-r20-invite-accept-form]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void submitInviteAccept(client, locale);
+  });
+}
+
+async function submitInviteAccept(client: BrowserApiClient, locale: WorkHubLocale) {
+  if (!root) {
+    return;
+  }
+  const tokenInput = root.querySelector<HTMLInputElement>("[data-r20-invite-accept-token]");
+  const nicknameInput = root.querySelector<HTMLInputElement>("[data-r20-invite-accept-nickname]");
+  const passwordInput = root.querySelector<HTMLInputElement>("[data-r20-invite-accept-password]");
+  const token = tokenInput?.value.trim() ?? "";
+  const nickname = nicknameInput?.value.trim() ?? "";
+  const password = passwordInput?.value ?? "";
+  const missing = !token
+    ? (locale === "en-US" ? "Paste your invite token first." : "请先粘贴邀请令牌。")
+    : !nickname
+      ? (locale === "en-US" ? "Please enter a nickname." : "请填写昵称。")
+      : password.length < 8
+        ? (locale === "en-US" ? "Password must be at least 8 characters." : "密码至少 8 位。")
+        : "";
+  if (missing) {
+    showInviteAcceptScreen(client, locale, { errorText: missing, presetToken: token });
+    return;
+  }
+  const submit = root.querySelector<HTMLButtonElement>("[data-r20-invite-accept-submit]");
+  if (submit) {
+    submit.disabled = true;
+  }
+  try {
+    await client.request("/api/auth/invites/accept", {
+      method: "POST",
+      body: JSON.stringify({ token, nickname, password })
+    });
+    persistBrowserLocale(locale);
+    // 接受成功 = 服务端已建号 + mint 会话 cookie。整页跳回工作台，全新 boot() 以新身份进入。
+    window.location.assign("/");
+  } catch (error) {
+    if (submit) {
+      submit.disabled = false;
+    }
+    const errorText = inviteAcceptErrorText(error, locale);
+    showInviteAcceptScreen(client, locale, { errorText, presetToken: token });
+  }
+}
+
+function inviteAcceptErrorText(error: unknown, locale: WorkHubLocale): string {
+  const zh = locale !== "en-US";
+  if (error instanceof WorkHubApiError) {
+    if (error.status === 404) {
+      return zh ? "邀请无效或已过期，请向管理员索取新的邀请。" : "This invite is invalid or expired — ask your admin for a new one.";
+    }
+    if (error.status === 409) {
+      return zh ? "该邮箱已注册，请直接登录。" : "That email is already registered — sign in instead.";
+    }
+    if (error.status === 400) {
+      return error.message || (zh ? "密码太弱或信息有误，请检查后重试。" : "The password is too weak or a field is invalid — check and retry.");
+    }
+    if (error.message) {
+      return error.message;
+    }
+  }
+  return zh ? "接受邀请失败，请稍后重试。" : "Couldn't accept the invite — try again later.";
+}
+
 async function renderCurrentRouteOrOnboard(client: BrowserApiClient, locale: WorkHubLocale, options: { silent?: boolean } = {}) {
   try {
     await renderCurrentRoute(client, locale, options);
@@ -4438,6 +4747,12 @@ async function boot() {
     // R10-P1-5：不设超时 = 一个挂死的请求把全局动作锁焊死到刷新。60s 上限盖住最慢的 LLM 动作
     // （intake 追问/建计划），超时抛错走各分支既有的 error notice + finally 复位锁。
     const client = createApiClient({ baseUrl: "", requestTimeoutMs: 60_000 });
+    // R20 P1-05：/invite 是公开的邀请接受落地页——在识别流之前特判，未登录也可达。渲染独立接受屏后
+    // 直接返回，不进 me() 识别 / SPA 路由渲染（成功接受后由 location.assign("/") 触发全新 boot 进工作台）。
+    if (window.location.pathname === "/invite") {
+      showInviteAcceptScreen(client, locale);
+      return;
+    }
     // 先挂导航监听，再渲染：否则首次渲染抛错时这两个监听永远注册不上，
     // 整个会话的前进/后退会静默失效（即便用户已从首屏错误中恢复）。
     window.addEventListener("popstate", () => {

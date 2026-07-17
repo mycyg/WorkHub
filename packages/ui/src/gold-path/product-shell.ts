@@ -460,8 +460,10 @@ export const productNavGroups: ReadonlyArray<{
   { id: "assets", titleKey: "nav.group.assets", keys: new Set(["drive", "meetings", "knowledge", "search"]), collapsible: true },
   // R14 批 MEM：记忆管理面对全体成员可读（团队技能 tab 的编辑/停用才收管理员），不进 adminOnly
   // 的 admin 组——否则普通成员连「关于我」自己的记忆都点不到导航入口（见 03-mem-design §6.1）。
-  { id: "team", titleKey: "nav.group.team", keys: new Set(["notifications", "calendar", "health", "memory"]), collapsible: true },
-  { id: "admin", titleKey: "nav.group.admin", keys: new Set(["cost", "agents", "skills", "settings"]), adminOnly: true, collapsible: true }
+  // R20 P1-06：settings 同理移出 adminOnly——个人设置（头像/资料/语言/AI 模式）人人可用，此前误锁进 admin
+  // 组致普通成员根本进不了自己的资料页；页内「团队成员/邀请」子区仍按 isAdmin 门控（renderSettingsRouteComponent）。
+  { id: "team", titleKey: "nav.group.team", keys: new Set(["notifications", "calendar", "health", "memory", "settings"]), collapsible: true },
+  { id: "admin", titleKey: "nav.group.admin", keys: new Set(["cost", "agents", "skills"]), adminOnly: true, collapsible: true }
 ];
 
 // R10-S3：状态壳(loading/error/403/404)只需要 key/route/title 渲导航——放宽到最小形状，
