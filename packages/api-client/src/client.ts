@@ -370,6 +370,12 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    // 桌面凭据登录（密码/hybrid 模式）：明文密码只走请求体，建会话 cookie（credentials: include），随后 bootstrapDesktop 据会话换 client_token。
+    login: (payload) =>
+      request<IdentityResponse>("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
     bootstrapDesktop: (payload) =>
       request("/api/auth/desktop-bootstrap", {
         method: "POST",

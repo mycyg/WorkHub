@@ -293,7 +293,39 @@ export function createAuthRoutes(
   routes.post("/desktop-bootstrap", async (c) => {
     const deps = resolveAuthDependencies(source);
     if (passwordModeEnabled(deps)) {
-      throw new HTTPException(404, { message: "桌面引导在当前认证模式下不可用" });
+      // P1-02（REL-5）：密码/hybrid 模式下桌面不能昵称自助引导，但仍需要一条可用登录链路。
+      // 本端点在密码模式改为「凭已建立的会话换设备令牌」的 exchange：用户先经既有 /api/auth/login
+      // 建会话（cookie），桌面再打这一条把会话换成后续请求走 header 的 client_token——桌面跨源
+      // (tauri://localhost→127.0.0.1) 不能靠 SameSite=Lax cookie 鉴权，必须持 token 走 header
+      // （见 middleware/auth.ts 顶注）。不新造鉴权：会话校验完全复用 resolveCurrentUser。
+      // 本路径已在 CSRF 同源守卫豁免（middleware/csrf.ts 的 desktop-bootstrap），桌面跨源 POST 得以送达；
+      // 会话 cookie 的 SameSite=Lax 仍是这条豁免路径的 CSRF 防线（跨站攻击页发不出带会话的请求 →
+      // 下面解析不到用户 → 404 拒），故豁免不新增 CSRF 面。
+      // 无有效会话（首启尚未登录 / 会话过期）→ 404 拒（沿用本端点既有「当前模式不可用」语义，桌面据此
+      // 渲凭据登录表单，登录后重打本端点）；持垃圾 client token → resolveOptionalCurrentUser 冒泡 403 拒。
+      const user = await resolveOptionalCurrentUser(c, deps);
+      if (!user) {
+        throw new HTTPException(404, { message: "桌面引导在密码模式下需要先用凭据登录" });
+      }
+      const payload = desktopBootstrapRequestSchema.parse(await readJsonObject(c));
+      // ENV-01：同 nickname 引导幂等确保默认工作区 active membership，否则换到 token 也进不了任何会话。
+      await ensureDefaultWorkspaceMembership(deps, user.id);
+      const token = makeClientToken();
+      const device = await deps.devices.createClientDevice({
+        userId: user.id,
+        deviceName: payload.device_name.trim(),
+        platform: (payload.platform ?? "desktop").trim().slice(0, 64) || "desktop",
+        clientTokenHash: hashClientToken(token),
+        lastSeenAt: (deps.now ?? (() => new Date()))()
+      });
+      return c.json(
+        {
+          identity: toIdentityResponse(user, false),
+          device: toClientDeviceResponse(device),
+          client_token: token
+        },
+        201
+      );
     }
     const payload = desktopBootstrapRequestSchema.parse(await readJsonObject(c));
     const nickname = validateNickname(payload.nickname);
