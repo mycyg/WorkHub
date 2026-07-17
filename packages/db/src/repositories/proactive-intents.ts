@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, inArray, isNull, lte, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
 
 import type { WorkItemStatus } from "@workhub/contracts";
 
@@ -16,6 +16,8 @@ import {
 // 追 DDL 阶梯的候选扫描。服务层（apps/api/src/services/proactive-intents.ts / ddl-chase.ts）据此
 // 「先记 intent 再投递」，纯规则、无 LLM。抑制/频控/阶梯判定全部留在应用层，这层只把数据老实搬出/落。
 
+export type ProactiveIntentStatus = "created" | "delivered" | "suppressed";
+
 export type RecordProactiveIntentInput = {
   workspaceId: string;
   projectId: string | null;
@@ -25,20 +27,28 @@ export type RecordProactiveIntentInput = {
   targetUserId: string | null;
   suppressionKey: string;
   payload: Record<string, unknown>;
+  // R20 REL-2（#P1-11）：重投所需的投递上下文（通道/文案/降级/通知草稿）——落库以便崩溃后恢复扫描重建
+  // intent。可空（历史调用不给则不落，恢复扫描据此判为不可重建）。见 services/proactive-intents.ts。
+  deliveryPayload?: Record<string, unknown> | null;
   at: Date;
   // 测试可注入确定性 id；生产默认 randomUUID（id 列无 DB 默认值，见 0063）。
   id?: string;
 };
 
 export type RecordProactiveIntentResult = {
-  // false = suppression_key 撞唯一约束（这件事此前已记过）→ 幂等跳过，不重投。
+  // false = suppression_key 撞唯一约束（这件事此前已记过）。
   created: boolean;
-  // 撞约束时无新行，id 为 undefined（调用方 created=false 分支不需要它）。
+  // 新插入时=新行 id；撞约束时=既有行 id（R20 REL-2 崩溃恢复要据既有行状态判定，故回带）。
   id?: string;
+  // R20 REL-2（#P1-11）：撞约束时回带既有行状态——'created' 说明是「落 intent 后、投递前崩溃」的可恢复
+  // 行（调用方据此恢复投递），'delivered'/'suppressed' 才是真 duplicate。新插入时为 undefined。
+  status?: ProactiveIntentStatus;
 };
 
 // 「先记 intent」：INSERT ... ON CONFLICT (suppression_key) DO NOTHING RETURNING id。
-// 撞唯一约束返回空数组 → created=false（已处理过）。这是全链幂等的单一真相源。
+// 新插入 → created=true。撞唯一约束（返回空数组）→ 回查既有行的 id + status：R20 REL-2 前只返回
+// created=false 就丢掉了既有行信息，导致「投递前崩溃、行停在 created」的行被永久当成 duplicate 去重。
+// 现在回带 { created:false, id, status } 让服务层区分「可恢复的 created」与「真 duplicate」。
 export async function recordProactiveIntent(
   db: WorkHubDb,
   input: RecordProactiveIntentInput
@@ -55,13 +65,34 @@ export async function recordProactiveIntent(
       targetUserId: input.targetUserId,
       suppressionKey: input.suppressionKey,
       payload: input.payload,
+      ...(input.deliveryPayload !== undefined && input.deliveryPayload !== null
+        ? { deliveryPayload: input.deliveryPayload }
+        : {}),
       status: "created",
       createdAt: input.at
     })
     .onConflictDoNothing({ target: proactiveIntents.suppressionKey })
     .returning({ id: proactiveIntents.id });
-  const row = rows[0];
-  return row ? { created: true, id: row.id } : { created: false };
+  const inserted = rows[0];
+  if (inserted) {
+    return { created: true, id: inserted.id };
+  }
+  // 撞唯一约束——回查既有行（不改动它，避免覆盖既有终态/投递上下文）。
+  const existingRows = await db
+    .select({ id: proactiveIntents.id, status: proactiveIntents.status })
+    .from(proactiveIntents)
+    .where(eq(proactiveIntents.suppressionKey, input.suppressionKey))
+    .limit(1);
+  const existing = existingRows[0];
+  return existing
+    ? { created: false, id: existing.id, status: normalizeStatus(existing.status) }
+    : { created: false };
+}
+
+// status 列有 check 约束限定 created/delivered/suppressed——收窄类型（越界值兜底按 created，宁可多恢复
+// 一次也不误判成终态而丢投）。
+function normalizeStatus(raw: string): ProactiveIntentStatus {
+  return raw === "delivered" || raw === "suppressed" ? raw : "created";
 }
 
 // 每人每日频控：某 target 在 [from, to) 区间内已 delivered 的 intent 数（当日=服务器本地日，区间由
@@ -171,6 +202,86 @@ export async function markProactiveIntentStatus(
       status: input.status,
       ...(input.deliveredVia ? { deliveredVia: input.deliveredVia } : {})
     })
+    .where(eq(proactiveIntents.id, input.id));
+}
+
+// ── R20 REL-2（#P1-11）：崩溃恢复兜底扫描 ──────────────────────────────────────────────────
+//
+// 「落 intent 后、投递前进程崩溃」的行永远停在 created。同 key 重试能救回大部分（见服务层），但没有重试的
+// 那些要靠 pulse 任务 proactive-intent-recovery 定期扫回来重投。
+
+export type RecoverableProactiveIntentRow = {
+  id: string;
+  workspaceId: string;
+  projectId: string | null;
+  workItemId: string | null;
+  kind: string;
+  stage: string | null;
+  targetUserId: string | null;
+  suppressionKey: string;
+  payload: Record<string, unknown>;
+  // record 时落库的投递上下文；历史行为 null → 服务层重建不出、直接判 stalled。
+  deliveryPayload: Record<string, unknown> | null;
+  attemptCount: number;
+  createdAt: Date;
+};
+
+// 扫「停在 created、够旧（created_at 早于 olderThanMs，给直投路径留出完成窗口，避免抢在途中的行）、
+// 重投次数未达上限（attempt_count < maxAttempts）」的行，最旧优先，limit 封顶。返回重投所需全字段。
+export async function listRecoverableProactiveIntents(
+  db: WorkHubDb,
+  input: { now: Date; olderThanMs: number; maxAttempts: number; limit: number }
+): Promise<RecoverableProactiveIntentRow[]> {
+  const cutoff = new Date(input.now.getTime() - input.olderThanMs);
+  const rows = await db
+    .select({
+      id: proactiveIntents.id,
+      workspaceId: proactiveIntents.workspaceId,
+      projectId: proactiveIntents.projectId,
+      workItemId: proactiveIntents.workItemId,
+      kind: proactiveIntents.kind,
+      stage: proactiveIntents.stage,
+      targetUserId: proactiveIntents.targetUserId,
+      suppressionKey: proactiveIntents.suppressionKey,
+      payload: proactiveIntents.payload,
+      deliveryPayload: proactiveIntents.deliveryPayload,
+      attemptCount: proactiveIntents.attemptCount,
+      createdAt: proactiveIntents.createdAt
+    })
+    .from(proactiveIntents)
+    .where(
+      and(
+        eq(proactiveIntents.status, "created"),
+        lt(proactiveIntents.createdAt, cutoff),
+        lt(proactiveIntents.attemptCount, input.maxAttempts)
+      )
+    )
+    .orderBy(asc(proactiveIntents.createdAt))
+    .limit(input.limit);
+  return rows.map((row) => ({
+    id: row.id,
+    workspaceId: row.workspaceId,
+    projectId: row.projectId,
+    workItemId: row.workItemId,
+    kind: row.kind,
+    stage: row.stage,
+    targetUserId: row.targetUserId,
+    suppressionKey: row.suppressionKey,
+    payload: (row.payload ?? {}) as Record<string, unknown>,
+    deliveryPayload: (row.deliveryPayload ?? null) as Record<string, unknown> | null,
+    attemptCount: row.attemptCount,
+    createdAt: row.createdAt
+  }));
+}
+
+// 恢复扫描每重投一次就把该行 attempt_count 原子自增 1（在 SQL 里 attempt_count + 1，不依赖读到的旧值）。
+export async function incrementProactiveIntentAttempt(
+  db: WorkHubDb,
+  input: { id: string }
+): Promise<void> {
+  await db
+    .update(proactiveIntents)
+    .set({ attemptCount: sql`${proactiveIntents.attemptCount} + 1` })
     .where(eq(proactiveIntents.id, input.id));
 }
 
