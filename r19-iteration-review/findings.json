@@ -190,6 +190,10 @@
         "real": true,
         "adjusted_severity": "medium",
         "reason": "POST /invites(:535)与/accept(:576)真实且生产注入invites仓库、revoke(:83)无路由调用,三端grep invite零命中确无UI,be-no-frontend核心成立;仅证据594行「GET /invites面板追踪」有误(无此路由)削弱次要合并项,不推翻主发现,medium公允。"
+      },
+      "lead_verdict": {
+        "corrected": true,
+        "reason": "web 创建+待接受清单已由 R18-H1 交付(browser.ts:2849+,密码模式),原「三端零接线」不实;真实缺口=接受落地页/撤销路由/桌面入口,且 codex P1-05 证实 token 被列表重渲抹掉"
       }
     },
     {
@@ -1780,6 +1784,7 @@
       "R19-42",
       "R19-19",
       "R19-22"
-    ]
+    ],
+    "corrected": 1
   }
 }
