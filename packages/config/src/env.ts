@@ -122,8 +122,13 @@ export const envSchema = z.object({
   // 环境用，需确定性可重放 stub client，绝不在生产双倍调 LLM）。默认 off——把真实 task role 切到 on 需先补齐
   // L3（manifest/评审在 Phase 2 由 loop2 复用 loop.ts 的 finalizeL3 产出，见 03-batch-c-engine.md）。
   AGENT_RUN_LOOP2_MODE: z.enum(["off", "shadow-assert", "on"]).default("off"),
-  // R15 批 C Phase 4（Cuu 对话轮次迁 loop2 + steering/follow-up 队列）。默认 off=生产零变化。
-  CONVERSATION_TURN_LOOP2_MODE: z.enum(["off", "on"]).default("off"),
+  // R15 批 C Phase 4（Cuu 对话轮次迁 loop2 + steering/follow-up 队列）。R20 起默认 on：R18 真 key 冒烟
+  // 放行（连发不再 409、steering 折入同轮、超限兜底不丢消息）+ R20 补齐 usage/elapsed 戳失回归(loop2-abort
+  // 线)。硬约束：对话队列闸/activeTurns 是进程内状态，多 API 实例部署下退化 best-effort——当前单进程
+  // 部署 sound；上多实例前需外置队列闸。回退口：置 off 即回 legacy 路。
+  // 注：AGENT_RUN_LOOP2_MODE 仍默认 off——abort parity 已修，但约 40 条 agent-run 单测断言 legacy 行为，
+  // schema 级翻 on 需专门迁移那批测试(独立排期)；生产可经部署 env 置 on 启用(引擎等价性由 shadow-assert 守)。
+  CONVERSATION_TURN_LOOP2_MODE: z.enum(["off", "on"]).default("on"),
   CONVERSATION_TURN_QUEUE_MAX_DEPTH: z.coerce.number().int().positive().default(3),
 
   // R15 批 A（统一调度器 Pulse）：周期任务总开关（默认开）+ 各任务 tick 间隔。间隔置 0 = 该任务不启

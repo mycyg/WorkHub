@@ -16,6 +16,19 @@ test("defaults are portable and PostgreSQL-first", () => {
   assert.equal(JSON.stringify(value).includes("/srv/yqgl"), false);
 });
 
+test("R20: loop2 defaults — conversation turns on, agent-run off (guards against silent drift)", () => {
+  const value = loadSettings({});
+
+  // R20 起对话轮默认走 loop2（usage/elapsed 戳失回归已在 loop2-abort 线补齐；R18 真 key 冒烟放行）。
+  assert.equal(value.conversationTurns.loop2Mode, "on");
+  // agent-run 保持 legacy 默认——abort parity 虽已修，但约 40 条 agent-run 单测断言 loop.ts 行为，
+  // schema 级翻 on 需专门迁移那批测试（独立排期）；生产可经部署 env 覆盖。
+  assert.equal(value.agentRun.loop2Mode, "off");
+  // 覆盖仍生效（回退口/生产启用口）。
+  assert.equal(loadSettings({ CONVERSATION_TURN_LOOP2_MODE: "off" }).conversationTurns.loop2Mode, "off");
+  assert.equal(loadSettings({ AGENT_RUN_LOOP2_MODE: "on" }).agentRun.loop2Mode, "on");
+});
+
 test("keeps provider and budget defaults available", () => {
   const value = loadSettings({});
 
