@@ -814,11 +814,17 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
     const workingRuns = surface.attention.background_runs.filter(
       (run) => run.state === "running" || run.state === "queued"
     ).length;
-    const projectCount = surface.projects?.projects.length ?? 0;
-    const openItems = surface.projects?.projects.reduce((sum, project) => sum + project.open_work_item_count, 0) ?? 0;
+    // P1-07：项目清单是独立于 attention 的并行拉取。加载失败时 surface.projects 为 undefined——此时
+    // 项目数/开放事项是「未知」而非「零」，用「—」占位、不参与零值统计，避免把「加载失败」谎报成「你没有项目」。
+    const projectsLoaded = surface.projects !== undefined;
+    const dash = "—";
+    const projectCount = projectsLoaded ? String(surface.projects!.projects.length) : dash;
+    const openItems = projectsLoaded
+      ? String(surface.projects!.projects.reduce((sum, project) => sum + project.open_work_item_count, 0))
+      : dash;
     return [
-      metric(locale, "projects", String(projectCount)),
-      metric(locale, "openwork", String(openItems)),
+      metric(locale, "projects", projectCount),
+      metric(locale, "openwork", openItems),
       metric(locale, "attention", String(workingRuns + queueRest + (surface.attention.primary ? 1 : 0)))
     ];
   }
@@ -1477,7 +1483,14 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
       }),
       listProjectsDeduped(client).then(
         (value): ProjectListVM => value,
-        (): ProjectListVM => ({ generated_at: new Date().toISOString(), projects: [] })
+        (error: unknown): ProjectListVM => {
+          // P1-07：会话过期(not_identified)必须冒泡去重认证——此前一并吞掉，会让掉线用户看到「空项目切换器」
+          // 而非重新登录（与 home/drive 的 not_identified 冒泡口径对齐）。其余错误照旧退化为空清单。
+          if (error instanceof WorkHubApiError && error.code === "not_identified") {
+            throw error;
+          }
+          return { generated_at: new Date().toISOString(), projects: [] };
+        }
       )
     ]);
     if (meetings.empty_state === "no_project") {

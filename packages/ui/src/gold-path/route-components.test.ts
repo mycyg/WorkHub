@@ -2742,6 +2742,19 @@ test("R18-H1 settings members section is admin-gated: SSR skeleton only when isA
   const asAdminEn = renderWebRouteComponent({ key: "settings", settings: settingsVm, isAdmin: true }, { locale: "en-US" });
   assert.equal(asAdminEn.html.includes("Loading members"), true);
   assert.equal(asAdminEn.html.includes("Invite members"), true);
+
+  // R20 P1-05（令牌存活根因）：一次性令牌展示区必须是 SSR 骨架里的持久节点，且是
+  // [data-r18-settings-invites-body] 的**兄弟**（不在 body 内）——body 才是 browser.ts hydrate()
+  // 每次重拉未过期清单时 innerHTML 重建的域。令牌盒在 body 之外，故「创建成功→重刷清单」不会销毁它，
+  // 令牌持续可见可复制。修复前令牌盒由 browser.ts render 注入进 body、随重建被销毁——此断言即那道防线。
+  const tokenIdx = asAdmin.html.indexOf('data-r18-settings-invite-token="true"');
+  const bodyIdx = asAdmin.html.indexOf('data-r18-settings-invites-body="true"');
+  assert.notEqual(tokenIdx, -1, "SSR skeleton carries a persistent token display node");
+  assert.equal(tokenIdx > bodyIdx, true, "token node is a sibling rendered after the invites body, not nested inside a rebuilt body");
+  // body 的加载态骨架里不含令牌节点（证明它确在 body 之外，不会被 body 重建牵连）。
+  const bodyOpen = asAdmin.html.indexOf(">", bodyIdx);
+  const bodyClose = asAdmin.html.indexOf("</div>", bodyOpen);
+  assert.equal(asAdmin.html.slice(bodyOpen, bodyClose).includes("data-r18-settings-invite-token"), false);
 });
 
 // R13 批 P3（功能审查 B4）：web /settings 的「AI 助手」区块——default_mode 与 dispatch_policy 两个

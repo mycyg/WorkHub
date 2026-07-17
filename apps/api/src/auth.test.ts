@@ -2144,6 +2144,81 @@ test("invite list requires admin (403) and rejects non-pending status (400)", as
   assert.equal(badStatus.status, 400);
 });
 
+// R20 P1-05：DELETE /api/auth/invites/:inviteId —— 管理员撤销本工作区一条未过期邀请（软删）。
+test("invite revoke soft-deletes a pending invite and drops it from the pending list", async () => {
+  const admin = user({ id: "10000000-0000-4000-8000-0000000000c1", nickname: "admin", isAdmin: true });
+  const { deps, invites, memberships, runtimeSettings } = inviteCtx(admin);
+  const workspaceId = runtimeSettings.auth.defaultWorkspaceId;
+  await memberships.create({ workspaceId, userId: admin.id, role: "owner", defaultWorkspace: true });
+  const { token: adminToken } = await mintSession(deps, admin, { authMethod: "password" });
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+  const cookie = await signedCookie(adminToken, runtimeSettings);
+
+  const created = await invites.create({
+    email: "revoke-me@example.com",
+    tokenHash: "hash-revoke-me",
+    workspaceId,
+    expiresAt: new Date(now.getTime() + 1_000_000)
+  });
+
+  const revokeRes = await app.request(`/auth/invites/${created.id}`, { method: "DELETE", headers: { Cookie: cookie } });
+  assert.equal(revokeRes.status, 200);
+  const body = (await revokeRes.json()) as { ok: boolean; invite_id: string };
+  assert.equal(body.ok, true);
+  assert.equal(body.invite_id, created.id);
+  assert.equal(invites.rows[0]?.deletedAt !== null, true, "invite soft-deleted (deletedAt set)");
+
+  const listRes = await app.request("/auth/invites?status=pending", { headers: { Cookie: cookie } });
+  const listBody = (await listRes.json()) as { invites: Array<Record<string, unknown>> };
+  assert.equal(listBody.invites.length, 0, "revoked invite no longer appears in the pending list");
+});
+
+test("invite revoke: member 403; foreign-workspace / unknown / already-revoked id 404 (no cross-tenant revoke)", async () => {
+  const admin = user({ id: "10000000-0000-4000-8000-0000000000c2", nickname: "admin", isAdmin: true });
+  const member = user({ id: "10000000-0000-4000-8000-0000000000c3", nickname: "member" });
+  const { deps, users, invites, memberships, runtimeSettings } = inviteCtx(admin);
+  (users as unknown as { rows: UserAuthRow[] }).rows.push(member);
+  const workspaceId = runtimeSettings.auth.defaultWorkspaceId;
+  await memberships.create({ workspaceId, userId: admin.id, role: "owner", defaultWorkspace: true });
+  const { token: adminToken } = await mintSession(deps, admin, { authMethod: "password" });
+  const { token: memberToken } = await mintSession(deps, member, { authMethod: "password" });
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+  const adminCookie = await signedCookie(adminToken, runtimeSettings);
+
+  // 别的工作区的活跃邀请——管理员据 id 也不能撤（listPending 谓词按 actor.workspaceId 隔离）。
+  const foreign = await invites.create({
+    email: "foreign@example.com",
+    tokenHash: "hash-foreign",
+    workspaceId: "99990000-0000-4000-8000-0000000000ff",
+    expiresAt: new Date(now.getTime() + 1_000_000)
+  });
+  // 本工作区一条已撤销的邀请——重复撤销幂等 404。
+  const alreadyRevoked = await invites.create({
+    email: "already@example.com",
+    tokenHash: "hash-already",
+    workspaceId,
+    expiresAt: new Date(now.getTime() + 1_000_000)
+  });
+  await invites.revoke(alreadyRevoked.id, now);
+
+  const byMember = await app.request(`/auth/invites/${foreign.id}`, { method: "DELETE", headers: { Cookie: await signedCookie(memberToken, runtimeSettings) } });
+  assert.equal(byMember.status, 403);
+
+  const foreignByAdmin = await app.request(`/auth/invites/${foreign.id}`, { method: "DELETE", headers: { Cookie: adminCookie } });
+  assert.equal(foreignByAdmin.status, 404, "an invite from another workspace is not revocable");
+  assert.equal(invites.rows.find((row) => row.id === foreign.id)?.deletedAt, null, "foreign invite untouched");
+
+  const unknownByAdmin = await app.request(`/auth/invites/10000000-0000-4000-8000-000000000999`, { method: "DELETE", headers: { Cookie: adminCookie } });
+  assert.equal(unknownByAdmin.status, 404);
+
+  const revokeAgain = await app.request(`/auth/invites/${alreadyRevoked.id}`, { method: "DELETE", headers: { Cookie: adminCookie } });
+  assert.equal(revokeAgain.status, 404, "revoking an already-revoked invite is an idempotent 404");
+});
+
 // ——— 团队就绪 gap[41]：安全/身份事件审计 ———
 
 // auditLogs 写必抛——验「尽力而为」：审计失败绝不破坏认证主流程的状态码/响应体。
