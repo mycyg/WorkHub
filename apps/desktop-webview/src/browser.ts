@@ -182,6 +182,22 @@ function pushShellBadgeToShell(count: number, locale: WorkHubLocale): void {
   }
 }
 
+// R19-13：应用内切语言时把新 locale 推给 Rust 壳层（set_shell_locale）——原生托盘菜单/tooltip 重建为新语言，
+// 后续 OS 通知兜底文案也跟随（壳层通知 worker 每次弹通知实时读同一 locale 源）。此前语言开关只改 webview 的
+// localStorage + reload，到不了外壳，切成英文后托盘/通知仍是中文。浏览器 dev 态无 __TAURI__ → 优雅降级 no-op。
+function pushShellLocaleToShell(locale: WorkHubLocale): void {
+  const tauri = (globalThis as {
+    __TAURI__?: {
+      core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
+      invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
+    };
+  }).__TAURI__;
+  const invoke = tauri?.core?.invoke ?? tauri?.invoke;
+  if (typeof invoke === "function") {
+    void invoke("set_shell_locale", { locale }).catch(() => undefined);
+  }
+}
+
 // P1-02（REL-5）：昵称模式成功=拿到 token(ready)；密码/hybrid 模式 desktop-bootstrap 会 404 →
 // 需要凭据登录(needs-credentials)，不再当「离线」静默吞；后端不可达等=unavailable。
 type DesktopBootstrapOutcome = "ready" | "needs-credentials" | "unavailable";
@@ -446,12 +462,17 @@ function bindLocaleSwitch(shellRoot: HTMLElement, locale: WorkHubLocale, client:
       return;
     }
     persistBrowserLocale(nextLocale);
+    // R19-13：立即把新 locale 同步给原生外壳（托盘/通知），与 webview 的 localStorage 生效语言保持一致——
+    // reload 只重渲 webview，托盘是原生常驻不受 reload 影响，靠这条 invoke 才会换语言。
+    pushShellLocaleToShell(nextLocale);
     void client.updatePreferences({ locale: nextLocale })
       .then(() => {
         window.location.reload();
       })
       .catch(() => {
         persistBrowserLocale(locale);
+        // 服务端持久化失败 → webview 回退旧语言，外壳也一并回退，二者不漂移。
+        pushShellLocaleToShell(locale);
         showRouteNotice(shellRoot, localePersistenceFailedNotice(locale, "locale_switch"));
       });
   });
