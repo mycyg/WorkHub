@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { users, workspaceMemberships, workspaces } from "../schema/index.js";
@@ -40,6 +40,9 @@ export type WorkspaceMembershipRepository = {
   listForUser: (userId: string) => Promise<WorkspaceMembershipRow[]>;
   /** 校验用户确属某工作区（override-header 解析时 fail-closed 用）。 */
   findActiveForUserWorkspace: (userId: string, workspaceId: string) => Promise<WorkspaceMembershipRow | null>;
+  /** SEC-1（P0-01）：查某用户在某工作区的软删墓碑（deletedAt 非空），无则 null。identify/bootstrap 据此
+   *  区分「被移出的墓碑（拒绝复活，fail-closed 403）」与「从未有过行的新用户（建行）」。多条墓碑取最近一条。 */
+  findSoftDeletedForUserWorkspace: (userId: string, workspaceId: string) => Promise<WorkspaceMembershipRow | null>;
   /** 解析用户的默认工作区成员行（actor 租户兜底锚点）。 */
   resolveDefaultWorkspace: (userId: string) => Promise<WorkspaceMembershipRow | null>;
   /** Phase 2：解析 actor 租户——默认成员行的工作区 + 其 org（join workspaces）。无默认成员→null（调用方回退常量）。 */
@@ -56,6 +59,14 @@ export type WorkspaceMembershipRepository = {
   /** R17 批 G1（#15 角色变更）：更新一条 active 成员行的角色（幂等：改到同值也照常前进 updated_at）。 */
   updateRole: (id: string, role: MembershipRole, at: Date) => Promise<WorkspaceMembershipRow | null>;
 };
+
+// SEC-1（P1-09 · 最后管理员 TOCTOU）：在 workspace 级 pg advisory 锁下串行化成员移出/改角色的
+// 「重查不变量→写」临界区。必须在一个事务内调用（pg_advisory_xact_lock 随事务提交/回滚自动释放，
+// 不会像会话级 advisory_lock 那样因 worker 崩溃而漏放）。锁键取 workspace 维度并加命名空间前缀，
+// 与预算预留等其它 advisory 锁隔离（mirror budget-reservations 的 hashtext(::bigint) 手法）。
+export async function acquireWorkspaceMemberLock(tx: WorkHubDb, workspaceId: string): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`workspace-members:${workspaceId}`})::bigint)`);
+}
 
 export function createWorkspaceMembershipRepository(db: WorkHubDb): WorkspaceMembershipRepository {
   return {
@@ -77,6 +88,22 @@ export function createWorkspaceMembershipRepository(db: WorkHubDb): WorkspaceMem
             isNull(workspaceMemberships.deletedAt)
           )
         )
+        .limit(1);
+      return rows[0] ?? null;
+    },
+
+    async findSoftDeletedForUserWorkspace(userId, workspaceId) {
+      const rows = await db
+        .select()
+        .from(workspaceMemberships)
+        .where(
+          and(
+            eq(workspaceMemberships.userId, userId),
+            eq(workspaceMemberships.workspaceId, workspaceId),
+            isNotNull(workspaceMemberships.deletedAt)
+          )
+        )
+        .orderBy(desc(workspaceMemberships.deletedAt))
         .limit(1);
       return rows[0] ?? null;
     },

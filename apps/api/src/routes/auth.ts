@@ -51,6 +51,7 @@ import {
   createAdminClaimThrottle,
   type AdminClaimThrottle
 } from "../middleware/admin-claim-throttle.js";
+import { WorkspaceMemberServiceError } from "../services/workspace-members.js";
 import { readJsonObject } from "./json-body.js";
 import { isUuidParam } from "./uuid-param.js";
 
@@ -165,6 +166,19 @@ async function ensureDefaultWorkspaceMembership(deps: AuthDependencies, userId: 
   const existing = await memberships.findActiveForUserWorkspace(userId, defaultWorkspaceId);
   if (existing) {
     return; // 已是该工作区的 active 成员——幂等短路。
+  }
+  // SEC-1（P0-01）：identify/bootstrap 只为「从未有过 membership 行」的新用户建行。查到软删墓碑
+  // （= 被管理员移出）则拒绝复活，fail-closed 403 workspace_access_revoked——否则被移出者一次 identify
+  // 就自动补回成员身份、绕过移出。恢复必须走管理员显式动作。
+  // TODO(SEC-1)：未来若需自助/管理员恢复，新增显式「重新加入」端点（校验邀请/管理员授权后清墓碑或建新行），
+  // 不要在此隐式复活。
+  const tombstone = await memberships.findSoftDeletedForUserWorkspace(userId, defaultWorkspaceId);
+  if (tombstone) {
+    throw new WorkspaceMemberServiceError(
+      403,
+      "workspace_access_revoked",
+      "你已被移出该工作区，访问已被撤销。如需恢复请联系工作区管理员。"
+    );
   }
   // schema 有「每用户至多一个 default workspace」的部分唯一索引
   // （workspace_memberships_user_default_uq）；只有该用户当前没有任何 active 默认工作区成员行时
