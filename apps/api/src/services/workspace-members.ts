@@ -31,7 +31,17 @@ export class WorkspaceMemberServiceError extends Error {
 
 const PRIVILEGED_ROLES: ReadonlySet<MembershipRole> = new Set<MembershipRole>(["admin", "owner"]);
 
+export type WorkspaceMemberSummary = {
+  user_id: string;
+  nickname: string;
+  role: MembershipRole;
+  joined_at: string;
+  is_self: boolean;
+};
+
 export type WorkspaceMemberService = {
+  // R18 批 H1（成员清单）：某工作区 roster（昵称/角色/加入时间/是否本人）——管理员门控（同增删/改角色）。
+  listMembers(input: { actor: AuthActor }): Promise<{ members: WorkspaceMemberSummary[] }>;
   removeMember(input: { actor: AuthActor; targetUserId: string }): Promise<{ removed_user_id: string }>;
   updateMemberRole(input: {
     actor: AuthActor;
@@ -43,7 +53,11 @@ export type WorkspaceMemberService = {
 export type WorkspaceMemberServiceDependencies = {
   memberships: Pick<
     WorkspaceMembershipRepository,
-    "findActiveForUserWorkspace" | "listActiveByWorkspace" | "softDelete" | "updateRole"
+    | "findActiveForUserWorkspace"
+    | "listActiveByWorkspace"
+    | "listActiveWithNicknameByWorkspace"
+    | "softDelete"
+    | "updateRole"
   >;
   auditLogs?: Pick<AuditLogRepository, "createAuditLog"> | undefined;
   now?: () => Date;
@@ -65,15 +79,9 @@ export function createWorkspaceMemberService(deps: WorkspaceMemberServiceDepende
   const memberships = deps.memberships;
 
   // 权限闸：解析发起人在这个工作区的活跃成员行，判定其为 admin/owner（或 user 级 isAdmin）。非成员 → 403。
-  async function assertManagerAndResolveTarget(input: {
-    actor: AuthActor;
-    targetUserId: string;
-  }): Promise<{ resolved: ResolvedActor; targetUserId: string; targetRole: MembershipRole; targetMembershipId: string }> {
-    const resolved = requireHumanActor(input.actor);
-    const targetUserId = input.targetUserId.trim().toLowerCase();
-    if (!targetUserId) {
-      throw new WorkspaceMemberServiceError(400, "member_target_required", "请选择要管理的成员。");
-    }
+  // 读（列成员）与写（移出/改角色）共用这一道门——成员分区连同 roster 都只对管理员开放。
+  async function assertManager(actor: AuthActor): Promise<ResolvedActor> {
+    const resolved = requireHumanActor(actor);
     const actingMembership = await memberships.findActiveForUserWorkspace(resolved.actorUserId, resolved.workspaceId);
     if (!actingMembership) {
       throw new WorkspaceMemberServiceError(403, "member_manage_forbidden", "只有工作区管理员可以管理成员。");
@@ -81,6 +89,18 @@ export function createWorkspaceMemberService(deps: WorkspaceMemberServiceDepende
     const isManager = resolved.isAdmin || PRIVILEGED_ROLES.has(actingMembership.role as MembershipRole);
     if (!isManager) {
       throw new WorkspaceMemberServiceError(403, "member_manage_forbidden", "只有工作区管理员可以管理成员。");
+    }
+    return resolved;
+  }
+
+  async function assertManagerAndResolveTarget(input: {
+    actor: AuthActor;
+    targetUserId: string;
+  }): Promise<{ resolved: ResolvedActor; targetUserId: string; targetRole: MembershipRole; targetMembershipId: string }> {
+    const resolved = await assertManager(input.actor);
+    const targetUserId = input.targetUserId.trim().toLowerCase();
+    if (!targetUserId) {
+      throw new WorkspaceMemberServiceError(400, "member_target_required", "请选择要管理的成员。");
     }
     // 不能对自己动手（移出=自锁、降级=自我夺权）——取窄，两条路径共用同一条守卫。
     if (targetUserId === resolved.actorUserId.toLowerCase()) {
@@ -105,6 +125,21 @@ export function createWorkspaceMemberService(deps: WorkspaceMemberServiceDepende
   }
 
   return {
+    async listMembers(input) {
+      const resolved = await assertManager(input.actor);
+      const rows = await memberships.listActiveWithNicknameByWorkspace(resolved.workspaceId);
+      const selfId = resolved.actorUserId.toLowerCase();
+      return {
+        members: rows.map((row) => ({
+          user_id: row.userId,
+          nickname: row.nickname,
+          role: row.role,
+          joined_at: row.joinedAt.toISOString(),
+          is_self: row.userId.toLowerCase() === selfId
+        }))
+      };
+    },
+
     async removeMember(input) {
       const { resolved, targetUserId, targetRole, targetMembershipId } = await assertManagerAndResolveTarget(input);
       // 移出的目标若是特权成员，且它是最后一名特权成员 → 拒（否则工作区没人能再管理）。

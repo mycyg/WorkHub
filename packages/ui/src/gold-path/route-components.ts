@@ -5418,7 +5418,30 @@ function renderSettingsMyProfileCard(locale: WorkHubLocale): string {
         </section>`;
 }
 
-function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale): WebRouteComponent {
+// R18 批 H1（web 工作区成员管理）：/settings 的「成员」分区——仅管理员可见（isAdmin 由外壳登录态给，
+// 同 memory 路由的团队技能 tab 编辑权来源）。SSR 只出加载态骨架，apps/web/src/browser.ts 的
+// bindSettingsMembersPanel 拉 GET /api/workspace/members 渲 roster（昵称/角色/加入时间）+ 移出/改角色
+// （PATCH/DELETE /api/workspace/members/:userId），并拉 GET/POST /api/auth/invites 做邀请与未过期邀请
+// 清单。非管理员不渲此分区（服务端各端点也再门控一遍，不靠前端自觉）。
+function renderSettingsMembersSection(locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  return `<p class="wh-r4-route-kicker" data-r18-settings-members-kicker="true">${escapeHtml(zh ? "团队成员（管理员）" : "Team members (admins)")}</p>
+      <div class="wh-r4-route-grid" data-r18-settings-members-grid="true">
+        <section class="wh-card wh-r4-route-card" data-r18-settings-members="true">
+          <h3 role="heading" aria-level="2">${escapeHtml(zh ? "成员" : "Members")}</h3>
+          <p class="wh-subtle">${escapeHtml(zh ? "管理工作区成员的角色与去留。不能对自己动手，也不能移出或降级最后一名管理员。" : "Manage members' roles and removal. You can't act on yourself or remove/demote the last admin.")}</p>
+          <div data-r18-settings-members-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载成员…" : "Loading members…")}</p></div>
+        </section>
+        <section class="wh-card wh-r4-route-card" data-r18-settings-invites="true">
+          <h3 role="heading" aria-level="2">${escapeHtml(zh ? "邀请成员" : "Invite members")}</h3>
+          <p class="wh-subtle">${escapeHtml(zh ? "生成一次性邀请链接令牌，自行转交给对方。令牌只显示一次，服务端不再可取回。" : "Generate a one-time invite token to hand off out-of-band. The token is shown once and can't be retrieved again.")}</p>
+          <div data-r18-settings-invites-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载邀请…" : "Loading invites…")}</p></div>
+        </section>
+      </div>`;
+}
+
+function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale, isAdmin = false): WebRouteComponent {
+  const membersSection = isAdmin ? renderSettingsMembersSection(locale) : "";
   const reactComponent = createSettingsReactRouteComponent(vm, locale);
   const reactAttrs = dataAttrs(reactRouteComponentMarkerAttrs(reactComponent));
   const props = reactComponent.props;
@@ -5475,6 +5498,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
           </div>`).join("")
           : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "还没有常驻规则。" : "No standing rules yet.")}</p>`}</div>
       </section>` : ""}
+      ${membersSection}
       <p class="wh-r4-route-kicker" data-r10-settings-diagnostics="true">${escapeHtml(locale === "zh-CN" ? "系统诊断（管理员关注；普通成员只读参考）" : "System diagnostics (for admins; read-only reference for members)")}</p>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-settings-runtime="true">
@@ -5538,7 +5562,7 @@ export type WebRouteComponentInput =
   | { key: "knowledge"; evidence: EvidenceBubble; sourceRef?: string | undefined; scopeLanding?: boolean | undefined; projects?: ProjectListVM | undefined }
   | { key: "search"; q?: string | undefined }
   | { key: "skills"; skills: TeamSkillsPageVM }
-  | { key: "settings"; settings: SettingsPageVM }
+  | { key: "settings"; settings: SettingsPageVM; isAdmin?: boolean | undefined }
   | { key: "memory"; memory: { userMemories: UserMemoryManagementPageVM; teamSkills: TeamSkillManagementPageVM; tab: "profile" | "skills"; isAdmin: boolean } };
 
 export function renderWebRouteComponent(
@@ -5591,7 +5615,7 @@ export function renderWebRouteComponent(
     case "skills":
       return renderTeamSkillsRouteComponent(input.skills, locale);
     case "settings":
-      return renderSettingsRouteComponent(input.settings, locale);
+      return renderSettingsRouteComponent(input.settings, locale, input.isAdmin ?? false);
     case "memory":
       return renderMemoryRouteComponent(input.memory, locale);
   }

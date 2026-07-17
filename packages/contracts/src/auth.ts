@@ -107,6 +107,27 @@ export const updateWorkspaceMemberRoleResultVmSchema = z
   .strict();
 export type UpdateWorkspaceMemberRoleResultVM = z.infer<typeof updateWorkspaceMemberRoleResultVmSchema>;
 
+// R18 批 H1（web 成员管理面板 · 成员清单）：GET /api/workspace/members 的一行成员——昵称/角色/加入时间。
+// is_self 供客户端把自己那行去掉管理动作（服务端也会以 member_manage_self 兜底，不依赖客户端自觉）。
+// 只读窄端点，管理员门控（同 DELETE/PATCH），供 web /settings 成员分区渲染 roster。
+export const workspaceMemberSummaryVmSchema = z
+  .object({
+    user_id: idSchema,
+    nickname: z.string().min(1).max(96),
+    role: workspaceMemberRoleSchema,
+    joined_at: isoDateTimeSchema,
+    is_self: z.boolean()
+  })
+  .strict();
+export type WorkspaceMemberSummaryVM = z.infer<typeof workspaceMemberSummaryVmSchema>;
+
+export const listWorkspaceMembersResultVmSchema = z
+  .object({
+    members: z.array(workspaceMemberSummaryVmSchema)
+  })
+  .strict();
+export type ListWorkspaceMembersResultVM = z.infer<typeof listWorkspaceMembersResultVmSchema>;
+
 export const identifyResponseSchema = userSchema.pick({
   id: true,
   nickname: true,

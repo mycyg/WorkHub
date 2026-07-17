@@ -2147,6 +2147,7 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindConversationParticipantsPanel(root, result, client, locale, signal);
   bindSearchRoutePanel(root, result, client, locale, signal);
   bindSettingsAiProfilePanel(root, result, client, locale, signal);
+  bindSettingsMembersPanel(root, result, client, locale, signal);
   bindSettingsMyProfilePanel(root, result, client, locale, signal);
   bindSettingsAvatarPanel(root, result, client, locale, signal);
   bindAvatarTiles(root, signal);
@@ -2756,6 +2757,336 @@ function bindConversationParticipantsPanel(
       applyVm(vm);
     } catch (error) {
       if (signal.aborted) {
+        return;
+      }
+      renderError();
+    }
+  };
+  void hydrate();
+}
+
+// R18 批 H1（web 工作区成员管理）：/settings 「成员」分区的客户端水合（仅管理员——SSR 已门控，非管理员
+// 无此骨架，这里 querySelector 落空即静默返回）。拉 GET /api/workspace/members 渲 roster（昵称/角色/加入
+// 时间）+ 移出/改角色（DELETE/PATCH /api/workspace/members/:userId），并拉 GET/POST /api/auth/invites 做
+// 邀请（令牌一次性展示 + 复制）与未过期邀请清单。调 G1 端点，403/409/last-admin 按错误码人话化。
+type SettingsMemberSummary = {
+  user_id: string;
+  nickname: string;
+  role: "member" | "admin" | "owner";
+  joined_at: string;
+  is_self: boolean;
+};
+type SettingsMembersVM = { members: SettingsMemberSummary[] };
+type SettingsPendingInvite = { invite_id: string; email: string; expires_at: string; created_at: string };
+type SettingsPendingInvitesVM = { invites: SettingsPendingInvite[] };
+type SettingsInviteCreateResult = { invite_id: string; token: string; email: string; expires_at: string };
+
+function formatDayStamp(iso: string): string {
+  return /^\d{4}-\d{2}-\d{2}/u.test(iso) ? iso.slice(0, 10) : iso;
+}
+
+function bindSettingsMembersPanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "settings") {
+    return;
+  }
+  const zh = locale === "zh-CN";
+  const ROLE_LABELS: Record<SettingsMemberSummary["role"], [string, string]> = {
+    member: ["成员", "Member"],
+    admin: ["管理员", "Admin"],
+    owner: ["拥有者", "Owner"]
+  };
+  const MEMBER_ERROR_COPY: Record<string, [string, string]> = {
+    member_manage_self: ["不能对自己执行这个操作。", "You can't do that to yourself."],
+    member_manage_forbidden: ["只有工作区管理员可以管理成员。", "Only workspace admins can manage members."],
+    member_last_admin: ["不能移出或降级最后一名管理员。", "You can't remove or demote the last admin."],
+    member_not_found: ["没有找到这个成员。", "That member wasn't found."],
+    member_target_required: ["请选择要管理的成员。", "Pick a member to manage."]
+  };
+  const humanizeMember = (error: unknown): string => {
+    if (error instanceof WorkHubApiError) {
+      const pair = MEMBER_ERROR_COPY[error.code];
+      if (pair) {
+        return zh ? pair[0] : pair[1];
+      }
+    }
+    return zh ? "操作失败，请稍后重试。" : "Action failed, please try again.";
+  };
+
+  bindSettingsMembersRoster(container, client, zh, signal, ROLE_LABELS, humanizeMember);
+  bindSettingsInvites(container, client, zh, signal);
+}
+
+function bindSettingsMembersRoster(
+  container: HTMLElement,
+  client: BrowserApiClient,
+  zh: boolean,
+  signal: AbortSignal,
+  roleLabels: Record<SettingsMemberSummary["role"], [string, string]>,
+  humanize: (error: unknown) => string
+) {
+  const section = container.querySelector<HTMLElement>("[data-r18-settings-members]");
+  const body = section?.querySelector<HTMLElement>("[data-r18-settings-members-body]");
+  if (!section || !body) {
+    return;
+  }
+  const roles: Array<SettingsMemberSummary["role"]> = ["member", "admin", "owner"];
+
+  const renderError = () => {
+    body.innerHTML = `<p class="wh-subtle" data-r18-settings-members-error="true">${escapeHtml(
+      zh ? "成员没拉到，稍后重试。" : "Couldn't load members — retry later."
+    )}</p><button type="button" class="wh-btn" data-r18-settings-members-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+    body.querySelector<HTMLButtonElement>("[data-r18-settings-members-retry]")
+      ?.addEventListener("click", () => void hydrate(), { signal });
+  };
+
+  const render = (vm: SettingsMembersVM) => {
+    const rowsHtml = vm.members
+      .map((member) => {
+        const roleLabel = roleLabels[member.role][zh ? 0 : 1];
+        const joined = formatDayStamp(member.joined_at);
+        if (member.is_self) {
+          return `<div class="wh-r4-route-row" data-r18-settings-member="${escapeHtml(member.user_id)}" data-r18-settings-member-self="true">
+            <div><strong>${escapeHtml(member.nickname)}</strong> <span class="wh-pill">${escapeHtml(zh ? "你" : "You")}</span></div>
+            <div class="wh-r4-route-meta"><span class="wh-pill">${escapeHtml(roleLabel)}</span><span class="wh-pill">${escapeHtml(zh ? `加入于 ${joined}` : `Joined ${joined}`)}</span></div>
+          </div>`;
+        }
+        const options = roles
+          .map((role) => `<option value="${escapeHtml(role)}"${role === member.role ? " selected" : ""}>${escapeHtml(roleLabels[role][zh ? 0 : 1])}</option>`)
+          .join("");
+        return `<div class="wh-r4-route-row" data-r18-settings-member="${escapeHtml(member.user_id)}" data-r18-settings-member-role="${escapeHtml(member.role)}">
+          <div><strong>${escapeHtml(member.nickname)}</strong><div class="wh-r4-route-meta"><span class="wh-pill">${escapeHtml(zh ? `加入于 ${joined}` : `Joined ${joined}`)}</span></div></div>
+          <div class="wh-r4-route-meta">
+            <select data-r18-settings-member-role-select="${escapeHtml(member.user_id)}" aria-label="${escapeHtml(zh ? "角色" : "Role")}">${options}</select>
+            <button type="button" class="wh-btn" data-r18-settings-member-remove="${escapeHtml(member.user_id)}">${escapeHtml(zh ? "移出" : "Remove")}</button>
+          </div>
+        </div>`;
+      })
+      .join("");
+    body.innerHTML = `<div class="wh-r4-route-table" data-r18-settings-members-count="${escapeHtml(String(vm.members.length))}">${rowsHtml}</div>
+      <p class="wh-subtle" data-r18-settings-members-status hidden></p>`;
+
+    const status = body.querySelector<HTMLElement>("[data-r18-settings-members-status]");
+    const setStatus = (text: string, tone: "saving" | "error") => {
+      if (!status) {
+        return;
+      }
+      status.hidden = false;
+      status.textContent = text;
+      status.setAttribute("data-r18-settings-members-status", tone);
+    };
+
+    body.querySelectorAll<HTMLButtonElement>("[data-r18-settings-member-remove]").forEach((btn) => {
+      const targetId = btn.getAttribute("data-r18-settings-member-remove") ?? "";
+      btn.addEventListener(
+        "click",
+        () => {
+          void (async () => {
+            setStatus(zh ? "处理中…" : "Working…", "saving");
+            try {
+              await client.request(`/api/workspace/members/${encodeURIComponent(targetId)}`, { method: "DELETE" });
+              if (signal.aborted) {
+                return;
+              }
+              void hydrate();
+            } catch (error) {
+              if (signal.aborted) {
+                return;
+              }
+              setStatus(humanize(error), "error");
+            }
+          })();
+        },
+        { signal }
+      );
+    });
+
+    body.querySelectorAll<HTMLSelectElement>("[data-r18-settings-member-role-select]").forEach((select) => {
+      const targetId = select.getAttribute("data-r18-settings-member-role-select") ?? "";
+      const previous = select.value;
+      select.addEventListener(
+        "change",
+        () => {
+          const nextRole = select.value;
+          void (async () => {
+            setStatus(zh ? "处理中…" : "Working…", "saving");
+            try {
+              await client.request(`/api/workspace/members/${encodeURIComponent(targetId)}`, {
+                method: "PATCH",
+                body: JSON.stringify({ role: nextRole })
+              });
+              if (signal.aborted) {
+                return;
+              }
+              void hydrate();
+            } catch (error) {
+              if (signal.aborted) {
+                return;
+              }
+              select.value = previous; // 改角色失败：回滚下拉，不留「看起来改成功了」的假象。
+              setStatus(humanize(error), "error");
+            }
+          })();
+        },
+        { signal }
+      );
+    });
+  };
+
+  const hydrate = async () => {
+    try {
+      const vm = await client.request<SettingsMembersVM>("/api/workspace/members");
+      if (signal.aborted) {
+        return;
+      }
+      render(vm);
+    } catch (error) {
+      if (signal.aborted) {
+        return;
+      }
+      renderError();
+    }
+  };
+  void hydrate();
+}
+
+function bindSettingsInvites(container: HTMLElement, client: BrowserApiClient, zh: boolean, signal: AbortSignal) {
+  const section = container.querySelector<HTMLElement>("[data-r18-settings-invites]");
+  const body = section?.querySelector<HTMLElement>("[data-r18-settings-invites-body]");
+  if (!section || !body) {
+    return;
+  }
+
+  const renderDisabled = () => {
+    body.innerHTML = `<p class="wh-subtle" data-r18-settings-invites-disabled="true">${escapeHtml(
+      zh
+        ? "邀请功能需要密码登录模式（当前工作区为昵称模式，无需邀请即可加入）。"
+        : "Invites require password login mode (this workspace uses nickname mode, where anyone can join without an invite)."
+    )}</p>`;
+  };
+  const renderError = () => {
+    body.innerHTML = `<p class="wh-subtle" data-r18-settings-invites-error="true">${escapeHtml(
+      zh ? "邀请没拉到，稍后重试。" : "Couldn't load invites — retry later."
+    )}</p><button type="button" class="wh-btn" data-r18-settings-invites-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+    body.querySelector<HTMLButtonElement>("[data-r18-settings-invites-retry]")
+      ?.addEventListener("click", () => void hydrate(), { signal });
+  };
+
+  const render = (invites: SettingsPendingInvite[]) => {
+    const listHtml = invites.length
+      ? `<div class="wh-r4-route-table" data-r18-settings-invites-count="${escapeHtml(String(invites.length))}">${invites
+          .map(
+            (invite) => `<div class="wh-r4-route-row" data-r18-settings-invite="${escapeHtml(invite.invite_id)}">
+              <div><strong>${escapeHtml(invite.email)}</strong></div>
+              <span class="wh-pill">${escapeHtml(zh ? `${formatDayStamp(invite.expires_at)} 过期` : `expires ${formatDayStamp(invite.expires_at)}`)}</span>
+            </div>`
+          )
+          .join("")}</div>`
+      : `<p class="wh-subtle" data-r18-settings-invites-empty="true">${escapeHtml(zh ? "还没有未过期的邀请。" : "No pending invites yet.")}</p>`;
+    body.innerHTML = `<form class="wh-r4-route-row" data-r18-settings-invite-form="true">
+        <input type="email" name="email" required maxlength="320" placeholder="${escapeHtml(zh ? "对方邮箱" : "Invitee email")}" aria-label="${escapeHtml(zh ? "邀请邮箱" : "Invite email")}" autocomplete="off" data-r18-settings-invite-email="true" />
+        <button type="submit" class="wh-btn wh-btn-primary" data-r18-settings-invite-submit="true">${escapeHtml(zh ? "邀请" : "Invite")}</button>
+      </form>
+      <p class="wh-subtle" data-r18-settings-invite-status hidden></p>
+      <div data-r18-settings-invite-token hidden></div>
+      <h4 role="heading" aria-level="3">${escapeHtml(zh ? "未过期邀请" : "Pending invites")}</h4>
+      ${listHtml}`;
+
+    const status = body.querySelector<HTMLElement>("[data-r18-settings-invite-status]");
+    const tokenBox = body.querySelector<HTMLElement>("[data-r18-settings-invite-token]");
+    const setStatus = (text: string, tone: "saving" | "error") => {
+      if (!status) {
+        return;
+      }
+      status.hidden = false;
+      status.textContent = text;
+      status.setAttribute("data-r18-settings-invite-status", tone);
+    };
+    const showToken = (invite: SettingsInviteCreateResult) => {
+      if (!tokenBox) {
+        return;
+      }
+      tokenBox.hidden = false;
+      tokenBox.innerHTML = `<p><strong>${escapeHtml(zh ? "邀请令牌（只显示这一次，请立即复制转交）：" : "Invite token (shown once — copy and hand it off now):")}</strong></p>
+        <code class="wh-r18-invite-token" data-r18-settings-invite-token-value style="word-break:break-all">${escapeHtml(invite.token)}</code>
+        <div class="wh-r4-route-meta"><button type="button" class="wh-btn" data-r18-settings-invite-copy="true">${escapeHtml(zh ? "复制令牌" : "Copy token")}</button></div>
+        <p class="wh-subtle">${escapeHtml(zh ? `发给 ${invite.email}，${formatDayStamp(invite.expires_at)} 前有效。` : `Send to ${invite.email}; valid until ${formatDayStamp(invite.expires_at)}.`)}</p>`;
+      tokenBox.querySelector<HTMLButtonElement>("[data-r18-settings-invite-copy]")?.addEventListener(
+        "click",
+        () => {
+          void navigator.clipboard?.writeText(invite.token).then(
+            () => setStatus(zh ? "已复制令牌。" : "Token copied.", "saving"),
+            () => setStatus(zh ? "复制失败，请手动选中复制。" : "Copy failed — select and copy manually.", "error")
+          );
+        },
+        { signal }
+      );
+    };
+
+    body.querySelector<HTMLFormElement>("[data-r18-settings-invite-form]")?.addEventListener(
+      "submit",
+      (event) => {
+        event.preventDefault();
+        const input = body.querySelector<HTMLInputElement>("[data-r18-settings-invite-email]");
+        const email = input?.value.trim() ?? "";
+        if (!email) {
+          setStatus(zh ? "请填写对方邮箱。" : "Enter an email first.", "error");
+          return;
+        }
+        void (async () => {
+          setStatus(zh ? "生成中…" : "Creating…", "saving");
+          try {
+            const created = await client.request<SettingsInviteCreateResult>("/api/auth/invites", {
+              method: "POST",
+              body: JSON.stringify({ email })
+            });
+            if (signal.aborted) {
+              return;
+            }
+            showToken(created);
+            if (input) {
+              input.value = "";
+            }
+            void hydrate(); // 重拉未过期清单，纳入刚建的这条。
+          } catch (error) {
+            if (signal.aborted) {
+              return;
+            }
+            if (error instanceof WorkHubApiError && error.status === 422) {
+              setStatus(zh ? "邮箱格式不对，检查后重试。" : "That email looks invalid — check and retry.", "error");
+              return;
+            }
+            if (error instanceof WorkHubApiError && error.status === 404) {
+              setStatus(zh ? "邀请功能未启用（需密码登录模式）。" : "Invites aren't enabled (password mode required).", "error");
+              return;
+            }
+            setStatus(zh ? "邀请没生成，请稍后重试。" : "Couldn't create the invite — try again later.", "error");
+          }
+        })();
+      },
+      { signal }
+    );
+  };
+
+  const hydrate = async () => {
+    try {
+      const vm = await client.request<SettingsPendingInvitesVM>("/api/auth/invites?status=pending");
+      if (signal.aborted) {
+        return;
+      }
+      render(vm.invites);
+    } catch (error) {
+      if (signal.aborted) {
+        return;
+      }
+      // 404 = 昵称模式下邀请功能未启用（诚实说明，不渲邀请表单）；其它 = 取数错，给重试。
+      if (error instanceof WorkHubApiError && error.status === 404) {
+        renderDisabled();
         return;
       }
       renderError();

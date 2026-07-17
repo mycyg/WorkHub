@@ -39,6 +39,13 @@ export function createWorkspaceMemberRoutes(deps: WorkspaceMemberRoutesDependenc
   const members = deps.members ?? getDefaultWorkspaceMemberService();
   const requireCurrentUser = createCurrentUserMiddleware(authSource);
 
+  // R18 批 H1（成员清单）：管理员读本工作区 roster（昵称/角色/加入时间/是否本人）。门控在服务层
+  // assertManager 里做（非管理员 403），路由层只成形响应。供 web /settings 成员分区渲染。
+  routes.get("/workspace/members", requireCurrentUser, async (c) => {
+    const data = await members.listMembers({ actor: c.var.actor });
+    return c.json({ ok: true, data });
+  });
+
   routes.delete("/workspace/members/:userId", requireCurrentUser, async (c) => {
     const targetUserId = requireTargetUserId(c.req.param("userId"));
     const data = await members.removeMember({ actor: c.var.actor, targetUserId });

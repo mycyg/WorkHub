@@ -5852,6 +5852,42 @@ const removeWorkspaceMemberResponses = {
     "500": conversationInternalResponse
   }
 } as const;
+// R18 批 H1（成员清单）：GET /api/workspace/members —— 管理员读 roster（昵称/角色/加入时间/是否本人）。
+const listWorkspaceMembersResponses = {
+  responses: {
+    "200": jsonDataResponse(
+      {
+        type: "object",
+        required: ["members"],
+        properties: {
+          members: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["user_id", "nickname", "role", "joined_at", "is_self"],
+              properties: {
+                user_id: uuidStringSchema,
+                nickname: { type: "string", minLength: 1, maxLength: 96 },
+                role: workspaceMemberRoleSchema,
+                joined_at: dateTimeStringSchema,
+                is_self: { type: "boolean" }
+              },
+              additionalProperties: false
+            }
+          }
+        },
+        additionalProperties: false
+      },
+      "Workspace member roster"
+    ).responses["200"],
+    "401": conversationAuthRequiredResponse,
+    "403": jsonErrorStatusResponse("403", "Only workspace admins/owners may list members", [
+      "member_manage_forbidden",
+      "human_required"
+    ]).responses["403"],
+    "500": conversationInternalResponse
+  }
+} as const;
 const updateWorkspaceMemberRoleResponses = {
   responses: {
     "200": jsonDataResponse(
@@ -8251,6 +8287,13 @@ export function getOpenApiDocument() {
           summary: "Leave (self) or remove (owner) a member; owner leaving promotes the earliest successor",
           parameters: [pathUuidParameter("id"), pathUuidParameter("userId")],
           ...removeConversationParticipantResponses
+        }
+      },
+      "/api/workspace/members": {
+        get: {
+          tags: ["conversations"],
+          summary: "List the workspace member roster (admin/owner only): nickname, role, joined-at, is-self",
+          ...listWorkspaceMembersResponses
         }
       },
       "/api/workspace/members/{userId}": {

@@ -2717,6 +2717,28 @@ test("R4.11 Settings route component uses a typed Settings Page VM without leaki
   assertNoMainWindowBoundaryLeak(settings.html);
 });
 
+test("R18-H1 settings members section is admin-gated: SSR skeleton only when isAdmin", () => {
+  const vm = surfaceVm();
+  const settingsVm = vm.page_vms.settings;
+  assert.ok(settingsVm);
+
+  const asMember = renderWebRouteComponent({ key: "settings", settings: settingsVm, isAdmin: false }, { locale: "zh-CN" });
+  assert.equal(asMember.html.includes('data-r18-settings-members="true"'), false);
+  assert.equal(asMember.html.includes('data-r18-settings-invites="true"'), false);
+
+  const asAdmin = renderWebRouteComponent({ key: "settings", settings: settingsVm, isAdmin: true }, { locale: "zh-CN" });
+  // SSR 只出加载态骨架 + hydration 锚点（真 roster / 邀请由 browser.ts 拉端点后注入）。
+  assert.equal(asAdmin.html.includes('data-r18-settings-members="true"'), true);
+  assert.equal(asAdmin.html.includes('data-r18-settings-members-body="true"'), true);
+  assert.equal(asAdmin.html.includes('data-r18-settings-invites="true"'), true);
+  assert.equal(asAdmin.html.includes('data-r18-settings-invites-body="true"'), true);
+  assert.equal(asAdmin.html.includes("正在加载成员"), true);
+
+  const asAdminEn = renderWebRouteComponent({ key: "settings", settings: settingsVm, isAdmin: true }, { locale: "en-US" });
+  assert.equal(asAdminEn.html.includes("Loading members"), true);
+  assert.equal(asAdminEn.html.includes("Invite members"), true);
+});
+
 // R13 批 P3（功能审查 B4）：web /settings 的「AI 助手」区块——default_mode 与 dispatch_policy 两个
 // 真表单（当前值由 apps/web/src/browser.ts 水合后解禁，SSR 必须是 disabled——R10-P1-7 的竞态收口纪律），
 // 其余 AI 项走既有 data-requires-desktop 提示模式，不再静默留白。

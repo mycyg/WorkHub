@@ -1108,7 +1108,7 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
       memory: { userMemories: surface.userMemories, teamSkills: surface.teamSkills, tab: surface.tab, isAdmin }
     }, { locale });
   }
-  return renderWebRouteComponent({ key: "settings", settings: surface.settings }, { locale });
+  return renderWebRouteComponent({ key: "settings", settings: surface.settings, isAdmin }, { locale });
 }
 
 function routeComponentsForSurface(surface: WebRouteSurface, locale: WorkHubLocale, isAdmin: boolean): WebRouteComponentMap {
