@@ -14,6 +14,14 @@ export type WriteEventStreamOptions = {
   // 审计 FIX#2(a)：活跃流 presence 续期的节流窗口（ms）。默认对齐心跳间隔，确保活跃流的续期频率
   // 与空闲心跳一致（都 ~30s 一次），始终 < 在线 TTL(120s)。测试里可调小以验证续期触发。
   presenceRefreshMs?: number;
+  // SEC P0（退出/撤销设备后已建立的 SSE 从不复检、继续灌旧账号事件）：本流的凭据授权重验钩子。开流时已过
+  // 完整鉴权，但长连接建立后从不重验 session/device grant——登出/吊销设备后旧连接仍活着。这里按节拍
+  // （≤heartbeatMs，见 revalidateMs）重验：返回 false=授权已撤销→写一条 `stream.revoked` 终止事件并正常收流。
+  // 依赖注入（push.ts 按本请求的凭据构造），便于单测。best-effort：重验查询抛错不拆健康流（视为暂不可判定，
+  // 保守继续，下一拍再验）。
+  revalidateGrant?: () => Promise<boolean> | boolean;
+  // 凭据重验的节拍（ms）。默认对齐心跳，确保空闲流每心跳、活跃流每 ≤heartbeatMs 也各重验一次。测试里可调小。
+  revalidateMs?: number;
 };
 
 export function writeEventStream(
@@ -26,6 +34,8 @@ export function writeEventStream(
 ) {
   const heartbeatMs = options.heartbeatMs ?? 30000;
   const presenceRefreshMs = options.presenceRefreshMs ?? heartbeatMs;
+  const revalidateGrant = options.revalidateGrant;
+  const revalidateMs = options.revalidateMs ?? heartbeatMs;
   const lastEventId = c.req.header("Last-Event-ID") ?? c.req.query("last_event_id") ?? "";
   // R15 批 A（A5 在线抑制）：会话流（topic=`conversation:<id>`）额外登记「此刻正在看这条会话」——
   // A5 通知生成时据此精确抑制（正在看的人不落 OS 通知，只靠已广播的 conversation.message.created 动红点）。
@@ -94,7 +104,29 @@ export function writeEventStream(
       // 审计 FIX#2(a)：节流活跃流的 presence 续期——不能每条事件都打一次 Redis。markStreamOpen 刚续过 TTL，
       // 故从「现在」起算，只在距上次续期 >presenceRefreshMs 时再续。
       let lastPresenceRefreshAt = Date.now();
+      // SEC P0：本流凭据授权的上次重验时刻。开流刚过完整鉴权，故从「现在」起算，只在距上次重验 >revalidateMs
+      // 时再验（空闲流每心跳、活跃流每 ≤heartbeatMs 各命中一次），避免每条事件都打一次授权查询。
+      let lastRevalidateAt = Date.now();
       while (!aborted) {
+        // SEC P0：每拍（≤heartbeatMs）重验本流凭据授权仍有效。登出/撤销设备后即便流仍活跃，也在下一拍收尾——
+        // 写一条 stream.revoked 终止事件后正常结束响应（客户端据此重新鉴权/停留在重新绑定屏）。
+        if (revalidateGrant && Date.now() - lastRevalidateAt >= revalidateMs) {
+          lastRevalidateAt = Date.now();
+          let stillAuthorized = true;
+          try {
+            stillAuthorized = await revalidateGrant();
+          } catch (error) {
+            // 重验查询抖动：视为暂不可判定，保守继续（绝不因一次授权查询故障拆掉一条健康流）。下一拍再验。
+            getDefaultStructuredLogger().warn("sse_grant_revalidate_failed", { error });
+            stillAuthorized = true;
+          }
+          if (!stillAuthorized) {
+            await output.write(
+              encoder.encode(formatSseEvent("stream.revoked", { reason: "credential_revoked" }))
+            );
+            break;
+          }
+        }
         pending = pending ?? iterator.next();
         const result = await raceHeartbeat(pending, heartbeatMs);
         if (result === "heartbeat") {

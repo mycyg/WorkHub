@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { Notification } from "@workhub/contracts";
+import type { ProactiveIntentStatus, RecoverableProactiveIntentRow } from "@workhub/db";
 
 import {
   createProactiveIntentService,
@@ -40,24 +41,42 @@ function intent(over: Partial<ProactiveIntentInput> = {}): ProactiveIntentInput 
 type RepoState = {
   recorded: Array<Parameters<ProactiveIntentRepositoryDeps["recordIntent"]>[0]>;
   status: Array<Parameters<ProactiveIntentRepositoryDeps["markStatus"]>[0]>;
+  incremented: string[];
 };
 
-function fakeRepo(options: { created?: boolean; deliveredToday?: number } = {}): {
+function fakeRepo(options: {
+  created?: boolean;
+  // 撞唯一约束时回带的既有行状态（R20 REL-2 崩溃恢复：'created'=可恢复、其余=真 duplicate）。
+  existingStatus?: ProactiveIntentStatus;
+  existingId?: string;
+  deliveredToday?: number;
+  recoverable?: RecoverableProactiveIntentRow[];
+} = {}): {
   repo: ProactiveIntentRepositoryDeps;
   state: RepoState;
 } {
-  const state: RepoState = { recorded: [], status: [] };
+  const state: RepoState = { recorded: [], status: [], incremented: [] };
   const repo: ProactiveIntentRepositoryDeps = {
     async recordIntent(input) {
       state.recorded.push(input);
       const created = options.created ?? true;
-      return created ? { created: true, id: "intent-1" } : { created: false };
+      if (created) {
+        return { created: true, id: "intent-1" };
+      }
+      // 撞唯一约束——回带既有行 id + status（默认 'delivered' = 真 duplicate）。
+      return { created: false, id: options.existingId ?? "intent-1", status: options.existingStatus ?? "delivered" };
     },
     async countDeliveredForUserOnDay() {
       return options.deliveredToday ?? 0;
     },
     async markStatus(input) {
       state.status.push(input);
+    },
+    async listRecoverable() {
+      return options.recoverable ?? [];
+    },
+    async incrementAttempt(input) {
+      state.incremented.push(input.id);
     }
   };
   return { repo, state };
@@ -134,6 +153,49 @@ test("recordAndDeliver: a duplicate suppression_key is idempotently skipped with
   assert.deepEqual(result, { status: "suppressed", reason: "duplicate" });
   assert.equal(notified, 0, "duplicate must not deliver");
   assert.equal(state.status.length, 0, "duplicate does not touch status (row already terminal)");
+});
+
+// R20 REL-2（#P1-11）：崩溃恢复腿 1——同 key 重试。既有行还停在 created（投递前进程崩溃）→ 不再误判成
+// duplicate，而是就地复用手里的 intent 恢复投递。旧代码此处稳定返回 { suppressed, duplicate }（红）。
+test("recordAndDeliver: a same-key retry whose existing row is still 'created' (pre-delivery crash) RESUMES delivery", async () => {
+  const { repo, state } = fakeRepo({ created: false, existingStatus: "created", existingId: "intent-1" });
+  let notified = 0;
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        notified += 1;
+        return notificationRow();
+      }
+    },
+    dailyCapPerUser: 10,
+    now: () => at
+  });
+  const result = await service.recordAndDeliver(intent());
+  // 恢复投递并顶 delivered——不是 duplicate。
+  assert.deepEqual(result, { status: "delivered", intentId: "intent-1" });
+  assert.equal(notified, 1, "the crashed intent is re-delivered on the same-key retry");
+  assert.deepEqual(state.status, [{ id: "intent-1", status: "delivered", deliveredVia: "notification" }]);
+});
+
+test("recordAndDeliver: a same-key retry whose existing row is 'suppressed' stays a true duplicate", async () => {
+  const { repo, state } = fakeRepo({ created: false, existingStatus: "suppressed", existingId: "intent-1" });
+  let notified = 0;
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        notified += 1;
+        return notificationRow();
+      }
+    },
+    dailyCapPerUser: 10,
+    now: () => at
+  });
+  const result = await service.recordAndDeliver(intent());
+  assert.deepEqual(result, { status: "suppressed", reason: "duplicate" });
+  assert.equal(notified, 0, "an already-terminal row must not re-deliver");
+  assert.equal(state.status.length, 0);
 });
 
 test("recordAndDeliver: reaching the per-user daily cap suppresses the intent (recorded, not delivered)", async () => {
@@ -592,4 +654,152 @@ test("isWithinProactiveQuietHours covers cross-midnight and same-day windows by 
   assert.equal(isWithinProactiveQuietHours(sameDay, new Date(2026, 6, 15, 3, 0)), true);
   assert.equal(isWithinProactiveQuietHours(sameDay, new Date(2026, 6, 15, 23, 0)), false);
   assert.equal(isWithinProactiveQuietHours(null, new Date(2026, 6, 15, 3, 0)), false);
+});
+
+// ── R20 REL-2（#P1-11）：崩溃恢复兜底扫描（recoverStalled）─────────────────────────────────
+
+function recoverableRow(over: Partial<RecoverableProactiveIntentRow> = {}): RecoverableProactiveIntentRow {
+  return {
+    id: "intent-1",
+    workspaceId: "d0000000-0000-4000-8000-000000000001",
+    projectId: "d0000000-0000-4000-8000-000000000002",
+    workItemId: "d0000000-0000-4000-8000-000000000003",
+    kind: "ddl_chase",
+    stage: "overdue",
+    targetUserId: "d0000000-0000-4000-8000-000000000004",
+    suppressionKey: "ddl:wi:overdue",
+    payload: { stage: "overdue" },
+    // record 时落库的投递上下文（notification 通道）。
+    deliveryPayload: {
+      channel: "notification",
+      notification: {
+        type: "work_item.overdue",
+        severity: "high",
+        title: "上线报价单 已逾期",
+        body: "尽快处理。",
+        targetUrl: "/workitems/d0000000-0000-4000-8000-000000000003",
+        dedupeKey: "ddl:wi:overdue"
+      }
+    },
+    attemptCount: 0,
+    createdAt: new Date("2026-07-15T13:00:00.000Z"),
+    ...over
+  };
+}
+
+const recoverInput = { now: at, olderThanMs: 5 * 60 * 1000, maxAttempts: 3, limit: 100 };
+
+test("recoverStalled: a reconstructable stale created row is re-delivered and counted as recovered", async () => {
+  const { repo, state } = fakeRepo({ recoverable: [recoverableRow()] });
+  let notified = 0;
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        notified += 1;
+        return notificationRow();
+      }
+    },
+    dailyCapPerUser: 10,
+    now: () => at
+  });
+  const result = await service.recoverStalled(recoverInput);
+  assert.deepEqual(result, { scanned: 1, recovered: 1, suppressed: 0, stalled: 0, retryable: 0 });
+  assert.equal(notified, 1, "the stalled intent is re-delivered from its persisted delivery_payload");
+  assert.deepEqual(state.incremented, ["intent-1"], "each attempt bumps attempt_count first");
+  assert.deepEqual(state.status, [{ id: "intent-1", status: "delivered", deliveredVia: "notification" }]);
+});
+
+test("recoverStalled: a row that keeps failing at the attempt cap is marked suppressed(stalled)", async () => {
+  // attemptCount=2 → 本次 = 第 3 次（=maxAttempts）；投递又抛 → 封顶判死。
+  const { repo, state } = fakeRepo({ recoverable: [recoverableRow({ attemptCount: 2 })] });
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        throw new Error("delivery down");
+      }
+    },
+    dailyCapPerUser: 10,
+    now: () => at,
+    logger: { warn() {} }
+  });
+  const result = await service.recoverStalled(recoverInput);
+  assert.deepEqual(result, { scanned: 1, recovered: 0, suppressed: 0, stalled: 1, retryable: 0 });
+  assert.deepEqual(state.incremented, ["intent-1"]);
+  assert.deepEqual(state.status, [{ id: "intent-1", status: "suppressed", deliveredVia: "stalled" }]);
+});
+
+test("recoverStalled: a failing row still under the attempt cap stays created for the next tick (retryable)", async () => {
+  const { repo, state } = fakeRepo({ recoverable: [recoverableRow({ attemptCount: 0 })] });
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        throw new Error("transient");
+      }
+    },
+    dailyCapPerUser: 10,
+    now: () => at,
+    logger: { warn() {} }
+  });
+  const result = await service.recoverStalled(recoverInput);
+  assert.deepEqual(result, { scanned: 1, recovered: 0, suppressed: 0, stalled: 0, retryable: 1 });
+  assert.deepEqual(state.incremented, ["intent-1"], "attempt is still bumped");
+  assert.equal(state.status.length, 0, "not marked terminal — remains created for the next tick");
+});
+
+test("recoverStalled: a legacy row with no delivery_payload cannot be rebuilt and is marked suppressed(stalled)", async () => {
+  const { repo, state } = fakeRepo({ recoverable: [recoverableRow({ deliveryPayload: null })] });
+  let notified = 0;
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        notified += 1;
+        return notificationRow();
+      }
+    },
+    dailyCapPerUser: 10,
+    now: () => at
+  });
+  const result = await service.recoverStalled(recoverInput);
+  assert.deepEqual(result, { scanned: 1, recovered: 0, suppressed: 0, stalled: 1, retryable: 0 });
+  assert.equal(notified, 0, "no reconstruct → no delivery attempt");
+  assert.deepEqual(state.incremented, ["intent-1"], "attempt still bumped");
+  assert.deepEqual(state.status, [{ id: "intent-1", status: "suppressed", deliveredVia: "stalled" }]);
+});
+
+test("recoverStalled: a retry that hits the daily cap is a legitimate suppressed terminal (not stalled)", async () => {
+  const { repo, state } = fakeRepo({ recoverable: [recoverableRow()], deliveredToday: 10 });
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        return notificationRow();
+      }
+    },
+    dailyCapPerUser: 10,
+    now: () => at
+  });
+  const result = await service.recoverStalled(recoverInput);
+  assert.deepEqual(result, { scanned: 1, recovered: 0, suppressed: 1, stalled: 0, retryable: 0 });
+  assert.deepEqual(state.status, [{ id: "intent-1", status: "suppressed" }], "deliver already terminalized to suppressed");
+});
+
+test("recoverStalled: an empty scan does nothing", async () => {
+  const { repo, state } = fakeRepo({ recoverable: [] });
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        return notificationRow();
+      }
+    },
+    dailyCapPerUser: 10,
+    now: () => at
+  });
+  const result = await service.recoverStalled(recoverInput);
+  assert.deepEqual(result, { scanned: 0, recovered: 0, suppressed: 0, stalled: 0, retryable: 0 });
+  assert.equal(state.incremented.length, 0);
 });

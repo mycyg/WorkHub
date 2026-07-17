@@ -485,9 +485,13 @@ fn set_client_token(state: tauri::State<'_, ShellClientToken>, token: String) {
     let trimmed = token.trim();
     if trimmed.is_empty() {
         eprintln!("WorkHub: client token cleared by webview");
-        if let Ok(mut guard) = state.0.lock() {
-            *guard = None;
-        }
+        // SEC P0-02：清空必须递增身份代际并唤醒等待者（ShellClientToken::set 内部两件事都做）——退出/换号后
+        // 旧账号私有 SSE pump 靠代际变更立即中止，不再一直把旧身份事件灌到 TCP 偶然断。旧实现在这里只写 None
+        // 后直接 return（连 notify 都不发），正是本缺陷根因。
+        let generation = state.set(None);
+        eprintln!(
+            "WorkHub: client token generation now {generation} (cleared); any active SSE pump aborts on the next tick"
+        );
         return;
     }
     // 仅记录尾 4 位用于诊断（绝不打印完整令牌）。SSE worker 下一拍重连即带它鉴权 → Cuu 上线。
@@ -499,18 +503,27 @@ fn set_client_token(state: tauri::State<'_, ShellClientToken>, token: String) {
         .map(|(i, _)| &trimmed[i..])
         .unwrap_or(trimmed);
     eprintln!("WorkHub: client token received (…{tail}); SSE /me authenticates on next reconnect");
-    if let Ok(mut guard) = state.0.lock() {
-        *guard = Some(trimmed.to_string());
-    }
-    // RUST-1：唤醒在退避 sleep 上等待的 SSE worker，令牌一到即刻重连（不再干等满一个退避周期）。
-    state.1.notify_waiters();
+    // 递增身份代际并唤醒（RUST-1 + SEC P0-02）：挂起中的 worker 立即以新身份重连；活跃的旧身份 pump 感知代际
+    // 变更后中止，再以新令牌重连——不再干等满一个退避周期，也不再拿旧身份续流。
+    let generation = state.set(Some(trimmed.to_string()));
+    eprintln!(
+        "WorkHub: client token generation now {generation}; SSE reconnects with the new identity"
+    );
 }
 
 // R8 真·Spotlight：webview 测得盒子内容高度后调它缩放主窗（盒子随内容生长/收缩，苹果聚焦风）。
 // 只改 main 窗内尺寸，top-left 锚定不动 → 向下生长。clamp 防 webview 传来的异常值把窗口撑爆/压没。
 fn clamp_spotlight_size(width: f64, height: f64) -> (f64, f64) {
-    let safe_width = if width.is_finite() { width.clamp(420.0, 1600.0) } else { 720.0 };
-    let safe_height = if height.is_finite() { height.clamp(48.0, 1400.0) } else { 480.0 };
+    let safe_width = if width.is_finite() {
+        width.clamp(420.0, 1600.0)
+    } else {
+        720.0
+    };
+    let safe_height = if height.is_finite() {
+        height.clamp(48.0, 1400.0)
+    } else {
+        480.0
+    };
     (safe_width, safe_height)
 }
 
@@ -534,8 +547,13 @@ fn set_spotlight_size(app: tauri::AppHandle, width: f64, height: f64) -> Result<
 // attention 队列数，再加上未读通知数）。count<=0 清角标（macOS set_badge_count(None) 清 dock 角标）；托盘
 // tooltip 带上计数（0 回到基线「Cuu 已就绪」）。托盘/tooltip 拿不到时 best-effort 不致命——Dock 角标是主承诺。
 #[tauri::command]
-fn set_shell_badge(app: tauri::AppHandle, count: i64, locale: Option<String>) -> Result<(), String> {
-    let resolved_locale = normalize_optional_workhub_locale(locale).unwrap_or(DEFAULT_WORKHUB_LOCALE);
+fn set_shell_badge(
+    app: tauri::AppHandle,
+    count: i64,
+    locale: Option<String>,
+) -> Result<(), String> {
+    let resolved_locale =
+        normalize_optional_workhub_locale(locale).unwrap_or(DEFAULT_WORKHUB_LOCALE);
     // Dock 角标（macOS）——app 级，用 main 窗句柄设置。main 窗还没建好（冷启动竞态）时静默跳过，下一拍再来。
     if let Some(window) = app.get_webview_window("main") {
         window
@@ -1443,7 +1461,14 @@ fn restore_pet_window_interaction_state(app: &tauri::AppHandle) -> Result<(), St
         (state.settings.scale_percent, state.settings.opacity_percent)
     };
     let runtime_state = app.state::<Mutex<PetWindowRuntimeState>>();
-    set_pet_window_settings(app.clone(), runtime_state, scale_percent, opacity_percent, false, false)?;
+    set_pet_window_settings(
+        app.clone(),
+        runtime_state,
+        scale_percent,
+        opacity_percent,
+        false,
+        false,
+    )?;
     Ok(())
 }
 
@@ -1883,7 +1908,10 @@ mod tests {
     fn spotlight_size_clamp_allows_idle_search_bar_height() {
         assert_eq!(clamp_spotlight_size(720.0, 52.0), (720.0, 52.0));
         assert_eq!(clamp_spotlight_size(200.0, 20.0), (420.0, 48.0));
-        assert_eq!(clamp_spotlight_size(f64::NAN, f64::INFINITY), (720.0, 480.0));
+        assert_eq!(
+            clamp_spotlight_size(f64::NAN, f64::INFINITY),
+            (720.0, 480.0)
+        );
     }
 
     #[test]

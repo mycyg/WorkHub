@@ -78,15 +78,24 @@ export function createAgentRunRecoveryScheduler(options: {
         ? await options.queue.recoverUnsettledTaskPlanRuns()
         : [];
       const recovered = await options.queue.recoverExpiredClaims();
-      // 恢复记录是 dead-letter(status==='failed') 与 requeued(status==='queued') 的并集。
-      // runNext 只放行重新入队的那些；死信永远拿不回来，绝不能进 drain 预算（否则空 runNext 白跑）。
+      // 恢复记录是 dead-letter(status==='failed') 与 requeued(status==='queued') 的并集，
+      // 这两个计数只用于上报 stats（见下方 requeuedCount/deadLetteredCount），P1-10 起不再
+      // 拿 requeued 给 drain 预算把关——drain 预算见下方 while 循环前的注释。
       const requeued = recovered.filter((run) => run.status === "queued").length;
       const deadLettered = recovered.filter((run) => run.status === "failed").length;
       let drained = 0;
-      if (autoDrain && requeued > 0) {
-        // 上限取「被重新入队的 claim 数」与硬上限的较小值：只放行可放行的那些，且永不超过硬上限。
-        const drainBudget = Math.min(requeued, maxDrainPerTick);
-        while (drained < drainBudget) {
+      if (autoDrain) {
+        // P1-10：drain 预算不再以「本轮 recoverExpiredClaims 产生了 requeued」为闸——queued 存量的来源
+        // 不止「过期租约被重排」这一条：请求进程在 enqueue 落库、claim 之前崩溃，也会留下一条 queued 且
+        // 从未被认领的 run，它压根不会出现在 recovered/requeued 里，旧代码 requeued===0 时直接跳过 drain，
+        // 这条 run 只能靠请求路径的 auto-pump 捞（routes/agent-runs.ts），但那个 auto-pump 只活在触发它的
+        // 请求进程里——进程一旦崩溃重启，这条 run 就永久卡在 queued。这里改成无条件循环调用 runNext()（内部
+        // 走 queuedRun()→persistence.claimNextQueued，Postgres 端用 `FOR UPDATE SKIP LOCKED` 事务原子认领，
+        // 见 packages/db/src/repositories/agent-runs.ts 的 claimNextQueued——多实例并发调用天然互斥，无需
+        // 额外加锁），直到 runNext() 返回 null（队列已空）或撞到硬上限 maxDrainPerTick 为止，效果等价于
+        // 「min(可 claim 的 queued 存量, maxDrainPerTick)」。死信 run（status==='failed'）从不会被
+        // claimNextQueued 选中（它的查询谓词固定 status='queued'），天然被排除出 drain，不需要额外判断。
+        while (drained < maxDrainPerTick) {
           const run = await options.queue.runNext();
           if (!run) {
             break;
@@ -125,6 +134,13 @@ export function createAgentRunRecoveryScheduler(options: {
     if (timer || intervalMs <= 0) {
       return;
     }
+    // P1-10：启动时立即跑一轮完整 tick，不等第一个 interval——否则服务重启前已持久化但未被 claim 的
+    // queued run（enqueue 落库、claim 之前进程崩溃）要空等一整个 intervalMs（默认 30s，可配更长）才被
+    // 捞回，配置值大时等价于永久卡住。tick() 自带 `running` 重入门禁，不会与随后 setInterval 的首次触发
+    // 撞车（即便撞车也只是其中一次直接返回空结果，不会双跑）。
+    void tick().catch((error) => {
+      getDefaultStructuredLogger().error("agent_run_recovery_tick_failed", { error });
+    });
     timer = setInterval(() => {
       void tick().catch((error) => {
         getDefaultStructuredLogger().error("agent_run_recovery_tick_failed", { error });

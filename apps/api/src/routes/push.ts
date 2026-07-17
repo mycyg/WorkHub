@@ -3,11 +3,14 @@ import { HTTPException } from "hono/http-exception";
 
 import { getDefaultPushBus, getDefaultPresenceStore, type PresenceStore, type PushBus } from "../broker/index.js";
 import { isUuidParam } from "./uuid-param.js";
+import type { Context } from "hono";
+
 import {
   getDefaultAuthDependencies,
   resolveAuthDependencies,
   resolveStreamUser,
   type AuthActor,
+  type AuthDependencies,
   type AuthDependencySource,
   type AuthEnv
 } from "../middleware/auth.js";
@@ -132,6 +135,33 @@ function createDefaultTopicAccess(input: {
   };
 }
 
+// SEC P0（登出/撤销设备后已建立的 SSE 从不复检、继续灌旧账号事件）：为本次流请求构造凭据重验钩子，
+// 交给 writeEventStream 在心跳节拍上调用。复用 resolveStreamUser 就地重解析同一份凭据（读同一个 `c` 的
+// client-token 头 / cookie）——设备被吊销或会话被撤销时它抛 401/403，钩子返回 false → 流写终止事件收尾。
+// 不自行重造 hash/查表逻辑（那要碰 middleware/auth.ts），也顺带覆盖用户被停用等其它撤销来源。
+// 非授权类错误（DB 抖动等）向上抛，由 stream.ts 的 best-effort 兜底吞掉并继续（不因一次查询故障拆健康流）。
+function grantStillValid(c: Context, authDeps: AuthDependencies): () => Promise<boolean> {
+  return async () => {
+    try {
+      await resolveStreamUser(c, authDeps);
+      return true;
+    } catch (error) {
+      if (error instanceof HTTPException && (error.status === 401 || error.status === 403)) {
+        return false;
+      }
+      throw error;
+    }
+  };
+}
+
+function streamOptionsWithGrantRevalidation(
+  c: Context,
+  authDeps: AuthDependencies,
+  base: WriteEventStreamOptions | undefined
+): WriteEventStreamOptions {
+  return { ...base, revalidateGrant: grantStillValid(c, authDeps) };
+}
+
 export function createPushRoutes(deps: PushRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
 
@@ -151,14 +181,14 @@ export function createPushRoutes(deps: PushRoutesDependencies = {}) {
     const authDeps = resolveAuthDependencies(authSource);
     const user = await resolveStreamUser(c, authDeps);
     const topic = await resolveAuthorizedTopic(user, { kind: "all" }, access);
-    return writeEventStream(c, bus, presence, topic, user, deps.stream);
+    return writeEventStream(c, bus, presence, topic, user, streamOptionsWithGrantRevalidation(c, authDeps, deps.stream));
   });
 
   routes.get("/stream/me", async (c) => {
     const authDeps = resolveAuthDependencies(authSource);
     const user = await resolveStreamUser(c, authDeps);
     const topic = await resolveAuthorizedTopic(user, { kind: "me" }, access);
-    return writeEventStream(c, bus, presence, topic, user, deps.stream);
+    return writeEventStream(c, bus, presence, topic, user, streamOptionsWithGrantRevalidation(c, authDeps, deps.stream));
   });
 
   routes.get("/stream/workitem/:id", async (c) => {
@@ -170,7 +200,7 @@ export function createPushRoutes(deps: PushRoutesDependencies = {}) {
     const authDeps = resolveAuthDependencies(authSource);
     const user = await resolveStreamUser(c, authDeps);
     const topic = await resolveAuthorizedTopic(user, { kind: "workitem", id: c.req.param("id") }, access);
-    return writeEventStream(c, bus, presence, topic, user, deps.stream);
+    return writeEventStream(c, bus, presence, topic, user, streamOptionsWithGrantRevalidation(c, authDeps, deps.stream));
   });
 
   routes.get("/stream/req/:id", async (c) => {
@@ -180,7 +210,7 @@ export function createPushRoutes(deps: PushRoutesDependencies = {}) {
     const authDeps = resolveAuthDependencies(authSource);
     const user = await resolveStreamUser(c, authDeps);
     const topic = await resolveAuthorizedTopic(user, { kind: "workitem", id: c.req.param("id") }, access);
-    return writeEventStream(c, bus, presence, topic, user, deps.stream);
+    return writeEventStream(c, bus, presence, topic, user, streamOptionsWithGrantRevalidation(c, authDeps, deps.stream));
   });
 
   routes.get("/stream/run/:id", async (c) => {
@@ -190,7 +220,7 @@ export function createPushRoutes(deps: PushRoutesDependencies = {}) {
     const authDeps = resolveAuthDependencies(authSource);
     const user = await resolveStreamUser(c, authDeps);
     const topic = await resolveAuthorizedTopic(user, { kind: "run", id: c.req.param("id") }, access);
-    return writeEventStream(c, bus, presence, topic, user, deps.stream);
+    return writeEventStream(c, bus, presence, topic, user, streamOptionsWithGrantRevalidation(c, authDeps, deps.stream));
   });
 
   routes.get("/stream/session/:id", async (c) => {
@@ -200,7 +230,7 @@ export function createPushRoutes(deps: PushRoutesDependencies = {}) {
     const authDeps = resolveAuthDependencies(authSource);
     const user = await resolveStreamUser(c, authDeps);
     const topic = await resolveAuthorizedTopic(user, { kind: "session", id: c.req.param("id") }, access);
-    return writeEventStream(c, bus, presence, topic, user, deps.stream);
+    return writeEventStream(c, bus, presence, topic, user, streamOptionsWithGrantRevalidation(c, authDeps, deps.stream));
   });
 
   routes.get("/stream/proposal/:id", async (c) => {
@@ -210,7 +240,7 @@ export function createPushRoutes(deps: PushRoutesDependencies = {}) {
     const authDeps = resolveAuthDependencies(authSource);
     const user = await resolveStreamUser(c, authDeps);
     const topic = await resolveAuthorizedTopic(user, { kind: "proposal", id: c.req.param("id") }, access);
-    return writeEventStream(c, bus, presence, topic, user, deps.stream);
+    return writeEventStream(c, bus, presence, topic, user, streamOptionsWithGrantRevalidation(c, authDeps, deps.stream));
   });
 
   routes.get("/stream/conversation/:id", async (c) => {
@@ -224,7 +254,7 @@ export function createPushRoutes(deps: PushRoutesDependencies = {}) {
       { kind: "conversation", id: c.req.param("id") },
       access
     );
-    return writeEventStream(c, bus, presence, topic, user, deps.stream);
+    return writeEventStream(c, bus, presence, topic, user, streamOptionsWithGrantRevalidation(c, authDeps, deps.stream));
   });
 
   return routes;

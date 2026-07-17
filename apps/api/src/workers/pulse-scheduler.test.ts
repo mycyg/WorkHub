@@ -145,3 +145,24 @@ test("R15 批 D: ddl-chase task drives its service through the shared scheduler 
   assert.equal(calls, 1);
   assert.equal(scheduler.stats().tasks["ddl-chase"]!.interval_ms, 1_800_000);
 });
+
+test("R20 REL-2: proactive-intent-recovery task drives recoverStalled through the shared scheduler contract", async () => {
+  let seen: { now: string; olderThanMs: number; maxAttempts: number; limit: number } | undefined;
+  const scheduler = createPulseScheduler();
+  // 镜像 getDefaultPulseScheduler 里 proactive-intent-recovery 的注册形状——驱动崩溃恢复扫描，走同一条
+  // 互斥/错误隔离/stats 水管，maxDrainPerTick 透传成 limit。
+  scheduler.register({
+    name: "proactive-intent-recovery",
+    intervalMs: 5 * 60 * 1000,
+    maxDrainPerTick: 200,
+    tick: async (ctx) => {
+      seen = { now: ctx.now.toISOString(), olderThanMs: 5 * 60 * 1000, maxAttempts: 3, limit: ctx.maxDrainPerTick ?? 200 };
+      return { scanned: 0, recovered: 0, suppressed: 0, stalled: 0, retryable: 0 };
+    }
+  });
+  const outcome = await scheduler.runTask("proactive-intent-recovery");
+  assert.equal(outcome.status, "ran");
+  assert.equal(seen?.limit, 200, "maxDrainPerTick is threaded into recoverStalled's limit");
+  assert.equal(seen?.maxAttempts, 3);
+  assert.equal(scheduler.stats().tasks["proactive-intent-recovery"]!.interval_ms, 5 * 60 * 1000);
+});

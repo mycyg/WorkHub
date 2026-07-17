@@ -539,6 +539,114 @@ export function openSpotlightAvatarCropModal(
   });
 }
 
+// —— R20 SEC P1-01（桌面 logout 吞错伪装成功）——————————————————————————————————————————————
+// 旧实现：`ctx.client.logout().catch(()=>undefined).then(...)` 吞掉服务端登出失败，随后照样清本地令牌、
+// `invoke("set_client_token","")` 也 fire-and-forget 且 `.catch` 吞错，最后无条件 reload——断网时用户看到
+// "已退出"而服务端 token 仍有效、Rust 壳层仍带旧身份重连。改为有序状态机：①await 服务端登出（失败即停，
+// 界面可见错误+可重试，绝不静默）→②await 清 Rust 壳层令牌（失败同样可见）→③清本地→广播→reload。
+// 服务端不可达时提供显式"仍要本地退出"兜底（force 跳过①，文案警示服务端凭证可能仍有效）。
+// 副作用抽成注入的 effects，让状态机可脱离真实 window/__TAURI__ 单测（同头像裁剪层依赖注入的取舍）。
+
+export type DesktopLogoutStage = "server" | "shell";
+
+export type DesktopLogoutEffects = {
+  // ① 撤销服务端会话/设备令牌（POST /api/auth/logout）。失败必须抛出，绝不吞。
+  serverLogout: () => Promise<unknown>;
+  // ② 清空 Rust 壳层令牌（invoke set_client_token ""）：递增身份代际、中止旧身份后台 SSE pump。失败必须抛出。
+  clearShellToken: () => Promise<unknown>;
+  // ③ 清本地身份（localStorage 令牌 + 登出标记）。内部 best-effort，不抛。
+  clearLocalIdentity: () => void;
+  // ③ 跨窗口广播登出（工作台/桌宠丢弃旧 token）。best-effort，不抛。
+  broadcastLoggedOut: () => void;
+  // ③ 整窗 reload（重走 bootstrap 绑定流）。
+  reload: () => void;
+};
+
+export type DesktopLogoutView = {
+  showProgress: () => void;
+  showError: (stage: DesktopLogoutStage) => void;
+};
+
+export type DesktopLogoutResult = "done" | "server-failed" | "shell-failed";
+
+// 有序登出状态机。force=true 表示用户在服务端不可达后显式选择"仍要本地退出"——跳过①，直接做②③本地清理，
+// 接受服务端凭证可能仍有效（错误文案已警示）。返回结果供测试断言（顺序 + 失败在哪一步止住）。
+export async function runDesktopLogout(
+  effects: DesktopLogoutEffects,
+  view: DesktopLogoutView,
+  options: { force: boolean }
+): Promise<DesktopLogoutResult> {
+  view.showProgress();
+  // ① 服务端登出。非 force 时失败即停：绝不在服务端凭证仍有效时清本地、伪装成功（P1-01 根因）。
+  if (!options.force) {
+    try {
+      await effects.serverLogout();
+    } catch {
+      view.showError("server");
+      return "server-failed";
+    }
+  }
+  // ② 清 Rust 壳层令牌（await、失败可见）。此时①已成功（服务端已安全），②失败只是本地令牌没清干净，可重试。
+  try {
+    await effects.clearShellToken();
+  } catch {
+    view.showError("shell");
+    return "shell-failed";
+  }
+  // ③ 清本地 → 广播 → reload。
+  effects.clearLocalIdentity();
+  effects.broadcastLoggedOut();
+  effects.reload();
+  return "done";
+}
+
+// 登出失败面板：可见错误 + 重试；server 阶段另给"仍要本地退出"兜底。文案中文/英文双语、无 emoji，语气对齐产品。
+export function logoutErrorPanelHtml(zh: boolean, stage: DesktopLogoutStage): string {
+  const title =
+    stage === "server"
+      ? zh
+        ? "登出没成功"
+        : "Sign-out didn't complete"
+      : zh
+        ? "本地清理没完成"
+        : "Local cleanup didn't finish";
+  const detail =
+    stage === "server"
+      ? zh
+        ? "连不上服务端。你在这台设备上的登录可能仍然有效——请检查网络后重试。"
+        : "Couldn't reach the server. Your sign-in on this device may still be valid — check your connection and retry."
+      : zh
+        ? "服务端已登出，但本地令牌没清干净。请重试。"
+        : "Signed out on the server, but the local token wasn't cleared. Please retry.";
+  // 重试：server 阶段重跑完整流程（含服务端）；shell 阶段服务端已完成，只重跑本地清理（force 跳过①）。
+  const retryForce = stage === "shell" ? "true" : "false";
+  const retryBtn = `<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-set-logout-retry data-logout-force="${retryForce}">${zh ? "重试" : "Retry"}</button>`;
+  // 仅 server 阶段给"仍要本地退出"兜底：服务端不可达时用户显式本地退出，文案已警示服务端凭证可能仍有效。
+  const forceBtn =
+    stage === "server"
+      ? `<button type="button" class="wh-spot-act wh-spot-act--danger ds-pressable" data-set-logout-local>${zh ? "仍要本地退出" : "Sign out locally anyway"}</button>`
+      : "";
+  return `<div class="wh-spot-error" data-spot-logout-error="${stage}"><div class="wh-spot-row-title">${title}</div><div class="wh-spot-row-sub" style="margin-top:6px">${detail}</div><div style="margin-top:13px;display:flex;gap:8px;flex-wrap:wrap">${retryBtn}${forceBtn}</div></div>`;
+}
+
+// 清 Rust 壳层令牌。与旧实现的关键差异：await 且不吞错——失败向上抛给状态机（可见可重试），不再 fire-and-forget
+// 伪装成功。浏览器 dev 无 __TAURI__ 时 no-op（那种环境本就没有壳层 SSE pump 要停）。
+async function invokeShellClearClientToken(): Promise<void> {
+  const tauri = (
+    globalThis as {
+      __TAURI__?: {
+        core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
+        invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
+      };
+    }
+  ).__TAURI__;
+  const invoke = tauri?.core?.invoke ?? tauri?.invoke;
+  if (typeof invoke !== "function") {
+    return;
+  }
+  await invoke("set_client_token", { token: "" });
+}
+
 export function createSettingsView(): SpotlightCapabilityView {
   return {
     id: "settings",
@@ -697,6 +805,43 @@ export function createSettingsView(): SpotlightCapabilityView {
           });
       }
 
+      // R20 SEC P1-01：登出的生产副作用（摸真 window/__TAURI__/壳层广播）。状态机本身 (runDesktopLogout) 与
+      // 这些副作用解耦，单测直接注入假 effects 断言顺序/失败停位；这里只在真实桌面环境执行。
+      const logoutEffects: DesktopLogoutEffects = {
+        serverLogout: () => ctx.client.logout(),
+        clearShellToken: () => invokeShellClearClientToken(),
+        clearLocalIdentity: () => {
+          try {
+            window.localStorage.removeItem("workhub_client_token");
+            window.localStorage.removeItem("yqgl_client_token");
+            // R10：落显式登出标记——boot 见它则停在重新绑定屏，不再用固定昵称自动绑回同一账户。
+            window.localStorage.setItem("workhub_desktop_logged_out", "1");
+          } catch {
+            // ignore storage failure
+          }
+        },
+        broadcastLoggedOut: () => {
+          // 跨窗口登出广播：已开着的工作台/桌宠窗手里的 client token 刚被清空，靠既有 Tauri 事件桥通知它们。
+          // 无 Tauri（浏览器 dev 预览）时 resolveDesktopShellEmitter() 返回 undefined，静默跳过。
+          const shellEmitter = resolveDesktopShellEmitter();
+          void Promise.resolve(shellEmitter?.emit?.("workhub-logged-out")).catch(() => undefined);
+        },
+        reload: () => window.location.reload()
+      };
+      const logoutView: DesktopLogoutView = {
+        showProgress: () => ctx.toast(zh ? "正在登出…" : "Signing out…", "info"),
+        showError: (stage) => {
+          ctx.body.innerHTML = logoutErrorPanelHtml(zh, stage);
+          ctx.requestResize();
+          if (!disposed) {
+            ctx.refocusBody();
+          }
+        }
+      };
+      const runLogoutFlow = (opts: { force: boolean }) => {
+        void runDesktopLogout(logoutEffects, logoutView, opts);
+      };
+
       ctx.body.addEventListener("click", (event) => {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
@@ -729,46 +874,20 @@ export function createSettingsView(): SpotlightCapabilityView {
           ctx.open("memory");
           return;
         }
-        // R9（身份边缘 high）：桌面此前完全没有登出/换身份入口——首启绑定后永久持有身份。
-        // 登出=吊销服务端会话（尽力而为）+清本地 client_token+整窗 reload（重走 bootstrap 绑定流）。
-        const logoutBtn = target.closest<HTMLElement>("[data-set-logout]");
-        if (logoutBtn) {
-          ctx.toast(zh ? "正在登出…" : "Signing out…", "info");
-          void ctx.client.logout()
-            .catch(() => undefined)
-            .then(() => {
-              try {
-                window.localStorage.removeItem("workhub_client_token");
-                window.localStorage.removeItem("yqgl_client_token");
-                // R10：落显式登出标记——boot 见它则停在重新绑定屏，不再用固定昵称自动绑回同一账户。
-                window.localStorage.setItem("workhub_desktop_logged_out", "1");
-                // R11 回归修复：Rust 壳层 SSE worker 独立持有 client token——不清空它，
-                // 登出后后台仍带旧身份重连推送流。空串即清（main.rs set_client_token 语义）。
-                const tauri = (globalThis as {
-                  __TAURI__?: {
-                    core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
-                    invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
-                  };
-                }).__TAURI__;
-                const invoke = tauri?.core?.invoke ?? tauri?.invoke;
-                if (typeof invoke === "function") {
-                  void invoke("set_client_token", { token: "" }).catch(() => undefined);
-                }
-              } catch {
-                // ignore storage failure
-              }
-              // G-desktop 止血批 3（跨窗口登出广播）：这个窗口自己接下来就 reload 了，但已经开着的
-              // 工作台/桌宠窗口不会跟着走——原来没有任何信号告诉它们"手里的 client token 刚被清空
-              // 了"，只会拿着废 token 继续发请求、连环 401。通过既有 Tauri 事件通路（同
-              // workbench/interrupt-broadcast.ts 用的 __TAURI__.event.emit 通用桥，事件名见
-              // desktop-cuu-runtime.ts 的 DesktopShellEventName）广播一下，接收端在 boot.ts 的
-              // bindWorkbenchLoggedOutListener（workbench）和 pet-surface.ts 的同名监听（桌宠）。
-              // 无 Tauri（浏览器 dev 预览）时 resolveDesktopShellEmitter() 返回 undefined，静默跳过——
-              // 那些环境本来就没有别的窗口能收广播，不是这批要修的缺口。
-              const shellEmitter = resolveDesktopShellEmitter();
-              void Promise.resolve(shellEmitter?.emit?.("workhub-logged-out")).catch(() => undefined);
-              window.location.reload();
-            });
+        // R9 → R20 SEC P1-01：登出走有序状态机（runDesktopLogout：①服务端登出 ②清 Rust 壳层令牌
+        // ③清本地→广播→reload）。服务端失败即停并渲可见错误+可重试，绝不吞错伪装成功。见文件上方状态机注释。
+        if (target.closest("[data-set-logout]")) {
+          runLogoutFlow({ force: false });
+          return;
+        }
+        // 失败面板上的按钮：重试（force 由阶段编码在 data-logout-force）/ 仍要本地退出（服务端不可达兜底，force=true）。
+        const logoutRetry = target.closest<HTMLElement>("[data-set-logout-retry]");
+        if (logoutRetry) {
+          runLogoutFlow({ force: logoutRetry.dataset.logoutForce === "true" });
+          return;
+        }
+        if (target.closest("[data-set-logout-local]")) {
+          runLogoutFlow({ force: true });
           return;
         }
         // R14 批 AVATAR：移除头像——DELETE 成功后隐藏预览图+按钮本身（回退首字母 tile 自然露出）。

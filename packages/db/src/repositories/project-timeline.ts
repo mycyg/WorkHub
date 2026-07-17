@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, inArray, isNull, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 
 import type { WorkItemStatus } from "@workhub/contracts";
 
@@ -311,6 +311,12 @@ export function createProjectTimelineRepository(db: WorkHubDb): ProjectTimelineR
         if (dependent.projectId !== dependency.projectId) {
           throw new TimelineDependencyError("cross_project", "依赖只能建立在同一个项目内的工作项之间。");
         }
+        // 项目级 advisory 事务锁：读边→BFS 判环→插边这三步必须对同一 projectId 串行化，否则并发的
+        // A→B 与 B→A 两个事务各自在空图快照上判无环、双双通过，插入后成环（复合唯一索引只防重边不防环）。
+        // 锁必须在读边（loadProjectDependencyEdges）之前拿到，事务提交/回滚自动释放，无需显式解锁。
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtext(${`project-dependency:${dependent.projectId}`})::bigint)`
+        );
         const edges = await loadProjectDependencyEdges(tx, dependent.projectId);
         if (wouldCreateDependencyCycle(edges, input.workItemId, input.dependsOnWorkItemId)) {
           throw new TimelineDependencyError("cycle", "这条依赖会造成循环依赖（A 依赖 B、B 又绕回依赖 A）。");

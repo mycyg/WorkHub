@@ -13,6 +13,7 @@ import {
   createDesktopCuuAgentLauncherCard,
   createDesktopCuuDemoScript,
   createDesktopShellScriptedListener,
+  DesktopCuuFetchEventSource,
   desktopCuuProjectContextFromRoute,
   desktopCuuProjectContextMaxAgeMs,
   desktopCuuProjectContextStorageKey,
@@ -1786,6 +1787,277 @@ test("desktop Cuu runtime uses fetch SSE with local client-token headers", async
       value: originalLocalStorage
     });
   }
+});
+
+// R20 P1-03 回归门：可注入的假时钟——tick() 触发当拍全部挂起定时器，用于确定性驱动重连/兜底退避，
+// 不依赖真定时器/真网络。返回值用 setTimeout 的真实类型别名，与生产注入点的 TimerId 结构一致。
+type FakeTimerId = ReturnType<typeof globalThis.setTimeout>;
+
+function createFakeClock() {
+  let seq = 0;
+  const pending = new Map<number, { handler: () => void; delayMs: number }>();
+  const cleared: number[] = [];
+  const delays: number[] = [];
+  return {
+    setTimeout(handler: () => void, delayMs: number): FakeTimerId {
+      const id = seq;
+      seq += 1;
+      pending.set(id, { handler, delayMs });
+      delays.push(delayMs);
+      return id as unknown as FakeTimerId;
+    },
+    clearTimeout(id: FakeTimerId): void {
+      cleared.push(id as unknown as number);
+      pending.delete(id as unknown as number);
+    },
+    pendingCount() {
+      return pending.size;
+    },
+    delays() {
+      return delays.slice();
+    },
+    cleared() {
+      return cleared.slice();
+    },
+    // 快照当拍挂起项后清空再逐一触发——新排的定时器进入下一拍，不在本拍内递归触发。
+    fire() {
+      const due = [...pending.values()];
+      pending.clear();
+      for (const timer of due) {
+        timer.handler();
+      }
+    }
+  };
+}
+
+// 冲刷微任务 + 宏任务，让 fire() 触发的 async open()/refresh() 跑到下一个悬挂点并把后续定时器排上。
+async function flushAsync(cycles = 8) {
+  for (let i = 0; i < cycles; i += 1) {
+    await Promise.resolve();
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
+
+test("R20 P1-03: fetch SSE source reconnects with backoff on EOF and fetch failure, resets on success", async () => {
+  const clock = createFakeClock();
+  const errors: string[] = [];
+  let opens = 0;
+  let fetchCalls = 0;
+  // 脚本：连#0=EOF, 连#1..2=断网(抛), 连#3=EOF(恢复)。EOF 与抛错都必须派发 error 并按退避重连。
+  const script = ["eof", "throw", "throw", "eof"];
+  const fakeFetch = async () => {
+    const mode = script[fetchCalls] ?? "throw";
+    fetchCalls += 1;
+    if (mode === "throw") {
+      throw new TypeError("Failed to fetch");
+    }
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.close();
+        }
+      }),
+      { status: 200, headers: { "Content-Type": "text/event-stream" } }
+    );
+  };
+
+  const source = new DesktopCuuFetchEventSource(
+    "/daemon/api/push/stream/run/run-1",
+    { withCredentials: true },
+    {
+      fetch: fakeFetch as unknown as typeof fetch,
+      setTimeout: clock.setTimeout,
+      clearTimeout: clock.clearTimeout,
+      random: () => 0,
+      baseReconnectMs: 1000,
+      maxReconnectMs: 60_000
+    }
+  );
+  source.addEventListener("open", () => {
+    opens += 1;
+  });
+  source.addEventListener("error", (event) => {
+    if (event.data) {
+      errors.push(event.data);
+    }
+  });
+
+  // 首连成功后立即 EOF：旧实现在此静默返回、无任何调度（红）；新实现派发 error 并排一个退避重连（绿）。
+  await flushAsync();
+  assert.equal(fetchCalls, 1);
+  assert.equal(opens, 1);
+  assert.deepEqual(errors, ["event_source_eof"]);
+  assert.equal(clock.pendingCount(), 1);
+  assert.deepEqual(clock.delays(), [1000]);
+
+  // 重连#1 → 断网抛错 → 派发 error + 退避翻倍。
+  clock.fire();
+  await flushAsync();
+  assert.equal(fetchCalls, 2);
+  assert.deepEqual(errors, ["event_source_eof", "Failed to fetch"]);
+  assert.equal(clock.delays().at(-1), 2000);
+
+  // 重连#2 → 再次断网 → 退避再翻倍。
+  clock.fire();
+  await flushAsync();
+  assert.equal(fetchCalls, 3);
+  assert.equal(clock.delays().at(-1), 4000);
+
+  // 重连#3 → 网络恢复、成功建流 → 退避复位回基准（EOF 后下一次退避又是 1000），并再次派发 open。
+  clock.fire();
+  await flushAsync();
+  assert.equal(fetchCalls, 4);
+  assert.equal(opens, 2);
+  assert.equal(clock.delays().at(-1), 1000);
+  assert.equal(clock.pendingCount(), 1);
+
+  // 视图关闭：清掉待触发的重连定时器，此后再怎么推进都不再重连（无泄漏）。
+  source.close();
+  assert.equal(clock.pendingCount(), 0);
+  clock.fire();
+  await flushAsync();
+  assert.equal(fetchCalls, 4);
+});
+
+test("R20 P1-03: run stream fallback keeps polling past 10 failures and converges after recovery", async () => {
+  FakeEventSource.instances = [];
+  const clock = createFakeClock();
+  const cards: CuuCard[] = [];
+  const statuses: DesktopCuuRunStreamStatus[] = [];
+  let getCalls = 0;
+  // 断网连续失败 14 次（远超旧的 10 次上限）后网络恢复，返回终态。
+  const FAILURES = 14;
+  const client = {
+    streamUrl(path: string) {
+      return `/daemon${path}`;
+    },
+    async getAgentRun() {
+      getCalls += 1;
+      if (getCalls <= FAILURES) {
+        throw new WorkHubApiError(503, "network_unavailable", "Cuu R20 forced network unavailable.");
+      }
+      return agentRunLive({ status: "succeeded", title: "Cuu 桌面入口任务" });
+    }
+  };
+
+  subscribeDesktopCuuAgentRunStream({
+    client,
+    run: agentRunLive({ status: "running" }),
+    EventSourceCtor: FakeEventSource,
+    fallbackRefreshMs: 1000,
+    timers: { setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout },
+    onCard(card) {
+      cards.push(card);
+    },
+    onStatus(status) {
+      statuses.push(status);
+    }
+  });
+
+  // 逐拍推进：每拍触发唯一挂起的兜底定时器 → refresh（失败）→ 退避后续排下一拍。旧代码第 10 次失败后
+  // scheduleFallbackRefresh 直接返回、不再续排 → getCalls 卡在 10、永远等不到 SSE 唤醒（自制源已死）。
+  for (let i = 0; i < FAILURES + 3; i += 1) {
+    clock.fire();
+    await flushAsync();
+  }
+
+  assert.ok(getCalls > 10, `polling must survive past 10 failures, got ${getCalls}`);
+  assert.equal(statuses.some((status) => status.state === "refreshed" && status.status === "succeeded"), true);
+  assert.equal(statuses.some((status) => status.state === "closed"), true);
+  assert.equal(cards.at(-1)?.state, "celebrating");
+  assert.equal(FakeEventSource.instances[0]?.closed, true);
+  // 收敛后 close 清掉兜底定时器，无泄漏。
+  assert.equal(clock.pendingCount(), 0);
+});
+
+test("R20 P1-03: SSE reconnect (open event) triggers terminal reconciliation", async () => {
+  FakeEventSource.instances = [];
+  const clock = createFakeClock();
+  const cards: CuuCard[] = [];
+  const statuses: DesktopCuuRunStreamStatus[] = [];
+  let getCalls = 0;
+  const client = {
+    streamUrl(path: string) {
+      return `/daemon${path}`;
+    },
+    async getAgentRun() {
+      getCalls += 1;
+      // 断网期间 run 已在服务端终结；重连后的流不回放漏掉的事件，靠 open 触发的对账收敛到终态。
+      return agentRunLive({ status: "succeeded", title: "Cuu 桌面入口任务" });
+    }
+  };
+
+  const subscription = subscribeDesktopCuuAgentRunStream({
+    client,
+    run: agentRunLive({ status: "running" }),
+    EventSourceCtor: FakeEventSource,
+    // 慢到本测试同步断言期间兜底定时器不自发触发——对账必须由 open 触发，而非兜底轮询。
+    fallbackRefreshMs: 600_000,
+    timers: { setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout },
+    onCard(card) {
+      cards.push(card);
+    },
+    onStatus(status) {
+      statuses.push(status);
+    }
+  });
+  const source = FakeEventSource.instances[0]!;
+
+  // 断连（无自动对账）→ 重连派发 open → 触发一次终态对账 refresh。
+  source.emit("error");
+  source.emit("open");
+  await flushAsync();
+
+  assert.ok(getCalls >= 1, "open must trigger a reconciliation getAgentRun");
+  assert.equal(statuses.some((status) => status.state === "refreshed" && status.status === "succeeded"), true);
+  assert.equal(cards.at(-1)?.state, "celebrating");
+  assert.equal(statuses.some((status) => status.state === "closed"), true);
+  assert.equal(clock.pendingCount(), 0);
+  subscription.close();
+});
+
+test("R20 P1-03: closing the subscription clears fallback timers and stops rescheduling", async () => {
+  FakeEventSource.instances = [];
+  const clock = createFakeClock();
+  let getCalls = 0;
+  const client = {
+    streamUrl(path: string) {
+      return `/daemon${path}`;
+    },
+    async getAgentRun() {
+      getCalls += 1;
+      throw new WorkHubApiError(503, "network_unavailable", "Cuu R20 forced network unavailable.");
+    }
+  };
+
+  const subscription = subscribeDesktopCuuAgentRunStream({
+    client,
+    run: agentRunLive({ status: "running" }),
+    EventSourceCtor: FakeEventSource,
+    fallbackRefreshMs: 1000,
+    timers: { setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout },
+    onCard() {},
+    onStatus() {}
+  });
+  const source = FakeEventSource.instances[0]!;
+
+  // 先跑两拍（均失败）确认一直在续排。
+  clock.fire();
+  await flushAsync();
+  clock.fire();
+  await flushAsync();
+  assert.ok(getCalls >= 2);
+  assert.equal(clock.pendingCount(), 1);
+
+  // 关闭视图 → 清掉挂起定时器 + 关掉 source；此后推进时钟不再排/触发任何轮询（无泄漏）。
+  subscription.close();
+  assert.equal(source.closed, true);
+  assert.equal(clock.pendingCount(), 0);
+  const callsAfterClose = getCalls;
+  clock.fire();
+  await flushAsync();
+  assert.equal(clock.pendingCount(), 0);
+  assert.equal(getCalls, callsAfterClose);
 });
 
 test("desktop Cuu runtime maps API and stream failures to Cuu cards", () => {
