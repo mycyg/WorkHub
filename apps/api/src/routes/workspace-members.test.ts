@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -7,11 +8,13 @@ import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 
 import { loadSettings, type Settings } from "@workhub/config";
+import type { WorkspaceRosterResultVM } from "@workhub/contracts";
 import type {
   ClientDeviceAuthRow,
   ClientDeviceRepository,
   UserAuthRow,
-  UserRepository
+  UserRepository,
+  WorkspaceMembershipRow
 } from "@workhub/db";
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "../middleware/auth.js";
@@ -19,7 +22,7 @@ import {
   WorkspaceMemberServiceError,
   type WorkspaceMemberService
 } from "../services/workspace-members.js";
-import { createWorkspaceMemberRoutes } from "./workspace-members.js";
+import { createWorkspaceMemberRoutes, type WorkspaceRosterReader } from "./workspace-members.js";
 
 const now = new Date("2026-07-16T09:00:00.000Z");
 const adminUserId = "70000000-0000-4000-8000-0000000000a1";
@@ -322,4 +325,176 @@ test("PATCH member role rejects an unknown role with 422 before the service", as
 
   assert.equal(response.status, 422);
   assert.equal(calls, 0);
+});
+
+// ── R20 P2A（P1-08 修复 · GET /api/workspace/roster） ──────────────────────────────────────────
+// 内存假 roster 读者：以「带 workspaceId 的成员种子」为真源，findActiveForUserWorkspace 判归属、
+// listActiveRosterPageByWorkspace 按工作区过滤 + 昵称排序 + limit/offset 切片——足以在路由边界断言
+// 工作区隔离、分页、无 200 截断、非成员 403，无需真 DB。
+
+type RosterSeed = {
+  workspaceId: string;
+  userId: string;
+  nickname: string;
+  role: "member" | "admin" | "owner";
+  joinedAt: Date;
+  avatarUpdatedAt: Date | null;
+};
+
+function rosterReader(seed: RosterSeed[]): {
+  reader: WorkspaceRosterReader;
+  calls: Array<{ workspaceId: string; limit: number; offset: number }>;
+} {
+  const calls: Array<{ workspaceId: string; limit: number; offset: number }> = [];
+  const reader: WorkspaceRosterReader = {
+    async findActiveForUserWorkspace(userId, workspaceId) {
+      const member = seed.find((row) => row.userId === userId && row.workspaceId === workspaceId);
+      return member ? ({ id: "membership", userId, workspaceId } as unknown as WorkspaceMembershipRow) : null;
+    },
+    async listActiveRosterPageByWorkspace(workspaceId, page) {
+      calls.push({ workspaceId, limit: page.limit, offset: page.offset });
+      const all = seed
+        .filter((row) => row.workspaceId === workspaceId)
+        .sort((a, b) => a.nickname.localeCompare(b.nickname));
+      const slice = all.slice(page.offset, page.offset + page.limit);
+      return {
+        total: all.length,
+        members: slice.map((row) => ({
+          userId: row.userId,
+          nickname: row.nickname,
+          role: row.role,
+          joinedAt: row.joinedAt,
+          avatarUpdatedAt: row.avatarUpdatedAt
+        }))
+      };
+    }
+  };
+  return { reader, calls };
+}
+
+function rosterApp(runtimeSettings: Settings, reader: WorkspaceRosterReader) {
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route(
+    "/api",
+    createWorkspaceMemberRoutes({ auth: authDeps(runtimeSettings), members: memberService(), roster: reader })
+  );
+  return app;
+}
+
+const otherWorkspaceId = "00000000-0000-4000-8000-0000000000ff";
+
+test("GET roster requires authentication before reaching the reader", async () => {
+  const runtimeSettings = settings();
+  const { reader, calls } = rosterReader([]);
+  const app = rosterApp(runtimeSettings, reader);
+
+  const response = await app.request("/api/workspace/roster");
+
+  assert.equal(response.status, 401);
+  assert.equal(calls.length, 0);
+});
+
+test("GET roster 403s a caller who is not an active member of the workspace", async () => {
+  const runtimeSettings = settings();
+  const { reader, calls } = rosterReader([
+    { workspaceId: otherWorkspaceId, userId: randomUUID(), nickname: "外人", role: "member", joinedAt: now, avatarUpdatedAt: null }
+  ]);
+  const app = rosterApp(runtimeSettings, reader);
+  const headers = { Cookie: await cookie(runtimeSettings) };
+
+  const response = await app.request("/api/workspace/roster", { headers });
+
+  assert.equal(response.status, 403);
+  assert.equal(((await response.json()) as { error: { code: string } }).error.code, "roster_forbidden");
+  assert.equal(calls.length, 0, "a non-member is rejected before the roster query runs");
+});
+
+test("GET roster returns only the caller's workspace members with avatar/online placeholders", async () => {
+  const runtimeSettings = settings();
+  const wsA = runtimeSettings.auth.defaultWorkspaceId;
+  const peerId = randomUUID();
+  const avatarAt = new Date("2026-07-14T00:00:00.000Z");
+  const { reader, calls } = rosterReader([
+    { workspaceId: wsA, userId: adminUserId, nickname: "r17-admin", role: "owner", joinedAt: now, avatarUpdatedAt: avatarAt },
+    { workspaceId: wsA, userId: peerId, nickname: "小赵", role: "member", joinedAt: now, avatarUpdatedAt: null },
+    { workspaceId: otherWorkspaceId, userId: randomUUID(), nickname: "他区成员", role: "member", joinedAt: now, avatarUpdatedAt: null }
+  ]);
+  const app = rosterApp(runtimeSettings, reader);
+  const headers = { Cookie: await cookie(runtimeSettings) };
+
+  const response = await app.request("/api/workspace/roster", { headers });
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as { ok: true; data: WorkspaceRosterResultVM };
+  // 隔离：只用 actor 的工作区查、只回该工作区成员——他区成员绝不泄露。
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.workspaceId, wsA);
+  assert.equal(body.data.total, 2);
+  assert.deepEqual(
+    body.data.members.map((member) => member.user_id).sort(),
+    [adminUserId, peerId].sort()
+  );
+  // 占位字段：online 恒 null；avatar_updated_at 有头像回 ISO、无头像回 null；is_self 正确标本人。
+  const self = body.data.members.find((member) => member.user_id === adminUserId);
+  assert.ok(self);
+  assert.equal(self.is_self, true);
+  assert.equal(self.online, null);
+  assert.equal(self.avatar_updated_at, avatarAt.toISOString());
+  const peer = body.data.members.find((member) => member.user_id === peerId);
+  assert.ok(peer);
+  assert.equal(peer.is_self, false);
+  assert.equal(peer.avatar_updated_at, null);
+});
+
+test("GET roster paginates via limit/offset", async () => {
+  const runtimeSettings = settings();
+  const wsA = runtimeSettings.auth.defaultWorkspaceId;
+  const { reader, calls } = rosterReader([
+    { workspaceId: wsA, userId: adminUserId, nickname: "a-self", role: "owner", joinedAt: now, avatarUpdatedAt: null },
+    { workspaceId: wsA, userId: randomUUID(), nickname: "b-two", role: "member", joinedAt: now, avatarUpdatedAt: null },
+    { workspaceId: wsA, userId: randomUUID(), nickname: "c-three", role: "member", joinedAt: now, avatarUpdatedAt: null }
+  ]);
+  const app = rosterApp(runtimeSettings, reader);
+  const headers = { Cookie: await cookie(runtimeSettings) };
+
+  const response = await app.request("/api/workspace/roster?limit=1&offset=1", { headers });
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as { data: WorkspaceRosterResultVM };
+  assert.deepEqual(calls[0], { workspaceId: wsA, limit: 1, offset: 1 });
+  assert.equal(body.data.total, 3);
+  assert.equal(body.data.limit, 1);
+  assert.equal(body.data.offset, 1);
+  assert.equal(body.data.members.length, 1);
+  assert.equal(body.data.members[0]?.nickname, "b-two");
+});
+
+test("GET roster surfaces members beyond the old 200 cap via offset", async () => {
+  const runtimeSettings = settings();
+  const wsA = runtimeSettings.auth.defaultWorkspaceId;
+  const seed: RosterSeed[] = [
+    { workspaceId: wsA, userId: adminUserId, nickname: "zz-admin", role: "owner", joinedAt: now, avatarUpdatedAt: null }
+  ];
+  for (let index = 0; index < 250; index += 1) {
+    seed.push({
+      workspaceId: wsA,
+      userId: randomUUID(),
+      nickname: `member-${String(index).padStart(3, "0")}`,
+      role: "member",
+      joinedAt: now,
+      avatarUpdatedAt: null
+    });
+  }
+  const { reader } = rosterReader(seed);
+  const app = rosterApp(runtimeSettings, reader);
+  const headers = { Cookie: await cookie(runtimeSettings) };
+
+  const response = await app.request("/api/workspace/roster?limit=100&offset=200", { headers });
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as { data: WorkspaceRosterResultVM };
+  assert.equal(body.data.total, 251, "total counts every active member, not a 200 cap");
+  // 第 201 个及以后的成员现在可经 offset 翻到（/api/users 硬 .limit(200) 时代它们对消费端永不可见）。
+  const nicknames = body.data.members.map((member) => member.nickname);
+  assert.ok(nicknames.includes("member-249"), "the 250th member is reachable past offset 200");
 });

@@ -105,6 +105,12 @@ import {
   type SpotlightResizeFn
 } from "./spotlight/controller.js";
 import { isStaleDesktopClientTokenError } from "./auth-recovery.js";
+import {
+  bindDesktopCredentialGate,
+  isPasswordModeBootstrapError,
+  readDesktopAuthModeHint,
+  rememberDesktopAuthModeHint
+} from "./desktop-login.js";
 
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
@@ -176,7 +182,11 @@ function pushShellBadgeToShell(count: number, locale: WorkHubLocale): void {
   }
 }
 
-async function bootstrapDesktopClientToken(client: BrowserApiClient): Promise<void> {
+// P1-02（REL-5）：昵称模式成功=拿到 token(ready)；密码/hybrid 模式 desktop-bootstrap 会 404 →
+// 需要凭据登录(needs-credentials)，不再当「离线」静默吞；后端不可达等=unavailable。
+type DesktopBootstrapOutcome = "ready" | "needs-credentials" | "unavailable";
+
+async function bootstrapDesktopClientToken(client: BrowserApiClient): Promise<DesktopBootstrapOutcome> {
   try {
     const result = await client.bootstrapDesktop({
       nickname: "WorkHub Desktop",
@@ -185,11 +195,19 @@ async function bootstrapDesktopClientToken(client: BrowserApiClient): Promise<vo
     });
     if (result?.client_token) {
       window.localStorage.setItem("workhub_client_token", result.client_token);
+      rememberDesktopAuthModeHint(window.localStorage, "nickname");
+      return "ready";
     }
+    return "unavailable";
   } catch (error) {
-    // 密码模式(404) / 后端不可达：保持无 token；上层取数失败会显示连接错误。
-    // 记一行便于诊断（不含敏感信息）——desktop-bootstrap 仅 nickname 模式开放，密码模式会 404。
+    if (isPasswordModeBootstrapError(error)) {
+      // 密码/hybrid 模式：桌面要凭据登录换令牌（见 desktop-login.ts）。记下模式，供登出后选对登录门。
+      rememberDesktopAuthModeHint(window.localStorage, "password");
+      return "needs-credentials";
+    }
+    // 后端不可达等：保持无 token；上层取数失败会显示连接错误。记一行便于诊断（不含敏感信息）。
     console.warn("WorkHub desktop bootstrap failed; continuing without client token", error);
+    return "unavailable";
   }
 }
 
@@ -204,12 +222,23 @@ export function desktopLoggedOut(): boolean {
   }
 }
 
-async function ensureDesktopClientToken(client: BrowserApiClient): Promise<void> {
+// P1-02（REL-5）：返回鉴权门状态，让 boot 决定渲主窗还是凭据登录门。
+// - ready：已有可用 token；
+// - needs-credentials：密码/hybrid 模式要凭据登录（fresh/stale 探到 404，或登出后按模式提示）；
+// - logged-out：昵称模式的显式登出态（保持既有「不自动 rebind」，不渲凭据门）；
+// - offline：拿不到 token 也非上述（后端不可达等），交给上层离线兜底。
+type DesktopAuthGateState = "ready" | "needs-credentials" | "logged-out" | "offline";
+
+async function ensureDesktopClientToken(client: BrowserApiClient): Promise<DesktopAuthGateState> {
   if (desktopLoggedOut()) {
-    return;
+    // 登出态绝不自动昵称 rebind（否则登出形同虚设）。密码模式没有「自动」可言——按上次探得的模式提示：
+    // 密码模式渲凭据登录门；昵称/未知模式保持既有行为（不 bootstrap、不渲门）。
+    return readDesktopAuthModeHint(window.localStorage) === "password" ? "needs-credentials" : "logged-out";
   }
   if (!clientToken()) {
-    await bootstrapDesktopClientToken(client);
+    if ((await bootstrapDesktopClientToken(client)) === "needs-credentials") {
+      return "needs-credentials";
+    }
   } else {
     // rank16：已有 token 也要探活一次——若被吊销/陈旧(not_identified)，清掉重铸，
     // 否则主窗/桌宠会拿着死 token 永远静默拉不到数据（旧的只在「无 token」时引导，覆盖不到这种情况）。
@@ -219,14 +248,28 @@ async function ensureDesktopClientToken(client: BrowserApiClient): Promise<void>
     } catch (error) {
       if (isStaleDesktopClientTokenError(error)) {
         window.localStorage.removeItem("workhub_client_token");
-        await bootstrapDesktopClientToken(client);
+        if ((await bootstrapDesktopClientToken(client)) === "needs-credentials") {
+          return "needs-credentials";
+        }
       }
     }
   }
   const token = clientToken();
   if (token) {
     pushClientTokenToShell(token);
+    return "ready";
   }
+  return "offline";
+}
+
+// 密码/hybrid 模式凭据登录门：接到既有 login → device-token exchange 流程，成功后 reload 走既有 token 流。
+function mountDesktopCredentialGate(rootEl: HTMLElement, client: BrowserApiClient, locale: WorkHubLocale): void {
+  bindDesktopCredentialGate(rootEl, {
+    client,
+    locale,
+    storage: window.localStorage,
+    onSuccess: () => window.location.reload()
+  });
 }
 
 async function resolveBootLocale(client: BrowserApiClient, fallback: WorkHubLocale) {
@@ -1293,7 +1336,13 @@ async function bootSpotlight() {
       getClientToken: clientToken
     });
     // 跨源鉴权地基：先确保有 client token（goldPath/pages 才返回 LIVE 数据），并把令牌推给 Rust 壳（SSE /me 鉴权）。
-    await ensureDesktopClientToken(client);
+    const gate = await ensureDesktopClientToken(client);
+    // P1-02（REL-5）：密码/hybrid 模式没有昵称自助引导——渲凭据登录门（login → device-token exchange），
+    // 登录成功后 reload 走既有 token 流。昵称模式不进这一分支（gate 只在 desktop-bootstrap 404 时才是它）。
+    if (gate === "needs-credentials") {
+      mountDesktopCredentialGate(root, client, locale);
+      return;
+    }
     // R12（首帧）：resolveBootLocale 内部的 me() 与 ensureDesktopClientToken 的探活是同一请求的重复——
     // 直接拿一次 me 结果解析 locale，省一拍串行往返。
     const bootMe = await client.me().catch(() => null);

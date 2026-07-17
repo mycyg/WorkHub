@@ -75,6 +75,20 @@ export type UpdateProjectInstructionsInput = {
   now?: Date;
 };
 
+// R20 P2A（R19-19 项目归档/删除）：软置 archived=true——仅命中「当前活跃」（未归档、未软删）的项目行，
+// 已归档/已删返回 null（幂等且不复活墓碑）。列表读路径的 WHERE 已过滤 archived=true，故无需改读。
+export type ArchiveProjectInput = {
+  projectId: string;
+  now?: Date;
+};
+
+// R20 P2A：软删——软置 deletedAt（墓碑），可选记录删除者昵称。仅命中未软删的行，已删返回 null。
+export type SoftDeleteProjectInput = {
+  projectId: string;
+  deletedByNickname?: string | null;
+  now?: Date;
+};
+
 export class ProjectSlugOccupiedError extends Error {
   constructor(public readonly slug: string) {
     super("Project slug is occupied by an archived or deleted project in this workspace");
@@ -90,6 +104,9 @@ export type ProjectRepository = {
   listPersonalForUser: (input: ListPersonalProjectsInput) => Promise<ProjectListRow[]>;
   // R16 批 W4a：写路径——返回更新后的完整行（含 instructionsMd），未命中活跃项目返回 null。
   updateInstructions: (input: UpdateProjectInstructionsInput) => Promise<ProjectRow | null>;
+  // R20 P2A（R19-19）：软归档/软删——CAS 只命中活跃/未删行，未命中返回 null（不复活墓碑）。
+  archiveProject: (input: ArchiveProjectInput) => Promise<ProjectRow | null>;
+  softDeleteProject: (input: SoftDeleteProjectInput) => Promise<ProjectRow | null>;
 };
 
 async function ensureActiveMain(
@@ -365,6 +382,43 @@ export function createProjectRepository(db: WorkHubDb): ProjectRepository {
           and(
             eq(projects.id, input.projectId),
             eq(projects.archived, false),
+            isNull(projects.deletedAt)
+          )
+        )
+        .returning();
+      return row ?? null;
+    },
+
+    async archiveProject(input) {
+      const at = input.now ?? new Date();
+      const [row] = await db
+        .update(projects)
+        .set({ archived: true, updatedAt: at })
+        // CAS：只归档「当前活跃」的项目——已归档/已软删不再命中（幂等，返回 null）。
+        .where(
+          and(
+            eq(projects.id, input.projectId),
+            eq(projects.archived, false),
+            isNull(projects.deletedAt)
+          )
+        )
+        .returning();
+      return row ?? null;
+    },
+
+    async softDeleteProject(input) {
+      const at = input.now ?? new Date();
+      const [row] = await db
+        .update(projects)
+        .set({
+          deletedAt: at,
+          ...(input.deletedByNickname !== undefined ? { deletedByNickname: input.deletedByNickname } : {}),
+          updatedAt: at
+        })
+        // CAS：只软删未删的行——已软删不再命中（幂等，返回 null）。可对已归档项目再软删。
+        .where(
+          and(
+            eq(projects.id, input.projectId),
             isNull(projects.deletedAt)
           )
         )

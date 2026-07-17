@@ -65,6 +65,7 @@ import { createGithubBindingRoutes } from "./routes/github-bindings.js";
 import { createDriveVersionRoutes } from "./routes/drive-versions.js";
 import { createSpotlightIntentRoutes } from "./routes/spotlight-intent.js";
 import { createPersonalProjectRoutes } from "./routes/personal-projects.js";
+import { createWorkspaceAuditRoutes } from "./routes/workspace-audit.js";
 import { TaskPlanApprovalError } from "./services/task-plan-approval.js";
 import { ProjectServiceError } from "./services/projects.js";
 import { PilotDay1MetricsServiceError } from "./services/pilot-day1-metrics.js";
@@ -313,6 +314,8 @@ app.route("/api", createGithubBindingRoutes());
 app.route("/api/drive", createDriveVersionRoutes());
 app.route("/api", createSpotlightIntentRoutes());
 app.route("/api", createPersonalProjectRoutes());
+// R20 P2A（R19-21）：工作区级审计列表（GET /api/workspace/audit，仅管理员，工作区硬隔离）。
+app.route("/api", createWorkspaceAuditRoutes());
 app.route("/api/pilot", createPilotRoutes());
 app.route("/api/ai-worklog", createAiWorklogRoutes());
 

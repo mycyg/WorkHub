@@ -128,6 +128,46 @@ export const listWorkspaceMembersResultVmSchema = z
   .strict();
 export type ListWorkspaceMembersResultVM = z.infer<typeof listWorkspaceMembersResultVmSchema>;
 
+// R20 P2A（P1-08 修复 · workspace-scoped roster）：GET /api/workspace/roster 的分页查询参数。
+// 背景：/api/users 是全局用户目录（跨租户泄露 + 全局昵称排序 + 硬上限 200 截断），却被消费端误当工作区
+// 花名册。本端点按调用者所在工作区 join membership 列成员，limit/offset 分页——无硬 200 截断，任意工作区
+// 成员可读。查询参数来自 URL query string（字符串），故 coerce；越界/非法一律回退默认（.catch），只读列表
+// 不因坏参数 422 阻断（客户端翻页体验优先）。
+export const workspaceRosterQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50).catch(50),
+  offset: z.coerce.number().int().min(0).default(0).catch(0)
+});
+export type WorkspaceRosterQuery = z.infer<typeof workspaceRosterQuerySchema>;
+
+// roster 一行成员：昵称/角色/加入时间/是否本人 + 头像占位 + 在线态占位。
+//   * avatar_updated_at：非空表示该成员有头像（兼作 GET /api/users/:id/avatar 的缓存键）；此处不回二进制。
+//   * online：在线态占位——当前恒 null（presence 接线后由后续批次填真值），字段先就位以免届时改契约。
+export const workspaceRosterMemberVmSchema = z
+  .object({
+    user_id: idSchema,
+    nickname: z.string().min(1).max(96),
+    role: workspaceMemberRoleSchema,
+    joined_at: isoDateTimeSchema,
+    is_self: z.boolean(),
+    avatar_updated_at: isoDateTimeSchema.nullable(),
+    online: z.boolean().nullable()
+  })
+  .strict();
+export type WorkspaceRosterMemberVM = z.infer<typeof workspaceRosterMemberVmSchema>;
+
+// roster 分页响应：本页成员 + 工作区活跃成员总数 + 回显本次 limit/offset。
+//   * total 修「计数错」——/api/users 的全局计数含跨租户且封顶 200；这里是本工作区 active 成员真实总数。
+//   * total > offset + members.length 即还有下一页，客户端据此翻页；全量成员皆可经 offset 达到（无 200 截断）。
+export const workspaceRosterResultVmSchema = z
+  .object({
+    members: z.array(workspaceRosterMemberVmSchema),
+    total: z.number().int().nonnegative(),
+    limit: z.number().int().min(1).max(100),
+    offset: z.number().int().nonnegative()
+  })
+  .strict();
+export type WorkspaceRosterResultVM = z.infer<typeof workspaceRosterResultVmSchema>;
+
 export const identifyResponseSchema = userSchema.pick({
   id: true,
   nickname: true,
