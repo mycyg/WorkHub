@@ -47,6 +47,21 @@ export const bootstrapProjectResultSchema = z.object({
 });
 export type BootstrapProjectResult = z.infer<typeof bootstrapProjectResultSchema>;
 
+// R20 P2A（R19-19 项目归档/删除 · 纯后端）：归档=软置 archived=true（从团队列表隐去，可再建同名），
+// 删除=软置 deletedAt（墓碑）。两端点均无请求体，管理员/项目所有者门控（canManageProjectDrive）。
+// 响应回操作后的项目 VM 与一个操作标志（archived / deleted）——additive，既有客户端不用改。
+export const archiveProjectResultSchema = z.object({
+  project: projectVmSchema,
+  archived: z.literal(true)
+});
+export type ArchiveProjectResult = z.infer<typeof archiveProjectResultSchema>;
+
+export const deleteProjectResultSchema = z.object({
+  project: projectVmSchema,
+  deleted: z.literal(true)
+});
+export type DeleteProjectResult = z.infer<typeof deleteProjectResultSchema>;
+
 // R13 批 S3（个人空间）：创建请求只填名字（可省略——服务端按「我的空间」/「我的空间 2」…自动命名）。
 // 不需要 workspace_id/slug/成员邀请这些团队项目才有的字段——个人空间跳过治理/邀请这一整套步骤。
 export const createPersonalProjectRequestSchema = z.object({

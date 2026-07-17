@@ -2489,6 +2489,35 @@ const bootstrapProjectResponse = {
     ]).responses["409"]
   }
 } as const;
+// R20 P2A（R19-18 指派）：work_item_assignments 行的响应形状（与 assignmentSchema 同源）。
+const workItemAssignmentResponseSchema = {
+  type: "object",
+  required: ["id", "work_item_id", "user_id", "role", "assigned_by_user_id", "created_at", "updated_at"],
+  properties: {
+    id: uuidStringSchema,
+    work_item_id: uuidStringSchema,
+    user_id: uuidStringSchema,
+    role: { type: "string", enum: ["lead", "collaborator"] },
+    assigned_by_user_id: uuidStringSchema,
+    created_at: dateTimeStringSchema,
+    updated_at: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
+// R20 P2A（R19-22 评论）：comments 行的响应形状。
+const workItemCommentResponseSchema = {
+  type: "object",
+  required: ["id", "work_item_id", "author_nickname", "body", "created_at", "updated_at"],
+  properties: {
+    id: uuidStringSchema,
+    work_item_id: uuidStringSchema,
+    author_nickname: { type: "string", minLength: 1, maxLength: 64 },
+    body: { type: "string", minLength: 1 },
+    created_at: dateTimeStringSchema,
+    updated_at: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
 const drivePreviewResponse = {
   responses: {
     "200": {
@@ -8311,6 +8340,58 @@ export function getOpenApiDocument() {
           ...updateWorkspaceMemberRoleResponses
         }
       },
+      "/api/workspace/audit": {
+        get: {
+          tags: ["conversations"],
+          summary: "List workspace-scoped audit logs (admin only): actor/action/time filters, paginated, newest first",
+          parameters: [
+            optionalUuidQueryParameter("actor_user_id"),
+            {
+              name: "action",
+              in: "query",
+              required: false,
+              schema: { type: "string", minLength: 1, maxLength: 64 }
+            },
+            optionalDateTimeQueryParameter("from"),
+            optionalDateTimeQueryParameter("to"),
+            {
+              name: "limit",
+              in: "query",
+              required: false,
+              schema: { type: "integer", minimum: 1, maximum: 200 }
+            },
+            optionalNonNegativeIntegerQueryParameter("offset")
+          ],
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["generated_at", "workspace_id", "audit_logs", "page"],
+              properties: {
+                generated_at: dateTimeStringSchema,
+                workspace_id: uuidStringSchema,
+                audit_logs: { type: "array", items: { type: "object", additionalProperties: true } },
+                page: {
+                  type: "object",
+                  required: ["limit", "offset", "count"],
+                  properties: {
+                    limit: { type: "integer", minimum: 1 },
+                    offset: { type: "integer", minimum: 0 },
+                    count: { type: "integer", minimum: 0 }
+                  },
+                  additionalProperties: false
+                }
+              },
+              additionalProperties: false
+            }, "Workspace audit log page").responses["200"],
+            "401": jsonErrorStatusResponse("401", "Workspace audit requires an authenticated user", [
+              "not_identified"
+            ]).responses["401"],
+            "403": jsonErrorStatusResponse("403", "Workspace audit is admin-only", [
+              "forbidden"
+            ]).responses["403"]
+          }
+        }
+      },
       "/api/presence": {
         get: {
           tags: ["conversations"],
@@ -9101,6 +9182,163 @@ export function getOpenApiDocument() {
           parameters: [pathUuidParameter("id")],
           ...jsonRequestBody(patchProjectInstructionsRequestBodySchema),
           ...projectInstructionsPatchResponses
+        }
+      },
+      "/api/projects/{id}/archive": {
+        post: {
+          tags: ["projects"],
+          summary: "Archive a project (soft archived=true; admin or project owner only)",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["project", "archived"],
+              properties: {
+                project: projectResponseSchema,
+                archived: { type: "boolean", const: true }
+              },
+              additionalProperties: false
+            }, "Archived project").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": jsonErrorStatusResponse("403", "Project is not manageable by the current user", [
+              "project_forbidden"
+            ]).responses["403"],
+            "404": jsonErrorStatusResponse("404", "Project was not found or is already archived/deleted", [
+              "project_not_found"
+            ]).responses["404"]
+          }
+        }
+      },
+      "/api/projects/{id}/delete": {
+        post: {
+          tags: ["projects"],
+          summary: "Soft-delete a project (tombstone deletedAt; admin or project owner only)",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["project", "deleted"],
+              properties: {
+                project: projectResponseSchema,
+                deleted: { type: "boolean", const: true }
+              },
+              additionalProperties: false
+            }, "Soft-deleted project").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": jsonErrorStatusResponse("403", "Project is not manageable by the current user", [
+              "project_forbidden"
+            ]).responses["403"],
+            "404": jsonErrorStatusResponse("404", "Project was not found or is already deleted", [
+              "project_not_found"
+            ]).responses["404"]
+          }
+        }
+      },
+      "/api/workitems/{id}/assign": {
+        post: {
+          tags: ["work-items"],
+          summary: "Assign a work item to a workspace member (writes work_item_assignments)",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody({
+            type: "object",
+            required: ["assignee_user_id"],
+            properties: {
+              assignee_user_id: uuidStringSchema,
+              role: { type: "string", enum: ["lead", "collaborator"] }
+            },
+            additionalProperties: false
+          }),
+          responses: {
+            "201": jsonDataResponse({
+              type: "object",
+              required: ["assignment"],
+              properties: { assignment: workItemAssignmentResponseSchema },
+              additionalProperties: false
+            }, "Created or updated assignment").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": jsonErrorStatusResponse("403", "Work item assignees are not manageable by the current user", [
+              "forbidden"
+            ]).responses["403"],
+            "404": jsonErrorStatusResponse("404", "Work item was not found", ["not_found"]).responses["404"],
+            "409": jsonErrorStatusResponse("409", "Work item has no owning workspace yet", [
+              "work_item_workspace_missing"
+            ]).responses["409"],
+            "422": jsonErrorStatusResponse("422", "Assignee is not a workspace member or payload is invalid", [
+              "assignee_not_member",
+              "validation_error"
+            ]).responses["422"]
+          }
+        }
+      },
+      "/api/workitems/{id}/claim": {
+        post: {
+          tags: ["work-items"],
+          summary: "Claim an ownerless work item as the current user (CAS: only when unclaimed)",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["work_item_id", "claimed_by_user_id"],
+              properties: {
+                work_item_id: uuidStringSchema,
+                claimed_by_user_id: uuidStringSchema
+              },
+              additionalProperties: false
+            }, "Claimed work item").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": jsonErrorStatusResponse("403", "Work item is not claimable by the current user", [
+              "forbidden"
+            ]).responses["403"],
+            "404": jsonErrorStatusResponse("404", "Work item was not found", ["not_found"]).responses["404"],
+            "409": jsonErrorStatusResponse("409", "Work item is already claimed or no longer claimable", [
+              "work_item_not_claimable"
+            ]).responses["409"]
+          }
+        }
+      },
+      "/api/workitems/{id}/comments": {
+        get: {
+          tags: ["work-items"],
+          summary: "List a work item's comment thread (workspace members who can view the item)",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["work_item_id", "comments"],
+              properties: {
+                work_item_id: uuidStringSchema,
+                comments: { type: "array", items: workItemCommentResponseSchema }
+              },
+              additionalProperties: false
+            }, "Work item comments").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": jsonErrorStatusResponse("403", "Work item comments are not visible to the current user", [
+              "forbidden"
+            ]).responses["403"],
+            "404": jsonErrorStatusResponse("404", "Work item was not found", ["not_found"]).responses["404"]
+          }
+        },
+        post: {
+          tags: ["work-items"],
+          summary: "Add a comment to a work item (author is the current user)",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody({
+            type: "object",
+            required: ["body"],
+            properties: { body: { type: "string", minLength: 1, maxLength: 4000 } },
+            additionalProperties: false
+          }),
+          responses: {
+            "201": jsonDataResponse(workItemCommentResponseSchema, "Created work item comment").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": jsonErrorStatusResponse("403", "Work item comments are not visible to the current user", [
+              "forbidden"
+            ]).responses["403"],
+            "404": jsonErrorStatusResponse("404", "Work item was not found", ["not_found"]).responses["404"],
+            "422": jsonErrorStatusResponse("422", "Comment body does not match the contract", [
+              "validation_error"
+            ]).responses["422"]
+          }
         }
       },
       "/api/workitems/{id}/dependencies": {

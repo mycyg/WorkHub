@@ -29,6 +29,8 @@ export * from "./repositories/notifications.js";
 export * from "./repositories/audit.js";
 export * from "./repositories/confidence.js";
 export * from "./repositories/work-items.js";
+export * from "./repositories/work-item-assignments.js";
+export * from "./repositories/comments.js";
 export * from "./repositories/proposals.js";
 export * from "./repositories/projects.js";
 export * from "./repositories/workbench.js";

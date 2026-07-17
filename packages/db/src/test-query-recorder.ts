@@ -14,6 +14,8 @@ export type RecordedQuery = {
   // 假 DB 之前没有任何调用方用到过 having，补一个和 groupBy/orderBy 同档次的透传记录字段。
   having?: unknown;
   limit?: number;
+  // R20 P2A：工作区审计分页读用 .offset()（此前无调用方用过 offset），补一个和 limit 同档次的透传记录。
+  offset?: number;
   lock?: string;
   alias?: string;
   setValue?: unknown;
@@ -87,6 +89,12 @@ class RecordedQueryBuilder implements PromiseLike<unknown[]> {
   limit(count: number): this {
     this.query.limit = count;
     this.query.steps.push("limit");
+    return this;
+  }
+
+  offset(count: number): this {
+    this.query.offset = count;
+    this.query.steps.push("offset");
     return this;
   }
 

@@ -4,6 +4,8 @@ import { readFile } from "node:fs/promises";
 import { Hono } from "hono";
 
 import {
+  assignWorkItemRequestSchema,
+  createWorkItemCommentRequestSchema,
   createWorkItemRequestSchema,
   normalizeWorkHubLocale,
   type WorkHubLocale,
@@ -21,12 +23,22 @@ import {
   WorkItemServiceError,
   type WorkItemService
 } from "../services/work-items.js";
+import {
+  getDefaultWorkItemAssignmentService,
+  type WorkItemAssignmentService
+} from "../services/work-item-assignment.js";
+import {
+  getDefaultWorkItemCommentService,
+  type WorkItemCommentService
+} from "../services/work-item-comments.js";
 import { readJsonObject } from "./json-body.js";
 import { isUuidParam } from "./uuid-param.js";
 
 export type WorkItemRoutesDependencies = {
   auth?: AuthDependencySource;
   workItems?: WorkItemService;
+  assignments?: WorkItemAssignmentService;
+  comments?: WorkItemCommentService;
 };
 
 function handleWorkItemError(error: unknown): never {
@@ -163,6 +175,8 @@ export function createWorkItemRoutes(deps: WorkItemRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
   const workItems = deps.workItems ?? getDefaultWorkItemService();
+  const assignments = deps.assignments ?? getDefaultWorkItemAssignmentService();
+  const comments = deps.comments ?? getDefaultWorkItemCommentService();
 
   routes.post("/workitems", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
@@ -259,6 +273,57 @@ export function createWorkItemRoutes(deps: WorkItemRoutesDependencies = {}) {
         actor: c.var.actor
       });
       return c.json({ ok: true, data });
+    } catch (error) {
+      handleWorkItemError(error);
+    }
+  });
+
+  // R20 P2A（R19-18）：指派——把工作项显式指派给某工作区成员（写 work_item_assignments）。
+  routes.post("/workitems/:id/assign", createCurrentUserMiddleware(authSource), async (c) => {
+    try {
+      const workItemId = requireWorkItemId(c.req.param("id"));
+      const payload = assignWorkItemRequestSchema.parse(await readJsonObject(c));
+      const data = await assignments.assign({
+        workItemId,
+        assigneeUserId: payload.assignee_user_id,
+        ...(payload.role ? { role: payload.role } : {}),
+        actor: c.var.actor
+      });
+      return c.json({ ok: true, data }, 201);
+    } catch (error) {
+      handleWorkItemError(error);
+    }
+  });
+
+  // R20 P2A（R19-18）：认领——当前登录用户认领一个无主工作项（复用 claimOwnerlessWorkItem 的 CAS）。
+  routes.post("/workitems/:id/claim", createCurrentUserMiddleware(authSource), async (c) => {
+    try {
+      const workItemId = requireWorkItemId(c.req.param("id"));
+      const data = await assignments.claim({ workItemId, actor: c.var.actor });
+      return c.json({ ok: true, data });
+    } catch (error) {
+      handleWorkItemError(error);
+    }
+  });
+
+  // R20 P2A（R19-22）：读工作项评论流（能看见这个工作项的工作区成员皆可）。
+  routes.get("/workitems/:id/comments", createCurrentUserMiddleware(authSource), async (c) => {
+    try {
+      const workItemId = requireWorkItemId(c.req.param("id"));
+      const data = await comments.list({ workItemId, actor: c.var.actor });
+      return c.json({ ok: true, data });
+    } catch (error) {
+      handleWorkItemError(error);
+    }
+  });
+
+  // R20 P2A（R19-22）：发一条工作项评论（author_nickname 取当前 actor，不接受伪造）。
+  routes.post("/workitems/:id/comments", createCurrentUserMiddleware(authSource), async (c) => {
+    try {
+      const workItemId = requireWorkItemId(c.req.param("id"));
+      const payload = createWorkItemCommentRequestSchema.parse(await readJsonObject(c));
+      const data = await comments.create({ workItemId, payload, actor: c.var.actor });
+      return c.json({ ok: true, data }, 201);
     } catch (error) {
       handleWorkItemError(error);
     }

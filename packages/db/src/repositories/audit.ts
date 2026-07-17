@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, desc, eq, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 
 import type { ActorKind } from "@workhub/contracts";
 
@@ -55,6 +55,56 @@ export type AuditLogRepository = {
   listAuditLogsForWorkItem: (workItemId: string, options?: { limit?: number }) => Promise<AuditLogRow[]>;
   markAuditLogUndone: (id: string, at: Date) => Promise<AuditLogRow | null>;
 };
+
+// R20 P2A（R19-21 工作区审计列表）：跨工作项的审计流读口（仅管理员用）——按 workspace 硬隔离 +
+// 可选操作者/动作/时间范围过滤 + 分页，时间倒序。单列在自有类型/工厂（不塞进 AuditLogRepository），
+// 保持纯 additive：不牵动 middleware/auth、agent-runner 等一堆现有 AuditLogRepository 实现/fake。
+export const WORKSPACE_AUDIT_LOGS_DEFAULT_LIMIT = 50;
+export const WORKSPACE_AUDIT_LOGS_MAX_LIMIT = 200;
+
+export type WorkspaceAuditLogFilter = {
+  workspaceId: string;
+  actorUserId?: string | undefined;
+  action?: string | undefined;
+  from?: Date | undefined;
+  to?: Date | undefined;
+  limit?: number | undefined;
+  offset?: number | undefined;
+};
+
+export type WorkspaceAuditLogRepository = {
+  listAuditLogsForWorkspace: (filter: WorkspaceAuditLogFilter) => Promise<AuditLogRow[]>;
+};
+
+export function createWorkspaceAuditLogRepository(db: WorkHubDb): WorkspaceAuditLogRepository {
+  return {
+    async listAuditLogsForWorkspace(filter) {
+      const conditions: SQL[] = [eq(auditLogs.workspaceId, filter.workspaceId)];
+      if (filter.actorUserId) {
+        conditions.push(eq(auditLogs.actorUserId, filter.actorUserId));
+      }
+      if (filter.action) {
+        conditions.push(eq(auditLogs.action, filter.action));
+      }
+      if (filter.from) {
+        conditions.push(gte(auditLogs.createdAt, filter.from));
+      }
+      if (filter.to) {
+        conditions.push(lte(auditLogs.createdAt, filter.to));
+      }
+      const rawLimit = filter.limit ?? WORKSPACE_AUDIT_LOGS_DEFAULT_LIMIT;
+      const limit = Math.min(Math.max(rawLimit, 1), WORKSPACE_AUDIT_LOGS_MAX_LIMIT);
+      const offset = Math.max(filter.offset ?? 0, 0);
+      return db
+        .select()
+        .from(auditLogs)
+        .where(and(...conditions))
+        .orderBy(desc(auditLogs.createdAt))
+        .limit(limit)
+        .offset(offset);
+    }
+  };
+}
 
 export function createSnapshotRepository(db: WorkHubDb): SnapshotRepository {
   return {

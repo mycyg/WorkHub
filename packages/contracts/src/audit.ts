@@ -81,3 +81,31 @@ export const auditTimelineVmSchema = z.object({
   manifest_facts: manifestFactsSchema
 });
 export type AuditTimelineVM = z.infer<typeof auditTimelineVmSchema>;
+
+// R20 P2A（R19-21 工作区审计列表 · 仅管理员）：跨工作区的审计流（不局限单个工作项），支持按
+// 操作者/动作/时间范围过滤 + 分页，时间倒序。工作区隔离在服务层用 actor.workspaceId 强制，
+// 客户端不能传 workspace（避免越租户读）。
+export const WORKSPACE_AUDIT_DEFAULT_LIMIT = 50;
+export const WORKSPACE_AUDIT_MAX_LIMIT = 200;
+
+export const workspaceAuditQuerySchema = z.object({
+  actor_user_id: idSchema.optional(),
+  action: z.string().trim().min(1).max(64).optional(),
+  from: isoDateTimeSchema.optional(),
+  to: isoDateTimeSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(WORKSPACE_AUDIT_MAX_LIMIT).optional(),
+  offset: z.coerce.number().int().min(0).optional()
+});
+export type WorkspaceAuditQuery = z.infer<typeof workspaceAuditQuerySchema>;
+
+export const workspaceAuditListVmSchema = z.object({
+  generated_at: isoDateTimeSchema,
+  workspace_id: idSchema,
+  audit_logs: z.array(auditLogFactSchema),
+  page: z.object({
+    limit: z.number().int().min(1),
+    offset: z.number().int().min(0),
+    count: z.number().int().min(0)
+  })
+});
+export type WorkspaceAuditListVM = z.infer<typeof workspaceAuditListVmSchema>;
