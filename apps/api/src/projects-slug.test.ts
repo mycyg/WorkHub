@@ -43,6 +43,12 @@ function fakeRepo(): { repo: ProjectRepository; slugs: string[] } {
     },
     async updateInstructions() {
       throw new Error("not needed for this test");
+    },
+    async archiveProject() {
+      throw new Error("not needed for this test");
+    },
+    async softDeleteProject() {
+      throw new Error("not needed for this test");
     }
   };
   return { repo, slugs };

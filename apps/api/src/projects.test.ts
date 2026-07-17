@@ -421,6 +421,12 @@ test("project bootstrap derives a stable slug for repeated non-ascii project nam
     },
     async updateInstructions() {
       throw new Error("not needed for this test");
+    },
+    async archiveProject() {
+      throw new Error("not needed for this test");
+    },
+    async softDeleteProject() {
+      throw new Error("not needed for this test");
     }
   };
   const service = createProjectService(repository, { settings: settings(), now: () => now });
@@ -472,6 +478,12 @@ test("project bootstrap maps archived/deleted slug occupancy to a recoverable co
       return [];
     },
     async updateInstructions() {
+      throw new Error("not needed for this test");
+    },
+    async archiveProject() {
+      throw new Error("not needed for this test");
+    },
+    async softDeleteProject() {
       throw new Error("not needed for this test");
     }
   };

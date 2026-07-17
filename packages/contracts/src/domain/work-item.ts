@@ -195,3 +195,49 @@ export const acceptanceCriteriaSchema = timestampFieldsSchema.extend({
   source_plan_id: idSchema.optional()
 });
 export type AcceptanceCriteria = z.infer<typeof acceptanceCriteriaSchema>;
+
+// R20 P2A（R19-18 指派/认领）：把一个工作项显式指派给某工作区成员。role 省略默认 collaborator；
+// 角色枚举与 work_item_assignments.role / assignmentSchema 同源（lead/collaborator）。
+export const assignWorkItemRequestSchema = z
+  .object({
+    assignee_user_id: idSchema,
+    role: z.enum(["lead", "collaborator"]).optional()
+  })
+  .strict();
+export type AssignWorkItemRequest = z.infer<typeof assignWorkItemRequestSchema>;
+
+export const assignWorkItemResultSchema = z.object({
+  assignment: assignmentSchema
+});
+export type AssignWorkItemResult = z.infer<typeof assignWorkItemResultSchema>;
+
+// R20 P2A：认领端点无请求体（当前登录用户认领这个无主工作项）。响应回落地后的认领人。
+export const claimWorkItemResultSchema = z.object({
+  work_item_id: idSchema,
+  claimed_by_user_id: idSchema
+});
+export type ClaimWorkItemResult = z.infer<typeof claimWorkItemResultSchema>;
+
+// R20 P2A（R19-22 工作项评论）：通用 comments 表（work_item_id + author_nickname + body）的读写视图。
+export const WORK_ITEM_COMMENT_MAX_CHARS = 4000;
+
+export const workItemCommentSchema = timestampFieldsSchema.extend({
+  id: idSchema,
+  work_item_id: idSchema,
+  author_nickname: z.string().min(1).max(64),
+  body: z.string().min(1)
+});
+export type WorkItemComment = z.infer<typeof workItemCommentSchema>;
+
+export const workItemCommentsResultSchema = z.object({
+  work_item_id: idSchema,
+  comments: z.array(workItemCommentSchema)
+});
+export type WorkItemCommentsResult = z.infer<typeof workItemCommentsResultSchema>;
+
+export const createWorkItemCommentRequestSchema = z
+  .object({
+    body: z.string().trim().min(1).max(WORK_ITEM_COMMENT_MAX_CHARS)
+  })
+  .strict();
+export type CreateWorkItemCommentRequest = z.infer<typeof createWorkItemCommentRequestSchema>;

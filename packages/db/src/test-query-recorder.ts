@@ -14,8 +14,8 @@ export type RecordedQuery = {
   // 假 DB 之前没有任何调用方用到过 having，补一个和 groupBy/orderBy 同档次的透传记录字段。
   having?: unknown;
   limit?: number;
-  // R20 P2A（roster 分页）：memberships.listActiveRosterPageByWorkspace 用 .limit().offset() 翻页。这个假 DB
-  // 之前无调用方用过 offset，补一个与 limit 同档次的透传记录字段（校验分页而非硬 200 截断）。
+  // R20 P2A（roster 与工作区审计分页）：listActiveRosterPageByWorkspace 与审计列表都用 .limit().offset() 翻页。
+  // 这个假 DB 之前无调用方用过 offset，补一个与 limit 同档次的透传记录字段（校验分页而非硬 200 截断）。
   offset?: number;
   lock?: string;
   alias?: string;
