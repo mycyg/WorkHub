@@ -7,7 +7,7 @@ import { renderGoldPathSurface, type WorkHubLocale } from "@workhub/ui/gold-path
 import { renderIntakeSession } from "@workhub/ui/intake";
 import { renderWorkItemDetail } from "@workhub/ui/workitem";
 import { renderProposalDetail } from "@workhub/ui/proposal";
-import { renderAgentRunReplay } from "@workhub/ui/replay";
+import { bindReplayRevertActions, renderAgentRunReplay, type ReplayRevertRoot } from "@workhub/ui/replay";
 
 export const desktopWebviewSurface = {
   name: "C-PET webview",
@@ -138,6 +138,25 @@ export function loadDesktopAgentRunReplay(client: WorkHubApiClient, runId: strin
 
 export async function renderDesktopAgentRunReplay(client: WorkHubApiClient, runId: string, locale?: WorkHubLocale) {
   return renderAgentRunReplay(await loadDesktopAgentRunReplay(client, runId), "desktop", locale ? { locale } : undefined);
+}
+
+// R20 DSK-UX（R19-3）：桌面壳挂上 replay 的 HTML 后调这里，给「撤销此次改动」按钮接真回调——桌面本就是
+// 本地客户端，可直接执行 POST /api/agent-runs/:id/revert（snapshot_id 走 body）。web 端不接这条、由既有
+// data-requires-desktop 拦截渲成「需在桌面端操作」。二次确认 + 刷新都在 @workhub/ui 的 bindReplayRevertActions
+// 里，这里只做「传 client + 回调」的薄接线。缺 revertAgentRun（旧 client）则安静退化成 no-op。
+export function bindDesktopAgentRunReplayRevert(
+  root: ReplayRevertRoot,
+  client: WorkHubApiClient,
+  options?: { onReverted?: (info: { runId: string; snapshotId: string }) => void }
+): () => void {
+  const revert = client.revertAgentRun;
+  if (!revert) {
+    return () => {};
+  }
+  return bindReplayRevertActions(root, {
+    revert: (runId, payload) => revert(runId, payload),
+    ...(options?.onReverted ? { onReverted: options.onReverted } : {})
+  });
 }
 
 export function loadDesktopAgentArmyDashboard(client: WorkHubApiClient, locale?: WorkHubLocale) {

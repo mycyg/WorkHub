@@ -15,6 +15,7 @@ import {
   type WorkHubLocale
 } from "@workhub/ui/gold-path";
 import { renderProposalConflictCards, renderProposalDetail, proposalCss } from "@workhub/ui/proposal";
+import type { ReplayRevertRoot } from "@workhub/ui/replay";
 import {
   actionElementApplyPayload,
   actionElementCreateWorkItemPayload,
@@ -84,6 +85,7 @@ import {
 import { parseDesktopShellNavigatePayload } from "./shell-events.js";
 import { handleDesktopSpotlightShellNavigate } from "./spotlight-shell-navigation.js";
 import { handleDesktopProposalAction } from "./desktop-proposal-actions.js";
+import { bindDesktopAgentRunReplayRevert } from "./main.js";
 import {
   dismissDesktopMainWindow,
   dragDesktopMainWindow,
@@ -1131,6 +1133,8 @@ async function boot() {
     ];
     // findings[#low]：同款代次守卫——并发 gold-path load 只让最新一发写面板。
     let goldPathLoadGen = 0;
+    // R20 DSK-UX（R19-3）：replay 面板的撤销按钮绑定句柄——每次重渲换掉旧按钮前先 dispose（清武装计时器）。
+    let replayRevertDispose: (() => void) | undefined;
     const renderLiveGoldPathPanel = async (entry: typeof liveGoldPathPages[number], id?: string) => {
       const panel = root.querySelector<HTMLElement>(`[data-wh-panel="${entry.key}"]`);
       if (!panel) {
@@ -1146,6 +1150,18 @@ async function boot() {
         const page = renderGoldPathSurface(liveSurface, "desktop", { locale }).pages.find((p) => p.key === entry.key);
         if (page) {
           panel.innerHTML = page.html;
+          // R20 DSK-UX（R19-3）：replay 面板渲染完成后，把「撤销此次改动」按钮接上真回调——桌面壳是本地客户端，
+          // 直接执行 POST /api/agent-runs/:id/revert（snapshot_id 走 body）；成功后重拉该面板，被撤销的快照翻
+          // 「已回滚」态。web 端不接这条、由既有 data-requires-desktop 拦截渲成「需在桌面端操作」。二次确认 +
+          // 调用 + 刷新都在 @workhub/ui 的 bindReplayRevertActions 里（经 main.ts 薄接线），这里只做挂载。
+          if (entry.key === "replay") {
+            replayRevertDispose?.();
+            replayRevertDispose = bindDesktopAgentRunReplayRevert(panel as unknown as ReplayRevertRoot, client, {
+              onReverted: () => {
+                void renderLiveGoldPathPanel(entry, id);
+              }
+            });
+          }
         }
       } catch {
         // 保留 fixture 面板,不打断用户。

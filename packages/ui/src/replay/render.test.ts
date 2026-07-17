@@ -4,7 +4,14 @@ import test from "node:test";
 import { createP05GoldPathFixture } from "@workhub/agent/fixtures";
 import type { ReplayTraceVM } from "@workhub/contracts";
 
-import { renderAgentRunReplay } from "./render.js";
+import {
+  bindReplayRevertActions,
+  decideSnapshotRevertConfirmation,
+  renderAgentRunReplay,
+  type ReplayRevertButton,
+  type ReplayRevertClickEvent,
+  type ReplayRevertRoot
+} from "./render.js";
 
 const workItemId = "76000000-0000-4000-8000-000000000101";
 const proposalId = "76000000-0000-4000-8000-000000000102";
@@ -329,4 +336,219 @@ test("replay renderer exposes structured field operation targets and writeback a
   assert.equal(zh.html.includes("Token 用量"), true);
   assert.equal(zh.html.includes("结果校验码"), true);
   assert.equal(zh.html.includes(`<p class="wh-replay-audit-code">${"c".repeat(64)}</p>`), false);
+});
+
+// ── R20 DSK-UX（R19-3）：撤销改动按钮 ──────────────────────────────────────────────────────
+
+function snapshot(overrides: Partial<ReplayTraceVM["snapshots"][number]> = {}): ReplayTraceVM["snapshots"][number] {
+  return {
+    id: "77000000-0000-4000-8000-000000000001",
+    work_item_id: workItemId,
+    kind: "pre_step",
+    ref: "snapshots/csw-1/pre",
+    created_by_kind: "ai",
+    created_at: "2026-06-05T00:00:00.000Z",
+    ...overrides
+  };
+}
+
+test("replay renderer offers an undo-changes action on each un-reverted snapshot, desktop-gated", () => {
+  const vm = replayWithStructuredFields();
+  const runId = (vm.run as { id?: string }).id!;
+  const firstSnapshotId = vm.snapshots[0]!.id;
+  const rendered = renderAgentRunReplay(vm, "web");
+
+  // 快照列表本身 + 本地化标题/桌面提示。
+  assert.equal(rendered.html.includes('data-replay-snapshot-list="true"'), true);
+  assert.equal(rendered.html.includes("改动快照"), true);
+  assert.equal(rendered.html.includes("需在桌面客户端执行"), true);
+  // 每颗按钮 = revert 动作 + 本地客户端门控（data-requires-desktop，对齐 R19-5 撤销策略）。
+  assert.equal(rendered.html.includes('data-action-id="revert_agent_run"'), true);
+  assert.equal(rendered.html.includes('data-requires-desktop="true"'), true);
+  assert.equal(rendered.html.includes('data-method="POST"'), true);
+  assert.equal(rendered.html.includes(`data-replay-revert-snapshot="${firstSnapshotId}"`), true);
+  assert.equal(rendered.html.includes(`data-replay-revert-run="${runId}"`), true);
+  assert.equal(rendered.html.includes(`href="/api/agent-runs/${runId}/revert"`), true);
+  assert.equal(rendered.html.includes("撤销此次改动"), true);
+  // 武装文案随按钮下发（binder 读 data-* 保持 locale 无关）。
+  assert.equal(rendered.html.includes('data-revert-label-arm="确认撤销？再点一次"'), true);
+
+  const en = renderAgentRunReplay(vm, "desktop", { locale: "en-US" });
+  assert.equal(en.html.includes("Change snapshots"), true);
+  assert.equal(en.html.includes("Undo these changes"), true);
+  assert.equal(en.html.includes('data-requires-desktop="true"'), true);
+});
+
+test("replay renderer shows a reverted state (no button) for already-reverted snapshots", () => {
+  const base = replayWithStructuredFields();
+  const revertedId = "77000000-0000-4000-8000-0000000000aa";
+  const liveId = "77000000-0000-4000-8000-0000000000bb";
+  const vm: ReplayTraceVM = {
+    ...base,
+    snapshots: [
+      snapshot({ id: revertedId, ref: "snapshots/csw-1/reverted", reverted_at: "2026-06-06T00:00:00.000Z" }),
+      snapshot({ id: liveId, ref: "snapshots/csw-1/live" })
+    ]
+  };
+  const rendered = renderAgentRunReplay(vm, "web");
+
+  // 已回滚：显示「已回滚」态、不给按钮。
+  assert.equal(rendered.html.includes('data-replay-snapshot-reverted="true"'), true);
+  assert.equal(rendered.html.includes("已回滚"), true);
+  assert.equal(rendered.html.includes(`data-replay-revert-snapshot="${revertedId}"`), false);
+  // 未回滚：给按钮。
+  assert.equal(rendered.html.includes(`data-replay-revert-snapshot="${liveId}"`), true);
+});
+
+test("replay renderer omits the snapshot list when there is no run id or no snapshots", () => {
+  const base = replayWithStructuredFields();
+  const noSnapshots: ReplayTraceVM = { ...base, snapshots: [] };
+  assert.equal(renderAgentRunReplay(noSnapshots, "web").html.includes('data-replay-snapshot-list'), false);
+
+  const noRunId: ReplayTraceVM = {
+    ...base,
+    run: { ...base.run, id: "" } as ReplayTraceVM["run"],
+    snapshots: [snapshot()]
+  };
+  assert.equal(renderAgentRunReplay(noRunId, "web").html.includes('data-action-id="revert_agent_run"'), false);
+});
+
+test("decideSnapshotRevertConfirmation arms first, executes on the second click of the same snapshot", () => {
+  assert.deepEqual(decideSnapshotRevertConfirmation(undefined, "snap-1"), { kind: "arm", snapshotId: "snap-1" });
+  assert.deepEqual(decideSnapshotRevertConfirmation("snap-1", "snap-1"), { kind: "execute", snapshotId: "snap-1" });
+  // 点了另一颗 → 重新武装那一颗（不执行上一颗）。
+  assert.deepEqual(decideSnapshotRevertConfirmation("snap-1", "snap-2"), { kind: "arm", snapshotId: "snap-2" });
+});
+
+// ── binder 的假 DOM（无 jsdom；照 apps/web/avatar-crop-modal.test.ts 的最小替身先例）───────────
+class FakeButton implements ReplayRevertButton {
+  dataset: { [key: string]: string | undefined };
+  textContent: string | null;
+  attrs: Record<string, string> = {};
+  private handlers: Array<(event: ReplayRevertClickEvent) => void> = [];
+  constructor(dataset: Record<string, string>) {
+    this.dataset = { ...dataset };
+    this.textContent = dataset["revertLabelIdle"] ?? "撤销此次改动";
+  }
+  setAttribute(name: string, value: string): void {
+    this.attrs[name] = value;
+  }
+  removeAttribute(name: string): void {
+    delete this.attrs[name];
+  }
+  addEventListener(_type: string, handler: (event: ReplayRevertClickEvent) => void): void {
+    this.handlers.push(handler);
+  }
+  click(): void {
+    const event: ReplayRevertClickEvent = { preventDefault() {}, stopPropagation() {} };
+    for (const handler of this.handlers) {
+      handler(event);
+    }
+  }
+}
+
+class FakeRoot implements ReplayRevertRoot {
+  constructor(private readonly buttons: FakeButton[]) {}
+  querySelectorAll(): Iterable<ReplayRevertButton> {
+    return this.buttons;
+  }
+}
+
+function revertButton(snapshotId: string, runId = "run-1"): FakeButton {
+  return new FakeButton({
+    replayRevertSnapshot: snapshotId,
+    replayRevertRun: runId,
+    revertLabelIdle: "撤销此次改动",
+    revertLabelArm: "确认撤销？再点一次",
+    revertLabelReverting: "撤销中…",
+    revertLabelReverted: "已回滚",
+    revertLabelRetry: "撤销失败，点此重试"
+  });
+}
+
+test("bindReplayRevertActions arms on first click without calling revert, executes on the second", async () => {
+  const button = revertButton("snap-1", "run-9");
+  const calls: Array<{ runId: string; payload: { snapshot_id: string } }> = [];
+  const reverted: Array<{ runId: string; snapshotId: string }> = [];
+  let resolveRevert: () => void = () => {};
+  bindReplayRevertActions(new FakeRoot([button]), {
+    revert: (runId, payload) => {
+      calls.push({ runId, payload });
+      return new Promise<void>((resolve) => {
+        resolveRevert = resolve;
+      });
+    },
+    onReverted: (info) => reverted.push(info),
+    setArmTimer: () => 0,
+    clearArmTimer: () => {}
+  });
+
+  // 首点：只武装，不发请求。
+  button.click();
+  assert.equal(calls.length, 0);
+  assert.equal(button.dataset["replayRevertArmed"], "true");
+  assert.equal(button.textContent, "确认撤销？再点一次");
+
+  // 再点：真调 revert（snapshot_id 走 body，run 走参数）。
+  button.click();
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0], { runId: "run-9", payload: { snapshot_id: "snap-1" } });
+  assert.equal(button.textContent, "撤销中…");
+  assert.equal(button.attrs["aria-disabled"], "true");
+
+  // 成功：翻「已回滚」+ 触发刷新回调。
+  resolveRevert();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(button.textContent, "已回滚");
+  assert.deepEqual(reverted, [{ runId: "run-9", snapshotId: "snap-1" }]);
+  assert.equal(button.dataset["replayRevertDone"], "true");
+});
+
+test("bindReplayRevertActions surfaces a retryable error when revert fails", async () => {
+  const button = revertButton("snap-1");
+  let attempts = 0;
+  const reverted: Array<unknown> = [];
+  bindReplayRevertActions(new FakeRoot([button]), {
+    revert: () => {
+      attempts += 1;
+      return attempts === 1 ? Promise.reject(new Error("boom")) : Promise.resolve();
+    },
+    onReverted: (info) => reverted.push(info),
+    setArmTimer: () => 0,
+    clearArmTimer: () => {}
+  });
+
+  button.click(); // arm
+  button.click(); // execute → rejects
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(attempts, 1);
+  assert.equal(reverted.length, 0);
+  // 失败后可见错误文案 + 恢复可点（去掉禁用/忙态）。
+  assert.equal(button.textContent, "撤销失败，点此重试");
+  assert.equal(button.attrs["aria-disabled"], undefined);
+  assert.equal(button.dataset["replayRevertBusy"], undefined);
+
+  // 重试：再走一遍武装→执行，这次成功。
+  button.click(); // arm
+  button.click(); // execute → resolves
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(attempts, 2);
+  assert.equal(button.textContent, "已回滚");
+});
+
+test("bindReplayRevertActions ignores buttons missing the snapshot or run id", () => {
+  const orphan = new FakeButton({ replayRevertSnapshot: "snap-1" }); // 无 run
+  const calls: number[] = [];
+  bindReplayRevertActions(new FakeRoot([orphan]), {
+    revert: () => {
+      calls.push(1);
+      return Promise.resolve();
+    }
+  });
+  orphan.click();
+  orphan.click();
+  assert.equal(calls.length, 0);
 });
