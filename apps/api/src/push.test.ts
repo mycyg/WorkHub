@@ -804,6 +804,138 @@ test("push route default resolvers authorize workitem session and proposal strea
   ]);
 });
 
+// SEC P0（退出/撤销设备后已建立的 SSE 从不复检、继续灌旧账号事件）：开流时凭据有效，随后被撤销
+// （这里模拟会话/cookie 撤销：重验时 findActiveByCookieToken 返回 null）——下一心跳节拍上重验发现授权已撤销，
+// 流写一条 stream.revoked 终止事件并自行收尾。撤销前不复检就是缺陷；这条钉死"下一拍收尾"。
+test("SEC P0 a revoked credential ends an established SSE on the next heartbeat with a stream.revoked event", async () => {
+  const runtimeSettings = settings();
+  const alice = user();
+  class RevokingUsers extends MemoryUsers {
+    public cookieLookups = 0;
+    override async findActiveByCookieToken(cookieToken: string) {
+      this.cookieLookups += 1;
+      // 首次（开流鉴权）有效；之后（心跳重验）视为已登出/会话撤销 → 返回 null（resolveStreamUser 抛 401）。
+      return this.cookieLookups <= 1 ? super.findActiveByCookieToken(cookieToken) : null;
+    }
+  }
+  const revokingUsers = new RevokingUsers([alice]);
+  const authDeps: AuthDependencies = {
+    users: revokingUsers,
+    devices: new MemoryDevices([]),
+    settings: runtimeSettings,
+    now: () => now
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route(
+    "/api/push",
+    createPushRoutes({
+      auth: authDeps,
+      bus: new InProcessPushBus(),
+      presence: new InMemoryPresenceStore(),
+      access: { canViewWorkItem: async () => true },
+      // 心跳/重验都对齐到 20ms：开流后下一拍即重验，测试无需真的等 30s。
+      stream: { heartbeatMs: 20 }
+    })
+  );
+
+  const controller = new AbortController();
+  const response = await app.request("/api/push/stream/me", {
+    headers: { Cookie: await signedCookie(alice.cookieToken, runtimeSettings) },
+    signal: controller.signal
+  });
+  assert.equal(response.status, 200);
+
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let acc = "";
+  let ended = false;
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    const { value, done } = await reader.read();
+    if (done) {
+      ended = true;
+      break;
+    }
+    acc += decoder.decode(value ?? new Uint8Array());
+    if (acc.includes("event: stream.revoked")) {
+      // 收到终止事件后应自行收流：继续读到 done（服务端 break → finally 清理 → 流关闭）。
+      while (Date.now() < deadline) {
+        const tail = await reader.read();
+        if (tail.done) {
+          ended = true;
+          break;
+        }
+      }
+      break;
+    }
+  }
+
+  assert.match(acc, /event: connected/u, "the stream opens normally while the credential is valid");
+  assert.match(acc, /event: stream\.revoked/u, "a revoked credential must emit a stream.revoked terminator");
+  assert.match(acc, /"reason":"credential_revoked"/u);
+  assert.equal(ended, true, "the stream must close itself after emitting stream.revoked");
+  // 至少重验过一次（开流 1 次 + 心跳重验 ≥1 次）。
+  assert.ok(revokingUsers.cookieLookups >= 2, `expected a revalidation lookup, saw ${revokingUsers.cookieLookups}`);
+  controller.abort();
+});
+
+// SEC P0 兜底：授权重验查询抖动（抛错）绝不能拆掉一条健康流——视为暂不可判定，保守继续。
+test("SEC P0 a throwing grant revalidation does not tear down a healthy SSE stream", async () => {
+  const runtimeSettings = settings();
+  const alice = user();
+  class BlippingUsers extends MemoryUsers {
+    public cookieLookups = 0;
+    override async findActiveByCookieToken(cookieToken: string) {
+      this.cookieLookups += 1;
+      // 首次开流成功；重验时抛非授权错误（DB 抖动）——stream.ts 应吞掉并继续，不写 stream.revoked。
+      if (this.cookieLookups <= 1) {
+        return super.findActiveByCookieToken(cookieToken);
+      }
+      throw new Error("cookie lookup database blip");
+    }
+  }
+  const blippingUsers = new BlippingUsers([alice]);
+  const authDeps: AuthDependencies = {
+    users: blippingUsers,
+    devices: new MemoryDevices([]),
+    settings: runtimeSettings,
+    now: () => now
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route(
+    "/api/push",
+    createPushRoutes({
+      auth: authDeps,
+      bus: new InProcessPushBus(),
+      presence: new InMemoryPresenceStore(),
+      access: { canViewWorkItem: async () => true },
+      stream: { heartbeatMs: 20 }
+    })
+  );
+
+  const controller = new AbortController();
+  const response = await app.request("/api/push/stream/me", {
+    headers: { Cookie: await signedCookie(alice.cookieToken, runtimeSettings) },
+    signal: controller.signal
+  });
+  assert.equal(response.status, 200);
+
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let acc = "";
+  // 读若干拍：应看到 connected + 心跳 ping，不该出现 stream.revoked（抖动被吞、流继续）。
+  for (let i = 0; i < 4; i++) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    acc += decoder.decode(value ?? new Uint8Array());
+  }
+  assert.match(acc, /event: connected/u);
+  assert.doesNotMatch(acc, /stream\.revoked/u, "a transient revalidation error must not terminate the stream");
+  assert.ok(blippingUsers.cookieLookups >= 2, "revalidation must have actually run");
+  await reader.cancel();
+  controller.abort();
+});
+
 class MemoryUsers implements UserRepository {
   constructor(private rows: UserAuthRow[]) {}
 
