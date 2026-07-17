@@ -13,13 +13,31 @@ import {
   renderDriveErrorHtml,
   renderDriveListHtml,
   renderDriveLoadingHtml,
+  renderDriveRecycleHtml,
   type DriveBreadcrumbCrumb
 } from "./render.js";
 import type { DriveSidePanelHandle } from "./side-panel.js";
 
 type Locale = "zh-CN" | "en-US";
 
+// R20 DSK-UX（R19-23）：删除两段式确认——第一下只武装、5 秒内对同一项再点一次才真发请求（照 GitHub 解绑 /
+// 版本回滚两端对齐的既有 5 秒先例）。超时自动解除武装。
+const DRIVE_DELETE_ARM_TIMEOUT_MS = 5000;
+
 export type DriveTabApiClient = Pick<WorkHubApiClient, "pages" | "uploadDriveFile" | "deleteDriveItem" | "restoreDriveItem">;
+
+// R20 DSK-UX（R19-23）：删除两段式确认的纯判定（照 side-panel.ts 的 decideRollbackConfirmation：这个
+// workspace 的测试运行器无真实 DOM，把点击处理器里的分支逻辑抽成不碰 DOM 的纯函数单独钉死）。
+// 同一项在武装态下再点=真删；未武装或点了另一项=（重新）武装那一项。
+export function decideDriveDeleteConfirmation(
+  armedItemId: string | undefined,
+  clickedItemId: string
+): { kind: "arm" | "execute"; itemId: string } {
+  if (armedItemId === clickedItemId) {
+    return { kind: "execute", itemId: clickedItemId };
+  }
+  return { kind: "arm", itemId: clickedItemId };
+}
 
 export type DriveViewHandle = {
   dispose: () => void;
@@ -56,7 +74,24 @@ export function mountDriveView(
   let currentFolderId: string | undefined;
   let uploading = false;
   let actionError: string | undefined;
+  // R20 DSK-UX（R19-23）：删除成功后的「已移到回收站，可恢复」回执（诚实告知软删可恢复，同 web/Spotlight）。
+  let actionNotice: string | undefined;
   let loadGeneration = 0;
+  // R20 DSK-UX（R19-23）：回收站视图开关 + 删除两段式确认武装态 + 还原进行中/失败态。
+  let recycleView = false;
+  let deleteArmedItemId: string | undefined;
+  let deleteArmTimer: ReturnType<typeof setTimeout> | undefined;
+  let restoreBusyId: string | undefined;
+  let restoreErrorId: string | undefined;
+  let restoreErrorText: string | undefined;
+
+  function clearDeleteArm(): void {
+    deleteArmedItemId = undefined;
+    if (deleteArmTimer !== undefined) {
+      clearTimeout(deleteArmTimer);
+      deleteArmTimer = undefined;
+    }
+  }
 
   function render(): void {
     if (disposed) {
@@ -71,20 +106,41 @@ export function mountDriveView(
       return;
     }
     const zh = input.locale === "zh-CN";
-    const breadcrumb = buildBreadcrumb(vm.items, currentFolderId, input.projectName);
-    const visibleItems = vm.items.filter((item) => (item.parent_id ?? undefined) === currentFolderId);
+    const deletedItems = vm.deleted_items;
     const errorBanner = actionError
       ? `<p class="wh-wb-drive-action-error">${escapeHtml(actionError)}</p>`
       : "";
+    const noticeBanner = actionNotice
+      ? `<p class="wh-wb-drive-action-notice">${escapeHtml(actionNotice)}</p>`
+      : "";
+    if (recycleView) {
+      container.innerHTML = `<div class="wh-wb-drive">${renderDriveBarHtml({
+        locale: input.locale,
+        breadcrumb: [],
+        canUpload: false,
+        recycleActive: true
+      })}${errorBanner}${noticeBanner}${renderDriveRecycleHtml({
+        locale: input.locale,
+        items: deletedItems,
+        ...(restoreBusyId ? { restoreBusyId } : {}),
+        ...(restoreErrorId ? { restoreErrorId } : {}),
+        ...(restoreErrorText ? { restoreErrorText } : {})
+      })}</div>`;
+      return;
+    }
+    const breadcrumb = buildBreadcrumb(vm.items, currentFolderId, input.projectName);
+    const visibleItems = vm.items.filter((item) => (item.parent_id ?? undefined) === currentFolderId);
     container.innerHTML = `<div class="wh-wb-drive">${renderDriveBarHtml({
       locale: input.locale,
       breadcrumb,
-      canUpload: vm.can_manage && !uploading
-    })}${errorBanner}${renderDriveListHtml({
+      canUpload: vm.can_manage && !uploading,
+      deletedCount: deletedItems.length
+    })}${errorBanner}${noticeBanner}${renderDriveListHtml({
       locale: input.locale,
       items: visibleItems,
       canManage: vm.can_manage,
-      apiBaseUrl: driveResourceApiBase()
+      apiBaseUrl: driveResourceApiBase(),
+      ...(deleteArmedItemId ? { deleteArmedItemId } : {})
     })}</div>`;
     if (uploading) {
       const label = container.querySelector<HTMLElement>("[data-wb-drive-upload-label]");
@@ -115,6 +171,61 @@ export function mountDriveView(
     }
   }
 
+  function executeDelete(itemId: string, versionId: string | undefined): void {
+    const zh = input.locale === "zh-CN";
+    const name = vm?.items.find((item) => item.id === itemId)?.name;
+    clearDeleteArm();
+    actionError = undefined;
+    actionNotice = undefined;
+    render();
+    void input.client
+      .deleteDriveItem(input.projectId, itemId, { expected_current_version_id: versionId ?? null }, { locale: input.locale })
+      .then(() => {
+        if (disposed) {
+          return;
+        }
+        // 诚实回执：软删可恢复，告诉用户回收站能找回（同 web/Spotlight 两端）。
+        actionNotice = name
+          ? (zh ? `已把「${name}」移到回收站，可在回收站找回。` : `Moved "${name}" to the recycle bin — recover it there anytime.`)
+          : (zh ? "已移到回收站，可在回收站找回。" : "Moved to the recycle bin — recoverable there.");
+        void load();
+      })
+      .catch(() => {
+        if (disposed) {
+          return;
+        }
+        actionError = zh ? "删除失败" : "Delete failed";
+        render();
+      });
+  }
+
+  function restoreItem(itemId: string): void {
+    const zh = input.locale === "zh-CN";
+    restoreBusyId = itemId;
+    restoreErrorId = undefined;
+    restoreErrorText = undefined;
+    render();
+    void input.client
+      .restoreDriveItem(input.projectId, itemId, { locale: input.locale })
+      .then(() => {
+        if (disposed) {
+          return;
+        }
+        restoreBusyId = undefined;
+        actionNotice = zh ? "已找回。" : "Recovered.";
+        void load();
+      })
+      .catch(() => {
+        if (disposed) {
+          return;
+        }
+        restoreBusyId = undefined;
+        restoreErrorId = itemId;
+        restoreErrorText = zh ? "找回失败，请重试。" : "Couldn't recover — try again.";
+        render();
+      });
+  }
+
   container.addEventListener("click", (event) => {
     if (!(event.target instanceof HTMLElement)) {
       return;
@@ -124,8 +235,34 @@ export function mountDriveView(
       void load();
       return;
     }
+    // R20 DSK-UX（R19-23）：回收站入口 / 返回文件。
+    if (target.closest("[data-wb-drive-recycle-open]")) {
+      clearDeleteArm();
+      recycleView = true;
+      actionError = undefined;
+      actionNotice = undefined;
+      restoreErrorId = undefined;
+      render();
+      return;
+    }
+    if (target.closest("[data-wb-drive-recycle-back]")) {
+      recycleView = false;
+      actionError = undefined;
+      actionNotice = undefined;
+      render();
+      return;
+    }
+    const restoreBtn = target.closest<HTMLElement>("[data-wb-drive-restore]");
+    if (restoreBtn?.dataset.wbDriveRestore) {
+      if (restoreBusyId) {
+        return;
+      }
+      restoreItem(restoreBtn.dataset.wbDriveRestore);
+      return;
+    }
     const folderBtn = target.closest<HTMLElement>("[data-wb-drive-open-folder]");
     if (folderBtn) {
+      clearDeleteArm();
       const id = folderBtn.dataset.wbDriveOpenFolder;
       currentFolderId = id ? id : undefined;
       render();
@@ -152,28 +289,70 @@ export function mountDriveView(
     }
     const deleteBtn = target.closest<HTMLElement>("[data-wb-drive-delete]");
     if (deleteBtn?.dataset.wbDriveDelete) {
+      // R20 DSK-UX（R19-23）：两段式确认——第一下武装，5 秒内对同一项再点一次才真发请求（decideDriveDeleteConfirmation）。
       const itemId = deleteBtn.dataset.wbDriveDelete;
       const versionId = deleteBtn.dataset.wbDriveDeleteVersion || undefined;
+      const decision = decideDriveDeleteConfirmation(deleteArmedItemId, itemId);
+      if (decision.kind === "execute") {
+        executeDelete(itemId, versionId);
+        return;
+      }
+      clearDeleteArm();
+      deleteArmedItemId = itemId;
       actionError = undefined;
-      void input.client
-        .deleteDriveItem(input.projectId, itemId, { expected_current_version_id: versionId ?? null }, { locale: input.locale })
-        .then(() => {
-          void load();
-        })
-        .catch(() => {
-          actionError = input.locale === "zh-CN" ? "删除失败" : "Delete failed";
-          render();
-        });
+      actionNotice = undefined;
+      deleteArmTimer = setTimeout(() => {
+        deleteArmTimer = undefined;
+        if (disposed) {
+          return;
+        }
+        deleteArmedItemId = undefined;
+        render();
+      }, DRIVE_DELETE_ARM_TIMEOUT_MS);
+      render();
       return;
     }
     // 行内其余点击（不是操作按钮/下载链接）都当作「打开预览」——文件行本身可点，照 prototype 的
     // fitem onclick=openPreview 行为。data-wb-drive-open-item 挂在整行容器上（见 render.ts）。
     const itemRow = target.closest<HTMLElement>("[data-wb-drive-open-item]");
     if (itemRow?.dataset.wbDriveOpenItem) {
+      clearDeleteArm();
       input.sidePanel.showPreview({
         projectId: input.projectId,
         itemId: itemRow.dataset.wbDriveOpenItem,
         itemName: itemRow.dataset.wbDriveOpenItemName ?? ""
+      });
+    }
+  });
+
+  // R20 DSK-UX（R19-25）：键盘可达——焦点落在行本身（role=button tabindex=0，见 render.ts）时，回车/空格
+  // 等同点击打开/进目录。行内的版本/下载/删除是真 button/a，有原生键盘激活，所以这里只在焦点正是行本身
+  // （event.target === row）时才接管，避免和它们双触发。照 kanban/view.ts:288 的既有先例。
+  container.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    if (!(event.target instanceof HTMLElement)) {
+      return;
+    }
+    const row = event.target.closest<HTMLElement>(".wh-wb-drive-row");
+    if (!row || event.target !== row) {
+      return;
+    }
+    event.preventDefault();
+    clearDeleteArm();
+    const folderId = row.dataset.wbDriveOpenFolder;
+    if (folderId !== undefined) {
+      currentFolderId = folderId ? folderId : undefined;
+      render();
+      return;
+    }
+    const itemId = row.dataset.wbDriveOpenItem;
+    if (itemId) {
+      input.sidePanel.showPreview({
+        projectId: input.projectId,
+        itemId,
+        itemName: row.dataset.wbDriveOpenItemName ?? ""
       });
     }
   });
@@ -208,6 +387,7 @@ export function mountDriveView(
   return {
     dispose: () => {
       disposed = true;
+      clearDeleteArm();
     },
     refresh: () => {
       void load();
