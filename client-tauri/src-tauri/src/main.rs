@@ -1,5 +1,7 @@
 use workhub_client_tauri::config::{load_shell_config_from_json_and_env, WorkHubShellConfig};
-use workhub_client_tauri::deep_link::{deep_link_plan_from_url, describe_deep_link_error};
+use workhub_client_tauri::deep_link::{
+    deep_link_plan_from_url, describe_deep_link_error, ShellDeepLinkPlan,
+};
 use workhub_client_tauri::events::{event_channel_name, ShellEvent};
 use workhub_client_tauri::locale::{
     normalize_optional_workhub_locale, normalize_workhub_locale, WorkHubLocale,
@@ -1559,6 +1561,59 @@ fn install_workhub_deep_links(app: &tauri::App) -> Result<(), String> {
     Ok(())
 }
 
+// P1-04:workbench 窗在 tauri.conf.json 里是 create:false(按需建)。除它以外的窗口(main/pet)启动时
+// 已经建好,深链落地前不需要"先建窗"这一步。抽成纯函数,不依赖 AppHandle,便于单测。
+fn deep_link_target_requires_window_creation(label: &str) -> bool {
+    label == "workbench"
+}
+
+/// 深链落地要做的两件事:按需建窗 + 执行窗口控制(show/focus/...)。抽成 trait 是为了让下面的
+/// `apply_deep_link_plan` 脱离真实 `tauri::AppHandle` 也能单测——生产实现见 `TauriDeepLinkWindowHost`,
+/// 测试里用一个纯内存假实现记录调用顺序,直接复现/验证 P1-04 的根因与修复。
+trait DeepLinkWindowHost {
+    fn create_window(&mut self, label: &str) -> Result<(), String>;
+    fn control_window(&mut self, control: &ShellWindowControlPlan) -> Result<(), String>;
+}
+
+struct TauriDeepLinkWindowHost<'a> {
+    app: &'a tauri::AppHandle,
+}
+
+impl DeepLinkWindowHost for TauriDeepLinkWindowHost<'_> {
+    fn create_window(&mut self, label: &str) -> Result<(), String> {
+        if label == "workbench" {
+            create_workbench_window_if_missing(self.app)?;
+        }
+        Ok(())
+    }
+
+    fn control_window(&mut self, control: &ShellWindowControlPlan) -> Result<(), String> {
+        execute_window_control(self.app, control.clone()).map(|_| ())
+    }
+}
+
+/// deep-link(冷启动 URL / 运行时 on_open_url)与 single-instance(第二实例)两条入口共享的落地路径:
+/// 目标窗若按需创建,先确保它存在,再执行窗口控制。P1-04 根因:此前只有正常 deep-link 分支走这套
+/// create-if-missing,single-instance 分支直接执行窗口控制——应用已运行但 workbench 窗还没被建过时
+/// (用户从未点开过工作台),`execute_window_control` 报 "workbench window is not available",深链
+/// 目标直接丢失。现在两条入口都收敛到这一个函数,不再各自维护一份判断逻辑。
+fn apply_deep_link_plan<H: DeepLinkWindowHost>(
+    host: &mut H,
+    plan: &ShellDeepLinkPlan,
+) -> Result<(), String> {
+    if deep_link_target_requires_window_creation(&plan.window_control.label) {
+        host.create_window(&plan.window_control.label)?;
+    }
+    host.control_window(&plan.window_control)
+}
+
+fn handle_deep_link_plan(app: &tauri::AppHandle, plan: &ShellDeepLinkPlan) -> Result<(), String> {
+    let mut host = TauriDeepLinkWindowHost { app };
+    apply_deep_link_plan(&mut host, plan)?;
+    app.emit(event_channel_name(ShellEvent::DeepLink), plan.clone())
+        .map_err(|error| format!("failed to emit deep-link event: {error}"))
+}
+
 fn handle_deep_link_url(app: &tauri::AppHandle, raw_url: &str) -> Result<(), String> {
     let locale = current_workhub_locale(app);
     let plan = deep_link_plan_from_url(raw_url).map_err(|error| {
@@ -1568,13 +1623,7 @@ fn handle_deep_link_url(app: &tauri::AppHandle, raw_url: &str) -> Result<(), Str
         )
     })?;
 
-    // 工作台窗按需创建(conf 里 create:false);先确保存在再执行 show/focus,否则冷启动深链会打空。
-    if plan.window_control.label == "workbench" {
-        create_workbench_window_if_missing(app)?;
-    }
-    execute_window_control(app, plan.window_control.clone())?;
-    app.emit(event_channel_name(ShellEvent::DeepLink), plan)
-        .map_err(|error| format!("failed to emit deep-link event: {error}"))
+    handle_deep_link_plan(app, &plan)
 }
 
 fn handle_single_instance_launch(
@@ -1586,10 +1635,9 @@ fn handle_single_instance_launch(
     if plan.deep_links.is_empty() {
         execute_window_control(app, plan.window_control.clone())?;
     } else {
+        // 第二实例带深链:复用与冷启动/运行时深链相同的落地路径(含按需建窗),不再绕开 create-if-missing。
         for deep_link in &plan.deep_links {
-            execute_window_control(app, deep_link.window_control.clone())?;
-            app.emit(event_channel_name(ShellEvent::DeepLink), deep_link.clone())
-                .map_err(|error| format!("failed to emit deep-link event: {error}"))?;
+            handle_deep_link_plan(app, deep_link)?;
         }
     }
 
@@ -1842,6 +1890,96 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
+    use workhub_client_tauri::single_instance::single_instance_plan_from_args;
+
+    // P1-04:纯内存假实现,记录调用顺序/次数,脱离真实 tauri::AppHandle 复现"第二实例带 workbench 深链、
+    // workbench 窗尚未创建"场景,并验证 apply_deep_link_plan 是否先建窗再控制窗口。
+    #[derive(Default)]
+    struct FakeDeepLinkWindowHost {
+        existing_windows: HashSet<String>,
+        created_windows: Vec<String>,
+        controlled_labels: Vec<String>,
+    }
+
+    impl DeepLinkWindowHost for FakeDeepLinkWindowHost {
+        fn create_window(&mut self, label: &str) -> Result<(), String> {
+            self.created_windows.push(label.to_string());
+            self.existing_windows.insert(label.to_string());
+            Ok(())
+        }
+
+        fn control_window(&mut self, control: &ShellWindowControlPlan) -> Result<(), String> {
+            if !self.existing_windows.contains(&control.label) {
+                return Err(format!("{} window is not available", control.label));
+            }
+            self.controlled_labels.push(control.label.clone());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn skipping_the_create_step_loses_a_workbench_deep_link_when_window_is_missing() {
+        // 复现 P1-04 根因:旧的 single-instance 分支直接执行窗口控制、不先建窗;应用已运行但用户从未
+        // 点开过工作台(workbench 窗还不存在)时,窗口控制直接报"不可用",深链目标丢失。
+        let mut host = FakeDeepLinkWindowHost::default();
+        let plan =
+            deep_link_plan_from_url("workhub://workbench/86000000-0000-4000-8000-000000000001")
+                .unwrap();
+
+        let result = host.control_window(&plan.window_control);
+
+        assert_eq!(result, Err("workbench window is not available".to_string()));
+    }
+
+    #[test]
+    fn apply_deep_link_plan_creates_the_missing_workbench_window_before_navigating() {
+        // 修复后:deep-link 与 single-instance 共享的落地路径按需建窗后再执行窗口控制,深链不丢。
+        let mut host = FakeDeepLinkWindowHost::default();
+        let plan =
+            deep_link_plan_from_url("workhub://workbench/86000000-0000-4000-8000-000000000001")
+                .unwrap();
+
+        apply_deep_link_plan(&mut host, &plan).unwrap();
+
+        assert_eq!(host.created_windows, vec!["workbench".to_string()]);
+        assert_eq!(host.controlled_labels, vec!["workbench".to_string()]);
+    }
+
+    #[test]
+    fn apply_deep_link_plan_does_not_create_the_always_present_main_window() {
+        // main 窗启动时已建好(create 未置 false),不需要走按需建窗这一步。
+        let mut host = FakeDeepLinkWindowHost::default();
+        host.existing_windows.insert("main".to_string());
+        let plan = deep_link_plan_from_url("workhub://open/approvals").unwrap();
+
+        apply_deep_link_plan(&mut host, &plan).unwrap();
+
+        assert!(host.created_windows.is_empty());
+        assert_eq!(host.controlled_labels, vec!["main".to_string()]);
+    }
+
+    #[test]
+    fn single_instance_workbench_deep_link_creates_the_window_via_shared_apply_path() {
+        // 串联 single_instance 的纯规划(从第二实例 argv 提取 deep_links)与 main.rs 的共享落地路径:
+        // 第二实例带 workbench 深链时,即便 workbench 窗从未创建过,也不会丢链。
+        let single_instance_plan = single_instance_plan_from_args(
+            &[
+                "WorkHub.exe".to_string(),
+                "workhub://workbench/86000000-0000-4000-8000-000000000001".to_string(),
+            ],
+            "C:/WorkHub",
+        );
+        assert_eq!(single_instance_plan.deep_links.len(), 1);
+
+        let mut host = FakeDeepLinkWindowHost::default();
+        for deep_link in &single_instance_plan.deep_links {
+            apply_deep_link_plan(&mut host, deep_link).unwrap();
+        }
+
+        assert_eq!(host.created_windows, vec!["workbench".to_string()]);
+        assert_eq!(host.controlled_labels, vec!["workbench".to_string()]);
+    }
 
     fn env_value(value: Option<&'static str>) -> impl Fn(&str) -> Option<String> {
         move |_| value.map(str::to_string)
