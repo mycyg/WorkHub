@@ -698,7 +698,12 @@ export const CONVERSATION_PARTICIPANTS_LIST_CAP = 100;
 export const conversationParticipantsVmSchema = z
   .object({
     scope: conversationParticipantsScopeSchema,
-    participants: z.array(conversationParticipantListItemVmSchema).max(CONVERSATION_PARTICIPANTS_LIST_CAP)
+    participants: z.array(conversationParticipantListItemVmSchema).max(CONVERSATION_PARTICIPANTS_LIST_CAP),
+    // R18 批 H1（web 会话镜像成员管理）：DM 判别位——scope:"participants" 涵盖普通群与 DM 两种 collab，
+    // 光看 scope/参与者数分不出（DM 与 2 人小群都是 owner+member）。服务层从 dm_key 非空如实推导：
+    // 群加/移人可做（web 给管理动作），DM 是 2 人不变量不能增删（web 渲双人无动作），main 是全员语义
+    // （scope:"workspace"，本位省略）。additive/optional——桌面消费方不读它，仍按 scope + 服务端 409 兜底。
+    is_dm: z.boolean().optional()
   })
   .strict();
 export type ConversationParticipantsVM = z.infer<typeof conversationParticipantsVmSchema>;

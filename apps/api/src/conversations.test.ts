@@ -2167,11 +2167,39 @@ test("listParticipants returns scope=participants with real rows for a collab (a
 
   assert.deepEqual(result, {
     scope: "participants",
+    is_dm: false,
     participants: [
       { user_id: userId, nickname: "阿曼", role: "owner" },
       { user_id: participantUserId, nickname: "小赵", role: "member" }
     ]
   });
+});
+
+test("listParticipants marks a DM (dm_key set) with is_dm=true", async () => {
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return accessRecord({ conversation: conversationRow({ dmKey: "dm:a:b" }), participantRole: "owner" });
+      },
+      async listParticipantsWithNickname() {
+        return [
+          { userId, nickname: "阿曼", role: "owner" },
+          { userId: participantUserId, nickname: "小赵", role: "member" }
+        ];
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now
+    }
+  );
+
+  const result = await service.listParticipants({ actor: actor(), conversationId });
+
+  assert.equal(result.scope, "participants");
+  assert.equal(result.is_dm, true);
 });
 
 test("listParticipants 404s an invisible (or non-participant) conversation before any query", async () => {
@@ -2248,6 +2276,7 @@ test("addParticipant adds to a non-dm collab, broadcasts participants.updated, a
   assert.deepEqual(writeInput, { workspaceId, conversationId, addedUserId: participantUserId, at: now });
   assert.equal(result.added, true);
   assert.equal(result.participants.scope, "participants");
+  assert.equal(result.participants.is_dm, false);
   assert.equal(result.participants.participants.length, 2);
   assert.equal(capture.published[0]?.type, "conversation.participants.updated");
   const event = capture.published[0]?.data as { data: { conversation_id: string; change: string; user_id: string } };

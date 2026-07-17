@@ -4113,6 +4113,36 @@ test("R15 web-mirror conversation component shows an honest empty state and pagi
   assert.equal(paged.html.includes('data-r15-conversation-target-seq="12"'), true);
 });
 
+test("R18 web-mirror conversation component renders a participants side-region skeleton for hydration", () => {
+  const zh = renderWebRouteComponent({
+    key: "conversation",
+    conversation: {
+      conversationId: "c-9",
+      messages: [],
+      members: [],
+      isLatest: true,
+      refreshHref: "/conversations/c-9"
+    }
+  }, { locale: "zh-CN" });
+  // SSR 只出加载态骨架 + hydration 锚点（真参与者与群管理动作由 browser.ts 拉 GET /participants 后注入）。
+  assert.equal(zh.html.includes('data-r18-conversation-participants="true"'), true);
+  assert.equal(zh.html.includes('data-r18-conversation-id="c-9"'), true);
+  assert.equal(zh.html.includes('data-r18-conversation-participants-body="true"'), true);
+  assert.equal(zh.html.includes("正在加载参与者"), true);
+
+  const en = renderWebRouteComponent({
+    key: "conversation",
+    conversation: {
+      conversationId: "c-9",
+      messages: [],
+      members: [],
+      isLatest: true,
+      refreshHref: "/conversations/c-9"
+    }
+  }, { locale: "en-US" });
+  assert.equal(en.html.includes("Loading participants"), true);
+});
+
 test("R15 web-mirror conversation component renders system_event risk digest and tool_note plainly", () => {
   const messages: ConversationMessageVM[] = [
     {

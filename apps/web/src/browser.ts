@@ -2144,6 +2144,7 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindNotificationMutePanel(root, result, client, locale, signal);
   bindProjectHomePlansPanel(root, result, client, locale, signal);
   bindProjectHomeInstructionsPanel(root, result, client, locale, signal);
+  bindConversationParticipantsPanel(root, result, client, locale, signal);
   bindSearchRoutePanel(root, result, client, locale, signal);
   bindSettingsAiProfilePanel(root, result, client, locale, signal);
   bindSettingsMyProfilePanel(root, result, client, locale, signal);
@@ -2513,6 +2514,248 @@ function bindProjectHomeInstructionsPanel(
       // GET 与 PATCH 同一道 canManageProjectDrive 门：403＝无权（读写都不行）→ 只读说明；其它＝取数错。
       if (error instanceof WorkHubApiError && error.status === 403) {
         renderForbidden();
+        return;
+      }
+      renderError();
+    }
+  };
+  void hydrate();
+}
+
+// R18 批 H1（web 会话镜像成员管理）：只读会话镜像的「参与者」侧区水合。SSR（route-components
+// renderConversationRouteComponent）只出加载态骨架；这里拉 GET /participants 后按 scope/is_dm 渲：
+//   * main（scope:"workspace"）→ 全员会话说明，无动作；
+//   * DM（scope:"participants" + is_dm）→ 双人说明，无动作；
+//   * 普通群（scope:"participants" 非 DM）→ 成员条 + 群管理动作：任何参与者可加人（工作区成员选择器，
+//     排除已在群者）与退出（自删）；群主额外可移出他人。调 G1 端点，403/409 按错误码人话化。
+// web 镜像页刻意不订会话 SSE（G-web 窄化纪律，见 liveEventTypes 排除 conversation.*）——参与者变化
+// 靠「动作后重拉 + 手动刷新按钮」感知，不把 conversation.* 事件引回 web。
+type MirrorParticipantItem = { user_id: string; nickname: string; role: "owner" | "member" };
+type MirrorParticipantsVM = { scope: "workspace" | "participants"; is_dm?: boolean; participants: MirrorParticipantItem[] };
+type MirrorRemoveResult = { removed_user_id: string; self_left: boolean; new_owner_user_id: string | null };
+type MirrorAddResult = { added: boolean; participants: MirrorParticipantsVM };
+
+function bindConversationParticipantsPanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "conversation") {
+    return;
+  }
+  const section = container.querySelector<HTMLElement>("[data-r18-conversation-participants]");
+  const body = section?.querySelector<HTMLElement>("[data-r18-conversation-participants-body]");
+  const conversationId = section?.getAttribute("data-r18-conversation-id") ?? "";
+  if (!section || !body || !conversationId) {
+    return;
+  }
+  const zh = locale === "zh-CN";
+  const participantsPath = `/api/conversations/${encodeURIComponent(conversationId)}/participants`;
+  let selfUserId = "";
+  let roster: Array<{ id: string; nickname: string }> = [];
+
+  // 端点错误码 → 双语人话（服务端消息只有中文，en 直接回退它会串语言，所以已知码全给双语；未知码回落通用）。
+  const ACTION_ERROR_COPY: Record<string, [string, string]> = {
+    conversation_add_target_required: ["请先选择要加入的成员。", "Pick a member to add first."],
+    conversation_participant_invalid: ["这个人不在工作区里，无法加入。", "That person isn't in the workspace and can't be added."],
+    conversation_dm_target_not_found: ["没有找到工作区里的这个人。", "That person wasn't found in the workspace."],
+    conversation_participant_cap: ["这个群的成员已经满了。", "This group is already full."],
+    conversation_not_group: ["主区是全员会话，不能单独增删成员。", "The main channel includes everyone — members can't be added or removed."],
+    conversation_dm_no_add: ["私聊只能是两个人，不能再加人。", "A DM is limited to two people."],
+    conversation_dm_no_remove: ["私聊不能移出或退出。", "You can't leave or remove members from a DM."],
+    conversation_remove_forbidden: ["只有群主可以移出其他成员。", "Only the group owner can remove other members."],
+    conversation_last_participant: ["你是最后一名成员，不能退出。", "You're the last member — you can't leave."],
+    conversation_participant_not_found: ["这个人已经不在群里了。", "That person is no longer in the group."],
+    conversation_not_found: ["没有找到这个会话。", "Conversation not found."]
+  };
+  const humanize = (error: unknown): string => {
+    if (error instanceof WorkHubApiError) {
+      const pair = ACTION_ERROR_COPY[error.code];
+      if (pair) {
+        return zh ? pair[0] : pair[1];
+      }
+    }
+    return zh ? "操作失败，请稍后重试。" : "Action failed, please try again.";
+  };
+
+  const renderLoading = () => {
+    body.innerHTML = `<p class="wh-subtle">${escapeHtml(zh ? "正在加载参与者…" : "Loading participants…")}</p>`;
+  };
+  const renderError = () => {
+    body.innerHTML = `<p class="wh-subtle" data-r18-conversation-participants-error="true">${escapeHtml(
+      zh ? "参与者没拉到，稍后重试。" : "Couldn't load participants — retry later."
+    )}</p><button type="button" class="wh-btn" data-r18-conversation-participants-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+    body.querySelector<HTMLButtonElement>("[data-r18-conversation-participants-retry]")
+      ?.addEventListener("click", () => void hydrate(), { signal });
+  };
+
+  const applyVm = (vm: MirrorParticipantsVM) => {
+    if (vm.scope === "workspace") {
+      body.innerHTML = `<p class="wh-subtle" data-r18-conversation-participants-scope="workspace">${escapeHtml(
+        zh
+          ? "这是主区会话，工作区全体成员都能看到，没有单独的参与者名单可管理。"
+          : "This is the main channel — visible to the whole workspace; there is no per-conversation roster to manage."
+      )}</p>`;
+      return;
+    }
+    if (vm.is_dm) {
+      const names = vm.participants.map((p) => p.nickname).join(zh ? "、" : ", ");
+      body.innerHTML = `<p data-r18-conversation-participants-scope="dm"><strong>${escapeHtml(zh ? "私聊（双人）" : "Direct message (2 people)")}</strong></p>
+        <p class="wh-subtle">${escapeHtml(names)}</p>
+        <p class="wh-subtle">${escapeHtml(zh ? "私聊固定两个人，不能加人或移出。" : "A DM is fixed at two people — members can't be added or removed.")}</p>`;
+      return;
+    }
+    renderGroup(vm);
+  };
+
+  const renderGroup = (vm: MirrorParticipantsVM) => {
+    const selfRole = vm.participants.find((p) => p.user_id === selfUserId)?.role;
+    const isOwner = selfRole === "owner";
+    const rowsHtml = vm.participants
+      .map((p) => {
+        const isSelf = p.user_id === selfUserId;
+        const roleLabel = p.role === "owner" ? (zh ? "群主" : "Owner") : (zh ? "成员" : "Member");
+        let actionHtml = "";
+        if (isSelf) {
+          actionHtml = `<button type="button" class="wh-btn" data-r18-participant-leave="true">${escapeHtml(zh ? "退出" : "Leave")}</button>`;
+        } else if (isOwner) {
+          actionHtml = `<button type="button" class="wh-btn" data-r18-participant-remove="${escapeHtml(p.user_id)}">${escapeHtml(zh ? "移出" : "Remove")}</button>`;
+        }
+        return `<div class="wh-r4-route-row" data-r18-participant="${escapeHtml(p.user_id)}" data-r18-participant-role="${escapeHtml(p.role)}">
+          <div><strong>${escapeHtml(p.nickname)}</strong> <span class="wh-pill">${escapeHtml(roleLabel)}</span>${isSelf ? ` <span class="wh-pill">${escapeHtml(zh ? "你" : "You")}</span>` : ""}</div>
+          ${actionHtml}
+        </div>`;
+      })
+      .join("");
+    const currentIds = new Set(vm.participants.map((p) => p.user_id));
+    const addable = roster.filter((u) => !currentIds.has(u.id));
+    const addHtml = addable.length
+      ? `<form class="wh-r4-route-row" data-r18-participant-add-form="true">
+          <select data-r18-participant-add-select="true" aria-label="${escapeHtml(zh ? "选择要加入的成员" : "Choose a member to add")}">
+            ${addable.map((u) => `<option value="${escapeHtml(u.id)}">${escapeHtml(u.nickname)}</option>`).join("")}
+          </select>
+          <button type="submit" class="wh-btn wh-btn-primary" data-r18-participant-add-submit="true">${escapeHtml(zh ? "加入" : "Add")}</button>
+        </form>`
+      : `<p class="wh-subtle" data-r18-participant-add-empty="true">${escapeHtml(
+          zh ? "工作区里其余成员都已在群内。" : "Everyone else in the workspace is already in this group."
+        )}</p>`;
+    body.innerHTML = `<div class="wh-r4-route-table" data-r18-conversation-participants-scope="group" data-r18-participant-count="${escapeHtml(String(vm.participants.length))}">${rowsHtml}</div>
+      <p class="wh-subtle" data-r18-participant-status hidden></p>
+      <div class="wh-r18-participant-add">${addHtml}</div>
+      <button type="button" class="wh-btn" data-r18-participant-refresh="true">${escapeHtml(zh ? "刷新参与者" : "Refresh participants")}</button>`;
+
+    const status = body.querySelector<HTMLElement>("[data-r18-participant-status]");
+    const setStatus = (text: string, tone: "saving" | "error") => {
+      if (!status) {
+        return;
+      }
+      status.hidden = false;
+      status.textContent = text;
+      status.setAttribute("data-r18-participant-status", tone);
+    };
+
+    const doRemove = async (targetId: string, isSelf: boolean) => {
+      setStatus(zh ? "处理中…" : "Working…", "saving");
+      try {
+        const res = await client.request<MirrorRemoveResult>(`${participantsPath}/${encodeURIComponent(targetId)}`, {
+          method: "DELETE"
+        });
+        if (signal.aborted) {
+          return;
+        }
+        if (res.self_left) {
+          // 自己退群后就不再是参与者，重拉会 404——不重拉，直接给「已退出」收尾说明。
+          body.innerHTML = `<p data-r18-conversation-participants-left="true"><strong>${escapeHtml(zh ? "你已退出该会话。" : "You've left this conversation.")}</strong></p>
+            <p class="wh-subtle">${escapeHtml(zh ? "刷新页面后你将无法再看到它。" : "You won't be able to see it after refreshing.")}</p>`;
+          return;
+        }
+        void reload();
+      } catch (error) {
+        if (signal.aborted) {
+          return;
+        }
+        setStatus(humanize(error), "error");
+      }
+      void isSelf;
+    };
+
+    body.querySelector<HTMLButtonElement>("[data-r18-participant-leave]")
+      ?.addEventListener("click", () => void doRemove(selfUserId, true), { signal });
+    body.querySelectorAll<HTMLButtonElement>("[data-r18-participant-remove]").forEach((btn) => {
+      const targetId = btn.getAttribute("data-r18-participant-remove") ?? "";
+      btn.addEventListener("click", () => void doRemove(targetId, false), { signal });
+    });
+    body.querySelector<HTMLButtonElement>("[data-r18-participant-refresh]")
+      ?.addEventListener("click", () => void reload(), { signal });
+    body.querySelector<HTMLFormElement>("[data-r18-participant-add-form]")?.addEventListener(
+      "submit",
+      (event) => {
+        event.preventDefault();
+        const select = body.querySelector<HTMLSelectElement>("[data-r18-participant-add-select]");
+        const userId = select?.value ?? "";
+        if (!userId) {
+          setStatus(zh ? "请先选择要加入的成员。" : "Pick a member to add first.", "error");
+          return;
+        }
+        void (async () => {
+          setStatus(zh ? "处理中…" : "Working…", "saving");
+          try {
+            const res = await client.request<MirrorAddResult>(participantsPath, {
+              method: "POST",
+              body: JSON.stringify({ user_id: userId })
+            });
+            if (signal.aborted) {
+              return;
+            }
+            applyVm(res.participants); // 加人端点回刷新后的完整列表，直接采用（无需再 GET）。
+          } catch (error) {
+            if (signal.aborted) {
+              return;
+            }
+            setStatus(humanize(error), "error");
+          }
+        })();
+      },
+      { signal }
+    );
+  };
+
+  const reload = async () => {
+    try {
+      const vm = await client.request<MirrorParticipantsVM>(participantsPath);
+      if (signal.aborted) {
+        return;
+      }
+      applyVm(vm);
+    } catch (error) {
+      if (signal.aborted) {
+        return;
+      }
+      renderError();
+    }
+  };
+
+  const hydrate = async () => {
+    renderLoading();
+    try {
+      const [me, vm, users] = await Promise.all([
+        client.me().catch(() => null),
+        client.request<MirrorParticipantsVM>(participantsPath),
+        client.listUsers().then(
+          (value) => value.users.map((u) => ({ id: u.id, nickname: u.nickname })),
+          () => [] as Array<{ id: string; nickname: string }>
+        )
+      ]);
+      if (signal.aborted) {
+        return;
+      }
+      selfUserId = me?.id ?? "";
+      roster = users;
+      applyVm(vm);
+    } catch (error) {
+      if (signal.aborted) {
         return;
       }
       renderError();

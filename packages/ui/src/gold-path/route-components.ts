@@ -5224,9 +5224,17 @@ function renderMirrorMessage(message: ConversationMessageVM, ctx: MirrorRenderCt
 }
 
 function renderConversationRouteComponent(input: ConversationMirrorInput, locale: WorkHubLocale): WebRouteComponent {
+  const zh = locale === "zh-CN";
   const memberNames = new Map(input.members.map((member) => [member.id, member.nickname] as const));
   const ctx: MirrorRenderCtx = { locale, memberNames, targetSeq: input.targetSeq };
   const base = `/conversations/${encodeURIComponent(input.conversationId)}`;
+  // R18 批 H1（web 会话镜像成员管理）：SSR 出「参与者」侧区骨架——先渲加载态，由 apps/web/src/browser.ts
+  // 的 bindConversationParticipantsPanel 拉 GET /participants 后按 scope/is_dm 渲成员条 + 群管理动作
+  // （加人/移出，DM/main 只渲说明无动作），照 settings AI 面板/项目指令面板的「SSR 骨架 + 客户端水合」纪律。
+  const participantsSection = `<section class="wh-card wh-r4-route-card wh-mirror-participants" data-r18-conversation-participants="true" data-r18-conversation-id="${escapeHtml(input.conversationId)}">
+        <h2 role="heading" aria-level="2">${escapeHtml(zh ? "参与者" : "Participants")}</h2>
+        <div data-r18-conversation-participants-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载参与者…" : "Loading participants…")}</p></div>
+      </section>`;
   const stream = input.messages.length === 0
     ? `<p class="wh-mirror-empty">${escapeHtml(routeT(locale, "conversation.empty"))}</p>`
     : input.messages.map((message) => renderMirrorMessage(message, ctx)).join("");
@@ -5258,6 +5266,7 @@ function renderConversationRouteComponent(input: ConversationMirrorInput, locale
         <strong>${escapeHtml(routeT(locale, "conversation.readonlyBanner"))}</strong>
         <p>${escapeHtml(routeT(locale, "conversation.readonlyHint"))}</p>
       </div>
+      ${participantsSection}
       <div class="wh-mirror-pager" data-r15-mirror-pager="top">${olderLink}${refreshLink}</div>
       <div class="wh-mirror-stream" data-r15-mirror-stream="true">${stream}</div>
       <div class="wh-mirror-pager" data-r15-mirror-pager="bottom">${newerLink}${latestLink}</div>
