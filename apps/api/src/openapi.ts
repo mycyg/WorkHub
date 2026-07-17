@@ -816,6 +816,24 @@ const authDeactivateResponses = {
     "404": authNotFoundResponse
   }
 } as const;
+// R20 P1-05：撤销邀请回体 { ok, invite_id }。
+const authInviteRevokeResponseSchema = {
+  type: "object",
+  required: ["ok", "invite_id"],
+  properties: {
+    ok: { type: "boolean", const: true },
+    invite_id: { type: "string", format: "uuid" }
+  },
+  additionalProperties: false
+} as const;
+const authInviteRevokeResponses = {
+  responses: {
+    "200": rawJsonResponse(authInviteRevokeResponseSchema, "Revoked (soft-deleted) the pending invite").responses["200"],
+    "401": authNotIdentifiedResponse,
+    "403": authForbiddenResponse,
+    "404": authNotFoundResponse
+  }
+} as const;
 const authLogoutResponses = {
   responses: {
     "200": rawJsonResponse(authOkResponseSchema, "Logged out").responses["200"],
@@ -7347,6 +7365,14 @@ export function getOpenApiDocument() {
           summary: "Admin: create an out-of-band invite, returns a one-time token",
           ...jsonRequestBody(inviteCreateRequestBodySchema),
           ...authInviteCreateResponses
+        }
+      },
+      "/api/auth/invites/{inviteId}": {
+        delete: {
+          tags: ["auth"],
+          summary: "Admin: revoke a pending invite in the caller's workspace (soft-delete)",
+          parameters: [pathUuidParameter("inviteId")],
+          ...authInviteRevokeResponses
         }
       },
       "/api/auth/invites/accept": {
