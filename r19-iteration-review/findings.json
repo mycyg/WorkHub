@@ -1,9 +1,13 @@
 {
   "stats": {
-    "raw": 64,
-    "deduped": 57,
-    "confirmed": 47,
-    "rejected": 10
+    "pipeline_raw": 64,
+    "pipeline_deduped": 57,
+    "verifier_confirmed": 47,
+    "verifier_rejected": 10,
+    "lead_withdrawn": 3,
+    "lead_corrected": 2,
+    "final_confirmed": 44,
+    "note": "处置状态唯一事实源=02-ssot-2026-07-17.md;confirmed[] 内含 lead_verdict.withdrawn 的条目不计入 final_confirmed"
   },
   "confirmed": [
     {
@@ -758,6 +762,10 @@
         "real": true,
         "reason": "grep 证实 deliveries/attachments/comments/user_profiles 四表除 core.ts 定义与 relations 声明外全仓无任何 repo/service/route 读写，且 db.query.* 关系查询 API 生产代码零调用，关系声明确属惰性遗留，file:line 与描述全部属实，low 级不夸大。",
         "adjusted_severity": "low"
+      },
+      "lead_verdict": {
+        "corrected": true,
+        "reason": "user_profiles 有真实仓库(user-profiles.ts)+GET/PATCH 路由,从死表清单移除(codex 反馈);deliveries/attachments/comments 复核维持"
       }
     },
     {
@@ -797,6 +805,10 @@
         "real": true,
         "adjusted_severity": "low",
         "reason": "三条证据逐一核实成立:usage.recorded 除文档外无生产发布方也无消费方(cost 文档自认未落),confidence.scored 在 toCuuState:9 映射但 agent-run-confidence:128 只是 audit action 字符串非 bus.publish,sync.progress 在 toCuuState:20 映射但仅 QA 脚本发、无真实发布方,均为订而无发的死枚举,low 诚实。"
+      },
+      "lead_verdict": {
+        "withdrawn": true,
+        "reason": "非新发现:enums.ts:165 起为 R17 G2 所加 @deprecated 标注,明文枚举值一律保留(契约兼容面),删除建议违背既档约束(codex 反馈后复核坐实)"
       }
     },
     {
@@ -1774,8 +1786,15 @@
   ],
   "lead_review": {
     "date": "2026-07-17",
-    "withdrawn": 2,
-    "final_confirmed": 45,
+    "withdrawn": [
+      "R19-14 托盘角标",
+      "R19-17 全局热键",
+      "R19-38 死枚举"
+    ],
+    "corrected": [
+      "R19-4 邀请范围",
+      "R19-37 死表范围"
+    ],
     "spot_checked_true": [
       "R19-12",
       "R19-13",
@@ -1783,8 +1802,9 @@
       "R19-41",
       "R19-42",
       "R19-19",
-      "R19-22"
+      "R19-22",
+      "R19-37(三张维持)"
     ],
-    "corrected": 1
+    "external_crosscheck": "codex 2026-07-17 反馈已并入"
   }
 }
