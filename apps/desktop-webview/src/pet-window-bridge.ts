@@ -5,6 +5,7 @@ import {
   type CuuControllerPreferences,
   type CuuIdleInteraction
 } from "@workhub/cuu";
+import type { DesktopShellSystemNotificationPlan } from "./shell-events.js";
 
 export type DesktopPetWindowMode = "body_only" | "card";
 export type DesktopPetScalePercent = 75 | 100 | 125 | 150;
@@ -40,6 +41,10 @@ export type DesktopPetWindowBridge = {
   startDragging?: () => void | Promise<void>;
   savePosition?: () => void | Promise<void>;
   focusMainRoute?: (route: string) => void | Promise<void>;
+  // P2-07/R19-12：OS 通知点击深链的命令桥（webview 半边）。生产绑定的 onSystemNotification 收到壳层广播的
+  // system-notification 计划后经此把计划回传给原生 focus_system_notification 命令，走 REL-6 统一深链落地路径
+  // （审批通知落审批面板、消息通知落对应会话）。桌面通知插件无点击回调，故点击消费必须由 webview 触发。
+  focusSystemNotification?: (plan: DesktopShellSystemNotificationPlan) => void | Promise<void>;
   showPetWindow?: () => void | Promise<void>;
   hidePetWindow?: () => void | Promise<void>;
   sampleCursorNear?: () => PetCursorSampleResult | Promise<PetCursorSampleResult>;
@@ -220,6 +225,9 @@ export function resolveDesktopPetWindowBridge(input: unknown = globalThis): Desk
           },
           focusMainRoute: async (route: string) => {
             await invoke("focus_main_route", { route });
+          },
+          focusSystemNotification: async (plan: DesktopShellSystemNotificationPlan) => {
+            await invoke("focus_system_notification", { plan });
           },
           showPetWindow: async () => {
             await invoke("show_pet_window");

@@ -5,6 +5,7 @@ use serde_json::Value;
 use tauri::plugin::PermissionState;
 use tauri_plugin_notification::NotificationExt;
 
+use crate::deep_link::{ShellDeepLinkPlan, WORKHUB_DEEP_LINK_SCHEME};
 use crate::events::{event_channel_name, ShellEvent};
 use crate::locale::WorkHubLocale;
 use crate::sse::ShellPushEventPayload;
@@ -30,6 +31,11 @@ pub struct ShellSystemNotificationPlan {
     pub event: String,
     pub title: String,
     pub body: String,
+    // P2-07/R19-12：locale 由服务端/壳层拥有,webview 从不做客户端翻译。壳层向 webview 广播此计划时会带上
+    // locale,但 webview 侧的 DesktopShellSystemNotificationPlan 并不保留它;当通知点击经命令桥把计划回传给
+    // focus_system_notification 时,payload 里没有 locale。#[serde(default)] 让回传能反序列化(缺省=ZhCn),
+    // 而点击落地路径(deep_link_plan_for_notification_click)只用 route + window_control,并不读 locale。
+    #[serde(default)]
     pub locale: WorkHubLocale,
     pub urgency: ShellSystemNotificationUrgency,
     pub route: String,
@@ -103,10 +109,36 @@ pub fn system_notification_dedupe_key(plan: &ShellSystemNotificationPlan) -> Str
     format!("{}:{}:{}", plan.id, plan.event, plan.route)
 }
 
+/// 通知点击 → 深链计划映射（P2-07 / R19-12）。壳层为 high/urgent 事件算好了目标 route + window_control
+/// （见 `system_notification_plan_from_push_payload_for_locale`），但 tauri-plugin-notification 2.3.3 桌面端
+/// 的 `show()` 只是 `spawn` 一个 `notify_rust` 调用并**丢弃返回句柄**（见 `show_system_notification` 顶部注释），
+/// 没有任何 click/action 回调可挂——OS 弹窗被点击时壳层拿不到信号。于是"点击消费"落在 webview 侧：webview
+/// 收到 `system-notification` 事件、由生产绑定的 `onSystemNotification` 经命令桥（`focus_system_notification`）
+/// 把本计划回传，这里把它整形成与 REL-6 统一深链落地路径同型的 `ShellDeepLinkPlan`，交回 `handle_deep_link_plan`
+/// 执行（含 workbench 按需建窗）。route 与 window_control 直接复用、绝不重算——审批通知落审批面板、消息通知落
+/// 对应会话，都由壳层原来算好的 route 决定。纯函数便于单测。
+pub fn deep_link_plan_for_notification_click(
+    plan: &ShellSystemNotificationPlan,
+) -> ShellDeepLinkPlan {
+    ShellDeepLinkPlan {
+        // raw_url 仅作诊断/事件载荷,永不被 handle_deep_link_plan 重新解析(它直接用下面的 route/window_control)。
+        // 点击来源是 OS/webview 通知而非真实 URL,这里合成一个可读的 workhub://open?route= 形态标注来源。
+        raw_url: format!("workhub://open?route={}", plan.route),
+        scheme: WORKHUB_DEEP_LINK_SCHEME.to_string(),
+        route: plan.route.clone(),
+        window_control: plan.window_control.clone(),
+    }
+}
+
 pub fn show_system_notification(
     app: &tauri::AppHandle,
     plan: &ShellSystemNotificationPlan,
 ) -> Result<bool, String> {
+    // P2-07/R19-12 降级说明：tauri-plugin-notification 2.3.3 桌面端 `NotificationBuilder::show()` 内部
+    // `tauri::async_runtime::spawn` 后调 `notify_rust::Notification::show()` 并丢弃其返回句柄,桌面端**没有**
+    // click/action 回调接口(action 仅移动端)。升级到 2.x 更高小版本也不改变这一点(上游桌面端仍无点击路由)。
+    // 因此壳层这里只负责"弹出",点击目标 route 由 webview 侧经 focus_system_notification 命令桥消费
+    // (见 deep_link_plan_for_notification_click)。macOS 上点击弹窗只会激活 App(→ RunEvent::Reopen,恢复主窗)。
     let notifications = app.notification();
     let mut permission = notifications
         .permission_state()
@@ -578,6 +610,79 @@ mod tests {
         .unwrap();
 
         assert_eq!(plan.route, "/inbox");
+    }
+
+    // P2-07/R19-12：通知点击 → 深链计划映射。route + window_control 必须从通知计划原样带过去(壳层已算好
+    // 审批/会话目标),交给 handle_deep_link_plan 走统一落地路径,而不是在点击时重算或丢失。
+    #[test]
+    fn notification_click_maps_to_deep_link_plan_preserving_route_and_window_control() {
+        let plan = system_notification_plan_from_push_payload_for_locale(
+            &payload("permission.ask", r#"{"approval_id":"approval-1"}"#, "me"),
+            WorkHubLocale::EnUs,
+        )
+        .unwrap()
+        .unwrap();
+
+        let deep_link = deep_link_plan_for_notification_click(&plan);
+
+        assert_eq!(deep_link.scheme, WORKHUB_DEEP_LINK_SCHEME);
+        assert_eq!(deep_link.route, "/approvals?approvalId=approval-1");
+        assert_eq!(deep_link.window_control, plan.window_control);
+        assert_eq!(deep_link.window_control.label, "main");
+        assert_eq!(
+            deep_link.window_control.source,
+            ShellWindowControlSource::SystemNotification
+        );
+    }
+
+    // 会话/消息类通知(带 work_item_id)点击落到工作项路由——window_control 仍指主窗,由 webview 命令桥执行。
+    #[test]
+    fn conversation_notification_click_targets_the_work_item_route() {
+        let plan = system_notification_plan_from_push_payload(&payload(
+            "notification.created",
+            r#"{"id":"n1","severity":"high","title":"Review","body":"ready","work_item_id":"work-1"}"#,
+            "me",
+        ))
+        .unwrap()
+        .unwrap();
+
+        let deep_link = deep_link_plan_for_notification_click(&plan);
+
+        assert_eq!(deep_link.route, "/workitems/work-1");
+        assert_eq!(
+            deep_link.window_control.route,
+            Some("/workitems/work-1".to_string())
+        );
+    }
+
+    // 命令桥回传的 payload 没有 locale 字段(webview 端不保留),#[serde(default)] 必须让它照样反序列化。
+    #[test]
+    fn system_notification_plan_deserializes_without_a_locale_field() {
+        let json = r#"{
+            "id":"evt-1",
+            "event":"permission.ask",
+            "title":"Cuu needs your approval",
+            "body":"Open WorkHub.",
+            "urgency":"urgent",
+            "route":"/approvals?approvalId=approval-1",
+            "windowControl":{
+                "label":"main",
+                "action":"show_and_focus",
+                "source":"system_notification",
+                "route":"/approvals?approvalId=approval-1",
+                "focus":true,
+                "reason":"focus-main-route"
+            },
+            "streamKind":"me",
+            "streamPath":"/api/push/stream/me"
+        }"#;
+
+        let plan: ShellSystemNotificationPlan = serde_json::from_str(json).unwrap();
+
+        assert_eq!(plan.locale, WorkHubLocale::default());
+        let deep_link = deep_link_plan_for_notification_click(&plan);
+        assert_eq!(deep_link.route, "/approvals?approvalId=approval-1");
+        assert_eq!(deep_link.window_control.label, "main");
     }
 
     #[test]
