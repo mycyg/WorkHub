@@ -50,6 +50,7 @@ import {
   type AuthEnv
 } from "./middleware/auth.js";
 import { hashPassword, verifyPassword } from "./auth/password.js";
+import { WorkspaceMemberServiceError } from "./services/workspace-members.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createClientDeviceRoutes } from "./routes/client-devices.js";
 import { httpErrorCodeFor } from "./http-error-codes.js";
@@ -443,6 +444,14 @@ class MemoryMemberships implements WorkspaceMembershipRepository {
     );
   }
 
+  async findSoftDeletedForUserWorkspace(userId: string, workspaceId: string) {
+    return (
+      this.rows
+        .filter((row) => row.userId === userId && row.workspaceId === workspaceId && row.deletedAt !== null)
+        .sort((a, b) => (b.deletedAt?.getTime() ?? 0) - (a.deletedAt?.getTime() ?? 0))[0] ?? null
+    );
+  }
+
   async resolveDefaultWorkspace(userId: string) {
     return this.rows.find((row) => row.userId === userId && row.defaultWorkspace && row.deletedAt === null) ?? null;
   }
@@ -651,6 +660,11 @@ function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<
   app.onError((error, c) => {
     if (error instanceof ZodError) {
       return c.json({ ok: false, error: { code: "validation_error", message: "invalid payload" } }, 422);
+    }
+    // SEC-1（P0-01）：fail-closed / identify 拒绝墓碑抛 WorkspaceMemberServiceError（app.ts onError 亦读其 code），
+    // 测试镜像同一映射，让响应体带上 workspace_access_revoked 等业务错误码。
+    if (error instanceof WorkspaceMemberServiceError) {
+      return c.json({ ok: false, error: { code: error.code, message: error.message } }, error.status);
     }
     if (error instanceof HTTPException) {
       return c.json({ ok: false, error: { code: "auth_error", message: error.message } }, error.status);
@@ -1061,6 +1075,33 @@ test("ENV-01: identify degrades to no membership (not a 500) when the default wo
   assert.equal(memberships.rows.length, 0);
 });
 
+// ——— SEC-1（P0-01）：被移出成员的墓碑不得被 identify 复活 ———
+test("SEC-1: identify does not revive a removed member's tombstone and denies with 403 workspace_access_revoked", async () => {
+  const alice = user({ nickname: "alice" });
+  const { deps: authDeps, memberships, runtimeSettings } = identifyCtx([alice]);
+  const created = await memberships.create({
+    workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+    userId: alice.id,
+    role: "member",
+    defaultWorkspace: true
+  });
+  await memberships.softDelete(created.id, now); // 管理员移出 → 软删墓碑
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const response = await app.request("/api/auth/identify", jsonPost({ nickname: "alice" }));
+
+  assert.equal(response.status, 403, "identify for a removed member must fail closed");
+  const body = (await response.json()) as { error?: { code?: string } };
+  assert.equal(body.error?.code, "workspace_access_revoked");
+  // 墓碑不复活：不得新建 active 成员行（恢复须走管理员显式动作）。
+  assert.equal(
+    memberships.rows.filter((row) => row.deletedAt === null).length,
+    0,
+    "identify must not re-create an active membership for a removed member"
+  );
+});
+
 test("findings: malformed JSON body to /identify returns malformed_json, not a generic 400", async () => {
   const app = withProductionHttpErrors(new Hono<AuthEnv>());
   app.route("/api/auth", createAuthRoutes(deps([], [], settings())));
@@ -1466,7 +1507,7 @@ test("POST /register and /login are 404 in nickname mode (gate off by default)",
 
 test("POST /login succeeds with the right password and rejects the wrong one (401, generic)", async () => {
   const alice = user({ id: "10000000-0000-4000-8000-0000000000a1", nickname: "alice" });
-  const { deps, credentials } = passwordCtx([alice]);
+  const { deps, credentials, memberships, runtimeSettings } = passwordCtx([alice]);
   credentials.rows.push(
     credentialRow({
       userId: alice.id,
@@ -1475,6 +1516,8 @@ test("POST /login succeeds with the right password and rejects the wrong one (40
       passwordAlgo: "scrypt"
     })
   );
+  // SEC-1：种子用户绕过注册直接落库，须补默认工作区成员行，否则 resolveHumanActor fail-closed（生产中登录用户必是成员）。
+  await memberships.create({ workspaceId: runtimeSettings.auth.defaultWorkspaceId, userId: alice.id, role: "member", defaultWorkspace: true });
   const app = withErrors(new Hono<AuthEnv>());
   app.route("/auth", createAuthRoutes(deps));
   app.get("/who", createCurrentUserMiddleware(deps), (c) => c.json({ id: c.var.currentUser.id }));
@@ -1546,7 +1589,7 @@ test("POST /password revokes other client device tokens but keeps the current lo
   const alice = user({ id: "10000000-0000-4000-8000-0000000000c3", nickname: "alice" });
   const currentToken = "current-device-token";
   const otherToken = "other-device-token";
-  const { deps, credentials, devices } = passwordCtx([
+  const { deps, credentials, devices, memberships, runtimeSettings } = passwordCtx([
     alice
   ], [
     device({
@@ -1566,6 +1609,8 @@ test("POST /password revokes other client device tokens but keeps the current lo
     passwordHash: await hashPassword("old-pass-1"),
     passwordAlgo: "scrypt"
   }));
+  // SEC-1：种子用户绕过注册，补默认工作区成员行以通过 resolveHumanActor（/who）。
+  await memberships.create({ workspaceId: runtimeSettings.auth.defaultWorkspaceId, userId: alice.id, role: "member", defaultWorkspace: true });
   const app = withErrors(new Hono<AuthEnv>());
   app.route("/auth", createAuthRoutes(deps));
   app.get("/who", createCurrentUserMiddleware(deps), (c) => c.json({ id: c.var.currentUser.id }));
@@ -1612,19 +1657,53 @@ test("resolveHumanActor derives tenant from the user's default membership", asyn
   assert.deepEqual((actor as { roleIds?: readonly string[] }).roleIds, ["owner"]);
 });
 
-test("resolveHumanActor falls back to the single-tenant constant when there is no membership", async () => {
+// SEC-1（P0-01）：memberships 仓库已接线（生产路径）却解析不到 active 成员行 → fail-closed 403，
+// 绝不回退默认租户常量。取代旧「无成员行→默认 workspace」语义。
+test("SEC-1: resolveHumanActor fails closed (403 workspace_access_revoked) when memberships are wired but no active row resolves", async () => {
   const runtimeSettings = settings();
   const alice = user({ nickname: "alice" });
   const deps: AuthDependencies = {
     users: new MemoryUsers([alice]),
     devices: new MemoryDevices([]),
-    memberships: new MemoryMemberships(), // 无成员行
+    memberships: new MemoryMemberships(), // 接线但无 active 成员行
     settings: runtimeSettings,
     now: () => now
   };
-  const actor = await resolveHumanActor(deps, alice);
-  assert.equal(actor.workspaceId, runtimeSettings.auth.defaultWorkspaceId);
-  assert.equal(actor.orgId, runtimeSettings.auth.defaultOrgId);
+  await assert.rejects(
+    () => resolveHumanActor(deps, alice),
+    (error: unknown) =>
+      error instanceof WorkspaceMemberServiceError &&
+      error.status === 403 &&
+      error.code === "workspace_access_revoked"
+  );
+});
+
+// SEC-1（P0-01）：被移出成员（membership 软删墓碑）即便持有仍有效的 nickname cookie，也必须 403。
+// 移出只软删成员行，用户行与 cookieToken 仍活——靠 resolveHumanActor fail-closed（安全带）挡住。
+test("SEC-1: a removed member with a still-valid cookie is denied 403 workspace_access_revoked", async () => {
+  const runtimeSettings = settings();
+  const alice = user({ nickname: "alice" });
+  const workspaceId = runtimeSettings.auth.defaultWorkspaceId;
+  const memberships = new MemoryMemberships();
+  const created = await memberships.create({ workspaceId, userId: alice.id, role: "member", defaultWorkspace: true });
+  await memberships.softDelete(created.id, now); // 管理员移出 → 软删墓碑
+  const authDeps: AuthDependencies = {
+    users: new MemoryUsers([alice]),
+    devices: new MemoryDevices([]),
+    memberships,
+    settings: runtimeSettings,
+    now: () => now
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.get("/who", createCurrentUserMiddleware(authDeps), (c) => c.json({ id: c.var.currentUser.id }));
+
+  const response = await app.request("/who", {
+    headers: { Cookie: await signedCookie(alice.cookieToken, runtimeSettings) }
+  });
+
+  assert.equal(response.status, 403, "removed member must be denied even with a valid cookie");
+  const body = (await response.json()) as { error?: { code?: string } };
+  assert.equal(body.error?.code, "workspace_access_revoked");
 });
 
 test("resolveHumanActor uses the constant when no memberships repository is wired (today's default)", async () => {
@@ -1915,6 +1994,8 @@ function inviteCtx(adminUser: UserAuthRow) {
 test("invite create→accept end-to-end builds an account, credential, default membership, and session", async () => {
   const admin = user({ id: "10000000-0000-4000-8000-0000000000aa", nickname: "admin", isAdmin: true });
   const { deps, credentials, memberships, invites, runtimeSettings } = inviteCtx(admin);
+  // SEC-1：创建邀请要经 resolveHumanActor 派生工作区——生产中创建邀请的管理员必是 active 成员，测试同构预置。
+  await memberships.create({ workspaceId: runtimeSettings.auth.defaultWorkspaceId, userId: admin.id, role: "owner", defaultWorkspace: true });
   const { token: adminToken } = await mintSession(deps, admin, { authMethod: "password" });
 
   const app = withErrors(new Hono<AuthEnv>());
@@ -2005,8 +2086,10 @@ test("invite create derives tenant and role from the server-side admin context",
 // R18 批 H1：GET /api/auth/invites?status=pending —— 列未过期邀请（未接受∧未撤销∧未过期），绝不回 token。
 test("invite list returns pending invites without tokens, excluding accepted/revoked/expired", async () => {
   const admin = user({ id: "10000000-0000-4000-8000-0000000000ae", nickname: "admin", isAdmin: true });
-  const { deps, invites, runtimeSettings } = inviteCtx(admin);
+  const { deps, invites, memberships, runtimeSettings } = inviteCtx(admin);
   const workspaceId = runtimeSettings.auth.defaultWorkspaceId;
+  // SEC-1：列邀请要经 resolveHumanActor 派生工作区——管理员须为 active 成员，测试同构预置。
+  await memberships.create({ workspaceId, userId: admin.id, role: "owner", defaultWorkspace: true });
   const { token: adminToken } = await mintSession(deps, admin, { authMethod: "password" });
 
   const app = withErrors(new Hono<AuthEnv>());

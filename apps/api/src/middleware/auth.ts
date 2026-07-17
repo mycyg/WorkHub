@@ -36,6 +36,9 @@ import {
 } from "@workhub/db";
 
 import { getDefaultPresenceStore } from "../broker/presence.js";
+// SEC-1（P0-01）：fail-closed 时复用成员服务的错误类型抛 403 workspace_access_revoked。
+// 该服务对 middleware/auth 仅有 `import type { AuthActor }`（编译期擦除），运行时无环。
+import { WorkspaceMemberServiceError } from "../services/workspace-members.js";
 
 export const COOKIE_NAME = authDefaults.cookieName;
 export const LOCAL_CLIENT_HEADER = authDefaults.localClientHeader;
@@ -308,8 +311,14 @@ export function createHumanActor(user: UserAuthRow, runtimeSettings: Settings = 
 }
 
 // R2 多租户 epic Phase 2：从成员关系派生 human actor 租户。提供 memberships 仓库时用默认成员行的
-// 工作区+org；无默认成员（或未提供仓库）回退单租户常量。因 seed 让现有用户都有指向默认工作区的默认成员，
-// 解析结果 == 今天常量产出 → 零可观测变化；只有真实第二工作区+成员出现时才开始区分。
+// 工作区+org。
+// SEC-1（P0-01）fail-closed：memberships 仓库已接线即为生产鉴权路径——解析不到 active 成员行时
+// 不再回退默认租户常量（那会让「被移出成员的软删墓碑」继续解析出可用 actor，绕过移出）。两态皆 fail-closed：
+//   * 成员行存在但已 soft-deleted（被移出的墓碑）→ 拒；
+//   * 从未有过行（注册/identify 建行覆盖新用户，seed 覆盖存量）→ 同样拒。
+// 统一抛 403 workspace_access_revoked（复用 WorkspaceMemberServiceError，app.onError 读其 code/status）。
+// 仅当 memberships 仓库整体未接线（单租户运行时 / 显式测试注入）才走常量——生产 getDefaultAuthDependencies
+// 永远接线 memberships，故生产 resolve 路径不再经 createHumanActor。
 export async function resolveHumanActor(deps: AuthDependencies, user: UserAuthRow): Promise<AuthActor> {
   const runtimeSettings = getAuthSettings(deps);
   if (deps.memberships) {
@@ -326,8 +335,13 @@ export async function resolveHumanActor(deps: AuthDependencies, user: UserAuthRo
         roleIds: [tenant.role]
       };
     }
+    throw new WorkspaceMemberServiceError(
+      403,
+      "workspace_access_revoked",
+      "你已不在该工作区，访问已被撤销。如需恢复请联系工作区管理员。"
+    );
   }
-  // 无成员行 → 单租户常量兜底（滚动迁移期 / 密码注册尚未建成员的用户 / 单测不传仓库）。
+  // memberships 仓库整体未接线 → 单租户常量（显式测试注入 / 不派生租户的运行时）。
   return createHumanActor(user, runtimeSettings);
 }
 
