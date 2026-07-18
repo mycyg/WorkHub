@@ -11,6 +11,7 @@ import { renderProposalConflictCards } from "@workhub/ui/proposal";
 import { renderOnboardingScreen, renderInviteAcceptScreen } from "@workhub/ui";
 import { openAvatarCropModal } from "./avatar-crop-modal.js";
 import { armConfirmButton } from "./confirm-button.js";
+import { runOnboardingLocaleSync } from "./onboarding-locale-sync.js";
 import { buildSettingsDeviceRow, humanizeDeviceRevokeError } from "./settings-devices.js";
 import {
   acceptedDeliverableRestoreFromHref,
@@ -5144,14 +5145,46 @@ async function submitOnboarding(client: BrowserApiClient, locale: WorkHubLocale)
     });
     currentIdentity = identityUserFrom(identity) ?? { nickname, isAdmin: false };
     persistBrowserLocale(locale);
-    void client.updatePreferences({ locale }).catch(() => undefined);
+    // R20 P2-09：此前 `.catch(() => undefined)` 把语言偏好同步失败整个吞掉——用户以为界面语言已经
+    // 存到服务端，换设备/清缓存后又会掉回默认语言。不阻塞进入工作台（与 renderCurrentRouteOrOnboard
+    // 并发发起），但落地后要是没同步成功，就给可见告警 + 就地重试按钮，不能悄悄丢。编排逻辑本身在
+    // onboarding-locale-sync.ts（browser.ts 顶层引用 document，没法被单测覆盖）。
+    const localeSyncedPromise = runOnboardingLocaleSync({
+      updatePreferences: () => client.updatePreferences({ locale }).then(() => undefined),
+      showSyncFailedNotice: (retry) => showOnboardingLocaleSyncFailedNotice(locale, retry),
+      showSyncSucceededNotice: () => showOnboardingLocaleSyncSucceededNotice(locale)
+    });
     await renderCurrentRouteOrOnboard(client, locale);
+    await localeSyncedPromise;
   } catch (error) {
     const errorText = error instanceof Error && error.message
       ? error.message
       : goldPathT(locale, "runtime.actionFail");
     showOnboardingScreen(client, locale, { errorText, presetNickname: nickname });
   }
+}
+
+// R20 P2-09：引导页语言偏好落服务端失败的可见告警——持久 notice（timeoutMs=0，不自动消失）+ 重试按钮。
+function onboardingLocaleRetryActionHtml(locale: WorkHubLocale) {
+  const label = locale === "en-US" ? "Retry" : "重试";
+  return `<button type="button" class="wh-btn" data-r20-onboarding-locale-retry="true">${escapeHtml(label)}</button>`;
+}
+
+function showOnboardingLocaleSyncFailedNotice(locale: WorkHubLocale, retry: () => void) {
+  if (!root) {
+    return;
+  }
+  showRouteNotice(root, localePersistenceFailedNotice(locale, "onboarding_locale_sync"), onboardingLocaleRetryActionHtml(locale), 0);
+  root
+    .querySelector<HTMLButtonElement>("[data-r20-onboarding-locale-retry]")
+    ?.addEventListener("click", retry, { once: true });
+}
+
+function showOnboardingLocaleSyncSucceededNotice(locale: WorkHubLocale) {
+  if (!root) {
+    return;
+  }
+  showRouteNotice(root, actionSuccessNotice(locale, locale === "en-US" ? "Language preference saved." : "语言偏好已保存。"));
 }
 
 // R20 P1-05：邀请接受落地页（/invite，未登录可达）。boot() 在识别流之前特判此路径，渲染独立接受屏，
