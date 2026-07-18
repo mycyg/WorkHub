@@ -61,3 +61,69 @@ async function waitForMarker(pathname: string, expected: string, timeoutMs = 4_0
   }
   assert.equal(lastValue, expected);
 }
+
+// R20 P2-11（根因）：launchChrome 失败此前只抛一句笼统的「Timed out waiting for Chrome CDP target:
+// <fetch 错误>」——fetch 错误几乎总是 ECONNREFUSED，从不告诉你 Chrome 进程是不是根本没起来、秒退了、
+// 退出码/信号是什么、stderr 里到底写了什么真正原因。下面两个测试注入假 chrome 可执行文件（同上一个
+// 测试的手法：用一个可控的 shell 脚本冒充 chrome 二进制，而不是真的起 Chrome），分别覆盖「进程压根没
+// 起来（ENOENT）」和「进程起来了但立刻带着诊断信息退出（典型的缺共享库/沙箱权限/profile 损坏）」两类
+// 根因，断言抛出的错误里带着这些根因信息，而不是只有超时提示。
+
+test("launchChrome surfaces the spawn error (e.g. ENOENT) instead of just timing out silently", async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "workhub-r20-chrome-spawn-error-"));
+  try {
+    const missingChromePath = path.join(tmp, "does-not-exist-chrome-binary");
+    await assert.rejects(
+      launchChrome(missingChromePath, 65533, path.join(tmp, "profile"), { debugTargetTimeoutMs: 5_000 }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /failed to spawn/u, "must name the failure mode, not just 'timed out'");
+        assert.match(error.message, /ENOENT/u, "must surface the OS-level spawn error code");
+        assert.ok(
+          error.message.includes(missingChromePath),
+          "must surface the chromePath that was attempted, for fast root-causing"
+        );
+        return true;
+      }
+    );
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("launchChrome surfaces exit code and captured stderr when Chrome dies immediately instead of timing out silently", async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "workhub-r20-chrome-early-exit-"));
+  try {
+    const fakeChromePath = path.join(tmp, "fake-chrome-crash.sh");
+    await writeFile(
+      fakeChromePath,
+      [
+        "#!/bin/sh",
+        // Simulate a real Chrome crash: writes a diagnosable reason to stderr, then exits non-zero
+        // before ever opening its CDP debug port.
+        "echo 'error while loading shared libraries: libfoo.so.1: cannot open shared object file' 1>&2",
+        "exit 17",
+        ""
+      ].join("\n"),
+      "utf8"
+    );
+    await chmod(fakeChromePath, 0o755);
+
+    await assert.rejects(
+      launchChrome(fakeChromePath, 65532, path.join(tmp, "profile"), { debugTargetTimeoutMs: 5_000 }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /exited before its CDP debug target came up/u, "must name the failure mode");
+        assert.match(error.message, /exit code 17/u, "must surface the process exit code");
+        assert.match(
+          error.message,
+          /libfoo\.so\.1/u,
+          "must surface captured stderr so the real root cause (missing shared library, in this example) is visible without a local re-run"
+        );
+        return true;
+      }
+    );
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
