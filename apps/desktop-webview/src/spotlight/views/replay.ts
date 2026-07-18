@@ -2,13 +2,29 @@
 // 列出在跑/排队的 AI 运行（pages.attention.background_runs）→ 点开看该运行的时间线（getAgentRun trace）。
 // list→detail 都在盒子内联 morph；历史已完成运行从工作项/审批进入，这里聚焦「Cuu 正在干什么」。
 
-import type { AgentRunLiveVM, AttentionHomeVM } from "@workhub/contracts";
+import type { AgentRunLiveVM, AgentStep, AttentionHomeVM } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 import { agentRunStatusLabel, agentStepPhaseLabel, agentStepPublicSummary } from "../labels.js";
 
 type BgRun = AttentionHomeVM["background_runs"][number];
+
+// R20 R19-30：详情页打开时若这个 run 还在跑，每隔这么久用 GET /api/agent-runs/{id}/trace?after= 的游标
+// 增量拉一次新步骤——只拿"上次看到的最大 step_no 之后"的新行，不是每次都整个 run 重新拉一遍（trace 端点
+// 本来就支持这个游标，此前前端从来没人传过，见 R19-30 发现）。
+const TRACE_POLL_INTERVAL_MS = 4000;
+// 增量端点不带 status/usage，单靠"出现 final 步"判断收尾不够稳（失败/升级路径不一定落 final 步）——每
+// 这么多轮兜底做一次 getAgentRun 全量核对，跟丢终态。
+const STATUS_RESYNC_EVERY_N_POLLS = 5;
+
+function highestStepNo(steps: AgentStep[]): number {
+  return steps.reduce((max, step) => Math.max(max, step.step_no), 0);
+}
+
+function isActiveRunStatus(status: AgentRunLiveVM["status"]): boolean {
+  return status === "queued" || status === "running";
+}
 
 function stateLabel(state: BgRun["state"], zh: boolean): string {
   const map: Record<BgRun["state"], [string, string]> = {
@@ -70,8 +86,19 @@ export function createReplayView(): SpotlightCapabilityView {
       let loadGen = 0;
       // rank7：上次失败的加载器，点「重试」即重跑。
       let retry: (() => void) | undefined;
+      // R20 R19-30：增量轮询定时器——list↔trace 切换、离开能力都要先停旧的，否则前一个 run 的轮询
+      // 会在后台继续拿新 run 名下不存在的 after 游标乱撞（虽然服务端会正确按 runId 过滤，但纯属浪费）。
+      let pollTimer: ReturnType<typeof setTimeout> | undefined;
+
+      const stopPolling = () => {
+        if (pollTimer !== undefined) {
+          clearTimeout(pollTimer);
+          pollTimer = undefined;
+        }
+      };
 
       const showList = async () => {
+        stopPolling();
         const gen = ++loadGen;
         ctx.setSubtitle(zh ? "AI 运行" : "AI runs");
         ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉运行…" : "Loading runs…"}</div>`;
@@ -93,7 +120,55 @@ export function createReplayView(): SpotlightCapabilityView {
         ctx.requestResize();
       };
 
+      // R20 R19-30：仅当详情页打开时这个 run 还在跑（queued/running）才起轮询；已终结的 run 时间线不会
+      // 再变，起了也白起。每轮先走增量 trace 游标只要新步骤，省掉整个 run 重新序列化/传输；「出现 final
+      // 步」或每 N 轮兜底做一次全量 getAgentRun 核对 status/usage 并判断是否已收尾。
+      const pollTrace = (runId: string, gen: number, seedVm: AgentRunLiveVM, waiting: boolean) => {
+        if (!isActiveRunStatus(seedVm.status)) {
+          return;
+        }
+        let activeVm = seedVm;
+        let cursor = highestStepNo(seedVm.trace ?? []);
+        let pollCount = 0;
+
+        const tick = async () => {
+          pollTimer = undefined;
+          if (disposed || gen !== loadGen) return;
+          pollCount += 1;
+          try {
+            const newSteps = await ctx.client.getAgentRunTrace(runId, cursor);
+            if (disposed || gen !== loadGen) return;
+            if (newSteps.length > 0) {
+              cursor = Math.max(cursor, highestStepNo(newSteps));
+              activeVm = { ...activeVm, trace: [...(activeVm.trace ?? []), ...newSteps] };
+              ctx.body.innerHTML = traceHtml(activeVm, zh, waiting);
+              ctx.requestResize();
+            }
+            const shouldResync = newSteps.some((step) => step.phase === "final")
+              || pollCount % STATUS_RESYNC_EVERY_N_POLLS === 0;
+            if (shouldResync) {
+              const refreshed = await ctx.client.getAgentRun(runId);
+              if (disposed || gen !== loadGen) return;
+              activeVm = refreshed;
+              cursor = Math.max(cursor, highestStepNo(refreshed.trace ?? []));
+              ctx.body.innerHTML = traceHtml(activeVm, zh, waiting);
+              ctx.requestResize();
+              if (!isActiveRunStatus(refreshed.status)) {
+                return;
+              }
+            }
+          } catch {
+            // best-effort：瞬时网络抖动跳过这一轮，下一轮重试，不弹错误态盖掉已经在展示的时间线。
+          }
+          if (!disposed && gen === loadGen) {
+            pollTimer = setTimeout(() => void tick(), TRACE_POLL_INTERVAL_MS);
+          }
+        };
+        pollTimer = setTimeout(() => void tick(), TRACE_POLL_INTERVAL_MS);
+      };
+
       const showTrace = async (runId: string, runState?: string) => {
+        stopPolling();
         const gen = ++loadGen;
         ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉时间线…" : "Loading trace…"}</div>`;
         ctx.requestResize();
@@ -101,7 +176,9 @@ export function createReplayView(): SpotlightCapabilityView {
           const vm = await ctx.client.getAgentRun(runId);
           if (disposed || gen !== loadGen) return;
           ctx.setSubtitle(zh ? "运行时间线" : "Run trace");
-          ctx.body.innerHTML = traceHtml(vm, zh, runState === "waiting_for_user");
+          const waiting = runState === "waiting_for_user";
+          ctx.body.innerHTML = traceHtml(vm, zh, waiting);
+          pollTrace(runId, gen, vm, waiting);
         } catch {
           if (disposed || gen !== loadGen) return;
           // L14 回归修复：retry 必须带上 runState，否则重试成功后「去拍板」按钮(仅 waiting_for_user 显示)会丢失。
@@ -140,6 +217,7 @@ export function createReplayView(): SpotlightCapabilityView {
       }
       return () => {
         disposed = true;
+        stopPolling();
       };
     }
   };
