@@ -352,10 +352,9 @@ mod tests {
         assert_eq!(bare.route, "/workbench");
         assert_eq!(bare.window_control.label, "workbench");
 
-        let project = deep_link_plan_from_url(
-            "workhub://workbench/86000000-0000-4000-8000-000000000001",
-        )
-        .unwrap();
+        let project =
+            deep_link_plan_from_url("workhub://workbench/86000000-0000-4000-8000-000000000001")
+                .unwrap();
         assert_eq!(
             project.route,
             "/workbench/86000000-0000-4000-8000-000000000001"

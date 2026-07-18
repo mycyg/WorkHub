@@ -39,7 +39,11 @@ impl ShellWindowPlan {
 }
 
 pub fn default_window_plans() -> Vec<ShellWindowPlan> {
-    vec![main_window_plan(), pet_window_plan(), workbench_window_plan()]
+    vec![
+        main_window_plan(),
+        pet_window_plan(),
+        workbench_window_plan(),
+    ]
 }
 
 pub fn main_window_plan() -> ShellWindowPlan {
