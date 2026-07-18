@@ -2858,6 +2858,29 @@ test("R14 AVATAR settings route avatar copy has no emoji and no git jargon", () 
   assert.doesNotMatch(avatarRowHtml, /\bCuu\b/u, "web copy must never say Cuu");
 });
 
+// R20 P2-05（设备管理 API 完整但零 UI）：/api/client-devices 四端点早就齐了，但 web /settings 从没接过
+// 任何 UI（本测试之前，SSR 输出里完全没有 data-r20-settings-devices 这个骨架——red-before 就是"根本不
+// 存在"）。这个区块不是 admin 分区（设备是个人账号维度），且 apps/web/src/browser.ts 的
+// bindSettingsDevicesPanel 拉真实数据水合，这里只钉 SSR 骨架的形状与文案。
+test("R20-P2-05 settings route renders the signed-in devices block: SSR skeleton, not admin-gated", () => {
+  const vm = surfaceVm();
+
+  const asMember = renderWebRouteComponent({ key: "settings", settings: vm.page_vms.settings!, isAdmin: false }, { locale: "zh-CN" });
+  assert.equal(asMember.html.includes('data-r20-settings-devices="true"'), true, "devices block must render for non-admins too");
+  assert.equal(asMember.html.includes('data-r20-settings-devices-body="true"'), true);
+  assert.match(asMember.html, /已登录设备/u);
+  assert.match(asMember.html, /正在加载设备/u);
+
+  const asAdmin = renderWebRouteComponent({ key: "settings", settings: vm.page_vms.settings!, isAdmin: true }, { locale: "zh-CN" });
+  assert.equal(asAdmin.html.includes('data-r20-settings-devices="true"'), true);
+
+  const en = renderWebRouteComponents(vm, { locale: "en-US" }).settings;
+  assert.ok(en);
+  assert.match(en.html, /Signed-in devices/u);
+  assert.match(en.html, /Loading devices/u);
+  assert.doesNotMatch(en.html, /Cuu/u, "web copy must never say Cuu");
+});
+
 test("R4.16 route components expose hydration boundary metadata without weakening markers", () => {
   const vm = {
     ...surfaceVm(),

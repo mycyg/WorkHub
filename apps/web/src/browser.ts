@@ -1,5 +1,5 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
-import { eventTypes, type ActionSpec, type AiFeedbackVerdict, type PutAiFeedbackRequest, type SearchResultsVm, type SkillEditOp } from "@workhub/contracts";
+import { eventTypes, type ActionSpec, type AiFeedbackVerdict, type ClientDeviceResponse, type PutAiFeedbackRequest, type SearchResultsVm, type SkillEditOp } from "@workhub/contracts";
 import {
   classifyGoldPathHref,
   goldPathT,
@@ -11,6 +11,7 @@ import { renderProposalConflictCards } from "@workhub/ui/proposal";
 import { renderOnboardingScreen, renderInviteAcceptScreen } from "@workhub/ui";
 import { openAvatarCropModal } from "./avatar-crop-modal.js";
 import { armConfirmButton } from "./confirm-button.js";
+import { buildSettingsDeviceRow, humanizeDeviceRevokeError } from "./settings-devices.js";
 import {
   acceptedDeliverableRestoreFromHref,
   actionElementApplyPayload,
@@ -2152,6 +2153,7 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindSettingsAiProfilePanel(root, result, client, locale, signal);
   bindSettingsMembersPanel(root, result, client, locale, signal);
   bindSettingsMyProfilePanel(root, result, client, locale, signal);
+  bindSettingsDevicesPanel(root, result, client, locale, signal);
   bindSettingsAvatarPanel(root, result, client, locale, signal);
   bindAvatarTiles(root, signal);
   bindMemoryPanel(root, result, client, locale, signal);
@@ -3863,6 +3865,129 @@ function bindSettingsMyProfilePanel(
     },
     { signal }
   );
+}
+
+// R20 P2-05（设备管理 API 完整但零 UI）：/settings「已登录设备」区块的客户端水合。SSR 只出加载态骨架
+// （非 admin 分区——设备是个人账号维度，见 route-components.ts renderSettingsDevicesCard）。拉
+// GET /api/client-devices/me 渲染列表 + 尽力探测 GET /api/client-devices/current 标「本机」（该端点要求
+// 本地客户端 client-token 请求头，纯网页会话没有这个头，探测预期 403——按最佳努力折叠为 null/不标注，
+// 不是 bug，见 settings-devices.ts isCurrentDevice 顶部注释）+ 撤销（POST /:id/revoke，两段式确认同
+// P2-08 参与者移出的 armConfirmButton 范式；已撤销/本机行不出撤销按钮）。格式化/判定纯逻辑拆在
+// apps/web/src/settings-devices.ts（可单测，这里只是 DOM 拼装胶水）。
+function bindSettingsDevicesPanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "settings") {
+    return;
+  }
+  const zh = locale === "zh-CN";
+  const section = container.querySelector<HTMLElement>("[data-r20-settings-devices]");
+  const body = section?.querySelector<HTMLElement>("[data-r20-settings-devices-body]");
+  if (!section || !body) {
+    return;
+  }
+
+  const render = (devices: ClientDeviceResponse[], currentDeviceId: string | null) => {
+    if (!devices.length) {
+      body.innerHTML = `<p class="wh-subtle" data-r20-settings-devices-empty="true">${escapeHtml(
+        zh ? "还没有已登录的设备。" : "No signed-in devices yet."
+      )}</p>`;
+      return;
+    }
+
+    const rowsHtml = devices
+      .map((raw) => {
+        const row = buildSettingsDeviceRow(raw, currentDeviceId, locale);
+        const revokeBtn = row.canRevoke
+          ? `<button type="button" class="wh-btn" data-r20-settings-device-revoke="${escapeHtml(row.id)}">${escapeHtml(zh ? "撤销" : "Revoke")}</button>`
+          : "";
+        return `<div class="wh-r4-route-row" data-r20-settings-device="${escapeHtml(row.id)}" data-r20-settings-device-current="${escapeHtml(String(row.isCurrent))}" data-r20-settings-device-revoked="${escapeHtml(String(row.isRevoked))}">
+            <div>
+              <strong>${escapeHtml(row.deviceName)}</strong>
+              <p>${escapeHtml(row.platform)} · ${escapeHtml(row.lastSeenLabel)}</p>
+            </div>
+            <div class="wh-r4-route-meta"><span class="wh-pill">${escapeHtml(row.statusLabel)}</span>${revokeBtn}</div>
+          </div>`;
+      })
+      .join("");
+    body.innerHTML = `<div class="wh-r4-route-table" data-r20-settings-devices-count="${escapeHtml(String(devices.length))}">${rowsHtml}</div>
+      <p class="wh-subtle" data-r20-settings-devices-status hidden></p>`;
+
+    const status = body.querySelector<HTMLElement>("[data-r20-settings-devices-status]");
+    const setStatus = (text: string, tone: "saving" | "error") => {
+      if (!status) {
+        return;
+      }
+      status.hidden = false;
+      status.textContent = text;
+      status.setAttribute("data-r20-settings-devices-status", tone);
+    };
+
+    // 撤销失败必须可见——不静默吞错（工单纪律）：按钮复位可再点，状态行给人话化错误。
+    const doRevoke = async (deviceId: string, button: HTMLButtonElement) => {
+      button.disabled = true;
+      setStatus(zh ? "正在撤销…" : "Revoking…", "saving");
+      try {
+        await client.revokeClientDevice(deviceId);
+        if (signal.aborted) {
+          return;
+        }
+        void load();
+      } catch (error) {
+        if (signal.aborted) {
+          return;
+        }
+        button.disabled = false;
+        setStatus(humanizeDeviceRevokeError(error, locale), "error");
+      }
+    };
+
+    body.querySelectorAll<HTMLButtonElement>("[data-r20-settings-device-revoke]").forEach((btn) => {
+      const deviceId = btn.getAttribute("data-r20-settings-device-revoke") ?? "";
+      btn.addEventListener(
+        "click",
+        () => armConfirmButton(btn, {
+          confirmLabel: zh ? "确认撤销？再点一次" : "Revoke — click again",
+          onConfirm: () => void doRevoke(deviceId, btn)
+        }),
+        { signal }
+      );
+    });
+  };
+
+  const load = async () => {
+    try {
+      const devices = await client.listClientDevices();
+      if (signal.aborted) {
+        return;
+      }
+      // 「本机」探测是尽力而为：GET /current 需要本地客户端 client-token 头，纯网页会话没有这个头，
+      // 403 是预期结果——折叠为 null（不标注任何一行），绝不让这条补充请求的失败挡住主列表渲染。
+      const currentDeviceId = await client
+        .currentClientDevice()
+        .then((device) => device.id)
+        .catch(() => null);
+      if (signal.aborted) {
+        return;
+      }
+      render(devices, currentDeviceId);
+    } catch (error) {
+      if (signal.aborted) {
+        return;
+      }
+      body.innerHTML = `<p class="wh-subtle" data-r20-settings-devices-error="true">${escapeHtml(
+        zh ? "没能读取已登录设备。" : "Couldn't load signed-in devices."
+      )}</p><button type="button" class="wh-btn" data-r20-settings-devices-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+      body.querySelector<HTMLButtonElement>("[data-r20-settings-devices-retry]")
+        ?.addEventListener("click", () => void load(), { signal });
+    }
+  };
+
+  void load();
 }
 
 // R14 批 AVATAR：设置页「我的资料」卡的头像位。GET /api/me/profile 已经在 bindSettingsMyProfilePanel

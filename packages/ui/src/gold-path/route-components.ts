@@ -5444,6 +5444,23 @@ function renderSettingsMyProfileCard(locale: WorkHubLocale): string {
         </section>`;
 }
 
+// R20 P2-05（设备管理 API 完整但零 UI）：web /settings 的「已登录设备」区块——GET/POST
+// /api/client-devices/{me,current,:id/revoke} 后端四端点早就齐了（auth.test.ts 覆盖），但从未接过任何
+// 前端 UI。这里只出加载态骨架（不是 admin 分区——设备是个人账号维度，任何登录用户都能看自己的设备）；
+// apps/web/src/browser.ts 的 bindSettingsDevicesPanel 拉 GET /api/client-devices/me 渲染列表（设备名/
+// 平台/最近活跃本地化），尽力探测 GET /api/client-devices/current 标出「本机」（纯网页会话没有本地客户端
+// client-token 请求头，探测预期 403——折叠为「无法判定」，不假装/不误标），并接 POST /:id/revoke（两段式
+// 确认，同 P2-08 参与者移出的 armConfirmButton 范式；已撤销/本机行不出撤销按钮）。判定逻辑拆在
+// apps/web/src/settings-devices.ts（纯函数，供单测覆盖）。
+function renderSettingsDevicesCard(locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  return `<section class="wh-card wh-r4-route-card" data-r20-settings-devices="true">
+          <h3 role="heading" aria-level="2">${escapeHtml(zh ? "已登录设备" : "Signed-in devices")}</h3>
+          <p class="wh-subtle">${escapeHtml(zh ? "配对到这个账号的客户端设备。撤销不再使用的设备后，那台设备需要重新配对才能再次访问。" : "Client devices paired to this account. Revoking a device you no longer use requires it to re-pair before it can access your account again.")}</p>
+          <div data-r20-settings-devices-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载设备…" : "Loading devices…")}</p></div>
+        </section>`;
+}
+
 // R18 批 H1（web 工作区成员管理）：/settings 的「成员」分区——仅管理员可见（isAdmin 由外壳登录态给，
 // 同 memory 路由的团队技能 tab 编辑权来源）。SSR 只出加载态骨架，apps/web/src/browser.ts 的
 // bindSettingsMembersPanel 拉 GET /api/workspace/members 渲 roster（昵称/角色/加入时间）+ 移出/改角色
@@ -5513,6 +5530,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale,
         </section>
         ${renderSettingsAiAssistantCard(locale, props.restoreHref)}
         ${renderSettingsMyProfileCard(locale)}
+        ${renderSettingsDevicesCard(locale)}
       </div>
       ${vm.permission_policies !== undefined ? `<section class="wh-card wh-r4-route-card" data-r9-settings-policies="${escapeHtml(String(vm.permission_policies.length))}">
         <h3 role="heading" aria-level="2">${escapeHtml(locale === "zh-CN" ? "自动通过规则" : "Auto-approve rules")}</h3>
