@@ -5434,6 +5434,94 @@ test("agent run queue keeps the lease alive during a long provider call", async 
   assert.notEqual(duringProvider?.claim?.heartbeat_at, duringProvider?.claim?.claimed_at);
 });
 
+// P3-02：claim 心跳成功续租时，refreshClaim 会顺带续预留租约（reservationRepo.refreshLease）。此前那次调用
+// 是 `.catch(() => {})`——不管是 DB 抛错还是命中 0 行（预留早被 releaseExpired 判过期/从未成功 reserve 过），
+// 全部悄悄吞掉，运维完全看不出这个仍在跑的 run 已经没有生效预留、outstanding 计算正在漏计它。根因测试：
+// 让 refreshLease 命中 0 行，断言必须能在结构化日志里看到 agent_run_budget_lease_renew_no_rows——
+// 修复前这条断言会红（吞掉后日志管道里什么都没有），修复后转绿。
+test("P3-02 budget lease renewal that updates 0 rows surfaces a structured log instead of being silently swallowed", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const renewSeen = deferred<void>();
+  const releaseProvider = deferred<void>();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-budget-lease-renew-test-"));
+  let tick = 0;
+  const longProviderClient: AgentLoopClient = {
+    model: "deepseek-v4-flash",
+    messages: {
+      async create() {
+        await releaseProvider.promise;
+        return {
+          id: "msg-budget-lease-renew",
+          stopReason: "end_turn",
+          usage: { inputTokens: 1, outputTokens: 1 },
+          usageRecord: {
+            provider: "deepseek",
+            model: "deepseek-v4-flash",
+            task: "worker",
+            inputTokens: 1,
+            outputTokens: 1,
+            estimatedCostCny: "0.001",
+            source: "agent_step",
+            createdAt: "2026-06-05T00:00:00.000Z"
+          },
+          content: [{ type: "text", text: "done" }]
+        };
+      }
+    }
+  };
+  const fakeReservationRepo = {
+    reserve: async () => ({ ok: true as const }),
+    reconcile: async () => 0,
+    releaseExpired: async () => 0,
+    refreshLease: async () => {
+      renewSeen.resolve();
+      return 0;
+    },
+    outstandingForScopes: async () => new Map()
+  };
+  const logLines: string[] = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: string | Uint8Array) => {
+    logLines.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+    return true;
+  }) as typeof process.stdout.write;
+  try {
+    const queue = createInMemoryAgentRunQueue({
+      settings: runtimeSettings,
+      now: () => new Date(now.getTime() + tick++ * 100),
+      id: () => "40000000-0000-4000-8000-00000000002f",
+      workerId: "worker-budget-lease-renew",
+      leaseMs: 300,
+      heartbeatIntervalMs: 10,
+      workdir: () => workdir,
+      client: () => longProviderClient,
+      persistence,
+      reservationRepo: fakeReservationRepo as unknown as BudgetReservationRepository,
+      confidence: false,
+      proposals: false,
+      notifications: false,
+      eventBus: false,
+      requireDeliverable: false
+    });
+    const run = await queue.enqueue({
+      workItemId,
+      actorId: userId,
+      title: "Budget lease renew 0-row run"
+    });
+
+    const running = queue.runNext();
+    await renewSeen.promise;
+    releaseProvider.resolve();
+    await running;
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+
+  const sawNoRowsLog = logLines.some((line) => line.includes("agent_run_budget_lease_renew_no_rows"));
+  assert.equal(sawNoRowsLog, true, "0-row budget lease renewal must be observable via structured log, not silently swallowed");
+});
+
 test("agent run abort propagates an AbortSignal to the in-flight provider request", async () => {
   const runtimeSettings = settings();
   const providerStarted = deferred<void>();
