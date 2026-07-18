@@ -182,7 +182,7 @@ mod tests {
         assert_eq!(plan.action, ShellWindowControlAction::ShowAndFocus);
         assert_eq!(plan.source, ShellWindowControlSource::DeepLink);
         assert_eq!(plan.route, Some("/proposal/proposal-1".to_string()));
-        assert_eq!(plan.focus, true);
+        assert!(plan.focus);
     }
 
     #[test]
@@ -203,9 +203,9 @@ mod tests {
         assert_eq!(show.label, "pet");
         assert_eq!(show.action, ShellWindowControlAction::Show);
         assert_eq!(show.route, Some("/pet.html".to_string()));
-        assert_eq!(show.focus, false);
+        assert!(!show.focus);
         assert_eq!(toggle.action, ShellWindowControlAction::Toggle);
-        assert_eq!(toggle.focus, false);
+        assert!(!toggle.focus);
     }
 
     #[test]
@@ -215,8 +215,8 @@ mod tests {
 
         assert_eq!(main.route, None);
         assert_eq!(pet.route, None);
-        assert_eq!(main.focus, false);
-        assert_eq!(pet.focus, false);
+        assert!(!main.focus);
+        assert!(!pet.focus);
     }
 
     #[test]
