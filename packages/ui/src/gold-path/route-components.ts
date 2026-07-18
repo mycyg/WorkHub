@@ -6,6 +6,9 @@ import type {
   AttentionAction,
   AttentionHomeVM,
   AttentionItem,
+  // R20 R19-27（工作项跨 run 审计时间线）：GET /api/workitems/:id/audit 返回的审计事实行。
+  AuditActor,
+  AuditLogFact,
   ConversationMessageVM,
   ConversationReactionKey,
   CostDashboardVM,
@@ -2295,6 +2298,76 @@ function traceRows(vm: WorkItemDetailVM, locale: WorkHubLocale) {
     .join("");
 }
 
+// R20 R19-27：后端早有跨 run 审计时间线端点（GET /api/workitems/:id/audit，packages/db
+// audit-repository 有测试覆盖），但 web 端从没拉过这份数据、更没渲染过——用户看不到一个工作项跨多次
+// AI 执行/快照/审批的完整审计轨迹。这里只出静态占位卡（时间线本体是客户端异步拉取，见
+// apps/web/src/browser.ts 的 bindWorkItemAuditTimelinePanel），行渲染抽成纯函数以便单测覆盖。
+const auditActionLabels: Record<string, [string, string]> = {
+  "work_item.created": ["创建工作项", "Work item created"],
+  "work_item.updated": ["更新工作项", "Work item updated"],
+  "snapshot.created": ["生成文件快照", "File snapshot created"],
+  "snapshot.reverted": ["回滚文件快照", "File snapshot reverted"],
+  "proposal.opened": ["生成变更申请", "Proposal opened"],
+  "proposal.merged": ["合并变更申请", "Proposal merged"],
+  "proposal.rejected": ["驳回变更申请", "Proposal rejected"],
+  "approval.approved": ["审批通过", "Approval granted"],
+  "approval.rejected": ["审批打回", "Approval rejected"]
+};
+
+function auditActionLabel(action: string, zh: boolean): string {
+  const hit = auditActionLabels[action];
+  if (hit) {
+    return zh ? hit[0] : hit[1];
+  }
+  // 未预先收录的动作字符串（新增审计事件类型时难免）不能裸给机器串——退化成分词展示，
+  // 至少比 "proposal.merged" 这种没见过的原始 action 值人类友好一些。
+  return humanizeToken(action.replace(/[._]/gu, " "));
+}
+
+function auditActorLabel(actor: AuditActor, zh: boolean): string {
+  if (actor.actor_kind === "ai") {
+    return "AI";
+  }
+  if (actor.actor_nickname) {
+    return actor.actor_nickname;
+  }
+  return zh ? "系统" : "System";
+}
+
+const AUDIT_TIMELINE_VISIBLE_COUNT = 8;
+
+// 导出供 browser.ts（web，拉到数据后）与单测复用；纯函数，不做取数——加载中/加载失败/无权三种态
+// 由调用方（bindWorkItemAuditTimelinePanel）区分渲染，这里只管「已经有一批审计事实，怎么显示」。
+export function renderWorkItemAuditTimelineRows(logs: AuditLogFact[], locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  if (logs.length === 0) {
+    return `<p class="wh-subtle" data-r20-workitem-audit-timeline-empty="true">${escapeHtml(zh ? "暂无审计记录。" : "No audit history yet.")}</p>`;
+  }
+  const visible = logs.slice(0, AUDIT_TIMELINE_VISIBLE_COUNT);
+  const overflowCount = logs.length - AUDIT_TIMELINE_VISIBLE_COUNT;
+  // R10-P1-4 同款约定（evidenceRows）：截断必须诚实标出「还有 N 条」，不许让审阅者以为已看全。
+  const overflow = overflowCount > 0
+    ? `<p class="wh-subtle" role="listitem" data-r20-workitem-audit-timeline-overflow="${escapeHtml(String(overflowCount))}">${escapeHtml(
+        zh
+          ? `还有 ${overflowCount} 条审计记录未展开（共 ${logs.length} 条）。`
+          : `${overflowCount} more audit entries not shown (${logs.length} total).`
+      )}</p>`
+    : "";
+  return visible
+    .map((entry) => `<div role="listitem" class="wh-r4-route-row" data-r20-workitem-audit-entry="${escapeHtml(entry.id)}" data-r20-workitem-audit-entry-action="${escapeHtml(entry.action)}">
+      <div>
+        <strong>${escapeHtml(auditActionLabel(entry.action, zh))}</strong>
+        <p>${escapeHtml(auditActorLabel(entry.actor, zh))}${entry.undone_at ? escapeHtml(zh ? "（已撤销）" : " (undone)") : ""}</p>
+      </div>
+      <span class="wh-pill">${escapeHtml(formatApprovalTimestamp(entry.created_at))}</span>
+    </div>`)
+    .join("") + overflow;
+}
+
+function workItemAuditTimelineLoadingHtml(locale: WorkHubLocale): string {
+  return `<p class="wh-subtle" data-r20-workitem-audit-timeline-loading="true">${escapeHtml(locale === "zh-CN" ? "正在加载审计记录…" : "Loading audit history…")}</p>`;
+}
+
 function workItemActions(vm: WorkItemDetailVM, locale: WorkHubLocale): ActionSpec[] {
   const proposalId = vm.latest_proposal?.proposal_id;
   const runId = vm.agent_trace_preview[0]?.agent_run_id;
@@ -2703,6 +2776,10 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
       <section class="wh-card wh-r4-route-card" data-r4-workitem-evidence="true">
         <h3 role="heading" aria-level="2">${escapeHtml(uiT(locale, "generic.evidence"))}</h3>
         <div class="wh-r4-route-timeline" role="list">${evidenceRows(vm.evidence_refs, locale, "r4-workitem-evidence-ref")}</div>
+      </section>
+      <section class="wh-card wh-r4-route-card" data-r20-workitem-audit-timeline="true" data-r20-workitem-audit-timeline-workitem="${escapeHtml(vm.workitem.id)}">
+        <h3 role="heading" aria-level="2">${escapeHtml(locale === "zh-CN" ? "跨 run 审计时间线" : "Cross-run audit timeline")}</h3>
+        <div class="wh-r4-route-timeline" role="list" data-r20-workitem-audit-timeline-body="true">${workItemAuditTimelineLoadingHtml(locale)}</div>
       </section>
     </section>`
   });

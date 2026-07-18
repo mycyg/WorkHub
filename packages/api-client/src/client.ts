@@ -554,6 +554,7 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
     // R20 R19-29：listWorkItemProposals（GET /api/workitems/:id/proposals）已删——web/desktop 均无调用点，
     // 同样的提议列表数据早已内嵌进工作项详情页 VM，核实零消费后随后端路由一并删除。
     listWorkItemConflicts: (workItemId) => request(`/api/workitems/${encodeURIComponent(workItemId)}/conflicts`),
+    getWorkItemAuditTimeline: (workItemId) => request(`/api/workitems/${encodeURIComponent(workItemId)}/audit`),
     getProposal: (id) => request(`/api/proposals/${encodeURIComponent(id)}`),
     reviewProposal: (id, payload, options) =>
       request(withPageLocale(`/api/proposals/${encodeURIComponent(id)}/review`, options), {

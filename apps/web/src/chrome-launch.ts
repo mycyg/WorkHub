@@ -83,23 +83,90 @@ async function stopChrome(child: ChildProcessWithoutNullStreams | undefined) {
   });
 }
 
-async function waitForDebugTarget(port: number, timeoutMs = 45_000) {
+const stderrTailLimit = 4000;
+
+// R20 P2-11：launchChrome 失败此前只抛「Timed out waiting for Chrome CDP target: <fetch 错误>」——
+// fetch 错误几乎总是 ECONNREFUSED（端口没起来），从不告诉你 Chrome 进程本身是否真的启动了、
+// 是不是秒退了、退出码/信号是什么、路径对不对、stderr 里有没有真正的根因（缺共享库/沙箱权限/
+// profile 损坏……）。QA 排障只能本地重跑加日志。这里把 spawn 错误码、进程提前退出的 exit
+// code/signal、stderr 尾部、以及 chromePath/debugPort/userDataDir 全部收进同一条结构化错误信息里。
+function describeExit(code: number | null, signal: NodeJS.Signals | null): string {
+  if (signal) {
+    return `signal ${signal}`;
+  }
+  return `exit code ${code ?? "null"}`;
+}
+
+type LaunchFailureContext = {
+  chromePath: string;
+  debugPort: number;
+  userDataDir: string;
+};
+
+function buildLaunchFailureMessage(context: LaunchFailureContext, reason: string, stderrTail: string): string {
+  const parts = [
+    reason,
+    `chromePath=${context.chromePath}`,
+    `debugPort=${context.debugPort}`,
+    `userDataDir=${context.userDataDir}`
+  ];
+  if (stderrTail.trim()) {
+    parts.push(`stderr=${JSON.stringify(stderrTail.trim())}`);
+  }
+  return parts.join(" | ");
+}
+
+async function waitForDebugTarget(
+  child: ChildProcessWithoutNullStreams,
+  context: LaunchFailureContext,
+  timeoutMs: number,
+  getStderrTail: () => string
+) {
   const deadline = Date.now() + timeoutMs;
   let lastError: unknown;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/json/list`);
-      const pages = await response.json() as Array<{ type?: string; webSocketDebuggerUrl?: string }>;
-      const page = pages.find((item) => item.type === "page" && item.webSocketDebuggerUrl);
-      if (page?.webSocketDebuggerUrl) {
-        return page.webSocketDebuggerUrl;
+  let spawnError: NodeJS.ErrnoException | undefined;
+  const onSpawnError = (error: NodeJS.ErrnoException) => {
+    spawnError = error;
+  };
+  child.on("error", onSpawnError);
+  try {
+    while (Date.now() < deadline) {
+      if (spawnError) {
+        throw new Error(
+          buildLaunchFailureMessage(
+            context,
+            `Chrome process failed to spawn (${spawnError.code ?? spawnError.message})`,
+            getStderrTail()
+          )
+        );
       }
-    } catch (error) {
-      lastError = error;
+      if (child.exitCode !== null || child.signalCode !== null) {
+        throw new Error(
+          buildLaunchFailureMessage(
+            context,
+            `Chrome process exited before its CDP debug target came up (${describeExit(child.exitCode, child.signalCode)})`,
+            getStderrTail()
+          )
+        );
+      }
+      try {
+        const response = await fetch(`http://127.0.0.1:${context.debugPort}/json/list`);
+        const pages = await response.json() as Array<{ type?: string; webSocketDebuggerUrl?: string }>;
+        const page = pages.find((item) => item.type === "page" && item.webSocketDebuggerUrl);
+        if (page?.webSocketDebuggerUrl) {
+          return page.webSocketDebuggerUrl;
+        }
+      } catch (error) {
+        lastError = error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 120));
     }
-    await new Promise((resolve) => setTimeout(resolve, 120));
+    throw new Error(
+      buildLaunchFailureMessage(context, `Timed out waiting for Chrome CDP target: ${String(lastError)}`, getStderrTail())
+    );
+  } finally {
+    child.off("error", onSpawnError);
   }
-  throw new Error(`Timed out waiting for Chrome CDP target: ${String(lastError)}`);
 }
 
 function chromeExtraArgs() {
@@ -117,6 +184,7 @@ export async function launchChrome(
 ) {
   await rm(userDataDir, { recursive: true, force: true });
   await mkdir(userDataDir, { recursive: true });
+  const context: LaunchFailureContext = { chromePath, debugPort, userDataDir };
   const child = spawn(chromePath, [
     "--headless=new",
     ...chromeExtraArgs(),
@@ -129,10 +197,18 @@ export async function launchChrome(
     `--user-data-dir=${userDataDir}`,
     "--window-size=1365,1100",
     "about:blank"
-  ], { stdio: "ignore" }) as ChildProcessWithoutNullStreams;
+  ], { stdio: ["ignore", "ignore", "pipe"] }) as unknown as ChildProcessWithoutNullStreams;
+
+  let stderrTail = "";
+  child.stderr.on("data", (chunk: Buffer) => {
+    stderrTail = (stderrTail + chunk.toString("utf8")).slice(-stderrTailLimit);
+  });
+  // Avoid an unhandled 'error' on the stderr stream itself turning into noise unrelated to the launch outcome.
+  child.stderr.on("error", () => undefined);
+
   let cdp: CdpClient | undefined;
   try {
-    const websocketUrl = await waitForDebugTarget(debugPort, options.debugTargetTimeoutMs);
+    const websocketUrl = await waitForDebugTarget(child, context, options.debugTargetTimeoutMs ?? 45_000, () => stderrTail);
     cdp = await CdpClient.connect(websocketUrl);
     await cdp.send("Page.enable");
     await cdp.send("Runtime.enable");

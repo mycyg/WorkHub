@@ -47,6 +47,10 @@ export type AvatarCropElement = {
   setAttribute(name: string, value: string): void;
   addEventListener(type: string, handler: (event: any) => void): void;
   setPointerCapture?(pointerId: number): void;
+  // R20 P2-10（焦点生命周期）：开弹窗要把焦点送进去、Tab 圈闭要挪焦点、关弹窗要把焦点还给触发钮——
+  // 三处都要能对着某个 AvatarCropElement 调用 .focus()（真实 DOM 元素天生就有；测试假元素补一个
+  // 可观察的桩即可，不需要真的模拟浏览器焦点系统）。
+  focus(): void;
 };
 
 export type AvatarCropRect = { sx: number; sy: number; sWidth: number; sHeight: number };
@@ -65,12 +69,17 @@ export type AvatarCropDeps = {
   appendToBody: (el: AvatarCropElement) => void;
   loadImage: (file: File) => Promise<AvatarCropLoadedImage>;
   renderCrop: (source: unknown, rect: AvatarCropRect, outputSize: number) => Promise<Blob>;
+  // R20 P2-10：当前持有焦点的元素——打开时用来记住"触发裁剪的那个按钮"，关闭时把焦点还回去；
+  // Tab 圈闭时用来判断"现在焦点在三个可操作件里的第几个"。真实浏览器 = document.activeElement；
+  // 缺省（未注入）时视为 null（不做焦点管理，向后兼容任何没有传这个 dep 的调用点）。
+  getActiveElement?: () => AvatarCropElement | null;
 };
 
 export function defaultAvatarCropDeps(): AvatarCropDeps {
   return {
     createElement: (tag) => document.createElement(tag) as unknown as AvatarCropElement,
     appendToBody: (el) => document.body.appendChild(el as unknown as Node),
+    getActiveElement: () => document.activeElement as unknown as AvatarCropElement | null,
     loadImage: (file) =>
       new Promise((resolve, reject) => {
         const url = URL.createObjectURL(file);
@@ -131,6 +140,10 @@ export function openAvatarCropModal(
   onConfirm: (blob: Blob) => void | Promise<void>,
   deps: AvatarCropDeps = defaultAvatarCropDeps()
 ): Promise<void> {
+  // R20 P2-10（焦点生命周期）：记下打开裁剪层之前谁有焦点（通常是"更换头像"触发钮）——关闭（无论
+  // 取消/确认/Esc）都要把焦点原样还回去。loadImage 是异步的，必须在它之前、同步地捕获，否则等图片
+  // 加载完时焦点可能已经不在原处了（哪怕这个窗口通常很短）。
+  const triggerElement = deps.getActiveElement?.() ?? null;
   return new Promise((resolveOpen, rejectOpen) => {
     void deps
       .loadImage(file)
@@ -209,6 +222,9 @@ export function openAvatarCropModal(
           previewEl.style.top = `${state.offset.y}px`;
         };
         applyState();
+        // R20 P2-10（开弹窗焦点移入）：首个可操作件是缩放滑杆（DOM 里第一个真正可聚焦的控件——
+        // 取景框本身不接受焦点，只能拖拽）。不挪的话读屏/键盘用户开了弹窗却毫无焦点提示。
+        zoomSlider.focus();
 
         const close = () => {
           if (disposed) {
@@ -217,7 +233,34 @@ export function openAvatarCropModal(
           disposed = true;
           overlay.remove();
           loaded.release();
+          // R20 P2-10：关闭（取消/确认/Esc 任意路径都走这一个 close）把焦点原样还给触发钮，
+          // 键盘/读屏用户不能在裁剪层消失后跌回文档顶部、丢失原本的操作上下文。
+          triggerElement?.focus();
         };
+
+        // R20 P2-10（Tab 圈闭）：这个模态只有三个可操作件（缩放滑杆/取消/确认），DOM 顺序即视觉顺序即
+        // 期望的 Tab 顺序。overlay 是它们共同的祖先——键盘事件会冒泡上来，在这一层统一拦截管理，不依赖
+        // 浏览器原生 Tab 顺序（背景页面其余可聚焦元素仍在文档里，放任原生 Tab 会漏出模态之外）。
+        const focusOrder: AvatarCropElement[] = [zoomSlider, cancelBtn, confirmBtn];
+        overlay.addEventListener("keydown", (event: KeyboardEvent) => {
+          if (event.key === "Escape") {
+            event.preventDefault?.();
+            close();
+            resolveOpen();
+            return;
+          }
+          if (event.key !== "Tab") {
+            return;
+          }
+          event.preventDefault?.();
+          const active = deps.getActiveElement?.() ?? null;
+          const currentIndex = active ? focusOrder.indexOf(active) : -1;
+          const lastIndex = focusOrder.length - 1;
+          const nextIndex = event.shiftKey
+            ? (currentIndex <= 0 ? lastIndex : currentIndex - 1)
+            : (currentIndex === -1 || currentIndex === lastIndex ? 0 : currentIndex + 1);
+          focusOrder[nextIndex]?.focus();
+        });
 
         let dragging = false;
         let dragStart = { x: 0, y: 0 };

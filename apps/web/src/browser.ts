@@ -4,6 +4,7 @@ import {
   classifyGoldPathHref,
   goldPathT,
   normalizeWorkHubLocale,
+  renderWorkItemAuditTimelineRows,
   type GoldPathAppShell,
   type WorkHubLocale
 } from "@workhub/ui/gold-path";
@@ -11,6 +12,7 @@ import { renderProposalConflictCards } from "@workhub/ui/proposal";
 import { renderOnboardingScreen, renderInviteAcceptScreen } from "@workhub/ui";
 import { openAvatarCropModal } from "./avatar-crop-modal.js";
 import { armConfirmButton } from "./confirm-button.js";
+import { runOnboardingLocaleSync } from "./onboarding-locale-sync.js";
 import { buildSettingsDeviceRow, humanizeDeviceRevokeError } from "./settings-devices.js";
 import {
   acceptedDeliverableRestoreFromHref,
@@ -2116,6 +2118,7 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindGoldPathNavigation(root, result.shell, client, locale, (href) => navigateWebRoute(href, client, locale), signal);
   bindNotificationMutePanel(root, result, client, locale, signal);
   bindHomeProjectsRetry(root, client, locale, signal);
+  bindWorkItemAuditTimelinePanel(root, result, client, locale, signal);
   bindProjectHomePlansPanel(root, result, client, locale, signal);
   bindProjectHomeInstructionsPanel(root, result, client, locale, signal);
   bindProjectHomeMembersPanel(root, result, client, locale, signal);
@@ -2395,6 +2398,56 @@ function bindProjectHomePlansPanel(
         zh ? "规划草案加载失败，稍后重试。" : "Couldn't load plan drafts — retry later."
       )}</p><button type="button" class="wh-btn" data-r17-project-home-plans-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
       body.querySelector<HTMLButtonElement>("[data-r17-project-home-plans-retry]")
+        ?.addEventListener("click", () => void load(), { signal });
+    }
+  };
+  void load();
+}
+
+// R20 R19-27：工作项详情页跨 run 审计时间线——服务端早有 GET /api/workitems/:id/audit（快照 + 审计
+// 事实 + manifest 校验，packages/db audit-repository 有测试覆盖），但此前没有任何类型化客户端方法能
+// 调用它，web 端也从没渲染过。route-components.ts 只出一个待水合的占位卡（加载中文案）；这里挂真实
+// 取数——成功即渲时间线（时间+动作+操作者，本地化，纯渲染逻辑在 renderWorkItemAuditTimelineRows）；
+// 403（无权）与其它失败分开，同 P1-07 project-home-plans 先例：无权≠没有数据，其它失败给可见告警 +
+// 可点重试，绝不能拿"暂无记录"糊弄一次真实的取数失败。
+function bindWorkItemAuditTimelinePanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "workitem") {
+    return;
+  }
+  const section = container.querySelector<HTMLElement>("[data-r20-workitem-audit-timeline]");
+  const body = section?.querySelector<HTMLElement>("[data-r20-workitem-audit-timeline-body]");
+  const workItemId = section?.getAttribute("data-r20-workitem-audit-timeline-workitem") ?? "";
+  if (!section || !body || !workItemId) {
+    return;
+  }
+  const zh = locale === "zh-CN";
+  const load = async () => {
+    try {
+      const timeline = await client.getWorkItemAuditTimeline(workItemId);
+      if (signal.aborted) {
+        return;
+      }
+      body.innerHTML = renderWorkItemAuditTimelineRows(timeline.audit_logs, locale);
+    } catch (error) {
+      if (signal.aborted) {
+        return;
+      }
+      if (error instanceof WorkHubApiError && error.status === 403) {
+        body.innerHTML = `<p class="wh-subtle" data-r20-workitem-audit-timeline-forbidden="true">${escapeHtml(
+          zh ? "你没有查看这个事项审计记录的权限。" : "You don't have permission to view this work item's audit history."
+        )}</p>`;
+        return;
+      }
+      body.innerHTML = `<p class="wh-subtle" data-r20-workitem-audit-timeline-error="true">${escapeHtml(
+        zh ? "审计时间线加载失败，稍后重试。" : "Couldn't load the audit timeline — retry later."
+      )}</p><button type="button" class="wh-btn" data-r20-workitem-audit-timeline-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+      body.querySelector<HTMLButtonElement>("[data-r20-workitem-audit-timeline-retry]")
         ?.addEventListener("click", () => void load(), { signal });
     }
   };
@@ -5144,14 +5197,46 @@ async function submitOnboarding(client: BrowserApiClient, locale: WorkHubLocale)
     });
     currentIdentity = identityUserFrom(identity) ?? { nickname, isAdmin: false };
     persistBrowserLocale(locale);
-    void client.updatePreferences({ locale }).catch(() => undefined);
+    // R20 P2-09：此前 `.catch(() => undefined)` 把语言偏好同步失败整个吞掉——用户以为界面语言已经
+    // 存到服务端，换设备/清缓存后又会掉回默认语言。不阻塞进入工作台（与 renderCurrentRouteOrOnboard
+    // 并发发起），但落地后要是没同步成功，就给可见告警 + 就地重试按钮，不能悄悄丢。编排逻辑本身在
+    // onboarding-locale-sync.ts（browser.ts 顶层引用 document，没法被单测覆盖）。
+    const localeSyncedPromise = runOnboardingLocaleSync({
+      updatePreferences: () => client.updatePreferences({ locale }).then(() => undefined),
+      showSyncFailedNotice: (retry) => showOnboardingLocaleSyncFailedNotice(locale, retry),
+      showSyncSucceededNotice: () => showOnboardingLocaleSyncSucceededNotice(locale)
+    });
     await renderCurrentRouteOrOnboard(client, locale);
+    await localeSyncedPromise;
   } catch (error) {
     const errorText = error instanceof Error && error.message
       ? error.message
       : goldPathT(locale, "runtime.actionFail");
     showOnboardingScreen(client, locale, { errorText, presetNickname: nickname });
   }
+}
+
+// R20 P2-09：引导页语言偏好落服务端失败的可见告警——持久 notice（timeoutMs=0，不自动消失）+ 重试按钮。
+function onboardingLocaleRetryActionHtml(locale: WorkHubLocale) {
+  const label = locale === "en-US" ? "Retry" : "重试";
+  return `<button type="button" class="wh-btn" data-r20-onboarding-locale-retry="true">${escapeHtml(label)}</button>`;
+}
+
+function showOnboardingLocaleSyncFailedNotice(locale: WorkHubLocale, retry: () => void) {
+  if (!root) {
+    return;
+  }
+  showRouteNotice(root, localePersistenceFailedNotice(locale, "onboarding_locale_sync"), onboardingLocaleRetryActionHtml(locale), 0);
+  root
+    .querySelector<HTMLButtonElement>("[data-r20-onboarding-locale-retry]")
+    ?.addEventListener("click", retry, { once: true });
+}
+
+function showOnboardingLocaleSyncSucceededNotice(locale: WorkHubLocale) {
+  if (!root) {
+    return;
+  }
+  showRouteNotice(root, actionSuccessNotice(locale, locale === "en-US" ? "Language preference saved." : "语言偏好已保存。"));
 }
 
 // R20 P1-05：邀请接受落地页（/invite，未登录可达）。boot() 在识别流之前特判此路径，渲染独立接受屏，
