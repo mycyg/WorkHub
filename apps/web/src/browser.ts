@@ -108,6 +108,7 @@ import {
 import { resolveWebMemoryConflictAction } from "./attention-actions.js";
 import { liveStreamTargetsForRoute } from "./live-stream-targets.js";
 import { renderMyConversationsSectionHtml } from "./my-conversations.js";
+import { fetchWorkspaceRosterMembers, type WorkspaceRosterVM } from "./workspace-roster.js";
 
 const root = document.getElementById("root");
 const liveLastEventIdStorageKey = "workhub.live.lastEventId";
@@ -809,7 +810,9 @@ function bindGoldPathNavigation(
       })();
       return;
     }
-    // R10-P2-5：审批转交——打开「转交给同事」时懒加载成员清单（不进 loader，不动 smoke 计数）；
+    // R10-P2-5（R20 P1-08 收尾）：审批转交——打开「转交给同事」时懒加载成员清单（不进 loader，不动 smoke
+    // 计数）。数据源＝本工作区花名册（GET /api/workspace/roster，分页翻到底），取代此前误用的全局
+    // /api/users（跨租户泄露 + 硬 200 截断）；管理员标签改读 roster 行的 is_admin，展示行为与此前等价。
     // 确认转交走既有 delegateApproval 全链（服务端重路由+通知），成功后重渲。
     const delegateSummary = event.target instanceof Element ? event.target.closest("[data-r10-approval-delegate] summary") : null;
     if (delegateSummary) {
@@ -817,10 +820,10 @@ function bindGoldPathNavigation(
       const select = details?.querySelector<HTMLSelectElement>("[data-r10-approval-delegate-select]");
       if (details && select && details.dataset["r10DelegateLoaded"] !== "true") {
         details.dataset["r10DelegateLoaded"] = "true";
-        void client.listUsers()
-          .then((result) => {
-            select.innerHTML = result.users
-              .map((user) => `<option value="${user.id}">${user.nickname}${user.is_admin ? (locale === "en-US" ? " (admin)" : "（管理员）") : ""}</option>`)
+        void fetchWorkspaceRosterMembers(client)
+          .then((members) => {
+            select.innerHTML = members
+              .map((member) => `<option value="${escapeHtml(member.user_id)}">${escapeHtml(member.nickname)}${member.is_admin ? (locale === "en-US" ? " (admin)" : "（管理员）") : ""}</option>`)
               .join("");
           })
           .catch(() => {
@@ -2536,13 +2539,6 @@ function bindProjectHomeInstructionsPanel(
 // 后填数并链到主区会话镜像 /conversations/:id。轻量镜像——不复制桌面工作台的成员全功能。取数失败静默降级。
 type ProjectHomeConversationLite = { id: string; kind: "main" | "collab"; is_dm?: boolean };
 type ProjectHomeConversationsVM = { conversations: ProjectHomeConversationLite[]; capped: boolean };
-
-// R20 P1-08：工作区花名册（GET /api/workspace/roster，分页）——按调用者所在工作区 join 列成员，
-// 替代此前误当花名册用的全局 /api/users（跨租户泄露 + 硬 200 截断 + 全局昵称排序）。此处只取
-// total（本工作区活跃成员真实总数，无 200 截断）与 members（加人选择器数据源）。响应经 client.request
-// 拆掉 { ok, data } 信封后即此形状。
-type WorkspaceRosterMemberSlice = { user_id: string; nickname: string };
-type WorkspaceRosterVM = { members: WorkspaceRosterMemberSlice[]; total: number; limit: number; offset: number };
 
 // R19-15：项目页（/projects，既有导航项）上的「个人空间 / 私聊」导航入口。桌面工作台有这两个分组、
 // 后端能力齐备（GET /api/me/personal-projects、GET /api/dm/list），但 web 端此前没有任何入口到达。

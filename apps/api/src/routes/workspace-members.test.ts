@@ -339,6 +339,9 @@ type RosterSeed = {
   role: "member" | "admin" | "owner";
   joinedAt: Date;
   avatarUpdatedAt: Date | null;
+  // R20 P1-08 收尾：users.is_admin 全局管理员标签（与本工作区 role 是两回事——一个 role:"member" 的用户
+  // 也可能是全局 isAdmin:true）。默认 false，种子里只在需要断言时显式给 true。
+  isAdmin?: boolean;
 };
 
 function rosterReader(seed: RosterSeed[]): {
@@ -364,7 +367,8 @@ function rosterReader(seed: RosterSeed[]): {
           nickname: row.nickname,
           role: row.role,
           joinedAt: row.joinedAt,
-          avatarUpdatedAt: row.avatarUpdatedAt
+          avatarUpdatedAt: row.avatarUpdatedAt,
+          isAdmin: row.isAdmin ?? false
         }))
       };
     }
@@ -415,7 +419,9 @@ test("GET roster returns only the caller's workspace members with avatar/online 
   const peerId = randomUUID();
   const avatarAt = new Date("2026-07-14T00:00:00.000Z");
   const { reader, calls } = rosterReader([
-    { workspaceId: wsA, userId: adminUserId, nickname: "r17-admin", role: "owner", joinedAt: now, avatarUpdatedAt: avatarAt },
+    // adminUserId 全局 isAdmin:true（同 user() 顶部 fixture），peerId 未给 isAdmin → 默认 false：
+    // 覆盖「admin 行 true、普通成员行 false」。
+    { workspaceId: wsA, userId: adminUserId, nickname: "r17-admin", role: "owner", joinedAt: now, avatarUpdatedAt: avatarAt, isAdmin: true },
     { workspaceId: wsA, userId: peerId, nickname: "小赵", role: "member", joinedAt: now, avatarUpdatedAt: null },
     { workspaceId: otherWorkspaceId, userId: randomUUID(), nickname: "他区成员", role: "member", joinedAt: now, avatarUpdatedAt: null }
   ]);
@@ -435,13 +441,16 @@ test("GET roster returns only the caller's workspace members with avatar/online 
     [adminUserId, peerId].sort()
   );
   // 占位字段：online 恒 null；avatar_updated_at 有头像回 ISO、无头像回 null；is_self 正确标本人。
+  // R20 P1-08 收尾：is_admin 正确透传全局管理员标签——admin 行 true、普通成员行 false。
   const self = body.data.members.find((member) => member.user_id === adminUserId);
   assert.ok(self);
   assert.equal(self.is_self, true);
   assert.equal(self.online, null);
   assert.equal(self.avatar_updated_at, avatarAt.toISOString());
+  assert.equal(self.is_admin, true, "the workspace admin's roster row carries is_admin: true");
   const peer = body.data.members.find((member) => member.user_id === peerId);
   assert.ok(peer);
+  assert.equal(peer.is_admin, false, "an ordinary member's roster row carries is_admin: false");
   assert.equal(peer.is_self, false);
   assert.equal(peer.avatar_updated_at, null);
 });
