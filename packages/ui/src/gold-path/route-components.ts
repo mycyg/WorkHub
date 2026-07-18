@@ -472,6 +472,9 @@ type RouteCopyKey =
   | "cost.laborProduction"
   | "cost.laborSelfImprovement"
   | "cost.laborSelfImprovementRatio"
+  | "cost.trendTitle"
+  | "cost.byWorkitem"
+  | "cost.byTeam"
   | "agents.kicker"
   | "agents.summary"
   | "agents.active"
@@ -752,6 +755,9 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "cost.laborProduction": "干活花费",
     "cost.laborSelfImprovement": "自进化花费",
     "cost.laborSelfImprovementRatio": "自进化占比",
+    "cost.trendTitle": "花费趋势",
+    "cost.byWorkitem": "按工作项分账",
+    "cost.byTeam": "按团队分账",
     "agents.kicker": "军团",
     "agents.summary": "观察正在推进的任务计划；需要人决定的事仍回到总览处理。",
     "agents.active": "进行中军团",
@@ -1030,6 +1036,9 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "cost.laborProduction": "Production spend",
     "cost.laborSelfImprovement": "Self-improvement spend",
     "cost.laborSelfImprovementRatio": "Self-improvement share",
+    "cost.trendTitle": "Spend trend",
+    "cost.byWorkitem": "Spend by work item",
+    "cost.byTeam": "Spend by team",
     "agents.kicker": "Agent teams",
     "agents.summary": "Observe active task plans; decisions still go through the overview inbox.",
     "agents.active": "Active teams",
@@ -4762,11 +4771,13 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
       : `Showing the 8 costliest teams of ${vm.by_task_plan.length}.`)}</p>`
     : "";
   // R3：非管理员的分组维度（按人/按军团/按目标）不可见时说明白，而不是当它不存在。
+  // R19-6（R20 波4）：by_workitem / by_team 与前三个维度同一门槛（仅管理员非空）——补进这句说明，
+  // 免得这两个维度对非管理员悄悄消失又没人解释为什么。
   const nonAdminNote = vm.viewer_is_admin === false
     ? `<section class="wh-card wh-r4-route-card" data-r9-cost-non-admin-note="true">
         <p class="wh-subtle">${escapeHtml(zhNotice
-          ? "按人 / 按军团 / 按目标的全组织分组仅管理员可见——这里只显示你自己的用量与预算。"
-          : "Org-wide breakdowns (by person / team / objective) are admin-only — this page shows your own usage and budgets.")}</p>
+          ? "按人 / 按军团 / 按目标 / 按工作项 / 按团队的全组织分组仅管理员可见——这里只显示你自己的用量与预算。"
+          : "Org-wide breakdowns (by person, agent team, objective, work item, or team) are admin-only — this page shows your own usage and budgets.")}</p>
       </section>`
     : "";
   const armyCard = vm.by_task_plan.length
@@ -4817,6 +4828,87 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
           <h3 role="heading" aria-level="2">${escapeHtml(zhNotice ? "目标花费" : "Spend by objective")}</h3>
           <div class="wh-r4-route-timeline" role="list">${byObjectiveRows}</div>
           ${byObjectiveCapNote}
+        </section>`
+    : "";
+  // R19-6（R20 波4）：by_workitem 早就在 VM 里（与 by_user/by_team/by_objective 同门槛，仅管理员非空），
+  // 桌面端 costView 已经渲了前 5 行并明确写着"去网页版成本页细看"（apps/desktop-webview/src/spotlight/
+  // views/dashboards.ts）——但 web 端此前从未消费这个字段，指路指到了一处空白。补上按花费降序的行 +
+  // 可点进工作项详情（与 by_task_plan 的 work_item_id 深链同一惯例），超 8 条时明说截断而非静默吞掉。
+  const byWorkitemRows = vm.by_workitem.slice(0, 8)
+    .map((item) => `<div role="listitem" class="wh-r4-route-row" data-r20-cost-workitem="${escapeHtml(item.workitem_id)}">
+      <div>
+        <a class="wh-r4-route-row-title" href="/workitems/${escapeHtml(encodeURIComponent(item.workitem_id))}" data-r20-cost-workitem-drill="${escapeHtml(item.workitem_id)}"><strong>${escapeHtml(item.code)}</strong></a>
+        <p>${escapeHtml(zhNotice ? `${item.turns} 轮` : `${item.turns} ${item.turns === 1 ? "turn" : "turns"}`)}</p>
+      </div>
+      <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny, locale))}</span>
+    </div>`)
+    .join("");
+  const byWorkitemCapNote = vm.by_workitem.length > 8
+    ? `<p class="wh-subtle" data-r20-cost-by-workitem-capped="true">${escapeHtml(zhNotice
+      ? `按花费只显示前 8 个工作项（共 ${vm.by_workitem.length} 个）。`
+      : `Showing the 8 costliest work items of ${vm.by_workitem.length}.`)}</p>`
+    : "";
+  const byWorkitemCard = vm.by_workitem.length
+    ? `<section class="wh-card wh-r4-route-card" data-r20-cost-by-workitem="true">
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "cost.byWorkitem"))}</h3>
+          <div class="wh-r4-route-timeline" role="list">${byWorkitemRows}</div>
+          ${byWorkitemCapNote}
+        </section>`
+    : "";
+  // R19-6（R20 波4）：by_team 同样早就在 VM 里、同一 admin 门槛，此前也从未被渲染。标签当前后端固定给
+  // "团队预算"（apps/api/src/pages/cost.ts 的 pageT(locale,"cost.label.teamBudget")，尚不区分多个团队），
+  // 这里在标签下补一行短 team_id，避免多条同名行看起来像重复渲染同一条数据。
+  const byTeamRows = vm.by_team.slice(0, 8)
+    .map((item) => `<div role="listitem" class="wh-r4-route-row" data-r20-cost-team="${escapeHtml(item.team_id)}">
+      <div>
+        <strong>${escapeHtml(item.label)}</strong>
+        <p>${escapeHtml(item.team_id.slice(0, 8))}</p>
+      </div>
+      <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny, locale))}</span>
+    </div>`)
+    .join("");
+  const byTeamCapNote = vm.by_team.length > 8
+    ? `<p class="wh-subtle" data-r20-cost-by-team-capped="true">${escapeHtml(zhNotice
+      ? `按花费只显示前 8 个团队（共 ${vm.by_team.length} 个）。`
+      : `Showing the 8 costliest teams of ${vm.by_team.length}.`)}</p>`
+    : "";
+  const byTeamCard = vm.by_team.length
+    ? `<section class="wh-card wh-r4-route-card" data-r20-cost-by-team="true">
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "cost.byTeam"))}</h3>
+          <div class="wh-r4-route-timeline" role="list">${byTeamRows}</div>
+          ${byTeamCapNote}
+        </section>`
+    : "";
+  // R19-6（R20 波4）：trend 不像 by_workitem/by_team 那样按 isAdmin 收窄——buildCostDashboardPage 里
+  // aggregateTrend 吃的是已经按用户身份筛过的 uniqueEntries（非管理员=只筛自己的账目），所以普通用户看到
+  // 的 trend 就是自己范围内的每日花费，本身是安全的，不该被 nonAdminNote 盖住。此前 web 只把它的长度渲成
+  // 顶部一个"统计天数: N"计数徽章（见下方 wh-r4-cost-metrics 卡），从没把序列本身画出来；桌面端已有 14 天
+  // 条形图。这里用近 14 天、每天一行（日期+花费+token）+ 复用既有 .wh-r4-route-meter 相对条形，超 14 天
+  // 明说只显示最近 14 天而不是静默截断。
+  const trendSlice = vm.trend.slice(-14);
+  const trendMax = Math.max(0.0001, ...trendSlice.map((point) => Number(point.cost_cny) || 0));
+  const trendRows = trendSlice
+    .map((point) => {
+      const pct = Math.max(4, Math.round(((Number(point.cost_cny) || 0) / trendMax) * 100));
+      return `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r20-cost-trend-day="${escapeHtml(point.date)}">
+        <div>
+          <strong>${escapeHtml(point.date)}</strong>
+          <p>${escapeHtml(`${costAmount(point.cost_cny, locale)} · ${point.tokens} ${zhNotice ? "个 token" : point.tokens === 1 ? "token" : "tokens"}`)}</p>
+          <div class="wh-r4-route-meter" aria-hidden="true"><span style="width:${escapeHtml(String(pct))}%"></span></div>
+        </div>
+      </div>`;
+    })
+    .join("");
+  const trendCapNote = vm.trend.length > 14
+    ? `<p class="wh-subtle" data-r20-cost-trend-capped="true">${escapeHtml(zhNotice
+      ? `只显示最近 14 天（共 ${vm.trend.length} 天记录）。`
+      : `Showing the most recent 14 days of ${vm.trend.length}.`)}</p>`
+    : "";
+  const trendCard = trendSlice.length
+    ? `<section class="wh-card wh-r4-route-card" data-r20-cost-trend="true" data-r20-cost-trend-day-count="${escapeHtml(String(trendSlice.length))}">
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "cost.trendTitle"))}</h3>
+          <div class="wh-r4-route-timeline" role="list">${trendRows}</div>
+          ${trendCapNote}
         </section>`
     : "";
   // R13 批 P4（labor-split 按 assignee 记账）：与 by_user 同构但维度不同——by_user 是记账时的
@@ -4943,9 +5035,10 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
           ${vm.model_breakdown.length > 5 ? `<p class="wh-subtle" data-r13-cost-models-capped="${escapeHtml(String(vm.model_breakdown.length - 5))}">${escapeHtml(locale === "zh-CN" ? `按花费只显示前 5 个模型（共 ${vm.model_breakdown.length} 个）。` : `Showing the 5 costliest models of ${vm.model_breakdown.length}.`)}</p>` : ""}
         </section>
       </div>
+      ${trendCard}
       ${armyCard || laborSplitCard || aiAutoMergeCard ? `<div class="wh-r4-route-grid">${armyCard}${laborSplitCard}${aiAutoMergeCard}</div>` : ""}
       ${nonAdminNote}
-      ${byUserCard || byObjectiveCard || byAssigneeCard ? `<div class="wh-r4-route-grid">${byUserCard}${byObjectiveCard}${byAssigneeCard}</div>` : ""}
+      ${byUserCard || byObjectiveCard || byAssigneeCard || byWorkitemCard || byTeamCard ? `<div class="wh-r4-route-grid">${byUserCard}${byObjectiveCard}${byAssigneeCard}${byWorkitemCard}${byTeamCard}</div>` : ""}
     </section>`
   });
 }
