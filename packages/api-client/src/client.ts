@@ -552,6 +552,7 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       }),
     listWorkItemProposals: (workItemId) => request(`/api/workitems/${encodeURIComponent(workItemId)}/proposals`),
     listWorkItemConflicts: (workItemId) => request(`/api/workitems/${encodeURIComponent(workItemId)}/conflicts`),
+    getWorkItemAuditTimeline: (workItemId) => request(`/api/workitems/${encodeURIComponent(workItemId)}/audit`),
     getProposal: (id) => request(`/api/proposals/${encodeURIComponent(id)}`),
     reviewProposal: (id, payload, options) =>
       request(withPageLocale(`/api/proposals/${encodeURIComponent(id)}/review`, options), {

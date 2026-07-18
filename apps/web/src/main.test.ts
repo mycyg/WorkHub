@@ -295,6 +295,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
       );
       return conflicts.length > 0 ? { conflicts } : { conflicts, empty_state: "no_conflicts" as const };
     },
+    async getWorkItemAuditTimeline() {
+      throw new Error("not needed");
+    },
     async getProposal() {
       throw new Error("not needed");
     },

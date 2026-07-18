@@ -660,6 +660,47 @@ test("api client exposes the objective create + link endpoints (R19-1 OKR wiring
   ]);
 });
 
+// R20 R19-27（工作项跨 run 审计时间线）：后端早有 GET /api/workitems/:id/audit（快照 + 审计事实 +
+// manifest 校验，packages/db audit-repository 有测试覆盖），但此前客户端没有任何类型化方法能调用
+// 它——web 端因此从没拉过这份数据、更别提渲染。锁定 URL/方法与信封解包（envelope → data）正确。
+test("api client exposes the work item cross-run audit timeline endpoint (R19-27 wiring)", async () => {
+  const calls: Array<{ url: string; method: string }> = [];
+  const timeline = {
+    work_item_id: "work-1",
+    snapshots: [],
+    audit_logs: [
+      {
+        id: "audit-1",
+        actor: { actor_kind: "human", actor_nickname: "小拓" },
+        entity: { entity_type: "work_item", entity_id: "work-1" },
+        action: "work_item.created",
+        detail_json: {},
+        created_at: "2026-07-10T09:00:00.000Z"
+      }
+    ],
+    manifest_facts: {
+      checks: { snapshot_exists: "failed", revert_available: "warning" },
+      rollback: { available: false, description: "无可回滚快照。" },
+      risk: { reversible: true, irreversible_reasons: [] },
+      evidence_refs: []
+    }
+  };
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET" });
+      return new Response(JSON.stringify({ ok: true, data: timeline }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  const result = await client.getWorkItemAuditTimeline("work-1");
+
+  assert.deepEqual(calls, [{ url: "/api/workitems/work-1/audit", method: "GET" }]);
+  assert.deepEqual(result, timeline);
+});
+
 // R14 批 MEM（记忆可见可治理）：用户记忆 + 团队技能两个治理面的客户端方法——URL/方法/body 构造要
 // 与服务端路由（apps/api/src/routes/{user-memory-governance,team-skill-governance}.ts）逐字对齐。
 // 这两组方法在 WorkHubApiClient 上是可选字段（同上面 pages.workbench? 的既有先例，不强迫

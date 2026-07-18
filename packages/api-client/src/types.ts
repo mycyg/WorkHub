@@ -5,6 +5,8 @@ import type {
   AgentStep,
   AcceptedDeliverableRestoreResult,
   AttentionHomeVM,
+  // R20 R19-27（工作项跨 run 审计时间线）：GET /api/workitems/:id/audit 的响应契约。
+  AuditTimelineVM,
   BudgetPolicy,
   BudgetPolicyUpdate,
   BootstrapProjectRequest,
@@ -391,6 +393,10 @@ export type WorkHubApiClient = {
   createProposalFromManifest: (workItemId: string, payload: CreateProposalFromManifestRequest) => Promise<Proposal>;
   listWorkItemProposals: (workItemId: string) => Promise<Proposal[]>;
   listWorkItemConflicts: (workItemId: string) => Promise<ProposalConflictListResult>;
+  // R20 R19-27：跨 run 审计时间线（快照 + 审计日志事实 + manifest 校验），供工作项详情页渲染。
+  // 服务端已有 GET /api/workitems/:id/audit（fail-closed 走 detailPage 同一套可见性），此前没有
+  // 任何类型化客户端方法能调用它——前端因此从来没有拉过这份数据、更别提渲染。
+  getWorkItemAuditTimeline: (workItemId: string) => Promise<AuditTimelineVM>;
   getProposal: (id: string) => Promise<Proposal>;
   reviewProposal: (id: string, payload: ReviewProposalRequest, options?: PageRequestOptions) => Promise<ProposalReviewResult>;
   mergeProposal: (id: string, payload?: MergeProposalRequest, options?: PageRequestOptions) => Promise<ProposalMergeResult>;
