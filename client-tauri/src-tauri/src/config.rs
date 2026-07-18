@@ -134,7 +134,7 @@ mod tests {
             locale: WorkHubLocale::EnUs,
         };
 
-        assert_eq!(config.has_trusted_device_token(), true);
+        assert!(config.has_trusted_device_token());
         assert_eq!(config.client_token_tail(), Some("4L3P".to_string()));
     }
 

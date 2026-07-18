@@ -303,7 +303,7 @@ mod tests {
         assert_eq!(toggle_control.action, ShellWindowControlAction::Toggle);
         assert_eq!(toggle_control.source, ShellWindowControlSource::Tray);
         assert_eq!(toggle_control.route, Some("/pet.html".to_string()));
-        assert_eq!(toggle_control.focus, false);
+        assert!(!toggle_control.focus);
     }
 
     #[test]
@@ -316,7 +316,7 @@ mod tests {
         assert_eq!(control.action, ShellWindowControlAction::Show);
         assert_eq!(control.source, ShellWindowControlSource::Tray);
         assert_eq!(control.route, Some("/pet.html".to_string()));
-        assert_eq!(control.focus, false);
+        assert!(!control.focus);
     }
 
     #[test]
@@ -328,7 +328,7 @@ mod tests {
         assert_eq!(control.action, ShellWindowControlAction::ShowAndFocus);
         assert_eq!(control.source, ShellWindowControlSource::Tray);
         assert_eq!(control.route, Some(INBOX_TRAY_ROUTE.to_string()));
-        assert_eq!(control.focus, true);
+        assert!(control.focus);
     }
 
     #[test]
@@ -340,7 +340,7 @@ mod tests {
         assert_eq!(control.action, ShellWindowControlAction::ShowAndFocus);
         assert_eq!(control.source, ShellWindowControlSource::Tray);
         assert_eq!(control.route, Some(SETTINGS_TRAY_ROUTE.to_string()));
-        assert_eq!(control.focus, true);
+        assert!(control.focus);
     }
 
     #[test]

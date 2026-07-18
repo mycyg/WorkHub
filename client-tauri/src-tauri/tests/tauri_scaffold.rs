@@ -64,7 +64,7 @@ fn tauri_windows_match_the_shell_window_contract() {
         assert_eq!(window["alwaysOnTop"], plan.always_on_top);
 
         if plan.is_pet_window() {
-            assert_eq!(plan.skip_taskbar, true);
+            assert!(plan.skip_taskbar);
             assert!(
                 window.get("skipTaskbar").is_none(),
                 "skipTaskbar stays in the WorkHub plan until it is confirmed by the Tauri v2 schema"

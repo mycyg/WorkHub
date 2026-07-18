@@ -25,6 +25,18 @@ pub fn event_channel(event: ShellEvent) -> ShellEventChannel {
     }
 }
 
+pub fn event_channel_name(event: ShellEvent) -> &'static str {
+    match event {
+        ShellEvent::PushEvent => "push-event",
+        ShellEvent::SseStatus => "sse-status",
+        ShellEvent::Navigate => "navigate",
+        ShellEvent::DeepLink => "deep-link",
+        ShellEvent::TrayAction => "tray-action",
+        ShellEvent::SystemNotification => "system-notification",
+        ShellEvent::SingleInstance => "single-instance",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -42,17 +54,5 @@ mod tests {
             event_channel_name(ShellEvent::SingleInstance),
             "single-instance"
         );
-    }
-}
-
-pub fn event_channel_name(event: ShellEvent) -> &'static str {
-    match event {
-        ShellEvent::PushEvent => "push-event",
-        ShellEvent::SseStatus => "sse-status",
-        ShellEvent::Navigate => "navigate",
-        ShellEvent::DeepLink => "deep-link",
-        ShellEvent::TrayAction => "tray-action",
-        ShellEvent::SystemNotification => "system-notification",
-        ShellEvent::SingleInstance => "single-instance",
     }
 }

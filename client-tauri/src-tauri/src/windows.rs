@@ -135,13 +135,13 @@ mod tests {
         assert_eq!(pet.label, "pet");
         assert_eq!(pet.title, "Cuu");
         assert_eq!(pet.route, "/pet.html");
-        assert_eq!(pet.transparent, true);
-        assert_eq!(pet.decorations, false);
-        assert_eq!(pet.always_on_top, true);
-        assert_eq!(pet.skip_taskbar, true);
-        assert_eq!(pet.resizable, false);
-        assert_eq!(pet.visible, false);
-        assert_eq!(pet.focus, false);
+        assert!(pet.transparent);
+        assert!(!pet.decorations);
+        assert!(pet.always_on_top);
+        assert!(pet.skip_taskbar);
+        assert!(!pet.resizable);
+        assert!(!pet.visible);
+        assert!(!pet.focus);
         assert!(pet.width <= 280);
         assert!(pet.height <= 360);
     }
@@ -153,13 +153,13 @@ mod tests {
         assert_eq!(main.label, "main");
         assert_eq!(main.route, "/");
         // 真·液态玻璃：主窗口透明，不依赖原生 vibrancy 底材。
-        assert_eq!(main.transparent, true);
+        assert!(main.transparent);
         // R8：主窗 frameless（去 OS 标题栏，只剩透明玻璃聚焦盒）。
-        assert_eq!(main.decorations, false);
+        assert!(!main.decorations);
         // WorkHub Spotlight should behave like Cuu: it stays above normal app windows when opened.
-        assert_eq!(main.always_on_top, true);
-        assert_eq!(main.skip_taskbar, false);
-        assert_eq!(main.resizable, true);
+        assert!(main.always_on_top);
+        assert!(!main.skip_taskbar);
+        assert!(main.resizable);
         // R8 真·Spotlight：小窗随内容缩放（不再是 1180×780 全屏壳）。
         assert_eq!(main.width, 720);
         assert_eq!(main.height, 64);
@@ -189,7 +189,7 @@ mod tests {
 
         // R12 起默认窗口族新增常驻工作台窗（此前为 ["main","pet"]，属声明式行为变更）。
         assert_eq!(labels, vec!["main", "pet", "workbench"]);
-        assert_eq!(window_plan_by_label("pet").unwrap().is_pet_window(), true);
+        assert!(window_plan_by_label("pet").unwrap().is_pet_window());
         assert_eq!(window_plan_by_label("unknown"), None);
     }
 
@@ -201,19 +201,19 @@ mod tests {
         assert_eq!(workbench.kind, ShellWindowKind::Workbench);
         assert_eq!(workbench.route, "/workbench.html");
         // 常驻工作窗：默认隐藏等唤起、可缩放、不置顶、不跳过任务栏。
-        assert_eq!(workbench.visible, false);
-        assert_eq!(workbench.focus, false);
-        assert_eq!(workbench.resizable, true);
-        assert_eq!(workbench.always_on_top, false);
-        assert_eq!(workbench.skip_taskbar, false);
+        assert!(!workbench.visible);
+        assert!(!workbench.focus);
+        assert!(workbench.resizable);
+        assert!(!workbench.always_on_top);
+        assert!(!workbench.skip_taskbar);
         // 玻璃约束：透明 + frameless（毛玻璃靠原生 vibrancy，不靠 CSS blur）。
-        assert_eq!(workbench.transparent, true);
-        assert_eq!(workbench.decorations, false);
+        assert!(workbench.transparent);
+        assert!(!workbench.decorations);
         // 三栏工作台需要真实桌面级面积，且最小尺寸不能塌到三栏摆不下。
         assert!(workbench.width >= 1200);
         assert!(workbench.height >= 720);
         assert_eq!(workbench.min_width, Some(960));
         assert_eq!(workbench.min_height, Some(620));
-        assert_eq!(workbench.is_pet_window(), false);
+        assert!(!workbench.is_pet_window());
     }
 }
