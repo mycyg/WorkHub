@@ -1396,7 +1396,7 @@ test("proposal routes require work item access before read and write operations"
     Cookie: await cookie(runtimeSettings)
   };
 
-  const list = await app.request(`/api/workitems/${itemManifest.work_item_id}/proposals`, { headers });
+  // R20 R19-29：GET /workitems/:id/proposals（list）已删（死冗余），本测试只留仍存在的读写路由。
   const create = await app.request(`/api/workitems/${itemManifest.work_item_id}/proposals`, {
     method: "POST",
     headers,
@@ -1427,7 +1427,6 @@ test("proposal routes require work item access before read and write operations"
     body: JSON.stringify({ conflict_resolution: { accept_incoming_target_keys: "not-an-array" } })
   });
 
-  assert.equal(list.status, 403);
   assert.equal(create.status, 403);
   assert.equal(read.status, 403);
   assert.equal(review.status, 403);
@@ -3724,22 +3723,18 @@ test("proposal routes create, read, and render a page VM from a DeliverableChang
   const raw = await app.request(`/api/proposals/${proposalId}`, {
     headers: { Cookie: await cookie(runtimeSettings) }
   });
-  const list = await app.request(`/api/workitems/${created.data.diff_manifest.work_item_id}/proposals`, {
-    headers: { Cookie: await cookie(runtimeSettings) }
-  });
+  // R20 R19-29：GET /workitems/:id/proposals（list）已删（死冗余，见 routes/proposals.ts）；同样的提议
+  // 列表数据靠 /api/pages/proposals/:id 页 VM 与下面这条 raw GET 覆盖，不再单独验证 list 端点。
   const page = await app.request(`/api/pages/proposals/${proposalId}`, {
     headers: { Cookie: await cookie(runtimeSettings) }
   });
 
   assert.equal(raw.status, 200);
-  assert.equal(list.status, 200);
   assert.equal(page.status, 200);
   const rawBody = await raw.json() as { ok: true; data: { diff_manifest: DeliverableChangeManifest } };
-  const listBody = await list.json() as { ok: true; data: { id: string }[] };
   const pageBody = await page.json() as { ok: true; data: ReturnType<typeof buildProposalDetailPage> };
 
   assert.equal(rawBody.data.diff_manifest.proposal_id, proposalId);
-  assert.equal(listBody.data.some((proposal) => proposal.id === proposalId), true);
   assert.equal(pageBody.data.proposal_id, proposalId);
   assert.equal(pageBody.data.manifest.review.reason_required_on_reject, true);
   assert.equal(pageBody.data.review_actions.request_changes.requires_reason, true);

@@ -1345,18 +1345,8 @@ const createTaskPlanResponse = {
     "503": createTaskPlanUnavailableResponse
   }
 } as const;
-const proposalListResponseSchema = {
-  type: "array",
-  items: proposalResponseSchema
-} as const;
-const proposalListResponse = {
-  responses: {
-    "200": jsonDataResponse(proposalListResponseSchema, "Work item proposals").responses["200"],
-    "401": proposalNotIdentifiedResponse,
-    "403": proposalForbiddenResponse,
-    "404": proposalNotFoundResponse
-  }
-} as const;
+// R20 R19-29：GET /workitems/{id}/proposals（list-work-item-proposals）已删——曾靠 proposalListResponseSchema/
+// proposalListResponse 撑门面，核实零消费后随路由一并删掉，POST（下面 createProposalResponse 那条）保留。
 const readProposalResponse = {
   responses: {
     "200": jsonDataResponse(proposalResponseSchema, "Deliverable change proposal").responses["200"],
@@ -4443,12 +4433,6 @@ const agentRunLiveResponseSchema = {
   },
   additionalProperties: false
 } as const;
-const agentRunHandoffResponseSchema = {
-  anyOf: [
-    structuredHandoffResponseSchema,
-    { type: "null" }
-  ]
-} as const;
 const snapshotResponseSchema = {
   type: "object",
   required: ["id", "work_item_id", "kind", "ref", "created_by_kind", "created_at"],
@@ -4559,14 +4543,6 @@ const agentRunTraceResponse = {
     "403": agentRunForbiddenResponse,
     "404": agentRunNotFoundResponse,
     "422": agentRunValidationResponse
-  }
-} as const;
-const agentRunHandoffResponse = {
-  responses: {
-    "200": jsonDataResponse(agentRunHandoffResponseSchema, "Escalated AI worker handoff").responses["200"],
-    "401": agentRunNotIdentifiedResponse,
-    "403": agentRunForbiddenResponse,
-    "404": agentRunNotFoundResponse
   }
 } as const;
 const abortAgentRunResponse = {
@@ -4718,29 +4694,6 @@ const pilotDay1MetricsResponseSchema = {
   },
   additionalProperties: false
 } as const;
-const aiWorklogResponseSchema = {
-  type: "object",
-  required: [
-    "runs_today",
-    "autonomy_rate",
-    "accepted_today",
-    "saved_hours_estimate",
-    "skills_promoted_today",
-    "skills_refined_today",
-    "generated_at"
-  ],
-  properties: {
-    runs_today: { type: "integer", minimum: 0 },
-    autonomy_rate: { type: "integer", minimum: 0, maximum: 100 },
-    accepted_today: { type: "integer", minimum: 0 },
-    saved_hours_estimate: { type: "number", minimum: 0 },
-    skills_promoted_today: { type: "integer", minimum: 0 },
-    skills_refined_today: { type: "integer", minimum: 0 },
-    generated_at: dateTimeStringSchema,
-    range_label: { type: "string", minLength: 1 }
-  },
-  additionalProperties: false
-} as const;
 const pilotDay1MetricsResponses = {
   responses: {
     "200": jsonDataResponse(pilotDay1MetricsResponseSchema, "Day 1 pilot metrics snapshot").responses["200"],
@@ -4753,14 +4706,8 @@ const pilotDay1MetricsResponses = {
     ]).responses["422"]
   }
 } as const;
-const aiWorklogTodayResponses = {
-  responses: {
-    "200": jsonDataResponse(aiWorklogResponseSchema, "Today's AI worklog metrics").responses["200"],
-    "401": jsonErrorStatusResponse("401", "AI worklog metrics require a current authenticated user", [
-      "not_identified"
-    ]).responses["401"]
-  }
-} as const;
+// R20 R19-29：GET /api/ai-worklog/today 已删（曾靠 aiWorklogResponseSchema/aiWorklogTodayResponses 撑门面）
+// ——见 paths 里的说明,核实零消费后随路由一并删掉。
 const revertAgentRunRequestBodySchema = {
   type: "object",
   required: ["snapshot_id"],
@@ -8103,13 +8050,9 @@ export function getOpenApiDocument() {
           parameters: [pathUuidParameter("id")],
           ...jsonRequestBody(createProposalRequestSchema),
           ...createProposalResponse
-        },
-        get: {
-          tags: ["proposals"],
-          summary: "List proposals for a work item",
-          parameters: [pathUuidParameter("id")],
-          ...proposalListResponse
         }
+        // R20 R19-29：GET（list-work-item-proposals）已删——web/desktop 均无调用点，数据早已内嵌进工作项
+        // 详情页 VM（GET /api/pages/workitems/{id}）。核实零消费后连路由一并删除，POST 不受影响。
       },
       "/api/workitems/{id}/task-plan": {
         post: {
@@ -9762,14 +9705,9 @@ export function getOpenApiDocument() {
           ...agentRunTraceResponse
         }
       },
-      "/api/agent-runs/{id}/handoff": {
-        get: {
-          tags: ["agent-runs"],
-          summary: "Read the structured handoff for an escalated AI worker run",
-          parameters: [pathUuidParameter("id")],
-          ...agentRunHandoffResponse
-        }
-      },
+      // R20 R19-29：GET /api/agent-runs/{id}/handoff 已删——SDK 曾有 getAgentRunHandoff 桩但 web/desktop
+      // 均无调用点，同一份结构化 handoff 数据早已内嵌进 GET /api/agent-runs/{id}/replay 的回放页。核实
+      // 过零消费后连路由与本文档一并删除。
       "/api/agent-runs/{id}/abort": {
         post: {
           tags: ["agent-runs"],
@@ -10020,14 +9958,10 @@ export function getOpenApiDocument() {
           ],
           ...pilotDay1MetricsResponses
         }
-      },
-      "/api/ai-worklog/today": {
-        get: {
-          tags: ["worklog"],
-          summary: "Read today's AI worklog metrics",
-          ...aiWorklogTodayResponses
-        }
       }
+      // R20 R19-29：/api/ai-worklog/today 已删——web/desktop 均无调用者（SDK 从未包装这条路径），
+      // 同样的今日 AI 工作量数据早已经由 GET /api/pages/attention 等页面 VM 内嵌 AiWorklogMetricsService
+      // 交付。核实过零消费后连路由（routes/ai-worklog.ts）与本文档一并删除，不留死冗余端点。
     }
   });
 }

@@ -272,7 +272,6 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   await client.createTaskPlan("work-1", {}, { locale: "en-US" });
   await client.getAgentRun("run-1");
   await client.getAgentRunTrace("run-1", 2);
-  await client.getAgentRunHandoff("run-1");
   await client.abortAgentRun("run-1");
   await client.resolveMemoryConflict("memory-conflict-1", {
     resolution: "merge_both",
@@ -280,7 +279,6 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     expected_updated_at: "2026-07-03T10:40:00.000Z"
   });
   await client.createProposalFromManifest("work-1", { manifest: deliverableManifestFixtures[0]! });
-  await client.listWorkItemProposals("work-1");
   await client.listWorkItemConflicts("work-1");
   await client.getProposal("proposal-1");
   await client.nextQuestion("session-1", { selected_option_ids: ["risk-first"] });
@@ -337,13 +335,11 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     'POST /api/workitems/work-1/task-plan?locale=en-US {}',
     "GET /api/agent-runs/run-1",
     "GET /api/agent-runs/run-1/trace?after=2",
-    "GET /api/agent-runs/run-1/handoff",
     "POST /api/agent-runs/run-1/abort",
     // R9.7 review: the old assertion put `expected_updated_at` in the JSON body,
     // but durable memory-conflict cards and OpenAPI document the stale-version token as a query parameter.
     'POST /api/memory-conflicts/memory-conflict-1/resolve/merge_both?expected_updated_at=2026-07-03T10%3A40%3A00.000Z {"value_md":"合并后的偏好。"}',
     "POST /api/workitems/work-1/proposals",
-    "GET /api/workitems/work-1/proposals",
     "GET /api/workitems/work-1/conflicts",
     "GET /api/proposals/proposal-1",
     'POST /api/sessions/session-1/next-question {"selected_option_ids":["risk-first"]}',

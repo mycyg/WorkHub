@@ -490,7 +490,8 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
-    getAgentRunHandoff: (runId) => request(`/api/agent-runs/${encodeURIComponent(runId)}/handoff`),
+    // R20 R19-29：getAgentRunHandoff（GET /api/agent-runs/:id/handoff）已删——web/desktop 均无调用点，
+    // 结构化 handoff 数据早已内嵌进 replayAgentRun 的回放页，核实零消费后随后端路由一并删除。
     respondApproval: (id, payload) =>
       request(`/api/approvals/${encodeURIComponent(id)}/respond`, {
         method: "POST",
@@ -550,7 +551,8 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
-    listWorkItemProposals: (workItemId) => request(`/api/workitems/${encodeURIComponent(workItemId)}/proposals`),
+    // R20 R19-29：listWorkItemProposals（GET /api/workitems/:id/proposals）已删——web/desktop 均无调用点，
+    // 同样的提议列表数据早已内嵌进工作项详情页 VM，核实零消费后随后端路由一并删除。
     listWorkItemConflicts: (workItemId) => request(`/api/workitems/${encodeURIComponent(workItemId)}/conflicts`),
     getProposal: (id) => request(`/api/proposals/${encodeURIComponent(id)}`),
     reviewProposal: (id, payload, options) =>

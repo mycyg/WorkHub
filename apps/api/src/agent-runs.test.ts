@@ -3276,7 +3276,7 @@ test("agent run read routes fall back to the run owner/admin gate when work item
   const readRoutes = [
     `/api/agent-runs/${queued.run_id}`,
     `/api/agent-runs/${queued.run_id}/trace`,
-    `/api/agent-runs/${queued.run_id}/handoff`,
+    // R20 R19-29：/handoff 端点已删（死冗余，见 routes/agent-runs.ts）。
     `/api/agent-runs/${queued.run_id}/replay`
   ];
 
@@ -3339,7 +3339,7 @@ test("agent run direct routes stay scoped to the actor workspace", async () => {
   const readRoutes = [
     `/api/agent-runs/${queued.run_id}`,
     `/api/agent-runs/${queued.run_id}/trace`,
-    `/api/agent-runs/${queued.run_id}/handoff`,
+    // R20 R19-29：/handoff 端点已删（死冗余，见 routes/agent-runs.ts）。
     `/api/agent-runs/${queued.run_id}/replay`
   ];
   const ownerCookie = await cookie(runtimeSettings);
@@ -3409,7 +3409,7 @@ test("agent run read routes allow users who can open the backing work item", asy
   for (const route of [
     `/api/agent-runs/${queued.run_id}`,
     `/api/agent-runs/${queued.run_id}/trace`,
-    `/api/agent-runs/${queued.run_id}/handoff`,
+    // R20 R19-29：/handoff 端点已删（死冗余，见 routes/agent-runs.ts）。
     `/api/agent-runs/${queued.run_id}/replay`
   ]) {
     const response = await app.request(route, { headers: { Cookie: collaboratorCookie } });
