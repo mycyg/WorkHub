@@ -36,6 +36,7 @@ export * from "./repositories/projects.js";
 export * from "./repositories/workbench.js";
 export * from "./repositories/conversations.js";
 export * from "./repositories/conversation-runs.js";
+export * from "./repositories/event-outbox.js";
 export * from "./repositories/ai-settings.js";
 export * from "./repositories/drive.js";
 export * from "./repositories/meetings.js";

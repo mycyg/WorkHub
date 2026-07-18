@@ -18,6 +18,7 @@ import {
   users,
   workspaceMemberships
 } from "../schema/index.js";
+import { enqueueEventOutbox } from "./event-outbox.js";
 
 export type ConversationRow = typeof projectConversations.$inferSelect;
 export type ConversationParticipantRow = typeof conversationParticipants.$inferSelect;
@@ -114,6 +115,22 @@ export type CreateUserMessageInput = CreateUserMessageBaseInput &
     | { kind: "text"; contentJson: { text: string }; replyToMessageId?: string }
     | { kind: "file_card"; contentJson: { drive_item_id: string; snapshot_name: string } }
   );
+
+// R20 P2-01（事务性 outbox）：可选的「同事务入队」钩子——服务层给定这条钩子后，createUserMessage 在插入
+// 消息行的同一事务里、拿到已落库的 created 行，同步构建 conversation.message.created 事件信封并写 outbox。
+// 钩子是纯同步的（信封所需的 seq/id/createdAt 全来自 created 行，引用预览由服务层事务外预取后闭包捕获），
+// 返回 null 表示这条消息不入队（走既有 best-effort 直发路径）。省略 options 时行为与本批之前逐字一致。
+export type EnqueueUserMessageOutbox = (message: ConversationMessageRow) => {
+  workspaceId: string;
+  topic: string;
+  eventType: string;
+  eventId: string;
+  payload: Record<string, unknown>;
+} | null;
+
+export type CreateUserMessageOptions = {
+  enqueueOutbox?: EnqueueUserMessageOutbox;
+};
 
 // R12 批4a：协同会话 turn 落库的 Cuu 回应——最初 kind 固定 'text'。sender_user_id 固定 null（Cuu 不是
 // workspace 成员，不需要也不能过 createUserMessage 那套 membership/participant 校验），这一点在下面
@@ -446,7 +463,12 @@ export type ConversationRepository = {
   // R15 批 B（人对人私聊）：actor 参与的 DM 列表（参与者门控、含两名参与者昵称）。新增只读方法，不改动
   // 上面任何既有方法的签名/行为——rail「私聊」分组的唯一数据源，桌面 chat 视图据此拿到真实参与者集合。
   listDmsForUser: (input: ListDmsForUserInput) => Promise<DmListForUserRow[]>;
-  createUserMessage: (input: CreateUserMessageInput) => Promise<ConversationMessageRow>;
+  // R20 P2-01：additive 的可选 options 参数——省略时行为与本批之前逐字一致；传 enqueueOutbox 钩子时
+  // 在同一事务里把 conversation.message.created 事件写进 event_outbox（原子于消息落库）。
+  createUserMessage: (
+    input: CreateUserMessageInput,
+    options?: CreateUserMessageOptions
+  ) => Promise<ConversationMessageRow>;
   // R12 批4a：新增，不改动上面任何既有方法的签名/行为。
   createCuuMessage: (input: CreateCuuMessageInput) => Promise<ConversationMessageRow>;
   listMessagesAfter: (input: ListConversationMessagesInput) => Promise<ConversationMessagePage | null>;
@@ -1511,7 +1533,7 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
       return result;
     },
 
-    async createUserMessage(input) {
+    async createUserMessage(input, options) {
       assertMessageContent(input);
       const at = input.at ?? new Date();
       const senderUserId = input.senderUserId.toLowerCase();
@@ -1640,6 +1662,15 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
           .returning();
         if (!created) {
           throw new ConversationMessageInsertFailedError("message insert returned no row");
+        }
+        // R20 P2-01：事务性 outbox——若服务层给了入队钩子，在这条消息落库的同一事务里把
+        // conversation.message.created 事件写进 event_outbox，与消息行原子提交。提交后由 drain 循环
+        // publish（apps/api）。钩子返回 null 表示不入队（走既有 best-effort 直发路径）。
+        if (options?.enqueueOutbox) {
+          const outboxRow = options.enqueueOutbox(created);
+          if (outboxRow) {
+            await enqueueEventOutbox(tx, outboxRow);
+          }
         }
         return created;
       });

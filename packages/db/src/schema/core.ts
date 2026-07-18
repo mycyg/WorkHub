@@ -762,6 +762,44 @@ export const conversationReadCursors = pgTable(
   ]
 );
 
+// R20 P2-01（事务性 outbox · 见 0069 迁移）：领域事件与其业务写在同一事务里落这张表，事务提交后由
+// drain 循环（apps/api workers/event-outbox-drain）把 pending 行 publish 到 SSE/事件总线，publish 成功
+// 才置 status='published'。修的裂缝：会话消息此前是「消息行提交 → 事后 best-effort bus.publish」，两步
+// 之间进程崩溃或 publish 抛错，则这条推送永久蒸发（SSE resume_mode='fresh' 不重放，只有重连才全量补拉）。
+// event_id 是幂等键——消费端本就按全量重拉对账，drain 重启重放导致的重复投递无害。当前仅承载
+// conversation.message.created（人到人 DM/协同/主区人类消息），其它 publish 点留作后续；表本身是通用形状，
+// 不与会话表耦合。
+export const eventOutbox = pgTable(
+  "event_outbox",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    // 目标主题（如 conversation:<id>）与事件类型（如 conversation.message.created）——drain 原样透传给
+    // bus.publish(topic, type, payload)，不在 drain 里二次组装信封。
+    topic: text("topic").notNull(),
+    eventType: text("event_type").notNull(),
+    // 幂等键 = 事件信封里的 event_id（既进 payload 也单列存，唯一约束兜「一行一事件」）。
+    eventId: uuid("event_id").notNull(),
+    // 已序列化好的完整事件信封（发布时不可变的快照，drain 原样发出）。
+    payload: jsonb("payload").$type<JsonObject>().notNull(),
+    status: varchar("status", { length: 16 }).notNull().default("pending"),
+    // drain 每失败一次 +1，用于排障/未来封顶；last_error 存结构化失败原因（禁空 catch 吞错）。
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    createdAt: createdAt(),
+    publishedAt: timestampTz("published_at")
+  },
+  (table): PgTableExtraConfigValue[] => [
+    check("event_outbox_status_ck", sql`${table.status} in ('pending', 'published')`),
+    check("event_outbox_attempts_ck", sql`${table.attempts} >= 0`),
+    uniqueIndex("event_outbox_event_id_uq").on(table.eventId),
+    // drain 扫描只挑未发行、按落库顺序发；部分索引只覆盖少量 pending 行，不给已发行付索引成本。
+    index("event_outbox_pending_idx")
+      .on(table.createdAt, table.id)
+      .where(sql`${table.status} = 'pending'`)
+  ]
+);
+
 export const actionCards = pgTable(
   "action_cards",
   {
