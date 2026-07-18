@@ -21,13 +21,16 @@ export type WorkspaceMemberWithNickname = {
 };
 
 // R20 P2A（P1-08 修复 · workspace-scoped roster）：分页花名册的一行。较 WorkspaceMemberWithNickname 多带
-// 头像时间戳占位（avatarUpdatedAt 非空=有头像，兼作头像端点缓存键；只取时间戳、不带 bytea 二进制）。
+// 头像时间戳占位（avatarUpdatedAt 非空=有头像，兼作头像端点缓存键；只取时间戳、不带 bytea 二进制）+
+// isAdmin（R20 P1-08 收尾：users.is_admin 全局管理员标签，不是本工作区角色——供消费端摆脱全局 /api/users
+// 后仍能标「管理员」，additive，不动既有字段/隔离/分页语义）。
 export type WorkspaceRosterMember = {
   userId: string;
   nickname: string;
   role: MembershipRole;
   joinedAt: Date;
   avatarUpdatedAt: Date | null;
+  isAdmin: boolean;
 };
 
 // R20 P2A：一页花名册 + 工作区 active 成员总数（total 供客户端翻页与「成员数」显示，修 /api/users 全局
@@ -253,7 +256,8 @@ export function createWorkspaceMembershipRepository(db: WorkHubDb): WorkspaceMem
           nickname: users.nickname,
           role: workspaceMemberships.role,
           joinedAt: workspaceMemberships.createdAt,
-          avatarUpdatedAt: users.avatarUpdatedAt
+          avatarUpdatedAt: users.avatarUpdatedAt,
+          isAdmin: users.isAdmin
         })
         .from(workspaceMemberships)
         .innerJoin(users, eq(users.id, workspaceMemberships.userId))
@@ -268,7 +272,8 @@ export function createWorkspaceMembershipRepository(db: WorkHubDb): WorkspaceMem
           nickname: row.nickname,
           role: row.role as MembershipRole,
           joinedAt: row.joinedAt,
-          avatarUpdatedAt: row.avatarUpdatedAt
+          avatarUpdatedAt: row.avatarUpdatedAt,
+          isAdmin: row.isAdmin
         }))
       };
     },
