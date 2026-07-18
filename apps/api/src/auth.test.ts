@@ -173,6 +173,13 @@ class MemoryUsers implements UserRepository {
     row.updatedAt = at;
     return row;
   }
+
+  // 含已软删墓碑的批量引用（真库 findRefsByIds 语义）——P2-02 停用善后重试入口据此分辨墓碑 vs 不存在。
+  async findRefsByIds(ids: string[]) {
+    return this.rows
+      .filter((row) => ids.includes(row.id))
+      .map((row) => ({ id: row.id, deletedAt: row.deletedAt }));
+  }
 }
 
 class MemoryDevices implements ClientDeviceRepository {
@@ -320,6 +327,18 @@ class MemorySessions implements SessionRepository {
 class ThrowingCleanupSessions extends MemorySessions {
   revokeAllForUser(): ReturnType<MemorySessions["revokeAllForUser"]> {
     return Promise.reject(new Error("session cleanup failed"));
+  }
+}
+
+// P2-02：先失败、后（外部瞬时故障恢复后）成功的会话仓库——用于验证停用善后清理可重跑收敛。
+class FlakyCleanupSessions extends MemorySessions {
+  public fail = true;
+
+  override revokeAllForUser(userId: string, at: Date): ReturnType<MemorySessions["revokeAllForUser"]> {
+    if (this.fail) {
+      return Promise.reject(new Error("session cleanup transient failure"));
+    }
+    return super.revokeAllForUser(userId, at);
   }
 }
 
@@ -1760,7 +1779,9 @@ test("POST /users/:id/deactivate (admin) soft-deletes the user and revokes their
   assert.equal(targetDevices.every((d) => d.revokedAt !== null), true, "devices revoked");
 });
 
-test("POST /users/:id/deactivate still succeeds when post-delete cleanup fails", async () => {
+test("P2-02: deactivate surfaces cleanup failure (does not fake success as { ok: true })", async () => {
+  // 根因：停用善后（撤会话/设备/凭据/在线态）此前是尽力而为——中途失败被静默吞掉、仍回 200 ok:true，
+  // 留下半清理态且无从感知。修复后：任一善后步失败 → 非 200 + 结构化告知失败步（不吞错伪装成功）。
   const runtimeSettings = settings();
   const admin = user({ id: "10000000-0000-4000-8000-0000000000d5", nickname: "admin", isAdmin: true });
   const target = user({ id: "10000000-0000-4000-8000-0000000000d6", nickname: "target", cookieToken: "cookie-target-cleanup" });
@@ -1784,8 +1805,85 @@ test("POST /users/:id/deactivate still succeeds when post-delete cleanup fails",
     headers: { Cookie: await signedCookie(admin.cookieToken, runtimeSettings) }
   });
 
-  assert.equal(res.status, 200);
-  assert.equal(await users.findActiveById(target.id), null, "target is soft-deleted even if cleanup is unavailable");
+  // 失败可见：不再伪装成功。账号墓碑已置（停用是权威动作），但善后未完成 → 500 + 失败步清单。
+  assert.equal(res.status, 500, "incomplete cleanup surfaces as non-200 (no fake success)");
+  const body = (await res.json()) as {
+    ok: boolean;
+    deactivated?: boolean;
+    cleanup?: { complete: boolean; steps: Array<{ step: string; ok: boolean }> };
+  };
+  assert.equal(body.ok, false, "response is not ok when cleanup incomplete");
+  assert.equal(body.deactivated, true, "tombstone is set even though cleanup is incomplete");
+  assert.equal(body.cleanup?.complete, false, "cleanup reported as not complete");
+  const failedSteps = (body.cleanup?.steps ?? []).filter((entry) => !entry.ok).map((entry) => entry.step);
+  // 会话/设备/凭据/在线态四步都失败 → 都进失败清单（调用方可据此判断残留）。
+  for (const step of ["credentials.delete_by_user", "sessions.revoke_all_for_user", "devices.revoke_for_user", "presence.forget_user"]) {
+    assert.ok(failedSteps.includes(step), `failed step reported: ${step}`);
+  }
+  assert.equal(await users.findActiveById(target.id), null, "target is soft-deleted (tombstone) despite cleanup failure");
+});
+
+test("P2-02: deactivate cleanup is re-entrant — retry converges to fully-cleaned", async () => {
+  // 根因：善后失败后没有可重入的重试路径——重发停用请求会因 softDelete 落空一律 404，半清理态永久卡住。
+  // 修复后：墓碑存在时重发本请求即重跑幂等清理并收敛；某会话撤销瞬时失败 → 首发 500、残留会话；
+  // 瞬时故障恢复后重发 → 200、会话/设备全撤、cleanup.complete。
+  const runtimeSettings = settings();
+  const admin = user({ id: "10000000-0000-4000-8000-0000000000d7", nickname: "admin", isAdmin: true });
+  const target = user({ id: "10000000-0000-4000-8000-0000000000d8", nickname: "target", cookieToken: "cookie-target-retry" });
+  const users = new MemoryUsers([admin, target]);
+  const sessions = new FlakyCleanupSessions();
+  const devices = new MemoryDevices([
+    device({ id: "20000000-0000-4000-8000-0000000000d8", userId: target.id, clientTokenHash: hashClientToken("target-device-retry") })
+  ]);
+  const forgotten: string[] = [];
+  const deps: AuthDependencies = {
+    users,
+    devices,
+    sessions,
+    settings: runtimeSettings,
+    now: () => now,
+    forgetUser: (userId) => {
+      forgotten.push(userId);
+    }
+  };
+  await sessions.create({
+    userId: target.id,
+    tokenHash: "target-retry-session-hash",
+    authMethod: "password",
+    absoluteExpiresAt: new Date(now.getTime() + 3_600_000),
+    idleExpiresAt: new Date(now.getTime() + 1_800_000)
+  });
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+  const path = "/auth/users/" + target.id + "/deactivate";
+  const cookie = await signedCookie(admin.cookieToken, runtimeSettings);
+
+  // 首发：会话撤销瞬时失败 → 500、半清理态（墓碑已置但会话仍在）。
+  const first = await app.request(path, { method: "POST", headers: { Cookie: cookie } });
+  assert.equal(first.status, 500, "transient session-revoke failure surfaces as 500");
+  assert.equal(await users.findActiveById(target.id), null, "target soft-deleted after first attempt");
+  assert.equal(
+    sessions.rows.filter((row) => row.userId === target.id && row.revokedAt === null).length,
+    1,
+    "half-cleaned: session still active because revoke step failed"
+  );
+
+  // 瞬时故障恢复，管理员重发同一停用请求（重试入口）——不再 404，重跑幂等清理收敛到全清理。
+  sessions.fail = false;
+  const retry = await app.request(path, { method: "POST", headers: { Cookie: cookie } });
+  assert.equal(retry.status, 200, "retry succeeds once the transient failure clears");
+  const retryBody = (await retry.json()) as { ok: boolean };
+  assert.equal(retryBody.ok, true, "retry reports ok once cleanup is complete");
+  // 收敛证据：残留会话/设备/在线态被彻底清干净。
+  assert.equal(
+    sessions.rows.filter((row) => row.userId === target.id && row.revokedAt === null).length,
+    0,
+    "converged: sessions revoked after retry"
+  );
+  const targetDevices = await devices.listByUser(target.id);
+  assert.equal(targetDevices.every((d) => d.revokedAt !== null), true, "devices revoked after retry");
+  assert.ok(forgotten.includes(target.id), "presence forgotten after retry");
 });
 
 test("POST /users/:id/deactivate hands over the target's active claims (unassign + audit) and leaves terminal items", async () => {

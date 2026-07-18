@@ -807,13 +807,62 @@ const authInviteListResponses = {
     "404": authNotFoundResponse
   }
 } as const;
+// P2-02：账号已停用（墓碑已置）但善后清理（撤会话/设备/凭据/交接/在线态）未完成——回 500 让调用方感知
+// （不伪装成功），携带失败步清单；清理步幂等，重发本请求即为重试入口，直至 cleanup.complete。
+const authDeactivateCleanupIncompleteResponse = {
+  description: "User deactivated (tombstone set) but post-deactivation cleanup did not complete; retry the same request",
+  content: {
+    "application/json": {
+      schema: {
+        type: "object",
+        required: ["ok", "error", "deactivated", "cleanup"],
+        properties: {
+          ok: { type: "boolean", const: false },
+          error: {
+            type: "object",
+            required: ["code", "message"],
+            properties: {
+              code: { type: "string", enum: ["offboard_cleanup_incomplete"] },
+              message: { type: "string", minLength: 1 }
+            },
+            additionalProperties: false
+          },
+          deactivated: { type: "boolean", const: true },
+          cleanup: {
+            type: "object",
+            required: ["complete", "steps"],
+            properties: {
+              complete: { type: "boolean" },
+              steps: {
+                type: "array",
+                items: {
+                  type: "object",
+                  required: ["step", "ok"],
+                  properties: {
+                    step: { type: "string" },
+                    ok: { type: "boolean" },
+                    error: { type: "string" }
+                  },
+                  additionalProperties: false
+                }
+              }
+            },
+            additionalProperties: false
+          }
+        },
+        additionalProperties: false
+      }
+    }
+  }
+} as const;
 const authDeactivateResponses = {
   responses: {
     "200": rawJsonResponse(authOkResponseSchema, "Deactivated user").responses["200"],
     "400": authBadRequestResponse,
     "401": authNotIdentifiedResponse,
     "403": authForbiddenResponse,
-    "404": authNotFoundResponse
+    "404": authNotFoundResponse,
+    "500": authDeactivateCleanupIncompleteResponse
   }
 } as const;
 // R20 P1-05：撤销邀请回体 { ok, invite_id }。
