@@ -2688,6 +2688,111 @@ test("B-R9.6 Cost route component omits the army card when by_task_plan is empty
   assert.equal(cost.html.includes('data-r9-cost-army="true"'), false);
 });
 
+// R19-6（R20 波4）：后端早就给 trend / by_workitem / by_team 填好了数据（cost.ts 三个维度都在 VM 里），
+// 桌面端（apps/desktop-webview 的 costView）也已经渲了 14 天趋势条形图 + by_workitem 前 5 行，还明确把
+// 用户指向"网页版成本页细看"——但 web 端 renderCostRouteComponent 此前完全没消费这三个字段（trend 只在
+// 顶部指标区露过一个"统计天数: N"计数徽章，by_workitem/by_team 从未被引用过），跨端指路断了链。
+// 这条固定测试用非空的 fixture（gold-path.ts 的 costDashboard 本身就带 1 条 trend + 1 条 by_workitem +
+// 1 条 by_team）断言三个维度真的渲成了可读内容，而不只是计数。
+test("R19-6 Cost route component renders trend, by-workitem, and by-team dimensions (desktop already links here)", () => {
+  const vm = surfaceVm();
+  const costVm = vm.page_vms.cost;
+  const trendPoint = costVm.trend[0];
+  const workitem = costVm.by_workitem[0];
+  const team = costVm.by_team[0];
+  assert.ok(trendPoint);
+  assert.ok(workitem);
+  assert.ok(team);
+
+  const cost = renderWebRouteComponents(vm, { locale: "zh-CN" }).cost;
+  assert.ok(cost);
+
+  // 趋势：按天渲出（日期 + 花费），不再只是一个计数徽章。
+  assert.equal(cost.html.includes('data-r20-cost-trend="true"'), true);
+  assert.equal(cost.html.includes(`data-r20-cost-trend-day="${trendPoint.date}"`), true);
+  assert.equal(cost.html.includes(trendPoint.date), true);
+
+  // 按工作项分账：渲出行 + 可点进工作项详情。
+  assert.equal(cost.html.includes('data-r20-cost-by-workitem="true"'), true);
+  assert.equal(cost.html.includes(`data-r20-cost-workitem="${workitem.workitem_id}"`), true);
+  assert.equal(cost.html.includes(workitem.code), true);
+  assert.equal(cost.html.includes(`href="/workitems/${workitem.workitem_id}"`), true);
+
+  // 按团队分账。
+  assert.equal(cost.html.includes('data-r20-cost-by-team="true"'), true);
+  assert.equal(cost.html.includes(`data-r20-cost-team="${team.team_id}"`), true);
+  assert.equal(cost.html.includes(team.label), true);
+
+  assertNoMainWindowBoundaryLeak(cost.html);
+});
+
+// trend 不按 isAdmin 收窄（后端 aggregateTrend 吃的是已经按用户身份筛过的 entries，普通用户看到的
+// 就是自己范围内的每日花费，本身是安全的）——但 by_workitem / by_team 与 by_user/by_task_plan/by_objective
+// 同门槛，仅管理员非空。普通用户看到的 VM 里这两个数组会是空数组，此时必须整卡不渲（不能伪装成"0 条记录"）。
+test("R19-6 Cost route component omits by-workitem/by-team cards when those admin-only dimensions are empty, but keeps trend", () => {
+  const base = surfaceVm();
+  const vm = {
+    ...base,
+    page_vms: {
+      ...base.page_vms,
+      cost: {
+        ...base.page_vms.cost,
+        viewer_is_admin: false,
+        by_workitem: [],
+        by_team: []
+      }
+    }
+  };
+  const cost = renderWebRouteComponents(vm, { locale: "en-US" }).cost;
+  assert.ok(cost);
+  assert.equal(cost.html.includes('data-r20-cost-by-workitem="true"'), false);
+  assert.equal(cost.html.includes('data-r20-cost-by-team="true"'), false);
+  // 非管理员说明文案要点名这两个维度，而不是让它们悄悄消失。
+  assert.match(cost.html, /work item/u);
+  // trend 是用户自己范围内的数据，非管理员照样能看。
+  assert.equal(cost.html.includes('data-r20-cost-trend="true"'), true);
+  assertNoMainWindowBoundaryLeak(cost.html);
+});
+
+test("R19-6 Cost route component caps by-workitem/by-team rows and trend days with an honest overflow note", () => {
+  const base = surfaceVm();
+  const manyWorkitems = Array.from({ length: 10 }, (_, i) => ({
+    workitem_id: `0f8b1c2d-1111-4222-8333-44445555${String(1000 + i).padStart(4, "0")}`,
+    code: `WI-${i}`,
+    cost_cny: String(10 - i),
+    turns: i + 1
+  }));
+  const manyTeams = Array.from({ length: 9 }, (_, i) => ({
+    team_id: `1a2b3c4d-2222-4333-8444-55556666${String(1000 + i).padStart(4, "0")}`,
+    label: "团队预算",
+    cost_cny: String(9 - i),
+    tokens: 100 * (i + 1)
+  }));
+  const manyTrendDays = Array.from({ length: 20 }, (_, i) => ({
+    date: `2026-06-${String(i + 1).padStart(2, "0")}`,
+    cost_cny: String(i + 1),
+    tokens: 100
+  }));
+  const vm = {
+    ...base,
+    page_vms: {
+      ...base.page_vms,
+      cost: {
+        ...base.page_vms.cost,
+        by_workitem: manyWorkitems,
+        by_team: manyTeams,
+        trend: manyTrendDays
+      }
+    }
+  };
+  const cost = renderWebRouteComponents(vm, { locale: "zh-CN" }).cost;
+  assert.ok(cost);
+  assert.equal(cost.html.includes("按花费只显示前 8 个工作项（共 10 个）"), true);
+  assert.equal(cost.html.includes("按花费只显示前 8 个团队（共 9 个）"), true);
+  assert.equal(cost.html.includes("只显示最近 14 天（共 20 天记录）"), true);
+  assertNoMainWindowBoundaryLeak(cost.html);
+});
+
 test("R4.11 Settings route component uses a typed Settings Page VM without leaking secrets or pet settings", () => {
   const vm = surfaceVm();
   const settings = renderWebRouteComponents(vm, { locale: "en-US" }).settings;
