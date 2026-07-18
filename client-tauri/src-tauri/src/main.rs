@@ -1347,6 +1347,9 @@ fn configure_main_window_chrome(window: &tauri::WebviewWindow) -> Result<(), Str
 #[derive(Clone, Copy)]
 enum MainWindowStartupFallbackStep {
     Chrome,
+    // Linux CI 的 clippy 看不到 macOS cfg 分支里的构造点（P3-01 把 clippy -D warnings 拉上 CI 后暴露），
+    // 与下一行 WindowsAcrylic 同款：仅在非目标平台上放行 dead_code。
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     MacosVibrancy,
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     WindowsAcrylic,
