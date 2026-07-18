@@ -1,5 +1,5 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
-import { eventTypes, type ActionSpec, type AiFeedbackVerdict, type PutAiFeedbackRequest, type SearchResultsVm, type SkillEditOp } from "@workhub/contracts";
+import { eventTypes, type ActionSpec, type AiFeedbackVerdict, type DmListVM, type ProjectListVM, type PutAiFeedbackRequest, type SearchResultsVm, type SkillEditOp } from "@workhub/contracts";
 import {
   classifyGoldPathHref,
   goldPathT,
@@ -80,8 +80,7 @@ import {
   updateIntakeActionPayloads,
   type ActionPayloadResult,
   type RouteNoticeTimerState,
-  type RouteNoticeVM,
-  type WebLiveStreamTarget
+  type RouteNoticeVM
 } from "@workhub/web-runtime";
 import {
   createUnknownWebRouteMatch,
@@ -107,6 +106,8 @@ import {
   unmountReactRouteIsland
 } from "./react-route-mount.js";
 import { resolveWebMemoryConflictAction } from "./attention-actions.js";
+import { liveStreamTargetsForRoute } from "./live-stream-targets.js";
+import { renderMyConversationsSectionHtml } from "./my-conversations.js";
 
 const root = document.getElementById("root");
 const liveLastEventIdStorageKey = "workhub.live.lastEventId";
@@ -414,40 +415,6 @@ function swapProposalActionRow(shellRoot: HTMLElement, actions: ProposalRowActio
 
 function activeRouteHasDirtyEdits() {
   return sharedActiveRouteHasDirtyEdits(root);
-}
-
-function liveStreamTargetsForRoute(result: WebRouteReadyResult, client: BrowserApiClient): WebLiveStreamTarget[] {
-  const targets: WebLiveStreamTarget[] = [{ key: "me", url: client.streams.me() }];
-  if (result.match.key === "intake") {
-    const sessionId = result.match.params["sessionId"];
-    if (sessionId) {
-      targets.push({ key: "session", url: client.streams.session(sessionId) });
-    }
-  } else if (result.match.key === "workitem") {
-    const workItemId = result.match.params["id"];
-    if (workItemId) {
-      targets.push({ key: "workitem", url: client.streams.workItem(workItemId) });
-    }
-  } else if (result.match.key === "proposal") {
-    const proposalId = result.match.params["id"];
-    const workItemId = result.surface.key === "proposal" ? result.surface.proposal.work_item_id : undefined;
-    if (proposalId) {
-      targets.push({ key: "proposal", url: client.streams.proposal(proposalId) });
-    }
-    if (workItemId) {
-      targets.push({ key: "workitem", url: client.streams.workItem(workItemId) });
-    }
-  } else if (result.match.key === "replay") {
-    const runId = result.match.params["id"];
-    const workItemId = result.surface.key === "replay" ? result.surface.replay.run.work_item_id : undefined;
-    if (runId) {
-      targets.push({ key: "run", url: client.streams.run(runId) });
-    }
-    if (workItemId) {
-      targets.push({ key: "workitem", url: client.streams.workItem(workItemId) });
-    }
-  }
-  return targets;
 }
 
 function identityUserFrom(identity: unknown): ShellIdentityUser | undefined {
@@ -2070,7 +2037,7 @@ function createBrowserLiveRuntime(client: BrowserApiClient, locale: WorkHubLocal
 
 function bindLiveRouteStreams(result: WebRouteReadyResult, client: BrowserApiClient, locale: WorkHubLocale) {
   liveRuntime ??= createBrowserLiveRuntime(client, locale);
-  liveRuntime.syncTargets(liveStreamTargetsForRoute(result, client));
+  liveRuntime.syncTargets(liveStreamTargetsForRoute(result, client.streams));
 }
 
 // R7（中断恢复 high）：dirty-guard 此前只护 SSE 刷新——用户自己按后退/点导航反而把没提交的输入
@@ -2147,6 +2114,7 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindProjectHomePlansPanel(root, result, client, locale, signal);
   bindProjectHomeInstructionsPanel(root, result, client, locale, signal);
   bindProjectHomeMembersPanel(root, result, client, locale, signal);
+  bindMyConversationsPanel(root, result, client, locale, signal);
   bindConversationParticipantsPanel(root, result, client, locale, signal);
   bindSearchRoutePanel(root, result, client, locale, signal);
   bindSettingsAiProfilePanel(root, result, client, locale, signal);
@@ -2576,6 +2544,48 @@ type ProjectHomeConversationsVM = { conversations: ProjectHomeConversationLite[]
 type WorkspaceRosterMemberSlice = { user_id: string; nickname: string };
 type WorkspaceRosterVM = { members: WorkspaceRosterMemberSlice[]; total: number; limit: number; offset: number };
 
+// R19-15：项目页（/projects，既有导航项）上的「个人空间 / 私聊」导航入口。桌面工作台有这两个分组、
+// 后端能力齐备（GET /api/me/personal-projects、GET /api/dm/list），但 web 端此前没有任何入口到达。
+// 挂进既有项目页而不新增路由——不动 gold-path 键/shellPageOrder，不触三处路由计数门。SSR 不含此块，
+// 这里客户端水合注入（私聊行链只读会话镜像 /conversations/:id，个人空间行链项目主页 /projects/:id）。
+// 两个来源各自 fail-soft（取数失败该列退化为空态，不整块塌）。
+function bindMyConversationsPanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "projects") {
+    return;
+  }
+  const route = container.querySelector<HTMLElement>('[data-r4-route-component="projects"]');
+  if (!route || route.querySelector('[data-r19-my-conversations]')) {
+    return;
+  }
+  const hydrate = async () => {
+    const [dm, personal] = await Promise.all([
+      client.request<DmListVM>("/api/dm/list").then(
+        (value) => value,
+        (): DmListVM | null => null
+      ),
+      client.request<ProjectListVM>("/api/me/personal-projects").then(
+        (value) => value,
+        (): ProjectListVM | null => null
+      )
+    ]);
+    if (signal.aborted || route.querySelector('[data-r19-my-conversations]')) {
+      return;
+    }
+    // 两个来源都取数失败：不注入一个空壳（避免误导为「你没有个人空间/私聊」），等下次重渲兜底。
+    if (dm === null && personal === null) {
+      return;
+    }
+    route.insertAdjacentHTML("beforeend", renderMyConversationsSectionHtml({ dm, personal, locale }));
+  };
+  void hydrate();
+}
+
 function bindProjectHomeMembersPanel(
   container: HTMLElement,
   result: WebRouteReadyResult,
@@ -2655,8 +2665,10 @@ function bindProjectHomeMembersPanel(
 //   * DM（scope:"participants" + is_dm）→ 双人说明，无动作；
 //   * 普通群（scope:"participants" 非 DM）→ 成员条 + 群管理动作：任何参与者可加人（工作区成员选择器，
 //     排除已在群者）与退出（自删）；群主额外可移出他人。调 G1 端点，403/409 按错误码人话化。
-// web 镜像页刻意不订会话 SSE（G-web 窄化纪律，见 liveEventTypes 排除 conversation.*）——参与者变化
-// 靠「动作后重拉 + 手动刷新按钮」感知，不把 conversation.* 事件引回 web。
+// R20 P2-06：会话镜像页现在订阅该会话专属 SSE 窄流（见 live-stream-targets.ts 的 conversation 分支——
+// 逐流 eventTypes 只订 conversation.*，不污染 me 流的全局窄化面）；新消息/编辑/reaction/参与者变化到达
+// 即触发一次全量重渲，断线重连补拉全量对账。下面这块参与者侧区仍走「动作后就地重拉」，SSE 到达时由
+// 外壳整页重渲一并刷新。
 type MirrorParticipantItem = { user_id: string; nickname: string; role: "owner" | "member" };
 type MirrorParticipantsVM = { scope: "workspace" | "participants"; is_dm?: boolean; participants: MirrorParticipantItem[] };
 type MirrorRemoveResult = { removed_user_id: string; self_left: boolean; new_owner_user_id: string | null };
