@@ -375,6 +375,26 @@ test("R17 G1 remove participant result: self_left + nullable new owner, extras r
   );
 });
 
+test("R20 P2-04 conversation.title.updated event: topic must match conversation_id, title bounded, extras rejected", () => {
+  const schema = requiredSchema<Record<string, unknown>>("conversationTitleUpdatedEventSchema");
+  const base = {
+    event_id: eventId,
+    type: "conversation.title.updated",
+    topic: `conversation:${conversationId}`,
+    ts,
+    data: { conversation_id: conversationId, title: "改第三幕" }
+  };
+  assert.equal(schema.safeParse(base).success, true);
+  // topic 必须与 data.conversation_id 绑定（superRefine）。
+  assert.equal(schema.safeParse({ ...base, topic: "conversation:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }).success, false);
+  // 空标题 / 超长标题违约（min(1).max(256)）。
+  assert.equal(schema.safeParse({ ...base, data: { ...base.data, title: "" } }).success, false);
+  assert.equal(schema.safeParse({ ...base, data: { ...base.data, title: "x".repeat(257) } }).success, false);
+  // 极简 payload——不接受 actor/project_id 等额外键（strict）。
+  assert.equal(schema.safeParse({ ...base, data: { ...base.data, extra: 1 } }).success, false);
+  assert.equal(schema.safeParse({ ...base, actor: { actor_kind: "human", actor_user_id: userId } }).success, false);
+});
+
 test("R17 G1 participants.updated event: topic must match conversation_id, change is an enum", () => {
   const schema = requiredSchema<Record<string, unknown>>("conversationParticipantsUpdatedEventSchema");
   const base = {

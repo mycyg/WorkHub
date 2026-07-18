@@ -487,3 +487,33 @@ export const conversationParticipantsUpdatedEventSchema = z
     }
   });
 export type ConversationParticipantsUpdatedEvent = z.infer<typeof conversationParticipantsUpdatedEventSchema>;
+
+// R20 P2-04（会话 rename 跨端同步）：conversation.title.updated——协同会话改名（PATCH /api/conversations/:id）
+// 后广播。data 带 conversation_id + 新 title（同 renameConversationRequest 的 min(1).max(256) 约束）——
+// 携带新名字让桌面端能就地改左栏树叶（renameCollabConversationInVm，不必再往返一次），web 镜像页则据事件到达
+// 触发一次全量重渲（title 以重拉的会话 VM 为准）。极简 payload（无 actor/project_id），同 cuu.updated/
+// read.updated 的既有取舍：客户端按 conversation_id 过滤，接不上就等下次重挂时用会话 VM 里的 title 兜底。
+export const conversationTitleUpdatedEventSchema = z
+  .object({
+    event_id: idSchema,
+    type: z.literal("conversation.title.updated"),
+    topic: z.string().min(1),
+    ts: isoDateTimeSchema,
+    data: z
+      .object({
+        conversation_id: idSchema,
+        title: z.string().min(1).max(256)
+      })
+      .strict()
+  })
+  .strict()
+  .superRefine((event, ctx) => {
+    if (event.topic !== `conversation:${event.data.conversation_id}`) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["topic"],
+        message: "title-updated topic must match data.conversation_id"
+      });
+    }
+  });
+export type ConversationTitleUpdatedEvent = z.infer<typeof conversationTitleUpdatedEventSchema>;

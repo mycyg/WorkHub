@@ -212,6 +212,11 @@ export const eventTypes = {
   // cuu.updated 的既有取舍——只带 conversation_id + 变化类型 + 受影响 user_id，客户端据此按需重拉
   // GET /participants，接不上就等下次重挂时兜底，不强求必达。
   conversationParticipantsUpdated: "conversation.participants.updated",
+  // R20 P2-04（会话 rename 跨端同步）：协同会话改名后广播——data 只带 conversation_id + 新 title。让别的开着
+  // 这个会话的客户端就地改左栏树叶 / web 镜像页标题，不必等下次全量轮询才看到新名字。同 cuu.updated 的既有
+  // 取舍：只投到会话私有流（conversation:<id>，仅参与者可订，不广播全工作区），接不上就等下次重挂时用会话 VM
+  // 里的 title 兜底，不强求这条广播必达。
+  conversationTitleUpdated: "conversation.title.updated",
   /** @deprecated 无生产者也无消费者：仅 r12-workbench 契约测试快照枚举，工具流实际走 conversation.tool.* 之外的既有事件。 */
   conversationToolBegin: "conversation.tool.begin",
   /** @deprecated 无生产者也无消费者：同上，仅契约测试引用。 */

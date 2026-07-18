@@ -7,17 +7,20 @@ import type { WebRouteReadyResult } from "./routes.js";
 // browser.ts 只负责把 client.streams 传进来并把结果交给 liveRuntime.syncTargets。
 
 // 会话专属窄流（/api/push/stream/conversation/:id）的订阅事件面。只订「会改动只读镜像可见内容」的
-// 已定型事件——新消息、编辑/删除/置顶（整条替换）、reaction 聚合、参与者集合变化。刻意不订：
+// 已定型事件——新消息、编辑/删除/置顶（整条替换）、reaction 聚合、参与者集合变化、会话改名（标题）。刻意不订：
 //   * message.delta（AI 流式增量，会引发刷新风暴——定型后有 message.created/updated 兜底）；
 //   * presence.typing / observer.analyzing（瞬态信号，镜像不渲染）；
 //   * read.updated（镜像是只读、不展示未读态）；cuu.updated / action_card.updated（镜像不渲染这些）。
 // 收到其一即触发一次全量重渲（renderCurrentRouteOrOnboard 重拉 listConversationMessages）——seq 合并=
 // 服务端权威（按 seq 排序、去重、含墓碑），去抖窗口把乱序/重复的一批事件并成一次拉取，天然幂等。
+// R20 P2-04（会话 rename 跨端同步）：conversation.title.updated 也纳入——会话被改名时镜像页标题随下一次全量
+// 重渲对齐权威（EventSource 按事件名订阅，未列入这张表的事件会被静默丢弃，故必须显式登记，见 live-runtime）。
 export const CONVERSATION_MIRROR_LIVE_EVENT_TYPES: readonly string[] = [
   eventTypes.conversationMessageCreated,
   eventTypes.conversationMessageUpdated,
   eventTypes.conversationReactionUpdated,
-  eventTypes.conversationParticipantsUpdated
+  eventTypes.conversationParticipantsUpdated,
+  eventTypes.conversationTitleUpdated
 ];
 
 // browser.ts 的 client.streams 子集——只取本模块会用到的窄流 URL 构造器。

@@ -55,6 +55,7 @@ import {
   conversationReadCursorVmSchema,
   conversationReadReceiptsVmSchema,
   conversationReadUpdatedEventSchema,
+  conversationTitleUpdatedEventSchema,
   createConversationResultVmSchema,
   openDmResultVmSchema,
   dmListVmSchema,
@@ -780,6 +781,35 @@ export function createConversationService(
     }
   }
 
+  // R20 P2-04（会话 rename 跨端同步）：改名后广播 conversation.title.updated（best-effort，同
+  // publishConversationCuuUpdated 的既有取舍——改名本身已经落库成功，不因广播失败回滚）。让别的开着这个会话的
+  // 客户端就地改左栏树叶 / web 镜像页标题，接不上就等下次重挂时用会话 VM 里的 title 兜底。投到会话私有流
+  // （topics.conversation，仅参与者可订，不广播全工作区）。
+  async function publishConversationTitleUpdated(access: ConversationRow, title: string) {
+    const conversationTopic = topics.conversation(access.id).topic;
+    const event = parseOutputContract(
+      conversationTitleUpdatedEventSchema,
+      makeWorkHubEvent({
+        type: eventTypes.conversationTitleUpdated,
+        topic: conversationTopic,
+        ts: now(),
+        data: { conversation_id: access.id, title }
+      }),
+      "conversations.title.event.updated"
+    );
+    try {
+      await bus.publish(conversationTopic, eventTypes.conversationTitleUpdated, event);
+    } catch (error) {
+      logger.warn("conversation_title_updated_publish_failed", {
+        event_id: event.event_id,
+        topic: conversationTopic,
+        conversation_id: access.id,
+        broker_backend: bus.backend,
+        error
+      });
+    }
+  }
+
   function parseReactionKey(rawKey: string): ConversationReactionKey {
     const parsed = conversationReactionKeySchema.safeParse(rawKey);
     if (!parsed.success) {
@@ -960,8 +990,10 @@ export function createConversationService(
     //   1. 会话可见（visibleConversation 已 404 挡住不可见者）；
     //   2. 仅 collab 会话可改名——main（团队主区/个人空间单聊）一律 403，不给一个点了必失败的入口；
     //   3. 仅参与者/owner（participantRole !== null）——project 可见的 collab 里的旁观者不能改名。
-    // 没有 conversation.updated 事件（本仓库事件面只到 message/reaction/read 三类），改名后靠客户端
-    // 就地更新左栏树叶 / 下次拉会话树刷新，不广播（见交付报告说明）。
+    // R20 P2-04（会话 rename 跨端同步）：改名后广播 conversation.title.updated（best-effort，见
+    // publishConversationTitleUpdated），让别的开着这个会话的客户端就地改左栏树叶 / web 镜像页标题，不必等
+    // 下次全量轮询。历史遗留的「没有 conversation.updated 事件、只靠客户端就地更新/下次拉会话树刷新」这条
+    // 取舍到此收口。
     async renameConversation(input) {
       const { human, access } = await visibleConversation(input);
       const conversation = access.conversation;
@@ -990,6 +1022,7 @@ export function createConversationService(
       } catch (error) {
         mapRepositoryError(error);
       }
+      await publishConversationTitleUpdated(updated, updated.title);
       return parseOutputContract(
         renameConversationResultVmSchema,
         { conversation: conversationToVm(updated, access.participantRole) },
