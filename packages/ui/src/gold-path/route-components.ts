@@ -472,6 +472,9 @@ type RouteCopyKey =
   | "cost.laborProduction"
   | "cost.laborSelfImprovement"
   | "cost.laborSelfImprovementRatio"
+  | "cost.trendTitle"
+  | "cost.byWorkitem"
+  | "cost.byTeam"
   | "agents.kicker"
   | "agents.summary"
   | "agents.active"
@@ -752,6 +755,9 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "cost.laborProduction": "干活花费",
     "cost.laborSelfImprovement": "自进化花费",
     "cost.laborSelfImprovementRatio": "自进化占比",
+    "cost.trendTitle": "花费趋势",
+    "cost.byWorkitem": "按工作项分账",
+    "cost.byTeam": "按团队分账",
     "agents.kicker": "军团",
     "agents.summary": "观察正在推进的任务计划；需要人决定的事仍回到总览处理。",
     "agents.active": "进行中军团",
@@ -1030,6 +1036,9 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "cost.laborProduction": "Production spend",
     "cost.laborSelfImprovement": "Self-improvement spend",
     "cost.laborSelfImprovementRatio": "Self-improvement share",
+    "cost.trendTitle": "Spend trend",
+    "cost.byWorkitem": "Spend by work item",
+    "cost.byTeam": "Spend by team",
     "agents.kicker": "Agent teams",
     "agents.summary": "Observe active task plans; decisions still go through the overview inbox.",
     "agents.active": "Active teams",
@@ -4467,6 +4476,36 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
         <h3 role="heading" aria-level="2">${escapeHtml(zh ? "成员" : "Members")}</h3>
         <div data-r18-project-home-members-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载成员摘要…" : "Loading member summary…")}</p></div>
       </section>`;
+  // R20 wave4（R19-1 OKR 前端接线）：服务端 POST /api/objectives（建目标+关键结果）与
+  // POST /api/objectives/:id/link（挂工作项）此前完全没有前端入口。目标是工作区级实体（objectives 表
+  // 没有 project_id 列），不是「这个项目的目标」——文案刻意不说「项目目标」。服务端没有列目标的端点
+  // （只有按 id 批量取标题/按状态取 id 列表），故本卡只能话本次会话内创建过的目标（不持久化列表），
+  // 创建成功后立刻在下面追加一行，带「挂到这里的某个工作项」选择器——数据源直接用本页已有的
+  // open_work_items（不额外请求）。
+  const objectivesSection = `<section class="wh-card wh-r4-route-card" data-r20-project-home-objectives="true" data-r20-project-home-objectives-project="${escapeHtml(project.id)}">
+        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "OKR · 目标与关键结果" : "OKR — objectives & key results")}</h3>
+        <p class="wh-subtle">${escapeHtml(zh
+          ? "目标是工作区级的，不专属这个项目。建好目标后，可以把下面「进行中工作」里的工作项挂上去追踪进度。"
+          : "Objectives are workspace-wide, not scoped to this project. Once created, link items from the open-work list above to track progress.")}</p>
+        <form data-r20-okr-create-form="true">
+          <div class="wh-r4-route-row">
+            <input type="text" class="wh-pill" data-r20-okr-title-input maxlength="256" placeholder="${escapeHtml(zh ? "目标标题" : "Objective title")}" aria-label="${escapeHtml(zh ? "目标标题" : "Objective title")}" />
+          </div>
+          <div class="wh-r4-route-row">
+            <textarea class="wh-pill" style="width:100%;box-sizing:border-box;resize:vertical" data-r20-okr-description-input maxlength="4000" rows="2" placeholder="${escapeHtml(zh ? "目标说明（可选）" : "Description (optional)")}" aria-label="${escapeHtml(zh ? "目标说明" : "Description")}"></textarea>
+          </div>
+          <div class="wh-r4-route-row">
+            <textarea class="wh-pill" style="width:100%;box-sizing:border-box;resize:vertical" data-r20-okr-kr-input maxlength="2000" rows="3" placeholder="${escapeHtml(zh ? "关键结果，每行一条（可选，最多 8 条）" : "Key results, one per line (optional, up to 8)")}" aria-label="${escapeHtml(zh ? "关键结果" : "Key results")}"></textarea>
+          </div>
+          <p class="wh-subtle" data-r20-okr-create-status hidden></p>
+          <button type="submit" class="wh-btn wh-btn-primary" data-r20-okr-create-submit="true">${escapeHtml(zh ? "创建目标" : "Create objective")}</button>
+        </form>
+        <div data-r20-okr-list role="list">
+          <p class="wh-subtle" data-r20-okr-list-empty="true">${escapeHtml(zh
+            ? "本次会话里还没有创建目标——服务端暂不提供列出全部已有目标的端点，创建后会立刻显示在这里。"
+            : "No objectives created in this session yet — the server has no endpoint to list existing ones, so newly created objectives appear here right away.")}</p>
+        </div>
+      </section>`;
   const instructionsSection = `<section class="wh-card wh-r4-route-card" data-r17-project-home-instructions="true" data-r17-project-home-instructions-project="${escapeHtml(project.id)}">
         <h3 role="heading" aria-level="2">${escapeHtml(zh ? "自定义指令" : "Custom instructions")}</h3>
         <p class="wh-subtle">${escapeHtml(
@@ -4527,6 +4566,7 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
       </section>
       ${githubSection}
       ${plansSection}
+      ${objectivesSection}
       ${membersSection}
       ${instructionsSection}
       <a class="wh-r4-route-kicker" href="/projects" data-r8-project-home-back="true">${escapeHtml(routeT(locale, "projectHome.back"))}</a>
@@ -4762,11 +4802,13 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
       : `Showing the 8 costliest teams of ${vm.by_task_plan.length}.`)}</p>`
     : "";
   // R3：非管理员的分组维度（按人/按军团/按目标）不可见时说明白，而不是当它不存在。
+  // R19-6（R20 波4）：by_workitem / by_team 与前三个维度同一门槛（仅管理员非空）——补进这句说明，
+  // 免得这两个维度对非管理员悄悄消失又没人解释为什么。
   const nonAdminNote = vm.viewer_is_admin === false
     ? `<section class="wh-card wh-r4-route-card" data-r9-cost-non-admin-note="true">
         <p class="wh-subtle">${escapeHtml(zhNotice
-          ? "按人 / 按军团 / 按目标的全组织分组仅管理员可见——这里只显示你自己的用量与预算。"
-          : "Org-wide breakdowns (by person / team / objective) are admin-only — this page shows your own usage and budgets.")}</p>
+          ? "按人 / 按军团 / 按目标 / 按工作项 / 按团队的全组织分组仅管理员可见——这里只显示你自己的用量与预算。"
+          : "Org-wide breakdowns (by person, agent team, objective, work item, or team) are admin-only — this page shows your own usage and budgets.")}</p>
       </section>`
     : "";
   const armyCard = vm.by_task_plan.length
@@ -4817,6 +4859,87 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
           <h3 role="heading" aria-level="2">${escapeHtml(zhNotice ? "目标花费" : "Spend by objective")}</h3>
           <div class="wh-r4-route-timeline" role="list">${byObjectiveRows}</div>
           ${byObjectiveCapNote}
+        </section>`
+    : "";
+  // R19-6（R20 波4）：by_workitem 早就在 VM 里（与 by_user/by_team/by_objective 同门槛，仅管理员非空），
+  // 桌面端 costView 已经渲了前 5 行并明确写着"去网页版成本页细看"（apps/desktop-webview/src/spotlight/
+  // views/dashboards.ts）——但 web 端此前从未消费这个字段，指路指到了一处空白。补上按花费降序的行 +
+  // 可点进工作项详情（与 by_task_plan 的 work_item_id 深链同一惯例），超 8 条时明说截断而非静默吞掉。
+  const byWorkitemRows = vm.by_workitem.slice(0, 8)
+    .map((item) => `<div role="listitem" class="wh-r4-route-row" data-r20-cost-workitem="${escapeHtml(item.workitem_id)}">
+      <div>
+        <a class="wh-r4-route-row-title" href="/workitems/${escapeHtml(encodeURIComponent(item.workitem_id))}" data-r20-cost-workitem-drill="${escapeHtml(item.workitem_id)}"><strong>${escapeHtml(item.code)}</strong></a>
+        <p>${escapeHtml(zhNotice ? `${item.turns} 轮` : `${item.turns} ${item.turns === 1 ? "turn" : "turns"}`)}</p>
+      </div>
+      <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny, locale))}</span>
+    </div>`)
+    .join("");
+  const byWorkitemCapNote = vm.by_workitem.length > 8
+    ? `<p class="wh-subtle" data-r20-cost-by-workitem-capped="true">${escapeHtml(zhNotice
+      ? `按花费只显示前 8 个工作项（共 ${vm.by_workitem.length} 个）。`
+      : `Showing the 8 costliest work items of ${vm.by_workitem.length}.`)}</p>`
+    : "";
+  const byWorkitemCard = vm.by_workitem.length
+    ? `<section class="wh-card wh-r4-route-card" data-r20-cost-by-workitem="true">
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "cost.byWorkitem"))}</h3>
+          <div class="wh-r4-route-timeline" role="list">${byWorkitemRows}</div>
+          ${byWorkitemCapNote}
+        </section>`
+    : "";
+  // R19-6（R20 波4）：by_team 同样早就在 VM 里、同一 admin 门槛，此前也从未被渲染。标签当前后端固定给
+  // "团队预算"（apps/api/src/pages/cost.ts 的 pageT(locale,"cost.label.teamBudget")，尚不区分多个团队），
+  // 这里在标签下补一行短 team_id，避免多条同名行看起来像重复渲染同一条数据。
+  const byTeamRows = vm.by_team.slice(0, 8)
+    .map((item) => `<div role="listitem" class="wh-r4-route-row" data-r20-cost-team="${escapeHtml(item.team_id)}">
+      <div>
+        <strong>${escapeHtml(item.label)}</strong>
+        <p>${escapeHtml(item.team_id.slice(0, 8))}</p>
+      </div>
+      <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny, locale))}</span>
+    </div>`)
+    .join("");
+  const byTeamCapNote = vm.by_team.length > 8
+    ? `<p class="wh-subtle" data-r20-cost-by-team-capped="true">${escapeHtml(zhNotice
+      ? `按花费只显示前 8 个团队（共 ${vm.by_team.length} 个）。`
+      : `Showing the 8 costliest teams of ${vm.by_team.length}.`)}</p>`
+    : "";
+  const byTeamCard = vm.by_team.length
+    ? `<section class="wh-card wh-r4-route-card" data-r20-cost-by-team="true">
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "cost.byTeam"))}</h3>
+          <div class="wh-r4-route-timeline" role="list">${byTeamRows}</div>
+          ${byTeamCapNote}
+        </section>`
+    : "";
+  // R19-6（R20 波4）：trend 不像 by_workitem/by_team 那样按 isAdmin 收窄——buildCostDashboardPage 里
+  // aggregateTrend 吃的是已经按用户身份筛过的 uniqueEntries（非管理员=只筛自己的账目），所以普通用户看到
+  // 的 trend 就是自己范围内的每日花费，本身是安全的，不该被 nonAdminNote 盖住。此前 web 只把它的长度渲成
+  // 顶部一个"统计天数: N"计数徽章（见下方 wh-r4-cost-metrics 卡），从没把序列本身画出来；桌面端已有 14 天
+  // 条形图。这里用近 14 天、每天一行（日期+花费+token）+ 复用既有 .wh-r4-route-meter 相对条形，超 14 天
+  // 明说只显示最近 14 天而不是静默截断。
+  const trendSlice = vm.trend.slice(-14);
+  const trendMax = Math.max(0.0001, ...trendSlice.map((point) => Number(point.cost_cny) || 0));
+  const trendRows = trendSlice
+    .map((point) => {
+      const pct = Math.max(4, Math.round(((Number(point.cost_cny) || 0) / trendMax) * 100));
+      return `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r20-cost-trend-day="${escapeHtml(point.date)}">
+        <div>
+          <strong>${escapeHtml(point.date)}</strong>
+          <p>${escapeHtml(`${costAmount(point.cost_cny, locale)} · ${point.tokens} ${zhNotice ? "个 token" : point.tokens === 1 ? "token" : "tokens"}`)}</p>
+          <div class="wh-r4-route-meter" aria-hidden="true"><span style="width:${escapeHtml(String(pct))}%"></span></div>
+        </div>
+      </div>`;
+    })
+    .join("");
+  const trendCapNote = vm.trend.length > 14
+    ? `<p class="wh-subtle" data-r20-cost-trend-capped="true">${escapeHtml(zhNotice
+      ? `只显示最近 14 天（共 ${vm.trend.length} 天记录）。`
+      : `Showing the most recent 14 days of ${vm.trend.length}.`)}</p>`
+    : "";
+  const trendCard = trendSlice.length
+    ? `<section class="wh-card wh-r4-route-card" data-r20-cost-trend="true" data-r20-cost-trend-day-count="${escapeHtml(String(trendSlice.length))}">
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "cost.trendTitle"))}</h3>
+          <div class="wh-r4-route-timeline" role="list">${trendRows}</div>
+          ${trendCapNote}
         </section>`
     : "";
   // R13 批 P4（labor-split 按 assignee 记账）：与 by_user 同构但维度不同——by_user 是记账时的
@@ -4943,9 +5066,10 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
           ${vm.model_breakdown.length > 5 ? `<p class="wh-subtle" data-r13-cost-models-capped="${escapeHtml(String(vm.model_breakdown.length - 5))}">${escapeHtml(locale === "zh-CN" ? `按花费只显示前 5 个模型（共 ${vm.model_breakdown.length} 个）。` : `Showing the 5 costliest models of ${vm.model_breakdown.length}.`)}</p>` : ""}
         </section>
       </div>
+      ${trendCard}
       ${armyCard || laborSplitCard || aiAutoMergeCard ? `<div class="wh-r4-route-grid">${armyCard}${laborSplitCard}${aiAutoMergeCard}</div>` : ""}
       ${nonAdminNote}
-      ${byUserCard || byObjectiveCard || byAssigneeCard ? `<div class="wh-r4-route-grid">${byUserCard}${byObjectiveCard}${byAssigneeCard}</div>` : ""}
+      ${byUserCard || byObjectiveCard || byAssigneeCard || byWorkitemCard || byTeamCard ? `<div class="wh-r4-route-grid">${byUserCard}${byObjectiveCard}${byAssigneeCard}${byWorkitemCard}${byTeamCard}</div>` : ""}
     </section>`
   });
 }
@@ -5444,6 +5568,23 @@ function renderSettingsMyProfileCard(locale: WorkHubLocale): string {
         </section>`;
 }
 
+// R20 P2-05（设备管理 API 完整但零 UI）：web /settings 的「已登录设备」区块——GET/POST
+// /api/client-devices/{me,current,:id/revoke} 后端四端点早就齐了（auth.test.ts 覆盖），但从未接过任何
+// 前端 UI。这里只出加载态骨架（不是 admin 分区——设备是个人账号维度，任何登录用户都能看自己的设备）；
+// apps/web/src/browser.ts 的 bindSettingsDevicesPanel 拉 GET /api/client-devices/me 渲染列表（设备名/
+// 平台/最近活跃本地化），尽力探测 GET /api/client-devices/current 标出「本机」（纯网页会话没有本地客户端
+// client-token 请求头，探测预期 403——折叠为「无法判定」，不假装/不误标），并接 POST /:id/revoke（两段式
+// 确认，同 P2-08 参与者移出的 armConfirmButton 范式；已撤销/本机行不出撤销按钮）。判定逻辑拆在
+// apps/web/src/settings-devices.ts（纯函数，供单测覆盖）。
+function renderSettingsDevicesCard(locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  return `<section class="wh-card wh-r4-route-card" data-r20-settings-devices="true">
+          <h3 role="heading" aria-level="2">${escapeHtml(zh ? "已登录设备" : "Signed-in devices")}</h3>
+          <p class="wh-subtle">${escapeHtml(zh ? "配对到这个账号的客户端设备。撤销不再使用的设备后，那台设备需要重新配对才能再次访问。" : "Client devices paired to this account. Revoking a device you no longer use requires it to re-pair before it can access your account again.")}</p>
+          <div data-r20-settings-devices-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载设备…" : "Loading devices…")}</p></div>
+        </section>`;
+}
+
 // R18 批 H1（web 工作区成员管理）：/settings 的「成员」分区——仅管理员可见（isAdmin 由外壳登录态给，
 // 同 memory 路由的团队技能 tab 编辑权来源）。SSR 只出加载态骨架，apps/web/src/browser.ts 的
 // bindSettingsMembersPanel 拉 GET /api/workspace/members 渲 roster（昵称/角色/加入时间）+ 移出/改角色
@@ -5469,8 +5610,25 @@ function renderSettingsMembersSection(locale: WorkHubLocale): string {
       </div>`;
 }
 
+// R20 wave4（R19-2 AI 预算策略前端接线）：GET /api/cost/policies 与 PUT /api/cost/policies/:scope/:id
+// 服务端早已有（admin-only），此前没有任何前端入口——非管理员连 GET 都是 403，所以只在 isAdmin 为真时
+// 渲这张卡（同上面成员分区的既有先例：非管理员该分区在 SSR 阶段就整体省略，不是渲了又禁用）。真实数据
+// 由 apps/web/src/browser.ts 的 bindSettingsBudgetPolicyPanel 拉取回填，SSR 只出加载态骨架。
+function renderSettingsBudgetPolicySection(locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  return `<section class="wh-card wh-r4-route-card" data-r20-settings-budget-policies="true">
+        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "AI 预算策略（管理员）" : "AI budget policies (admins)")}</h3>
+        <p class="wh-subtle">${escapeHtml(zh
+          ? "按范围（工作项/任务/目标/用户/团队/评测）设置的 AI 用量与费用上限，以及超限后的处理方式。"
+          : "Token and spend caps for the AI engine, scoped by work item / task / objective / user / team / eval, plus what happens on overrun.")}</p>
+        <p class="wh-subtle" data-r20-settings-budget-policies-status="loading" hidden></p>
+        <div data-r20-settings-budget-policies-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载预算策略…" : "Loading budget policies…")}</p></div>
+      </section>`;
+}
+
 function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale, isAdmin = false): WebRouteComponent {
   const membersSection = isAdmin ? renderSettingsMembersSection(locale) : "";
+  const budgetPolicySection = isAdmin ? renderSettingsBudgetPolicySection(locale) : "";
   const reactComponent = createSettingsReactRouteComponent(vm, locale);
   const reactAttrs = dataAttrs(reactRouteComponentMarkerAttrs(reactComponent));
   const props = reactComponent.props;
@@ -5513,6 +5671,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale,
         </section>
         ${renderSettingsAiAssistantCard(locale, props.restoreHref)}
         ${renderSettingsMyProfileCard(locale)}
+        ${renderSettingsDevicesCard(locale)}
       </div>
       ${vm.permission_policies !== undefined ? `<section class="wh-card wh-r4-route-card" data-r9-settings-policies="${escapeHtml(String(vm.permission_policies.length))}">
         <h3 role="heading" aria-level="2">${escapeHtml(locale === "zh-CN" ? "自动通过规则" : "Auto-approve rules")}</h3>
@@ -5528,6 +5687,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale,
           : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "还没有常驻规则。" : "No standing rules yet.")}</p>`}</div>
       </section>` : ""}
       ${membersSection}
+      ${budgetPolicySection}
       <p class="wh-r4-route-kicker" data-r10-settings-diagnostics="true">${escapeHtml(locale === "zh-CN" ? "系统诊断（管理员关注；普通成员只读参考）" : "System diagnostics (for admins; read-only reference for members)")}</p>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-settings-runtime="true">

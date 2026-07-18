@@ -2165,6 +2165,41 @@ test("B-R9.6 project home rows show the army progress pill only for armied work 
   assertNoMainWindowBoundaryLeak(projectHome.html);
 });
 
+// R20 wave4（R19-1 OKR 前端接线）：/api/objectives（创建）与 /api/objectives/:id/link（挂链）此前
+// 端点在但前端完全不可达。项目主页新增 OKR 卡——创建目标表单常渲（不依赖任何 GET，纯 POST 表单），
+// 会话内创建列表骨架给一条诚实空态说明（服务端没有列全部目标的端点）。
+test("R20 wave4 (R19-1): project home renders an OKR card with a create-objective form and an honest session-scoped empty state", () => {
+  const vm = {
+    generated_at: "2026-06-11T09:00:00.000Z",
+    project: {
+      id: "93000000-0000-4000-8000-000000000001",
+      name: "R5 Workspace",
+      slug: "r5-workspace",
+      description: null,
+      owner_label: "owner",
+      status: "active" as const
+    },
+    summary: { open_work_item_count: 0, total_open_work_item_count: 0 },
+    open_work_items: [],
+    drive: { file_count: 0, recent_files: [] },
+    actions: {
+      new_task: { id: "new_task", label: "新任务", method: "GET" as const, href: "/intake" },
+      open_drive: { id: "open_drive", label: "打开网盘", method: "GET" as const, href: "/drive?project_id=93000000-0000-4000-8000-000000000001" }
+    }
+  };
+  const projectHome = renderWebRouteComponent({ key: "project-home", project: vm }, { locale: "zh-CN" });
+  assert.equal(projectHome.html.includes('data-r20-project-home-objectives="true"'), true);
+  assert.equal(projectHome.html.includes('data-r20-project-home-objectives-project="93000000-0000-4000-8000-000000000001"'), true);
+  assert.equal(projectHome.html.includes('data-r20-okr-create-form="true"'), true);
+  assert.equal(projectHome.html.includes('data-r20-okr-title-input'), true);
+  assert.equal(projectHome.html.includes('data-r20-okr-kr-input'), true);
+  assert.equal(projectHome.html.includes('data-r20-okr-create-submit="true"'), true);
+  assert.equal(projectHome.html.includes('data-r20-okr-list-empty="true"'), true);
+  // 诚实缺省：文案不应暗示目标是「这个项目的」，因为 objectives 表没有 project_id（工作区级实体）。
+  assert.doesNotMatch(projectHome.html, /项目目标/u);
+  assertNoMainWindowBoundaryLeak(projectHome.html);
+});
+
 // R14 批 GH（07-gh-design.md §5.1）：项目主页 github_activities 区块——web 端消费。
 test("R14 GH: project home renders recent GitHub activity with kind/state/author badges and a real external link", () => {
   const baseVm = {
@@ -2688,6 +2723,111 @@ test("B-R9.6 Cost route component omits the army card when by_task_plan is empty
   assert.equal(cost.html.includes('data-r9-cost-army="true"'), false);
 });
 
+// R19-6（R20 波4）：后端早就给 trend / by_workitem / by_team 填好了数据（cost.ts 三个维度都在 VM 里），
+// 桌面端（apps/desktop-webview 的 costView）也已经渲了 14 天趋势条形图 + by_workitem 前 5 行，还明确把
+// 用户指向"网页版成本页细看"——但 web 端 renderCostRouteComponent 此前完全没消费这三个字段（trend 只在
+// 顶部指标区露过一个"统计天数: N"计数徽章，by_workitem/by_team 从未被引用过），跨端指路断了链。
+// 这条固定测试用非空的 fixture（gold-path.ts 的 costDashboard 本身就带 1 条 trend + 1 条 by_workitem +
+// 1 条 by_team）断言三个维度真的渲成了可读内容，而不只是计数。
+test("R19-6 Cost route component renders trend, by-workitem, and by-team dimensions (desktop already links here)", () => {
+  const vm = surfaceVm();
+  const costVm = vm.page_vms.cost;
+  const trendPoint = costVm.trend[0];
+  const workitem = costVm.by_workitem[0];
+  const team = costVm.by_team[0];
+  assert.ok(trendPoint);
+  assert.ok(workitem);
+  assert.ok(team);
+
+  const cost = renderWebRouteComponents(vm, { locale: "zh-CN" }).cost;
+  assert.ok(cost);
+
+  // 趋势：按天渲出（日期 + 花费），不再只是一个计数徽章。
+  assert.equal(cost.html.includes('data-r20-cost-trend="true"'), true);
+  assert.equal(cost.html.includes(`data-r20-cost-trend-day="${trendPoint.date}"`), true);
+  assert.equal(cost.html.includes(trendPoint.date), true);
+
+  // 按工作项分账：渲出行 + 可点进工作项详情。
+  assert.equal(cost.html.includes('data-r20-cost-by-workitem="true"'), true);
+  assert.equal(cost.html.includes(`data-r20-cost-workitem="${workitem.workitem_id}"`), true);
+  assert.equal(cost.html.includes(workitem.code), true);
+  assert.equal(cost.html.includes(`href="/workitems/${workitem.workitem_id}"`), true);
+
+  // 按团队分账。
+  assert.equal(cost.html.includes('data-r20-cost-by-team="true"'), true);
+  assert.equal(cost.html.includes(`data-r20-cost-team="${team.team_id}"`), true);
+  assert.equal(cost.html.includes(team.label), true);
+
+  assertNoMainWindowBoundaryLeak(cost.html);
+});
+
+// trend 不按 isAdmin 收窄（后端 aggregateTrend 吃的是已经按用户身份筛过的 entries，普通用户看到的
+// 就是自己范围内的每日花费，本身是安全的）——但 by_workitem / by_team 与 by_user/by_task_plan/by_objective
+// 同门槛，仅管理员非空。普通用户看到的 VM 里这两个数组会是空数组，此时必须整卡不渲（不能伪装成"0 条记录"）。
+test("R19-6 Cost route component omits by-workitem/by-team cards when those admin-only dimensions are empty, but keeps trend", () => {
+  const base = surfaceVm();
+  const vm = {
+    ...base,
+    page_vms: {
+      ...base.page_vms,
+      cost: {
+        ...base.page_vms.cost,
+        viewer_is_admin: false,
+        by_workitem: [],
+        by_team: []
+      }
+    }
+  };
+  const cost = renderWebRouteComponents(vm, { locale: "en-US" }).cost;
+  assert.ok(cost);
+  assert.equal(cost.html.includes('data-r20-cost-by-workitem="true"'), false);
+  assert.equal(cost.html.includes('data-r20-cost-by-team="true"'), false);
+  // 非管理员说明文案要点名这两个维度，而不是让它们悄悄消失。
+  assert.match(cost.html, /work item/u);
+  // trend 是用户自己范围内的数据，非管理员照样能看。
+  assert.equal(cost.html.includes('data-r20-cost-trend="true"'), true);
+  assertNoMainWindowBoundaryLeak(cost.html);
+});
+
+test("R19-6 Cost route component caps by-workitem/by-team rows and trend days with an honest overflow note", () => {
+  const base = surfaceVm();
+  const manyWorkitems = Array.from({ length: 10 }, (_, i) => ({
+    workitem_id: `0f8b1c2d-1111-4222-8333-44445555${String(1000 + i).padStart(4, "0")}`,
+    code: `WI-${i}`,
+    cost_cny: String(10 - i),
+    turns: i + 1
+  }));
+  const manyTeams = Array.from({ length: 9 }, (_, i) => ({
+    team_id: `1a2b3c4d-2222-4333-8444-55556666${String(1000 + i).padStart(4, "0")}`,
+    label: "团队预算",
+    cost_cny: String(9 - i),
+    tokens: 100 * (i + 1)
+  }));
+  const manyTrendDays = Array.from({ length: 20 }, (_, i) => ({
+    date: `2026-06-${String(i + 1).padStart(2, "0")}`,
+    cost_cny: String(i + 1),
+    tokens: 100
+  }));
+  const vm = {
+    ...base,
+    page_vms: {
+      ...base.page_vms,
+      cost: {
+        ...base.page_vms.cost,
+        by_workitem: manyWorkitems,
+        by_team: manyTeams,
+        trend: manyTrendDays
+      }
+    }
+  };
+  const cost = renderWebRouteComponents(vm, { locale: "zh-CN" }).cost;
+  assert.ok(cost);
+  assert.equal(cost.html.includes("按花费只显示前 8 个工作项（共 10 个）"), true);
+  assert.equal(cost.html.includes("按花费只显示前 8 个团队（共 9 个）"), true);
+  assert.equal(cost.html.includes("只显示最近 14 天（共 20 天记录）"), true);
+  assertNoMainWindowBoundaryLeak(cost.html);
+});
+
 test("R4.11 Settings route component uses a typed Settings Page VM without leaking secrets or pet settings", () => {
   const vm = surfaceVm();
   const settings = renderWebRouteComponents(vm, { locale: "en-US" }).settings;
@@ -2755,6 +2895,27 @@ test("R18-H1 settings members section is admin-gated: SSR skeleton only when isA
   const bodyOpen = asAdmin.html.indexOf(">", bodyIdx);
   const bodyClose = asAdmin.html.indexOf("</div>", bodyOpen);
   assert.equal(asAdmin.html.slice(bodyOpen, bodyClose).includes("data-r18-settings-invite-token"), false);
+});
+
+// R20 wave4（R19-2 AI 预算策略前端接线）：GET/PUT /api/cost/policies(/:scope/:id) 服务端早已有且
+// admin-only（非管理员连 GET 都是 403）——SSR 阶段就该整体省略这张卡，不是渲了又假装可编辑。
+test("R20 wave4 (R19-2): settings budget policy section is admin-gated: SSR skeleton only when isAdmin", () => {
+  const vm = surfaceVm();
+  const settingsVm = vm.page_vms.settings;
+  assert.ok(settingsVm);
+
+  const asMember = renderWebRouteComponent({ key: "settings", settings: settingsVm, isAdmin: false }, { locale: "zh-CN" });
+  assert.equal(asMember.html.includes('data-r20-settings-budget-policies="true"'), false);
+
+  const asAdmin = renderWebRouteComponent({ key: "settings", settings: settingsVm, isAdmin: true }, { locale: "zh-CN" });
+  // SSR 只出加载态骨架 + hydration 锚点（真策略列表由 browser.ts bindSettingsBudgetPolicyPanel 拉取后注入）。
+  assert.equal(asAdmin.html.includes('data-r20-settings-budget-policies="true"'), true);
+  assert.equal(asAdmin.html.includes('data-r20-settings-budget-policies-body="true"'), true);
+  assert.equal(asAdmin.html.includes("正在加载预算策略"), true);
+
+  const asAdminEn = renderWebRouteComponent({ key: "settings", settings: settingsVm, isAdmin: true }, { locale: "en-US" });
+  assert.equal(asAdminEn.html.includes("Loading budget policies"), true);
+  assertNoMainWindowBoundaryLeak(asAdmin.html);
 });
 
 // R13 批 P3（功能审查 B4）：web /settings 的「AI 助手」区块——default_mode 与 dispatch_policy 两个
@@ -2856,6 +3017,29 @@ test("R14 AVATAR settings route avatar copy has no emoji and no git jargon", () 
   const avatarRowHtml = settings.html.slice(avatarRowStart, avatarRowStart + 900);
   assert.doesNotMatch(avatarRowHtml, /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u, "no emoji in avatar copy");
   assert.doesNotMatch(avatarRowHtml, /\bCuu\b/u, "web copy must never say Cuu");
+});
+
+// R20 P2-05（设备管理 API 完整但零 UI）：/api/client-devices 四端点早就齐了，但 web /settings 从没接过
+// 任何 UI（本测试之前，SSR 输出里完全没有 data-r20-settings-devices 这个骨架——red-before 就是"根本不
+// 存在"）。这个区块不是 admin 分区（设备是个人账号维度），且 apps/web/src/browser.ts 的
+// bindSettingsDevicesPanel 拉真实数据水合，这里只钉 SSR 骨架的形状与文案。
+test("R20-P2-05 settings route renders the signed-in devices block: SSR skeleton, not admin-gated", () => {
+  const vm = surfaceVm();
+
+  const asMember = renderWebRouteComponent({ key: "settings", settings: vm.page_vms.settings!, isAdmin: false }, { locale: "zh-CN" });
+  assert.equal(asMember.html.includes('data-r20-settings-devices="true"'), true, "devices block must render for non-admins too");
+  assert.equal(asMember.html.includes('data-r20-settings-devices-body="true"'), true);
+  assert.match(asMember.html, /已登录设备/u);
+  assert.match(asMember.html, /正在加载设备/u);
+
+  const asAdmin = renderWebRouteComponent({ key: "settings", settings: vm.page_vms.settings!, isAdmin: true }, { locale: "zh-CN" });
+  assert.equal(asAdmin.html.includes('data-r20-settings-devices="true"'), true);
+
+  const en = renderWebRouteComponents(vm, { locale: "en-US" }).settings;
+  assert.ok(en);
+  assert.match(en.html, /Signed-in devices/u);
+  assert.match(en.html, /Loading devices/u);
+  assert.doesNotMatch(en.html, /Cuu/u, "web copy must never say Cuu");
 });
 
 test("R4.16 route components expose hydration boundary metadata without weakening markers", () => {

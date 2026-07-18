@@ -142,6 +142,8 @@ export type WorkspaceRosterQuery = z.infer<typeof workspaceRosterQuerySchema>;
 // roster 一行成员：昵称/角色/加入时间/是否本人 + 头像占位 + 在线态占位。
 //   * avatar_updated_at：非空表示该成员有头像（兼作 GET /api/users/:id/avatar 的缓存键）；此处不回二进制。
 //   * online：在线态占位——当前恒 null（presence 接线后由后续批次填真值），字段先就位以免届时改契约。
+//   * is_admin：R20 P1-08 收尾 · 全局管理员标签（users.is_admin，非本工作区角色）——additive 补字段，供
+//     web 审批转交选择器等消费端摆脱全局 /api/users（该端点跨租户泄露 + 硬 200 截断）后仍能标「管理员」。
 export const workspaceRosterMemberVmSchema = z
   .object({
     user_id: idSchema,
@@ -149,6 +151,7 @@ export const workspaceRosterMemberVmSchema = z
     role: workspaceMemberRoleSchema,
     joined_at: isoDateTimeSchema,
     is_self: z.boolean(),
+    is_admin: z.boolean(),
     avatar_updated_at: isoDateTimeSchema.nullable(),
     online: z.boolean().nullable()
   })

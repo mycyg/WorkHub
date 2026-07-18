@@ -119,6 +119,8 @@ export function createWorkspaceMemberRoutes(deps: WorkspaceMemberRoutesDependenc
       role: row.role,
       joined_at: row.joinedAt.toISOString(),
       is_self: row.userId.toLowerCase() === selfId,
+      // R20 P1-08 收尾：全局管理员标签（非本工作区角色）——供转交选择器等消费端摆脱全局 /api/users。
+      is_admin: row.isAdmin,
       // 头像占位：非空＝有头像（客户端据此取 /api/users/:id/avatar 并用作缓存键）；此处不带二进制。
       avatar_updated_at: row.avatarUpdatedAt ? row.avatarUpdatedAt.toISOString() : null,
       // 在线态占位：presence 接线在后续批次，字段先就位、恒 null。

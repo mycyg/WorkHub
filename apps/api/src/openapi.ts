@@ -5977,13 +5977,15 @@ const listWorkspaceRosterResponses = {
             type: "array",
             items: {
               type: "object",
-              required: ["user_id", "nickname", "role", "joined_at", "is_self", "avatar_updated_at", "online"],
+              required: ["user_id", "nickname", "role", "joined_at", "is_self", "is_admin", "avatar_updated_at", "online"],
               properties: {
                 user_id: uuidStringSchema,
                 nickname: { type: "string", minLength: 1, maxLength: 96 },
                 role: workspaceMemberRoleSchema,
                 joined_at: dateTimeStringSchema,
                 is_self: { type: "boolean" },
+                // R20 P1-08 收尾：全局管理员标签（users.is_admin，非本工作区角色）——additive。
+                is_admin: { type: "boolean" },
                 avatar_updated_at: { ...dateTimeStringSchema, nullable: true },
                 online: { type: "boolean", nullable: true }
               },

@@ -33,6 +33,7 @@ test("roster member VM accepts avatar/online placeholders (null) and rejects unk
     role: "member" as const,
     joined_at: "2026-07-02T00:00:00.000Z",
     is_self: false,
+    is_admin: false,
     avatar_updated_at: null,
     online: null
   };
@@ -44,6 +45,10 @@ test("roster member VM accepts avatar/online placeholders (null) and rejects unk
   assert.equal(workspaceRosterMemberVmSchema.safeParse({ ...base, role: "superuser" }).success, false);
   // strict：禁未知字段混入。
   assert.equal(workspaceRosterMemberVmSchema.safeParse({ ...base, cookie_token: "leak" }).success, false);
+  // R20 P1-08 收尾：is_admin 必填（roster 行现须带全局管理员标签，供转交选择器渲染「管理员」）。
+  assert.equal(workspaceRosterMemberVmSchema.safeParse({ ...base, is_admin: true }).success, true);
+  const { is_admin: _omittedIsAdmin, ...withoutIsAdmin } = base;
+  assert.equal(workspaceRosterMemberVmSchema.safeParse(withoutIsAdmin).success, false);
 });
 
 test("roster result VM carries members plus total/limit/offset paging metadata", () => {

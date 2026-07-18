@@ -106,6 +106,97 @@ test("R4.21 live runtime reuses EventSource and persists cursor", async () => {
   assert.equal(metrics.r4LiveLastOpenHadCursor, true);
 });
 
+test("R20 P2-06 live runtime honors a per-target eventTypes override (conversation stream subscribes to conversation.* without polluting the me stream)", async () => {
+  FakeEventSource.instances = [];
+  const metrics: Record<string, unknown> = {};
+  const refreshes: Array<{ eventType: string; targetKey: string }> = [];
+  // 延迟型定时器队列——比「立即执行」的假 setTimeout 更贴近生产：先拿到 handle，稍后 flush 时才跑
+  // handler，去抖窗口的 set/clear 顺序才正确（立即执行版会把 liveRefreshTimer 残留成非 undefined）。
+  let pendingTimer: (() => void) | undefined;
+  const flushTimer = async () => {
+    const handler = pendingTimer;
+    pendingTimer = undefined;
+    handler?.();
+    await Promise.resolve();
+  };
+  const runtime = createWebLiveRuntime({
+    // 全局订阅面刻意排除 conversation.*（G-web 窄化纪律）——me 流不该收会话推送。
+    eventTypes: ["proposal.merged"],
+    EventSourceCtor: FakeEventSource,
+    locationHref: "http://workhub.local/conversations/c-1",
+    readCursor: () => "",
+    persistCursor: () => true,
+    setMetric: (key, value) => {
+      metrics[key] = value;
+    },
+    setTimeoutFn: (handler) => {
+      pendingTimer = handler;
+      return 1;
+    },
+    clearTimeoutFn: () => {
+      pendingTimer = undefined;
+    },
+    onRefresh: async (eventType, targetKey) => {
+      refreshes.push({ eventType, targetKey });
+      return "refreshed";
+    },
+    onRefreshNotice: () => undefined,
+    onFatal: (error) => {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+  });
+
+  runtime.syncTargets([
+    { key: "me", url: "/api/push/stream/me" },
+    {
+      key: "conversation",
+      url: "/api/push/stream/conversation/c-1",
+      eventTypes: ["conversation.message.created"],
+      refreshOnReconnect: true
+    }
+  ]);
+
+  const meSource = FakeEventSource.instances.find((s) => s.url.startsWith("/api/push/stream/me"));
+  const convSource = FakeEventSource.instances.find((s) => s.url.startsWith("/api/push/stream/conversation/"));
+  assert.ok(meSource, "me stream opened");
+  assert.ok(convSource, "conversation stream opened");
+
+  // me 流没有注册 conversation.* 监听（只有全局 eventTypes）——会话事件到 me 流不触发刷新。
+  assert.equal(meSource.listeners.has("conversation.message.created"), false, "me stream must not listen for conversation events");
+  // 会话专属流按 per-target eventTypes 注册了 conversation.message.created 监听。
+  assert.equal(convSource.listeners.has("conversation.message.created"), true, "conversation stream must subscribe to conversation.message.created");
+
+  // 重复/乱序的同一批增量事件被去抖窗口合并成一次全量拉取——幂等（全量拉取本身即服务端权威、按 seq 排序）。
+  convSource.emit("conversation.message.created", { data: JSON.stringify({ event_id: "evt-conv-1" }) });
+  convSource.emit("conversation.message.created", { data: JSON.stringify({ event_id: "evt-conv-1" }) });
+  await flushTimer();
+  assert.deepEqual(refreshes, [{ eventType: "conversation.message.created", targetKey: "conversation" }], "a new conversation message triggers a single (deduped) full route refetch");
+
+  // 重连补拉：第一次 connected 不刷（首连即刚拉过），断线后第二次 connected → 补拉全量对账。
+  convSource.emit("connected", { data: JSON.stringify({ event_id: "evt-conv-1" }) });
+  await flushTimer();
+  assert.equal(refreshes.length, 1, "first connect does not trigger a redundant refetch");
+  convSource.emit("connected", { data: JSON.stringify({ event_id: "evt-conv-1" }) });
+  await flushTimer();
+  assert.deepEqual(
+    refreshes[1],
+    { eventType: "reconnect", targetKey: "conversation" },
+    "a reconnect re-pulls the full page so events lost during the disconnect window are recovered"
+  );
+
+  // 切到另一个会话：旧会话流关闭（不泄漏），新会话流打开。
+  runtime.syncTargets([
+    { key: "me", url: "/api/push/stream/me" },
+    {
+      key: "conversation",
+      url: "/api/push/stream/conversation/c-2",
+      eventTypes: ["conversation.message.created"],
+      refreshOnReconnect: true
+    }
+  ]);
+  assert.equal(convSource.closed, true, "leaving conversation c-1 closes its stream (no leak)");
+});
+
 test("rank10 live runtime gives up on a dead stream after a consecutive-error streak (and a real event resets it)", () => {
   FakeEventSource.instances = [];
   const metrics: Record<string, unknown> = {};
