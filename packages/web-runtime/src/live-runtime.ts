@@ -3,6 +3,13 @@ import type { LiveMetricWriter } from "./dirty.js";
 export type WebLiveStreamTarget = {
   key: string;
   url: string;
+  // R20 P2-06：可选的逐流订阅面覆写。缺省沿用全局 options.eventTypes；会话专属窄流用它订阅
+  // conversation.* 事件，而不必把这些事件塞进全局订阅面（否则 me 流会在每个页面收到会话推送——
+  // 正是 G-web 窄化纪律要避免的）。
+  eventTypes?: string[] | undefined;
+  // R20 P2-06：断线重连后是否补拉全量对账。开着时，这条流第二次及以后的 connected（即重连，非首连）
+  // 触发一次全量重渲——把重连窗口里漏掉的增量事件通过一次权威全量拉取补回，不只依赖增量。
+  refreshOnReconnect?: boolean | undefined;
 };
 
 export type WebLiveEventSourceEvent = {
@@ -45,6 +52,9 @@ type LiveEventSourceEntry = {
   openedUrl: string;
   // rank10：连续错误计数(连上/收到事件即清零)。超阈值=会话很可能已失效——停止让浏览器对死流无限重连。
   errorStreak: number;
+  // R20 P2-06：这条流累计触发 connected 的次数。首连=1（不补拉，刚拉过），>1 即重连——
+  // 配合 target.refreshOnReconnect 触发全量对账，补回断线窗口漏掉的增量事件。
+  connectedCount: number;
 };
 
 // rank10：连续错误到此阈值(中间无任何成功连接/事件)即判定流已死、放弃自动重连。浏览器 EventSource
@@ -213,7 +223,7 @@ export function createWebLiveRuntime(options: WebLiveRuntimeOptions) {
     }
     const openedUrl = streamUrlWithCursor(target.url);
     const source = new EventSourceCtor(openedUrl, { withCredentials: true });
-    const entry: LiveEventSourceEntry = { source, target, openedUrl, errorStreak: 0 };
+    const entry: LiveEventSourceEntry = { source, target, openedUrl, errorStreak: 0, connectedCount: 0 };
     liveEventSources.set(target.url, entry);
     liveEventSourceOpenCount += 1;
     setMetric("r4LiveLastOpenedStream", target.key);
@@ -222,9 +232,16 @@ export function createWebLiveRuntime(options: WebLiveRuntimeOptions) {
     source.addEventListener("connected", (event) => {
       noteLiveEventCursor(event, "connected");
       entry.errorStreak = 0; // 连上即清零错误计数。
+      entry.connectedCount += 1;
       const connected = Number(String((globalThis.document?.documentElement.dataset.r4LiveConnectedCount ?? "0"))) + 1;
       setMetric("r4LiveConnectedCount", connected);
       setMetric("r4LiveLastConnectedStream", target.key);
+      // R20 P2-06：重连补拉。首连（connectedCount===1）刚由外壳全量拉过，不重复；第二次及以后的
+      // connected 是断线重连——漏掉的增量事件由这次全量重渲对账补回（会话镜像即靠这条兜住重连窗口）。
+      if (entry.target.refreshOnReconnect && entry.connectedCount > 1) {
+        setMetric("r4LiveReconnectRefetchStream", entry.target.key);
+        scheduleLiveRouteRefresh("reconnect", entry.target.key);
+      }
     });
     source.addEventListener("error", () => {
       setMetric("r4LiveLastErrorStream", target.key);
@@ -239,7 +256,9 @@ export function createWebLiveRuntime(options: WebLiveRuntimeOptions) {
         options.onGiveUp?.(target.key);
       }
     });
-    for (const eventType of options.eventTypes) {
+    // R20 P2-06：逐流订阅面——会话专属窄流用 target.eventTypes 订阅 conversation.*，其余流沿用全局面。
+    const listenEventTypes = target.eventTypes ?? options.eventTypes;
+    for (const eventType of listenEventTypes) {
       source.addEventListener(eventType, (event) => {
         noteLiveEventCursor(event, "payload");
         entry.errorStreak = 0; // 收到任意事件即清零错误计数。
