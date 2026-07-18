@@ -152,6 +152,99 @@ async function bestEffortAuthCleanup(action: string, cleanup: () => Promise<void
   }
 }
 
+type OffboardCleanupStep = { step: string; ok: boolean; error?: string };
+type OffboardCleanupResult = { complete: boolean; steps: OffboardCleanupStep[] };
+
+// P2-02（停用账号善后清理 · 可重入）：把账号停用后的各善后步骤收进一个「幂等 + 可重跑」例程。
+// 每步都能重复执行并收敛——删已删的凭据=0 行、撤已撤的会话/设备=无操作、退回已退回的事项=空集、
+// forgetUser 天然幂等——故某步失败留下半清理态时，重跑本例程会把残留逐步收敛到全清理。
+// 不吞错伪装成功：逐步捕获，失败写结构化告警并记入返回的 steps[]，由调用方据 complete 决定是否重试。
+// 与 SEC-1（工作区移出）边界：SEC-1 是「工作区成员软删 + 撤 token」的【同事务】原子操作（见
+// services/workspace-members.ts removeMember）；本例程是【账号级】停用善后，且含 presence.forgetUser
+// 这种非库内的外部存储清理，无法整体收进库事务，故取「幂等重入」而非单事务。
+async function runOffboardCleanup(
+  deps: AuthDependencies,
+  targetId: string,
+  actingUserId: string,
+  at: Date
+): Promise<OffboardCleanupResult> {
+  const steps: OffboardCleanupStep[] = [];
+  const runStep = async (step: string, fn: () => Promise<void>): Promise<void> => {
+    try {
+      await fn();
+      steps.push({ step, ok: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // 结构化告警：停用善后某步失败会留下半清理态，须可见、可重跑（P2-02）。
+      console.warn(
+        JSON.stringify({
+          event: "auth.offboard_cleanup_step_failed",
+          step,
+          target_user_id: targetId,
+          actor_user_id: actingUserId,
+          error: message
+        })
+      );
+      steps.push({ step, ok: false, error: message });
+    }
+  };
+
+  // 释放邮箱（幂等：删不存在的凭据 = 0 行）。user_credentials.email 是 citext UNIQUE，停用用户若留着
+  // 凭据行会让那个邮箱永远无法再注册；用户行仍以 deletedAt 软删保留供审计，只删对停用用户已无意义的凭据。
+  if (deps.credentials) {
+    await runStep("credentials.delete_by_user", () => deps.credentials!.deleteByUserId(targetId));
+  }
+  // 工作交接（幂等：只退回仍在认领中的非终态事项，已退回则为空集）。提交人(submitter)字段保留以保溯源，
+  // 终态(merged/done/cancelled)与已软删事项不动；每退回一项写一笔审计让交接可追溯。
+  if (deps.workItems) {
+    await runStep("workitems.handover", async () => {
+      const reassigned = await deps.workItems!.unassignActiveClaimsForUser(targetId, at);
+      if (deps.auditLogs) {
+        for (const item of reassigned) {
+          await deps.auditLogs.createAuditLog({
+            actorKind: "human",
+            actorUserId: actingUserId,
+            entityType: "work_item",
+            entityId: item.id,
+            action: "work_item.unassigned_on_offboarding",
+            detailJson: { offboarded_user_id: targetId }
+          });
+        }
+      }
+    });
+  }
+  // 立即切断访问（幂等：撤已撤的会话/设备 = 无操作）。
+  if (deps.sessions) {
+    await runStep("sessions.revoke_all_for_user", async () => {
+      await deps.sessions!.revokeAllForUser(targetId, at);
+    });
+  }
+  await runStep("devices.revoke_for_user", async () => {
+    const devices = await deps.devices.listByUser(targetId);
+    for (const device of devices) {
+      if (device.revokedAt === null) {
+        await deps.devices.revokeByIdForUser(device.id, targetId, at);
+      }
+    }
+  });
+  await runStep("presence.forget_user", async () => {
+    await deps.forgetUser?.(targetId);
+  });
+
+  return { complete: steps.every((entry) => entry.ok), steps };
+}
+
+// P2-02 重试入口判据：softDelete 落空（isNull(deletedAt) 守卫）时，分辨「已停用（墓碑在，本次即善后
+// 重跑）」与「从不存在（真 404）」。复用既有 findRefsByIds（含墓碑、无需新迁移/新仓库方法）。
+async function isSoftDeletedUser(deps: AuthDependencies, id: string): Promise<boolean> {
+  if (!deps.users.findRefsByIds) {
+    return false; // 无该可选查询的运行时：分辨不了墓碑与不存在，保持既有 404 行为（保守 fail-closed）。
+  }
+  const refs = await deps.users.findRefsByIds([id]);
+  const ref = refs.find((entry) => entry.id === id);
+  return Boolean(ref && ref.deletedAt !== null);
+}
+
 // ENV-01 修复（R12 人工验收）：昵称 identify / 桌面首启引导此前只调用 getOrCreateActiveByNickname
 // 建 user 行，从不建 workspace_memberships——conversations/workbench 等路由的鉴权都要求 active
 // membership，新用户由此处处 404。密码注册路径（见下方 /register）已有先例（memberships.create +
@@ -901,63 +994,49 @@ export function createAuthRoutes(
     }
     const at = (deps.now ?? (() => new Date()))();
     const deleted = await deps.users.softDelete(targetId, actingUser.id, at);
-    if (!deleted) {
-      throw new HTTPException(404, { message: "用户不存在或已停用" });
-    }
-    // 安全事件：账号被管理员停用（账号级，区别于下方 G3 的逐工作项交接审计）。entityId=被停用用户；
-    // actor=执行停用的管理员。这是账号生命周期终止的权威审计点。
-    await auditSecurityEvent(deps, {
-      actorUserId: actingUser.id,
-      entityId: targetId,
-      action: "auth.user_deactivated",
-      detailJson: { deactivated_nickname: deleted.nickname }
-    });
-    // 释放邮箱：user_credentials.email 是 citext UNIQUE，停用用户若留着凭据行会让那个邮箱永远无法再注册。
-    // 用户行仍以 deletedAt 软删保留供审计，只删对停用用户已无意义的凭据。顺序写——软删成功后残留凭据无害,
-    // 故删凭据失败不必回滚软删（与本路由后续撤会话/设备同为尽力而为的善后步骤）。
-    if (deps.credentials) {
-      await bestEffortAuthCleanup("credentials.delete_by_user", () => deps.credentials!.deleteByUserId(targetId));
-    }
-    // 工作交接：把被停用用户认领中的非终态事项退回可领取池（claimed_by_user_id=null），避免在岗工作卡在
-    // 已消失的人身上。提交人(submitter)字段保留以保溯源，终态(merged/done/cancelled)与已软删事项不动。
-    // 每退回一项写一笔审计（actor=执行停用的管理员）让交接可追溯。尽力而为——审计写失败不得使停用失败，
-    // 故整段裹 try/catch 仅告警（与上方撤凭据/下方撤会话设备同为善后步骤）。
-    if (deps.workItems) {
-      try {
-        const reassigned = await deps.workItems.unassignActiveClaimsForUser(targetId, at);
-        if (deps.auditLogs) {
-          for (const item of reassigned) {
-            await deps.auditLogs.createAuditLog({
-              actorKind: "human",
-              actorUserId: actingUser.id,
-              entityType: "work_item",
-              entityId: item.id,
-              action: "work_item.unassigned_on_offboarding",
-              detailJson: { offboarded_user_id: targetId }
-            });
-          }
-        }
-      } catch (error) {
-        console.warn("offboarding work-item handover failed (best-effort)", error);
-      }
-    }
-    // 立即切断访问：撤销全部服务端会话 + 客户端设备令牌。
-    if (deps.sessions) {
-      await bestEffortAuthCleanup("sessions.revoke_all_for_user", async () => {
-        await deps.sessions!.revokeAllForUser(targetId, at);
+    if (deleted) {
+      // 安全事件：账号被管理员停用（账号级，区别于 G3 的逐工作项交接审计）。entityId=被停用用户；
+      // actor=执行停用的管理员。这是账号生命周期终止的权威审计点，只在首次停用（软删命中）时写一笔。
+      await auditSecurityEvent(deps, {
+        actorUserId: actingUser.id,
+        entityId: targetId,
+        action: "auth.user_deactivated",
+        detailJson: { deactivated_nickname: deleted.nickname }
       });
-    }
-    await bestEffortAuthCleanup("devices.revoke_for_user", async () => {
-      const devices = await deps.devices.listByUser(targetId);
-      for (const device of devices) {
-        if (device.revokedAt === null) {
-          await deps.devices.revokeByIdForUser(device.id, targetId, at);
-        }
+    } else {
+      // softDelete 落空（isNull(deletedAt) 守卫）：或【已停用】(墓碑在，本次即善后重跑) 或【从不存在】(真 404)。
+      // P2-02：停用善后是 best-effort 步骤，中途失败会留下半清理态；重发本请求即为重试入口——重跑幂等
+      // 清理收敛，不再一律 404 把重试路径堵死。用 findRefsByIds（含墓碑）分辨墓碑与不存在。
+      const alreadyDeactivated = await isSoftDeletedUser(deps, targetId);
+      if (!alreadyDeactivated) {
+        throw new HTTPException(404, { message: "用户不存在或已停用" });
       }
-    });
-    await bestEffortAuthCleanup("presence.forget_user", async () => {
-      await deps.forgetUser?.(targetId);
-    });
+    }
+
+    // 善后清理：幂等 + 可重跑。逐步捕获失败（不吞错伪装成功），失败步落结构化日志并记入 cleanup.steps。
+    const cleanup = await runOffboardCleanup(deps, targetId, actingUser.id, at);
+    if (!cleanup.complete) {
+      // 失败可见（P2-02）：账号墓碑已置（首次）或早已置（重试），但某清理步未完成 → 残留访问可能仍在。
+      // 回 500 让调用方感知（不伪装成功），重发本请求即重试，直至 cleanup.complete。
+      const failed = cleanup.steps.filter((entry) => !entry.ok).map((entry) => entry.step);
+      console.warn(
+        JSON.stringify({
+          event: "auth.offboard_cleanup_incomplete",
+          target_user_id: targetId,
+          actor_user_id: actingUser.id,
+          failed_steps: failed
+        })
+      );
+      return c.json(
+        {
+          ok: false,
+          error: { code: "offboard_cleanup_incomplete", message: "账号已停用，但部分善后清理未完成，请重试。" },
+          deactivated: true,
+          cleanup
+        },
+        500
+      );
+    }
 
     return c.json({ ok: true });
   });
