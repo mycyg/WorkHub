@@ -39,6 +39,7 @@ import {
   conflictsFromMergeError,
   createTaskPlanActionFromHref,
   createWebLiveRuntime,
+  cssEscape,
   createWorkItemActionFromHref,
   desktopRequiredNotice,
   dirtyGuardRefreshAction,
@@ -2119,9 +2120,11 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindProjectHomeInstructionsPanel(root, result, client, locale, signal);
   bindProjectHomeMembersPanel(root, result, client, locale, signal);
   bindMyConversationsPanel(root, result, client, locale, signal);
+  bindProjectHomeObjectivesPanel(root, result, client, locale, signal);
   bindConversationParticipantsPanel(root, result, client, locale, signal);
   bindSearchRoutePanel(root, result, client, locale, signal);
   bindSettingsAiProfilePanel(root, result, client, locale, signal);
+  bindSettingsBudgetPolicyPanel(root, result, client, locale, signal);
   bindSettingsMembersPanel(root, result, client, locale, signal);
   bindSettingsMyProfilePanel(root, result, client, locale, signal);
   bindSettingsDevicesPanel(root, result, client, locale, signal);
@@ -2657,6 +2660,175 @@ function bindProjectHomeMembersPanel(
   void hydrate();
 }
 
+// R20 wave4（R19-1 OKR 前端接线）：项目主页 OKR 卡的客户端接线。创建目标表单是纯 POST（不依赖任何
+// GET，SSR 已常渲、不锁禁用），提交调 client.createObjective；成功后本地追加一行「刚创建的目标」，
+// 带「挂到某个工作项」的选择器（数据源用本页已加载的 open_work_items，不额外发请求）+ 挂链按钮
+// （client.linkObjective）。服务端没有列全部已有目标的端点，故这份列表只是会话内、不持久化——
+// 空态文案已诚实说明这点（route-components renderProjectHomeObjectivesSection）。两个动作失败都要
+// 显式报错（4xx/5xx 都在状态行报文案），不静默吞。
+function bindProjectHomeObjectivesPanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "project-home" || result.surface.key !== "project-home") {
+    return;
+  }
+  const section = container.querySelector<HTMLElement>("[data-r20-project-home-objectives]");
+  const form = section?.querySelector<HTMLFormElement>("[data-r20-okr-create-form]");
+  const titleInput = form?.querySelector<HTMLInputElement>("[data-r20-okr-title-input]");
+  const descriptionInput = form?.querySelector<HTMLTextAreaElement>("[data-r20-okr-description-input]");
+  const krInput = form?.querySelector<HTMLTextAreaElement>("[data-r20-okr-kr-input]");
+  const submitButton = form?.querySelector<HTMLButtonElement>("[data-r20-okr-create-submit]");
+  const createStatus = section?.querySelector<HTMLElement>("[data-r20-okr-create-status]");
+  const list = section?.querySelector<HTMLElement>("[data-r20-okr-list]");
+  const emptyNote = list?.querySelector<HTMLElement>("[data-r20-okr-list-empty]");
+  if (!section || !form || !titleInput || !descriptionInput || !krInput || !submitButton || !list) {
+    return;
+  }
+  const zh = locale === "zh-CN";
+  const openWorkItems = result.surface.project.open_work_items;
+
+  const setCreateStatus = (text: string, tone: "saving" | "saved" | "error") => {
+    if (!createStatus) {
+      return;
+    }
+    createStatus.hidden = false;
+    createStatus.textContent = text;
+    createStatus.setAttribute("data-r20-okr-create-status", tone);
+  };
+
+  const parseKeyResultLines = (raw: string) =>
+    raw
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .slice(0, 8)
+      .map((title) => ({ title }));
+
+  const renderObjectiveRow = (objective: { objective_id: string; title: string; status: string; progress_percent: number }) => {
+    if (emptyNote) {
+      emptyNote.hidden = true;
+    }
+    const row = document.createElement("div");
+    row.className = "wh-r4-route-row";
+    row.setAttribute("data-r20-okr-item", objective.objective_id);
+    const options = openWorkItems
+      .map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(`${item.code} · ${item.title}`)}</option>`)
+      .join("");
+    const linkControls = openWorkItems.length
+      ? `<select class="wh-pill" data-r20-okr-link-select aria-label="${escapeHtml(zh ? "选择要挂的工作项" : "Pick a work item to link")}">
+          <option value="">${escapeHtml(zh ? "选择工作项…" : "Pick a work item…")}</option>
+          ${options}
+        </select>
+        <button type="button" class="wh-btn" data-r20-okr-link-submit="true">${escapeHtml(zh ? "挂链" : "Link")}</button>`
+      : `<span class="wh-subtle">${escapeHtml(zh ? "这个项目暂无进行中工作项可挂。" : "No open work items in this project to link yet.")}</span>`;
+    row.innerHTML = `<div>
+        <strong>${escapeHtml(objective.title)}</strong>
+        <div class="wh-r4-route-meta">
+          <span class="wh-pill">${escapeHtml(objective.status)}</span>
+          <span class="wh-pill">${escapeHtml(`${objective.progress_percent}%`)}</span>
+        </div>
+      </div>
+      <div>
+        ${linkControls}
+        <p class="wh-subtle" data-r20-okr-link-status hidden></p>
+      </div>`;
+    list.append(row);
+
+    const select = row.querySelector<HTMLSelectElement>("[data-r20-okr-link-select]");
+    const linkButton = row.querySelector<HTMLButtonElement>("[data-r20-okr-link-submit]");
+    const linkStatus = row.querySelector<HTMLElement>("[data-r20-okr-link-status]");
+    const setLinkStatus = (text: string, tone: "saving" | "saved" | "error") => {
+      if (!linkStatus) {
+        return;
+      }
+      linkStatus.hidden = false;
+      linkStatus.textContent = text;
+      linkStatus.setAttribute("data-r20-okr-link-status", tone);
+    };
+    linkButton?.addEventListener(
+      "click",
+      () => {
+        const workItemId = select?.value ?? "";
+        if (!workItemId) {
+          setLinkStatus(zh ? "先选一个工作项。" : "Pick a work item first.", "error");
+          return;
+        }
+        linkButton.disabled = true;
+        setLinkStatus(zh ? "挂链中…" : "Linking…", "saving");
+        void client
+          .linkObjective(objective.objective_id, { work_item_id: workItemId })
+          .then(() => {
+            if (signal.aborted) {
+              return;
+            }
+            linkButton.disabled = false;
+            setLinkStatus(zh ? "已挂链" : "Linked", "saved");
+          })
+          .catch((error: unknown) => {
+            if (signal.aborted) {
+              return;
+            }
+            linkButton.disabled = false;
+            setLinkStatus(
+              error instanceof WorkHubApiError ? error.message : (zh ? "挂链失败，请重试" : "Link failed — please retry"),
+              "error"
+            );
+          });
+      },
+      { signal }
+    );
+  };
+
+  form.addEventListener(
+    "submit",
+    (event) => {
+      event.preventDefault();
+      const title = titleInput.value.trim();
+      if (!title) {
+        setCreateStatus(zh ? "请先填写目标标题。" : "Enter an objective title first.", "error");
+        titleInput.focus();
+        return;
+      }
+      const description = descriptionInput.value.trim();
+      const keyResults = parseKeyResultLines(krInput.value);
+      submitButton.disabled = true;
+      setCreateStatus(zh ? "创建中…" : "Creating…", "saving");
+      void client
+        .createObjective({
+          title,
+          ...(description ? { description_md: description } : {}),
+          ...(keyResults.length ? { key_results: keyResults } : {})
+        })
+        .then((created) => {
+          if (signal.aborted) {
+            return;
+          }
+          submitButton.disabled = false;
+          setCreateStatus(zh ? "已创建" : "Created", "saved");
+          titleInput.value = "";
+          descriptionInput.value = "";
+          krInput.value = "";
+          renderObjectiveRow(created);
+        })
+        .catch((error: unknown) => {
+          if (signal.aborted) {
+            return;
+          }
+          submitButton.disabled = false;
+          setCreateStatus(
+            error instanceof WorkHubApiError ? error.message : (zh ? "创建失败，请重试" : "Create failed — please retry"),
+            "error"
+          );
+        });
+    },
+    { signal }
+  );
+}
+
 // R18 批 H1（web 会话镜像成员管理）：只读会话镜像的「参与者」侧区水合。SSR（route-components
 // renderConversationRouteComponent）只出加载态骨架；这里拉 GET /participants 后按 scope/is_dm 渲：
 //   * main（scope:"workspace"）→ 全员会话说明，无动作；
@@ -2937,6 +3109,262 @@ type SettingsInviteCreateResult = { invite_id: string; token: string; email: str
 
 function formatDayStamp(iso: string): string {
   return /^\d{4}-\d{2}-\d{2}/u.test(iso) ? iso.slice(0, 10) : iso;
+}
+
+// R20 wave4（R19-2 AI 预算策略前端接线）：/settings「AI 预算策略」分区的客户端水合（仅管理员——SSR
+// 已门控，非管理员无此骨架，querySelector 落空即静默返回）。GET /api/cost/policies 列出全部策略，
+// 每条渲成一行可编辑字段；任一字段 change 即单字段 PUT /api/cost/policies/:scope/:id（同 AI 助手面板
+// 的单字段自动保存纪律），成功即以服务端回吐值刷新（version 会涨），失败回滚该字段到上次已保存值 +
+// 状态行显式报错（403/422/其它网络错误都人话化，不静默吞）。GET 失败整卡锁定 + 重试，不假装能编辑。
+type SettingsBudgetPolicySlice = {
+  id: string;
+  scope_kind: "workitem" | "task" | "objective" | "user" | "team" | "eval";
+  period: "run" | "day" | "month" | "total";
+  max_tokens: number;
+  max_cost_cny: string;
+  warning_ratio: number;
+  critical_ratio: number;
+  on_warning: "notify" | "downgrade_model";
+  on_exhausted: "block_new_run" | "handoff_current_run";
+  model_route_hint?: "cheapest_safe" | "balanced" | "premium";
+  enabled: boolean;
+  version: number;
+};
+
+function bindSettingsBudgetPolicyPanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "settings") {
+    return;
+  }
+  const section = container.querySelector<HTMLElement>("[data-r20-settings-budget-policies]");
+  const body = section?.querySelector<HTMLElement>("[data-r20-settings-budget-policies-body]");
+  const status = section?.querySelector<HTMLElement>("[data-r20-settings-budget-policies-status]");
+  if (!section || !body) {
+    return;
+  }
+  const zh = locale === "zh-CN";
+  const getCostPolicies = client.costPolicies;
+  const putCostPolicy = client.updateCostPolicy;
+  if (!getCostPolicies || !putCostPolicy) {
+    return;
+  }
+
+  const setStatus = (text: string, tone: "saving" | "saved" | "error") => {
+    if (!status) {
+      return;
+    }
+    status.hidden = false;
+    status.textContent = text;
+    status.setAttribute("data-r20-settings-budget-policies-status", tone);
+  };
+
+  const onWarningLabel = (value: string) =>
+    value === "notify" ? (zh ? "提醒" : "Notify") : value === "downgrade_model" ? (zh ? "降级模型" : "Downgrade model") : value;
+  const onExhaustedLabel = (value: string) =>
+    value === "block_new_run" ? (zh ? "阻止新任务" : "Block new runs") : value === "handoff_current_run" ? (zh ? "移交当前任务" : "Hand off current run") : value;
+  const modelRouteHintLabel = (value: string) =>
+    value === "cheapest_safe" ? (zh ? "最省钱" : "Cheapest safe") : value === "balanced" ? (zh ? "均衡" : "Balanced") : value === "premium" ? (zh ? "高档位" : "Premium") : value;
+
+  const renderPolicyRow = (policy: SettingsBudgetPolicySlice): string => {
+    const onWarningOptions = ["notify", "downgrade_model"]
+      .map((value) => `<option value="${escapeHtml(value)}"${value === policy.on_warning ? " selected" : ""}>${escapeHtml(onWarningLabel(value))}</option>`)
+      .join("");
+    const onExhaustedOptions = ["block_new_run", "handoff_current_run"]
+      .map((value) => `<option value="${escapeHtml(value)}"${value === policy.on_exhausted ? " selected" : ""}>${escapeHtml(onExhaustedLabel(value))}</option>`)
+      .join("");
+    const modelRouteHintOptions = ["cheapest_safe", "balanced", "premium"]
+      .map((value) => `<option value="${escapeHtml(value)}"${value === policy.model_route_hint ? " selected" : ""}>${escapeHtml(modelRouteHintLabel(value))}</option>`)
+      .join("");
+    const modelRouteHintPlaceholder = policy.model_route_hint
+      ? ""
+      : `<option value="" selected disabled>${escapeHtml(zh ? "未设置" : "Not set")}</option>`;
+    return `<div class="wh-r4-route-row" data-r20-budget-policy="${escapeHtml(policy.id)}" data-r20-budget-policy-scope="${escapeHtml(policy.scope_kind)}">
+      <div>
+        <strong>${escapeHtml(`${policy.scope_kind} · ${policy.id}`)}</strong>
+        <div class="wh-r4-route-meta">
+          <span class="wh-pill">${escapeHtml(policy.period)}</span>
+          <span class="wh-pill" data-r20-budget-policy-version="${escapeHtml(String(policy.version))}">v${escapeHtml(String(policy.version))}</span>
+          <label><input type="checkbox" data-r20-budget-policy-enabled="true"${policy.enabled ? " checked" : ""} /> ${escapeHtml(zh ? "启用" : "Enabled")}</label>
+        </div>
+      </div>
+      <div class="wh-r4-route-meta">
+        <label>${escapeHtml(zh ? "Token 上限" : "Max tokens")} <input class="wh-pill" type="number" min="1" step="1" data-r20-budget-policy-max-tokens="true" value="${escapeHtml(String(policy.max_tokens))}" /></label>
+        <label>${escapeHtml(zh ? "费用上限（元）" : "Max cost (CNY)")} <input class="wh-pill" type="text" inputmode="decimal" data-r20-budget-policy-max-cost-cny="true" value="${escapeHtml(policy.max_cost_cny)}" /></label>
+        <label>${escapeHtml(zh ? "提醒阈值" : "Warning ratio")} <input class="wh-pill" type="number" min="0" max="1" step="0.01" data-r20-budget-policy-warning-ratio="true" value="${escapeHtml(String(policy.warning_ratio))}" /></label>
+        <label>${escapeHtml(zh ? "严重阈值" : "Critical ratio")} <input class="wh-pill" type="number" min="0" max="1" step="0.01" data-r20-budget-policy-critical-ratio="true" value="${escapeHtml(String(policy.critical_ratio))}" /></label>
+        <label>${escapeHtml(zh ? "达到提醒阈值时" : "On warning")} <select class="wh-pill" data-r20-budget-policy-on-warning="true">${onWarningOptions}</select></label>
+        <label>${escapeHtml(zh ? "用尽预算时" : "On exhausted")} <select class="wh-pill" data-r20-budget-policy-on-exhausted="true">${onExhaustedOptions}</select></label>
+        <label>${escapeHtml(zh ? "模型档位提示" : "Model route hint")} <select class="wh-pill" data-r20-budget-policy-model-route-hint="true">${modelRouteHintPlaceholder}${modelRouteHintOptions}</select></label>
+      </div>
+      <p class="wh-subtle" data-r20-budget-policy-status hidden></p>
+    </div>`;
+  };
+
+  const bindPolicyRow = (row: HTMLElement, policy: SettingsBudgetPolicySlice) => {
+    let lastSaved = policy;
+    const rowStatus = row.querySelector<HTMLElement>("[data-r20-budget-policy-status]");
+    const setRowStatus = (text: string, tone: "saving" | "saved" | "error") => {
+      if (!rowStatus) {
+        return;
+      }
+      rowStatus.hidden = false;
+      rowStatus.textContent = text;
+      rowStatus.setAttribute("data-r20-budget-policy-status", tone);
+    };
+    const fields: Array<{
+      element: HTMLInputElement | HTMLSelectElement | null;
+      read: (el: HTMLInputElement | HTMLSelectElement) => unknown;
+      write: (el: HTMLInputElement | HTMLSelectElement, value: SettingsBudgetPolicySlice) => void;
+      patchKey: string;
+    }> = [
+      {
+        element: row.querySelector<HTMLInputElement>("[data-r20-budget-policy-max-tokens]"),
+        read: (el) => Number((el as HTMLInputElement).value),
+        write: (el, value) => { (el as HTMLInputElement).value = String(value.max_tokens); },
+        patchKey: "max_tokens"
+      },
+      {
+        element: row.querySelector<HTMLInputElement>("[data-r20-budget-policy-max-cost-cny]"),
+        read: (el) => (el as HTMLInputElement).value.trim(),
+        write: (el, value) => { (el as HTMLInputElement).value = value.max_cost_cny; },
+        patchKey: "max_cost_cny"
+      },
+      {
+        element: row.querySelector<HTMLInputElement>("[data-r20-budget-policy-warning-ratio]"),
+        read: (el) => Number((el as HTMLInputElement).value),
+        write: (el, value) => { (el as HTMLInputElement).value = String(value.warning_ratio); },
+        patchKey: "warning_ratio"
+      },
+      {
+        element: row.querySelector<HTMLInputElement>("[data-r20-budget-policy-critical-ratio]"),
+        read: (el) => Number((el as HTMLInputElement).value),
+        write: (el, value) => { (el as HTMLInputElement).value = String(value.critical_ratio); },
+        patchKey: "critical_ratio"
+      },
+      {
+        element: row.querySelector<HTMLSelectElement>("[data-r20-budget-policy-on-warning]"),
+        read: (el) => (el as HTMLSelectElement).value,
+        write: (el, value) => { (el as HTMLSelectElement).value = value.on_warning; },
+        patchKey: "on_warning"
+      },
+      {
+        element: row.querySelector<HTMLSelectElement>("[data-r20-budget-policy-on-exhausted]"),
+        read: (el) => (el as HTMLSelectElement).value,
+        write: (el, value) => { (el as HTMLSelectElement).value = value.on_exhausted; },
+        patchKey: "on_exhausted"
+      },
+      {
+        element: row.querySelector<HTMLSelectElement>("[data-r20-budget-policy-model-route-hint]"),
+        read: (el) => (el as HTMLSelectElement).value,
+        write: (el, value) => { (el as HTMLSelectElement).value = value.model_route_hint ?? ""; },
+        patchKey: "model_route_hint"
+      },
+      {
+        element: row.querySelector<HTMLInputElement>("[data-r20-budget-policy-enabled]"),
+        read: (el) => (el as HTMLInputElement).checked,
+        write: (el, value) => { (el as HTMLInputElement).checked = value.enabled; },
+        patchKey: "enabled"
+      }
+    ];
+    let saveChain: Promise<void> = Promise.resolve();
+    const doSave = async (patch: Record<string, unknown>, field: (typeof fields)[number]) => {
+      setRowStatus(zh ? "保存中…" : "Saving…", "saving");
+      try {
+        // patch 只带这一次改的单个字段（key 名与 BudgetPolicyUpdate 的 snake_case 字段逐一对应，见
+        // 上面 fields 表的 patchKey），构造成 Record 而非直接用 BudgetPolicyUpdate 字面量类型是为了
+        // 复用同一份提交逻辑服务 8 个不同字段；这里做一次显式类型断言收窄回服务端期望的形状。
+        const updated = await putCostPolicy(
+          lastSaved.scope_kind,
+          lastSaved.id,
+          patch as unknown as Parameters<typeof putCostPolicy>[2]
+        );
+        if (signal.aborted) {
+          return;
+        }
+        lastSaved = updated as unknown as SettingsBudgetPolicySlice;
+        for (const f of fields) {
+          if (f.element) {
+            f.write(f.element, lastSaved);
+          }
+        }
+        setRowStatus(zh ? "已保存" : "Saved", "saved");
+      } catch (error) {
+        if (signal.aborted) {
+          return;
+        }
+        if (field.element) {
+          field.write(field.element, lastSaved);
+        }
+        setRowStatus(
+          error instanceof WorkHubApiError ? error.message : (zh ? "保存失败，请重试" : "Save failed, please retry"),
+          "error"
+        );
+      }
+    };
+    for (const field of fields) {
+      const element = field.element;
+      if (!element) {
+        continue;
+      }
+      // number/text 输入用 change（失焦/回车才触发，不是 input 逐键），select/checkbox 原生就是 change——
+      // 同 bindSettingsAiProfilePanel 的既有节流纪律，不会敲一个字就发一次请求。
+      element.addEventListener(
+        "change",
+        () => {
+          const value = field.read(element);
+          saveChain = saveChain.then(() => doSave({ [field.patchKey]: value }, field));
+        },
+        { signal }
+      );
+    }
+  };
+
+  const load = async () => {
+    body.innerHTML = `<p class="wh-subtle">${escapeHtml(zh ? "正在加载预算策略…" : "Loading budget policies…")}</p>`;
+    try {
+      const policies = await getCostPolicies();
+      if (signal.aborted) {
+        return;
+      }
+      if (status) {
+        status.hidden = true;
+      }
+      if (policies.length === 0) {
+        body.innerHTML = `<p class="wh-subtle" data-r20-settings-budget-policies-empty="true">${escapeHtml(
+          zh ? "还没有配置任何预算策略。" : "No budget policies configured yet."
+        )}</p>`;
+        return;
+      }
+      body.innerHTML = policies.map((policy) => renderPolicyRow(policy as unknown as SettingsBudgetPolicySlice)).join("");
+      for (const policy of policies) {
+        const row = body.querySelector<HTMLElement>(`[data-r20-budget-policy="${cssEscape(policy.id)}"]`);
+        if (row) {
+          bindPolicyRow(row, policy as unknown as SettingsBudgetPolicySlice);
+        }
+      }
+    } catch (error) {
+      if (signal.aborted) {
+        return;
+      }
+      if (error instanceof WorkHubApiError && error.status === 403) {
+        body.innerHTML = `<p class="wh-subtle" data-r20-settings-budget-policies-forbidden="true">${escapeHtml(
+          zh ? "你没有查看/编辑 AI 预算策略的权限。" : "You don't have permission to view or edit AI budget policies."
+        )}</p>`;
+        return;
+      }
+      body.innerHTML = `<p class="wh-subtle" data-r20-settings-budget-policies-error="true">${escapeHtml(
+        zh ? "预算策略没拉到，稍后重试。" : "Couldn't load budget policies — retry later."
+      )}</p><button type="button" class="wh-btn" data-r20-settings-budget-policies-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+      body.querySelector<HTMLButtonElement>("[data-r20-settings-budget-policies-retry]")
+        ?.addEventListener("click", () => void load(), { signal });
+    }
+  };
+  void load();
 }
 
 function bindSettingsMembersPanel(
