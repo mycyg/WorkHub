@@ -68,6 +68,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: client-tauri/src-tauri
+      - name: Ensure rustfmt/clippy components
+        run: rustup component add rustfmt clippy
+      # 注:runner 是 ubuntu-latest。rustfmt 只做语法层排版,不评估 cfg,所以下面 fmt --check
+      # 覆盖全部源码,包括 windows.rs/main.rs 里 `#[cfg(target_os = "macos"/"windows")]` 门下的分支。
+      # 但 clippy 是真编译再 lint,Linux target 编译期会把那些平台专属分支直接剔除——
+      # 因此 clippy 这一步只对 Linux 生效的代码路径生效,macOS/Windows 专属分支的 clippy
+      # 仍需在对应平台本机跑(与现有 rust-system-i18n job 里 cargo test 的覆盖范围一致,非本次新增的局限)。
+      - name: cargo fmt --check (desktop shell, all cfg branches)
+        run: cargo fmt --manifest-path client-tauri/src-tauri/Cargo.toml --check
+      - name: cargo clippy -D warnings (desktop shell, Linux cfg paths only)
+        run: cargo clippy --manifest-path client-tauri/src-tauri/Cargo.toml --all-targets -- -D warnings
       - uses: pnpm/action-setup@v4
         with:
           version: 11.0.9
