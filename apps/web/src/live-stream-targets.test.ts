@@ -48,6 +48,9 @@ test("R20 P2-06 the web conversation mirror route subscribes to its conversation
   // 订阅面 = 会改动只读镜像可见内容的会话事件（新消息 / 编辑删除置顶 / reaction / 参与者）。
   assert.deepEqual(conversationTarget.eventTypes, [...CONVERSATION_MIRROR_LIVE_EVENT_TYPES]);
   assert.ok(conversationTarget.eventTypes?.includes("conversation.message.created"));
+  // R20 P2-04（会话 rename 跨端同步）：会话被改名时镜像页要重渲对齐新标题——conversation.title.updated 必须
+  // 在订阅面内。EventSource 按事件名订阅，漏登记 = 事件被静默丢弃、镜像页永远显示旧名字。
+  assert.ok(conversationTarget.eventTypes?.includes("conversation.title.updated"));
   // 断线重连要补拉全量对账，不能只靠增量。
   assert.equal(conversationTarget.refreshOnReconnect, true);
 });
