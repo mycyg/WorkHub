@@ -10,6 +10,7 @@ import {
   parseIncomingObserverAnalyzing,
   parseIncomingReactionUpdated,
   parseIncomingReadUpdated,
+  parseIncomingConversationTitleUpdated,
   parseIncomingTyping
 } from "./events.js";
 
@@ -440,6 +441,51 @@ test("parseIncomingConversationCuuUpdated rejects garbage / wrong conversation i
   assert.equal(parseIncomingConversationCuuUpdated(null, conversationId), undefined);
   assert.equal(
     parseIncomingConversationCuuUpdated(validCuuUpdatedEvent(), "40000000-0000-4000-8000-000000000099"),
+    undefined
+  );
+});
+
+// —— R20 P2-04：conversation.title.updated（会话 rename 跨端同步） —— //
+
+function validTitleUpdatedEvent(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    event_id: eventId,
+    type: "conversation.title.updated",
+    topic: `conversation:${conversationId}`,
+    ts,
+    data: {
+      conversation_id: conversationId,
+      title: "改第三幕"
+    },
+    ...overrides
+  };
+}
+
+test("parseIncomingConversationTitleUpdated accepts a well-formed event and returns the new title", () => {
+  assert.equal(parseIncomingConversationTitleUpdated(validTitleUpdatedEvent(), conversationId), "改第三幕");
+});
+
+test("parseIncomingConversationTitleUpdated rejects garbage / wrong conversation / empty title instead of throwing", () => {
+  assert.equal(parseIncomingConversationTitleUpdated({ nope: true }, conversationId), undefined);
+  assert.equal(parseIncomingConversationTitleUpdated(null, conversationId), undefined);
+  assert.equal(
+    parseIncomingConversationTitleUpdated(validTitleUpdatedEvent(), "40000000-0000-4000-8000-000000000099"),
+    undefined
+  );
+  // 空标题违约（min(1)）——静默丢弃，不崩渲染。
+  assert.equal(
+    parseIncomingConversationTitleUpdated(
+      { ...validTitleUpdatedEvent(), data: { conversation_id: conversationId, title: "" } },
+      conversationId
+    ),
+    undefined
+  );
+  // topic 与 data.conversation_id 不绑定——superRefine 拒绝。
+  assert.equal(
+    parseIncomingConversationTitleUpdated(
+      { ...validTitleUpdatedEvent(), topic: "conversation:40000000-0000-4000-8000-000000000099" },
+      conversationId
+    ),
     undefined
   );
 });

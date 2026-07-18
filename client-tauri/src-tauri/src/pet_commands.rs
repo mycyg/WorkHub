@@ -294,7 +294,7 @@ mod tests {
         let settings = plan.settings.expect("settings should be present");
         assert_eq!(plan.command, SET_PET_WINDOW_MODE_COMMAND);
         assert_eq!(plan.label, "pet");
-        assert_eq!(plan.focus, false);
+        assert!(!plan.focus);
         assert_eq!(placement.mode, PetWindowMode::Card);
         assert_eq!(placement.position, LogicalPosition { x: 1340, y: 270 });
         assert_eq!(placement.size.width, 520);
@@ -314,7 +314,7 @@ mod tests {
         let placement = plan.placement.expect("placement should be present");
         assert_eq!(plan.command, SET_PET_WINDOW_MODE_COMMAND);
         assert_eq!(plan.label, "pet");
-        assert_eq!(plan.focus, false);
+        assert!(!plan.focus);
         assert_eq!(placement.mode, PetWindowMode::BodyOnly);
         assert_eq!(placement.position, LogicalPosition { x: 1636, y: 676 });
     }
@@ -341,8 +341,8 @@ mod tests {
         assert_eq!(placement.position, LogicalPosition { x: 1175, y: 25 });
         assert_eq!(settings.scale_percent, 125);
         assert_eq!(settings.opacity_percent, 80);
-        assert_eq!(settings.pass_through, true);
-        assert_eq!(settings.hide_on_hover, true);
+        assert!(settings.pass_through);
+        assert!(settings.hide_on_hover);
     }
 
     #[test]
@@ -355,7 +355,7 @@ mod tests {
         assert_eq!(drag.command, START_PET_WINDOW_DRAG_COMMAND);
         assert_eq!(drag.drag.unwrap().animation_action, "drag_hold");
         assert_eq!(save.command, SAVE_PET_WINDOW_POSITION_COMMAND);
-        assert_eq!(save.focus, false);
+        assert!(!save.focus);
         assert_eq!(
             save.saved_position,
             Some(LogicalPosition { x: 1280, y: 720 })
@@ -437,8 +437,8 @@ mod tests {
 
         let pointer = plan.pointer.expect("pointer should be present");
         assert_eq!(plan.command, SAMPLE_PET_CURSOR_NEAR_COMMAND);
-        assert_eq!(pointer.inside_window, true);
-        assert_eq!(pointer.cursor_near, true);
+        assert!(pointer.inside_window);
+        assert!(pointer.cursor_near);
         assert_eq!(pointer.look_x_percent, -8);
         assert_eq!(pointer.look_y_percent, -11);
     }

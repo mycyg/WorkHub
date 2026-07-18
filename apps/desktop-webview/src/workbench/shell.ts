@@ -48,6 +48,7 @@ import {
   bumpDmUnread,
   mountWorkbenchRail,
   reconcileConversationUnreadFromVm,
+  renameCollabConversationInVm,
   setConversationUnreadInVm,
   setDmUnread,
   type WorkbenchRailApiClient
@@ -1326,7 +1327,19 @@ export function mountWorkbenchShell(
           onApproveProposal: approveProposalFromChat,
           onRequestChangesProposal: requestChangesProposalFromChat,
           // R16-W3：产出卡「在编辑器中查看」→ 中栏变更编辑器。
-          onOpenProposalInEditor: openProposalInEditor
+          onOpenProposalInEditor: openProposalInEditor,
+          // R20 P2-04（会话 rename 跨端同步）：别的客户端把这条协同会话改了名——就地把左栏树叶标题换掉
+          // （renameCollabConversationInVm，同 rail 本地改名走同一个纯函数），不重拉整份 VM。
+          onConversationTitleUpdated: (title: string) => {
+            const latestVm = store.getState().vm;
+            if (!latestVm) {
+              return;
+            }
+            const nextVm = renameCollabConversationInVm(latestVm, collabConversation.id, title);
+            if (nextVm !== latestVm) {
+              store.setState({ vm: nextVm });
+            }
+          }
         });
         chatMountKey = key;
         // R13 批 P1：情境面板默认态挂军团三区——会话情境存在时（这里是刚挂上这个协同会话的 chat 视图）

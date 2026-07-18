@@ -359,14 +359,9 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
     return c.json({ ok: true, data: toAgentRunLiveVm(data) });
   });
 
-  routes.get("/agent-runs/:id/handoff", createCurrentUserMiddleware(authSource), async (c) => {
-    const run = await queue.get(requireUuidParam(c.req.param("id")));
-    if (!run) {
-      throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
-    }
-    await assertCanReadRun(run, c.var.actor, replayWorkItems);
-    return c.json({ ok: true, data: run.handoff ?? null });
-  });
+  // R20 R19-29：GET /agent-runs/:id/handoff 已删——SDK 有 getAgentRunHandoff 桩但 web/desktop 均无调用点，
+  // 核实过零消费（结构化 handoff 数据早已内嵌进下面 /replay 页的 handoff/handoff_md 字段）后删除，
+  // 不留死冗余端点。
 
   routes.get("/agent-runs/:id/replay", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);

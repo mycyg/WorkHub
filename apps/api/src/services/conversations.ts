@@ -19,6 +19,7 @@ import {
   ConversationThreadRootMismatchError,
   createAiFeedbackRepository,
   createConversationRepository,
+  createEventOutboxRepository,
   getSharedDatabaseClient,
   type AiFeedbackRepository,
   type AiFeedbackRow,
@@ -29,6 +30,8 @@ import {
   type ConversationRepository,
   type ConversationRow,
   type CreateUserMessageInput,
+  type EnqueueUserMessageOutbox,
+  type EventOutboxRepository,
   type MessageReactionAggregate,
   type ReplyPreviewTargetRow,
   type VisibleConversationRow,
@@ -52,6 +55,7 @@ import {
   conversationReadCursorVmSchema,
   conversationReadReceiptsVmSchema,
   conversationReadUpdatedEventSchema,
+  conversationTitleUpdatedEventSchema,
   createConversationResultVmSchema,
   openDmResultVmSchema,
   dmListVmSchema,
@@ -84,7 +88,7 @@ import {
   type UpdateConversationCuuRequest,
   type UpdateConversationCuuResultVM
 } from "@workhub/contracts";
-import { makeWorkHubEvent, topics } from "@workhub/events";
+import { createWorkHubEventId, makeWorkHubEvent, topics } from "@workhub/events";
 
 // ── R17 批 G1（群成员管理 · 拍板 A：项目成员=会话参与者的可管理化） ─────────────────────────
 // 决策（06-gap-fix-plan.md 拍板 A，负责人代决可逆）：当前产品单工作区形态下不新建「项目团队」数据层。
@@ -110,6 +114,7 @@ import type { PresenceStore } from "../broker/types.js";
 import { getDefaultStructuredLogger, type StructuredLogger } from "../logging.js";
 import type { AuthActor } from "../middleware/auth.js";
 import { parseOutputContract } from "../pages/output-contract.js";
+import { createEventOutboxDrain, type EventOutboxDrain } from "./event-outbox.js";
 import { notifyConversationMessage } from "./conversation-message-notify.js";
 import { createNotificationService, type NotificationService } from "./notifications.js";
 import { getDefaultConversationReplyJudgeService } from "./conversation-reply-judge.js";
@@ -269,6 +274,11 @@ export type ConversationServiceOptions = {
     presence: Pick<PresenceStore, "isViewingConversation">;
     notifications: Pick<NotificationService, "createConversationMessageNotification">;
   };
+  // R20 P2-01（事务性 outbox）：给定时——createMessage 把 conversation.message.created 事件与消息行在
+  // 同一事务里写进 event_outbox，提交后调这个 drain 立刻 publish（失败留 pending 等定时/下次即席 drain
+  // 重放，绝不丢）。省略时（既有测试的 createConversationService 调用点）退回既有 best-effort「提交后直发」
+  // 路径，行为逐字一致、零回归——只有默认服务（getDefaultConversationService）与真 PG 集成测试会注入它。
+  outboxDrain?: EventOutboxDrain;
 };
 
 function requireHumanActor(actor: AuthActor): HumanConversationActor {
@@ -771,6 +781,35 @@ export function createConversationService(
     }
   }
 
+  // R20 P2-04（会话 rename 跨端同步）：改名后广播 conversation.title.updated（best-effort，同
+  // publishConversationCuuUpdated 的既有取舍——改名本身已经落库成功，不因广播失败回滚）。让别的开着这个会话的
+  // 客户端就地改左栏树叶 / web 镜像页标题，接不上就等下次重挂时用会话 VM 里的 title 兜底。投到会话私有流
+  // （topics.conversation，仅参与者可订，不广播全工作区）。
+  async function publishConversationTitleUpdated(access: ConversationRow, title: string) {
+    const conversationTopic = topics.conversation(access.id).topic;
+    const event = parseOutputContract(
+      conversationTitleUpdatedEventSchema,
+      makeWorkHubEvent({
+        type: eventTypes.conversationTitleUpdated,
+        topic: conversationTopic,
+        ts: now(),
+        data: { conversation_id: access.id, title }
+      }),
+      "conversations.title.event.updated"
+    );
+    try {
+      await bus.publish(conversationTopic, eventTypes.conversationTitleUpdated, event);
+    } catch (error) {
+      logger.warn("conversation_title_updated_publish_failed", {
+        event_id: event.event_id,
+        topic: conversationTopic,
+        conversation_id: access.id,
+        broker_backend: bus.backend,
+        error
+      });
+    }
+  }
+
   function parseReactionKey(rawKey: string): ConversationReactionKey {
     const parsed = conversationReactionKeySchema.safeParse(rawKey);
     if (!parsed.success) {
@@ -951,8 +990,10 @@ export function createConversationService(
     //   1. 会话可见（visibleConversation 已 404 挡住不可见者）；
     //   2. 仅 collab 会话可改名——main（团队主区/个人空间单聊）一律 403，不给一个点了必失败的入口；
     //   3. 仅参与者/owner（participantRole !== null）——project 可见的 collab 里的旁观者不能改名。
-    // 没有 conversation.updated 事件（本仓库事件面只到 message/reaction/read 三类），改名后靠客户端
-    // 就地更新左栏树叶 / 下次拉会话树刷新，不广播（见交付报告说明）。
+    // R20 P2-04（会话 rename 跨端同步）：改名后广播 conversation.title.updated（best-effort，见
+    // publishConversationTitleUpdated），让别的开着这个会话的客户端就地改左栏树叶 / web 镜像页标题，不必等
+    // 下次全量轮询。历史遗留的「没有 conversation.updated 事件、只靠客户端就地更新/下次拉会话树刷新」这条
+    // 取舍到此收口。
     async renameConversation(input) {
       const { human, access } = await visibleConversation(input);
       const conversation = access.conversation;
@@ -981,6 +1022,7 @@ export function createConversationService(
       } catch (error) {
         mapRepositoryError(error);
       }
+      await publishConversationTitleUpdated(updated, updated.title);
       return parseOutputContract(
         renameConversationResultVmSchema,
         { conversation: conversationToVm(updated, access.participantRole) },
@@ -1271,9 +1313,67 @@ export function createConversationService(
         };
       }
 
+      const conversationTopic = topics.conversation(access.conversation.id).topic;
+
+      // conversation.message.created 信封的组装口径——outbox 入队钩子（事务内，data=刚落库消息的 VM）
+      // 与既有 best-effort 直发路径（事务外，data=富化后的响应 VM）共用，保证两条路径产出的事件逐字一致。
+      const previewTextOf = (vm: ConversationMessageVM): string =>
+        vm.kind === "text" ? vm.content.text : vm.kind === "file_card" ? vm.content.snapshot_name : vm.kind;
+      const buildCreatedEvent = (data: ConversationMessageVM, eventId?: string) =>
+        parseOutputContract(
+          conversationMessageCreatedEventSchema,
+          makeWorkHubEvent({
+            ...(eventId ? { event_id: eventId } : {}),
+            type: eventTypes.conversationMessageCreated,
+            topic: conversationTopic,
+            ts: now(),
+            actor: {
+              actor_kind: "human",
+              actor_user_id: human.userId,
+              label: human.actor.label
+            },
+            project_id: access.conversation.projectId,
+            preview_text: previewTextOf(data),
+            data
+          }),
+          "conversations.messages.event.created"
+        );
+
+      // R20 P2-01（事务性 outbox）：开了 outbox 模式（注入 outboxDrain）时，先预取引用预览，让「消息落库的
+      // 同一事务」里能同步把 conversation.message.created 写进 event_outbox——彻底关掉「消息已提交、事件未
+      // publish」这条崩溃丢投窗口。省略 outboxDrain 时下面这两步都跳过，走既有直发路径，逐字零回归。
+      const replyToId = input.payload.kind === "text" ? input.payload.reply_to_message_id : undefined;
+      const outboxReplyPreview = options.outboxDrain && replyToId
+        ? (await repository.listReplyPreviews({
+            conversationId: access.conversation.id,
+            messageIds: [replyToId]
+          })).get(replyToId)
+        : undefined;
+      const enqueueOutbox: EnqueueUserMessageOutbox | undefined = options.outboxDrain
+        ? (createdRow) => {
+            const vm = parseOutputContract(
+              conversationMessageVmSchema,
+              messageToVm(createdRow, { replyTarget: outboxReplyPreview }),
+              "conversations.messages.create"
+            );
+            const eventId = createWorkHubEventId();
+            const outboxEvent = buildCreatedEvent(vm, eventId);
+            return {
+              workspaceId: human.workspaceId,
+              topic: conversationTopic,
+              eventType: eventTypes.conversationMessageCreated,
+              eventId,
+              payload: outboxEvent as unknown as Record<string, unknown>
+            };
+          }
+        : undefined;
+
       let created: ConversationMessageRow;
       try {
-        created = await repository.createUserMessage(writeInput);
+        created = await repository.createUserMessage(
+          writeInput,
+          enqueueOutbox ? { enqueueOutbox } : undefined
+        );
       } catch (error) {
         mapRepositoryError(error);
       }
@@ -1283,41 +1383,36 @@ export function createConversationService(
         await enrichSingleMessage(access.conversation.id, created, human.userId),
         "conversations.messages.create"
       );
-      const conversationTopic = topics.conversation(access.conversation.id).topic;
-      const previewText = message.kind === "text"
-        ? message.content.text
-        : message.kind === "file_card"
-          ? message.content.snapshot_name
-          : message.kind;
-      const event = parseOutputContract(
-        conversationMessageCreatedEventSchema,
-        makeWorkHubEvent({
-          type: eventTypes.conversationMessageCreated,
-          topic: conversationTopic,
-          ts: now(),
-          actor: {
-            actor_kind: "human",
-            actor_user_id: human.userId,
-            label: human.actor.label
-          },
-          project_id: access.conversation.projectId,
-          preview_text: previewText,
-          data: message
-        }),
-        "conversations.messages.event.created"
-      );
-      try {
-        await bus.publish(conversationTopic, eventTypes.conversationMessageCreated, event);
-      } catch (error) {
-        logger.warn("conversation_message_publish_failed", {
-          event_id: event.event_id,
-          topic: conversationTopic,
-          conversation_id: message.conversation_id,
-          message_id: message.id,
-          seq: message.seq,
-          broker_backend: bus.backend,
-          error
+      const previewText = previewTextOf(message);
+
+      if (options.outboxDrain) {
+        // 事件已在上面的事务里入队；这里立刻 drain 把它 publish 出去（happy path 与既有直发同样即时）。
+        // publish 失败/进程崩溃 → 行留 pending，由定时 drain 或下一次即席 drain 重放，绝不丢。
+        await options.outboxDrain().catch((error) => {
+          logger.warn("conversation_message_outbox_drain_failed", {
+            topic: conversationTopic,
+            conversation_id: message.conversation_id,
+            message_id: message.id,
+            seq: message.seq,
+            error
+          });
         });
+      } else {
+        // 既有 best-effort 直发路径（未接 outbox 时逐字保留）：发送者已看到消息落库成功，广播失败仅 warn。
+        const event = buildCreatedEvent(message);
+        try {
+          await bus.publish(conversationTopic, eventTypes.conversationMessageCreated, event);
+        } catch (error) {
+          logger.warn("conversation_message_publish_failed", {
+            event_id: event.event_id,
+            topic: conversationTopic,
+            conversation_id: message.conversation_id,
+            message_id: message.id,
+            seq: message.seq,
+            broker_backend: bus.backend,
+            error
+          });
+        }
       }
 
       // R15 批 A（A5 消息通知）：给其他参与者扇出 conversation.message 通知——fire-and-forget，绝不阻塞/
@@ -1584,6 +1679,25 @@ export function createConversationService(
 
 let defaultDbClient: WorkHubDatabaseClient | undefined;
 let defaultConversationService: ConversationService | undefined;
+let defaultEventOutboxRepository: EventOutboxRepository | undefined;
+let defaultEventOutboxDrain: EventOutboxDrain | undefined;
+
+// R20 P2-01：共享的 outbox 仓库/ drain 单例——createMessage 的即席 drain 与后台
+// event-outbox-drain 调度器用的是同一个 drain 实例（同一把进程内互斥、同一个 bus），
+// 即席与定时两条触发路径因此不会重复扫、不会重复发同一行。
+export function getDefaultEventOutboxRepository(): EventOutboxRepository {
+  defaultEventOutboxRepository ??= createEventOutboxRepository(getSharedDatabaseClient().db);
+  return defaultEventOutboxRepository;
+}
+
+export function getDefaultEventOutboxDrain(): EventOutboxDrain {
+  defaultEventOutboxDrain ??= createEventOutboxDrain({
+    outbox: getDefaultEventOutboxRepository(),
+    bus: getDefaultPushBus(),
+    logger: getDefaultStructuredLogger()
+  });
+  return defaultEventOutboxDrain;
+}
 
 export function getDefaultConversationService(): ConversationService {
   if (!defaultConversationService) {
@@ -1609,7 +1723,10 @@ export function getDefaultConversationService(): ConversationService {
         messageNotify: {
           presence: getDefaultPresenceStore(),
           notifications: createNotificationService()
-        }
+        },
+        // R20 P2-01（事务性 outbox）：消息落库与 conversation.message.created 事件同事务写 event_outbox，
+        // 提交后即席 drain publish。杜绝「消息已提交、事件未 publish」的崩溃丢投窗口。
+        outboxDrain: getDefaultEventOutboxDrain()
       }
     );
   }

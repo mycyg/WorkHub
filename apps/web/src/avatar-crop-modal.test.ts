@@ -11,6 +11,14 @@ import { openAvatarCropModal, type AvatarCropDeps, type AvatarCropElement } from
 // 纯裁剪数学（clampCropOffset/zoomCropTo/cropSourceRect 等）已经在 packages/ui/src/avatar/
 // avatar-crop.test.ts 里被穷举单测覆盖，这里只验证「桌面/web 各自的薄 DOM 接线」本身没接错线。
 
+// R20 P2-10（焦点生命周期）：FakeFocusTracker 模拟真实浏览器的 document.activeElement——每个
+// FakeElement.focus() 调用都把自己记成"当前持有焦点的元素"，deps.getActiveElement 读它。这不是在
+// 重新发明 jsdom 的焦点系统，只是给"开弹窗焦点进去/Tab 圈闭/关弹窗焦点还回去"这条纯编排逻辑一个
+// 可观察、可断言的替身。
+class FakeFocusTracker {
+  active: FakeElement | null = null;
+}
+
 class FakeElement implements AvatarCropElement {
   style: Record<string, string> = {};
   className = "";
@@ -26,7 +34,10 @@ class FakeElement implements AvatarCropElement {
   attrs: Record<string, string> = {};
   children: AvatarCropElement[] = [];
   removed = false;
+  focusCount = 0;
   private listeners = new Map<string, Array<(event: any) => void>>();
+
+  constructor(private readonly tracker?: FakeFocusTracker) {}
 
   appendChild(child: AvatarCropElement): void {
     this.children.push(child);
@@ -47,22 +58,30 @@ class FakeElement implements AvatarCropElement {
       handler(event);
     }
   }
+  focus(): void {
+    this.focusCount += 1;
+    if (this.tracker) {
+      this.tracker.active = this;
+    }
+  }
 }
 
 function makeFakeDeps(overrides: Partial<AvatarCropDeps> = {}) {
+  const tracker = new FakeFocusTracker();
   const created: FakeElement[] = [];
   const body: FakeElement[] = [];
   const releaseState = { released: false };
-  const previewElement = new FakeElement();
+  const previewElement = new FakeElement(tracker);
   const deps: AvatarCropDeps = {
     createElement: (_tag: string) => {
-      const el = new FakeElement();
+      const el = new FakeElement(tracker);
       created.push(el);
       return el;
     },
     appendToBody: (el) => {
       body.push(el as FakeElement);
     },
+    getActiveElement: () => tracker.active,
     loadImage: async () => ({
       previewElement,
       drawSource: "fake-source-token",
@@ -74,7 +93,11 @@ function makeFakeDeps(overrides: Partial<AvatarCropDeps> = {}) {
     renderCrop: async () => new Blob(["fake-webp-bytes"], { type: "image/webp" }),
     ...overrides
   };
-  return { deps, created, body, releaseState, previewElement };
+  return { deps, created, body, releaseState, previewElement, tracker };
+}
+
+function keydownEvent(key: string, shiftKey = false) {
+  return { key, shiftKey, preventDefault: () => undefined };
 }
 
 function findByTextContent(elements: FakeElement[], text: string): FakeElement {
@@ -143,15 +166,20 @@ test("select image -> crop (drag + zoom) -> confirm -> upload succeeds end to en
   assert.equal(releaseState.released, true, "the object URL / loaded image resources must be released after confirm");
 });
 
-test("cancel closes the modal without ever calling onConfirm or uploading anything", async () => {
+test("cancel closes the modal without ever calling onConfirm or uploading anything, and restores focus to the trigger", async () => {
   const file = new File(["fake-picked-bytes"], "photo.png", { type: "image/png" });
-  const { deps, created, body, releaseState } = makeFakeDeps();
+  const { deps, created, body, releaseState, tracker } = makeFakeDeps();
+  const triggerButton = new FakeElement(tracker);
+  tracker.active = triggerButton;
   let confirmCalls = 0;
 
   const openPromise = openAvatarCropModal(file, true, async () => {
     confirmCalls += 1;
   }, deps);
   await flush();
+
+  // 中间态断言：真的要先"挪走"过（进了弹窗），下面的"还回去"才不是因为压根没动过而巧合成立。
+  assert.notEqual(tracker.active, triggerButton, "opening the modal must move focus into it first");
 
   const cancelBtn = findByTextContent(created, "取消");
   cancelBtn.dispatch("click");
@@ -160,6 +188,65 @@ test("cancel closes the modal without ever calling onConfirm or uploading anythi
   assert.equal(confirmCalls, 0);
   assert.equal(body[0]!.removed, true);
   assert.equal(releaseState.released, true);
+  // R20 P2-10：关闭（这里是取消）必须把焦点还给弹窗打开前持有焦点的那个元素。
+  assert.equal(tracker.active, triggerButton);
+});
+
+// R20 P2-10（根因）：这个弹窗此前完全没有键盘焦点生命周期——开弹窗焦点不进去、Tab 会漏到弹窗
+// 之外的背景页面、Esc 不关闭、关闭后焦点也不还给触发钮。下面两个测试锁定四条要求：开=焦点进首个
+// 可操作件、Tab=在三个控件之间圈闭（不漏到模态之外）、Esc=像取消一样关闭、关=焦点还给触发钮。
+test("opening the crop modal focuses the zoom slider first, and Tab traps focus in a loop across the three controls", async () => {
+  const file = new File(["fake-picked-bytes"], "photo.png", { type: "image/png" });
+  const { deps, created, body, tracker } = makeFakeDeps();
+
+  const openPromise = openAvatarCropModal(file, true, async () => undefined, deps);
+  await flush();
+
+  const slider = findByType(created, "range");
+  const cancelBtn = findByTextContent(created, "取消");
+  const confirmBtn = findByTextContent(created, "确认");
+  const overlay = body[0]!;
+
+  assert.equal(tracker.active, slider, "the zoom slider (the first operable control) must receive focus once the modal opens");
+
+  overlay.dispatch("keydown", keydownEvent("Tab"));
+  assert.equal(tracker.active, cancelBtn, "Tab from the slider must move to Cancel");
+
+  overlay.dispatch("keydown", keydownEvent("Tab"));
+  assert.equal(tracker.active, confirmBtn, "Tab from Cancel must move to Confirm");
+
+  overlay.dispatch("keydown", keydownEvent("Tab"));
+  assert.equal(tracker.active, slider, "Tab from Confirm must loop back to the slider — focus must never leak past the last control");
+
+  overlay.dispatch("keydown", keydownEvent("Tab", true));
+  assert.equal(tracker.active, confirmBtn, "Shift+Tab from the slider must loop backward to Confirm");
+
+  cancelBtn.dispatch("click");
+  await openPromise;
+});
+
+test("Escape closes the crop modal like Cancel (no confirm/upload) and restores focus to whatever had focus before it opened", async () => {
+  const file = new File(["fake-picked-bytes"], "photo.png", { type: "image/png" });
+  const { deps, body, releaseState, tracker } = makeFakeDeps();
+  const triggerButton = new FakeElement(tracker);
+  tracker.active = triggerButton;
+  let confirmCalls = 0;
+
+  const openPromise = openAvatarCropModal(file, true, async () => {
+    confirmCalls += 1;
+  }, deps);
+  await flush();
+
+  assert.notEqual(tracker.active, triggerButton, "opening the modal must move focus away from the trigger and into the modal");
+
+  const overlay = body[0]!;
+  overlay.dispatch("keydown", keydownEvent("Escape"));
+  await openPromise;
+
+  assert.equal(confirmCalls, 0, "Escape must never confirm/upload");
+  assert.equal(body[0]!.removed, true);
+  assert.equal(releaseState.released, true);
+  assert.equal(tracker.active, triggerButton, "closing (via Escape) must restore focus to the element that had it before the modal opened");
 });
 
 test("a failed image load rejects instead of opening a modal for a broken file", async () => {

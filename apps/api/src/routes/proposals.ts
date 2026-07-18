@@ -1336,14 +1336,9 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
     }
   });
 
-  routes.get("/workitems/:id/proposals", createCurrentUserMiddleware(authSource), async (c) => {
-    await assertCanReadWorkItem(c.req.param("id"), c.var.actor);
-    const rows = await proposals.listByWorkItem(c.req.param("id"));
-    return c.json({
-      ok: true,
-      data: rows.map(({ reviews: _reviews, ...proposal }) => proposal)
-    });
-  });
+  // R20 R19-29：GET /workitems/:id/proposals（list-work-item-proposals）已删——SDK 有 listWorkItemProposals
+  // 桩但 web/desktop 均无调用点，同样的提议列表数据早已内嵌进工作项详情页 VM（GET /api/pages/workitems/:id）。
+  // 核实过零消费后删除，POST（上面创建提议）与下面 /conflicts 不受影响。
 
   routes.get("/workitems/:id/conflicts", createCurrentUserMiddleware(authSource), async (c) => {
     await assertCanReadWorkItem(c.req.param("id"), c.var.actor);

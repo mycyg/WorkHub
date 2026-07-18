@@ -1,4 +1,5 @@
 import { WorkHubApiError, type WorkHubApiClient } from "@workhub/api-client";
+import { fetchWorkspaceRosterMembers } from "./workspace-roster.js";
 import type {
   AgentArmyDashboardVM,
   ApprovalCenterVM,
@@ -1392,10 +1393,16 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     // 消息（主数据，参与者门控在服务端——非参与者 404 走既有 notFound 态）与成员目录并行拉。
     // 成员目录仅用于发送者昵称解析，失败 fail-soft（消息照常渲，昵称退化为「未知成员」）；
     // not_identified 仍冒泡去重认证。
+    // R20 P1-08 收尾：昵称解析改走工作区花名册（GET /api/workspace/roster，翻页翻到底），不再用全局
+    // /api/users——核实过 GET /conversations/:id/participants 这条路：main 会话没有参与者行，恒回
+    // scope:"workspace" + 空列表（apps/api/src/services/conversations.ts listParticipants），对本页最常见
+    // 的主区会话完全没有昵称可用；collab/DM 虽然有真实参与者行，但退群成员的历史发言同样解析不出——两条
+    // 路径对"已离开的历史发言人"都不覆盖，参与者端点对主区会话覆盖面更差（不是"次优"而是"没有"），所以选
+    // 工作区花名册这条更通用、且与审批转交选择器（browser.ts）已用的同一数据源一致。
     const [page, members] = await Promise.all([
       client.listConversationMessages(conversationId, requestOptions),
-      client.listUsers().then(
-        (value) => value.users.map((user) => ({ id: user.id, nickname: user.nickname })),
+      fetchWorkspaceRosterMembers(client).then(
+        (value) => value.map((member) => ({ id: member.user_id, nickname: member.nickname })),
         (error: unknown): Array<{ id: string; nickname: string }> => {
           if (error instanceof WorkHubApiError && error.code === "not_identified") {
             throw error;

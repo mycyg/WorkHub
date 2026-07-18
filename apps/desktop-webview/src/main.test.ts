@@ -366,9 +366,7 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
     async abortAgentRun() {
       return { ...liveRun, status: "cancelled", run: { ...liveRun.run, status: "cancelled" } };
     },
-    async getAgentRunHandoff() {
-      return null;
-    },
+    // R20 R19-29：getAgentRunHandoff 已从 WorkHubApiClient 删除（死端点，无消费）。
     async respondApprovalsBatch(): Promise<{ approved: number; skipped: number }> {
       throw new Error("not needed");
     },
@@ -411,14 +409,15 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
     async createProposalFromManifest() {
       throw new Error("not needed");
     },
-    async listWorkItemProposals() {
-      throw new Error("not needed");
-    },
+    // R20 R19-29：listWorkItemProposals 已从 WorkHubApiClient 删除（死端点，无消费）。
     async listWorkItemConflicts(workItemId: string) {
       const conflicts = ((surface as unknown as { conflicts?: ProposalConflict[] }).conflicts ?? []).filter(
         (conflict) => conflict.work_item_id === workItemId
       );
       return conflicts.length > 0 ? { conflicts } : { conflicts, empty_state: "no_conflicts" as const };
+    },
+    async getWorkItemAuditTimeline() {
+      throw new Error("not needed");
     },
     async getProposal() {
       throw new Error("not needed");

@@ -272,7 +272,6 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   await client.createTaskPlan("work-1", {}, { locale: "en-US" });
   await client.getAgentRun("run-1");
   await client.getAgentRunTrace("run-1", 2);
-  await client.getAgentRunHandoff("run-1");
   await client.abortAgentRun("run-1");
   await client.resolveMemoryConflict("memory-conflict-1", {
     resolution: "merge_both",
@@ -280,7 +279,6 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     expected_updated_at: "2026-07-03T10:40:00.000Z"
   });
   await client.createProposalFromManifest("work-1", { manifest: deliverableManifestFixtures[0]! });
-  await client.listWorkItemProposals("work-1");
   await client.listWorkItemConflicts("work-1");
   await client.getProposal("proposal-1");
   await client.nextQuestion("session-1", { selected_option_ids: ["risk-first"] });
@@ -337,13 +335,11 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     'POST /api/workitems/work-1/task-plan?locale=en-US {}',
     "GET /api/agent-runs/run-1",
     "GET /api/agent-runs/run-1/trace?after=2",
-    "GET /api/agent-runs/run-1/handoff",
     "POST /api/agent-runs/run-1/abort",
     // R9.7 review: the old assertion put `expected_updated_at` in the JSON body,
     // but durable memory-conflict cards and OpenAPI document the stale-version token as a query parameter.
     'POST /api/memory-conflicts/memory-conflict-1/resolve/merge_both?expected_updated_at=2026-07-03T10%3A40%3A00.000Z {"value_md":"合并后的偏好。"}',
     "POST /api/workitems/work-1/proposals",
-    "GET /api/workitems/work-1/proposals",
     "GET /api/workitems/work-1/conflicts",
     "GET /api/proposals/proposal-1",
     'POST /api/sessions/session-1/next-question {"selected_option_ids":["risk-first"]}',
@@ -658,6 +654,47 @@ test("api client exposes the objective create + link endpoints (R19-1 OKR wiring
       body: JSON.stringify({ work_item_id: "work-1" })
     }
   ]);
+});
+
+// R20 R19-27（工作项跨 run 审计时间线）：后端早有 GET /api/workitems/:id/audit（快照 + 审计事实 +
+// manifest 校验，packages/db audit-repository 有测试覆盖），但此前客户端没有任何类型化方法能调用
+// 它——web 端因此从没拉过这份数据、更别提渲染。锁定 URL/方法与信封解包（envelope → data）正确。
+test("api client exposes the work item cross-run audit timeline endpoint (R19-27 wiring)", async () => {
+  const calls: Array<{ url: string; method: string }> = [];
+  const timeline = {
+    work_item_id: "work-1",
+    snapshots: [],
+    audit_logs: [
+      {
+        id: "audit-1",
+        actor: { actor_kind: "human", actor_nickname: "小拓" },
+        entity: { entity_type: "work_item", entity_id: "work-1" },
+        action: "work_item.created",
+        detail_json: {},
+        created_at: "2026-07-10T09:00:00.000Z"
+      }
+    ],
+    manifest_facts: {
+      checks: { snapshot_exists: "failed", revert_available: "warning" },
+      rollback: { available: false, description: "无可回滚快照。" },
+      risk: { reversible: true, irreversible_reasons: [] },
+      evidence_refs: []
+    }
+  };
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET" });
+      return new Response(JSON.stringify({ ok: true, data: timeline }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  const result = await client.getWorkItemAuditTimeline("work-1");
+
+  assert.deepEqual(calls, [{ url: "/api/workitems/work-1/audit", method: "GET" }]);
+  assert.deepEqual(result, timeline);
 });
 
 // R14 批 MEM（记忆可见可治理）：用户记忆 + 团队技能两个治理面的客户端方法——URL/方法/body 构造要

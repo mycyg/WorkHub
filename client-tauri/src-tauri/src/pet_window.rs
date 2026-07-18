@@ -388,11 +388,11 @@ mod tests {
         assert_eq!(plan.mode, PetWindowMode::BodyOnly);
         assert_eq!(plan.size, PET_BODY_ONLY_SIZE);
         assert_eq!(plan.position, LogicalPosition { x: 1636, y: 676 });
-        assert_eq!(plan.focus, false);
-        assert_eq!(plan.transparent, true);
-        assert_eq!(plan.decorations, false);
-        assert_eq!(plan.always_on_top, true);
-        assert_eq!(plan.skip_taskbar, true);
+        assert!(!plan.focus);
+        assert!(plan.transparent);
+        assert!(!plan.decorations);
+        assert!(plan.always_on_top);
+        assert!(plan.skip_taskbar);
     }
 
     #[test]
@@ -453,9 +453,9 @@ mod tests {
         assert_eq!(card_plan.position, LogicalPosition { x: 1175, y: 25 });
         assert_eq!(visual.scale_percent, 125);
         assert_eq!(visual.opacity_percent, 80);
-        assert_eq!(visual.pass_through, true);
-        assert_eq!(visual.hide_on_hover, true);
-        assert_eq!(visual.focus, false);
+        assert!(visual.pass_through);
+        assert!(visual.hide_on_hover);
+        assert!(!visual.focus);
     }
 
     #[test]
@@ -501,15 +501,15 @@ mod tests {
             near_radius: DEFAULT_PET_CURSOR_NEAR_RADIUS,
         });
 
-        assert_eq!(inside.inside_window, true);
-        assert_eq!(inside.cursor_near, true);
+        assert!(inside.inside_window);
+        assert!(inside.cursor_near);
         assert_eq!(inside.look_x_percent, -54);
         assert_eq!(inside.look_y_percent, -58);
-        assert_eq!(nearby.inside_window, false);
-        assert_eq!(nearby.cursor_near, true);
+        assert!(!nearby.inside_window);
+        assert!(nearby.cursor_near);
         assert_eq!(nearby.look_x_percent, 94);
         assert_eq!(nearby.look_y_percent, 83);
-        assert_eq!(far.cursor_near, false);
+        assert!(!far.cursor_near);
         assert_eq!(far.look_x_percent, 100);
         assert_eq!(far.look_y_percent, 100);
     }
@@ -521,7 +521,7 @@ mod tests {
 
         assert_eq!(start.label, "pet");
         assert_eq!(start.action, PetWindowDragAction::StartDragging);
-        assert_eq!(start.focus, false);
+        assert!(!start.focus);
         assert_eq!(start.animation_action, "drag_hold");
         assert_eq!(save.action, PetWindowDragAction::SavePosition);
         assert_eq!(save.animation_action, "idle_breathe");

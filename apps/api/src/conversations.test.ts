@@ -1862,6 +1862,42 @@ test("renameConversation forwards a tenant-safe title write and returns the rena
   assert.equal(result.conversation.participant_role, "owner");
 });
 
+// R20 P2-04（会话 rename 跨端同步）：改名后广播 conversation.title.updated 到会话私有流，携带新 title——
+// 让别的开着这个会话的客户端就地改左栏树叶 / web 镜像页标题，不必等下次全量轮询。修复前 renameConversation
+// 不发任何领域事件（published 为空），本断言即为红。
+test("renameConversation broadcasts conversation.title.updated to the conversation-private topic with the new title", async () => {
+  const capture = capturingBus();
+  const service = createConversationService(
+    repository({
+      async findVisibleAccessRecord() {
+        return accessRecord({ participantRole: "owner" });
+      },
+      async renameConversation(input) {
+        return conversationRow({ title: input.title, updatedAt: new Date("2026-07-18T09:00:00.000Z") });
+      }
+    }),
+    {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      bus: capture.bus,
+      now: () => now
+    }
+  );
+
+  await service.renameConversation({ actor: actor(), conversationId, payload: { title: "改第三幕" } });
+
+  assert.equal(capture.published.length, 1);
+  assert.equal(capture.published[0]?.topic, `conversation:${conversationId}`);
+  assert.equal(capture.published[0]?.type, "conversation.title.updated");
+  const event = capture.published[0]?.data as { type: string; topic: string; data: { conversation_id: string; title: string } };
+  // 契约门（parseOutputContract）已在发布前跑过一遍——这里再核一次形状+topic绑定（title-updated 的 topic
+  // 必须与 data.conversation_id 匹配）与新 title 透传。
+  assert.equal(event.type, "conversation.title.updated");
+  assert.equal(event.topic, `conversation:${conversationId}`);
+  assert.deepEqual(event.data, { conversation_id: conversationId, title: "改第三幕" });
+});
+
 test("renameConversation refuses a non-collab (main) conversation with 403 and never writes", async () => {
   let renameCalls = 0;
   const service = createConversationService(

@@ -76,6 +76,7 @@ import {
   parseIncomingObserverAnalyzing,
   parseIncomingReactionUpdated,
   parseIncomingReadUpdated,
+  parseIncomingConversationTitleUpdated,
   parseIncomingTyping,
   type IncomingReactionUpdate
 } from "./events.js";
@@ -506,6 +507,10 @@ export function mountChatView(
     // R15 批 I2（决策 digest 卡）：pending_digest 卡「打开收件箱」按钮点击——宿主（shell.ts）切中栏到 I1
     // 的决策收件箱视图（centerTab='inbox'）。可选：不接（测试/其它宿主）时 digest 卡不渲这个按钮。
     onOpenInbox?: () => void;
+    // R20 P2-04（会话 rename 跨端同步）：别的客户端把这条会话改了名——conversation.title.updated 到达时，本视图
+    // 拿到新 title 交给宿主（shell.ts）就地更新左栏树叶（renameCollabConversationInVm），不整页刷。可选：不接
+    // （测试/其它宿主）时纯本地丢弃，下次重挂时用会话 VM 里的 title 兜底。
+    onConversationTitleUpdated?: (title: string) => void;
     // R14 批 CHAT（桌宠彩蛋，stretch）：有人给 Cuu 的一条消息新加了个反应时，把该露的情绪信号交出去
     // （celebrating/worried/thinking，见 reaction-emotion.ts 的映射）。detection 在这里做——只有本地持
     // 有上一份 reactions 快照的 view.ts 能 diff 出「新增了哪个键」（reaction.updated 是全量聚合，无增量）。
@@ -2641,6 +2646,15 @@ export function mountChatView(
             return;
           }
           void loadParticipants();
+          return;
+        }
+        // R20 P2-04（会话 rename 跨端同步）：conversation.title.updated——别的客户端把这条会话改了名。把新 title
+        // 交给宿主就地更新左栏树叶（renameCollabConversationInVm，不整页刷）。会话头（成员条 / DM 昵称）不渲会话
+        // 标题，故本视图无需自渲；main/DM 收不到这个事件（服务端只在 collab renameConversation 广播）。不缓冲：
+        // 只是标题状态同步，不产生消息/气泡。
+        const renamedTitle = parseIncomingConversationTitleUpdated(event.data, input.conversationId);
+        if (renamedTitle !== undefined) {
+          input.onConversationTitleUpdated?.(renamedTitle);
           return;
         }
         // R14 批 CHAT：conversation.observer.analyzing（瞬态指示灯）——不缓冲（渲在独立指示行区域，不进

@@ -173,9 +173,11 @@ fn workhub_env_flag_enabled(name: &str, get_env: impl Fn(&str) -> Option<String>
 }
 
 fn workhub_env_flag_value(name: &str, get_env: impl Fn(&str) -> Option<String>) -> Option<bool> {
-    get_env(name).map(|value| match value.trim().to_ascii_lowercase().as_str() {
-        "1" | "true" | "yes" | "on" => true,
-        _ => false,
+    get_env(name).map(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
     })
 }
 
@@ -1345,6 +1347,9 @@ fn configure_main_window_chrome(window: &tauri::WebviewWindow) -> Result<(), Str
 #[derive(Clone, Copy)]
 enum MainWindowStartupFallbackStep {
     Chrome,
+    // Linux CI 的 clippy 看不到 macOS cfg 分支里的构造点（P3-01 把 clippy -D warnings 拉上 CI 后暴露），
+    // 与下一行 WindowsAcrylic 同款：仅在非目标平台上放行 dead_code。
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     MacosVibrancy,
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     WindowsAcrylic,
@@ -1849,12 +1854,12 @@ fn main() {
             }
         })
         .setup(|app| {
-            let shell_config = load_workhub_shell_config(&app.handle())?;
+            let shell_config = load_workhub_shell_config(app.handle())?;
             if let Ok(mut locale) = app.state::<Mutex<WorkHubLocale>>().lock() {
                 *locale = shell_config.locale;
             }
             create_pet_window_with_surface_flag(app)?;
-            if let Ok(Some(saved)) = load_pet_window_saved_placement(&app.handle()) {
+            if let Ok(Some(saved)) = load_pet_window_saved_placement(app.handle()) {
                 let work_area = app
                     .get_webview_window("pet")
                     .map(|window| work_area_for_pet_window(&window))
@@ -1868,7 +1873,7 @@ fn main() {
             install_workhub_deep_links(app)?;
             // R15：全局热键唤起聚焦盒（交互规划 04 §二第 2 项）——注册失败（多半是 Option+Space 被
             // 别的应用占用）只记日志降级，绝不 panic/绝不让应用起不来：托盘/常驻小窗仍是保底触达路径。
-            if let Err(error) = install_workhub_global_hotkey(&app.handle()) {
+            if let Err(error) = install_workhub_global_hotkey(app.handle()) {
                 eprintln!(
                     "WorkHub: {error}; continuing without the global hotkey (tray icon and the docked spotlight window remain available)"
                 );
@@ -2344,21 +2349,19 @@ mod tests {
 
     #[test]
     fn cuu_qa_preferences_env_enables_dom_report_when_path_is_present() {
-        assert_eq!(
+        assert!(
             workhub_cuu_qa_preferences_from_env(named_env(&[(
                 WORKHUB_CUU_QA_DOM_REPORT_PATH_ENV,
                 "C:\\temp\\cuu-tauri-dom-report.json"
             )]))
-            .pet_qa_dom_report,
-            true
+            .pet_qa_dom_report
         );
-        assert_eq!(
-            workhub_cuu_qa_preferences_from_env(named_env(&[(
+        assert!(
+            !workhub_cuu_qa_preferences_from_env(named_env(&[(
                 WORKHUB_CUU_QA_DOM_REPORT_PATH_ENV,
                 " "
             )]))
-            .pet_qa_dom_report,
-            false
+            .pet_qa_dom_report
         );
     }
 

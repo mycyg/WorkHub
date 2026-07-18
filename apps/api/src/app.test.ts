@@ -383,7 +383,7 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["get", "/api/projects/{id}/instructions"],
     ["patch", "/api/projects/{id}/instructions"],
     ["post", "/api/workitems/{id}/proposals"],
-    ["get", "/api/workitems/{id}/proposals"],
+    // R20 R19-29：GET /api/workitems/{id}/proposals（list-work-item-proposals）已删（死冗余，无消费）。
     ["get", "/api/workitems/{id}/conflicts"],
     ["get", "/api/proposals/{id}"],
     ["post", "/api/proposals/{id}/review"],
@@ -397,7 +397,7 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["post", "/api/workitems/{id}/agent-runs"],
     ["get", "/api/agent-runs/{id}"],
     ["get", "/api/agent-runs/{id}/trace"],
-    ["get", "/api/agent-runs/{id}/handoff"],
+    // R20 R19-29：GET /api/agent-runs/{id}/handoff 已删（死冗余，无消费）。
     ["post", "/api/agent-runs/{id}/abort"],
     ["get", "/api/agent-runs/{id}/replay"],
     ["post", "/api/agent-runs/{id}/revert"],
@@ -420,7 +420,7 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["post", "/api/knowledge/search"],
     ["get", "/api/workitems/{id}/audit"],
     ["get", "/api/pilot/day1/metrics"],
-    ["get", "/api/ai-worklog/today"],
+    // R20 R19-29：GET /api/ai-worklog/today 已删（死冗余，无消费；数据早已内嵌进 attention 页 VM）。
     ["get", "/api/conversations/{id}/army"],
     ["get", "/api/me/army"],
     ["post", "/api/action-card-items/{id}/decide"],
@@ -853,6 +853,30 @@ test("runtime API routes stay in lockstep with the OpenAPI document", async () =
   });
 });
 
+// R20 R19-29：三个冗余死读端点（无任何前端/客户端消费，专用端点 + SDK 桩无调用者）——根因回归：
+// 基线上这三条路径仍然可达/仍被文档化，删除后必须整条从运行时路由与 OpenAPI 文档一起消失。
+// 这条测试在删除改动落地前会红（路径仍存在/仍是 200-401 而非 404），落地后转绿。
+test("R19-29 dead read endpoints (handoff / ai-worklog·today / list-work-item-proposals) are fully removed", async () => {
+  const response = await app.request("/api/openapi.json");
+  const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
+
+  // GET /api/agent-runs/{id}/handoff：整条路径已删（唯一方法就是这个 get）。
+  assert.equal(body.paths["/api/agent-runs/{id}/handoff"], undefined, "handoff path must be gone from OpenAPI");
+
+  // GET /api/ai-worklog/today：整条路径已删；无鉴权直接命中路由层 404（不再进 requireCurrentUser 中间件，
+  // 也就不会是 401）——这一步是活的 HTTP 回归，不只是静态 OpenAPI 检查。
+  assert.equal(body.paths["/api/ai-worklog/today"], undefined, "ai-worklog/today path must be gone from OpenAPI");
+  const worklogHttp = await app.request("/api/ai-worklog/today");
+  assert.equal(worklogHttp.status, 404, "GET /api/ai-worklog/today must 404 once the route is removed");
+
+  // GET /api/workitems/{id}/proposals：只删 get，POST（创建提议）必须原样保留。
+  const workItemProposalsPath = body.paths["/api/workitems/{id}/proposals"] as
+    | Record<string, unknown>
+    | undefined;
+  assert.equal(workItemProposalsPath?.["get"], undefined, "list-work-item-proposals get must be gone");
+  assert.ok(workItemProposalsPath?.["post"], "create-proposal post must stay (still consumed)");
+});
+
 test("templated OpenAPI paths declare their required path parameters", async () => {
   const response = await app.request("/api/openapi.json");
   const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
@@ -1080,7 +1104,6 @@ test("project and drive OpenAPI routes document runtime path and query parameter
     ["/api/meetings/projects/{projectId}/insights/{insightId}/dismiss", "post", ["projectId", "insightId"]],
     ["/api/meetings/workitems/{workItemId}/proposal-draft", "post", ["workItemId"]],
     ["/api/workitems/{id}/proposals", "post", ["id"]],
-    ["/api/workitems/{id}/proposals", "get", ["id"]],
 	    ["/api/workitems/{id}/conflicts", "get", ["id"]],
 	    ["/api/proposals/{id}", "get", ["id"]],
 	    ["/api/proposals/{id}/review", "post", ["id"]],
@@ -1094,7 +1117,6 @@ test("project and drive OpenAPI routes document runtime path and query parameter
 	    ["/api/workitems/{id}/agent-runs", "post", ["id"]],
 	    ["/api/agent-runs/{id}", "get", ["id"]],
 	    ["/api/agent-runs/{id}/trace", "get", ["id"]],
-	    ["/api/agent-runs/{id}/handoff", "get", ["id"]],
 	    ["/api/agent-runs/{id}/abort", "post", ["id"]],
 	    ["/api/agent-runs/{id}/replay", "get", ["id"]],
 	    ["/api/agent-runs/{id}/revert", "post", ["id"]],
@@ -1360,7 +1382,7 @@ test("push streams and audit OpenAPI routes document runtime UUID guards and res
   assert.deepEqual(auditNotFoundError?.properties?.code, { type: "string", enum: ["not_found"] });
 });
 
-test("pilot metrics and AI worklog OpenAPI routes document query and response contracts", async () => {
+test("pilot metrics OpenAPI route documents query and response contracts", async () => {
   const response = await app.request("/api/openapi.json");
   const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
 
@@ -1398,32 +1420,8 @@ test("pilot metrics and AI worklog OpenAPI routes document query and response co
     enum: ["validation_error", "invalid_range"]
   });
 
-  const worklogResponse = jsonResponseSchema(body.paths, "/api/ai-worklog/today", "get", "200");
-  const worklogData = worklogResponse?.properties?.data as { required?: string[]; properties?: Record<string, unknown> } | undefined;
-  assert.deepEqual(worklogResponse?.required, ["ok", "data"]);
-  assert.deepEqual(worklogData?.required, [
-    "runs_today",
-    "autonomy_rate",
-    "accepted_today",
-    "saved_hours_estimate",
-    "skills_promoted_today",
-    "skills_refined_today",
-    "generated_at"
-  ]);
-  assert.deepEqual(Object.keys(worklogData?.properties ?? {}).sort(), [
-    "accepted_today",
-    "autonomy_rate",
-    "generated_at",
-    "range_label",
-    "runs_today",
-    "saved_hours_estimate",
-    "skills_promoted_today",
-    "skills_refined_today"
-  ]);
-  const worklogAuth = jsonResponseSchema(body.paths, "/api/ai-worklog/today", "get", "401");
-  const worklogAuthError = worklogAuth?.properties?.error as { properties?: Record<string, unknown> } | undefined;
-  assert.deepEqual(worklogAuth?.required, ["ok", "error"]);
-  assert.deepEqual(worklogAuthError?.properties?.code, { type: "string", enum: ["not_identified"] });
+  // R20 R19-29：GET /api/ai-worklog/today 已删（死冗余，无消费；数据早已内嵌进 attention 页 VM）——
+  // 原先这里的 worklogResponse/worklogAuth 契约断言随路由一并删除，见下方新增的删除回归断言。
 });
 
 test("Task intake and AgentRun OpenAPI responses document the execution chain", async () => {
@@ -1615,7 +1613,7 @@ test("Task intake and AgentRun OpenAPI responses document the execution chain", 
     ["/api/workitems/{id}/agent-runs", "post"],
     ["/api/agent-runs/{id}", "get"],
     ["/api/agent-runs/{id}/trace", "get"],
-    ["/api/agent-runs/{id}/handoff", "get"],
+    // R20 R19-29：/handoff 端点已删（死冗余，无消费）。
     ["/api/agent-runs/{id}/abort", "post"],
     ["/api/agent-runs/{id}/replay", "get"]
   ] as const) {
@@ -1629,7 +1627,7 @@ test("Task intake and AgentRun OpenAPI responses document the execution chain", 
     ["/api/workitems/{id}/agent-runs", "post"],
     ["/api/agent-runs/{id}", "get"],
     ["/api/agent-runs/{id}/trace", "get"],
-    ["/api/agent-runs/{id}/handoff", "get"],
+    // R20 R19-29：/handoff 端点已删（死冗余，无消费）。
     ["/api/agent-runs/{id}/abort", "post"],
     ["/api/agent-runs/{id}/replay", "get"]
   ] as const) {
@@ -1645,7 +1643,7 @@ test("Task intake and AgentRun OpenAPI responses document the execution chain", 
     ["/api/workitems/{id}/agent-runs", "post"],
     ["/api/agent-runs/{id}", "get"],
     ["/api/agent-runs/{id}/trace", "get"],
-    ["/api/agent-runs/{id}/handoff", "get"],
+    // R20 R19-29：/handoff 端点已删（死冗余，无消费）。
     ["/api/agent-runs/{id}/abort", "post"],
     ["/api/agent-runs/{id}/replay", "get"]
   ] as const) {
@@ -1671,9 +1669,8 @@ test("Task intake and AgentRun OpenAPI responses document the execution chain", 
     enum: ["validation_error"]
   });
 
-  const handoffResponse = jsonResponseSchema(body.paths, "/api/agent-runs/{id}/handoff", "get", "200");
-  assert.deepEqual(handoffResponse?.required, ["ok", "data"]);
-  assert.ok(handoffResponse?.properties?.data, "GET /api/agent-runs/{id}/handoff missing nullable handoff data schema");
+  // R20 R19-29：GET /api/agent-runs/{id}/handoff 已删（死冗余，无消费）——原先这里的 handoffResponse
+  // 契约断言随路由/openapi 条目一并删除；同样的结构化 handoff 数据已在下面 replayResponse 里覆盖。
 
   const replayResponse = jsonResponseSchema(body.paths, "/api/agent-runs/{id}/replay", "get", "200");
   assert.deepEqual(replayResponse?.required, ["ok", "data", "meta"]);
@@ -2121,7 +2118,7 @@ test("Proposal OpenAPI contracts document review, merge, and conflict action pay
 
   for (const [path, method] of [
     ["/api/workitems/{id}/proposals", "post"],
-    ["/api/workitems/{id}/proposals", "get"],
+    // R20 R19-29：GET /api/workitems/{id}/proposals（list）已删（死冗余，无消费）。
     ["/api/workitems/{id}/conflicts", "get"],
     ["/api/proposals/{id}", "get"],
     ["/api/proposals/{id}/review", "post"],
@@ -2171,12 +2168,11 @@ test("Proposal OpenAPI contracts document review, merge, and conflict action pay
     enum: ["proposal_already_exists"]
   });
 
-  for (const [path, method] of [
-    ["/api/workitems/{id}/proposals", "get"],
-    ["/api/proposals/{id}", "get"]
-  ] as const) {
-    const schema = jsonResponseSchema(body.paths, path, method, "200");
-    assert.deepEqual(schema?.required, ["ok", "data"], `${method.toUpperCase()} ${path} missing proposal response`);
+  // R20 R19-29：GET /api/workitems/{id}/proposals（list）已删（死冗余，无消费）——原先与它同批断言的
+  // 200 响应形状检查随路由/openapi 条目一并删除，/api/proposals/{id} 的等价检查已在别处覆盖。
+  {
+    const schema = jsonResponseSchema(body.paths, "/api/proposals/{id}", "get", "200");
+    assert.deepEqual(schema?.required, ["ok", "data"], "GET /api/proposals/{id} missing proposal response");
   }
 
   const reviewRequest = jsonRequestSchema(body.paths, "/api/proposals/{id}/review", "post");

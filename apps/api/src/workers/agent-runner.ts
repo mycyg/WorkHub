@@ -1094,9 +1094,30 @@ export function createInMemoryAgentRunQueue(options: {
     // 仍在生效的预留，导致无预留的重跑集体超预算。与入队时 reserve 用的 reservationLeaseMs 保持同一视界。
     if (reservationRepo) {
       const reservationLeaseExpiresAt = new Date(heartbeatAt.getTime() + reservationLeaseMs);
+      const reservationWorkspaceId = run.workspace_id ?? settings.auth.defaultWorkspaceId;
+      // P3-02：这次续租此前是 `.catch(() => {})`——DB 抛错和"命中 0 行"全被悄悄吞掉，没人知道预留租约丢了。
+      // 0 行意味着这个 run 已经没有 active 预留可续（早被 releaseExpired 判过期释放，或从未成功 reserve
+      // 过），outstanding 计算会从此漏掉这个仍在跑的 run，并发预留可能悄悄超预算却查不出来。改为：抛错与
+      // 0 行都留一条结构化日志给运维排查；不改变 run 本身的执行/状态（续租失败不等于 run 失联，claim 心跳
+      // 是独立信号，已由 agent_run_claim_heartbeat_failed / agent_run_claim_lease_lost 覆盖）。
       await reservationRepo
-        .refreshLease(run.workspace_id ?? settings.auth.defaultWorkspaceId, run.run_id, reservationLeaseExpiresAt)
-        .catch(() => {});
+        .refreshLease(reservationWorkspaceId, run.run_id, reservationLeaseExpiresAt)
+        .then((renewedRows) => {
+          if (renewedRows === 0) {
+            getDefaultStructuredLogger().warn("agent_run_budget_lease_renew_no_rows", {
+              runId: run.run_id,
+              workspaceId: reservationWorkspaceId,
+              reservationLeaseExpiresAt: reservationLeaseExpiresAt.toISOString()
+            });
+          }
+        })
+        .catch((error) => {
+          getDefaultStructuredLogger().warn("agent_run_budget_lease_renew_failed", {
+            runId: run.run_id,
+            workspaceId: reservationWorkspaceId,
+            error
+          });
+        });
     }
   }
 

@@ -13,6 +13,7 @@ import {
   conversationPresenceTypingEventSchema,
   conversationReactionUpdatedEventSchema,
   conversationReadUpdatedEventSchema,
+  conversationTitleUpdatedEventSchema,
   type ConversationActionCardUpdatedEvent,
   type ConversationMessageReactionVM,
   type ConversationMessageVM
@@ -197,6 +198,20 @@ export function parseIncomingConversationParticipantsUpdated(
     return undefined;
   }
   return { change: parsed.data.data.change, userId: parsed.data.data.user_id };
+}
+
+// R20 P2-04（会话 rename 跨端同步）：conversation.title.updated——别的客户端给这条会话改了名，data 带新 title。
+// 同 parseIncomingConversationCuuUpdated：未过 zod 校验/会话 id 不匹配一律 undefined，调用方（view.ts）拿到
+// 新 title 就地更新左栏树叶（renameCollabConversationInVm），不整页刷。
+export function parseIncomingConversationTitleUpdated(raw: unknown, conversationId: string): string | undefined {
+  const parsed = conversationTitleUpdatedEventSchema.safeParse(raw);
+  if (!parsed.success) {
+    return undefined;
+  }
+  if (parsed.data.data.conversation_id !== conversationId) {
+    return undefined;
+  }
+  return parsed.data.data.title;
 }
 
 // R14 批 CHAT：conversation.observer.analyzing——瞬态（照 typing 模式，ttl 30s），观察者开始整理讨论时

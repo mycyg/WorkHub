@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { AgentArmyDashboardVM, AttentionItem, CalendarPageVM, ConversationMessageVM, DrivePageVM, ProjectHealthPageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProjectListVM, ProposalConflict, ProposalDetailVM, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
+import type { AgentArmyDashboardVM, AttentionItem, AuditLogFact, CalendarPageVM, ConversationMessageVM, DrivePageVM, ProjectHealthPageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProjectListVM, ProposalConflict, ProposalDetailVM, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
 
 import { renderAgentRunReplay } from "../replay/index.js";
-import { renderWebRouteComponent, renderWebRouteComponents } from "./route-components.js";
+import { renderWebRouteComponent, renderWebRouteComponents, renderWorkItemAuditTimelineRows } from "./route-components.js";
 import { renderOnboardingScreen } from "../onboarding.js";
 import { renderWebProductShell } from "./product-shell.js";
 import { renderGoldPathSurface } from "./render.js";
@@ -1153,6 +1153,78 @@ test("R4.11 WorkItem route component keeps task context, trace, acceptance, and 
   assert.equal(workitem.html.includes('data-s1-day2-post-run-next-action="replay"'), true);
   assert.deepEqual(workitem.primaryHrefs.includes(`/proposals/${vm.page_vms.proposal.proposal_id}`), true);
   assertNoMainWindowBoundaryLeak(workitem.html);
+});
+
+// R20 R19-27（根因）：后端早有跨 run 审计时间线端点（GET /api/workitems/:id/audit，packages/db
+// audit-repository 有测试），但 web 工作项详情页此前完全不渲染它——这个断言此前必然失败（页面里压根
+// 没有这段标记）。时间线本体是客户端异步水合（apps/web/src/browser.ts），这里只锁定 route-components
+// 出的占位卡：正确的 data-* 挂载点（供 browser.ts 找到并水合）+ 本地化的加载中文案，两种语言都要有。
+test("R20 R19-27 WorkItem route component renders a hydration slot for the cross-run audit timeline", () => {
+  const vm = surfaceVm();
+  const zh = renderWebRouteComponents(vm, { locale: "zh-CN" }).workitem;
+  const en = renderWebRouteComponents(vm, { locale: "en-US" }).workitem;
+  assert.ok(zh);
+  assert.ok(en);
+
+  assert.equal(zh.html.includes('data-r20-workitem-audit-timeline="true"'), true);
+  assert.equal(zh.html.includes(`data-r20-workitem-audit-timeline-workitem="${vm.page_vms.workitem.workitem.id}"`), true);
+  assert.equal(zh.html.includes('data-r20-workitem-audit-timeline-body="true"'), true);
+  assert.equal(zh.html.includes('data-r20-workitem-audit-timeline-loading="true"'), true);
+  assert.equal(zh.html.includes("正在加载审计记录"), true);
+  assert.equal(en.html.includes("Loading audit history"), true);
+  assertNoMainWindowBoundaryLeak(zh.html);
+  assertNoMainWindowBoundaryLeak(en.html);
+});
+
+// R20 R19-27：审计时间线的行渲染是纯函数（renderWorkItemAuditTimelineRows），供 browser.ts 拉到数据后
+// 复用；这里直接单测它——本地化动作/操作者标签、时间戳、撤销标记、以及 evidenceRows 同款的截断诚实
+// 提示（"还有 N 条…（共 M 条）"），不能让审阅者以为已经看全。
+test("R20 R19-27 renderWorkItemAuditTimelineRows localizes action/actor labels, marks undone entries, and truncates honestly", () => {
+  const baseEntry: AuditLogFact = {
+    id: "audit-1",
+    actor: { actor_kind: "human", actor_nickname: "小拓" },
+    entity: { entity_type: "work_item", entity_id: "work-1" },
+    action: "work_item.created",
+    detail_json: {},
+    created_at: "2026-07-10T09:00:00.000Z"
+  };
+
+  const empty = renderWorkItemAuditTimelineRows([], "en-US");
+  assert.equal(empty.includes("No audit history yet"), true);
+
+  const zhRows = renderWorkItemAuditTimelineRows([baseEntry], "zh-CN");
+  assert.equal(zhRows.includes('data-r20-workitem-audit-entry="audit-1"'), true);
+  assert.equal(zhRows.includes('data-r20-workitem-audit-entry-action="work_item.created"'), true);
+  assert.equal(zhRows.includes("创建工作项"), true);
+  assert.equal(zhRows.includes("小拓"), true);
+  assert.equal(zhRows.includes("2026-07-10"), true);
+
+  const aiEntry: AuditLogFact = {
+    ...baseEntry,
+    id: "audit-2",
+    actor: { actor_kind: "ai" },
+    action: "snapshot.reverted",
+    undone_at: "2026-07-10T09:05:00.000Z"
+  };
+  const enRows = renderWorkItemAuditTimelineRows([aiEntry], "en-US");
+  assert.equal(enRows.includes("File snapshot reverted"), true);
+  assert.equal(enRows.includes("AI (undone)"), true);
+
+  // Unknown/future action strings must not leak the raw machine token — they fall back to a
+  // humanized (dot/underscore stripped, title-cased) rendering instead.
+  const unknownAction: AuditLogFact = { ...baseEntry, id: "audit-3", action: "some_future.action_kind" };
+  const unknownRows = renderWorkItemAuditTimelineRows([unknownAction], "en-US");
+  assert.equal(unknownRows.includes("Some Future Action Kind"), true);
+
+  const many: AuditLogFact[] = Array.from({ length: 11 }, (_, index) => ({
+    ...baseEntry,
+    id: `audit-many-${index}`
+  }));
+  const truncated = renderWorkItemAuditTimelineRows(many, "zh-CN");
+  assert.equal(truncated.includes('data-r20-workitem-audit-timeline-overflow="3"'), true);
+  assert.equal(truncated.includes("还有 3 条审计记录未展开（共 11 条）"), true);
+  assert.equal(truncated.includes("audit-many-7"), true, "the 8th visible entry must still be rendered");
+  assert.equal(truncated.includes("audit-many-8"), false, "the 9th entry must be truncated, not silently rendered");
 });
 
 // R14 批 CHAT（web-avatars）：claimed_by_user_id/claimed_by_nickname 一直在契约里，web 端此前从没
