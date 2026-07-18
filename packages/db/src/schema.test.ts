@@ -682,7 +682,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0068 proactive intent recovery", () => {
+test("migration journal ends with 0069 event outbox", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -698,17 +698,17 @@ test("migration journal ends with 0068 proactive intent recovery", () => {
       when: finalEntry.when
     },
     {
-      // R20 REL-2（#P1-11 主动性 intent 崩溃恢复）：0068(proactive_intent_recovery,when=1783929000000)
-      // 接在 W4a 的 0067(project_instructions,when=1783928000000)之后,journal 收于 0068,when 严格递增。
-      idx: 68,
+      // R20 W5-1（#P2-01 事务性 outbox）：0069(event_outbox,when=1783929001000)接在 REL-2 的
+      // 0068(proactive_intent_recovery,when=1783929000000)之后,journal 收于 0069,when 严格递增。
+      idx: 69,
       version: "7",
-      tag: "0068_proactive_intent_recovery",
+      tag: "0069_event_outbox",
       breakpoints: true,
-      when: 1783929000000
+      when: 1783929001000
     }
   );
-  // when 严格递增——0068 的时间戳必须大于 0067 的 1783928000000。
-  const priorEntry = journal.entries.find((entry) => entry.tag === "0067_project_instructions");
+  // when 严格递增——0069 的时间戳必须大于 0068 的 1783929000000。
+  const priorEntry = journal.entries.find((entry) => entry.tag === "0068_proactive_intent_recovery");
   assert.ok(priorEntry && finalEntry && finalEntry.when > priorEntry.when);
 });
 
