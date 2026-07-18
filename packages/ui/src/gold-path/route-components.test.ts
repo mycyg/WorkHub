@@ -2165,6 +2165,41 @@ test("B-R9.6 project home rows show the army progress pill only for armied work 
   assertNoMainWindowBoundaryLeak(projectHome.html);
 });
 
+// R20 wave4（R19-1 OKR 前端接线）：/api/objectives（创建）与 /api/objectives/:id/link（挂链）此前
+// 端点在但前端完全不可达。项目主页新增 OKR 卡——创建目标表单常渲（不依赖任何 GET，纯 POST 表单），
+// 会话内创建列表骨架给一条诚实空态说明（服务端没有列全部目标的端点）。
+test("R20 wave4 (R19-1): project home renders an OKR card with a create-objective form and an honest session-scoped empty state", () => {
+  const vm = {
+    generated_at: "2026-06-11T09:00:00.000Z",
+    project: {
+      id: "93000000-0000-4000-8000-000000000001",
+      name: "R5 Workspace",
+      slug: "r5-workspace",
+      description: null,
+      owner_label: "owner",
+      status: "active" as const
+    },
+    summary: { open_work_item_count: 0, total_open_work_item_count: 0 },
+    open_work_items: [],
+    drive: { file_count: 0, recent_files: [] },
+    actions: {
+      new_task: { id: "new_task", label: "新任务", method: "GET" as const, href: "/intake" },
+      open_drive: { id: "open_drive", label: "打开网盘", method: "GET" as const, href: "/drive?project_id=93000000-0000-4000-8000-000000000001" }
+    }
+  };
+  const projectHome = renderWebRouteComponent({ key: "project-home", project: vm }, { locale: "zh-CN" });
+  assert.equal(projectHome.html.includes('data-r20-project-home-objectives="true"'), true);
+  assert.equal(projectHome.html.includes('data-r20-project-home-objectives-project="93000000-0000-4000-8000-000000000001"'), true);
+  assert.equal(projectHome.html.includes('data-r20-okr-create-form="true"'), true);
+  assert.equal(projectHome.html.includes('data-r20-okr-title-input'), true);
+  assert.equal(projectHome.html.includes('data-r20-okr-kr-input'), true);
+  assert.equal(projectHome.html.includes('data-r20-okr-create-submit="true"'), true);
+  assert.equal(projectHome.html.includes('data-r20-okr-list-empty="true"'), true);
+  // 诚实缺省：文案不应暗示目标是「这个项目的」，因为 objectives 表没有 project_id（工作区级实体）。
+  assert.doesNotMatch(projectHome.html, /项目目标/u);
+  assertNoMainWindowBoundaryLeak(projectHome.html);
+});
+
 // R14 批 GH（07-gh-design.md §5.1）：项目主页 github_activities 区块——web 端消费。
 test("R14 GH: project home renders recent GitHub activity with kind/state/author badges and a real external link", () => {
   const baseVm = {
@@ -2755,6 +2790,27 @@ test("R18-H1 settings members section is admin-gated: SSR skeleton only when isA
   const bodyOpen = asAdmin.html.indexOf(">", bodyIdx);
   const bodyClose = asAdmin.html.indexOf("</div>", bodyOpen);
   assert.equal(asAdmin.html.slice(bodyOpen, bodyClose).includes("data-r18-settings-invite-token"), false);
+});
+
+// R20 wave4（R19-2 AI 预算策略前端接线）：GET/PUT /api/cost/policies(/:scope/:id) 服务端早已有且
+// admin-only（非管理员连 GET 都是 403）——SSR 阶段就该整体省略这张卡，不是渲了又假装可编辑。
+test("R20 wave4 (R19-2): settings budget policy section is admin-gated: SSR skeleton only when isAdmin", () => {
+  const vm = surfaceVm();
+  const settingsVm = vm.page_vms.settings;
+  assert.ok(settingsVm);
+
+  const asMember = renderWebRouteComponent({ key: "settings", settings: settingsVm, isAdmin: false }, { locale: "zh-CN" });
+  assert.equal(asMember.html.includes('data-r20-settings-budget-policies="true"'), false);
+
+  const asAdmin = renderWebRouteComponent({ key: "settings", settings: settingsVm, isAdmin: true }, { locale: "zh-CN" });
+  // SSR 只出加载态骨架 + hydration 锚点（真策略列表由 browser.ts bindSettingsBudgetPolicyPanel 拉取后注入）。
+  assert.equal(asAdmin.html.includes('data-r20-settings-budget-policies="true"'), true);
+  assert.equal(asAdmin.html.includes('data-r20-settings-budget-policies-body="true"'), true);
+  assert.equal(asAdmin.html.includes("正在加载预算策略"), true);
+
+  const asAdminEn = renderWebRouteComponent({ key: "settings", settings: settingsVm, isAdmin: true }, { locale: "en-US" });
+  assert.equal(asAdminEn.html.includes("Loading budget policies"), true);
+  assertNoMainWindowBoundaryLeak(asAdmin.html);
 });
 
 // R13 批 P3（功能审查 B4）：web /settings 的「AI 助手」区块——default_mode 与 dispatch_policy 两个

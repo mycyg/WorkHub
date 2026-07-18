@@ -16,6 +16,7 @@ export * from "./domain/identity.js";
 export * from "./domain/pilot.js";
 export * from "./domain/project.js";
 export * from "./domain/work-item.js";
+export * from "./domain/objective.js";
 export * from "./domain/collaboration.js";
 export * from "./domain/text-diff3.js";
 export * from "./domain/agent.js";

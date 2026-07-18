@@ -628,6 +628,38 @@ test("api client exposes the workbench bootstrap page VM endpoint", async () => 
   ]);
 });
 
+// R20 wave4（R19-1 OKR 前端接线）：objectives 创建 + 挂链两个既有服务端端点此前没有任何类型化
+// 客户端方法能调用（前端完全不可达）。这里锁死 URL/方法/body 构造，逐字对齐
+// apps/api/src/routes/objectives.ts 的 POST /api/objectives 与 POST /api/objectives/:id/link。
+test("api client exposes the objective create + link endpoints (R19-1 OKR wiring)", async () => {
+  const calls: Array<{ url: string; method: string; body: string | undefined }> = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET", body: typeof init?.body === "string" ? init.body : undefined });
+      return new Response(JSON.stringify({ ok: true, data: { objective_id: "objective-1", title: "ok", status: "active", progress_percent: 0 } }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  await client.createObjective({ title: "R20 稳定性目标", key_results: [{ title: "P0 缺陷清零" }] });
+  await client.linkObjective("objective-1", { work_item_id: "work-1" });
+
+  assert.deepEqual(calls, [
+    {
+      url: "/api/objectives",
+      method: "POST",
+      body: JSON.stringify({ title: "R20 稳定性目标", key_results: [{ title: "P0 缺陷清零" }] })
+    },
+    {
+      url: "/api/objectives/objective-1/link",
+      method: "POST",
+      body: JSON.stringify({ work_item_id: "work-1" })
+    }
+  ]);
+});
+
 // R14 批 MEM（记忆可见可治理）：用户记忆 + 团队技能两个治理面的客户端方法——URL/方法/body 构造要
 // 与服务端路由（apps/api/src/routes/{user-memory-governance,team-skill-governance}.ts）逐字对齐。
 // 这两组方法在 WorkHubApiClient 上是可选字段（同上面 pages.workbench? 的既有先例，不强迫

@@ -457,6 +457,18 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    // R20 wave4（R19-1 OKR 前端接线）：创建目标（可带关键结果）+ 把工作项挂到目标上——服务端早已有
+    // POST /api/objectives 与 POST /api/objectives/:id/link，此前没有任何类型化客户端方法能调用它们。
+    createObjective: (payload) =>
+      request("/api/objectives", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    linkObjective: (objectiveId, payload) =>
+      request(`/api/objectives/${encodeURIComponent(objectiveId)}/link`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
     startAgentRun: (workItemId, payload = {}, options) =>
       request(withPageLocale(`/api/workitems/${encodeURIComponent(workItemId)}/agent-runs`, options), {
         method: "POST",

@@ -181,6 +181,14 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async createWorkItem() {
       return surface.page_vms.workitem;
     },
+    // R20 wave4（R19-1 OKR 前端接线）：本文件手写全量 WorkHubApiClient 字面量 mock，新增的必填方法
+    // 要跟着补桩——不是这个测试要覆盖的行为，随便给个符合响应契约的最小值即可。
+    async createObjective() {
+      return { objective_id: "90000000-0000-4000-8000-000000000001", title: "mock objective", status: "active", progress_percent: 0 };
+    },
+    async linkObjective(objectiveId: string) {
+      return { objective_id: objectiveId, work_item_id: "50000000-0000-4000-8000-000000000021" };
+    },
     async createTaskPlan() {
       return {
         plan_id: "70000000-0000-4000-8000-000000000011",

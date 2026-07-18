@@ -4467,6 +4467,36 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
         <h3 role="heading" aria-level="2">${escapeHtml(zh ? "成员" : "Members")}</h3>
         <div data-r18-project-home-members-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载成员摘要…" : "Loading member summary…")}</p></div>
       </section>`;
+  // R20 wave4（R19-1 OKR 前端接线）：服务端 POST /api/objectives（建目标+关键结果）与
+  // POST /api/objectives/:id/link（挂工作项）此前完全没有前端入口。目标是工作区级实体（objectives 表
+  // 没有 project_id 列），不是「这个项目的目标」——文案刻意不说「项目目标」。服务端没有列目标的端点
+  // （只有按 id 批量取标题/按状态取 id 列表），故本卡只能话本次会话内创建过的目标（不持久化列表），
+  // 创建成功后立刻在下面追加一行，带「挂到这里的某个工作项」选择器——数据源直接用本页已有的
+  // open_work_items（不额外请求）。
+  const objectivesSection = `<section class="wh-card wh-r4-route-card" data-r20-project-home-objectives="true" data-r20-project-home-objectives-project="${escapeHtml(project.id)}">
+        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "OKR · 目标与关键结果" : "OKR — objectives & key results")}</h3>
+        <p class="wh-subtle">${escapeHtml(zh
+          ? "目标是工作区级的，不专属这个项目。建好目标后，可以把下面「进行中工作」里的工作项挂上去追踪进度。"
+          : "Objectives are workspace-wide, not scoped to this project. Once created, link items from the open-work list above to track progress.")}</p>
+        <form data-r20-okr-create-form="true">
+          <div class="wh-r4-route-row">
+            <input type="text" class="wh-pill" data-r20-okr-title-input maxlength="256" placeholder="${escapeHtml(zh ? "目标标题" : "Objective title")}" aria-label="${escapeHtml(zh ? "目标标题" : "Objective title")}" />
+          </div>
+          <div class="wh-r4-route-row">
+            <textarea class="wh-pill" style="width:100%;box-sizing:border-box;resize:vertical" data-r20-okr-description-input maxlength="4000" rows="2" placeholder="${escapeHtml(zh ? "目标说明（可选）" : "Description (optional)")}" aria-label="${escapeHtml(zh ? "目标说明" : "Description")}"></textarea>
+          </div>
+          <div class="wh-r4-route-row">
+            <textarea class="wh-pill" style="width:100%;box-sizing:border-box;resize:vertical" data-r20-okr-kr-input maxlength="2000" rows="3" placeholder="${escapeHtml(zh ? "关键结果，每行一条（可选，最多 8 条）" : "Key results, one per line (optional, up to 8)")}" aria-label="${escapeHtml(zh ? "关键结果" : "Key results")}"></textarea>
+          </div>
+          <p class="wh-subtle" data-r20-okr-create-status hidden></p>
+          <button type="submit" class="wh-btn wh-btn-primary" data-r20-okr-create-submit="true">${escapeHtml(zh ? "创建目标" : "Create objective")}</button>
+        </form>
+        <div data-r20-okr-list role="list">
+          <p class="wh-subtle" data-r20-okr-list-empty="true">${escapeHtml(zh
+            ? "本次会话里还没有创建目标——服务端暂不提供列出全部已有目标的端点，创建后会立刻显示在这里。"
+            : "No objectives created in this session yet — the server has no endpoint to list existing ones, so newly created objectives appear here right away.")}</p>
+        </div>
+      </section>`;
   const instructionsSection = `<section class="wh-card wh-r4-route-card" data-r17-project-home-instructions="true" data-r17-project-home-instructions-project="${escapeHtml(project.id)}">
         <h3 role="heading" aria-level="2">${escapeHtml(zh ? "自定义指令" : "Custom instructions")}</h3>
         <p class="wh-subtle">${escapeHtml(
@@ -4527,6 +4557,7 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
       </section>
       ${githubSection}
       ${plansSection}
+      ${objectivesSection}
       ${membersSection}
       ${instructionsSection}
       <a class="wh-r4-route-kicker" href="/projects" data-r8-project-home-back="true">${escapeHtml(routeT(locale, "projectHome.back"))}</a>
@@ -5469,8 +5500,25 @@ function renderSettingsMembersSection(locale: WorkHubLocale): string {
       </div>`;
 }
 
+// R20 wave4（R19-2 AI 预算策略前端接线）：GET /api/cost/policies 与 PUT /api/cost/policies/:scope/:id
+// 服务端早已有（admin-only），此前没有任何前端入口——非管理员连 GET 都是 403，所以只在 isAdmin 为真时
+// 渲这张卡（同上面成员分区的既有先例：非管理员该分区在 SSR 阶段就整体省略，不是渲了又禁用）。真实数据
+// 由 apps/web/src/browser.ts 的 bindSettingsBudgetPolicyPanel 拉取回填，SSR 只出加载态骨架。
+function renderSettingsBudgetPolicySection(locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  return `<section class="wh-card wh-r4-route-card" data-r20-settings-budget-policies="true">
+        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "AI 预算策略（管理员）" : "AI budget policies (admins)")}</h3>
+        <p class="wh-subtle">${escapeHtml(zh
+          ? "按范围（工作项/任务/目标/用户/团队/评测）设置的 AI 用量与费用上限，以及超限后的处理方式。"
+          : "Token and spend caps for the AI engine, scoped by work item / task / objective / user / team / eval, plus what happens on overrun.")}</p>
+        <p class="wh-subtle" data-r20-settings-budget-policies-status="loading" hidden></p>
+        <div data-r20-settings-budget-policies-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载预算策略…" : "Loading budget policies…")}</p></div>
+      </section>`;
+}
+
 function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale, isAdmin = false): WebRouteComponent {
   const membersSection = isAdmin ? renderSettingsMembersSection(locale) : "";
+  const budgetPolicySection = isAdmin ? renderSettingsBudgetPolicySection(locale) : "";
   const reactComponent = createSettingsReactRouteComponent(vm, locale);
   const reactAttrs = dataAttrs(reactRouteComponentMarkerAttrs(reactComponent));
   const props = reactComponent.props;
@@ -5528,6 +5576,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale,
           : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "还没有常驻规则。" : "No standing rules yet.")}</p>`}</div>
       </section>` : ""}
       ${membersSection}
+      ${budgetPolicySection}
       <p class="wh-r4-route-kicker" data-r10-settings-diagnostics="true">${escapeHtml(locale === "zh-CN" ? "系统诊断（管理员关注；普通成员只读参考）" : "System diagnostics (for admins; read-only reference for members)")}</p>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-settings-runtime="true">

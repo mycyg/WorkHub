@@ -21,6 +21,11 @@ import type {
   CreateWorkItemRequest,
   CreateProposalFromManifestRequest,
   CreateSessionRequest,
+  // R20 wave4（R19-1 OKR 前端接线）：创建目标 + 挂链工作项的请求/响应契约。
+  CreateObjectiveRequest,
+  CreateObjectiveResponse,
+  LinkObjectiveRequest,
+  LinkObjectiveResponse,
   DrivePageVM,
   MeetingPageVM,
   ApplyMergeProposalCandidateRequest,
@@ -354,6 +359,10 @@ export type WorkHubApiClient = {
   getSession: (id: string, options?: PageRequestOptions) => Promise<SessionVM>;
   createWorkItem: (payload: CreateWorkItemRequest, options?: PageRequestOptions) => Promise<WorkItemDetailVM>;
   createTaskPlan: (workItemId: string, payload?: CreateTaskPlanRequest, options?: PageRequestOptions) => Promise<CreateTaskPlanResult>;
+  // R20 wave4（R19-1 OKR 前端接线）：创建目标（可带关键结果）+ 把工作项挂到目标上——后端早已有
+  // POST /api/objectives 与 POST /api/objectives/:id/link，此前没有任何类型化客户端方法能调用它们。
+  createObjective: (payload: CreateObjectiveRequest) => Promise<CreateObjectiveResponse>;
+  linkObjective: (objectiveId: string, payload: LinkObjectiveRequest) => Promise<LinkObjectiveResponse>;
   startAgentRun: (workItemId: string, payload?: StartAgentRunRequest, options?: PageRequestOptions) => Promise<AgentRunLiveVM>;
   getAgentRun: (runId: string) => Promise<AgentRunLiveVM>;
   getAgentRunTrace: (runId: string, after?: number) => Promise<AgentStep[]>;
