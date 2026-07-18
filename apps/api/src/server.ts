@@ -11,6 +11,7 @@ import { getDefaultSessionSweepScheduler } from "./workers/session-sweep.js";
 import { getDefaultRiskMonitorScheduler } from "./workers/risk-monitor.js";
 import { getDefaultGithubSyncScheduler } from "./workers/github-poll.js";
 import { getDefaultPulseScheduler } from "./workers/pulse-scheduler.js";
+import { getDefaultEventOutboxDrainScheduler } from "./workers/event-outbox-drain.js";
 
 // 进程级兜底：未捕获异常/未处理 rejection 此前无人接，一次走线的 throw/reject 会静默杀掉 daemon
 // 或留下半死状态。早注册（先于 server start），与下方 SIGINT/SIGTERM 优雅退出互补、不替代。
@@ -62,6 +63,11 @@ githubPollScheduler.start();
 const pulseScheduler = settings.pulse.enabled ? getDefaultPulseScheduler() : undefined;
 pulseScheduler?.start();
 
+// R20 P2-01（事务性 outbox）：会话消息事件的 outbox drain——启动即补发上次崩溃残留在 pending 的行，
+// 之后周期性重放 publish 失败的行。纯 DB + bus，无 LLM 依赖，与 risk-monitor 同档无条件启动。
+const eventOutboxDrainScheduler = getDefaultEventOutboxDrainScheduler();
+eventOutboxDrainScheduler.start();
+
 // R12 批3：主区静默观察者——LLM provider 未配置时不启动（tick 会逐会话打 LLM，未配置只会
 // 刷 consecutive_failures 噪音），与 meta-planner/cross-agent-judge 的 isConfigured 守卫同款语义。
 const conversationObserverScheduler = getDefaultProviderRegistry().isConfigured()
@@ -108,6 +114,7 @@ function shutdown(exitCode: number) {
   riskMonitorScheduler.stop();
   githubPollScheduler.stop();
   pulseScheduler?.stop();
+  eventOutboxDrainScheduler.stop();
   conversationObserverScheduler?.stop();
   conversationReplyJudgeScheduler?.stop();
   const forceExit = setTimeout(() => process.exit(exitCode), 2000);
