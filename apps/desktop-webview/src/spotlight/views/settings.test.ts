@@ -5,7 +5,9 @@ import type { SettingsPageVM, UserAiProfileVM, UserProfileVM } from "@workhub/co
 
 import {
   createSettingsView,
+  decidePolicyRevokeConfirmation,
   logoutErrorPanelHtml,
+  permissionPoliciesSectionHtml,
   runDesktopLogout,
   type DesktopLogoutEffects,
   type DesktopLogoutStage,
@@ -956,5 +958,104 @@ test("settings view renders a 'Cuu's memory' nav row that opens the independent 
     body.click(new FakeElement(new Set(["[data-set-open-memory]"])));
 
     assert.deepEqual(opened, [{ id: "memory" }]);
+  });
+});
+
+// —— R20 DSK-UX（R19-5 撤销学到的自动通过策略）—— //
+
+function policyVm(over: Record<string, unknown> = {}) {
+  return {
+    id: "70000000-0000-4000-8000-000000000001",
+    action_pattern: "drive.write:*",
+    effect: "allow" as const,
+    learned_from_session: true,
+    created_at: "2026-07-16T00:00:00.000Z",
+    revoke_href: "/api/permissions/70000000-0000-4000-8000-000000000001",
+    ...over
+  };
+}
+
+test("permissionPoliciesSectionHtml renders nothing for a non-admin (no permission_policies in the VM)", () => {
+  assert.equal(
+    permissionPoliciesSectionHtml({ policies: undefined, armedId: undefined, busyId: undefined, errorText: undefined, zh: true }),
+    ""
+  );
+});
+
+test("permissionPoliciesSectionHtml lists each policy with a revoke control (R19-5 governance dead-end fixed)", () => {
+  const html = permissionPoliciesSectionHtml({
+    policies: [policyVm()],
+    armedId: undefined,
+    busyId: undefined,
+    errorText: undefined,
+    zh: true
+  });
+  assert.match(html, /data-spot-policies-section="true"/u);
+  assert.match(html, /drive\.write:\*/u);
+  assert.match(html, /自动通过/u);
+  assert.match(html, /data-set-revoke-policy="70000000-0000-4000-8000-000000000001"/u);
+});
+
+test("permissionPoliciesSectionHtml arms exactly the targeted policy's revoke button into a confirm prompt", () => {
+  const armed = permissionPoliciesSectionHtml({
+    policies: [policyVm({ id: "p1" }), policyVm({ id: "p2" })],
+    armedId: "p1",
+    busyId: undefined,
+    errorText: undefined,
+    zh: true
+  });
+  assert.match(armed, /data-set-revoke-policy="p1"[^>]*wh-spot-act--danger|wh-spot-act--danger[^>]*data-set-revoke-policy="p1"/u);
+  assert.equal((armed.match(/确定？再点一次撤销/gu) ?? []).length, 1, "only the armed policy shows the confirm prompt");
+});
+
+test("permissionPoliciesSectionHtml shows an empty-state note for an admin with no learned policies", () => {
+  const html = permissionPoliciesSectionHtml({ policies: [], armedId: undefined, busyId: undefined, errorText: undefined, zh: true });
+  assert.match(html, /data-spot-policies-section="true"/u);
+  assert.match(html, /还没有学到的自动通过策略/u);
+});
+
+test("decidePolicyRevokeConfirmation arms first, executes on the second click of the same policy, re-arms on a different one", () => {
+  assert.deepEqual(decidePolicyRevokeConfirmation(undefined, "p1"), { kind: "arm", id: "p1" });
+  assert.deepEqual(decidePolicyRevokeConfirmation("p1", "p1"), { kind: "execute", id: "p1" });
+  assert.deepEqual(decidePolicyRevokeConfirmation("p1", "p2"), { kind: "arm", id: "p2" });
+});
+
+test("the settings view revokes a policy only on the confirmed second click, calling DELETE /api/permissions/:id once", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = { ...settingsVm(), permission_policies: [policyVm({ id: "pol-1" })] } as unknown as SettingsPageVM;
+    const revokeCalls: string[] = [];
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          },
+          async revokePermissionPolicy(id: string) {
+            revokeCalls.push(id);
+            return policyVm({ id, deleted_at: "2026-07-17T00:00:00.000Z" }) as unknown as never;
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+
+    assert.match(body.innerHTML, /data-set-revoke-policy="pol-1"/u);
+
+    // First click only arms — no DELETE yet.
+    body.click(new FakeElement(new Set(["[data-set-revoke-policy]"]), { setRevokePolicy: "pol-1" }));
+    assert.equal(revokeCalls.length, 0, "the first click must not delete anything");
+    assert.match(body.innerHTML, /确定？再点一次撤销/u);
+
+    // Second click confirms — DELETE fires once, then the policy drops out of the list.
+    body.click(new FakeElement(new Set(["[data-set-revoke-policy]"]), { setRevokePolicy: "pol-1" }));
+    await tick();
+    await tick();
+    assert.deepEqual(revokeCalls, ["pol-1"]);
+    assert.doesNotMatch(body.innerHTML, /data-set-revoke-policy="pol-1"/u, "the revoked policy must disappear from the list");
   });
 });

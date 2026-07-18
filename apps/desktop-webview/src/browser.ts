@@ -15,6 +15,7 @@ import {
   type WorkHubLocale
 } from "@workhub/ui/gold-path";
 import { renderProposalConflictCards, renderProposalDetail, proposalCss } from "@workhub/ui/proposal";
+import type { ReplayRevertRoot } from "@workhub/ui/replay";
 import {
   actionElementApplyPayload,
   actionElementCreateWorkItemPayload,
@@ -84,6 +85,7 @@ import {
 import { parseDesktopShellNavigatePayload } from "./shell-events.js";
 import { handleDesktopSpotlightShellNavigate } from "./spotlight-shell-navigation.js";
 import { handleDesktopProposalAction } from "./desktop-proposal-actions.js";
+import { bindDesktopAgentRunReplayRevert } from "./main.js";
 import {
   dismissDesktopMainWindow,
   dragDesktopMainWindow,
@@ -179,6 +181,22 @@ function pushShellBadgeToShell(count: number, locale: WorkHubLocale): void {
   const invoke = tauri?.core?.invoke ?? tauri?.invoke;
   if (typeof invoke === "function") {
     void invoke("set_shell_badge", { count: Math.max(0, Math.floor(count)), locale }).catch(() => undefined);
+  }
+}
+
+// R19-13：应用内切语言时把新 locale 推给 Rust 壳层（set_shell_locale）——原生托盘菜单/tooltip 重建为新语言，
+// 后续 OS 通知兜底文案也跟随（壳层通知 worker 每次弹通知实时读同一 locale 源）。此前语言开关只改 webview 的
+// localStorage + reload，到不了外壳，切成英文后托盘/通知仍是中文。浏览器 dev 态无 __TAURI__ → 优雅降级 no-op。
+function pushShellLocaleToShell(locale: WorkHubLocale): void {
+  const tauri = (globalThis as {
+    __TAURI__?: {
+      core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
+      invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
+    };
+  }).__TAURI__;
+  const invoke = tauri?.core?.invoke ?? tauri?.invoke;
+  if (typeof invoke === "function") {
+    void invoke("set_shell_locale", { locale }).catch(() => undefined);
   }
 }
 
@@ -446,12 +464,17 @@ function bindLocaleSwitch(shellRoot: HTMLElement, locale: WorkHubLocale, client:
       return;
     }
     persistBrowserLocale(nextLocale);
+    // R19-13：立即把新 locale 同步给原生外壳（托盘/通知），与 webview 的 localStorage 生效语言保持一致——
+    // reload 只重渲 webview，托盘是原生常驻不受 reload 影响，靠这条 invoke 才会换语言。
+    pushShellLocaleToShell(nextLocale);
     void client.updatePreferences({ locale: nextLocale })
       .then(() => {
         window.location.reload();
       })
       .catch(() => {
         persistBrowserLocale(locale);
+        // 服务端持久化失败 → webview 回退旧语言，外壳也一并回退，二者不漂移。
+        pushShellLocaleToShell(locale);
         showRouteNotice(shellRoot, localePersistenceFailedNotice(locale, "locale_switch"));
       });
   });
@@ -1110,6 +1133,8 @@ async function boot() {
     ];
     // findings[#low]：同款代次守卫——并发 gold-path load 只让最新一发写面板。
     let goldPathLoadGen = 0;
+    // R20 DSK-UX（R19-3）：replay 面板的撤销按钮绑定句柄——每次重渲换掉旧按钮前先 dispose（清武装计时器）。
+    let replayRevertDispose: (() => void) | undefined;
     const renderLiveGoldPathPanel = async (entry: typeof liveGoldPathPages[number], id?: string) => {
       const panel = root.querySelector<HTMLElement>(`[data-wh-panel="${entry.key}"]`);
       if (!panel) {
@@ -1125,6 +1150,18 @@ async function boot() {
         const page = renderGoldPathSurface(liveSurface, "desktop", { locale }).pages.find((p) => p.key === entry.key);
         if (page) {
           panel.innerHTML = page.html;
+          // R20 DSK-UX（R19-3）：replay 面板渲染完成后，把「撤销此次改动」按钮接上真回调——桌面壳是本地客户端，
+          // 直接执行 POST /api/agent-runs/:id/revert（snapshot_id 走 body）；成功后重拉该面板，被撤销的快照翻
+          // 「已回滚」态。web 端不接这条、由既有 data-requires-desktop 拦截渲成「需在桌面端操作」。二次确认 +
+          // 调用 + 刷新都在 @workhub/ui 的 bindReplayRevertActions 里（经 main.ts 薄接线），这里只做挂载。
+          if (entry.key === "replay") {
+            replayRevertDispose?.();
+            replayRevertDispose = bindDesktopAgentRunReplayRevert(panel as unknown as ReplayRevertRoot, client, {
+              onReverted: () => {
+                void renderLiveGoldPathPanel(entry, id);
+              }
+            });
+          }
         }
       } catch {
         // 保留 fixture 面板,不打断用户。

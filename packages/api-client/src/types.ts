@@ -73,8 +73,19 @@ import type {
   PatchUserMemoryRequest,
   PatchTeamSkillRequest,
   // R14 批 FEEDBACK（web-feedback-ui）：提议详情页「有用/没用」反馈的 PUT 请求体契约。
-  PutAiFeedbackRequest
+  PutAiFeedbackRequest,
+  // R20 DSK-UX（R19-5 撤销学到的自动通过策略 / R19-3 撤销 AI 文件改动）：治理策略与快照回滚的写契约。
+  PermissionPolicy,
+  RevertAgentRunRequest,
+  Snapshot
 } from "@workhub/contracts";
+
+// R20 DSK-UX（R19-3）：POST /api/agent-runs/:id/revert 的响应形状——把被还原的那次文件快照标记为
+// reverted 并回吐它（供调用方确认/刷新）。服务端本地客户端门控，桌面天然满足。
+export type RevertAgentRunResult = {
+  status: "reverted";
+  snapshot: Snapshot;
+};
 
 export type ApiOk<T> = {
   ok: true;
@@ -347,6 +358,11 @@ export type WorkHubApiClient = {
   getAgentRun: (runId: string) => Promise<AgentRunLiveVM>;
   getAgentRunTrace: (runId: string, after?: number) => Promise<AgentStep[]>;
   abortAgentRun: (runId: string) => Promise<AgentRunLiveVM>;
+  // R20 DSK-UX（R19-3）：撤销这次 AI 执行对某个文件的改动（还原快照）。要求本地客户端——桌面壳层天然满足，
+  // web 端到不了这个写动作（与 restore/权限撤销同一道本地客户端门）。可选（同 workbench?/putProposalFeedback? 的
+  // 既有取舍）：标必填会强迫 apps/web 等其它 workspace 里已有的完整 WorkHubApiClient 字面量 mock 补一个用不到的
+  // 桩，那些文件不在本批改动范围内；真实 createApiClient() 一定实现它，调用点用 `!` 断言（同 putProposalFeedback）。
+  revertAgentRun?: (runId: string, payload: RevertAgentRunRequest) => Promise<RevertAgentRunResult>;
   getAgentRunHandoff: (runId: string) => Promise<StructuredHandoff | null>;
   respondApproval: (id: string, payload: RespondApprovalRequest) => Promise<unknown>;
   // R12（批量效率）：多选批量放行（allow-only）。
@@ -416,6 +432,10 @@ export type WorkHubApiClient = {
   costUsage: () => Promise<CostSummaryVM>;
   costPolicies: () => Promise<BudgetPolicy[]>;
   updateCostPolicy: (scope: BudgetPolicy["scope_kind"], id: string, payload: BudgetPolicyUpdate) => Promise<BudgetPolicy>;
+  // R20 DSK-UX（R19-5）：撤销一条学到的自动通过/权限策略（DELETE /api/permissions/:id）。要求本地客户端 + 管理员
+  // ——桌面壳层天然满足本地客户端门；策略列表本身也只有管理员能读到（见 settings VM 的 permission_policies）。
+  // 可选：同 revertAgentRun 的取舍（避免强迫 apps/web 完整 client 字面量 mock 补桩），调用点用 `!` 断言。
+  revokePermissionPolicy?: (id: string) => Promise<PermissionPolicy>;
   pilotDay1Metrics: (options?: PilotDay1MetricsRequestOptions) => Promise<PilotDay1MetricsSnapshot>;
   listProjects: () => Promise<ProjectListVM>;
   replayAgentRun: (runId: string, options?: PageRequestOptions) => Promise<ReplayTraceVM>;

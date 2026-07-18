@@ -1612,6 +1612,10 @@ test("createTurn returns 500 conversation_turn_failed when persistence fails aft
   );
 });
 
+// 钉 off：这条断言的是 legacy 单槽并发语义——同会话已有一轮在跑时，第二次并发 createTurn 立刻 409
+// conversation_turn_busy。loop2（P4b）有意改为把并发请求入队（steering/follow-up，队列深度超限才 409），
+// 故第二次不再 reject 而是排队，assert.rejects 会与 gate 死锁。loop2 的队列语义由显式注入 loop2Mode:"on"
+// 的队列/steering 专测覆盖；这条只钉 legacy 行为。
 test("createTurn only allows one in-progress turn per conversation and releases the slot once it settles", async () => {
   let releaseFirst: (() => void) | undefined;
   const gate = new Promise<void>((resolve) => {
@@ -1619,6 +1623,7 @@ test("createTurn only allows one in-progress turn per conversation and releases 
   });
   const service = createConversationTurnService(
     baseDeps({
+      loop2Mode: "off",
       client: async () => ({
         messages: {
           async stream() {
@@ -2789,7 +2794,10 @@ test("loop2(off): the legacy path still rejects a concurrent turn with 409 conve
   const gate = deferred();
   const service = createConversationTurnService(
     baseDeps({
-      // loop2Mode omitted → off (default). Concurrent turn must still 409 like today.
+      // 钉 off：这条专测 off/legacy 分支的单槽并发 409 门。原本靠「省略 loop2Mode → 默认 off」成立，但当
+      // CONVERSATION_TURN_LOOP2_MODE 默认翻 on 后省略即变 on（会入队而非 409、与 gate 死锁）。显式钉 off 保住
+      // 这条断言的本意——legacy 门在 off 下不变。
+      loop2Mode: "off",
       client: async () => ({
         messages: {
           async stream() {

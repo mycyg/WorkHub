@@ -3500,66 +3500,75 @@ test("agent run abort allows users who can mutate the backing work item", async 
   assert.equal((await queue.get(queued.run_id))?.status, "cancelled");
 });
 
-test("aborted running agent runs keep the cancelled state during finalize drift", async () => {
-  const runtimeSettings = settings();
-  const toolStarted = deferred<void>();
-  const releaseTool = deferred<void>();
-  const milestoneNotifications: { newStatus: string }[] = [];
-  let toolExecutions = 0;
-  let confidenceCalls = 0;
-  const notifications: AgentRunNotificationPublisher = {
-    async notifyMilestone(context) {
-      milestoneNotifications.push({ newStatus: context.newStatus });
-      return [];
-    }
-  };
-  const queue = createInMemoryAgentRunQueue({
-    settings: runtimeSettings,
-    now: () => now,
-    id: () => "40000000-0000-4000-8000-000000000031",
-    client: () => singleToolThenDoneAgentClient(),
-    requireDeliverable: false,
-    confidence: async () => {
-      confidenceCalls += 1;
-      return { confidenceId, verdict: "human_spotcheck" };
-    },
-    notifications,
-    tools: () => ({
-      toModelTools: () => [],
-      async execute() {
-        toolExecutions += 1;
-        toolStarted.resolve();
-        await releaseTool.promise;
-        return {
-          ok: true,
-          isError: false,
-          content: "slow tool done"
-        };
+// Shadow-verify the cancel-during-tool contract on BOTH loop implementations. loop2=on exercises the
+// pi engine adapter: a tool call the model emits must still run through input.tools.execute even when
+// it is absent from the (here empty) toModelTools list — mirroring loop.ts, which delegates every
+// model-named tool call to the registry unconditionally. Without that parity the slow tool never runs,
+// toolStarted never resolves, and runNext hangs. Under both engines the run must converge to cancelled
+// once abort fires mid-tool: no trace recorded, no confidence call, no milestone notification.
+for (const loop2Mode of ["off", "on"] as const) {
+  test(`aborted running agent runs keep the cancelled state during finalize drift (loop2=${loop2Mode})`, async () => {
+    const runtimeSettings = settings();
+    const toolStarted = deferred<void>();
+    const releaseTool = deferred<void>();
+    const milestoneNotifications: { newStatus: string }[] = [];
+    let toolExecutions = 0;
+    let confidenceCalls = 0;
+    const notifications: AgentRunNotificationPublisher = {
+      async notifyMilestone(context) {
+        milestoneNotifications.push({ newStatus: context.newStatus });
+        return [];
       }
-    })
+    };
+    const queue = createInMemoryAgentRunQueue({
+      settings: runtimeSettings,
+      now: () => now,
+      id: () => "40000000-0000-4000-8000-000000000031",
+      loop2Mode,
+      client: () => singleToolThenDoneAgentClient(),
+      requireDeliverable: false,
+      confidence: async () => {
+        confidenceCalls += 1;
+        return { confidenceId, verdict: "human_spotcheck" };
+      },
+      notifications,
+      tools: () => ({
+        toModelTools: () => [],
+        async execute() {
+          toolExecutions += 1;
+          toolStarted.resolve();
+          await releaseTool.promise;
+          return {
+            ok: true,
+            isError: false,
+            content: "slow tool done"
+          };
+        }
+      })
+    });
+
+    const queued = await queue.enqueue({
+      workItemId,
+      actorId: userId,
+      title: "Cancellable worker run"
+    });
+    const running = queue.runNext();
+    await toolStarted.promise;
+    const aborted = await queue.abort(queued.run_id, userId);
+
+    assert.equal(aborted.status, "cancelled");
+    releaseTool.resolve();
+    const settled = await running;
+    const stored = await queue.get(queued.run_id);
+
+    assert.equal(settled?.status, "cancelled");
+    assert.equal(stored?.status, "cancelled");
+    assert.equal(stored?.trace.length, 0);
+    assert.equal(toolExecutions, 1);
+    assert.equal(confidenceCalls, 0);
+    assert.deepEqual(milestoneNotifications, []);
   });
-
-  const queued = await queue.enqueue({
-    workItemId,
-    actorId: userId,
-    title: "Cancellable worker run"
-  });
-  const running = queue.runNext();
-  await toolStarted.promise;
-  const aborted = await queue.abort(queued.run_id, userId);
-
-  assert.equal(aborted.status, "cancelled");
-  releaseTool.resolve();
-  const settled = await running;
-  const stored = await queue.get(queued.run_id);
-
-  assert.equal(settled?.status, "cancelled");
-  assert.equal(stored?.status, "cancelled");
-  assert.equal(stored?.trace.length, 0);
-  assert.equal(toolExecutions, 1);
-  assert.equal(confidenceCalls, 0);
-  assert.deepEqual(milestoneNotifications, []);
-});
+}
 
 test("agent run enqueue opens user_forbidden escalation for human-reserved worker work", async () => {
   const runtimeSettings = settings();

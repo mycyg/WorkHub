@@ -722,3 +722,69 @@ test("R14 batch FEEDBACK: api client PUTs/DELETEs proposal feedback against the 
     { url: "/api/proposals/proposal-1/feedback", method: "DELETE", body: undefined }
   ]);
 });
+
+test("R20 DSK-UX (R19-3): api client POSTs the revert to /api/agent-runs/:id/revert with the snapshot in the body", async () => {
+  const calls: Array<{ url: string; method: string; body: string | undefined }> = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET", body: typeof init?.body === "string" ? init.body : undefined });
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          data: {
+            status: "reverted",
+            snapshot: {
+              id: "snap-1",
+              work_item_id: "wi-1",
+              kind: "pre_step",
+              ref: "runs/run-1/pre",
+              created_by_kind: "ai",
+              reverted_at: "2026-07-17T09:00:00.000Z",
+              created_at: "2026-07-17T08:00:00.000Z"
+            }
+          }
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+  });
+
+  const result = await client.revertAgentRun!("run-1", { snapshot_id: "snap-1" });
+  assert.equal(result.status, "reverted");
+  assert.equal(result.snapshot.id, "snap-1");
+  assert.deepEqual(calls, [
+    { url: "/api/agent-runs/run-1/revert", method: "POST", body: JSON.stringify({ snapshot_id: "snap-1" }) }
+  ]);
+  // runId is URL-encoded, and the snapshot id never leaks into the URL.
+  assert.ok(!calls[0]!.url.includes("snap-1"), "snapshot id must travel in the body, not the URL");
+});
+
+test("R20 DSK-UX (R19-5): api client DELETEs a permission policy against /api/permissions/:id", async () => {
+  const calls: Array<{ url: string; method: string; body: string | undefined }> = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET", body: typeof init?.body === "string" ? init.body : undefined });
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          data: {
+            id: "policy-1",
+            scope_kind: "user",
+            scope_id: "u1",
+            action_pattern: "drive.write:*",
+            effect: "allow",
+            priority: 0,
+            learned_from_session: true,
+            created_at: "2026-07-17T08:00:00.000Z",
+            updated_at: "2026-07-17T08:00:00.000Z"
+          }
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+  });
+
+  const policy = await client.revokePermissionPolicy!("policy-1");
+  assert.equal(policy.id, "policy-1");
+  assert.deepEqual(calls, [{ url: "/api/permissions/policy-1", method: "DELETE", body: undefined }]);
+});

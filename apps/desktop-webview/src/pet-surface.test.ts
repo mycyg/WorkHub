@@ -1716,6 +1716,60 @@ test("pet surface handles proposal review request-changes without navigating to 
   ]);
 });
 
+test("pet surface routes OS notification clicks to the native deep-link command bridge", async () => {
+  // P2-07/R19-12：修复前生产绑定漏传 onSystemNotification，壳层算好的通知 route/window_control 落到 no-op，
+  // 点 OS 通知打不开目标页。这里驱动真实生产绑定：壳层广播 system-notification 计划 → 桌宠经命令桥回传给
+  // 原生 focus_system_notification，审批通知带着 /approvals 深链落地。
+  const handlers = new Map<string, (event: { payload: unknown }) => void>();
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => handlers.delete(eventName);
+  };
+  const focusedPlans: Array<{ route?: string; windowControl?: { label?: string } }> = [];
+  const client = createPetHarnessClient([]) as unknown as DesktopPetSurfaceClient;
+
+  await withFakePetDom(async (root) => {
+    const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+      client,
+      listen,
+      petWindowBridge: {
+        setMode() {},
+        focusSystemNotification(plan) {
+          focusedPlans.push(plan);
+        }
+      }
+    });
+    try {
+      handlers.get("system-notification")?.({
+        payload: {
+          id: "evt-approval",
+          event: "permission.ask",
+          title: "Cuu needs your approval",
+          body: "Open WorkHub to allow, deny, or remember this rule.",
+          urgency: "urgent",
+          route: "/approvals?approvalId=approval-1",
+          windowControl: {
+            label: "main",
+            action: "show_and_focus",
+            source: "system_notification",
+            focus: true,
+            reason: "focus-main-route",
+            route: "/approvals?approvalId=approval-1"
+          },
+          streamKind: "me",
+          streamPath: "/api/push/stream/me"
+        }
+      });
+      await Promise.resolve();
+      assert.equal(focusedPlans.length, 1);
+      assert.equal(focusedPlans[0]?.route, "/approvals?approvalId=approval-1");
+      assert.equal(focusedPlans[0]?.windowControl?.label, "main");
+    } finally {
+      await runtime.dispose();
+    }
+  });
+});
+
 test("pet surface refreshes a proposal card after the main window settles the review action", async () => {
   const openedProposalReview: AttentionItem = {
     id: "proposal-review-runtime",
@@ -2774,6 +2828,42 @@ test("pet window bridge resolves body/card modes and Tauri-like commands", async
   });
   await scaledTauri?.setMode?.("card");
   assert.equal(calls.at(-1), "scaled:set_pet_window_mode:card");
+});
+
+test("pet window bridge relays notification clicks to the native focus_system_notification command", async () => {
+  const calls: Array<{ command: string; args: Record<string, unknown> | undefined }> = [];
+  const bridge = resolveDesktopPetWindowBridge({
+    __TAURI__: {
+      core: {
+        async invoke(command: string, args?: Record<string, unknown>) {
+          calls.push({ command, args });
+          return {};
+        }
+      }
+    }
+  });
+  const plan = {
+    id: "evt-approval",
+    event: "permission.ask",
+    title: "Cuu needs your approval",
+    body: "Open WorkHub to allow, deny, or remember this rule.",
+    urgency: "urgent" as const,
+    route: "/approvals?approvalId=approval-1",
+    windowControl: {
+      label: "main",
+      action: "show_and_focus" as const,
+      source: "system_notification" as const,
+      focus: true,
+      reason: "focus-main-route",
+      route: "/approvals?approvalId=approval-1"
+    },
+    streamKind: "me",
+    streamPath: "/api/push/stream/me"
+  };
+
+  await bridge?.focusSystemNotification?.(plan);
+
+  assert.deepEqual(calls, [{ command: "focus_system_notification", args: { plan } }]);
 });
 
 test("pet window bridge wires dynamic click-through (cursor probe + ignore toggle)", async () => {

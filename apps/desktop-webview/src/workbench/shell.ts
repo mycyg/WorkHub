@@ -47,12 +47,14 @@ import {
   bumpConversationUnreadInVm,
   bumpDmUnread,
   mountWorkbenchRail,
+  reconcileConversationUnreadFromVm,
   setConversationUnreadInVm,
   setDmUnread,
   type WorkbenchRailApiClient
 } from "./rail.js";
 import type { ProjectSettingsApiClient } from "./settings/api.js";
 import { mountProjectSettingsView, type ProjectSettingsViewHandle } from "./settings/view.js";
+import { createPresenceHandle } from "./presence-store.js";
 import { createWorkbenchStore, type WorkbenchStore, type WorkbenchStoreState } from "./store.js";
 import { isMacOsWebview, resolveWorkbenchWindowBridge } from "./window-bridge.js";
 
@@ -249,6 +251,9 @@ export function mountWorkbenchShell(
 ): WorkbenchShellHandle {
   const doc = root.ownerDocument ?? document;
   const store = input.store ?? createWorkbenchStore();
+  // R20 DSK-UX（R19-11 presence 单源）：唯一的在线态门面——聊天区/rail 都通过它读写同一份 store.onlineUserIds，
+  // 不再各留私有 presence 副本各刷各的（同一人两处圆点打架）。rail 直接用 store（见 rail.ts loadPresence）。
+  const presenceHandle = createPresenceHandle(store);
   const getClientToken = input.getClientToken ?? defaultClientTokenReader;
   let disposed = false;
   // G-desktop 止血批 3：本窗当前是否正显示「已登出」整窗态——showLoggedOut() 置真，selectProject()
@@ -662,9 +667,49 @@ export function mountWorkbenchShell(
     eventTypes.permissionExpired,
     eventTypes.proposalOpened
   ]);
+  // R20 DSK-UX（R19-9 未读重连补缺）：/me 流重连成功后（REL-4 统一的 open 语义→onReconnected 无条件调一次）
+  // 补一次未读缺口——断线期间漏掉的 notification.created（broker resume_mode:fresh 不重放）不会再让主区/协同
+  // 未读永久少算。走既有权威来源 pages.workbench 重拉当前选中项目的 VM，把每条会话未读对齐真值（不整帧替换
+  // VM，避免重挂 chat 视图，见 reconcileConversationUnreadFromVm）；顺带补拉 DM 列表（DM 未读权威）+ 刷决策角标。
+  // best-effort：单调代次守卫防晚到响应覆盖新值；拉不到就保持现状，不打断。
+  let reconnectReconcileGen = 0;
+  const reconcileUnreadOnReconnect = () => {
+    // DM 未读 + 决策角标：这两处本来就有各自的权威重拉入口，重连时一并触发让它们和主区/协同同源自愈。
+    void ensureDmListLoaded();
+    refreshInboxBadge();
+    const projectId = store.getState().selectedProjectId;
+    const fetchWorkbench = input.client.pages.workbench;
+    if (!projectId || !fetchWorkbench) {
+      return;
+    }
+    const my = ++reconnectReconcileGen;
+    void fetchWorkbench(projectId, { locale: input.locale })
+      .then((fresh) => {
+        if (disposed || my !== reconnectReconcileGen) {
+          return;
+        }
+        const state = store.getState();
+        // 项目在重连补拉在途中被切走——这份 VM 已不对应当前项目，丢弃（selectProject 会拉自己的）。
+        if (!state.vm || state.selectedProjectId !== projectId || fresh.project.id !== state.vm.project.id) {
+          return;
+        }
+        const nextVm = reconcileConversationUnreadFromVm(state.vm, fresh, currentlyOpenConversationId());
+        if (nextVm !== state.vm) {
+          store.setState({ vm: nextVm });
+        }
+      })
+      .catch(() => {
+        // best-effort：重连补拉失败保持现状，下一次 selectProject/30s 兜底会再对账。
+      });
+  };
   const meStream: ConversationStreamHandle = connectConversationStream({
     url: input.client.streams.me(),
     getClientToken,
+    onReconnected: () => {
+      if (!disposed) {
+        reconcileUnreadOnReconnect();
+      }
+    },
     onEvent: (event) => {
       if (disposed) {
         return;
@@ -710,7 +755,15 @@ export function mountWorkbenchShell(
       }
       if (Object.keys(patch).length > 0) {
         store.setState(patch);
+        return;
       }
+      // R20 DSK-UX（R19-40 新 DM 即时入栏）：两处 bump 都是空操作 = 这条会话既不在项目树 VM、也不在私聊
+      // 列表里——很可能是别人刚开的、本地还没有的新私聊（bumpDmUnread 对未知会话原样返回，此前它只能干等
+      // rail 30s loadDms 才冒出来）。补拉一次私聊列表让它即时上墙。DM 消息 severity=normal 不触发 OS 通知，
+      // 所以这条即时补拉是新私聊在左栏出现的唯一实时路径。ensureDmListLoaded 自带单调代次守卫，突发多条也
+      // 只有最后一次响应落地（不会因外项目协同消息的误触发而堆叠 setState）。取舍：/me 通知不带会话 kind，
+      // 无法在此判定是 DM 还是外项目协同，宁可对后者多拉一次无害的 DM 列表，也不放过新 DM 的即时性。
+      void ensureDmListLoaded();
     }
   });
 
@@ -1014,6 +1067,8 @@ export function mountWorkbenchShell(
         currentUserId,
         members,
         getClientToken,
+        // R20 DSK-UX（R19-11 presence 单源）：DM 头像在线点也走共享 store，和 rail 私聊行/资料卡同源。
+        presence: presenceHandle,
         streamUrl: input.client.streams.conversation(dm.conversation.id),
         onConversationEvent: (raw: unknown) => {
           void interruptBroadcaster?.handleRawConversationEvent(raw);
@@ -1257,6 +1312,8 @@ export function mountWorkbenchShell(
           currentUserId: vm.viewer.user_id,
           members: vm.workspace_members.items,
           getClientToken,
+          // R20 DSK-UX（R19-11 presence 单源）：协同会话成员条在线点走共享 store，和 rail/资料卡同源。
+          presence: presenceHandle,
           streamUrl: input.client.streams.conversation(collabConversation.id),
           onConversationEvent: (raw: unknown) => {
             void interruptBroadcaster?.handleRawConversationEvent(raw);
@@ -1318,6 +1375,8 @@ export function mountWorkbenchShell(
         currentUserId: vm.viewer.user_id,
         members: vm.workspace_members.items,
         getClientToken,
+        // R20 DSK-UX（R19-11 presence 单源）：主区成员条在线点走共享 store，和 rail/资料卡同源。
+        presence: presenceHandle,
         streamUrl: input.client.streams.conversation(mainConversation.id),
         onConversationEvent: (raw: unknown) => {
           void interruptBroadcaster?.handleRawConversationEvent(raw);

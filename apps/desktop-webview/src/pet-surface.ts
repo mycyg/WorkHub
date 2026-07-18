@@ -1612,6 +1612,14 @@ export async function bootDesktopPetSurface(
     onDecision(decision) {
       handleDesktopPetRuntimeDecision(decision, setCard);
     },
+    onSystemNotification(plan) {
+      // P2-07/R19-12：OS 通知点击深链的 webview 半边（此前生产绑定漏传 onSystemNotification，壳层算好的
+      // route/window_control 落到 no-op）。桌面 tauri-plugin-notification 无点击回调，故点击消费由 webview 触发：
+      // 把壳层广播的 system-notification 计划经命令桥回传给原生 focus_system_notification → handle_deep_link_plan
+      // （REL-6 统一深链落地路径，含 workbench 按需建窗），审批通知落审批面板、消息通知落对应会话。失败不致命——
+      // 通知只是提醒，桥不可用（非 Tauri/降级）时静默跳过，桌宠仍会把同一事件渲成可点击的 Cuu 卡兜底。
+      void Promise.resolve(petWindowBridge?.focusSystemNotification?.(plan)).catch(() => undefined);
+    },
     retryingDelayMs: desktopPetRuntimeRetryingDelayMs,
     get locale() {
       return locale;

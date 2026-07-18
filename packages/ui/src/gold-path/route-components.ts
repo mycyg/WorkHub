@@ -1515,13 +1515,17 @@ function renderHomeRouteComponent(
       ? `<p class="wh-subtle" data-r9-home-projects-overflow="${escapeHtml(String(projectList.length - 4))}">${escapeHtml(zh
         ? `还有 ${projectList.length - 4} 个项目未显示，` : `${projectList.length - 4} more projects not shown — `)}<a href="/projects">${escapeHtml(zh ? "查看全部项目" : "see all projects")}</a></p>`
       : "")
-    : `<p class="wh-subtle" data-r8-home-projects-empty="true">${escapeHtml(zh ? "还没有项目。先新建或打开一个项目，任务、文件和版本都会收在同一个工作区里。" : "No projects yet. Create or open a project first; tasks, files, and versions will live in that workspace.")}</p>`;
+    : projects === undefined
+      // P1-07：加载失败 ≠ 空。projects===undefined 是取数失败——桌内给失败说明（指向上方重试条），
+      // 绝不渲「还没有项目」的空态文案把失败谎报成「你没有项目」。
+      ? `<p class="wh-subtle" data-r20-home-projects-desk-failed="true">${escapeHtml(zh ? "项目清单没能加载，用上方的「重试加载项目」再试一次。" : "The project list didn't load — use “Retry loading projects” above.")}</p>`
+      : `<p class="wh-subtle" data-r8-home-projects-empty="true">${escapeHtml(zh ? "还没有项目。先新建或打开一个项目，任务、文件和版本都会收在同一个工作区里。" : "No projects yet. Create or open a project first; tasks, files, and versions will live in that workspace.")}</p>`;
   const projectDriveHref = topProject ? `/drive?project_id=${encodeURIComponent(topProject.id)}` : "/projects";
   const projectIntakeHref = topProject ? `/intake?project_id=${encodeURIComponent(topProject.id)}` : "/intake";
   const projectDesk = `<section class="wh-card wh-r4-route-card wh-r4-route-card--accent wh-r8-home-project-desk" data-r8-home-project-desk="true" data-r8-home-project-count="${escapeHtml(String(projectList.length))}" data-r8-home-projects-loaded="${escapeHtml(String(Boolean(projects)))}">
       <div class="wh-r4-route-meta">
         <span class="wh-r4-route-kicker">${escapeHtml(zh ? "项目与网盘" : "Projects and drive")}</span>
-        <span class="wh-pill">${escapeHtml(projects ? (zh ? `项目 ${projectList.length}` : `${projectList.length} projects`) : (zh ? "项目清单稍后同步" : "Project list syncing"))}</span>
+        <span class="wh-pill">${escapeHtml(projects ? (zh ? `项目 ${projectList.length}` : `${projectList.length} projects`) : (zh ? "项目清单未加载" : "Project list unavailable"))}</span>
       </div>
       <h3 role="heading" aria-level="2">${escapeHtml(zh ? "先进入项目，再处理任务和文件" : "Start from a project, then work through tasks and files")}</h3>
       <p>${escapeHtml(zh ? "每个项目像一个仓库：进行中的任务、最近文件、版本历史和网盘入口都围绕它组织。" : "Each project behaves like a repo: open work, recent files, version history, and the drive stay organized around it.")}</p>
@@ -1555,6 +1559,19 @@ function renderHomeRouteComponent(
         <span class="wh-r4-route-kicker">${escapeHtml(zh ? "数据未完整加载" : "Some data did not load")}</span>
         <div class="wh-r4-route-timeline" role="list">
           ${sourceWarnings.map((warning) => `<p class="wh-subtle" data-r4-home-source-warning-source="${escapeHtml(warning.source)}">${escapeHtml(warning.message)}</p>`).join("")}
+        </div>
+      </section>`
+    : "";
+
+  // P1-07：项目清单是独立于 attention 的并行拉取。projects===undefined 表示这次「加载失败」（not_identified
+  // 已在 loader 冒泡去重认证，走到这里的 undefined 是真·取数失败）——显式渲警示条 + 重试，别把失败静默降级成
+  // 「项目清单稍后同步」那种像还在加载的软话，也别和「加载成功但 0 个项目」的空态混为一谈。
+  const projectsFailedBanner = projects === undefined
+    ? `<section class="wh-card wh-r4-route-card wh-r4-home-source-warning" data-r20-home-projects-failed="true" role="alert">
+        <span class="wh-r4-route-kicker">${escapeHtml(zh ? "项目清单加载失败" : "Project list failed to load")}</span>
+        <p class="wh-subtle">${escapeHtml(zh ? "只有项目区受影响，其余决策与运行照常。" : "Only the projects area is affected; decisions and runs are unaffected.")}</p>
+        <div class="wh-r4-route-actions">
+          <button type="button" class="wh-btn" data-r20-home-projects-retry="true">${escapeHtml(zh ? "重试加载项目" : "Retry loading projects")}</button>
         </div>
       </section>`
     : "";
@@ -1672,6 +1689,7 @@ function renderHomeRouteComponent(
       </header>
       ${chips}
       ${sourceWarningBanner}
+      ${projectsFailedBanner}
       ${decisionGrid}
       <div class="wh-r4-route-grid">
         ${projectDesk}
@@ -5444,6 +5462,9 @@ function renderSettingsMembersSection(locale: WorkHubLocale): string {
           <h3 role="heading" aria-level="2">${escapeHtml(zh ? "邀请成员" : "Invite members")}</h3>
           <p class="wh-subtle">${escapeHtml(zh ? "生成一次性邀请链接令牌，自行转交给对方。令牌只显示一次，服务端不再可取回。" : "Generate a one-time invite token to hand off out-of-band. The token is shown once and can't be retrieved again.")}</p>
           <div data-r18-settings-invites-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载邀请…" : "Loading invites…")}</p></div>
+          <!-- R20 P1-05：令牌展示区是 body 的持久兄弟节点，不在水合重建的 [data-r18-settings-invites-body] 域内——
+               生成邀请后重拉未过期清单（重建 body）绝不会销毁刚展示的一次性令牌，令牌可持续可见可复制。 -->
+          <div data-r18-settings-invite-token="true" hidden></div>
         </section>
       </div>`;
 }

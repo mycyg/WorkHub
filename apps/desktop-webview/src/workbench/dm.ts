@@ -6,7 +6,7 @@
 // 同 chat/api.ts 顶部注释的既有取舍：不为工作台窗口的批次特性扩大 WorkHubApiClient 的具名方法面，
 // 全走 client.request<T>（{ok,data} 信封由 client 解出 data；失败抛 WorkHubApiError）。
 
-import type { DmListItemVM, DmListVM, OpenDmResultVM, WorkbenchPageVM } from "@workhub/contracts";
+import type { DmListItemVM, DmListVM, OpenDmResultVM, PresenceEntryVm, WorkbenchPageVM } from "@workhub/contracts";
 
 import { fetchPresence } from "./chat/api.js";
 import { onlineUserIdsFromPresence } from "./chat/presence-state.js";
@@ -59,6 +59,27 @@ export async function fetchOnlineUserIds(
     }
   }
   return online;
+}
+
+// R20 DSK-UX（R19-11 presence 单源）：与 fetchOnlineUserIds 同样分批查，但保留每个 user 的 is_online 原值
+// （不只收在线并集）——rail 据此把「谁在线 / 谁离线」per-user 合并进单源 store.onlineUserIds（applyPresence），
+// 而不是全量替换。这样 rail 30s 轮询不会把聊天区刚（重连即时）刷到、rail 本批没查的 user 误清成离线。
+// 任一块失败静默跳过（best-effort，同 fetchOnlineUserIds），返回已拿到的条目。
+export async function fetchPresenceEntries(
+  client: DmApiClient,
+  userIds: readonly string[]
+): Promise<PresenceEntryVm[]> {
+  const entries: PresenceEntryVm[] = [];
+  const chunks = chunkPresenceIds(userIds);
+  for (const chunk of chunks) {
+    try {
+      const result = await fetchPresence(client, chunk);
+      entries.push(...result.presence);
+    } catch {
+      // best-effort：这一块拉不到就跳过，不重试轰炸。
+    }
+  }
+  return entries;
 }
 
 // DM 列表 upsert：按 conversation.id 去重——命中既有就原地替换（不重复），未命中就插到最前（最近开的

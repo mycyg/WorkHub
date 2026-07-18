@@ -6,6 +6,7 @@ export * from "./overlap-hunk-review.js";
 export * from "./rich-patch-viewer.js";
 export * from "./route-state.js";
 export * from "./onboarding.js";
+export * from "./invite-accept.js";
 export * from "./route-line-editor.js";
 export * from "./structured-field-labels.js";
 export * from "./subrecord-item-diff.js";

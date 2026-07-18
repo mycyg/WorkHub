@@ -7,6 +7,9 @@ use workhub_client_tauri::locale::{
     normalize_optional_workhub_locale, normalize_workhub_locale, WorkHubLocale,
     DEFAULT_WORKHUB_LOCALE,
 };
+use workhub_client_tauri::notify::{
+    deep_link_plan_for_notification_click, ShellSystemNotificationPlan,
+};
 use workhub_client_tauri::pet_commands::{
     body_position_from_window_position_with_settings, pet_window_rect_from_position_with_settings,
     restore_saved_body_position, sample_pet_cursor_near_command_plan,
@@ -41,7 +44,7 @@ use std::{
 };
 
 use tauri::{
-    menu::{MenuBuilder, MenuItemBuilder},
+    menu::{Menu, MenuBuilder, MenuItemBuilder},
     path::BaseDirectory,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     utils::config::Color,
@@ -570,6 +573,44 @@ fn set_shell_badge(
     Ok(())
 }
 
+// R19-13：壳层 locale 运行时同步。壳层 locale 过去启动即冻结（setup 从 config 读一次写进 Mutex），应用内
+// 切语言只改 webview 的 localStorage + reload，到不了原生外壳——托盘菜单/tooltip、深链错误、通知兜底文案
+// 都卡在启动语言。webview 语言开关成功切换后 invoke 本命令：更新共享 locale 源（Mutex<WorkHubLocale>，通知
+// worker 每次弹通知都实时读它，见 sse_worker::current_shell_locale）并重建托盘菜单/tooltip 为新语言。
+#[tauri::command]
+fn set_shell_locale(app: tauri::AppHandle, locale: String) -> Result<(), String> {
+    apply_shell_locale(&app, normalize_workhub_locale(&locale))
+}
+
+fn apply_shell_locale(app: &tauri::AppHandle, locale: WorkHubLocale) -> Result<(), String> {
+    if let Ok(mut current) = app.state::<Mutex<WorkHubLocale>>().lock() {
+        *current = locale;
+    }
+    // 托盘存在时重建菜单/tooltip 为新语言。没有托盘（无 tray-icon feature / 尚未装好）时 best-effort 不致命。
+    // tooltip 这里回到基线文案；下一次 set_shell_badge（badge 30s 轮询携带 locale）会把带计数的 tooltip 也刷成新语言。
+    if let Some(tray) = app.tray_by_id(WORKHUB_TRAY_ID) {
+        let menu = build_workhub_tray_menu(app, locale)?;
+        tray.set_menu(Some(menu))
+            .map_err(|error| format!("failed to update tray menu locale: {error}"))?;
+        tray.set_tooltip(Some(tray_tooltip(locale)))
+            .map_err(|error| format!("failed to update tray tooltip locale: {error}"))?;
+    }
+    Ok(())
+}
+
+// P2-07/R19-12：OS 通知点击深链的原生半边（命令桥）。桌面端 tauri-plugin-notification 无点击回调（见
+// notify::show_system_notification 注释），故"点击消费"由 webview 侧的 onSystemNotification 触发：把它收到的
+// system-notification 计划经此命令回传，壳层整形成深链计划后走 REL-6 统一的 handle_deep_link_plan（含 workbench
+// 按需建窗），不另造窗口控制路。审批通知落审批面板、消息通知落对应会话，都由计划里壳层原算好的 route 决定。
+#[tauri::command]
+fn focus_system_notification(
+    app: tauri::AppHandle,
+    plan: ShellSystemNotificationPlan,
+) -> Result<(), String> {
+    let deep_link = deep_link_plan_for_notification_click(&plan);
+    handle_deep_link_plan(&app, &deep_link)
+}
+
 #[tauri::command]
 fn start_main_window_drag(window: tauri::Window) -> Result<(), String> {
     if window.label() != "main" {
@@ -887,6 +928,43 @@ fn toggle_main_window_from_global_hotkey(app: &tauri::AppHandle) {
     };
     if let Err(error) = execute_window_control(app, plan) {
         eprintln!("WorkHub: failed to apply global hotkey window control: {error}");
+    }
+}
+
+// R19-16：Dock 图标点击（Reopen）时的主窗恢复决策。纯函数便于单测。主窗已可见 → 不动（macOS 会自行把 App
+// 前置，重复 show/focus 只会平白抢焦点）；主窗被藏起来（最常见：自绘关闭 / Cmd+W hide 到托盘）→ 用与托盘
+// 「打开 WorkHub」/全局热键同一套 show_main_window_plan 恢复并聚焦，不另造第二套控制协议。传入的是主窗**自身**
+// 的可见性，而非 RunEvent 的 has_visible_windows——桌宠常驻可见会让 has_visible_windows=true，但主窗仍可能隐藏。
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn dock_reopen_plan(main_window_visible: bool) -> Option<ShellWindowControlPlan> {
+    if main_window_visible {
+        None
+    } else {
+        Some(show_main_window_plan(ShellWindowControlSource::Setting))
+    }
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn apply_dock_reopen(app: &tauri::AppHandle) -> Result<(), String> {
+    let visible = app
+        .get_webview_window("main")
+        .and_then(|window| window.is_visible().ok())
+        .unwrap_or(false);
+    if let Some(plan) = dock_reopen_plan(visible) {
+        execute_window_control(app, plan)?;
+    }
+    Ok(())
+}
+
+// R19-16：App::run 的 RunEvent 回调宿主。目前只消费 macOS 的 Reopen（Dock 图标点击 /
+// applicationShouldHandleReopen）。非 macOS 上整段 cfg 掉，参数随之未用，故 allow(unused_variables)。
+#[allow(unused_variables)]
+fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
+    #[cfg(target_os = "macos")]
+    if let tauri::RunEvent::Reopen { .. } = event {
+        if let Err(error) = apply_dock_reopen(app) {
+            eprintln!("WorkHub: failed to restore the main window on Dock reopen: {error}");
+        }
     }
 }
 
@@ -1352,7 +1430,12 @@ fn position_main_window_top_center(window: &tauri::WebviewWindow) {
     let _ = window.set_position(TauriLogicalPosition::new(x, y));
 }
 
-fn install_workhub_tray(app: &tauri::App, locale: WorkHubLocale) -> Result<(), String> {
+// R19-13：托盘菜单构建抽成独立函数,让启动安装(install_workhub_tray)与运行时切语言(set_shell_locale →
+// apply_shell_locale)复用同一份构建逻辑——切语言时用新 locale 重建菜单再 tray.set_menu,不各写一份。
+fn build_workhub_tray_menu(
+    app: &tauri::AppHandle,
+    locale: WorkHubLocale,
+) -> Result<Menu<tauri::Wry>, String> {
     let show_main = tray_menu_action_plan_by_id_for_locale(TRAY_SHOW_MAIN_ID, locale)
         .ok_or_else(|| "missing show-main tray action".to_string())?;
     let hide_main = tray_menu_action_plan_by_id_for_locale(TRAY_HIDE_MAIN_ID, locale)
@@ -1405,7 +1488,7 @@ fn install_workhub_tray(app: &tauri::App, locale: WorkHubLocale) -> Result<(), S
         .build(app)
         .map_err(|error| format!("failed to build quit tray item: {error}"))?;
 
-    let menu = MenuBuilder::new(app)
+    MenuBuilder::new(app)
         .item(&show_main_item)
         .item(&hide_main_item)
         .separator()
@@ -1417,7 +1500,11 @@ fn install_workhub_tray(app: &tauri::App, locale: WorkHubLocale) -> Result<(), S
         .separator()
         .item(&quit_item)
         .build()
-        .map_err(|error| format!("failed to build WorkHub tray menu: {error}"))?;
+        .map_err(|error| format!("failed to build WorkHub tray menu: {error}"))
+}
+
+fn install_workhub_tray(app: &tauri::App, locale: WorkHubLocale) -> Result<(), String> {
+    let menu = build_workhub_tray_menu(app.handle(), locale)?;
 
     let mut builder = TrayIconBuilder::with_id(WORKHUB_TRAY_ID)
         .tooltip(tray_tooltip(locale))
@@ -1866,6 +1953,8 @@ fn main() {
             set_client_token,
             set_spotlight_size,
             set_shell_badge,
+            set_shell_locale,
+            focus_system_notification,
             start_main_window_drag,
             move_main_window_by,
             show_main_window,
@@ -1878,13 +1967,18 @@ fn main() {
             restore_pet_window_interaction,
             write_cuu_qa_dom_report
         ])
-        .run(tauri::generate_context!())
+        // R19-16：改用 build()? + App::run(callback) 收尾，以便注册 RunEvent 回调消费 macOS Dock 图标点击
+        // （applicationShouldHandleReopen → RunEvent::Reopen）。主窗自绘关闭/Cmd+W 都是 hide 不是 close
+        // （见 should_hide_instead_of_close），用户经常把主窗藏进托盘；此前 main() 以 Builder::run 收尾、
+        // 没有任何 RunEvent 回调，点 Dock 图标毫无反应，藏起来的主窗只能靠托盘/深链/通知找回。
+        .build(tauri::generate_context!())
         // 启动失败（坏 tauri.conf.json / 缺 main·pet 窗口标签 / 缺图标 / 插件初始化失败等）原本只 panic 出
         // 一句无上下文的 "failed to run WorkHub Tauri shell"。改为打印真实错误(Debug)再非零退出，便于诊断。
         .unwrap_or_else(|error| {
             eprintln!("WorkHub Tauri shell failed to start: {error:?}");
             std::process::exit(1);
-        });
+        })
+        .run(handle_run_event);
 }
 
 #[cfg(test)]
@@ -1992,6 +2086,20 @@ mod tests {
                 .find(|(key, _)| *key == name)
                 .map(|(_, value)| value.to_string())
         }
+    }
+
+    // R19-16：Dock 图标点击恢复隐藏的主窗。修复前 main() 无 RunEvent 回调、点 Dock 无反应;这条锁住恢复决策
+    // ——主窗隐藏时用与托盘同一套 show_main_window_plan 恢复,已可见时不动（不抢焦点）。
+    #[test]
+    fn dock_reopen_restores_only_a_hidden_main_window() {
+        let plan =
+            dock_reopen_plan(false).expect("hidden main window should be restored on Dock reopen");
+        assert_eq!(plan.label, "main");
+        assert_eq!(plan.action, ShellWindowControlAction::ShowAndFocus);
+        assert_eq!(plan.source, ShellWindowControlSource::Setting);
+        assert_eq!(plan.route, Some("/".to_string()));
+
+        assert!(dock_reopen_plan(true).is_none());
     }
 
     #[test]

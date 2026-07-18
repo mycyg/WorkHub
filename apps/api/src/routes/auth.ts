@@ -668,6 +668,47 @@ export function createAuthRoutes(
     });
   });
 
+  // R20 P1-05：撤销一条未过期邀请（管理员在 web 成员分区点「撤销」）。门控同 POST/GET /invites
+  // （鉴权先行 401 → 非管理员 403 → 非密码模式 404 → 运行时不支持 501）。仓库 revoke(id) 按 id 软删、
+  // 不带工作区谓词——故这里先经 listPending(actor.workspaceId) 确认该邀请确属发起人本工作区且仍是
+  // 未过期未接受未撤销的活跃邀请，再撤；查无（跨租户 id / 已接受 / 已过期 / 已撤销）一律 404，绝不
+  // 让管理员据 id 撤掉别的工作区的邀请（fail-closed，租户隔离靠 listPending 谓词而非只信 :inviteId）。
+  routes.delete("/invites/:inviteId", async (c) => {
+    const deps = resolveAuthDependencies(source);
+    const actingUser = await resolveCurrentUser(c, deps); // 鉴权先行 → 未鉴权 401 fail-closed
+    if (!actingUser.isAdmin) {
+      throw new HTTPException(403, { message: "需要管理员权限" });
+    }
+    if (!passwordModeEnabled(deps)) {
+      throw new HTTPException(404, { message: "邀请功能未启用" });
+    }
+    if (!deps.invites) {
+      throw new HTTPException(501, { message: "当前运行时不支持邀请" });
+    }
+    const inviteId = c.req.param("inviteId");
+    const at = (deps.now ?? (() => new Date()))();
+    const actor = await resolveHumanActor(deps, actingUser);
+    // 租户隔离 + 存在性：只允许撤销本工作区当前活跃（未接受∧未撤销∧未过期）的邀请。
+    const pending = await deps.invites.listPending(actor.workspaceId, at);
+    const target = pending.find((row) => row.id === inviteId);
+    if (!target) {
+      throw new HTTPException(404, { message: "邀请不存在或已失效" });
+    }
+    const revoked = await deps.invites.revoke(target.id, at);
+    if (!revoked) {
+      // 并发窗口：listPending 后被别的请求抢先撤/接受——幂等地按「已失效」回 404，不 500。
+      throw new HTTPException(404, { message: "邀请不存在或已失效" });
+    }
+    // 安全事件：管理员撤销邀请（收回赋权入口，必审）。entityId=邀请 id；actor=撤销的管理员。
+    await auditSecurityEvent(deps, {
+      actorUserId: actingUser.id,
+      entityId: revoked.id,
+      action: "auth.invite_revoked",
+      detailJson: { email: revoked.email, workspace_id: revoked.workspaceId ?? null }
+    });
+    return c.json({ ok: true as const, invite_id: revoked.id });
+  });
+
   // 公开入口：收件人凭 out-of-band token 接受邀请 → 建账号 + 凭据 + 默认成员 + 会话。
   routes.post("/invites/accept", async (c) => {
     const deps = resolveAuthDependencies(source);

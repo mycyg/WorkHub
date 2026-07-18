@@ -164,8 +164,10 @@ async function main(): Promise<void> {
     ]),
     dynamic_notification_payload_preserved: hasAll(notifySource, evidence.dynamic_boundaries),
     sse_worker_passes_locale_to_notification_plan: hasAll(sseWorkerSource, [
-      "let locale = config.locale",
-      "system_notification_plan_from_push_payload_for_locale(&payload, locale)"
+      // R19-13：通知文案 locale 改为每次构建计划时实时读共享的 Mutex<WorkHubLocale>（应用内切语言即刻
+      // 跟随），不再按 worker 启动时的 config.locale 冻结。门同步为断言这个更强的运行时不变量。
+      "current_shell_locale(app)",
+      "system_notification_plan_from_push_payload_for_locale("
     ]),
     deep_link_diagnostics_bilingual: hasAll(deepLinkSource, [
       "describe_deep_link_error",

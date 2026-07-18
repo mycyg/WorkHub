@@ -149,7 +149,6 @@ pub fn spawn_default_shell_sse_workers(
     app: tauri::AppHandle,
     config: WorkHubShellConfig,
 ) -> Result<ShellSseWorkerPlan, ShellSsePlanError> {
-    let locale = config.locale;
     spawn_shell_sse_workers(
         app,
         plan_shell_sse_worker(
@@ -157,14 +156,12 @@ pub fn spawn_default_shell_sse_workers(
             startup_shell_sse_targets(&config),
             DEFAULT_SSE_RECONNECT_DELAY_MS,
         )?,
-        locale,
     )
 }
 
 pub fn spawn_shell_sse_workers(
     app: tauri::AppHandle,
     plan: ShellSseWorkerPlan,
-    locale: WorkHubLocale,
 ) -> Result<ShellSseWorkerPlan, ShellSsePlanError> {
     let client = reqwest::Client::new();
     let notification_deduper = Arc::new(Mutex::new(ShellSystemNotificationDeduper::default()));
@@ -180,12 +177,20 @@ pub fn spawn_shell_sse_workers(
                 subscription,
                 reconnect_delay_ms,
                 notification_deduper,
-                locale,
             )
             .await;
         });
     }
     Ok(plan)
+}
+
+/// R19-13：通知文案的 locale 源。壳层 locale 过去在 worker 启动时按值冻结,应用内切语言后新弹的通知仍是旧
+/// 语言。改为每次构建通知计划时**实时**读共享的 `Mutex<WorkHubLocale>`（`set_shell_locale` 命令会更新它）。
+/// 拿不到 state（降级/测试无 App）时回退默认语言。纯读,不碰令牌/身份代际逻辑。
+fn current_shell_locale(app: &tauri::AppHandle) -> WorkHubLocale {
+    app.try_state::<Mutex<WorkHubLocale>>()
+        .and_then(|state| state.lock().ok().map(|locale| *locale))
+        .unwrap_or_default()
 }
 
 async fn run_sse_subscription(
@@ -194,7 +199,6 @@ async fn run_sse_subscription(
     subscription: ShellSseSubscription,
     reconnect_delay_ms: u64,
     notification_deduper: Arc<Mutex<ShellSystemNotificationDeduper>>,
-    locale: WorkHubLocale,
 ) {
     // rank9：连不上(尤令牌被吊销/后端不可达)时不再固定 5s 死锤服务端——指数退避(上限 60s)；
     // 一旦成功打开连接就把退避复位回基准，故瞬时掉线仍是快速 5s 重连。每拍重读令牌，webview 重铸后即恢复。
@@ -240,7 +244,6 @@ async fn run_sse_subscription(
                             &subscription,
                             response,
                             &notification_deduper,
-                            locale,
                             snapshot.generation,
                         )
                         .await
@@ -340,7 +343,6 @@ async fn pump_sse_response(
     subscription: &ShellSseSubscription,
     response: reqwest::Response,
     notification_deduper: &Arc<Mutex<ShellSystemNotificationDeduper>>,
-    locale: WorkHubLocale,
     open_generation: u64,
 ) -> Result<PumpOutcome, String> {
     let mut buffer = ShellSseFrameBuffer::default();
@@ -385,7 +387,6 @@ async fn pump_sse_response(
                             &mut pending,
                             chunk,
                             notification_deduper,
-                            locale,
                         )?;
                     }
                 }
@@ -407,7 +408,6 @@ async fn pump_sse_response(
                     &mut pending,
                     chunk,
                     notification_deduper,
-                    locale,
                 )?;
             }
             Err("SSE stream ended".to_string())
@@ -424,7 +424,6 @@ fn process_sse_chunk<B: AsRef<[u8]>>(
     pending: &mut Vec<u8>,
     chunk: Result<B, reqwest::Error>,
     notification_deduper: &Arc<Mutex<ShellSystemNotificationDeduper>>,
-    locale: WorkHubLocale,
 ) -> Result<(), String> {
     let chunk = chunk.map_err(|error| format!("SSE stream read failed: {error}"))?;
     pending.extend_from_slice(chunk.as_ref());
@@ -454,8 +453,12 @@ fn process_sse_chunk<B: AsRef<[u8]>>(
         let payload = push_payload_from_frame(subscription, frame);
         app.emit(&subscription.event_channel, payload.clone())
             .map_err(|error| format!("failed to emit push-event: {error}"))?;
-        if let Some(plan) = system_notification_plan_from_push_payload_for_locale(&payload, locale)
-            .map_err(|error| format!("failed to plan system notification: {error:?}"))?
+        // R19-13：实时读取当前壳层 locale（而非 worker 启动时的冻结值）——应用内切语言后新弹的通知即刻跟随。
+        if let Some(plan) = system_notification_plan_from_push_payload_for_locale(
+            &payload,
+            current_shell_locale(app),
+        )
+        .map_err(|error| format!("failed to plan system notification: {error:?}"))?
         {
             if !should_deliver_system_notification(notification_deduper, &plan)? {
                 continue;

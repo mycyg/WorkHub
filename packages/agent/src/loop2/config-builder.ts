@@ -380,30 +380,36 @@ export async function runAgentLoop2(input: AgentLoopInput): Promise<AgentLoopRes
 	// A `load_skill`-style tool that mounts new tools mid-run is reflected on the very next model request,
 	// same as loop.ts. Resolved once here for the first turn's context; `prepareNextTurn` refreshes it.
 	const ctx = buildToolCtx(input);
+	// Wrap one tool name as a pi AgentTool whose execute delegates to the WorkHub registry
+	// (input.tools.execute). Shared by the model-visible tools AND by resolveMissingTool, so a
+	// tool call the model emits is executed via the same return-based registry path whether or
+	// not it is in the current visible list — matching loop.ts, which delegates every model-named
+	// tool call to input.tools.execute unconditionally.
+	const makePiTool = (name: string, description: string, parameters: JsonSchema): AgentTool => ({
+		name,
+		description,
+		parameters,
+		label: name,
+		execute: async (_toolCallId: string, params: Record<string, unknown>): Promise<AgentToolResult<ToolResult>> => {
+			try {
+				const result = await input.tools.execute(name, params, ctx);
+				return workhubToolResultToPi(result);
+			} catch (error) {
+				// Legacy loop.run lets input.tools.execute throws propagate out. Capture, abort, and
+				// re-throw after the loop; return an error result so the current batch finishes cleanly.
+				fatalToolError = error;
+				runController.abort(error);
+				return workhubToolResultToPi(errorToolResult(error instanceof Error ? error.message : String(error)));
+			}
+		},
+	});
 	const buildPiTools = async (): Promise<AgentTool[]> => {
 		const modelTools = await input.tools.toModelTools(ctx);
 		return modelTools.map((raw) => {
 			const spec = raw as { name: string; description?: string; input_schema?: unknown };
 			const parameters: JsonSchema =
 				spec.input_schema && typeof spec.input_schema === "object" ? (spec.input_schema as JsonSchema) : { type: "object" };
-			return {
-				name: spec.name,
-				description: spec.description ?? "",
-				parameters,
-				label: spec.name,
-				execute: async (_toolCallId: string, params: Record<string, unknown>): Promise<AgentToolResult<ToolResult>> => {
-					try {
-						const result = await input.tools.execute(spec.name, params, ctx);
-						return workhubToolResultToPi(result);
-					} catch (error) {
-						// Legacy loop.run lets input.tools.execute throws propagate out. Capture, abort, and
-						// re-throw after the loop; return an error result so the current batch finishes cleanly.
-						fatalToolError = error;
-						runController.abort(error);
-						return workhubToolResultToPi(errorToolResult(error instanceof Error ? error.message : String(error)));
-					}
-				},
-			} satisfies AgentTool;
+			return makePiTool(spec.name, spec.description ?? "", parameters);
 		});
 	};
 	const tools = await buildPiTools();
@@ -462,6 +468,11 @@ export async function runAgentLoop2(input: AgentLoopInput): Promise<AgentLoopRes
 		model,
 		toolExecution: "sequential",
 		afterToolCall: workhubAfterToolCall,
+		// Parity with loop.ts: a tool call whose name is not in the current model-visible list is
+		// still executed via the WorkHub registry (input.tools.execute), which is the real gatekeeper
+		// for unknown tools. Without this, pi short-circuits to "tool not found" and never runs the
+		// registry — diverging from loop.ts (and, e.g., leaving an in-flight cancel's tool unrun).
+		resolveMissingTool: (name) => makePiTool(name, "", { type: "object" }),
 		convertToLlm: (messages) => sanitizePiTruncatedContent(messages),
 		transformContext: async (messages) => {
 			if (forceCompactBeforeNext) {

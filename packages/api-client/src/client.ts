@@ -471,6 +471,13 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       request(`/api/agent-runs/${encodeURIComponent(runId)}/abort`, {
         method: "POST"
       }),
+    // R20 DSK-UX（R19-3）：撤销这次 AI 执行对文件的改动——POST /api/agent-runs/:id/revert，body 带要还原的
+    // snapshot_id（可选 reason_md）。服务端本地客户端门控，桌面壳层天然满足。
+    revertAgentRun: (runId, payload) =>
+      request(`/api/agent-runs/${encodeURIComponent(runId)}/revert`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
     getAgentRunHandoff: (runId) => request(`/api/agent-runs/${encodeURIComponent(runId)}/handoff`),
     respondApproval: (id, payload) =>
       request(`/api/approvals/${encodeURIComponent(id)}/respond`, {
@@ -647,6 +654,11 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       request(`/api/cost/policies/${encodeURIComponent(scope)}/${encodeURIComponent(id)}`, {
         method: "PUT",
         body: JSON.stringify(payload)
+      }),
+    // R20 DSK-UX（R19-5）：撤销一条学到的自动通过/权限策略——DELETE /api/permissions/:id（本地客户端 + 管理员门）。
+    revokePermissionPolicy: (id) =>
+      request(`/api/permissions/${encodeURIComponent(id)}`, {
+        method: "DELETE"
       }),
     pilotDay1Metrics: (options) => request(withPilotDay1MetricsOptions("/api/pilot/day1/metrics", options)),
     listProjects: () => request("/api/projects"),
