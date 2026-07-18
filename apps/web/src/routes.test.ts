@@ -59,13 +59,15 @@ type RouteClientOverrides = {
   teamSkillsManage?: TeamSkillManagementPageVM;
   conflicts?: ProposalConflict[];
   conversationMessages?: ConversationMessagePageVM;
-  users?: { users: Array<{ id: string; nickname: string; is_admin: boolean }> };
+  // R20 P1-08 收尾：会话镜像的发送者昵称解析改走工作区花名册（GET /api/workspace/roster），不再是全局
+  // /api/users——起名 roster 而非 users，避免和已删的 listUsers fake 同名误导。
+  roster?: Array<{ user_id: string; nickname: string; is_admin: boolean }>;
   attentionError?: Error;
   approvalsError?: Error;
   costError?: Error;
   knowledgeError?: Error;
   conversationMessagesError?: Error;
-  usersError?: Error;
+  rosterError?: Error;
   projectsError?: Error;
 };
 
@@ -754,12 +756,19 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
       }
       return overrides.projects ?? projectListVm();
     },
-    async listUsers() {
-      calls.push("listUsers");
-      if (overrides.usersError) {
-        throw overrides.usersError;
+    // R20 P1-08 收尾：fetchWorkspaceRosterMembers 只依赖一个泛型 request(path) 方法（见
+    // workspace-roster.ts），这里喂假实现服务 GET /api/workspace/roster，取代已删的 listUsers 假端点。
+    // 单页返回全部（total===members.length），与真实分页契约一致但测试数据量小用不到翻页。
+    async request(path: string) {
+      if (path.startsWith("/api/workspace/roster")) {
+        calls.push("workspaceRoster");
+        if (overrides.rosterError) {
+          throw overrides.rosterError;
+        }
+        const members = overrides.roster ?? [];
+        return { members, total: members.length, limit: 100, offset: 0 };
       }
-      return overrides.users ?? { users: [] };
+      throw new Error(`fakeRouteClient: unhandled request path ${path}`);
     },
     async listConversationMessages(conversationId: string, options?: { beforeSeq?: number; afterSeq?: number; limit?: number }) {
       const cursor = options?.beforeSeq !== undefined
@@ -2572,19 +2581,17 @@ function conversationMessagePageVm(overrides: Partial<ConversationMessagePageVM>
   return { messages, has_more: false, next_after_seq: 9, next_before_seq: 5, ...overrides };
 }
 
-function conversationUsers() {
-  return {
-    users: [
-      { id: MIRROR_OWNER_ID, nickname: "R15 owner", is_admin: true },
-      { id: MIRROR_IVY_ID, nickname: "Ivy", is_admin: false }
-    ]
-  };
+function conversationRosterMembers() {
+  return [
+    { user_id: MIRROR_OWNER_ID, nickname: "R15 owner", is_admin: true },
+    { user_id: MIRROR_IVY_ID, nickname: "Ivy", is_admin: false }
+  ];
 }
 
 test("R15 web-mirror conversation route renders a read-only message mirror (latest page)", async () => {
   const { client, calls } = fakeRouteClient(goldPathSurfaceVm(), {
     conversationMessages: conversationMessagePageVm(),
-    users: conversationUsers()
+    roster: conversationRosterMembers()
   });
   const match = resolveWebRoute(`/conversations/${MIRROR_CONVERSATION_ID}`);
   assert.ok(match);
@@ -2595,7 +2602,8 @@ test("R15 web-mirror conversation route renders a read-only message mirror (late
   // 首屏 = 最新一页：beforeSeq=MAX（O(1)，同桌面首屏策略）。
   assert.ok(calls.some((call) => call.startsWith(`conversationMessages:${MIRROR_CONVERSATION_ID}:before=${Number.MAX_SAFE_INTEGER}:`)));
   // 成员目录用于昵称解析。
-  assert.ok(calls.includes("listUsers"));
+  // R20 P1-08 收尾：昵称解析走工作区花名册端点，不再是全局 /api/users。
+  assert.ok(calls.includes("workspaceRoster"));
   // 只读边界：绝不 POST——没有任何写端点被触及（发消息/反应/已读游标/turns 全无）。
   assert.equal(calls.filter((call) => /receipt|turn|reaction|:read|typing/u.test(call)).length, 0);
 
@@ -2630,7 +2638,7 @@ test("R15 web-mirror conversation route renders a read-only message mirror (late
 test("R15 web-mirror ?seq= locates the target message and never advances the read cursor", async () => {
   const { client, calls } = fakeRouteClient(goldPathSurfaceVm(), {
     conversationMessages: conversationMessagePageVm(),
-    users: conversationUsers()
+    roster: conversationRosterMembers()
   });
   const match = resolveWebRoute(`/conversations/${MIRROR_CONVERSATION_ID}?seq=5`);
   assert.ok(match);
@@ -2653,7 +2661,7 @@ test("R15 web-mirror pagination cursors follow the before/after read-endpoint se
   // 最新页 + 还有更早：只出「更早」链接（before=next_before_seq），无更新/回最新。
   const latest = fakeRouteClient(goldPathSurfaceVm(), {
     conversationMessages: conversationMessagePageVm({ has_more: true, next_before_seq: 3, next_after_seq: 9 }),
-    users: conversationUsers()
+    roster: conversationRosterMembers()
   });
   const latestMatch = resolveWebRoute(`/conversations/${MIRROR_CONVERSATION_ID}`);
   assert.ok(latestMatch);
@@ -2667,7 +2675,7 @@ test("R15 web-mirror pagination cursors follow the before/after read-endpoint se
   // 更早页（?before=）：更早（before=next_before_seq）+ 更新（after=页内最新 seq）+ 回到最新 三个都在。
   const before = fakeRouteClient(goldPathSurfaceVm(), {
     conversationMessages: conversationMessagePageVm({ has_more: true, next_before_seq: 3, next_after_seq: 9 }),
-    users: conversationUsers()
+    roster: conversationRosterMembers()
   });
   const beforeMatch = resolveWebRoute(`/conversations/${MIRROR_CONVERSATION_ID}?before=100`);
   assert.ok(beforeMatch);
@@ -2681,7 +2689,7 @@ test("R15 web-mirror pagination cursors follow the before/after read-endpoint se
   // 正向页（?after=）：afterSeq 请求；has_more → 更新（after=next_after_seq），更早回溯页内最旧 seq。
   const after = fakeRouteClient(goldPathSurfaceVm(), {
     conversationMessages: conversationMessagePageVm({ has_more: true, next_after_seq: 42 }),
-    users: conversationUsers()
+    roster: conversationRosterMembers()
   });
   const afterMatch = resolveWebRoute(`/conversations/${MIRROR_CONVERSATION_ID}?after=4`);
   assert.ok(afterMatch);
@@ -2696,7 +2704,7 @@ test("R15 web-mirror pagination cursors follow the before/after read-endpoint se
 test("R15 web-mirror non-participant / missing conversation falls to the recoverable not-found state", async () => {
   const { client } = fakeRouteClient(goldPathSurfaceVm(), {
     conversationMessagesError: new WorkHubApiError(404, "conversation_not_found", "没有找到这个会话。"),
-    users: conversationUsers()
+    roster: conversationRosterMembers()
   });
   const match = resolveWebRoute(`/conversations/${MIRROR_CONVERSATION_ID}`);
   assert.ok(match);
@@ -2710,7 +2718,7 @@ test("R15 web-mirror non-participant / missing conversation falls to the recover
 test("R15 web-mirror member-directory failure degrades softly to unknown-member labels", async () => {
   const { client } = fakeRouteClient(goldPathSurfaceVm(), {
     conversationMessages: conversationMessagePageVm(),
-    usersError: new Error("directory unavailable")
+    rosterError: new Error("directory unavailable")
   });
   const match = resolveWebRoute(`/conversations/${MIRROR_CONVERSATION_ID}`);
   assert.ok(match);
