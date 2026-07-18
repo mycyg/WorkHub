@@ -22,7 +22,6 @@ import { createPushRoutes } from "./routes/push.js";
 import { createNotificationRoutes } from "./routes/notifications.js";
 import { createAuditRoutes } from "./routes/audit.js";
 import { createPageRoutes } from "./routes/pages.js";
-import { createAiWorklogRoutes } from "./routes/ai-worklog.js";
 import { createDriveRoutes } from "./routes/drive.js";
 import { createMeetingRoutes } from "./routes/meetings.js";
 import { createPilotRoutes } from "./routes/pilot.js";
@@ -317,7 +316,9 @@ app.route("/api", createPersonalProjectRoutes());
 // R20 P2A（R19-21）：工作区级审计列表（GET /api/workspace/audit，仅管理员，工作区硬隔离）。
 app.route("/api", createWorkspaceAuditRoutes());
 app.route("/api/pilot", createPilotRoutes());
-app.route("/api/ai-worklog", createAiWorklogRoutes());
+// R20 R19-29：/api/ai-worklog/today（createAiWorklogRoutes）已删——web/desktop 均无调用者，同样的今日
+// AI 工作量数据早已由 GET /api/pages/attention 等页面 VM 内嵌 AiWorklogMetricsService 交付。核实零消费
+// 后连路由文件（routes/ai-worklog.ts）一并删除；服务本身（services/ai-worklog-metrics.ts）仍在用，未动。
 
 app.onError((error, c) => {
   if (error instanceof ZodError) {
