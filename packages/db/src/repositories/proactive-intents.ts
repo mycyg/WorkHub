@@ -16,7 +16,10 @@ import {
 // 追 DDL 阶梯的候选扫描。服务层（apps/api/src/services/proactive-intents.ts / ddl-chase.ts）据此
 // 「先记 intent 再投递」，纯规则、无 LLM。抑制/频控/阶梯判定全部留在应用层，这层只把数据老实搬出/落。
 
-export type ProactiveIntentStatus = "created" | "delivered" | "suppressed";
+// R21 加固（并发投递幂等）：新增 'delivering' 中间态（见 0070 迁移）——投递方必须先经
+// claimProactiveIntentForDelivery 把行从 created 原子领取到 delivering，领取成功才允许执行投递副作用，
+// 两个并发调用只有一个能领到，conversation_message/action_card 等无幂等通道因此不会被双投。
+export type ProactiveIntentStatus = "created" | "delivering" | "delivered" | "suppressed";
 
 export type RecordProactiveIntentInput = {
   workspaceId: string;
@@ -89,10 +92,38 @@ export async function recordProactiveIntent(
     : { created: false };
 }
 
-// status 列有 check 约束限定 created/delivered/suppressed——收窄类型（越界值兜底按 created，宁可多恢复
-// 一次也不误判成终态而丢投）。
+// status 列有 check 约束限定 created/delivering/delivered/suppressed——收窄类型（越界值兜底按 created，
+// 宁可多恢复一次也不误判成终态而丢投）。
 function normalizeStatus(raw: string): ProactiveIntentStatus {
-  return raw === "delivered" || raw === "suppressed" ? raw : "created";
+  return raw === "delivering" || raw === "delivered" || raw === "suppressed" ? raw : "created";
+}
+
+// R21 加固（并发投递幂等）：投递前的原子领取——UPDATE ... WHERE status 前置条件 + RETURNING，恰好一个
+// 并发调用能拿到 1 行，其余 0 行（调用方按 duplicate 收口，不执行任何投递副作用）。
+//   * 常规/同 key 重试路径：只允许从 'created' 领取（stalledBefore 缺省）——已在投递中（delivering）或
+//     已终态的行都领不到。
+//   * 恢复扫描路径：传 stalledBefore（= now - 停滞阈值），额外允许领取「停滞的 delivering」行（created_at
+//     早于该阈值）——投递中途进程崩溃的行停在 delivering，靠这里被扫回重投。
+export async function claimProactiveIntentForDelivery(
+  db: WorkHubDb,
+  input: { id: string; stalledBefore?: Date }
+): Promise<boolean> {
+  const rows = await db
+    .update(proactiveIntents)
+    .set({ status: "delivering" })
+    .where(
+      and(
+        eq(proactiveIntents.id, input.id),
+        input.stalledBefore
+          ? and(
+              inArray(proactiveIntents.status, ["created", "delivering"]),
+              lt(proactiveIntents.createdAt, input.stalledBefore)
+            )
+          : eq(proactiveIntents.status, "created")
+      )
+    )
+    .returning({ id: proactiveIntents.id });
+  return rows.length === 1;
 }
 
 // 每人每日频控：某 target 在 [from, to) 区间内已 delivered 的 intent 数（当日=服务器本地日，区间由
@@ -191,7 +222,7 @@ export async function listRecentProactiveIntentsForUser(
   }));
 }
 
-// 投递闸走完后把 intent 从 created 顶到终态：delivered（附 delivered_via）或 suppressed（频控/静音挡下）。
+// 投递闸走完后把 intent 从 delivering 顶到终态：delivered（附 delivered_via）或 suppressed（频控/静音挡下）。
 export async function markProactiveIntentStatus(
   db: WorkHubDb,
   input: { id: string; status: "delivered" | "suppressed"; deliveredVia?: string }
@@ -226,8 +257,10 @@ export type RecoverableProactiveIntentRow = {
   createdAt: Date;
 };
 
-// 扫「停在 created、够旧（created_at 早于 olderThanMs，给直投路径留出完成窗口，避免抢在途中的行）、
-// 重投次数未达上限（attempt_count < maxAttempts）」的行，最旧优先，limit 封顶。返回重投所需全字段。
+// 扫「停在 created 或 delivering、够旧（created_at 早于 olderThanMs，给直投路径留出完成窗口，避免抢在
+// 途中的行）、重投次数未达上限（attempt_count < maxAttempts）」的行，最旧优先，limit 封顶。返回重投
+// 所需全字段。R21 加固：delivering 也可恢复——投递中途进程崩溃的行停在 delivering，不扫它就永久滞留；
+// 真正在途的行由停滞阈值 + claimProactiveIntentForDelivery 的原子领取共同保护，不会被抢投。
 export async function listRecoverableProactiveIntents(
   db: WorkHubDb,
   input: { now: Date; olderThanMs: number; maxAttempts: number; limit: number }
@@ -251,7 +284,7 @@ export async function listRecoverableProactiveIntents(
     .from(proactiveIntents)
     .where(
       and(
-        eq(proactiveIntents.status, "created"),
+        inArray(proactiveIntents.status, ["created", "delivering"]),
         lt(proactiveIntents.createdAt, cutoff),
         lt(proactiveIntents.attemptCount, input.maxAttempts)
       )

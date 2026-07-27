@@ -42,6 +42,8 @@ type RepoState = {
   recorded: Array<Parameters<ProactiveIntentRepositoryDeps["recordIntent"]>[0]>;
   status: Array<Parameters<ProactiveIntentRepositoryDeps["markStatus"]>[0]>;
   incremented: string[];
+  // R21 加固：投递前原子领取的调用记录（并发幂等断言用）。
+  claims: Array<Parameters<ProactiveIntentRepositoryDeps["claimForDelivery"]>[0]>;
 };
 
 function fakeRepo(options: {
@@ -51,11 +53,13 @@ function fakeRepo(options: {
   existingId?: string;
   deliveredToday?: number;
   recoverable?: RecoverableProactiveIntentRow[];
+  // R21 加固：领取结果（缺省 true = 领到）。false 模拟并发对手先领走——服务必须按 duplicate 收口/跳过。
+  claimReturns?: boolean;
 } = {}): {
   repo: ProactiveIntentRepositoryDeps;
   state: RepoState;
 } {
-  const state: RepoState = { recorded: [], status: [], incremented: [] };
+  const state: RepoState = { recorded: [], status: [], incremented: [], claims: [] };
   const repo: ProactiveIntentRepositoryDeps = {
     async recordIntent(input) {
       state.recorded.push(input);
@@ -71,6 +75,10 @@ function fakeRepo(options: {
     },
     async markStatus(input) {
       state.status.push(input);
+    },
+    async claimForDelivery(input) {
+      state.claims.push(input);
+      return options.claimReturns ?? true;
     },
     async listRecoverable() {
       return options.recoverable ?? [];
@@ -176,6 +184,70 @@ test("recordAndDeliver: a same-key retry whose existing row is still 'created' (
   assert.deepEqual(result, { status: "delivered", intentId: "intent-1" });
   assert.equal(notified, 1, "the crashed intent is re-delivered on the same-key retry");
   assert.deepEqual(state.status, [{ id: "intent-1", status: "delivered", deliveredVia: "notification" }]);
+});
+
+// R21 加固（并发投递幂等）：投递前必须先原子领取（created → delivering）。下面三条钉死并发语义——
+// 领不到（并发对手先领走）就绝不执行任何投递副作用。
+test("recordAndDeliver: a fresh insert that loses the delivery claim race is a duplicate with zero side effects", async () => {
+  const { repo, state } = fakeRepo({ claimReturns: false });
+  let notified = 0;
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        notified += 1;
+        return notificationRow();
+      }
+    },
+    dailyCapPerUser: 10,
+    now: () => at
+  });
+  const result = await service.recordAndDeliver(intent());
+  assert.deepEqual(result, { status: "suppressed", reason: "duplicate" });
+  assert.equal(notified, 0, "losing the claim must not deliver");
+  assert.equal(state.status.length, 0, "the loser must not touch the row status either");
+  // 常规路径的领取不带 stalledBefore（只允许从 created 领取）。
+  assert.deepEqual(state.claims, [{ id: "intent-1" }]);
+});
+
+test("recordAndDeliver: a same-key retry on a 'created' row that loses the claim race is a duplicate (no double delivery)", async () => {
+  const { repo, state } = fakeRepo({ created: false, existingStatus: "created", existingId: "intent-1", claimReturns: false });
+  let notified = 0;
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        notified += 1;
+        return notificationRow();
+      }
+    },
+    dailyCapPerUser: 10,
+    now: () => at
+  });
+  const result = await service.recordAndDeliver(intent());
+  assert.deepEqual(result, { status: "suppressed", reason: "duplicate" });
+  assert.equal(notified, 0, "two concurrent same-key retries must deliver at most once");
+  assert.equal(state.status.length, 0);
+});
+
+test("recordAndDeliver: a same-key retry whose existing row is 'delivering' (in-flight elsewhere) is a duplicate without claiming", async () => {
+  const { repo, state } = fakeRepo({ created: false, existingStatus: "delivering", existingId: "intent-1" });
+  let notified = 0;
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        notified += 1;
+        return notificationRow();
+      }
+    },
+    dailyCapPerUser: 10,
+    now: () => at
+  });
+  const result = await service.recordAndDeliver(intent());
+  assert.deepEqual(result, { status: "suppressed", reason: "duplicate" });
+  assert.equal(notified, 0, "an in-flight row must not be re-delivered by a same-key retry");
+  assert.equal(state.claims.length, 0, "the regular path does not even attempt to claim a delivering row");
 });
 
 test("recordAndDeliver: a same-key retry whose existing row is 'suppressed' stays a true duplicate", async () => {
@@ -785,6 +857,33 @@ test("recoverStalled: a retry that hits the daily cap is a legitimate suppressed
   const result = await service.recoverStalled(recoverInput);
   assert.deepEqual(result, { scanned: 1, recovered: 0, suppressed: 1, stalled: 0, retryable: 0 });
   assert.deepEqual(state.status, [{ id: "intent-1", status: "suppressed" }], "deliver already terminalized to suppressed");
+});
+
+// R21 加固：恢复重投同样先原子领取（额外允许领「停滞的 delivering」）——领不到 = 另一个并发调用正在投，
+// 整行跳过（不自增 attempt、不投递、不动状态）。
+test("recoverStalled: a row that loses the recovery claim race is skipped entirely", async () => {
+  const { repo, state } = fakeRepo({ recoverable: [recoverableRow()], claimReturns: false });
+  let notified = 0;
+  const service = createProactiveIntentService({
+    repository: repo,
+    notifications: {
+      async createNotification() {
+        notified += 1;
+        return notificationRow();
+      }
+    },
+    dailyCapPerUser: 10,
+    now: () => at
+  });
+  const result = await service.recoverStalled(recoverInput);
+  assert.deepEqual(result, { scanned: 1, recovered: 0, suppressed: 0, stalled: 0, retryable: 0 });
+  assert.equal(notified, 0, "losing the claim must not re-deliver");
+  assert.equal(state.incremented.length, 0, "attempt_count must not be bumped by the loser");
+  assert.equal(state.status.length, 0);
+  // 恢复路径的领取带 stalledBefore（= now - 停滞阈值），允许领回投递中途崩溃的 delivering 行。
+  assert.deepEqual(state.claims, [
+    { id: "intent-1", stalledBefore: new Date(at.getTime() - recoverInput.olderThanMs) }
+  ]);
 });
 
 test("recoverStalled: an empty scan does nothing", async () => {

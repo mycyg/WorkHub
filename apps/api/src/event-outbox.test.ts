@@ -111,7 +111,10 @@ function makeOutboxRepository(store: EventOutboxRow[]): EventOutboxRepository {
         row.status = "published";
         row.publishedAt = at ?? new Date();
         row.lastError = null;
+        return true;
       }
+      // R21 加固（A4）：CAS 落空（行已被并发 drain 标记过）→ false，调用方不计 published。
+      return false;
     },
     async markFailed({ id, error }) {
       const row = store.find((entry) => entry.id === id);
@@ -119,6 +122,16 @@ function makeOutboxRepository(store: EventOutboxRow[]): EventOutboxRepository {
         row.attempts += 1;
         row.lastError = error;
       }
+    },
+    async purgePublishedBefore({ cutoff, limit }) {
+      // 镜像真仓库语义：只清 published 且 created_at 早于 cutoff 的行，limit 封顶。
+      const targets = store
+        .filter((row) => row.status === "published" && row.createdAt < cutoff)
+        .slice(0, Math.max(0, limit));
+      for (const target of targets) {
+        store.splice(store.indexOf(target), 1);
+      }
+      return targets.length;
     }
   };
 }
@@ -220,7 +233,7 @@ test("createEventOutboxDrain publishes pending rows and marks them published", a
 
   const result = await drain();
 
-  assert.deepEqual(result, { scanned: 1, published: 1, failed: 0 });
+  assert.deepEqual(result, { scanned: 1, published: 1, failed: 0, purged: 0 });
   assert.equal(published.length, 1);
   assert.equal(published[0]?.topic, "conversation:c1");
   assert.equal(store[0]?.status, "published");
@@ -249,16 +262,142 @@ test("createEventOutboxDrain keeps a row pending when publish fails, then replay
   const drain = createEventOutboxDrain({ outbox, bus, logger: silentLogger });
 
   const firstPass = await drain();
-  assert.deepEqual(firstPass, { scanned: 1, published: 0, failed: 1 });
+  assert.deepEqual(firstPass, { scanned: 1, published: 0, failed: 1, purged: 0 });
   assert.equal(published.length, 0, "publish 失败时事件不能被投递出去");
   assert.equal(store[0]?.status, "pending", "失败行必须留在 pending 等重放");
   assert.equal(store[0]?.attempts, 1, "失败行 attempts +1");
   assert.ok(store[0]?.lastError, "失败行须记 last_error（禁空 catch 吞错）");
 
   const secondPass = await drain();
-  assert.deepEqual(secondPass, { scanned: 1, published: 1, failed: 0 });
+  assert.deepEqual(secondPass, { scanned: 1, published: 1, failed: 0, purged: 0 });
   assert.equal(published.length, 1, "恢复后下一轮 drain 必须补发");
   assert.equal(store[0]?.status, "published");
+});
+
+// R21 加固（A4 发布统计不虚增）：publish 成功但 markPublished CAS 落空（并发 drain 已标记过该行）时，
+// published 不得 +1——旧代码无条件自增，重复投递会把发布统计越滚越虚。
+test("createEventOutboxDrain does not count published when markPublished loses the CAS", async () => {
+  const row: EventOutboxRow = {
+    id: randomUUID(),
+    workspaceId: "w",
+    topic: "conversation:c3",
+    eventType: "conversation.message.created",
+    eventId: randomUUID(),
+    payload: {},
+    status: "pending",
+    attempts: 0,
+    lastError: null,
+    createdAt: new Date(),
+    publishedAt: null
+  };
+  const base = makeOutboxRepository([row]);
+  // 模拟并发 drain：本方 publish 成功后、标记前，行已被对方标成 published → CAS 落空返回 false。
+  const outbox: EventOutboxRepository = {
+    ...base,
+    async markPublished() {
+      return false;
+    }
+  };
+  const { published, bus } = flakyBus(0);
+  const drain = createEventOutboxDrain({ outbox, bus, logger: silentLogger });
+
+  const result = await drain();
+
+  assert.equal(published.length, 1, "publish itself still happens (idempotent for consumers)");
+  assert.deepEqual(result, { scanned: 1, published: 0, failed: 0, purged: 0 });
+});
+
+// R21 加固（A3 防无界增长）：drain 末尾顺带清掉保留窗口（7 天）外的已发布行；pending 行与窗口内的
+// published 行不动。
+test("createEventOutboxDrain purges published rows older than the retention window", async () => {
+  const staleCreatedAt = new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000); // 8 天前 > 7 天保留窗口
+  const store: EventOutboxRow[] = [
+    {
+      id: randomUUID(),
+      workspaceId: "w",
+      topic: "conversation:old",
+      eventType: "conversation.message.created",
+      eventId: randomUUID(),
+      payload: {},
+      status: "published",
+      attempts: 0,
+      lastError: null,
+      createdAt: staleCreatedAt,
+      publishedAt: staleCreatedAt
+    },
+    {
+      id: randomUUID(),
+      workspaceId: "w",
+      topic: "conversation:recent",
+      eventType: "conversation.message.created",
+      eventId: randomUUID(),
+      payload: {},
+      status: "published",
+      attempts: 0,
+      lastError: null,
+      createdAt: new Date(now.getTime() - 60 * 1000),
+      publishedAt: new Date(now.getTime() - 60 * 1000)
+    },
+    {
+      id: randomUUID(),
+      workspaceId: "w",
+      topic: "conversation:pending",
+      eventType: "conversation.message.created",
+      eventId: randomUUID(),
+      payload: {},
+      status: "pending",
+      attempts: 0,
+      lastError: null,
+      createdAt: new Date(now.getTime() - 30 * 1000),
+      publishedAt: null
+    }
+  ];
+  const outbox = makeOutboxRepository(store);
+  const { bus } = flakyBus(0);
+  const drain = createEventOutboxDrain({ outbox, bus, logger: silentLogger, now: () => now });
+
+  const result = await drain();
+
+  // pending 行本轮被 publish（scanned/published 1），过期 published 行被清（purged 1）。
+  assert.deepEqual(result, { scanned: 1, published: 1, failed: 0, purged: 1 });
+  assert.equal(store.some((entry) => entry.topic === "conversation:old"), false, "stale published row purged");
+  assert.equal(store.some((entry) => entry.topic === "conversation:recent"), true, "recent published row kept");
+  assert.equal(store.some((entry) => entry.topic === "conversation:pending"), true, "the freshly published row is kept");
+});
+
+test("createEventOutboxDrain treats a purge failure as best-effort (drain result intact, warning logged)", async () => {
+  const row: EventOutboxRow = {
+    id: randomUUID(),
+    workspaceId: "w",
+    topic: "conversation:c4",
+    eventType: "conversation.message.created",
+    eventId: randomUUID(),
+    payload: {},
+    status: "pending",
+    attempts: 0,
+    lastError: null,
+    createdAt: new Date(),
+    publishedAt: null
+  };
+  const base = makeOutboxRepository([row]);
+  const outbox: EventOutboxRepository = {
+    ...base,
+    async purgePublishedBefore() {
+      throw new Error("purge exploded");
+    }
+  };
+  const warnings: string[] = [];
+  const { bus } = flakyBus(0);
+  const drain = createEventOutboxDrain({
+    outbox,
+    bus,
+    logger: { warn: (message: string) => { warnings.push(message); } }
+  });
+
+  const result = await drain();
+
+  assert.deepEqual(result, { scanned: 1, published: 1, failed: 0, purged: 0 });
+  assert.ok(warnings.includes("event_outbox_purge_failed"), "purge failure is logged, not thrown");
 });
 
 // ── 根因复现（纯内存，走真 createConversationService）：崩溃窗口 → 下一轮 drain 补发 ──────────────
@@ -338,7 +477,7 @@ test("R20 contrast: without the outbox (legacy direct publish), a publish failur
   assert.equal(published.length, 0, "直发路径：publish 失败，事件没发出去");
   assert.equal(store.length, 0, "直发路径不留 outbox 行——这正是被修复的丢投裂缝");
   const recovery = await legacyDrain();
-  assert.deepEqual(recovery, { scanned: 0, published: 0, failed: 0 });
+  assert.deepEqual(recovery, { scanned: 0, published: 0, failed: 0, purged: 0 });
   assert.equal(published.length, 0, "没有 outbox，事件永久丢失，无从补发");
 });
 

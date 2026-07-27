@@ -95,11 +95,13 @@ export function createWorkspaceAuditLogRepository(db: WorkHubDb): WorkspaceAudit
       const rawLimit = filter.limit ?? WORKSPACE_AUDIT_LOGS_DEFAULT_LIMIT;
       const limit = Math.min(Math.max(rawLimit, 1), WORKSPACE_AUDIT_LOGS_MAX_LIMIT);
       const offset = Math.max(filter.offset ?? 0, 0);
+      // R21 加固：createdAt 撞秒时行序不稳定会让 limit/offset 翻页在页边界重复/漏行——补 id 次级键
+      // 钉死全序。
       return db
         .select()
         .from(auditLogs)
         .where(and(...conditions))
-        .orderBy(desc(auditLogs.createdAt))
+        .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
         .limit(limit)
         .offset(offset);
     }

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { proactiveIntents } from "./schema/index.js";
 import {
+  claimProactiveIntentForDelivery,
   countDeliveredProactiveIntentsForUser,
   incrementProactiveIntentAttempt,
   listDdlChaseCandidates,
@@ -146,12 +147,53 @@ test("listRecoverableProactiveIntents scans created rows that are stale and unde
   assert.deepEqual(rows[0]?.deliveryPayload, { channel: "notification" });
   assert.equal(rows[0]?.attemptCount, 1);
   const select = queries.find((q) => q.operation === "select");
-  // 只碰 created 行；attempt_count 上界；created_at 上界都进 where。
+  // 只碰 created/delivering 行；attempt_count 上界；created_at 上界都进 where。
   assert.ok(queryReferences(select?.where, proactiveIntents.status), "must scope by status");
   assert.ok(queryReferences(select?.where, proactiveIntents.attemptCount), "must bound attempt_count");
   assert.ok(queryReferences(select?.where, proactiveIntents.createdAt), "must bound created_at (staleness)");
-  assert.ok(queryParamValues(select?.where).includes("created"), "must filter status = created");
+  assert.ok(queryParamValues(select?.where).includes("created"), "must scan stale created rows");
+  // R21 加固：投递中途崩溃的行停在 delivering——恢复扫描必须把它们一并扫回，否则永久滞留。
+  assert.ok(queryParamValues(select?.where).includes("delivering"), "must also scan stale delivering rows");
   assert.equal(select?.limit, 200);
+});
+
+// ── R21 加固（并发投递幂等）：claimProactiveIntentForDelivery 的原子领取 ─────────────────────────
+
+test("claimProactiveIntentForDelivery (regular path) claims only from 'created' and reports success on 1 row", async () => {
+  const { db, queries } = createQueryRecorder([[{ id: "intent-1" }]]);
+  const claimed = await claimProactiveIntentForDelivery(db, { id: "intent-1" });
+  assert.equal(claimed, true);
+  const update = queries.find((q) => q.operation === "update");
+  assert.ok(update, "claim must be a single UPDATE");
+  assert.equal(update?.returningCalled, true, "claim outcome is decided by RETURNING (rowCount)");
+  const setValue = update?.setValue as Record<string, unknown>;
+  assert.equal(setValue["status"], "delivering", "claim moves the row to the in-flight state");
+  // WHERE 带 status 前置条件（只允许从 created 领取），且不带 created_at 停滞阈值。
+  assert.ok(queryReferences(update?.where, proactiveIntents.id));
+  assert.ok(queryReferences(update?.where, proactiveIntents.status));
+  assert.ok(queryParamValues(update?.where).includes("created"));
+  assert.equal(queryParamValues(update?.where).includes("delivering"), false, "regular claims must not steal in-flight rows");
+  assert.equal(queryReferences(update?.where, proactiveIntents.createdAt), false, "no staleness bound on the regular path");
+});
+
+test("claimProactiveIntentForDelivery returns false when the CAS matches no row (concurrent claimer won)", async () => {
+  const { db } = createQueryRecorder([[]]);
+  const claimed = await claimProactiveIntentForDelivery(db, { id: "intent-1" });
+  assert.equal(claimed, false);
+});
+
+test("claimProactiveIntentForDelivery (recovery path) also claims stalled 'delivering' rows behind the cutoff", async () => {
+  const stalledBefore = new Date("2026-07-15T09:55:00.000Z");
+  const { db, queries } = createQueryRecorder([[{ id: "intent-1" }]]);
+  const claimed = await claimProactiveIntentForDelivery(db, { id: "intent-1", stalledBefore });
+  assert.equal(claimed, true);
+  const update = queries.find((q) => q.operation === "update");
+  const params = queryParamValues(update?.where);
+  // 恢复路径放宽到 created/delivering，但必须叠加 created_at < stalledBefore 的停滞阈值——真在途的行不被抢。
+  assert.ok(params.includes("created"));
+  assert.ok(params.includes("delivering"));
+  assert.ok(queryReferences(update?.where, proactiveIntents.createdAt), "recovery claims must be staleness-bounded");
+  assert.ok(params.some((value) => value instanceof Date && value.getTime() === stalledBefore.getTime()));
 });
 
 test("listRecoverableProactiveIntents coalesces a null delivery_payload to null (legacy rows)", async () => {

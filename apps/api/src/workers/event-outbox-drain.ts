@@ -19,6 +19,8 @@ export type EventOutboxDrainScheduler = {
     tick_count: number;
     published_count: number;
     failed_count: number;
+    // R21 加固：drain 顺带清理的过期已发布行累计数（见 services/event-outbox.ts 的 purge）。
+    purged_count: number;
     error_count: number;
     last_tick_at?: string;
     last_error_message?: string;
@@ -38,6 +40,7 @@ export function createEventOutboxDrainScheduler(options: {
   let tickCount = 0;
   let publishedCount = 0;
   let failedCount = 0;
+  let purgedCount = 0;
   let errorCount = 0;
   let lastTickAt: string | undefined;
   let lastErrorMessage: string | undefined;
@@ -45,7 +48,7 @@ export function createEventOutboxDrainScheduler(options: {
   async function tick(): Promise<EventOutboxDrainResult> {
     if (running) {
       // 上一 tick 还没跑完 → 跳过本次（drain 自身已有进程内互斥，这里再挡一层避免堆积）。
-      return { scanned: 0, published: 0, failed: 0 };
+      return { scanned: 0, published: 0, failed: 0, purged: 0 };
     }
     running = true;
     try {
@@ -53,6 +56,7 @@ export function createEventOutboxDrainScheduler(options: {
       tickCount += 1;
       publishedCount += result.published;
       failedCount += result.failed;
+      purgedCount += result.purged;
       lastTickAt = now().toISOString();
       return result;
     } catch (error) {
@@ -98,6 +102,7 @@ export function createEventOutboxDrainScheduler(options: {
       tick_count: tickCount,
       published_count: publishedCount,
       failed_count: failedCount,
+      purged_count: purgedCount,
       error_count: errorCount,
       ...(lastTickAt ? { last_tick_at: lastTickAt } : {}),
       ...(lastErrorMessage ? { last_error_message: lastErrorMessage } : {})

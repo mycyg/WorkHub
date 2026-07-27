@@ -299,6 +299,15 @@ export type WorkItemRepository = {
 // 单列在自有接口（而非塞进基 WorkItemRepository）——它只服务停用路由，不污染 agent-runner/通知用的最小写面。
 export type WorkItemClaimHandoverRepository = {
   unassignActiveClaimsForUser: (userId: string, at: Date) => Promise<{ id: string }[]>;
+  // R21 加固（停用善后审计缺口）：把「退回认领 + 逐项审计日志」包进同一个 db 事务——审计写失败则退回
+  // 一并回滚，重跑停用善后才能真收敛（否则退回已生效、审计永久缺失，重试扫不到任何可退回行）。OPTIONAL：
+  // 真库仓库实现它；假仓库/老运行时缺席时路由回退「先退回、再逐条写审计」的顺序写（既有 best-effort 行为）。
+  unassignActiveClaimsForUserWithAudit?: (input: {
+    userId: string;
+    at: Date;
+    // 执行停用的管理员——落进每条审计的 actor_user_id。
+    actorUserId: string;
+  }) => Promise<{ id: string }[]>;
 };
 
 export type WorkItemDataRepository = WorkItemRepository & WorkItemClaimHandoverRepository & {
@@ -776,6 +785,43 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         )
         .returning({ id: workItems.id });
       return rows;
+    },
+
+    // R21 加固：退回 + 审计的原子版本——UPDATE 与逐项 audit_logs INSERT 共一事务，任一步抛即整笔回滚。
+    // 语义与 unassignActiveClaimsForUser 完全一致，只是把调用方原来「事后逐条写审计」的裂缝收进事务里。
+    async unassignActiveClaimsForUserWithAudit(input) {
+      return db.transaction(async (tx) => {
+        const rows = await tx
+          .update(workItems)
+          .set({
+            claimedByUserId: null,
+            claimedByNickname: null,
+            claimedAt: null,
+            version: sql`${workItems.version} + 1`,
+            updatedAt: input.at
+          })
+          .where(
+            and(
+              eq(workItems.claimedByUserId, input.userId),
+              notInArray(workItems.status, terminalWorkItemStatuses),
+              isNull(workItems.deletedAt)
+            )
+          )
+          .returning({ id: workItems.id });
+        // 每退回一项写一笔审计（action/entity/detail 与 routes/auth.ts 顺序写路径逐字一致）。
+        for (const row of rows) {
+          await tx.insert(auditLogs).values({
+            id: randomUUID(),
+            actorKind: "human",
+            actorUserId: input.actorUserId,
+            entityType: "work_item",
+            entityId: row.id,
+            action: "work_item.unassigned_on_offboarding",
+            detailJson: { offboarded_user_id: input.userId }
+          });
+        }
+        return rows;
+      });
     },
 
     async claimOwnerlessWorkItem(input) {

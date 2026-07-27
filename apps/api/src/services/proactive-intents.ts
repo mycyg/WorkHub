@@ -1,6 +1,7 @@
 import { settings as runtimeSettings } from "@workhub/config";
 import type { NotificationSeverity } from "@workhub/contracts";
 import {
+  claimProactiveIntentForDelivery,
   countDeliveredProactiveIntentsForUser,
   createActionCardRepository,
   createConversationRepository,
@@ -101,7 +102,11 @@ export type ProactiveIntentRepositoryDeps = {
   recordIntent: (input: Parameters<typeof recordProactiveIntent>[1]) => Promise<RecordProactiveIntentResult>;
   countDeliveredForUserOnDay: (input: { targetUserId: string; from: Date; to: Date }) => Promise<number>;
   markStatus: (input: { id: string; status: "delivered" | "suppressed"; deliveredVia?: string }) => Promise<void>;
-  // R20 REL-2（#P1-11 崩溃恢复兜底扫描）：列出停在 created 的陈旧行 + 每次重投自增 attempt_count。
+  // R21 加固（并发投递幂等）：投递前的原子领取（created → delivering，UPDATE ... WHERE status 前置条件）。
+  // 缺省（不传 stalledBefore）只允许从 created 领取；恢复扫描传 stalledBefore（= now - 停滞阈值）额外
+  // 允许领取「停滞的 delivering」。领取失败（false）= 有并发方在投/已投——绝不执行投递副作用。
+  claimForDelivery: (input: { id: string; stalledBefore?: Date }) => Promise<boolean>;
+  // R20 REL-2（#P1-11 崩溃恢复兜底扫描）：列出停在 created/delivering 的陈旧行 + 每次重投自增 attempt_count。
   listRecoverable: (input: {
     now: Date;
     olderThanMs: number;
@@ -226,9 +231,11 @@ export function createProactiveIntentService(deps: ProactiveIntentServiceDeps): 
   const now = deps.now ?? (() => new Date());
   const logger = deps.logger ?? getDefaultStructuredLogger();
 
-  // R20 REL-2（#P1-11）：投递腿（从 created 顶到终态）。直投路径与崩溃恢复扫描共用同一份——三通道逻辑
+  // R20 REL-2（#P1-11）：投递腿（从 delivering 顶到终态）。直投路径与崩溃恢复扫描共用同一份——三通道逻辑
   // 只此一处，不复制粘贴。入口是 intentId + 完整 intent（恢复路径从 delivery_payload 重建后再进来），
-  // 走完必把行推到 delivered/suppressed 某个终态（除非中途抛错，那正是崩溃窗口，行仍停在 created）。
+  // R21 加固：调用方必须先经 claimForDelivery 原子领取（created → delivering）才进这里——并发调用只有
+  // 一个能领到，投递副作用因此恰好执行一次。走完必把行推到 delivered/suppressed 某个终态（除非中途抛错，
+  // 那正是崩溃窗口，行停在 delivering，等恢复扫描按停滞阈值领回重投）。
   async function deliver(intentId: string, intent: ProactiveIntentInput, at: Date): Promise<ProactiveDeliverResult> {
     // 每人每日上限：当日该 target 的已投递 intent 数达上限 → 记 suppressed，不投。
     const { from, to } = localDayBounds(at);
@@ -350,8 +357,14 @@ export function createProactiveIntentService(deps: ProactiveIntentServiceDeps): 
       if (!recorded.created) {
         // 撞 suppression_key 唯一约束。R20 REL-2（#P1-11）：区分「真 duplicate」与「投递前崩溃、行停在
         // created」——后者是可恢复态，同 key 重试即恢复投递（手里的 intent 就是完整投递上下文，直接复用
-        // deliver 腿，不必等兜底扫描）。既有行已 delivered/suppressed 才是真 duplicate，幂等跳过。
+        // deliver 腿，不必等兜底扫描）。既有行已 delivering（有并发方在投）/delivered/suppressed 都是真
+        // duplicate，幂等跳过。R21 加固：恢复投递前必须先原子领取（created → delivering），两个并发的
+        // 同 key 重试只有一个领得到——领不到的按 duplicate 收口，绝不重复执行投递副作用。
         if (recorded.id && recorded.status === "created") {
+          const claimed = await deps.repository.claimForDelivery({ id: recorded.id });
+          if (!claimed) {
+            return { status: "suppressed", reason: "duplicate" };
+          }
           return deliver(recorded.id, intent, at);
         }
         return { status: "suppressed", reason: "duplicate" };
@@ -361,7 +374,12 @@ export function createProactiveIntentService(deps: ProactiveIntentServiceDeps): 
         return { status: "suppressed", reason: "duplicate" };
       }
 
-      // 2) 投递（每人每日上限 + 三通道 + 顶终态）。
+      // 2) 原子领取（created → delivering）后投递（每人每日上限 + 三通道 + 顶终态）。刚插入的行正常必能
+      // 领到；领不到 = 极端竞态下另一条路径（同 key 重试/恢复扫描）已抢先在投——按 duplicate 收口。
+      const claimed = await deps.repository.claimForDelivery({ id: recorded.id });
+      if (!claimed) {
+        return { status: "suppressed", reason: "duplicate" };
+      }
       return deliver(recorded.id, intent, at);
     },
 
@@ -379,7 +397,15 @@ export function createProactiveIntentService(deps: ProactiveIntentServiceDeps): 
         stalled: 0,
         retryable: 0
       };
+      // R21 加固：恢复重投同样必须先原子领取——允许领取「停滞的 delivering」（created_at 早于停滞阈值：
+      // 投递中途崩溃的行停在 delivering，靠这里救回），领不到 = 另一个并发调用（直投重试/另一个恢复 tick）
+      // 正拿着这行在投，跳过不碰。
+      const stalledBefore = new Date(input.now.getTime() - input.olderThanMs);
       for (const row of rows) {
+        const claimed = await deps.repository.claimForDelivery({ id: row.id, stalledBefore });
+        if (!claimed) {
+          continue;
+        }
         // 每次尝试先自增 attempt_count（即便本次又崩，attempt_count 已 +1，达上限后不会被反复重扫）。
         await deps.repository.incrementAttempt({ id: row.id });
         const attempt = row.attemptCount + 1;
@@ -400,7 +426,7 @@ export function createProactiveIntentService(deps: ProactiveIntentServiceDeps): 
             result.suppressed += 1;
           }
         } catch (error) {
-          // 本次重投又抛（进程若在此崩溃则行仍停在 created，attempt_count 已 +1，下个 tick 再来）。
+          // 本次重投又抛（行停在 delivering，attempt_count 已 +1，过停滞阈值后下个 tick 再领回来）。
           logger.warn?.("proactive_intent_recovery_delivery_failed", { intentId: row.id, attempt, error });
           if (attempt >= input.maxAttempts) {
             // 已达重投上限仍投不成 → 封顶判死（delivered_via='stalled'）。
@@ -552,6 +578,8 @@ export function getDefaultProactiveIntentService(): ProactiveIntentService {
         recordIntent: (input) => recordProactiveIntent(db, input),
         countDeliveredForUserOnDay: (input) => countDeliveredProactiveIntentsForUser(db, input),
         markStatus: (input) => markProactiveIntentStatus(db, input),
+        // R21 加固：投递前的原子领取（created → delivering），并发投递恰好一个能领到。
+        claimForDelivery: (input) => claimProactiveIntentForDelivery(db, input),
         // R20 REL-2（#P1-11）：崩溃恢复兜底扫描的两条原语。
         listRecoverable: (input) => listRecoverableProactiveIntents(db, input),
         incrementAttempt: (input) => incrementProactiveIntentAttempt(db, input)

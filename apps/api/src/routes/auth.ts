@@ -158,6 +158,8 @@ type OffboardCleanupResult = { complete: boolean; steps: OffboardCleanupStep[] }
 // P2-02（停用账号善后清理 · 可重入）：把账号停用后的各善后步骤收进一个「幂等 + 可重跑」例程。
 // 每步都能重复执行并收敛——删已删的凭据=0 行、撤已撤的会话/设备=无操作、退回已退回的事项=空集、
 // forgetUser 天然幂等——故某步失败留下半清理态时，重跑本例程会把残留逐步收敛到全清理。
+// R21 加固：工作交接步优先走仓储层「退回+审计」原子入口（同一 db 事务，见 workitems.handover 处注释），
+// 保证「退回成功但审计缺失」这种半态不再出现——步骤失败时整步回滚，重跑真收敛。
 // 不吞错伪装成功：逐步捕获，失败写结构化告警并记入返回的 steps[]，由调用方据 complete 决定是否重试。
 // 与 SEC-1（工作区移出）边界：SEC-1 是「工作区成员软删 + 撤 token」的【同事务】原子操作（见
 // services/workspace-members.ts removeMember）；本例程是【账号级】停用善后，且含 presence.forgetUser
@@ -196,9 +198,21 @@ async function runOffboardCleanup(
   }
   // 工作交接（幂等：只退回仍在认领中的非终态事项，已退回则为空集）。提交人(submitter)字段保留以保溯源，
   // 终态(merged/done/cancelled)与已软删事项不动；每退回一项写一笔审计让交接可追溯。
+  // R21 加固（停用善后审计缺口）：优先走仓储层的原子版本 unassignActiveClaimsForUserWithAudit——退回与
+  // 逐项审计共一 db 事务，审计写失败则退回一并回滚，重跑本善后才能真收敛（旧顺序写在审计失败时退回已
+  // 生效、审计永久缺失——重试扫不到任何可退回行）。原子入口缺席（假仓库/老运行时）时回退顺序写，行为不变。
   if (deps.workItems) {
     await runStep("workitems.handover", async () => {
-      const reassigned = await deps.workItems!.unassignActiveClaimsForUser(targetId, at);
+      const handover = deps.workItems!;
+      if (handover.unassignActiveClaimsForUserWithAudit) {
+        await handover.unassignActiveClaimsForUserWithAudit({
+          userId: targetId,
+          at,
+          actorUserId: actingUserId
+        });
+        return;
+      }
+      const reassigned = await handover.unassignActiveClaimsForUser(targetId, at);
       if (deps.auditLogs) {
         for (const item of reassigned) {
           await deps.auditLogs.createAuditLog({
