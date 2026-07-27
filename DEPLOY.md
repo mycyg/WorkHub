@@ -119,6 +119,9 @@ docker compose --env-file .env.pilot -f docker-compose.pilot.yml up -d --build  
 | 回复互斥闸（同一会话不许并发出两轮 Cuu 回应） | `conversation-turns.ts` 里一个进程内 `Set`，按会话 id 加锁 | 闸门只挡得住同一个进程内的并发请求；两个副本各自能放行一条，同一会话可能同时跑出两轮回应 |
 | 回话判定去重（判定器/@Cuu 直通两条路径都不重复触发同一条消息） | `conversation-reply-judge.ts` 里一个进程内 `Map`（会话→已判定到的最后消息 id） | 每个副本各记各的水位线；最坏情况是同一条触发消息被两个副本各判一次，重复触发（不是丢失） |
 | 军团/task-plan 执行队列（当前在跑哪个 run、它的沙箱工作目录、中断句柄） | `agent-runner.ts` 的 `createInMemoryAgentRunQueue`——`Map`/`Set` 记录运行中 run、workdir、abort controller | 每个副本各自认领、各自调度；task-plan 记录本身在 PostgreSQL 里是安全的，但"谁正在真正执行、能不能中断它"这件事跨副本不同步 |
+| 会话消息 outbox 派发（`event_outbox` 每 30s drain 一轮） | `apps/api/src/services/event-outbox.ts` 的进程内 in-flight 闸——`listPending` 是普通 SELECT，无 `FOR UPDATE SKIP LOCKED`/租约 | 两个副本会各自捞到同一批 pending 行、对同一事件各 publish 一次；消费端按消息 id 去重 + 按 seq 排序，用户不会看到重复消息，但 SSE 推送量翻倍、发布统计失真。上多副本前要给 drain 加跨实例领取（行租约或 SKIP LOCKED） |
+
+（对照项：主动性 intent 的投递/恢复扫描曾同属此类，R21 起已改为 PostgreSQL 层原子领取——`claimProactiveIntentForDelivery` 把行从 created 顶到 delivering 才许投递——多副本下天然安全，无需列入上表。）
 
 `WORKER_COUNT`（单进程内的 worker 池大小）与 `BROKER_BACKEND=redis` 已有配置层面的 fail-closed 守卫
 （`packages/config/src/env.ts` `validateRuntimeConfig`：生产环境下 `WORKER_COUNT>1` 配 `BROKER_BACKEND=memory`
