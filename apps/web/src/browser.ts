@@ -3122,9 +3122,11 @@ function bindConversationParticipantsPanel(
       const [me, vm, users] = await Promise.all([
         client.me().catch(() => null),
         client.request<MirrorParticipantsVM>(participantsPath),
-        // 加人选择器数据源取工作区花名册（本工作区成员，非全局用户目录）。limit=100 取首页（roster 上限）。
-        client.request<WorkspaceRosterVM>("/api/workspace/roster?limit=100").then(
-          (value) => value.members.map((m) => ({ id: m.user_id, nickname: m.nickname })),
+        // 加人选择器数据源取工作区花名册（本工作区成员，非全局用户目录）。此前只拉 limit=100 首页，工作区
+        // 成员超过 100 人时后面的人选不到、还静默看不出截断——改用 fetchWorkspaceRosterMembers 翻页拉全量
+        // （与审批转交选择器同一数据源，见上方 delegateSummary 分支）。
+        fetchWorkspaceRosterMembers(client).then(
+          (members) => members.map((m) => ({ id: m.user_id, nickname: m.nickname })),
           () => [] as Array<{ id: string; nickname: string }>
         )
       ]);
@@ -3260,6 +3262,9 @@ function bindSettingsBudgetPolicyPanel(
 
   const bindPolicyRow = (row: HTMLElement, policy: SettingsBudgetPolicySlice) => {
     let lastSaved = policy;
+    // R21：此前保存成功只回写 fields 表里的输入框，版本号 pill（服务端每次 PUT 都会 bump version）没有
+    // 跟着刷新——页面上一直停在打开时的旧版本号，下一次改字段乐观并发校验用的是这个陈旧显示误导用户。
+    const versionElement = row.querySelector<HTMLElement>("[data-r20-budget-policy-version]");
     const rowStatus = row.querySelector<HTMLElement>("[data-r20-budget-policy-status]");
     const setRowStatus = (text: string, tone: "saving" | "saved" | "error") => {
       if (!rowStatus) {
@@ -3344,6 +3349,11 @@ function bindSettingsBudgetPolicyPanel(
           if (f.element) {
             f.write(f.element, lastSaved);
           }
+        }
+        if (versionElement) {
+          // textContent 直接赋值不经 HTML 解析，不需要 escapeHtml（那是给 innerHTML/模板字符串拼接用的）。
+          versionElement.textContent = `v${lastSaved.version}`;
+          versionElement.setAttribute("data-r20-budget-policy-version", String(lastSaved.version));
         }
         setRowStatus(zh ? "已保存" : "Saved", "saved");
       } catch (error) {
@@ -5198,16 +5208,26 @@ async function submitOnboarding(client: BrowserApiClient, locale: WorkHubLocale)
     currentIdentity = identityUserFrom(identity) ?? { nickname, isAdmin: false };
     persistBrowserLocale(locale);
     // R20 P2-09：此前 `.catch(() => undefined)` 把语言偏好同步失败整个吞掉——用户以为界面语言已经
-    // 存到服务端，换设备/清缓存后又会掉回默认语言。不阻塞进入工作台（与 renderCurrentRouteOrOnboard
-    // 并发发起），但落地后要是没同步成功，就给可见告警 + 就地重试按钮，不能悄悄丢。编排逻辑本身在
-    // onboarding-locale-sync.ts（browser.ts 顶层引用 document，没法被单测覆盖）。
-    const localeSyncedPromise = runOnboardingLocaleSync({
-      updatePreferences: () => client.updatePreferences({ locale }).then(() => undefined),
+    // 存到服务端，换设备/清缓存后又会掉回默认语言。不阻塞进入工作台（PATCH 与渲染并发发起），但落地
+    // 后要是没同步成功，就给可见告警 + 就地重试按钮，不能悄悄丢。
+    //
+    // R21（补丁）：notice 靠壳层 DOM 上的 [data-wh-app-notice]，引导页模板没有这个节点——PATCH 先于
+    // renderCurrentRouteOrOnboard 渲完 settle 时（典型场景：断网几乎立即 reject），告警会在壳层还没
+    // 渲出来那一刻被无声吞掉。所以这里立刻发起 PATCH（保持并发/不阻塞语义），但只把这个已经在飞的
+    // Promise 传给 runOnboardingLocaleSync，真正渲染 notice 的调用要等 renderCurrentRouteOrOnboard
+    // 之后才做。编排逻辑本身在 onboarding-locale-sync.ts（browser.ts 顶层引用 document，没法被单测
+    // 覆盖）。
+    const localeSyncFirstAttempt = client.updatePreferences({ locale }).then(() => undefined);
+    // 提前挂一个空 catch，避免壳层渲染这段时间内 Node 把它当成未处理拒绝报出来；真正的失败处理仍然
+    // 在 runOnboardingLocaleSync 里、渲染完成之后才触发。
+    localeSyncFirstAttempt.catch(() => undefined);
+    await renderCurrentRouteOrOnboard(client, locale);
+    await runOnboardingLocaleSync({
+      firstAttempt: localeSyncFirstAttempt,
+      retryUpdatePreferences: () => client.updatePreferences({ locale }).then(() => undefined),
       showSyncFailedNotice: (retry) => showOnboardingLocaleSyncFailedNotice(locale, retry),
       showSyncSucceededNotice: () => showOnboardingLocaleSyncSucceededNotice(locale)
     });
-    await renderCurrentRouteOrOnboard(client, locale);
-    await localeSyncedPromise;
   } catch (error) {
     const errorText = error instanceof Error && error.message
       ? error.message
