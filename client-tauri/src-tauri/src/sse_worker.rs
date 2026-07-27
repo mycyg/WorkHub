@@ -220,7 +220,17 @@ async fn run_sse_subscription(
                     Some("waiting for a client token".to_string()),
                 );
                 match token_change_notifier(&app) {
-                    Some(notify) => notify.notified().await,
+                    // 令牌写入用 notify_waiters()（不预存许可，见 `ShellClientToken::set`）：上面读快照与这里
+                    // 注册等待者之间到达的写入会被丢弃，裸 `notified().await` 就永久卡死。对齐下方退避分支的
+                    // 模式——`select!` 同时等通知与一个基准退避的兜底 sleep，醒来后 continue 重新探测令牌
+                    // 快照；正确性来自"每拍重读快照 + 代际比对"（见文件顶部注释），通知/sleep 都只是唤醒提示。
+                    // select 竞态窗口本身难以单测钉死，靠兜底轮询保证有界等待。
+                    Some(notify) => {
+                        tokio::select! {
+                            _ = notify.notified() => {}
+                            _ = sleep(reconnect_backoff(reconnect_delay_ms, 0)) => {}
+                        }
+                    }
                     // 拿不到通知句柄（降级）：退回按基准退避轮询，不至于永久卡死。
                     None => sleep(reconnect_backoff(reconnect_delay_ms, 0)).await,
                 }
@@ -454,12 +464,19 @@ fn process_sse_chunk<B: AsRef<[u8]>>(
         app.emit(&subscription.event_channel, payload.clone())
             .map_err(|error| format!("failed to emit push-event: {error}"))?;
         // R19-13：实时读取当前壳层 locale（而非 worker 启动时的冻结值）——应用内切语言后新弹的通知即刻跟随。
-        if let Some(plan) = system_notification_plan_from_push_payload_for_locale(
+        // 单条通知计划失败（如畸形通知 ID）只跳过这条系统通知，不 `?` 上抛——push-event 已照常 emit，
+        // 一条脏数据不该把整条 SSE 连接打断重连（路由侧的畸形 ID 已在 route_for_notification 内优雅降级）。
+        let plan = match system_notification_plan_from_push_payload_for_locale(
             &payload,
             current_shell_locale(app),
-        )
-        .map_err(|error| format!("failed to plan system notification: {error:?}"))?
-        {
+        ) {
+            Ok(plan) => plan,
+            Err(error) => {
+                eprintln!("failed to plan WorkHub system notification: {error:?}");
+                continue;
+            }
+        };
+        if let Some(plan) = plan {
             if !should_deliver_system_notification(notification_deduper, &plan)? {
                 continue;
             }
