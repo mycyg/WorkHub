@@ -547,6 +547,17 @@ export function bindReplayRevertActions(root: ReplayRevertRoot, deps: ReplayReve
       reverted: button.dataset["revertLabelReverted"] ?? REVERT_LABEL_FALLBACK.reverted,
       retry: button.dataset["revertLabelRetry"] ?? REVERT_LABEL_FALLBACK.retry
     };
+    // C2（R21 审查）：武装超时的收尾逻辑——武装/失败重试两条路径共用同一套「超时未点则回落 idle 文案」。
+    const scheduleArmTimeout = (snapshotId: string) => {
+      armTimer = setArmTimer(() => {
+        armTimer = undefined;
+        if (!disposed && armedSnapshotId === snapshotId) {
+          armedSnapshotId = undefined;
+          delete button.dataset["replayRevertArmed"];
+          button.textContent = labels.idle;
+        }
+      }, REVERT_ARM_TIMEOUT_MS);
+    };
     button.addEventListener("click", (event: ReplayRevertClickEvent) => {
       event.preventDefault();
       // 桌面壳的 gold-path 点击管线也在根上委托——武装/执行都自己处理，别让它再兜底走一遍。
@@ -560,14 +571,7 @@ export function bindReplayRevertActions(root: ReplayRevertRoot, deps: ReplayReve
         armedSnapshotId = snapshotId;
         button.dataset["replayRevertArmed"] = "true";
         button.textContent = labels.arm;
-        armTimer = setArmTimer(() => {
-          armTimer = undefined;
-          if (!disposed && armedSnapshotId === snapshotId) {
-            armedSnapshotId = undefined;
-            delete button.dataset["replayRevertArmed"];
-            button.textContent = labels.idle;
-          }
-        }, REVERT_ARM_TIMEOUT_MS);
+        scheduleArmTimeout(snapshotId);
         return;
       }
       clearTimer();
@@ -592,10 +596,16 @@ export function bindReplayRevertActions(root: ReplayRevertRoot, deps: ReplayReve
           if (disposed) {
             return;
           }
-          // 失败：解除忙态、去掉禁用，把文案换成可见的「点此重试」——再点一次会重新走武装→执行。
+          // C2（R21 审查）：失败后不清空武装态——保持 armedSnapshotId = snapshotId，
+          // 下一次单击 decideSnapshotRevertConfirmation 直接命中 execute（真的重试），
+          // 而不是先重新武装一次白点一下。超时未点击则复用 arm 分支同款定时器回落到 idle 文案。
           delete button.dataset["replayRevertBusy"];
           button.removeAttribute("aria-disabled");
+          armedSnapshotId = snapshotId;
+          button.dataset["replayRevertArmed"] = "true";
           button.textContent = labels.retry;
+          clearTimer();
+          scheduleArmTimeout(snapshotId);
         });
     });
   }

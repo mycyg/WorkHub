@@ -1838,18 +1838,31 @@ async function flushAsync(cycles = 8) {
   }
 }
 
-test("R20 P1-03: fetch SSE source reconnects with backoff on EOF and fetch failure, resets on success", async () => {
+test("R20 P1-03: fetch SSE source reconnects with backoff on EOF and fetch failure, resets only once real data arrives", async () => {
   const clock = createFakeClock();
   const errors: string[] = [];
   let opens = 0;
   let fetchCalls = 0;
-  // 脚本：连#0=EOF, 连#1..2=断网(抛), 连#3=EOF(恢复)。EOF 与抛错都必须派发 error 并按退避重连。
-  const script = ["eof", "throw", "throw", "eof"];
+  // 脚本：连#0=EOF(无数据), 连#1..2=断网(抛), 连#3=真收到一帧数据后才 EOF(真正恢复)。
+  // EOF 与抛错都必须派发 error 并按退避重连；C1（R21 审查）：只有连#3 真收到过数据块才算「连接活了」，
+  // 退避才该复位——连#0 那种「accept 即断、从未有数据」的空 EOF 不该复位（那正是本轮修的 bug）。
+  const script = ["eof", "throw", "throw", "data-then-eof"];
   const fakeFetch = async () => {
     const mode = script[fetchCalls] ?? "throw";
     fetchCalls += 1;
     if (mode === "throw") {
       throw new TypeError("Failed to fetch");
+    }
+    if (mode === "data-then-eof") {
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(": ping\n\n"));
+            controller.close();
+          }
+        }),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } }
+      );
     }
     return new Response(
       new ReadableStream({
@@ -1882,7 +1895,8 @@ test("R20 P1-03: fetch SSE source reconnects with backoff on EOF and fetch failu
     }
   });
 
-  // 首连成功后立即 EOF：旧实现在此静默返回、无任何调度（红）；新实现派发 error 并排一个退避重连（绿）。
+  // 首连成功后立即 EOF（从未收到任何数据）：旧实现在此静默返回、无任何调度（红）；
+  // 新实现派发 error 并排一个退避重连（绿）。
   await flushAsync();
   assert.equal(fetchCalls, 1);
   assert.equal(opens, 1);
@@ -1903,7 +1917,8 @@ test("R20 P1-03: fetch SSE source reconnects with backoff on EOF and fetch failu
   assert.equal(fetchCalls, 3);
   assert.equal(clock.delays().at(-1), 4000);
 
-  // 重连#3 → 网络恢复、成功建流 → 退避复位回基准（EOF 后下一次退避又是 1000），并再次派发 open。
+  // 重连#3 → 网络恢复、真收到一帧数据后才 EOF → 退避复位回基准（真活过一次后下一次退避又是 1000），
+  // 并再次派发 open。
   clock.fire();
   await flushAsync();
   assert.equal(fetchCalls, 4);
@@ -1917,6 +1932,60 @@ test("R20 P1-03: fetch SSE source reconnects with backoff on EOF and fetch failu
   clock.fire();
   await flushAsync();
   assert.equal(fetchCalls, 4);
+});
+
+test("C4（R21 审查）: accept-即断（HTTP 200 后立刻 EOF、从未有数据帧）的连续重连必须正常指数退避，不能卡在基准值", async () => {
+  const clock = createFakeClock();
+  let fetchCalls = 0;
+  // 每次都是同一种「accept 即断」：响应 200 后 body 立刻关闭，从未 enqueue 过任何字节。
+  const fakeFetch = async () => {
+    fetchCalls += 1;
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.close();
+        }
+      }),
+      { status: 200, headers: { "Content-Type": "text/event-stream" } }
+    );
+  };
+
+  const source = new DesktopCuuFetchEventSource(
+    "/daemon/api/push/stream/run/run-2",
+    { withCredentials: true },
+    {
+      fetch: fakeFetch as unknown as typeof fetch,
+      setTimeout: clock.setTimeout,
+      clearTimeout: clock.clearTimeout,
+      random: () => 0,
+      baseReconnectMs: 1000,
+      maxReconnectMs: 60_000
+    }
+  );
+
+  // 连#0（首连）：accept 即断，退避排到基准 1000（consecutiveFailures 从 0 起，尚未有过错判）。
+  await flushAsync();
+  assert.equal(fetchCalls, 1);
+  assert.deepEqual(clock.delays(), [1000]);
+
+  // 连#1..#3：每次都同样 accept 即断——若退避在响应 OK 时就清零（修复前的 bug），这里会一直停在 1000；
+  // 修复后应正常翻倍：2000 → 4000 → 8000。
+  clock.fire();
+  await flushAsync();
+  assert.equal(fetchCalls, 2);
+  assert.equal(clock.delays().at(-1), 2000);
+
+  clock.fire();
+  await flushAsync();
+  assert.equal(fetchCalls, 3);
+  assert.equal(clock.delays().at(-1), 4000);
+
+  clock.fire();
+  await flushAsync();
+  assert.equal(fetchCalls, 4);
+  assert.equal(clock.delays().at(-1), 8000);
+
+  source.close();
 });
 
 test("R20 P1-03: run stream fallback keeps polling past 10 failures and converges after recovery", async () => {

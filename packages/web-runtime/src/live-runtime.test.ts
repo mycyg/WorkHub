@@ -197,6 +197,78 @@ test("R20 P2-06 live runtime honors a per-target eventTypes override (conversati
   assert.equal(convSource.closed, true, "leaving conversation c-1 closes its stream (no leak)");
 });
 
+test("C3（R21 审查）same-URL syncTargets with a changed eventTypes override rebinds instead of reusing the stale closure", async () => {
+  FakeEventSource.instances = [];
+  const metrics: Record<string, unknown> = {};
+  const refreshes: Array<{ eventType: string; targetKey: string }> = [];
+  let pendingTimer: (() => void) | undefined;
+  const flushTimer = async () => {
+    const handler = pendingTimer;
+    pendingTimer = undefined;
+    handler?.();
+    await Promise.resolve();
+  };
+  const runtime = createWebLiveRuntime({
+    eventTypes: ["proposal.merged"],
+    EventSourceCtor: FakeEventSource,
+    locationHref: "http://workhub.local/conversations/c-1",
+    readCursor: () => "",
+    persistCursor: () => true,
+    setMetric: (key, value) => {
+      metrics[key] = value;
+    },
+    setTimeoutFn: (handler) => {
+      pendingTimer = handler;
+      return 1;
+    },
+    clearTimeoutFn: () => {
+      pendingTimer = undefined;
+    },
+    onRefresh: async (eventType, targetKey) => {
+      refreshes.push({ eventType, targetKey });
+      return "refreshed";
+    },
+    onRefreshNotice: () => undefined,
+    onFatal: (error) => {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+  });
+
+  // 首次订阅：同一个 URL，只订 conversation.message.created。
+  runtime.syncTargets([
+    { key: "conversation", url: "/api/push/stream/conversation/shared", eventTypes: ["conversation.message.created"] }
+  ]);
+  const firstSource = FakeEventSource.instances[0];
+  assert.ok(firstSource, "first stream opened");
+  assert.equal(firstSource.listeners.has("conversation.message.created"), true);
+
+  // 第二次 syncTargets：同一个 URL，但 eventTypes 换了（比如切到了别的会话订阅面）。
+  // 复用分支若只换 entry.target 引用，firstSource 上已挂的监听器仍是旧闭包——新事件类型永远收不到。
+  runtime.syncTargets([
+    { key: "conversation", url: "/api/push/stream/conversation/shared", eventTypes: ["conversation.message.updated"] }
+  ]);
+
+  assert.equal(firstSource.closed, true, "the stale stream must be closed rather than silently reused");
+  assert.equal(FakeEventSource.instances.length, 2, "a fresh EventSource is opened for the new eventTypes");
+  const secondSource = FakeEventSource.instances[1];
+  assert.ok(secondSource);
+  assert.equal(secondSource.listeners.has("conversation.message.updated"), true, "the new stream subscribes to the new eventTypes");
+  assert.equal(secondSource.listeners.has("conversation.message.created"), false, "the new stream must not carry over the stale eventTypes");
+
+  // 新流按新事件面正确触发刷新（证明监听器不是旧闭包）。
+  secondSource.emit("conversation.message.updated", { data: JSON.stringify({ event_id: "evt-c3-1" }) });
+  await flushTimer();
+  assert.deepEqual(refreshes, [{ eventType: "conversation.message.updated", targetKey: "conversation" }]);
+
+  // 再来一次 syncTargets，key 与 eventTypes 都没变——这次才是真复用，不应再开新流。
+  runtime.syncTargets([
+    { key: "conversation", url: "/api/push/stream/conversation/shared", eventTypes: ["conversation.message.updated"] }
+  ]);
+  assert.equal(FakeEventSource.instances.length, 2, "an unchanged target is still safely reused");
+  assert.equal(secondSource.closed, false);
+  assert.equal(metrics.r4LiveSseReuseCount, 1);
+});
+
 test("rank10 live runtime gives up on a dead stream after a consecutive-error streak (and a real event resets it)", () => {
   FakeEventSource.instances = [];
   const metrics: Record<string, unknown> = {};
