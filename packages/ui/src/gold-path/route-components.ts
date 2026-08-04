@@ -3790,7 +3790,9 @@ function renderHealthSignal(
 }
 
 // R7（撤销路径）：restore_blocked_reason 服务端为中文人话——en 界面用映射兜底（非点名串，可安全整体映射）。
-function restoreBlockedReasonEn(reason: string): string {
+// C1（R21 审查）：导出给桌面端 apps/desktop-webview/src/workbench/drive/render.ts 复用，
+// 避免桌面回收站英文界面直渲后端中文原值。
+export function restoreBlockedReasonEn(reason: string): string {
   if (reason.includes("父文件夹")) {
     return "Its parent folder is also in the recycle bin — restore the parent first.";
   }

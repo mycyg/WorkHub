@@ -227,6 +227,13 @@ test("renderDriveRecycleHtml shows the blocked reason instead of a restore butto
   assert.match(html, /父级也在回收站，先还原它/u);
 });
 
+test("renderDriveRecycleHtml maps the blocked reason to English instead of leaking the Chinese original", () => {
+  const blocked = fileItem({ id: "file-y", name: "stuck.md", restore_blocked_reason: "父文件夹也在回收站，先还原父文件夹。" });
+  const html = renderDriveRecycleHtml({ locale: "en-US", items: [blocked] });
+  assert.doesNotMatch(html, /父文件夹/u);
+  assert.match(html, /Its parent folder is also in the recycle bin/u);
+});
+
 test("renderDriveRecycleHtml shows an empty-state when the bin has nothing", () => {
   const html = renderDriveRecycleHtml({ locale: "zh-CN", items: [] });
   assert.match(html, /回收站是空的/u);

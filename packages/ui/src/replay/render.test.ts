@@ -525,18 +525,77 @@ test("bindReplayRevertActions surfaces a retryable error when revert fails", asy
   await Promise.resolve();
   assert.equal(attempts, 1);
   assert.equal(reverted.length, 0);
-  // 失败后可见错误文案 + 恢复可点（去掉禁用/忙态）。
+  // 失败后可见错误文案 + 恢复可点（去掉禁用/忙态），且保持「武装」态——data-replay-revert-armed 仍在。
   assert.equal(button.textContent, "撤销失败，点此重试");
   assert.equal(button.attrs["aria-disabled"], undefined);
   assert.equal(button.dataset["replayRevertBusy"], undefined);
+  assert.equal(button.dataset["replayRevertArmed"], "true");
 
-  // 重试：再走一遍武装→执行，这次成功。
-  button.click(); // arm
-  button.click(); // execute → resolves
+  // C2（R21 审查）：重试只需单击——武装态没被清空，这一下直接命中 execute 真的重试，
+  // 不必先重新武装一次白点一下。
+  button.click(); // execute（复用失败前的武装）→ resolves
   await Promise.resolve();
   await Promise.resolve();
   assert.equal(attempts, 2);
   assert.equal(button.textContent, "已回滚");
+});
+
+test("bindReplayRevertActions retries with a single click after failure, without re-arming first", async () => {
+  const button = revertButton("snap-1");
+  let attempts = 0;
+  bindReplayRevertActions(new FakeRoot([button]), {
+    revert: () => {
+      attempts += 1;
+      return attempts === 1 ? Promise.reject(new Error("boom")) : Promise.resolve();
+    },
+    setArmTimer: () => 0,
+    clearArmTimer: () => {}
+  });
+
+  button.click(); // arm
+  button.click(); // execute → rejects
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(attempts, 1);
+  assert.equal(button.textContent, "撤销失败，点此重试");
+
+  // 单击一次即真重试（不是重新武装）。
+  button.click();
+  assert.equal(attempts, 2);
+  assert.equal(button.textContent, "撤销中…");
+});
+
+test("bindReplayRevertActions falls back to the idle label if the post-failure arm window times out unclicked", async () => {
+  const button = revertButton("snap-1");
+  let attempts = 0;
+  let armCallback: (() => void) | undefined;
+  bindReplayRevertActions(new FakeRoot([button]), {
+    revert: () => {
+      attempts += 1;
+      return attempts === 1 ? Promise.reject(new Error("boom")) : Promise.resolve();
+    },
+    setArmTimer: (fn) => {
+      armCallback = fn;
+      return 1;
+    },
+    clearArmTimer: () => {}
+  });
+
+  button.click(); // arm
+  button.click(); // execute → rejects
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(button.textContent, "撤销失败，点此重试");
+  assert.equal(button.dataset["replayRevertArmed"], "true");
+
+  // 超时未点：回落到 idle 文案，武装态解除——下一击重新走武装→执行两步。
+  armCallback?.();
+  assert.equal(button.textContent, "撤销此次改动");
+  assert.equal(button.dataset["replayRevertArmed"], undefined);
+
+  button.click(); // arm again（武装已解除）
+  assert.equal(attempts, 1);
+  assert.equal(button.textContent, "确认撤销？再点一次");
 });
 
 test("bindReplayRevertActions ignores buttons missing the snapshot or run id", () => {

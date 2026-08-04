@@ -9,7 +9,7 @@ import type { StructuredLogger } from "../logging.js";
 // 消息此前是「消息行提交 → 事后 best-effort bus.publish」，两步之间进程崩溃或 publish 抛错则推送永久蒸发。
 
 export type EventOutboxDrainDeps = {
-  outbox: Pick<EventOutboxRepository, "listPending" | "markPublished" | "markFailed">;
+  outbox: Pick<EventOutboxRepository, "listPending" | "markPublished" | "markFailed" | "purgePublishedBefore">;
   bus: Pick<PushBus, "publish">;
   logger: Pick<StructuredLogger, "warn">;
   now?: () => Date;
@@ -19,11 +19,17 @@ export type EventOutboxDrainResult = {
   scanned: number;
   published: number;
   failed: number;
+  // R21 加固（防无界增长）：本轮顺带清掉的过期已发布行数（保留窗口外的 published 行）。
+  purged: number;
 };
 
 export type EventOutboxDrain = (options?: { limit?: number }) => Promise<EventOutboxDrainResult>;
 
 const DEFAULT_DRAIN_BATCH = 100;
+// R21 加固：已发布行的保留窗口（消费端本就按全量重拉对账，published 行只剩排障价值）与每轮清理上限
+// （id IN (LIMIT n) 防长事务，积压靠后续轮次逐步追平）。
+export const PUBLISHED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+export const PURGE_BATCH_LIMIT = 500;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -60,8 +66,12 @@ export function createEventOutboxDrain(deps: EventOutboxDrainDeps): EventOutboxD
         continue;
       }
       try {
-        await deps.outbox.markPublished({ id: row.id, at: now() });
-        published += 1;
+        // R21 加固（A4 发布统计不虚增）：markPublished 带 status='pending' CAS，返回是否真的更新了行——
+        // 并发 drain 抢先标记过的行这里拿 false，published 不重复计数。
+        const marked = await deps.outbox.markPublished({ id: row.id, at: now() });
+        if (marked) {
+          published += 1;
+        }
       } catch (markError) {
         // publish 已成功但标记失败——下一轮 drain 会重发（重复投递，消费端幂等兜底）。留 warn 供排查。
         deps.logger.warn("event_outbox_mark_published_error", {
@@ -71,7 +81,18 @@ export function createEventOutboxDrain(deps: EventOutboxDrainDeps): EventOutboxD
         });
       }
     }
-    return { scanned: rows.length, published, failed };
+    // R21 加固（A3 防无界增长）：顺带清掉保留窗口外的已发布行。best-effort——清理失败只 warn，绝不影响
+    // drain 主流程（下一轮再清）。
+    let purged = 0;
+    try {
+      purged = await deps.outbox.purgePublishedBefore({
+        cutoff: new Date(now().getTime() - PUBLISHED_RETENTION_MS),
+        limit: PURGE_BATCH_LIMIT
+      });
+    } catch (purgeError) {
+      deps.logger.warn("event_outbox_purge_failed", { error: purgeError });
+    }
+    return { scanned: rows.length, published, failed, purged };
   }
 
   return (options = {}) => {

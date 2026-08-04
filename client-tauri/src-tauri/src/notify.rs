@@ -183,7 +183,9 @@ pub fn system_notification_plan_from_push_payload_for_locale(
         return Ok(None);
     };
 
-    let route = route_for_notification(&parsed)?;
+    // route 侧已优雅降级（畸形 ID → 兜底路由，见 route_for_notification），此处不再产生路由类错误；
+    // focus_main_route 仅对兜底集合外的异常路由兜住最后一道防线。
+    let route = route_for_notification(&parsed);
     let window_control = focus_main_route(ShellWindowControlSource::SystemNotification, &route)
         .map_err(ShellSystemNotificationError::UnsafeRoute)?;
 
@@ -248,7 +250,9 @@ fn urgency_for_event(parsed: &ParsedPushData) -> Option<ShellSystemNotificationU
         "agent_run.escalated" | "agent_run.failed" | "escalation.opened" | "sync.conflict" => {
             Some(ShellSystemNotificationUrgency::High)
         }
-        "proposal.opened" | "proposal.reviewed" | "revision.fedback" => {
+        // proposal.* 与 webview 侧 interruption-policy 的分类保持一致：opened/reviewed/merged 同为
+        // "终局/决策"信号，都按 High 弹桌面通知（双端一致性基准见 workbench/interruption-policy.ts）。
+        "proposal.opened" | "proposal.reviewed" | "proposal.merged" | "revision.fedback" => {
             Some(ShellSystemNotificationUrgency::High)
         }
         "notification.created" => urgency_from_payload_fields(parsed),
@@ -283,50 +287,53 @@ fn body_for_notification(parsed: &ParsedPushData, locale: WorkHubLocale) -> Stri
         .unwrap_or_else(|| fallback_body_for_event(&parsed.event, locale).to_string())
 }
 
-fn route_for_notification(parsed: &ParsedPushData) -> Result<String, ShellSystemNotificationError> {
+/// 通知落地路由。畸形 ID 绝不上抛：`safe_route_segment` 失败时与上面 target_url 分支同款优雅降级——
+/// 跳过精确路由、落到该事件的兜底路由（审批 → /approvals，其余 → 后续分支直至 /inbox）。过去这里对
+/// approval_id/proposal_id/run_id/work_item_id 硬 `?` 失败，经 process_sse_chunk 一路上抛把整条 SSE
+/// 连接打断重连——单条通知的脏数据不该有连接级杀伤力。因此本函数不再返回 Result。
+fn route_for_notification(parsed: &ParsedPushData) -> String {
     if let Some(route) = field_string(&parsed.data, "target_url")
         .or_else(|| field_string(&parsed.data, "targetUrl"))
         .or_else(|| nested_field_string(&parsed.data, &["attention", "actions", "0", "href"]))
     {
         if focus_main_route(ShellWindowControlSource::SystemNotification, &route).is_ok() {
-            return Ok(route);
+            return route;
         }
     }
 
     if parsed.event == "budget.warning" || parsed.event == "budget.exhausted" {
-        return Ok("/dashboard/cost".to_string());
+        return "/dashboard/cost".to_string();
     }
     if parsed.event == "permission.ask" {
-        if let Some(approval_id) = field_string(&parsed.data, "approval_id")
+        if let Some(segment) = field_string(&parsed.data, "approval_id")
             .or_else(|| field_string(&parsed.data, "approvalId"))
+            .and_then(|approval_id| safe_route_segment(&approval_id).ok())
         {
-            return Ok(format!(
-                "/approvals?approvalId={}",
-                safe_route_segment(&approval_id)?
-            ));
+            return format!("/approvals?approvalId={segment}");
         }
-        return Ok("/approvals".to_string());
+        // 无 approval_id 或其含非法字符：落审批中心，仅失去精确定位。
+        return "/approvals".to_string();
     }
-    if let Some(proposal_id) = field_string(&parsed.data, "proposal_id")
+    if let Some(segment) = field_string(&parsed.data, "proposal_id")
         .or_else(|| field_string(&parsed.data, "proposalId"))
+        .and_then(|proposal_id| safe_route_segment(&proposal_id).ok())
     {
-        return Ok(format!("/proposals/{}", safe_route_segment(&proposal_id)?));
+        return format!("/proposals/{segment}");
     }
-    if let Some(run_id) =
-        field_string(&parsed.data, "run_id").or_else(|| field_string(&parsed.data, "runId"))
+    if let Some(segment) = field_string(&parsed.data, "run_id")
+        .or_else(|| field_string(&parsed.data, "runId"))
+        .and_then(|run_id| safe_route_segment(&run_id).ok())
     {
-        return Ok(format!(
-            "/agent-runs/{}/replay",
-            safe_route_segment(&run_id)?
-        ));
+        return format!("/agent-runs/{segment}/replay");
     }
-    if let Some(work_item_id) = field_string(&parsed.data, "work_item_id")
+    if let Some(segment) = field_string(&parsed.data, "work_item_id")
         .or_else(|| field_string(&parsed.data, "workItemId"))
+        .and_then(|work_item_id| safe_route_segment(&work_item_id).ok())
     {
-        return Ok(format!("/workitems/{}", safe_route_segment(&work_item_id)?));
+        return format!("/workitems/{segment}");
     }
 
-    Ok("/inbox".to_string())
+    "/inbox".to_string()
 }
 
 fn notification_id(
@@ -395,6 +402,7 @@ fn fallback_title_for_event(event: &str, locale: WorkHubLocale) -> &'static str 
             "permission.ask" => "Cuu 需要你的审批",
             "proposal.opened" => "新的变更提案",
             "proposal.reviewed" => "变更提案有反馈",
+            "proposal.merged" => "变更提案已合并",
             "revision.fedback" => "需要修订",
             "agent_run.failed" => "AI 运行失败",
             "agent_run.escalated" | "escalation.opened" => "Cuu 需要你决策",
@@ -407,6 +415,7 @@ fn fallback_title_for_event(event: &str, locale: WorkHubLocale) -> &'static str 
             "permission.ask" => "Cuu needs your approval",
             "proposal.opened" => "New change proposal",
             "proposal.reviewed" => "Change proposal feedback",
+            "proposal.merged" => "Change proposal merged",
             "revision.fedback" => "Revision requested",
             "agent_run.failed" => "AI run failed",
             "agent_run.escalated" | "escalation.opened" => "Cuu needs a decision",
@@ -422,6 +431,7 @@ fn fallback_body_for_event(event: &str, locale: WorkHubLocale) -> &'static str {
             "permission.ask" => "打开 WorkHub 允许、拒绝或记住这条规则。",
             "budget.exhausted" => "新的自动运行会暂停，直到预算问题被处理。",
             "budget.warning" => "打开成本看板，选择更省的执行路径。",
+            "proposal.merged" => "变更已并入底稿，打开 WorkHub 查看合并结果。",
             "sync.conflict" => "选择本地、云端或 AI 合并建议。",
             _ => "打开 WorkHub 查看详情。",
         },
@@ -429,6 +439,9 @@ fn fallback_body_for_event(event: &str, locale: WorkHubLocale) -> &'static str {
             "permission.ask" => "Open WorkHub to allow, deny, or remember this rule.",
             "budget.exhausted" => "New automated runs are paused until the budget is handled.",
             "budget.warning" => "Open the cost dashboard and choose a cheaper execution path.",
+            "proposal.merged" => {
+                "The change is merged into the draft. Open WorkHub for the result."
+            }
             "sync.conflict" => "Choose local, cloud, or the AI merge suggestion.",
             _ => "Open WorkHub for details.",
         },
@@ -568,6 +581,67 @@ mod tests {
         assert_eq!(plan.locale, WorkHubLocale::EnUs);
         assert_eq!(plan.title, "中文任务标题");
         assert_eq!(plan.body, "Keep this exact body.");
+    }
+
+    // proposal.merged 与 opened/reviewed 同级（对齐 webview interruption-policy 的 proposal 分类）：
+    // 必须产出 High 桌面通知，且中英 fallback 文案齐备、路由落到具体提案。
+    #[test]
+    fn merged_proposals_notify_at_high_urgency_with_fallback_copy() {
+        let plan = system_notification_plan_from_push_payload(&payload(
+            "proposal.merged",
+            r#"{"proposal_id":"proposal-9"}"#,
+            "me",
+        ))
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(plan.urgency, ShellSystemNotificationUrgency::High);
+        assert_eq!(plan.title, "变更提案已合并");
+        assert_eq!(plan.body, "变更已并入底稿，打开 WorkHub 查看合并结果。");
+        assert_eq!(plan.route, "/proposals/proposal-9");
+
+        let plan_en = system_notification_plan_from_push_payload_for_locale(
+            &payload("proposal.merged", r#"{"proposal_id":"proposal-9"}"#, "me"),
+            WorkHubLocale::EnUs,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(plan_en.title, "Change proposal merged");
+        assert_eq!(
+            plan_en.body,
+            "The change is merged into the draft. Open WorkHub for the result."
+        );
+    }
+
+    // 畸形 approval_id 只降级不冒泡：仍产出通知计划，路由落审批中心兜底，绝不 Err（过去会 `?` 上抛
+    // 打断整条 SSE 连接）。
+    #[test]
+    fn malformed_approval_ids_degrade_to_the_approvals_route_without_erroring() {
+        let plan = system_notification_plan_from_push_payload(&payload(
+            "permission.ask",
+            r#"{"approval_id":"../../evil?x=1"}"#,
+            "me",
+        ))
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(plan.urgency, ShellSystemNotificationUrgency::Urgent);
+        assert_eq!(plan.route, "/approvals");
+    }
+
+    // 其余精确路由分支（proposal/run/workitem）同款降级：ID 含非法字符时跳过精确路由，落 /inbox 兜底。
+    #[test]
+    fn malformed_precise_route_ids_fall_back_to_inbox() {
+        let plan = system_notification_plan_from_push_payload(&payload(
+            "proposal.reviewed",
+            r#"{"proposal_id":"a/b","run_id":"x?y","work_item_id":"..\\z"}"#,
+            "me",
+        ))
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(plan.route, "/inbox");
     }
 
     #[test]

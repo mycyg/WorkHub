@@ -1940,6 +1940,118 @@ test("POST /users/:id/deactivate hands over the target's active claims (unassign
   );
 });
 
+// R21 加固（停用善后审计缺口）：仓储提供「退回+审计」原子入口时，路由必须优先走它（同一 db 事务，
+// 审计写失败则退回一并回滚）——而不是先退回、再事后逐条写审计的裂缝写法。
+class MemoryWorkItemsWithAtomicHandover extends MemoryWorkItems {
+  public atomicCalls: Array<{ userId: string; actorUserId: string }> = [];
+  // 模拟真库实现：事务内退回 + 逐项审计写到自己的 sink（不是路由的 auditLogs seam）。
+  constructor(rows: FakeWorkItemClaim[], private readonly auditSink: MemoryAuditLogs, private readonly failWith?: Error) {
+    super(rows);
+  }
+
+  async unassignActiveClaimsForUserWithAudit(input: { userId: string; at: Date; actorUserId: string }) {
+    this.atomicCalls.push({ userId: input.userId, actorUserId: input.actorUserId });
+    if (this.failWith) {
+      // 模拟事务回滚：整步失败、不留任何半态（不退回、不写审计）。
+      throw this.failWith;
+    }
+    const affected = await this.unassignActiveClaimsForUser(input.userId, input.at);
+    for (const item of affected) {
+      await this.auditSink.createAuditLog({
+        actorKind: "human",
+        actorUserId: input.actorUserId,
+        entityType: "work_item",
+        entityId: item.id,
+        action: "work_item.unassigned_on_offboarding",
+        detailJson: { offboarded_user_id: input.userId }
+      });
+    }
+    return affected;
+  }
+}
+
+test("POST /users/:id/deactivate prefers the atomic unassign+audit repository entry point when available", async () => {
+  const runtimeSettings = settings();
+  const admin = user({ id: "10000000-0000-4000-8000-0000000000d5", nickname: "admin", isAdmin: true });
+  const target = user({ id: "10000000-0000-4000-8000-0000000000d6", nickname: "target", cookieToken: "cookie-target-at" });
+  const repoAuditSink = new MemoryAuditLogs();
+  const workItems = new MemoryWorkItemsWithAtomicHandover(
+    [{ id: "a0000000-0000-4000-8000-000000000011", claimedByUserId: target.id, status: "ai_working", deletedAt: null }],
+    repoAuditSink
+  );
+  const seamAuditLogs = new MemoryAuditLogs();
+  const deps: AuthDependencies = {
+    users: new MemoryUsers([admin, target]),
+    devices: new MemoryDevices([]),
+    sessions: new MemorySessions(),
+    workItems,
+    auditLogs: seamAuditLogs,
+    settings: runtimeSettings,
+    now: () => now
+  };
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const res = await app.request("/auth/users/" + target.id + "/deactivate", {
+    method: "POST",
+    headers: { Cookie: await signedCookie(admin.cookieToken, runtimeSettings) }
+  });
+  assert.equal(res.status, 200);
+
+  // 原子入口被调用（带执行停用的管理员），退回照常生效。
+  assert.deepEqual(workItems.atomicCalls, [{ userId: target.id, actorUserId: admin.id }]);
+  assert.equal(workItems.rows[0]?.claimedByUserId, null, "claim handed back through the atomic path");
+  // 审计随事务落在仓储侧（sink），路由不再经 seam 事后补写逐项审计（seam 上只剩账号级安全事件）。
+  assert.equal(
+    repoAuditSink.rows.filter((row) => row.action === "work_item.unassigned_on_offboarding").length,
+    1,
+    "per-item handover audit written inside the atomic entry point"
+  );
+  assert.equal(
+    seamAuditLogs.rows.some((row) => row.action === "work_item.unassigned_on_offboarding"),
+    false,
+    "the route must not duplicate handover audits through the seam when the atomic path ran"
+  );
+});
+
+test("POST /users/:id/deactivate reports an incomplete handover step when the atomic unassign+audit rolls back", async () => {
+  const runtimeSettings = settings();
+  const admin = user({ id: "10000000-0000-4000-8000-0000000000d7", nickname: "admin", isAdmin: true });
+  const target = user({ id: "10000000-0000-4000-8000-0000000000d8", nickname: "target", cookieToken: "cookie-target-rb" });
+  const repoAuditSink = new MemoryAuditLogs();
+  const workItems = new MemoryWorkItemsWithAtomicHandover(
+    [{ id: "a0000000-0000-4000-8000-000000000012", claimedByUserId: target.id, status: "ai_working", deletedAt: null }],
+    repoAuditSink,
+    new Error("audit insert failed inside the tx")
+  );
+  const deps: AuthDependencies = {
+    users: new MemoryUsers([admin, target]),
+    devices: new MemoryDevices([]),
+    sessions: new MemorySessions(),
+    workItems,
+    auditLogs: new MemoryAuditLogs(),
+    settings: runtimeSettings,
+    now: () => now
+  };
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const res = await app.request("/auth/users/" + target.id + "/deactivate", {
+    method: "POST",
+    headers: { Cookie: await signedCookie(admin.cookieToken, runtimeSettings) }
+  });
+  // 善后未完成 → 500 offboard_cleanup_incomplete（重发本请求即重试）。
+  assert.equal(res.status, 500);
+  const body = await res.json() as { error: { code: string }; cleanup: { complete: boolean; steps: Array<{ step: string; ok: boolean }> } };
+  assert.equal(body.error.code, "offboard_cleanup_incomplete");
+  assert.equal(body.cleanup.steps.find((entry) => entry.step === "workitems.handover")?.ok, false);
+  // 回滚语义：退回与审计要么同成、要么同败——这里同败，认领仍在、审计为空，重跑可真收敛。
+  assert.equal(workItems.rows[0]?.claimedByUserId, target.id, "rollback leaves the claim in place");
+  assert.equal(repoAuditSink.rows.length, 0, "rollback leaves no orphan audit rows");
+});
+
 test("POST /users/:id/deactivate rejects non-admins (403) and self-deactivation (400)", async () => {
   const runtimeSettings = settings();
   const admin = user({ id: "10000000-0000-4000-8000-0000000000e1", nickname: "admin", isAdmin: true });

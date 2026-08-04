@@ -119,7 +119,13 @@ export function createWorkItemAssignmentService(
       if (!allowed) {
         throw new WorkItemServiceError(403, "forbidden", "你现在还不能认领这个事项。");
       }
-      const workspaceId = accessRow.workspaceId ?? actor.workspaceId;
+      // R21 加固（A9 兜底口径统一）：与 assign 一致——workspaceId 缺失时兜到项目侧，而不是 actor 侧。
+      // 旧写法兜 actor.workspaceId 会让「工作项/项目都没归属工作区」的行被写进 actor 的工作区（跨租户
+      // 语义污染），且与 claimOwnerlessWorkItem 的 workspace CAS 谓词对不上。
+      const workspaceId = accessRow.workspaceId ?? accessRow.project?.workspaceId ?? null;
+      if (!workspaceId) {
+        throw new WorkItemServiceError(409, "work_item_workspace_missing", "这个事项还没有归属工作区，暂时无法认领。");
+      }
       const claimed = await deps.workItems.claimOwnerlessWorkItem({
         workItemId,
         workspaceId,

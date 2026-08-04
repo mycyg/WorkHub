@@ -132,6 +132,54 @@ test("archiveProject: non-owner non-admin is forbidden and the repo is never cal
   assert.deepEqual(calls.archive, []);
 });
 
+// R21 加固（NULL 旁路收口）：workspaceId 为 NULL 的孤儿项目不再对任意租户的管理员敞开。
+test("archiveProject: an admin from another tenant cannot manage a NULL-workspace orphan project", async () => {
+  const { svc, calls } = service({
+    project: activeProject({ workspaceId: null, ownerUserId: "someone-else" } as Partial<WorkItemProjectRow>)
+  });
+  await assert.rejects(
+    () =>
+      svc.archiveProject({
+        projectId,
+        actor: ownerActor({
+          isAdmin: true,
+          userId: "cross-admin",
+          id: "cross-admin",
+          workspaceId: "99999999-0000-4000-8000-000000000099"
+        })
+      }),
+    (error: unknown) => error instanceof ProjectServiceError && error.status === 403 && error.code === "project_forbidden"
+  );
+  assert.deepEqual(calls.archive, [], "orphan rows must not be manageable by any admin");
+});
+
+test("archiveProject: an admin cannot manage a project in a DIFFERENT workspace (explicit cross-tenant deny)", async () => {
+  const { svc, calls } = service({ project: activeProject({ ownerUserId: "someone-else" }) });
+  await assert.rejects(
+    () =>
+      svc.archiveProject({
+        projectId,
+        actor: ownerActor({
+          isAdmin: true,
+          userId: "cross-admin",
+          id: "cross-admin",
+          workspaceId: "99999999-0000-4000-8000-000000000099"
+        })
+      }),
+    (error: unknown) => error instanceof ProjectServiceError && error.status === 403
+  );
+  assert.deepEqual(calls.archive, []);
+});
+
+test("deleteProject: the owner can still manage their own NULL-workspace project (ownership beats orphanhood)", async () => {
+  const { svc, calls } = service({
+    project: activeProject({ workspaceId: null } as Partial<WorkItemProjectRow>)
+  });
+  const result = await svc.deleteProject({ projectId, actor: ownerActor() });
+  assert.equal(result.deleted, true);
+  assert.equal(calls.softDelete.length, 1);
+});
+
 test("archiveProject: missing project maps to 404 project_not_found", async () => {
   const { svc } = service({ project: null });
   await assert.rejects(

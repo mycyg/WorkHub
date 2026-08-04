@@ -782,15 +782,18 @@ export const eventOutbox = pgTable(
     eventId: uuid("event_id").notNull(),
     // 已序列化好的完整事件信封（发布时不可变的快照，drain 原样发出）。
     payload: jsonb("payload").$type<JsonObject>().notNull(),
+    // pending(待发) / published(已发) / failed(R21 加固，见 0071 迁移：attempts 达上限后的终态死信，
+    // listPending 天然不再捞，靠 last_error 排障)。
     status: varchar("status", { length: 16 }).notNull().default("pending"),
-    // drain 每失败一次 +1，用于排障/未来封顶；last_error 存结构化失败原因（禁空 catch 吞错）。
+    // drain 每失败一次 +1；达 MAX_PUBLISH_ATTEMPTS（仓储层常量）即封顶判 failed；last_error 存结构化
+    // 失败原因（禁空 catch 吞错）。
     attempts: integer("attempts").notNull().default(0),
     lastError: text("last_error"),
     createdAt: createdAt(),
     publishedAt: timestampTz("published_at")
   },
   (table): PgTableExtraConfigValue[] => [
-    check("event_outbox_status_ck", sql`${table.status} in ('pending', 'published')`),
+    check("event_outbox_status_ck", sql`${table.status} in ('pending', 'published', 'failed')`),
     check("event_outbox_attempts_ck", sql`${table.attempts} >= 0`),
     uniqueIndex("event_outbox_event_id_uq").on(table.eventId),
     // drain 扫描只挑未发行、按落库顺序发；部分索引只覆盖少量 pending 行，不给已发行付索引成本。
@@ -2436,7 +2439,8 @@ export const proactiveIntents = pgTable(
     targetUserId: uuid("target_user_id").references(() => users.id, { onDelete: "set null" }),
     suppressionKey: text("suppression_key").notNull(),
     payload: jsonb("payload").$type<JsonObject>().notNull().default(sql`'{}'::jsonb`),
-    // created(已记未投) / delivered(已投递) / suppressed(被频控/静音/重复挡下)。
+    // created(已记未投) / delivering(R21 加固，见 0070 迁移：投递方经 claimProactiveIntentForDelivery
+    // 原子领取后的在途态，并发调用只有一个能领到) / delivered(已投递) / suppressed(被频控/静音/重复挡下)。
     status: text("status").notNull().default("created"),
     // 本批唯一投递通道='notification'；未来会话卡/SSE 各有自己的值。恢复扫描封顶判死时写 'stalled'。
     deliveredVia: text("delivered_via"),
@@ -2452,7 +2456,7 @@ export const proactiveIntents = pgTable(
     uniqueIndex("proactive_intents_suppression_key_uq").on(table.suppressionKey),
     index("proactive_intents_target_delivered_idx").on(table.targetUserId, table.createdAt),
     index("proactive_intents_work_item_id_idx").on(table.workItemId),
-    check("proactive_intents_status_ck", sql`${table.status} in ('created', 'delivered', 'suppressed')`)
+    check("proactive_intents_status_ck", sql`${table.status} in ('created', 'delivering', 'delivered', 'suppressed')`)
   ]
 );
 

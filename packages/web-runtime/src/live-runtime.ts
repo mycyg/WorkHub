@@ -215,11 +215,22 @@ export function createWebLiveRuntime(options: WebLiveRuntimeOptions) {
     setMetric("r4LiveSseSupported", true);
     const existing = liveEventSources.get(target.url);
     if (existing) {
-      existing.target = target;
-      liveEventSourceReuseCount += 1;
-      setMetric("r4LiveLastReusedStream", target.key);
-      updateLiveRuntimeMetrics();
-      return;
+      // C3（R21 审查）：同 URL 复用不能只换 entry.target 引用——下面 source.addEventListener 的每个
+      // 回调闭包着创建时的 target（eventTypes/key），原地换引用不会让已挂的监听器跟着变。
+      // 只有 key 与 eventTypes（内容）都没变时才真正安全复用；否则关旧流按新 target 重新订阅，
+      // 避免"看起来复用了，实际还在用旧事件面/旧 key 记账"这种以后很难查的坑。
+      const existingEventTypes = existing.target.eventTypes ?? options.eventTypes;
+      const nextEventTypes = target.eventTypes ?? options.eventTypes;
+      const sameEventTypes = existingEventTypes.length === nextEventTypes.length
+        && existingEventTypes.every((type, index) => type === nextEventTypes[index]);
+      if (existing.target.key === target.key && sameEventTypes) {
+        existing.target = target;
+        liveEventSourceReuseCount += 1;
+        setMetric("r4LiveLastReusedStream", target.key);
+        updateLiveRuntimeMetrics();
+        return;
+      }
+      closeLiveEventSource(target.url);
     }
     const openedUrl = streamUrlWithCursor(target.url);
     const source = new EventSourceCtor(openedUrl, { withCredentials: true });

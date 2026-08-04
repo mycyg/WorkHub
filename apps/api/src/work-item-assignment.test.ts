@@ -201,3 +201,30 @@ test("claim: missing work item maps to 404", async () => {
     (error: unknown) => error instanceof WorkItemServiceError && error.status === 404
   );
 });
+
+// R21 加固（A9 兜底口径统一）：claim 与 assign 用同一个 workspaceId 兜底——工作项列缺失时兜项目侧，
+// 绝不兜 actor 侧（否则无归属行会被写进 actor 的工作区）。
+test("claim: a work item whose own workspaceId is missing falls back to the PROJECT workspace, not the actor's", async () => {
+  const projectWorkspaceId = "00000000-0000-4000-8000-000000000077";
+  const row = accessRow({ submitterUserId: "someone-else", workspaceId: null } as Partial<WorkItemAccessRow>);
+  row.project = { ...row.project!, workspaceId: projectWorkspaceId };
+  const claimer = actor({ id: assigneeId, userId: assigneeId, workspaceId: projectWorkspaceId });
+  const { svc, rec } = service({ row });
+  await svc.claim({ workItemId, actor: claimer });
+  assert.deepEqual(rec.claimed, [{ workItemId, workspaceId: projectWorkspaceId, userId: assigneeId }]);
+});
+
+test("claim: no workspace on either the work item or its project maps to 409 work_item_workspace_missing", async () => {
+  const row = accessRow({ submitterUserId: "someone-else", workspaceId: null } as Partial<WorkItemAccessRow>);
+  row.project = { ...row.project!, workspaceId: null };
+  // workspaceId 置空串让 permissionScope 回落 undefined（无作用域收窄）——聚焦断言 workspace 兜底本身，
+  // 而非 scope 门（两侧全 NULL 的行在带 scope 的门里本就进不来）。
+  const claimer = actor({ id: assigneeId, userId: assigneeId, workspaceId: "" });
+  const { svc, rec } = service({ row });
+  await assert.rejects(
+    () => svc.claim({ workItemId, actor: claimer }),
+    (error: unknown) =>
+      error instanceof WorkItemServiceError && error.status === 409 && error.code === "work_item_workspace_missing"
+  );
+  assert.deepEqual(rec.claimed, [], "must not write into the actor's workspace as a fallback");
+});

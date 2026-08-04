@@ -1827,8 +1827,7 @@ export class DesktopCuuFetchEventSource implements DesktopCuuEventSourceLike {
       if (!response.ok || !response.body) {
         throw new Error(`event_source_http_${response.status}`);
       }
-      // 成功建流 → 退避复位（连上后即便流随后中断也按基准快速重连）+ 派发 open 供终态对账。
-      this.consecutiveFailures = 0;
+      // 派发 open 供终态对账（响应 OK 即派发，不等数据——终态对账不依赖是否真收到过事件）。
       this.dispatch("open", {});
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -1838,6 +1837,10 @@ export class DesktopCuuFetchEventSource implements DesktopCuuEventSourceLike {
         if (result.done) {
           break;
         }
+        // C4（R21 审查）：退避复位推迟到这里——真正收到过数据块才算连接活着。若放在响应 OK 处
+        // 立即清零，服务端「accept 即断」（HTTP 200 后立刻 EOF、从未有数据帧）的循环会让退避
+        // 永远停在基准值，且每次 open 都触发一次全量 refresh，等于对一个死连接高频重试。
+        this.consecutiveFailures = 0;
         buffer += decoder.decode(result.value, { stream: true });
         buffer = this.flushFrames(buffer);
       }

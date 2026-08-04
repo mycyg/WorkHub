@@ -89,15 +89,17 @@ test("assignWorkItem upserts on the (work_item, user) unique index", async () =>
   assert.ok(conflict?.set && "role" in conflict.set);
 });
 
-// R20 P2A（R19-22 评论）：读按 createdAt 升序 + 上限；写 INSERT ... RETURNING。
-test("listCommentsForWorkItem reads the thread ascending with a bounded default limit", async () => {
-  const rows = [{ id: "c-1" }, { id: "c-2" }] as unknown[];
+// R20 P2A（R19-22 评论）：读回升序对话流 + 上限；写 INSERT ... RETURNING。
+// R21 加固（A5）：DB 侧按 desc 取「最新的 limit 条」（>limit 时最新评论不再被截掉），仓储反转回升序返回。
+test("listCommentsForWorkItem reads the newest window and returns it ascending with a bounded default limit", async () => {
+  // DB 按 desc 返回「最新在前」——仓储反转成升序（对话顺序）。
+  const rows = [{ id: "c-2" }, { id: "c-1" }] as unknown[];
   const { db, queries } = createQueryRecorder([rows]);
   const repo = createCommentRepository(db);
 
   const result = await repo.listCommentsForWorkItem("wi-1");
 
-  assert.deepEqual(result, rows);
+  assert.deepEqual(result, [{ id: "c-1" }, { id: "c-2" }]);
   const [query] = queries;
   assert.equal(query?.fromTable, comments);
   assert.ok(queryReferences(query?.where, comments.workItemId));
@@ -150,7 +152,10 @@ test("listAuditLogsForWorkspace filters by workspace, applies filters, and pagin
   assert.ok(queryParamValues(query?.where).includes("snapshot.reverted"));
   assert.equal(query?.limit, 25);
   assert.equal(query?.offset, 50);
-  assert.ok((query?.orderBy.length ?? 0) > 0);
+  // R21 加固（A6）：createdAt 撞秒时 limit/offset 翻页会重复/漏行——必须带 id 次级键钉死全序。
+  assert.equal(query?.orderBy.length, 2, "must order by createdAt with an id tie-breaker");
+  assert.ok(queryReferences(query?.orderBy, auditLogs.createdAt));
+  assert.ok(queryReferences(query?.orderBy, auditLogs.id));
 });
 
 test("listAuditLogsForWorkspace clamps limit to the max and defaults offset to 0", async () => {

@@ -5,6 +5,7 @@
 // 那边只复用其中的纯 fetch/鉴权逻辑（fmtSize/driveResourceHref 等），不复用其 HTML。
 
 import type { DriveItemVM } from "@workhub/contracts";
+import { restoreBlockedReasonEn } from "@workhub/ui";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { driveResourceHref, fmtSize } from "../../spotlight/views/drive.js";
@@ -179,7 +180,9 @@ export function renderDriveRecycleHtml(input: {
             busy ? (zh ? "找回中…" : "Recovering…") : (zh ? "找回" : "Recover")
           }</button>`
         : item.restore_blocked_reason
-          ? `<span class="wh-wb-drive-row-meta">${escapeHtml(item.restore_blocked_reason)}</span>`
+          // C1（R21 审查）：restore_blocked_reason 是服务端中文人话，en 界面套用与 web 端一致的映射兜底，
+          // 不直渲中文原值（见 route-components.ts 的 restoreBlockedReasonEn）。
+          ? `<span class="wh-wb-drive-row-meta">${escapeHtml(zh ? item.restore_blocked_reason : restoreBlockedReasonEn(item.restore_blocked_reason))}</span>`
           : "";
       const rowError = input.restoreErrorId === item.id && input.restoreErrorText
         ? `<div class="wh-wb-drive-row-meta wh-wb-drive-restore-error">${escapeHtml(input.restoreErrorText)}</div>`

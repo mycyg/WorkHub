@@ -682,7 +682,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0069 event outbox", () => {
+test("migration journal ends with 0071 event outbox failed", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -698,18 +698,74 @@ test("migration journal ends with 0069 event outbox", () => {
       when: finalEntry.when
     },
     {
-      // R20 W5-1（#P2-01 事务性 outbox）：0069(event_outbox,when=1783929001000)接在 REL-2 的
-      // 0068(proactive_intent_recovery,when=1783929000000)之后,journal 收于 0069,when 严格递增。
-      idx: 69,
+      // R21 加固：0070(proactive_intent_delivering,when=1783929002000)/0071(event_outbox_failed,
+      // when=1783929003000)接在 0069(event_outbox,when=1783929001000)之后,journal 收于 0071,when 严格递增。
+      idx: 71,
       version: "7",
-      tag: "0069_event_outbox",
+      tag: "0071_event_outbox_failed",
       breakpoints: true,
-      when: 1783929001000
+      when: 1783929003000
     }
   );
-  // when 严格递增——0069 的时间戳必须大于 0068 的 1783929000000。
-  const priorEntry = journal.entries.find((entry) => entry.tag === "0068_proactive_intent_recovery");
-  assert.ok(priorEntry && finalEntry && finalEntry.when > priorEntry.when);
+  // when 严格递增——0069 → 0070 → 0071 的时间戳必须依次增大。
+  const entry0069 = journal.entries.find((entry) => entry.tag === "0069_event_outbox");
+  const entry0070 = journal.entries.find((entry) => entry.tag === "0070_proactive_intent_delivering");
+  assert.ok(entry0069 && entry0070 && finalEntry);
+  assert.equal(entry0070.idx, 70);
+  assert.ok(entry0070.when > entry0069.when);
+  assert.ok(finalEntry.when > entry0070.when);
+});
+
+// R21 加固：0070/0071 都是「CHECK 枚举翻转」迁移——DROP IF EXISTS + ADD 成对（replay 安全），且新枚举
+// 是旧枚举的超集（既有行全部满足，无需回填/NOT VALID 分步）。Drizzle schema 与迁移同步钉死。
+test("R21 migration 0070 widens the proactive_intents status CHECK with 'delivering' replay-safe", () => {
+  const migrationUrl = new URL("../migrations/0070_proactive_intent_delivering.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0070_proactive_intent_delivering.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  const dropPosition = migration.search(
+    /ALTER TABLE "proactive_intents" DROP CONSTRAINT IF EXISTS "proactive_intents_status_ck";/u
+  );
+  const addPosition = migration.search(
+    /ALTER TABLE "proactive_intents" ADD CONSTRAINT "proactive_intents_status_ck"\s+CHECK \("status" IN \('created','delivering','delivered','suppressed'\)\);/u
+  );
+  assert.ok(dropPosition >= 0, "0070 must drop the old status CHECK with IF EXISTS (replay-safe)");
+  assert.ok(addPosition >= 0, "0070 must re-add the status CHECK including 'delivering'");
+  assert.ok(dropPosition < addPosition, "0070 must drop before adding");
+  assert.doesNotMatch(migration, /DROP COLUMN|ADD COLUMN|ALTER COLUMN|CREATE TABLE|CREATE\s+(?:UNIQUE\s+)?INDEX/iu, "migration 0070 must only flip the CHECK");
+  assert.doesNotMatch(migration, /CONCURRENTLY/iu, "migration 0070 must not use CONCURRENTLY (single-tx replay)");
+  assert.doesNotMatch(migration, /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u, "migration must not contain emoji glyphs");
+
+  // Drizzle schema 与迁移同步：check 表达式包含全部四个状态。
+  const table = requiredTable("proactiveIntents") as WorkHubTable & Record<string, any>;
+  const checkText = checkSqlText(table);
+  for (const status of ["'created'", "'delivering'", "'delivered'", "'suppressed'"]) {
+    assert.equal(checkText.includes(status), true, `proactive_intents status CHECK must include ${status}`);
+  }
+});
+
+test("R21 migration 0071 widens the event_outbox status CHECK with 'failed' replay-safe", () => {
+  const migrationUrl = new URL("../migrations/0071_event_outbox_failed.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0071_event_outbox_failed.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  const dropPosition = migration.search(
+    /ALTER TABLE "event_outbox" DROP CONSTRAINT IF EXISTS "event_outbox_status_ck";/u
+  );
+  const addPosition = migration.search(
+    /ALTER TABLE "event_outbox" ADD CONSTRAINT "event_outbox_status_ck"\s+CHECK \("status" IN \('pending','published','failed'\)\);/u
+  );
+  assert.ok(dropPosition >= 0, "0071 must drop the old status CHECK with IF EXISTS (replay-safe)");
+  assert.ok(addPosition >= 0, "0071 must re-add the status CHECK including 'failed'");
+  assert.ok(dropPosition < addPosition, "0071 must drop before adding");
+  assert.doesNotMatch(migration, /DROP COLUMN|ADD COLUMN|ALTER COLUMN|CREATE TABLE|CREATE\s+(?:UNIQUE\s+)?INDEX/iu, "migration 0071 must only flip the CHECK");
+  assert.doesNotMatch(migration, /CONCURRENTLY/iu, "migration 0071 must not use CONCURRENTLY (single-tx replay)");
+  assert.doesNotMatch(migration, /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u, "migration must not contain emoji glyphs");
+
+  // Drizzle schema 与迁移同步：check 表达式包含全部三个状态。
+  const table = requiredTable("eventOutbox") as WorkHubTable & Record<string, any>;
+  const checkText = checkSqlText(table);
+  for (const status of ["'pending'", "'published'", "'failed'"]) {
+    assert.equal(checkText.includes(status), true, `event_outbox status CHECK must include ${status}`);
+  }
 });
 
 test("R15 批 A migration 0061 adds the reminder-ladder columns additively", () => {

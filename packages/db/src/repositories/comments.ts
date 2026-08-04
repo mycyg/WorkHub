@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { asc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { comments } from "../schema/index.js";
@@ -28,12 +28,16 @@ export function createCommentRepository(db: WorkHubDb): CommentRepository {
   return {
     async listCommentsForWorkItem(workItemId, options = {}) {
       const limit = options.limit ?? COMMENTS_FOR_WORK_ITEM_LIMIT;
-      return db
+      // R21 加固：超过 limit 时保留【最新】的 N 条——先按 createdAt 倒序取（id 做稳定 tie-breaker，
+      // 同秒落库的行序确定），再反转回升序返回，保持「对话顺序」的返回形状与契约不变。
+      // 旧写法 asc+limit 会截掉最新评论：第 201 条起的新评论永远不可见。
+      const rows = await db
         .select()
         .from(comments)
         .where(eq(comments.workItemId, workItemId))
-        .orderBy(asc(comments.createdAt))
+        .orderBy(desc(comments.createdAt), desc(comments.id))
         .limit(limit);
+      return rows.reverse();
     },
 
     async insertComment(input) {
