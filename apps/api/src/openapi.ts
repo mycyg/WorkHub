@@ -2071,6 +2071,11 @@ const approvalDelegateSemanticResponse = jsonErrorStatusResponse(
   "Approval delegation target is not valid for this request",
   ["delegate_to_requester", "delegate_target_cannot_view"]
 ).responses["422"];
+const approvalDelegateAuthorizationUnavailableResponse = jsonErrorStatusResponse(
+  "503",
+  "Approval delegation target authorization could not be verified",
+  ["delegate_membership_unavailable", "delegate_user_directory_unavailable"]
+).responses["503"];
 const approvalMalformedJsonResponse = jsonErrorStatusResponse(
   "400",
   "Approval comment request body must be a JSON object",
@@ -2154,7 +2159,8 @@ const approvalDelegateResponse = {
     "403": approvalReadForbiddenResponse,
     "404": approvalDelegateNotFoundResponse,
     "422": approvalDelegateSemanticResponse,
-    "409": approvalRaceResponse
+    "409": approvalRaceResponse,
+    "503": approvalDelegateAuthorizationUnavailableResponse
   }
 } as const;
 const escalationResolveResponse = {
@@ -2439,6 +2445,7 @@ const calendarPageResponseSchema = {
         required: ["date", "blocks"],
         properties: {
           date: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+          is_today: { type: "boolean" },
           blocks: { type: "array", items: scheduleBlockResponseSchema }
         },
         additionalProperties: false
@@ -2678,6 +2685,7 @@ const drivePageResponseSchema = {
     },
     can_manage: { type: "boolean" },
     selected_item_id: uuidStringSchema,
+    search_query: { type: "string" },
     items: { type: "array", items: { type: "object", additionalProperties: true } },
     deleted_items: { type: "array", items: { type: "object", additionalProperties: true } },
     versions: { type: "array", items: { type: "object", additionalProperties: true } },
@@ -2694,7 +2702,7 @@ const drivePageResponseSchema = {
       },
       additionalProperties: false
     },
-    empty_state: { type: "string", enum: ["no_project", "no_drive_items"] }
+    empty_state: { type: "string", enum: ["no_project", "no_drive_items", "no_search_match"] }
   },
   additionalProperties: false
 } as const;
@@ -7285,10 +7293,10 @@ export function getOpenApiDocument() {
       "/api/users": {
         get: {
           tags: ["auth"],
-          summary: "List active member refs (id/nickname/admin) for delegation pickers",
+          summary: "List active member refs in the authenticated actor workspace for delegation pickers",
           responses: {
             "200": {
-              description: "Active member refs sorted by nickname (max 200)",
+              description: "Active member refs in the actor workspace sorted by nickname (max 200)",
               content: {
                 "application/json": {
                   schema: {
@@ -7323,6 +7331,9 @@ export function getOpenApiDocument() {
               }
             },
             ...jsonErrorStatusResponse("401", "Member listing requires an authenticated user", ["not_identified"]).responses,
+            ...jsonErrorStatusResponse("403", "Member listing requires an active membership in the actor workspace", [
+              "workspace_membership_required"
+            ]).responses,
             ...jsonErrorStatusResponse("501", "Member listing is not supported by the active storage", ["users_unsupported"]).responses
           }
         }

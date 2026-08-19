@@ -3,11 +3,13 @@ import { createClient } from "redis";
 import { settings as defaultSettings, type Settings } from "@workhub/config";
 import { checkDatabaseHealth, getSharedDatabaseClient } from "@workhub/db";
 
+import { createPushBus } from "./broker/index.js";
+
 /**
  * 深度就绪检查（编排器 readiness probe 用）。
  *
  * 与 /api/health 的存活探针分离：liveness 只确认进程在转、不碰外部依赖；readiness 真打依赖——
- * Postgres（SELECT 1）+ Redis（仅当 BROKER_BACKEND=redis）。每项检查都裹在超时 + try/catch 里，
+ * Postgres（SELECT 1）+ 当前 broker。每项检查都裹在超时 + try/catch 里，
  * 任何依赖卡死/拒连都不会让探针挂起，最坏在 timeout 后判定为 down。
  */
 
@@ -93,15 +95,32 @@ async function checkRedis(runtimeSettings: Settings, timeoutMs: number): Promise
   }
 }
 
+function checkBuiltInBroker(runtimeSettings: Settings): ReadinessCheck {
+  try {
+    createPushBus(runtimeSettings);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: shortError(error) };
+  }
+}
+
 export async function checkReadiness(runtimeSettings: Settings = defaultSettings): Promise<ReadinessResult> {
   const timeoutMs = resolveTimeoutMs();
   const checks: Record<string, ReadinessCheck> = {};
 
   checks.database = await checkDatabase(runtimeSettings, timeoutMs);
 
-  // Redis 仅在被配置为 broker 后端时纳入就绪判定；memory/pg_listen 后端下不依赖 Redis，跳过。
-  if (runtimeSettings.broker.backend === "redis" && runtimeSettings.broker.url.length > 0) {
-    checks.redis = await checkRedis(runtimeSettings, timeoutMs);
+  if (runtimeSettings.broker.backend === "memory") {
+    checks.broker = checkBuiltInBroker(runtimeSettings);
+  } else if (runtimeSettings.broker.backend === "redis") {
+    const redis = runtimeSettings.broker.url.length > 0
+      ? await checkRedis(runtimeSettings, timeoutMs)
+      : { ok: false };
+    // 保留 redis 细项供现有运维消费者定位，同时由统一 broker 细项给页面和总状态消费。
+    checks.redis = redis;
+    checks.broker = redis;
+  } else {
+    checks.broker = checkBuiltInBroker(runtimeSettings);
   }
 
   const ready = Object.values(checks).every((check) => check.ok);

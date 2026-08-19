@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WorkHub 验收报告 · R8 web 交叉复审</title>
+<style>
+  :root{
+    --ink:#172033; --muted:#5b616e; --faint:#9aa0ac; --line:#e9ebf0; --line-soft:#f1f2f6;
+    --indigo:#4f46e5; --indigo-soft:#eef0fe; --bg:#f6f7fb; --card:#ffffff;
+    --ok:#1f9d6b; --ok-soft:#e7f6ef; --amber:#e0892a; --amber-soft:#fcf3e6; --red:#e5484d;
+    --shadow:0 18px 50px rgba(37,51,79,.10); --shadow-sm:0 8px 24px rgba(37,51,79,.06);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg);line-height:1.6;-webkit-font-smoothing:antialiased}
+  a{color:var(--indigo);text-decoration:none}
+  .wrap{max-width:1140px;margin:0 auto;padding:0 24px}
+  /* hero */
+  .hero{background:linear-gradient(135deg,#4f46e5 0%,#6d5ef0 48%,#8b7bf5 100%);color:#fff;padding:64px 0 72px;position:relative;overflow:hidden}
+  .hero::after{content:"";position:absolute;inset:0;background:radial-gradient(1200px 400px at 80% -10%,rgba(255,255,255,.22),transparent 60%);pointer-events:none}
+  .hero .wrap{position:relative}
+  .badge{display:inline-block;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:6px 14px;font-size:13px;font-weight:700;letter-spacing:.02em;backdrop-filter:blur(8px)}
+  h1{font-size:40px;line-height:1.15;margin:18px 0 10px;font-weight:850;letter-spacing:-.01em}
+  .hero p.sub{font-size:17px;opacity:.92;max-width:760px;margin:0}
+  .hero .meta{margin-top:22px;font-size:13.5px;opacity:.85}
+  /* stat row */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:-40px 0 8px;position:relative;z-index:2}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--shadow-sm)}
+  .stat b{display:block;font-size:34px;font-weight:850;color:var(--indigo);line-height:1.1}
+  .stat span{display:block;color:var(--muted);font-size:13px;font-weight:700;margin-top:4px}
+  section{padding:40px 0 8px}
+  h2{font-size:24px;font-weight:850;margin:8px 0 6px;letter-spacing:-.01em}
+  h2 .em{color:var(--indigo)}
+  .lead{color:var(--muted);font-size:15px;margin:0 0 22px;max-width:820px}
+  /* method cards */
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .mcard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 18px 16px;box-shadow:var(--shadow-sm)}
+  .mcard h3{margin:0 0 6px;font-size:15px;font-weight:800}
+  .mcard p{margin:0;color:var(--muted);font-size:13.5px}
+  .mcard .k{font-size:12px;font-weight:800;color:var(--indigo);background:var(--indigo-soft);border-radius:8px;padding:3px 9px;display:inline-block;margin-bottom:9px}
+  /* batches */
+  .batch{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:12px;box-shadow:var(--shadow-sm)}
+  .batch summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:12px;font-weight:800;font-size:15.5px}
+  .batch summary::-webkit-details-marker{display:none}
+  .batch summary .chev{margin-left:auto;color:var(--faint);font-size:13px;font-weight:700}
+  .pill{font-size:11.5px;font-weight:800;border-radius:999px;padding:3px 10px;white-space:nowrap}
+  .pill.ok{background:var(--ok-soft);color:var(--ok)}
+  .pill.sha{background:#eef0f3;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
+  .batch ul{margin:14px 0 4px;padding-left:18px}
+  .batch li{margin:7px 0;color:var(--muted);font-size:14px}
+  .batch li b{color:var(--ink);font-weight:700}
+  /* gallery */
+  .shot{background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden;box-shadow:var(--shadow);margin-bottom:28px}
+  .shot .cap{padding:16px 20px;border-bottom:1px solid var(--line-soft);display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+  .shot .cap h3{margin:0;font-size:17px;font-weight:850}
+  .shot .cap .route{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--faint)}
+  .shot .cap .tag{margin-left:auto;font-size:11.5px;font-weight:800;color:var(--ok);background:var(--ok-soft);border-radius:999px;padding:3px 10px}
+  .shot .body{display:grid;grid-template-columns:1.55fr 1fr;gap:0}
+  .shot .imgwrap{background:#eef0f4;padding:18px;display:flex;align-items:flex-start;justify-content:center}
+  .shot .imgwrap img{width:100%;height:auto;border-radius:10px;border:1px solid var(--line);box-shadow:var(--shadow-sm);display:block}
+  .shot .notes{padding:20px 22px}
+  .shot .notes p{margin:0 0 12px;font-size:14px;color:var(--muted)}
+  .shot .notes .fixes{list-style:none;margin:0;padding:0}
+  .shot .notes .fixes li{position:relative;padding-left:24px;margin:8px 0;font-size:13.5px;color:var(--ink)}
+  .shot .notes .fixes li::before{content:"✓";position:absolute;left:0;top:0;color:var(--ok);font-weight:900;background:var(--ok-soft);border-radius:50%;width:18px;height:18px;display:grid;place-items:center;font-size:11px}
+  .shot.mobile .imgwrap img{max-width:320px;margin:0 auto}
+  /* remaining */
+  .rem{background:var(--amber-soft);border:1px solid #f0dcc0;border-radius:14px;padding:18px 20px}
+  .rem h3{margin:0 0 8px;font-size:15px;font-weight:800;color:#9a5a12}
+  .rem li{color:#7a5418;font-size:13.5px;margin:6px 0}
+  footer{color:var(--faint);font-size:12.5px;text-align:center;padding:40px 0 56px}
+  @media (max-width:880px){
+    .stats{grid-template-columns:repeat(2,1fr)} .grid3{grid-template-columns:1fr}
+    .shot .body{grid-template-columns:1fr} h1{font-size:30px}
+  }
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="wrap">
+    <span class="badge">R8 · Web 交叉复审 · 验收报告</span>
+    <h1>WorkHub Web 体验复审与修复验收</h1>
+    <p class="sub">以「一名一无所知的真实用户」视角，对全部 Web 路由做穷举式交叉复审：47 个 agent 分四类全局视角 + 五个路由簇并行排查，逐条对抗式验证。共确认 31 条真问题，其中 30 条已修复并通过 CI，1 条为需产品决策的功能缺口已单独立项。</p>
+    <p class="meta">生成方式：无头 Chrome 驱动当前代码的实时前端（web 5173 → API 8787，真实种子数据）逐路由截图 · 全部修复已合入 main 且 8 项 CI 全绿</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="stats">
+    <div class="stat"><b>31</b><span>对抗式验证的真问题</span></div>
+    <div class="stat"><b>30</b><span>已修复 · CI 全绿</span></div>
+    <div class="stat"><b>16</b><span>逐页实时截图验收</span></div>
+    <div class="stat"><b>13</b><span>合入 main 的提交</span></div>
+  </div>
+</div>
+
+<section><div class="wrap">
+  <h2>一、<span class="em">审查方法</span></h2>
+  <p class="lead">不以开发者的上帝视角，而是扮演一名第一次打开软件、什么都不懂的真实用户，逐页逐按钮地问「这个数字是什么意思」「点了会发生什么」「为什么这里是空的还叫我处理它」——再把这些疑问回灌成可检验的代码缺陷。</p>
+  <div class="grid3">
+    <div class="mcard"><span class="k">发现</span><h3>4 类全局视角 + 5 路由簇</h3><p>跨页计数一致性、Web→API 数据流正确性、空/零/未选态、死胡同导航；叠加收件箱/GitHub 核心/工作-Diff/输入配置/仪表盘五个簇的 clueless-user 走查。</p></div>
+    <div class="mcard"><span class="k">验证</span><h3>逐条对抗式 refute</h3><p>每条发现都派一个独立 agent 读真实代码去「反驳」它，默认存疑；只有代码确凿坐实的才保留。37 条原始发现去重为 31 条，全部坐实（0 存疑）。</p></div>
+    <div class="mcard"><span class="k">闭环</span><h3>改一批 → 测 → CI 绿 → 再改</h3><p>每批：typecheck + 整包单测 + 实时浏览器复验，targeted 提交，逐 job 核 CI conclusion 后才进入下一批。期间自查并修正了两处自身回归。</p></div>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>二、<span class="em">修复清单</span>（按主题分批，均已合入 main）</h2>
+  <p class="lead">点击展开每批的具体改动。所有改动均附单元/路由测试锁定，并经 CI 的 workspace / r1-pg / r2-pg-redis / pilot-stack / web-live-route / rust-i18n / migration / security 八项校验。</p>
+
+  <details class="batch" open><summary>批 A · 原始枚举 / 内部黑话泄漏给用户 <span class="pill ok">已修</span><span class="pill sha">f7544c09</span><span class="chev">展开 ▾</span></summary>
+  <ul>
+    <li><b>看改动页状态徽章</b>渲染裸枚举 opened/reviewed/merged/rejected → 人话化「待你审阅 / 已审阅 / 已合并 / 已退回」。</li>
+    <li><b>工作项 AI 执行轨迹</b>步骤标题「1. tool_call」等裸阶段枚举 → 复用回放页的人话化标签。</li>
+    <li><b>派活选项药丸</b>回退到裸 low/medium 甚至字面 "confirm" → 本地化风险等级，无提示时不渲药丸。</li>
+    <li><b>成本预算风险</b>状态药丸裸渲 ok/warning/critical → 本地化；<b>派活自由输入</b>英文标签从开发自述「Typing stays a collapsed fallback」→ 真正的用户指引。</li>
+    <li><b>回放合并时间线</b>把内部 conflict_key 当标题裸渲 → 「冲突位置: …」；冲突数/时间戳药丸补单位与可读格式。</li>
+  </ul></details>
+
+  <details class="batch"><summary>批 B · 原始 ISO 机器时间戳泄漏 <span class="pill ok">已修</span><span class="pill sha">1bc5fb62</span><span class="chev">展开 ▾</span></summary>
+  <ul><li>通知、会议、网盘（版本/回收站/操作日志）、日程页头周范围把 <code>2026-06-25T14:32:00.000Z</code> 这类机器串直接显示给用户 → 统一走既有格式化（YYYY-MM-DD HH:MM 或 YYYY-MM-DD），与审批/项目页同口径。</li></ul></details>
+
+  <details class="batch"><summary>批 C · 跨页计数 / 标签不一致 <span class="pill ok">已修</span><span class="pill sha">3f419da2</span><span class="chev">展开 ▾</span></summary>
+  <ul>
+    <li><b>项目主页「进行中」</b>顶部 chip 用可见数(1)、页头用全量(16)→ 同一页两个数字打架；统一为全量，页头保留「你可处理 N」细分。<span class="pill sha">edd5f64e</span></li>
+    <li><b>技能页</b> chip 复用了首页的「焦点/队列/后台」标签 → 改为「激活技能/已精修/AI 撰写」。</li>
+    <li><b>通知页</b>「需要你决定」chip 误用共享的「待处理」标签；<b>会议页</b>「洞察」chip 实为已处理数；<b>首页</b>队列 chip 把首决策重复计数、「AI 正在做」把失败/等待也算进去 —— 逐一对齐口径。</li>
+    <li><b>工作项交付物</b> chip(已采纳) / 卡片(AI 提议改动) / 计数(两者相加) 三个数字各说各话 → 厘清为「已采纳」chip + 「AI 提议的改动」卡。</li>
+  </ul></details>
+
+  <details class="batch"><summary>批 D · 空态 / 幻影脚手架 <span class="pill ok">已修</span><span class="pill sha">9747c27a</span><span class="chev">展开 ▾</span></summary>
+  <ul>
+    <li><b>会议页</b>无会议时仍渲染「本会议暂无转写」「纪要」卡，描述一个不存在的会议 → 仅在选中会议时渲染详情，否则一张贴合的空态卡。</li>
+    <li><b>网盘</b>文件树/版本空态用错名词（说「无交付物」）、回收站/操作日志空态直接渲染字符「0」→ 各自专属空态文案。</li>
+    <li><b>看改动</b>无评论时把区标题当正文重渲 → 「暂无评论」；<b>派活</b>删掉与进度卡重复的「接入摘要」卡。</li>
+  </ul></details>
+
+  <details class="batch"><summary>批 E · 死胡同 / 死指标 <span class="pill ok">已修</span><span class="pill sha">5fc95d2a</span><span class="chev">展开 ▾</span></summary>
+  <ul>
+    <li><b>403 死循环</b>越权页唯一的 CTA 指回刚刚 403 的同一个 URL，点了又 403，永远出不去 → 导向用户能访问的地方，文案诚实。<span class="pill sha">98e9fe61</span></li>
+    <li><b>项目列表「已归档」</b>结构性恒为 0 的死指标 → 换成「有进展（有进行中工作的项目数）」。</li>
+    <li><b>项目主页「还有 N 条未显示」</b>用可见数自减恒为 0、从不出现 → 按全量算并诚实说明「你暂无权限查看」。</li>
+    <li><b>审批「截止时间」卡</b>绑定首项、切换审批项时不更新 → 移除冗余卡（SLA 已在每行与时间线显示）。</li>
+  </ul></details>
+
+  <details class="batch"><summary>批 F · 裸数字补单位 / 诚实标签 <span class="pill ok">已修</span><span class="pill sha">b18ec1c1</span><span class="chev">展开 ▾</span></summary>
+  <ul><li>成本页 token 用量补「个 token」；把名不副实的「趋势: 7」改为「统计天数: 7」；模型分项补「次调用」；技能精修徽章「+5」补「改了 5 处」。</li></ul></details>
+
+  <details class="batch"><summary>专项 · 设置文案 / 通知按钮语义 / 网盘文件 <span class="pill ok">已修</span><span class="pill sha">38ee268e · 19b797b6 · 66ce0cba · 8fb4fed0</span><span class="chev">展开 ▾</span></summary>
+  <ul>
+    <li><b>设置页</b>简介承诺「在这里管理预算」但页面并无预算卡 → 文案改指向「成本」页。</li>
+    <li><b>通知按钮</b>「忽略」与「完成」字节相同（都只 archive）；对「需要你决定」项「完成」误导（暗示已决定）→ 决策项不再给「完成」（决定要在源头做）；「已处理」桶改名「已归档」（被忽略的不是「已完成」）。</li>
+    <li><b>网盘文件</b>项目主页文件行原本像可点开却只跳网盘高亮 → 加「在网盘中查看」明确意图。（真二进制下载需后端文件存储，属产品功能缺口，已单独立项。）</li>
+    <li><b>网盘文件数</b>项目主页用全量 count、网盘页用 200 行切片 → 大于 200 文件时两页数字打架；统一为全量，并在网盘页注明「本页只加载前 N / 共 M」。</li>
+  </ul></details>
+</div></section>
+
+<section><div class="wrap">
+  <h2>三、<span class="em">逐页验收</span>（当前代码 · 实时截图）</h2>
+  <p class="lead">以下每张均为本次复审后、当前 main 代码在真实 API + 种子数据下的实时渲染。修复点已标注在每页右侧。</p>
+  <article class="shot">
+    <div class="cap"><h3>决策收件箱（首页）</h3><span class="route">/</span><span class="tag">ready · 已验收</span></div>
+    <div class="body">
+      <div class="imgwrap"><img loading="lazy" src="assets/01-home.png" alt="决策收件箱（首页）" /></div>
+      <div class="notes"><p>AI 替你扛活后的决策落点：当前要拍板的一件事 + 队列 + AI 战绩横幅。空态有可爱兜底而非裸卡。</p><ul class="fixes"><li>「AI 正在做」只数真正在跑的（不含失败/等待）</li><li>队列 chip 去重首决策，避免 1+3=4 误读</li><li>空收件箱隐藏「当前入口/支撑证据」占位卡</li></ul></div>
+    </div>
+  </article>
+<article class="shot">
+    <div class="cap"><h3>项目列表（GitHub 式入口）</h3><span class="route">/projects</span><span class="tag">ready · 已验收</span></div>
+    <div class="body">
+      <div class="imgwrap"><img loading="lazy" src="assets/02-projects.png" alt="项目列表（GitHub 式入口）" /></div>
+      <div class="notes"><p>项目即产品的列表入口。顶部速览三项事实，每个项目卡显示进行中工作量。</p><ul class="fixes"><li>删掉恒为 0 的「已归档」死指标，换成「有进展」</li><li>项目计数与进行中总量同口径</li></ul></div>
+    </div>
+  </article>
+<article class="shot">
+    <div class="cap"><h3>项目主页（核心 hub）</h3><span class="route">/projects/:id</span><span class="tag">ready · 已验收</span></div>
+    <div class="body">
+      <div class="imgwrap"><img loading="lazy" src="assets/03-project-home.png" alt="项目主页（核心 hub）" /></div>
+      <div class="notes"><p>单项目主页：进行中工作 + 最近文件（网盘同步一等公民）+ 新任务/打开网盘入口。一图集中体现多处修复。</p><ul class="fixes"><li>「进行中 16」chip 与页头同口径（曾 chip=1、页头=16 打架）</li><li>「还有 15 条…你暂无权限查看」按全量算并诚实说明（曾恒 0 从不出现）</li><li>最近文件行加「在网盘中查看」不再暗示能打开文件</li><li>文件日期切片显示（曾裸 ISO）</li></ul></div>
+    </div>
+  </article>
+<article class="shot">
+    <div class="cap"><h3>网盘（文件同步）</h3><span class="route">/drive?project_id=:id</span><span class="tag">ready · 已验收</span></div>
+    <div class="body">
+      <div class="imgwrap"><img loading="lazy" src="assets/04-drive.png" alt="网盘（文件同步）" /></div>
+      <div class="notes"><p>项目网盘：文件树 + 版本 + 已采纳交付物 + 评论 + 回收站 + 操作日志。</p><ul class="fixes"><li>文件数用全量 count，与项目主页一致；超 200 行注明「本页只加载前 N/共 M」</li><li>版本/回收站/操作日志时间戳切片显示</li><li>回收站/操作日志空态给真文案（曾直接渲字符「0」）</li><li>删除钮标明目标文件名</li></ul></div>
+    </div>
+  </article>
+<article class="shot">
+    <div class="cap"><h3>审批中心</h3><span class="route">/approvals</span><span class="tag">ready · 已验收</span></div>
+    <div class="body">
+      <div class="imgwrap"><img loading="lazy" src="assets/05-approvals.png" alt="审批中心" /></div>
+      <div class="notes"><p>需要你点头的事项：左栏列表 + 中栏详情 + 右栏动作/规则。当前为空态——贴合的空态卡，而非描述不存在选择的脚手架。</p><ul class="fixes"><li>空态专属卡（曾渲「左边选一条」重复提示 + 「审批事实: 未路由」幻影占位）</li><li>移除会变陈旧的独立「截止时间」卡（SLA 已在每行+时间线）</li><li>审批步骤/请求状态本地化</li></ul></div>
+    </div>
+  </article>
+<article class="shot">
+    <div class="cap"><h3>工作项详情</h3><span class="route">/workitems/:id</span><span class="tag">ready · 已验收</span></div>
+    <div class="body">
+      <div class="imgwrap"><img loading="lazy" src="assets/06-workitem.png" alt="工作项详情" /></div>
+      <div class="notes"><p>一件任务的全貌：上下文 + AI 执行轨迹 + 验收项 + 证据 + AI 提议的改动。</p><ul class="fixes"><li>AI 轨迹步骤标题人话化（曾「1. tool_call」裸枚举）</li><li>「已采纳」chip 与「AI 提议的改动」卡厘清（曾三个数字各说各话）</li></ul></div>
+    </div>
+  </article>
+<article class="shot">
+    <div class="cap"><h3>派活 / 接入</h3><span class="route">/intake</span><span class="tag">ready · 已验收</span></div>
+    <div class="body">
+      <div class="imgwrap"><img loading="lazy" src="assets/07-intake.png" alt="派活 / 接入" /></div>
+      <div class="notes"><p>从真实项目开始派活：意图输入 + 选项澄清。盒子逐步生长式的多轮问答入口。</p><ul class="fixes"><li>选项药丸不再泄漏裸 low/medium 或字面 "confirm"</li><li>自由输入标签改为真用户指引（曾是开发自述）</li><li>删掉与进度卡重复的「接入摘要」卡</li></ul></div>
+    </div>
+  </article>
+<article class="shot">
+    <div class="cap"><h3>会议洞察</h3><span class="route">/meetings?project_id=:id</span><span class="tag">ready · 已验收</span></div>
+    <div class="body">
+      <div class="imgwrap"><img loading="lazy" src="assets/08-meetings.png" alt="会议洞察" /></div>
+      <div class="notes"><p>会议转写 → AI 洞察 → 一键转草稿/提议。Approval-safe：确认前不改官方状态。</p><ul class="fixes"><li>无会议时不再渲染幻影「转写/纪要」卡，改单张贴合空态卡</li><li>会议列表时间戳格式化</li><li>「洞察」chip 口径厘清（已处理 vs 总数）</li></ul></div>
+    </div>
+  </article>
+<article class="shot">
+    <div class="cap"><h3>通知中心</h3><span class="route">/notifications</span><span class="tag">ready · 已验收</span></div>
+    <div class="body">
+      <div class="imgwrap"><img loading="lazy" src="assets/09-notifications.png" alt="通知中心" /></div>
+      <div class="notes"><p>分桶收件箱：需要你决定 / FYI / 已归档，每条带依据与证据链接。</p><ul class="fixes"><li>「需要你决定」项不再给误导的「完成」键（决定要在源头做）</li><li>「已处理」桶改名「已归档」（被忽略的不是已完成）</li><li>通知时间戳格式化</li></ul></div>
+    </div>
+  </article>
+<article class="shot">
+    <div class="cap"><h3>日程</h3><span class="route">/calendar</span><span class="tag">ready · 已验收</span></div>
+    <div class="body">
+      <div class="imgwrap"><img loading="lazy" src="assets/10-calendar.png" alt="日程" /></div>
+      <div class="notes"><p>按天的日程块：今日/逾期/事项，工作项截止可深链。</p><ul class="fixes"><li>页头周范围切片显示（曾裸 ISO 紧贴标题，最显眼）</li><li>日程块状态/类型本地化</li></ul></div>
+    </div>
+  </article>
+<article class="shot">
+    <div class="cap"><h3>成本与预算</h3><span class="route">/dashboard/cost</span><span class="tag">ready · 已验收</span></div>
+    <div class="body">
+      <div class="imgwrap"><img loading="lazy" src="assets/11-cost.png" alt="成本与预算" /></div>
+      <div class="notes"><p>Token 用量、估算成本（¥）、预算与风险、模型分项、劳动力分账。</p><ul class="fixes"><li>token 用量补单位「个 token」</li><li>名不副实的「趋势: N」改「统计天数: N」</li><li>模型分项补「次调用」；预算风险状态本地化</li></ul></div>
+    </div>
+  </article>
+<article class="shot">
+    <div class="cap"><h3>团队技能</h3><span class="route">/dashboard/skills</span><span class="tag">ready · 已验收</span></div>
+    <div class="body">
+      <div class="imgwrap"><img loading="lazy" src="assets/12-skills.png" alt="团队技能" /></div>
+      <div class="notes"><p>AI 技能库：激活/已精修/AI 撰写，含 K2 来源溯源徽章。</p><ul class="fixes"><li>顶部 chip 改为技能专属标签「激活技能/已精修/AI 撰写」（曾复用首页焦点/队列/后台）</li><li>精修徽章「+5」补「改了 5 处」</li></ul></div>
+    </div>
+  </article>
+<article class="shot">
+    <div class="cap"><h3>健康总览</h3><span class="route">/dashboard/health</span><span class="tag">ready · 已验收</span></div>
+    <div class="body">
+      <div class="imgwrap"><img loading="lazy" src="assets/13-health.png" alt="健康总览" /></div>
+      <div class="notes"><p>项目健康分带：项目数/需关注/告急，逐项目卡带产线目标链接。</p><ul class="fixes"><li>健康信号/逾期等标签本地化（前序轮次）</li></ul></div>
+    </div>
+  </article>
+<article class="shot">
+    <div class="cap"><h3>知识检索</h3><span class="route">/knowledge/search</span><span class="tag">ready · 已验收</span></div>
+    <div class="body">
+      <div class="imgwrap"><img loading="lazy" src="assets/14-knowledge.png" alt="知识检索" /></div>
+      <div class="notes"><p>证据来源检索。无锚点时不塌成裸 403，而是在外壳内给「需要选范围」的落地引导。</p><ul class="fixes"><li>知识 403 → 外壳内范围落地 bubble（不再裸 403 死胡同）</li></ul></div>
+    </div>
+  </article>
+<article class="shot">
+    <div class="cap"><h3>应用设置</h3><span class="route">/settings</span><span class="tag">ready · 已验收</span></div>
+    <div class="body">
+      <div class="imgwrap"><img loading="lazy" src="assets/15-settings.png" alt="应用设置" /></div>
+      <div class="notes"><p>运行时 / AI 运行时 / 语言 / 桌面客户端连接。桌宠形象在独立窗口设置。</p><ul class="fixes"><li>简介不再承诺页面并不存在的「预算」设置，改指向「成本」页</li></ul></div>
+    </div>
+  </article>
+<article class="shot mobile">
+    <div class="cap"><h3>项目主页 · 移动端</h3><span class="route">/projects/:id（414px）</span><span class="tag">ready · 已验收</span></div>
+    <div class="body">
+      <div class="imgwrap"><img loading="lazy" src="assets/16-project-home-mobile.png" alt="项目主页 · 移动端" /></div>
+      <div class="notes"><p>响应式验证：项目主页在窄屏下的布局与可读性。</p><ul class="fixes"><li>移动端栅格回落，导航折叠，无横向溢出</li></ul></div>
+    </div>
+  </article>
+</div></section>
+
+<section><div class="wrap">
+  <h2>四、<span class="em">余留项</span>（需产品决策，已立项）</h2>
+  <div class="rem">
+    <h3>网盘真二进制文件存储与下载／预览</h3>
+    <ul>
+      <li>当前网盘是「元数据目录」：上传接口只收 JSON（文件名/大小/类型/解析文本），后端写了 storage_path 字符串但<b>从不把字节落盘</b>，因此文件无法真正打开/下载（强行加下载路由只会 404）。</li>
+      <li>这是真实功能缺口而非 bug：实现需先定产品方案（存储后端=本地文件系统 / 对象存储？上传走 multipart？大小与类型限制？）。已附完整实现地图单独立项，待拍板后按「已采纳交付物」既有下载路由的范式落地。本次先做诚实兜底：UI 不再暗示文件可打开。</li>
+    </ul>
+  </div>
+</div></section>
+
+<footer>
+  WorkHub 验收报告 · R8 web 交叉复审 · 全部修复已合入 main 并通过 CI · 桌面客户端（Tauri）复审与图文验收为独立轮次
+</footer>
+</body>
+</html>

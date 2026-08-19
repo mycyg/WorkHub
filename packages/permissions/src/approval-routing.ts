@@ -19,7 +19,7 @@ type ApprovalActionCopyKey = "approve" | "deny" | "delegate";
 
 const approvalActionCopy: Record<NonNullable<ApprovalAttentionOptions["locale"]>, Record<ApprovalActionCopyKey, string>> = {
   "zh-CN": {
-    approve: "同意",
+    approve: "通过",
     deny: "打回",
     delegate: "转交"
   },

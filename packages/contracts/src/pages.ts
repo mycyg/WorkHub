@@ -331,6 +331,8 @@ export const drivePageVmSchema = z.object({
   can_manage: z.boolean().default(false),
   selected_item_id: idSchema.optional(),
   requested_item_missing: z.boolean().optional(),
+  // R11 Batch 0：按名搜索时回填查询串，让前端能区分「真空盘」与「搜索无命中」（见 empty_state 的 no_search_match）。
+  search_query: z.string().optional(),
   items: z.array(driveItemVmSchema),
   deleted_items: z.array(driveItemVmSchema).default([]),
   versions: z.array(driveFileVersionVmSchema),
@@ -343,7 +345,8 @@ export const drivePageVmSchema = z.object({
     restore_item: actionSpecSchema.optional(),
     comment_to_draft: actionSpecSchema.optional()
   }).default({}),
-  empty_state: z.enum(["no_project", "no_drive_items"]).optional()
+  // no_search_match：搜索过滤后 0 命中（与真空盘 no_drive_items 区分，供前端诚实提示）。
+  empty_state: z.enum(["no_project", "no_drive_items", "no_search_match"]).optional()
 });
 export type DrivePageVM = z.infer<typeof drivePageVmSchema>;
 
@@ -565,6 +568,9 @@ export const calendarPageVmSchema = z.object({
   }),
   days: z.array(z.object({
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+    // R11 Batch 0：标记「今天」那一格，供 UI 高亮（与 summary.today_count 同一 clock 口径）。API 恒回填此字段；
+    // 声明 optional 是为了不破坏尚未回填 is_today 的既有 CalendarPageVM 消费方 fixture（UI 半边下一波补齐后可收紧为必填）。
+    is_today: z.boolean().optional(),
     blocks: z.array(scheduleBlockVmSchema)
   })),
   blocks: z.array(scheduleBlockVmSchema),
@@ -1491,7 +1497,7 @@ export const settingsPageVmSchema = z.object({
   generated_at: isoDateTimeSchema,
   locale: workHubLocaleSchema,
   // 普通用户审查（APPROVAL-POLICY-UI）：「以后同类审批自动通过」的常驻策略要能查看；
-  // 撤销走 DELETE /api/permissions/:id（桌面边界内的写动作，web 端按钮 fail-closed 提示去桌面）。
+  // 管理员通过 revoke_href 撤销，服务端负责租户边界、软删除和审计。
   permission_policies: z.array(z.object({
     id: idSchema,
     action_pattern: z.string().min(1),
@@ -1515,8 +1521,7 @@ export const settingsPageVmSchema = z.object({
     default_model: z.string().min(1),
     provider_count: z.number().int().nonnegative(),
     api_key_configured: z.boolean(),
-    base_url_configured: z.boolean(),
-    secret_safe: z.literal(true)
+    base_url_configured: z.boolean()
   }),
   budgets: z.object({
     run_tokens: z.number().int().positive(),

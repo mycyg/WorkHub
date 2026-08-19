@@ -242,7 +242,6 @@ type BrowserAudit = {
     settingsPreferenceLocale: string | null;
     settingsPreferenceSource: string | null;
     settingsPreferenceSynced: string | null;
-    settingsSecretSafe: string | null;
     settingsRestoreRequiresDesktop: string | null;
     settingsWebLocalActions: string | null;
     settingsLocalBoundary: string | null;
@@ -444,8 +443,7 @@ function settingsPage(locale: WorkHubLocale): SettingsPageVM {
       default_model: "deepseek-v4-flash-r4-11-browser-smoke",
       provider_count: 1,
       api_key_configured: true,
-      base_url_configured: true,
-      secret_safe: true
+      base_url_configured: true
     },
     budgets: {
       run_tokens: 120000,
@@ -2949,7 +2947,6 @@ function auditExpression() {
       settingsPreferenceLocale: routeComponent?.getAttribute("data-r4-settings-preference-locale") || null,
       settingsPreferenceSource: routeComponent?.getAttribute("data-r4-settings-preference-source") || null,
       settingsPreferenceSynced: routeComponent?.getAttribute("data-r4-settings-preference-synced") || null,
-      settingsSecretSafe: routeComponent?.getAttribute("data-r4-settings-secret-safe") || null,
       settingsRestoreRequiresDesktop: routeComponent?.getAttribute("data-r4-settings-restore-requires-desktop") || null,
       settingsWebLocalActions: routeComponent?.getAttribute("data-r4-settings-web-local-actions") || null,
       settingsLocalBoundary: routeComponent?.getAttribute("data-r4-settings-local-boundary") || null,
@@ -4045,7 +4042,6 @@ function vmDomValueMatches(steps: StepReport[], surface: GoldPathSurfaceVM) {
       settings.settingsActiveLocale === "en-US" &&
       settings.settingsPreferenceLocale === "en-US" &&
       settings.settingsPreferenceSynced === "true" &&
-      settings.settingsSecretSafe === "true" &&
       settings.settingsRestoreRequiresDesktop === "true" &&
       settings.settingsWebLocalActions === "false"
   );
@@ -4818,10 +4814,9 @@ async function main() {
           step.audit.storedLocale === "en-US" &&
           step.audit.activeLocale === "en-US"
         ),
-      r4_15_settings_secret_safe:
+      r4_15_settings_no_secret_leak:
         steps.some((step) =>
           step.id === "13-settings-en-desktop-route-component" &&
-          step.audit.routeData.settingsSecretSafe === "true" &&
           step.audit.routeData.settingsPetModelInWeb === "false" &&
           !step.audit.secretLeak
         ),
@@ -4931,7 +4926,6 @@ async function main() {
           step.audit.reactComponentName === "SettingsRouteComponent" &&
           step.audit.reactComponentPageVm === "settings" &&
           step.audit.reactComponentLocale === "en-US" &&
-          step.audit.routeData.settingsSecretSafe === "true" &&
           step.audit.routeData.settingsPetModelInWeb === "false" &&
           step.audit.routeData.settingsRestoreRequiresDesktop === "true" &&
           step.audit.routeData.settingsWebLocalActions === "false" &&
@@ -5020,7 +5014,6 @@ async function main() {
           step.audit.routeComponent === "settings" &&
           step.audit.reactComponentName === "SettingsRouteComponent" &&
           step.audit.reactComponentPageVm === "settings" &&
-          step.audit.routeData.settingsSecretSafe === "true" &&
           step.audit.routeData.settingsPetModelInWeb === "false"
         ),
       r4_19_pre_true_react_mount:
@@ -5455,7 +5448,7 @@ async function main() {
         `- R4.14 knowledge fallback/bind: ${String(gates.r4_14_knowledge_fallback_route && gates.r4_14_knowledge_bind_success)}`,
         `- R4.14 mobile no overflow: ${String(gates.r4_14_mobile_no_overflow)}`,
         `- R4.15 settings locale persistence: ${String(gates.r4_15_settings_locale_persistence)}`,
-        `- R4.15 settings secret safe: ${String(gates.r4_15_settings_secret_safe)}`,
+        `- R4.15 settings no secret leak: ${String(gates.r4_15_settings_no_secret_leak)}`,
         `- R4.15 desktop boundary gate: ${String(gates.r4_15_desktop_boundary_gate)}`,
         `- R4.15 route recovery actions: ${String(gates.r4_15_route_recovery_actions)}`,
         `- R4.15 settings mobile no overflow: ${String(gates.r4_15_settings_mobile_no_overflow)}`,

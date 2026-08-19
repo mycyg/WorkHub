@@ -1,0 +1,124 @@
+{
+  "generatedAt": "2026-06-24T22:46:25.065Z",
+  "web": "http://localhost:5173",
+  "ids": {
+    "projectId": "00000000-0000-4000-8000-000000000004",
+    "projectSlug": "demo",
+    "workItemId": "00000000-0000-4000-8000-000000000104",
+    "approvalCount": 0
+  },
+  "steps": [
+    {
+      "id": "01-home",
+      "url": "http://localhost:5173/",
+      "status": "ready",
+      "title": "决策收件箱",
+      "file": "assets/01-home.png"
+    },
+    {
+      "id": "02-projects",
+      "url": "http://localhost:5173/projects",
+      "status": "ready",
+      "title": "项目",
+      "file": "assets/02-projects.png"
+    },
+    {
+      "id": "03-project-home",
+      "url": "http://localhost:5173/projects/00000000-0000-4000-8000-000000000004",
+      "status": "ready",
+      "title": "WorkHub Demo",
+      "file": "assets/03-project-home.png"
+    },
+    {
+      "id": "04-drive",
+      "url": "http://localhost:5173/drive?project_id=00000000-0000-4000-8000-000000000004",
+      "status": "ready",
+      "title": "WorkHub Demo",
+      "file": "assets/04-drive.png"
+    },
+    {
+      "id": "05-approvals",
+      "url": "http://localhost:5173/approvals",
+      "status": "ready",
+      "title": "没有等你点头的事啦 ٩(◜◡◝)۶",
+      "file": "assets/05-approvals.png"
+    },
+    {
+      "id": "06-workitem",
+      "url": "http://localhost:5173/workitems/00000000-0000-4000-8000-000000000104",
+      "status": "ready",
+      "title": "R4.7 live API PG seed review package with deliberately-long-provider-diagnostic-token-alpha-beta-1234567890",
+      "file": "assets/06-workitem.png"
+    },
+    {
+      "id": "07-intake",
+      "url": "http://localhost:5173/intake",
+      "status": "ready",
+      "title": "从真实项目开始派活",
+      "file": "assets/07-intake.png"
+    },
+    {
+      "id": "08-meetings",
+      "url": "http://localhost:5173/meetings?project_id=00000000-0000-4000-8000-000000000004",
+      "status": "ready",
+      "title": "WorkHub Demo",
+      "file": "assets/08-meetings.png"
+    },
+    {
+      "id": "09-notifications",
+      "url": "http://localhost:5173/notifications",
+      "status": "ready",
+      "title": "通知中心",
+      "file": "assets/09-notifications.png"
+    },
+    {
+      "id": "10-calendar",
+      "url": "http://localhost:5173/calendar",
+      "status": "ready",
+      "title": "日程",
+      "file": "assets/10-calendar.png"
+    },
+    {
+      "id": "11-cost",
+      "url": "http://localhost:5173/dashboard/cost",
+      "status": "ready",
+      "title": "预算与成本",
+      "file": "assets/11-cost.png"
+    },
+    {
+      "id": "12-skills",
+      "url": "http://localhost:5173/dashboard/skills",
+      "status": "ready",
+      "title": "团队技能",
+      "file": "assets/12-skills.png"
+    },
+    {
+      "id": "13-health",
+      "url": "http://localhost:5173/dashboard/health",
+      "status": "ready",
+      "title": "健康总览",
+      "file": "assets/13-health.png"
+    },
+    {
+      "id": "14-knowledge",
+      "url": "http://localhost:5173/knowledge/search",
+      "status": "ready",
+      "title": "证据来源",
+      "file": "assets/14-knowledge.png"
+    },
+    {
+      "id": "15-settings",
+      "url": "http://localhost:5173/settings",
+      "status": "ready",
+      "title": "应用设置",
+      "file": "assets/15-settings.png"
+    },
+    {
+      "id": "16-project-home-mobile",
+      "url": "http://localhost:5173/projects/00000000-0000-4000-8000-000000000004",
+      "status": "ready",
+      "title": "WorkHub Demo",
+      "file": "assets/16-project-home-mobile.png"
+    }
+  ]
+}

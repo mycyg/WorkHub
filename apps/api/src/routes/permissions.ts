@@ -87,8 +87,9 @@ export function createPermissionRoutes(deps: PermissionRoutesDependencies = {}) 
     return c.json({ ok: true, data });
   });
 
-  // M24：撤销权限策略（含学到的 allow 授权）。与 PUT 同样要求本地客户端 + admin。
-  routes.delete("/:id", createRequireLocalClientMiddleware(authSource), async (c) => {
+  // M24：撤销权限策略（含学到的 allow 授权）。管理员可从任一已认证客户端撤销；
+  // 租户边界、软删除、等价规则收敛与审计仍由 service.revokePolicy 统一执行。
+  routes.delete("/:id", createCurrentUserMiddleware(authSource), async (c) => {
     requireAdmin(c);
     const policyId = c.req.param("id");
     if (!isUuidParam(policyId)) {

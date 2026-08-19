@@ -23,6 +23,7 @@ import {
   createPermissionPolicyRepository,
   createUserRepository,
   createWorkItemRepository,
+  createWorkspaceMembershipRepository,
   type ApprovalCommentRepository,
   type ApprovalCommentRow,
   type AuditLogRepository,
@@ -35,7 +36,8 @@ import {
   type UserRepository,
   type WorkItemAccessRow,
   type WorkItemDataRepository,
-  type WorkHubDatabaseClient
+  type WorkHubDatabaseClient,
+  type WorkspaceMembershipRepository
 } from "@workhub/db";
 import { topics } from "@workhub/events";
 import {
@@ -175,9 +177,10 @@ export type ApprovalServiceDependencies = {
   approvals: ApprovalRequestRepository;
   policies: PermissionPolicyRepository;
   auditLogs: AuditLogRepository;
-  // 可选：用于校验委派目标用户存在（L#48）。缺省时退化为不校验（旧测试夹具）。
-  // findActiveByNickname 供 @mentions 解析被点名用户，本身也是可选——旧夹具只给 findActiveById 时不解析 mention。
+  // 非委派场景和旧夹具仍可省略 users；delegate() 强制要求 findActiveById，缺失时返回
+  // delegate_user_directory_unavailable。findActiveByNickname 仅供可选的 @mentions 解析。
   users?: Pick<UserRepository, "findActiveById"> & Partial<Pick<UserRepository, "findActiveByNickname">>;
+  memberships?: Pick<WorkspaceMembershipRepository, "findActiveForUserWorkspace"> | false;
   // 可选：委派守卫用——把审批挂的工作项摊平成可见性记录，校验转交目标确实能看到该事项（与 routeApprover 一致）。
   // 缺省时退化为不校验工作项可见性（旧测试夹具不提供）。
   workItems?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord"> & Partial<Pick<WorkItemDataRepository, "findWorkItemAccessRecords">>;
@@ -212,6 +215,7 @@ export function getDefaultApprovalServiceDependencies(): ApprovalServiceDependen
     auditLogs: createAuditLogRepository(defaultDbClient.db),
     policies: createPermissionPolicyRepository(defaultDbClient.db),
     users: createUserRepository(defaultDbClient.db),
+    memberships: createWorkspaceMembershipRepository(defaultDbClient.db),
     workItems: createWorkItemRepository(defaultDbClient.db),
     proposals: getDefaultProposalService(),
     approvalComments: createApprovalCommentRepository(defaultDbClient.db),
@@ -549,6 +553,7 @@ function auditEntity(row: ApprovalRequestRow) {
 
 export function createApprovalService(deps: ApprovalServiceDependencies = getDefaultApprovalServiceDependencies()) {
   const now = deps.now ?? (() => new Date());
+  const memberships = deps.memberships === false ? undefined : deps.memberships;
 
   async function auditApprovalAction(
     row: ApprovalRequestRow,
@@ -1108,12 +1113,28 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       ensureCanActOnApproval(approval, actor);
 
       // L#48：委派目标必须是真实存在的活跃用户，否则审批会被路由进黑洞或转给非法 id。
-      let target: UserAuthRow | null = null;
-      if (deps.users) {
-        target = await deps.users.findActiveById(toUserId);
-        if (!target) {
-          throw new ApprovalServiceError(404, "delegate_target_not_found", "找不到要转交的成员。");
-        }
+      if (!deps.users) {
+        throw new ApprovalServiceError(
+          503,
+          "delegate_user_directory_unavailable",
+          "成员目录暂时无法校验，审批没有被转交。"
+        );
+      }
+      const target = await deps.users.findActiveById(toUserId);
+      if (!target) {
+        throw new ApprovalServiceError(404, "delegate_target_not_found", "找不到要转交的成员。");
+      }
+
+      if (!memberships) {
+        throw new ApprovalServiceError(
+          503,
+          "delegate_membership_unavailable",
+          "成员资格暂时无法校验，审批没有被转交。"
+        );
+      }
+      const targetMembership = await memberships.findActiveForUserWorkspace(toUserId, actor.workspaceId);
+      if (!targetMembership) {
+        throw new ApprovalServiceError(404, "delegate_target_not_found", "找不到要转交的成员。");
       }
 
       // 与 routeApprover/usableCandidate 一致的转交守卫：审批挂在某个工作项上时，转交目标必须
@@ -1125,9 +1146,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
           if (toUserId === workItem.submitterUserId) {
             throw new ApprovalServiceError(422, "delegate_to_requester", "不能把审批转交回发起人。");
           }
-          // target 可能未取（无 deps.users 的旧夹具）——此时回退到仅凭 id 构造可见性主体。
-          const candidate = target ?? ({ id: toUserId } as Pick<UserAuthRow, "id">);
-          if (!canViewWorkItemRecord(toWorkItemAccessRecord(workItem), candidate, {
+          if (!canViewWorkItemRecord(toWorkItemAccessRecord(workItem), target, {
             orgId: actor.orgId,
             workspaceId: actor.workspaceId
           })) {

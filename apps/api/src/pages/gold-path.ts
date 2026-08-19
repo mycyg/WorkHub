@@ -108,7 +108,7 @@ const generatedEnglishCopy = new Map<string, string>([
   ["2 个交付物、3 条证据、可回滚；点同意后才会进入正式交付。", "2 deliverables, 3 evidence refs, reversible. It enters official delivery only after approval."],
   ["打回必须写原因，AI assistant 会把原因放进下一轮修改上下文。", "A rejection needs a reason; AI assistant will use it in the next revision context."],
   ["打开审批", "Open approval"],
-  ["同意", "Approve"],
+  ["通过", "Approve"],
   ["AI assistant 写好了区域发布复盘包模板", "AI assistant drafted the regional launch review template"],
   ["请看一下这份非代码变更申请：2 个交付物、3 条证据、可回滚。", "Review this non-code change request: 2 deliverables, 3 evidence refs, reversible."],
   ["需要你决定采纳还是打回。", "Decide whether to accept it or request changes."],
