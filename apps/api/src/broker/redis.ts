@@ -141,20 +141,50 @@ export class RedisPushBus implements PushBus {
       return;
     }
 
-    this.connecting ??= this.connect().catch((error) => {
-      this.connecting = undefined;
-      throw error;
-    });
+    // connecting 必须在【成功】后也清空——否则首次建连留下的已解决 Promise 会让后续所有
+    // 「isOpen=false → 重连」路径空等旧 Promise，重建永远不发生（断线即永久失聪）。
+    this.connecting ??= this.connect().then(
+      () => {
+        this.connecting = undefined;
+      },
+      (error) => {
+        this.connecting = undefined;
+        throw error;
+      }
+    );
     await this.connecting;
   }
 
   private async connect() {
-    this.publisher = this.clientFactory(this.url);
-    this.subscriber = this.publisher.duplicate();
-    this.publisher.on("error", (error) => console.error("Redis publisher error", error));
-    this.subscriber.on("error", (error) => console.error("Redis subscriber error", error));
-    await this.publisher.connect();
-    await this.subscriber.connect();
+    // INF-04：这里是「isOpen=false 后的重建」路径（Redis 抖动/断线）。两个坑必须一起堵：
+    // 1) 旧客户端不 quit 会泄漏连接——先退出再重建；
+    // 2) subscribe() 只在「新 topic」时下发订阅（handlers 命中即跳过），所以新 subscriber 必须在
+    //    这里按 handlers 注册表把断线前的 topic 全部补订，否则所有在线 SSE 永久失聪。
+    const stalePublisher = this.publisher;
+    const staleSubscriber = this.subscriber;
+    this.publisher = undefined;
+    this.subscriber = undefined;
+    await staleSubscriber?.quit().catch((error) => console.error("Redis subscriber quit failed", error));
+    await stalePublisher?.quit().catch((error) => console.error("Redis publisher quit failed", error));
+
+    const publisher = this.clientFactory(this.url);
+    const subscriber = publisher.duplicate();
+    publisher.on("error", (error) => console.error("Redis publisher error", error));
+    subscriber.on("error", (error) => console.error("Redis subscriber error", error));
+    try {
+      await publisher.connect();
+      await subscriber.connect();
+      for (const [topic, handler] of this.handlers) {
+        await subscriber.subscribe(topic, handler);
+      }
+    } catch (error) {
+      // 连接/补订失败：退出半成品客户端并保持字段为空——下次 ensureConnected 会重走完整重建。
+      await subscriber.quit().catch(() => undefined);
+      await publisher.quit().catch(() => undefined);
+      throw error;
+    }
+    this.publisher = publisher;
+    this.subscriber = subscriber;
   }
 
   private async withTopicLock<T>(topic: string, operation: () => Promise<T>): Promise<T> {

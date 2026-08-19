@@ -20,7 +20,7 @@ export function createPlaceholderView(id: CommandId): SpotlightCapabilityView {
         <span class="wh-spot-placeholder-icon">${cmd?.icon ?? ""}</span>
         <h3 class="wh-spot-placeholder-title">${escapeHtml(label)}</h3>
         <p class="wh-spot-placeholder-sub">${escapeHtml(hint)}</p>
-        <p class="wh-spot-placeholder-note">${zh ? "这个能力正在接入苹果聚焦盒，马上就好 (=^･ω･^=)" : "Wiring this capability into the box — almost there (=^･ω･^=)"}</p>
+        <p class="wh-spot-placeholder-note">${zh ? "这个能力正在接入苹果聚焦盒，马上就好。" : "Wiring this capability into the box — almost there."}</p>
       </div>`;
       ctx.requestResize();
     }

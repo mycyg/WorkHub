@@ -6,6 +6,7 @@ import type { WorkItemStatus } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
 import {
+  chatMessages,
   projects,
   proactiveIntents,
   workItemAssignments,
@@ -428,4 +429,61 @@ export async function listDdlChaseCandidates(
     }
   }
   return candidates;
+}
+
+// ── CHAT-8（澄清待答兜底）：长时间无人回答的澄清会话扫描 ─────────────────────────────────────────
+
+export type StaleClarificationWorkItemRow = {
+  workItemId: string;
+  code: string;
+  title: string | null;
+  submitterUserId: string;
+  projectId: string;
+  workspaceId: string | null;
+  createdAt: Date;
+};
+
+// 扫「澄清中(ai_clarifying)、建单早于 olderThan、且至今没有任何 clarification_answer」的工作项——
+// 用户建完会话就走开、澄清问题一直没人答的兜底（服务层据此给提交人落一条提醒通知，dedupe 幂等）。
+// 「已答但未定稿」不算滞留（confirm 阶段是用户自己的下一步）；已软删/已离澄清态的自然退出。
+// 与 listDdlChaseCandidates 同结构：一次拉候选工作项（limit 封顶，防积压拖垮）+ 一批查回答（IN 候选 id），
+// JS 归并剔除已答的——避免 NOT EXISTS 相关子查询（仓内查询记录器测试底座不建模子查询，且两次往返足够小）。
+export async function listStaleClarificationWorkItems(
+  db: WorkHubDb,
+  input: { olderThan: Date; limit: number }
+): Promise<StaleClarificationWorkItemRow[]> {
+  const rows = await db
+    .select({
+      workItemId: workItems.id,
+      code: workItems.code,
+      title: workItems.title,
+      submitterUserId: workItems.submitterUserId,
+      projectId: workItems.projectId,
+      workspaceId: workItems.workspaceId,
+      createdAt: workItems.createdAt
+    })
+    .from(workItems)
+    .where(
+      and(
+        eq(workItems.status, "ai_clarifying"),
+        isNull(workItems.deletedAt),
+        lt(workItems.createdAt, input.olderThan)
+      )
+    )
+    .orderBy(asc(workItems.createdAt))
+    .limit(input.limit);
+  if (rows.length === 0) {
+    return rows;
+  }
+  const answeredRows = await db
+    .select({ workItemId: chatMessages.workItemId })
+    .from(chatMessages)
+    .where(
+      and(
+        inArray(chatMessages.workItemId, rows.map((row) => row.workItemId)),
+        eq(chatMessages.kind, "clarification_answer")
+      )
+    );
+  const answeredIds = new Set(answeredRows.map((row) => row.workItemId));
+  return rows.filter((row) => !answeredIds.has(row.workItemId));
 }

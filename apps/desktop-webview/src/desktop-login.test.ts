@@ -9,6 +9,7 @@ import {
   readDesktopAuthModeHint,
   rememberDesktopAuthModeHint,
   renderDesktopCredentialGateHtml,
+  runDesktopBootstrapWithLock,
   runDesktopCredentialLogin,
   type DesktopLoginClient
 } from "./desktop-login.js";
@@ -194,4 +195,137 @@ test("desktop auth-mode hint round-trips through storage and rejects junk", () =
   assert.equal(readDesktopAuthModeHint(storage), "nickname");
   storage.setItem("workhub_auth_mode", "bogus");
   assert.equal(readDesktopAuthModeHint(storage), null);
+});
+
+// —— DSK-07：跨窗启动锁（localStorage lease） —— //
+
+function lockTestHarness(initial: Record<string, string> = {}) {
+  const { storage, values } = fakeReadWriteStorage(initial);
+  let now = 1_000;
+  return {
+    storage,
+    values,
+    now: () => now,
+    advance: (ms: number) => {
+      now += ms;
+    },
+    sleep: async (ms: number) => {
+      now += ms;
+    }
+  };
+}
+
+test("runDesktopBootstrapWithLock: first caller acquires, runs, and releases its own lock", async () => {
+  const h = lockTestHarness();
+  const runs: string[] = [];
+
+  const result = await runDesktopBootstrapWithLock({
+    storage: h.storage,
+    readToken: () => undefined,
+    run: async () => {
+      runs.push("run");
+      return "ready";
+    },
+    now: h.now,
+    sleep: h.sleep
+  });
+
+  assert.deepEqual(result, { kind: "ran", result: "ready" });
+  assert.deepEqual(runs, ["run"]);
+  // 释放：锁不残留（别的窗口之后能正常抢）。
+  assert.equal(h.values.get("workhub_desktop_bootstrap_lock"), undefined);
+});
+
+test("runDesktopBootstrapWithLock: loser of the lock polls and picks up the winner's token instead of re-running", async () => {
+  const h = lockTestHarness();
+  // 模拟胜者持有锁（新鲜）。
+  h.storage.setItem("workhub_desktop_bootstrap_lock", `winner@${h.now() + 10_000}`);
+  let polls = 0;
+  const runs: string[] = [];
+
+  const result = await runDesktopBootstrapWithLock({
+    storage: h.storage,
+    readToken: () => {
+      polls += 1;
+      // 第二次重读时胜者已落盘。
+      return polls >= 2 ? "winner-token" : undefined;
+    },
+    run: async () => {
+      runs.push("run");
+      return "ready";
+    },
+    now: h.now,
+    sleep: h.sleep,
+    pollMs: 50
+  });
+
+  assert.deepEqual(result, { kind: "token-ready", token: "winner-token" });
+  assert.deepEqual(runs, [], "loser must not bootstrap again");
+  // 败者不碰别人的锁。
+  assert.ok(h.values.get("workhub_desktop_bootstrap_lock")?.startsWith("winner@"));
+});
+
+test("runDesktopBootstrapWithLock: takes over an expired lock when the winner died without releasing", async () => {
+  const h = lockTestHarness();
+  // 胜者崩了：锁已过期、token 没落盘。
+  h.storage.setItem("workhub_desktop_bootstrap_lock", `dead-winner@${h.now() - 1}`);
+  const runs: string[] = [];
+
+  const result = await runDesktopBootstrapWithLock({
+    storage: h.storage,
+    readToken: () => undefined,
+    run: async () => {
+      runs.push("run");
+      return "ready";
+    },
+    now: h.now,
+    sleep: h.sleep
+  });
+
+  assert.deepEqual(result, { kind: "ran", result: "ready" });
+  assert.deepEqual(runs, ["run"]);
+  assert.equal(h.values.get("workhub_desktop_bootstrap_lock"), undefined, "own lock released after takeover run");
+});
+
+test("runDesktopBootstrapWithLock: gives up as busy when the lock stays fresh and no token lands", async () => {
+  const h = lockTestHarness();
+  // 胜者持有锁且在整个等待窗口内保持新鲜。
+  h.storage.setItem("workhub_desktop_bootstrap_lock", `winner@${h.now() + 60_000}`);
+  let runs = 0;
+  const result = await runDesktopBootstrapWithLock({
+    storage: h.storage,
+    readToken: () => undefined,
+    run: async () => {
+      runs += 1;
+      return "ready";
+    },
+    now: h.now,
+    sleep: (ms) => {
+      h.advance(ms);
+      return Promise.resolve();
+    },
+    waitMs: 500,
+    pollMs: 100
+  });
+
+  assert.deepEqual(result, { kind: "busy" });
+  assert.equal(runs, 0);
+  // 败者不碰别人的锁。
+  assert.ok(h.values.get("workhub_desktop_bootstrap_lock")?.startsWith("winner@"));
+});
+
+test("runDesktopBootstrapWithLock: run failure still releases the lock (TTL is only a backstop)", async () => {
+  const h = lockTestHarness();
+  await assert.rejects(() =>
+    runDesktopBootstrapWithLock({
+      storage: h.storage,
+      readToken: () => undefined,
+      run: async () => {
+        throw new Error("backend offline");
+      },
+      now: h.now,
+      sleep: h.sleep
+    })
+  );
+  assert.equal(h.values.get("workhub_desktop_bootstrap_lock"), undefined);
 });

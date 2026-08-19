@@ -140,6 +140,7 @@ export type CuuCopyKey =
   | "notice.prefix"
   | "action.reasonRequired"
   | "action.approved"
+  | "action.runAborted"
   | "action.memoryConflictResolved"
   | "action.denied"
   | "action.evidenceFound"
@@ -203,6 +204,7 @@ export type CuuCopyKey =
   | "pet.selectedFallback"
   | "pet.optionRequired"
   | "pet.reasonRequired"
+  | "pet.abortRunConfirm"
   | "pet.reasonDefault"
   | "pet.actionFail"
   | "pet.action.approve"
@@ -322,14 +324,14 @@ const cuuCopy = {
     "budget.scope.objective": "目标预算",
     "budget.scope.user": "个人预算",
     "budget.scope.team": "团队预算",
-    "budget.scope.curation": "蒸馏预算",
+    "budget.scope.curation": "AI 自学预算",
     "budget.scope.eval": "评测预算",
     "budget.scopeDesc.workitem": "当前任务",
     "budget.scopeDesc.task": "当前任务计划",
     "budget.scopeDesc.objective": "当前目标",
     "budget.scopeDesc.user": "当前用户",
     "budget.scopeDesc.team": "当前团队",
-    "budget.scopeDesc.curation": "团队蒸馏范围",
+    "budget.scopeDesc.curation": "团队自学范围",
     "budget.scopeDesc.eval": "评测范围",
     "budget.handle": "处理预算",
     "budget.view": "查看预算",
@@ -361,19 +363,22 @@ const cuuCopy = {
     "offline.closedMessage": "Cuu 会安静等连接回来，重要事项不会被丢掉。",
     "offline.retryingChip": "重连中",
     "offline.closedChip": "已断开",
+    // CHAT-10：与 web 端同 key 文案对齐（以 packages/ui/src/gold-path/i18n.ts 为准）——同一件事
+    // 在桌宠和 web 端必须说同一句话。
     "state.idle": "待命",
-    "state.thinking": "思考中",
-    "state.asking_approval": "等你点选",
-    "state.carrying_document": "拿来变更",
-    "state.searching_evidence": "找到证据",
+    "state.thinking": "整理中",
+    "state.asking_approval": "等你点一下",
+    "state.carrying_document": "带着交付物",
+    "state.searching_evidence": "找证据",
     "state.syncing_files": "同步中",
     "state.worried": "需要留意",
     "state.revision_requested": "继续修改",
-    "state.celebrating": "完成了",
+    "state.celebrating": "完成啦",
     "state.offline": "离线",
     "notice.prefix": "Cuu：{title}",
     "action.reasonRequired": "打回需要先选择一个原因。",
     "action.approved": "Cuu 已收到：这步已批准。",
+    "action.runAborted": "Cuu 已收到：这次执行已中止，AI 已做的工作会保留。",
     "action.memoryConflictResolved": "偏好冲突已处理，Cuu 记好了～",
     "action.denied": "Cuu 已带着原因打回，会继续改。",
     "action.evidenceFound": "Cuu 找到了一组项目证据。",
@@ -437,6 +442,7 @@ const cuuCopy = {
     "pet.selectedFallback": "已调整选项，点确认继续。",
     "pet.optionRequired": "先点一个选项，Cuu 再继续。",
     "pet.reasonRequired": "先点一个原因，Cuu 会带着它继续改。",
+    "pet.abortRunConfirm": "确定中止？AI 已做的工作会保留，但不会继续——再点一次「取消执行」确认。",
     "pet.reasonDefault": "需要调整",
     "pet.actionFail": "动作提交失败，请稍后再试。",
     "pet.action.approve": "同意",
@@ -457,7 +463,7 @@ const cuuCopy = {
     "pet.kind.evidence": "证据",
     "pet.kind.budget": "预算",
     "pet.kind.sync": "同步",
-    "pet.kind.trace": "进度",
+    "pet.kind.trace": "进度", // term-allow: 词典 key 标识符，非用户可见文案
     "pet.kind.completion": "完成",
     "pet.kind.offline": "离线",
     "pet.kind.bubble": "提醒",
@@ -594,11 +600,12 @@ const cuuCopy = {
     "offline.closedMessage": "Cuu will wait quietly for the connection to recover. Important items will not be lost.",
     "offline.retryingChip": "Reconnecting",
     "offline.closedChip": "Disconnected",
+    // CHAT-10: same keys as the web gold-path i18n (packages/ui/src/gold-path/i18n.ts is authoritative).
     "state.idle": "Idle",
-    "state.thinking": "Thinking",
+    "state.thinking": "Organizing",
     "state.asking_approval": "Waiting for you",
-    "state.carrying_document": "Change ready",
-    "state.searching_evidence": "Evidence found",
+    "state.carrying_document": "Carrying a draft",
+    "state.searching_evidence": "Finding evidence",
     "state.syncing_files": "Syncing",
     "state.worried": "Needs attention",
     "state.revision_requested": "Revising",
@@ -607,6 +614,7 @@ const cuuCopy = {
     "notice.prefix": "Cuu: {title}",
     "action.reasonRequired": "Choose a reason before sending it back.",
     "action.approved": "Cuu got it: this step is approved.",
+    "action.runAborted": "Cuu got it: the run was aborted; work done so far is kept.",
     "action.memoryConflictResolved": "Memory conflict resolved — Cuu noted it.",
     "action.denied": "Sent back; Cuu will revise.",
     "action.evidenceFound": "Cuu found a set of project evidence.",
@@ -670,6 +678,7 @@ const cuuCopy = {
     "pet.selectedFallback": "Selection updated. Confirm to continue.",
     "pet.optionRequired": "Choose one option before Cuu continues.",
     "pet.reasonRequired": "Choose one reason so Cuu can revise with it.",
+    "pet.abortRunConfirm": "Abort? Work done so far is kept, but it won't continue — click \"Cancel run\" again to confirm.",
     "pet.reasonDefault": "Needs adjustment",
     "pet.actionFail": "Action failed. Please try again later.",
     "pet.action.approve": "Approve",

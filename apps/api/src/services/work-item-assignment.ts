@@ -13,10 +13,14 @@ import {
 } from "@workhub/permissions";
 import type { Assignment, AssignWorkItemResult, ClaimWorkItemResult } from "@workhub/contracts";
 import {
+  createAuditLogRepository,
+  createUserRepository,
   createWorkItemAssignmentRepository,
   createWorkItemRepository,
   createWorkspaceMembershipRepository,
   getSharedDatabaseClient,
+  type AuditLogRepository,
+  type UserRepository,
   type WorkItemAccessRow,
   type WorkItemAssignmentRepository,
   type WorkItemAssignmentRow,
@@ -44,6 +48,12 @@ export type WorkItemAssignmentServiceDependencies = {
   workItems: Pick<WorkItemDataRepository, "findWorkItemAccessRecord" | "claimOwnerlessWorkItem">;
   assignments: WorkItemAssignmentRepository;
   memberships: Pick<WorkspaceMembershipRepository, "findActiveForUserWorkspace">;
+  // MRG-13：assign 双查对齐 approvals delegate——membership 只证明「是成员」，不证明「账号还活着」；
+  // 已停用（users.deletedAt 非空）的账号可能留着 active membership。缺失 seam 时 assign fail-closed 503。
+  users?: Pick<UserRepository, "findActiveById"> | undefined;
+  // MRG-10：指派/认领改变工作项归属，必须留审计（否则工作区审计页对它们全盲）。OPTIONAL：单测/老运行时
+  // 缺席时静默跳过；生产 wiring 恒注入。
+  auditLogs?: Pick<AuditLogRepository, "createAuditLog"> | undefined;
   now?: () => Date;
 };
 
@@ -79,6 +89,24 @@ export function createWorkItemAssignmentService(
 ): WorkItemAssignmentService {
   const now = deps.now ?? (() => new Date());
 
+  // MRG-10：审计尽力而为——写失败绝不破坏指派/认领主流程（对齐 workspace-members.ts 的 writeAuditBestEffort）。
+  // workspaceId 落顶层列：工作区审计流（listAuditLogsForWorkspace）按它硬过滤，缺了审计页永远查不到。
+  async function writeAuditBestEffort(
+    entry: Parameters<NonNullable<WorkItemAssignmentServiceDependencies["auditLogs"]>["createAuditLog"]>[0]
+  ): Promise<void> {
+    if (!deps.auditLogs) {
+      return;
+    }
+    try {
+      await deps.auditLogs.createAuditLog(entry);
+    } catch (error) {
+      console.warn(
+        `work item assignment audit write failed (best-effort): action=${entry.action} actor=${entry.actorUserId ?? "?"} workspace=${entry.workspaceId ?? "?"} entity=${entry.entityType}:${entry.entityId}`,
+        error
+      );
+    }
+  }
+
   async function requireAccessRow(workItemId: string): Promise<WorkItemAccessRow> {
     const row = await deps.workItems.findWorkItemAccessRecord(workItemId);
     if (!row) {
@@ -99,6 +127,15 @@ export function createWorkItemAssignmentService(
       if (!workspaceId) {
         throw new WorkItemServiceError(409, "work_item_workspace_missing", "这个事项还没有归属工作区，暂时无法指派。");
       }
+      // MRG-13：双查对齐 approvals delegate——membership 不查 users.deletedAt，已停用账号仍可能留着
+      // active 成员行；先过 findActiveById（只回活跃账号），把「指派给已停用账号」挡在 422。
+      if (!deps.users) {
+        throw new WorkItemServiceError(503, "assign_user_directory_unavailable", "成员目录暂时无法校验，事项没有被指派。");
+      }
+      const assignee = await deps.users.findActiveById(assigneeUserId);
+      if (!assignee) {
+        throw new WorkItemServiceError(422, "assignee_not_active", "被指派人不存在或账号已停用。");
+      }
       const membership = await deps.memberships.findActiveForUserWorkspace(assigneeUserId, workspaceId);
       if (!membership) {
         throw new WorkItemServiceError(422, "assignee_not_member", "被指派人不是这个工作区的成员。");
@@ -109,6 +146,15 @@ export function createWorkItemAssignmentService(
         role: role ?? "collaborator",
         assignedByUserId: actorUserId(actor),
         at: now()
+      });
+      await writeAuditBestEffort({
+        actorKind: "human",
+        actorUserId: actorUserId(actor),
+        workspaceId,
+        entityType: "work_item",
+        entityId: workItemId,
+        action: "work_item.assigned",
+        detailJson: { workspace_id: workspaceId, assignee_user_id: assigneeUserId, role: row.role }
       });
       return { assignment: assignmentVm(row) };
     },
@@ -136,6 +182,15 @@ export function createWorkItemAssignmentService(
         // CAS 落空：已被别人认领 / 已离开可认领状态（并发或过期点击）——不覆盖既有认领人。
         throw new WorkItemServiceError(409, "work_item_not_claimable", "这个事项已被认领或已不在可认领状态。");
       }
+      await writeAuditBestEffort({
+        actorKind: "human",
+        actorUserId: actorUserId(actor),
+        workspaceId,
+        entityType: "work_item",
+        entityId: workItemId,
+        action: "work_item.claimed",
+        detailJson: { workspace_id: workspaceId, claimed_by_user_id: claimed.claimedByUserId ?? actorUserId(actor) }
+      });
       return {
         work_item_id: claimed.id,
         claimed_by_user_id: claimed.claimedByUserId ?? actorUserId(actor)
@@ -153,7 +208,9 @@ export function getDefaultWorkItemAssignmentService(): WorkItemAssignmentService
     defaultService = createWorkItemAssignmentService({
       workItems: createWorkItemRepository(defaultDbClient.db),
       assignments: createWorkItemAssignmentRepository(defaultDbClient.db),
-      memberships: createWorkspaceMembershipRepository(defaultDbClient.db)
+      memberships: createWorkspaceMembershipRepository(defaultDbClient.db),
+      users: createUserRepository(defaultDbClient.db),
+      auditLogs: createAuditLogRepository(defaultDbClient.db)
     });
   }
   return defaultService;

@@ -191,7 +191,7 @@ function budgetDecisionSummary(locale: WorkHubLocale, actionId?: string) {
 }
 
 function delegateSummary(locale: WorkHubLocale) {
-  return locale === "en-US" ? "Escalation delegated." : "已转派升级。";
+  return locale === "en-US" ? "Delegated to another owner." : "已转派给负责人处理。";
 }
 
 function workspaceMatches(row: EscalationServiceRow, actor: AuthActor) {

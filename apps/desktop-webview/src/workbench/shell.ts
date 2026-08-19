@@ -29,7 +29,7 @@ import {
 import { renderConversationTabsHtml } from "./conversation-tabs/render.js";
 import { loadOpenConversationTabs, saveOpenConversationTabs } from "./conversation-tabs/storage.js";
 import { workbenchCss } from "./css.js";
-import { dmMembersFromParticipants, dmPeerParticipant, fetchDmList, openDirectMessage, upsertDmListItem } from "./dm.js";
+import { createDmListReloadCoordinator, dmMembersFromParticipants, dmPeerParticipant, fetchDmList, openDirectMessage, upsertDmListItem } from "./dm.js";
 import { mountProfilePopover, type ProfilePopoverHandle } from "./profile-popover.js";
 import { mountDriveSidePanel, type DriveSidePanelApiClient, type DriveSidePanelHandle } from "./drive/side-panel.js";
 import { mountDriveView, type DriveTabApiClient, type DriveViewHandle } from "./drive/view.js";
@@ -543,31 +543,36 @@ export function mountWorkbenchShell(
   // （消息/已读/presence/turns 全是会话级端点 /api/conversations/:id/*，与容器项目无关）+ 真实参与者集合
   // （已读 N/M 的分母因此收敛成 1/1，而不是拿全工作区成员）。
   let dmListRequestGen = 0;
-  const ensureDmListLoaded = () => {
-    const my = ++dmListRequestGen;
-    return fetchDmList(input.client)
-      .then((result) => {
-        if (disposed || my !== dmListRequestGen) {
-          return;
-        }
-        const selfFromDm = result.items
-          .flatMap((item) => item.participants)
-          .find((participant) => participant.is_self)?.user_id;
-        store.setState({
-          dmList: result.items,
-          dmListLoad: "ready",
-          ...(store.getState().currentUserId === undefined && selfFromDm ? { currentUserId: selfFromDm } : {})
+  // MRG-21：在飞单例 + 数秒冷却（createDmListReloadCoordinator）——未知会话通知的补拉（/me 流 bump 未命中，
+  // 见下）在别的项目每条消息都触发一次，不加闸门会每条消息全量拉一次 /api/dm/list 打爆后端。在飞复用同一
+  // promise；冷却期内的非强制调用跳过；force（深链兜底 tryOpenDmByConversationId）绕过冷却但仍共享在飞请求。
+  const ensureDmListLoaded = createDmListReloadCoordinator({
+    load: () => {
+      const my = ++dmListRequestGen;
+      return fetchDmList(input.client)
+        .then((result) => {
+          if (disposed || my !== dmListRequestGen) {
+            return;
+          }
+          const selfFromDm = result.items
+            .flatMap((item) => item.participants)
+            .find((participant) => participant.is_self)?.user_id;
+          store.setState({
+            dmList: result.items,
+            dmListLoad: "ready",
+            ...(store.getState().currentUserId === undefined && selfFromDm ? { currentUserId: selfFromDm } : {})
+          });
+          // R16-W4b2：DM 列表就绪也能给出 workspace/user 作用域（dm-only 冷启动 vm 还没加载时的兜底恢复点）。
+          maybeRestoreTabs();
+        })
+        .catch(() => {
+          if (disposed || my !== dmListRequestGen) {
+            return;
+          }
+          store.setState({ dmListLoad: "error" });
         });
-        // R16-W4b2：DM 列表就绪也能给出 workspace/user 作用域（dm-only 冷启动 vm 还没加载时的兜底恢复点）。
-        maybeRestoreTabs();
-      })
-      .catch(() => {
-        if (disposed || my !== dmListRequestGen) {
-          return;
-        }
-        store.setState({ dmListLoad: "error" });
-      });
-  };
+    }
+  });
 
   // R15 批 A6（rail 未读红点）：当前中栏正打开的是哪条会话——me-stream 收到该会话新消息通知时不给它加
   // 未读（用户在看、它有自己的会话流、读游标在推进）。main 会话没有独立 id 字段，从 vm 里按 kind 找。
@@ -774,7 +779,8 @@ export function mountWorkbenchShell(
       openDmConversation(conversationId);
       return true;
     }
-    await ensureDmListLoaded();
+    // MRG-21：深链兜底必须真等一次新鲜列表——force 绕过冷却（在飞时仍共享同一请求）。
+    await ensureDmListLoaded({ force: true });
     if (disposed) {
       return false;
     }

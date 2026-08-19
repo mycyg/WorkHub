@@ -131,7 +131,7 @@ export type ProposalSettledNotifier = (input: {
 }) => Promise<void>;
 
 function settledPreviewText(outcome: ProposalSettledOutcome, title: string): string {
-  const label = outcome === "approved" ? "已通过" : outcome === "merged" ? "已合并" : "已打回";
+  const label = outcome === "approved" ? "已通过" : outcome === "merged" ? "已采纳" : "已打回";
   // preview_text 上限 200（事件 schema），标题过长时截断。
   return `${title.slice(0, 160)} ${label}`;
 }

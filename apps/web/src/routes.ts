@@ -1276,8 +1276,24 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
       // 用户自己挑落点（真活跃排序，首项默认）。清单拉取失败退化为原试点兜底（不挡提需求）。
       return { key: "intake", start: true, ...(await intakeProjectChoices(client)) } satisfies WebRouteSurface;
     }
-    const session = await client.getSession(sessionId, withLocale(locale));
-    return { key: "intake", session } satisfies WebRouteSurface;
+    try {
+      const session = await client.getSession(sessionId, withLocale(locale));
+      return { key: "intake", session } satisfies WebRouteSurface;
+    } catch (error) {
+      // CHAT-1/E2E-01：澄清反问缺失/失效（生成失败后可重试）不塌成一句通用「页面加载失败」——
+      // 把服务端的本地化指引原文渲进状态卡正文，动作导回接入起点重新提交（=createSession 重试路径）。
+      if (error instanceof WorkHubApiError && error.code === "clarification_draft_missing") {
+        const tailored: TailoredEmptyRouteState = {
+          status: "empty",
+          titleOverride: locale === "en-US" ? "The clarification question isn't ready" : "澄清问题还没有生成",
+          bodyOverride: error.message,
+          actionHref: "/intake",
+          actionLabel: locale === "en-US" ? "Restart intake" : "重新提交需求"
+        };
+        return tailored;
+      }
+      throw error;
+    }
   }
   if (match.key === "approvals") {
     const approvals = await client.pages.approvals(approvalPageOptions(match, locale));
@@ -1671,6 +1687,17 @@ async function intakeProjectChoices(client: WorkHubApiClient): Promise<{ project
   }
 }
 
+// WEB-01：match.pathname 是 location.pathname 的 URL 编码形态——中文路由（/这个路由不存在）会
+// 原样渲成 %E8%BF%99… 糊在 404 卡的 pill 上。仅展示层解码；非法编码序列 decodeURIComponent 会抛，
+// 回落原串——不为展示把错误态页面搞炸。href/actionHref 一律不动（那些必须保持编码形态）。
+function displayPathname(pathname: string): string {
+  try {
+    return decodeURIComponent(pathname);
+  } catch {
+    return pathname;
+  }
+}
+
 export function renderWebRouteState(
   match: WebRouteMatch,
   status: Exclude<WebRouteLoadStatus, "ready">,
@@ -1682,7 +1709,7 @@ export function renderWebRouteState(
     routeKey: match.key,
     state: routeState,
     locale,
-    route: match.pathname,
+    route: displayPathname(match.pathname),
     ...(input.traceId ? { traceId: input.traceId } : {}),
     ...(input.ownerLabel ? { ownerLabel: input.ownerLabel } : {}),
     ...(input.actionHref ? { actionHref: input.actionHref } : {}),

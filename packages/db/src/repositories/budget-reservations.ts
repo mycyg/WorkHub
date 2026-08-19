@@ -22,7 +22,9 @@ export type BudgetReservationScopeInput = {
   scope: BudgetScope;
   scopeKind: BudgetScope["kind"];
   scopeId: string;
-  period: "day" | "month";
+  // CORE-03：period 增加 "total"（军团 task 计划预算，periodBucket 用固定常量 TOTAL_RESERVATION_PERIOD_BUCKET），
+  // 否则 period=total 的策略完全不在原子预留覆盖内，并发子 run 可穿透计划总预算。
+  period: "day" | "month" | "total";
   periodBucket: string;
   capTokens: number;
   capCostCny: string;

@@ -159,7 +159,7 @@ function handoffToJson(handoff: StructuredHandoff | undefined): Record<string, u
   if (!handoff) {
     return {
       done: [],
-      remaining: ["需要查看 AgentRun trace 后确认下一步。"],
+      remaining: ["需要查看这次执行的回放后确认下一步。"],
       next_steps: ["查看执行过程", "决定继续、打回或转人工处理"],
       blockers: [],
       artifacts: [],

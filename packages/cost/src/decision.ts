@@ -171,7 +171,10 @@ function evaluatePolicyUsage(
     tokenOut,
     totalTokens,
     maxTokens: policy.maxTokens,
-    remainingTokens: Math.max(policy.maxTokens - totalTokens, 0),
+    // 上限 <=0 视为「该维度不限」（与上方 tokenRatio/costRatio 特判同口径）：remainingTokens 记
+    // Number.MAX_SAFE_INTEGER 而非 0——否则 constrainRunBudget 会把 run maxTokens 钳到 max(1, min(...))=1，
+    // 挂了 maxTokens=0 策略的 scope 会让每个 run 一步即耗尽、永久卡死。
+    remainingTokens: policy.maxTokens > 0 ? Math.max(policy.maxTokens - totalTokens, 0) : Number.MAX_SAFE_INTEGER,
     estimatedCostCny: formatCny(usedCost),
     maxCostCny: policy.maxCostCny,
     remainingCostCny: formatCny(Math.max(maxCost - usedCost, 0)),

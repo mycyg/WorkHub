@@ -362,6 +362,8 @@ export function createProjectPlanner(options: ProjectPlannerOptions): ProjectPla
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const response = await client.messages.create({
           maxTokens: PROJECT_PLANNER_MAX_TOKENS,
+          // E2E-03：thinking 模型的思维链计入 max_tokens，结构化输出调用关闭 thinking 防截断。
+          disableThinking: true,
           source: "agent_step",
           timeoutMs: PROJECT_PLANNER_TIMEOUT_MS,
           system: "You are WorkHub's project planner. Return strict JSON only. Never include secrets or prose outside JSON.",
@@ -387,6 +389,8 @@ export function createProjectPlanner(options: ProjectPlannerOptions): ProjectPla
         }
         const judgeResponse = await client.messages.create({
           maxTokens: PROJECT_PLANNER_JUDGE_MAX_TOKENS,
+          // E2E-03：thinking 模型的思维链计入 max_tokens，结构化输出调用关闭 thinking 防截断。
+          disableThinking: true,
           source: "agent_step",
           timeoutMs: PROJECT_PLANNER_TIMEOUT_MS,
           system: "You are WorkHub's project-plan judge. Return strict JSON only.",

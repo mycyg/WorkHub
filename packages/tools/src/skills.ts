@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync, existsSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -12,6 +13,10 @@ export type SkillMeta = {
   name: string;
   description: string;
   whenToUse: string;
+  /** 分层发现时标注来源层（listSkills 单目录调用时不填）。 */
+  layer?: SkillLayer;
+  /** 分层优先级：数值越小层级越高（project 100 > user 200 > bundled 600）。 */
+  rank?: number;
 };
 
 const skillsRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "skills");
@@ -64,15 +69,108 @@ export function listSkills(root = skillsRoot): SkillMeta[] {
   return skills;
 }
 
-export function loadSkillContent(id: string, root = skillsRoot): string | undefined {
+export function loadSkillContent(id: string, root: string | LayeredSkillOptions = skillsRoot): string | undefined {
   if (!/^[a-z0-9-]+$/u.test(id)) {
     return undefined;
   }
-  const skillPath = path.join(root, id, "SKILL.md");
-  if (!existsSync(skillPath)) {
-    return undefined;
+  if (typeof root === "string") {
+    const skillPath = path.join(root, id, "SKILL.md");
+    if (!existsSync(skillPath)) {
+      return undefined;
+    }
+    return readFileSync(skillPath, "utf8");
   }
-  return readFileSync(skillPath, "utf8");
+  // 分层解析：同 id 取 rank 最小（层级最高）的一层内容。
+  const layers = resolveSkillLayers(root).sort((left, right) => left.rank - right.rank);
+  for (const { root: layerRoot } of layers) {
+    const skillPath = path.join(layerRoot, id, "SKILL.md");
+    if (existsSync(skillPath)) {
+      return readFileSync(skillPath, "utf8");
+    }
+  }
+  return undefined;
+}
+
+// ─── 分层技能发现（参考 deepseek-harness：项目级 > 用户级 > 内置） ───
+
+export type SkillLayer = "project" | "user" | "bundled";
+
+export type LayeredSkillOptions = {
+  /** 项目级技能目录，默认 <repo>/.workhub/skills（env: WORKHUB_SKILLS_PROJECT_DIR 覆盖）。 */
+  projectRoot?: string;
+  /** 用户级技能目录，默认 ~/.workhub/skills（env: WORKHUB_SKILLS_USER_DIR 覆盖）。 */
+  userRoot?: string;
+  /** 内置（bundled）技能目录，默认 packages/tools/skills。 */
+  bundledRoot?: string;
+};
+
+const SKILL_LAYER_RANKS: Record<SkillLayer, number> = {
+  project: 100,
+  user: 200,
+  bundled: 600
+};
+
+/** 从 start 向上找最近的 .git 所在目录作为 repo 根；找不到则回落 start 本身。 */
+function findRepoRoot(start: string): string {
+  let dir = path.resolve(start);
+  for (;;) {
+    if (existsSync(path.join(dir, ".git"))) {
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      return path.resolve(start);
+    }
+    dir = parent;
+  }
+}
+
+/**
+ * 解析三层技能目录。env 覆盖直接在此处读取（WORKHUB_SKILLS_PROJECT_DIR /
+ * WORKHUB_SKILLS_USER_DIR）：@workhub/tools 不依赖 @workhub/config，为其接入
+ * envSchema 成本高于收益；如需统一纳管，后续再把这两个键加进 config 的 envSchema。
+ */
+export function resolveSkillLayers(
+  options: LayeredSkillOptions = {}
+): Array<{ layer: SkillLayer; rank: number; root: string }> {
+  const projectRoot =
+    options.projectRoot ??
+    process.env.WORKHUB_SKILLS_PROJECT_DIR ??
+    path.join(findRepoRoot(process.cwd()), ".workhub", "skills");
+  const userRoot =
+    options.userRoot ??
+    process.env.WORKHUB_SKILLS_USER_DIR ??
+    path.join(os.homedir(), ".workhub", "skills");
+  const bundledRoot = options.bundledRoot ?? skillsRoot;
+  return [
+    { layer: "project", rank: SKILL_LAYER_RANKS.project, root: projectRoot },
+    { layer: "user", rank: SKILL_LAYER_RANKS.user, root: userRoot },
+    { layer: "bundled", rank: SKILL_LAYER_RANKS.bundled, root: bundledRoot }
+  ];
+}
+
+// 缓存键 = 三层根目录组合，保证不同层组合互不串缓存。
+const layeredSkillsCache = new Map<string, SkillMeta[]>();
+
+/** 按 rank 合并三层技能：同 id 高层（rank 小）覆盖低层；返回的 SkillMeta 带 layer 与 rank。 */
+export function listLayeredSkills(options: LayeredSkillOptions = {}): SkillMeta[] {
+  const layers = resolveSkillLayers(options);
+  const cacheKey = layers.map((layer) => layer.root).join("\0");
+  const cached = layeredSkillsCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+  const byId = new Map<string, SkillMeta>();
+  // 低层先写、高层后写，实现同 id 高层覆盖低层。
+  const ordered = [...layers].sort((left, right) => right.rank - left.rank);
+  for (const { layer, rank, root } of ordered) {
+    for (const skill of listSkills(root)) {
+      byId.set(skill.id, { ...skill, layer, rank });
+    }
+  }
+  const skills = [...byId.values()].sort((left, right) => left.id.localeCompare(right.id));
+  layeredSkillsCache.set(cacheKey, skills);
+  return skills;
 }
 
 /** 把技能列表格式化成工人 system prompt 的技能目录（id + 适用场景一句话）。 */

@@ -5,7 +5,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { WorkHubLocale } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
-import { users } from "../schema/index.js";
+import { users, workspaceMemberships } from "../schema/index.js";
 
 export type UserAuthRow = typeof users.$inferSelect;
 
@@ -47,6 +47,12 @@ export type UserRepository = {
   // R10-P2-5（委派选人器）：活跃成员简表（id+昵称+admin），按昵称排序、上限 200——只暴露转交
   // 所需的最小字段。OPTIONAL（假仓库不实现则 /api/users 回 501，前端选人器降级隐藏）。
   listActiveRefs?: () => Promise<Array<Pick<UserAuthRow, "id" | "nickname" | "isAdmin">>>;
+  // R11 Batch 0（工作区级成员目录）：同 listActiveRefs 但按工作区收拢——只返回该工作区有
+  // active membership 且未软删的用户，杜绝跨工作区成员枚举。OPTIONAL（同 listActiveRefs 的
+  // 501 降级范式）；实现存在时 /api/users 优先用它。
+  listActiveRefsForWorkspace?: (
+    workspaceId: string
+  ) => Promise<Array<Pick<UserAuthRow, "id" | "nickname" | "isAdmin">>>;
   // R14 批 AVATAR（头像与资料入口）：写入/清空/读取用户头像二进制。setAvatar 覆盖写（含
   // avatarUpdatedAt，兼作 GET 端点的 ETag 源）；clearAvatar 回退「无头像」（渲染层回退首字母
   // 色块 tile）；findAvatar 只取头像相关两列，避免整行 SELECT * 把 bytea 意外带进不需要它的查询。
@@ -63,6 +69,20 @@ export function createUserRepository(db: WorkHubDb): UserRepository {
         .select({ id: users.id, nickname: users.nickname, isAdmin: users.isAdmin })
         .from(users)
         .where(isNull(users.deletedAt))
+        .orderBy(users.nickname)
+        .limit(200);
+      return rows;
+    },
+
+    async listActiveRefsForWorkspace(workspaceId) {
+      const rows = await db
+        .select({ id: users.id, nickname: users.nickname, isAdmin: users.isAdmin })
+        .from(users)
+        .innerJoin(
+          workspaceMemberships,
+          and(eq(workspaceMemberships.userId, users.id), eq(workspaceMemberships.workspaceId, workspaceId))
+        )
+        .where(and(isNull(users.deletedAt), isNull(workspaceMemberships.deletedAt)))
         .orderBy(users.nickname)
         .limit(200);
       return rows;

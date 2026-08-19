@@ -33,8 +33,8 @@ export function buildStructuredHandoff(input: {
 }): StructuredHandoff {
   return {
     done: input.steps.slice(-5).map(summarizeStep),
-    remaining: ["需要人工或经理模式确认剩余目标是否仍成立。"],
-    nextSteps: ["查看 AgentRun trace", "确认已有半成品", "决定继续、打回或转人工处理"],
+    remaining: ["需要负责人确认剩余目标是否仍成立。"],
+    nextSteps: ["查看这次执行的回放", "确认已有半成品", "决定继续、打回或转人工处理"],
     blockers: [input.reason],
     artifacts: artifactPaths(input.steps),
     budgetHit: input.budgetHit

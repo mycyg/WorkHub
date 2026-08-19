@@ -413,6 +413,34 @@ test("replay renderer omits the snapshot list when there is no run id or no snap
   assert.equal(renderAgentRunReplay(noRunId, "web").html.includes('data-action-id="revert_agent_run"'), false);
 });
 
+// WIRE-07：中止执行入口只出现在进行中（queued/running）的 run 上；终态 run 一律不出按钮。
+test("replay renderer offers an abort action only while the run is active", () => {
+  const base = replayWithStructuredFields();
+  const runId = (base.run as { id?: string }).id!;
+  assert.ok(runId, "fixture run must carry an id");
+  const withStatus = (status: string): ReplayTraceVM => ({
+    ...base,
+    run: { ...base.run, status } as ReplayTraceVM["run"]
+  });
+
+  for (const status of ["queued", "running"]) {
+    const rendered = renderAgentRunReplay(withStatus(status), "web");
+    assert.equal(rendered.html.includes('data-action-id="abort_agent_run"'), true, `${status} must offer abort`);
+    assert.equal(rendered.html.includes(`href="/api/agent-runs/${runId}/abort"`), true);
+    assert.equal(rendered.html.includes('data-method="POST"'), true);
+    assert.equal(rendered.html.includes(`data-replay-abort-run="${runId}"`), true);
+    assert.equal(rendered.html.includes("中止执行"), true);
+  }
+  for (const status of ["succeeded", "failed", "escalated", "cancelled"]) {
+    const rendered = renderAgentRunReplay(withStatus(status), "web");
+    assert.equal(rendered.html.includes('data-action-id="abort_agent_run"'), false, `${status} must not offer abort`);
+  }
+  // 桌面面同样渲染（按钮标记一致，由桌面壳的分发接）。
+  const desktop = renderAgentRunReplay(withStatus("running"), "desktop", { locale: "en-US" });
+  assert.equal(desktop.html.includes('data-action-id="abort_agent_run"'), true);
+  assert.equal(desktop.html.includes("Abort run"), true);
+});
+
 test("decideSnapshotRevertConfirmation arms first, executes on the second click of the same snapshot", () => {
   assert.deepEqual(decideSnapshotRevertConfirmation(undefined, "snap-1"), { kind: "arm", snapshotId: "snap-1" });
   assert.deepEqual(decideSnapshotRevertConfirmation("snap-1", "snap-1"), { kind: "execute", snapshotId: "snap-1" });

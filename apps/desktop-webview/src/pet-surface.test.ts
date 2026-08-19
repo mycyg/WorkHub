@@ -665,6 +665,10 @@ type FakePetDomEvent = {
   readonly target: FakePetDomElement;
   defaultPrevented: boolean;
   preventDefault: () => void;
+  // CHAT-10：键盘事件字段（Enter 发送用）；鼠标事件不填。
+  key?: string;
+  shiftKey?: boolean;
+  isComposing?: boolean;
 };
 
 type FakePetDomListener = (event: FakePetDomEvent) => void | Promise<void>;
@@ -698,6 +702,22 @@ class FakePetDomRoot extends FakePetDomElement {
     if (selector === "[data-pet-free-text]" && this.innerHTML.includes('data-pet-free-text="true"')) {
       return new FakePetDomElement("textarea", { "data-pet-free-text": "true" }, this.petFreeTextValue) as unknown as T;
     }
+    // CHAT-10：Enter 发送会查卡片的主提交锚点并 click() 它。从 innerHTML 里抠出真实 href 造成元素，
+    // click() 转发回根节点的点击管线（与真实 DOM 的事件冒泡一致）。
+    if (selector === '[data-cuu-action-id="submit_option"], [data-cuu-action-id="start_agent_from_cuu"]') {
+      for (const actionId of ["submit_option", "start_agent_from_cuu"]) {
+        const href = new RegExp(`href="([^"]+)"[^>]*data-cuu-action-id="${actionId}"`, "u").exec(this.innerHTML)?.[1];
+        if (href) {
+          const anchor = new FakePetDomElement("a", { href, "data-cuu-action-id": actionId }) as FakePetDomElement & {
+            click: () => void;
+          };
+          anchor.click = () => {
+            void this.click(anchor);
+          };
+          return anchor as unknown as T;
+        }
+      }
+    }
     return null;
   }
 
@@ -714,6 +734,22 @@ class FakePetDomRoot extends FakePetDomElement {
       }
     };
     for (const listener of this.listeners.get("click") ?? []) {
+      await listener(event);
+    }
+    return event;
+  }
+
+  // CHAT-09：click 之外的通用事件分发（自由文本框的 input 事件、CHAT-10 的 keydown 用它驱动）。
+  async emit(type: string, target: FakePetDomElement, extra: Partial<FakePetDomEvent> = {}) {
+    const event: FakePetDomEvent = {
+      target,
+      defaultPrevented: false,
+      preventDefault() {
+        event.defaultPrevented = true;
+      },
+      ...extra
+    };
+    for (const listener of this.listeners.get(type) ?? []) {
       await listener(event);
     }
     return event;
@@ -992,6 +1028,7 @@ test("pet surface keeps the failed agent-run card inside the expanded Cuu frame"
   assert.match(surface.html, /class="wh-pet-section-title">Budget<\/span>/u);
   assert.match(surface.html, /data-cuu-action-id="view_replay"/u);
   assert.match(surface.html, /data-cuu-action-id="open_workitem"/u);
+  // WIRE-07：终态（failed）run 不出中止按钮——中止只对进行中的 run 有意义。
   assert.doesNotMatch(surface.html, /data-cuu-action-id="abort_agent_run"/u);
   assert.doesNotMatch(surface.html, /Cuu updated progress: Cuu desktop entry task/u);
   assert.match(surface.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{[^}]*bottom:calc\(392px \* var\(--wh-pet-scale,1\)\)/u);
@@ -1000,6 +1037,27 @@ test("pet surface keeps the failed agent-run card inside the expanded Cuu frame"
   assert.match(surface.css, /data-pet-card-has-context=true\] \.wh-pet-title\{[^}]*-webkit-line-clamp:2/u);
   assert.match(surface.css, /data-pet-card-has-context=true\] \.wh-pet-message\{[^}]*-webkit-line-clamp:2/u);
   assert.match(surface.css, /data-pet-card-has-context=true\] \.wh-pet-section-line,\.wh-pet-surface\[data-pet-card-has-context=true\] \.wh-pet-evidence-item\{-webkit-line-clamp:1\}/u);
+});
+
+// WIRE-07：进行中（queued/running）的 run 卡必须真的端出「取消执行」按钮，且点击能解析成
+// abort-agent-run 动作（两段式确认在点击层，submit 走 client.abortAgentRun）。
+test("pet surface offers a wired abort action on an active agent-run card", () => {
+  const activeRun = petHarnessRun();
+  assert.equal(activeRun.status, "queued");
+  const card = cardFromAgentRunLive(activeRun, { locale: "zh-CN" });
+  const surface = renderDesktopPetSurface({
+    card,
+    status_text: "Cuu 正在推进：桌面入口任务",
+    locale: "zh-CN"
+  });
+
+  assert.match(surface.html, /data-cuu-action-id="abort_agent_run"/u);
+  assert.match(surface.html, /href="\/api\/agent-runs\/10000000-0000-4000-8000-000000000301\/abort"/u);
+  assert.match(surface.html, /data-method="POST"/u);
+  assert.match(surface.html, /取消执行/u);
+
+  const resolved = resolveHarnessAction(card, "abort_agent_run");
+  assert.deepEqual(resolved, { kind: "abort-agent-run", runId: "10000000-0000-4000-8000-000000000301" });
 });
 
 test("pet surface constrains long runtime error cards in the expanded Cuu frame", () => {
@@ -1457,6 +1515,51 @@ test("pet surface passes the current project context into Cuu launcher sessions"
   );
 });
 
+// CHAT-10：自由文本框 Enter 发送（Shift+Enter 换行）、中文输入法选词上屏的 Enter（isComposing）不发送。
+test("pet free-text box submits on Enter, keeps Shift+Enter and IME composition as plain newline", async () => {
+  const calls: unknown[] = [];
+  const target = globalThis as typeof globalThis & { __WORKHUB_CUU_QA_LOCALE__?: unknown };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "zh-CN";
+
+  try {
+    await withFakePetDom(async (root) => {
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient(calls)
+      });
+      try {
+        await root.click(fakePetTarget({ "data-pet-drag-handle": "true" }));
+        assert.match(root.innerHTML, /data-pet-free-text="true"/u);
+        const textarea = () => fakePetTarget({ "data-pet-free-text": "true" }, "textarea");
+
+        // Shift+Enter：换行，不发送。
+        const shiftEnter = await root.emit("keydown", textarea(), { key: "Enter", shiftKey: true });
+        assert.equal(shiftEnter.defaultPrevented, false);
+        assert.equal(calls.length, 0);
+
+        // 输入法选词上屏的 Enter：不发送。
+        const composing = await root.emit("keydown", textarea(), { key: "Enter", isComposing: true });
+        assert.equal(composing.defaultPrevented, false);
+        assert.equal(calls.length, 0);
+
+        // 裸 Enter：等价于点「开始处理」——走既有点击管线发起 createSession。
+        const enter = await root.emit("keydown", textarea(), { key: "Enter" });
+        assert.equal(enter.defaultPrevented, true);
+        await waitForFakePetCardMode();
+        assert.equal(
+          (calls[0] as { step?: string } | undefined)?.step,
+          "createSession",
+          "Enter must forward to the card's primary submit action"
+        );
+      } finally {
+        await runtime.dispose();
+      }
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+  }
+});
+
 test("pet surface lets users restart after a launcher clarification failure", async () => {
   const calls: unknown[] = [];
   const target = globalThis as typeof globalThis & {
@@ -1716,10 +1819,10 @@ test("pet surface handles proposal review request-changes without navigating to 
   ]);
 });
 
-test("pet surface routes OS notification clicks to the native deep-link command bridge", async () => {
-  // P2-07/R19-12：修复前生产绑定漏传 onSystemNotification，壳层算好的通知 route/window_control 落到 no-op，
-  // 点 OS 通知打不开目标页。这里驱动真实生产绑定：壳层广播 system-notification 计划 → 桌宠经命令桥回传给
-  // 原生 focus_system_notification，审批通知带着 /approvals 深链落地。
+test("pet surface does not steal focus on OS notification arrival; clicking the matching Cuu card action lands the plan", async () => {
+  // MRG-20：修复前 webview 在通知到达那一刻就 focus_system_notification——弹窗抢焦点 + 强制导航。
+  // 现在到达只暂存计划；用户在桌宠 Cuu 卡上点击指向同一路由的动作时，才把壳层算好的
+  // route/window_control 经命令桥回传原生 focus_system_notification 落地（审批通知落审批面板）。
   const handlers = new Map<string, (event: { payload: unknown }) => void>();
   const listen: DesktopShellListen = (eventName, handler) => {
     handlers.set(eventName, handler);
@@ -1727,6 +1830,24 @@ test("pet surface routes OS notification clicks to the native deep-link command 
   };
   const focusedPlans: Array<{ route?: string; windowControl?: { label?: string } }> = [];
   const client = createPetHarnessClient([]) as unknown as DesktopPetSurfaceClient;
+  const planPayload = {
+    id: "evt-approval",
+    event: "permission.ask",
+    title: "Cuu needs your approval",
+    body: "Open WorkHub to allow, deny, or remember this rule.",
+    urgency: "urgent",
+    route: "/approvals?approvalId=approval-1",
+    windowControl: {
+      label: "main",
+      action: "show_and_focus",
+      source: "system_notification",
+      focus: true,
+      reason: "focus-main-route",
+      route: "/approvals?approvalId=approval-1"
+    },
+    streamKind: "me",
+    streamPath: "/api/push/stream/me"
+  };
 
   await withFakePetDom(async (root) => {
     const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
@@ -1740,30 +1861,87 @@ test("pet surface routes OS notification clicks to the native deep-link command 
       }
     });
     try {
+      handlers.get("system-notification")?.({ payload: planPayload });
+      await Promise.resolve();
+      // 到达即抢焦点的旧行为已移除——不点卡片就什么都不发生。
+      assert.equal(focusedPlans.length, 0);
+
+      // 用户点击指向同一路由（path 相同，查询串不影响匹配）的卡片动作 → 计划被回传落地。
+      await root.click(fakePetTarget({ href: "/approvals" }, "a"));
+      await Promise.resolve();
+      assert.equal(focusedPlans.length, 1);
+      assert.equal(focusedPlans[0]?.route, "/approvals?approvalId=approval-1");
+      assert.equal(focusedPlans[0]?.windowControl?.label, "main");
+
+      // 计划一次性消费——再点一次不再重复导航。
+      await root.click(fakePetTarget({ href: "/approvals" }, "a"));
+      await Promise.resolve();
+      assert.equal(focusedPlans.length, 1);
+    } finally {
+      await runtime.dispose();
+    }
+  });
+});
+
+test("pet surface keeps the notification plan when the user clicks an unrelated route", async () => {
+  // MRG-20：点了别的路由不该误消费暂存的通知计划——之后点对路由仍能落地。
+  const handlers = new Map<string, (event: { payload: unknown }) => void>();
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => handlers.delete(eventName);
+  };
+  const focusedPlans: Array<{ route?: string }> = [];
+  const focusedMainRoutes: string[] = [];
+  const client = createPetHarnessClient([]) as unknown as DesktopPetSurfaceClient;
+
+  await withFakePetDom(async (root) => {
+    const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+      client,
+      listen,
+      petWindowBridge: {
+        setMode() {},
+        focusSystemNotification(plan) {
+          focusedPlans.push(plan);
+        },
+        focusMainRoute(route) {
+          focusedMainRoutes.push(route);
+        }
+      }
+    });
+    try {
       handlers.get("system-notification")?.({
         payload: {
-          id: "evt-approval",
-          event: "permission.ask",
-          title: "Cuu needs your approval",
-          body: "Open WorkHub to allow, deny, or remember this rule.",
-          urgency: "urgent",
-          route: "/approvals?approvalId=approval-1",
+          id: "evt-cost",
+          event: "budget.warning",
+          title: "Budget warning",
+          body: "Usage is close to the cap.",
+          urgency: "high",
+          route: "/dashboard/cost",
           windowControl: {
             label: "main",
             action: "show_and_focus",
             source: "system_notification",
             focus: true,
             reason: "focus-main-route",
-            route: "/approvals?approvalId=approval-1"
+            route: "/dashboard/cost"
           },
           streamKind: "me",
           streamPath: "/api/push/stream/me"
         }
       });
       await Promise.resolve();
+
+      // 点不相关的路由 → 不消费计划，走既有主窗导航兜底。
+      await root.click(fakePetTarget({ href: "/settings" }, "a"));
+      await Promise.resolve();
+      assert.equal(focusedPlans.length, 0);
+      assert.deepEqual(focusedMainRoutes, ["/settings"]);
+
+      // 点对路由 → 计划落地。
+      await root.click(fakePetTarget({ href: "/dashboard/cost" }, "a"));
+      await Promise.resolve();
       assert.equal(focusedPlans.length, 1);
-      assert.equal(focusedPlans[0]?.route, "/approvals?approvalId=approval-1");
-      assert.equal(focusedPlans[0]?.windowControl?.label, "main");
+      assert.equal(focusedPlans[0]?.route, "/dashboard/cost");
     } finally {
       await runtime.dispose();
     }
@@ -1872,6 +2050,76 @@ test("pet surface refreshes a proposal card after the main window settles the re
         await runtime.dispose();
       }
       assert.ok(stopped.includes("attention-refresh"));
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+  }
+});
+
+// CHAT-09：自由文本框有未提交内容时静默刷新被跳过是刻意的（保住正在打的字），但跳过必须记脏——
+// 否则之后再无事件到达，卡片永久停在旧帧。这条测试钉死：跳过 → 清空文本框（input 事件）→ 补刷落地。
+test("pet surface flushes the skipped attention refresh once the free-text box is cleared", async () => {
+  const clarificationItem = (summary: string): AttentionItem => ({
+    id: "clarify-1",
+    kind: "clarification",
+    priority: "urgent",
+    source_ref: { entity_type: "notification", entity_id: "session-1" },
+    title: "Cuu 想再确认一句",
+    summary_text: summary,
+    reason_text: summary,
+    actions: [
+      { id: "submit_option", label: "继续", style: "primary", method: "POST", href: "/api/sessions/session-1/next-question" }
+    ],
+    cuu_state: "asking_approval",
+    created_at: "2026-06-10T01:00:00.000Z"
+  });
+  let attentionQueue: AttentionItem[] = [];
+  const handlers = new Map<string, (event: { payload: unknown }) => void>();
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => handlers.delete(eventName);
+  };
+  const client = {
+    ...createPetHarnessClient([]),
+    pages: {
+      attention: async () => ({ primary: null, queue: attentionQueue })
+    }
+  } as unknown as DesktopPetSurfaceClient;
+  const target = globalThis as typeof globalThis & { __WORKHUB_CUU_QA_LOCALE__?: unknown };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "zh-CN";
+
+  try {
+    await withFakePetDom(async (root) => {
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, { client, listen });
+      try {
+        handlers.get("push-event")?.({
+          payload: shellPayload(eventTypes.permissionAsk, {
+            summary_text: "旧口径文本",
+            attention: clarificationItem("旧口径文本")
+          })
+        });
+        await waitForFakePetCardMode();
+        assert.match(root.innerHTML, /data-cuu-card-id="clarify-1"/u);
+        assert.match(root.innerHTML, /旧口径文本/u);
+        assert.match(root.innerHTML, /data-pet-free-text="true"/u);
+
+        // 框里有未提交内容（harness 默认 petFreeTextValue 非空）→ 静默刷新被跳过、记脏。
+        attentionQueue = [clarificationItem("新口径文本")];
+        handlers.get("attention-refresh")?.({ payload: { reason: "spotlight-action-settled" } });
+        await waitForFakePetCardMode();
+        assert.match(root.innerHTML, /旧口径文本/u, "pending free text must shield the visible card");
+        assert.doesNotMatch(root.innerHTML, /新口径文本/u);
+
+        // 用户清空文本框 → 补刷落地，新帧上来。
+        root.petFreeTextValue = "";
+        await root.emit("input", fakePetTarget({ "data-pet-free-text": "true" }, "textarea"));
+        await waitForFakePetCardMode();
+        assert.match(root.innerHTML, /新口径文本/u, "clearing the box must flush the skipped refresh");
+        assert.doesNotMatch(root.innerHTML, /旧口径文本/u);
+      } finally {
+        await runtime.dispose();
+      }
     });
   } finally {
     target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
@@ -2107,6 +2355,67 @@ test("pet surface syncs settings emitted by the main desktop window", async () =
         await runtime.dispose();
       }
       assert.ok(stopped.includes("pet-settings"));
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+    Object.defineProperty(target, "localStorage", {
+      configurable: true,
+      value: originalLocalStorage
+    });
+  }
+});
+
+// DSK-02：托盘「恢复交互」只复位穿透/悬停隐藏——用户自调的透明度必须原样保留（此前硬重置成 100 并落盘，
+// 把用户设置冲掉；Rust 侧 main.rs 特意保留用户透明度，webview 这边不该对着干）。
+test("pet tray restore-interaction resets pass-through/hover-hide but preserves the user's opacity", async () => {
+  const target = globalThis as typeof globalThis & {
+    __WORKHUB_CUU_QA_LOCALE__?: unknown;
+    localStorage?: Storage;
+  };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  const originalLocalStorage = target.localStorage;
+  const storage = createFakeLocalStorage({
+    workhub_cuu_preferences: JSON.stringify({
+      pet_pass_through: true,
+      pet_hide_on_hover: true,
+      pet_opacity_percent: 60
+    })
+  });
+  target.__WORKHUB_CUU_QA_LOCALE__ = "zh-CN";
+  Object.defineProperty(target, "localStorage", {
+    configurable: true,
+    value: storage
+  });
+
+  try {
+    await withFakePetDom(async (root) => {
+      const handlers = new Map<string, (event: { payload: unknown }) => void>();
+      const listen: DesktopShellListen = (eventName, handler) => {
+        handlers.set(eventName, handler);
+        return () => handlers.delete(eventName);
+      };
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient([]),
+        listen
+      });
+
+      try {
+        assert.match(root.innerHTML, /data-pet-pass-through="true"/u);
+        assert.match(root.innerHTML, /data-pet-opacity-percent="60"/u);
+
+        handlers.get("tray-action")?.({ payload: { id: "restore-pet-interaction" } });
+
+        // 穿透/悬停隐藏复位，透明度保持用户自调的 60（且落盘的也是 60）。
+        assert.match(root.innerHTML, /data-pet-pass-through="false"/u);
+        assert.match(root.innerHTML, /data-pet-hide-on-hover="false"/u);
+        assert.match(root.innerHTML, /data-pet-opacity-percent="60"/u);
+        const persisted = JSON.parse(storage.getItem("workhub_cuu_preferences") ?? "{}") as Record<string, unknown>;
+        assert.equal(persisted.pet_opacity_percent, 60);
+        assert.equal(persisted.pet_pass_through, false);
+        assert.equal(persisted.pet_hide_on_hover, false);
+      } finally {
+        await runtime.dispose();
+      }
     });
   } finally {
     target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;

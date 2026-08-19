@@ -6,7 +6,7 @@ import type {
   WorkHubLocale
 } from "@workhub/contracts";
 
-import { agentRunStatusLabel, agentStepPhaseLabel, agentStepPublicSummary, uiCount, uiLocale, uiT, type UiRenderOptions } from "../i18n.js";
+import { agentRunStatusLabel, agentStepPhaseLabel, agentStepPublicSummary, formatLocalTimestamp, uiCount, uiLocale, uiT, type UiRenderOptions } from "../i18n.js";
 import { overlapHunkReviewCss, renderOverlapHunkReview } from "../overlap-hunk-review.js";
 import { renderRichPatchViewer, richPatchViewerCss } from "../rich-patch-viewer.js";
 import {
@@ -137,7 +137,10 @@ const replayCopy = {
   "replay.snapshotKindPreStep": { "zh-CN": "执行前快照", "en-US": "Pre-step snapshot" },
   "replay.snapshotKindMerge": { "zh-CN": "合并快照", "en-US": "Merge snapshot" },
   "replay.snapshotKindManual": { "zh-CN": "手动快照", "en-US": "Manual snapshot" },
-  "replay.snapshotKindBase": { "zh-CN": "基线快照", "en-US": "Base snapshot" }
+  "replay.snapshotKindBase": { "zh-CN": "基线快照", "en-US": "Base snapshot" },
+  // WIRE-07：进行中的 run 在回放页给「中止执行」入口（POST /api/agent-runs/:id/abort）。渲染层只吐
+  // 带 data-* 的静态标记，两段式确认与调用都在 web 的 api-action 分发里（armConfirmButton 先例）。
+  "replay.abortRun": { "zh-CN": "中止执行", "en-US": "Abort run" }
 } satisfies Record<string, ReplayCopy>;
 
 type ReplayCopyKey = keyof typeof replayCopy;
@@ -308,9 +311,11 @@ function renderDeliverables(vm: ReplayTraceVM, locale: WorkHubLocale) {
   const accepted = vm.accepted_deliverables ?? [];
   return accepted
     .map((item) => {
+      // WIRE-08：预览/下载此前是裸 <a href=/api/...>——web 的 api-action 分发拦下后无人认领，落「处理中」
+      // 兜底。对齐 workitem 页做法：预览接 drive_preview 预览面板管线，下载走原生资源链接标记直接放行。
       const actions = [
-        item.preview_href ? `<a class="wh-btn" href="${escapeHtml(safeHref(item.preview_href))}">${escapeHtml(t(locale, "replay.deliverablePreview"))}</a>` : "",
-        item.download_href ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(safeHref(item.download_href))}">${escapeHtml(t(locale, "replay.deliverableDownload"))}</a>` : "",
+        item.preview_href ? `<a class="wh-btn" href="${escapeHtml(safeHref(item.preview_href))}" data-action-id="drive_preview" data-r4-proposal-change-preview="true">${escapeHtml(t(locale, "replay.deliverablePreview"))}</a>` : "",
+        item.download_href ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(safeHref(item.download_href))}" data-action-id="drive_download" data-native-resource-link="true" target="_blank" rel="noreferrer">${escapeHtml(t(locale, "replay.deliverableDownload"))}</a>` : "",
         item.restore_href ? `<a class="wh-btn wh-btn-danger" href="${escapeHtml(safeHref(item.restore_href))}" data-action-id="restore_deliverable" data-method="POST">${escapeHtml(t(locale, "replay.deliverableRestore"))}</a>` : ""
       ].filter(Boolean).join("");
       return `<article class="wh-card" data-replay-deliverable="${escapeHtml(item.id)}"><strong>${escapeHtml(item.filename ?? item.target_key)}</strong><p class="wh-subtle">${escapeHtml(item.target_path ?? item.target_key)}</p>${actions ? `<div class="wh-actions">${actions}</div>` : ""}</article>`;
@@ -341,7 +346,8 @@ function renderMergeTimeline(vm: ReplayTraceVM, locale: WorkHubLocale) {
         : `<p class="wh-subtle">${escapeHtml(t(locale, "replay.noChoiceLabel"))}</p>`;
       const targetSummary = attempt.target_keys.length > 0 ? attempt.target_keys.join(", ") : attempt.id;
       const conflictPill = uiCount(locale, attempt.conflict_count, "处冲突", "conflict");
-      const createdAtPill = attempt.created_at.slice(0, 16).replace("T", " ");
+      // UI-02：本地时区渲染（不再 slice(0,16) 直切 ISO 串 UTC 直出）。
+      const createdAtPill = formatLocalTimestamp(attempt.created_at);
       return `<article class="wh-card" data-replay-merge-attempt="${escapeHtml(attempt.id)}" data-replay-merge-result="${escapeHtml(attempt.result)}"><strong>${escapeHtml(mergeAttemptLabel(locale, attempt.result))}</strong><p class="wh-subtle">${escapeHtml(targetSummary)}</p><div class="wh-actions"><span class="wh-pill" data-replay-merge-conflict-count="${escapeHtml(String(attempt.conflict_count))}">${escapeHtml(conflictPill)}</span><span class="wh-pill">${escapeHtml(createdAtPill)}</span></div>${renderBulkActionAudit(attempt, locale)}${renderTextHunkDecisionAudit(attempt, locale)}${decisions}</article>`;
     })
     .join("");
@@ -376,7 +382,7 @@ function renderSnapshots(vm: ReplayTraceVM, locale: WorkHubLocale, runId: string
   const rows = snapshots
     .map((snap) => {
       const reverted = Boolean(snap.reverted_at);
-      const createdAt = snap.created_at ? snap.created_at.slice(0, 16).replace("T", " ") : "";
+      const createdAt = snap.created_at ? formatLocalTimestamp(snap.created_at) : "";
       const meta = [snapshotKindLabel(locale, snap.kind), createdAt].filter(Boolean).join(" · ");
       const action = reverted
         ? `<span class="wh-pill" data-replay-snapshot-reverted="true">${escapeHtml(t(locale, "replay.snapshotReverted"))}</span>`
@@ -428,11 +434,17 @@ export function renderAgentRunReplay(
   const backToWorkItem = surface === "web" && run.work_item_id
     ? `<a class="wh-replay-back" href="/workitems/${encodeURIComponent(run.work_item_id)}" data-replay-back-work-item="${escapeHtml(run.work_item_id)}">${escapeHtml(t(locale, "replay.backToWorkItem"))}</a>`
     : "";
+  // WIRE-07：进行中（queued/running，与 cardFromAgentRunLive 的 active 口径一致）的 run 给「中止执行」
+  // 入口；终态（succeeded/failed/escalated/cancelled）不出按钮。二次确认在 web 分发层（r9ConfirmArmed）。
+  const abortRunAction = runId && (run.status === "queued" || run.status === "running")
+    ? `<div class="wh-actions"><a class="wh-btn wh-btn-danger" href="${escapeHtml(safeHref(`/api/agent-runs/${encodeURIComponent(runId)}/abort`))}" data-action-id="abort_agent_run" data-method="POST" data-replay-abort-run="${escapeHtml(runId)}">${escapeHtml(t(locale, "replay.abortRun"))}</a></div>`
+    : "";
   const main = `<section class="wh-replay-main">
     <span class="wh-kicker">${escapeHtml(t(locale, "replay.kicker"))}</span>
     ${backToWorkItem}
     <h1 class="wh-title">${escapeHtml(t(locale, "replay.title"))}</h1>
     <p class="wh-subtle">${escapeHtml(run.handoff_md ?? run.outcome_reason ?? t(locale, "replay.emptySummary"))}</p>
+    ${abortRunAction}
     <div class="wh-grid">
       ${run.status ? `<article class="wh-card" data-replay-run-status="${escapeHtml(run.status)}"><strong>${escapeHtml(uiT(locale, "generic.status"))}</strong><p class="wh-subtle">${escapeHtml(agentRunStatusLabel(locale, run.status))}</p></article>` : ""}
       <article class="wh-card"><strong>${escapeHtml(uiT(locale, "generic.steps"))}</strong><p class="wh-subtle">${escapeHtml(String(vm.steps.length))}</p></article>

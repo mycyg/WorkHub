@@ -369,7 +369,7 @@ test("R9.7 escalation mutation success summaries honor the requested locale", as
     "en-US"
   );
 
-  assert.equal(delegated.attention.summary_text, "Escalation delegated.");
+  assert.equal(delegated.attention.summary_text, "Delegated to another owner.");
 });
 
 test("R9.7 budget decision actions reject options not present on the durable notice", async () => {

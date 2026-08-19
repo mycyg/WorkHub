@@ -149,7 +149,10 @@ export type QuestionCard = z.infer<typeof questionCardSchema>;
 
 export const createSessionRequestSchema = z.object({
   title: z.string().min(1).optional(),
-  intent_text: z.string().min(1).optional(),
+  // CHAT-04：intent_text 原文会进 LLM 澄清 prompt（services/work-items.ts clarificationPrompt），
+  // 此前只有 min(1) 无上限，客户端 maxlength=280 裸奔——在契约边界收口到 2000，超长意图在
+  // 创建会话时即得干净 422，而不是无界文本烧 token。
+  intent_text: z.string().min(1).max(2000).optional(),
   project_id: idSchema.optional(),
   work_item_id: idSchema.optional()
 });

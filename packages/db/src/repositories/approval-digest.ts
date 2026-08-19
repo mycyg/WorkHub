@@ -98,6 +98,8 @@ export async function listProjectsWithPendingApprovals(
     .orderBy(asc(projects.id))
     .limit(input.limit);
   // workspace_id 是 schema 上的历史可空列——活跃项目恒有值；null 分支结构上不可达，用类型收窄换掉断言。
+  // E2E-15：min(created_at) 经 pg 驱动回来是 string 而非 Date（sql<Date> 只是编译期标注），
+  // 直接调 .getTime() 会在运行期炸（pulse 日志实证）。这里防御性水合成 Date。
   return rows.flatMap((row) =>
     row.workspaceId && row.oldestPendingAt
       ? [
@@ -106,7 +108,7 @@ export async function listProjectsWithPendingApprovals(
             workspaceId: row.workspaceId,
             mainConversationId: row.mainConversationId,
             pendingCount: row.pendingCount,
-            oldestPendingAt: row.oldestPendingAt
+            oldestPendingAt: new Date(row.oldestPendingAt)
           }
         ]
       : []

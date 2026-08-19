@@ -102,6 +102,28 @@ test("applyPendingWorkbenchDeepLink is a no-op when there is nothing stashed (no
   assert.deepEqual(calls, []);
 });
 
+// MRG-22：登出态/凭据门等落不了地的场合不许消费 stash——consume 是一次性删除，删了而 selectProject
+// 被拦就等于把深链目标吞了。enabled === false 时连读都不读，stash 原样留给登录后的干净 boot。
+test("applyPendingWorkbenchDeepLink keeps the stash untouched when disabled (logged-out boot)", () => {
+  const storage = fakeReadWriteStorage();
+  stashPendingWorkbenchDeepLink({ projectId: "project-1", conversationId: "conv-1" }, { storage, now: () => 0 });
+  const calls: Array<[string, string | undefined]> = [];
+  const shell = {
+    selectProject: (projectId: string, conversationId?: string) => {
+      calls.push([projectId, conversationId]);
+    }
+  };
+
+  applyPendingWorkbenchDeepLink(shell, storage, () => 0, { enabled: false });
+
+  assert.deepEqual(calls, []);
+  assert.ok(storage.getItem("workhub_workbench_pending_deep_link"), "stash must survive a disabled boot");
+  // 恢复路径（重新登录后 reload → 干净 boot）：enabled 默认开启，stash 被原样接回。
+  applyPendingWorkbenchDeepLink(shell, storage, () => 0);
+  assert.deepEqual(calls, [["project-1", "conv-1"]]);
+  assert.equal(storage.getItem("workhub_workbench_pending_deep_link"), null);
+});
+
 test("bindWorkbenchDeepLinkListener selects the project from a workbench-targeted deep-link plan", () => {
   const calls: Array<[string, string | undefined]> = [];
   const shell = {

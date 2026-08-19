@@ -264,12 +264,12 @@ type WorkItemCopyKey =
 
 const workItemCopy: Record<WorkHubLocale, Record<WorkItemCopyKey, string>> = {
   "zh-CN": {
-    "question.confirm.title": "是否按这个方向创建事项？",
-    "question.confirm.body": "确认后会按下面的方向创建事项。",
-    "question.confirm.create.label": "创建事项",
-    "question.confirm.create.description": "确认后，事项会进入可执行状态，AI 可以继续处理。",
+    "question.confirm.title": "是否按这个方向创建任务？",
+    "question.confirm.body": "确认后会按下面的方向创建任务。",
+    "question.confirm.create.label": "创建任务",
+    "question.confirm.create.description": "确认后，任务会进入可执行状态，AI 可以继续处理。",
     "question.confirm.evidence.label": "先找证据",
-    "question.confirm.evidence.description": "先从项目历史、文档和事项里找依据。",
+    "question.confirm.evidence.description": "先从项目历史、文档和任务里找依据。",
     "question.confirm.adjust.label": "调整范围",
     "question.confirm.adjust.description": "回到上一步补充澄清回答。",
     "question.clarify.title": "需要先确认一个关键点",
@@ -277,7 +277,7 @@ const workItemCopy: Record<WorkHubLocale, Record<WorkItemCopyKey, string>> = {
     "question.scope.title": "这件事先按哪种交付方式处理？",
     "question.scope.document.label": "文档/方案草稿",
     "question.scope.document.description": "适合周报、方案、说明书、PR 式变更说明。",
-    "question.scope.document.impact": "首发 L2 file-only 白名单内，风险最低。",
+    "question.scope.document.impact": "第一阶段只改文件、不动别的东西，风险最低。",
     "question.scope.data.label": "结构化数据",
     "question.scope.data.description": "适合 JSON、YAML、CSV、配置或表格分析。",
     "question.scope.data.impact": "会保留字段级证据和回滚点。",
@@ -286,9 +286,9 @@ const workItemCopy: Record<WorkHubLocale, Record<WorkItemCopyKey, string>> = {
     "question.scope.code.impact": "需要通过快照、测试和审批。",
     "question.scope.ai.label": "让 AI 判断",
     "question.scope.ai.description": "我会按证据和风险选择最稳的交付路径。",
-    "question.scope.ai.impact": "不用打字，保持 option-first。",
+    "question.scope.ai.impact": "不用打字，点选就行。",
     "question.free.placeholder": "有特殊要求再补一句，不填也可以。",
-    "question.progress.intent": "需求",
+    "question.progress.intent": "任务",
     "question.progress.scope": "澄清",
     "question.progress.confirm": "确认",
     "question.progress.run": "执行",
@@ -301,12 +301,12 @@ const workItemCopy: Record<WorkHubLocale, Record<WorkItemCopyKey, string>> = {
     "proposalDraft.create.label": "生成变更提议"
   },
   "en-US": {
-    "question.confirm.title": "Create the work item with this direction?",
-    "question.confirm.body": "Confirming creates the work item with the direction below.",
-    "question.confirm.create.label": "Create work item",
-    "question.confirm.create.description": "After confirmation, the work item becomes executable so AI can continue.",
+    "question.confirm.title": "Create the task with this direction?",
+    "question.confirm.body": "Confirming creates the task with the direction below.",
+    "question.confirm.create.label": "Create task",
+    "question.confirm.create.description": "After confirmation, the task becomes executable so AI can continue.",
     "question.confirm.evidence.label": "Find evidence first",
-    "question.confirm.evidence.description": "Search project history, documents, and related work first.",
+    "question.confirm.evidence.description": "Search project history, documents, and related tasks first.",
     "question.confirm.adjust.label": "Adjust scope",
     "question.confirm.adjust.description": "Go back and refine the clarification answer.",
     "question.clarify.title": "One key detail to confirm",
@@ -314,7 +314,7 @@ const workItemCopy: Record<WorkHubLocale, Record<WorkItemCopyKey, string>> = {
     "question.scope.title": "Which delivery path should this use first?",
     "question.scope.document.label": "Document / plan draft",
     "question.scope.document.description": "Best for reports, plans, manuals, and PR-style change notes.",
-    "question.scope.document.impact": "Lowest risk in the first L2 file-only allowlist.",
+    "question.scope.document.impact": "Lowest risk: the first stage only touches files, nothing else.",
     "question.scope.data.label": "Structured data",
     "question.scope.data.description": "Best for JSON, YAML, CSV, configuration, or spreadsheet analysis.",
     "question.scope.data.impact": "Keeps field-level evidence and rollback points.",
@@ -323,9 +323,9 @@ const workItemCopy: Record<WorkHubLocale, Record<WorkItemCopyKey, string>> = {
     "question.scope.code.impact": "Requires snapshots, tests, and approval.",
     "question.scope.ai.label": "Let AI decide",
     "question.scope.ai.description": "AI will choose the most stable delivery path from evidence and risk.",
-    "question.scope.ai.impact": "No typing required; keeps the option-first flow.",
+    "question.scope.ai.impact": "No typing required; just pick options.",
     "question.free.placeholder": "Add special requirements only if needed.",
-    "question.progress.intent": "Intent",
+    "question.progress.intent": "Task",
     "question.progress.scope": "Clarify",
     "question.progress.confirm": "Confirm",
     "question.progress.run": "Run",
@@ -351,9 +351,9 @@ const generatedAcceptanceCopy = new Map<string, string>([
   ["点选澄清完成", workItemCopy["en-US"]["acceptance.optionFirst"]],
   ["澄清回答已纳入执行范围", workItemCopy["en-US"]["acceptance.optionFirst"]],
   ["证据已绑定", workItemCopy["en-US"]["acceptance.evidenceBound"]],
-  ["澄清必须点选优先", "Clarification must stay option-first"],
-  ["交付物变更申请必须像 PR 一样可审", "Deliverable change requests must be PR-like and reviewable"],
-  ["Replay footer 必须显示成本切片", "Replay footer must show cost slices"]
+  ["澄清以点选为主", "Clarification is done by picking options"],
+  ["交付物变更必须逐条可审", "Deliverable changes must be reviewable item by item"],
+  ["回放页脚必须显示成本明细", "The replay footer must show cost details"]
 ]);
 
 function workItemT(locale: WorkHubLocale | undefined, key: WorkItemCopyKey) {
@@ -929,7 +929,19 @@ function clarificationDraftLooksTemplated(draft: ClarificationQuestionDraft, inp
     .split(/[^\p{Letter}\p{Number}_\-.]+/u)
     .map((token) => token.trim().toLowerCase())
     .filter((token) => token.length >= 4)
-    .slice(0, 12);
+    // E2E-07：CJK 文本没有词边界，整段「写一份团队周会纪要模板」是一个长 token，反问只要稍作转述
+    // （如「周会纪要」）就永不命中 → 真实问题被误判 templated 502。长 CJK token 追加 4 字滑窗 n-gram。
+    .flatMap((token) => {
+      if (token.length <= 8 || !/[\p{Script=Han}]/u.test(token)) {
+        return [token];
+      }
+      const grams: string[] = [token];
+      for (let i = 0; i + 4 <= token.length; i += 2) {
+        grams.push(token.slice(i, i + 4));
+      }
+      return grams;
+    })
+    .slice(0, 48);
   const intentMatched = intentTokens.some((token) => combined.includes(token));
   return input.files.length > 0 ? !fileMatched && !intentMatched : !intentMatched;
 }
@@ -941,6 +953,19 @@ function clarificationDraftCoversNamedDriveTargets(draft: ClarificationQuestionD
   }
   const combined = `${draft.title}\n${draft.body ?? ""}`.toLowerCase();
   return targets.every((target) => combined.includes(target.toLowerCase()));
+}
+
+// CHAT-1：读路径拿不到可用已存草稿时的统一出口——草稿生成已收敛到 createSession（含带
+// work_item_id 的显式重试），GET 不再现场生成。文案里把「怎么重试」说清楚，前端会话页
+// 会把它原样渲进状态卡（apps/web routes.ts intake 分支对 clarification_draft_missing 有定制）。
+function clarificationDraftMissingError(locale: WorkHubLocale): WorkItemServiceError {
+  return new WorkItemServiceError(
+    409,
+    "clarification_draft_missing",
+    locale === "en-US"
+      ? "The clarification question for this session is missing or out of date. Retry generating it by restarting intake for this work item."
+      : "这个会话的澄清反问还没生成或已失效。请重新进入该事项的接入流程，重试生成澄清反问。"
+  );
 }
 
 function canReuseStoredClarificationDraft(
@@ -974,27 +999,46 @@ function createLlmClarificationGenerator(registry: ProviderRegistry): Clarificat
       ...(input.actor.workspaceId ? { workspaceId: input.actor.workspaceId } : {}),
       workItemId: input.workItem.id
     }, "clarify");
-    const response = await client.messages.create({
+    const request = (extraInstruction?: string) => client.messages.create({
       maxTokens: CLARIFICATION_LLM_MAX_TOKENS,
       source: "agent_step",
       timeoutMs: CLARIFICATION_LLM_TIMEOUT_MS,
+      // E2E-03：thinking 模型的思维链计入 max_tokens，1600 的短预算会被吃光导致正文从未生成（实测
+      // 同 prompt 思维链 485~2855 tokens 波动）→ 短 JSON 调用显式关闭 thinking。
+      disableThinking: true,
       system: "You are WorkHub's intake clarifier. Return strict JSON only. Never include secrets or unrelated implementation advice.",
       messages: [{
         role: "user",
-        content: clarificationPrompt(input)
+        // E2E-01：重试时在 prompt 末尾追加「只返回合法 JSON」强调，不改变原 prompt 结构。
+        content: extraInstruction ? `${clarificationPrompt(input)}\n\n${extraInstruction}` : clarificationPrompt(input)
       }]
     });
-    const draft = parseClarificationDraftFromResponse(response, input.locale);
-    if (clarificationDraftLooksTemplated(draft, input)) {
-      throw new WorkItemServiceError(
-        502,
-        "clarification_llm_templated_response",
-        input.locale === "en-US"
-          ? "AI material analysis returned a generic template instead of a real follow-up question."
-          : "AI 材料分析返回了泛化模板，不是真实反问。"
-      );
+    const parseAndCheck = (response: { content: unknown[] }) => {
+      const draft = parseClarificationDraftFromResponse(response, input.locale);
+      if (clarificationDraftLooksTemplated(draft, input)) {
+        throw new WorkItemServiceError(
+          502,
+          "clarification_llm_templated_response",
+          input.locale === "en-US"
+            ? "AI material analysis returned a generic template instead of a real follow-up question."
+            : "AI 材料分析返回了泛化模板，不是真实反问。"
+        );
+      }
+      return draft;
+    };
+    try {
+      return parseAndCheck(await request());
+    } catch (error) {
+      // E2E-01：只有「输出解析失败」(clarification_llm_invalid_response) 值得原样重试一次——
+      // 模型偶发输出围栏/多余文本是瞬态错误；泛化模板拒稿、超时、配额等重试也不会改变结论，不重试。
+      if (!(error instanceof WorkItemServiceError) || error.code !== "clarification_llm_invalid_response") {
+        throw error;
+      }
+      const retryInstruction = input.locale === "en-US"
+        ? "Important: return exactly one valid JSON object and nothing else — no prose, no markdown fences."
+        : "注意：只返回一个合法 JSON 对象，不要输出任何解释文字或 Markdown 代码围栏。";
+      return parseAndCheck(await request(retryInstruction));
     }
-    return draft;
   };
 }
 
@@ -1753,7 +1797,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     }
     const first = await repository.findFirstActiveProjectInWorkspace(actor.workspaceId);
     if (!first) {
-      throw new WorkItemServiceError(404, "project_not_found", "还没有可用项目，无法创建事项。");
+      throw new WorkItemServiceError(404, "project_not_found", "还没有可用项目，无法创建任务。");
     }
     assertCanCreateInProject(first, actor);
     return first;
@@ -1810,7 +1854,44 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
   const clarificationGenerator = options.clarificationGenerator
     ?? (options.providerRegistry ? createLlmClarificationGenerator(options.providerRegistry) : undefined);
 
-  async function clarificationDraftFor(
+  // CHAT-1（读路径去副作用）：GET /sessions/:id 是轮询/刷新都会打到的读路径，此前混在
+  // clarificationDraftFor 里——缺文件就插 notice、加载失败就插 error、复用启发式不命中就直接烧一次
+  // LLM（60s/1600 tokens 无频率限制），读流量会把 chat_messages 写爆还烧钱。拆成两条路径：
+  //   - storedReusableClarificationDraft（本函数）：纯读。只读「已存草稿」+ 只读的文件上下文
+  //     （复用启发式要用），不写任何 chat 消息、绝不调 LLM。草稿不存在/失效返回 undefined，
+  //     由调用方决定怎么呈现（getSession 抛 409 引导走生成路径重试）。
+  //   - generateClarificationDraftFor：唯一允许写留痕/调 LLM 的生成路径，只在 createSession
+  //     （新建或带 work_item_id 的显式重试）里调用。
+  async function storedReusableClarificationDraft(
+    workItem: WorkItemRow,
+    actor: AuthActor,
+    locale: WorkHubLocale = "zh-CN"
+  ) {
+    const stored = draftFromStoredClarificationQuestion(
+      await repository.findLatestChatMessageByKind(workItem.id, "clarification_question")
+    );
+    if (!stored) {
+      return undefined;
+    }
+    const intentText = workItem.rawDescription ?? workItem.title ?? undefined;
+    let files: ClarificationFileContext[] = [];
+    try {
+      files = await projectFileContext({
+        projectId: workItem.projectId,
+        actor,
+        locale,
+        intentText
+      });
+    } catch {
+      // 读路径 fail-closed 但**不留痕**（留痕写在生成路径，见 generateClarificationDraftFor）：
+      // 文件上下文读不出就无法验证复用启发式，宁可当作没有可用草稿。
+      throw clarificationFileContextFailedError(locale);
+    }
+    const input: ClarificationQuestionInput = { workItem, actor, locale, files };
+    return canReuseStoredClarificationDraft(stored, input) ? stored : undefined;
+  }
+
+  async function generateClarificationDraftFor(
     workItem: WorkItemRow,
     actor: AuthActor,
     locale: WorkHubLocale = "zh-CN"
@@ -1828,12 +1909,15 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         intentText
       });
     } catch (error) {
+      // CHAT-1：留痕只在生成路径写——这里是用户显式触发的生成/重试，一次调用最多一条。
       await repository.insertChatMessage({
         workItemId: workItem.id,
         role: "system",
         kind: "clarification_file_context_error",
         contentJson: {
-          message: error instanceof Error ? error.message : "project file context failed"
+          message: locale === "en-US"
+            ? `project file context failed: ${error instanceof Error ? error.message : "unknown error"}`
+            : `项目文件上下文加载失败：${error instanceof Error ? error.message : "未知错误"}`
         },
         at: now()
       });
@@ -1841,6 +1925,12 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     }
     // R9 批次0-2：点名文件没找到不再 502（并连带 cancel 工单）——降级为留痕后继续，
     // 让澄清反问自然向用户确认缺失的材料。识别本身有误报可能，阻断主流程代价不对称。
+    // CHAT-1：留痕挪到「复用判断之后」——只有真的会重新生成草稿才写，复用已存草稿的
+    // 显式重试（createSession 带 work_item_id）不再重复堆 notice。
+    const input: ClarificationQuestionInput = { workItem, actor, locale, files };
+    if (stored && canReuseStoredClarificationDraft(stored, input)) {
+      return stored;
+    }
     const missingFileNames = missingDriveTargetFileNames({
       intentText,
       files
@@ -1857,10 +1947,6 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         },
         at: now()
       });
-    }
-    const input: ClarificationQuestionInput = { workItem, actor, locale, files };
-    if (stored && canReuseStoredClarificationDraft(stored, input)) {
-      return stored;
     }
     if (!clarificationGenerator) {
       throw new WorkItemServiceError(
@@ -1881,7 +1967,10 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         role: "system",
         kind: "clarification_analysis_error",
         contentJson: {
-          message: error instanceof Error ? error.message : "clarification analysis failed",
+          // E2E-01：落库留痕按 locale 写中/英文（此前硬编码英文 message，中文用户看不懂失败原因）。
+          message: locale === "en-US"
+            ? `AI material analysis failed: ${error instanceof Error ? error.message : "unknown error"}`
+            : `AI 材料分析失败：${error instanceof Error ? error.message : "未知错误"}`,
           file_paths: files.map((file) => file.path)
         },
         at: now()
@@ -1913,7 +2002,9 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         role: "system",
         kind: "clarification_analysis_error",
         contentJson: {
-          message: "clarification analysis returned a generic template",
+          message: locale === "en-US"
+            ? "AI material analysis returned a generic template"
+            : "AI 材料分析返回了泛化模板",
           file_paths: files.map((file) => file.path)
         },
         at: now()
@@ -1941,7 +2032,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
   }
 
   async function scopeSessionVmFor(workItem: WorkItemRow, actor: AuthActor, locale: WorkHubLocale = "zh-CN") {
-    return sessionVmFor(workItem, "scope", locale, await clarificationDraftFor(workItem, actor, locale));
+    return sessionVmFor(workItem, "scope", locale, await generateClarificationDraftFor(workItem, actor, locale));
   }
 
   return {
@@ -1979,16 +2070,10 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         const session = await scopeSessionVmFor(workItem, input.actor, input.locale);
         return session;
       } catch (error) {
-        try {
-          await repository.updateWorkItemFromSession({
-            workItemId: workItem.id,
-            status: "cancelled",
-            planningNote: "clarification_session_failed",
-            at: now()
-          });
-        } catch (cancelError) {
-          void cancelError;
-        }
+        // E2E-01：澄清生成失败**不再把工作项置 cancelled**——意图没有丢（上方 intent 消息已落库），
+        // 工作项留在 ai_clarifying，用户可经 createSession(带 work_item_id) 显式重试生成；
+        // 长时间没人处理的滞留会话由 clarification-chase pulse（CHAT-8）兜底提醒提交人。
+        // 此前失败即 cancel 会让一次瞬态 LLM 故障永久吞掉用户意图。
         throw error;
       }
     },
@@ -2000,29 +2085,88 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
       if (clarificationAnswers.length > 0) {
         return sessionVmFor(rows.workItem, "confirm", input.locale);
       }
-      return scopeSessionVmFor(rows.workItem, input.actor, input.locale);
+      // CHAT-1：读路径只读已存草稿——不生成、不写留痕、不调 LLM。草稿缺失/失效由
+      // createSession(带 work_item_id) 的显式重试负责再生成。
+      const stored = await storedReusableClarificationDraft(rows.workItem, input.actor, input.locale);
+      if (!stored) {
+        throw clarificationDraftMissingError(input.locale ?? "zh-CN");
+      }
+      return sessionVmFor(rows.workItem, "scope", input.locale, stored);
     },
 
     async nextQuestion(input) {
       const rows = await requireDetail(input.sessionId, input.actor);
       assertCanMutateWorkItemRows(rows, input.actor);
+      // CHAT-2④ 状态守卫：只有澄清中的会话可作答。已定稿(spec_ready 及以后)/终态事项再写
+      // 澄清回答没有消费者，只会污染定稿输入与留痕（fail-closed，与定稿侧的状态守卫同口径）。
+      if (rows.workItem.status !== "ai_clarifying") {
+        throw new WorkItemServiceError(
+          409,
+          "clarification_state_conflict",
+          (input.locale ?? "zh-CN") === "en-US"
+            ? "This session has already moved past clarification; new answers are no longer accepted."
+            : "这个会话已经越过澄清阶段，不能再提交澄清回答。"
+        );
+      }
       const selectedOptionIds = input.payload.selected_option_ids ?? [];
       // M10: "调整范围"(adjust-scope) on the confirm step is navigation back to the
       // scope question, not a clarification answer. Re-rendering confirm would trap
       // the user on the same screen; send them back to scope to re-choose and don't
       // record the navigation as an answer.
+      // CHAT-2③：回到 scope 重答前必须清掉已存的 scope 回答——否则旧回答残留在定稿输入里，
+      // 用户「调整范围」后旧选择仍悄悄生效。
       if (selectedOptionIds.includes("adjust-scope")) {
-        return scopeSessionVmFor(rows.workItem, input.actor, input.locale);
+        await repository.deleteSessionClarificationAnswers(rows.workItem.id);
+        const draft = await storedReusableClarificationDraft(rows.workItem, input.actor, input.locale);
+        if (!draft) {
+          throw clarificationDraftMissingError(input.locale ?? "zh-CN");
+        }
+        return sessionVmFor(rows.workItem, "scope", input.locale, draft);
       }
-      await repository.insertChatMessage({
+      // CHAT-2① 选项合法性：selected_option_ids 必须来自当前阶段真实渲染出去的选项集，
+      // 否则客户端可提交任意字符串落库，定稿时变成来路不明的 planning_note/launcher 输入。
+      // 无法核验（无草稿/无选项=长文本问题）时带选项提交一律 422（fail-closed）。
+      if (selectedOptionIds.length > 0) {
+        const priorAnswers = await repository.listSessionClarificationAnswers(rows.workItem.id);
+        // confirm 阶段的合法选项是确认卡上的哨兵（create-workitem/adjust-scope 等），不是 scope 草稿的选项——
+        // CUU 桌宠的确认卡就走这条路提交（cuu-r3 冒烟实证）。按阶段取校验集。
+        const atConfirmStage = priorAnswers.length > 0;
+        const validOptionIds = new Set(
+          atConfirmStage
+            ? (questionFor(rows.workItem, "confirm", input.locale).options ?? []).map((option, index) => option.id ?? `option-${index + 1}`)
+            : (draftFromStoredClarificationQuestion(
+                await repository.findLatestChatMessageByKind(rows.workItem.id, "clarification_question")
+              )?.options ?? []).map((option, index) => option.id ?? `option-${index + 1}`)
+        );
+        if (validOptionIds.size < 2 || selectedOptionIds.some((id) => !validOptionIds.has(id))) {
+          throw new WorkItemServiceError(
+            422,
+            "clarification_option_invalid",
+            (input.locale ?? "zh-CN") === "en-US"
+              ? "The submitted option does not belong to the current clarification question. Refresh and answer again."
+              : "提交的选项不属于当前澄清问题，请刷新后重新作答。"
+          );
+        }
+      }
+      // CHAT-2② 幂等：scope 阶段只有一道题，回答键即 (session, question) ≡ (workItem, 'clarification_answer')。
+      // 重复提交（双击/网络重试）upsert 替换而非追加，同一题的回答不会无界堆积。
+      // 哨兵过滤：confirm 阶段的「创建任务/调整范围」是导航动作不是内容回答——落库前剥掉哨兵 id，
+      // 否则定稿合并时 "create-workitem" 会漏进执行范围（cuu-r3 冒烟实证钉住）。
+      const CONFIRM_SENTINELS = new Set(["create-workitem", "adjust-scope"]);
+      const contentOptionIds = selectedOptionIds.filter((id) => !CONFIRM_SENTINELS.has(id));
+      if (contentOptionIds.length === 0 && !input.payload.free_text && selectedOptionIds.length > 0) {
+        // 纯哨兵提交（点了「创建任务」）：不产生回答记录，直接回确认卡（创建动作走 createWorkItem）。
+        return sessionVmFor(rows.workItem, "confirm", input.locale);
+      }
+      await repository.replaceSessionClarificationAnswer({
         workItemId: rows.workItem.id,
         role: "user",
         kind: "clarification_answer",
         contentJson: {
-          selected_option_ids: selectedOptionIds,
+          selected_option_ids: contentOptionIds,
           free_text: input.payload.free_text ?? null
         },
-        ...(selectedOptionIds[0] ? { selectedOptionKey: selectedOptionIds[0] } : {}),
+        ...(contentOptionIds[0] ? { selectedOptionKey: contentOptionIds[0] } : {}),
         ...(input.payload.free_text ? { userOtherText: input.payload.free_text } : {}),
         at: now()
       });
@@ -2054,6 +2198,10 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
           workItemId: rows.workItem.id,
           title: input.payload.title ?? rows.workItem.title ?? titleFromIntent(rows.workItem.rawDescription ?? undefined),
           status: "spec_ready",
+          // CHAT-3（定稿竞态）：上面的 clarificationAnswers 是在事务外读的；把读到的条数交给仓库层，
+          // 在「状态守卫 + 定稿写入」同一事务里复核回答数未变——读与写之间插入的新回答（用户在另一
+          // 标签页又答了一次）会让复核落空返回 null，而不是拿陈旧回答集静默定稿。
+          expectedClarificationAnswerCount: clarificationAnswers.length,
           at: now()
         };
         const rawDescription = input.payload.raw_description ?? rows.workItem.rawDescription ?? undefined;
@@ -2077,7 +2225,13 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         if (!updated) {
           // findings[#19/H4]：item 必存在（requireDetail 已在上方校验），故 0 行命中只能是状态守卫拒绝了
           // 非法转移（如想把已交付/在审事项回滚到 spec_ready/ai_working）→ 409 状态冲突，而非误报 404。
-          throw new WorkItemServiceError(409, "workitem_state_conflict", "这个事项的当前状态不允许重新定稿。");
+          // CHAT-3：此外回答计数复核（expectedClarificationAnswerCount）落空也走这里——读回答与定稿之间
+          // 有新回答写入，提示刷新重答而非拿旧回答集定稿。
+          throw new WorkItemServiceError(
+            409,
+            "workitem_state_conflict",
+            "这个事项的当前状态不允许重新定稿；若刚提交过新的澄清回答，请刷新后重试。"
+          );
         }
         await repository.insertChatMessage({
           workItemId: updated.id,
@@ -2489,19 +2643,68 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
     async getSession(input) {
       const workItem = requireWorkItem(input.sessionId);
       const hasAnswers = (answers.get(input.sessionId) ?? []).length > 0;
-      return hasAnswers
-        ? sessionVmFor(memoryRow(workItem), "confirm", input.locale)
-        : memoryScopeSessionVmFor(workItem, input.actor, input.locale);
+      if (hasAnswers) {
+        return sessionVmFor(memoryRow(workItem), "confirm", input.locale);
+      }
+      // CHAT-1：与持久化路径同口径——读路径只读已存草稿，不调 generator 现场生成。
+      const stored = questionDrafts.get(workItem.id);
+      if (!stored) {
+        throw clarificationDraftMissingError(input.locale ?? "zh-CN");
+      }
+      return sessionVmFor(memoryRow(workItem), "scope", input.locale, stored);
     },
 
     async nextQuestion(input) {
       const workItem = requireWorkItem(input.sessionId);
+      // CHAT-2④：与持久化路径同口径——只有澄清中的会话可作答。
+      if (workItem.status !== "ai_clarifying") {
+        throw new WorkItemServiceError(
+          409,
+          "clarification_state_conflict",
+          (input.locale ?? "zh-CN") === "en-US"
+            ? "This session has already moved past clarification; new answers are no longer accepted."
+            : "这个会话已经越过澄清阶段，不能再提交澄清回答。"
+        );
+      }
+      const selectedOptionIds = input.payload.selected_option_ids ?? [];
       // M10: mirror the persistent path — "调整范围"(adjust-scope) navigates back to
       // the scope question instead of dead-ending on confirm, and is not recorded.
-      if ((input.payload.selected_option_ids ?? []).includes("adjust-scope")) {
-        return memoryScopeSessionVmFor(workItem, input.actor, input.locale);
+      // CHAT-2③：回 scope 前清掉已存回答（旧选择不得残留进定稿输入）。
+      if (selectedOptionIds.includes("adjust-scope")) {
+        answers.delete(input.sessionId);
+        const stored = questionDrafts.get(workItem.id);
+        if (!stored) {
+          throw clarificationDraftMissingError(input.locale ?? "zh-CN");
+        }
+        return sessionVmFor(memoryRow(workItem), "scope", input.locale, stored);
       }
-      answers.set(input.sessionId, [...(answers.get(input.sessionId) ?? []), input.payload]);
+      // CHAT-2①：与持久化路径同口径——选项必须属于当前阶段真实渲染出去的选项集
+      //（confirm 阶段的合法选项是确认卡哨兵 create-workitem/adjust-scope，见持久化路径同注释）。
+      if (selectedOptionIds.length > 0) {
+        const atConfirmStage = (answers.get(input.sessionId) ?? []).length > 0;
+        const stored = questionDrafts.get(workItem.id);
+        const validOptionIds = new Set(
+          atConfirmStage
+            ? (questionFor(memoryRow(workItem), "confirm", input.locale).options ?? []).map((option, index) => option.id ?? `option-${index + 1}`)
+            : (stored?.options ?? []).map((option, index) => option.id ?? `option-${index + 1}`)
+        );
+        if (validOptionIds.size < 2 || selectedOptionIds.some((id) => !validOptionIds.has(id))) {
+          throw new WorkItemServiceError(
+            422,
+            "clarification_option_invalid",
+            (input.locale ?? "zh-CN") === "en-US"
+              ? "The submitted option does not belong to the current clarification question. Refresh and answer again."
+              : "提交的选项不属于当前澄清问题，请刷新后重新作答。"
+          );
+        }
+      }
+      // CHAT-2②：与持久化路径同口径——同一会话的回答 upsert 替换而非追加（幂等）。
+      // 哨兵过滤：confirm 阶段的纯哨兵提交（create-workitem）不是内容回答——不落库、不覆盖 scope 回答。
+      const contentOptionIds = selectedOptionIds.filter((id) => id !== "create-workitem" && id !== "adjust-scope");
+      if (contentOptionIds.length === 0 && !input.payload.free_text && selectedOptionIds.length > 0) {
+        return sessionVmFor(memoryRow(workItem), "confirm", input.locale);
+      }
+      answers.set(input.sessionId, [{ ...input.payload, selected_option_ids: contentOptionIds }]);
       return sessionVmFor(memoryRow(workItem), "confirm", input.locale);
     },
 
@@ -2593,7 +2796,9 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
           title: item.title ?? item.code,
           ...(item.summary_md ? { excerpt: compactText(item.summary_md) } : {}),
           confidence_hint: "found" as const,
-          href: `/api/pages/workitems/${item.id}`
+          // WIRE-09：证据「打开」要给 SPA 地址而非 JSON Page VM——与 PG 实现 evidenceRefFromWorkItem
+          // （同文件上方，/workitems/:id）同口径；/api/pages/* 点过去只会看到一坨 JSON。
+          href: `/workitems/${item.id}`
         }));
       return {
         id: stableUuid(`memory:evidence:${query ?? "recent"}:${input.payload.work_item_id ?? ""}`),

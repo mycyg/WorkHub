@@ -127,6 +127,23 @@ test("R15 批 F: care-scan settings have sensible defaults and are overridable",
   assert.equal(loadSettings({ PULSE_CARE_SCAN_INTERVAL_MS: "0" }).pulse.careScanIntervalMs, 0);
 });
 
+test("CHAT-8: clarification-chase settings have sensible defaults and are overridable", () => {
+  const defaults = loadSettings({});
+  // 澄清待答兜底默认 1 小时一 tick；滞留阈值默认 24h。
+  assert.equal(defaults.pulse.clarificationChaseIntervalMs, 3600000);
+  assert.equal(defaults.pulse.clarificationPendingAfterMs, 86400000);
+
+  const overridden = loadSettings({
+    PULSE_CLARIFICATION_CHASE_INTERVAL_MS: "600000",
+    CLARIFICATION_PENDING_AFTER_MS: "43200000"
+  });
+  assert.equal(overridden.pulse.clarificationChaseIntervalMs, 600000);
+  assert.equal(overridden.pulse.clarificationPendingAfterMs, 43200000);
+
+  // 间隔置 0 = 不挂定时器（沿用其他 pulse 任务的 min(0) 语义）。
+  assert.equal(loadSettings({ PULSE_CLARIFICATION_CHASE_INTERVAL_MS: "0" }).pulse.clarificationChaseIntervalMs, 0);
+});
+
 test("provider registry config keeps API keys out of public metadata", () => {
   const value = loadSettings({
     LLM_API_KEY: "secret-key",

@@ -177,6 +177,12 @@ export type DesktopCuuActionRequest =
   | {
       kind: "skip-plan";
       proposalId: string;
+    }
+  // WIRE-07：进行中 run 卡上的「取消执行」（POST /api/agent-runs/:id/abort）——此前卡片已产
+  // abort_agent_run 动作但分发无分支，点了石沉大海。
+  | {
+      kind: "abort-agent-run";
+      runId: string;
     };
 
 export const desktopCuuProjectContextStorageKey = "workhub_cuu_project_context";
@@ -352,6 +358,8 @@ type DesktopCuuActionClient = Pick<
     };
   }>;
   resolveMemoryConflict?: WorkHubApiClient["resolveMemoryConflict"];
+  // WIRE-07：中止进行中的 run（POST /api/agent-runs/:id/abort）——可选注入，测试替身不带也不影响其它动作。
+  abortAgentRun?: WorkHubApiClient["abortAgentRun"];
   resolveBudgetDecision?: (
     escalationId: string,
     budgetActionId: string,
@@ -580,7 +588,21 @@ export function subscribeDesktopCuuAgentRunStream(input: {
     };
   }
 
-  const streamUrl = desktopCuuRunStreamUrl(input.client, input.run.stream_href);
+  // DSK-08：跨源 run 流 URL 被拒绝时不抛穿调用方——给一张诚实的错误卡 + error 状态，
+  // 语义同 EventSource 不可用分支（订阅建立失败，不致命）。
+  let streamUrl: string;
+  try {
+    streamUrl = desktopCuuRunStreamUrl(input.client, input.run.stream_href);
+  } catch (error) {
+    input.onCard(cardFromDesktopCuuRuntimeError(error, { locale: input.locale, run: input.run }));
+    input.onStatus?.({ state: "error", runId, message: desktopCuuErrorMessage(error, input.locale) });
+    return {
+      runId,
+      close() {
+        input.onStatus?.({ state: "closed", runId, reason: "cross_origin_stream_url" });
+      }
+    };
+  }
   const source = new EventSourceCtor(streamUrl, { withCredentials: true });
   let closed = false;
   let refreshing = false;
@@ -1470,6 +1492,15 @@ export function resolveDesktopCuuAction(
     };
   }
 
+  // WIRE-07：agent-run 进行中卡的「取消执行」。
+  const agentRunAbortMatch = /^\/api\/agent-runs\/([^/]+)\/abort$/u.exec(path);
+  if (agentRunAbortMatch?.[1]) {
+    return {
+      kind: "abort-agent-run",
+      runId: decodeURIComponent(agentRunAbortMatch[1])
+    };
+  }
+
   return undefined;
 }
 
@@ -1597,6 +1628,17 @@ export async function submitDesktopCuuAction(input: {
     };
   }
 
+  // WIRE-07：中止执行——两段式确认已在 pet-surface 点击层完成，到这里就是确认后的真提交。
+  if (input.action.kind === "abort-agent-run") {
+    if (!input.client.abortAgentRun) {
+      throw new Error("Abort run action is unavailable.");
+    }
+    await input.client.abortAgentRun(input.action.runId);
+    return {
+      message: cuuT(input.locale, "action.runAborted")
+    };
+  }
+
   if (input.action.kind === "proposal-merge") {
     const result = await input.client.mergeProposal(input.action.proposalId, input.action.payload ?? {}, localeOptions);
     return {
@@ -1646,6 +1688,17 @@ export async function submitDesktopCuuAction(input: {
 
 function desktopCuuSessionSelectionStartsRun(action: Extract<DesktopCuuActionRequest, { kind: "session-next-question" }>) {
   return action.selectedOptionIds?.includes("create-workitem") === true;
+}
+
+// WIRE-07：中止执行的两段式确认纯判定——照 workbench/drive/side-panel.ts 的 decideRollbackConfirmation
+// 先例（同一个 run 在武装态下再点=执行；未武装或点了另一个 run=（重新）武装）。不碰 DOM，单测直接钉死。
+export function decideDesktopCuuAbortConfirmation(
+  armedRunId: string | undefined,
+  clickedRunId: string
+): { kind: "arm" | "execute"; runId: string } {
+  return armedRunId === clickedRunId
+    ? { kind: "execute", runId: clickedRunId }
+    : { kind: "arm", runId: clickedRunId };
 }
 
 function desktopCuuSessionNeedsClarification(session: Awaited<ReturnType<WorkHubApiClient["createSession"]>>) {
@@ -1939,8 +1992,22 @@ function parseDesktopCuuFetchSseFrame(frame: string): { event: string; data: str
   return { event, data: data.join("\n") };
 }
 
+// DSK-08：stream_href 若是绝对 URL，必须与 API base 同源——自制 fetch 源会给请求带上 client token
+// 鉴权头（见 DesktopCuuFetchEventSource.open），一张脏数据 run 卡就能把 SSE 指到第三方源、令牌随连接外泄。
+// 解析不出预期源或源不一致一律拒绝（调用方按错误卡处理），相对路径照旧走 client.streamUrl 解析。
 function desktopCuuRunStreamUrl(client: Pick<WorkHubApiClient, "streamUrl">, streamHref: string) {
-  return /^https?:\/\//iu.test(streamHref) ? streamHref : client.streamUrl(streamHref);
+  if (!/^https?:\/\//iu.test(streamHref)) {
+    return client.streamUrl(streamHref);
+  }
+  try {
+    const expectedOrigin = new URL(client.streamUrl("/")).origin;
+    if (new URL(streamHref).origin === expectedOrigin) {
+      return streamHref;
+    }
+  } catch {
+    // 落到下面的拒绝分支。
+  }
+  throw new Error(`Refused cross-origin agent run stream URL: ${streamHref}`);
 }
 
 function desktopCuuAgentRunIsActive(status: AgentRunLiveVM["status"]) {

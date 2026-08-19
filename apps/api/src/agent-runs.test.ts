@@ -7326,7 +7326,12 @@ test("R9.7 dead-letter recovery fails closed when the decision inbox write fails
   await queue.recoverExpiredClaims();
   await persistence.claimQueued(queued.run_id, { workerId: "dead-worker-2", ...expiredLease });
 
-  await assert.rejects(queue.recoverExpiredClaims(), /decision inbox unavailable/u);
+  // INF-02：升级卡写失败不再抛出中断整批——当前 run 回 restore 重试面（下轮 tick 重试），
+  // 其余断言不变：没有持久化的决策卡就绝不把事项置 escalated、不发交接里程碑。
+  await queue.recoverExpiredClaims();
+  const restored = await persistence.get(queued.run_id);
+  assert.equal(restored?.status, "running", "failed dead-letter escalation restores the run to the retry surface");
+  assert.equal(restored?.claim?.claimed_by, "worker-deadletter-r9-7:dead-letter-retry");
   assert.equal(status.statuses.get(workItemId), "ai_working", "do not show escalated without a matching attention card");
   assert.deepEqual(milestoneNotifications, [], "do not publish a handoff milestone when the inbox card was not persisted");
   assert.equal(
@@ -7377,7 +7382,8 @@ test("R9.7 dead-letter recovery remains retryable until attention is durable", a
   await persistence.claimQueued(queued.run_id, { workerId: "dead-worker-1", ...expiredLease });
   await queue.recoverExpiredClaims();
   await persistence.claimQueued(queued.run_id, { workerId: "dead-worker-2", ...expiredLease });
-  await assert.rejects(queue.recoverExpiredClaims(), /decision inbox unavailable once/u);
+  // INF-02：升级卡写失败不再抛出——run 被 restore 回重试面（running + 过期租约），下轮恢复再试。
+  await queue.recoverExpiredClaims();
   failInbox = false;
 
   const recovered = await queue.recoverExpiredClaims();
@@ -7386,4 +7392,139 @@ test("R9.7 dead-letter recovery remains retryable until attention is durable", a
   assert.equal(status.statuses.get(workItemId), "escalated");
   assert.equal(decisions.escalationRows.length, 1);
   assert.equal(decisions.escalationRows[0]?.agentRunId, queued.run_id);
+});
+
+test("INF-01: a poison unsettled task-plan run does not break settlement recovery for the rest", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const makeTerminalChild = (runId: string, itemId: string): AgentRunQueueRecord => ({
+    run_id: runId,
+    work_item_id: workItemId,
+    actor_id: userId,
+    mode: "worker",
+    status: "succeeded",
+    title: "Unsettled terminal child",
+    task_plan_id: "81000000-0000-4000-8000-000000000071",
+    task_plan_item_id: itemId,
+    budget: {
+      max_steps: 15,
+      total_timeout_s: 300,
+      max_tokens: 120000,
+      max_cost_cny: "5"
+    },
+    budget_decision: {
+      decision_id: "budget-1",
+      allowed: true,
+      model_route: {
+        provider: "test",
+        model: "test",
+        reason: "default"
+      }
+    },
+    usage: {
+      steps_used: 1,
+      token_in: 1,
+      token_out: 1,
+      estimated_cost_cny: "0"
+    },
+    trace: [],
+    created_at: now.toISOString(),
+    updated_at: now.toISOString()
+  });
+  const poison = makeTerminalChild("40000000-0000-4000-8000-0000000000f1", "81000000-0000-4000-8000-0000000000f1");
+  const healthy = makeTerminalChild("40000000-0000-4000-8000-0000000000f2", "81000000-0000-4000-8000-0000000000f2");
+  persistence.rows.set(poison.run_id, poison);
+  persistence.rows.set(healthy.run_id, healthy);
+  const settledRunIds: string[] = [];
+  let failPoison = true;
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    persistence,
+    runSettled: async (run) => {
+      if (run.run_id === poison.run_id && failPoison) {
+        failPoison = false;
+        throw new Error("task-plan settlement temporarily unavailable");
+      }
+      settledRunIds.push(run.run_id);
+    },
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+
+  // poison run 结算抛错：整批不能中断——健康 run 照常结算，poison run 留待下轮 tick 重扫。
+  const recovered = await queue.recoverUnsettledTaskPlanRuns();
+
+  assert.deepEqual(recovered.map((run) => run.run_id), [healthy.run_id]);
+  assert.deepEqual(settledRunIds, [healthy.run_id]);
+
+  // 下轮恢复还会再扫到 poison run（它仍在 unsettled 集合里），结算成功即补上——内存 stub 不会
+  // 把已结算行移出候选集，故 healthy 会再结算一次；关键断言是 poison 在重试轮被结算且首轮没堵批。
+  const retried = await queue.recoverUnsettledTaskPlanRuns();
+  assert.deepEqual(retried.map((run) => run.run_id), [poison.run_id, healthy.run_id]);
+  assert.equal(settledRunIds.filter((id) => id === poison.run_id).length, 1, "poison run settles on the retry tick");
+});
+
+test("INF-02: a failed dead-letter escalation does not strand the rest of the batch", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const decisions = new MemoryAiDecisions();
+  const otherWorkItemId = "62000000-0000-4000-8000-0000000000f3";
+  const recoveredAt = new Date("2026-06-05T00:10:00.000Z");
+  const status = faithfulWorkItemStatusWriter({
+    [workItemId]: "ai_working",
+    [otherWorkItemId]: "ai_working"
+  });
+  let idSeq = 0;
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => recoveredAt,
+    id: () => `40000000-0000-4000-8000-0000000000e${(idSeq += 1)}`,
+    workerId: "worker-deadletter-batch",
+    leaseMs: 60_000,
+    maxRecoverAttempts: 1,
+    persistence,
+    decisions: {
+      async createEscalationEvent(input) {
+        if (input.agentRunId === poisonRunId) {
+          throw new Error("decision inbox unavailable for one run");
+        }
+        return decisions.createEscalationEvent(input);
+      }
+    },
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false,
+    transitionWorkItemStatus: status.writer
+  });
+  const first = await queue.enqueue({ workItemId, actorId: userId, title: "Poison dead-letter" });
+  const second = await queue.enqueue({ workItemId: otherWorkItemId, actorId: userId, title: "Healthy dead-letter" });
+  const poisonRunId = first.run_id;
+  const expiredLease = {
+    claimedAt: new Date("2026-06-05T00:00:00.000Z"),
+    heartbeatAt: new Date("2026-06-05T00:00:30.000Z"),
+    leaseExpiresAt: new Date("2026-06-05T00:01:00.000Z")
+  };
+
+  // 两条 run 都走到死信（两次过期租约恢复，越过 maxRecoverAttempts=1）。
+  for (const run of [first, second]) {
+    await persistence.claimQueued(run.run_id, { workerId: "dead-worker-1", ...expiredLease });
+    await queue.recoverExpiredClaims();
+    await persistence.claimQueued(run.run_id, { workerId: "dead-worker-2", ...expiredLease });
+  }
+
+  // 批处理：第一条的升级卡写失败——旧代码在这里 throw，第二条永久卡死。现在第一条回 restore
+  // 重试面（下轮 tick 重试），第二条照常升级。
+  await queue.recoverExpiredClaims();
+
+  const restored = await persistence.get(first.run_id);
+  assert.equal(restored?.status, "running", "the failed run goes back to the retry surface");
+  assert.equal(restored?.claim?.claimed_by, "worker-deadletter-batch:dead-letter-retry");
+  assert.equal(status.statuses.get(workItemId), "ai_working", "no escalation without a durable decision card");
+  assert.equal(status.statuses.get(otherWorkItemId), "escalated", "the rest of the batch is still processed");
+  assert.equal(decisions.escalationRows.length, 1);
+  assert.equal(decisions.escalationRows[0]?.agentRunId, second.run_id);
 });

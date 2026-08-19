@@ -74,7 +74,7 @@ export function createTaskPlanMergeApprovalHandler(input: {
       throw new TaskPlanApprovalError(
         409,
         "task_plan_approval_failed",
-        "任务计划提议已合并，但对应草稿未能标记为已批准。"
+        "任务计划提议已采纳，但对应草稿未能标记为已批准。"
       );
     }
     return approved;

@@ -5,6 +5,7 @@ import type { DmListItemVM } from "@workhub/contracts";
 
 import {
   chunkPresenceIds,
+  createDmListReloadCoordinator,
   dmMembersFromParticipants,
   dmPeerParticipant,
   fetchDmList,
@@ -163,4 +164,91 @@ test("fetchDmList calls GET /api/dm/list and openDirectMessage POSTs /api/dm/ope
   assert.equal(calls[1]!.path, "/api/dm/open");
   assert.equal(calls[1]!.init?.method, "POST");
   assert.deepEqual(JSON.parse(String(calls[1]!.init?.body)), { user_id: peerId });
+});
+
+// —— MRG-21：DM 列表加载协调器（在飞单例 + 冷却） —— //
+
+test("createDmListReloadCoordinator shares the in-flight request across concurrent callers", async () => {
+  let loads = 0;
+  let releaseLoad: (() => void) | undefined;
+  const load = () =>
+    new Promise<void>((resolve) => {
+      loads += 1;
+      releaseLoad = resolve;
+    });
+  const coordinator = createDmListReloadCoordinator({ load });
+
+  const first = coordinator();
+  const second = coordinator();
+  await Promise.resolve();
+  assert.equal(loads, 1, "concurrent calls must share one in-flight request");
+  releaseLoad?.();
+  await Promise.all([first, second]);
+});
+
+test("createDmListReloadCoordinator skips non-forced reloads inside the cooldown window", async () => {
+  let now = 10_000;
+  let loads = 0;
+  const coordinator = createDmListReloadCoordinator({
+    load: async () => {
+      loads += 1;
+    },
+    cooldownMs: 5_000,
+    now: () => now
+  });
+
+  await coordinator();
+  assert.equal(loads, 1);
+
+  // 冷却期内的普通触发（未知会话通知 bump 未命中）被跳过——别的项目每条消息都触发也不再打爆后端。
+  now += 1_000;
+  await coordinator();
+  await coordinator();
+  assert.equal(loads, 1);
+
+  // 冷却期过后正常再拉。
+  now += 5_000;
+  await coordinator();
+  assert.equal(loads, 2);
+});
+
+test("createDmListReloadCoordinator lets force bypass the cooldown but still share the in-flight request", async () => {
+  let now = 0;
+  let loads = 0;
+  let releaseLoad: (() => void) | undefined;
+  let pending = false;
+  const coordinator = createDmListReloadCoordinator({
+    load: () => {
+      loads += 1;
+      if (pending) {
+        return new Promise<void>((resolve) => {
+          releaseLoad = resolve;
+        });
+      }
+      return Promise.resolve();
+    },
+    cooldownMs: 5_000,
+    now: () => now
+  });
+
+  await coordinator();
+  assert.equal(loads, 1);
+
+  // 冷却期内 force（深链兜底）必须真发一次。
+  now += 100;
+  pending = true;
+  const forced = coordinator({ force: true });
+  await Promise.resolve();
+  assert.equal(loads, 2);
+
+  // force 在飞期间，普通/force 调用都共享同一 promise，不再发第三次。
+  const shared = coordinator({ force: true });
+  await Promise.resolve();
+  assert.equal(loads, 2);
+  releaseLoad?.();
+  await Promise.all([forced, shared]);
+
+  // 在飞复用后冷却计时从最近一次发起算——刚拉完不久的非 force 调用仍被跳过。
+  await coordinator();
+  assert.equal(loads, 2);
 });

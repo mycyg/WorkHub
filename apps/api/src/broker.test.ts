@@ -155,6 +155,42 @@ test("redis bus normalizes malformed and cross-topic payloads before delivery", 
   await subscriber.close();
 });
 
+// INF-04：Redis 抖动（isOpen=false）后重建连接——旧客户端必须 quit（不泄漏），新 subscriber 必须
+// 把断线前已注册的 topic 全部补订回来，否则所有在线 SSE 永久失聪。
+test("INF-04: redis bus quits stale clients and re-subscribes existing topics after a reconnect", async () => {
+  const redis = new FakeRedisHub();
+  const factory: RedisPubSubClientFactory = () => redis.createPubSubClient();
+  const bus = new RedisPushBus("redis://workhub-test", 256, factory);
+  const subscription = await bus.subscribe("workitem:w-reconnect");
+  const staleClients = [...redis.pubSubClients];
+  assert.equal(staleClients.length, 2, "publisher + subscriber pair");
+
+  // 模拟断线：连接已死（isOpen=false）、订阅随连接丢失，但 bus 仍持有旧客户端句柄。
+  for (const client of staleClients) {
+    client.simulateDrop();
+  }
+
+  // 下一次 publish 触发 ensureConnected 重建：旧客户端被 quit，新 subscriber 补订已有 topic，
+  // 事件照常送达既有订阅。
+  await bus.publish("workitem:w-reconnect", "agent_run.step", { step: 9 });
+
+  const event = await subscription[Symbol.asyncIterator]().next();
+  assert.equal(event.done, false);
+  assert.deepEqual(event.value, {
+    topic: "workitem:w-reconnect",
+    type: "agent_run.step",
+    data: { step: 9 }
+  });
+  assert.equal(
+    staleClients.every((client) => client.quitCalls >= 1),
+    true,
+    "stale clients must be quit, not leaked"
+  );
+
+  await bus.unsubscribe("workitem:w-reconnect", subscription);
+  await bus.close();
+});
+
 test("redis bus serializes unsubscribe and resubscribe for the same topic", async () => {
   const redis = new FakeRedisHub();
   const factory: RedisPubSubClientFactory = () => redis.createPubSubClient();
@@ -293,9 +329,13 @@ class FakeRedisHub {
   private unsubscribeStartPromise: Promise<void> | undefined;
   private unsubscribeStarted: (() => void) | undefined;
   private unsubscribeRelease: (() => void) | undefined;
+  // 工厂与 duplicate() 创建的全部 pub/sub 客户端（含 subscriber），供测试模拟断线/断言退出。
+  public pubSubClients: FakeRedisPubSubClient[] = [];
 
   createPubSubClient(): RedisPubSubClient {
-    return new FakeRedisPubSubClient(this);
+    const client = new FakeRedisPubSubClient(this);
+    this.pubSubClients.push(client);
+    return client;
   }
 
   createPresenceClient(): RedisPresenceClient {
@@ -408,12 +448,15 @@ class FakeRedisHub {
 
 class FakeRedisPubSubClient implements RedisPubSubClient {
   isOpen = false;
+  quitCalls = 0;
   private subscriptions = new Map<string, Set<RedisListener>>();
 
   constructor(private readonly hub: FakeRedisHub) {}
 
   duplicate() {
-    return new FakeRedisPubSubClient(this.hub);
+    const client = new FakeRedisPubSubClient(this.hub);
+    this.hub.pubSubClients.push(client);
+    return client;
   }
 
   on() {
@@ -425,6 +468,19 @@ class FakeRedisPubSubClient implements RedisPubSubClient {
   }
 
   async quit() {
+    this.quitCalls += 1;
+    for (const [channel, listeners] of this.subscriptions) {
+      for (const listener of listeners) {
+        this.hub.removeListener(channel, listener);
+      }
+    }
+    this.subscriptions.clear();
+    this.isOpen = false;
+  }
+
+  // 模拟 Redis 抖动断线：监听关系随连接一起丢失，但不经过 quit（不计 quitCalls）——
+  // 用于区分「断线丢订阅」与「重建时主动退出旧客户端」。
+  simulateDrop() {
     for (const [channel, listeners] of this.subscriptions) {
       for (const listener of listeners) {
         this.hub.removeListener(channel, listener);

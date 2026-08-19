@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { proactiveIntents } from "./schema/index.js";
+import { proactiveIntents, workItems, chatMessages } from "./schema/index.js";
 import {
   claimProactiveIntentForDelivery,
   countDeliveredProactiveIntentsForUser,
   incrementProactiveIntentAttempt,
   listDdlChaseCandidates,
   listRecoverableProactiveIntents,
+  listStaleClarificationWorkItems,
   markProactiveIntentStatus,
   recordProactiveIntent
 } from "./repositories/proactive-intents.js";
@@ -266,4 +267,53 @@ test("listDdlChaseCandidates skips the assignment query entirely when no candida
   assert.deepEqual(candidates, []);
   const selects = queries.filter((q) => q.operation === "select");
   assert.equal(selects.length, 1, "must not issue an assignment query when the candidate scan is empty");
+});
+
+test("listStaleClarificationWorkItems filters out sessions that already have an answer", async () => {
+  // CHAT-8：已答过的澄清会话不算滞留（confirm 阶段是用户自己的下一步），只有「零回答」的才进兜底提醒。
+  const staleRows = [
+    {
+      workItemId,
+      code: "WI-9",
+      title: "整理验收要点",
+      submitterUserId: targetUserId,
+      projectId,
+      workspaceId,
+      createdAt: new Date("2026-07-10T10:00:00.000Z")
+    },
+    {
+      workItemId: "d0000000-0000-4000-8000-000000000099",
+      code: "WI-10",
+      title: "已答过的事项",
+      submitterUserId: targetUserId,
+      projectId,
+      workspaceId,
+      createdAt: new Date("2026-07-09T10:00:00.000Z")
+    }
+  ];
+  const answeredRows = [{ workItemId: "d0000000-0000-4000-8000-000000000099" }];
+  const { db, queries } = createQueryRecorder([staleRows, answeredRows]);
+  const stale = await listStaleClarificationWorkItems(db, {
+    olderThan: new Date("2026-07-14T10:00:00.000Z"),
+    limit: 200
+  });
+  assert.equal(stale.length, 1);
+  assert.equal(stale[0]?.workItemId, workItemId);
+  // 候选查询必须锚定 ai_clarifying + 软删过滤；第二查把已答会话剔除。
+  const selects = queries.filter((q) => q.operation === "select");
+  assert.equal(selects.length, 2, "candidate scan + answered-ids batch");
+  assert.ok(queryReferences(selects[0]?.where, workItems.status), "candidate scan must filter by status");
+  assert.ok(queryReferences(selects[0]?.where, workItems.deletedAt), "candidate scan must exclude soft-deleted items");
+  assert.ok(queryReferences(selects[1]?.where, chatMessages.kind), "answered scan must filter by chat message kind");
+});
+
+test("listStaleClarificationWorkItems skips the answered-ids query when no candidates match", async () => {
+  const { db, queries } = createQueryRecorder([[]]);
+  const stale = await listStaleClarificationWorkItems(db, {
+    olderThan: new Date("2026-07-14T10:00:00.000Z"),
+    limit: 200
+  });
+  assert.deepEqual(stale, []);
+  const selects = queries.filter((q) => q.operation === "select");
+  assert.equal(selects.length, 1, "must not issue the answered-ids query when the candidate scan is empty");
 });

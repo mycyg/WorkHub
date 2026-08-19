@@ -69,7 +69,7 @@ export const lifecycleMilestones: Partial<Record<WorkItemStatus, LifecycleMilest
     severity: "high",
     recipients: ["submitter", "approver"],
     titleTemplate: "{code} 需要你来定一下",
-    bodyTemplate: "这个活我先卡住了:{reason_oneline}。我建议这么推进,看一眼?"
+    bodyTemplate: "这个活我先卡住了：{reason_oneline}。我建议这么推进，看一眼？"
   },
   pm_mode: {
     status: "pm_mode",
@@ -77,7 +77,7 @@ export const lifecycleMilestones: Partial<Record<WorkItemStatus, LifecycleMilest
     severity: "high",
     recipients: ["approver"],
     titleTemplate: "{code} 我整理好了推进方案",
-    bodyTemplate: "为什么卡 / 建议谁做 / 计划都列好了 - 确认或调整"
+    bodyTemplate: "为什么卡 / 建议谁做 / 计划都列好了 —— 确认或调整"
   },
   in_review: {
     status: "in_review",
@@ -85,15 +85,15 @@ export const lifecycleMilestones: Partial<Record<WorkItemStatus, LifecycleMilest
     severity: "high",
     recipients: ["approver"],
     titleTemplate: "{code} 成果待你确认采纳",
-    bodyTemplate: "{actor} 把成果整理好了,进去确认采纳或打回"
+    bodyTemplate: "{actor} 把成果整理好了，进去确认采纳或打回"
   },
   merged: {
     status: "merged",
     notificationType: "workitem.merged",
     severity: "normal",
     recipients: ["submitter"],
-    titleTemplate: "{code} 已合并完成",
-    bodyTemplate: "{actor} 采纳了成果,本次工作已汇入"
+    titleTemplate: "{code} 已采纳进正式版",
+    bodyTemplate: "{actor} 采纳了成果，本次工作已汇入正式版。"
   },
   cancelled: {
     status: "cancelled",

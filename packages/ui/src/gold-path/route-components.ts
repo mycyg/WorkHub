@@ -64,6 +64,8 @@ import {
   checkStatusLabel,
   deliverableTargetLabel,
   evidenceSourceLabel,
+  formatLocalDate,
+  formatLocalTimestamp,
   notificationTypeLabel,
   previewKindLabel,
   proposalStatusLabel,
@@ -543,7 +545,6 @@ type RouteCopyKey =
   | "settings.model"
   | "settings.apiKey"
   | "settings.baseUrl"
-  | "settings.secretSafe"
   | "settings.activeLocale"
   | "settings.preferenceLocale"
   | "settings.preferenceSource"
@@ -585,7 +586,7 @@ type RouteCopyKey =
 const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
   "zh-CN": {
     "workitem.context": "任务上下文",
-    "workitem.trace": "AI 工作过程",
+    "workitem.trace": "AI 工作过程", // term-allow：key 名是词典标识符，不是用户文案（值已人话）。
     "workitem.deliverables": "AI 提议的改动",
     "workitem.driveSource": "网盘评论来源",
     "workitem.meetingSource": "会议洞察来源",
@@ -597,7 +598,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "intake.summary": "接入摘要",
     "intake.progress": "澄清进度",
     "intake.freeText": "展开手动输入回答",
-    "intake.createWorkItem": "创建工作项",
+    "intake.createWorkItem": "创建任务",
     "intake.continue": "继续澄清",
     "intake.stateDone": "已完成",
     "intake.stateActive": "进行中",
@@ -766,7 +767,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "agents.active": "进行中军团",
     "agents.waiting": "等你决策",
     "agents.todayCost": "今日成本",
-    "agents.autonomy": "自治率",
+    "agents.autonomy": "自主率",
     "agents.plans": "活跃计划",
     "agents.recent": "最近升级",
     "agents.noRecent": "还没有升级动态。",
@@ -780,8 +781,8 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "agents.judge": "复核通过率",
     "skills.kicker": "团队技能库",
     "skills.title": "团队技能",
-    "skills.summary": "AI 沉淀并持续打磨的可复用技能",
-    "skills.empty": "还没有沉淀出团队技能。AI 会在夜间从真实工作里蒸馏。",
+    "skills.summary": "AI 从真实工作里攒下并持续打磨的可复用技能",
+    "skills.empty": "还没有攒下团队技能。AI 会在夜间从真实工作里总结。",
     "projects.kicker": "项目即产品",
     "projects.title": "项目",
     "projects.summary": "把每个项目当成一个产品来管理：进行中工作项、负责人和最近更新一目了然。",
@@ -803,7 +804,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "projectHome.github": "最近 GitHub 动态",
     "projectHome.githubEmpty": "在桌面客户端项目设置中绑定 GitHub 后可见。",
     "skills.active": "在用",
-    "skills.aiAuthored": "AI 蒸馏",
+    "skills.aiAuthored": "AI 总结",
     "skills.refined": "已精修",
     "skills.version": "版本",
     "skills.readiness": "成熟度",
@@ -828,7 +829,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "settings.model": "模型",
     "settings.apiKey": "密钥状态",
     "settings.baseUrl": "服务地址状态",
-    "settings.secretSafe": "密钥安全",
     "settings.activeLocale": "当前语言",
     "settings.preferenceLocale": "服务端偏好",
     "settings.preferenceSource": "偏好来源",
@@ -856,7 +856,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "memory.delete": "删除",
     "memory.deleteConfirm": "确定删除？再点一次",
     "memory.deleteHint": "删除后 AI 助手将忘记这条。",
-    "memory.skillsEmpty": "还没有沉淀出团队技能。",
+    "memory.skillsEmpty": "还没有攒下团队技能。",
     "memory.status.draft": "草稿",
     "memory.status.active": "在用",
     "memory.status.deprecated": "已停用",
@@ -868,7 +868,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
   },
   "en-US": {
     "workitem.context": "Task context",
-    "workitem.trace": "AI execution trace",
+    "workitem.trace": "AI work replay",
     "workitem.deliverables": "Proposed changes",
     "workitem.driveSource": "Drive comment source",
     "workitem.meetingSource": "Meeting insight source",
@@ -880,7 +880,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "intake.summary": "Intake summary",
     "intake.progress": "Clarification progress",
     "intake.freeText": "Type your answer",
-    "intake.createWorkItem": "Create work item",
+    "intake.createWorkItem": "Create task",
     "intake.continue": "Continue intake",
     "intake.stateDone": "Done",
     "intake.stateActive": "In progress",
@@ -1061,8 +1061,8 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "agents.judge": "Review pass rate",
     "skills.kicker": "Team skill library",
     "skills.title": "Team skills",
-    "skills.summary": "Reusable skills the AI distills and keeps refining",
-    "skills.empty": "No team skills yet. The AI distills them nightly from real work.",
+    "skills.summary": "Reusable skills the AI picks up from real work and keeps refining",
+    "skills.empty": "No team skills yet. The AI sums them up nightly from real work.",
     "projects.kicker": "Projects as products",
     "projects.title": "Projects",
     "projects.summary": "Treat every project like a product: open work, owner, and latest activity at a glance.",
@@ -1084,7 +1084,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "projectHome.github": "Recent GitHub activity",
     "projectHome.githubEmpty": "Bind GitHub in the desktop client's project settings to see this.",
     "skills.active": "Active",
-    "skills.aiAuthored": "AI-distilled",
+    "skills.aiAuthored": "AI learned",
     "skills.refined": "Refined",
     "skills.version": "Version",
     "skills.readiness": "Readiness",
@@ -1109,7 +1109,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "settings.model": "Model",
     "settings.apiKey": "Key status",
     "settings.baseUrl": "Service URL status",
-    "settings.secretSafe": "Secret safety",
     "settings.activeLocale": "Active locale",
     "settings.preferenceLocale": "Server preference",
     "settings.preferenceSource": "Preference source",
@@ -1385,7 +1384,7 @@ function attentionKindLabel(kind: string, zh: boolean): string {
       approval: "待审批",
       plan_review: "计划审阅",
       proposal_review: "待审查",
-      escalation: "已升级",
+      escalation: "需要负责人介入",
       sync_conflict: "撞车冲突",
       knowledge_result: "知识结果",
       budget: "预算",
@@ -1397,7 +1396,7 @@ function attentionKindLabel(kind: string, zh: boolean): string {
       approval: "Approval",
       plan_review: "Plan review",
       proposal_review: "Review",
-      escalation: "Escalated",
+      escalation: "Needs owner",
       sync_conflict: "Conflict",
       knowledge_result: "Knowledge",
       budget: "Budget",
@@ -1519,7 +1518,7 @@ function renderHomeRouteComponent(
           <div class="wh-r4-route-meta">
             ${project.owner_user_id ? personAvatarTileHtml({ userId: project.owner_user_id, label: project.owner_nickname }) : ""}<span class="wh-pill">${escapeHtml(`${routeT(locale, "projects.owner")} · ${project.owner_nickname}`)}</span>
             <span class="wh-pill">${escapeHtml(`${routeT(locale, "projects.openItems")} ${project.open_work_item_count}`)}</span>
-            <span class="wh-pill">${escapeHtml(`${routeT(locale, "projects.updated")} ${project.updated_at.slice(0, 10)}`)}</span>
+            <span class="wh-pill">${escapeHtml(`${routeT(locale, "projects.updated")} ${formatLocalDate(project.updated_at)}`)}</span>
           </div>
         </div>
         <a class="wh-btn" href="/projects/${escapeHtml(encodeURIComponent(project.id))}" data-r8-home-open-project="${escapeHtml(project.id)}">${escapeHtml(routeT(locale, "projects.open"))}</a>
@@ -1557,7 +1556,7 @@ function renderHomeRouteComponent(
   // M1：战绩主行只在今天真有完成量时才显示，否则零活跃新用户首屏会读到「今天我替你扛了 0 件·自主率 0%·约省 0 小时」
   // 这种自夸 0 的尴尬文案（与自进化行的 selfEvolved>0 门同口径）。自进化行独立成立。
   const worklogMainLine = worklog && worklog.accepted_today > 0
-    ? `<span>${escapeHtml(zh ? "今天我搞定了" : "AI handled today:")} <b>${escapeHtml(String(worklog.accepted_today))}</b> ${escapeHtml(zh ? "件 · 自治率" : "done · autonomy")} <b title="${escapeHtml(zh ? "今日 AI 复核通过率" : "Today's AI review pass rate")}" data-r9-home-autonomy-note="true">${escapeHtml(String(worklog.autonomy_rate))}%</b> · ${escapeHtml(zh ? "约省" : "saved ≈")} <b>${escapeHtml(String(worklog.saved_hours_estimate))}</b> ${escapeHtml(zh ? "小时" : "h")}${zh ? ` <span class="wh-r4-home-kao">٩(◜◡◝)۶</span>` : ""}</span>`
+    ? `<span>${escapeHtml(zh ? "今天我搞定了" : "AI handled today:")} <b>${escapeHtml(String(worklog.accepted_today))}</b> ${escapeHtml(zh ? "件 · 自主率" : "done · autonomy")} <b title="${escapeHtml(zh ? "今日 AI 复核通过率" : "Today's AI review pass rate")}" data-r9-home-autonomy-note="true">${escapeHtml(String(worklog.autonomy_rate))}%</b> · ${escapeHtml(zh ? "约省" : "saved ≈")} <b>${escapeHtml(String(worklog.saved_hours_estimate))}</b> ${escapeHtml(zh ? "小时" : "h")}${zh ? ` <span class="wh-r4-home-kao">٩(◜◡◝)۶</span>` : ""}</span>`
     : "";
   const worklogBanner = (worklogMainLine || selfEvolveLine)
     ? `<div class="wh-r4-home-banner" data-r4-home-worklog="true">
@@ -1708,7 +1707,7 @@ function renderHomeRouteComponent(
         <section class="wh-card wh-r4-route-card" data-r8-home-drive-principle="true">
           <span class="wh-r4-route-kicker">${escapeHtml(zh ? "文件同步" : "File sync")}</span>
           <h3 role="heading" aria-level="2">${escapeHtml(zh ? "网盘跟着项目走" : "The drive follows the project")}</h3>
-          <p>${escapeHtml(zh ? "上传、版本、交付物恢复和评论草稿都在项目网盘里闭环，避免把文件散在全局入口。" : "Uploads, versions, deliverable restore, and comment drafts close the loop inside each project drive instead of a loose global bucket.")}</p>
+          <p>${escapeHtml(zh ? "上传、版本、交付物恢复和评论草稿都在项目网盘里完成，避免把文件散在全局入口。" : "Uploads, versions, deliverable restore, and comment drafts all stay inside each project drive instead of a loose global bucket.")}</p>
           <a class="wh-r4-route-kicker" href="${escapeHtml(safeHref(projectDriveHref))}" data-r8-home-drive-principle-link="true">${escapeHtml(zh ? "查看项目网盘 →" : "View project drive →")}</a>
         </section>
       </div>
@@ -1754,7 +1753,7 @@ function renderIntakeStartRouteComponent(
   const kicker = project ? (zh ? "项目工作入口" : "Project work entry") : routeT(locale, "intake.startKicker");
   const title = project ? (zh ? `在「${project.name}」里新建任务` : `Start work in ${project.name}`) : routeT(locale, "intake.startTitle");
   const body = project
-    ? (zh ? "新任务会直接绑定到这个项目，进入选项优先的需求澄清；不会改动已确认的交付物。" : "This task binds directly to this project, then opens option-first intake. It won't touch accepted deliverables.")
+    ? (zh ? "新任务会直接绑定到这个项目，先给你几个选项把任务问清楚；不会改动已确认的交付物。" : "This task binds directly to this project, then asks a few options to pin down the work. It won't touch accepted deliverables.")
     : routeT(locale, "intake.startBody");
   const projectCardHeading = project ? (zh ? "项目上下文" : "Project context") : routeT(locale, "intake.startProject");
   // start 动作：有项目则带 data-s4b-project-id（browser 据此 createSession 直绑该项目、不 bootstrap）；
@@ -1938,13 +1937,10 @@ function approvalEvidenceConfidenceLabel(hint: string, zh: boolean): string {
   );
 }
 
-// 2026-06-14T10:24:00.000Z → 2026-06-14 10:24（确定性、不解析 Date、不卷时区，smoke 安全；比裸 ISO 友好）。
+// UI-02：统一走本地时区（formatLocalTimestamp：new Date + 本地分量，形状仍为 YYYY-MM-DD HH:MM）。
+// 此前直切 ISO 串 UTC 直出——北京时间下午的事显示成当天上午。无效输入原样返回，渲染层不炸。
 function formatApprovalTimestamp(iso: string | undefined): string {
-  if (!iso) {
-    return "";
-  }
-  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/u.exec(iso);
-  return match ? `${match[1]} ${match[2]}` : iso;
+  return formatLocalTimestamp(iso);
 }
 
 // R8（留痕）：已处理审批的决策词映射。
@@ -2264,7 +2260,7 @@ function emptyTraceCopy(status: string, locale: WorkHubLocale): string {
     return zh ? "这条任务已取消，没有执行步骤。" : "This work item was cancelled; there are no execution steps.";
   }
   if (status === "escalated") {
-    return zh ? "已升级给负责人接手，暂无 AI 执行步骤。" : "Escalated to an owner to take over; no AI steps yet.";
+    return zh ? "需要负责人介入，暂无 AI 执行步骤。" : "Needs the owner to step in; no AI steps yet.";
   }
   return uiT(locale, "workitem.emptyTrace");
 }
@@ -2278,7 +2274,7 @@ function emptyDeliverableCopy(status: string, locale: WorkHubLocale): string {
     return zh ? "这条任务已取消，没有交付物。" : "This work item was cancelled; there is no deliverable.";
   }
   if (status === "escalated") {
-    return zh ? "已升级给负责人，暂无可供审批的交付物。" : "Escalated to an owner; no deliverable to approve yet.";
+    return zh ? "需要负责人介入，暂无可供审批的交付物。" : "Needs the owner to step in; no deliverable to approve yet.";
   }
   return uiT(locale, "workitem.willReadEvidence");
 }
@@ -2303,12 +2299,12 @@ function traceRows(vm: WorkItemDetailVM, locale: WorkHubLocale) {
 // AI 执行/快照/审批的完整审计轨迹。这里只出静态占位卡（时间线本体是客户端异步拉取，见
 // apps/web/src/browser.ts 的 bindWorkItemAuditTimelinePanel），行渲染抽成纯函数以便单测覆盖。
 const auditActionLabels: Record<string, [string, string]> = {
-  "work_item.created": ["创建工作项", "Work item created"],
+  "work_item.created": ["创建任务", "Task created"],
   "work_item.updated": ["更新工作项", "Work item updated"],
   "snapshot.created": ["生成文件快照", "File snapshot created"],
   "snapshot.reverted": ["回滚文件快照", "File snapshot reverted"],
   "proposal.opened": ["生成变更申请", "Proposal opened"],
-  "proposal.merged": ["合并变更申请", "Proposal merged"],
+  "proposal.merged": ["采纳变更申请", "Change adopted"],
   "proposal.rejected": ["驳回变更申请", "Proposal rejected"],
   "approval.approved": ["审批通过", "Approval granted"],
   "approval.rejected": ["审批打回", "Approval rejected"]
@@ -2524,7 +2520,7 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
   const rows = team.items.length
     ? team.items.map((item) => {
         const traceLink = !item.action && item.replay_href
-          ? `<a class="wh-pill" href="${escapeHtml(safeHref(item.replay_href))}" data-r9-agent-team-trace="${escapeHtml(item.task_plan_item_id)}">${escapeHtml(locale === "zh-CN" ? "看轨迹" : "View trace")}</a>`
+          ? `<a class="wh-pill" href="${escapeHtml(safeHref(item.replay_href))}" data-r9-agent-team-trace="${escapeHtml(item.task_plan_item_id)}">${escapeHtml(locale === "zh-CN" ? "看轨迹" : "View replay")}</a>`
           : "";
         const waiting = item.waiting_for_seq.length
           ? `<p>${escapeHtml(locale === "zh-CN" ? `等待 ${item.waiting_for_seq.map((seq) => `#${seq}`).join(", ")} 完成` : `Waiting for ${item.waiting_for_seq.map((seq) => `#${seq}`).join(", ")}`)}</p>`
@@ -2607,7 +2603,7 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
 function workItemActionHint(status: string, zh: boolean): string {
   const map: Record<string, [string, string]> = {
     intake: ["AI 正在接收这条需求，稍后会请你澄清。", "AI is taking in this request; it will ask you to clarify soon."],
-    ai_clarifying: ["AI 正在和你澄清需求，去「提需求」入口继续。", "AI is clarifying with you — continue from the intake flow."],
+    ai_clarifying: ["AI 正在和你澄清任务细节，去「新任务」入口继续。", "AI is clarifying the task with you — continue from the new-task entry."],
     in_progress: ["AI 正在处理，有进展会更新到这里。", "AI is working on this; progress will appear here."],
     in_review: ["等待审阅，相关变更会以审批 / 变更申请的形式找你。", "Awaiting review — changes will reach you as an approval / change request."],
     // 普通用户审查：升级恰恰是「需要人拿主意」的状态，写「无需你额外操作」在撒谎——重试/接手按钮在收件箱。
@@ -2690,8 +2686,8 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
     </div>`).join("")
     : `<p class="wh-subtle" data-r4-workitem-empty-deliverable-status="${escapeHtml(vm.workitem.status)}">${escapeHtml(emptyDeliverableCopy(vm.workitem.status, locale))}</p>`;
   // R13 批 P4（全托管透明度：reviewer_kind 溯源）：只要有一条已采纳交付物是 AI 自己复核并合并的
-  // （reviewer_kind==="ai"），说明这个工作项确实发生过「全托管自动合并」——置信度 pill 的
-  // 「可自动采纳」（未来时/资格描述）此时该改成过去时，不能对已发生的事实用「可以」这种语气。
+  // （reviewer_kind==="ai"），说明这个工作项确实发生过「全托管自动合并」——把握度 pill 上补一条
+  // 过去时的「已自动采纳」，对已发生的事实用事实语气；未发生时只显示把握度三句话，不预告资格。
   const hasAiAutoMergedDeliverable = vm.accepted_deliverables.some((accepted) => accepted.reviewer_kind === "ai");
   // R14 批 CHAT（web-avatars）：claimed_by_user_id/claimed_by_nickname 一直在 WorkItem 契约里
   // （apps/api/src/services/work-items.ts 早就在填），但 web 端此前从没渲过——工单详情页从没说过
@@ -2727,11 +2723,11 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
             ${claimedByPill}
             <span class="wh-pill">${escapeHtml(attentionPriorityLabel(vm.workitem.priority, locale === "zh-CN"))}</span>
             <span class="wh-pill">${escapeHtml(localizedEnumLabel(vm.workitem.mode, locale === "zh-CN", { worker: "执行", pm: "项目管理" }, { worker: "Worker", pm: "PM" }))}</span>
-            ${vm.confidence ? `<span class="wh-pill wh-r4-prio ${vm.confidence.verdict === "escalate" ? "wh-r4-prio--warn" : ""}" data-r9-workitem-confidence="${escapeHtml(vm.confidence.verdict)}" data-r13-workitem-confidence-auto-merged="${escapeHtml(String(vm.confidence.verdict === "auto_merge" && hasAiAutoMergedDeliverable))}" title="${escapeHtml(locale === "zh-CN" ? "AI 对最近一次输出的置信评级与分流结论" : "AI's confidence grade and routing verdict for the latest output")}">${escapeHtml(locale === "zh-CN"
-    ? `${vm.confidence.score >= 0.85 ? "AI 很有把握" : vm.confidence.score >= 0.6 ? "AI 比较有把握" : "AI 把握不大"} · ${vm.confidence.verdict === "auto_merge" ? (hasAiAutoMergedDeliverable ? "已自动采纳" : "可自动采纳") : vm.confidence.verdict === "human_spotcheck" ? "建议抽查" : "建议人工把关"}`
-    : `${vm.confidence.score >= 0.85 ? "AI is confident" : vm.confidence.score >= 0.6 ? "AI is fairly confident" : "AI is unsure"} · ${vm.confidence.verdict === "auto_merge" ? (hasAiAutoMergedDeliverable ? "auto-merged already" : "auto-merge ok") : vm.confidence.verdict === "human_spotcheck" ? "spot-check" : "needs review"}`)}</span>` : ""}
+            ${vm.confidence ? `<span class="wh-pill wh-r4-prio ${vm.confidence.verdict === "escalate" ? "wh-r4-prio--warn" : ""}" data-r9-workitem-confidence="${escapeHtml(vm.confidence.verdict)}" data-r13-workitem-confidence-auto-merged="${escapeHtml(String(vm.confidence.verdict === "auto_merge" && hasAiAutoMergedDeliverable))}" title="${escapeHtml(locale === "zh-CN" ? "AI 对最近一次输出的把握程度" : "How confident AI is about its latest output")}">${escapeHtml(locale === "zh-CN"
+    ? `${vm.confidence.score >= 0.85 ? "我比较有把握" : vm.confidence.score >= 0.6 ? "建议你扫一眼" : "我拿不准，你来定"}${vm.confidence.verdict === "auto_merge" && hasAiAutoMergedDeliverable ? " · 已自动采纳" : ""}`
+    : `${vm.confidence.score >= 0.85 ? "I'm fairly confident" : vm.confidence.score >= 0.6 ? "Worth a quick look" : "I'm not sure — your call"}${vm.confidence.verdict === "auto_merge" && hasAiAutoMergedDeliverable ? " · Auto-adopted" : ""}`)}</span>` : ""}
           </div>
-          ${vm.confidence ? `<p class="wh-subtle" data-r9-workitem-confidence-note="true">${escapeHtml(locale === "zh-CN" ? "AI 对最近一次输出的置信评级与分流结论。" : "AI's confidence grade and routing verdict for the latest output.")}</p>` : ""}
+          ${vm.confidence ? `<p class="wh-subtle" data-r9-workitem-confidence-note="true">${escapeHtml(locale === "zh-CN" ? "AI 对最近一次输出的把握程度。" : "How confident AI is about its latest output.")}</p>` : ""}
           ${(() => {
     // L25：上下文卡正文别和头部 summary 重复(都源自 raw_description 时)；两者都空也别渲一个空 <p>。
     const body = vm.workitem.planning_note ?? vm.workitem.raw_description ?? "";
@@ -3256,7 +3252,7 @@ function renderDriveRouteComponent(
     ? selectedFileVersions.slice(0, 8).map((version) => `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-drive-version="${escapeHtml(version.id)}" data-r4-drive-version-current="${escapeHtml(String(version.current))}">
       <div>
         <strong>${escapeHtml(`${version.filename} · v${version.version_no}`)}</strong>
-        <p>${escapeHtml(`${formatBytes(version.size_bytes, locale)} · ${version.created_at.slice(0, 10)}`)}</p>
+        <p>${escapeHtml(`${formatBytes(version.size_bytes, locale)} · ${formatLocalDate(version.created_at)}`)}</p>
       </div>
       <div class="wh-r4-route-meta">
         <span class="wh-pill">${escapeHtml(driveVersionSourceLabel(version.source, locale === "zh-CN"))}</span>
@@ -3323,7 +3319,7 @@ function renderDriveRouteComponent(
       </div>
       <div class="wh-r4-route-meta">
         <span class="wh-pill">${escapeHtml(driveItemKindLabel(item.kind, locale === "zh-CN"))}</span>
-        ${item.deleted_at ? `<span class="wh-pill">${escapeHtml(item.deleted_at.slice(0, 10))}</span>` : ""}
+        ${item.deleted_at ? `<span class="wh-pill">${escapeHtml(formatLocalDate(item.deleted_at))}</span>` : ""}
         ${item.restore_href ? `<a class="wh-btn" href="${escapeHtml(safeHref(item.restore_href))}" data-action-id="drive_restore_item" data-method="POST" data-r5-drive-recycle-restore="${escapeHtml(item.id)}">${escapeHtml(routeT(locale, "drive.restore"))}</a>` : item.restore_blocked_reason ? `<span class="wh-subtle" data-r9-drive-restore-blocked="${escapeHtml(item.id)}">${escapeHtml(locale === "en-US" ? restoreBlockedReasonEn(item.restore_blocked_reason) : item.restore_blocked_reason)}</span>` : ""}
       </div>
     </div>`).join("")
@@ -3339,7 +3335,7 @@ function renderDriveRouteComponent(
     ? vm.operations.slice(0, 6).map((operation) => `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-drive-operation="${escapeHtml(operation.id)}" data-r5-drive-operation-type="${escapeHtml(operation.op_type)}">
       <div>
         <strong>${escapeHtml(operation.summary_text)}</strong>
-        <p>${escapeHtml(operation.created_at.slice(0, 10))}</p>
+        <p>${escapeHtml(formatLocalDate(operation.created_at))}</p>
       </div>
       <div class="wh-r4-route-meta">
         <span class="wh-pill">${escapeHtml(driveOpTypeLabel(operation.op_type, locale === "zh-CN"))}</span>
@@ -3681,15 +3677,15 @@ function renderNotificationBucket(
 const MUTABLE_NOTIFICATION_TYPES: ReadonlyArray<{ type: string; zh: string; en: string }> = [
   { type: "workitem.ai_working", zh: "AI 开始处理工作项", en: "AI started working on an item" },
   { type: "workitem.in_review", zh: "工作项待审查", en: "An item is ready for review" },
-  { type: "workitem.escalated", zh: "工作项升级给人处理", en: "An item was escalated to a human" },
+  { type: "workitem.escalated", zh: "工作项需要负责人介入", en: "An item needs the owner" },
   { type: "workitem.pm_mode", zh: "工作项转 PM 协作模式", en: "An item switched to PM mode" },
-  { type: "workitem.merged", zh: "工作项已合并交付", en: "An item was merged" },
+  { type: "workitem.merged", zh: "工作项成果已采纳", en: "An item's deliverable was adopted" },
   { type: "workitem.cancelled", zh: "工作项已取消", en: "An item was cancelled" },
   { type: "comment.mention", zh: "评论里 @ 了我", en: "Someone mentioned me in a comment" },
   { type: "meeting.insight.pending", zh: "会议洞察待确认", en: "A meeting insight needs confirmation" },
   { type: "work_item.due_soon", zh: "工作项快到期提醒", en: "An item is due soon" },
   { type: "work_item.overdue", zh: "工作项已逾期提醒", en: "An item is overdue" },
-  { type: "work_item.escalated_ddl", zh: "工作项逾期升级提醒", en: "An overdue item was escalated" },
+  { type: "work_item.escalated_ddl", zh: "工作项逾期需负责人介入", en: "An overdue item needs the owner" },
   { type: "conversation.message", zh: "会话里的新消息", en: "New messages in a conversation" },
   { type: "conversation.mention", zh: "会话里 @ 了我", en: "Someone mentioned me in a conversation" }
 ];
@@ -3903,19 +3899,24 @@ function renderCalendarRouteComponent(vm: CalendarPageVM, locale: WorkHubLocale)
   // R10-P2-3：路由早就支持 ?date=&view=，页面却没有任何日期/视图控件——用户只能改 URL。
   // 补上一周/今天/下一周 + 日/周切换（纯链接导航，走既有 SPA 管线）。
   const zh = locale === "zh-CN";
-  const anchor = new Date(`${vm.scope.date.slice(0, 10)}T00:00:00.000Z`);
+  // UI-02：日程锚点按本地零点取日、平移后按本地日期出串——此前按 UTC 零点锚定再切 toISOString，
+  // 跨时区/DST 边界会把「上/下一周」算到错误的日期上。
+  const anchorDate = vm.scope.date.slice(0, 10);
+  const [anchorYear = 1970, anchorMonth = 1, anchorDay = 1] = anchorDate.split("-").map(Number);
+  const anchor = new Date(anchorYear, anchorMonth - 1, anchorDay);
   const shiftDays = vm.scope.view === "day" ? 1 : 7;
   const shifted = (days: number) => {
-    const next = new Date(anchor.getTime() + days * 24 * 60 * 60 * 1000);
-    return next.toISOString().slice(0, 10);
+    const next = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() + days);
+    const pad = (value: number) => String(value).padStart(2, "0");
+    return `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())}`;
   };
   const calendarHref = (date: string, view: string) => `/calendar?date=${encodeURIComponent(date)}&view=${encodeURIComponent(view)}`;
   const calendarControls = `<div class="wh-r4-route-actions" data-r10-calendar-controls="true">
         <a class="wh-btn" href="${escapeHtml(calendarHref(shifted(-shiftDays), vm.scope.view))}" data-r10-calendar-prev="true">${escapeHtml(zh ? (vm.scope.view === "day" ? "前一天" : "上一周") : (vm.scope.view === "day" ? "Previous day" : "Previous week"))}</a>
         <a class="wh-btn" href="/calendar" data-r10-calendar-today="true">${escapeHtml(zh ? "回到今天" : "Today")}</a>
         <a class="wh-btn" href="${escapeHtml(calendarHref(shifted(shiftDays), vm.scope.view))}" data-r10-calendar-next="true">${escapeHtml(zh ? (vm.scope.view === "day" ? "后一天" : "下一周") : (vm.scope.view === "day" ? "Next day" : "Next week"))}</a>
-        <a class="wh-btn${vm.scope.view === "day" ? " wh-btn-primary" : ""}" href="${escapeHtml(calendarHref(vm.scope.date.slice(0, 10), "day"))}" data-r10-calendar-view-day="true" aria-pressed="${escapeHtml(String(vm.scope.view === "day"))}">${escapeHtml(zh ? "日视图" : "Day")}</a>
-        <a class="wh-btn${vm.scope.view === "day" ? "" : " wh-btn-primary"}" href="${escapeHtml(calendarHref(vm.scope.date.slice(0, 10), "week"))}" data-r10-calendar-view-week="true" aria-pressed="${escapeHtml(String(vm.scope.view !== "day"))}">${escapeHtml(zh ? "周视图" : "Week")}</a>
+        <a class="wh-btn${vm.scope.view === "day" ? " wh-btn-primary" : ""}" href="${escapeHtml(calendarHref(anchorDate, "day"))}" data-r10-calendar-view-day="true" aria-pressed="${escapeHtml(String(vm.scope.view === "day"))}">${escapeHtml(zh ? "日视图" : "Day")}</a>
+        <a class="wh-btn${vm.scope.view === "day" ? "" : " wh-btn-primary"}" href="${escapeHtml(calendarHref(anchorDate, "week"))}" data-r10-calendar-view-week="true" aria-pressed="${escapeHtml(String(vm.scope.view !== "day"))}">${escapeHtml(zh ? "周视图" : "Week")}</a>
       </div>`;
   const dayRows = vm.days.map((day) => `<section class="wh-card wh-r4-route-card" data-r5-calendar-day="${escapeHtml(day.date)}" data-r5-calendar-day-count="${escapeHtml(String(day.blocks.length))}">
     <h3 role="heading" aria-level="2">${escapeHtml(day.date)}</h3>
@@ -3934,7 +3935,7 @@ function renderCalendarRouteComponent(vm: CalendarPageVM, locale: WorkHubLocale)
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "calendar.kicker"))}</span>
           <h1>${escapeHtml(locale === "zh-CN" ? "接下来几天的安排" : "What's coming up")}</h1>
-          <p>${escapeHtml(`${routeT(locale, "calendar.week")} · ${vm.scope.range_start.slice(0, 10)} - ${vm.scope.range_end.slice(0, 10)}`)}</p>
+          <p>${escapeHtml(`${routeT(locale, "calendar.week")} · ${formatLocalDate(vm.scope.range_start)} - ${formatLocalDate(vm.scope.range_end)}`)}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.block_count))}</span>
       </header>
@@ -4018,7 +4019,7 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
     { id: "waiting_decision", label: routeT(locale, "agents.waiting"), value: String(vm.kpis.waiting_decision_count), href: "/" },
     // UX-M11：今日成本口径=当前可见的活跃军团账目，不是全组织今日总账——标签说清楚，不冒充。
     { id: "today_cost", label: routeT(locale, "agents.todayCost"), value: costAmount(vm.kpis.today_cost_cny, locale), note: locale === "zh-CN" ? "仅含当前可见军团" : "Visible teams only" },
-    // 普通用户审查：「自治率」没人看得懂——注明口径（当日 AI 判官复核通过率，无审阅回退 run 成功率）。
+    // 普通用户审查：「自主率」这种词要注明口径（当日 AI 判官复核通过率，无审阅回退 run 成功率）。
     { id: "autonomy_rate", label: routeT(locale, "agents.autonomy"), value: `${vm.kpis.autonomy_rate_pct}%`, note: locale === "zh-CN" ? "今日 AI 复核通过率" : "Today's AI review pass rate" },
     // R13 批 P4（KPI：AI 自动合并数/占比）：与 cost 页 ai_auto_merge 同源同口径；缺省（取数失败/非管理员）
     // 时整张卡不渲染，不冒充 0 次。
@@ -4229,7 +4230,7 @@ function memoryCategoryLabel(category: UserMemoryManagementItemVM["category"], l
 function renderMemoryProfileItem(item: UserMemoryManagementItemVM, locale: WorkHubLocale): string {
   const zh = locale === "zh-CN";
   const editedLine = item.edited_at
-    ? `<p class="wh-subtle" data-r14-mem-edited="true">${escapeHtml(zh ? `最近由你于 ${item.edited_at.slice(0, 10)} 修改` : `Last edited by you on ${item.edited_at.slice(0, 10)}`)}</p>`
+    ? `<p class="wh-subtle" data-r14-mem-edited="true">${escapeHtml(zh ? `最近由你于 ${formatLocalDate(item.edited_at)} 修改` : `Last edited by you on ${formatLocalDate(item.edited_at)}`)}</p>`
     : "";
   return `<article class="wh-card wh-r4-route-card" data-r14-mem-item="${escapeHtml(item.id)}" data-r14-mem-updated-at="${escapeHtml(item.updated_at)}">
     <div class="wh-r4-route-meta">
@@ -4383,7 +4384,7 @@ function renderProjectsRouteComponent(vm: ProjectListVM, locale: WorkHubLocale):
       const descriptionLine = project.description
         ? `<p>${escapeHtml(project.description)}</p>`
         : "";
-      const updatedLabel = `${routeT(locale, "projects.updated")} ${project.updated_at.slice(0, 10)}`;
+      const updatedLabel = `${routeT(locale, "projects.updated")} ${formatLocalDate(project.updated_at)}`;
       const projectHref = `/projects/${encodeURIComponent(project.id)}`;
       return `<div role="listitem" class="wh-r4-route-row" data-r8-project="${escapeHtml(project.id)}" data-r8-project-slug="${escapeHtml(project.slug)}" data-r8-project-archived="${escapeHtml(String(project.archived))}" data-r8-project-open-items="${escapeHtml(String(project.open_work_item_count))}">
       <div>
@@ -4456,7 +4457,7 @@ function githubActivityRowHtml(item: GithubActivityVM, locale: WorkHubLocale): s
           <span class="wh-pill">${escapeHtml(githubActivityKindLabel(item.kind, zh))}</span>
           ${stateTag}
           ${authorTag}
-          <span class="wh-pill">${escapeHtml(item.occurred_at.slice(0, 10))}</span>
+          <span class="wh-pill">${escapeHtml(formatLocalDate(item.occurred_at))}</span>
         </div>
       </div>
     </a>`;
@@ -4524,7 +4525,7 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
     ? vm.drive.recent_files.map((file) => `<a class="wh-r4-route-row" href="${escapeHtml(safeHref(file.href))}" data-r8-project-home-file="${escapeHtml(file.id)}">
       <div><strong>${escapeHtml(file.name)}</strong></div>
       <div class="wh-r4-route-meta">
-        <span class="wh-pill">${escapeHtml(file.updated_at.slice(0, 10))}</span>
+        <span class="wh-pill">${escapeHtml(formatLocalDate(file.updated_at))}</span>
         <span class="wh-pill">${escapeHtml(zh ? "在网盘中查看" : "View in drive")}</span>
       </div>
     </a>`).join("")
@@ -4663,7 +4664,7 @@ function renderProjectTimelineRouteComponent(vm: ProjectTimelinePageVM, locale: 
   const rowHtml = (item: TimelineWorkItemVM): string => {
     const duePill = item.due_at
       ? `<span class="wh-pill"${item.overdue ? ' data-tone="overdue"' : ""}>${escapeHtml(
-          `${zh ? "截止" : "Due"} ${item.due_at.slice(0, 10)}`
+          `${zh ? "截止" : "Due"} ${formatLocalDate(item.due_at)}`
         )}</span>`
       : `<span class="wh-pill">${escapeHtml(zh ? "未定期" : "No date")}</span>`;
     const overduePill = item.overdue
@@ -4728,7 +4729,7 @@ function renderProjectTimelineRouteComponent(vm: ProjectTimelinePageVM, locale: 
     .sort((a, b) => a.sort - b.sort)
     .map((milestone: ProjectMilestoneVM) => {
       const items = vm.items.filter((item) => item.milestone_id === milestone.id);
-      const dueLabel = milestone.due_at ? `${zh ? "截止" : "Due"} ${milestone.due_at.slice(0, 10)}` : undefined;
+      const dueLabel = milestone.due_at ? `${zh ? "截止" : "Due"} ${formatLocalDate(milestone.due_at)}` : undefined;
       const doneTag = milestone.status === "done"
         ? ` <span class="wh-pill" data-tone="done">${escapeHtml(zh ? "已达成" : "Reached")}</span>`
         : "";
@@ -5097,7 +5098,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
             : (zhNotice
               ? "下面的数字暂时都是 0。派一个任务让 AI 跑一次，这里就会出现成本。"
               : "The figures below read 0 for now. Assign a task and let AI run once — cost will show up here."))}</p>
-          ${vm.empty_state === "no_agent_runs" ? `<div class="wh-r4-route-actions"><a class="wh-btn wh-btn-primary" href="/intake" data-r9-cost-empty-cta="true">${escapeHtml(zhNotice ? "派一个任务" : "Assign a task")}</a></div>` : ""}
+          ${vm.empty_state === "no_agent_runs" /* term-allow：empty_state 枚举是 VM 标识符，非用户文案 */ ? `<div class="wh-r4-route-actions"><a class="wh-btn wh-btn-primary" href="/intake" data-r9-cost-empty-cta="true">${escapeHtml(zhNotice ? "派一个任务" : "Assign a task")}</a></div>` : ""}
         </section>`
     : "";
 
@@ -5312,8 +5313,8 @@ function mirrorSettleOutcomeLabel(outcome: string, zh: boolean): string {
   return localizedEnumLabel(
     outcome,
     zh,
-    { approved: "已通过", merged: "已合并", rejected: "已打回" },
-    { approved: "Approved", merged: "Merged", rejected: "Sent back" }
+    { approved: "已通过", merged: "已采纳", rejected: "已打回" },
+    { approved: "Approved", merged: "Adopted", rejected: "Sent back" }
   );
 }
 
@@ -5719,7 +5720,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale,
     locale,
     pageVm: "settings",
     reactComponent,
-    html: `<section class="wh-r4-route" data-r4-route-component="settings" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}"${reactAttrs} data-r4-settings-generated-at="${escapeHtml(props.generatedAt)}" data-r4-settings-runtime-status="${escapeHtml(props.runtimeStatus)}" data-r4-settings-broker="${escapeHtml(props.brokerBackend)}" data-r4-settings-worker-count="${escapeHtml(String(props.workerCount))}" data-r4-settings-active-locale="${escapeHtml(props.activeLocale)}" data-r4-settings-preference-locale="${escapeHtml(props.preferenceLocale)}" data-r4-settings-preference-source="${escapeHtml(props.preferenceSource)}" data-r4-settings-preference-synced="${escapeHtml(String(props.preferenceSynced))}" data-r4-settings-secret-safe="${escapeHtml(String(props.secretSafe))}" data-r4-settings-pet-model-in-web="${escapeHtml(String(props.petModelSettingsInWeb))}" data-r4-settings-desktop-client="${escapeHtml(props.desktopClient)}" data-r4-settings-local-boundary="${escapeHtml(String(props.localExecutionBoundary))}" data-r4-settings-restore-requires-desktop="${escapeHtml(String(props.restoreRequiresDesktop))}" data-r4-settings-web-local-actions="${escapeHtml(String(props.webLocalActionsEnabled))}">
+    html: `<section class="wh-r4-route" data-r4-route-component="settings" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}"${reactAttrs} data-r4-settings-generated-at="${escapeHtml(props.generatedAt)}" data-r4-settings-runtime-status="${escapeHtml(props.runtimeStatus)}" data-r4-settings-broker="${escapeHtml(props.brokerBackend)}" data-r4-settings-worker-count="${escapeHtml(String(props.workerCount))}" data-r4-settings-active-locale="${escapeHtml(props.activeLocale)}" data-r4-settings-preference-locale="${escapeHtml(props.preferenceLocale)}" data-r4-settings-preference-source="${escapeHtml(props.preferenceSource)}" data-r4-settings-preference-synced="${escapeHtml(String(props.preferenceSynced))}" data-r4-settings-pet-model-in-web="${escapeHtml(String(props.petModelSettingsInWeb))}" data-r4-settings-desktop-client="${escapeHtml(props.desktopClient)}" data-r4-settings-local-boundary="${escapeHtml(String(props.localExecutionBoundary))}" data-r4-settings-restore-requires-desktop="${escapeHtml(String(props.restoreRequiresDesktop))}" data-r4-settings-web-local-actions="${escapeHtml(String(props.webLocalActionsEnabled))}">
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "settings.kicker"))}</span>
@@ -5783,7 +5784,6 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale,
           <div role="listitem" class="wh-r4-route-row" title="${escapeHtml(locale === "zh-CN" ? "AI 引擎的服务端密钥；「未配置」时 AI 功能不可用，需管理员在服务端设置。" : "Server-side key for the AI engine; if unset, AI features are unavailable until an admin configures it.")}"><strong>${escapeHtml(routeT(locale, "settings.apiKey"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.apiKeyConfigured, locale))}</span></div>
           ${!props.apiKeyConfigured ? `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "AI 引擎密钥未配置——AI 功能不可用，请管理员在服务端设置。" : "AI engine key not set — AI features are unavailable until an admin configures the server.")}</p>` : ""}
           <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.baseUrl"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.baseUrlConfigured, locale))}</span></div>
-          <div role="listitem" class="wh-r4-route-row" title="${escapeHtml(locale === "zh-CN" ? "密钥只存服务端环境变量、绝不发给浏览器；「未配置」时联系管理员在服务端配置。" : "Keys live only in server env vars and never reach the browser; if unset, ask an admin to configure the server.")}"><strong>${escapeHtml(routeT(locale, "settings.secretSafe"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.secretSafe, locale))}</span></div>
           <p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "密钥只存服务端环境变量，绝不发给浏览器。" : "Keys live only in server env vars and never reach the browser.")}</p>
         </section>
       </div>

@@ -7,6 +7,10 @@ import type { BudgetScope } from "./types.js";
 
 export type ReservationStatus = "active" | "settled" | "expired";
 
+// CORE-03：period="total"（军团 task 计划生命周期预算）预留用的固定 periodBucket。total 无自然时间桶，
+// 用固定常量让同一 (scope,task) 的所有并发子 run 落在同一预留键上、被同一把 advisory 锁串行化。
+export const TOTAL_RESERVATION_PERIOD_BUCKET = "total";
+
 // 一条预留行的数值投影（仓库读出的形状里本模块只关心这些字段）。
 export type ReservationRow = {
   scopeKind: BudgetScope["kind"];

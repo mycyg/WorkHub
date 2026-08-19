@@ -82,6 +82,39 @@ export async function fetchPresenceEntries(
   return entries;
 }
 
+// MRG-21：DM 列表加载的「在飞单例 + 数秒冷却」协调器。未知会话通知（/me 流 bump 未命中时补拉，
+// 见 shell.ts）在别的项目每条消息都触发一次——不加闸门会每条消息全量拉一次 /api/dm/list。语义：
+//  - 在飞：任何调用方复用同一 promise（await 到同一次结果），不重复发请求；
+//  - 冷却：距上次发起不足 cooldownMs 的非 force 调用直接跳过（列表几秒前才拉过，够新鲜）；
+//  - force（深链兜底等必须真拿一次新鲜列表的路径）绕过冷却，但仍共享在飞请求。
+// 契约：load 必须自己兜住错误（resolve，不 reject）——shell.ts 的实现内部 catch 成 dmListLoad:"error"。
+export function createDmListReloadCoordinator(input: {
+  load: () => Promise<void>;
+  cooldownMs?: number;
+  now?: () => number;
+}): (options?: { force?: boolean }) => Promise<void> {
+  const cooldownMs = input.cooldownMs ?? 5_000;
+  const now = input.now ?? (() => Date.now());
+  let inFlight: Promise<void> | undefined;
+  let lastStartedAt = Number.NEGATIVE_INFINITY;
+  return (options = {}) => {
+    if (inFlight) {
+      return inFlight;
+    }
+    if (!options.force && now() - lastStartedAt < cooldownMs) {
+      return Promise.resolve();
+    }
+    lastStartedAt = now();
+    const request = input.load().finally(() => {
+      if (inFlight === request) {
+        inFlight = undefined;
+      }
+    });
+    inFlight = request;
+    return request;
+  };
+}
+
 // DM 列表 upsert：按 conversation.id 去重——命中既有就原地替换（不重复），未命中就插到最前（最近开的
 // 排前，与服务端 updatedAt 倒序口径一致）。「发私聊」新建/开既有 DM 后把它并进 store.dmList 用。
 export function upsertDmListItem(list: readonly DmListItemVM[], item: DmListItemVM): DmListItemVM[] {

@@ -15,7 +15,8 @@ import {
   bindDesktopCredentialGate,
   isPasswordModeBootstrapError,
   readDesktopAuthModeHint,
-  rememberDesktopAuthModeHint
+  rememberDesktopAuthModeHint,
+  runDesktopBootstrapWithLock
 } from "../desktop-login.js";
 import { resolveDesktopTauriInvoke } from "../desktop-window-controls.js";
 import { consumePendingWorkbenchDeepLink } from "./pending-deep-link.js";
@@ -77,7 +78,7 @@ export async function ensureWorkbenchClientToken(
   }
   let identity: IdentityResponse | null = null;
   if (!clientToken()) {
-    if ((await bootstrapWorkbenchClientToken(client)) === "needs-credentials") {
+    if ((await bootstrapWorkbenchClientTokenWithLock(client)) === "needs-credentials") {
       return { identity: null, gate: "needs-credentials" };
     }
   } else {
@@ -86,7 +87,7 @@ export async function ensureWorkbenchClientToken(
     } catch (error) {
       if (isStaleDesktopClientTokenError(error)) {
         window.localStorage.removeItem("workhub_client_token");
-        if ((await bootstrapWorkbenchClientToken(client)) === "needs-credentials") {
+        if ((await bootstrapWorkbenchClientTokenWithLock(client)) === "needs-credentials") {
           return { identity: null, gate: "needs-credentials" };
         }
       }
@@ -123,6 +124,20 @@ async function bootstrapWorkbenchClientToken(client: WorkHubApiClient): Promise<
     console.warn("WorkHub workbench desktop bootstrap failed; continuing without client token", error);
     return "unavailable";
   }
+}
+
+// DSK-07：包一层跨窗启动锁（与 browser.ts 的 bootstrapDesktopClientTokenWithLock 同款）——工作台窗口
+// 与主窗/桌宠首启并发 bootstrap 会重复注册设备、双 token 互覆；败者短轮询重读胜者落盘的 token。
+async function bootstrapWorkbenchClientTokenWithLock(client: WorkHubApiClient): Promise<WorkbenchBootstrapOutcome> {
+  const locked = await runDesktopBootstrapWithLock({
+    storage: window.localStorage,
+    readToken: () => clientToken(),
+    run: () => bootstrapWorkbenchClientToken(client)
+  });
+  if (locked.kind === "ran") {
+    return locked.result;
+  }
+  return locked.kind === "token-ready" ? "ready" : "unavailable";
 }
 
 // —— 深链事件订阅 —— //
@@ -197,8 +212,15 @@ export function bindWorkbenchLoggedOutListener(onLoggedOut: () => void, scope: u
 export function applyPendingWorkbenchDeepLink(
   shell: Pick<WorkbenchShellHandle, "selectProject">,
   storage: Pick<Storage, "getItem" | "setItem" | "removeItem"> = window.localStorage,
-  now?: () => number
+  now?: () => number,
+  options: { enabled?: boolean } = {}
 ): void {
+  // MRG-22：登出态/凭据门等「现在没法真正落地深链」的场合不许消费 stash——consume 是一次性删除，
+  // 而 selectProject 会被 shell 的 loggedOut 守卫拦下，照删就把深链目标吞了（用户从主窗重新登录后，
+  // 恢复路径 reload → 干净 boot 时 stash 还在，才能原样接回目标）。enabled === false 时连读都不读。
+  if (options.enabled === false) {
+    return;
+  }
   const target = consumePendingWorkbenchDeepLink({ storage, ...(now ? { now } : {}) });
   if (target) {
     // #30：会话命中带 seq 时透传——工作台打开会话后定位到该消息并短暂高亮。
@@ -246,11 +268,14 @@ async function boot(): Promise<void> {
   // G-desktop 止血批 3：这次 boot 本身可能就已经处在登出态（比如上一次收到跨窗口登出广播后这个窗口
   // 自己 reload 了一轮，见 shell.ts selectProject 的恢复路径注释）——必须先于下面两行深链消费判断，
   // 否则一次带着真实深链目标的冷启动会在还没展示「已登出」之前就先把请求发出去。
-  if (isWorkbenchDesktopLoggedOut()) {
+  const loggedOutAtBoot = isWorkbenchDesktopLoggedOut();
+  if (loggedOutAtBoot) {
     shell.showLoggedOut();
   }
   bindWorkbenchDeepLinkListener(shell);
-  applyPendingWorkbenchDeepLink(shell);
+  // MRG-22：登出态不消费深链 stash（consume 是一次性删除，而 selectProject 会被 loggedOut 守卫拦下，
+  // 照删就把目标吞了）。留着它——重新登录后恢复路径 reload → 干净 boot 会在这里原样接回（TTL 15s 兜底）。
+  applyPendingWorkbenchDeepLink(shell, window.localStorage, undefined, { enabled: !loggedOutAtBoot });
   // 运行期广播：这个窗口一直开着、之后才收到别的窗口发起的登出——见 bindWorkbenchLoggedOutListener
   // 顶部注释。showLoggedOut() 本身幂等，两条路径（这里的运行期监听 + 上面的 boot 时快照检查）都指向
   // 同一个方法，不会重复触发副作用。

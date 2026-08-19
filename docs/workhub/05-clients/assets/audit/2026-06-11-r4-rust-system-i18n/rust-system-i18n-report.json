@@ -1,18 +1,18 @@
 {
-  "generated_at": "2026-07-18T06:21:04.358Z",
+  "generated_at": "2026-08-19T13:18:49.073Z",
   "module": "R4.6 Rust system-string i18n",
-  "output_dir": "/Users/apple/Desktop/开发项目/wh-r20/wave3/docs/workhub/05-clients/assets/audit/2026-06-11-r4-rust-system-i18n",
-  "cargo_mode": "skipped-by-env",
+  "output_dir": "/Users/apple/Desktop/开发项目/WorkHub/docs/workhub/05-clients/assets/audit/2026-06-11-r4-rust-system-i18n",
+  "cargo_mode": "executed",
   "commands": [
     {
-      "command": "cargo test (skipped: WORKHUB_RUST_I18N_CARGO=skip)",
-      "exitCode": 0,
+      "command": "cargo test --manifest-path /Users/apple/Desktop/开发项目/WorkHub/client-tauri/src-tauri/Cargo.toml",
+      "exitCode": null,
       "stdoutTail": "",
-      "stderrTail": ""
+      "stderrTail": "\nspawn cargo ENOENT"
     }
   ],
   "gates": {
-    "cargo_tests_passed": true,
+    "cargo_tests_passed": false,
     "locale_contract_has_two_values": true,
     "shell_config_consumes_locale": true,
     "tray_labels_and_tooltip_bilingual": true,

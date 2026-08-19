@@ -4234,8 +4234,8 @@ test("proposal action routes localize result envelopes from locale query", async
     };
   };
   assert.equal(reviewBody.data.attention.summary_text, "Approved — ready to accept into the official version.");
-  assert.equal(reviewBody.data.attention.actions[0]?.label, "Merge deliverable");
-  assert.equal(reviewBody.data.next_action?.label, "Merge deliverable");
+  assert.equal(reviewBody.data.attention.actions[0]?.label, "Adopt into the official version");
+  assert.equal(reviewBody.data.next_action?.label, "Adopt into the official version");
   assert.doesNotMatch(reviewBody.data.attention.title, /已通过确认/u);
 
   const merge = await app.request(`/api/proposals/${proposalId}/merge?locale=en-US`, {

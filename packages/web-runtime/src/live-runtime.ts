@@ -27,7 +27,9 @@ export type WebLiveEventSourceConstructor = new (
   init?: EventSourceInit
 ) => WebLiveEventSourceLike;
 
-export type WebLiveRefreshOutcome = "refreshed" | "dirty-deferred";
+// MRG-24：新增 "skipped"——刷新决策方主动放弃本次重渲（如会话镜像正在翻历史分页 ?before=，
+// 整页重渲会把滚动锚回最新页），由 onRefreshNotice 决定给不给手动刷新提示。
+export type WebLiveRefreshOutcome = "refreshed" | "dirty-deferred" | "skipped";
 
 export type WebLiveRuntimeOptions = {
   eventTypes: string[];

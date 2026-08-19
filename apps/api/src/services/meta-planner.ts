@@ -296,6 +296,9 @@ export function createMetaPlanner(options: MetaPlannerOptions): MetaPlanner {
           maxTokens: META_PLANNER_MAX_TOKENS,
           source: "agent_step",
           timeoutMs: META_PLANNER_TIMEOUT_MS,
+          // E2E-03：思维链计入 max_tokens，2400 预算被 thinking 挤占后 JSON 截断（实测复现：
+          // "Unterminated string in JSON"）。任务分解是结构化输出调用，关闭 thinking。
+          disableThinking: true,
           system: "You are WorkHub's meta-planner. Return strict JSON only. Never include secrets, prose outside JSON, or implementation advice unrelated to the task plan.",
           messages: [{ role: "user", content: plannerPrompt(input, feedback) }]
         });
@@ -321,6 +324,7 @@ export function createMetaPlanner(options: MetaPlannerOptions): MetaPlanner {
           maxTokens: META_PLANNER_JUDGE_MAX_TOKENS,
           source: "agent_step",
           timeoutMs: META_PLANNER_TIMEOUT_MS,
+          disableThinking: true,
           system: "You are WorkHub's decomposition judge. Return strict JSON only.",
           messages: [{ role: "user", content: judgePrompt(plan, input) }]
         });

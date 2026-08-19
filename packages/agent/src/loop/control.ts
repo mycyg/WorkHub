@@ -65,7 +65,14 @@ function canonical(value: unknown): string {
       .join(",")}}`;
   }
   if (typeof value === "string") {
-    return JSON.stringify(value.length > 500 ? value.slice(0, 500) : value.trim());
+    const trimmed = value.trim();
+    // CORE-05①：>500 字不再只取前 500 字——同模板大文件（只有尾部不同）指纹恒同，会被死循环检测误杀。
+    // 头部保留可调试前缀，并入长度 + 尾部哈希区分「前 500 字相同、后面不同」的串。
+    if (trimmed.length > 500) {
+      const tailHash = crypto.createHash("sha256").update(trimmed.slice(500)).digest("hex").slice(0, 16);
+      return JSON.stringify(`${trimmed.slice(0, 500)}#len=${trimmed.length}#tail=${tailHash}`);
+    }
+    return JSON.stringify(trimmed);
   }
   return JSON.stringify(value);
 }
@@ -74,6 +81,8 @@ export function fingerprintAssistantBlocks(blocks: AgentAssistantBlock[]) {
   const toolCalls = blocks.filter((block): block is Extract<AgentAssistantBlock, { type: "tool_use" }> => block.type === "tool_use");
   const source = toolCalls.length > 0
     ? toolCalls.map((tool) => ({ name: tool.name, input: tool.input }))
+    // CORE-05②：unknown 块的 raw 原样走 canonical（保持结构化、键排序）。旧实现先 .join("\n") 拼成字符串，
+    // raw 是对象时被 String 化成 "[object Object]"——所有 unknown 对象指纹恒同，必然误判/漏判死循环。
     : blocks.map((block) => {
         if (block.type === "text" || block.type === "thinking") {
           return block.text;
@@ -82,7 +91,7 @@ export function fingerprintAssistantBlocks(blocks: AgentAssistantBlock[]) {
           return block.raw;
         }
         return { name: block.name, input: block.input };
-      }).join("\n");
+      });
   return crypto.createHash("sha256").update(canonical(source)).digest("hex");
 }
 
@@ -94,18 +103,29 @@ export class DoomLoopDetector {
   push(step: Pick<AgentLoopStep, "assistant">) {
     const signature = fingerprintAssistantBlocks(step.assistant);
     this.signatures.push(signature);
-    if (this.signatures.length > this.windowSize) {
+    // CORE-05③：周期 2（A-B-A-B）交替检测需要至少 4 个签名，保留窗口下限提到 4。
+    const keep = Math.max(this.windowSize, 4);
+    if (this.signatures.length > keep) {
       this.signatures.shift();
     }
     return this.isLooping() ? signature : null;
   }
 
   private isLooping() {
-    if (this.signatures.length < this.windowSize) {
-      return false;
+    if (this.signatures.length >= this.windowSize) {
+      const window = this.signatures.slice(-this.windowSize);
+      if (window.every((signature) => signature === window[0])) {
+        return true;
+      }
     }
-    const first = this.signatures[0];
-    return this.signatures.every((signature) => signature === first);
+    // CORE-05③：周期 2 交替循环——最近 4 步呈 A-B-A-B 且 A≠B（A-A-A-A 已被上方等值窗口覆盖）。
+    if (this.signatures.length >= 4) {
+      const [a, b, c, d] = this.signatures.slice(-4) as [string, string, string, string];
+      if (a === c && b === d && a !== b) {
+        return true;
+      }
+    }
+    return false;
   }
 }
 

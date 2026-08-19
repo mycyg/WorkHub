@@ -46,36 +46,6 @@
       <canvas class="live2d" id="live2d" width="300" height="800"></canvas>
     </div>
     <script src="./live2d.js"></script>
-    <script>
-      (() => {
-        const root = document.documentElement;
-        const post = (status, detail) => {
-          root.dataset.live2dStatus = status;
-          try {
-            window.parent.postMessage(
-              {
-                type: "workhub:cuu-live2d",
-                model: "tororo",
-                status,
-                detail: detail || ""
-              },
-              "*"
-            );
-          } catch {}
-        };
-
-        window.addEventListener("error", (event) => {
-          post("error", event.message || "window error");
-        });
-
-        try {
-          post("loading");
-          loadlive2d("live2d", "./cuu-tororo.model.json");
-          window.setTimeout(() => post("running"), 1200);
-        } catch (error) {
-          post("error", error && error.message ? error.message : String(error));
-        }
-      })();
-    </script>
+    <script src="./cuu-tororo-boot.js"></script>
   </body>
 </html>

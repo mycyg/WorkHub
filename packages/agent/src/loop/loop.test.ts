@@ -854,6 +854,7 @@ test("AgentLoop does not retry non-transient provider errors", async () => {
   const workdir = await tempWorkdir();
   const tools = createToolRegistry(createBuiltInFileTools());
   const loop = createAgentLoop();
+  const events: AgentLoopEvent[] = [];
   let calls = 0;
   const client: AgentLoopClient = {
     model: "fake-model",
@@ -867,7 +868,9 @@ test("AgentLoop does not retry non-transient provider errors", async () => {
       }
     }
   };
-  await assert.rejects(() => loop.run({
+  // CORE-09：非瞬态错误不再裸抛出——run 体兜底 catch 按 status:"failed" 正常收尾
+  // （handoff + agent_run.failed），不重试（calls 仍为 1）。
+  const result = await loop.run({
     runId: "40000000-0000-4000-8000-000000000008",
     workItemId: "50000000-0000-4000-8000-000000000008",
     workdir,
@@ -876,9 +879,17 @@ test("AgentLoop does not retry non-transient provider errors", async () => {
     client,
     tools,
     budget: { ...budget, providerRetryBaseDelayMs: 1 },
-    requireDeliverable: false
-  }));
+    requireDeliverable: false,
+    reviewDeliverable: false,
+    emit: (event) => {
+      events.push(event);
+    }
+  });
   assert.equal(calls, 1);
+  assert.equal(result.status, "failed");
+  assert.match(result.reason, /bad request/u);
+  assert.equal(result.handoff?.budgetHit, "unknown");
+  assert.equal(events.some((event) => event.type === eventTypes.agentRunFailed), true);
 });
 
 test("AgentLoop runs an llm_review after success and carries the grade into the result", async () => {
@@ -1171,4 +1182,141 @@ test("neutralizeFenceTags leaves non-fence angle brackets untouched", () => {
   assert.equal(neutralizeFenceTags(text), text);
   // 但会处理大小写与多余空白的围栏标签变体。
   assert.equal(neutralizeFenceTags("</OUTPUTS >").includes("‹/OUTPUTS ›"), true);
+});
+
+// ── CORE-09：run 体兜底 try/catch ───────────────────────────────────────────────────────
+
+test("CORE-09 a throwing tool execution is caught: failed + handoff + agent_run.failed + usage recorded", async () => {
+  const workdir = await tempWorkdir();
+  const loop = createAgentLoop();
+  const events: AgentLoopEvent[] = [];
+  const usageSnapshots: number[] = [];
+  const result = await loop.run({
+    runId: "40000000-0000-4000-8000-0000000000c9",
+    workItemId: "50000000-5000-4000-8000-0000000000c9",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "write a file",
+    client: fakeClient([
+      {
+        id: "m1",
+        stopReason: "tool_use",
+        usage: { inputTokens: 10, outputTokens: 20 },
+        content: [{ type: "tool_use", id: "tool-1", name: "write_file", input: { path: "outputs/a.md", content: "x" } }]
+      }
+    ]),
+    // tools.execute 直接抛错（绕过 registry 内部的 errorToolResult 兜底，模拟宿主侧硬故障）。
+    tools: {
+      toModelTools: async () => [],
+      execute: async () => {
+        throw new Error("tool executor exploded");
+      }
+    },
+    budget,
+    emit: (event) => {
+      events.push(event);
+    },
+    recorder: {
+      recordStep: () => undefined,
+      recordUsage: (usage) => {
+        usageSnapshots.push(usage.totalTokens);
+      }
+    }
+  });
+
+  // 异常不逃逸：按 failed 正常收尾，带结构化 handoff（budgetHit=unknown），已耗 token 被记账。
+  assert.equal(result.status, "failed");
+  assert.equal(result.control, "stop");
+  assert.match(result.reason, /tool executor exploded/u);
+  assert.equal(result.handoff?.budgetHit, "unknown");
+  assert.ok(result.handoff?.blockers.some((blocker) => blocker.includes("tool executor exploded")));
+  assert.equal(result.usage.totalTokens, 30, "失败 run 仍保留已消耗 token");
+  assert.equal(usageSnapshots.at(-1), 30, "异常路径必须再记一次 recordUsage");
+  const failed = events.find((event) => event.type === eventTypes.agentRunFailed);
+  assert.ok(failed, "必须发 agent_run.failed 事件");
+  assert.equal((failed?.data as { handoff?: { budgetHit?: string } }).handoff?.budgetHit, "unknown");
+});
+
+test("CORE-09 even a throwing agent_run.started emit is caught (and the failed-event emit never re-throws)", async () => {
+  const workdir = await tempWorkdir();
+  const loop = createAgentLoop();
+  const events: AgentLoopEvent[] = [];
+  const result = await loop.run({
+    runId: "40000000-0000-4000-8000-0000000000ca",
+    workItemId: "50000000-5000-4000-8000-0000000000ca",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "write a file",
+    client: fakeClient([]),
+    tools: createToolRegistry(createBuiltInFileTools()),
+    budget,
+    emit: (event) => {
+      // started 事件抛错（事件总线故障）；后续事件正常记录——兜底 failed 事件自身绝不二次抛出。
+      if (event.type === eventTypes.agentRunStarted) {
+        throw new Error("event bus down");
+      }
+      events.push(event);
+    }
+  });
+
+  assert.equal(result.status, "failed");
+  assert.match(result.reason, /event bus down/u);
+  assert.equal(result.handoff?.budgetHit, "unknown");
+  assert.equal(events.some((event) => event.type === eventTypes.agentRunFailed), true);
+});
+
+// ── CORE-10：评审调用过预算闸门 ─────────────────────────────────────────────────────────
+
+test("CORE-10 an exhausted token budget skips the review call and fails closed", async () => {
+  const workdir = await tempWorkdir();
+  const tools = createToolRegistry(createBuiltInFileTools());
+  const loop = createAgentLoop();
+  const events: AgentLoopEvent[] = [];
+  let createCalls = 0;
+  const client: AgentLoopClient = {
+    model: "fake-model",
+    messages: {
+      async create() {
+        createCalls += 1;
+        if (createCalls === 1) {
+          return {
+            id: "m1",
+            stopReason: "tool_use",
+            usage: { inputTokens: 10, outputTokens: 20 },
+            content: [{ type: "tool_use", id: "tool-1", name: "write_file", input: { path: "outputs/report.md", content: "报告" } }]
+          };
+        }
+        if (createCalls === 2) {
+          return { id: "m2", stopReason: "end_turn", usage: { inputTokens: 5, outputTokens: 5 }, content: [{ type: "text", text: "交付完成" }] };
+        }
+        throw new Error("review must not be called when the budget is exhausted");
+      }
+    }
+  };
+  const result = await loop.run({
+    runId: "40000000-0000-4000-8000-0000000000cb",
+    workItemId: "50000000-5000-4000-8000-0000000000cb",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "任务：写一份报告",
+    client,
+    tools,
+    // 两步共耗 40 token = maxTokens：收尾时 token 预算恰好耗尽。
+    budget: { ...budget, maxTokens: 40 },
+    snapshot: () => ({ snapshotId: "60000000-0000-4000-8000-0000000000cb" }),
+    emit: (event) => {
+      events.push(event);
+    }
+  });
+
+  assert.equal(result.status, "succeeded");
+  assert.equal(createCalls, 2, "预算耗尽后不得再发评审 LLM 调用");
+  assert.equal(result.review, undefined);
+  assert.equal(result.reviewFailed, true, "跳过评审按 fail-closed 置位（与评审失败同口径）");
+  assert.equal(
+    events.some((event) => event.data.kind === "llm_review_failed" && event.data.reason === "budget_exhausted"),
+    true
+  );
+  // 未被评审吃掉 token：总用量仍是两步之和。
+  assert.equal(result.usage.totalTokens, 40);
 });

@@ -116,6 +116,9 @@ function requestBody(params: LlmCreateParams & { model: string }, stream: boolea
   if (params.tools && params.tools.length > 0) {
     body.tools = params.tools;
   }
+  if (params.disableThinking) {
+    body.thinking = { type: "disabled" };
+  }
   return body;
 }
 

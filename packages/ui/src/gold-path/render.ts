@@ -12,7 +12,7 @@ import type {
   ReplayMergeCandidateVM,
   ReplayTraceVM
 } from "@workhub/contracts";
-import { agentStepPhaseLabel, agentStepPublicSummary, budgetStatusLabel, checkStatusLabel, deliverableTargetLabel, uiFormatCny, workItemStatusLabel } from "../i18n.js";
+import { agentStepPhaseLabel, agentStepPublicSummary, budgetStatusLabel, checkStatusLabel, deliverableTargetLabel, formatLocalTimestamp, uiFormatCny, workItemStatusLabel } from "../i18n.js";
 import { publicProposalDisplayTitle } from "../proposal/render.js";
 import { approvalQueuePageInfoText, goldPathT, normalizeWorkHubLocale, type GoldPathCopyKey, type WorkHubLocale } from "./i18n.js";
 import {
@@ -122,12 +122,9 @@ function approvalFactRouteLabel(routedToUserId: string | undefined, locale: Work
   return locale === "zh-CN" ? "已路由" : "Routed";
 }
 
+// UI-02：统一本地时区渲染（formatLocalTimestamp），不再直切 ISO 串 UTC 直出。
 function formatApprovalFactTimestamp(iso: string | undefined) {
-  if (!iso) {
-    return "";
-  }
-  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/u.exec(iso);
-  return match ? `${match[1]} ${match[2]}` : iso;
+  return formatLocalTimestamp(iso);
 }
 
 function t(locale: WorkHubLocale, key: GoldPathCopyKey) {

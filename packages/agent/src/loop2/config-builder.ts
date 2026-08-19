@@ -50,6 +50,7 @@ import { checkLoopBudget, controlFromAssistant, createInitialUsage, DoomLoopDete
 import { buildStructuredHandoff } from "../loop/handoff.js";
 import {
 	finalizeL3,
+	settleRunException,
 	summarizeStepsForCompaction,
 	tryGenerateStructuredSummary,
 	type StructuredSummaryState,
@@ -284,16 +285,34 @@ type Escalation = {
 /**
  * Drive the vendored pi loop for one WorkHub AgentRun and return a WorkHub
  * `AgentLoopResult`. Drop-in replacement for `AgentLoop.run`.
+ *
+ * CORE-09 parity：与 AgentLoop.run 同一兜底语义——run 体（provider 终态错误 re-throw、
+ * fatalToolError re-throw、emit 失败等）抛出的任何异常不再裸逃逸，统一走 settleRunException
+ * （与 loop.ts 共用同一实现）：recordUsage 记已耗用量 + 发 agent_run.failed + 结构化 handoff，
+ * 按 status:"failed" 正常收尾。
  */
 export async function runAgentLoop2(input: AgentLoopInput): Promise<AgentLoopResult> {
+	const usage = createInitialUsage();
+	const steps: AgentLoopStep[] = [];
+	try {
+		return await runAgentLoop2Body(input, usage, steps);
+	} catch (error) {
+		return settleRunException(input, usage, steps, error);
+	}
+}
+
+async function runAgentLoop2Body(
+	input: AgentLoopInput,
+	usage: AgentLoopUsage,
+	steps: AgentLoopStep[],
+): Promise<AgentLoopResult> {
 	const now = input.now ?? (() => new Date());
 	const startedAt = Date.now();
 	const requireDeliverable = input.requireDeliverable ?? true;
 	const maxCompactions = input.budget.maxCompactions ?? 2;
 
 	// Shared mutable state accumulated across turns (mirrors loop.ts run() locals).
-	const usage = createInitialUsage();
-	const steps: AgentLoopStep[] = [];
+	// usage/steps 由外层包装器注入（CORE-09：兜底 catch 路径也要拿到已耗用量/已记步骤）。
 	const doomLoop = new DoomLoopDetector(input.budget.doomLoopWindow ?? 3);
 	let compactions = 0;
 	let nextCompactionAtTokens = 0;

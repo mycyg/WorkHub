@@ -234,6 +234,7 @@ type ReplyJudgeLlmClient = {
   messages: {
     create: (input: {
       maxTokens: number;
+      disableThinking?: boolean;
       source: "agent_step";
       system: string;
       messages: Array<{ role: "user"; content: string }>;
@@ -295,6 +296,8 @@ function defaultLlmClassifierFactory(deps: {
       const client = registry.get({ id: "conversation-reply-judge", workspaceId }, "assistant") as unknown as ReplyJudgeLlmClient;
       const response = await client.messages.create({
         maxTokens: DEFAULT_LLM_MAX_RESPONSE_TOKENS,
+        // E2E-03：thinking 模型的思维链计入 max_tokens，结构化输出调用关闭 thinking 防截断。
+        disableThinking: true,
         source: "agent_step",
         system: buildReplyJudgeSystemPrompt(),
         messages: [{ role: "user", content: buildReplyJudgeUserPrompt({ recentMessages, candidateText }) }],

@@ -276,6 +276,51 @@ test("budget decision blocks exhausted scopes with traceable details", () => {
   assert.equal(decision.limitingUsage?.remainingCostCny, "0");
 });
 
+test("CORE-01 maxTokens<=0 policy means token dimension unlimited, run budget stays at the default cap", () => {
+  // 约定「上限 <=0 视为不限」。回归钉：旧实现 remainingTokens = max(0 - used, 0) = 0，
+  // constrainRunBudget 把 run maxTokens 钳成 max(1, min(...)) = 1 → 挂此策略的 run 一步即耗尽。
+  const settings = loadSettings({});
+  const decision = decideRunBudget({
+    settings,
+    decisionId: "decision-unlimited-tokens",
+    now: new Date("2026-06-05T12:00:00.000Z"),
+    scopeIds: { userId: "user-1" },
+    modelRoute: { provider: "deepseek", model: "deepseek-v4-flash", reason: "default" },
+    policies: [
+      {
+        id: "pcost-user-day-unlimited-tokens",
+        scopeKind: "user",
+        period: "day",
+        maxTokens: 0, // token 维不限
+        maxCostCny: "20",
+        warningRatio: 0.8,
+        criticalRatio: 0.95,
+        onWarning: "notify",
+        onExhausted: "block_new_run",
+        enabled: true,
+        version: 1
+      }
+    ],
+    usage: [
+      {
+        policyId: "pcost-user-day-unlimited-tokens",
+        scope: { kind: "user", userId: "user-1" },
+        tokenIn: 900000,
+        tokenOut: 100000,
+        estimatedCostCny: "1"
+      }
+    ]
+  });
+
+  assert.equal(decision.allowed, true);
+  assert.equal(decision.limitingUsage?.remainingTokens, Number.MAX_SAFE_INTEGER);
+  // run 级 token 上限不被该策略钳小：保持 settings 默认（而非被钳成 1）。
+  assert.equal(decision.runBudget.maxTokens, settings.budgets.runTokens);
+  assert.equal(decision.runBudget.maxTokens > 1, true);
+  // 成本维仍正常约束（remainingCostCny = 20 - 1）。
+  assert.equal(decision.limitingUsage?.remainingCostCny, "19");
+});
+
 test("cost ledger reconciles usage into scoped entries and budget snapshots", async () => {
   const ledger = createMemoryCostLedgerStore({ teamId: "team-1" });
   const record = buildUsageRecord({

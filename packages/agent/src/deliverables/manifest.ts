@@ -384,28 +384,28 @@ function buildChecks(input: BuildDeliverableChangeManifestInput, changes: Delive
   return [
     buildCheck(
       "snapshot_exists",
-      "基线快照",
+      "还原点",
       input.snapshotId ? "passed" : "warning",
-      input.snapshotId ? "交付物生成前已有可追溯快照。" : "本次 Manifest 草案没有收到 snapshot_id，需要人工确认回滚边界。"
+      input.snapshotId ? "这次改动留下了还原点，可以随时恢复到改动前。" : "这次改动没有留下还原点，需要人工确认能否安全恢复。"
     ),
     buildCheck(
       "artifact_exists",
       "交付物存在",
       changes.length > 0 ? "passed" : "failed",
-      `已发现 ${changes.length} 个 outputs/ 交付物。`
+      `已发现 ${changes.length} 个交付物。`
     ),
     buildCheck(
       "evidence_linked",
       "证据引用",
       evidenceRefs.length > 0 ? "passed" : "skipped",
-      evidenceRefs.length > 0 ? "已关联真实证据引用。" : "本次没有传入证据引用，Manifest 保持空证据，不编造来源。",
+      evidenceRefs.length > 0 ? "已关联真实证据引用。" : "本次没有传入证据引用，不编造来源。",
       evidenceRefs
     ),
     buildCheck(
       "revert_available",
-      "回滚能力",
+      "恢复能力",
       input.snapshotId ? "passed" : "warning",
-      input.snapshotId ? "可通过 snapshot_id 回滚。" : "缺少 snapshot_id，回滚能力需要审批或人工补充。"
+      input.snapshotId ? "可以通过还原点恢复到改动前。" : "缺少还原点，能否恢复需要人工确认。"
     )
   ];
 }
@@ -428,10 +428,10 @@ function buildSummary(input: BuildDeliverableChangeManifestInput, changes: Deliv
   const evidenceLine = (input.evidenceRefs?.length ?? 0) > 0
     ? `已关联 ${input.evidenceRefs?.length ?? 0} 条证据。`
     : "未传入证据引用，等待人工补证或确认。";
-  const snapshotLine = input.snapshotId ? `基线快照：${input.snapshotId}` : "缺少基线快照：需人工确认回滚边界。";
+  const snapshotLine = input.snapshotId ? "留有还原点，可恢复到改动前。" : "没有还原点：需人工确认能否安全恢复。";
   return [
     "## 变更摘要",
-    `本次 AgentRun 从 outputs/ 生成 ${changes.length} 个交付物变更草案：${kinds}。`,
+    `本次执行生成了 ${changes.length} 个交付物变更草案：${kinds}。`,
     "",
     "## 审查提示",
     evidenceLine,
@@ -514,17 +514,17 @@ export async function buildDeliverableChangeManifestFromOutputs(
     ? {
       available: true,
       snapshot_id: input.snapshotId,
-      description: "可通过基线快照恢复到 AgentRun 写入交付物之前的状态。"
+      description: "可以通过还原点恢复到这次交付物写入之前的状态。"
     }
     : {
       available: false,
-      description: "Manifest 草案缺少 snapshot_id，需要人工确认或重新运行带快照门禁的 AgentRun。"
+      description: "这份变更草案没有还原点，需要人工确认，或让 AI 带还原点重跑一次。"
     };
 
   const manifest = {
     version: 0,
     work_item_id: input.workItemId,
-    title: input.title ?? "AgentRun 交付物变更草案",
+    title: input.title ?? "AI 交付物变更草案",
     summary_md: buildSummary(input, changes),
     author: input.author ?? {
       actor_kind: "ai",
@@ -537,14 +537,14 @@ export async function buildDeliverableChangeManifestFromOutputs(
     risk: input.snapshotId
       ? {
         level: "low",
-        human_label: "交付物由 outputs/ 生成，且已有可回滚快照。",
+        human_label: "交付物由 AI 生成，且留有可恢复的还原点。",
         reversible: true
       }
       : {
         level: "medium",
-        human_label: "交付物已生成，但缺少可验证快照。",
+        human_label: "交付物已生成，但缺少可验证的还原点。",
         reversible: false,
-        irreversible_reasons: ["No snapshot_id was supplied for this manifest draft."]
+        irreversible_reasons: ["No restore point was kept for this change draft."]
       },
     rollback,
     review: {

@@ -700,6 +700,8 @@ export function createLlmMergeFusionCandidateGenerator(options: {
           }, "review");
           const response = await client.messages.create({
             maxTokens: 1200,
+            // E2E-03：thinking 模型的思维链计入 max_tokens，结构化输出调用关闭 thinking 防截断。
+            disableThinking: true,
             source: "review",
             system: "You are WorkHub's merge mediator. Return strict JSON only. Never include secrets or git conflict markers.",
             messages: [

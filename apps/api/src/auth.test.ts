@@ -604,12 +604,14 @@ class MemoryInvites implements InviteRepository {
 }
 
 // 用户停用-工作交接的假仓库：只实现 unassignActiveClaimsForUser（停用路由用的唯一方法）。
-// 模拟真库语义：清空被停用用户认领的、非终态、未软删事项的认领字段，RETURNING 受影响 id。
+// 模拟真库语义：清空被停用用户认领的、非终态、未软删事项的认领字段，RETURNING 受影响 id + workspaceId
+// （MRG-11：路由逐项写审计时把 workspaceId 落到顶层列）。
 type FakeWorkItemClaim = {
   id: string;
   claimedByUserId: string | null;
   status: WorkItemStatus;
   deletedAt: Date | null;
+  workspaceId?: string | null;
 };
 
 const TERMINAL_STATUSES: readonly WorkItemStatus[] = ["merged", "done", "cancelled"];
@@ -618,7 +620,7 @@ class MemoryWorkItems implements WorkItemClaimHandoverRepository {
   constructor(public rows: FakeWorkItemClaim[]) {}
 
   async unassignActiveClaimsForUser(userId: string, at: Date) {
-    const affected: { id: string }[] = [];
+    const affected: { id: string; workspaceId: string | null }[] = [];
     for (const row of this.rows) {
       if (
         row.claimedByUserId === userId &&
@@ -626,7 +628,7 @@ class MemoryWorkItems implements WorkItemClaimHandoverRepository {
         !TERMINAL_STATUSES.includes(row.status)
       ) {
         row.claimedByUserId = null;
-        affected.push({ id: row.id });
+        affected.push({ id: row.id, workspaceId: row.workspaceId ?? null });
       }
     }
     void at;
@@ -1892,8 +1894,8 @@ test("POST /users/:id/deactivate hands over the target's active claims (unassign
   const target = user({ id: "10000000-0000-4000-8000-0000000000d4", nickname: "target", cookieToken: "cookie-target-ho" });
   const workItems = new MemoryWorkItems([
     // 两条该用户认领中的非终态事项 → 应被退回（claimedByUserId 清空）。
-    { id: "a0000000-0000-4000-8000-000000000001", claimedByUserId: target.id, status: "ai_working", deletedAt: null },
-    { id: "a0000000-0000-4000-8000-000000000002", claimedByUserId: target.id, status: "in_review", deletedAt: null },
+    { id: "a0000000-0000-4000-8000-000000000001", claimedByUserId: target.id, status: "ai_working", deletedAt: null, workspaceId: "ws-handover" },
+    { id: "a0000000-0000-4000-8000-000000000002", claimedByUserId: target.id, status: "in_review", deletedAt: null, workspaceId: "ws-handover" },
     // 终态事项（merged）→ 不动，保溯源「谁交付的」。
     { id: "a0000000-0000-4000-8000-000000000003", claimedByUserId: target.id, status: "merged", deletedAt: null },
     // 别人认领的非终态事项 → 不受影响。
@@ -1938,6 +1940,12 @@ test("POST /users/:id/deactivate hands over the target's active claims (unassign
     ["a0000000-0000-4000-8000-000000000001", "a0000000-0000-4000-8000-000000000002"],
     "audit entityIds are exactly the reassigned items"
   );
+  // MRG-11：顶层 workspaceId 从 work item 行带出——工作区审计流按它硬过滤，缺列即查不到。
+  assert.equal(
+    handoverLogs.every((row) => row.workspaceId === "ws-handover"),
+    true,
+    "handover audits carry the work item's workspaceId at the top level"
+  );
 });
 
 // R21 加固（停用善后审计缺口）：仓储提供「退回+审计」原子入口时，路由必须优先走它（同一 db 事务，
@@ -1960,6 +1968,8 @@ class MemoryWorkItemsWithAtomicHandover extends MemoryWorkItems {
       await this.auditSink.createAuditLog({
         actorKind: "human",
         actorUserId: input.actorUserId,
+        // MRG-11：与真库实现对齐——workspaceId 从 work item 行带出落顶层列。
+        ...(item.workspaceId ? { workspaceId: item.workspaceId } : {}),
         entityType: "work_item",
         entityId: item.id,
         action: "work_item.unassigned_on_offboarding",
@@ -2361,6 +2371,8 @@ test("invite revoke soft-deletes a pending invite and drops it from the pending 
   const workspaceId = runtimeSettings.auth.defaultWorkspaceId;
   await memberships.create({ workspaceId, userId: admin.id, role: "owner", defaultWorkspace: true });
   const { token: adminToken } = await mintSession(deps, admin, { authMethod: "password" });
+  const auditLogs = new MemoryAuditLogs();
+  deps.auditLogs = auditLogs;
 
   const app = withErrors(new Hono<AuthEnv>());
   app.route("/auth", createAuthRoutes(deps));
@@ -2383,6 +2395,11 @@ test("invite revoke soft-deletes a pending invite and drops it from the pending 
   const listRes = await app.request("/auth/invites?status=pending", { headers: { Cookie: cookie } });
   const listBody = (await listRes.json()) as { invites: Array<Record<string, unknown>> };
   assert.equal(listBody.invites.length, 0, "revoked invite no longer appears in the pending list");
+
+  // MRG-11：撤销事件带顶层 workspaceId——工作区审计流（listAuditLogsForWorkspace）按它硬过滤。
+  const revokedLogs = auditLogs.rows.filter((row) => row.action === "auth.invite_revoked");
+  assert.equal(revokedLogs.length, 1, "one auth.invite_revoked audit");
+  assert.equal(revokedLogs[0]?.workspaceId, workspaceId);
 });
 
 test("invite revoke: member 403; foreign-workspace / unknown / already-revoked id 404 (no cross-tenant revoke)", async () => {
@@ -2545,11 +2562,20 @@ test("gap[41]: account deactivate writes account-level auth.user_deactivated (di
   const admin = user({ id: "10000000-0000-4000-8000-0000000000e3", nickname: "admin", isAdmin: true });
   const target = user({ id: "10000000-0000-4000-8000-0000000000e4", nickname: "target", cookieToken: "cookie-deact-audit" });
   const auditLogs = new MemoryAuditLogs();
+  // MRG-11：给执行管理员挂一条默认工作区成员行——账号级停用事件据此把顶层 workspaceId 锚到其工作区。
+  const memberships = new MemoryMemberships();
+  memberships.rows.push(membershipRow({
+    workspaceId: "ws-deactivate",
+    userId: admin.id,
+    role: "owner",
+    defaultWorkspace: true
+  }));
   const deps: AuthDependencies = {
     users: new MemoryUsers([admin, target]),
     devices: new MemoryDevices([]),
     sessions: new MemorySessions(),
     auditLogs,
+    memberships,
     settings: runtimeSettings,
     now: () => now
   };
@@ -2566,6 +2592,8 @@ test("gap[41]: account deactivate writes account-level auth.user_deactivated (di
   assert.equal(deactivated.length, 1, "one account-level auth.user_deactivated audit");
   assert.equal(deactivated[0]?.entityId, target.id, "subject is the deactivated user");
   assert.equal(deactivated[0]?.actorUserId, admin.id, "actor is the admin");
+  // MRG-11：顶层 workspaceId 锚到执行管理员的工作区——否则工作区审计页（按 workspaceId 硬过滤）查不到。
+  assert.equal(deactivated[0]?.workspaceId, "ws-deactivate");
   // 不与 G3 逐工作项审计重复（本场景无 workItems dep → 零交接审计）。
   assert.equal(auditLogs.rows.some((row) => row.action === "work_item.unassigned_on_offboarding"), false);
 });

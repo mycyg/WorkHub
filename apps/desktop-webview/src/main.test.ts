@@ -41,10 +41,6 @@ import {
   startDesktopIntakeSession
 } from "./main.js";
 import {
-  handleDesktopProposalAction,
-  type DesktopProposalActionClient
-} from "./desktop-proposal-actions.js";
-import {
   dismissDesktopMainWindow,
   dragDesktopMainWindow,
   moveDesktopMainWindowBy,
@@ -169,22 +165,8 @@ const agentArmyDashboard: AgentArmyDashboardVM = {
   }
 };
 
-function fakeDesktopProposalClient(calls: Array<{ method: string; id: string; payload: unknown }>): DesktopProposalActionClient {
-  return {
-    async reviewProposal(id: string, payload: unknown) {
-      calls.push({ method: "reviewProposal", id, payload });
-      return { attention: { summary_text: "已审阅" } };
-    },
-    async mergeProposal(id: string, payload: unknown) {
-      calls.push({ method: "mergeProposal", id, payload });
-      return { attention: { summary_text: "已合入" } };
-    }
-  } as unknown as DesktopProposalActionClient;
-}
-
-function fakeDesktopActionTarget(dataset: Record<string, string>): HTMLElement {
-  return { dataset } as unknown as HTMLElement;
-}
+// DSK-01：desktop-proposal-actions.ts 只被死 boot() 的 bindGoldPathNavigation 引用，
+// 已随死代码一并删除——原 fakeDesktopProposalClient / fakeDesktopActionTarget 及其两个测试同步移除。
 
 type FakeDesktopDomEvent = { preventDefault?: () => void };
 
@@ -987,72 +969,9 @@ test("desktop webview exposes the shared Cuu event adapter for the Rust shell", 
 
 // R9.7: the old assertions read browser.ts and matched import/branch strings.
 // That was wrong because source regexes can pass while desktop clicks still call the wrong API.
-test("desktop proposal review action confirms only and leaves merge as a second step", async () => {
-  const calls: Array<{ method: string; id: string; payload: unknown }> = [];
-  let settled = 0;
-
-  const handled = await handleDesktopProposalAction({
-    href: "/api/proposals/proposal-1/review",
-    actionTarget: fakeDesktopActionTarget({}),
-    actionId: "approve",
-    requiresReason: false,
-    locale: "zh-CN",
-    client: fakeDesktopProposalClient(calls),
-    showRouteNotice: () => undefined,
-    showPayloadFailureNotice: () => undefined,
-    showMergeConflictNotice: () => false,
-    onActionSettled: () => { settled += 1; }
-  });
-
-  assert.equal(handled, true);
-  assert.deepEqual(calls, [
-    { method: "reviewProposal", id: "proposal-1", payload: { decision: "approve", remember: "once" } }
-  ]);
-  assert.equal(settled, 1);
-});
-
-test("desktop proposal action handler uses shared merge payload and reason-required behavior", async () => {
-  const calls: Array<{ method: string; id: string; payload: unknown }> = [];
-  const notices: string[] = [];
-  let pendingReview: { href: string; actionId: string } | undefined;
-  let settled = 0;
-
-  const mergeHandled = await handleDesktopProposalAction({
-    href: "/api/proposals/proposal-2/merge",
-    actionTarget: fakeDesktopActionTarget({ requestJson: "{\"reviewed_by\":\"desktop\"}" }),
-    actionId: "merge",
-    requiresReason: false,
-    locale: "zh-CN",
-    client: fakeDesktopProposalClient(calls),
-    showRouteNotice: (notice) => { notices.push(notice.kind); },
-    showPayloadFailureNotice: () => undefined,
-    showMergeConflictNotice: () => false,
-    onActionSettled: () => { settled += 1; }
-  });
-
-  const reviewHandled = await handleDesktopProposalAction({
-    href: "/api/proposals/proposal-3/review",
-    actionTarget: fakeDesktopActionTarget({}),
-    actionId: "request_changes",
-    requiresReason: true,
-    locale: "zh-CN",
-    client: fakeDesktopProposalClient(calls),
-    showRouteNotice: (notice) => { notices.push(notice.kind); },
-    showPayloadFailureNotice: () => undefined,
-    showMergeConflictNotice: () => false,
-    setPendingReview: (href, actionId) => { pendingReview = { href, actionId }; },
-    onActionSettled: () => { settled += 1; }
-  });
-
-  assert.equal(mergeHandled, true);
-  assert.equal(reviewHandled, true);
-  assert.deepEqual(calls, [
-    { method: "mergeProposal", id: "proposal-2", payload: { reviewed_by: "desktop" } }
-  ]);
-  assert.deepEqual(pendingReview, { href: "/api/proposals/proposal-3/review", actionId: "request_changes" });
-  assert.deepEqual(notices, ["action_success", "reason_required"]);
-  assert.equal(settled, 1);
-});
+// DSK-01: desktop-proposal-actions.ts was only referenced by the dead boot() shell
+// (bindGoldPathNavigation) and has been deleted together with it; the two
+// handleDesktopProposalAction tests that lived here went with it.
 
 // The old project-context assertion was wrong: it grepped deprecated gold-path
 // activateRoute text while the production desktop shell is bootSpotlight().

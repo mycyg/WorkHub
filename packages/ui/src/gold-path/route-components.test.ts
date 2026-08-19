@@ -5,6 +5,7 @@ import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/a
 import type { AgentArmyDashboardVM, AttentionItem, AuditLogFact, CalendarPageVM, ConversationMessageVM, DrivePageVM, ProjectHealthPageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProjectListVM, ProposalConflict, ProposalDetailVM, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
 
 import { renderAgentRunReplay } from "../replay/index.js";
+import { formatLocalDate, formatLocalTimestamp } from "../i18n.js";
 import { renderWebRouteComponent, renderWebRouteComponents, renderWorkItemAuditTimelineRows } from "./route-components.js";
 import { renderOnboardingScreen } from "../onboarding.js";
 import { renderWebProductShell } from "./product-shell.js";
@@ -1145,7 +1146,7 @@ test("R4.11 WorkItem route component keeps task context, trace, acceptance, and 
   assert.equal(workitem.html.includes(`data-r4-workitem-id="${vm.page_vms.workitem.workitem.id}"`), true);
   assert.equal(workitem.html.includes(`data-r4-workitem-trace-count="${vm.page_vms.workitem.agent_trace_preview.length}"`), true);
   assert.equal(workitem.html.includes(`data-r4-workitem-acceptance-count="${vm.page_vms.workitem.acceptance.length}"`), true);
-  assert.equal(workitem.html.includes("AI execution trace"), true);
+  assert.equal(workitem.html.includes("AI work replay"), true);
   assert.equal(workitem.html.includes("Acceptance checklist"), true);
   assert.equal(workitem.html.includes("data-method=\"GET\""), true);
   assert.equal(workitem.html.includes('data-s1-day2-post-run-next-action="proposal"'), true);
@@ -1194,9 +1195,10 @@ test("R20 R19-27 renderWorkItemAuditTimelineRows localizes action/actor labels, 
   const zhRows = renderWorkItemAuditTimelineRows([baseEntry], "zh-CN");
   assert.equal(zhRows.includes('data-r20-workitem-audit-entry="audit-1"'), true);
   assert.equal(zhRows.includes('data-r20-workitem-audit-entry-action="work_item.created"'), true);
-  assert.equal(zhRows.includes("创建工作项"), true);
+  assert.equal(zhRows.includes("创建任务"), true);
   assert.equal(zhRows.includes("小拓"), true);
-  assert.equal(zhRows.includes("2026-07-10"), true);
+  // UI-02：时间戳按本地时区渲染——日期部分由格式化助手算出（时区无关）。
+  assert.equal(zhRows.includes(formatLocalDate("2026-07-10T09:00:00.000Z")), true);
 
   const aiEntry: AuditLogFact = {
     ...baseEntry,
@@ -1273,7 +1275,8 @@ test("R9.7 WorkItem trace route component does not render machine tool names as 
 
   assert.ok(workitem);
   assert.equal(workitem.html.includes("<span class=\"wh-pill\">read_project_file</span>"), false);
-  assert.equal(workitem.html.includes("<span class=\"wh-pill\">2026-07-03 10:24</span>"), true);
+  // UI-02：时间戳按本地时区渲染——期望值由同一格式化助手算出（时区无关），同时断言不再 UTC 直出。
+  assert.equal(workitem.html.includes(`<span class="wh-pill">${formatLocalTimestamp("2026-07-03T10:24:00.000Z")}</span>`), true);
 });
 
 test("R9.1 WorkItem route component renders the approved task plan snapshot", () => {
@@ -1360,7 +1363,7 @@ test("R9.1 WorkItem route component drafts a task plan before any agent run", ()
 });
 
 // R13 批 P4（全托管透明度：reviewer_kind 溯源）：ai 复核合并的交付物要显示过去时提示，
-// 且置信度 pill 的「可自动采纳」（未来时/资格描述）此时该改成「已自动采纳」（过去时）。
+// 且把握度 pill 上补过去时的「已自动采纳」（未发生时只显示把握度三句话，不预告资格）。
 test("R13 P4 WorkItem route component marks AI-auto-merged deliverables with a past-tense notice", () => {
   const base = surfaceVm().page_vms.workitem;
   const aiMergedVm: WorkItemDetailVM = {
@@ -1389,7 +1392,7 @@ test("R13 P4 WorkItem route component marks AI-auto-merged deliverables with a p
   assert.equal(workitem.html.includes("可自动采纳"), false);
 });
 
-test("R13 P4 WorkItem route component keeps the eligibility (未发生) wording when auto_merge has not actually merged anything yet", () => {
+test("R13 P4 WorkItem route component shows only the confidence wording when auto_merge has not actually merged anything yet", () => {
   const base = surfaceVm().page_vms.workitem;
   const notYetMergedVm: WorkItemDetailVM = {
     ...base,
@@ -1399,7 +1402,8 @@ test("R13 P4 WorkItem route component keeps the eligibility (未发生) wording 
   const workitem = renderWebRouteComponent({ key: "workitem", workitem: notYetMergedVm }, { locale: "zh-CN" });
 
   assert.equal(workitem.html.includes('data-r13-workitem-confidence-auto-merged="false"'), true);
-  assert.equal(workitem.html.includes("可自动采纳"), true);
+  assert.equal(workitem.html.includes("我比较有把握"), true);
+  assert.equal(workitem.html.includes("已自动采纳"), false);
   assert.equal(workitem.html.includes("已由 AI 自动合并，无人工复核。"), false);
 });
 
@@ -1963,7 +1967,7 @@ test("S1 Day0 Proposal route component hides write actions after merge", () => {
   assert.ok(proposal);
   // 状态徽章人话化(不再裸渲枚举 "merged"),原始枚举保留在 data 属性供选择器/测试用。
   assert.equal(proposal.html.includes('data-r4-proposal-status="merged"'), true);
-  assert.equal(proposal.html.includes(">Merged</span>"), true);
+  assert.equal(proposal.html.includes(">Adopted</span>"), true);
   assert.equal(proposal.html.includes('class="wh-r4-route-count" data-r4-proposal-status="merged">merged<'), false);
   assert.equal(proposal.html.includes('data-r4-proposal-action-count="0"'), true);
   assert.equal(proposal.html.includes('data-action-id="approve"'), false);
@@ -2347,7 +2351,7 @@ test("R4.14 Intake confirm component exposes create work item action with select
   assert.equal(intake.html.includes('data-r4-intake-input-mode="confirm"'), true);
   assert.equal(intake.html.includes('data-intake-create-workitem="true"'), true);
   assert.equal(intake.html.includes('data-action-id="create_workitem"'), true);
-  assert.equal(intake.html.includes("创建工作项"), true);
+  assert.equal(intake.html.includes("创建任务"), true);
   assert.equal(intake.primaryHrefs.includes("/api/workitems"), true);
   assertNoMainWindowBoundaryLeak(intake.html);
 });
@@ -3324,7 +3328,8 @@ test("Approvals route component does not leak raw approval facts", () => {
   );
   assert.equal(approvals.html.includes("2026-07-05T00:00:00.000Z"), false);
   assert.equal(approvals.html.includes("<strong>Tool approval</strong>"), true);
-  assert.equal(approvals.html.includes("Pending · due 2026-07-05 00:00"), true);
+  // UI-02：本地时区渲染，期望值由格式化助手算出（时区无关）。
+  assert.equal(approvals.html.includes(`Pending · due ${formatLocalTimestamp("2026-07-05T00:00:00.000Z")}`), true);
   assert.equal(approvals.html.includes(">Routed</span>"), true);
   assertNoMainWindowBoundaryLeak(approvals.html);
 });
@@ -3899,9 +3904,9 @@ test("R14 批 MEM: memory route renders the profile tab with category badge, pro
   // 出处：有 provenance.label 就用它；否则三级降级到「早期记录，出处不明」。
   assert.equal(zh.html.includes("来自会话《周报》的一次 AI 执行"), true);
   assert.equal(zh.html.includes("早期记录，出处不明"), true);
-  // edited_at 是独立叠加行，不是取代出处。
-  assert.equal(zh.html.includes("最近由你于 2026-07-12 修改"), true);
-  assert.equal(en.html.includes("Last edited by you on 2026-07-12"), true);
+  // edited_at 是独立叠加行，不是取代出处。UI-02：本地时区渲染，期望值由格式化助手算出（时区无关）。
+  assert.equal(zh.html.includes(`最近由你于 ${formatLocalDate("2026-07-12T00:00:00.000Z")} 修改`), true);
+  assert.equal(en.html.includes(`Last edited by you on ${formatLocalDate("2026-07-12T00:00:00.000Z")}`), true);
   // 「团队技能」tab 面板仍在（hidden），空态文案存在。
   assert.equal(zh.html.includes('data-r14-mem-skills-panel="true" hidden'), true);
   assert.equal(zh.html.includes('data-r14-mem-skills-empty="true"'), true);
@@ -4360,14 +4365,14 @@ test("R15 web-mirror conversation component renders a read-only bilingual messag
   // file_card 快照名（只读 chip）。
   assert.equal(html.includes("风险清单.md"), true);
   // system_event 落定行朴素渲染：标题 + 结算词。
-  assert.equal(html.includes("周报变更 · 已合并"), true);
+  assert.equal(html.includes("周报变更 · 已采纳"), true);
   // 删除墓碑。
   assert.equal(html.includes("此消息已删除"), true);
 
   // 英文横幅 + 结算词本地化。
   const en = renderWebRouteComponent({ key: "conversation", conversation }, { locale: "en-US" });
   assert.equal(en.html.includes("Read-only mirror · Collaborate in the desktop workbench"), true);
-  assert.equal(en.html.includes("周报变更 · Merged"), true);
+  assert.equal(en.html.includes("周报变更 · Adopted"), true);
   assert.equal(en.html.includes("Original message deleted"), true);
   assert.equal(en.html.includes("Cuu is asking"), true);
 });

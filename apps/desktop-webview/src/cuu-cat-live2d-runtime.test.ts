@@ -98,3 +98,26 @@ test("desktop Live2D model pages keep canvas framing proportional across pet sca
     assert.doesNotMatch(html, /bottom:\s*-112px|width:\s*210px|height:\s*560px/u);
   }
 });
+
+// DSK-04：tauri.conf.json 的 CSP 是 `script-src 'self'`——模型页里的内联 <script> 会被拦死
+//（dev 走 vite 无 CSP 所以只有打包后才暴露，桌宠直接黑屏）。回归守卫：模型页只准引用外部 .js，
+// 且引导脚本真实存在于同目录。
+test("desktop Live2D model pages carry no inline scripts (CSP script-src 'self')", () => {
+  for (const modelPage of [
+    { html: "../public/cuu/live2d/hijiki/cuu-hijiki.html", boot: "../public/cuu/live2d/hijiki/cuu-hijiki-boot.js" },
+    { html: "../public/cuu/live2d/tororo/cuu-tororo.html", boot: "../public/cuu/live2d/tororo/cuu-tororo-boot.js" }
+  ]) {
+    const html = readFileSync(resolve(testDir, modelPage.html), "utf8");
+
+    // 无内联脚本：剥掉所有 <script src="..."></script> 后不应再出现任何 <script 标签。
+    const withoutExternal = html.replace(/<script\s+src="[^"]*"\s*>\s*<\/script>/gu, "");
+    assert.doesNotMatch(withoutExternal, /<script/iu, `${modelPage.html} must not carry inline scripts (CSP script-src 'self')`);
+    assert.match(html, /<script src="\.\/live2d\.js"><\/script>/u);
+    // 引导脚本被引用且真实存在。
+    const bootSrc = /<script src="(\.\/cuu-(?:hijiki|tororo)-boot\.js)"><\/script>/u.exec(html)?.[1];
+    assert.ok(bootSrc, `${modelPage.html} must reference its external boot script`);
+    const bootJs = readFileSync(resolve(testDir, modelPage.boot), "utf8");
+    assert.match(bootJs, /loadlive2d\("live2d"/u);
+    assert.match(bootJs, /workhub:cuu-live2d/u);
+  }
+});

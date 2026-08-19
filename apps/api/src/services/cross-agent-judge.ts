@@ -609,6 +609,8 @@ async function runJudgeCall(input: CrossAgentJudgeInput, client: ReturnType<Prov
   try {
     response = await client.messages.create({
       maxTokens: CROSS_AGENT_JUDGE_MAX_TOKENS,
+      // E2E-03：thinking 模型的思维链计入 max_tokens，结构化输出调用关闭 thinking 防截断。
+      disableThinking: true,
       source: "agent_step",
       ...(perspective ? { seq: HIGH_RISK_VOTE_PERSPECTIVES.findIndex((candidate) => candidate.id === perspective.id) } : {}),
       timeoutMs: CROSS_AGENT_JUDGE_TIMEOUT_MS,

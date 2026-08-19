@@ -12,6 +12,14 @@ import { renderProposalConflictCards } from "@workhub/ui/proposal";
 import { renderOnboardingScreen, renderInviteAcceptScreen } from "@workhub/ui";
 import { openAvatarCropModal } from "./avatar-crop-modal.js";
 import { armConfirmButton } from "./confirm-button.js";
+import {
+  armApprovalSendBack,
+  armProposalSendBack,
+  clearPendingSendBack,
+  createPendingSendBackState,
+  pendingSendBackActive,
+  resolvePendingSendBack
+} from "./review-reason-pending.js";
 import { runOnboardingLocaleSync } from "./onboarding-locale-sync.js";
 import { buildSettingsDeviceRow, humanizeDeviceRevokeError } from "./settings-devices.js";
 import {
@@ -30,6 +38,7 @@ import {
   actionSuccessNotice,
   actionSummary,
   activeRouteHasDirtyEdits as sharedActiveRouteHasDirtyEdits,
+  agentRunAbortIdFromHref,
   applyIdentityLocale,
   approvalRespondIdFromHref,
   bindRouteLineEditor,
@@ -402,7 +411,9 @@ function swapProposalActionRow(shellRoot: HTMLElement, actions: ProposalRowActio
   const links = nextActions.map((action, index) => {
     const link = document.createElement("a");
     link.className = index === 0 ? "wh-btn wh-btn-primary" : "wh-btn";
-    link.setAttribute("href", action.href);
+    // UI-05：next_action.href 是服务端/LLM 产物，直挂 setAttribute 不过 safeHref 会把 javascript: 一类
+    // 脏协议写进可点锚点——与模板里所有 action.href 渲染点同口径先过 safeHref。
+    link.setAttribute("href", safeHref(action.href));
     link.dataset.actionId = action.id;
     link.dataset.method = action.method;
     if (action.request_json) {
@@ -605,6 +616,11 @@ async function showRebaseRequiredNotice(
   return true;
 }
 
+// UI-04：批量通过按钮的常态文案带勾选数（确认态文案在点击处理器里由 armConfirmButton 换入）。
+function batchApproveLabel(locale: WorkHubLocale, count: number): string {
+  return locale === "en-US" ? `Approve selected (${count})` : `批量通过所选（${count}）`;
+}
+
 function bindGoldPathNavigation(
   shellRoot: HTMLElement,
   shell: GoldPathAppShell,
@@ -613,21 +629,16 @@ function bindGoldPathNavigation(
   onNavigate?: (href: string, pageKey: string) => void | Promise<void>,
   signal?: AbortSignal
 ) {
-  let pendingReviewHref: string | undefined;
-  let pendingReviewActionId: string | undefined;
-  let pendingApprovalId: string | undefined;
-  let pendingApprovalActionId: string | undefined;
+  // UI-01：两条打回挂起态收进纯模块（review-reason-pending.ts）——入口互清、消费互斥，可单测。
+  const pendingSendBack = createPendingSendBackState();
 
   // R5（键盘可达）：理由提示卡响应 Esc——等同点「取消」，键盘用户不再被迫三选一才能脱身。
   shellRoot.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape" || (!pendingReviewHref && !pendingApprovalId)) {
+    if (event.key !== "Escape" || !pendingSendBackActive(pendingSendBack)) {
       return;
     }
     event.preventDefault();
-    pendingReviewHref = undefined;
-    pendingReviewActionId = undefined;
-    pendingApprovalId = undefined;
-    pendingApprovalActionId = undefined;
+    clearPendingSendBack(pendingSendBack);
     clearActiveRouteDirty();
     const notice = shellRoot.querySelector<HTMLElement>("[data-wh-app-notice]");
     if (notice) {
@@ -650,12 +661,17 @@ function bindGoldPathNavigation(
   // option 的 value 已是完整 href（/drive?project_id=…）；空 value（M3 占位「当前项目」）不导航。
   shellRoot.addEventListener("change", (event) => {
     const target = event.target;
-    // R12（批量效率）：勾选审批行 checkbox → 显示「批量通过所选」按钮（有勾选才显示）。
+    // R12（批量效率）：勾选审批行 checkbox → 显示「批量通过所选」按钮（有勾选才显示），文案带勾选数。
     if (target instanceof HTMLInputElement && target.matches("[data-r12-approval-check]")) {
-      const anyChecked = shellRoot.querySelector("[data-r12-approval-check]:checked") !== null;
+      const checkedCount = shellRoot.querySelectorAll("[data-r12-approval-check]:checked").length;
       const batchButton = shellRoot.querySelector<HTMLElement>("[data-r12-approval-batch-approve]");
       if (batchButton) {
-        batchButton.hidden = !anyChecked;
+        // UI-04：勾选变化先解除可能残留的确认武装——数量变了，旧的「确认通过 N 条」文案不再成立，
+        // 连同 armConfirmButton 记下的原标签一并作废（下次武装按新文案重新快照）。
+        delete batchButton.dataset.r9ConfirmArmed;
+        delete batchButton.dataset.r20ConfirmOriginalLabel;
+        batchButton.hidden = checkedCount === 0;
+        batchButton.textContent = batchApproveLabel(locale, checkedCount);
       }
       return;
     }
@@ -978,43 +994,52 @@ function bindGoldPathNavigation(
     }
 
     // R12（批量效率）：批量通过所选——收集勾选 id → respond-batch，成功后重渲并回执成功/跳过数。
+    // UI-04：一批 N 条一次放行不能再零确认——沿用 armConfirmButton 两段式（第一次点武装换确认文案，
+    // 5 秒内再点才真执行；勾选变化会解除武装，见上方 change 监听）。
     const batchApprove = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-r12-approval-batch-approve]") : null;
     if (batchApprove) {
       event.preventDefault();
       const ids = [...shellRoot.querySelectorAll<HTMLInputElement>("[data-r12-approval-check]:checked")]
         .map((input) => input.dataset.r12ApprovalCheck)
         .filter((value): value is string => Boolean(value));
-      if (ids.length === 0 || !beginBusyAction("respond_batch")) {
+      if (ids.length === 0) {
         return;
       }
-      batchApprove.disabled = true;
-      showRouteNotice(shellRoot, actionInProgressNotice(locale, "respond_batch"), undefined, 0);
-      void (async () => {
-        try {
-          const result = await client.respondApprovalsBatch(ids);
-          await renderCurrentRoute(client, locale);
-          showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, locale === "en-US"
-            ? `Approved ${result.approved} item${result.approved === 1 ? "" : "s"}${result.skipped ? `, ${result.skipped} skipped (already handled)` : ""}.`
-            : `已批量通过 ${result.approved} 条${result.skipped ? `，${result.skipped} 条跳过（已被处理）` : ""}。`, "respond_batch"));
-        } catch (error) {
-          showRouteNotice(shellRoot, actionErrorNotice(locale, error, "respond_batch"));
-        } finally {
-          endBusyAction("respond_batch");
-          if (batchApprove.isConnected) {
-            batchApprove.disabled = false;
+      armConfirmButton(batchApprove, {
+        confirmLabel: locale === "en-US"
+          ? `Approve ${ids.length} selected? Click again to confirm`
+          : `确认通过所选 ${ids.length} 条？再点一次确认`,
+        onConfirm: () => {
+          if (!beginBusyAction("respond_batch")) {
+            return;
           }
+          batchApprove.disabled = true;
+          showRouteNotice(shellRoot, actionInProgressNotice(locale, "respond_batch"), undefined, 0);
+          void (async () => {
+            try {
+              const result = await client.respondApprovalsBatch(ids);
+              await renderCurrentRoute(client, locale);
+              showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, locale === "en-US"
+                ? `Approved ${result.approved} item${result.approved === 1 ? "" : "s"}${result.skipped ? `, ${result.skipped} skipped (already handled)` : ""}.`
+                : `已批量通过 ${result.approved} 条${result.skipped ? `，${result.skipped} 条跳过（已被处理）` : ""}。`, "respond_batch"));
+            } catch (error) {
+              showRouteNotice(shellRoot, actionErrorNotice(locale, error, "respond_batch"));
+            } finally {
+              endBusyAction("respond_batch");
+              if (batchApprove.isConnected) {
+                batchApprove.disabled = false;
+              }
+            }
+          })();
         }
-      })();
+      });
       return;
     }
     // R5（键盘可达）：理由卡「取消」——清空挂起状态、收起持久提示卡、解除 dirty 标记。Esc 同效（见下方 keydown）。
     const reasonCancel = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-review-reason-cancel]") : null;
     if (reasonCancel) {
       event.preventDefault();
-      pendingReviewHref = undefined;
-      pendingReviewActionId = undefined;
-      pendingApprovalId = undefined;
-      pendingApprovalActionId = undefined;
+      clearPendingSendBack(pendingSendBack);
       clearActiveRouteDirty();
       const notice = shellRoot.querySelector<HTMLElement>("[data-wh-app-notice]");
       if (notice) {
@@ -1023,49 +1048,61 @@ function bindGoldPathNavigation(
       return;
     }
     const reasonButton = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-review-reason]") : null;
-    if (reasonButton && (pendingReviewHref || pendingApprovalId)) {
+    const pendingSendBackTarget = resolvePendingSendBack(pendingSendBack);
+    if (reasonButton && pendingSendBackTarget) {
       event.preventDefault();
       const reasonMd = reasonButton.dataset.reviewReason ?? goldPathT(locale, "runtime.reason.format");
-      const proposalAction = pendingReviewHref ? proposalActionFromHref(pendingReviewHref) : undefined;
-      if (proposalAction?.action === "review") {
+      // UI-01：resolvePendingSendBack 返回互斥的 discriminated union——一次点击只可能落一个审计动作，
+      // 结构上不存在「提议打回打完继续走审批打回」的双发路径（入口互清见 requiresReason 两处）。
+      if (pendingSendBackTarget.kind === "proposal") {
+        const proposalAction = proposalActionFromHref(pendingSendBackTarget.href);
+        if (proposalAction?.action !== "review") {
+          return;
+        }
+        // UI-03：与审批打回同口径——in-flight 锁防连点双发，成功后重渲让卡片状态跟上（回执在重渲后弹）。
+        if (!beginBusyAction("proposal_request_changes")) {
+          return;
+        }
+        showRouteNotice(shellRoot, actionInProgressNotice(locale, pendingSendBackTarget.actionId), undefined, 0);
         try {
           const result = await client.reviewProposal(proposalAction.proposalId, {
             decision: "request_changes",
             reason_md: reasonMd,
             remember: "once"
           }, { locale });
-          showRouteNotice(shellRoot, actionSuccessNotice(locale, result.attention.summary_text, pendingReviewActionId ?? "request_changes"));
-          pendingReviewHref = undefined;
-          pendingReviewActionId = undefined;
+          const settledReviewActionId = pendingSendBackTarget.actionId;
+          clearPendingSendBack(pendingSendBack);
           clearActiveRouteDirty();
+          await renderCurrentRoute(client, locale);
+          showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, result.attention.summary_text, settledReviewActionId));
         } catch (error) {
-          showRouteNotice(shellRoot, actionErrorNotice(locale, error, pendingReviewActionId ?? "request_changes"));
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, pendingSendBackTarget.actionId));
+        } finally {
+          endBusyAction("proposal_request_changes");
         }
-      }
-      if (pendingApprovalId) {
+      } else {
         if (!beginBusyAction("approval_deny")) {
           return;
         }
-        showRouteNotice(shellRoot, actionInProgressNotice(locale, pendingApprovalActionId ?? "deny"), undefined, 0);
+        showRouteNotice(shellRoot, actionInProgressNotice(locale, pendingSendBackTarget.actionId), undefined, 0);
         try {
           const remember = shellRoot.querySelector<HTMLInputElement>("[data-r4-approval-remember]")?.checked ? "always" : "once";
           // L#W2-17：优先用决策面板里手写的「意见说明」，没写才回落到预设理由按钮。
           const customReason = shellRoot.querySelector<HTMLTextAreaElement>("[data-r4-approval-reason]")?.value.trim();
-          const result = await client.respondApproval(pendingApprovalId, {
+          const result = await client.respondApproval(pendingSendBackTarget.approvalId, {
             decision: "deny",
             reason_md: customReason || reasonMd,
             remember
           });
-          const settledApprovalActionId = pendingApprovalActionId ?? "deny";
-          approvalReasonDrafts.delete(pendingApprovalId);
-          pendingApprovalId = undefined;
-          pendingApprovalActionId = undefined;
+          const settledApprovalActionId = pendingSendBackTarget.actionId;
+          approvalReasonDrafts.delete(pendingSendBackTarget.approvalId);
+          clearPendingSendBack(pendingSendBack);
           clearActiveRouteDirty();
           // R8（引导承接 high）：打回后同样重渲——已处理项移出队列，回执在重渲后弹。
           await renderCurrentRoute(client, locale);
           showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), settledApprovalActionId));
         } catch (error) {
-          showRouteNotice(shellRoot, actionErrorNotice(locale, error, pendingApprovalActionId ?? "deny"));
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, pendingSendBackTarget.actionId));
         } finally {
           endBusyAction("approval_deny");
         }
@@ -1315,6 +1352,38 @@ function bindGoldPathNavigation(
           });
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId ?? "start_agent_run"));
+        }
+        return;
+      }
+      // WIRE-07：回放页「中止执行」（POST /api/agent-runs/:id/abort）。中止是破坏性动作——两段式确认
+      // 沿用 armConfirmButton/r9ConfirmArmed 先例：第一次点把按钮翻成确认文案（5 秒自动复原），限时内
+      // 再点一次才真正发请求；成功后重渲回放页让状态卡翻成「已取消」。
+      const abortRunId = agentRunAbortIdFromHref(href);
+      if (abortRunId) {
+        let abortConfirmed = false;
+        armConfirmButton(actionTarget, {
+          confirmLabel: locale === "en-US"
+            ? "Abort? Work done so far is kept, but it won't continue."
+            : "确定中止？AI 已做的工作会保留，但不会继续。",
+          onConfirm: () => {
+            abortConfirmed = true;
+          }
+        });
+        if (!abortConfirmed) {
+          return;
+        }
+        showRouteNotice(shellRoot, actionInProgressNotice(locale, actionId ?? "abort_agent_run"), undefined, 0);
+        try {
+          await client.abortAgentRun(abortRunId);
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            const body = locale === "en-US"
+              ? "Run aborted — work done so far is kept."
+              : "已中止执行——AI 已做的工作会保留。";
+            showRouteNotice(root, actionSuccessNotice(locale, body, actionId ?? "abort_agent_run"));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId ?? "abort_agent_run"));
         }
         return;
       }
@@ -1626,15 +1695,15 @@ function bindGoldPathNavigation(
       const approvalRespondId = approvalRespondIdFromHref(href);
       if (approvalRespondId) {
         if (action.requiresReason || actionId === "deny") {
-          pendingApprovalId = approvalRespondId;
-          pendingApprovalActionId = actionId ?? "deny";
+          // UI-01：两个打回挂起入口互清（模块内保证）——同一时刻只允许一条打回流程挂起。
+          armApprovalSendBack(pendingSendBack, approvalRespondId, actionId ?? "deny");
           markActiveRouteDirty("review_reason_pending");
-          showRouteNotice(shellRoot, reasonRequiredNotice(locale, pendingApprovalActionId), reviewReasonButtons(locale), 0);
+          showRouteNotice(shellRoot, reasonRequiredNotice(locale, pendingSendBack.approvalActionId ?? "deny"), reviewReasonButtons(locale), 0);
           return;
         }
         // R13（决策完整性）：打回理由卡挂起时不许静默改批准——先让用户对已开的打回流程表态
         // （选理由或 Esc/取消），否则 X 后按 A/误点会把正在走打回的同一条直接放行。
-        if (pendingApprovalId || pendingReviewHref) {
+        if (pendingSendBackActive(pendingSendBack)) {
           showRouteNotice(shellRoot, {
             kind: "reason_required",
             tone: "warning",
@@ -1666,10 +1735,10 @@ function bindGoldPathNavigation(
       const proposalAction = proposalActionFromHref(href);
       if (proposalAction?.action === "review") {
         if (action.requiresReason) {
-          pendingReviewHref = href;
-          pendingReviewActionId = actionId ?? "request_changes";
+          // UI-01：与审批打回互清（模块内保证）——见上方 approvalRespondId 分支同注。
+          armProposalSendBack(pendingSendBack, href, actionId ?? "request_changes");
           markActiveRouteDirty("review_reason_pending");
-          showRouteNotice(shellRoot, reasonRequiredNotice(locale, pendingReviewActionId), reviewReasonButtons(locale), 0);
+          showRouteNotice(shellRoot, reasonRequiredNotice(locale, pendingSendBack.reviewActionId ?? "request_changes"), reviewReasonButtons(locale), 0);
           return;
         }
         try {
@@ -1952,12 +2021,18 @@ async function refreshCurrentRouteFromLiveEvent(
   locale: WorkHubLocale,
   eventType: string,
   targetKey: string
-): Promise<"refreshed" | "dirty-deferred"> {
+): Promise<"refreshed" | "dirty-deferred" | "skipped"> {
   // findings[#118]：home 此前在这里短路——只对 HIDDEN 的 React 探针岛做 sse-props 更新、设 refreshMode="react-props"
   // 后 return，从不把新 result.html 写回 root.innerHTML。但首页可见的决策卡/战绩条/后台 run 行是 renderHomeRouteComponent
   // 产出的服务端静态 HTML，只由 renderCurrentRoute 写入；React 探针是隐藏的、不管理这些可见节点。于是 SSE 事件（新决策、
   // proposal.merged、budget.warning）永远刷不新可见的决策收件箱。删掉 home 专属短路，让 home 与其它路由一样走下面的
   // dirty-check + renderCurrentRouteOrOnboard 全量重渲染（后者同样 fail-closed：not_identified 回注册屏）。
+  // MRG-24：会话镜像翻历史分页（?before=）时收到 conversation.* 事件不整路由重渲——重渲会按最新页
+  // 重拉，读历史的人被拽回顶部。标 skipped，由 onRefreshNotice 给手动刷新提示，用户自己决定何时回最新页。
+  if (targetKey === "conversation" && new URLSearchParams(window.location.search).has("before")) {
+    setLiveMetric("r4LiveRefreshMode", "history-page-skipped");
+    return "skipped";
+  }
   if (activeRouteHasDirtyEdits()) {
     liveDirtyGuardCount += 1;
     setLiveMetric("r4LiveRefreshMode", "dirty-deferred");
@@ -1996,6 +2071,26 @@ function createBrowserLiveRuntime(client: BrowserApiClient, locale: WorkHubLocal
     onRefresh: (eventType, targetKey) => refreshCurrentRouteFromLiveEvent(client, locale, eventType, targetKey),
     onRefreshNotice: (outcome, eventType, targetKey) => {
       if (!root) {
+        return;
+      }
+      // MRG-24：翻历史分页时刷新被跳过（见 refreshCurrentRouteFromLiveEvent）——给一条带手动刷新动作的
+      // 轻提示，复用 dirty-guard 的刷新动作（带全 query），而不是 dirty-guard 的「未提交内容」文案。
+      if (outcome === "skipped") {
+        showRouteNotice(
+          root,
+          {
+            kind: "sse_refresh",
+            tone: "info",
+            source: "sse",
+            locale,
+            title: locale === "en-US" ? "New messages arrived" : "有新消息",
+            body: locale === "en-US"
+              ? "You're browsing earlier history, so the page didn't jump to the latest. Refresh when you're ready."
+              : "你正在翻阅历史消息，页面没有自动跳到最新。看完后手动刷新即可。"
+          },
+          dirtyGuardRefreshAction(locale, webRouteHref(`${window.location.pathname}${window.location.search}`)),
+          3600
+        );
         return;
       }
       // 普通用户审查 R2：动作回执与「页面已刷新」共用一个 toast 槽——回执刚弹出就被刷新提示盖掉。
@@ -5378,7 +5473,9 @@ function inviteAcceptErrorText(error: unknown, locale: WorkHubLocale): string {
     if (error.status === 400) {
       return error.message || (zh ? "密码太弱或信息有误，请检查后重试。" : "The password is too weak or a field is invalid — check and retry.");
     }
-    if (error.message) {
+    // MRG-26：只透传 4xx 的服务端 message（参数/状态类文案是写给人看的）；5xx 的 message 常含内部
+    // 细节，不应糊到用户脸上——一律落通用「稍后重试」。
+    if (error.status >= 400 && error.status < 500 && error.message) {
       return error.message;
     }
   }

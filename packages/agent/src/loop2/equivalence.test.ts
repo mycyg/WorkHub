@@ -591,10 +591,18 @@ test("equivalence: non-retryable provider error (400) — both engines fail imme
 	const legacyH = make();
 	const loop2H = make();
 
-	// Both engines propagate the failure as a throw (loop.ts: callModelWithRetry re-throws; loop2:
-	// the streamFn encodes the error terminal and runAgentLoop2 re-throws it for agent-runner's catch).
-	await assert.rejects(() => createAgentLoop().run(legacyH.input), /400 bad request/);
-	await assert.rejects(() => runAgentLoop2(loop2H.input), /400 bad request/);
+	// CORE-09：两引擎都不再裸抛（旧契约：throw 给 agent-runner 的 catch）——统一走 settleRunException
+	// 按 status:"failed" 正常收尾（recordUsage + agent_run.failed + 结构化 handoff，budgetHit="unknown"）。
+	const legacy = await createAgentLoop().run(legacyH.input);
+	const loop2 = await runAgentLoop2(loop2H.input);
+	assert.equal(legacy.status, "failed");
+	assert.equal(loop2.status, "failed");
+	assert.match(legacy.reason, /400 bad request/);
+	assert.match(loop2.reason, /400 bad request/);
+	assert.equal(legacy.handoff?.budgetHit, "unknown");
+	assert.equal(loop2.handoff?.budgetHit, "unknown");
+	assert.equal(legacyH.emittedEvents.some((e) => e.type === "agent_run.failed"), true, "legacy emitted agent_run.failed");
+	assert.equal(loop2H.emittedEvents.some((e) => e.type === "agent_run.failed"), true, "loop2 emitted agent_run.failed");
 
 	// No retry on a 4xx: exactly one provider request, zero provider_retry events, on both engines.
 	assert.equal(legacyH.requests.length, 1, "legacy did not retry");

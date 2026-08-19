@@ -31,16 +31,18 @@ function preview(value: unknown, maxLength = 300) {
 }
 
 export function createAgentRunSnapshotHook(options: AgentRunSnapshotHookOptions): SnapshotHook {
+  const snapshotRoot = options.snapshotRoot ?? path.join(options.settings.dataDir, "snapshots", "agent-runs", options.run.run_id);
+  // CORE-04：service 提到闭包外只建一次——其内部按 workdir 持有「上一份快照」的 (contentSha256, ref)，
+  // 同一 run 内相邻快照内容未变时复用 ref 不再整树拷贝（否则每次 side-effect 工具调用全量复制）。
+  const service = createSnapshotService({
+    snapshotRoot,
+    ...(options.now ? { now: options.now } : {}),
+    ...(options.id ? { id: options.id } : {})
+  });
   return async (input: SnapshotHookInput) => {
     const stores = options.snapshots && options.auditLogs
       ? { snapshots: options.snapshots, auditLogs: options.auditLogs }
       : getDefaultAuditStores();
-    const snapshotRoot = options.snapshotRoot ?? path.join(options.settings.dataDir, "snapshots", "agent-runs", options.run.run_id);
-    const service = createSnapshotService({
-      snapshotRoot,
-      ...(options.now ? { now: options.now } : {}),
-      ...(options.id ? { id: options.id } : {})
-    });
     const snapshot = await service.takeSandboxFileSnapshot({
       workItemId: input.workItemId ?? options.run.work_item_id,
       workdir: input.workdir,

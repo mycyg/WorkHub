@@ -202,6 +202,11 @@ export type UpdateStoredWorkItemFromSessionInput = {
   selectedOptionIds?: string[];
   planningNote?: string | null;
   acceptanceItems?: WorkItemAcceptanceSeedInput[];
+  // CHAT-3（定稿竞态）：service 在事务外读过一次澄清回答，定稿写入前在**同一事务**里复核
+  // clarification_answer 条数仍等于这个值——读与写之间若有新回答插入（用户在另一标签页又答了一次），
+  // 计数不符 → 返回 null（与状态守卫落空同口径），service 抛 409 让客户端刷新重答，而不是拿着
+  // 陈旧回答集定稿。缺省(undefined)=不做该复核（取消/其他非定稿改写路径不传）。
+  expectedClarificationAnswerCount?: number;
   at?: Date;
 };
 
@@ -298,7 +303,8 @@ export type WorkItemRepository = {
 // 逐项写审计日志。终态(merged/done/cancelled)与已软删事项不动；提交人(submitter)不动以保溯源。
 // 单列在自有接口（而非塞进基 WorkItemRepository）——它只服务停用路由，不污染 agent-runner/通知用的最小写面。
 export type WorkItemClaimHandoverRepository = {
-  unassignActiveClaimsForUser: (userId: string, at: Date) => Promise<{ id: string }[]>;
+  // MRG-11：RETURNING 带 workspaceId——调用方逐项写审计时落到顶层列（工作区审计流按它硬过滤）。
+  unassignActiveClaimsForUser: (userId: string, at: Date) => Promise<{ id: string; workspaceId: string | null }[]>;
   // R21 加固（停用善后审计缺口）：把「退回认领 + 逐项审计日志」包进同一个 db 事务——审计写失败则退回
   // 一并回滚，重跑停用善后才能真收敛（否则退回已生效、审计永久缺失，重试扫不到任何可退回行）。OPTIONAL：
   // 真库仓库实现它；假仓库/老运行时缺席时路由回退「先退回、再逐条写审计」的顺序写（既有 best-effort 行为）。
@@ -307,7 +313,7 @@ export type WorkItemClaimHandoverRepository = {
     at: Date;
     // 执行停用的管理员——落进每条审计的 actor_user_id。
     actorUserId: string;
-  }) => Promise<{ id: string }[]>;
+  }) => Promise<{ id: string; workspaceId: string | null }[]>;
 };
 
 export type WorkItemDataRepository = WorkItemRepository & WorkItemClaimHandoverRepository & {
@@ -338,6 +344,13 @@ export type WorkItemDataRepository = WorkItemRepository & WorkItemClaimHandoverR
   createWorkItem: (input: CreateStoredWorkItemInput) => Promise<WorkItemRow>;
   updateWorkItemFromSession: (input: UpdateStoredWorkItemFromSessionInput) => Promise<WorkItemRow | null>;
   insertChatMessage: (input: InsertStoredChatMessageInput) => Promise<WorkItemChatMessageRow>;
+  // CHAT-2（澄清回答幂等）：会话里 scope 阶段只有一道题，回答键即 (workItemId, kind='clarification_answer')。
+  // 重复提交（双击/重试/刷新重发）必须 upsert 替换而非追加——否则同一题的回答无界堆积、定稿输入被
+  // 重复计数。实现为单事务内「删旧回答 + 插新回答」，与 insertChatMessage 返回同形状。
+  replaceSessionClarificationAnswer: (input: InsertStoredChatMessageInput) => Promise<WorkItemChatMessageRow>;
+  // CHAT-2（调整范围）：confirm 页点「调整范围」= 回到 scope 重答，已存的 scope 回答必须一并清除，
+  // 否则旧回答残留在定稿输入里。返回删除条数。
+  deleteSessionClarificationAnswers: (workItemId: string) => Promise<number>;
   listSessionSelectedOptionIds: (workItemId: string) => Promise<string[]>;
   listSessionClarificationAnswers: (workItemId: string) => Promise<WorkItemClarificationAnswerRow[]>;
   findLatestChatMessageByKind: (workItemId: string, kind: string) => Promise<WorkItemChatMessageRow | null>;
@@ -765,7 +778,8 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
     },
 
     async unassignActiveClaimsForUser(userId, at) {
-      // 单条 UPDATE：把该用户认领的、非终态、未软删事项的认领字段清空，RETURNING 受影响 id。
+      // 单条 UPDATE：把该用户认领的、非终态、未软删事项的认领字段清空，RETURNING 受影响 id + workspaceId
+      // （MRG-11：调用方逐项写审计要带顶层 workspaceId——工作区审计流按它硬过滤，从 work item 行带出最准）。
       // 走 work_items_claimed_by_user_id_idx；version+1 让客户端乐观锁/同步感知到归属变更（与本仓其它写一致）。
       const rows = await db
         .update(workItems)
@@ -783,7 +797,7 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
             isNull(workItems.deletedAt)
           )
         )
-        .returning({ id: workItems.id });
+        .returning({ id: workItems.id, workspaceId: workItems.workspaceId });
       return rows;
     },
 
@@ -807,13 +821,16 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
               isNull(workItems.deletedAt)
             )
           )
-          .returning({ id: workItems.id });
+          .returning({ id: workItems.id, workspaceId: workItems.workspaceId });
         // 每退回一项写一笔审计（action/entity/detail 与 routes/auth.ts 顺序写路径逐字一致）。
+        // MRG-11：顶层 workspaceId 从 work item 行带出——工作区审计流（listAuditLogsForWorkspace）
+        // 按 workspaceId 硬过滤，缺列的审计在审计页永远查不到。
         for (const row of rows) {
           await tx.insert(auditLogs).values({
             id: randomUUID(),
             actorKind: "human",
             actorUserId: input.actorUserId,
+            ...(row.workspaceId ? { workspaceId: row.workspaceId } : {}),
             entityType: "work_item",
             entityId: row.id,
             action: "work_item.unassigned_on_offboarding",
@@ -1042,6 +1059,17 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
       // findings[#20/H5]：状态更新 + 验收项删/插放进同一事务原子完成——否则崩在 delete 与 insert 之间会永久
       // 留下零验收行；状态守卫也确保终态/在审事项的验收态绝不被本路径截断重写。
       return db.transaction(async (tx) => {
+        // CHAT-3（定稿竞态）：service 在事务外按「读到的回答集」组装定稿内容，回答计数复核必须和状态写入
+        // 同事务——否则「读回答 → 用户又答一条 → 定稿写入」的交错会拿旧回答集定稿（新回答被静默丢弃）。
+        if (input.expectedClarificationAnswerCount !== undefined) {
+          const countRows = await tx
+            .select({ id: chatMessages.id })
+            .from(chatMessages)
+            .where(and(eq(chatMessages.workItemId, input.workItemId), eq(chatMessages.kind, "clarification_answer")));
+          if (countRows.length !== input.expectedClarificationAnswerCount) {
+            return null;
+          }
+        }
         const rows = await tx
           .update(workItems)
           .set({
@@ -1107,6 +1135,45 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         throw new Error("Failed to create chat message");
       }
       return row;
+    },
+
+    async replaceSessionClarificationAnswer(input) {
+      // CHAT-2：删旧 + 插新必须在同一事务里——拆成两次独立写的话，崩在中间会留下「零回答」的
+      // 已答会话（getSession 按有无回答切 confirm/scope 阶段，零回答会把用户打回 scope 重答）。
+      return db.transaction(async (tx) => {
+        await tx
+          .delete(chatMessages)
+          .where(and(eq(chatMessages.workItemId, input.workItemId), eq(chatMessages.kind, "clarification_answer")));
+        const at = input.at ?? new Date();
+        const values: typeof chatMessages.$inferInsert = {
+            id: input.id ?? randomUUID(),
+            workItemId: input.workItemId,
+            role: input.role,
+            kind: input.kind,
+            contentJson: input.contentJson,
+            createdAt: at,
+            updatedAt: at
+          };
+        if (input.selectedOptionKey) values.selectedOptionKey = input.selectedOptionKey;
+        if (input.userOtherText) values.userOtherText = input.userOtherText;
+        const rows = await tx
+          .insert(chatMessages)
+          .values(values)
+          .returning();
+        const row = rows[0];
+        if (!row) {
+          throw new Error("Failed to create chat message");
+        }
+        return row;
+      });
+    },
+
+    async deleteSessionClarificationAnswers(workItemId) {
+      const rows = await db
+        .delete(chatMessages)
+        .where(and(eq(chatMessages.workItemId, workItemId), eq(chatMessages.kind, "clarification_answer")))
+        .returning({ id: chatMessages.id });
+      return rows.length;
     },
 
     async listSessionSelectedOptionIds(workItemId) {

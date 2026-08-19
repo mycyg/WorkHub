@@ -13,6 +13,7 @@ import {
   createDesktopCuuAgentLauncherCard,
   createDesktopCuuDemoScript,
   createDesktopShellScriptedListener,
+  decideDesktopCuuAbortConfirmation,
   DesktopCuuFetchEventSource,
   desktopCuuProjectContextFromRoute,
   desktopCuuProjectContextMaxAgeMs,
@@ -1617,6 +1618,60 @@ test("findings: error card re-surfaces after a recovery event resets the latch",
   subscription.close();
 });
 
+test("DSK-08: absolute run stream URLs must share the API base origin; cross-origin is refused with an error card", () => {
+  FakeEventSource.instances = [];
+  const cards: CuuCard[] = [];
+  const statuses: DesktopCuuRunStreamStatus[] = [];
+  const client = {
+    streamUrl(path: string) {
+      return `http://127.0.0.1:8787${path}`;
+    },
+    async getAgentRun() {
+      return agentRunLive({ status: "running" });
+    }
+  };
+  const runId = "10000000-0000-4000-8000-000000000301";
+
+  // 同源绝对 URL：原样放行（与相对路径解析结果一致）。
+  const sameOrigin = subscribeDesktopCuuAgentRunStream({
+    client,
+    run: agentRunLive({ stream_href: `http://127.0.0.1:8787/api/push/stream/run/${runId}` }),
+    EventSourceCtor: FakeEventSource,
+    fallbackRefreshMs: 60_000,
+    onCard(card) {
+      cards.push(card);
+    },
+    onStatus(status) {
+      statuses.push(status);
+    }
+  });
+  assert.equal(sameOrigin.streamUrl, `http://127.0.0.1:8787/api/push/stream/run/${runId}`);
+  sameOrigin.close();
+
+  // 跨源绝对 URL：拒绝——不建流（不带着 client token 去连第三方源），弹错误卡 + error 状态。
+  const crossOrigin = subscribeDesktopCuuAgentRunStream({
+    client,
+    run: agentRunLive({ stream_href: "https://evil.example.com/api/push/stream/run/x" }),
+    EventSourceCtor: FakeEventSource,
+    fallbackRefreshMs: 60_000,
+    onCard(card) {
+      cards.push(card);
+    },
+    onStatus(status) {
+      statuses.push(status);
+    }
+  });
+  assert.equal(crossOrigin.streamUrl, undefined);
+  assert.equal(FakeEventSource.instances.length, 1, "cross-origin URL must not open a stream");
+  // 通用错误卡（kind=generic → state "worried"），带 run 上下文。
+  assert.equal(cards.at(-1)?.state, "worried");
+  assert.equal(cards.at(-1)?.id, `cuu-run-error-${runId}`);
+  assert.ok(statuses.some((status) => status.state === "error"));
+  crossOrigin.close();
+  const lastStatus = statuses.at(-1);
+  assert.ok(lastStatus?.state === "closed" && lastStatus.reason === "cross_origin_stream_url");
+});
+
 test("desktop Cuu run stream falls back to polling when no SSE event arrives", async () => {
   FakeEventSource.instances = [];
   const cards: CuuCard[] = [];
@@ -2811,6 +2866,52 @@ test("resolveDesktopCuuAction dispatches memory-conflict, budget and skip-plan h
     kind: "skip-plan",
     proposalId: "p1"
   });
+});
+
+// WIRE-07：进行中 run 卡的「取消执行」此前点了石沉大海——现在 href 能解析、确认后真的打 abort 端点。
+test("resolveDesktopCuuAction dispatches the agent-run abort href", () => {
+  assert.deepEqual(resolveDesktopCuuAction("/api/agent-runs/run-1/abort", { actionId: "abort_agent_run" }), {
+    kind: "abort-agent-run",
+    runId: "run-1"
+  });
+  // revert/replay 等同前缀路径不误判。
+  assert.equal(resolveDesktopCuuAction("/api/agent-runs/run-1/revert"), undefined);
+});
+
+test("decideDesktopCuuAbortConfirmation arms first and executes only on the second click of the same run", () => {
+  assert.deepEqual(decideDesktopCuuAbortConfirmation(undefined, "run-1"), { kind: "arm", runId: "run-1" });
+  assert.deepEqual(decideDesktopCuuAbortConfirmation("run-1", "run-1"), { kind: "execute", runId: "run-1" });
+  // 点了另一个 run → 重新武装那一个，不执行上一个。
+  assert.deepEqual(decideDesktopCuuAbortConfirmation("run-1", "run-2"), { kind: "arm", runId: "run-2" });
+});
+
+test("submitDesktopCuuAction aborts the run through the client", async () => {
+  const calls: string[] = [];
+  const client = {
+    async respondApproval() { throw new Error("unused"); },
+    async nextQuestion() { throw new Error("unused"); },
+    async searchKnowledge() { throw new Error("unused"); },
+    async useEvidenceForWorkItem() { throw new Error("unused"); },
+    async abortAgentRun(runId: string) {
+      calls.push(runId);
+    }
+  } as never;
+
+  const result = await submitDesktopCuuAction({
+    client,
+    locale: "zh-CN",
+    action: { kind: "abort-agent-run", runId: "run-1" }
+  });
+  assert.deepEqual(calls, ["run-1"]);
+  assert.match(result.message, /已中止/u);
+
+  const enResult = await submitDesktopCuuAction({
+    client,
+    locale: "en-US",
+    action: { kind: "abort-agent-run", runId: "run-2" }
+  });
+  assert.deepEqual(calls, ["run-1", "run-2"]);
+  assert.match(enResult.message, /aborted/u);
 });
 
 test("submitDesktopCuuAction runs the three new card actions through the client", async () => {

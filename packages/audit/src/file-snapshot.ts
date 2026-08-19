@@ -57,13 +57,18 @@ export async function takeFileSnapshot(input: SnapshotTakeInput): Promise<Snapsh
     throw new Error("snapshot workdir must be a directory");
   }
   const contentSha256 = await hashWorkdir(input.workdir);
-  await copyTree(input.workdir, snapshotDir);
+  // CORE-04：内容零变化（contentSha256 与上一份相同）→ 复用上一份的 ref，不再整树拷贝。
+  const reused = input.reuseIfUnchanged && input.reuseIfUnchanged.contentSha256 === contentSha256;
+  const ref = reused ? input.reuseIfUnchanged!.ref : snapshotDir;
+  if (!reused) {
+    await copyTree(input.workdir, snapshotDir);
+  }
 
   const snapshot: SnapshotRef = {
     id,
     workItemId: input.workItemId,
     kind: input.kind ?? "pre_step",
-    ref: snapshotDir,
+    ref,
     contentSha256,
     createdByKind: input.createdByKind,
     createdAt: now().toISOString()

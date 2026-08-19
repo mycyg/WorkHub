@@ -595,7 +595,9 @@ export async function tryGenerateStructuredSummary(params: {
       ],
       maxTokens: COMPACTION_SUMMARY_MAX_TOKENS,
       source: "compact",
-      signal: controller.signal
+      signal: controller.signal,
+      // E2E-03：思维链计入 max_tokens，1500 短预算下 thinking 会挤占正文导致摘要截断。
+      disableThinking: true
     });
     // 摘要调用的 usage 走既有记账通道（同 llm_review），失败 run 也记到真实 token/成本。
     const usageTokens = response.usage ?? { inputTokens: 0, outputTokens: 0 };
@@ -941,7 +943,9 @@ async function reviewDeliverable(input: AgentLoopInput, params: {
         ].join("\n")
       }],
       maxTokens: 300,
-      source: "review"
+      source: "review",
+      // E2E-03：300 tokens 连一小段思维链都装不下——评审 JSON 必被截断；评审是短 JSON 调用，关闭 thinking。
+      disableThinking: true
     });
     const usageTokens = response.usage ?? { inputTokens: 0, outputTokens: 0 };
     addUsage(params.usage, usageTokens.inputTokens, usageTokens.outputTokens, response.usageRecord?.estimatedCostCny);
@@ -991,7 +995,8 @@ export type L3Finalization = {
  * - 无交付物时发 agentRunFailed 并回 status:"failed"；
  * - requireDeliverable 时按同样的可选字段装配 manifest；
  * - reviewDeliverable（默认开）时发 llm_review / llm_review_failed 事件，并把评审 usage 折进传入的
- *   usage 对象（addUsage 就地累加）。
+ *   usage 对象（addUsage 就地累加）。CORE-10：评审前先过 checkLoopBudget 预算闸门——预算已耗尽
+ *   则跳过评审调用、置 reviewFailed（fail-closed），不再烧一次评审 LLM 调用。
  * 只返回结构体、不建 terminalResult——各调用方按自己的结果形状收尾。
  */
 export async function finalizeL3(input: AgentLoopInput, params: {
@@ -1051,33 +1056,50 @@ export async function finalizeL3(input: AgentLoopInput, params: {
   let review: AgentRunReview | undefined;
   let reviewFailed = false;
   if (input.reviewDeliverable ?? true) {
-    const outcome = await reviewDeliverable(input, { finalText, manifest, usage });
-    if (outcome.kind === "ok") {
-      review = outcome.review;
-      await input.emit?.({
-        type: eventTypes.agentRunStep,
-        previewText: `llm_review: grade=${review.grade} ${review.rationale.slice(0, 120)}`,
-        data: {
-          run_id: input.runId,
-          step_no: usage.stepsUsed,
-          kind: "llm_review",
-          grade: review.grade
-        }
-      });
-    } else {
-      // findings[#2]：评审被请求但失败/空/不可解析——置位 fail-closed 标志并发审计/遥测信号，
-      // 绝不静默向上美化成乐观启发式分。
+    // CORE-10：评审 LLM 调用同样过预算闸门——收尾时预算（步数/超时/token/成本）已耗尽就不再烧
+    // 一次评审调用，置 reviewFailed fail-closed（与评审失败同口径：向下钳低置信，不静默美化）。
+    const budgetDecision = checkLoopBudget(usage, input.budget);
+    if (budgetDecision?.signal === "escalate") {
       reviewFailed = true;
       await input.emit?.({
         type: eventTypes.agentRunStep,
-        previewText: `llm_review_failed: ${outcome.reason}`,
+        previewText: `llm_review_failed: budget_exhausted（${budgetDecision.reason}）`,
         data: {
           run_id: input.runId,
           step_no: usage.stepsUsed,
           kind: "llm_review_failed",
-          reason: outcome.reason
+          reason: "budget_exhausted"
         }
       });
+    } else {
+      const outcome = await reviewDeliverable(input, { finalText, manifest, usage });
+      if (outcome.kind === "ok") {
+        review = outcome.review;
+        await input.emit?.({
+          type: eventTypes.agentRunStep,
+          previewText: `llm_review: grade=${review.grade} ${review.rationale.slice(0, 120)}`,
+          data: {
+            run_id: input.runId,
+            step_no: usage.stepsUsed,
+            kind: "llm_review",
+            grade: review.grade
+          }
+        });
+      } else {
+        // findings[#2]：评审被请求但失败/空/不可解析——置位 fail-closed 标志并发审计/遥测信号，
+        // 绝不静默向上美化成乐观启发式分。
+        reviewFailed = true;
+        await input.emit?.({
+          type: eventTypes.agentRunStep,
+          previewText: `llm_review_failed: ${outcome.reason}`,
+          data: {
+            run_id: input.runId,
+            step_no: usage.stepsUsed,
+            kind: "llm_review_failed",
+            reason: outcome.reason
+          }
+        });
+      }
     }
   }
 
@@ -1098,12 +1120,69 @@ export async function finalizeL3(input: AgentLoopInput, params: {
   return result;
 }
 
+/**
+ * CORE-09 run 级兜底收尾（loop.ts 与 loop2 config-builder 共用同一实现，单一真相）：任何从 run 体
+ * 逃逸的异常按 status:"failed" 正常收尾——recordUsage 记已耗用量 + 发 agent_run.failed 事件 +
+ * 结构化 handoff（budgetHit="unknown"）。recordUsage/兜底 emit 自身的异常一律吞掉，绝不二次抛出
+ * （emit 可能就是原始抛错源）。裸逃逸的旧行为会让宿主侧拿不到 handoff/failed 事件，且确定性错误
+ * 被外层整 run 重跑、烧多倍预算。
+ */
+export async function settleRunException(
+  input: AgentLoopInput,
+  usage: AgentLoopUsage,
+  steps: AgentLoopStep[],
+  error: unknown
+): Promise<AgentLoopResult> {
+  const message = error instanceof Error ? error.message : String(error);
+  try {
+    input.recorder?.recordUsage?.(usage);
+  } catch {
+    // 忽略兜底记账异常。
+  }
+  const handoff = buildStructuredHandoff({
+    steps,
+    budgetHit: "unknown",
+    reason: `AgentRun 异常中止：${message.slice(0, 200)}`
+  });
+  try {
+    await input.emit?.({
+      type: eventTypes.agentRunFailed,
+      previewText: message.slice(0, 200),
+      data: {
+        run_id: input.runId,
+        work_item_id: input.workItemId,
+        handoff,
+        error: message.slice(0, 500)
+      }
+    });
+  } catch {
+    // 忽略兜底事件异常。
+  }
+  return terminalResult({
+    status: "failed",
+    reason: message.slice(0, 256),
+    control: "stop",
+    usage,
+    steps,
+    handoff
+  });
+}
+
 export class AgentLoop {
+  // CORE-09：整个 run 体兜底 try/catch（收尾实现见 settleRunException，loop2 共用）。
   async run(input: AgentLoopInput): Promise<AgentLoopResult> {
-    const now = input.now ?? (() => new Date());
-    const startedAt = Date.now();
     const usage = createInitialUsage();
     const steps: AgentLoopStep[] = [];
+    try {
+      return await this.runBody(input, usage, steps);
+    } catch (error) {
+      return settleRunException(input, usage, steps, error);
+    }
+  }
+
+  private async runBody(input: AgentLoopInput, usage: AgentLoopUsage, steps: AgentLoopStep[]): Promise<AgentLoopResult> {
+    const now = input.now ?? (() => new Date());
+    const startedAt = Date.now();
     const messages: LlmMessage[] = [
       {
         role: "user",

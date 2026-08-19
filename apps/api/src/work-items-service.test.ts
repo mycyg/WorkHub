@@ -111,6 +111,34 @@ function repository(): WorkItemDataRepository {
         createdAt: input.at ?? now
       };
     },
+    async replaceSessionClarificationAnswer(input: InsertStoredChatMessageInput) {
+      for (let index = chatMessages.length - 1; index >= 0; index -= 1) {
+        if (chatMessages[index]?.kind === "clarification_answer") {
+          chatMessages.splice(index, 1);
+        }
+      }
+      chatMessages.push({ kind: input.kind, contentJson: input.contentJson });
+      return {
+        id: `chat-${chatMessages.length}`,
+        workItemId: input.workItemId,
+        role: input.role,
+        kind: input.kind,
+        contentJson: input.contentJson,
+        selectedOptionKey: null,
+        userOtherText: null,
+        createdAt: input.at ?? now
+      };
+    },
+    async deleteSessionClarificationAnswers() {
+      let removed = 0;
+      for (let index = chatMessages.length - 1; index >= 0; index -= 1) {
+        if (chatMessages[index]?.kind === "clarification_answer") {
+          chatMessages.splice(index, 1);
+          removed += 1;
+        }
+      }
+      return removed;
+    },
     async listSessionSelectedOptionIds() {
       return [];
     },
@@ -770,7 +798,9 @@ test("persistent intake requires an AI clarification generator instead of local 
   );
 });
 
-test("persistent intake cancels a newly created clarification draft when AI analysis fails", async () => {
+test("persistent intake keeps a newly created work item in ai_clarifying when AI analysis fails", async () => {
+  // E2E-01：澄清生成失败不再把工作项置 cancelled——意图没丢（intent 消息已落库），
+  // 工作项留在 ai_clarifying，可经 createSession(带 work_item_id) 显式重试生成。
   const updates: Array<{ workItemId: string; status: string; planningNote?: string | null }> = [];
   const repo = {
     ...repository(),
@@ -817,11 +847,7 @@ test("persistent intake cancels a newly created clarification draft when AI anal
       && error.code === "clarification_llm_failed"
   );
 
-  assert.deepEqual(updates, [{
-    workItemId,
-    status: "cancelled",
-    planningNote: "clarification_session_failed"
-  }]);
+  assert.deepEqual(updates, [], "clarification failure must not cancel the work item");
 });
 
 test("persistent intake does not cancel an existing work item when AI analysis fails", async () => {
@@ -867,6 +893,545 @@ test("persistent intake does not cancel an existing work item when AI analysis f
       && error.code === "clarification_llm_failed"
   );
   assert.equal(updateCalled, false);
+});
+
+// ── CHAT-1：getSession 读路径去副作用 ─────────────────────────────────────────────
+
+test("persistent getSession reuses the stored draft without any writes or LLM calls", async () => {
+  // CHAT-1：轮询/刷新会话页必须纯读——不写 chat_messages、不调澄清生成器。
+  let generatorCalls = 0;
+  let chatWrites = 0;
+  const repo: WorkItemDataRepository = {
+    ...repository(),
+    async readWorkItemDetail() {
+      return detailRows({
+        status: "ai_clarifying",
+        submitterUserId: userId,
+        title: "请整理预算偏差说明",
+        rawDescription: "请整理预算偏差说明"
+      });
+    },
+    async findLatestChatMessageByKind() {
+      return {
+        id: "93000000-0000-4000-8000-000000000703",
+        workItemId,
+        role: "assistant",
+        kind: "clarification_question",
+        contentJson: {
+          title: "请确认 Q3预算复盘.xlsx 中的偏差说明面向董事会还是财务复盘？",
+          body: "我已看到 Q3预算复盘.xlsx，需要确认这份说明的目标读者。",
+          placeholder: "例如：面向董事会。"
+        },
+        selectedOptionKey: null,
+        userOtherText: null,
+        createdAt: now,
+        updatedAt: now
+      };
+    },
+    async insertChatMessage(input: InsertStoredChatMessageInput) {
+      chatWrites += 1;
+      return repository().insertChatMessage(input);
+    },
+    async replaceSessionClarificationAnswer() {
+      chatWrites += 1;
+      throw new Error("read path must not write chat messages");
+    }
+  } as unknown as WorkItemDataRepository;
+  const service = createDbWorkItemService(repo, {
+    now: () => now,
+    async projectFileContext() {
+      return [{
+        name: "Q3预算复盘.xlsx",
+        path: "财务/Q3预算复盘.xlsx",
+        preview: "预算偏差说明、董事会口径、财务复盘口径。"
+      }];
+    },
+    async clarificationGenerator() {
+      generatorCalls += 1;
+      throw new Error("read path must never call the clarification generator");
+    }
+  });
+
+  for (let poll = 0; poll < 3; poll += 1) {
+    const session = await service.getSession({ sessionId: workItemId, actor, locale: "zh-CN" });
+    assert.equal(session.question.title, "请确认 Q3预算复盘.xlsx 中的偏差说明面向董事会还是财务复盘？");
+  }
+  assert.equal(generatorCalls, 0);
+  assert.equal(chatWrites, 0);
+});
+
+test("persistent getSession does not write missing-file notices on the read path", async () => {
+  // CHAT-1①：点名文件缺失的 notice 只在生成路径写；GET 轮询不再每刷一次插一条
+  // clarification_file_context_notice（此前读路径在复用判断之前就写 notice，无界膨胀 chat_messages）。
+  // 已存草稿存在但盖不住点名文件 → 复用不命中 → 409 引导走生成路径重试，全程零写入、零 LLM。
+  let chatWrites = 0;
+  let generatorCalls = 0;
+  const repo: WorkItemDataRepository = {
+    ...repository(),
+    async readWorkItemDetail() {
+      return detailRows({
+        status: "ai_clarifying",
+        submitterUserId: userId,
+        title: "根据项目网盘 缺失材料.txt 生成三条验收要点",
+        rawDescription: "请根据项目网盘 缺失材料.txt 生成三条验收要点。"
+      });
+    },
+    async findLatestChatMessageByKind() {
+      return {
+        id: "93000000-0000-4000-8000-000000000707",
+        workItemId,
+        role: "assistant",
+        kind: "clarification_question",
+        contentJson: {
+          title: "请确认生成三条验收要点的目标读者是谁？",
+          body: "需求里提到生成三条验收要点，但没有说明读者。",
+          placeholder: "例如：面向验收同学。"
+        },
+        selectedOptionKey: null,
+        userOtherText: null,
+        createdAt: now,
+        updatedAt: now
+      };
+    },
+    async insertChatMessage(input: InsertStoredChatMessageInput) {
+      chatWrites += 1;
+      return repository().insertChatMessage(input);
+    }
+  } as unknown as WorkItemDataRepository;
+  const service = createDbWorkItemService(repo, {
+    now: () => now,
+    async projectFileContext() {
+      return [{
+        name: "unrelated-notes.md",
+        path: "docs/unrelated-notes.md",
+        preview: "这是一份无关的会议记录。"
+      }];
+    },
+    async clarificationGenerator() {
+      generatorCalls += 1;
+      throw new Error("read path must never call the clarification generator");
+    }
+  });
+
+  for (let poll = 0; poll < 3; poll += 1) {
+    await assert.rejects(
+      () => service.getSession({ sessionId: workItemId, actor, locale: "zh-CN" }),
+      (error) =>
+        error instanceof WorkItemServiceError
+        && error.status === 409
+        && error.code === "clarification_draft_missing"
+    );
+  }
+  assert.equal(chatWrites, 0);
+  assert.equal(generatorCalls, 0);
+});
+
+test("persistent getSession does not write file-context errors on the read path", async () => {
+  // CHAT-1②：文件上下文加载失败的 error 留痕也只在生成路径写；GET 只抛错不落库。
+  let chatWrites = 0;
+  const repo: WorkItemDataRepository = {
+    ...repository(),
+    async readWorkItemDetail() {
+      return detailRows({
+        status: "ai_clarifying",
+        submitterUserId: userId
+      });
+    },
+    async findLatestChatMessageByKind() {
+      return {
+        id: "93000000-0000-4000-8000-000000000704",
+        workItemId,
+        role: "assistant",
+        kind: "clarification_question",
+        contentJson: {
+          title: "请确认 Reviewable work item 的验收口径？",
+          body: "需求里提到 Reviewable work item，但没有说明验收口径。",
+          placeholder: "例如：以网盘文件为准。"
+        },
+        selectedOptionKey: null,
+        userOtherText: null,
+        createdAt: now,
+        updatedAt: now
+      };
+    },
+    async insertChatMessage(input: InsertStoredChatMessageInput) {
+      chatWrites += 1;
+      return repository().insertChatMessage(input);
+    }
+  } as unknown as WorkItemDataRepository;
+  const service = createDbWorkItemService(repo, {
+    now: () => now,
+    async projectFileContext() {
+      throw new Error("drive read exploded");
+    }
+  });
+
+  await assert.rejects(
+    () => service.getSession({ sessionId: workItemId, actor, locale: "zh-CN" }),
+    (error) =>
+      error instanceof WorkItemServiceError
+      && error.status === 502
+      && error.code === "clarification_file_context_failed"
+  );
+  assert.equal(chatWrites, 0);
+});
+
+// ── CHAT-2：nextQuestion 校验 / 幂等 / adjust-scope / 状态守卫 ─────────────────────
+
+test("persistent nextQuestion rejects option ids outside the current question options", async () => {
+  // CHAT-2①：selected_option_ids 必须属于当前已存草稿的选项集，否则 422 且不落库。
+  let answerWritten = false;
+  const repo: WorkItemDataRepository = {
+    ...repository(),
+    async readWorkItemDetail() {
+      return detailRows({ status: "ai_clarifying", submitterUserId: userId });
+    },
+    async findLatestChatMessageByKind() {
+      return {
+        id: "93000000-0000-4000-8000-000000000705",
+        workItemId,
+        role: "assistant",
+        kind: "clarification_question",
+        contentJson: {
+          title: "请确认验收要点面向谁？",
+          options: [
+            { id: "option-1", label: "面向董事会" },
+            { id: "option-2", label: "面向验收同学" }
+          ]
+        },
+        selectedOptionKey: null,
+        userOtherText: null,
+        createdAt: now,
+        updatedAt: now
+      };
+    },
+    async replaceSessionClarificationAnswer(input: InsertStoredChatMessageInput) {
+      answerWritten = true;
+      return repository().insertChatMessage(input);
+    }
+  } as unknown as WorkItemDataRepository;
+  const service = createDbWorkItemService(repo, { now: () => now });
+
+  await assert.rejects(
+    () => service.nextQuestion({
+      sessionId: workItemId,
+      actor,
+      locale: "zh-CN",
+      payload: { selected_option_ids: ["injected-by-client"] }
+    }),
+    (error) =>
+      error instanceof WorkItemServiceError
+      && error.status === 422
+      && error.code === "clarification_option_invalid"
+  );
+  assert.equal(answerWritten, false);
+
+  // 合法选项照常接受（含缺省 id 按 option-{index+1} 推导的口径）。
+  const session = await service.nextQuestion({
+    sessionId: workItemId,
+    actor,
+    locale: "zh-CN",
+    payload: { selected_option_ids: ["option-2"] }
+  });
+  assert.equal(session.question.input_mode, "confirm");
+});
+
+test("persistent nextQuestion replaces the previous answer instead of appending", async () => {
+  // CHAT-2②：同一题重复提交 = upsert 替换，回答记录恒为一条（幂等），且以最后一次为准。
+  const storedAnswers: Array<{ selectedOptionIds: string[]; freeText?: string }> = [];
+  const repo: WorkItemDataRepository = {
+    ...repository(),
+    async readWorkItemDetail() {
+      return detailRows({ status: "ai_clarifying", submitterUserId: userId });
+    },
+    async replaceSessionClarificationAnswer(input: InsertStoredChatMessageInput) {
+      storedAnswers.splice(0, storedAnswers.length);
+      storedAnswers.push({
+        selectedOptionIds: (input.contentJson["selected_option_ids"] as string[]) ?? [],
+        ...(typeof input.contentJson["free_text"] === "string" ? { freeText: input.contentJson["free_text"] as string } : {})
+      });
+      return repository().insertChatMessage(input);
+    },
+    async listSessionClarificationAnswers() {
+      return storedAnswers;
+    }
+  } as unknown as WorkItemDataRepository;
+  const service = createDbWorkItemService(repo, { now: () => now });
+
+  await service.nextQuestion({
+    sessionId: workItemId,
+    actor,
+    locale: "zh-CN",
+    payload: { free_text: "第一版回答。" }
+  });
+  await service.nextQuestion({
+    sessionId: workItemId,
+    actor,
+    locale: "zh-CN",
+    payload: { free_text: "网络重试后的第二版回答。" }
+  });
+
+  assert.equal(storedAnswers.length, 1);
+  assert.equal(storedAnswers[0]?.freeText, "网络重试后的第二版回答。");
+});
+
+test("persistent nextQuestion adjust-scope clears stored answers before returning to scope", async () => {
+  // CHAT-2③：「调整范围」回到 scope 重答时，已存的 scope 回答必须清除，否则旧选择残留进定稿输入。
+  let cleared = 0;
+  const repo: WorkItemDataRepository = {
+    ...repository(),
+    async readWorkItemDetail() {
+      return detailRows({ status: "ai_clarifying", submitterUserId: userId });
+    },
+    async findLatestChatMessageByKind() {
+      return {
+        id: "93000000-0000-4000-8000-000000000706",
+        workItemId,
+        role: "assistant",
+        kind: "clarification_question",
+        contentJson: {
+          title: "请确认 Reviewable work item 的验收口径？",
+          body: "需求里提到 Reviewable work item，但没有说明验收口径。"
+        },
+        selectedOptionKey: null,
+        userOtherText: null,
+        createdAt: now,
+        updatedAt: now
+      };
+    },
+    async deleteSessionClarificationAnswers() {
+      cleared += 2;
+      return 2;
+    },
+    async listSessionClarificationAnswers() {
+      return [];
+    }
+  } as unknown as WorkItemDataRepository;
+  const service = createDbWorkItemService(repo, {
+    now: () => now,
+    async projectFileContext() {
+      return [];
+    }
+  });
+
+  const session = await service.nextQuestion({
+    sessionId: workItemId,
+    actor,
+    locale: "zh-CN",
+    payload: { selected_option_ids: ["adjust-scope"] }
+  });
+
+  assert.equal(cleared, 2);
+  assert.equal(session.question.input_mode, "long_text");
+  assert.equal(session.question.progress.find((step) => step.key === "scope")?.state, "active");
+});
+
+test("persistent nextQuestion rejects answers once the session has left clarification", async () => {
+  // CHAT-2④ 状态守卫：已定稿(spec_ready)的会话不再接受澄清回答。
+  let answerWritten = false;
+  const repo: WorkItemDataRepository = {
+    ...repository(),
+    async readWorkItemDetail() {
+      return detailRows({ status: "spec_ready", submitterUserId: userId });
+    },
+    async replaceSessionClarificationAnswer() {
+      answerWritten = true;
+      throw new Error("finalized sessions must not accept clarification answers");
+    }
+  } as unknown as WorkItemDataRepository;
+  const service = createDbWorkItemService(repo, { now: () => now });
+
+  await assert.rejects(
+    () => service.nextQuestion({
+      sessionId: workItemId,
+      actor,
+      locale: "zh-CN",
+      payload: { free_text: "迟到的回答。" }
+    }),
+    (error) =>
+      error instanceof WorkItemServiceError
+      && error.status === 409
+      && error.code === "clarification_state_conflict"
+  );
+  assert.equal(answerWritten, false);
+});
+
+// ── CHAT-3：定稿竞态守卫 ─────────────────────────────────────────────────────────
+
+test("session finalization aborts when a new clarification answer lands after the read", async () => {
+  // CHAT-3：listSessionClarificationAnswers 读到 1 条回答后、定稿写入前用户又答了一条——
+  // 仓库层在定稿事务里复核回答计数（expectedClarificationAnswerCount=1 ≠ 实际 2）→ null → 409。
+  const repo: WorkItemDataRepository = {
+    ...repository(),
+    async readWorkItemDetail() {
+      return detailRows({ status: "ai_clarifying", submitterUserId: userId });
+    },
+    async listSessionClarificationAnswers() {
+      return [{ selectedOptionIds: [], freeText: "读到的第一版回答。" }];
+    },
+    async updateWorkItemFromSession(input: Parameters<WorkItemDataRepository["updateWorkItemFromSession"]>[0]) {
+      // 模拟并发：事务内实际已有 2 条回答（读与写之间又插入一条）。
+      const actualAnswerCount = 2;
+      if (input.expectedClarificationAnswerCount !== undefined
+        && input.expectedClarificationAnswerCount !== actualAnswerCount) {
+        return null;
+      }
+      return knowledgeWorkItem({ id: input.workItemId, status: input.status });
+    }
+  } as unknown as WorkItemDataRepository;
+  const service = createDbWorkItemService(repo, { now: () => now });
+
+  await assert.rejects(
+    () => service.createWorkItem({
+      actor,
+      locale: "zh-CN",
+      payload: { session_id: workItemId }
+    }),
+    (error) =>
+      error instanceof WorkItemServiceError
+      && error.status === 409
+      && error.code === "workitem_state_conflict"
+  );
+});
+
+// ── E2E-01：解析失败重试 + 留痕本地化 ────────────────────────────────────────────
+
+test("persistent intake retries once with a strict-JSON nudge when the LLM response does not parse", async () => {
+  // E2E-01①：LLM 输出解析失败（invalid JSON）重试一次，重试 prompt 追加「只返回合法 JSON」强调。
+  const prompts: string[] = [];
+  const providerRegistry = {
+    isConfigured() {
+      return true;
+    },
+    get() {
+      return {
+        messages: {
+          async create(input: { messages: Array<{ content: string }> }) {
+            prompts.push(input.messages[0]?.content ?? "");
+            if (prompts.length === 1) {
+              return { content: [{ text: "当然，这是你的澄清问题——抱歉，忘了 JSON。" }] };
+            }
+            return {
+              content: [{
+                text: JSON.stringify({
+                  title: "请确认 workhub-app-upload.txt 的验收口径是否只面向真实 App 测试？",
+                  body: "我已看到项目文件 workhub-app-upload.txt，需要确认验收口径。",
+                  placeholder: "例如：是，只面向真实 App 测试。"
+                })
+              }]
+            };
+          }
+        }
+      };
+    }
+  } as unknown as ProviderRegistry;
+  const service = createDbWorkItemService(repository(), {
+    now: () => now,
+    providerRegistry,
+    async projectFileContext() {
+      return [{
+        name: "workhub-app-upload.txt",
+        path: "workhub-app-upload.txt",
+        preview: "真实 App 验收"
+      }];
+    }
+  });
+
+  const session = await service.createSession({
+    actor,
+    locale: "zh-CN",
+    payload: {
+      project_id: projectId,
+      intent_text: "请根据项目网盘 workhub-app-upload.txt 生成三条验收要点。"
+    }
+  });
+
+  assert.equal(prompts.length, 2, "parse failure must be retried exactly once");
+  assert.match(prompts[1] ?? "", /只返回一个合法 JSON 对象/u);
+  assert.equal(session.question.title, "请确认 workhub-app-upload.txt 的验收口径是否只面向真实 App 测试？");
+});
+
+test("persistent intake does not retry non-parse LLM failures", async () => {
+  // E2E-01① 边界：泛化模板拒稿/服务不可用不是瞬态解析错误，重试也不会改变结论——不重试。
+  let createCalls = 0;
+  const providerRegistry = {
+    isConfigured() {
+      return true;
+    },
+    get() {
+      return {
+        messages: {
+          async create() {
+            createCalls += 1;
+            return {
+              content: [{
+                text: JSON.stringify({
+                  title: "这件事先按哪种交付方向处理？",
+                  body: "请选择文档/方案、结构化数据或小型代码模板。"
+                })
+              }]
+            };
+          }
+        }
+      };
+    }
+  } as unknown as ProviderRegistry;
+  const service = createDbWorkItemService(repository(), {
+    now: () => now,
+    providerRegistry,
+    async projectFileContext() {
+      return [];
+    }
+  });
+
+  await assert.rejects(
+    () => service.createSession({
+      actor,
+      locale: "zh-CN",
+      payload: { project_id: projectId, intent_text: "整理周报。" }
+    }),
+    (error) => error instanceof WorkItemServiceError && error.code === "clarification_llm_templated_response"
+  );
+  assert.equal(createCalls, 1);
+});
+
+test("persistent intake writes the clarification analysis trace in the request locale", async () => {
+  // E2E-01③：clarification_analysis_error 留痕按 locale 写中/英文，不再硬编码英文。
+  const traces: Array<{ kind: string; message: unknown }> = [];
+  const repo: WorkItemDataRepository = {
+    ...repository(),
+    async insertChatMessage(input: InsertStoredChatMessageInput) {
+      traces.push({ kind: input.kind, message: (input.contentJson as Record<string, unknown>)["message"] });
+      return repository().insertChatMessage(input);
+    }
+  } as unknown as WorkItemDataRepository;
+  const service = createDbWorkItemService(repo, {
+    now: () => now,
+    async projectFileContext() {
+      return [];
+    },
+    async clarificationGenerator() {
+      throw new Error("provider down");
+    }
+  });
+
+  for (const locale of ["zh-CN", "en-US"] as const) {
+    traces.length = 0;
+    await assert.rejects(
+      () => service.createSession({
+        actor,
+        locale,
+        payload: { project_id: projectId, intent_text: "整理周报。" }
+      }),
+      (error) => error instanceof WorkItemServiceError && error.code === "clarification_llm_failed"
+    );
+    const trace = traces.find((entry) => entry.kind === "clarification_analysis_error");
+    assert.ok(trace, "analysis failure must leave a trace");
+    assert.match(
+      String(trace?.message),
+      locale === "en-US" ? /^AI material analysis failed: /u : /^AI 材料分析失败：/u
+    );
+  }
 });
 
 test("persistent intake passes the actor workspace into AI clarification usage", async () => {
@@ -1149,7 +1714,8 @@ test("session clarification answer uses generic mutation access, not artifact-sp
         assignments: [{ userId, role: "member" }]
       } as unknown as StoredWorkItemDetailRows;
     },
-    async insertChatMessage() {
+    // CHAT-2②：回答写入走幂等的 replaceSessionClarificationAnswer（upsert），权限拒绝时必须一条都不写。
+    async replaceSessionClarificationAnswer() {
       answerWritten = true;
       throw new Error("service must not write a clarification answer for a read-only session");
     }
@@ -1222,7 +1788,7 @@ test("assigned lead can continue a private clarification session", async () => {
         assignments: [{ userId, role: "lead" }]
       } as unknown as StoredWorkItemDetailRows;
     },
-    async insertChatMessage(input: InsertStoredChatMessageInput) {
+    async replaceSessionClarificationAnswer(input: InsertStoredChatMessageInput) {
       answerWritten = true;
       return repository().insertChatMessage(input);
     }

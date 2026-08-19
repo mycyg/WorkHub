@@ -68,6 +68,7 @@ export type SpotlightIntentLlmClient = {
   messages: {
     create: (input: {
       maxTokens: number;
+      disableThinking?: boolean;
       source: "agent_step";
       system: string;
       messages: Array<{ role: "user"; content: string }>;
@@ -172,6 +173,8 @@ export function createSpotlightIntentService(deps: SpotlightIntentServiceDeps): 
       try {
         const response = await client.messages.create({
           maxTokens: deps.maxResponseTokens ?? DEFAULT_MAX_RESPONSE_TOKENS,
+          // E2E-03：thinking 模型的思维链计入 max_tokens，结构化输出调用关闭 thinking 防截断。
+          disableThinking: true,
           source: "agent_step",
           system,
           messages: [{ role: "user", content: userPrompt }],

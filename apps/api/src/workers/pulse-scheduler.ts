@@ -6,6 +6,10 @@ import { getDefaultApprovalDigestService } from "../services/approval-digest.js"
 import { createNotificationService, type NotificationService } from "../services/notifications.js";
 import { getDefaultDdlChaseService } from "../services/ddl-chase.js";
 import { getDefaultCareScanService } from "../services/care-scan.js";
+import {
+  getDefaultClarificationChaseService,
+  type ClarificationChaseRunResult
+} from "../services/clarification-chase.js";
 import { getDefaultProactiveIntentService } from "../services/proactive-intents.js";
 import type { ApprovalDigestRunResult } from "../services/approval-digest.js";
 import type { CareScanRunResult } from "../services/care-scan.js";
@@ -207,6 +211,7 @@ export function getDefaultPulseScheduler(deps: {
   ddlChase?: { runOnce: () => Promise<DdlChaseRunResult> };
   careScan?: { runOnce: () => Promise<CareScanRunResult> };
   proactiveRecovery?: Pick<ProactiveIntentService, "recoverStalled">;
+  clarificationChase?: { runOnce: () => Promise<ClarificationChaseRunResult> };
 } = {}): PulseScheduler {
   if (defaultPulseScheduler) {
     return defaultPulseScheduler;
@@ -217,6 +222,7 @@ export function getDefaultPulseScheduler(deps: {
   const ddlChase = deps.ddlChase ?? getDefaultDdlChaseService();
   const careScan = deps.careScan ?? getDefaultCareScanService();
   const proactiveRecovery = deps.proactiveRecovery ?? getDefaultProactiveIntentService();
+  const clarificationChase = deps.clarificationChase ?? getDefaultClarificationChaseService();
   const scheduler = createPulseScheduler();
 
   scheduler.register({
@@ -318,6 +324,25 @@ export function getDefaultPulseScheduler(deps: {
           suppressed_no_personal_space: result.suppressed_no_personal_space,
           skipped_opted_out: result.skipped_opted_out,
           skipped_quiet_hours: result.skipped_quiet_hours
+        });
+      }
+      return result;
+    }
+  });
+
+  scheduler.register({
+    name: "clarification-chase",
+    intervalMs: settings.pulse.clarificationChaseIntervalMs,
+    // CHAT-8（澄清待答兜底）：扫「ai_clarifying 超阈值仍零回答」的会话，给提交人落一条去重通知。
+    // 纯规则、无 LLM，与 ddl-chase 同档；一 tick 最多投递 maxDrainPerTick 条。
+    maxDrainPerTick: 200,
+    tick: async () => {
+      const result = await clarificationChase.runOnce();
+      if (result.delivered > 0) {
+        getDefaultStructuredLogger().info("pulse_clarification_chase_swept", {
+          scanned: result.scanned,
+          delivered: result.delivered,
+          suppressed_muted: result.suppressed_muted
         });
       }
       return result;

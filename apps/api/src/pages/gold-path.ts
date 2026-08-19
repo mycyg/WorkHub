@@ -119,10 +119,10 @@ const generatedEnglishCopy = new Map<string, string>([
   ["先点一个区域发布复盘包口径，我再开始做。", "Choose a regional launch review direction before I start."],
   ["采纳", "Approve"],
   ["打回并说明原因", "Request changes with a reason"],
-  ["合并交付物", "Merge deliverables"],
-  ["澄清必须点选优先", "Clarification must stay option-first"],
-  ["交付物变更申请必须像 PR 一样可审", "Deliverable change requests must be PR-like and reviewable"],
-  ["Replay footer 必须显示成本切片", "Replay footer must show cost slices"]
+  ["采纳进正式版", "Adopt into the official version"],
+  ["澄清以点选为主", "Clarification is done by picking options"],
+  ["交付物变更必须逐条可审", "Deliverable changes must be reviewable item by item"],
+  ["回放页脚必须显示成本明细", "The replay footer must show cost details"]
 ]);
 
 function localizeGeneratedSurface<T>(value: T, locale: WorkHubLocale, key?: string): T {

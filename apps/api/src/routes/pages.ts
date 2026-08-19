@@ -356,7 +356,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       },
       worklog: {
         en: "Autonomy metrics could not be loaded — the 0% shown is missing data, not a real rate.",
-        zh: "自治率数据暂时加载失败——显示的 0% 是缺数据，不是真实通过率。"
+        zh: "自主率数据暂时加载失败——显示的 0% 是缺数据，不是真实通过率。"
       }
     };
     const message = messages[source];

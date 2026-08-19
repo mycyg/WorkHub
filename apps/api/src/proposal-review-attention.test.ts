@@ -53,7 +53,7 @@ test("reviewed proposal → proposal_review item exposes merge + view (no approv
   assert.equal(merge?.method, "POST");
   assert.equal(merge?.href, `/api/proposals/${base.id}/merge`);
   assert.equal(merge?.style, "primary");
-  assert.equal(merge?.label, "合入交付物");
+  assert.equal(merge?.label, "采纳进正式版");
   assert.ok(item.actions.find((a) => a.id === "open_proposal"));
   assert.equal(item.actions.find((a) => a.id === "approve"), undefined);
 });

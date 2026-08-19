@@ -218,6 +218,8 @@ async function runOffboardCleanup(
           await deps.auditLogs.createAuditLog({
             actorKind: "human",
             actorUserId: actingUserId,
+            // MRG-11：顶层 workspaceId 从 work item 行带出——工作区审计流按它硬过滤，缺列即查不到。
+            ...(item.workspaceId ? { workspaceId: item.workspaceId } : {}),
             entityType: "work_item",
             entityId: item.id,
             action: "work_item.unassigned_on_offboarding",
@@ -727,8 +729,10 @@ export function createAuthRoutes(
       expiresAt
     });
     // 安全事件：管理员创建邀请（赋权入口，必审）。entityId=邀请 id；actor=创建邀请的管理员。不记明文 token。
+    // MRG-11：顶层 workspaceId 必带——工作区审计流（listAuditLogsForWorkspace）按它硬过滤，缺列即查不到。
     await auditSecurityEvent(deps, {
       actorUserId: actingUser.id,
+      workspaceId: invite.workspaceId ?? actor.workspaceId,
       entityId: invite.id,
       action: "auth.invite_created",
       detailJson: { email: invite.email, role: invite.role, workspace_id: invite.workspaceId ?? null }
@@ -807,8 +811,10 @@ export function createAuthRoutes(
       throw new HTTPException(404, { message: "邀请不存在或已失效" });
     }
     // 安全事件：管理员撤销邀请（收回赋权入口，必审）。entityId=邀请 id；actor=撤销的管理员。
+    // MRG-11：顶层 workspaceId 必带（优先取邀请行自身的租户）——否则工作区审计页永远查不到这条撤销。
     await auditSecurityEvent(deps, {
       actorUserId: actingUser.id,
+      workspaceId: revoked.workspaceId ?? actor.workspaceId,
       entityId: revoked.id,
       action: "auth.invite_revoked",
       detailJson: { email: revoked.email, workspace_id: revoked.workspaceId ?? null }
@@ -889,8 +895,10 @@ export function createAuthRoutes(
     await deps.touchUser?.(user.id);
 
     // 安全事件：邀请被接受 → 新账号入驻（赋权落地，必审）。entityId=新用户；detail 记邀请来源。
+    // MRG-11：顶层 workspaceId 取邀请落地的工作区（invite.workspaceId ?? 默认工作区，即上方成员写入的同一个）。
     await auditSecurityEvent(deps, {
       actorUserId: user.id,
+      workspaceId,
       entityId: user.id,
       action: "auth.invite_accepted",
       detailJson: { nickname: user.nickname, invite_id: invite.id, email: invite.email, role: invite.role }
@@ -1011,8 +1019,12 @@ export function createAuthRoutes(
     if (deleted) {
       // 安全事件：账号被管理员停用（账号级，区别于 G3 的逐工作项交接审计）。entityId=被停用用户；
       // actor=执行停用的管理员。这是账号生命周期终止的权威审计点，只在首次停用（软删命中）时写一笔。
+      // MRG-11：顶层 workspaceId 锚到执行管理员的工作区（账号级事件没有天然实体工作区），否则工作区
+      // 审计页按 workspaceId 硬过滤永远查不到。best-effort：解析失败不阻断停用主流程（审计本就尽力而为）。
+      const actingTenant = await deps.memberships?.resolveDefaultTenant(actingUser.id).catch(() => null);
       await auditSecurityEvent(deps, {
         actorUserId: actingUser.id,
+        ...(actingTenant?.workspaceId ? { workspaceId: actingTenant.workspaceId } : {}),
         entityId: targetId,
         action: "auth.user_deactivated",
         detailJson: { deactivated_nickname: deleted.nickname }
@@ -1064,11 +1076,26 @@ export function createUserDirectoryRoutes(source: AuthDependencySource = getDefa
   const routes = new Hono<AuthEnv>();
   routes.get("/users", async (c) => {
     const deps = resolveAuthDependencies(source);
-    await resolveCurrentUser(c, deps);
-    if (!deps.users.listActiveRefs) {
-      return c.json({ ok: false, error: { code: "users_unsupported", message: "当前存储不支持成员清单。" } }, 501);
+    const currentUser = await resolveCurrentUser(c, deps);
+    const memberships = deps.memberships;
+    const listActiveRefsForWorkspace = deps.users.listActiveRefsForWorkspace;
+    if (!memberships?.findActiveForUserWorkspace || !listActiveRefsForWorkspace) {
+      return c.json(
+        { ok: false, error: { code: "users_unsupported", message: "当前存储不支持工作区成员清单。" } },
+        501
+      );
     }
-    const refs = await deps.users.listActiveRefs();
+    // R11 Batch 0：目录按 actor 工作区收拢——先验 actor 在该工作区的 active membership（fail-closed），
+    // 再只回该工作区的活跃成员，杜绝跨工作区成员枚举。
+    const actor = await resolveHumanActor(deps, currentUser);
+    const membership = await memberships.findActiveForUserWorkspace(currentUser.id, actor.workspaceId);
+    if (!membership) {
+      return c.json(
+        { ok: false, error: { code: "workspace_membership_required", message: "当前用户不是该工作区的活跃成员。" } },
+        403
+      );
+    }
+    const refs = await listActiveRefsForWorkspace.call(deps.users, actor.workspaceId);
     return c.json({
       ok: true,
       data: { users: refs.map((user) => ({ id: user.id, nickname: user.nickname, is_admin: user.isAdmin })) }

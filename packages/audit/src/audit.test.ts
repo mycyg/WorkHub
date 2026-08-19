@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -108,4 +108,57 @@ test("manifest facts expose rollback and irreversible reasons", () => {
   assert.equal(facts.rollback.available, false);
   assert.deepEqual(facts.risk.irreversible_reasons, ["external_effect"]);
   assert.equal(facts.evidence_refs[0]?.source_type, "audit_log");
+});
+
+test("CORE-04 SnapshotService reuses the previous snapshot ref when workdir content is unchanged", async () => {
+  // 每次 side-effect 工具调用前拍快照；相邻两次调用之间工作区大多零变化。旧实现仍整树拷贝
+  // （最坏 ~3GB/run）。修复后 contentSha256 与上一份相同 → 复用 ref、不拷贝。
+  const workdir = await tempDir("workhub-audit-dedup-work-");
+  const snapshotRoot = await tempDir("workhub-audit-dedup-snap-");
+  await mkdir(path.join(workdir, "outputs"), { recursive: true });
+  await writeFile(path.join(workdir, "outputs", "result.md"), "v1", "utf8");
+  const service = createSnapshotService({ snapshotRoot });
+
+  const first = await service.takeSandboxFileSnapshot({
+    workItemId: "a0000000-0000-4000-8000-0000000000c1",
+    workdir,
+    createdByKind: "ai"
+  });
+  const second = await service.takeSandboxFileSnapshot({
+    workItemId: "a0000000-0000-4000-8000-0000000000c1",
+    workdir,
+    createdByKind: "ai"
+  });
+
+  // 新快照仍是独立身份（审计行一行一 id），但内容零变化 → 复用同一份目录拷贝。
+  assert.notEqual(second.id, first.id);
+  assert.equal(second.ref, first.ref);
+  assert.equal(second.contentSha256, first.contentSha256);
+  assert.equal((await readdir(snapshotRoot)).length, 1, "内容未变不得新增整树拷贝");
+  // 复用的 ref 仍可用于 revert/readSnapshotFile（内容一致）。
+  assert.equal(
+    (await readSnapshotFile({ ref: second.ref }, "outputs/result.md"))?.text,
+    "v1"
+  );
+
+  // 内容变化后恢复正常拷贝：新 ref、新目录。
+  await writeFile(path.join(workdir, "outputs", "result.md"), "v2", "utf8");
+  const third = await service.takeSandboxFileSnapshot({
+    workItemId: "a0000000-0000-4000-8000-0000000000c1",
+    workdir,
+    createdByKind: "ai"
+  });
+  assert.notEqual(third.ref, first.ref);
+  assert.notEqual(third.contentSha256, first.contentSha256);
+  assert.equal((await readdir(snapshotRoot)).length, 2);
+  assert.equal((await readSnapshotFile({ ref: third.ref }, "outputs/result.md"))?.text, "v2");
+
+  // 变化后继续拍：再零变化时复用的是最新这份（v2）的 ref。
+  const fourth = await service.takeSandboxFileSnapshot({
+    workItemId: "a0000000-0000-4000-8000-0000000000c1",
+    workdir,
+    createdByKind: "ai"
+  });
+  assert.equal(fourth.ref, third.ref);
+  assert.equal((await readdir(snapshotRoot)).length, 2);
 });

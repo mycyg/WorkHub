@@ -67,14 +67,18 @@ function assignmentRow(overrides: Partial<WorkItemAssignmentRow> = {}): WorkItem
 type Recorder = {
   assigned: Array<{ workItemId: string; userId: string; role: string; assignedByUserId: string }>;
   claimed: Array<{ workItemId: string; workspaceId: string; userId: string }>;
+  audits: Array<{ action: string; entityType: string; entityId: string; workspaceId?: string; detailJson?: Record<string, unknown> }>;
 };
 
 function service(config: {
   row?: WorkItemAccessRow | null;
   member?: boolean;
+  userActive?: boolean;
+  withUsers?: boolean;
+  withAuditLogs?: boolean;
   claimReturns?: { id: string; claimedByUserId: string | null } | null;
 } = {}): { svc: ReturnType<typeof createWorkItemAssignmentService>; rec: Recorder } {
-  const rec: Recorder = { assigned: [], claimed: [] };
+  const rec: Recorder = { assigned: [], claimed: [], audits: [] };
   const deps: WorkItemAssignmentServiceDependencies = {
     workItems: {
       async findWorkItemAccessRecord() {
@@ -106,6 +110,26 @@ function service(config: {
         return (config.member ?? true) ? ({ id: "m-1" } as never) : null;
       }
     },
+    // MRG-13：默认注入活跃成员目录；userActive:false 模拟被指派人是已停用/不存在账号。
+    ...(config.withUsers === false
+      ? {}
+      : {
+          users: {
+            async findActiveById(id: string) {
+              return (config.userActive ?? true) ? ({ id } as never) : null;
+            }
+          }
+        }),
+    ...(config.withAuditLogs
+      ? {
+          auditLogs: {
+            async createAuditLog(input: { action: string; entityType: string; entityId: string; workspaceId?: string; detailJson?: Record<string, unknown> }) {
+              rec.audits.push(input);
+              return input as never;
+            }
+          }
+        }
+      : {}),
     now: () => now
   };
   return { svc: createWorkItemAssignmentService(deps), rec };
@@ -148,6 +172,38 @@ test("assign: assignee who is not a workspace member is rejected 422", async () 
   assert.deepEqual(rec.assigned, []);
 });
 
+// MRG-13：membership 只证明「是成员」不证明「账号还活着」——已停用账号仍可能留着 active 成员行。
+test("assign: a deactivated (or missing) assignee account is rejected 422 before the membership check", async () => {
+  const { svc, rec } = service({ userActive: false });
+  await assert.rejects(
+    () => svc.assign({ workItemId, assigneeUserId: assigneeId, actor: actor() }),
+    (error: unknown) => error instanceof WorkItemServiceError && error.status === 422 && error.code === "assignee_not_active"
+  );
+  assert.deepEqual(rec.assigned, []);
+});
+
+test("assign: without the user directory seam the service fails closed with 503", async () => {
+  const { svc, rec } = service({ withUsers: false });
+  await assert.rejects(
+    () => svc.assign({ workItemId, assigneeUserId: assigneeId, actor: actor() }),
+    (error: unknown) =>
+      error instanceof WorkItemServiceError && error.status === 503 && error.code === "assign_user_directory_unavailable"
+  );
+  assert.deepEqual(rec.assigned, []);
+});
+
+// MRG-10：指派/认领必须留工作区级审计（审计页按 workspaceId 硬过滤）。
+test("assign: writes a work_item.assigned audit row with the workspace id", async () => {
+  const { svc, rec } = service({ withAuditLogs: true });
+  await svc.assign({ workItemId, assigneeUserId: assigneeId, actor: actor() });
+  assert.equal(rec.audits.length, 1);
+  assert.equal(rec.audits[0]?.action, "work_item.assigned");
+  assert.equal(rec.audits[0]?.entityType, "work_item");
+  assert.equal(rec.audits[0]?.entityId, workItemId);
+  assert.equal(rec.audits[0]?.workspaceId, workspaceId);
+  assert.equal(rec.audits[0]?.detailJson?.["assignee_user_id"], assigneeId);
+});
+
 test("assign: missing work item maps to 404", async () => {
   const { svc } = service({ row: null });
   await assert.rejects(
@@ -175,6 +231,19 @@ test("claim: eligible user claims an ownerless spec_ready item; claimedByUserId 
   assert.equal(result.work_item_id, workItemId);
   assert.equal(result.claimed_by_user_id, assigneeId);
   assert.deepEqual(rec.claimed, [{ workItemId, workspaceId, userId: assigneeId }]);
+});
+
+// MRG-10：认领同样留工作区级审计。
+test("claim: writes a work_item.claimed audit row with the workspace id", async () => {
+  const claimer = actor({ id: assigneeId, userId: assigneeId, label: "claimer" });
+  const { svc, rec } = service({ row: accessRow({ submitterUserId: "someone-else" }), withAuditLogs: true });
+  await svc.claim({ workItemId, actor: claimer });
+  assert.equal(rec.audits.length, 1);
+  assert.equal(rec.audits[0]?.action, "work_item.claimed");
+  assert.equal(rec.audits[0]?.entityType, "work_item");
+  assert.equal(rec.audits[0]?.entityId, workItemId);
+  assert.equal(rec.audits[0]?.workspaceId, workspaceId);
+  assert.equal(rec.audits[0]?.detailJson?.["claimed_by_user_id"], assigneeId);
 });
 
 test("claim: non-spec_ready item is not claimable (403)", async () => {

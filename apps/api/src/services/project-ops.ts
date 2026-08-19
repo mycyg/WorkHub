@@ -6,9 +6,11 @@
 // 不碰 app.ts 的错误处理表。
 import type { ArchiveProjectResult, DeleteProjectResult, ProjectVM } from "@workhub/contracts";
 import {
+  createAuditLogRepository,
   createProjectRepository,
   createWorkItemRepository,
   getSharedDatabaseClient,
+  type AuditLogRepository,
   type ProjectRepository,
   type ProjectRow,
   type WorkItemDataRepository,
@@ -28,6 +30,9 @@ export type ProjectOpsServiceDependencies = {
   // findProjectById 只回「活跃」项目（archived=false 且未软删）——正是归档/删除前的可操作目标。
   projectLookup: Pick<WorkItemDataRepository, "findProjectById">;
   projects: Pick<ProjectRepository, "archiveProject" | "softDeleteProject">;
+  // MRG-10：归档/删除是项目生命周期里最破坏性的两个动作，必须留审计（否则工作区审计页对它们全盲）。
+  // OPTIONAL：单测/老运行时缺席时静默跳过；生产 wiring 恒注入。
+  auditLogs?: Pick<AuditLogRepository, "createAuditLog"> | undefined;
   now?: () => Date;
 };
 
@@ -46,6 +51,24 @@ function toProjectVm(project: Pick<ProjectRow, "id" | "workspaceId" | "name" | "
 
 export function createProjectOpsService(deps: ProjectOpsServiceDependencies): ProjectOpsService {
   const now = deps.now ?? (() => new Date());
+
+  // MRG-10：审计尽力而为——写失败绝不破坏归档/删除主流程（对齐 workspace-members.ts 的 writeAuditBestEffort）。
+  // workspaceId 落顶层列：工作区审计流（listAuditLogsForWorkspace）按它硬过滤，缺了审计页永远查不到。
+  async function writeAuditBestEffort(
+    entry: Parameters<NonNullable<ProjectOpsServiceDependencies["auditLogs"]>["createAuditLog"]>[0]
+  ): Promise<void> {
+    if (!deps.auditLogs) {
+      return;
+    }
+    try {
+      await deps.auditLogs.createAuditLog(entry);
+    } catch (error) {
+      console.warn(
+        `project ops audit write failed (best-effort): action=${entry.action} actor=${entry.actorUserId ?? "?"} workspace=${entry.workspaceId ?? "?"} entity=${entry.entityType}:${entry.entityId}`,
+        error
+      );
+    }
+  }
 
   // 仅管理员或项目所有者，且同租户作用域内（workspace/org 不跨界）。
   // R21 加固（NULL 旁路收口）：旧写法「任一侧为空则不设限」让 workspaceId 为 NULL 的孤儿项目对任意租户的
@@ -89,6 +112,15 @@ export function createProjectOpsService(deps: ProjectOpsServiceDependencies): Pr
         // 权限门刚过、CAS 又落空——竞态窗口内被别的请求先归档/软删了，按 404 收口。
         throw new ProjectServiceError(404, "project_not_found", "没有找到这个项目。");
       }
+      await writeAuditBestEffort({
+        actorKind: "human",
+        actorUserId: actor.userId ?? actor.id,
+        ...(row.workspaceId ? { workspaceId: row.workspaceId } : {}),
+        entityType: "project",
+        entityId: projectId,
+        action: "project.archived",
+        detailJson: { workspace_id: row.workspaceId ?? null, project_name: row.name }
+      });
       return { project: toProjectVm(row), archived: true };
     },
 
@@ -102,6 +134,15 @@ export function createProjectOpsService(deps: ProjectOpsServiceDependencies): Pr
       if (!row) {
         throw new ProjectServiceError(404, "project_not_found", "没有找到这个项目。");
       }
+      await writeAuditBestEffort({
+        actorKind: "human",
+        actorUserId: actor.userId ?? actor.id,
+        ...(row.workspaceId ? { workspaceId: row.workspaceId } : {}),
+        entityType: "project",
+        entityId: projectId,
+        action: "project.deleted",
+        detailJson: { workspace_id: row.workspaceId ?? null, project_name: row.name, deleted_by_nickname: actor.label }
+      });
       return { project: toProjectVm(row), deleted: true };
     }
   };
@@ -115,7 +156,8 @@ export function getDefaultProjectOpsService(): ProjectOpsService {
     defaultDbClient = getSharedDatabaseClient();
     defaultService = createProjectOpsService({
       projectLookup: createWorkItemRepository(defaultDbClient.db),
-      projects: createProjectRepository(defaultDbClient.db)
+      projects: createProjectRepository(defaultDbClient.db),
+      auditLogs: createAuditLogRepository(defaultDbClient.db)
     });
   }
   return defaultService;

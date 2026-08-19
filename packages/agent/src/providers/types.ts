@@ -54,6 +54,10 @@ export type LlmCreateParams = {
   // 可选：单次 provider 请求超时（毫秒）。无 signal 时由它派生 AbortSignal.timeout；与 signal 同存则二者任一触发即中断。
   // 可选保后向兼容——既有调用方/测试不传则不施加超时。
   timeoutMs?: number;
+  // 可选：显式关闭 provider 的 thinking（思维链）块。thinking 模型的思维链计入 max_tokens——
+  // 短输出 JSON 调用（澄清/评审/压缩这类 maxTokens 较小的）会被 thinking 吃光预算导致正文截断。
+  // 只在这类短 JSON 调用点传 true；默认不传保持 provider 行为。
+  disableThinking?: boolean;
 };
 
 /** AbortSignal.timeout / AbortError 抛出的中断错误统一识别名——让重试层把"挂死连接"当瞬态网络错误处理。 */

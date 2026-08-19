@@ -45,6 +45,7 @@ import {
   mergeProposalRequestSchema,
   mergeProposalCandidateChoiceResultSchema,
   nextQuestionRequestSchema,
+  createSessionRequestSchema,
   proposalConflictListResultSchema,
   replayTracePageVmSchema,
   resolveEscalationRequestSchema,
@@ -102,6 +103,13 @@ test("R9.0 escalation action contracts stay narrow and human-actionable", () => 
     to_user_id: "10000000-0000-4000-8000-000000000002",
     reason_md: "Better owner for this blocker."
   });
+});
+
+test("CHAT-4: createSession intent_text is capped at the contract boundary", () => {
+  // intent_text 原文会进 LLM 澄清 prompt——契约边界收口 2000，超长意图在创建会话时即得 422。
+  assert.equal(createSessionRequestSchema.safeParse({ intent_text: "整理周报。" }).success, true);
+  assert.equal(createSessionRequestSchema.safeParse({ intent_text: "x".repeat(2000) }).success, true);
+  assert.equal(createSessionRequestSchema.safeParse({ intent_text: "x".repeat(2001) }).success, false);
 });
 
 test("findings[#19/H4] sessionFinalizeFromStatuses blocks resurrecting finalized items, allows clarify-phase + same-status", () => {

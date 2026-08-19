@@ -217,6 +217,8 @@ function createLlmAgentMemoryPromotionJudge(
     const client = providerRegistry.get(input.actor, "decompose");
     const response = await client.messages.create({
       maxTokens: MEMORY_PROMOTION_MAX_TOKENS,
+      // E2E-03：thinking 模型的思维链计入 max_tokens，结构化输出调用关闭 thinking 防截断。
+      disableThinking: true,
       source: "agent_step",
       timeoutMs: MEMORY_PROMOTION_TIMEOUT_MS,
       system: "You are WorkHub's memory promotion judge. Return strict JSON only.",

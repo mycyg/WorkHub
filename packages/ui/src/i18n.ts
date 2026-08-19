@@ -18,7 +18,7 @@ export type UiRenderOptions = {
 type Copy = Record<WorkHubLocale, string>;
 
 const copy = {
-  // R9 i18n：与 gold-path 词典的 intake.kicker（「新建需求」）同名不同义——改名消歧。
+  // R9 i18n：与 gold-path 词典的 intake.kicker（「新任务」）同名不同义——改名消歧。
   "intake.sessionKicker": { "zh-CN": "选项澄清", "en-US": "Option intake" },
   "intake.aiRecommended": { "zh-CN": "AI 推荐", "en-US": "AI recommended" },
   "intake.freeText": { "zh-CN": "其他 / 补充", "en-US": "Other / add context" },
@@ -78,7 +78,7 @@ const copy = {
   "proposal.railComplete": { "zh-CN": "已完成", "en-US": "Finished" },
   "proposal.railCarrying": { "zh-CN": "带着交付物", "en-US": "Carrying a deliverable" },
   "proposal.railRejected": { "zh-CN": "已打回", "en-US": "Sent back" },
-  "proposal.terminalMerged": { "zh-CN": "这份改动已采纳，并合并进正式版。无需再操作。", "en-US": "This change was accepted and merged into the official version. Nothing more to do." },
+  "proposal.terminalMerged": { "zh-CN": "这份改动已采纳进正式版。无需再操作。", "en-US": "This change was adopted into the official version. Nothing more to do." },
   "proposal.terminalRejected": { "zh-CN": "这份改动已打回，打回理由已回灌给 AI，它会带着反馈继续改。", "en-US": "This change was sent back; the reason was fed to the AI, which will revise with your feedback." },
   "proposal.rollbackAvailable": { "zh-CN": "留有回滚快照（需人工恢复）", "en-US": "Rollback snapshot kept (manual restore)" },
   "proposal.rollbackUnavailable": { "zh-CN": "无回滚快照", "en-US": "No rollback snapshot" },
@@ -173,7 +173,7 @@ const copy = {
   },
   "proposal.taskPlanScopeRecommended": { "zh-CN": "建议", "en-US": "Recommended" },
 
-  "agent.kicker": { "zh-CN": "实时轨迹", "en-US": "Live trace" },
+  "agent.kicker": { "zh-CN": "实时轨迹", "en-US": "Live replay" },
   "agent.emptyTrace": {
     "zh-CN": "AI 已排队，开始后会把关键步骤放在这里。",
     "en-US": "AI is queued. Key steps will appear here after it starts."
@@ -222,7 +222,7 @@ const workItemStatusLabels = {
   escalated: { "zh-CN": "需要负责人介入", "en-US": "Needs owner" },
   pm_mode: { "zh-CN": "PM 模式处理中", "en-US": "PM mode" },
   in_review: { "zh-CN": "等待确认", "en-US": "In review" },
-  merged: { "zh-CN": "已采纳", "en-US": "Merged" },
+  merged: { "zh-CN": "已采纳", "en-US": "Adopted" },
   done: { "zh-CN": "已完成", "en-US": "Done" },
   cancelled: { "zh-CN": "已取消", "en-US": "Cancelled" }
 } satisfies Record<WorkItemStatus, Copy>;
@@ -258,7 +258,7 @@ const agentRunStatusLabels = {
   running: { "zh-CN": "进行中", "en-US": "In progress" },
   succeeded: { "zh-CN": "已完成", "en-US": "Succeeded" },
   failed: { "zh-CN": "失败", "en-US": "Failed" },
-  escalated: { "zh-CN": "已升级", "en-US": "Escalated" },
+  escalated: { "zh-CN": "需要负责人介入", "en-US": "Needs owner" },
   cancelled: { "zh-CN": "已取消", "en-US": "Cancelled" }
 } satisfies Record<AgentRunStatus, Copy>;
 
@@ -318,7 +318,7 @@ const budgetStatusLabels: Record<string, Copy> = {
 const proposalStatusLabels: Record<string, Copy> = {
   opened: { "zh-CN": "待你审阅", "en-US": "Open for review" },
   reviewed: { "zh-CN": "已审阅", "en-US": "Reviewed" },
-  merged: { "zh-CN": "已合并", "en-US": "Merged" },
+  merged: { "zh-CN": "已采纳", "en-US": "Adopted" },
   rejected: { "zh-CN": "已退回", "en-US": "Changes requested" }
 };
 
@@ -357,6 +357,39 @@ export function uiCount(locale: WorkHubLocale, count: number, zhUnit: string, en
   return locale === "zh-CN" ? `${count} ${zhUnit}` : `${count} ${count === 1 ? enSingular : enPlural}`;
 }
 
+// UI-02：全站时间戳统一本地时区渲染——此前大量 slice(0,10)/slice(0,16) 直切 ISO 串，UTC 直出，
+// 北京时间下午的事显示成当天上午。统一走 new Date + 本地分量格式化；形状保持既有的
+// 「YYYY-MM-DD HH:MM」（两 locale 同形，沿用原视觉约定，不引入 toLocaleString 的 locale 标点差异）。
+// 无效输入原样返回——渲染层不因为一条脏时间戳把整页搞炸。
+export function formatLocalTimestamp(iso: string | undefined): string {
+  if (!iso) {
+    return "";
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+// 纯日期渲染（YYYY-MM-DD）。输入本身已是日期串（无时刻，如 scope.date/due_at 日期字段）时原样透传——
+// 那种值是按「日」存的，转成 Date 再按本地时区格式化会被时区挪到前一天。
+export function formatLocalDate(iso: string | undefined): string {
+  if (!iso) {
+    return "";
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/u.test(iso)) {
+    return iso;
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 export function uiHumanize(value: string) {
   // 防御：上游枚举可能为 undefined/null(如 fixture 未填 run.status)，别让 label 查找崩在 .replace 上。
   return String(value ?? "").replace(/_/gu, " ");
@@ -389,13 +422,13 @@ export function uiFormatCny(value: string | number | null | undefined, locale: W
 const NOTIFICATION_TYPE_EXACT: Record<string, [string, string]> = {
   "comment.mention": ["提到你", "Mention"],
   "workitem.claimed": ["已认领", "Claimed"],
-  "workitem.escalated": ["已升级", "Escalated"],
-  "escalation.opened": ["已升级", "Escalated"],
+  "workitem.escalated": ["需要负责人介入", "Needs owner"],
+  "escalation.opened": ["需要负责人介入", "Needs owner"],
   "proposal.ready": ["改动待审", "Proposal ready"],
   "proposal.opened": ["改动待审", "Proposal ready"],
-  "agent_run.step": ["AI 进展", "AI progress"],
-  "agent_run.succeeded": ["AI 完成", "AI done"],
-  "agent_run.failed": ["AI 失败", "AI failed"],
+  "agent_run.step": ["AI 进展", "AI progress"], // term-allow：key 是事件名标识符，值已人话
+  "agent_run.succeeded": ["AI 完成", "AI done"], // term-allow：key 是事件名标识符，值已人话
+  "agent_run.failed": ["AI 失败", "AI failed"], // term-allow：key 是事件名标识符，值已人话
   "approval.decided": ["审批已定", "Decided"],
   "approval.delegated": ["审批转交", "Delegated"],
   "approval.expired": ["审批过期", "Expired"],
@@ -414,7 +447,7 @@ const NOTIFICATION_TYPE_EXACT: Record<string, [string, string]> = {
   // 裸显大写英文 token（"Work Item.due Soon" 等），补精确映射。
   "work_item.due_soon": ["到期提醒", "Due soon"],
   "work_item.overdue": ["已逾期", "Overdue"],
-  "work_item.escalated_ddl": ["逾期升级", "Overdue escalated"],
+  "work_item.escalated_ddl": ["逾期需负责人介入", "Overdue — needs owner"],
   "work_item.needs_owner": ["待认领提醒", "Needs owner"],
   "conversation.message": ["新消息", "New message"],
   "conversation.mention": ["有人提到你", "Mentioned you"]
@@ -425,10 +458,10 @@ const NOTIFICATION_TYPE_PREFIX: Record<string, [string, string]> = {
   workitem: ["工作项", "Work item"],
   work_item: ["工作项", "Work item"],
   conversation: ["会话", "Conversation"],
-  agent_run: ["AI 运行", "AI run"],
+  agent_run: ["AI 运行", "AI run"], // term-allow：key 是事件名前缀标识符，值已人话
   approval: ["审批", "Approval"],
   proposal: ["改动", "Proposal"],
-  escalation: ["升级", "Escalation"],
+  escalation: ["需要负责人介入", "Needs owner"],
   drive: ["网盘", "Drive"],
   drive_comment: ["网盘评论", "Drive comment"],
   meeting: ["会议", "Meeting"],

@@ -8,6 +8,7 @@ import {
   acceptedDeliverableRestoreFromHref,
   actionElementCreateProjectPayload,
   actionElementJsonPayload,
+  agentRunAbortIdFromHref,
   approvalRespondIdFromHref,
   bootstrapProjectActionFromHref,
   conflictsFromMergeError,
@@ -50,6 +51,11 @@ test("R4.21 shared runtime parses route action hrefs without app-specific code",
   assert.equal(createNamedProjectActionFromHref("/api/projects"), false);
   assert.deepEqual(createTaskPlanActionFromHref("/api/workitems/w%201/task-plan"), { workItemId: "w 1" });
   assert.deepEqual(startAgentRunActionFromHref("/api/workitems/w%201/agent-runs"), { workItemId: "w 1" });
+  // WIRE-07：回放页「中止执行」的 href 识别；其它 agent-runs 路径不误判。
+  assert.equal(agentRunAbortIdFromHref("/api/agent-runs/r-1/abort"), "r-1");
+  assert.equal(agentRunAbortIdFromHref("https://workhub.local/api/agent-runs/r%202/abort"), "r 2");
+  assert.equal(agentRunAbortIdFromHref("/api/agent-runs/r-1/revert"), undefined);
+  assert.equal(agentRunAbortIdFromHref("/agent-runs/r-1/replay"), undefined);
   assert.equal(evidenceBindingWorkItemIdFromHref("/api/workitems/w-1/evidence-bindings"), "w-1");
   assert.deepEqual(acceptedDeliverableRestoreFromHref("/api/workitems/w-1/deliverables/ac-1/restore"), {
     workItemId: "w-1",

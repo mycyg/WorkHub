@@ -77,6 +77,13 @@ export function startAgentRunActionFromHref(href: string) {
   return match?.[1] ? { workItemId: decodeURIComponent(match[1]) } : undefined;
 }
 
+// WIRE-07：回放页「中止执行」按钮的 href 识别（POST /api/agent-runs/:id/abort）。
+export function agentRunAbortIdFromHref(href: string) {
+  const path = hrefPathname(href);
+  const match = /^\/api\/agent-runs\/([^/]+)\/abort$/u.exec(path);
+  return match?.[1] ? decodeURIComponent(match[1]) : undefined;
+}
+
 export function createTaskPlanActionFromHref(href: string) {
   const path = hrefPathname(href);
   const match = /^\/api\/workitems\/([^/]+)\/task-plan$/u.exec(path);

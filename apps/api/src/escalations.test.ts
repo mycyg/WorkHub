@@ -220,7 +220,7 @@ class MemoryEscalations implements EscalationService {
     this.delegateCalls.push({ id, actor, payload, ...(locale ? { locale } : {}) });
     return {
       escalation: { id, work_item_id: workItemId, suggested_lead_user_id: payload.to_user_id ?? null },
-      attention: { summary_text: "已转派升级。" }
+      attention: { summary_text: "已转派给负责人处理。" }
     };
   }
 

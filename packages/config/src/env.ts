@@ -162,7 +162,14 @@ export const envSchema = z.object({
   // R15 批 F（关怀信号阈值 · 深夜活跃）：近 7 天内 ≥ 此数个不同深夜(23:00–06:00 本地)日历日有活动（默认 3）。
   PROACTIVE_CARE_LATE_NIGHT_MIN_NIGHTS: z.coerce.number().int().positive().default(3),
   // R15 批 F（关怀信号阈值 · 连续受挫）：近 7 天该用户提案被打回达此次数（默认 2）。
-  PROACTIVE_CARE_FRUSTRATION_THRESHOLD: z.coerce.number().int().positive().default(2)
+  PROACTIVE_CARE_FRUSTRATION_THRESHOLD: z.coerce.number().int().positive().default(2),
+
+  // CHAT-8（澄清待答兜底 · clarification-chase pulse 任务）：默认 1 小时一 tick（24h 粗粒度兜底，
+  // 与 notification-reminder 同档）。0=不挂定时器。纯规则、无 LLM。
+  PULSE_CLARIFICATION_CHASE_INTERVAL_MS: z.coerce.number().int().min(0).default(3600000),
+  // CHAT-8：澄清会话「待答滞留」阈值——ai_clarifying 且无任何澄清回答超过该时长（默认 24h）
+  // 才给提交人落提醒通知。与 ddl-chase 的静默/频控闸刻意无关：这是会话本身的最低限度兜底。
+  CLARIFICATION_PENDING_AFTER_MS: z.coerce.number().int().positive().default(86400000)
 });
 
 type ParsedEnv = z.infer<typeof envSchema>;
@@ -260,6 +267,9 @@ export type Settings = {
     approvalDigestIntervalMs: number;
     ddlChaseIntervalMs: number;
     careScanIntervalMs: number;
+    clarificationChaseIntervalMs: number;
+    // CHAT-8：澄清待答滞留阈值（默认 24h），clarification-chase 服务据此判「该提醒提交人了」。
+    clarificationPendingAfterMs: number;
   };
   proactive: {
     quietHours: string;
@@ -367,7 +377,9 @@ export function loadSettings(env: EnvInput = process.env): Settings {
       notificationReminderIntervalMs: parsed.PULSE_NOTIFICATION_REMINDER_INTERVAL_MS,
       approvalDigestIntervalMs: parsed.PULSE_APPROVAL_DIGEST_INTERVAL_MS,
       ddlChaseIntervalMs: parsed.PULSE_DDL_CHASE_INTERVAL_MS,
-      careScanIntervalMs: parsed.PULSE_CARE_SCAN_INTERVAL_MS
+      careScanIntervalMs: parsed.PULSE_CARE_SCAN_INTERVAL_MS,
+      clarificationChaseIntervalMs: parsed.PULSE_CLARIFICATION_CHASE_INTERVAL_MS,
+      clarificationPendingAfterMs: parsed.CLARIFICATION_PENDING_AFTER_MS
     },
     proactive: {
       quietHours: parsed.PROACTIVE_QUIET_HOURS,

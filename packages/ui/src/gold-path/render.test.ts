@@ -6,6 +6,7 @@ import type { AcceptedDeliverableVM, GoldPathSurfaceVM, ReplayMergeAttemptVM } f
 import { toCuuState } from "@workhub/events";
 
 import { renderGoldPathSurface } from "./render.js";
+import { formatLocalTimestamp } from "../i18n.js";
 
 function surfaceVm() {
   const fixture = createP05GoldPathFixture();
@@ -91,7 +92,8 @@ test("approval center renderer does not leak raw approval facts", () => {
   assert.equal(approvals.html.includes("96000000-0000-4000-8000-000000000011"), false);
   assert.equal(approvals.html.includes("2026-07-05T00:00:00.000Z"), false);
   assert.equal(approvals.html.includes("<strong>Tool approval</strong>"), true);
-  assert.equal(approvals.html.includes("Pending · SLA 2026-07-05 00:00"), true);
+  // UI-02：本地时区渲染，期望值由格式化助手算出（时区无关）。
+  assert.equal(approvals.html.includes(`Pending · SLA ${formatLocalTimestamp("2026-07-05T00:00:00.000Z")}`), true);
   assert.equal(approvals.html.includes(">Routed</span>"), true);
 });
 
@@ -506,7 +508,8 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
   assert.equal(zhReplay?.html.includes("data-text-diff3-conflict-hunks=\"1\""), true);
   assert.equal(zhReplay?.html.includes("data-text-diff3-conflict-ranges=\"2\""), true);
   assert.equal(zhReplay?.html.includes(">2026-06-05T00:00:00.000Z<"), false);
-  assert.equal(zhReplay?.html.includes(">2026-06-05 00:00<"), true);
+  // UI-02：本地时区渲染，期望值由格式化助手算出（时区无关）。
+  assert.equal(zhReplay?.html.includes(`>${formatLocalTimestamp("2026-06-05T00:00:00.000Z")}<`), true);
   assert.equal(zhReplay?.html.includes("data-overlap-risk=\"requires_review\""), true);
   assert.equal(zhReplay?.html.includes("改动预览"), true);
   assert.equal(zhReplay?.html.includes("文本合并检查"), true);

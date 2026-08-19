@@ -2425,7 +2425,7 @@ test("R9 approvals route renders the real total and a working next-page entry fo
   assert.equal(result.status, "ready");
   assert.deepEqual(calls, ["approvals:zh-CN:offset=100"]);
   assert.equal(result.html.includes('data-r4-approval-pending="237"'), true);
-  assert.equal(result.html.includes('<span class="wh-r4-route-count">237 待处理</span>'), true);
+  assert.equal(result.html.includes('<span class="wh-r4-route-count">237</span>'), true);
   assert.equal(result.html.includes('data-r4-approval-page-offset="100"'), true);
   assert.equal(result.html.includes('data-r4-approval-next-page-href="/approvals?offset=200"'), true);
   assert.equal(result.html.includes('href="/approvals?offset=200"'), true);

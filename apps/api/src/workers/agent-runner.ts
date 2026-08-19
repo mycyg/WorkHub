@@ -32,6 +32,7 @@ import {
   createMemoryBudgetPolicyStore,
   createMemoryCostLedgerStore,
   decideRunBudget,
+  TOTAL_RESERVATION_PERIOD_BUCKET,
   type BudgetDecision,
   type BudgetDecisionTrace,
   type BudgetNotice,
@@ -2434,7 +2435,15 @@ export function createInMemoryAgentRunQueue(options: {
       });
       const settled: AgentRunQueueRecord[] = [];
       for (const run of candidates) {
-        await notifyRunSettled(run);
+        // INF-01：逐 run 兜底——单个 run 结算失败不能中断整批。本方法在恢复 tick 里排在
+        // recoverExpiredClaims 之前（agent-run-recovery.ts），任一个 poison run 把异常抛出循环，
+        // 过期租约回收就会整轮停摆。失败的记日志跳过，下轮 tick 还会再扫到它。
+        try {
+          await notifyRunSettled(run);
+        } catch (error) {
+          getDefaultStructuredLogger().warn("agent_run_unsettled_settle_skipped", { runId: run.run_id, error });
+          continue;
+        }
         settled.push(run);
       }
       return settled;
@@ -2485,6 +2494,13 @@ export function createInMemoryAgentRunQueue(options: {
           try {
             await openDeadLetterEscalation(run, recoveredAt);
           } catch (error) {
+            // INF-02：单个死信 run 的升级卡写失败不能中断整批——旧代码在这里 throw，排在后面的死信
+            // run 会永久卡在 ai_working 无人知晓。当前 run 各自回 restore 重试面（下轮 tick 重试），
+            // 记日志后继续批处理。
+            getDefaultStructuredLogger().warn("agent_run_dead_letter_batch_item_failed", {
+              runId: run.run_id,
+              error
+            });
             try {
               await restoreDeadLetterRetrySurface(run, recoveredAt);
             } catch (restoreError) {
@@ -2493,7 +2509,7 @@ export function createInMemoryAgentRunQueue(options: {
                 restoreError
               });
             }
-            throw error;
+            continue;
           }
           await notifyRunMilestone(run, "AI 多次崩溃，已转人工接手。");
           await notifyRunSettled(run);
@@ -2837,14 +2853,17 @@ function budgetDecisionFromReservationDenial(
   };
 }
 
-// R2 原子预算：把预算决策的受限 day/month scope 转成预留输入。per-run cap 不预留（按 work-item，已被
+// R2 原子预算：把预算决策的受限 day/month/total scope 转成预留输入。per-run cap 不预留（按 work-item，已被
 // work_item active 唯一索引串行化）；committed/cap 取自 decision.usages，est 取本 run 的 per-run cap。
+// CORE-03：period="total"（军团 task 计划总预算）也必须进原子预留——此前被过滤掉，并发子 run 各自在
+// decideRunBudget 的旧 committed 快照上判不超、双双起跑，可穿透计划总预算。total 无自然时间桶，
+// periodBucket 用固定常量 TOTAL_RESERVATION_PERIOD_BUCKET，让同一计划的所有子 run 共用一把 advisory 锁。
 function buildReserveScopes(decision: BudgetDecisionTrace, at: Date): BudgetReservationScopeInput[] {
   const isoDay = at.toISOString().slice(0, 10);
   const isoMonth = at.toISOString().slice(0, 7);
   const scopes: BudgetReservationScopeInput[] = [];
   for (const usage of decision.usages) {
-    if (usage.period !== "day" && usage.period !== "month") {
+    if (usage.period !== "day" && usage.period !== "month" && usage.period !== "total") {
       continue;
     }
     scopes.push({
@@ -2852,7 +2871,7 @@ function buildReserveScopes(decision: BudgetDecisionTrace, at: Date): BudgetRese
       scopeKind: usage.scope.kind,
       scopeId: budgetScopeId(usage.scope),
       period: usage.period,
-      periodBucket: usage.period === "day" ? isoDay : isoMonth,
+      periodBucket: usage.period === "day" ? isoDay : usage.period === "month" ? isoMonth : TOTAL_RESERVATION_PERIOD_BUCKET,
       capTokens: usage.maxTokens,
       capCostCny: usage.maxCostCny,
       committedTokens: usage.totalTokens,

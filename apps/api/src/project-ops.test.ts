@@ -77,9 +77,11 @@ function service(overrides: {
   project?: WorkItemProjectRow | null;
   archiveReturns?: ProjectRow | null;
   deleteReturns?: ProjectRow | null;
+  auditFails?: boolean;
   calls?: { archive: string[]; softDelete: Array<{ projectId: string; deletedByNickname: string | null | undefined }> };
 } = {}) {
   const calls = overrides.calls ?? { archive: [], softDelete: [] };
+  const audits: Array<{ action: string; entityType: string; entityId: string; workspaceId?: string; detailJson?: Record<string, unknown> }> = [];
   return {
     svc: createProjectOpsService({
       projectLookup: {
@@ -97,9 +99,20 @@ function service(overrides: {
           return overrides.deleteReturns === undefined ? resultRow({ deletedAt: now }) : overrides.deleteReturns;
         }
       },
+      // MRG-10：审计 seam——auditFails 模拟写失败（best-effort，不得破坏主流程）。
+      auditLogs: {
+        async createAuditLog(input: { action: string; entityType: string; entityId: string; workspaceId?: string; detailJson?: Record<string, unknown> }) {
+          if (overrides.auditFails) {
+            throw new Error("audit store unavailable");
+          }
+          audits.push(input);
+          return input as never;
+        }
+      },
       now: () => now
     }),
-    calls
+    calls,
+    audits
   };
 }
 
@@ -211,6 +224,34 @@ test("deleteProject: non-owner non-admin is forbidden", async () => {
     (error: unknown) => error instanceof ProjectServiceError && error.status === 403
   );
   assert.deepEqual(calls.softDelete, []);
+});
+
+// MRG-10：归档/删除是破坏性生命周期操作，必须写工作区级审计（审计页按 workspaceId 硬过滤）。
+test("archiveProject: writes a project.archived audit row with the workspace id", async () => {
+  const { svc, audits } = service();
+  await svc.archiveProject({ projectId, actor: ownerActor() });
+  assert.equal(audits.length, 1);
+  assert.equal(audits[0]?.action, "project.archived");
+  assert.equal(audits[0]?.entityType, "project");
+  assert.equal(audits[0]?.entityId, projectId);
+  assert.equal(audits[0]?.workspaceId, "00000000-0000-4000-8000-000000000002");
+});
+
+test("deleteProject: writes a project.deleted audit row with the workspace id", async () => {
+  const { svc, audits } = service();
+  await svc.deleteProject({ projectId, actor: ownerActor() });
+  assert.equal(audits.length, 1);
+  assert.equal(audits[0]?.action, "project.deleted");
+  assert.equal(audits[0]?.entityType, "project");
+  assert.equal(audits[0]?.entityId, projectId);
+  assert.equal(audits[0]?.workspaceId, "00000000-0000-4000-8000-000000000002");
+});
+
+test("archiveProject: an audit write failure does not break the archive (best-effort)", async () => {
+  const { svc, calls } = service({ auditFails: true });
+  const result = await svc.archiveProject({ projectId, actor: ownerActor() });
+  assert.equal(result.archived, true);
+  assert.deepEqual(calls.archive, [projectId]);
 });
 
 // ---- route wiring tests ----

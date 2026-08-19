@@ -44,6 +44,12 @@ export type SnapshotTakeInput = {
   createdByKind: ActorKind;
   now?: () => Date;
   id?: () => string;
+  /**
+   * CORE-04 内容去重：调用方持有的「上一份同 workdir 快照」。hashWorkdir 算出的 contentSha256 与之相同
+   * 说明工作区自上次快照以来零变化——复用其 ref、跳过整树拷贝（否则每次 side-effect 工具调用都全量
+   * 复制一份，最坏 ~3GB/run）。新快照仍得新 id（审计行一行一 id），只是 ref 指向既有目录。
+   */
+  reuseIfUnchanged?: { contentSha256: string; ref: string };
 };
 
 export type RevertSnapshotInput = {

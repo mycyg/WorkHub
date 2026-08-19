@@ -11,7 +11,7 @@ import { WorkHubApiError } from "@workhub/api-client/client";
 import type { PasswordLoginRequest, WorkHubApiClient } from "@workhub/api-client";
 import type { WorkHubLocale } from "@workhub/ui/gold-path";
 
-// 与 browser.ts:128 / workbench/boot.ts:19 同一套令牌键 + 登出标记键——写令牌前清登出标记，落新键。
+// 与 browser.ts / workbench/boot.ts 同一套令牌键 + 登出标记键——写令牌前清登出标记，落新键。
 const CLIENT_TOKEN_KEY = "workhub_client_token";
 const DESKTOP_LOGGED_OUT_FLAG = "workhub_desktop_logged_out";
 // 探得的认证模式提示：首启 bootstrap 成功=nickname、404=password（见 isPasswordModeBootstrapError）。
@@ -35,6 +35,99 @@ export function rememberDesktopAuthModeHint(storage: Pick<Storage, "setItem">, m
   } catch {
     // storage 不可用：模式提示只是优化，丢失不影响 fresh-launch 的 404 探测路径。
   }
+}
+
+// DSK-07：跨窗启动锁（localStorage lease）。首启时主窗/桌宠/工作台几乎同时 boot，都见「无 token」会
+// 并发打 /api/auth/desktop-bootstrap——重复注册设备、双 token 互覆。同一 Tauri 应用各窗口共享同一
+// localStorage（同 pending-deep-link.ts 顶部注释的既有事实），且 get/set 同步，用它做粗粒度 lease：
+// 抢到锁的窗口执行 bootstrap 并落 token；没抢到的短轮询重读 token——胜者落盘后败者直接拿到现成
+// token，不再重复 bootstrap。锁带 TTL + 属主标记 + 写后回读确认（同时写时后写覆盖先写，只有回读到
+// 自己的属主标记才算真抢到）；胜者崩了/忘释放由 TTL 兜底，释放只删自己的锁。
+export type DesktopBootstrapLockResult<T> =
+  | { kind: "ran"; result: T }
+  | { kind: "token-ready"; token: string }
+  | { kind: "busy" };
+
+const DESKTOP_BOOTSTRAP_LOCK_KEY = "workhub_desktop_bootstrap_lock";
+const DESKTOP_BOOTSTRAP_LOCK_TTL_MS = 10_000;
+
+export async function runDesktopBootstrapWithLock<T>(input: {
+  storage: Pick<Storage, "getItem" | "setItem" | "removeItem">;
+  readToken: () => string | undefined;
+  run: () => Promise<T>;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+  lockTtlMs?: number;
+  waitMs?: number;
+  pollMs?: number;
+}): Promise<DesktopBootstrapLockResult<T>> {
+  const now = input.now ?? (() => Date.now());
+  const sleep = input.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const lockTtlMs = input.lockTtlMs ?? DESKTOP_BOOTSTRAP_LOCK_TTL_MS;
+  const waitMs = input.waitMs ?? 5_000;
+  const pollMs = input.pollMs ?? 200;
+  const owner = `${now()}:${Math.random()}`;
+
+  const readLock = (): { owner: string; expiresAt: number } | undefined => {
+    try {
+      const raw = input.storage.getItem(DESKTOP_BOOTSTRAP_LOCK_KEY);
+      const [ownerId, expiresAtRaw] = raw?.split("@") ?? [];
+      const expiresAt = Number(expiresAtRaw);
+      if (!ownerId || !Number.isFinite(expiresAt)) {
+        return undefined;
+      }
+      return { owner: ownerId, expiresAt };
+    } catch {
+      return undefined;
+    }
+  };
+  const tryAcquire = (): boolean => {
+    try {
+      const lock = readLock();
+      if (lock && lock.expiresAt > now()) {
+        return false;
+      }
+      input.storage.setItem(DESKTOP_BOOTSTRAP_LOCK_KEY, `${owner}@${now() + lockTtlMs}`);
+      return readLock()?.owner === owner;
+    } catch {
+      return false;
+    }
+  };
+  const release = (): void => {
+    try {
+      if (readLock()?.owner === owner) {
+        input.storage.removeItem(DESKTOP_BOOTSTRAP_LOCK_KEY);
+      }
+    } catch {
+      // 释放失败无碍——TTL 兜底，别的窗口到期可接管。
+    }
+  };
+  const runLocked = async (): Promise<DesktopBootstrapLockResult<T>> => {
+    try {
+      return { kind: "ran", result: await input.run() };
+    } finally {
+      release();
+    }
+  };
+
+  if (tryAcquire()) {
+    return runLocked();
+  }
+  // 没抢到：胜者正在 bootstrap——短轮询重读 token，胜者落盘即返回；胜者崩了锁到期则接管。
+  const deadline = now() + waitMs;
+  while (now() < deadline) {
+    await sleep(pollMs);
+    const token = input.readToken();
+    if (token) {
+      return { kind: "token-ready", token };
+    }
+    if (tryAcquire()) {
+      return runLocked();
+    }
+  }
+  // 等到超时仍无 token 也抢不到锁：放弃（交给上层离线兜底），最后再读一次兜底。
+  const token = input.readToken();
+  return token ? { kind: "token-ready", token } : { kind: "busy" };
 }
 
 // 桌面 exchange 只需要客户端的 login + bootstrapDesktop 两个能力——收窄依赖便于测试注入假客户端。

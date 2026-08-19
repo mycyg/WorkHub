@@ -924,17 +924,17 @@ const workItemDetail: WorkItemDetailVM = {
   acceptance: [
     {
       id: "option-first",
-      title: "澄清必须点选优先",
+      title: "澄清以点选为主",
       status: "met"
     },
     {
       id: "non-code-pr",
-      title: "交付物变更申请必须像 PR 一样可审",
+      title: "交付物变更必须逐条可审",
       status: "met"
     },
     {
       id: "replay-cost",
-      title: "Replay footer 必须显示成本切片",
+      title: "回放页脚必须显示成本明细",
       status: "met"
     }
   ],
@@ -1168,7 +1168,7 @@ const events: WorkHubEvent<unknown>[] = [
     actor: { actor_kind: "system", label: "notification-service" },
     work_item_id: p05GoldPathIds.workItem,
     project_id: p05GoldPathIds.project,
-    preview_text: "客户周报模板已合并，审计和回滚入口可用。",
+    preview_text: "客户周报模板已采纳进正式版，审计和还原入口可用。",
     attention: deliveryAttention,
     data: deliveryAttention
   })

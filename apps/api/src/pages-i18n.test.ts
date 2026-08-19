@@ -233,7 +233,7 @@ test("Page VM builders localize generated English copy without translating user/
     ]
   } as StoredProposal, "en-US");
   assert.equal(proposal.review_actions.request_changes.label, "Request changes with a reason");
-  assert.equal(proposal.review_actions.merge?.label, "Merge deliverable");
+  assert.equal(proposal.review_actions.merge?.label, "Adopt into the official version");
   assert.equal(proposal.comments[0]?.author_label, "Owner");
   assert.equal(proposal.comments[0]?.body, "Keep this reviewer note untranslated.");
 

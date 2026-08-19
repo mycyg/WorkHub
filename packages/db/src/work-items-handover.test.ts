@@ -14,8 +14,12 @@ const targetUserId = "a0000000-0000-4000-8000-000000000001";
 const actorUserId = "a0000000-0000-4000-8000-000000000002";
 
 test("unassignActiveClaimsForUserWithAudit runs the unassign UPDATE and per-item audit INSERTs in one transaction", async () => {
-  // responses[0] = UPDATE ... RETURNING 两条受影响行；后续每条 INSERT 各消费一个空响应。
-  const { db, queries, transactions } = createQueryRecorder([[{ id: "wi-1" }, { id: "wi-2" }], [], []]);
+  // responses[0] = UPDATE ... RETURNING 两条受影响行（MRG-11：带 workspaceId，供审计落顶层列）；后续每条 INSERT 各消费一个空响应。
+  const { db, queries, transactions } = createQueryRecorder([
+    [{ id: "wi-1", workspaceId: "ws-1" }, { id: "wi-2", workspaceId: "ws-1" }],
+    [],
+    []
+  ]);
   const repository = createWorkItemRepository(db);
 
   const affected = await repository.unassignActiveClaimsForUserWithAudit!({
@@ -24,7 +28,7 @@ test("unassignActiveClaimsForUserWithAudit runs the unassign UPDATE and per-item
     actorUserId
   });
 
-  assert.deepEqual(affected, [{ id: "wi-1" }, { id: "wi-2" }]);
+  assert.deepEqual(affected, [{ id: "wi-1", workspaceId: "ws-1" }, { id: "wi-2", workspaceId: "ws-1" }]);
   // 单事务收口，且事务正常提交。
   assert.deepEqual(transactions, [{ outcome: "resolved" }]);
 
@@ -43,6 +47,8 @@ test("unassignActiveClaimsForUserWithAudit runs the unassign UPDATE and per-item
     const values = insert.valuesValue as Record<string, unknown>;
     assert.equal(values["actorKind"], "human");
     assert.equal(values["actorUserId"], actorUserId);
+    // MRG-11：顶层 workspaceId 从 work item 行带出——工作区审计流按它硬过滤。
+    assert.equal(values["workspaceId"], "ws-1");
     assert.equal(values["entityType"], "work_item");
     assert.equal(values["entityId"], index === 0 ? "wi-1" : "wi-2");
     assert.equal(values["action"], "work_item.unassigned_on_offboarding");

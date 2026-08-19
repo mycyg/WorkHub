@@ -59,6 +59,7 @@ import {
   cardFromDesktopCuuRuntimeError,
   createDesktopCuuAnalysisCard,
   createDesktopCuuAgentLauncherCard,
+  decideDesktopCuuAbortConfirmation,
   loadDesktopCuuProjectContext,
   resolveDesktopCuuAction,
   resolveDesktopShellEmitter,
@@ -89,6 +90,7 @@ import {
 } from "./pet-window-bridge.js";
 import { parseWorkbenchDeepLinkHref } from "./workbench/cuu-bubble-deeplink.js";
 import { openWorkbenchRouteFromPet } from "./workbench/cuu-bubble-open.js";
+import type { DesktopShellSystemNotificationPlan } from "./shell-events.js";
 
 export type DesktopSurface = "main" | "pet";
 
@@ -789,6 +791,21 @@ function desktopPetOpenMainRouteFallback(locale: WorkHubLocale) {
   return locale === "en-US" ? "Cuu could not open this in WorkHub." : "Cuu 暂时打不开主窗口。";
 }
 
+// MRG-20：system-notification 计划按「路由 path」暂存/消费——通知 route 可能带查询串
+//（/approvals?approvalId=…），而卡片动作 href 常是裸路径；对齐到 path 才能认出同一件事。
+export function desktopSystemNotificationPlanRouteKey(route: string | null | undefined): string | undefined {
+  const raw = route?.trim();
+  if (!raw) {
+    return undefined;
+  }
+  try {
+    const parsed = new URL(raw, "tauri://localhost");
+    return parsed.pathname || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function desktopPetOpenWorkbenchRouteFallback(locale: WorkHubLocale) {
   return locale === "en-US" ? "Cuu could not open the workbench window." : "Cuu 暂时打不开工作台窗口。";
 }
@@ -808,7 +825,7 @@ function primaryDesktopCuuAction(card: CuuCard, actionId: string, freeText?: str
 }
 
 // G-desktop 止血批 3（跨窗口登出广播）：登出发生在主窗（spotlight 设置视图）时,主窗自己
-// `window.location.reload()` 就够了——重新走 boot() 会自然命中 desktopLoggedOut() 的重新绑定屏。但桌宠窗是
+// `window.location.reload()` 就够了——重新走 bootSpotlight() 会自然命中登出标记的重新绑定屏（DSK-01）。但桌宠窗是
 // 一个已经在跑的独立进程,不会跟着主窗一起 reload,原来完全没有 handler 去处理"我手里的 client token 刚被
 // 主窗清空了"这件事,只会在下一次调用时静默拿着空 token 打 401。现在监听同一个 workhub-logged-out 事件
 // （见 boot.ts/workbench/interrupt-broadcast.ts 同款 emit/listen 通路),换成一张诚实的「已登出」卡片——
@@ -869,6 +886,10 @@ export async function bootDesktopPetSurface(
     : desktopPetInitialIdleAction;
   let statusText: string | undefined;
   let pendingAction: DesktopCuuActionRequest | undefined;
+  // WIRE-07：中止执行的两段式确认武装态（5 秒窗口，判定见 desktop-cuu-runtime 的
+  // decideDesktopCuuAbortConfirmation）——纯变量记忆，渲染层不重画按钮。
+  let armedAbortRunId: string | undefined;
+  let armedAbortTimer: ReturnType<typeof setTimeout> | undefined;
   let runStreamSubscription: DesktopCuuRunStreamSubscription | undefined;
   let confirmedPetWindowMode: DesktopPetWindowMode | undefined;
   let syncingPetWindowMode: DesktopPetWindowMode | undefined;
@@ -1128,9 +1149,11 @@ export async function bootDesktopPetSurface(
       const next = currentId ? items.find((item) => item.id === currentId) ?? items[0] : items[0];
       if (next) {
         // R6（桌面交互）：SSE/轮询刷新会整卡重渲——用户正往自由文本框里打的字会被静默清空。
-        // 框里有未提交内容时跳过本次静默刷新（下一次事件还会再同步；提交后 setCard 走正常路径）。
+        // 框里有未提交内容时跳过本次静默刷新。CHAT-09：跳过记脏——否则若之后再无事件到达，
+        // 卡片会永久停在旧帧；用户清空文本框（input 监听，见下）或提交动作落定后补刷一次。
         const pendingFreeText = root.querySelector<HTMLTextAreaElement>("[data-pet-free-text]")?.value.trim();
         if (pendingFreeText) {
+          attentionRefreshSkippedForFreeText = true;
           return;
         }
         setCard(cardFromAttentionItem(next, { locale }), visibleAttentionMessage(next), { persist: false });
@@ -1143,6 +1166,17 @@ export async function bootDesktopPetSurface(
       // 刷新失败不打断桌宠当前状态，下一次事件/轮询还会再同步。
     }
   }
+
+  // CHAT-09：被自由文本框挡下的静默刷新记脏后，由这里补偿——清空文本框 / 提交动作落定都会调到。
+  // refreshVisibleAttentionCard 自身有「当前卡不是 attention 卡就早退」的守卫，多补一次无害。
+  let attentionRefreshSkippedForFreeText = false;
+  const flushSkippedAttentionRefresh = () => {
+    if (!attentionRefreshSkippedForFreeText) {
+      return;
+    }
+    attentionRefreshSkippedForFreeText = false;
+    void refreshVisibleAttentionCard();
+  };
 
   const broadcastPetSettings = (
     preferences: CuuControllerPreferences,
@@ -1404,6 +1438,8 @@ export async function bootDesktopPetSurface(
         setCard(cardFromDesktopPetActionError(error, locale), actionMessage(error, locale));
       } finally {
         petActionBusy = false;
+        // CHAT-09：提交落定后补一次被自由文本框挡下的静默刷新（无脏标记则空操作）。
+        flushSkippedAttentionRefresh();
       }
       return;
     }
@@ -1476,6 +1512,13 @@ export async function bootDesktopPetSurface(
       const workbenchTarget = parseWorkbenchDeepLinkHref(anchor.getAttribute("href"));
       if (workbenchTarget) {
         event.preventDefault();
+        // MRG-20：这条深链若对应刚到达的 OS 通知（同路由已暂存计划），优先把计划回传原生
+        // focus_system_notification 走统一深链落地；否则按既有方式开工作台。
+        const notificationPlan = takeSystemNotificationPlanForRoute(anchor.getAttribute("href"));
+        if (notificationPlan && petWindowBridge?.focusSystemNotification) {
+          focusSystemNotificationPlan(notificationPlan);
+          return;
+        }
         const opened = await openWorkbenchRouteFromPet(workbenchTarget).catch(() => false);
         if (!opened) {
           statusText = desktopPetOpenWorkbenchRouteFallback(locale);
@@ -1486,6 +1529,12 @@ export async function bootDesktopPetSurface(
       const route = desktopPetMainRouteFromHref(anchor.getAttribute("href"));
       if (route) {
         event.preventDefault();
+        // MRG-20：同上——主窗路由若对应暂存的通知计划，走 focus_system_notification 落地。
+        const notificationPlan = takeSystemNotificationPlanForRoute(route);
+        if (notificationPlan && petWindowBridge?.focusSystemNotification) {
+          focusSystemNotificationPlan(notificationPlan);
+          return;
+        }
         try {
           await openMainRouteFromPet(route);
         } catch {
@@ -1496,6 +1545,31 @@ export async function bootDesktopPetSurface(
       return;
     }
     event.preventDefault();
+    // WIRE-07：中止执行是破坏性动作——两段式确认（沿用网盘回滚 decideRollbackConfirmation 同款先例）：
+    // 第一次点只武装（状态行换确认文案，5 秒自动解除），武装窗口内再点同一颗才真正提交中止。
+    if (action.kind === "abort-agent-run") {
+      const abortDecision = decideDesktopCuuAbortConfirmation(armedAbortRunId, action.runId);
+      if (abortDecision.kind === "arm") {
+        armedAbortRunId = action.runId;
+        statusText = cuuT(locale, "pet.abortRunConfirm");
+        render();
+        if (armedAbortTimer !== undefined) {
+          clearTimeout(armedAbortTimer);
+        }
+        armedAbortTimer = setTimeout(() => {
+          armedAbortTimer = undefined;
+          if (armedAbortRunId === action.runId) {
+            armedAbortRunId = undefined;
+          }
+        }, 5000);
+        return;
+      }
+      armedAbortRunId = undefined;
+      if (armedAbortTimer !== undefined) {
+        clearTimeout(armedAbortTimer);
+        armedAbortTimer = undefined;
+      }
+    }
     // findings[30]：reason 收集触发要与 approvalDecisionFromAction 的 deny 判定一致（关键词集 OR requiresReason），
     // 而不是只看 requiresReason 标志——否则一个 requiresReason=false 的 deny 会跳过 reason 提示，到 /respond 时
     // 因缺 reason 在客户端抛错。凡 deny 一律先走 reason 提示。
@@ -1511,6 +1585,9 @@ export async function bootDesktopPetSurface(
     if (petActionBusy) {
       return;
     }
+    // 走到这里=本次点击决定真提交——残留的中止武装态作废（点了别的动作就别留着一个看不见的 5 秒窗，
+    // 否则窗口内再点中止会跳过武装直接执行）。
+    armedAbortRunId = undefined;
     petActionBusy = true;
     // findings[#low]：同上——捕获 await 前的卡片做兜底，避免 await 期间 currentCard 被改写。
     const fallbackCard = currentCard;
@@ -1532,6 +1609,40 @@ export async function bootDesktopPetSurface(
       setCard(cardFromDesktopPetActionError(error, locale), actionMessage(error, locale));
     } finally {
       petActionBusy = false;
+      // CHAT-09：提交落定后补一次被自由文本框挡下的静默刷新（无脏标记则空操作）。
+      flushSkippedAttentionRefresh();
+    }
+  });
+
+  // CHAT-10：自由文本框 Enter 发送（Shift+Enter 换行），与主流聊天习惯一致。isComposing 守卫：
+  // 中文输入法选词上屏的 Enter 绝不触发发送。复用既有点击管线（找到卡片的主提交动作转发一次 click），
+  // 不复制提交逻辑。找不到可提交动作（卡没有输入区）时不拦默认行为（保持换行）。
+  root.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.shiftKey || event.isComposing) {
+      return;
+    }
+    const textarea = event.target instanceof Element ? event.target.closest("[data-pet-free-text]") : null;
+    if (!textarea) {
+      return;
+    }
+    const submit = root.querySelector<HTMLAnchorElement>(
+      '[data-cuu-action-id="submit_option"], [data-cuu-action-id="start_agent_from_cuu"]'
+    );
+    if (!submit) {
+      return;
+    }
+    event.preventDefault();
+    submit.click();
+  });
+
+  // CHAT-09：自由文本框被清空（用户删掉未提交内容）时，补一次此前被挡下的静默刷新——
+  // 否则跳过之后若再无事件到达，卡片会永久停在旧帧。
+  root.addEventListener("input", (event) => {
+    const textarea = event.target instanceof Element
+      ? event.target.closest<HTMLTextAreaElement>("[data-pet-free-text]")
+      : null;
+    if (textarea && !textarea.value.trim()) {
+      flushSkippedAttentionRefresh();
     }
   });
 
@@ -1565,11 +1676,13 @@ export async function bootDesktopPetSurface(
     if (desktopTrayActionId(event.payload) !== "restore-pet-interaction") {
       return;
     }
+    // DSK-02：只复位穿透/悬停隐藏——透明度从当前偏好原样带回（Rust 侧特意保留用户自调的透明度，
+    // 之前这里硬重置成 100 并落盘，把用户的设置冲掉了）。
     updatePetPreferences(
       {
         pet_pass_through: false,
         pet_hide_on_hover: false,
-        pet_opacity_percent: 100
+        pet_opacity_percent: controller.snapshot().preferences.pet_opacity_percent
       },
       desktopPetSettingsMenuCopy[locale].restoredFromTray,
       { source: "tray" }
@@ -1598,6 +1711,42 @@ export async function bootDesktopPetSurface(
     loggedOutUnlisten = maybeLoggedOutUnlisten;
   }
 
+  // MRG-20：OS 通知到达不再抢焦点/强制导航。壳层广播的 system-notification 计划先按路由暂存；
+  // 用户在桌宠 Cuu 卡上点出同一目标路由的动作时，才把计划回传原生 focus_system_notification
+  // → handle_deep_link_plan 落地（审批通知落审批面板、消息通知落对应会话，含 workbench 按需建窗）。
+  const pendingSystemNotificationPlans = new Map<string, DesktopShellSystemNotificationPlan>();
+  const rememberSystemNotificationPlan = (plan: DesktopShellSystemNotificationPlan) => {
+    const key = desktopSystemNotificationPlanRouteKey(plan.route);
+    if (!key) {
+      return;
+    }
+    // 重插到最新位置；上限防御——通知只进不出（用户不点）时不至于无限攒，超出丢最旧的一条。
+    pendingSystemNotificationPlans.delete(key);
+    pendingSystemNotificationPlans.set(key, plan);
+    while (pendingSystemNotificationPlans.size > 20) {
+      const oldest = pendingSystemNotificationPlans.keys().next().value;
+      if (oldest === undefined) {
+        break;
+      }
+      pendingSystemNotificationPlans.delete(oldest);
+    }
+  };
+  // 用户点了卡片动作 → 取出同路由的通知计划（一次性消费）；返回 undefined 时由调用方走既有导航兜底。
+  const takeSystemNotificationPlanForRoute = (route: string | null | undefined) => {
+    const key = desktopSystemNotificationPlanRouteKey(route);
+    if (!key) {
+      return undefined;
+    }
+    const plan = pendingSystemNotificationPlans.get(key);
+    if (plan) {
+      pendingSystemNotificationPlans.delete(key);
+    }
+    return plan;
+  };
+  const focusSystemNotificationPlan = (plan: DesktopShellSystemNotificationPlan) => {
+    void Promise.resolve(petWindowBridge?.focusSystemNotification?.(plan)).catch(() => undefined);
+  };
+
   const runtime = await bindDesktopShellCuuRuntime({
     listen: shellListen,
     controller,
@@ -1613,12 +1762,11 @@ export async function bootDesktopPetSurface(
       handleDesktopPetRuntimeDecision(decision, setCard);
     },
     onSystemNotification(plan) {
-      // P2-07/R19-12：OS 通知点击深链的 webview 半边（此前生产绑定漏传 onSystemNotification，壳层算好的
-      // route/window_control 落到 no-op）。桌面 tauri-plugin-notification 无点击回调，故点击消费由 webview 触发：
-      // 把壳层广播的 system-notification 计划经命令桥回传给原生 focus_system_notification → handle_deep_link_plan
-      // （REL-6 统一深链落地路径，含 workbench 按需建窗），审批通知落审批面板、消息通知落对应会话。失败不致命——
-      // 通知只是提醒，桥不可用（非 Tauri/降级）时静默跳过，桌宠仍会把同一事件渲成可点击的 Cuu 卡兜底。
-      void Promise.resolve(petWindowBridge?.focusSystemNotification?.(plan)).catch(() => undefined);
+      // MRG-20：通知到达只按路由暂存计划，不再立刻 focus_system_notification 抢焦点/强制导航——
+      // 同一事件的 Cuu 卡已由 push-event 渲出，等用户点击卡片上指向同一路由的动作时再落地
+      //（见 click 处理里 workbench 深链 / 主窗路由两个分支）。桥不可用时计划留着也无害，
+      // 届时点击走既有的 openWorkbenchRouteFromPet / openMainRouteFromPet 兜底。
+      rememberSystemNotificationPlan(plan);
     },
     retryingDelayMs: desktopPetRuntimeRetryingDelayMs,
     get locale() {
