@@ -74,7 +74,8 @@ const notificationCopy = {
   "zh-CN": {
     open: "打开",
     markRead: "标为已读",
-    markAllRead: "全部已读",
+    // markAllRead 后端故意跳过「需要你决定」桶，标签必须诚实说明不含待决策项。
+    markAllRead: "全部已读（不含待决策）",
     dismiss: "忽略",
     complete: "完成",
     meetingPendingTitle: "会议建议等待确认",
@@ -90,7 +91,8 @@ const notificationCopy = {
   "en-US": {
     open: "Open",
     markRead: "Mark as read",
-    markAllRead: "Mark all as read",
+    // markAllRead skips the "needs your decision" bucket on the backend; the label must say so.
+    markAllRead: "Mark all read (skips decisions)",
     dismiss: "Dismiss",
     complete: "Complete",
     meetingPendingTitle: "Meeting insight needs review",
@@ -700,6 +702,8 @@ export function createScheduleNotifyPageService(
         const key = dateKey(addDays(scope.rangeStart, index));
         return {
           date: key,
+          // UI 高亮「今天」用（与 summary.today_count 同一 clock 口径）。
+          is_today: key === dateKey(clock),
           blocks: blocks.filter((block) => dateKey(new Date(block.ends_at)) === key)
         };
       });

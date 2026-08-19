@@ -138,6 +138,39 @@ async function auditSecurityEvent(
   }
 }
 
+// R11 Batch 0（委派全链路回归）：昵称模式 identify / desktop-bootstrap 从不建 workspace membership，
+// 而成员目录 GET /api/users 与审批委派都已收紧为「必须有 active membership」→ 默认昵称模式下委派选人器永远 403。
+// 此处在身份解析成功后确保默认工作区存在 active membership，与密码注册路径的 memberships.create 对齐。
+// 幂等：先查后建；并发重复 create 撞 (ws,user)/default 的 partial unique（23505）则忽略。deps.memberships
+// 缺席（假仓库/老运行时）时静默跳过——与注册路径的 `if (memberships)` 同口径。
+async function ensureDefaultWorkspaceMembership(
+  deps: AuthDependencies,
+  user: { id: string; isAdmin: boolean }
+): Promise<void> {
+  const memberships = deps.memberships;
+  if (!memberships) {
+    return; // seam 可选：假仓库/老运行时缺席时跳过，不报错。
+  }
+  const workspaceId = getAuthSettings(deps).auth.defaultWorkspaceId;
+  const existing = await memberships.findActiveForUserWorkspace(user.id, workspaceId);
+  if (existing) {
+    return; // 已有 active 成员行 → 幂等返回。
+  }
+  try {
+    await memberships.create({
+      workspaceId,
+      userId: user.id,
+      role: user.isAdmin ? "owner" : "member",
+      defaultWorkspace: true
+    });
+  } catch (error) {
+    // 并发下另一个请求已抢先建好，撞唯一约束（23505）→ 幂等忽略；其余错误照常冒泡。
+    if (!isUniqueViolation(error)) {
+      throw error;
+    }
+  }
+}
+
 async function bestEffortAuthCleanup(action: string, cleanup: () => Promise<void>): Promise<void> {
   try {
     await cleanup();
@@ -215,6 +248,9 @@ export function createAuthRoutes(
       adminClaimThrottle.recordSuccess(throttleKey);
     }
 
+    // 委派全链路回归修复：确保（新老用户）都有默认工作区 active membership，否则成员目录/委派恒 403。
+    await ensureDefaultWorkspaceMembership(deps, user);
+
     await issueUserCookie(c, user, getAuthSettings(deps));
     await deps.touchUser?.(user.id);
 
@@ -257,6 +293,8 @@ export function createAuthRoutes(
       clientTokenHash: hashClientToken(token),
       lastSeenAt: (deps.now ?? (() => new Date()))()
     });
+    // 桌面首启同样需默认工作区 active membership，否则该设备用户委派恒 403（与 /identify 同 helper 复用）。
+    await ensureDefaultWorkspaceMembership(deps, user);
     return c.json(
       {
         identity: toIdentityResponse(user, created),

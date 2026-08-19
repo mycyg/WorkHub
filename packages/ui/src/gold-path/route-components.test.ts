@@ -475,8 +475,7 @@ function settingsVm(locale: "zh-CN" | "en-US" = "zh-CN"): SettingsPageVM {
       default_model: "deepseek-v4-flash",
       provider_count: 1,
       api_key_configured: true,
-      base_url_configured: true,
-      secret_safe: true
+      base_url_configured: true
     },
     budgets: {
       run_tokens: 120000,
@@ -2330,7 +2329,6 @@ test("R4.11 Settings route component uses a typed Settings Page VM without leaki
   assert.equal(settings.html.includes('data-r4-settings-preference-locale="zh-CN"'), true);
   assert.equal(settings.html.includes('data-r4-settings-preference-source="server"'), true);
   assert.equal(settings.html.includes('data-r4-settings-preference-synced="true"'), true);
-  assert.equal(settings.html.includes('data-r4-settings-secret-safe="true"'), true);
   assert.equal(settings.html.includes('data-r4-settings-pet-model-in-web="false"'), true);
   assert.equal(settings.html.includes('data-r4-settings-restore-requires-desktop="true"'), true);
   assert.equal(settings.html.includes('data-r4-settings-web-local-actions="false"'), true);
@@ -2428,7 +2426,6 @@ test("R4.17 Home and Settings route components expose React-compatible props wit
   assert.equal(settings.reactComponent.propsSource, "typed-page-vm");
   assert.equal(settings.reactComponent.propsFingerprint, expectedSettings.propsFingerprint);
   assert.deepEqual(settings.reactComponent.primaryHrefs, settings.primaryHrefs);
-  assert.equal(settings.reactComponent.props.secretSafe, true);
   assert.equal(settings.reactComponent.props.petModelSettingsInWeb, false);
   assert.equal(settings.reactComponent.props.restoreRequiresDesktop, true);
   assert.equal(settings.reactComponent.props.webLocalActionsEnabled, false);

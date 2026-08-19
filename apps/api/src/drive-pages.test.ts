@@ -380,6 +380,66 @@ test("drive page service scopes the default-project lookup to the actor's worksp
   assert.equal(seenWorkspaceId, actor().workspaceId);
 });
 
+// A3：搜索无命中 vs 真空盘——前端需靠 search_query + no_search_match 区分，不再谎称空盘。
+function emptyProjectRows(): DrivePageRows {
+  return {
+    project: projectRow(),
+    items: [],
+    versions: [],
+    acceptedDeliverables: [],
+    comments: [],
+    deletedItems: [],
+    commentProposals: [],
+    operations: []
+  };
+}
+
+function emptyProjectRepo(): DriveRepository {
+  return {
+    async listRecentFilesByProject() { return []; },
+    async countFilesByProject() { return 0; },
+    async readPage() { return emptyProjectRows(); },
+    async uploadFile() { throw new Error("not needed"); },
+    async softDeleteItem() { throw new Error("not needed"); },
+    async restoreDeletedItem() { throw new Error("not needed"); },
+    async createComment(): Promise<never> { throw new Error("not needed"); },
+    async commentToDraft() { throw new Error("not needed"); },
+    async recordDraftProposal() { throw new Error("not needed"); }
+  };
+}
+
+test("drive page marks no_search_match and echoes the query when a search returns nothing", async () => {
+  const service = createDrivePageService({ repo: emptyProjectRepo(), now: () => now });
+  const page = await service.page({ actor: actor(), locale: "en-US", projectId, nameQuery: "budget.xlsx" });
+  assert.equal(page.empty_state, "no_search_match");
+  assert.equal(page.search_query, "budget.xlsx");
+});
+
+test("drive page keeps no_drive_items and omits search_query for a truly empty project", async () => {
+  const service = createDrivePageService({ repo: emptyProjectRepo(), now: () => now });
+  const page = await service.page({ actor: actor(), locale: "en-US", projectId });
+  assert.equal(page.empty_state, "no_drive_items");
+  assert.equal(page.search_query, undefined);
+});
+
+test("drive page echoes the search query even when items match (no empty_state)", async () => {
+  const repo: DriveRepository = {
+    async listRecentFilesByProject() { return []; },
+    async countFilesByProject() { return 0; },
+    async readPage() { return rows(); },
+    async uploadFile() { throw new Error("not needed"); },
+    async softDeleteItem() { throw new Error("not needed"); },
+    async restoreDeletedItem() { throw new Error("not needed"); },
+    async createComment(): Promise<never> { throw new Error("not needed"); },
+    async commentToDraft() { throw new Error("not needed"); },
+    async recordDraftProposal() { throw new Error("not needed"); }
+  };
+  const service = createDrivePageService({ repo, now: () => now });
+  const page = await service.page({ actor: actor(), locale: "en-US", projectId, nameQuery: "复盘" });
+  assert.equal(page.search_query, "复盘");
+  assert.equal(page.empty_state, undefined);
+});
+
 test("drive page service builds project files, version history, accepted deliverable links, and comment draft state", async () => {
   let seenProjectId: string | undefined;
   const repo: DriveRepository = {

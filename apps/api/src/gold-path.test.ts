@@ -667,7 +667,11 @@ test("settings page carries server locale preference sync state without secrets"
   const app = withErrors(new Hono<AuthEnv>());
   app.route("/api/pages", createPageRoutes({
     auth: authDeps(runtimeSettings, [user({ preferredLocale: "en-US" })]),
-    queue: emptyQueue()
+    queue: emptyQueue(),
+    readiness: async () => ({
+      ready: true,
+      checks: { database: { ok: true }, broker: { ok: true } }
+    })
   }));
 
   const response = await app.request("/api/pages/settings?locale=zh-CN", {
@@ -680,7 +684,6 @@ test("settings page carries server locale preference sync state without secrets"
     data: {
       locale: string;
       runtime: { runtime_status: string };
-      llm_runtime: { secret_safe: boolean };
       language: {
         active_locale: string;
         preference_locale: string;
@@ -698,7 +701,6 @@ test("settings page carries server locale preference sync state without secrets"
   assert.equal(body.meta.locale, "zh-CN");
   assert.equal(body.data.locale, "zh-CN");
   assert.equal(body.data.runtime.runtime_status, "ready");
-  assert.equal(body.data.llm_runtime.secret_safe, true);
   assert.equal(body.data.language.active_locale, "zh-CN");
   assert.equal(body.data.language.preference_locale, "en-US");
   assert.equal(body.data.language.preference_source, "server");

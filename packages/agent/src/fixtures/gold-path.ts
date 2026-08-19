@@ -765,7 +765,7 @@ const approvalAttention: AttentionItem = {
     },
     {
       id: "approve",
-      label: "同意",
+      label: "通过",
       style: "secondary",
       method: "POST",
       href: `/api/approvals/${p05GoldPathIds.approval}/respond`

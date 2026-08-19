@@ -429,8 +429,7 @@ function settingsVm(locale: "zh-CN" | "en-US" = "zh-CN"): SettingsPageVM {
       default_model: "deepseek-v4-flash",
       provider_count: 1,
       api_key_configured: true,
-      base_url_configured: true,
-      secret_safe: true
+      base_url_configured: true
     },
     budgets: {
       run_tokens: 120000,
@@ -1865,7 +1864,6 @@ test("R4.15 settings route keeps locale preference and device boundary markers a
   assert.equal(result.html.includes('data-r4-settings-active-locale="en-US"'), true);
   assert.equal(result.html.includes('data-r4-settings-preference-locale="en-US"'), true);
   assert.equal(result.html.includes('data-r4-settings-preference-synced="true"'), true);
-  assert.equal(result.html.includes('data-r4-settings-secret-safe="true"'), true);
   assert.equal(result.html.includes('data-r4-settings-restore-requires-desktop="true"'), true);
   assert.equal(result.html.includes('data-r4-settings-web-local-actions="false"'), true);
   // M23：设置页不再把内部端点 /api/auth/preferences、本地存储键、租约 ms 等运维管道暴露给普通用户。
@@ -1921,7 +1919,7 @@ test("R9 approvals route renders the real total and a working next-page entry fo
   assert.equal(result.status, "ready");
   assert.deepEqual(calls, ["approvals:zh-CN:offset=100"]);
   assert.equal(result.html.includes('data-r4-approval-pending="237"'), true);
-  assert.equal(result.html.includes('<span class="wh-r4-route-count">237</span>'), true);
+  assert.equal(result.html.includes('<span class="wh-r4-route-count">237 待处理</span>'), true);
   assert.equal(result.html.includes('data-r4-approval-page-offset="100"'), true);
   assert.equal(result.html.includes('data-r4-approval-next-page-href="/approvals?offset=200"'), true);
   assert.equal(result.html.includes('href="/approvals?offset=200"'), true);

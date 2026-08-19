@@ -193,6 +193,9 @@ export type GoldPathCopyKey =
   | "cost.estimatedTitle"
   | "cost.statusTitle"
   | "cost.statusFallback"
+  | "cost.emptyRisks"
+  | "cost.emptyBudgets"
+  | "cost.emptyModels"
   | "settings.kicker"
   | "settings.title"
   | "settings.summary"
@@ -386,6 +389,9 @@ const goldPathCopy = {
     "cost.estimatedTitle": "估算成本",
     "cost.statusTitle": "预算状态",
     "cost.statusFallback": "ok",
+    "cost.emptyRisks": "暂无预算风险",
+    "cost.emptyBudgets": "还没有预算记录",
+    "cost.emptyModels": "还没有模型用量",
     "settings.kicker": "设置",
     "settings.title": "应用设置",
     "settings.summary": "在这里管理运行、语言和桌面客户端连接；预算与成本在「成本」页查看。桌宠形象在独立的桌宠窗口里设置。",
@@ -578,6 +584,9 @@ const goldPathCopy = {
     "cost.estimatedTitle": "Estimated cost",
     "cost.statusTitle": "Budget status",
     "cost.statusFallback": "ok",
+    "cost.emptyRisks": "No budget risks",
+    "cost.emptyBudgets": "No budgets yet",
+    "cost.emptyModels": "No model usage yet",
     "settings.kicker": "Settings",
     "settings.title": "App settings",
     "settings.summary": "Manage app runtime, language, and desktop connectivity here; budgets and cost live on the Cost page. The pet look is configured and validated only in the independent pet window.",

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>WorkHub · 液态玻璃 Web 换肤签字稿（S1 外壳阶段）</title>
+<style>
+  :root{color-scheme:light}
+  body{margin:0;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;background:radial-gradient(1100px 640px at 6% -8%,rgba(79,70,229,.10),transparent 55%),radial-gradient(900px 560px at 102% -2%,rgba(21,160,90,.08),transparent 52%),#F3F5F9;color:#1A1D26;padding:40px 24px}
+  main{max-width:1180px;margin:0 auto}
+  h1{font-size:28px;margin:0 0 6px}
+  .sub{color:#646E7E;margin:0 0 28px;line-height:1.6}
+  .note{background:rgba(255,255,255,.66);border:1px solid rgba(255,255,255,.75);border-radius:16px;padding:16px 20px;margin-bottom:28px;line-height:1.7;box-shadow:0 8px 26px rgba(37,51,79,.05)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(480px,1fr));gap:22px}
+  figure{margin:0;background:rgba(255,255,255,.66);border:1px solid rgba(255,255,255,.75);border-radius:18px;padding:14px;box-shadow:0 12px 34px rgba(37,51,79,.07)}
+  figure img{width:100%;border-radius:10px;border:1px solid #E6E7EB;display:block}
+  figcaption{padding:10px 4px 2px;font-size:13px;color:#646E7E;line-height:1.5}
+  figcaption strong{color:#1A1D26}
+  code{background:#EEF0FE;border-radius:6px;padding:1px 6px;font-size:12px}
+</style>
+</head>
+<body>
+<main>
+  <h1>WorkHub · 液态玻璃 Web 换肤签字稿</h1>
+  <p class="sub">R10-S1 + S1.5（logo 与导航重构）· 2026-07-10 · 分支 codex/r9-stage-b-rework（commit ba4bf1b22）· 82 步实路由 smoke 全绿后截图</p>
+  <div class="note">
+    <strong>S1 外壳：</strong>渐变底 + 顶栏/侧栏真毛玻璃 + 半透明卡片 + 大圆角分级（18/16/12px）+ 对比度 ≥4.5:1 + 降透明度自动回实底。<br />
+    <strong>S1.5（你上轮提的两点）：</strong>① logo 从三色渐变方块换成靛紫玻璃 squircle（高光 + 内嵌磨砂玻璃片）；② 左侧 14 个平铺入口重构为四组——<strong>工作</strong>（总览/项目/提需求/审批）、<strong>项目资产</strong>（网盘/会议/知识）、<strong>团队</strong>（通知/日程/项目健康）、<strong>管理</strong>（成本/军团/技能/设置，仅管理员可见——普通成员导航只剩 10 项）；移动端「更多」按组披露，工作组常驻。<br />
+    <strong>下一步（待确认或直接开工）：</strong>S2 把 18 条路由内容组件全面收进玻璃语言；S3 提议审阅 / Replay 两个 legacy 页迁入；批 0c Intake 大件（项目选择器 + 防旧文件带偏）。
+  </div>
+  <div class="grid">
+    <figure><img src="01-home-zh-desktop.png" alt="首页" /><figcaption><strong>总览首页（中文）</strong> · 渐变底 + 玻璃侧栏 + 圆角决策卡</figcaption></figure>
+    <figure><img src="02-approvals-click-zh-desktop.png" alt="审批中心" /><figcaption><strong>审批中心</strong> · 三栏玻璃布局；同批修复：变更卡带真「文本预览」、合规检查完整展示</figcaption></figure>
+    <figure><img src="03-workitem-click-zh-desktop-route-component.png" alt="工作项" /><figcaption><strong>工作项详情</strong> · 「AI 置信 87%」已改人话分档（很有把握 / 比较有把握 / 把握不大）</figcaption></figure>
+    <figure><img src="01a-intake-zh-desktop-route-component.png" alt="提需求" /><figcaption><strong>提需求</strong></figcaption></figure>
+    <figure><img src="15ab-projects-en-desktop-route-component.png" alt="项目列表" /><figcaption><strong>项目列表（EN）</strong></figcaption></figure>
+    <figure><img src="15b-drive-en-desktop-route-component.png" alt="网盘" /><figcaption><strong>项目网盘（EN）</strong></figcaption></figure>
+    <figure><img src="06a-proposal-advanced-review-en-desktop.png" alt="提议审阅" /><figcaption><strong>变更申请审阅（EN）</strong> · 冲突工作台；此页 legacy 样式将在 S3 全面并入玻璃语言</figcaption></figure>
+    <figure><img src="15k-notifications-en-desktop.png" alt="通知" /><figcaption><strong>通知中心（EN）</strong> · 同批修复：静音开关水合前锁定，读取失败不再可能覆盖已有设置</figcaption></figure>
+    <figure><img src="13-settings-en-desktop-route-component.png" alt="设置" /><figcaption><strong>设置（EN）</strong></figcaption></figure>
+    <figure><img src="12-cost-en-mobile-route-component.png" alt="成本移动端" /><figcaption><strong>成本页 · 390px 移动宽度</strong> · 移动断点玻璃同样生效且无横滚</figcaption></figure>
+    <figure><img src="15j-meetings-en-mobile-no-overflow.png" alt="会议移动端" /><figcaption><strong>会议页 · 390px 移动宽度</strong></figcaption></figure>
+  </div>
+</main>
+</body>
+</html>

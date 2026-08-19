@@ -313,7 +313,7 @@ export function renderAgentRunReplay(
     ? `<a class="wh-replay-back" href="/workitems/${encodeURIComponent(run.work_item_id)}" data-replay-back-work-item="${escapeHtml(run.work_item_id)}">${escapeHtml(copy(locale, "← 返回任务", "← Back to work item"))}</a>`
     : "";
   const main = `<section class="wh-replay-main">
-    <span class="wh-kicker">${escapeHtml(copy(locale, "Replay Work", "Replay Work"))}</span>
+    <span class="wh-kicker">${escapeHtml(copy(locale, "执行回放", "Replay Work"))}</span>
     ${backToWorkItem}
     <h1 class="wh-title">${escapeHtml(copy(locale, "查看 AI 怎么做的", "See how AI did it"))}</h1>
     <p class="wh-subtle">${escapeHtml(run.handoff_md ?? run.outcome_reason ?? copy(locale, "关键步骤、证据、快照和成本都在这里。", "Key steps, evidence, snapshots, and cost are shown here."))}</p>

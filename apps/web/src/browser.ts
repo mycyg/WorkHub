@@ -1778,6 +1778,17 @@ function bindGoldPathNavigation(
         }
         return;
       }
+      if (action.method === "DELETE") {
+        try {
+          const result = await client.request<unknown>(href, { method: "DELETE" });
+          // 删除成功后不靠本地 DOM 猜状态：重新加载当前路由，让策略列表等派生视图以服务端为准。
+          await renderCurrentRoute(client, locale);
+          showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
       showRouteNotice(shellRoot, actionPendingNotice(locale, actionId));
       } finally {
         endBusyAction(busyKey);

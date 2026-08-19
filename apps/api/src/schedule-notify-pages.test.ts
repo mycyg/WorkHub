@@ -883,6 +883,29 @@ test("calendar page does not show merged work items as active due blocks", async
   assert.equal(page.empty_state, "no_schedule_blocks");
 });
 
+// A4：日历日卡带 is_today，供 UI 高亮「今天」。now = 2026-06-11T10:00Z → dateKey = 2026-06-11。
+test("calendar days flag today using the same clock as the summary", async () => {
+  const service = createScheduleNotifyPageService({
+    notifications: new MemoryNotifications(),
+    scheduleNotify: new MemoryScheduleNotify(),
+    audit: new MemoryAudit(),
+    now: () => now
+  });
+
+  // day 视图：唯一一天即今天。
+  const day = await service.calendarPage({ actor: actor(), locale: "zh-CN", date: "2026-06-11", view: "day" });
+  assert.equal(day.days.length, 1);
+  assert.equal(day.days[0]?.date, "2026-06-11");
+  assert.equal(day.days[0]?.is_today, true);
+
+  // week 视图：恰好一天标记为今天，且其 date === 今天；其余日期不误标。
+  const week = await service.calendarPage({ actor: actor(), locale: "zh-CN", date: "2026-06-11", view: "week" });
+  const flagged = week.days.filter((d) => d.is_today);
+  assert.equal(flagged.length, 1);
+  assert.equal(flagged[0]?.date, "2026-06-11");
+  assert.equal(week.days.filter((d) => d.date !== "2026-06-11").every((d) => d.is_today === false), true);
+});
+
 test("schedule notify page service builds calendar blocks from due work and meeting followups", async () => {
   const service = createScheduleNotifyPageService({
     notifications: new MemoryNotifications(),

@@ -78,6 +78,7 @@ export const routeStateCss = [
   ".wh-route-state-pill{display:inline-flex;align-items:center;max-width:100%;border-radius:999px;background:#f5f8fc;color:#66728c;font-size:11px;font-weight:800;padding:5px 8px;overflow-wrap:anywhere}",
   ".wh-route-state-card h3{margin:0;font-size:16px;line-height:1.35;overflow-wrap:anywhere}.wh-route-state-card p{margin:0;color:#66728c;font-size:13px;line-height:1.5;overflow-wrap:anywhere}",
   ".wh-route-state-action{display:inline-flex;width:max-content;max-width:100%;align-items:center;justify-content:center;border:1px solid #dfe5f1;border-radius:8px;background:#fff;color:#172033;text-decoration:none;font-weight:800;font-size:12px;padding:8px 10px;overflow-wrap:anywhere}",
+  ".wh-route-state-trace{margin:0;color:#93a0b8;font-size:11px;font-weight:600;overflow-wrap:anywhere}",
   "@media (max-width:980px){.wh-route-state-row{grid-template-columns:1fr}.wh-route-state-route{position:sticky;top:0;z-index:1}}"
 ].join("");
 
@@ -204,16 +205,20 @@ export function renderRouteStateCard(input: RouteStateCardInput) {
   const route = routeInfo[locale][input.routeKey];
   const copy = stateCopy[locale][input.state];
   const actionHref = input.actionHref ?? (input.state === "empty" || input.state === "notFound" ? "/" : input.route ?? route.route);
-  const meta = input.state === "error"
-    ? input.traceId ?? "trace_id=r4-web-route-state"
-    : input.state === "forbidden"
-      ? input.ownerLabel ?? (locale === "zh-CN" ? "需要负责人授权" : "Needs owner approval")
-      : input.route ?? route.route;
+  // L（错误态诚实层级）：错误卡顶部 pill 曾直接渲工程 trace 串(status=/code=)，用户读到一串黑话。
+  // 顶部 pill 改渲路由(与其它态一致)，把 trace 降到正文之后的弱化 footer——工程师仍可取证，用户不被黑话劝退。
+  const meta = input.state === "forbidden"
+    ? input.ownerLabel ?? (locale === "zh-CN" ? "需要负责人授权" : "Needs owner approval")
+    : input.route ?? route.route;
+  const errorFooter = input.state === "error"
+    ? `<p class="wh-route-state-trace" data-route-state-trace="true">${escapeHtml(input.traceId ?? "trace_id=r4-web-route-state")}</p>`
+    : "";
   return `<article class="wh-route-state-card" data-route-key="${input.routeKey}" data-route-state="${input.state}" data-locale="${locale}">
     <span class="wh-route-state-pill">${escapeHtml(meta)}</span>
     <h3>${escapeHtml(input.titleOverride ?? copy.title)}</h3>
     <p>${escapeHtml(input.bodyOverride ?? copy.body)}</p>
     <a class="wh-route-state-action" href="${escapeHtml(safeHref(actionHref))}">${escapeHtml(input.actionLabel ?? copy.action)}</a>
+    ${errorFooter}
   </article>`;
 }
 

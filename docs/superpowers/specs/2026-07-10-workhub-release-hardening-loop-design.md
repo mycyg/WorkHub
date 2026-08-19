@@ -95,20 +95,29 @@ The hardening work introduces or consolidates the following bounded contracts. E
 - Exclude the requester, current assignee, inactive membership, and ineligible roles when required by the action.
 - Return a non-enumerating error for forged cross-workspace targets.
 - Complete authorization before mutation, notification, SSE, or success audit.
+- Identity provisioning never expands existing workspace access: an active existing membership may be promoted as default, but configured-default insertion is limited to a newly created user or a proven legacy user with zero membership history; soft-deleted history is never resurrected.
 
 **Consumers:** Approval routes/services, escalation services, Web delegate picker, future Desktop delegate picker.
 
 ### 4.2 Identity generation and stream lifecycle
 
-**Owner:** Tauri shell token state and SSE worker.
+**Owner:** Crash-safe API bootstrap attempts, canonical Desktop storage, the staged Tauri identity coordinator, and phase-specific Pet scope handling.
 
 **Responsibilities:**
 
-- Every token change increments an identity generation.
-- Clearing a token broadcasts the change and cancels the active response immediately.
-- Events from an earlier generation are discarded.
-- Signed-out and rebind states are explicit current Spotlight states.
-- Server logout failure is not represented as completed logout.
+- Use one production identity authority. Static shell/env token sources fail closed; the older deterministic Cuu token remains confined to explicit smoke tests and is forbidden in the native release gate.
+- Desktop bootstrap persists a high-entropy attempt capability before mutation. The API stores pending credentials in a separate attempts table, never `client_devices`; pending tokens cannot authenticate. Only after local `pending_activation` persistence may the client activate the reserved device. Probe/cancel is idempotent, survives response loss, serializes with activation, and can revoke a linked active device.
+- Canonical Desktop storage is one strict versioned record. Ordinary clients read only `bound`; Pet alone may read `binding` during an acknowledged transition. Pending/interrupted issued states are recovery-only and disable another bootstrap until cleanup is confirmed.
+- Bind each native snapshot to an actor, private token, and a durably reserved cross-process generation. The counter is atomically written and fsynced before publication; corruption/write failure blocks startup or transition. Tokens, token fragments, and bootstrap secrets are never logged or emitted to WebViews.
+- A main-owned monotonic transition lease has explicit Preparing, Committing, Recovering, Degraded, and Stable phases. Rust prepare blocks private effects and waits for all registered workers—including notification lifecycle—to quiesce. Pet prepare clears old actor work and starts zero target work. Rust mark installs the target while still blocked; Pet commit installs the target scope; Rust finalize alone releases workers. Canonical `bound` is written only after finalize.
+- A failed worker barrier returns a typed clear-recovery handle. Any active/degraded failure keeps a clear lease until Pet clear prepare+commit or confirmed surface destruction and recovery finalize. Main-WebView reload and lost IPC responses recover by exact non-secret transition id/phase/snapshot, never by guessing.
+- Restore records contain only actor/generation/entity hints, never private cards. Every valid restore is re-fetched under the current token before render; actor mismatch, future/corrupt generation, unauthorized/not-found, and legacy state are deleted fail-closed.
+- Rust private side effects use reservations: transition marks instability, releases its mutex, then drains already-reserved synchronous effects. Native callbacks are never invoked under identity or notification registry locks.
+- Identity-sensitive macOS notifications use a main-thread-only native actor/delegate and pure `Send + Sync` registry. Opaque ids include a process nonce, generation, and sequence. Submission is callback-reentrant-safe, activation consumes the registry record before exactly-once Rust routing, late old delivery is removed, and dedupe commits only after confirmed submission. TypeScript activation is telemetry-only.
+- API streams require active device/session/user, active membership, and topic authorization before connected, heartbeat, and every event write. A serial authorization pass has a fail-closed two-second boundary and query-count/latency observability. Credential/membership 401/403 is terminal in Rust until identity generation changes.
+- Desktop logout revokes only the presented client device, not the user's browser cookie/session. Failed mutation is probed; UI claims the old identity remains active only after an exact same-actor result, otherwise it reports unknown state.
+- Signed-out, rebind, identity diagnostic, and cleanup-only recovery are explicit current Spotlight states. Recovery-only state cannot submit a second bootstrap.
+- Native release evidence uses a fixed non-production bundle/TCC identity, isolated WKWebView data-store identifier and filesystem paths, no production deep-link schemes, one proxy API base shared by WebView/Rust, a real Pet run stream, all-artifact secret scanning, and a clean committed implementation SHA. OS delivery/removal may be physical evidence; identifier replay is labelled non-physical and does not close the separate click gate.
 
 ### 4.3 Project context
 
@@ -176,7 +185,12 @@ Scope:
 Exit gate:
 
 - Forged cross-workspace delegate requests produce no mutation, notification, SSE, or success audit.
-- Logout terminates the active identity stream before the UI reports signed out.
+- Existing cross-workspace or soft-deleted membership history is never granted/resurrected by identity bootstrap; truly new/zero-history users alone receive configured-default membership.
+- Pending desktop credentials cannot authenticate. Both A and B show durable attempt and pending-activation evidence before activation; response loss/cancel races leave no active orphan device.
+- Logout terminates the Rust `/me` stream and every Pet actor-scoped operation, removes delivered A notifications and restore state, and completes Rust worker barrier, Pet prepare, Rust mark, Pet commit, and Rust finalize before reporting signed out.
+- A -> logout -> restart-signed-out -> B rebind preserves an increasing durable generation and accepts only B-generation push, notification delivery/guard activation, direct-stream, action/attention/restore data; delayed in-process A work is discarded and the old native process is proven terminated.
+- Already-open API streams close after device/session/membership revocation and do not write the initial connected frame, heartbeat, or bus event after authorization becomes invalid.
+- A current isolated packaged macOS gate uses the real API, Tauri process, Rust worker, main/Pet WebViews, real run topic, and owned notification backend to prove A teardown, signed-out restart, B-only state, delivered-notification removal, and stale activation-guard rejection without touching production bundle/profile/config/deep-link state.
 - All covering tests show an observed red-green cycle.
 
 ### Batch 1: Project, object, and destructive-action correctness

@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WorkHub 系统图 · 数据流转 + 组件架构(当前 as-is)</title>
+<style>
+  :root{
+    --ink:#f3f8fd;--ink-soft:rgba(238,246,253,.68);--ink-faint:rgba(238,246,253,.44);
+    --glass:rgba(255,255,255,.07);--glass-2:rgba(255,255,255,.045);
+    --stroke:rgba(255,255,255,.14);--stroke-soft:rgba(255,255,255,.09);
+    --client:#7cc7ff;--api:#9b8cff;--engine:#52e0a3;--worker:#f6c453;--data:#ff9f7d;--ext:#c7b3ff;
+    --warn:#ff7d92;
+    --shadow:0 24px 60px -28px rgba(0,0,0,.72);
+    --serif:"Georgia","Times New Roman","Songti SC","Noto Serif CJK SC",serif;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    --mono:ui-monospace,Menlo,"SF Mono",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:var(--sans);color:var(--ink);min-height:100vh;padding:0 0 90px;-webkit-font-smoothing:antialiased;
+    background:radial-gradient(1300px 640px at 82% -10%,rgba(130,190,250,.20),transparent 60%),
+      linear-gradient(180deg,#06101d 0%,#0b2138 24%,#143a5c 52%,#23597f 78%,#9cc0dd 100%);
+  }
+  .wrap{max-width:1280px;margin:0 auto;padding:0 26px}
+
+  /* nav */
+  .topbar{position:sticky;top:0;z-index:20;backdrop-filter:blur(18px) saturate(150%);-webkit-backdrop-filter:blur(18px) saturate(150%);
+    background:rgba(7,17,30,.55);border-bottom:1px solid var(--stroke-soft)}
+  .topbar .inner{max-width:1280px;margin:0 auto;padding:13px 26px;display:flex;align-items:center;gap:18px}
+  .topbar .brand{font-family:var(--serif);font-size:16px;font-weight:500}
+  .topbar .brand b{font-style:italic;font-weight:500}
+  .topbar nav{margin-left:auto;display:flex;gap:8px}
+  .topbar a{font-size:12.5px;color:var(--ink-soft);text-decoration:none;padding:6px 13px;border-radius:999px;border:1px solid var(--stroke-soft)}
+  .topbar a:hover{color:var(--ink);border-color:var(--stroke);background:rgba(255,255,255,.05)}
+
+  header{padding:54px 0 8px;text-align:center}
+  .eyebrow{font-size:12px;letter-spacing:.3em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:16px}
+  h1{font-family:var(--serif);font-weight:500;font-size:clamp(30px,4.6vw,52px);line-height:1.1}
+  h1 em{font-style:italic}
+  .lede{max-width:680px;margin:18px auto 0;font-size:15.5px;line-height:1.7;color:var(--ink-soft)}
+  .lede b{color:var(--ink)}
+  .tagrow{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:20px}
+  .tag{font-size:11.5px;color:var(--ink-soft);padding:4px 11px;border-radius:999px;border:1px solid var(--stroke)}
+
+  .glass{background:linear-gradient(180deg,var(--glass),var(--glass-2));border:1px solid var(--stroke);
+    border-radius:20px;box-shadow:var(--shadow),inset 0 1px 0 rgba(255,255,255,.16);
+    backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%)}
+
+  section{margin-top:58px}
+  .sec-head{display:flex;align-items:baseline;gap:13px;margin-bottom:5px}
+  .sec-no{font-family:var(--serif);font-size:15px;color:var(--ink-faint)}
+  .sec-title{font-family:var(--serif);font-size:clamp(23px,3vw,32px);font-weight:500}
+  .sec-desc{color:var(--ink-soft);font-size:14.5px;line-height:1.65;max-width:820px;margin:9px 0 26px}
+  .sec-desc code{font-family:var(--mono);font-size:12.5px;color:var(--ink);background:rgba(255,255,255,.07);padding:1px 6px;border-radius:6px}
+
+  /* ───────── DATA FLOW (vertical pipeline) ───────── */
+  .flowwrap{padding:30px 28px 26px}
+  .lanes{display:flex;gap:7px;margin-bottom:22px;flex-wrap:wrap}
+  .lanekey{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-soft);padding:4px 10px;border-radius:999px;border:1px solid var(--stroke-soft)}
+  .sq{width:11px;height:11px;border-radius:3px;flex:none}
+  .step{display:flex;gap:16px;align-items:stretch;position:relative}
+  .step .gutter{display:flex;flex-direction:column;align-items:center;width:46px;flex:none}
+  .step .num{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;
+    font-family:var(--serif);font-size:18px;font-weight:500;background:rgba(255,255,255,.06);border:1px solid var(--stroke)}
+  .step .line{flex:1;width:2px;background:linear-gradient(180deg,var(--stroke),transparent);margin:4px 0}
+  .step .body{flex:1;padding:15px 18px 16px;border-radius:15px;background:rgba(255,255,255,.045);border:1px solid var(--stroke-soft);
+    margin-bottom:14px;position:relative;overflow:hidden}
+  .step .rail{position:absolute;left:0;top:0;bottom:0;width:4px}
+  .step .body .lane{font-size:11px;letter-spacing:.03em;margin-bottom:6px;display:flex;align-items:center;gap:7px;color:var(--ink-faint)}
+  .step .body h4{font-size:16px;font-weight:650;margin-bottom:5px}
+  .step .body p{font-size:13px;line-height:1.55;color:var(--ink-soft)}
+  .step .body .files{margin-top:9px;font-family:var(--mono);font-size:11px;color:var(--ink-faint);line-height:1.6}
+  .step .body .files span{display:inline-block;margin-right:14px;white-space:nowrap}
+  .branchin{font-size:11.5px;color:var(--ink-soft);margin:2px 0 12px 62px;padding-left:14px;border-left:2px dashed rgba(124,199,255,.5)}
+  .branchin b{color:var(--client)}
+
+  /* feedback loops */
+  .feedback{margin-top:6px;padding:22px 24px;border-radius:18px}
+  .feedback h3{font-family:var(--serif);font-size:19px;font-weight:500;margin-bottom:4px}
+  .feedback .sub{font-size:13px;color:var(--ink-soft);margin-bottom:18px}
+  .fbgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}
+  .fb{display:flex;gap:13px;align-items:flex-start;padding:14px 16px;border-radius:13px;background:rgba(255,255,255,.04);border:1px solid var(--stroke-soft)}
+  .fb .ic{font-size:17px;line-height:1.3;flex:none}
+  .fb h5{font-size:13.5px;font-weight:650;margin-bottom:3px}
+  .fb p{font-size:12px;line-height:1.5;color:var(--ink-soft)}
+  .fb code{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint)}
+  .fb.warn{box-shadow:inset 0 0 0 1px rgba(255,125,146,.32)}
+  .fb.warn h5{color:var(--warn)}
+
+  /* ───────── COMPONENT ARCH (layered bands) ───────── */
+  .archwrap{padding:14px 24px 26px}
+  .band{position:relative;margin:0 0 8px;padding:16px 18px 16px 84px;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid var(--stroke-soft)}
+  .band .lab{position:absolute;left:0;top:0;bottom:0;width:70px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    border-right:1px solid var(--stroke-soft);text-align:center;gap:4px}
+  .band .lab .zh{font-size:12.5px;font-weight:650;writing-mode:vertical-rl;letter-spacing:.18em}
+  .band .lrail{position:absolute;left:0;top:8px;bottom:8px;width:4px;border-radius:4px}
+  .chips{display:flex;gap:11px;flex-wrap:wrap}
+  .chip{flex:1;min-width:172px;padding:12px 14px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid var(--stroke-soft)}
+  .chip h4{font-size:14px;font-weight:650;margin-bottom:4px;display:flex;align-items:center;gap:7px}
+  .chip .path{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);margin-bottom:6px}
+  .chip p{font-size:11.5px;line-height:1.5;color:var(--ink-soft)}
+  .chip .mods{margin-top:7px;display:flex;gap:5px;flex-wrap:wrap}
+  .mod{font-size:10px;padding:2px 7px;border-radius:999px;border:1px solid var(--stroke);color:var(--ink-soft)}
+  .conn{text-align:center;color:var(--ink-faint);font-size:12px;margin:1px 0 8px;display:flex;align-items:center;justify-content:center;gap:9px}
+  .conn::before,.conn::after{content:"";height:1px;width:42px;background:var(--stroke-soft)}
+  .dotc{width:10px;height:10px;border-radius:3px;display:inline-block;vertical-align:middle;margin-right:5px}
+
+  .note{margin-top:42px;padding:22px 24px;border-radius:18px;font-size:13.5px;line-height:1.75;color:var(--ink-soft)}
+  .note b{color:var(--ink)} .note .w{color:var(--warn);font-weight:600}
+  footer{margin-top:46px;text-align:center;font-size:12px;color:var(--ink-faint);line-height:1.7}
+
+  @media(max-width:860px){.fbgrid{grid-template-columns:1fr}.chip{min-width:140px}}
+</style>
+</head>
+<body>
+
+<div class="topbar"><div class="inner">
+  <span class="brand">WorkHub · 系统图 <b>as-is</b></span>
+  <nav>
+    <a href="#flow">数据流转</a>
+    <a href="#arch">组件架构</a>
+  </nav>
+</div></div>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">当前系统 · 基于真代码盘点</div>
+    <h1>WorkHub 数据流转 &amp; 组件架构</h1>
+    <p class="lede">一个意图如何从用户走到「可信正式版」:<b>提议 → 审批 → 合并</b> 的业务版 GitHub 内核,AI 是第一个动手的,人只在该拍板时拍板。下面两张图基于对 9 个子系统的逐文件盘点,标注真实 <code>file:line</code>。</p>
+    <div class="tagrow">
+      <span class="tag">单 agent 执行(无层级 spawn)</span>
+      <span class="tag">证明驱动:没有交付物 = 失败</span>
+      <span class="tag">预算硬上限(reservation 串行化)</span>
+      <span class="tag">记忆/技能 复利回灌</span>
+    </div>
+  </header>
+
+  <!-- ============ DATA FLOW ============ -->
+  <section id="flow">
+    <div class="sec-head"><span class="sec-no">01</span><span class="sec-title">数据流转图 · 一个任务的一生</span></div>
+    <p class="sec-desc">主链路 9 步(实线,自上而下);记忆与技能在执行前注入、执行后回灌;预算全程对账;升级 / 纠错 / 夜间蒸馏构成反馈回路。色条表示这一步由哪一层拥有。</p>
+
+    <div class="flowwrap glass">
+      <div class="lanes">
+        <span class="lanekey"><i class="sq" style="background:var(--client)"></i>客户端</span>
+        <span class="lanekey"><i class="sq" style="background:var(--api)"></i>API / Worker</span>
+        <span class="lanekey"><i class="sq" style="background:var(--engine)"></i>执行引擎 packages/agent</span>
+        <span class="lanekey"><i class="sq" style="background:var(--data)"></i>服务 / 数据</span>
+      </div>
+
+      <!-- step 1 -->
+      <div class="step"><div class="gutter"><div class="num">1</div><div class="line"></div></div>
+        <div class="body"><div class="rail" style="background:var(--client)"></div>
+          <div class="lane"><i class="sq" style="background:var(--client)"></i>客户端 → API</div>
+          <h4>用户提交意图 → work_item(intake)</h4>
+          <p>web 路由注册表 / 桌面 Cuu 收意图 + 约束 + 文件,落 work_item,launcher spec 拍平成 acceptance_items(验收标准)。可带 kickoff_agent 标志。</p>
+          <div class="files"><span>apps/web/src/routes.ts</span><span>services/work-items.ts:863</span><span>:343 acceptanceItemsFromLauncherSpec</span></div>
+        </div></div>
+
+      <!-- step 2 -->
+      <div class="step"><div class="gutter"><div class="num">2</div><div class="line"></div></div>
+        <div class="body"><div class="rail" style="background:var(--api)"></div>
+          <div class="lane"><i class="sq" style="background:var(--api)"></i>API / Worker ↔ 预算</div>
+          <h4>enqueue → AgentRunQueueRecord(queued)+ 预算预留</h4>
+          <p>decideBudget 读已提交用量对账上限 → reserve 在 (scope,bucket) 上 advisory lock 串行预留;超额则补偿:run→failed + 抛 402 budget_exhausted。每 work_item 仅一条在跑。</p>
+          <div class="files"><span>workers/agent-runner.ts:1337</span><span>cost/decision.ts:51</span><span>cost/reservation.ts</span></div>
+        </div></div>
+
+      <!-- step 3 -->
+      <div class="step"><div class="gutter"><div class="num">3</div><div class="line"></div></div>
+        <div class="body"><div class="rail" style="background:var(--api)"></div>
+          <div class="lane"><i class="sq" style="background:var(--api)"></i>Worker 池</div>
+          <h4>claim-lease 抢占 → running</h4>
+          <p>多 worker(hostname:pid)轮询 claimNextQueued(PG FOR UPDATE SKIP LOCKED)原子抢占,写 claim{by,at,heartbeat,lease};心跳每 lease/3 续租,租约过期则重排或死信。</p>
+          <div class="files"><span>agent-runner.ts:481</span><span>:675 refreshClaim</span><span>agent-run-persistence.ts:291</span></div>
+        </div></div>
+
+      <!-- branch in: memory/skill -->
+      <div class="branchin"><b>↑ 执行前注入</b> · 记忆库 user_memories(top-5 按 confidence×recency,&lt;user_memory&gt; 围栏)+ 技能库 team_skills(load_skill 工具,FS 预置优先)→ 拼进 system prompt / 首条 user message　<code>services/user-memory.ts:76 · team-skill-context.ts</code></div>
+
+      <!-- step 4 -->
+      <div class="step"><div class="gutter"><div class="num">4</div><div class="line"></div></div>
+        <div class="body"><div class="rail" style="background:var(--engine)"></div>
+          <div class="lane"><i class="sq" style="background:var(--engine)"></i>执行引擎 packages/agent</div>
+          <h4>executeRun → loop.run() 跑一次</h4>
+          <p>单 AgentLoopClient:think → tool_use(文件/技能/浏览器)→ tool_result 内循环至 end_turn。全程 checkLoopBudget(步数/token/费用/超时)+ DoomLoop 检测;产物落 <code>outputs/</code>。<b>requireDeliverable:无交付物 → run failed「AI 没产出交付物」(没有证明=没做完,硬门)。</b></p>
+          <div class="files"><span>agent-runner.ts:919</span><span>loop/loop.ts:988 hasDeliverables</span><span>loop/control.ts:31</span></div>
+        </div></div>
+
+      <!-- step 5 -->
+      <div class="step"><div class="gutter"><div class="num">5</div><div class="line"></div></div>
+        <div class="body"><div class="rail" style="background:var(--engine)"></div>
+          <div class="lane"><i class="sq" style="background:var(--engine)"></i>执行引擎 · 评审</div>
+          <h4>reviewDeliverable(独立 review client)→ grade 1-5</h4>
+          <p>用与 worker 不同的模型客户端(反自评偏见),把 outputs/ 真实摘录(≤6 文件×1200 字)喂进评审 prompt,按验收标准打 1-5 分。评审失败/不可解析 → reviewFailed,置信钳到 ≤0.4(fail-closed)。</p>
+          <div class="files"><span>loop/loop.ts:636 reviewDeliverable</span><span>:584 collectOutputExcerpts</span></div>
+        </div></div>
+
+      <!-- step 6 -->
+      <div class="step"><div class="gutter"><div class="num">6</div><div class="line"></div></div>
+        <div class="body"><div class="rail" style="background:var(--engine)"></div>
+          <div class="lane"><i class="sq" style="background:var(--engine)"></i>执行引擎 · 置信度</div>
+          <h4>confidence 矩阵 → verdict</h4>
+          <p>融合 review(0.5)+ acceptance(0.35,有 manifest=1)+ 风险维度(可逆性/影响面)→ score[0,1] + 档位。<b>verdict:auto_merge(仅 grade5)/ human_spotcheck / escalate</b>。grade4 即便高置信也降级人工抽检。</p>
+          <div class="files"><span>evaluation/confidence.ts:94</span><span>:125 reviewFailed 惩罚</span></div>
+        </div></div>
+
+      <!-- step 7 -->
+      <div class="step"><div class="gutter"><div class="num">7</div><div class="line"></div></div>
+        <div class="body"><div class="rail" style="background:var(--api)"></div>
+          <div class="lane"><i class="sq" style="background:var(--api)"></i>API · 提议</div>
+          <h4>openProposalFromManifest → proposal</h4>
+          <p>run 成功且有 manifest → 由 DeliverableChangeManifest 开提议(像 PR);可改 acceptance_items / task_items(结构化字段补丁,冲突走 ai_fusion 归并)。仅当提议开成,终态才进 in_review;否则 escalated。</p>
+          <div class="files"><span>agent-runner.ts:888</span><span>services/proposals.ts:1816 createFromManifest</span></div>
+        </div></div>
+
+      <!-- step 8 -->
+      <div class="step"><div class="gutter"><div class="num">8</div><div class="line"></div></div>
+        <div class="body"><div class="rail" style="background:var(--client)"></div>
+          <div class="lane"><i class="sq" style="background:var(--client)"></i>客户端 · 决策收件箱</div>
+          <h4>attention 队列 → 人审(approve / request_changes)</h4>
+          <p>GET /api/pages/attention 合并 待批审批 + 可评审提议 为决策卡。人确认或打回。<span style="color:var(--warn)">⚠ 升级(escalation)目前未并入此队列——见反馈回路 ④。</span></p>
+          <div class="files"><span>routes/pages.ts:195</span><span>pages/attention.ts</span><span>approvals.ts</span></div>
+        </div></div>
+
+      <!-- step 9 -->
+      <div class="step"><div class="gutter"><div class="num">9</div></div>
+        <div class="body" style="margin-bottom:0"><div class="rail" style="background:var(--api)"></div>
+          <div class="lane"><i class="sq" style="background:var(--api)"></i>API · 合并</div>
+          <h4>merge → main(唯一可信正式版)</h4>
+          <p>提议 reviewed → merge 端点把改动汇入正式版;每处改动留快照可一键回滚。北极星「自治率」= 全程无人插手就合并成功的占比。</p>
+          <div class="files"><span>routes/proposals.ts</span><span>services/ai-worklog-metrics.ts 自治率</span></div>
+        </div></div>
+
+      <!-- feedback loops -->
+      <div class="feedback glass" style="margin-top:20px">
+        <h3>反馈回路(虚线 · 让系统越跑越强 / 越跑越安全)</h3>
+        <div class="sub">主链路之外,四条回路把「结果」回灌成下一次的记忆、技能、账单与人类决策。</div>
+        <div class="fbgrid">
+          <div class="fb"><div class="ic">💰</div><div>
+            <h5>① 预算对账</h5>
+            <p>每次 LLM 调用的 token/费用 → cost ledger;run 结束 reconcile 结算预留。labor-split 区分「干活」vs「自进化」。<code>cost/ledger.ts · agent-runner.ts:1204</code></p>
+          </div></div>
+          <div class="fb"><div class="ic">🧠</div><div>
+            <h5>② 纠错回灌记忆</h5>
+            <p>review=request_changes(置信 0.9)→ correctionFromReview 抽取偏好/纠错写回 user_memories,下次注入。<code>services/user-memory.ts:40</code></p>
+          </div></div>
+          <div class="fb"><div class="ic">🌙</div><div>
+            <h5>③ 夜间技能蒸馏</h5>
+            <p>curation tick 从「已采纳交付 + 升级 + 被弃信号(K1)」蒸馏/精炼 team_skills(K2 受限补丁 / K3 学习率 / K5 成本分账)。<code>workers/agent-skill-curation.ts</code></p>
+          </div></div>
+          <div class="fb warn"><div class="ic">⚠️</div><div>
+            <h5>④ 升级逃生舱(有缺口)</h5>
+            <p>verdict=escalate → 写 escalation_events;但 <b>work_items.escalated 死状态</b>未可靠置位、升级卡未上 attention 首页。R9.0 待修。<code>agent-run-confidence.ts:86</code></p>
+          </div></div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ COMPONENT ARCH ============ -->
+  <section id="arch">
+    <div class="sec-head"><span class="sec-no">02</span><span class="sec-title">组件架构图 · 分层与依赖</span></div>
+    <p class="sec-desc">monorepo 分六层:客户端 → API 应用 → 执行引擎 + 后台 worker → 领域/数据包 → 外部依赖。上层依赖下层,worker 与引擎共享 packages/agent。</p>
+
+    <div class="archwrap glass">
+
+      <div class="band"><div class="lrail" style="background:var(--client)"></div>
+        <div class="lab"><span class="dotc" style="background:var(--client)"></span><span class="zh">客户端</span></div>
+        <div class="chips">
+          <div class="chip"><h4><i class="sq" style="background:var(--client)"></i>apps/web</h4><div class="path">apps/web/src/routes.ts</div><p>路由注册表(17 路由,regex 匹配)+ GoldPath 外壳;React 局部水合。GitHub 式浅色卡片语言。</p><div class="mods"><span class="mod">route-registry</span><span class="mod">GoldPath shell</span><span class="mod">shellPageOrder</span></div></div>
+          <div class="chip"><h4><i class="sq" style="background:var(--client)"></i>client-tauri / desktop-webview</h4><div class="path">apps/desktop-webview · client-tauri</div><p>桌面 Cuu 聚焦盒 + glass-window 玻璃浮层(液态玻璃 backdrop-blur),决策卡牌。</p><div class="mods"><span class="mod">Cuu</span><span class="mod">glass-window</span><span class="mod">SSE shell-events</span></div></div>
+          <div class="chip"><h4><i class="sq" style="background:var(--client)"></i>packages/ui</h4><div class="path">packages/ui/src/gold-path</div><p>共享渲染:app-shell + product-shell,纯函数可测;web 与桌面共用。</p><div class="mods"><span class="mod">render.ts</span><span class="mod">app-shell</span></div></div>
+        </div>
+      </div>
+
+      <div class="conn">HTTP / SSE　▼　REST + 事件流</div>
+
+      <div class="band"><div class="lrail" style="background:var(--api)"></div>
+        <div class="lab"><span class="dotc" style="background:var(--api)"></span><span class="zh">API 应用</span></div>
+        <div class="chips">
+          <div class="chip"><h4>routes/</h4><div class="path">apps/api/src/routes</div><p>HTTP + SSE 入口:work-items · agent-runs · proposals · approvals · pages · cost。auth + csrf 中间件守卫。</p><div class="mods"><span class="mod">middleware/auth</span><span class="mod">csrf</span></div></div>
+          <div class="chip"><h4>pages/</h4><div class="path">apps/api/src/pages</div><p>页面 VM 装配(Zod 契约 fail-closed):attention · cost · project-home · team-skills。</p><div class="mods"><span class="mod">output-contract</span></div></div>
+          <div class="chip"><h4>services/</h4><div class="path">apps/api/src/services</div><p>业务编排:work-items · proposals · user-memory · team-skill-context · agent-run-confidence · human-reserved-guard · skill-curation。</p><div class="mods"><span class="mod">提议→审批→合并</span></div></div>
+          <div class="chip"><h4>broker / sse</h4><div class="path">apps/api/src/broker · sse</div><p>话题总线(私有 user/workitem/session)+ SSE 推送,presence 走 Redis。</p><div class="mods"><span class="mod">presence</span></div></div>
+        </div>
+      </div>
+
+      <div class="conn">调用 · 入队 / 抢占　▼</div>
+
+      <div class="band"><div class="lrail" style="background:var(--engine)"></div>
+        <div class="lab"><span class="dotc" style="background:var(--engine)"></span><span class="zh">引擎 / Worker</span></div>
+        <div class="chips">
+          <div class="chip"><h4><i class="sq" style="background:var(--engine)"></i>packages/agent</h4><div class="path">packages/agent/src</div><p>执行引擎:loop(think-tool-result + 预算门 + doom-loop)· evaluation/confidence(LLM-judge)· deliverables · control。</p><div class="mods"><span class="mod">loop.ts</span><span class="mod">confidence.ts</span><span class="mod">deliverables</span></div></div>
+          <div class="chip"><h4><i class="sq" style="background:var(--worker)"></i>workers/ agent-runner</h4><div class="path">apps/api/src/workers/agent-runner.ts</div><p>队列 + claim-lease 心跳泵 + executeRun;预算 reserve/reconcile;开提议 + 记置信。</p><div class="mods"><span class="mod">pump</span><span class="mod">claim-lease</span></div></div>
+          <div class="chip"><h4><i class="sq" style="background:var(--worker)"></i>workers/ skill-curation</h4><div class="path">apps/api/src/workers/agent-skill-curation.ts</div><p>夜间 tick:蒸馏 + 精炼 team_skills(K1-K5),与生产预算隔离。</p><div class="mods"><span class="mod">nightly</span><span class="mod">K1-K5</span></div></div>
+        </div>
+      </div>
+
+      <div class="conn">读写仓储 repository　▼</div>
+
+      <div class="band"><div class="lrail" style="background:var(--data)"></div>
+        <div class="lab"><span class="dotc" style="background:var(--data)"></span><span class="zh">领域 / 数据</span></div>
+        <div class="chips">
+          <div class="chip"><h4>packages/db</h4><div class="path">packages/db/src</div><p>schema/core(work_items · agent_runs · proposals · user_memories · team_skills · escalation_events · cost_ledger)+ repositories + migrations。</p><div class="mods"><span class="mod">schema</span><span class="mod">repositories</span><span class="mod">migrations</span></div></div>
+          <div class="chip"><h4>packages/contracts</h4><div class="path">packages/contracts/src</div><p>Zod 契约:pages VM 联合类型 · domain(work-item/user-memory/team-skill)· enums。</p><div class="mods"><span class="mod">pages.ts</span></div></div>
+          <div class="chip"><h4>packages/cost</h4><div class="path">packages/cost/src</div><p>ledger(已提交账)· reservation(硬上限预留)· budget(5 档 policy)· decision。</p><div class="mods"><span class="mod">reservation</span><span class="mod">labor-split</span></div></div>
+          <div class="chip"><h4>packages/tools</h4><div class="path">packages/tools/src</div><p>agent 工具:skills(load_skill)· 文件读写 · 浏览器等。</p><div class="mods"><span class="mod">skills.ts</span></div></div>
+        </div>
+      </div>
+
+      <div class="conn">SQL · 队列锁 / LLM API　▼</div>
+
+      <div class="band" style="margin-bottom:0"><div class="lrail" style="background:var(--ext)"></div>
+        <div class="lab"><span class="dotc" style="background:var(--ext)"></span><span class="zh">外部依赖</span></div>
+        <div class="chips">
+          <div class="chip"><h4><i class="sq" style="background:var(--ext)"></i>PostgreSQL</h4><div class="path">真相之源</div><p>所有业务对象 + 队列(FOR UPDATE SKIP LOCKED 抢占)+ advisory lock(预算/技能串行)。</p></div>
+          <div class="chip"><h4><i class="sq" style="background:var(--ext)"></i>Redis</h4><div class="path">broker presence + SSE</div><p>话题总线在线状态、跨实例事件分发。</p></div>
+          <div class="chip"><h4><i class="sq" style="background:var(--ext)"></i>LLM Provider</h4><div class="path">DeepSeek / Anthropic via /anthropic</div><p>worker + review 两路客户端;usage 回流 cost ledger。真 key 已端到端验证(~¥0.03/任务)。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <div class="note glass">
+    <b>读这两张图的一句话:</b>WorkHub 是「业务版 GitHub」——AI 当默认劳动力跑完一条 <b>意图→执行→评审→置信→提议→人审→合并</b> 的链路,任何改动都走提议、留快照、不直写生产;记忆/技能/预算在两端回灌。
+    <br><br>
+    <span class="w">当前局限(诚实标注):</span>① 单 agent 执行,无层级子 agent / 无 meta-planner 拆解 ② 记忆只覆盖不归并 ③ 无 OKR ④ escalated 升级是死状态、未上决策队列。这四点正是 R9「agent 军团」要补的(见 <code>r9-agent-army/</code>)。
+  </div>
+
+  <footer>
+    WorkHub 系统图(as-is)· 生成 2026-06-24 · 依据 9 子系统逐文件盘点<br>
+    agent-engine · skill-library · memory-library · decomposition-planner · okr-objectives · judge-verification · attention-escape-hatch · budget-cost · frontend-ux
+  </footer>
+
+</div>
+</body>
+</html>

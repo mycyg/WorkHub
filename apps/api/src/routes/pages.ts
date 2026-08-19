@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 
-import { settings } from "@workhub/config";
+import { settings, type Settings } from "@workhub/config";
 import { decideRunBudget, type BudgetPolicyStore, type CostLedgerStore } from "@workhub/cost";
 import {
   normalizeWorkHubLocale,
@@ -36,6 +36,7 @@ import { buildTeamSkillsPage } from "../pages/team-skills.js";
 import { buildP05GoldPathSurfacePage } from "../pages/gold-path.js";
 import { buildProposalDetailPage, buildProposalReviewAttentionItem } from "../pages/proposals.js";
 import { buildSettingsPage } from "../pages/settings.js";
+import { checkReadiness, type ReadinessResult } from "../readiness.js";
 import {
   DrivePageServiceError,
   getDefaultDrivePageService,
@@ -106,6 +107,7 @@ export type PageRoutesDependencies = {
   scheduleNotifyPages?: ScheduleNotifyPageService;
   projectHealthPages?: ProjectHealthPageService;
   aiWorklog?: AiWorklogMetricsService;
+  readiness?: (runtimeSettings: Settings) => Promise<ReadinessResult>;
   teamSkills?: Pick<TeamSkillRepository, "listActive">;
   taskPlans?: Pick<ReturnType<typeof createTaskPlanRepository>, "listDashboardPlans" | "listPlanMetaByIds">;
   objectives?: Pick<ObjectiveRepository, "listObjectiveTitlesByIds">;
@@ -286,6 +288,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const scheduleNotifyPages = deps.scheduleNotifyPages ?? createScheduleNotifyPageService();
   const projectHealthPages = deps.projectHealthPages ?? createProjectHealthPageService();
   const aiWorklog = deps.aiWorklog ?? getDefaultAiWorklogMetricsService();
+  const readiness = deps.readiness ?? checkReadiness;
   const teamSkills = deps.teamSkills ?? createTeamSkillRepository(getSharedDatabaseClient().db);
   const taskPlans = deps.taskPlans ?? createTaskPlanRepository(getSharedDatabaseClient().db);
   const objectives = deps.objectives ?? createObjectiveRepository(getSharedDatabaseClient().db);
@@ -923,7 +926,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   routes.get("/settings", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
     const preferenceLocale = normalizeWorkHubLocale(c.var.currentUser.preferredLocale);
-    // APPROVAL-POLICY-UI：常驻审批策略在设置页可见（撤销是桌面边界写动作，按钮 fail-closed）。
+    // APPROVAL-POLICY-UI：常驻审批策略在设置页可见，管理员可直接从当前认证客户端撤销。
     // 取数失败降级为不渲策略区，不拖垮设置页。
     // R6（权限边界 high）：权限策略是 org 级治理面，专用路由 /api/permissions 读写均 admin-only——
     // 设置页此前无条件吐给所有成员（越权读）。与专用路由同门槛：非管理员不取不渲。
@@ -935,8 +938,10 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
         permissionPolicies = undefined;
       }
     }
+    const runtimeReadiness = await readiness(authSettings);
     return c.json(pageEnvelope(buildSettingsPage({
       settings: authSettings,
+      readiness: runtimeReadiness,
       locale,
       preferenceLocale,
       preferenceSource: "server",

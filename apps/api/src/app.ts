@@ -191,7 +191,8 @@ app.get("/api/health", (c) =>
 );
 
 // 深度就绪探针（编排器 readiness probe 用）：与 /api/health 的存活探针分离——liveness 不依赖任何外部依赖，
-// readiness 真打 DB（SELECT 1）+ Redis（若 BROKER_BACKEND=redis）。每项检查带超时与 try/catch，绝不挂死；
+// readiness 真打 DB（SELECT 1）+ 当前 broker（Redis 模式执行 PING；内建模式构造实际 adapter）。
+// 每项检查带超时与 try/catch，绝不挂死；
 // 全通过回 200 {ready:true,...}，任一依赖故障回 503 {ready:false,...}。单测不调用此端点，DB 不在时返回 503 也无碍。
 app.get("/api/ready", async (c) => {
   const result = await checkReadiness(settings);

@@ -163,7 +163,6 @@ export type SettingsRouteComponentProps = {
   providerCount: number;
   apiKeyConfigured: boolean;
   baseUrlConfigured: boolean;
-  secretSafe: boolean;
   activeLocale: WorkHubLocale;
   preferenceLocale: WorkHubLocale;
   preferenceSource: SettingsPageVM["language"]["preference_source"];
@@ -407,7 +406,6 @@ export function createSettingsReactRouteComponent(vm: SettingsPageVM, locale: Wo
     providerCount: vm.llm_runtime.provider_count,
     apiKeyConfigured: vm.llm_runtime.api_key_configured,
     baseUrlConfigured: vm.llm_runtime.base_url_configured,
-    secretSafe: vm.llm_runtime.secret_safe,
     activeLocale: normalizeWorkHubLocale(vm.language.active_locale),
     preferenceLocale: normalizeWorkHubLocale(vm.language.preference_locale),
     preferenceSource: vm.language.preference_source,
@@ -439,7 +437,6 @@ export function createSettingsReactRouteComponent(vm: SettingsPageVM, locale: Wo
       props.pageVm,
       props.runtimeStatus,
       props.workerCount,
-      props.secretSafe,
       props.activeLocale,
       props.preferenceLocale,
       props.petModelSettingsInWeb,

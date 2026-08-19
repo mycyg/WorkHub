@@ -205,7 +205,7 @@ export const webRouteComponentCss = [
   ".wh-r4-approval-detail-panel[hidden]{display:none}.wh-r4-approval-detail-panel section{display:grid;gap:6px}.wh-r4-approval-field{display:grid;gap:4px}.wh-r4-approval-reason,.wh-r4-approval-comment-input{width:100%;max-width:100%;box-sizing:border-box;min-width:0;resize:vertical;font:inherit;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:12px;padding:6px;overflow-wrap:anywhere}.wh-r4-approval-remember{display:flex;gap:6px;align-items:flex-start;font-size:13px;color:var(--wh-product-secondary,#5B616E)}.wh-r4-approval-comment-form{display:grid;gap:6px}",
   ".wh-r4-approval-detail .wh-r4-route-row{grid-template-columns:1fr}.wh-r4-approval-detail .wh-r4-route-row p,.wh-r4-approval-detail .wh-r4-route-row strong{overflow-wrap:anywhere;white-space:normal}.wh-r4-approval-detail .wh-r4-route-meta{justify-content:flex-start}",
   "@media (max-width:1040px){.wh-r4-approvals-grid{grid-template-columns:1fr}}",
-  "@media (max-width:860px){.wh-r4-route-head,.wh-r4-route-grid,.wh-r4-route-row{grid-template-columns:1fr}.wh-r4-route-head{align-items:start}.wh-r4-route-count{width:max-content}.wh-r4-route-actions{align-items:flex-start}}"
+  "@media (max-width:860px){.wh-r4-route-head,.wh-r4-route-grid,.wh-r4-route-row{grid-template-columns:1fr}.wh-r4-route-head{align-items:start}.wh-r4-route-count{display:none}.wh-r4-route-actions{align-items:flex-start}}"
 ].join("");
 
 type RouteCopyKey =
@@ -272,6 +272,7 @@ type RouteCopyKey =
   | "drive.openDraft"
   | "drive.openProposal"
   | "drive.requestedMissing"
+  | "drive.clearSearch"
   | "drive.status.pending_llm"
   | "drive.status.draft_created"
   | "drive.status.proposal_created"
@@ -280,6 +281,9 @@ type RouteCopyKey =
   | "meeting.transcript"
   | "meeting.minutes"
   | "meeting.insights"
+  | "meeting.emptyInsights"
+  | "meeting.noMeetings"
+  | "meeting.emptyTitle"
   | "meeting.createDraft"
   | "meeting.dismiss"
   | "meeting.openDraft"
@@ -352,6 +356,7 @@ type RouteCopyKey =
   | "agents.recent"
   | "agents.noRecent"
   | "agents.empty"
+  | "agents.titleEmpty"
   | "agents.start"
   | "agents.cost"
   | "agents.costDetails"
@@ -405,7 +410,6 @@ type RouteCopyKey =
   | "settings.model"
   | "settings.apiKey"
   | "settings.baseUrl"
-  | "settings.secretSafe"
   | "settings.activeLocale"
   | "settings.preferenceLocale"
   | "settings.preferenceSource"
@@ -480,6 +484,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.openDraft": "打开草稿",
     "drive.openProposal": "查看变更申请",
     "drive.requestedMissing": "找不到该文件，已回到默认视图。",
+    "drive.clearSearch": "清除搜索",
     "drive.status.pending_llm": "待生成草稿",
     "drive.status.draft_created": "已生成草稿",
     "drive.status.proposal_created": "已生成提议",
@@ -488,6 +493,9 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "meeting.transcript": "转写",
     "meeting.minutes": "纪要",
     "meeting.insights": "洞察",
+    "meeting.emptyInsights": "这场会议还没有洞察。",
+    "meeting.noMeetings": "暂无会议",
+    "meeting.emptyTitle": "还没有会议记录",
     "meeting.createDraft": "生成草稿",
     "meeting.dismiss": "忽略",
     "meeting.openDraft": "打开草稿",
@@ -561,6 +569,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "agents.recent": "最近升级",
     "agents.noRecent": "还没有升级动态。",
     "agents.empty": "还没有军团在跑。下次遇到大任务，系统会先生成一份任务计划。",
+    "agents.titleEmpty": "军团待命中",
     "agents.start": "发起新任务",
     "agents.cost": "成本",
     "agents.costDetails": "查看成本",
@@ -616,7 +625,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "settings.model": "模型",
     "settings.apiKey": "密钥状态",
     "settings.baseUrl": "服务地址状态",
-    "settings.secretSafe": "密钥安全",
     "settings.activeLocale": "当前语言",
     "settings.preferenceLocale": "服务端偏好",
     "settings.preferenceSource": "偏好来源",
@@ -690,6 +698,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.openDraft": "Open draft",
     "drive.openProposal": "Open change request",
     "drive.requestedMissing": "We could not find that file, so the drive is back at the default view.",
+    "drive.clearSearch": "Clear search",
     "drive.status.pending_llm": "Pending draft",
     "drive.status.draft_created": "Draft created",
     "drive.status.proposal_created": "Proposal created",
@@ -698,6 +707,9 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "meeting.transcript": "Transcript",
     "meeting.minutes": "Minutes",
     "meeting.insights": "Insights",
+    "meeting.emptyInsights": "No insights from this meeting yet.",
+    "meeting.noMeetings": "No meetings",
+    "meeting.emptyTitle": "No meetings yet",
     "meeting.createDraft": "Create draft",
     "meeting.dismiss": "Dismiss",
     "meeting.openDraft": "Open draft",
@@ -771,6 +783,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "agents.recent": "Recent escalations",
     "agents.noRecent": "No escalations yet.",
     "agents.empty": "No agent teams are running yet. Next time there is a large task, WorkHub will draft a task plan first.",
+    "agents.titleEmpty": "Legion standing by",
     "agents.start": "Start a task",
     "agents.cost": "Cost",
     "agents.costDetails": "View cost",
@@ -826,7 +839,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "settings.model": "Model",
     "settings.apiKey": "Key status",
     "settings.baseUrl": "Service URL status",
-    "settings.secretSafe": "Secret safety",
     "settings.activeLocale": "Active locale",
     "settings.preferenceLocale": "Server preference",
     "settings.preferenceSource": "Preference source",
@@ -1247,7 +1259,9 @@ function renderHomeRouteComponent(
   const worklog = vm.worklog;
   const projectList = projects?.projects ?? [];
   const topProject = projectList[0];
-  const projectCountLabel = projects ? String(projectList.length) : (zh ? "项目" : "Projects");
+  const projectCountLabel = projects
+    ? (zh ? `${projectList.length} 个项目` : `${projectList.length} ${projectList.length === 1 ? "project" : "projects"}`)
+    : (zh ? "项目" : "Projects");
   const projectRows = projectList.length
     ? projectList.slice(0, 4).map((project) => `<div role="listitem" class="wh-r4-route-row" data-r8-home-project="${escapeHtml(project.id)}" data-r8-home-project-open-items="${escapeHtml(String(project.open_work_item_count))}">
         <div>
@@ -1275,7 +1289,7 @@ function renderHomeRouteComponent(
       <h3 role="heading" aria-level="2">${escapeHtml(zh ? "先进入项目，再处理任务和文件" : "Start from a project, then work through tasks and files")}</h3>
       <p>${escapeHtml(zh ? "每个项目像一个仓库：进行中的任务、最近文件、版本历史和网盘入口都围绕它组织。" : "Each project behaves like a repo: open work, recent files, version history, and the drive stay organized around it.")}</p>
       <div class="wh-r4-route-actions">
-        <a class="wh-btn wh-btn-primary" href="/projects" data-r8-home-projects-cta="true">${escapeHtml(zh ? "打开项目" : "Open projects")}</a>
+        <a class="wh-btn wh-btn-primary" href="/projects" data-r8-home-projects-cta="true">${escapeHtml(zh ? "查看全部项目" : "Open projects")}</a>
         <a class="wh-btn" href="${escapeHtml(safeHref(projectDriveHref))}" data-r8-home-drive-cta="true">${escapeHtml(topProject ? (zh ? `打开「${topProject.name}」网盘` : `Open ${topProject.name} drive`) : (zh ? "打开网盘" : "Open drive"))}</a>
         <a class="wh-btn" href="${escapeHtml(safeHref(projectIntakeHref))}" data-r4-home-intake-cta="true" data-r8-home-new-work-cta="true">${escapeHtml(topProject ? (zh ? `在「${topProject.name}」新建任务` : `New task in ${topProject.name}`) : (zh ? "新建任务" : "New task"))}</a>
       </div>
@@ -1873,7 +1887,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
           <h1 data-r10-approval-headline="true">${escapeHtml(primary?.title ?? goldPathT(locale, "approvals.emptyTitle"))}</h1>
           <p data-r10-approval-headline-reason="true">${escapeHtml(primary?.reason_text ?? goldPathT(locale, "approvals.reasonFallback"))}</p>
         </div>
-        <span class="wh-r4-route-count">${escapeHtml(String(pendingCount))}</span>
+        <span class="wh-r4-route-count">${escapeHtml(locale === "zh-CN" ? `${pendingCount} 待处理` : `${pendingCount} pending`)}</span>
       </header>
       ${pageInfoNote ? `<p class="wh-subtle" data-r4-approval-page-info-note="true">${escapeHtml(pageInfoNote)}</p>` : ""}
       ${nextPageAction}
@@ -2703,7 +2717,7 @@ function renderDriveRouteComponent(
   const driveSearchForm = currentProjectId
     ? `<form class="wh-r4-route-meta" method="get" action="/drive" role="search" data-r9-drive-search-form="true">
         <input type="hidden" name="project_id" value="${escapeHtml(currentProjectId)}" />
-        <input class="wh-pill" type="search" name="q" maxlength="120" placeholder="${escapeHtml(locale === "zh-CN" ? "按文件名搜索…" : "Search files by name…")}" aria-label="${escapeHtml(locale === "zh-CN" ? "搜索文件" : "Search files")}" />
+        <input class="wh-pill" type="search" name="q" maxlength="120" value="${escapeHtml(vm.search_query ?? "")}" placeholder="${escapeHtml(locale === "zh-CN" ? "按文件名搜索…" : "Search files by name…")}" aria-label="${escapeHtml(locale === "zh-CN" ? "搜索文件" : "Search files")}" />
         <button class="wh-btn" type="submit">${escapeHtml(locale === "zh-CN" ? "搜索" : "Search")}</button>
       </form>`
     : "";
@@ -2715,6 +2729,15 @@ function renderDriveRouteComponent(
   const selectedActiveItem = vm.items.find((item) => item.id === vm.selected_item_id);
   const selectedDeletedItem = vm.deleted_items.find((item) => item.id === vm.selected_item_id);
   const selectedItem = selectedActiveItem ?? (selectedDeletedItem || vm.requested_item_missing ? undefined : vm.items.find((item) => item.kind === "file") ?? vm.items[0]);
+  // H（诚实空态）：按名搜索 0 命中不能复用「网盘还是空的」——那会把「搜索没匹配」谎报成「盘里没文件」。
+  // loader 回填 empty_state="no_search_match" / search_query;两者任一成立即渲专属无命中态 + 清除搜索链接（回到不带 q 的当前项目盘）。
+  const driveSearchQuery = vm.search_query?.trim() ?? "";
+  const driveNoSearchMatch = vm.empty_state === "no_search_match" || (driveSearchQuery.length > 0 && vm.items.length === 0);
+  const driveNoSearchMatchSentence = locale === "zh-CN"
+    ? `没有找到与『${driveSearchQuery}』匹配的文件。`
+    : `No files match “${driveSearchQuery}”.`;
+  const driveClearSearchHref = safeHref(`/drive?project_id=${encodeURIComponent(currentProjectId)}`);
+  const driveNoSearchMatchHtml = `<p class="wh-subtle" data-r11-drive-no-search-match="true">${escapeHtml(driveNoSearchMatchSentence)} <a href="${escapeHtml(driveClearSearchHref)}" data-r11-drive-clear-search="true">${escapeHtml(routeT(locale, "drive.clearSearch"))}</a></p>`;
   const requestedMissingNotice = vm.requested_item_missing
     ? `<p class="wh-subtle" data-r9-drive-requested-missing="true">${escapeHtml(routeT(locale, "drive.requestedMissing"))}</p>`
     : "";
@@ -2768,7 +2791,9 @@ function renderDriveRouteComponent(
         </div>
       </div>`;
     }).join("")
-    : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.emptyFiles"))}</p>`;
+    : driveNoSearchMatch
+      ? driveNoSearchMatchHtml
+      : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.emptyFiles"))}</p>`;
   // L9：masthead 的「文件 N」与大号标题数字用的是 file_count(不含文件夹),但文件列表渲染的是 items(文件夹+文件),
   // 数字和可见行数对不上。在列表标题上挑明「文件夹 N · 文件 M」,让标题数字与列表内容自洽。
   const driveFolderCount = vm.items.filter((item) => item.kind === "folder").length;
@@ -2905,7 +2930,7 @@ function renderDriveRouteComponent(
           ${driveProjectNav}
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "drive.kicker"))}</span>
           <h1>${escapeHtml(projectTitle)}</h1>
-          <p>${escapeHtml(selectedItem?.path ?? routeT(locale, vm.items.length === 0 ? "drive.emptyFiles" : "drive.selectFile"))}</p>
+          <p>${driveNoSearchMatch && !selectedItem ? escapeHtml(driveNoSearchMatchSentence) : escapeHtml(selectedItem?.path ?? routeT(locale, vm.items.length === 0 ? "drive.emptyFiles" : "drive.selectFile"))}</p>
           ${requestedMissingNotice}
           ${driveManageActions ? `<div class="wh-r4-route-actions" data-r5-drive-manage-actions="true">${driveManageActions}</div>` : ""}
         </div>
@@ -2995,9 +3020,7 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
         ? `只列出最近 10 场会议（共 ${vm.meetings.length} 场）。`
         : `Showing the 10 most recent meetings of ${vm.meetings.length}.`)}</p>`
       : "")
-    : `<p class="wh-subtle">${escapeHtml(selectedMeeting
-      ? (locale === "zh-CN" ? "这场会议还没有洞察。" : "No insights from this meeting yet.")
-      : routeT(locale, "meeting.empty"))}</p>`;
+    : `<p class="wh-subtle">${escapeHtml(routeT(locale, "meeting.noMeetings"))}</p>`;
   const transcript = selectedMeeting?.transcript_text?.trim() || meetingContentFallback("transcript", selectedMeeting?.status, locale);
   const minutes = selectedMeeting?.minutes_md?.trim() || meetingContentFallback("minutes", selectedMeeting?.status, locale);
   const insightRows = selectedMeeting?.insights.length
@@ -3033,7 +3056,7 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
         <div class="wh-r4-route-actions">${createAction}${dismissAction}</div>
       </article>`;
     }).join("")
-    : `<article class="wh-card wh-r4-route-card"><p>${escapeHtml(routeT(locale, "meeting.empty"))}</p></article>`;
+    : `<article class="wh-card wh-r4-route-card"><p>${escapeHtml(routeT(locale, "meeting.emptyInsights"))}</p></article>`;
   const primaryHrefs = [
     ...vm.meetings.flatMap((meeting) => meeting.insights.flatMap((insight) => [
       insight.actions?.create_draft?.href,
@@ -3056,7 +3079,7 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "meeting.kicker"))}</span>
           <h1>${escapeHtml(projectTitle)}</h1>
-          <p>${escapeHtml(selectedMeeting?.title ?? routeT(locale, "meeting.empty"))}</p>
+          <p>${escapeHtml(selectedMeeting?.title ?? "")}</p>
         </div>
         <span class="wh-r4-route-count" title="${escapeHtml(locale === "zh-CN" ? "待确认洞察" : "Insights pending review")}">${escapeHtml(`${vm.summary.pending_insight_count} ${locale === "zh-CN" ? "条待确认" : "pending"}`)}</span>
       </header>
@@ -3089,7 +3112,7 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
           <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "meeting.minutes"))}</h3>
           <pre class="wh-r5-meeting-text">${escapeHtml(minutes)}</pre>
         </section>
-      </div>` : `<div class="wh-r4-route-grid"><article class="wh-card wh-r4-route-card" data-r5-meeting-empty="true"><h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "meeting.empty"))}</h3><p class="wh-subtle">${escapeHtml(vm.can_manage ? (locale === "zh-CN" ? "会议录音或转写接入后，Cuu 会自动整理出纪要和待办洞察，并显示在这里。" : "Once a meeting recording or transcript is brought in, Cuu drafts the minutes and action insights here.") : (locale === "zh-CN" ? "团队的会议接入后，这里会出现转写、纪要和洞察。" : "Once a team meeting is brought in, its transcript, minutes and insights show up here."))}</p></article></div>`}
+      </div>` : `<div class="wh-r4-route-grid"><article class="wh-card wh-r4-route-card" data-r5-meeting-empty="true"><h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "meeting.emptyTitle"))}</h3><p class="wh-subtle">${escapeHtml(vm.can_manage ? (locale === "zh-CN" ? "会议录音或转写接入后，Cuu 会自动整理出纪要和待办洞察，并显示在这里。" : "Once a meeting recording or transcript is brought in, Cuu drafts the minutes and action insights here.") : (locale === "zh-CN" ? "团队的会议接入后，这里会出现转写、纪要和洞察。" : "Once a team meeting is brought in, its transcript, minutes and insights show up here."))}</p></article></div>`}
     </section>`
   });
 }
@@ -3407,8 +3430,8 @@ function renderCalendarRouteComponent(vm: CalendarPageVM, locale: WorkHubLocale)
         <a class="wh-btn${vm.scope.view === "day" ? " wh-btn-primary" : ""}" href="${escapeHtml(calendarHref(vm.scope.date.slice(0, 10), "day"))}" data-r10-calendar-view-day="true" aria-pressed="${escapeHtml(String(vm.scope.view === "day"))}">${escapeHtml(zh ? "日视图" : "Day")}</a>
         <a class="wh-btn${vm.scope.view === "day" ? "" : " wh-btn-primary"}" href="${escapeHtml(calendarHref(vm.scope.date.slice(0, 10), "week"))}" data-r10-calendar-view-week="true" aria-pressed="${escapeHtml(String(vm.scope.view !== "day"))}">${escapeHtml(zh ? "周视图" : "Week")}</a>
       </div>`;
-  const dayRows = vm.days.map((day) => `<section class="wh-card wh-r4-route-card" data-r5-calendar-day="${escapeHtml(day.date)}" data-r5-calendar-day-count="${escapeHtml(String(day.blocks.length))}">
-    <h3 role="heading" aria-level="2">${escapeHtml(day.date)}</h3>
+  const dayRows = vm.days.map((day) => `<section class="wh-card wh-r4-route-card${day.is_today ? " wh-r4-route-card--accent" : ""}" data-r5-calendar-day="${escapeHtml(day.date)}" data-r5-calendar-day-count="${escapeHtml(String(day.blocks.length))}"${day.is_today ? ' data-r5-calendar-day-today="true"' : ""}>
+    <h3 role="heading" aria-level="2">${escapeHtml(day.date)}${day.is_today ? ` <span class="wh-pill">${escapeHtml(routeT(locale, "calendar.today"))}</span>` : ""}</h3>
     <div class="wh-r4-route-timeline" role="list">${day.blocks.length ? day.blocks.map((block) => renderCalendarBlock(block, locale)).join("") : `<p role="listitem" class="wh-subtle">${escapeHtml(routeT(locale, "calendar.empty"))}</p>`}</div>
   </section>`).join("");
 
@@ -3426,7 +3449,7 @@ function renderCalendarRouteComponent(vm: CalendarPageVM, locale: WorkHubLocale)
           <h1>${escapeHtml(locale === "zh-CN" ? "接下来几天的安排" : "What's coming up")}</h1>
           <p>${escapeHtml(`${routeT(locale, "calendar.week")} · ${vm.scope.range_start.slice(0, 10)} - ${vm.scope.range_end.slice(0, 10)}`)}</p>
         </div>
-        <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.block_count))}</span>
+        <span class="wh-r4-route-count">${escapeHtml(locale === "zh-CN" ? `${vm.summary.block_count} 个安排` : `${vm.summary.block_count} scheduled`)}</span>
       </header>
       ${calendarControls}
       <div class="wh-r4-route-grid">
@@ -3448,7 +3471,7 @@ function costAmount(value: string, locale: WorkHubLocale = "zh-CN") {
 
 function renderBudgetRows(vm: CostDashboardVM, locale: WorkHubLocale) {
   if (vm.budget.length === 0) {
-    return `<p role="listitem" class="wh-subtle">${escapeHtml(goldPathT(locale, "cost.statusFallback"))}</p>`;
+    return `<p role="listitem" class="wh-subtle">${escapeHtml(goldPathT(locale, "cost.emptyBudgets"))}</p>`;
   }
   return vm.budget.slice(0, 5).map((usage, index) => {
     if (usage.enabled === false) {
@@ -3624,20 +3647,20 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "agents.kicker"))}</span>
-          <h1>${escapeHtml(locale === "zh-CN" ? "军团正在为你干活" : "Your agent teams at work")}</h1>
+          <h1>${escapeHtml(vm.empty_state === "no_agent_armies" ? routeT(locale, "agents.titleEmpty") : (locale === "zh-CN" ? "军团正在为你干活" : "Your agent teams at work"))}</h1>
           <p>${escapeHtml(routeT(locale, "agents.summary"))}</p>
         </div>
-        <span class="wh-r4-route-count">${escapeHtml(String(vm.kpis.active_team_count))}</span>
+        ${vm.kpis.active_team_count > 0 ? `<span class="wh-r4-route-count">${escapeHtml(locale === "zh-CN" ? `${vm.kpis.active_team_count} 支军团` : `${vm.kpis.active_team_count} ${vm.kpis.active_team_count === 1 ? "legion" : "legions"}`)}</span>` : ""}
       </header>
       <div class="wh-r4-route-grid" data-r9-agent-dashboard-kpis="true">${kpis}</div>
       ${warningStrip}
       ${capWarning}
       ${empty}
       <div class="wh-r4-route-grid">
-        <section class="wh-r4-route-card" data-r9-agent-dashboard-plans="true">
+        ${vm.plans.length ? `<section class="wh-r4-route-card" data-r9-agent-dashboard-plans="true">
           <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "agents.plans"))}</h3>
           <div class="wh-r4-route-grid">${planCards}</div>
-        </section>
+        </section>` : ""}
         <details class="wh-card wh-r4-route-card" data-r9-agent-recent-activity="accordion" open>
           <summary>${escapeHtml(routeT(locale, "agents.recent"))}</summary>
           <div class="wh-r4-route-timeline" role="list">${recent}</div>
@@ -3688,7 +3711,7 @@ function renderTeamSkillsRouteComponent(vm: TeamSkillsPageVM, locale: WorkHubLoc
           <h1>${escapeHtml(routeT(locale, "skills.title"))}</h1>
           <p>${escapeHtml(`${routeT(locale, "skills.summary")} · ${routeT(locale, "skills.active")} ${vm.totals.active} · ${routeT(locale, "skills.refined")} ${vm.totals.refined}`)}</p>
         </div>
-        <span class="wh-r4-route-count">${escapeHtml(String(vm.totals.active))}</span>
+        <span class="wh-r4-route-count">${escapeHtml(locale === "zh-CN" ? `${vm.totals.active} 个技能` : `${vm.totals.active} ${vm.totals.active === 1 ? "skill" : "skills"}`)}</span>
       </header>
       <div class="wh-r4-route-grid">${cards}</div>
     </section>`
@@ -3887,7 +3910,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
       </div>
       <span class="wh-pill">${escapeHtml(budgetStatusLabel(locale, risk.status))}</span>
     </div>`).join("")
-    : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "cost.statusFallback"))}</p>`;
+    : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "cost.emptyRisks"))}</p>`;
   const zhNotice = locale === "zh-CN";
   const notices = vm.notices.length
     // M24：预算通知要把推荐动作(降级模型/暂停/联系管理员)当按钮渲出来,而不是只给一个跳回本页的自指链接;
@@ -4100,7 +4123,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-cost-models="true">
           <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "cost.models"))}</h3>
-          <div class="wh-r4-route-timeline" role="list">${models || `<p role="listitem" class="wh-subtle">${escapeHtml(goldPathT(locale, "cost.statusFallback"))}</p>`}</div>
+          <div class="wh-r4-route-timeline" role="list">${models || `<p role="listitem" class="wh-subtle">${escapeHtml(goldPathT(locale, "cost.emptyModels"))}</p>`}</div>
           ${vm.model_breakdown.length > 5 ? `<p class="wh-subtle" data-r13-cost-models-capped="${escapeHtml(String(vm.model_breakdown.length - 5))}">${escapeHtml(locale === "zh-CN" ? `按花费只显示前 5 个模型（共 ${vm.model_breakdown.length} 个）。` : `Showing the 5 costliest models of ${vm.model_breakdown.length}.`)}</p>` : ""}
         </section>
       </div>
@@ -4163,7 +4186,7 @@ function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale
           <h1>${escapeHtml(routeT(locale, "knowledge.sources"))}</h1>
           <p>${escapeHtml(vm.summary_text)}</p>
         </div>
-        <span class="wh-r4-route-count">${escapeHtml(String(refs.length))}</span>
+        <span class="wh-r4-route-count">${escapeHtml(locale === "zh-CN" ? `${refs.length} 条` : `${refs.length} ${refs.length === 1 ? "item" : "items"}`)}</span>
       </header>
       ${searchBlock}
       ${sourceRef ? `<p class="wh-subtle" data-r5-7-knowledge-source-ref="${escapeHtml(sourceRef)}">${escapeHtml(routeT(locale, "knowledge.fromNotice"))}: ${escapeHtml(sourceRef)}</p>` : ""}
@@ -4188,7 +4211,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
     locale,
     pageVm: "settings",
     reactComponent,
-    html: `<section class="wh-r4-route" data-r4-route-component="settings" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}"${reactAttrs} data-r4-settings-generated-at="${escapeHtml(props.generatedAt)}" data-r4-settings-runtime-status="${escapeHtml(props.runtimeStatus)}" data-r4-settings-broker="${escapeHtml(props.brokerBackend)}" data-r4-settings-worker-count="${escapeHtml(String(props.workerCount))}" data-r4-settings-active-locale="${escapeHtml(props.activeLocale)}" data-r4-settings-preference-locale="${escapeHtml(props.preferenceLocale)}" data-r4-settings-preference-source="${escapeHtml(props.preferenceSource)}" data-r4-settings-preference-synced="${escapeHtml(String(props.preferenceSynced))}" data-r4-settings-secret-safe="${escapeHtml(String(props.secretSafe))}" data-r4-settings-pet-model-in-web="${escapeHtml(String(props.petModelSettingsInWeb))}" data-r4-settings-desktop-client="${escapeHtml(props.desktopClient)}" data-r4-settings-local-boundary="${escapeHtml(String(props.localExecutionBoundary))}" data-r4-settings-restore-requires-desktop="${escapeHtml(String(props.restoreRequiresDesktop))}" data-r4-settings-web-local-actions="${escapeHtml(String(props.webLocalActionsEnabled))}">
+    html: `<section class="wh-r4-route" data-r4-route-component="settings" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}"${reactAttrs} data-r4-settings-generated-at="${escapeHtml(props.generatedAt)}" data-r4-settings-runtime-status="${escapeHtml(props.runtimeStatus)}" data-r4-settings-broker="${escapeHtml(props.brokerBackend)}" data-r4-settings-worker-count="${escapeHtml(String(props.workerCount))}" data-r4-settings-active-locale="${escapeHtml(props.activeLocale)}" data-r4-settings-preference-locale="${escapeHtml(props.preferenceLocale)}" data-r4-settings-preference-source="${escapeHtml(props.preferenceSource)}" data-r4-settings-preference-synced="${escapeHtml(String(props.preferenceSynced))}" data-r4-settings-pet-model-in-web="${escapeHtml(String(props.petModelSettingsInWeb))}" data-r4-settings-desktop-client="${escapeHtml(props.desktopClient)}" data-r4-settings-local-boundary="${escapeHtml(String(props.localExecutionBoundary))}" data-r4-settings-restore-requires-desktop="${escapeHtml(String(props.restoreRequiresDesktop))}" data-r4-settings-web-local-actions="${escapeHtml(String(props.webLocalActionsEnabled))}">
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "settings.kicker"))}</span>
@@ -4220,14 +4243,13 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
       </div>
       ${vm.permission_policies !== undefined ? `<section class="wh-card wh-r4-route-card" data-r9-settings-policies="${escapeHtml(String(vm.permission_policies.length))}">
         <h3 role="heading" aria-level="2">${escapeHtml(locale === "zh-CN" ? "自动通过规则" : "Auto-approve rules")}</h3>
-        <p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "勾选「以后同类自动通过」留下的常驻规则都在这里；撤销需在桌面端操作。" : "Standing rules from \u201calways allow\u201d live here; revoking requires the desktop app.")}</p>
         <div class="wh-r4-route-timeline" role="list">${vm.permission_policies.length
           ? vm.permission_policies.map((policy) => `<div role="listitem" class="wh-r4-route-row" data-r9-settings-policy="${escapeHtml(policy.id)}">
             <div>
               <strong>${escapeHtml(policy.action_pattern)}</strong>
               <p>${escapeHtml(`${policy.effect === "allow" ? (locale === "zh-CN" ? "自动通过" : "Auto-allow") : policy.effect === "deny" ? (locale === "zh-CN" ? "自动拒绝" : "Auto-deny") : (locale === "zh-CN" ? "每次询问" : "Ask")}${policy.learned_from_session ? (locale === "zh-CN" ? " · 来自审批时的勾选" : " · learned from approval") : ""}`)}</p>
             </div>
-            <a class="wh-btn" href="${escapeHtml(safeHref(policy.revoke_href))}" data-action-id="revoke_policy" data-method="DELETE" data-requires-desktop="true">${escapeHtml(locale === "zh-CN" ? "撤销" : "Revoke")}</a>
+            <a class="wh-btn" href="${escapeHtml(safeHref(policy.revoke_href))}" data-action-id="revoke_policy" data-method="DELETE">${escapeHtml(locale === "zh-CN" ? "撤销" : "Revoke")}</a>
           </div>`).join("")
           : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "还没有常驻规则。" : "No standing rules yet.")}</p>`}</div>
       </section>` : ""}
@@ -4243,12 +4265,10 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
         <section class="wh-card wh-r4-route-card" data-r4-settings-llm="true">
           <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "settings.llm"))}</h3>
           <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.provider"))}</strong><span class="wh-pill">${escapeHtml(props.defaultProvider)}</span></div>
-          <div role="listitem" class="wh-r4-route-row"><div><strong>${escapeHtml(routeT(locale, "settings.model"))}</strong><p>${escapeHtml(props.defaultModel)}</p></div><span class="wh-pill">${escapeHtml(String(props.providerCount))}</span></div>
+          <div role="listitem" class="wh-r4-route-row"><div><strong>${escapeHtml(routeT(locale, "settings.model"))}</strong><p>${escapeHtml(props.defaultModel)}</p></div></div>
           <div role="listitem" class="wh-r4-route-row" title="${escapeHtml(locale === "zh-CN" ? "AI 引擎的服务端密钥；「未配置」时 AI 功能不可用，需管理员在服务端设置。" : "Server-side key for the AI engine; if unset, AI features are unavailable until an admin configures it.")}"><strong>${escapeHtml(routeT(locale, "settings.apiKey"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.apiKeyConfigured, locale))}</span></div>
           ${!props.apiKeyConfigured ? `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "AI 引擎密钥未配置——AI 功能不可用，请管理员在服务端设置。" : "AI engine key not set — AI features are unavailable until an admin configures the server.")}</p>` : ""}
           <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.baseUrl"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.baseUrlConfigured, locale))}</span></div>
-          <div role="listitem" class="wh-r4-route-row" title="${escapeHtml(locale === "zh-CN" ? "密钥只存服务端环境变量、绝不发给浏览器；「未配置」时联系管理员在服务端配置。" : "Keys live only in server env vars and never reach the browser; if unset, ask an admin to configure the server.")}"><strong>${escapeHtml(routeT(locale, "settings.secretSafe"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.secretSafe, locale))}</span></div>
-          <p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "密钥只存服务端环境变量，绝不发给浏览器。" : "Keys live only in server env vars and never reach the browser.")}</p>
         </section>
       </div>
 

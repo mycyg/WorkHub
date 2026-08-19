@@ -407,7 +407,8 @@ function buildDrivePage(
   actor: AuthActor,
   requestedItemId?: string,
   linkAccess?: WorkItemLinkAccess,
-  locale: WorkHubLocale = "zh-CN"
+  locale: WorkHubLocale = "zh-CN",
+  nameQuery?: string
 ): DrivePageVM {
   const allItems = [...rows.items, ...rows.deletedItems];
   const itemById = new Map(allItems.map((item) => [item.id, item]));
@@ -642,7 +643,12 @@ function buildDrivePage(
         status: "active"
       }
     } : { empty_state: "no_project" }),
-    ...(rows.project && itemVms.length === 0 ? { empty_state: "no_drive_items" } : {})
+    // 搜索无命中 vs 真空盘：nameQuery 非空且过滤后 0 命中 → no_search_match，否则真空盘 no_drive_items。
+    ...(rows.project && itemVms.length === 0
+      ? { empty_state: nameQuery ? "no_search_match" : "no_drive_items" }
+      : {}),
+    // nameQuery 非空时回填查询串（不论有无命中），供前端诚实提示「关于 X 的搜索」。
+    ...(nameQuery ? { search_query: nameQuery } : {})
   };
   return parseOutputContract(drivePageVmSchema, data, "drive.page");
 }
@@ -942,7 +948,7 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
           ...rows.acceptedDeliverables.map((accepted) => accepted.accepted.workItemId)
         ]
       });
-      return buildDrivePage(rows, deps.now?.() ?? new Date(), input.actor, input.itemId, linkAccess, input.locale);
+      return buildDrivePage(rows, deps.now?.() ?? new Date(), input.actor, input.itemId, linkAccess, input.locale, input.nameQuery);
     },
     async file(input) {
       const rows = await deps.repo.readFile?.({ projectId: input.projectId, itemId: input.itemId });

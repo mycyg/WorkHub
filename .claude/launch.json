@@ -4,26 +4,74 @@
     {
       "name": "desktop-webview",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@workhub/desktop-webview", "dev", "--", "--port", "1420"],
+      "runtimeArgs": [
+        "--filter",
+        "@workhub/desktop-webview",
+        "dev",
+        "--",
+        "--port",
+        "1420"
+      ],
       "port": 1420
     },
     {
       "name": "desktop-prod",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@workhub/desktop-webview", "preview"],
+      "runtimeArgs": [
+        "--filter",
+        "@workhub/desktop-webview",
+        "preview"
+      ],
       "port": 1420
     },
     {
       "name": "web-prod",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@workhub/web", "preview"],
+      "runtimeArgs": [
+        "--filter",
+        "@workhub/web",
+        "preview"
+      ],
       "port": 5173
     },
     {
       "name": "web",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@workhub/web", "dev"],
+      "runtimeArgs": [
+        "--filter",
+        "@workhub/web",
+        "dev"
+      ],
       "port": 5173
+    },
+    {
+      "name": "r12-prototype",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "r12-desktop-workbench/prototype/serve.mjs"
+      ],
+      "port": 4173
+    },
+    {
+      "name": "web-r13",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--dir",
+        "/Users/apple/.codex/worktrees/WorkHub/r12-workbench-full/apps/web",
+        "dev",
+        "--",
+        "--port",
+        "5175"
+      ],
+      "port": 5175
+    },
+    {
+      "name": "r13dist",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "/private/tmp/claude-501/-Users-apple-Desktop------WorkHub/bcba249a-0475-4c39-b4d7-cd33989a0109/scratchpad/serve-r13-dist.mjs"
+      ],
+      "port": 4174
     }
   ]
 }

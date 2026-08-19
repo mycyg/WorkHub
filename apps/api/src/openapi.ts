@@ -2264,6 +2264,7 @@ const calendarPageResponseSchema = {
         required: ["date", "blocks"],
         properties: {
           date: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+          is_today: { type: "boolean" },
           blocks: { type: "array", items: scheduleBlockResponseSchema }
         },
         additionalProperties: false
@@ -2474,6 +2475,7 @@ const drivePageResponseSchema = {
     },
     can_manage: { type: "boolean" },
     selected_item_id: uuidStringSchema,
+    search_query: { type: "string" },
     items: { type: "array", items: { type: "object", additionalProperties: true } },
     deleted_items: { type: "array", items: { type: "object", additionalProperties: true } },
     versions: { type: "array", items: { type: "object", additionalProperties: true } },
@@ -2490,7 +2492,7 @@ const drivePageResponseSchema = {
       },
       additionalProperties: false
     },
-    empty_state: { type: "string", enum: ["no_project", "no_drive_items"] }
+    empty_state: { type: "string", enum: ["no_project", "no_drive_items", "no_search_match"] }
   },
   additionalProperties: false
 } as const;

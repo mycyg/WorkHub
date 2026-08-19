@@ -908,6 +908,94 @@ test("registering without a secret stays a regular user", async () => {
   assert.equal(body.is_admin, false);
 });
 
+// A1（委派全链路回归）：昵称模式 identify 必须建默认工作区 active membership，否则成员目录/委派恒 403。
+test("identify creates a default workspace membership for a new nickname user", async () => {
+  const memberships = new MemoryMemberships();
+  const runtimeSettings = settings();
+  const authDeps: AuthDependencies = { ...deps([], [], runtimeSettings), memberships };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const res = await app.request("/api/auth/identify", jsonPost({ nickname: "Newbie" }));
+  assert.equal(res.status, 201);
+  assert.equal(memberships.rows.length, 1);
+  assert.equal(memberships.rows[0]?.workspaceId, runtimeSettings.auth.defaultWorkspaceId);
+  assert.equal(memberships.rows[0]?.role, "member");
+  assert.equal(memberships.rows[0]?.defaultWorkspace, true);
+});
+
+test("identify backfills a default workspace membership for an existing nickname user", async () => {
+  const alice = user({ nickname: "alice" });
+  const memberships = new MemoryMemberships();
+  const runtimeSettings = settings();
+  const authDeps: AuthDependencies = { ...deps([alice], [], runtimeSettings), memberships };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const res = await app.request("/api/auth/identify", jsonPost({ nickname: "alice" }));
+  assert.equal(res.status, 200); // 老用户登录（created=false）
+  assert.equal(memberships.rows.length, 1);
+  assert.equal(memberships.rows[0]?.userId, alice.id);
+  assert.equal(memberships.rows[0]?.defaultWorkspace, true);
+});
+
+test("identify does not duplicate an existing membership (idempotent)", async () => {
+  const alice = user({ nickname: "alice" });
+  const memberships = new MemoryMemberships();
+  const runtimeSettings = settings();
+  await memberships.create({
+    workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+    userId: alice.id,
+    role: "member",
+    defaultWorkspace: true
+  });
+  const authDeps: AuthDependencies = { ...deps([alice], [], runtimeSettings), memberships };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const res = await app.request("/api/auth/identify", jsonPost({ nickname: "alice" }));
+  assert.equal(res.status, 200);
+  assert.equal(memberships.rows.length, 1);
+});
+
+test("identify assigns the owner role when a fresh user bootstraps admin", async () => {
+  const memberships = new MemoryMemberships();
+  const runtimeSettings = settings({ ADMIN_CLAIM_SECRET: "let-me-in" });
+  const authDeps: AuthDependencies = { ...deps([], [], runtimeSettings), memberships };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const res = await app.request("/api/auth/identify", jsonPost({ nickname: "Pilot Admin", admin_secret: "let-me-in" }));
+  assert.equal(res.status, 201);
+  assert.equal(((await res.json()) as { is_admin: boolean }).is_admin, true);
+  assert.equal(memberships.rows.length, 1);
+  assert.equal(memberships.rows[0]?.role, "owner");
+});
+
+test("identify succeeds without a memberships repository (no membership write)", async () => {
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(deps([], [], settings())));
+  const res = await app.request("/api/auth/identify", jsonPost({ nickname: "NoMembers" }));
+  assert.equal(res.status, 201);
+});
+
+test("desktop-bootstrap creates a default workspace membership for the nickname user", async () => {
+  const memberships = new MemoryMemberships();
+  const runtimeSettings = settings();
+  const authDeps: AuthDependencies = { ...deps([], [], runtimeSettings), memberships };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const res = await app.request(
+    "/api/auth/desktop-bootstrap",
+    jsonPost({ nickname: "Desktop User", device_name: "MacBook" })
+  );
+  assert.equal(res.status, 201);
+  assert.equal(memberships.rows.length, 1);
+  assert.equal(memberships.rows[0]?.workspaceId, runtimeSettings.auth.defaultWorkspaceId);
+  assert.equal(memberships.rows[0]?.defaultWorkspace, true);
+});
+
 test("findings: malformed JSON body to /identify returns malformed_json, not a generic 400", async () => {
   const app = withProductionHttpErrors(new Hono<AuthEnv>());
   app.route("/api/auth", createAuthRoutes(deps([], [], settings())));

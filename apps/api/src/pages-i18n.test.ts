@@ -193,12 +193,19 @@ test("Page VM builders localize generated English copy without translating user/
     "Ask an admin"
   ]);
 
-  const settingsPage = buildSettingsPage({ settings, locale: "en-US", generatedAt: new Date(at) });
+  const settingsPage = buildSettingsPage({
+    settings,
+    readiness: {
+      ready: true,
+      checks: { database: { ok: true }, broker: { ok: true } }
+    },
+    locale: "en-US",
+    generatedAt: new Date(at)
+  });
   assert.equal(settingsPage.locale, "en-US");
   assert.equal(settingsPage.runtime.runtime_status, "ready");
   assert.equal(settingsPage.llm_runtime.default_model, "deepseek-v4-flash");
   assert.equal(settingsPage.llm_runtime.api_key_configured, false);
-  assert.equal(settingsPage.llm_runtime.secret_safe, true);
   assert.equal(settingsPage.language.preference_locale, "en-US");
   assert.equal(settingsPage.language.preference_source, "request");
   assert.equal(settingsPage.language.preference_synced, true);

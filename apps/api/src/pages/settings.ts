@@ -2,9 +2,11 @@ import { settingsPageVmSchema, workHubLocaleStorageKey, workHubLocales, type Set
 import type { Settings } from "@workhub/config";
 
 import { parseOutputContract } from "./output-contract.js";
+import type { ReadinessResult } from "../readiness.js";
 
 type SettingsPageInput = {
   settings: Settings;
+  readiness: ReadinessResult;
   locale: WorkHubLocale;
   preferenceLocale?: WorkHubLocale;
   preferenceSource?: "server" | "request" | "fallback";
@@ -19,8 +21,8 @@ type SettingsPageInput = {
 };
 
 export function buildSettingsPage(input: SettingsPageInput): SettingsPageVM {
-  const brokerConfigured = input.settings.broker.backend === "memory" || input.settings.broker.url.length > 0;
-  const databaseConfigured = input.settings.databaseUrl.length > 0;
+  const brokerConfigured = input.readiness.checks.broker?.ok === true;
+  const databaseConfigured = input.readiness.checks.database?.ok === true;
   const preferenceLocale = input.preferenceLocale ?? input.locale;
   const preferenceSource = input.preferenceSource ?? (input.preferenceLocale ? "server" : "request");
   // findings[#79 同类]：返回前过 fail-closed 输出契约校验，VM 装配走样 → 500（不是甩给调用方 422）。
@@ -43,7 +45,7 @@ export function buildSettingsPage(input: SettingsPageInput): SettingsPageVM {
       : {}),
     runtime: {
       app_env: input.settings.appEnv,
-      runtime_status: brokerConfigured && databaseConfigured && input.settings.workerCount > 0 ? "ready" : "attention_needed",
+      runtime_status: input.readiness.ready && brokerConfigured && databaseConfigured ? "ready" : "attention_needed",
       worker_count: input.settings.workerCount,
       broker_backend: input.settings.broker.backend,
       broker_configured: brokerConfigured,
@@ -56,8 +58,7 @@ export function buildSettingsPage(input: SettingsPageInput): SettingsPageVM {
       default_model: input.settings.llm.model,
       provider_count: Object.keys(input.settings.providers).length,
       api_key_configured: input.settings.llm.apiKey.length > 0,
-      base_url_configured: input.settings.llm.baseUrl.length > 0,
-      secret_safe: true
+      base_url_configured: input.settings.llm.baseUrl.length > 0
     },
     budgets: {
       run_tokens: input.settings.budgets.runTokens,
