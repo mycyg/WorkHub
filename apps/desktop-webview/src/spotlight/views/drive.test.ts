@@ -280,3 +280,10 @@ test("R9.7 desktop drive no-project empty state avoids dispatch copy", () => {
   assert.match(zh, /交给 Cuu 一个任务/u);
   assert.match(en, /Create a task/u);
 });
+
+test("L-01 (R24 S3 walkthrough): drive no-project empty state uses an SVG face, not an emoji", () => {
+  const html = driveNoProjectsEmptyHtml(true);
+
+  assert.doesNotMatch(html, /[\u{1F300}-\u{1FAFF}]/u, "must not contain emoji");
+  assert.match(html, /<div class="wh-spot-empty-face"><svg /u);
+});

@@ -379,12 +379,19 @@ function backgroundIntervalLabel(intervalMs: number, zh: boolean): string {
 }
 
 // 定时任务名 → 人话(与 pulse-scheduler.ts 注册的 name 一一对应)。未映射的名字诚实回退原串，不编造。
+// M-10（R24 S3 走查）：pulse-scheduler.ts 后来又注册了 clarification-chase/proactive-intent-recovery
+// 两个任务，这张表没跟上——情境面板里就混进了两条没翻译的内部调度器 id，终端用户看不懂。补齐。
 const BACKGROUND_TASK_LABEL: Record<string, [string, string]> = {
   "approval-sla": ["审批超时巡检", "Approval SLA sweep"],
   "notification-reminder": ["通知提醒阶梯", "Notification reminders"],
   "approval-digest": ["待拍板汇总卡", "Approval digest"],
   "ddl-chase": ["追截止日期", "Deadline chase"],
-  "care-scan": ["主动关怀扫描", "Care scan"]
+  "care-scan": ["主动关怀扫描", "Care scan"],
+  // CHAT-8：扫描长期无人回答的澄清会话，给提交人推一条提醒。
+  "clarification-chase": ["澄清待办提醒", "Clarification nudges"],
+  // R20 REL-2：主动提醒投递前若进程崩溃，扫描并补投那些卡住的记录（纯内部容错，无新用户价值主张，
+  // 但仍要给个人话名字，不能漏译成生 id）。
+  "proactive-intent-recovery": ["主动提醒补投", "Proactive nudge retry"]
 };
 
 function backgroundTaskLabel(name: string, zh: boolean): string {

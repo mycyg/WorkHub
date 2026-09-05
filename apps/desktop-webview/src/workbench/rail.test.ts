@@ -451,20 +451,20 @@ test("renderNewProjectModalHtml toggles data-open and disables the submit button
   assert.match(closed, /data-open="false"/u);
   assert.match(closed, /data-wb-new-project-submit disabled/u);
 
-  const openWithName = renderNewProjectModalHtml({ locale: "zh-CN", open: true, name: "泰诺麦博推广", submitting: false });
+  const openWithName = renderNewProjectModalHtml({ locale: "zh-CN", open: true, name: "客户复盘项目", submitting: false });
   assert.match(openWithName, /data-open="true"/u);
   assert.doesNotMatch(openWithName, /data-wb-new-project-submit disabled/u);
 });
 
 test("renderNewProjectModalHtml disables inputs while submitting and surfaces a server error", () => {
-  const submitting = renderNewProjectModalHtml({ locale: "zh-CN", open: true, name: "泰诺麦博推广", submitting: true });
+  const submitting = renderNewProjectModalHtml({ locale: "zh-CN", open: true, name: "客户复盘项目", submitting: true });
   assert.match(submitting, /data-wb-new-project-name[^>]*disabled/u);
   assert.match(submitting, /创建中/u);
 
   const errored = renderNewProjectModalHtml({
     locale: "zh-CN",
     open: true,
-    name: "泰诺麦博推广",
+    name: "客户复盘项目",
     submitting: false,
     error: "这个项目标识已被占用"
   });

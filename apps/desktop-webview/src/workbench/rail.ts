@@ -639,6 +639,8 @@ export function renderDmGroupHtml(input: {
   return `<div class="wh-wb-rail-group">${head}${rows}</div>`;
 }
 
+// L-03（R24 S3 走查）：占位符此前含一个真实公司名——公开仓库不该留客户真名，换成中性示例；
+// 与 spotlight/views/new-project.ts 那份盒子内联新建入口用同一个示例名，两处口径一致。
 export function renderNewProjectModalHtml(input: {
   locale: Locale;
   open: boolean;
@@ -654,7 +656,7 @@ export function renderNewProjectModalHtml(input: {
         class="wh-wb-modal-input"
         type="text"
         maxlength="128"
-        placeholder="${zh ? "项目名，如：泰诺麦博推广" : "Project name"}"
+        placeholder="${zh ? "项目名，如：产品路线图" : "Project name, e.g. Product roadmap"}"
         data-wb-new-project-name
         value="${escapeHtml(input.name)}"
         ${input.submitting ? "disabled" : ""}

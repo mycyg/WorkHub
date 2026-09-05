@@ -245,6 +245,108 @@ test("settings view renders the AI section with the profile's current selections
   assert.match(body.innerHTML, /建任务 · 允许/u);
 });
 
+// —— M-06（R24 S3 走查）：「AI assistant · Not set up」此前是个死状态——没有说明也没有入口。 ——
+
+function settingsVmWithAi(apiKeyConfigured: boolean): SettingsPageVM {
+  const vm = settingsVm();
+  return { ...vm, llm_runtime: { ...vm.llm_runtime, api_key_configured: apiKeyConfigured } };
+}
+
+test("M-06: settings explains an unconfigured AI assistant with an actionable link, and mounts nothing extra once it's ready", async () => {
+  const notConfigured = new FakeBody();
+  await createSettingsView().mount(
+    baseCtx(notConfigured, {
+      client: {
+        pages: { async settings() { return settingsVmWithAi(false); } },
+        async request<T>(path: string) {
+          if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+          return aiProfileVm() as unknown as T;
+        }
+      } as unknown as SpotlightViewContext["client"]
+    })
+  );
+  await tick();
+
+  assert.match(notConfigured.innerHTML, /data-spot-ai-not-configured="true"/u);
+  assert.match(notConfigured.innerHTML, /LLM_API_KEY/u, "names the concrete env var an admin needs to set");
+  assert.match(notConfigured.innerHTML, /data-set-ai-deploy-docs="true"/u, "gives a link to the deployment docs");
+
+  const configured = new FakeBody();
+  await createSettingsView().mount(
+    baseCtx(configured, {
+      client: {
+        pages: { async settings() { return settingsVmWithAi(true); } },
+        async request<T>(path: string) {
+          if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+          return aiProfileVm() as unknown as T;
+        }
+      } as unknown as SpotlightViewContext["client"]
+    })
+  );
+  await tick();
+
+  assert.doesNotMatch(configured.innerHTML, /data-spot-ai-not-configured/u, "the note only shows up when AI really isn't configured");
+});
+
+test("M-06: clicking 'view deployment instructions' copies the DEPLOY.md link and confirms it, instead of a dead target=_blank (Tauri webview has no external-link handler)", async () => {
+  await withFakeHtmlElement(async () => {
+    const toasts: Array<{ message: string; tone?: string | undefined }> = [];
+    const body = new FakeBody();
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return settingsVmWithAi(false); } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          }
+        } as unknown as SpotlightViewContext["client"],
+        toast: (message: string, tone?: string) => {
+          toasts.push({ message, tone });
+        }
+      })
+    );
+    await tick();
+
+    // Node 21+ defines a getter-only global `navigator` — plain assignment throws
+    // ("Cannot set property navigator ... which has only a getter"). Same trick as
+    // controller-drag.test.ts uses for `Element`: redefine the property.
+    const copiedUrls: string[] = [];
+    const previousNavigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: {
+        clipboard: {
+          writeText: async (text: string) => {
+            copiedUrls.push(text);
+          }
+        }
+      }
+    });
+    try {
+      body.click(new FakeElement(new Set(["[data-set-ai-deploy-docs]"])));
+      await tick();
+    } finally {
+      if (previousNavigatorDescriptor) {
+        Object.defineProperty(globalThis, "navigator", previousNavigatorDescriptor);
+      } else {
+        delete (globalThis as { navigator?: unknown }).navigator;
+      }
+    }
+
+    assert.deepEqual(copiedUrls, ["https://github.com/mycyg/WorkHub/blob/main/DEPLOY.md"]);
+    assert.ok(
+      toasts.some((t) => t.tone === "ok" && (/copied|paste/iu.test(t.message) || /已复制/u.test(t.message))),
+      "confirms the copy so the user knows the click did something"
+    );
+  });
+});
+
+test("L-04: the signed-in devices explanation wraps instead of being clipped to one ellipsized line", () => {
+  const html = devicesSectionHtml(devicesState({ devices: [] }), true);
+  assert.match(html, /class="wh-spot-row-sub wh-spot-row-sub--wrap"/u);
+});
+
 test("clicking a mode chip optimistically updates and PATCHes only default_mode", async () => {
   await withFakeHtmlElement(async () => {
     const body = new FakeBody();
