@@ -55,8 +55,9 @@ docker compose --env-file .env.pilot -f docker-compose.pilot.yml logs -f workhub
   `conversation_observer_disabled` / `conversation_reply_judge_disabled` 日志，不会反复重试打空转的 LLM 请求。
 - 风险巡检（工单停滞/临期/成本异常/绑定仓库长期没有新提交）与 GitHub 轮询走确定性规则，**不依赖 LLM，照常运行**，与是否配置 key 无关。
 - 团队技能夜间自学（§3.4）**不会启动**——服务端只打一行 `skill_curation_disabled` 日志（`reason` 写明是没配密钥还是被开关关掉），不会每夜白跑一遍再被打回。
-- Web/桌面 composer 顶部会出现一条“AI 服务未配置”的横幅（读 `GET /api/health` 的 `ai_provider_configured`
-  字段）。**这条横幅只是提示，不拦发送**——如果这时候用户仍然直接找 Cuu 说话（1:1 协同会话或 @Cuu），
+- Web 端任意页面顶部、桌面聊天输入区顶部都会出现一条”AI 服务未配置”的横幅（读 `GET /api/health` 的
+  `ai_provider_configured` 字段——与设置页显示的密钥状态同一来源）。**这条横幅只是提示，不拦发送**——
+  如果这时候用户仍然直接找 Cuu 说话（1:1 协同会话或 @Cuu），
   会同步收到一条明确的失败响应（“这一轮 Cuu 没接上，请再试一次”，HTTP 500），而不是卡死、超时或没反应。
   这是已知的、可接受的降级行为：错误是即时且可见的，不是静默假死。
 
@@ -159,6 +160,17 @@ docker compose --env-file .env.pilot -f docker-compose.pilot.yml up -d --build  
 Pilot 栈默认 `APP_ENV=development` —— 对应规格树的 **LAN-first 信任模型**（D-3）：同网即信任、昵称报到、无密码、cookie 走 http。这是给可信局域网内 1–10 人试运行的口径。
 
 **如果要暴露到公网/HTTPS**：设 `APP_ENV=production`，此时配置守卫会强制要求强 `COOKIE_SECRET`、`COOKIE_SECURE=true`（需 HTTPS）、收紧 `CORS_ALLOW_ORIGINS`（不许 `*`）——任何一项不满足进程直接拒绝启动（fail-closed）。完整威胁模型重审清单见 `docs/workhub/01-architecture/security-and-permissions.md` §1.3。
+
+**`AUTH_MODE` 在生产环境必须是 `password` 或 `hybrid`，不能是 `nickname`**（同一处 fail-closed 守卫，进程直接拒绝启动）——昵称模式没有口令/会话边界，cookie 即身份，不适合暴露到公网。设置：
+
+```bash
+# .env.pilot 加一行（或直接设为容器环境变量）：
+AUTH_MODE=password
+```
+
+这两种模式下 web 和桌面端都改走邮箱 + 密码登录（`POST /api/auth/login`）；`/`（web）首次打开会自动探测到这个模式并渲染邮箱/密码表单，不再是昵称报到屏。**首个管理员怎么来**：这两种模式下没有"填昵称 + 勾选管理员 + 填 `ADMIN_CLAIM_SECRET`"这条路——改成在登录屏切到"注册"标签页，用邮箱 + 昵称 + 密码创建账号（`POST /api/auth/register`）；只要这个实例当前还没有任何管理员，**第一个完成注册的账号会被服务端自动提为管理员**，不需要额外操作。之后再注册的账号都是普通成员，管理员身份只能后续在设置页的成员管理里手动授予。
+
+注意：配置守卫仍然要求 `ADMIN_CLAIM_SECRET` 在生产环境非空且 ≥16 位（这道检查不区分 `AUTH_MODE`），但这个值只在昵称模式的认领流程里会被读取——`password`/`hybrid` 模式下随便生成一个满足长度要求的随机串占位即可（`openssl rand -hex 16`），它不会被用到、也不会影响上面这条"第一个注册者自动成为管理员"的流程。
 
 ## 9. 日志口径
 

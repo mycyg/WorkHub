@@ -1,4 +1,5 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
+import type { IdentityResponse } from "@workhub/api-client";
 import { eventTypes, type ActionSpec, type AiFeedbackVerdict, type ClientDeviceResponse, type DmListVM, type ObjectiveDetailResponse, type ProjectListVM, type PutAiFeedbackRequest, type SearchResultsVm, type SkillEditOp } from "@workhub/contracts";
 import {
   classifyGoldPathHref,
@@ -12,7 +13,9 @@ import {
   type WorkHubLocale
 } from "@workhub/ui/gold-path";
 import { renderProposalConflictCards } from "@workhub/ui/proposal";
-import { renderOnboardingScreen, renderInviteAcceptScreen } from "@workhub/ui";
+import { renderOnboardingScreen, renderInviteAcceptScreen, renderPasswordAuthScreen, type PasswordAuthScreenTab } from "@workhub/ui";
+import { renderAiReadinessBannerHtml, renderIntakeAiReadinessNoteHtml } from "./ai-readiness-banner.js";
+import { detectAuthScreenMode, describeAuthScreenError, type AuthScreenMode } from "./auth-screen-mode.js";
 import { openAvatarCropModal } from "./avatar-crop-modal.js";
 import { armConfirmButton } from "./confirm-button.js";
 import {
@@ -51,6 +54,7 @@ import {
   browserLocale,
   bootstrapProjectActionFromHref,
   createNamedProjectActionFromHref,
+  createPersonalSpaceActionFromHref,
   clearActiveRouteDirty as sharedClearActiveRouteDirty,
   clearLiveDirtyMetrics as sharedClearLiveDirtyMetrics,
   conflictsFromMergeError,
@@ -788,7 +792,7 @@ function bindGoldPathNavigation(
           return;
         }
       }
-      showOnboardingScreen(client, locale);
+      await showOnboardingScreen(client, locale);
       return;
     }
 
@@ -1313,6 +1317,25 @@ function bindGoldPathNavigation(
             const body = created.created
               ? (locale === "en-US" ? `Created project: ${created.project.name}.` : `已创建项目：${created.project.name}。`)
               : (locale === "en-US" ? `Opened existing project: ${created.project.name}.` : `已打开同名的现有项目：${created.project.name}。`);
+            showRouteNotice(root, actionSuccessNotice(locale, body, actionId));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
+      // R23 P2（SA-05）：/projects 页「新建个人空间」按钮——服务端自动命名（无字段可采集，见
+      // action-payload.ts 的 createPersonalSpaceActionFromHref 注释），成功后停留在原地刷新整页
+      // （renderCurrentRoute），新空间随 bindMyConversationsPanel 的水合重新取数一起出现在列表里；
+      // 不像团队项目那样跳进新建资源的主页——个人空间创建是「清单里多一行」，不是「开始一个新项目」。
+      if (createPersonalSpaceActionFromHref(href) && actionTarget.dataset.r19CreatePersonalSpace === "true") {
+        try {
+          const created = await client.createPersonalProject({});
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            const body = locale === "en-US"
+              ? `Created personal space: ${created.project.name}.`
+              : `已创建个人空间：${created.project.name}。`;
             showRouteNotice(root, actionSuccessNotice(locale, body, actionId));
           }
         } catch (error) {
@@ -2346,6 +2369,7 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindProjectHomeInstructionsPanel(root, result, client, locale, signal);
   bindProjectHomeMembersPanel(root, result, client, locale, signal);
   bindMyConversationsPanel(root, result, client, locale, signal);
+  bindAiReadinessNotices(root, result, client, locale, signal);
   bindProjectHomeObjectivesPanel(root, result, client, locale, signal);
   bindConversationParticipantsPanel(root, result, client, locale, signal);
   bindSearchRoutePanel(root, result, client, locale, signal);
@@ -2450,6 +2474,53 @@ function bindAvatarTiles(container: HTMLElement, signal: AbortSignal) {
       img.hidden = true;
     };
     img.src = `/api/users/${encodeURIComponent(userId)}/avatar`;
+  });
+}
+
+// R23 P2（SA-08）：README 承诺的「AI 服务未配置」顶部横幅——此前只存在于桌面聊天输入区，web 端一个
+// 提示都没有，新用户第一次提需求才撞见后端失败响应。取数源是 GET /api/health 的
+// ai_provider_configured（部署级事实，只随 LLM_API_KEY + 容器重启变化，不随路由/会话变化），
+// 缓存这次页面会话里的第一次探活结果——不必每次导航都重新打一次这个请求。取数失败按「已配置」
+// 处理（不显示横幅）：宁可这次刷新暂时看不到提示，也不能因为一次网络抖动就吓唬本来配置正常的用户。
+let cachedAiProviderConfigured: Promise<boolean> | undefined;
+
+function aiProviderConfiguredCached(client: BrowserApiClient): Promise<boolean> {
+  cachedAiProviderConfigured ??= client.health().then(
+    (health) => health.ai_provider_configured,
+    () => true
+  );
+  return cachedAiProviderConfigured;
+}
+
+// 挂在每次就绪路由渲染后、不按路由 key 过滤（同 bindAvatarTiles 的先例）——壳层横幅挂载点
+// [data-wh-ai-banner] 在每次导航时都随整段 shell HTML 重新渲成 SSR 的 hidden 空态（product-shell.ts
+// 不知道这件事，也不应该知道——见该文件顶部注释），所以这里每次都要重新水合，而不是只做一次。
+// intake 路由额外在起点面板内插一条更具体的说明（提交会失败，不只是「有条横幅」）。
+function bindAiReadinessNotices(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  const banner = container.querySelector<HTMLElement>("[data-wh-ai-banner]");
+  const intakeRoute = result.match.key === "intake"
+    ? container.querySelector<HTMLElement>('[data-r4-route-component="intake"]')
+    : null;
+  if (!banner && !intakeRoute) {
+    return;
+  }
+  void aiProviderConfiguredCached(client).then((configured) => {
+    if (signal.aborted || configured) {
+      return;
+    }
+    if (banner) {
+      banner.innerHTML = renderAiReadinessBannerHtml(locale);
+      banner.hidden = false;
+    }
+    if (intakeRoute && !intakeRoute.querySelector("[data-r23-intake-ai-note]")) {
+      intakeRoute.insertAdjacentHTML("afterbegin", renderIntakeAiReadinessNoteHtml(locale));
+    }
   });
 }
 
@@ -3286,7 +3357,7 @@ function bindMyConversationsPanel(
         (value) => value,
         (): DmListVM | null => null
       ),
-      client.request<ProjectListVM>("/api/me/personal-projects").then(
+      client.listPersonalProjects().then(
         (value) => value,
         (): ProjectListVM | null => null
       )
@@ -5974,17 +6045,42 @@ function clearReadyRouteBindings() {
   liveRuntime?.clearRefreshTimer();
 }
 
-function showOnboardingScreen(
+// R23 P2（SA-04）：AUTH_MODE 是部署期常量（读环境变量，容器生命周期内不变）——探测一次即可，
+// 缓存这次页面会话的探测 Promise（同 aiProviderConfiguredCached 的先例：缓存 Promise 本身而非
+// resolve 后的值，并发调用天然共享同一次探测，不会因为还没 resolve 就重复发起第二次）。
+let authScreenModePromise: Promise<AuthScreenMode> | undefined;
+
+function resolveAuthScreenMode(client: BrowserApiClient): Promise<AuthScreenMode> {
+  authScreenModePromise ??= detectAuthScreenMode((payload) => client.identify(payload));
+  return authScreenModePromise;
+}
+
+// R23 P2（SA-04）：生产环境强制 AUTH_MODE!='nickname' 时，POST /api/auth/identify 恒 404——
+// 这个函数曾经只渲 renderOnboardingScreen（昵称 + 管理员口令），密码/hybrid 模式的用户完全无路可走
+// （登出/会话过期都会落到这里，此前落到的都是打不开的昵称表单）。现在先探测模式，再决定渲哪一个屏；
+// 探测结果缓存后，同一页面会话内的重复调用（登出、tab 切回探活、SSE 掉线回退等）几乎不再等待。
+//
+// 新增的 await 意味着这个函数不再是同步的——如果等待探测期间又发生了一次更新的 showOnboardingScreen/
+// renderCurrentRoute 调用（activeRouteRenderId 被更新的调用递增），这次探测结果作废，绝不覆盖更新的
+// 画面（同 renderCurrentRoute 自身的 renderId 竞态守卫）。
+async function showOnboardingScreen(
   client: BrowserApiClient,
   locale: WorkHubLocale,
-  input: { errorText?: string; presetNickname?: string } = {}
-) {
+  input: {
+    errorText?: string;
+    presetNickname?: string;
+    presetEmail?: string;
+    presetRegisterNickname?: string;
+    authTab?: PasswordAuthScreenTab;
+  } = {}
+): Promise<void> {
   if (!root) {
     return;
   }
   // R11 回归修复：R10 想修的「探活切注册屏后在途 renderCurrentRoute 盖回失效内容」竞态，
   // 递增被错落在 renderFatalRouteError（anchor 撞名）——真正的 not_identified 分流全走这里。
   activeRouteRenderId += 1;
+  const renderId = activeRouteRenderId;
   clearReadyRouteBindings();
   liveRuntime?.closeAllLiveEventSources();
   // findings[#low]：live runtime 单例创建时一次性捕获 locale。登出→切语言→重登后，
@@ -5997,6 +6093,23 @@ function showOnboardingScreen(
   activeLocale = locale;
   setDocumentLocale(locale);
   const targetRoute = `${window.location.pathname}${window.location.search}`;
+  const mode = await resolveAuthScreenMode(client);
+  if (!root || renderId !== activeRouteRenderId) {
+    return;
+  }
+  if (mode === "password") {
+    const tab: PasswordAuthScreenTab = input.authTab === "register" ? "register" : "login";
+    root.innerHTML = renderPasswordAuthScreen({
+      locale,
+      tab,
+      targetRoute,
+      ...(input.errorText ? { errorText: input.errorText } : {}),
+      ...(input.presetEmail ? { presetEmail: input.presetEmail } : {}),
+      ...(input.presetRegisterNickname ? { presetNickname: input.presetRegisterNickname } : {})
+    }).html;
+    bindPasswordAuthScreen(client, locale, tab, input.presetEmail, input.presetRegisterNickname);
+    return;
+  }
   root.innerHTML = renderOnboardingScreen({
     locale,
     targetRoute,
@@ -6022,7 +6135,7 @@ function bindOnboardingScreen(client: BrowserApiClient, locale: WorkHubLocale, p
         return;
       }
       persistBrowserLocale(nextLocale);
-      showOnboardingScreen(client, nextLocale, {
+      void showOnboardingScreen(client, nextLocale, {
         ...(nicknameInput?.value.trim() ? { presetNickname: nicknameInput.value.trim() } : {})
       });
     });
@@ -6030,6 +6143,41 @@ function bindOnboardingScreen(client: BrowserApiClient, locale: WorkHubLocale, p
   root.querySelector<HTMLFormElement>("[data-r5-9-onboarding-form]")?.addEventListener("submit", (event) => {
     event.preventDefault();
     void submitOnboarding(client, locale);
+  });
+}
+
+// R23 P2（SA-04）：登录/注册/昵称报到三条路径共享的「认证成功之后」编排——设身份、同步语言偏好
+// （并发发起 + 失败可见可重试，见下方 R20 P2-09 的注释）、渲工作台。fallbackNickname 只在
+// identityUserFrom 从响应体解不出昵称时兜底（服务端响应缺字段的防御性分支，正常不会触发）：
+// 昵称报到用用户刚输入的昵称；密码登录没有对应的"昵称"，退而用邮箱；密码注册用用户刚输入的昵称。
+async function completeAuthSuccess(
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  identity: IdentityResponse,
+  fallbackNickname: string
+) {
+  currentIdentity = identityUserFrom(identity) ?? { nickname: fallbackNickname, isAdmin: false };
+  persistBrowserLocale(locale);
+  // R20 P2-09：此前 `.catch(() => undefined)` 把语言偏好同步失败整个吞掉——用户以为界面语言已经
+  // 存到服务端，换设备/清缓存后又会掉回默认语言。不阻塞进入工作台（PATCH 与渲染并发发起），但落地
+  // 后要是没同步成功，就给可见告警 + 就地重试按钮，不能悄悄丢。
+  //
+  // R21（补丁）：notice 靠壳层 DOM 上的 [data-wh-app-notice]，引导页模板没有这个节点——PATCH 先于
+  // renderCurrentRouteOrOnboard 渲完 settle 时（典型场景：断网几乎立即 reject），告警会在壳层还没
+  // 渲出来那一刻被无声吞掉。所以这里立刻发起 PATCH（保持并发/不阻塞语义），但只把这个已经在飞的
+  // Promise 传给 runOnboardingLocaleSync，真正渲染 notice 的调用要等 renderCurrentRouteOrOnboard
+  // 之后才做。编排逻辑本身在 onboarding-locale-sync.ts（browser.ts 顶层引用 document，没法被单测
+  // 覆盖）。
+  const localeSyncFirstAttempt = client.updatePreferences({ locale }).then(() => undefined);
+  // 提前挂一个空 catch，避免壳层渲染这段时间内 Node 把它当成未处理拒绝报出来；真正的失败处理仍然
+  // 在 runOnboardingLocaleSync 里、渲染完成之后才触发。
+  localeSyncFirstAttempt.catch(() => undefined);
+  await renderCurrentRouteOrOnboard(client, locale);
+  await runOnboardingLocaleSync({
+    firstAttempt: localeSyncFirstAttempt,
+    retryUpdatePreferences: () => client.updatePreferences({ locale }).then(() => undefined),
+    showSyncFailedNotice: (retry) => showOnboardingLocaleSyncFailedNotice(locale, retry),
+    showSyncSucceededNotice: () => showOnboardingLocaleSyncSucceededNotice(locale)
   });
 }
 
@@ -6041,7 +6189,7 @@ async function submitOnboarding(client: BrowserApiClient, locale: WorkHubLocale)
   const nickname = nicknameInput?.value.trim() ?? "";
   if (!nickname) {
     // R6（表单）：留空提交此前只 focus 零反馈（表单带 novalidate，原生气泡也不弹）——渲染可见错误条。
-    showOnboardingScreen(client, locale, {
+    void showOnboardingScreen(client, locale, {
       errorText: locale === "en-US" ? "Please enter a nickname first." : "请先填写昵称。",
       presetNickname: ""
     });
@@ -6058,36 +6206,144 @@ async function submitOnboarding(client: BrowserApiClient, locale: WorkHubLocale)
       nickname,
       ...(adminSecret ? { admin_secret: adminSecret } : {})
     });
-    currentIdentity = identityUserFrom(identity) ?? { nickname, isAdmin: false };
-    persistBrowserLocale(locale);
-    // R20 P2-09：此前 `.catch(() => undefined)` 把语言偏好同步失败整个吞掉——用户以为界面语言已经
-    // 存到服务端，换设备/清缓存后又会掉回默认语言。不阻塞进入工作台（PATCH 与渲染并发发起），但落地
-    // 后要是没同步成功，就给可见告警 + 就地重试按钮，不能悄悄丢。
-    //
-    // R21（补丁）：notice 靠壳层 DOM 上的 [data-wh-app-notice]，引导页模板没有这个节点——PATCH 先于
-    // renderCurrentRouteOrOnboard 渲完 settle 时（典型场景：断网几乎立即 reject），告警会在壳层还没
-    // 渲出来那一刻被无声吞掉。所以这里立刻发起 PATCH（保持并发/不阻塞语义），但只把这个已经在飞的
-    // Promise 传给 runOnboardingLocaleSync，真正渲染 notice 的调用要等 renderCurrentRouteOrOnboard
-    // 之后才做。编排逻辑本身在 onboarding-locale-sync.ts（browser.ts 顶层引用 document，没法被单测
-    // 覆盖）。
-    const localeSyncFirstAttempt = client.updatePreferences({ locale }).then(() => undefined);
-    // 提前挂一个空 catch，避免壳层渲染这段时间内 Node 把它当成未处理拒绝报出来；真正的失败处理仍然
-    // 在 runOnboardingLocaleSync 里、渲染完成之后才触发。
-    localeSyncFirstAttempt.catch(() => undefined);
-    await renderCurrentRouteOrOnboard(client, locale);
-    await runOnboardingLocaleSync({
-      firstAttempt: localeSyncFirstAttempt,
-      retryUpdatePreferences: () => client.updatePreferences({ locale }).then(() => undefined),
-      showSyncFailedNotice: (retry) => showOnboardingLocaleSyncFailedNotice(locale, retry),
-      showSyncSucceededNotice: () => showOnboardingLocaleSyncSucceededNotice(locale)
-    });
+    await completeAuthSuccess(client, locale, identity, nickname);
   } catch (error) {
     const errorText = error instanceof Error && error.message
       ? error.message
       : goldPathT(locale, "runtime.actionFail");
-    showOnboardingScreen(client, locale, { errorText, presetNickname: nickname });
+    void showOnboardingScreen(client, locale, { errorText, presetNickname: nickname });
   } finally {
     endBusyAction("onboarding_identify");
+  }
+}
+
+// R23 P2（SA-04）：密码/hybrid 模式登录注册屏的 DOM 接线——tab 切换（登录⇄注册，走完整
+// showOnboardingScreen 重渲，探测结果已缓存故几乎零延迟）、语言切换（同 bindOnboardingScreen 的
+// 昵称屏先例）、表单提交按当前 tab 分流到 submitPasswordLogin / submitPasswordRegister。
+function bindPasswordAuthScreen(
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  tab: PasswordAuthScreenTab,
+  presetEmail?: string,
+  presetNickname?: string
+) {
+  if (!root) {
+    return;
+  }
+  const emailInput = root.querySelector<HTMLInputElement>("[data-r23-auth-email]");
+  if (emailInput && presetEmail) {
+    emailInput.value = presetEmail;
+  }
+  if (presetNickname) {
+    const nicknameInput = root.querySelector<HTMLInputElement>("[data-r23-auth-nickname]");
+    if (nicknameInput) {
+      nicknameInput.value = presetNickname;
+    }
+  }
+  emailInput?.focus();
+  for (const option of root.querySelectorAll<HTMLButtonElement>("[data-r23-auth-tab-option]")) {
+    option.addEventListener("click", (event) => {
+      event.preventDefault();
+      const nextTab: PasswordAuthScreenTab = option.getAttribute("data-r23-auth-tab-option") === "register" ? "register" : "login";
+      if (nextTab === tab) {
+        return;
+      }
+      const email = emailInput?.value.trim();
+      void showOnboardingScreen(client, locale, {
+        authTab: nextTab,
+        ...(email ? { presetEmail: email } : {})
+      });
+    });
+  }
+  for (const option of root.querySelectorAll<HTMLButtonElement>("[data-r23-auth-locale-option]")) {
+    option.addEventListener("click", (event) => {
+      event.preventDefault();
+      const nextLocale = normalizeWorkHubLocale(option.getAttribute("data-r23-auth-locale-option"));
+      if (nextLocale === locale) {
+        return;
+      }
+      persistBrowserLocale(nextLocale);
+      const email = emailInput?.value.trim();
+      const nicknameValue = root?.querySelector<HTMLInputElement>("[data-r23-auth-nickname]")?.value.trim();
+      void showOnboardingScreen(client, nextLocale, {
+        authTab: tab,
+        ...(email ? { presetEmail: email } : {}),
+        ...(nicknameValue ? { presetRegisterNickname: nicknameValue } : {})
+      });
+    });
+  }
+  root.querySelector<HTMLFormElement>("[data-r23-auth-form]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (tab === "register") {
+      void submitPasswordRegister(client, locale);
+    } else {
+      void submitPasswordLogin(client, locale);
+    }
+  });
+}
+
+async function submitPasswordLogin(client: BrowserApiClient, locale: WorkHubLocale) {
+  if (!root) {
+    return;
+  }
+  const email = root.querySelector<HTMLInputElement>("[data-r23-auth-email]")?.value.trim() ?? "";
+  const password = root.querySelector<HTMLInputElement>("[data-r23-auth-password]")?.value ?? "";
+  if (!email || !password) {
+    void showOnboardingScreen(client, locale, {
+      authTab: "login",
+      errorText: locale === "en-US" ? "Enter your email and password." : "请填写邮箱和密码。",
+      ...(email ? { presetEmail: email } : {})
+    });
+    return;
+  }
+  if (!beginBusyAction("password_auth")) {
+    return;
+  }
+  try {
+    const identity = await client.login({ email, password });
+    await completeAuthSuccess(client, locale, identity, email);
+  } catch (error) {
+    void showOnboardingScreen(client, locale, {
+      authTab: "login",
+      errorText: describeAuthScreenError(error, locale, "login"),
+      presetEmail: email
+    });
+  } finally {
+    endBusyAction("password_auth");
+  }
+}
+
+async function submitPasswordRegister(client: BrowserApiClient, locale: WorkHubLocale) {
+  if (!root) {
+    return;
+  }
+  const email = root.querySelector<HTMLInputElement>("[data-r23-auth-email]")?.value.trim() ?? "";
+  const nickname = root.querySelector<HTMLInputElement>("[data-r23-auth-nickname]")?.value.trim() ?? "";
+  const password = root.querySelector<HTMLInputElement>("[data-r23-auth-password]")?.value ?? "";
+  if (!email || !nickname || !password) {
+    void showOnboardingScreen(client, locale, {
+      authTab: "register",
+      errorText: locale === "en-US" ? "Fill in email, nickname, and password." : "请填写邮箱、昵称和密码。",
+      ...(email ? { presetEmail: email } : {}),
+      ...(nickname ? { presetRegisterNickname: nickname } : {})
+    });
+    return;
+  }
+  if (!beginBusyAction("password_auth")) {
+    return;
+  }
+  try {
+    const identity = await client.register({ email, nickname, password });
+    await completeAuthSuccess(client, locale, identity, nickname);
+  } catch (error) {
+    void showOnboardingScreen(client, locale, {
+      authTab: "register",
+      errorText: describeAuthScreenError(error, locale, "register"),
+      presetEmail: email,
+      presetRegisterNickname: nickname
+    });
+  } finally {
+    endBusyAction("password_auth");
   }
 }
 
@@ -6247,7 +6503,7 @@ async function renderCurrentRouteOrOnboard(client: BrowserApiClient, locale: Wor
     await renderCurrentRoute(client, locale, options);
   } catch (error) {
     if (error instanceof WorkHubApiError && error.code === "not_identified") {
-      showOnboardingScreen(client, locale);
+      await showOnboardingScreen(client, locale);
       return;
     }
     throw error;
@@ -6302,13 +6558,13 @@ async function boot() {
         .then((me) => {
           if (!me) {
             currentIdentity = undefined;
-            showOnboardingScreen(client, activeLocale);
+            void showOnboardingScreen(client, activeLocale);
           }
         })
         .catch((error) => {
           if (error instanceof WorkHubApiError && (error.status === 401 || error.code === "not_identified")) {
             currentIdentity = undefined;
-            showOnboardingScreen(client, activeLocale);
+            void showOnboardingScreen(client, activeLocale);
           }
         })
         .finally(() => {
@@ -6330,7 +6586,7 @@ async function boot() {
       me = await client.me();
     } catch (error) {
       if (error instanceof WorkHubApiError && (error.status === 401 || error.code === "not_identified")) {
-        showOnboardingScreen(client, locale);
+        await showOnboardingScreen(client, locale);
         return;
       }
       throw error;
@@ -6341,7 +6597,7 @@ async function boot() {
       activeLocale = locale;
       await renderCurrentRouteOrOnboard(client, locale);
     } else {
-      showOnboardingScreen(client, locale);
+      await showOnboardingScreen(client, locale);
     }
   } catch (error) {
     renderFatalRouteError(locale, error);

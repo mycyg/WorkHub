@@ -14,6 +14,7 @@ import {
   conflictsFromMergeError,
   createTaskPlanActionFromHref,
   createNamedProjectActionFromHref,
+  createPersonalSpaceActionFromHref,
   createWorkItemActionFromHref,
   driveCommentDraftFromHref,
   driveDraftProposalFromHref,
@@ -50,6 +51,10 @@ test("R4.21 shared runtime parses route action hrefs without app-specific code",
   assert.equal(bootstrapProjectActionFromHref("/api/projects/bootstrap"), true);
   assert.equal(createNamedProjectActionFromHref("/api/projects/bootstrap"), true);
   assert.equal(createNamedProjectActionFromHref("/api/projects"), false);
+  // R23 P2（SA-05）：新建个人空间的按钮 href 识别；相邻的 GET 清单端点（同路径不同方法）不误判。
+  assert.equal(createPersonalSpaceActionFromHref("/api/me/personal-projects"), true);
+  assert.equal(createPersonalSpaceActionFromHref("/api/me/personal-projects/x"), false);
+  assert.equal(createPersonalSpaceActionFromHref("/api/projects/bootstrap"), false);
   assert.deepEqual(createTaskPlanActionFromHref("/api/workitems/w%201/task-plan"), { workItemId: "w 1" });
   assert.deepEqual(startAgentRunActionFromHref("/api/workitems/w%201/agent-runs"), { workItemId: "w 1" });
   // WIRE-07：回放页「中止执行」的 href 识别；其它 agent-runs 路径不误判。
