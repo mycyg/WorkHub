@@ -39,6 +39,43 @@ export function rememberDesktopAuthModeHint(storage: Pick<Storage, "setItem">, m
   }
 }
 
+// R24 S2：鉴权门状态 → 该渲哪一屏。此前这个判断在主窗（browser.ts bootSpotlight）与工作台窗
+// （workbench/boot.ts boot）各写了一遍 if 链，两边已经实际漂移过——主窗有 logged-out 分支、工作台没有，
+// 两边都没有 offline 分支（连不上后端时主窗继续挂一个取不到数的空聚焦盒、工作台直接挂外壳，
+// 用户看不到一句错误，也走不到服务器地址输入框，见 desktop-connect-screen.ts 顶部注释）。
+// 收敛成一个纯函数：两个 surface 共用同一张表，差异只有一处（登出态工作台交给外壳的「已登出」整窗态，
+// 主窗渲重新绑定屏），而且可以单测。
+export type DesktopAuthGate = "ready" | "needs-credentials" | "logged-out" | "offline";
+export type DesktopBootScreen = "mount" | "credential-gate" | "rebind" | "connect-server";
+
+export function desktopBootScreenForGate(
+  gate: DesktopAuthGate,
+  surface: "spotlight" | "workbench"
+): DesktopBootScreen {
+  if (gate === "needs-credentials") {
+    return "credential-gate";
+  }
+  if (gate === "offline") {
+    return "connect-server";
+  }
+  if (gate === "logged-out") {
+    // 工作台没有独立的重新绑定屏：外壳自己有「已登出」整窗态（shell.showLoggedOut），boot 继续挂载它。
+    return surface === "spotlight" ? "rebind" : "mount";
+  }
+  return "mount";
+}
+
+// R24 S2（换服务器）：模式提示是「上一台服务器」的事实，换服务器时必须作废——留着它会让登出后
+// 的再登录门渲错那一张（A 是密码模式、B 是昵称模式时尤其明显）。键名只在本模块定义一次，
+// 连接服务器屏经这个函数清，不另抄一遍键名。
+export function forgetDesktopAuthModeHint(storage: Pick<Storage, "removeItem">): void {
+  try {
+    storage.removeItem(AUTH_MODE_HINT_KEY);
+  } catch {
+    // 同上。
+  }
+}
+
 // DSK-07：跨窗启动锁（localStorage lease）。首启时主窗/桌宠/工作台几乎同时 boot，都见「无 token」会
 // 并发打 /api/auth/desktop-bootstrap——重复注册设备、双 token 互覆。同一 Tauri 应用各窗口共享同一
 // localStorage（同 pending-deep-link.ts 顶部注释的既有事实），且 get/set 同步，用它做粗粒度 lease：

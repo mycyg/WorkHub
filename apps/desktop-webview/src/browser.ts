@@ -21,7 +21,11 @@ import {
   saveDesktopCuuProjectContextFromRoute
 } from "./desktop-cuu-runtime.js";
 import { loadCuuPreferences } from "./cuu-preferences.js";
-import { bindDesktopOfflineCard } from "./desktop-offline-card.js";
+import {
+  bindDesktopConnectScreen,
+  bindDesktopServerChangedReload,
+  createDesktopServerChoiceEffects
+} from "./desktop-connect-screen.js";
 import { renderDesktopSpotlightBootShell } from "./desktop-spotlight-boot.js";
 import { bootDesktopPetSurface, resolveDesktopSurface } from "./pet-surface.js";
 import { scheduleWorkHubLiquidGlassFilterRebuild } from "./liquid-glass-filter.js";
@@ -36,6 +40,7 @@ import {
   dragDesktopMainWindow,
   moveDesktopMainWindowBy as moveDesktopMainWindowByCommand,
   resizeDesktopMainWindow,
+  resolveDesktopTauriInvoke,
   takeDesktopPendingDeepLink
 } from "./desktop-window-controls.js";
 import {
@@ -46,6 +51,7 @@ import {
 import { isStaleDesktopClientTokenError } from "./auth-recovery.js";
 import {
   bindDesktopCredentialGate,
+  desktopBootScreenForGate,
   isPasswordModeBootstrapError,
   readDesktopAuthModeHint,
   rememberDesktopAuthModeHint,
@@ -239,15 +245,22 @@ const dismissMainWindow = (): void => {
   dismissDesktopMainWindow();
 };
 
-// 连不上后端时渲一张清晰的玻璃「离线卡」：说明需要后端、当前地址、怎么改、重试。
-function renderDesktopOfflineCard(rootEl: HTMLElement, locale: WorkHubLocale, error: unknown): void {
-  const apiBase = resolveDesktopApiBase();
-  const detail = error instanceof Error ? error.message : String(error);
-  bindDesktopOfflineCard(rootEl, {
-    apiBase,
-    detail,
+// R24 S2：连不上后端 → 渲「连接到你的服务器」屏（地址输入 + 测试连接 + 结果卡 + 显式确认）。
+// 此前这里是一张「离线卡」，而它只在未捕获异常时才渲；真实的「连不上」（gate === "offline"）
+// 根本不抛异常，用户看到的是一条什么都不说的空搜索条，也没有任何入口能改服务器地址（E-02）。
+// 现在两条路径（gate offline / boot 抛错）都落到同一屏，全仓只此一处服务器地址入口。
+// 探测客户端刻意**不带令牌**（C1）：/api/health 无需鉴权，令牌绝不发给一台还没被确认的服务器。
+function mountDesktopConnectScreen(rootEl: HTMLElement, locale: WorkHubLocale, error?: unknown): void {
+  const detail = error === undefined ? undefined : error instanceof Error ? error.message : String(error);
+  bindDesktopConnectScreen(rootEl, {
     locale,
-    storage: window.localStorage,
+    apiBase: resolveDesktopApiBase(),
+    ...(detail ? { detail } : {}),
+    probe: (base) => createApiClient({ baseUrl: base }).health(),
+    effects: createDesktopServerChoiceEffects({
+      storage: window.localStorage,
+      invoke: resolveDesktopTauriInvoke()
+    }),
     reload: () => window.location.reload(),
     scheduleRebuild: () => scheduleWorkHubLiquidGlassFilterRebuild(document)
   });
@@ -265,6 +278,9 @@ async function bootSpotlight() {
   // R12（首帧）：此前两次网络往返（token 探活 + locale me）完成前 #root 是空 div、整窗白屏——
   // 先同步渲一帧占位盒，让窗口一出现就有画面。
   root.innerHTML = renderDesktopSpotlightBootShell();
+  // R24 S2（跨窗跟随）：别的窗口换了服务器 → 壳层广播 workhub-server-changed → 本窗 reload 走新地址。
+  // 订阅要早于下面的鉴权门分支，否则停在连接屏/登录门的窗口收不到这条广播，会一直卡在旧地址那一屏。
+  bindDesktopServerChangedReload(resolveDesktopShellListen(), () => window.location.reload());
   try {
     const client = createApiClient({
       baseUrl: resolveDesktopApiBase(),
@@ -272,16 +288,23 @@ async function bootSpotlight() {
     });
     // 跨源鉴权地基：先确保有 client token（goldPath/pages 才返回 LIVE 数据），并把令牌推给 Rust 壳（SSE /me 鉴权）。
     const gate = await ensureDesktopClientToken(client);
-    // P1-02（REL-5）：密码/hybrid 模式没有昵称自助引导——渲凭据登录门（login → device-token exchange），
-    // 登录成功后 reload 走既有 token 流。昵称模式不进这一分支（gate 只在 desktop-bootstrap 404 时才是它）。
-    if (gate === "needs-credentials") {
+    // 鉴权门 → 该渲哪一屏，走与工作台窗共用的那张表（desktop-login.ts 的 desktopBootScreenForGate）：
+    // - credential-gate：P1-02（REL-5）密码/hybrid 模式没有昵称自助引导，渲凭据登录门
+    //   （login → device-token exchange），登录成功后 reload 走既有 token 流；
+    // - rebind：DSK-01 昵称模式的显式登出态，渲「输入昵称重新绑定这台设备」屏；
+    // - connect-server：R24 S2（E-02）连不上后端。此前这条路径**没有任何分支**，会继续挂载一个
+    //   取不到数的空聚焦盒——用户既看不到一句错误，也走不到唯一的服务器地址输入框。
+    const screen = desktopBootScreenForGate(gate, "spotlight");
+    if (screen === "credential-gate") {
       mountDesktopCredentialGate(root, client, locale);
       return;
     }
-    // DSK-01（真登出）：昵称模式的显式登出态——渲「输入昵称重新绑定这台设备」屏，不再继续挂载 Spotlight。
-    // 此前这张屏只存在于死 boot() 里，登出后这里会继续往下挂载、所有取数静默失败，全应用无重新登录入口。
-    if (gate === "logged-out") {
+    if (screen === "rebind") {
       mountDesktopRebindScreen(root, client, locale);
+      return;
+    }
+    if (screen === "connect-server") {
+      mountDesktopConnectScreen(root, locale);
       return;
     }
     // R12（首帧）：resolveBootLocale 内部的 me() 与 ensureDesktopClientToken 的探活是同一请求的重复——
@@ -393,7 +416,7 @@ async function bootSpotlight() {
     });
     window.addEventListener("focus", () => void refreshApprovalsBadge());
   } catch (error) {
-    renderDesktopOfflineCard(root, locale, error);
+    mountDesktopConnectScreen(root, locale, error);
   }
 }
 
@@ -401,6 +424,9 @@ if (root && resolveDesktopSurface() === "pet") {
   // C2 修复：桌宠窗口此前用 baseUrl:"" 建客户端 → 所有 API/SSE 落到死的 tauri:// 源 → 永远「离线」。
   // 改为传入与主窗一致的客户端（真实 API base + client token），桌宠才能真正连后端、SSE 才能鉴权。
   void (async () => {
+    // R24 S2：桌宠窗不渲连接服务器屏（那是主窗/工作台的事），但必须跟着换服务器——否则它会拿着
+    // 旧地址永远「重连中」。同 workhub-logged-out 的跨窗广播模式。
+    bindDesktopServerChangedReload(resolveDesktopShellListen(), () => window.location.reload());
     const petClient = createApiClient({
       baseUrl: resolveDesktopApiBase(),
       getClientToken: clientToken

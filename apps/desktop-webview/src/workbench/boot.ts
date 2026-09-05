@@ -18,11 +18,17 @@ import {
 import { resolveDesktopApiBaseFromStorage } from "../desktop-api-base.js";
 import {
   bindDesktopCredentialGate,
+  desktopBootScreenForGate,
   isPasswordModeBootstrapError,
   readDesktopAuthModeHint,
   rememberDesktopAuthModeHint,
   runDesktopBootstrapWithLock
 } from "../desktop-login.js";
+import {
+  bindDesktopConnectScreen,
+  bindDesktopServerChangedReload,
+  createDesktopServerChoiceEffects
+} from "../desktop-connect-screen.js";
 import { resolveDesktopTauriInvoke, takeDesktopPendingDeepLink } from "../desktop-window-controls.js";
 import { consumePendingWorkbenchDeepLink } from "./pending-deep-link.js";
 import { mountWorkbenchShell, renderWorkbenchDocumentHead, type WorkbenchShellHandle } from "./shell.js";
@@ -267,16 +273,40 @@ async function boot(): Promise<void> {
     getClientToken: clientToken
   });
 
+  // R24 S2（跨窗跟随）：别的窗口换了服务器 → 壳层广播 workhub-server-changed → 本窗 reload 走新地址。
+  // 与 workhub-logged-out 的订阅同一条通用事件桥（bindWorkbenchLoggedOutListener 就在下面）。
+  // 订阅早于鉴权门分支，否则停在连接屏/登录门的工作台窗收不到广播、一直卡在旧地址。
+  bindDesktopServerChangedReload(resolveWorkbenchTauriListen(), () => window.location.reload());
+
   const auth = await ensureWorkbenchClientToken(client).catch(
     () => ({ identity: null, gate: "offline" as const })
   );
+  // 鉴权门 → 该渲哪一屏，与主窗共用同一张表（desktop-login.ts 的 desktopBootScreenForGate）——
+  // 两边此前各写一遍 if 链，已经实际漂移过（工作台既没有登出屏也没有连不上后端的分支）。
+  const screen = desktopBootScreenForGate(auth.gate, "workbench");
   // P1-02（REL-5）：密码/hybrid 模式渲凭据登录门（login → device-token exchange），成功后 reload 走既有 token 流。
-  if (auth.gate === "needs-credentials") {
+  if (screen === "credential-gate") {
     bindDesktopCredentialGate(root, {
       client,
       locale,
       storage: window.localStorage,
       onSuccess: () => window.location.reload()
+    });
+    return;
+  }
+  // R24 S2（E-02）：连不上后端时此前直接挂载工作台外壳——所有取数静默失败，整窗看着像"正常但空"，
+  // 而工作台窗连离线卡都没有。补上与主窗同一屏：地址输入 → 测试连接 → 显式确认使用这台服务器。
+  if (screen === "connect-server") {
+    bindDesktopConnectScreen(root, {
+      locale,
+      apiBase: resolveWorkbenchApiBase(),
+      // C1：探测客户端不带令牌——/api/health 无需鉴权，令牌绝不发给一台还没被确认的服务器。
+      probe: (base) => createApiClient({ baseUrl: base }).health(),
+      effects: createDesktopServerChoiceEffects({
+        storage: window.localStorage,
+        invoke: resolveDesktopTauriInvoke()
+      }),
+      reload: () => window.location.reload()
     });
     return;
   }
