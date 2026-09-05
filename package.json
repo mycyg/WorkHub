@@ -10,7 +10,7 @@
     "pnpm": ">=11.0.0"
   },
   "scripts": {
-    "prepare": "lefthook install",
+    "prepare": "node scripts/dev/install-git-hooks.mjs",
     "dev": "pnpm --filter @workhub/api dev",
     "build": "pnpm -r --if-present build",
     "typecheck": "pnpm -r --if-present typecheck",
