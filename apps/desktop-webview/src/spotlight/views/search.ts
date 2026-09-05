@@ -5,11 +5,11 @@
 // （fetchDriveResource/driveResourceApiBase/driveResourceHref，同一套 token 自愈逻辑），不重复造轮子。
 //
 // 深链降级说明（诚实披露，见设计 §6）：
-// - 网盘/工单结果有真实的逐项深链（ctx.open("drive"/"workitem", {...})，目标 view 会直接展开该项）。
+// - 网盘/工单/会议结果都有真实的逐项深链（ctx.open("drive"/"workitem"/"meetings", {...})，目标 view
+//   会直接展开该项）。F-09：会议能力视图落地后，会议结果不再降级到「打开工作台看项目」——
+//   直接 ctx.open("meetings", { id: projectId, route: "?m=meetingId" }) 展开该场会议的详情。
 // - 会话结果 MVP 只到会话级（invoke open_workbench + stashPendingWorkbenchDeepLink 带 conversationId，
 //   不带 seq——stash payload 本就没有 seq 字段，精确滚动明确列为跨包依赖，不在本工包）。
-// - 会议结果没有可复用的「打开某条会议」能力视图（team/日历视图不消费 target），只能诚实降级为
-//   「在工作台打开该项目」——open_workbench 到项目级，行内文案如实告知，不假装精确跳转。
 
 import type {
   ConversationSearchResult,
@@ -32,7 +32,7 @@ import { escapeHtml } from "@workhub/web-runtime";
 
 import { resolveDesktopTauriInvoke } from "../../desktop-window-controls.js";
 import { stashPendingWorkbenchDeepLink } from "../../workbench/pending-deep-link.js";
-import { workItemStatusLabel } from "../labels.js";
+import { meetingRecordStatusLabel as meetingStatusLabel, workItemStatusLabel } from "../labels.js";
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 import { driveResourceApiBase, driveResourceHref, fetchDriveResource } from "./drive.js";
 
@@ -79,21 +79,10 @@ export function matchedInLabel(matchedIn: SearchMatchedIn, zh: boolean): string 
   }
 }
 
-// 会议没有共享的状态词表（web/桌面此前都没建）——只给已知的三个真实值配人话，未知值如实透传，
-// 不编造词表（去黑话的另一面：不认识的枚举值宁可原样显示也不要瞎翻译）。
-const MEETING_STATUS_LABELS: Record<string, { zh: string; en: string }> = {
-  processing: { zh: "处理中", en: "Processing" },
-  ready: { zh: "已就绪", en: "Ready" },
-  failed: { zh: "失败", en: "Failed" }
-};
-
-export function meetingStatusLabel(status: string, zh: boolean): string {
-  const entry = MEETING_STATUS_LABELS[status];
-  if (!entry) {
-    return status;
-  }
-  return zh ? entry.zh : entry.en;
-}
+// F-09：会议状态词表现在与「会议」能力视图共用（../labels.js meetingRecordStatusLabel），不再在这里
+// 单独维护一份——避免同一枚举值在搜索结果行与会议详情页里被翻成两种不同的话。仍按原名字导出，
+// search.test.ts 与旧调用点不用改。
+export { meetingStatusLabel };
 
 function escapeRegExpLiteral(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
@@ -182,11 +171,11 @@ function workItemRowHtml(r: WorkItemSearchResult, zh: boolean, query: string): s
 
 function meetingRowHtml(r: MeetingSearchResult, zh: boolean, query: string): string {
   const matchLabel = matchedInLabel(r.matched_in, zh);
-  return `<button type="button" role="option" tabindex="-1" class="wh-spot-row" data-search-row="true" data-search-kind="meeting" data-search-project-id="${escapeHtml(r.project_id)}">
+  // F-09：会议结果现在带 meeting_id，直达会议详情（不再降级到工作台项目级）。
+  return `<button type="button" role="option" tabindex="-1" class="wh-spot-row" data-search-row="true" data-search-kind="meeting" data-search-project-id="${escapeHtml(r.project_id)}" data-search-meeting-id="${escapeHtml(r.meeting_id)}">
     <div class="wh-spot-row-main">
       <div class="wh-spot-row-title">${escapeHtml(r.project_name)} · ${escapeHtml(r.title)} <span class="wh-spot-row-tag">${escapeHtml(meetingStatusLabel(r.status, zh))}</span></div>
       <div class="wh-spot-row-sub">${escapeHtml(matchLabel)}：${highlightSnippet(r.snippet, query)}</div>
-      <div class="wh-spot-row-sub">${escapeHtml(zh ? "会议详情暂不能从搜索直达，点开将在工作台打开该项目" : "Meeting detail isn't linkable yet — opens the project in the workbench")}</div>
     </div>
   </button>`;
 }
@@ -253,7 +242,8 @@ export type SearchOpenAction =
   | { kind: "conversation"; projectId: string; conversationId: string; seq?: number }
   | { kind: "drive"; projectId: string; itemId: string }
   | { kind: "workitem"; workItemId: string }
-  | { kind: "meeting"; projectId: string };
+  // F-09：会议命中现在带 meetingId——直达该场会议详情（不再只到项目级）。
+  | { kind: "meeting"; projectId: string; meetingId: string };
 
 export type SearchRowDataset = {
   searchKind?: string;
@@ -262,6 +252,7 @@ export type SearchRowDataset = {
   searchSeq?: string;
   searchItemId?: string;
   searchWorkItemId?: string;
+  searchMeetingId?: string;
 };
 
 export function resolveSearchRowAction(dataset: SearchRowDataset): SearchOpenAction | undefined {
@@ -286,7 +277,9 @@ export function resolveSearchRowAction(dataset: SearchRowDataset): SearchOpenAct
     case "workitem":
       return dataset.searchWorkItemId ? { kind: "workitem", workItemId: dataset.searchWorkItemId } : undefined;
     case "meeting":
-      return dataset.searchProjectId ? { kind: "meeting", projectId: dataset.searchProjectId } : undefined;
+      return dataset.searchProjectId && dataset.searchMeetingId
+        ? { kind: "meeting", projectId: dataset.searchProjectId, meetingId: dataset.searchMeetingId }
+        : undefined;
     default:
       return undefined;
   }
@@ -404,7 +397,7 @@ export function createSearchView(): SpotlightCapabilityView {
         }, SEARCH_DEBOUNCE_MS);
       };
 
-      const openInWorkbench = async (action: Extract<SearchOpenAction, { kind: "conversation" | "meeting" }>) => {
+      const openInWorkbench = async (action: Extract<SearchOpenAction, { kind: "conversation" }>) => {
         const invoke = resolveDesktopTauriInvoke();
         if (!invoke) {
           ctx.toast(zh ? "工作台只在桌面客户端里可用" : "The workbench only opens in the desktop app", "info");
@@ -412,27 +405,14 @@ export function createSearchView(): SpotlightCapabilityView {
         }
         // 冷启动竞态兜底：invoke 之前同步写 stash（见 workbench/pending-deep-link.ts 顶部注释）。
         // #30：会话命中把 seq 一并 stash，工作台打开会话后据此定位滚动 + 高亮该消息。
-        if (action.kind === "conversation") {
-          stashPendingWorkbenchDeepLink({
-            projectId: action.projectId,
-            conversationId: action.conversationId,
-            ...(action.seq !== undefined ? { seq: action.seq } : {})
-          });
-        } else {
-          stashPendingWorkbenchDeepLink({ projectId: action.projectId });
-        }
+        stashPendingWorkbenchDeepLink({
+          projectId: action.projectId,
+          conversationId: action.conversationId,
+          ...(action.seq !== undefined ? { seq: action.seq } : {})
+        });
         try {
           await invoke("open_workbench", { projectId: action.projectId });
-          ctx.toast(
-            action.kind === "conversation"
-              ? zh
-                ? "已在工作台打开该会话"
-                : "Opened the conversation in the workbench"
-              : zh
-                ? "已在工作台打开该项目，会议详情请在里面查看"
-                : "Opened the project in the workbench — find the meeting there",
-            "ok"
-          );
+          ctx.toast(zh ? "已在工作台打开该会话" : "Opened the conversation in the workbench", "ok");
         } catch {
           ctx.toast(zh ? "没打开工作台窗口，稍后重试" : "Couldn't open the workbench — try again", "error");
         }
@@ -449,6 +429,11 @@ export function createSearchView(): SpotlightCapabilityView {
         }
         if (action.kind === "workitem") {
           ctx.open("workitem", { id: action.workItemId });
+          return;
+        }
+        if (action.kind === "meeting") {
+          // F-09：会议能力视图落地——直达该场会议详情，不再降级到工作台项目级。
+          ctx.open("meetings", { id: action.projectId, route: `?m=${encodeURIComponent(action.meetingId)}` });
           return;
         }
         void openInWorkbench(action);
