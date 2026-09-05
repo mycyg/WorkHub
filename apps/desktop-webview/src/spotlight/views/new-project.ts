@@ -17,6 +17,8 @@ import { resolveDesktopTauriInvoke } from "../../desktop-window-controls.js";
 import { stashPendingWorkbenchDeepLink } from "../../workbench/pending-deep-link.js";
 import type { SpotlightCapabilityView, SpotlightViewContext } from "../view-context.js";
 
+import { spotlightViewsT } from "./locales.js";
+
 type NewProjectState = {
   name: string;
   submitting: boolean;
@@ -32,8 +34,8 @@ export function newProjectHtml(zh: boolean, state: NewProjectState): string {
   const disabled = state.submitting ? " disabled" : "";
   const submitDisabled = state.submitting || !state.name.trim() ? " disabled" : "";
   return `<div class="wh-spot-intake">
-    <h3 class="wh-spot-intake-title">${zh ? "新建项目" : "New project"}</h3>
-    <p class="wh-spot-intake-body">${zh ? "自动配好群聊、网盘和 Cuu，建好即可用。" : "Sets up a team chat, drive, and Cuu — ready as soon as it's created."}</p>
+    <h3 class="wh-spot-intake-title">${spotlightViewsT(zh, "newProject")}</h3>
+    <p class="wh-spot-intake-body">${spotlightViewsT(zh, "setsUpATeamChatDrive")}</p>
     <input
       type="text"
       class="wh-spot-freetext wh-spot-freetext--line"
@@ -46,7 +48,7 @@ export function newProjectHtml(zh: boolean, state: NewProjectState): string {
     ${state.error ? `<p class="wh-spot-row-sub" style="color:var(--ds-danger);white-space:normal">${escapeHtml(state.error)}</p>` : ""}
     <div class="wh-spot-intake-actions">
       <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-new-project-submit${submitDisabled}>${
-        state.submitting ? (zh ? "创建中…" : "Creating…") : zh ? "创建项目" : "Create project"
+        state.submitting ? (spotlightViewsT(zh, "creating")) : spotlightViewsT(zh, "createProject")
       }</button>
     </div>
   </div>`;
@@ -71,7 +73,7 @@ export function createNewProjectView(): SpotlightCapabilityView {
         body.querySelector<HTMLInputElement>("[data-new-project-name]")?.focus();
       };
 
-      ctx.setSubtitle(zh ? "新建项目" : "New project");
+      ctx.setSubtitle(spotlightViewsT(ctx.locale, "newProject"));
       render();
       focusInput();
 
@@ -86,7 +88,7 @@ export function createNewProjectView(): SpotlightCapabilityView {
         if (state.submitting) return;
         const trimmed = state.name.trim();
         if (!trimmed) {
-          state.error = zh ? "先给项目起个名字" : "Give the project a name first";
+          state.error = spotlightViewsT(ctx.locale, "giveTheProjectANameFirst");
           render();
           focusInput();
           return;
@@ -123,9 +125,7 @@ export function createNewProjectView(): SpotlightCapabilityView {
           state.error =
             error instanceof WorkHubApiError && error.message
               ? error.message
-              : zh
-                ? "创建失败，请重试"
-                : "Couldn't create the project — retry";
+              : spotlightViewsT(ctx.locale, "couldnTCreateTheProjectRetry");
           render();
           focusInput();
         }

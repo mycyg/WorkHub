@@ -59,6 +59,8 @@ import { scheduleWorkHubLiquidGlassFilterRebuild } from "../../liquid-glass-filt
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 import { driveResourceApiBase, fetchDriveResource } from "./drive.js";
 
+import { spotlightViewsT } from "./locales.js";
+
 const AI_PROFILE_PATH = "/api/me/ai-profile";
 // R13 批 A2（派人推荐 v2）："我是谁"（个人资料），与上面的 AI_PROFILE_PATH（"AI 该怎么替我干活"）
 // 语义分开，不同端点不同表。
@@ -78,14 +80,12 @@ function avatarHref(userId: string): string {
 const DEPLOY_DOC_URL = "https://github.com/mycyg/WorkHub/blob/main/DEPLOY.md";
 
 function aiNotConfiguredNoteHtml(zh: boolean): string {
-  const explanation = zh
-    ? "AI 助手还没配置——需要管理员在服务器的 .env 文件里设置 LLM_API_KEY 并重启服务后才能使用。"
-    : "The AI assistant isn't set up yet — an admin needs to set LLM_API_KEY in the server's .env file and restart it.";
-  return `<div class="wh-spot-row-sub wh-spot-row-sub--wrap" data-spot-ai-not-configured="true">${escapeHtml(explanation)} <button type="button" class="wh-spot-inline-link" data-set-ai-deploy-docs="true">${zh ? "查看部署说明" : "View deployment instructions"}</button></div>`;
+  const explanation = spotlightViewsT(zh, "theAiAssistantIsnTSet");
+  return `<div class="wh-spot-row-sub wh-spot-row-sub--wrap" data-spot-ai-not-configured="true">${escapeHtml(explanation)} <button type="button" class="wh-spot-inline-link" data-set-ai-deploy-docs="true">${spotlightViewsT(zh, "viewDeploymentInstructions")}</button></div>`;
 }
 
 function localeLabel(locale: string, zh: boolean): string {
-  if (locale === "zh-CN") return zh ? "简体中文" : "Chinese";
+  if (locale === "zh-CN") return spotlightViewsT(zh, "chinese");
   if (locale === "en-US" || locale === "en") return zh ? "English" : "English";
   return locale;
 }
@@ -153,7 +153,7 @@ function aiSectionHtml(profile: UserAiProfileVM | undefined, aiFailed: boolean, 
   if (aiFailed) {
     return `<div class="wh-spot-set-group" data-spot-ai-section="true">
       <div class="wh-spot-set-label">${zh ? "AI" : "AI"}</div>
-      <div class="wh-spot-row-sub">${zh ? "AI 设置没拉到。" : "Couldn't load AI settings."}<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-spot-ai-retry style="margin-left:8px">${zh ? "重试" : "Retry"}</button></div>
+      <div class="wh-spot-row-sub">${spotlightViewsT(zh, "couldnTLoadAiSettings")}<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-spot-ai-retry style="margin-left:8px">${spotlightViewsT(zh, "retry")}</button></div>
     </div>`;
   }
   if (!profile) {
@@ -184,26 +184,26 @@ function aiSectionHtml(profile: UserAiProfileVM | undefined, aiFailed: boolean, 
   const granularChips = GRANULAR_KEYS.map((key) => {
     const allowed = granularEffective(profile.granular_settings, key);
     const label = granularLabel(key, zh);
-    const stateText = allowed ? (zh ? "允许" : "allowed") : zh ? "已禁止" : "blocked";
+    const stateText = allowed ? (spotlightViewsT(zh, "allowed")) : spotlightViewsT(zh, "blocked");
     return `<button type="button" class="wh-spot-reason" data-toggle-ai-granular="${key}" data-sel="${!allowed}">${escapeHtml(label)} · ${stateText}</button>`;
   }).join("");
 
   return `<div class="wh-spot-set-group" data-spot-ai-section="true">
-    <div class="wh-spot-set-label">${zh ? "AI · 默认模式（单聊）" : "AI · Default mode (1:1)"}</div>
+    <div class="wh-spot-set-label">${spotlightViewsT(zh, "aiDefaultMode11")}</div>
     <div class="wh-spot-reasons-row">${modeChips}</div>
     <div class="wh-spot-row-sub">${escapeHtml(modeDesc)}</div>
   </div>
   <div class="wh-spot-set-group" data-spot-ai-dispatch-section="true">
-    <div class="wh-spot-set-label">${zh ? "接单策略" : "Dispatch policy"}</div>
+    <div class="wh-spot-set-label">${spotlightViewsT(zh, "dispatchPolicy")}</div>
     <div class="wh-spot-reasons-row">${dispatchChips}</div>
     <div class="wh-spot-row-sub">${escapeHtml(dispatchDesc)}</div>
   </div>
   <div class="wh-spot-set-group" data-spot-ai-granular-section="true">
-    <div class="wh-spot-set-label">${zh ? "AI 能做什么" : "What AI can do"}</div>
+    <div class="wh-spot-set-label">${spotlightViewsT(zh, "whatAiCanDo")}</div>
     <div class="wh-spot-reasons-row">${granularChips}</div>
   </div>
   <div class="wh-spot-set-group" data-spot-ai-proactivity-section="true">
-    <div class="wh-spot-set-label">${zh ? "Cuu 主动性" : "Cuu proactivity"}</div>
+    <div class="wh-spot-set-label">${spotlightViewsT(zh, "cuuProactivity")}</div>
     <div class="wh-spot-reasons-row">${proactivityChips}</div>
   </div>`;
 }
@@ -219,17 +219,17 @@ function avatarSectionHtml(profile: UserProfileVM | undefined, profileFailed: bo
   const initial = (profile.nickname ?? "").trim();
   const fallbackLetter = initial ? initial[0]!.toUpperCase() : "?";
   return `<div class="wh-spot-set-group" data-spot-avatar-section="true">
-    <div class="wh-spot-set-label">${zh ? "头像" : "Avatar"}</div>
+    <div class="wh-spot-set-label">${spotlightViewsT(zh, "avatar")}</div>
     <div class="wh-spot-avatar-row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <span class="wh-spot-avatar-preview" data-spot-avatar-preview="true" style="position:relative;display:inline-flex;width:44px;height:44px;flex:0 0 auto;border-radius:50%;overflow:hidden;background:var(--ds-ink-faint)">
         <span class="wh-spot-avatar-fallback" data-spot-avatar-fallback="true" aria-hidden="true" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800">${escapeHtml(fallbackLetter)}</span>
-        <img class="wh-spot-avatar-img" data-spot-avatar-img="true" alt="${escapeHtml(zh ? "当前头像" : "Current avatar")}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" hidden />
+        <img class="wh-spot-avatar-img" data-spot-avatar-img="true" alt="${escapeHtml(spotlightViewsT(zh, "currentAvatar"))}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" hidden />
       </span>
       <label class="wh-spot-act wh-spot-act--quiet ds-pressable wh-spot-upload-label" data-spot-avatar-upload-label="true">
-        <span>${zh ? "更换头像" : "Change avatar"}</span>
+        <span>${spotlightViewsT(zh, "changeAvatar")}</span>
         <input type="file" accept="image/png,image/jpeg,image/webp" class="wh-spot-file-input" data-spot-avatar-file-input="true" />
       </label>
-      <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-spot-avatar-remove-btn="true" hidden>${zh ? "移除头像" : "Remove avatar"}</button>
+      <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-spot-avatar-remove-btn="true" hidden>${spotlightViewsT(zh, "removeAvatar")}</button>
     </div>
     <div class="wh-spot-row-sub" data-spot-avatar-status="true" hidden></div>
   </div>`;
@@ -242,8 +242,8 @@ function avatarSectionHtml(profile: UserProfileVM | undefined, profileFailed: bo
 function profileSectionHtml(profile: UserProfileVM | undefined, profileFailed: boolean, zh: boolean): string {
   if (profileFailed) {
     return `<div class="wh-spot-set-group" data-spot-profile-section="true">
-      <div class="wh-spot-set-label">${zh ? "我的资料" : "My profile"}</div>
-      <div class="wh-spot-row-sub">${zh ? "资料没拉到。" : "Couldn't load your profile."}<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-spot-profile-retry style="margin-left:8px">${zh ? "重试" : "Retry"}</button></div>
+      <div class="wh-spot-set-label">${spotlightViewsT(zh, "myProfile")}</div>
+      <div class="wh-spot-row-sub">${spotlightViewsT(zh, "couldnTLoadYourProfile")}<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-spot-profile-retry style="margin-left:8px">${spotlightViewsT(zh, "retry")}</button></div>
     </div>`;
   }
   if (!profile) {
@@ -251,11 +251,11 @@ function profileSectionHtml(profile: UserProfileVM | undefined, profileFailed: b
   }
   const skillsValue = profile.skill_tags.join(", ");
   return `<div class="wh-spot-set-group" data-spot-profile-section="true">
-    <div class="wh-spot-set-label">${zh ? "我的资料" : "My profile"}</div>
-    <div class="wh-spot-row-sub">${zh ? "以后 Cuu 派活会参考这些信息。" : "Cuu will use this when suggesting who to assign work to."}</div>
-    <input type="text" class="wh-spot-freetext wh-spot-freetext--line" data-set-profile-title value="${escapeHtml(profile.title ?? "")}" maxlength="128" placeholder="${escapeHtml(zh ? "职位/角色头衔，例如：前端负责人" : "Title, e.g. Frontend lead")}" />
-    <textarea class="wh-spot-freetext" data-set-profile-bio rows="3" maxlength="4000" placeholder="${escapeHtml(zh ? "简单介绍一下自己" : "A short bio")}">${escapeHtml(profile.bio_md ?? "")}</textarea>
-    <input type="text" class="wh-spot-freetext wh-spot-freetext--line" data-set-profile-skills value="${escapeHtml(skillsValue)}" placeholder="${escapeHtml(zh ? "技能标签，用逗号分隔" : "Skill tags, comma separated")}" />
+    <div class="wh-spot-set-label">${spotlightViewsT(zh, "myProfile")}</div>
+    <div class="wh-spot-row-sub">${spotlightViewsT(zh, "cuuWillUseThisWhenSuggesting")}</div>
+    <input type="text" class="wh-spot-freetext wh-spot-freetext--line" data-set-profile-title value="${escapeHtml(profile.title ?? "")}" maxlength="128" placeholder="${escapeHtml(spotlightViewsT(zh, "titleEGFrontendLead"))}" />
+    <textarea class="wh-spot-freetext" data-set-profile-bio rows="3" maxlength="4000" placeholder="${escapeHtml(spotlightViewsT(zh, "aShortBio"))}">${escapeHtml(profile.bio_md ?? "")}</textarea>
+    <input type="text" class="wh-spot-freetext wh-spot-freetext--line" data-set-profile-skills value="${escapeHtml(skillsValue)}" placeholder="${escapeHtml(spotlightViewsT(zh, "skillTagsCommaSeparated"))}" />
   </div>`;
 }
 
@@ -325,21 +325,21 @@ export function permissionPolicyFormHtml(state: PermissionPolicyFormState, zh: b
     const label = permissionPolicyEffectLabel(effect, zh);
     return `<button type="button" class="wh-spot-reason" data-set-policy-effect="${effect}" data-sel="${state.effect === effect}">${escapeHtml(label)}</button>`;
   }).join("");
-  const submitLabel = state.busy ? (zh ? "正在提交…" : "Submitting…") : (zh ? "创建 / 更新策略" : "Create / update policy");
+  const submitLabel = state.busy ? (spotlightViewsT(zh, "submitting")) : (spotlightViewsT(zh, "createUpdatePolicy"));
   const error = state.errorText
     ? `<div class="wh-spot-row-sub" data-spot-policy-form-error="true" style="color:var(--ds-danger)">${escapeHtml(state.errorText)}</div>`
     : "";
   return `<div class="wh-spot-set-group" data-spot-policy-form-section="true">
-    <div class="wh-spot-set-label">${zh ? "新增 / 调整策略" : "Add / adjust a policy"}</div>
-    <div class="wh-spot-row-sub">${zh ? "范围" : "Scope"}</div>
+    <div class="wh-spot-set-label">${spotlightViewsT(zh, "addAdjustAPolicy")}</div>
+    <div class="wh-spot-row-sub">${spotlightViewsT(zh, "scope")}</div>
     <div class="wh-spot-reasons-row">${scopeChips}</div>
     <div class="wh-spot-row-sub">${escapeHtml(scopeDesc)}</div>
-    <input type="text" class="wh-spot-freetext wh-spot-freetext--line" data-set-policy-scope-id value="${escapeHtml(state.scopeId)}" maxlength="64" placeholder="${escapeHtml(zh ? "范围 ID" : "Scope ID")}" ${state.busy ? "disabled" : ""} />
-    <input type="text" class="wh-spot-freetext wh-spot-freetext--line" data-set-policy-action-pattern value="${escapeHtml(state.actionPattern)}" maxlength="128" placeholder="${escapeHtml(zh ? "动作模式，例如 drive.write:*（* 通配）" : "Action pattern, e.g. drive.write:* (* wildcards)")}" ${state.busy ? "disabled" : ""} />
-    <div class="wh-spot-row-sub">${zh ? "效果" : "Effect"}</div>
+    <input type="text" class="wh-spot-freetext wh-spot-freetext--line" data-set-policy-scope-id value="${escapeHtml(state.scopeId)}" maxlength="64" placeholder="${escapeHtml(spotlightViewsT(zh, "scopeId"))}" ${state.busy ? "disabled" : ""} />
+    <input type="text" class="wh-spot-freetext wh-spot-freetext--line" data-set-policy-action-pattern value="${escapeHtml(state.actionPattern)}" maxlength="128" placeholder="${escapeHtml(spotlightViewsT(zh, "actionPatternEGDriveWrite"))}" ${state.busy ? "disabled" : ""} />
+    <div class="wh-spot-row-sub">${spotlightViewsT(zh, "effect")}</div>
     <div class="wh-spot-reasons-row">${effectChips}</div>
-    ${state.effect === "deny" ? `<div class="wh-spot-row-sub">${zh ? "优先级达到 1000 的自动拒绝会跨范围强制熔断，压过更窄范围的自动通过——非紧急封禁不要设这么高。" : "A deny at priority 1000+ is a cross-scope kill switch that overrides narrower auto-approve rules — only set it that high for an emergency block."}</div>` : ""}
-    <input type="number" class="wh-spot-freetext wh-spot-freetext--line" data-set-policy-priority value="${escapeHtml(state.priority)}" placeholder="${escapeHtml(zh ? "优先级（默认 0）" : "Priority (default 0)")}" ${state.busy ? "disabled" : ""} />
+    ${state.effect === "deny" ? `<div class="wh-spot-row-sub">${spotlightViewsT(zh, "aDenyAtPriority1000Is")}</div>` : ""}
+    <input type="number" class="wh-spot-freetext wh-spot-freetext--line" data-set-policy-priority value="${escapeHtml(state.priority)}" placeholder="${escapeHtml(spotlightViewsT(zh, "priorityDefault0"))}" ${state.busy ? "disabled" : ""} />
     <button type="button" class="wh-spot-act ds-pressable wh-spot-act--primary" data-set-policy-submit="true" ${state.busy ? "disabled" : ""}>${submitLabel}</button>
     ${error}
   </div>`;
@@ -427,11 +427,11 @@ type DesktopDeviceRowVM = {
 
 function formatDesktopDeviceLastSeen(lastSeenAt: string | undefined, zh: boolean): string {
   if (!lastSeenAt) {
-    return zh ? "从未连接" : "Never connected";
+    return spotlightViewsT(zh, "neverConnected");
   }
   const parsed = new Date(lastSeenAt);
   if (Number.isNaN(parsed.getTime())) {
-    return zh ? "从未连接" : "Never connected";
+    return spotlightViewsT(zh, "neverConnected");
   }
   return new Intl.DateTimeFormat(zh ? "zh-CN" : "en-US", {
     year: "numeric",
@@ -447,7 +447,7 @@ function buildDesktopDeviceRow(device: ClientDeviceResponse, currentDeviceId: st
   const revoked = Boolean(device.revoked_at);
   // 已撤销的设备哪怕 id 命中当前探测也不再算「本机」——同 web 端 isCurrentDevice 的既有语义。
   const current = currentDeviceId !== null && !revoked && device.id === currentDeviceId;
-  const statusLabel = revoked ? (zh ? "已撤销" : "Revoked") : current ? (zh ? "本机" : "This device") : (zh ? "活跃" : "Active");
+  const statusLabel = revoked ? (spotlightViewsT(zh, "revoked")) : current ? (spotlightViewsT(zh, "thisDevice")) : (spotlightViewsT(zh, "active"));
   return {
     id: device.id,
     deviceName: device.device_name,
@@ -474,9 +474,9 @@ export type DesktopDevicesSectionState = {
 export function devicesSectionHtml(state: DesktopDevicesSectionState, zh: boolean): string {
   if (state.failed) {
     return `<div class="wh-spot-set-group" data-spot-devices-section="true">
-      <div class="wh-spot-set-label">${zh ? "已登录设备" : "Signed-in devices"}</div>
-      <div class="wh-spot-row-sub">${zh ? "设备没拉到。" : "Couldn't load devices."}</div>
-      <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-set-devices-retry="true">${zh ? "重试" : "Retry"}</button>
+      <div class="wh-spot-set-label">${spotlightViewsT(zh, "signedInDevices")}</div>
+      <div class="wh-spot-row-sub">${spotlightViewsT(zh, "couldnTLoadDevices")}</div>
+      <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-set-devices-retry="true">${spotlightViewsT(zh, "retry")}</button>
     </div>`;
   }
   if (!state.devices) {
@@ -485,26 +485,26 @@ export function devicesSectionHtml(state: DesktopDevicesSectionState, zh: boolea
     return "";
   }
   const rows = state.devices.length === 0
-    ? `<div class="wh-spot-row-sub">${zh ? "还没有已登录的设备。" : "No signed-in devices yet."}</div>`
+    ? `<div class="wh-spot-row-sub">${spotlightViewsT(zh, "noSignedInDevicesYet")}</div>`
     : state.devices
         .map((device) => {
           const row = buildDesktopDeviceRow(device, state.currentDeviceId, zh);
           let actionHtml = "";
           if (row.isCurrent) {
             const label = state.revokeCurrentBusy
-              ? (zh ? "正在登出…" : "Signing out…")
+              ? (spotlightViewsT(zh, "signingOut"))
               : state.revokeCurrentArmed
-                ? (zh ? "确定？再点一次" : "Sure? Click again")
-                : (zh ? "撤销本机并登出" : "Revoke & sign out");
+                ? (spotlightViewsT(zh, "sureClickAgain3"))
+                : (spotlightViewsT(zh, "revokeSignOut"));
             actionHtml = `<button type="button" class="wh-spot-act ds-pressable ${state.revokeCurrentArmed ? "wh-spot-act--danger" : "wh-spot-act--quiet"}" data-set-revoke-current-device="true" ${state.revokeCurrentBusy ? "disabled" : ""}>${label}</button>`;
           } else if (row.canRevoke) {
             const armed = state.armedId === row.id;
             const busy = state.busyId === row.id;
             const label = busy
-              ? (zh ? "撤销中…" : "Revoking…")
+              ? (spotlightViewsT(zh, "revoking"))
               : armed
-                ? (zh ? "确定？再点一次" : "Sure? Click again")
-                : (zh ? "撤销" : "Revoke");
+                ? (spotlightViewsT(zh, "sureClickAgain3"))
+                : (spotlightViewsT(zh, "revoke"));
             actionHtml = `<button type="button" class="wh-spot-act ds-pressable ${armed ? "wh-spot-act--danger" : "wh-spot-act--quiet"}" data-set-revoke-device="${escapeHtml(row.id)}" ${busy ? "disabled" : ""}>${label}</button>`;
           }
           return `<div class="wh-spot-row" style="cursor:default">
@@ -519,10 +519,8 @@ export function devicesSectionHtml(state: DesktopDevicesSectionState, zh: boolea
   // L-04（R24 S3 走查）：这段说明是完整的两句话，但 .wh-spot-row-sub 默认单行截断（给"行副标题"
   // 用）——之前借用它渲这段长说明，实测被裁成一行省略号。加 --wrap 修饰类让它正常换行。
   return `<div class="wh-spot-set-group" data-spot-devices-section="true">
-    <div class="wh-spot-set-label">${zh ? "已登录设备" : "Signed-in devices"}</div>
-    <div class="wh-spot-row-sub wh-spot-row-sub--wrap">${zh
-      ? "配对到这个账号的客户端设备。撤销不再使用的设备后，那台设备需要重新配对才能再次访问。"
-      : "Client devices paired to this account. Revoking a device you no longer use requires it to re-pair before it can access your account again."
+    <div class="wh-spot-set-label">${spotlightViewsT(zh, "signedInDevices")}</div>
+    <div class="wh-spot-row-sub wh-spot-row-sub--wrap">${spotlightViewsT(zh, "clientDevicesPairedToThisAccount")
     }</div>
     ${rows}
     ${error}
@@ -548,18 +546,14 @@ export function pluginCompatLines(report: PluginCompatReport | undefined, zh: bo
       continue;
     }
     if (check.id === "manifest") {
-      lines.push(zh ? "这个目录里没有可读的 package.json。" : "No readable package.json in that directory.");
+      lines.push(spotlightViewsT(zh, "noReadablePackageJsonInThat"));
     } else if (check.id === "client_surface") {
       lines.push(
-        zh
-          ? "这是界面/主题类插件，WorkHub 的界面不是同一套技术，装不了。"
-          : "This is a UI/theme plugin; WorkHub's interface is a different technology, so it can't run here."
+        spotlightViewsT(zh, "thisIsAUiThemePlugin")
       );
     } else if (check.id === "install_scripts") {
       lines.push(
-        zh
-          ? "它带安装期脚本，会在安装时执行任意代码。"
-          : "It ships install-time scripts, which would execute arbitrary code while installing."
+        spotlightViewsT(zh, "itShipsInstallTimeScriptsWhich")
       );
     } else if (check.id === "dsh_tools_peer") {
       const versions = report.peer_dsh_tools_range && report.host_dsh_tools_version
@@ -574,9 +568,7 @@ export function pluginCompatLines(report: PluginCompatReport | undefined, zh: bo
       );
     } else if (check.id === "bundle_manifest") {
       lines.push(
-        zh
-          ? "它没有按 dsh 的惯例声明打包清单，不一定是个能装的插件。"
-          : "It declares no dsh bundle manifest, so it may not be a packaged plugin at all."
+        spotlightViewsT(zh, "itDeclaresNoDshBundleManifest")
       );
     }
   }
@@ -587,33 +579,25 @@ export function pluginCompatLines(report: PluginCompatReport | undefined, zh: bo
 export function pluginInstallErrorText(code: string | undefined, zh: boolean): string {
   switch (code) {
     case "plugin_manifest_unreadable":
-      return zh
-        ? "这个目录里没有可读的 package.json，装不进来。请把路径指到插件目录本身。"
-        : "No readable package.json there. Point the path at the plugin directory itself.";
+      return spotlightViewsT(zh, "noReadablePackageJsonTherePoint");
     case "plugin_client_surface_unsupported":
-      return zh
-        ? "这是界面/主题类插件，WorkHub 的界面不是同一套技术，装不了。"
-        : "This is a UI/theme plugin; WorkHub's interface is a different technology, so it can't be installed.";
+      return spotlightViewsT(zh, "thisIsAUiThemePlugin2");
     case "plugin_install_scripts_refused":
-      return zh
-        ? "它带安装期脚本，会在安装时执行任意代码，我们不装。"
-        : "It ships install-time scripts that would run arbitrary code while installing, so we don't install it.";
+      return spotlightViewsT(zh, "itShipsInstallTimeScriptsThat");
     case "plugin_already_installed":
-      return zh ? "这个目录已经装过了。" : "That directory is already installed.";
+      return spotlightViewsT(zh, "thatDirectoryIsAlreadyInstalled");
     case "plugin_admin_required":
-      return zh ? "只有管理员可以管理插件。" : "Only an admin can manage plugins.";
+      return spotlightViewsT(zh, "onlyAnAdminCanManagePlugins");
     case "validation_error":
-      return zh
-        ? "路径得是这台服务器上的一个绝对目录路径。"
-        : "The path must be an absolute directory on the server machine.";
+      return spotlightViewsT(zh, "thePathMustBeAnAbsolute");
     default:
-      return zh ? "没装成，请再试一次。" : "Install failed — try again.";
+      return spotlightViewsT(zh, "installFailedTryAgain");
   }
 }
 
 function pluginStatusLine(plugin: PluginVM, zh: boolean): string {
   if (!plugin.enabled || plugin.status === "disabled") {
-    return zh ? "已停用" : "Disabled";
+    return spotlightViewsT(zh, "disabled");
   }
   if (plugin.status === "load_failed") {
     const reason = plugin.load_report?.error;
@@ -654,9 +638,9 @@ export function pluginsSectionHtml(state: DesktopPluginsSectionState, zh: boolea
     return "";
   }
   const rows = state.failed
-    ? `<div class="wh-spot-row" style="cursor:default"><div class="wh-spot-row-main"><div class="wh-spot-row-sub">${zh ? "插件清单没拉到。" : "Couldn't load the plugin list."}</div></div><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-set-plugins-retry="true">${zh ? "重试" : "Retry"}</button></div>`
+    ? `<div class="wh-spot-row" style="cursor:default"><div class="wh-spot-row-main"><div class="wh-spot-row-sub">${spotlightViewsT(zh, "couldnTLoadThePluginList")}</div></div><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-set-plugins-retry="true">${spotlightViewsT(zh, "retry")}</button></div>`
     : !state.plugins || state.plugins.length === 0
-      ? `<div class="wh-spot-row-sub">${zh ? "还没有装任何插件。" : "No plugins installed yet."}</div>`
+      ? `<div class="wh-spot-row-sub">${spotlightViewsT(zh, "noPluginsInstalledYet")}</div>`
       : state.plugins
           .map((plugin) => {
             const busy = state.busyId === plugin.id;
@@ -664,17 +648,17 @@ export function pluginsSectionHtml(state: DesktopPluginsSectionState, zh: boolea
             const toggleArmed = state.armedKey === `toggle:${plugin.id}`;
             const removeArmed = state.armedKey === `remove:${plugin.id}`;
             const toggleLabel = busy
-              ? (zh ? "处理中…" : "Working…")
+              ? (spotlightViewsT(zh, "working"))
               : toggleArmed
-                ? (zh ? "确定？再点一次" : "Sure? Click again")
+                ? (spotlightViewsT(zh, "sureClickAgain3"))
                 : enabled
-                  ? (zh ? "停用" : "Disable")
-                  : (zh ? "启用" : "Enable");
+                  ? (spotlightViewsT(zh, "disable"))
+                  : (spotlightViewsT(zh, "enable"));
             const removeLabel = busy
-              ? (zh ? "处理中…" : "Working…")
+              ? (spotlightViewsT(zh, "working"))
               : removeArmed
-                ? (zh ? "确定？再点一次移除" : "Sure? Click again")
-                : (zh ? "移除" : "Remove");
+                ? (spotlightViewsT(zh, "sureClickAgain4"))
+                : (spotlightViewsT(zh, "remove"));
             const compat = pluginCompatLines(plugin.compat_report, zh);
             const title = plugin.version ? `${plugin.name} ${plugin.version}` : plugin.name;
             return `<div class="wh-spot-row" style="cursor:default" data-spot-plugin="${escapeHtml(plugin.id)}">
@@ -697,7 +681,7 @@ export function pluginsSectionHtml(state: DesktopPluginsSectionState, zh: boolea
     if (state.installOutcome.kind === "refused") {
       return `<div class="wh-spot-row" style="cursor:default" data-spot-plugin-outcome="refused">
         <div class="wh-spot-row-main">
-          <div class="wh-spot-row-title">${zh ? "没有安装" : "Not installed"}</div>
+          <div class="wh-spot-row-title">${spotlightViewsT(zh, "notInstalled")}</div>
           <div class="wh-spot-row-sub">${escapeHtml(pluginInstallErrorText(state.installOutcome.code, zh))}</div>
         </div>
       </div>`;
@@ -735,28 +719,22 @@ export function pluginsSectionHtml(state: DesktopPluginsSectionState, zh: boolea
   const installForm = state.supported
     ? `<div class="wh-spot-row" style="cursor:default">
         <div class="wh-spot-row-main">
-          <div class="wh-spot-row-title">${zh ? "从本机目录安装" : "Install from a local directory"}</div>
-          <div class="wh-spot-row-sub">${zh
-            ? "填服务器上那个插件目录的绝对路径。安装前会先读它的 package.json 做体检，不会执行插件代码。"
-            : "Enter the absolute path of the plugin directory on the server. We read its package.json first; no plugin code runs during the check."
+          <div class="wh-spot-row-title">${spotlightViewsT(zh, "installFromALocalDirectory")}</div>
+          <div class="wh-spot-row-sub">${spotlightViewsT(zh, "enterTheAbsolutePathOfThe")
           }</div>
           <input type="text" class="wh-spot-freetext wh-spot-freetext--line" data-set-plugin-install-path value="${escapeHtml(state.installPath)}" maxlength="1000" placeholder="/srv/plugins/dsh-plugin-echo" ${state.installBusy ? "disabled" : ""} />
         </div>
-        <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-set-plugin-install="true" ${state.installBusy ? "disabled" : ""}>${state.installBusy ? (zh ? "安装中…" : "Installing…") : zh ? "安装" : "Install"}</button>
+        <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-set-plugin-install="true" ${state.installBusy ? "disabled" : ""}>${state.installBusy ? (spotlightViewsT(zh, "installing")) : spotlightViewsT(zh, "install")}</button>
       </div>`
-    : `<div class="wh-spot-row-sub">${zh
-        ? "当前服务端版本还没有插件管理接口，升级后可用。"
-        : "This server version has no plugin management endpoints yet — update it to use them."
+    : `<div class="wh-spot-row-sub">${spotlightViewsT(zh, "thisServerVersionHasNoPlugin")
       }</div>`;
   const error = state.errorText
     ? `<div class="wh-spot-row-sub" data-spot-plugin-error="true" style="color:var(--ds-danger)">${escapeHtml(state.errorText)}</div>`
     : "";
 
   return `<div class="wh-spot-set-group" data-spot-plugins-section="true">
-    <div class="wh-spot-set-label">${zh ? "插件" : "Plugins"}</div>
-    <div class="wh-spot-row-sub">${zh
-      ? "兼容 DeepSeek Harness 的工具类插件：它们给 Cuu 添工具。界面/主题类插件走的是另一套技术，装不了。"
-      : "Compatible with DeepSeek Harness tool plugins — they give Cuu extra tools. UI and theme plugins use a different technology and can't be installed."
+    <div class="wh-spot-set-label">${spotlightViewsT(zh, "plugins")}</div>
+    <div class="wh-spot-row-sub">${spotlightViewsT(zh, "compatibleWithDeepseekHarnessToolPlugins")
     }</div>
     ${hostNote ? `<div class="wh-spot-row-sub">${escapeHtml(hostNote)}</div>` : ""}
     ${rows}
@@ -789,10 +767,10 @@ export function serverSectionHtml(state: DesktopServerSectionState, zh: boolean)
   const detail = parts.map((part) => escapeHtml(part)).join(" · ");
   return `<div class="wh-spot-row" style="cursor:default" data-spot-server-section="true">
     <div class="wh-spot-row-main">
-      <div class="wh-spot-row-title">${zh ? "服务器" : "Server"}</div>
+      <div class="wh-spot-row-title">${spotlightViewsT(zh, "server")}</div>
       <div class="wh-spot-row-sub">${detail}</div>
     </div>
-    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-set-change-server="true">${zh ? "更换服务器" : "Change server"}</button>
+    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-set-change-server="true">${spotlightViewsT(zh, "changeServer")}</button>
   </div>`;
 }
 
@@ -820,12 +798,12 @@ function settingsHtml(
   const runtimeOk = vm.runtime.runtime_status === "ready";
   return `<div class="wh-spot-dash">
     <div class="wh-spot-set-group">
-      <div class="wh-spot-set-label">${zh ? "语言" : "Language"}</div>
+      <div class="wh-spot-set-label">${spotlightViewsT(zh, "language")}</div>
       <div class="wh-spot-reasons-row">${langChips}</div>
     </div>
     <div class="wh-spot-metrics">
-      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "运行状态" : "Runtime"}</span><span class="wh-spot-metric-v" style="color:${runtimeOk ? "var(--ds-success)" : "var(--ds-warn)"}">${runtimeOk ? (zh ? "正常" : "Ready") : zh ? "需关注" : "Attention"}</span></div>
-      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "AI 助手" : "AI assistant"}</span><span class="wh-spot-metric-v" style="color:${vm.llm_runtime.api_key_configured ? "var(--ds-success)" : "var(--ds-warn)"}">${vm.llm_runtime.api_key_configured ? (zh ? "已就绪" : "Ready") : zh ? "待配置" : "Not set up"}</span></div>
+      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${spotlightViewsT(zh, "runtime")}</span><span class="wh-spot-metric-v" style="color:${runtimeOk ? "var(--ds-success)" : "var(--ds-warn)"}">${runtimeOk ? (spotlightViewsT(zh, "ready2")) : spotlightViewsT(zh, "attention")}</span></div>
+      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${spotlightViewsT(zh, "aiAssistant")}</span><span class="wh-spot-metric-v" style="color:${vm.llm_runtime.api_key_configured ? "var(--ds-success)" : "var(--ds-warn)"}">${vm.llm_runtime.api_key_configured ? (spotlightViewsT(zh, "ready")) : spotlightViewsT(zh, "notSetUp")}</span></div>
     </div>
     ${vm.llm_runtime.api_key_configured ? "" : aiNotConfiguredNoteHtml(zh)}
     ${aiSectionHtml(aiProfile, aiFailed, zh)}
@@ -839,22 +817,22 @@ function settingsHtml(
     ${devicesHtml}
     <button type="button" class="wh-spot-row" data-set-open-memory="true">
       <div class="wh-spot-row-main">
-        <div class="wh-spot-row-title">${zh ? "Cuu 的记忆" : "Cuu's memory"}</div>
-        <div class="wh-spot-row-sub">${zh ? "查看和管理关于我的记忆、团队技能库" : "View and manage what Cuu remembers, and the team skill library"}</div>
+        <div class="wh-spot-row-title">${spotlightViewsT(zh, "cuuSMemory")}</div>
+        <div class="wh-spot-row-sub">${spotlightViewsT(zh, "viewAndManageWhatCuuRemembers")}</div>
       </div>
     </button>
     <div class="wh-spot-row" style="cursor:default">
       <div class="wh-spot-row-main">
-        <div class="wh-spot-row-title">${zh ? "桌面客户端" : "Desktop client"}</div>
-        <div class="wh-spot-row-sub">${zh ? "桌宠外观在独立桌宠窗设置；本地动作仅桌面端可用" : "Pet appearance is set on the pet window; local actions are desktop-only"}</div>
+        <div class="wh-spot-row-title">${spotlightViewsT(zh, "desktopClient")}</div>
+        <div class="wh-spot-row-sub">${spotlightViewsT(zh, "petAppearanceIsSetOnThe")}</div>
       </div>
     </div>
     <div class="wh-spot-row">
       <div class="wh-spot-row-main">
-        <div class="wh-spot-row-title">${zh ? "账户" : "Account"}</div>
-        <div class="wh-spot-row-sub">${zh ? "退出当前身份并重新绑定这台设备" : "Sign out and re-bind this device"}</div>
+        <div class="wh-spot-row-title">${spotlightViewsT(zh, "account")}</div>
+        <div class="wh-spot-row-sub">${spotlightViewsT(zh, "signOutAndReBindThis")}</div>
       </div>
-      <button type="button" class="wh-spot-act wh-spot-act--danger ds-pressable" data-set-logout="true">${zh ? "登出" : "Sign out"}</button>
+      <button type="button" class="wh-spot-act wh-spot-act--danger ds-pressable" data-set-logout="true">${spotlightViewsT(zh, "signOut")}</button>
     </div>
     <div class="wh-spot-set-bottom-spacer" aria-hidden="true"></div>
   </div>`;
@@ -985,12 +963,12 @@ export function openSpotlightAvatarCropModal(
         const modal = deps.createElement("div");
         modal.setAttribute("role", "dialog");
         modal.setAttribute("aria-modal", "true");
-        modal.setAttribute("aria-label", zh ? "裁剪头像" : "Crop avatar");
+        modal.setAttribute("aria-label", spotlightViewsT(zh, "cropAvatar"));
         modal.style.cssText =
           "background:#fff;border-radius:16px;padding:20px;display:grid;gap:14px;max-width:calc(100vw - 32px)";
 
         const title = deps.createElement("h3");
-        title.textContent = zh ? "裁剪头像" : "Crop avatar";
+        title.textContent = spotlightViewsT(zh, "cropAvatar");
         title.style.cssText = "margin:0;font-size:16px";
 
         const viewport = deps.createElement("div");
@@ -1011,12 +989,10 @@ export function openSpotlightAvatarCropModal(
         zoomSlider.max = String(maxScale);
         zoomSlider.step = String((maxScale - minScale) / 200 || 0.001);
         zoomSlider.value = String(state.scale);
-        zoomSlider.setAttribute("aria-label", zh ? "缩放" : "Zoom");
+        zoomSlider.setAttribute("aria-label", spotlightViewsT(zh, "zoom"));
 
         const hint = deps.createElement("p");
-        hint.textContent = zh
-          ? "拖动图片调整位置，用滑杆缩放，取景框内的区域会被保存为头像。"
-          : "Drag to reposition, use the slider to zoom — the area inside the frame becomes your avatar.";
+        hint.textContent = spotlightViewsT(zh, "dragToRepositionUseTheSlider");
         hint.style.cssText = "margin:0;font-size:12px;color:#666";
 
         const actions = deps.createElement("div");
@@ -1024,11 +1000,11 @@ export function openSpotlightAvatarCropModal(
         const cancelBtn = deps.createElement("button");
         cancelBtn.type = "button";
         cancelBtn.className = "wh-spot-act wh-spot-act--quiet";
-        cancelBtn.textContent = zh ? "取消" : "Cancel";
+        cancelBtn.textContent = spotlightViewsT(zh, "cancel");
         const confirmBtn = deps.createElement("button");
         confirmBtn.type = "button";
         confirmBtn.className = "wh-spot-act wh-spot-act--primary";
-        confirmBtn.textContent = zh ? "确认" : "Confirm";
+        confirmBtn.textContent = spotlightViewsT(zh, "confirm");
 
         viewport.appendChild(previewEl);
         actions.appendChild(cancelBtn);
@@ -1179,27 +1155,19 @@ export async function runDesktopLogout(
 export function logoutErrorPanelHtml(zh: boolean, stage: DesktopLogoutStage): string {
   const title =
     stage === "server"
-      ? zh
-        ? "登出没成功"
-        : "Sign-out didn't complete"
-      : zh
-        ? "本地清理没完成"
-        : "Local cleanup didn't finish";
+      ? spotlightViewsT(zh, "signOutDidnTComplete")
+      : spotlightViewsT(zh, "localCleanupDidnTFinish");
   const detail =
     stage === "server"
-      ? zh
-        ? "连不上服务端。你在这台设备上的登录可能仍然有效——请检查网络后重试。"
-        : "Couldn't reach the server. Your sign-in on this device may still be valid — check your connection and retry."
-      : zh
-        ? "服务端已登出，但本地令牌没清干净。请重试。"
-        : "Signed out on the server, but the local token wasn't cleared. Please retry.";
+      ? spotlightViewsT(zh, "couldnTReachTheServerYour")
+      : spotlightViewsT(zh, "signedOutOnTheServerBut");
   // 重试：server 阶段重跑完整流程（含服务端）；shell 阶段服务端已完成，只重跑本地清理（force 跳过①）。
   const retryForce = stage === "shell" ? "true" : "false";
-  const retryBtn = `<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-set-logout-retry data-logout-force="${retryForce}">${zh ? "重试" : "Retry"}</button>`;
+  const retryBtn = `<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-set-logout-retry data-logout-force="${retryForce}">${spotlightViewsT(zh, "retry")}</button>`;
   // 仅 server 阶段给"仍要本地退出"兜底：服务端不可达时用户显式本地退出，文案已警示服务端凭证可能仍有效。
   const forceBtn =
     stage === "server"
-      ? `<button type="button" class="wh-spot-act wh-spot-act--danger ds-pressable" data-set-logout-local>${zh ? "仍要本地退出" : "Sign out locally anyway"}</button>`
+      ? `<button type="button" class="wh-spot-act wh-spot-act--danger ds-pressable" data-set-logout-local>${spotlightViewsT(zh, "signOutLocallyAnyway")}</button>`
       : "";
   return `<div class="wh-spot-error" data-spot-logout-error="${stage}"><div class="wh-spot-row-title">${title}</div><div class="wh-spot-row-sub" style="margin-top:6px">${detail}</div><div style="margin-top:13px;display:flex;gap:8px;flex-wrap:wrap">${retryBtn}${forceBtn}</div></div>`;
 }
@@ -1324,7 +1292,7 @@ export function createSettingsView(): SpotlightCapabilityView {
       // 覆盖新一轮渲染；dispose 时连同最后一个 blob URL 一起释放，不留内存泄漏。
       let avatarHydrateGen = 0;
       let lastAvatarObjectUrl: string | undefined;
-      ctx.setSubtitle(zh ? "偏好与状态" : "Preferences & status");
+      ctx.setSubtitle(spotlightViewsT(ctx.locale, "preferencesStatus"));
 
       const revokeAvatarObjectUrl = () => {
         if (lastAvatarObjectUrl) {
@@ -1509,13 +1477,13 @@ export function createSettingsView(): SpotlightCapabilityView {
 
       // rank7：装载失败渲带「重试」的错误块，点重试重跑（不再死胡同）。
       const load = async () => {
-        ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉设置…" : "Loading settings…"}</div>`;
+        ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${spotlightViewsT(ctx.locale, "loadingSettings")}</div>`;
         ctx.requestResize();
         try {
           vm = await ctx.client.pages.settings({ locale: ctx.locale });
         } catch {
           if (disposed) return;
-          ctx.body.innerHTML = spotlightErrorHtml(zh, zh ? "设置没拉到" : "Couldn't load settings");
+          ctx.body.innerHTML = spotlightErrorHtml(zh, spotlightViewsT(ctx.locale, "couldnTLoadSettings"));
           ctx.requestResize();
           return;
         }
@@ -1548,7 +1516,7 @@ export function createSettingsView(): SpotlightCapabilityView {
           .catch(() => {
             if (disposed) return;
             aiProfile = previous;
-            aiErrorText = zh ? "没保存成功，再试一次。" : "Couldn't save — try again.";
+            aiErrorText = spotlightViewsT(ctx.locale, "couldnTSaveTryAgain");
             renderAll();
           });
       }
@@ -1567,7 +1535,7 @@ export function createSettingsView(): SpotlightCapabilityView {
           .catch(() => {
             if (disposed) return;
             profile = previous;
-            profileErrorText = zh ? "没保存成功，再试一次。" : "Couldn't save — try again.";
+            profileErrorText = spotlightViewsT(ctx.locale, "couldnTSaveTryAgain");
             renderAll();
           });
       }
@@ -1583,7 +1551,7 @@ export function createSettingsView(): SpotlightCapabilityView {
         const revoke = ctx.client.revokePermissionPolicy;
         if (!revoke) {
           policyRevokeBusyId = undefined;
-          policyRevokeError = zh ? "当前客户端版本不支持撤销，请升级后再试。" : "This client version can't revoke policies — please update.";
+          policyRevokeError = spotlightViewsT(ctx.locale, "thisClientVersionCanTRevoke");
           renderAll();
           return;
         }
@@ -1598,14 +1566,14 @@ export function createSettingsView(): SpotlightCapabilityView {
             if (vm) {
               vm = { ...vm, permission_policies: (vm.permission_policies ?? []).filter((policy) => policy.id !== policyId) };
             }
-            ctx.toast(zh ? "已撤销这条自动通过策略" : "Auto-approve policy revoked", "ok");
+            ctx.toast(spotlightViewsT(ctx.locale, "autoApprovePolicyRevoked"), "ok");
             renderAll();
           })
           .catch(() => {
             if (disposed) return;
             policyRevokeBusyId = undefined;
-            policyRevokeError = zh ? "撤销失败，请重试。" : "Couldn't revoke — try again.";
-            ctx.toast(zh ? "撤销失败" : "Revoke failed", "error");
+            policyRevokeError = spotlightViewsT(ctx.locale, "couldnTRevokeTryAgain");
+            ctx.toast(spotlightViewsT(ctx.locale, "revokeFailed"), "error");
             renderAll();
           });
       }
@@ -1618,18 +1586,14 @@ export function createSettingsView(): SpotlightCapabilityView {
         const actionPattern = policyFormActionPattern.trim();
         const priority = Number(policyFormPriority);
         if (!scopeId || !actionPattern || !Number.isFinite(priority)) {
-          policyFormError = zh
-            ? "请填写范围 ID 与动作模式，优先级需为数字。"
-            : "Enter a scope ID and action pattern; priority must be a number.";
+          policyFormError = spotlightViewsT(ctx.locale, "enterAScopeIdAndAction");
           renderAll();
           return;
         }
         // MRG-25 同款取舍：createPermissionPolicy 是可选方法，旧版客户端缺它就安静降级，不非空断言硬调。
         const create = ctx.client.createPermissionPolicy;
         if (!create) {
-          policyFormError = zh
-            ? "当前客户端版本不支持新增策略，请升级后再试。"
-            : "This client version can't create policies — please update.";
+          policyFormError = spotlightViewsT(ctx.locale, "thisClientVersionCanTCreate");
           renderAll();
           return;
         }
@@ -1666,14 +1630,14 @@ export function createSettingsView(): SpotlightCapabilityView {
             // 范围/效果/优先级多半跨几条规则复用，动作模式清空以方便连续新增。
             policyFormScopeId = "";
             policyFormActionPattern = "";
-            ctx.toast(zh ? "策略已保存" : "Policy saved", "ok");
+            ctx.toast(spotlightViewsT(ctx.locale, "policySaved"), "ok");
             renderAll();
           })
           .catch(() => {
             if (disposed) return;
             policyFormBusy = false;
-            policyFormError = zh ? "保存失败，请重试。" : "Couldn't save — try again.";
-            ctx.toast(zh ? "保存失败" : "Save failed", "error");
+            policyFormError = spotlightViewsT(ctx.locale, "couldnTSaveTryAgain2");
+            ctx.toast(spotlightViewsT(ctx.locale, "saveFailed"), "error");
             renderAll();
           });
       }
@@ -1707,7 +1671,7 @@ export function createSettingsView(): SpotlightCapabilityView {
           .catch(() => {
             if (disposed) return;
             pluginBusyId = undefined;
-            pluginErrorText = zh ? "没成功，请重试。" : "That didn't work — try again.";
+            pluginErrorText = spotlightViewsT(ctx.locale, "thatDidnTWorkTryAgain");
             ctx.toast(failToast, "error");
             renderAll();
           });
@@ -1717,9 +1681,7 @@ export function createSettingsView(): SpotlightCapabilityView {
         const enabled = plugin.enabled && plugin.status !== "disabled";
         const call = enabled ? ctx.client.disablePlugin : ctx.client.enablePlugin;
         if (!call) {
-          pluginErrorText = zh
-            ? "当前服务端版本还没有插件管理接口，升级后可用。"
-            : "This server version has no plugin management endpoints yet — update it.";
+          pluginErrorText = spotlightViewsT(ctx.locale, "thisServerVersionHasNoPlugin2");
           renderAll();
           return;
         }
@@ -1727,17 +1689,15 @@ export function createSettingsView(): SpotlightCapabilityView {
           plugin.id,
           () => call.call(ctx.client, plugin.id),
           (result) => replacePluginRow(result as PluginVM),
-          enabled ? (zh ? "已停用" : "Disabled") : (zh ? "已启用" : "Enabled"),
-          zh ? "没改成" : "Couldn't change it"
+          enabled ? (spotlightViewsT(ctx.locale, "disabled")) : (spotlightViewsT(ctx.locale, "enabled")),
+          spotlightViewsT(ctx.locale, "couldnTChangeIt")
         );
       }
 
       function removePlugin(plugin: PluginVM): void {
         const call = ctx.client.removePlugin;
         if (!call) {
-          pluginErrorText = zh
-            ? "当前服务端版本还没有插件管理接口，升级后可用。"
-            : "This server version has no plugin management endpoints yet — update it.";
+          pluginErrorText = spotlightViewsT(ctx.locale, "thisServerVersionHasNoPlugin2");
           renderAll();
           return;
         }
@@ -1751,8 +1711,8 @@ export function createSettingsView(): SpotlightCapabilityView {
               pluginInstallOutcome = undefined;
             }
           },
-          zh ? "已移除" : "Removed",
-          zh ? "没移除成" : "Couldn't remove it"
+          spotlightViewsT(ctx.locale, "removed"),
+          spotlightViewsT(ctx.locale, "couldnTRemoveIt")
         );
       }
 
@@ -1762,16 +1722,12 @@ export function createSettingsView(): SpotlightCapabilityView {
         const sourcePath = pluginInstallPath.trim();
         const install = ctx.client.installPlugin;
         if (!install) {
-          pluginErrorText = zh
-            ? "当前服务端版本还没有插件管理接口，升级后可用。"
-            : "This server version has no plugin management endpoints yet — update it.";
+          pluginErrorText = spotlightViewsT(ctx.locale, "thisServerVersionHasNoPlugin2");
           renderAll();
           return;
         }
         if (!sourcePath) {
-          pluginErrorText = zh
-            ? "填一下插件目录的绝对路径。"
-            : "Enter the plugin directory's absolute path.";
+          pluginErrorText = spotlightViewsT(ctx.locale, "enterThePluginDirectorySAbsolute");
           renderAll();
           return;
         }
@@ -1789,8 +1745,8 @@ export function createSettingsView(): SpotlightCapabilityView {
             pluginInstallOutcome = { kind: "installed", plugin: installed };
             ctx.toast(
               installed.status === "installed"
-                ? (zh ? "插件装好了" : "Plugin installed")
-                : (zh ? "登记了，但没能加载" : "Registered, but it did not load"),
+                ? (spotlightViewsT(ctx.locale, "pluginInstalled"))
+                : (spotlightViewsT(ctx.locale, "registeredButItDidNotLoad")),
               installed.status === "installed" ? "ok" : "info"
             );
             renderAll();
@@ -1804,7 +1760,7 @@ export function createSettingsView(): SpotlightCapabilityView {
               ? String((error as { code?: unknown }).code)
               : undefined;
             pluginInstallOutcome = { kind: "refused", code };
-            ctx.toast(zh ? "没有安装" : "Not installed", "error");
+            ctx.toast(spotlightViewsT(ctx.locale, "notInstalled"), "error");
             renderAll();
           });
       }
@@ -1824,14 +1780,14 @@ export function createSettingsView(): SpotlightCapabilityView {
             if (devices) {
               devices = devices.map((device) => (device.id === deviceId ? revoked : device));
             }
-            ctx.toast(zh ? "已撤销这台设备" : "Device revoked", "ok");
+            ctx.toast(spotlightViewsT(ctx.locale, "deviceRevoked"), "ok");
             renderAll();
           })
           .catch(() => {
             if (disposed) return;
             deviceRevokeBusyId = undefined;
-            deviceRevokeError = zh ? "撤销失败，请重试。" : "Couldn't revoke — try again.";
-            ctx.toast(zh ? "撤销失败" : "Revoke failed", "error");
+            deviceRevokeError = spotlightViewsT(ctx.locale, "couldnTRevokeTryAgain");
+            ctx.toast(spotlightViewsT(ctx.locale, "revokeFailed"), "error");
             renderAll();
           });
       }
@@ -1860,7 +1816,7 @@ export function createSettingsView(): SpotlightCapabilityView {
         reload: () => window.location.reload()
       };
       const logoutView: DesktopLogoutView = {
-        showProgress: () => ctx.toast(zh ? "正在登出…" : "Signing out…", "info"),
+        showProgress: () => ctx.toast(spotlightViewsT(ctx.locale, "signingOut"), "info"),
         showError: (stage) => {
           ctx.body.innerHTML = logoutErrorPanelHtml(zh, stage);
           ctx.requestResize();
@@ -1916,7 +1872,7 @@ export function createSettingsView(): SpotlightCapabilityView {
         }
         if (target.closest("[data-spot-ai-retry]")) {
           aiFailed = false;
-          ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉设置…" : "Loading settings…"}</div>`;
+          ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${spotlightViewsT(ctx.locale, "loadingSettings")}</div>`;
           ctx.requestResize();
           void loadAiProfile().then(() => {
             if (disposed) return;
@@ -1926,7 +1882,7 @@ export function createSettingsView(): SpotlightCapabilityView {
         }
         if (target.closest("[data-spot-profile-retry]")) {
           profileFailed = false;
-          ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉设置…" : "Loading settings…"}</div>`;
+          ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${spotlightViewsT(ctx.locale, "loadingSettings")}</div>`;
           ctx.requestResize();
           void loadProfile().then(() => {
             if (disposed) return;
@@ -2057,7 +2013,7 @@ export function createSettingsView(): SpotlightCapabilityView {
         // R23 F-03：设备列表重试。
         if (target.closest("[data-set-devices-retry]")) {
           devicesFailed = false;
-          ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉设置…" : "Loading settings…"}</div>`;
+          ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${spotlightViewsT(ctx.locale, "loadingSettings")}</div>`;
           ctx.requestResize();
           void loadDevices().then(() => {
             if (disposed) return;
@@ -2130,7 +2086,7 @@ export function createSettingsView(): SpotlightCapabilityView {
             copied.then(
               () => {
                 ctx.toast(
-                  zh ? "部署说明链接已复制，请到浏览器粘贴打开" : "Copied the deployment doc link — paste it into your browser",
+                  spotlightViewsT(ctx.locale, "copiedTheDeploymentDocLinkPaste"),
                   "ok"
                 );
               },
@@ -2168,7 +2124,7 @@ export function createSettingsView(): SpotlightCapabilityView {
             status.hidden = false;
             status.textContent = text;
           };
-          setAvatarStatus(zh ? "正在移除…" : "Removing…");
+          setAvatarStatus(spotlightViewsT(ctx.locale, "removing"));
           void ctx.client
             .request(AVATAR_PATH, { method: "DELETE" })
             .then(() => {
@@ -2179,18 +2135,18 @@ export function createSettingsView(): SpotlightCapabilityView {
                 img.hidden = true;
               }
               removeAvatarBtn.hidden = true;
-              setAvatarStatus(zh ? "已移除头像" : "Avatar removed");
+              setAvatarStatus(spotlightViewsT(ctx.locale, "avatarRemoved"));
             })
             .catch(() => {
               if (disposed) return;
-              setAvatarStatus(zh ? "移除失败，请重试" : "Failed to remove — please try again");
+              setAvatarStatus(spotlightViewsT(ctx.locale, "failedToRemovePleaseTryAgain"));
             });
           return;
         }
         const loc = target.closest<HTMLElement>("[data-set-locale]");
         if (loc?.dataset.setLocale && loc.dataset.sel !== "true") {
           const next = loc.dataset.setLocale;
-          ctx.toast(zh ? "正在切换语言…" : "Switching language…", "info");
+          ctx.toast(spotlightViewsT(ctx.locale, "switchingLanguage"), "info");
           try {
             window.localStorage.setItem(storageKey, next);
           } catch {
@@ -2209,7 +2165,7 @@ export function createSettingsView(): SpotlightCapabilityView {
               }
               window.location.reload();
             })
-            .catch(() => ctx.toast(zh ? "切换失败，稍后重试" : "Failed — retry", "error"));
+            .catch(() => ctx.toast(spotlightViewsT(ctx.locale, "failedRetry2"), "error"));
           return;
         }
 
@@ -2283,7 +2239,7 @@ export function createSettingsView(): SpotlightCapabilityView {
           status.textContent = text;
         };
         void openSpotlightAvatarCropModal(file, zh, async (blob) => {
-          setAvatarStatus(zh ? "正在上传…" : "Uploading…");
+          setAvatarStatus(spotlightViewsT(ctx.locale, "uploading2"));
           try {
             await ctx.client.request(AVATAR_PATH, {
               method: "PUT",
@@ -2291,11 +2247,11 @@ export function createSettingsView(): SpotlightCapabilityView {
               body: blob
             });
             if (disposed) return;
-            setAvatarStatus(zh ? "头像已更新" : "Avatar updated");
+            setAvatarStatus(spotlightViewsT(ctx.locale, "avatarUpdated"));
             hydrateAvatarPreview();
           } catch {
             if (disposed) return;
-            setAvatarStatus(zh ? "上传失败，请重试" : "Upload failed — please try again");
+            setAvatarStatus(spotlightViewsT(ctx.locale, "uploadFailedPleaseTryAgain"));
           }
         });
       });

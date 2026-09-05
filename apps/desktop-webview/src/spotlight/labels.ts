@@ -1,3 +1,4 @@
+import { spotlightT } from "./locales.js";
 // 桌面 Spotlight 视图共用的枚举→本地化标签（避免给用户直接渲染 in_progress / urgent / running 等裸枚举）。
 // 文案与 web 端 packages/ui i18n 同口径；约定签名 (value, zh) 与各 view 既有 helper 一致。
 
@@ -70,7 +71,7 @@ const riskHintMap: Record<string, [string, string]> = {
 };
 
 export function agentStepPhaseLabel(phase: string, zh: boolean): string {
-  return agentStepPhaseMap[phase]?.[zh ? 0 : 1] ?? (zh ? "步骤" : "Step");
+  return agentStepPhaseMap[phase]?.[zh ? 0 : 1] ?? (spotlightT(zh, "step"));
 }
 
 export function agentStepPublicSummary(
@@ -79,15 +80,15 @@ export function agentStepPublicSummary(
 ): string {
   switch (step.phase) {
     case "think":
-      return zh ? "AI 正在整理材料，稍后给你下一步。" : "AI is organizing the materials and preparing the next step.";
+      return spotlightT(zh, "aiIsOrganizingTheMaterialsAnd");
     case "tool_call":
-      return zh ? "正在调用工具。" : "Calling a tool.";
+      return spotlightT(zh, "callingATool");
     case "tool_result":
-      return zh ? "工具已返回，AI 正在整理下一步。" : "Tool result received; AI is organizing the next step.";
+      return spotlightT(zh, "toolResultReceivedAiIsOrganizing");
     case "final":
-      return step.output_excerpt ?? (zh ? "最终输出已生成。" : "Final output is ready.");
+      return step.output_excerpt ?? (spotlightT(zh, "finalOutputIsReady"));
     default:
-      return step.output_excerpt ?? (zh ? "记录了一个步骤。" : "Recorded one step.");
+      return step.output_excerpt ?? (spotlightT(zh, "recordedOneStep"));
   }
 }
 

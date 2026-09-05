@@ -26,6 +26,8 @@ import { classifyAttentionActionHref } from "./attention.js";
 import { meetingInsightKindLabel, meetingInsightStatusLabel, meetingRecordStatusLabel } from "../labels.js";
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 
+import { spotlightViewsT } from "./locales.js";
+
 // ── 纯函数：深链解析 / 渲染 —— 与 DOM 接线分离，逐条可单测（同 drive.ts 手法）。 ──────────────
 
 // F-09：会议详情深链 `?m=meetingId`（search.ts 的 ctx.open("meetings", { route: "?m=..." })）与
@@ -57,7 +59,7 @@ function formatMeetingTimestamp(iso: string, zh: boolean): string {
 // L27 同款（web route-components.ts meetingContentFallback）：转写/纪要为空时不能都说「还没有
 // 内容」——会议还在 processing/failed 时那句是错的，按状态给贴合的占位。
 function meetingContentFallback(kind: "transcript" | "minutes", status: MeetingRecordVM["status"], zh: boolean): string {
-  const noun = kind === "transcript" ? (zh ? "转写" : "Transcript") : (zh ? "纪要" : "Minutes");
+  const noun = kind === "transcript" ? (spotlightViewsT(zh, "transcript")) : (spotlightViewsT(zh, "minutes"));
   if (status === "processing") {
     return zh ? `${noun}还在准备中，稍后回来查看。` : `${noun} is still being prepared — check back shortly.`;
   }
@@ -92,10 +94,10 @@ function meetingInsightCardHtml(insight: MeetingInsightVM, zh: boolean): string 
   // draft_href/proposal_href 是纯导航（GET /workitems/:id、/proposals/:id），不是要提交的 ActionSpec——
   // 用 data-meeting-open-href 单独一类,分发给 classifyAttentionActionHref 而不是当写动作提交。
   const draftLink = insight.draft_href
-    ? `<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-meeting-open-href="${escapeHtml(insight.draft_href)}">${escapeHtml(zh ? "打开草稿" : "Open draft")}</button>`
+    ? `<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-meeting-open-href="${escapeHtml(insight.draft_href)}">${escapeHtml(spotlightViewsT(zh, "openDraft"))}</button>`
     : "";
   const proposalLink = insight.proposal_href
-    ? `<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-meeting-open-href="${escapeHtml(insight.proposal_href)}">${escapeHtml(zh ? "查看变更申请" : "View change request")}</button>`
+    ? `<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-meeting-open-href="${escapeHtml(insight.proposal_href)}">${escapeHtml(spotlightViewsT(zh, "viewChangeRequest"))}</button>`
     : "";
   const actionsRow = createBtn || dismissBtn || draftLink || proposalLink
     ? `<div class="wh-spot-card-actions">${createBtn}${dismissBtn}${draftLink}${proposalLink}</div>`
@@ -109,7 +111,7 @@ function meetingInsightCardHtml(insight: MeetingInsightVM, zh: boolean): string 
       </div>
       <h3 class="wh-spot-card-title">${escapeHtml(insight.title)}</h3>
       <p class="wh-spot-card-desc">${escapeHtml(insight.description)}</p>
-      <p class="wh-spot-card-desc">${escapeHtml(zh ? "AI 推荐理由：" : "AI reason: ")}${escapeHtml(insight.confidence_reason)}</p>
+      <p class="wh-spot-card-desc">${escapeHtml(spotlightViewsT(zh, "aiReason2"))}${escapeHtml(insight.confidence_reason)}</p>
       ${actionsRow}
     </div>
   </article>`;
@@ -120,13 +122,13 @@ function meetingDetailHtml(m: MeetingRecordVM, zh: boolean): string {
   const minutes = m.minutes_md?.trim() || meetingContentFallback("minutes", m.status, zh);
   const insights = m.insights.length
     ? `<div class="wh-spot-cards ds-stagger">${m.insights.map((i) => meetingInsightCardHtml(i, zh)).join("")}</div>`
-    : `<p class="wh-spot-bubble-note" style="color:var(--ds-ink-muted)">${zh ? "这场会议还没有洞察。" : "No insights from this meeting yet."}</p>`;
+    : `<p class="wh-spot-bubble-note" style="color:var(--ds-ink-muted)">${spotlightViewsT(zh, "noInsightsFromThisMeetingYet")}</p>`;
   return `<div class="wh-spot-drive-section" data-meeting-detail="${escapeHtml(m.id)}">
-    <p class="wh-spot-reasons-q">${zh ? "转写" : "Transcript"}</p>
+    <p class="wh-spot-reasons-q">${spotlightViewsT(zh, "transcript")}</p>
     <pre class="wh-spot-row-sub wh-spot-drive-preview-text">${escapeHtml(transcript)}</pre>
-    <p class="wh-spot-reasons-q">${zh ? "纪要" : "Minutes"}</p>
+    <p class="wh-spot-reasons-q">${spotlightViewsT(zh, "minutes")}</p>
     <pre class="wh-spot-row-sub wh-spot-drive-preview-text">${escapeHtml(minutes)}</pre>
-    <p class="wh-spot-reasons-q">${zh ? "洞察" : "Insights"}</p>
+    <p class="wh-spot-reasons-q">${spotlightViewsT(zh, "insights")}</p>
     ${insights}
   </div>`;
 }
@@ -136,7 +138,7 @@ function meetingRowHtml(m: MeetingRecordVM, zh: boolean, selected: boolean): str
   const pendingTag = pendingCount > 0
     ? ` <span class="wh-spot-row-tag">${escapeHtml(zh ? `${pendingCount} 条待确认` : `${pendingCount} pending`)}</span>`
     : "";
-  const current = selected ? `<span class="wh-spot-row-current">${zh ? "当前" : "Current"}</span>` : "";
+  const current = selected ? `<span class="wh-spot-row-current">${spotlightViewsT(zh, "current")}</span>` : "";
   return `<button type="button" class="wh-spot-row" data-meeting-select="${escapeHtml(m.id)}" data-meeting-selected="${selected ? "true" : "false"}"${selected ? ' aria-current="true"' : ""}>
     <div class="wh-spot-row-main">
       <div class="wh-spot-row-title">${escapeHtml(m.title)} <span class="wh-spot-row-tag">${escapeHtml(meetingRecordStatusLabel(m.status, zh))}</span>${pendingTag}</div>
@@ -164,16 +166,16 @@ function visibleMeetings(meetings: readonly MeetingRecordVM[], selectedId: strin
 export function meetingsHtml(vm: MeetingPageVM, projectChips: string, zh: boolean): string {
   const s = vm.summary;
   const summary = `<div class="wh-spot-metrics">
-    <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "会议" : "Meetings"}</span><span class="wh-spot-metric-v">${s.meeting_count}</span></div>
-    <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "已就绪" : "Ready"}</span><span class="wh-spot-metric-v">${s.ready_count}</span></div>
-    <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "待确认洞察" : "Pending"}</span><span class="wh-spot-metric-v">${s.pending_insight_count}</span></div>
+    <div class="wh-spot-metric"><span class="wh-spot-metric-k">${spotlightViewsT(zh, "meetings")}</span><span class="wh-spot-metric-v">${s.meeting_count}</span></div>
+    <div class="wh-spot-metric"><span class="wh-spot-metric-k">${spotlightViewsT(zh, "ready")}</span><span class="wh-spot-metric-v">${s.ready_count}</span></div>
+    <div class="wh-spot-metric"><span class="wh-spot-metric-k">${spotlightViewsT(zh, "pending")}</span><span class="wh-spot-metric-v">${s.pending_insight_count}</span></div>
   </div>`;
   const selected = vm.meetings.find((m) => m.id === vm.selected_meeting_id) ?? vm.meetings[0];
   const list = vm.meetings.length
     ? `<div class="wh-spot-list ds-stagger">${visibleMeetings(vm.meetings, selected?.id).map((m) => meetingRowHtml(m, zh, m.id === selected?.id)).join("")}</div>${vm.meetings.length > MEETING_LIST_CAP ? `<p class="wh-spot-card-desc" data-meeting-list-overflow="${vm.meetings.length - MEETING_LIST_CAP}">${zh ? `只显示最近 ${MEETING_LIST_CAP} 场会议（共 ${vm.meetings.length} 场），全部会议去网页版看。` : `Showing the ${MEETING_LIST_CAP} most recent of ${vm.meetings.length} meetings — open the web app for the full list.`}</p>` : ""}`
     // 桌面此前完全没有会议视图,现在有读的一面了,但导入转写仍只有网页版能做（F-09 范围不含导入
     // UI）——诚实指路,不假装桌面也能建,同 drive.ts 回收站/超量列表指去网页版的口径。
-    : `<p class="wh-spot-bubble-note" style="color:var(--ds-ink-muted)">${zh ? "这个项目还没有会议，去网页版导入会议转写后会显示在这里。" : "No meetings in this project yet — import a transcript on the web app and it'll show up here."}</p>`;
+    : `<p class="wh-spot-bubble-note" style="color:var(--ds-ink-muted)">${spotlightViewsT(zh, "noMeetingsInThisProjectYet")}</p>`;
   const detail = selected ? meetingDetailHtml(selected, zh) : "";
   return `<div class="wh-spot-know">${projectChips}${summary}${list}${detail}</div>`;
 }
@@ -181,9 +183,9 @@ export function meetingsHtml(vm: MeetingPageVM, projectChips: string, zh: boolea
 export function meetingsNoProjectsEmptyHtml(zh: boolean): string {
   return `<div class="wh-spot-empty">
     <div class="wh-spot-empty-face">(=^･ω･^=)</div>
-    <h3 class="wh-spot-empty-title">${zh ? "还没有项目" : "No projects"}</h3>
-    <p class="wh-spot-empty-sub">${zh ? "先交给 Cuu 一个任务，它会自动建立项目，会议记录也会归到这里。" : "Create a task and Cuu will set up a project — meetings land here too."}</p>
-    <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-meeting-open-intake="true">${zh ? "＋ 新任务 / 交给 AI" : "＋ New task / Ask AI"}</button>
+    <h3 class="wh-spot-empty-title">${spotlightViewsT(zh, "noProjects")}</h3>
+    <p class="wh-spot-empty-sub">${spotlightViewsT(zh, "createATaskAndCuuWill2")}</p>
+    <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-meeting-open-intake="true">${spotlightViewsT(zh, "newTaskAskAi")}</button>
   </div>`;
 }
 
@@ -205,7 +207,7 @@ export function createMeetingsView(): SpotlightCapabilityView {
       // 当前选中的会议——深链带来的初值，之后随用户点击列表行/切项目而变，每次都显式带给
       // pages.meetings（不依赖写动作接口自己回的 selected_meeting_id，见文件头注释）。
       let selectedMeetingId = meetingTargetIdFromRoute(ctx.target?.route);
-      ctx.setSubtitle(zh ? "转写、纪要与洞察" : "Transcripts, minutes & insights");
+      ctx.setSubtitle(spotlightViewsT(ctx.locale, "transcriptsMinutesInsights"));
 
       const chips = (): string => {
         if (projects.length <= 1) return "";
@@ -218,7 +220,7 @@ export function createMeetingsView(): SpotlightCapabilityView {
         if (!projectId) return;
         const gen = ++loadGen;
         const reqProjectId = projectId;
-        ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉会议…" : "Loading meetings…"}</div>`;
+        ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${spotlightViewsT(ctx.locale, "loadingMeetings")}</div>`;
         ctx.requestResize();
         try {
           const vm = await ctx.client.pages.meetings({
@@ -229,19 +231,19 @@ export function createMeetingsView(): SpotlightCapabilityView {
           if (disposed || gen !== loadGen) return;
           selectedMeetingId = vm.selected_meeting_id;
           const proj = projects.find((p) => p.id === reqProjectId);
-          ctx.setSubtitle(proj ? proj.name : zh ? "会议" : "Meetings");
+          ctx.setSubtitle(proj ? proj.name : spotlightViewsT(ctx.locale, "meetings"));
           ctx.body.innerHTML = meetingsHtml(vm, chips(), zh);
         } catch {
           if (disposed || gen !== loadGen) return;
           retry = () => void load();
-          ctx.body.innerHTML = spotlightErrorHtml(zh, zh ? "会议没拉到" : "Couldn't load meetings");
+          ctx.body.innerHTML = spotlightErrorHtml(zh, spotlightViewsT(ctx.locale, "couldnTLoadMeetings"));
         }
         ctx.requestResize();
         // R11（键盘全程）：innerHTML 重渲后焦点掉回 body——交还内容区，Tab 起点可预期。
         ctx.refocusBody();
       };
 
-      ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在准备…" : "Preparing…"}</div>`;
+      ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${spotlightViewsT(ctx.locale, "preparing")}</div>`;
       ctx.requestResize();
       void (async () => {
         try {
@@ -297,7 +299,7 @@ export function createMeetingsView(): SpotlightCapabilityView {
             ctx.open(nav.view, nav.id ? { id: nav.id, route: openHrefEl.dataset.meetingOpenHref } : { route: openHrefEl.dataset.meetingOpenHref });
           } else {
             // 分发表没有的形态：诚实告知打不开，不落一个静默无效的按钮（不能假装在处理）。
-            ctx.toast(zh ? "这个入口暂时打不开" : "This action is not available here", "error");
+            ctx.toast(spotlightViewsT(ctx.locale, "thisActionIsNotAvailableHere"), "error");
           }
           return;
         }
@@ -307,12 +309,12 @@ export function createMeetingsView(): SpotlightCapabilityView {
         if (insightAction?.dataset.meetingInsightAction && !busy) {
           const parsed = meetingInsightActionFromHref(insightAction.dataset.meetingInsightAction);
           if (!parsed) {
-            ctx.toast(zh ? "这个操作暂时打不开" : "This action is not available here", "error");
+            ctx.toast(spotlightViewsT(ctx.locale, "thisActionIsNotAvailableHere2"), "error");
             return;
           }
           busy = true;
           insightAction.textContent =
-            parsed.action === "draft" ? (zh ? "生成草稿中…" : "Creating draft…") : (zh ? "忽略中…" : "Dismissing…");
+            parsed.action === "draft" ? (spotlightViewsT(ctx.locale, "creatingDraft")) : (spotlightViewsT(ctx.locale, "dismissing"));
           const call =
             parsed.action === "draft"
               ? ctx.client.createMeetingInsightDraft(parsed.projectId, parsed.insightId, { locale: ctx.locale })
@@ -320,11 +322,11 @@ export function createMeetingsView(): SpotlightCapabilityView {
           void call
             .then(() =>
               ctx.toast(
-                parsed.action === "draft" ? (zh ? "已生成草稿" : "Draft created") : (zh ? "已忽略" : "Dismissed"),
+                parsed.action === "draft" ? (spotlightViewsT(ctx.locale, "draftCreated")) : (spotlightViewsT(ctx.locale, "dismissed")),
                 "ok"
               )
             )
-            .catch(() => ctx.toast(zh ? "操作失败，稍后重试" : "Couldn't complete this — try again", "error"))
+            .catch(() => ctx.toast(spotlightViewsT(ctx.locale, "couldnTCompleteThisTryAgain"), "error"))
             .finally(() => {
               busy = false;
               // 显式带着当前 selectedMeetingId 重拉——不用这次调用自己返回的页面（见文件头注释）。

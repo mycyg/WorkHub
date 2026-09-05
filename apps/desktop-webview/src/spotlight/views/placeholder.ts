@@ -7,6 +7,8 @@ import { escapeHtml } from "@workhub/web-runtime";
 import { commandRegistry, type CommandId } from "../../command-palette.js";
 import type { SpotlightCapabilityView, SpotlightViewContext } from "../view-context.js";
 
+import { spotlightViewsT } from "./locales.js";
+
 export function createPlaceholderView(id: CommandId): SpotlightCapabilityView {
   return {
     id,
@@ -15,12 +17,12 @@ export function createPlaceholderView(id: CommandId): SpotlightCapabilityView {
       const cmd = commandRegistry.find((c) => c.id === id);
       const label = cmd ? cmd.label[zh ? "zh-CN" : "en"] : id;
       const hint = cmd ? cmd.hint[zh ? "zh-CN" : "en"] : "";
-      ctx.setSubtitle(zh ? "即将上线" : "Coming soon");
+      ctx.setSubtitle(spotlightViewsT(ctx.locale, "comingSoon"));
       ctx.body.innerHTML = `<div class="wh-spot-placeholder">
         <span class="wh-spot-placeholder-icon">${cmd?.icon ?? ""}</span>
         <h3 class="wh-spot-placeholder-title">${escapeHtml(label)}</h3>
         <p class="wh-spot-placeholder-sub">${escapeHtml(hint)}</p>
-        <p class="wh-spot-placeholder-note">${zh ? "这个能力正在接入苹果聚焦盒，马上就好。" : "Wiring this capability into the box — almost there."}</p>
+        <p class="wh-spot-placeholder-note">${spotlightViewsT(ctx.locale, "wiringThisCapabilityIntoTheBox")}</p>
       </div>`;
       ctx.requestResize();
     }

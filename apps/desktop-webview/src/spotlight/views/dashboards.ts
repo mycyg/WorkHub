@@ -22,6 +22,8 @@ import type { CommandId } from "../../command-palette.js";
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 import { workItemPriorityLabel, workItemStatusLabel } from "../labels.js";
 
+import { spotlightViewsT } from "./locales.js";
+
 function loadingHtml(zh: boolean, label: string): string {
   return `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${escapeHtml(label)}</div>`;
 }
@@ -57,53 +59,53 @@ function cny(value: string | undefined): string {
 function taskPlanRoleLabel(role: AgentArmyDashboardPlanVM["roles"][number]["role"], zh: boolean): string {
   switch (role) {
     case "research":
-      return zh ? "调研" : "Research";
+      return spotlightViewsT(zh, "research");
     case "produce":
-      return zh ? "产出" : "Produce";
+      return spotlightViewsT(zh, "produce");
     case "review":
-      return zh ? "复核" : "Review";
+      return spotlightViewsT(zh, "review");
     case "integrate":
-      return zh ? "整合" : "Integrate";
+      return spotlightViewsT(zh, "integrate");
     default:
-      return zh ? "子任务" : "Subtask";
+      return spotlightViewsT(zh, "subtask");
   }
 }
 
 function agentTeamStatusLabel(status: AgentArmyDashboardPlanVM["statuses"][number]["status"], zh: boolean): string {
   switch (status) {
     case "pending":
-      return zh ? "待开始" : "Waiting";
+      return spotlightViewsT(zh, "waiting");
     case "dispatched":
-      return zh ? "进行中" : "In progress";
+      return spotlightViewsT(zh, "inProgress");
     case "succeeded":
-      return zh ? "已完成" : "Done";
+      return spotlightViewsT(zh, "done");
     case "failed":
-      return zh ? "失败" : "Failed";
+      return spotlightViewsT(zh, "failed");
     case "needs_human":
-      return zh ? "等你决定" : "Needs you";
+      return spotlightViewsT(zh, "needsYou");
     case "skipped":
-      return zh ? "已跳过" : "Skipped";
+      return spotlightViewsT(zh, "skipped");
     default:
-      return zh ? "子任务" : "Subtask";
+      return spotlightViewsT(zh, "subtask");
   }
 }
 
 function taskPlanStatusLabel(status: AgentArmyDashboardPlanVM["status"], zh: boolean): string {
   switch (status) {
     case "draft":
-      return zh ? "草稿" : "Draft";
+      return spotlightViewsT(zh, "draft");
     case "proposed":
-      return zh ? "待批准" : "Proposed";
+      return spotlightViewsT(zh, "proposed");
     case "approved":
-      return zh ? "已批准" : "Approved";
+      return spotlightViewsT(zh, "approved2");
     case "dispatching":
-      return zh ? "进行中" : "In progress";
+      return spotlightViewsT(zh, "inProgress");
     case "done":
-      return zh ? "已收工" : "Done";
+      return spotlightViewsT(zh, "done2");
     case "cancelled":
-      return zh ? "已取消" : "Cancelled";
+      return spotlightViewsT(zh, "cancelled");
     default:
-      return zh ? "分工计划" : "Task plan";
+      return spotlightViewsT(zh, "taskPlan");
   }
 }
 
@@ -113,9 +115,7 @@ function agentArmyCappedCopy(hiddenCount: number, zh: boolean): string {
       ? `还有 ${hiddenCount} 个小队未在这里显示，打开工作项查看详情。`
       : `+${hiddenCount} more squads not shown here — open work items for detail.`;
   }
-  return zh
-    ? "还有更多小队未在这里显示，打开工作项查看详情。"
-    : "More squads are not shown here — open work items for detail.";
+  return spotlightViewsT(zh, "moreSquadsAreNotShownHere");
 }
 
 function agentArmyPlanRow(plan: AgentArmyDashboardPlanVM, zh: boolean): string {
@@ -147,34 +147,34 @@ export function agentArmyPlanDetailHtml(plan: AgentArmyDashboardPlanVM, zh: bool
     .map((status) => `<span class="wh-spot-row-tag">${escapeHtml(`${agentTeamStatusLabel(status.status, zh)} ${status.count}`)}</span>`)
     .join("");
   const blocker = plan.oldest_blocker
-    ? `<div class="wh-spot-card-actions"><button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-open-capability="approvals">${escapeHtml(zh ? "去决策收件箱" : "Open inbox")}</button></div><p class="wh-spot-row-sub">${escapeHtml(plan.oldest_blocker.label)}</p>`
+    ? `<div class="wh-spot-card-actions"><button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-open-capability="approvals">${escapeHtml(spotlightViewsT(zh, "openInbox"))}</button></div><p class="wh-spot-row-sub">${escapeHtml(plan.oldest_blocker.label)}</p>`
     : "";
   return `<div class="wh-spot-dash ds-anim-fade-in" data-spot-agent-plan-detail="${escapeHtml(plan.plan_id)}">
-    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-back-to-agent-armies style="align-self:flex-start">${zh ? "← 返回小队列表" : "← Back to squads"}</button>
+    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-back-to-agent-armies style="align-self:flex-start">${spotlightViewsT(zh, "backToSquads")}</button>
     <div>
       <div class="wh-spot-row-title" style="font-size:17px">${escapeHtml(plan.work_item_title)}</div>
       <div class="wh-spot-row-sub">${escapeHtml(`${plan.work_item_code} · ${taskPlanStatusLabel(plan.status, zh)} · ${plan.progress.label}`)}</div>
     </div>
     <div class="wh-spot-metrics">
-      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "进度" : "Progress"}</span><span class="wh-spot-metric-v wh-spot-metric-v--big">${escapeHtml(plan.progress.label)}</span></div>
-      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "成本" : "Cost"}</span><span class="wh-spot-metric-v">${escapeHtml(`${cny(plan.cost.used_cny)}${plan.cost.budget_cny ? `/${cny(plan.cost.budget_cny)}` : ""}`)}</span></div>
-      <div class="wh-spot-metric" aria-label="${escapeHtml(zh ? `复核通过率 ${plan.judge.pass_rate_pct}%` : `Review pass rate ${plan.judge.pass_rate_pct}%`)}"><span class="wh-spot-metric-k">${zh ? "复核通过率" : "Review pass rate"}</span><span class="wh-spot-metric-v">${escapeHtml(String(plan.judge.pass_rate_pct))}%</span></div>
+      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${spotlightViewsT(zh, "progress")}</span><span class="wh-spot-metric-v wh-spot-metric-v--big">${escapeHtml(plan.progress.label)}</span></div>
+      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${spotlightViewsT(zh, "cost")}</span><span class="wh-spot-metric-v">${escapeHtml(`${cny(plan.cost.used_cny)}${plan.cost.budget_cny ? `/${cny(plan.cost.budget_cny)}` : ""}`)}</span></div>
+      <div class="wh-spot-metric" aria-label="${escapeHtml(zh ? `复核通过率 ${plan.judge.pass_rate_pct}%` : `Review pass rate ${plan.judge.pass_rate_pct}%`)}"><span class="wh-spot-metric-k">${spotlightViewsT(zh, "reviewPassRate")}</span><span class="wh-spot-metric-v">${escapeHtml(String(plan.judge.pass_rate_pct))}%</span></div>
     </div>
     <div class="wh-spot-bars" aria-hidden="true"><span class="wh-spot-bar" style="height:8px;width:${escapeHtml(pctWidth(plan.cost.burn_pct))}%"></span></div>
     <div class="wh-spot-row-sub">${roles}${statuses}</div>
     ${blocker}
     <div class="wh-spot-card-actions">
-      <button type="button" class="wh-spot-act ds-pressable" data-open-workitem="${escapeHtml(plan.work_item_id)}">${escapeHtml(zh ? "打开工作项" : "Open work item")}</button>
+      <button type="button" class="wh-spot-act ds-pressable" data-open-workitem="${escapeHtml(plan.work_item_id)}">${escapeHtml(spotlightViewsT(zh, "openWorkItem"))}</button>
     </div>
   </div>`;
 }
 
 export function agentArmyDashboardView(vm: AgentArmyDashboardVM, zh: boolean): string {
   const kpis = [
-    { id: "active_team_count", label: zh ? "进行中小队" : "Active squads", value: String(vm.kpis.active_team_count) },
-    { id: "waiting_decision", label: zh ? "等你决策" : "Needs you", value: String(vm.kpis.waiting_decision_count), capability: "approvals" },
-    { id: "today_cost", label: zh ? "今日成本" : "Today cost", value: cny(vm.kpis.today_cost_cny) },
-    { id: "autonomy_rate", label: zh ? "自治率" : "Autonomy", value: `${vm.kpis.autonomy_rate_pct}%` }
+    { id: "active_team_count", label: spotlightViewsT(zh, "activeSquads"), value: String(vm.kpis.active_team_count) },
+    { id: "waiting_decision", label: spotlightViewsT(zh, "needsYou2"), value: String(vm.kpis.waiting_decision_count), capability: "approvals" },
+    { id: "today_cost", label: spotlightViewsT(zh, "todayCost"), value: cny(vm.kpis.today_cost_cny) },
+    { id: "autonomy_rate", label: spotlightViewsT(zh, "autonomy"), value: `${vm.kpis.autonomy_rate_pct}%` }
   ].map((item) => {
     const body = `<span class="wh-spot-metric-k">${escapeHtml(item.label)}</span><span class="wh-spot-metric-v">${escapeHtml(item.value)}</span>`;
     return item.capability
@@ -192,30 +192,30 @@ export function agentArmyDashboardView(vm: AgentArmyDashboardVM, zh: boolean): s
     ? `<div class="wh-spot-list" data-spot-agent-source-warnings="${escapeHtml(String(sourceWarnings.length))}">
         ${sourceWarnings.map((warning) => `<div class="wh-spot-row" data-spot-agent-source-warning="${escapeHtml(warning.source)}">
           <div class="wh-spot-row-main">
-            <div class="wh-spot-row-title">${escapeHtml(zh ? "决策数据未完全加载" : "Decision data is partially loaded")}</div>
+            <div class="wh-spot-row-title">${escapeHtml(spotlightViewsT(zh, "decisionDataIsPartiallyLoaded"))}</div>
             <div class="wh-spot-row-sub">${escapeHtml(warning.message)}</div>
           </div>
         </div>`).join("")}
       </div>`
     : "";
   const empty = vm.empty_state === "no_agent_armies"
-    ? `<div data-spot-agent-dashboard-empty="no_agent_armies">${emptyHtml("Cuu", zh ? "还没有 Cuu 的小队在跑" : "No Cuu squads are running yet.", zh ? "下次遇到大活儿，Cuu 会先给你一份分工方案。" : "Next time there is a large task, Cuu will draft a plan first.")}<div style="text-align:center"><button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-open-capability="intake">${zh ? "新任务 / 交给 AI" : "New task"}</button></div></div>`
+    ? `<div data-spot-agent-dashboard-empty="no_agent_armies">${emptyHtml("Cuu", spotlightViewsT(zh, "noCuuSquadsAreRunningYet"), spotlightViewsT(zh, "nextTimeThereIsALarge"))}<div style="text-align:center"><button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-open-capability="intake">${spotlightViewsT(zh, "newTask")}</button></div></div>`
     : "";
   const recent = vm.recent_escalations.length
     ? `<div class="wh-spot-list">${vm.recent_escalations.map((item) => `<button type="button" class="wh-spot-row" data-open-capability="approvals" style="cursor:pointer;width:100%;text-align:left">
         <div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(item.title)}</div><div class="wh-spot-row-sub">${escapeHtml(item.reason_preview)}</div></div>
       </button>`).join("")}</div>`
-    : `<p class="wh-spot-row-sub">${escapeHtml(zh ? "最近没有需要你拍板的军团事件。" : "No recent squad decisions.")}</p>`;
+    : `<p class="wh-spot-row-sub">${escapeHtml(spotlightViewsT(zh, "noRecentSquadDecisions"))}</p>`;
   return `<div class="wh-spot-dash ds-anim-fade-in" data-spot-agent-dashboard="true" data-spot-agent-dashboard-plan-count="${escapeHtml(String(vm.plans.length))}">
     <div>
-      <div class="wh-spot-row-title" style="font-size:17px">${escapeHtml(zh ? "Cuu 的小队" : "Cuu's squads")}</div>
-      <div class="wh-spot-row-sub">${escapeHtml(zh ? "只看进展；拍板仍回决策收件箱。" : "Observe progress; decisions stay in the inbox.")}</div>
+      <div class="wh-spot-row-title" style="font-size:17px">${escapeHtml(spotlightViewsT(zh, "cuuSSquads"))}</div>
+      <div class="wh-spot-row-sub">${escapeHtml(spotlightViewsT(zh, "observeProgressDecisionsStayInThe"))}</div>
     </div>
     <div class="wh-spot-metrics">${kpis}</div>
     ${warnings}
     ${empty}
     ${rows ? `<div class="wh-spot-list ds-stagger">${rows}</div>${capped}` : ""}
-    <div class="wh-spot-row-metalabel">${escapeHtml(zh ? "最近动态" : "Recent activity")}</div>
+    <div class="wh-spot-row-metalabel">${escapeHtml(spotlightViewsT(zh, "recentActivity"))}</div>
     ${recent}
   </div>`;
 }
@@ -278,20 +278,20 @@ function projectCard(p: ProjectListItemVM, zh: boolean): string {
   // rank14：项目行可点 → 进入该项目网盘（最贴近「项目主页」）。div→button，带 data-open-project。
   return `<button type="button" class="wh-spot-row" data-open-project="${escapeHtml(p.id)}" style="cursor:pointer;width:100%;text-align:left">
     <div class="wh-spot-row-main">
-      <div class="wh-spot-row-title">${escapeHtml(p.name)}${p.archived ? `<span class="wh-spot-row-tag">${zh ? "已归档" : "Archived"}</span>` : ""}</div>
+      <div class="wh-spot-row-title">${escapeHtml(p.name)}${p.archived ? `<span class="wh-spot-row-tag">${spotlightViewsT(zh, "archived")}</span>` : ""}</div>
       <div class="wh-spot-row-sub">${escapeHtml(p.description ?? (zh ? `负责人 ${p.owner_nickname}` : `Owner ${p.owner_nickname}`))}</div>
     </div>
-    <div class="wh-spot-row-meta">${badge}<span class="wh-spot-row-metalabel">${zh ? "进行中" : "open"}</span></div>
+    <div class="wh-spot-row-meta">${badge}<span class="wh-spot-row-metalabel">${spotlightViewsT(zh, "open")}</span></div>
   </button>`;
 }
 
 // rank14：可点的「新任务」CTA——空态/有项目都给一个去派活的入口（开 intake 能力）。
 function newTaskCta(zh: boolean): string {
-  return `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-open-intake style="align-self:flex-start">${zh ? "＋ 新任务 / 交给 AI" : "＋ New task / Ask AI"}</button>`;
+  return `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-open-intake style="align-self:flex-start">${spotlightViewsT(zh, "newTaskAskAi")}</button>`;
 }
 
 export function projectListEmptyHtml(zh: boolean): string {
-  return `<div class="wh-spot-dash ds-anim-fade-in">${emptyHtml(FACE_ICON_FOLDER, zh ? "还没有项目" : "No projects yet", zh ? "新建任务后会自动建立项目和网盘" : "Create a task to create one")}<div style="text-align:center">${newTaskCta(zh)}</div></div>`;
+  return `<div class="wh-spot-dash ds-anim-fade-in">${emptyHtml(FACE_ICON_FOLDER, spotlightViewsT(zh, "noProjectsYet"), spotlightViewsT(zh, "createATaskToCreateOne"))}<div style="text-align:center">${newTaskCta(zh)}</div></div>`;
 }
 
 // R14 批 GH（07-gh-design.md §5.1）：项目主页 github_activities 区块——GH-B 已把它接进
@@ -300,11 +300,11 @@ export function projectListEmptyHtml(zh: boolean): string {
 function githubActivityKindLabel(kind: GithubActivityVM["kind"], zh: boolean): string {
   switch (kind) {
     case "commit":
-      return zh ? "提交" : "Commit";
+      return spotlightViewsT(zh, "commit");
     case "pull_request":
       return "PR";
     case "issue":
-      return zh ? "议题" : "Issue";
+      return spotlightViewsT(zh, "issue");
     default:
       return kind;
   }
@@ -333,7 +333,7 @@ export function projectHomeDetailHtml(vm: ProjectHomePageVM, zh: boolean): strin
   // total_open_work_item_count 是全量(含他人私有态)。头条数用全量,与列表卡一致;另标「你可处理 N」。
   const viewableOpen = vm.summary.open_work_item_count;
   const totalOpen = vm.summary.total_open_work_item_count ?? viewableOpen;
-  const archived = p.status === "archived" ? `<span class="wh-spot-row-tag">${zh ? "已归档" : "Archived"}</span>` : "";
+  const archived = p.status === "archived" ? `<span class="wh-spot-row-tag">${spotlightViewsT(zh, "archived")}</span>` : "";
   const desc = p.description ? `<p class="wh-spot-row-sub" style="margin-top:4px">${escapeHtml(p.description)}</p>` : "";
   const rows = vm.open_work_items.length
     ? vm.open_work_items
@@ -344,7 +344,7 @@ export function projectHomeDetailHtml(vm: ProjectHomePageVM, zh: boolean): strin
       </button>`
         )
         .join("")
-    : emptyHtml(FACE_ICON_DONE, zh ? "暂无进行中的工作" : "No open work", zh ? "点「新任务」创建下一项工作" : "Use New task to create work");
+    : emptyHtml(FACE_ICON_DONE, spotlightViewsT(zh, "noOpenWork"), spotlightViewsT(zh, "useNewTaskToCreateWork"));
   // 隐藏量按全量算(曾用可见数自减恒为 0,提示从不出现)。原因可能是列表截断或权限过滤，
   // 当前 VM 无法区分，文案保持中性。
   const hidden = totalOpen - vm.open_work_items.length;
@@ -357,11 +357,11 @@ export function projectHomeDetailHtml(vm: ProjectHomePageVM, zh: boolean): strin
         .map(
           (f) =>
             `<button type="button" class="wh-spot-row" data-open-drive="${escapeHtml(p.id)}" data-open-drive-route="${escapeHtml(safeHref(f.href))}" style="cursor:pointer;width:100%;text-align:left">
-        <div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(f.name)}</div><div class="wh-spot-row-sub">${escapeHtml(f.updated_at.slice(0, 10))} · ${zh ? "在网盘中查看" : "View in drive"}</div></div>
+        <div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(f.name)}</div><div class="wh-spot-row-sub">${escapeHtml(f.updated_at.slice(0, 10))} · ${spotlightViewsT(zh, "viewInDrive")}</div></div>
       </button>`
         )
         .join("")
-    : `<p class="wh-spot-row-sub">${escapeHtml(zh ? "网盘里还没有文件。" : "No files in the drive yet.")}</p>`;
+    : `<p class="wh-spot-row-sub">${escapeHtml(spotlightViewsT(zh, "noFilesInTheDriveYet"))}</p>`;
   // DF-3:「最近文件 N」是项目文件总数,但只列 recent_files(≤5)。超出时给「还有 N 未显示」,
   // 否则一堆文件的项目只露几条却显示总数,像把这几条当成全部(web route-components 同款 note)。
   const hiddenFiles = vm.drive.file_count - vm.drive.recent_files.length;
@@ -372,10 +372,10 @@ export function projectHomeDetailHtml(vm: ProjectHomePageVM, zh: boolean): strin
   // 未绑定/绑定但暂无活动/取数失败：服务端三种情况都省略这个字段（诚实缺省），故只有非空数组才渲区块。
   const githubActivities = vm.github_activities ?? [];
   const githubBlock = githubActivities.length
-    ? `<div class="wh-spot-row-metalabel" style="margin-top:4px">${escapeHtml(zh ? "最近 GitHub 动态" : "Recent GitHub activity")}</div><div class="wh-spot-list">${githubActivities.map((item) => githubActivityRow(item, zh)).join("")}</div>`
+    ? `<div class="wh-spot-row-metalabel" style="margin-top:4px">${escapeHtml(spotlightViewsT(zh, "recentGithubActivity"))}</div><div class="wh-spot-list">${githubActivities.map((item) => githubActivityRow(item, zh)).join("")}</div>`
     : "";
   return `<div class="wh-spot-dash ds-anim-fade-in">
-    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-back-to-projects style="align-self:flex-start">${zh ? "← 返回项目列表" : "← Back to projects"}</button>
+    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-back-to-projects style="align-self:flex-start">${spotlightViewsT(zh, "backToProjects")}</button>
     <div>
       <div class="wh-spot-row-title" style="font-size:17px">${escapeHtml(p.name)}${archived}</div>
       ${desc}
@@ -403,7 +403,7 @@ export function createProjectsView(): SpotlightCapabilityView {
 
       const renderList = async () => {
         const my = ++gen;
-        ctx.body.innerHTML = loadingHtml(zh, zh ? "正在拉项目…" : "Loading projects…");
+        ctx.body.innerHTML = loadingHtml(zh, spotlightViewsT(ctx.locale, "loadingProjects"));
         ctx.requestResize();
         try {
           const vm = await ctx.client.listProjects();
@@ -416,14 +416,14 @@ export function createProjectsView(): SpotlightCapabilityView {
             : projectListEmptyHtml(zh);
         } catch {
           if (disposed || my !== gen) return;
-          ctx.body.innerHTML = spotlightErrorHtml(zh, zh ? "项目没拉到，稍后重试" : "Couldn't load projects — retry");
+          ctx.body.innerHTML = spotlightErrorHtml(zh, spotlightViewsT(ctx.locale, "couldnTLoadProjectsRetry"));
         }
         ctx.requestResize();
       };
 
       const renderDetail = async (projectId: string) => {
         const my = ++gen;
-        ctx.body.innerHTML = loadingHtml(zh, zh ? "正在打开项目…" : "Opening project…");
+        ctx.body.innerHTML = loadingHtml(zh, spotlightViewsT(ctx.locale, "openingProject"));
         ctx.requestResize();
         try {
           const vm = await ctx.client.pages.project(projectId, { locale: ctx.locale });
@@ -432,7 +432,7 @@ export function createProjectsView(): SpotlightCapabilityView {
           ctx.body.innerHTML = projectHomeDetailHtml(vm, zh);
         } catch {
           if (disposed || my !== gen) return;
-          ctx.body.innerHTML = spotlightErrorHtml(zh, zh ? "项目主页没打开，稍后重试" : "Couldn't open project — retry");
+          ctx.body.innerHTML = spotlightErrorHtml(zh, spotlightViewsT(ctx.locale, "couldnTOpenProjectRetry"));
         }
         ctx.requestResize();
       };
@@ -465,7 +465,7 @@ export function createProjectsView(): SpotlightCapabilityView {
           // 检索证据行 rank2 的既有教训），故照抄那条既有外链模式：给一句诚实提示，不假装能内联打开。
           const ghActivity = target.closest<HTMLElement>("[data-open-gh-activity]");
           if (ghActivity?.dataset.openGhActivity) {
-            ctx.toast(zh ? "GitHub 链接需要在系统浏览器中打开" : "Open GitHub links in your system browser", "info");
+            ctx.toast(spotlightViewsT(ctx.locale, "openGithubLinksInYourSystem"), "info");
             return;
           }
           const drive = target.closest<HTMLElement>("[data-open-drive]");
@@ -517,36 +517,36 @@ export function costView(vm: CostDashboardVM, zh: boolean): string {
     ? trend.reduce((best, t) => ((Number(t.cost_cny) || 0) > (Number(best.cost_cny) || 0) ? t : best))
     : undefined;
   const barsCaption = trend.length
-    ? `<div class="wh-spot-bars-cap"><span>${escapeHtml(trend[0]?.date ?? "")} – ${escapeHtml(trend[trend.length - 1]?.date ?? "")}</span><span>${zh ? "峰值" : "Peak"} ${escapeHtml(cny(peak?.cost_cny ?? "0"))}</span></div>`
+    ? `<div class="wh-spot-bars-cap"><span>${escapeHtml(trend[0]?.date ?? "")} – ${escapeHtml(trend[trend.length - 1]?.date ?? "")}</span><span>${spotlightViewsT(zh, "peak")} ${escapeHtml(cny(peak?.cost_cny ?? "0"))}</span></div>`
     : "";
   const labor = vm.labor_split
-    ? `<div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "自我精进占比" : "Self-improvement"}</span><span class="wh-spot-metric-v">${Math.round(vm.labor_split.self_improvement_ratio * 100)}%</span></div>`
+    ? `<div class="wh-spot-metric"><span class="wh-spot-metric-k">${spotlightViewsT(zh, "selfImprovement")}</span><span class="wh-spot-metric-v">${Math.round(vm.labor_split.self_improvement_ratio * 100)}%</span></div>`
     : "";
   const topItems = vm.by_workitem
     .slice(0, 5)
     .map(
       (w) =>
-        `<div class="wh-spot-row"><div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(w.code)}</div><div class="wh-spot-row-sub">${w.turns} ${zh ? "轮" : "turns"}</div></div><div class="wh-spot-row-meta">${escapeHtml(cny(w.cost_cny))}</div></div>`
+        `<div class="wh-spot-row"><div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(w.code)}</div><div class="wh-spot-row-sub">${w.turns} ${spotlightViewsT(zh, "turns")}</div></div><div class="wh-spot-row-meta">${escapeHtml(cny(w.cost_cny))}</div></div>`
     )
     .join("");
   return `<div class="wh-spot-dash">
     <div class="wh-spot-metrics">
-      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "累计花费" : "Total spend"}</span><span class="wh-spot-metric-v wh-spot-metric-v--big">${escapeHtml(cny(vm.total_cost_cny))}</span></div>
+      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${spotlightViewsT(zh, "totalSpend")}</span><span class="wh-spot-metric-v wh-spot-metric-v--big">${escapeHtml(cny(vm.total_cost_cny))}</span></div>
       <div class="wh-spot-metric"><span class="wh-spot-metric-k">Tokens</span><span class="wh-spot-metric-v">${(vm.token_in + vm.token_out).toLocaleString()}</span></div>
       ${labor}
     </div>
-    ${bars ? `<div class="wh-spot-bars" role="group" aria-label="${zh ? "近 14 天花费趋势" : "14-day spend trend"}">${bars}</div>${barsCaption}` : ""}
+    ${bars ? `<div class="wh-spot-bars" role="group" aria-label="${spotlightViewsT(zh, "copy14DaySpendTrend")}">${bars}</div>${barsCaption}` : ""}
     ${topItems ? `<div class="wh-spot-list">${topItems}${vm.by_workitem.length > 5 ? `<p class="wh-spot-card-desc">${zh ? `还有 ${vm.by_workitem.length - 5} 个事项的花费，去网页版成本页细看。` : `${vm.by_workitem.length - 5} more on the web cost page.`}</p>` : ""}</div>` : ""}
   </div>`;
 }
 
 export function createCostView(): SpotlightCapabilityView {
   return readOnlyView("cost", {
-    loadingLabel: (zh) => (zh ? "正在算成本…" : "Loading cost…"),
-    errorLabel: (zh) => (zh ? "成本没拉到，稍后重试" : "Couldn't load cost — retry"),
+    loadingLabel: (zh) => (spotlightViewsT(zh, "loadingCost")),
+    errorLabel: (zh) => (spotlightViewsT(zh, "couldnTLoadCostRetry")),
     load: async (ctx, zh) => {
       const vm = await ctx.client.pages.cost({ locale: ctx.locale });
-      return { html: costView(vm, zh), subtitle: `${cny(vm.total_cost_cny)} · ${zh ? "累计" : "total"}` };
+      return { html: costView(vm, zh), subtitle: `${cny(vm.total_cost_cny)} · ${spotlightViewsT(zh, "total")}` };
     }
   });
 }
@@ -561,7 +561,7 @@ export function createAgentsView(): SpotlightCapabilityView {
       let vm: AgentArmyDashboardVM | undefined;
 
       const renderList = async () => {
-        ctx.body.innerHTML = loadingHtml(zh, zh ? "正在拉 Cuu 的小队…" : "Loading Cuu's squads…");
+        ctx.body.innerHTML = loadingHtml(zh, spotlightViewsT(ctx.locale, "loadingCuuSSquads"));
         ctx.requestResize();
         try {
           vm = await ctx.client.pages.agents({ locale: ctx.locale });
@@ -573,7 +573,7 @@ export function createAgentsView(): SpotlightCapabilityView {
           ctx.body.innerHTML = directPlan ? agentArmyPlanDetailHtml(directPlan, zh) : agentArmyDashboardView(vm, zh);
         } catch {
           if (disposed) return;
-          ctx.body.innerHTML = spotlightErrorHtml(zh, zh ? "小队看板没拉到，稍后重试" : "Couldn't load squads — retry");
+          ctx.body.innerHTML = spotlightErrorHtml(zh, spotlightViewsT(ctx.locale, "couldnTLoadSquadsRetry"));
         }
         ctx.requestResize();
       };
@@ -652,7 +652,7 @@ function notificationRow(item: NotificationPageVM["items"][number], zh: boolean)
   // R15 批 A（A2 提醒阶梯）：next_remind_at 非空 = 这条通知还挂在 24h 叮嘱阶梯上，给一个「暂停提醒」轻按钮
   // （POST /api/notifications/:id/snooze 置空 next_remind_at 即抑制，读/归档态不动，通知仍留在待决策队列）。
   const snoozeBtn = item.next_remind_at
-    ? `<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-notif-snooze="${escapeHtml(item.id)}" title="${escapeHtml(zh ? "暂停这条通知的 24h 提醒" : "Stop the 24h reminders for this notification")}">${escapeHtml(zh ? "暂停提醒" : "Snooze")}</button>`
+    ? `<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-notif-snooze="${escapeHtml(item.id)}" title="${escapeHtml(spotlightViewsT(zh, "stopThe24hRemindersForThis"))}">${escapeHtml(spotlightViewsT(zh, "snooze"))}</button>`
     : "";
   return `<div class="wh-spot-row" data-notif-id="${escapeHtml(item.id)}">
     <span class="wh-spot-card-bar wh-spot-card-bar--${tone}" style="border-radius:3px"></span>
@@ -661,14 +661,14 @@ function notificationRow(item: NotificationPageVM["items"][number], zh: boolean)
       <div class="wh-spot-row-sub">${escapeHtml([when, item.body ?? ""].filter(Boolean).join(" · "))}</div>
     </div>
     ${snoozeBtn}
-    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-notif-mute="${escapeHtml(item.type)}" title="${escapeHtml(zh ? `不再接收「${notificationTypeLabel(item.type, zh)}」类通知` : `Mute “${notificationTypeLabel(item.type, zh)}” notifications`)}">${escapeHtml(zh ? "静音此类" : "Mute type")}</button>
+    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-notif-mute="${escapeHtml(item.type)}" title="${escapeHtml(zh ? `不再接收「${notificationTypeLabel(item.type, zh)}」类通知` : `Mute “${notificationTypeLabel(item.type, zh)}” notifications`)}">${escapeHtml(spotlightViewsT(zh, "muteType"))}</button>
   </div>`;
 }
 
 export function createNotificationsView(): SpotlightCapabilityView {
   return readOnlyView("notifications", {
-    loadingLabel: (zh) => (zh ? "正在拉通知…" : "Loading notifications…"),
-    errorLabel: (zh) => (zh ? "通知没拉到，稍后重试" : "Couldn't load notifications — retry"),
+    loadingLabel: (zh) => (spotlightViewsT(zh, "loadingNotifications")),
+    errorLabel: (zh) => (spotlightViewsT(zh, "couldnTLoadNotificationsRetry")),
     load: async (ctx, zh) => {
       // R10-P1-7：偏好 GET 失败不能装作「什么都没静音」——那会让下一次「静音此类」整组 PUT
       // 把已有静音覆盖丢。失败时禁用静音入口+诚实提示（通知列表照常显示）。
@@ -686,12 +686,12 @@ export function createNotificationsView(): SpotlightCapabilityView {
         : "";
       const muted = prefs.muted_notification_types;
       const mutedPanel = muted.length
-        ? `<div class="wh-spot-list" data-notif-muted-panel><p class="wh-spot-card-desc">${escapeHtml(zh ? "已静音类型：" : "Muted types:")}</p>${muted
-          .map((type) => `<div class="wh-spot-row"><div class="wh-spot-row-main"><div class="wh-spot-row-sub">${escapeHtml(notificationTypeLabel(type, zh))}</div></div><button type="button" class="wh-spot-act ds-pressable" data-notif-unmute="${escapeHtml(type)}">${escapeHtml(zh ? "恢复接收" : "Unmute")}</button></div>`)
+        ? `<div class="wh-spot-list" data-notif-muted-panel><p class="wh-spot-card-desc">${escapeHtml(spotlightViewsT(zh, "mutedTypes"))}</p>${muted
+          .map((type) => `<div class="wh-spot-row"><div class="wh-spot-row-main"><div class="wh-spot-row-sub">${escapeHtml(notificationTypeLabel(type, zh))}</div></div><button type="button" class="wh-spot-act ds-pressable" data-notif-unmute="${escapeHtml(type)}">${escapeHtml(spotlightViewsT(zh, "unmute"))}</button></div>`)
           .join("")}</div>`
         : "";
       const prefsFailedNote = prefsFailed
-        ? `<p class="wh-spot-card-desc">${escapeHtml(zh ? "静音设置没读取到——为避免覆盖你已有的静音，静音按钮暂时不可用。" : "Couldn't load mute settings — mute buttons are locked so we don't overwrite what you saved.")}</p>`
+        ? `<p class="wh-spot-card-desc">${escapeHtml(spotlightViewsT(zh, "couldnTLoadMuteSettingsMute"))}</p>`
         : "";
       // G4 #10（关怀 opt-out）：Cuu 关怀私聊开关（默认开）。始终渲染（是持久偏好，不随收件箱空/满而消失），
       // 携带当前 muted 快照以便 PUT 时不误清静音；prefs 没读到时锁禁用+诚实提示（不装作已关/已开）。
@@ -699,17 +699,17 @@ export function createNotificationsView(): SpotlightCapabilityView {
       const careCard = `<div class="wh-spot-list" data-notif-care data-notif-care-enabled="${careEnabled ? "true" : "false"}" data-notif-muted="${escapeHtml(JSON.stringify(muted))}"${prefsFailed ? " data-notif-prefs-failed=\"true\"" : ""}>
         <div class="wh-spot-row">
           <div class="wh-spot-row-main">
-            <div class="wh-spot-row-title">${escapeHtml(zh ? "Cuu 关怀消息" : "Cuu care check-ins")}</div>
-            <div class="wh-spot-row-sub">${escapeHtml(zh ? "Cuu 会在你负荷高、或连续深夜工作时私下问候一句，可随时关闭。" : "Cuu privately checks in when your load is high or you're working late nights — turn it off anytime.")}</div>
+            <div class="wh-spot-row-title">${escapeHtml(spotlightViewsT(zh, "cuuCareCheckIns"))}</div>
+            <div class="wh-spot-row-sub">${escapeHtml(spotlightViewsT(zh, "cuuPrivatelyChecksInWhenYour"))}</div>
           </div>
           <button type="button" class="wh-spot-act ds-pressable" data-notif-care-toggle="${careEnabled ? "off" : "on"}"${prefsFailed ? " disabled" : ""}>${escapeHtml(
-            prefsFailed ? (zh ? "暂不可用" : "Unavailable") : careEnabled ? (zh ? "关闭" : "Turn off") : (zh ? "开启" : "Turn on")
+            prefsFailed ? (spotlightViewsT(zh, "unavailable")) : careEnabled ? (spotlightViewsT(zh, "turnOff")) : (spotlightViewsT(zh, "turnOn"))
           )}</button>
         </div>
       </div>`;
       const listHtml = rows.length || muted.length
         ? `<div class="wh-spot-list ds-stagger" data-notif-list data-notif-muted="${escapeHtml(JSON.stringify(muted))}"${prefsFailed ? " data-notif-prefs-failed=\"true\"" : ""}>${prefsFailedNote}${rows.map((item) => notificationRow(item, zh)).join("")}${overflow}${mutedPanel}</div>`
-        : emptyHtml(FACE_ICON_BELL, zh ? "通知箱是空的" : "Inbox is empty", zh ? "审批、军团收工和升级会出现在这里" : "Approvals, team completions and escalations show here");
+        : emptyHtml(FACE_ICON_BELL, spotlightViewsT(zh, "inboxIsEmpty"), spotlightViewsT(zh, "approvalsTeamCompletionsAndEscalationsShow"));
       const html = `${careCard}${listHtml}`;
       // L-09（R24 S3 走查）："need a call" 是"待决策"的生硬直译，英文读起来不知所云——改成通顺表达。
       const subtitle = zh
@@ -728,18 +728,18 @@ export function createNotificationsView(): SpotlightCapabilityView {
         const notificationId = snoozeBtn.dataset.notifSnooze;
         const originalText = snoozeBtn.textContent;
         snoozeBtn.disabled = true;
-        snoozeBtn.textContent = zh ? "暂停中…" : "Snoozing…";
+        snoozeBtn.textContent = spotlightViewsT(ctx.locale, "snoozing");
         void ctx.client
           .request(`/api/notifications/${encodeURIComponent(notificationId)}/snooze`, { method: "POST" })
           .then(() => {
-            snoozeBtn.textContent = zh ? "已暂停" : "Snoozed";
+            snoozeBtn.textContent = spotlightViewsT(ctx.locale, "snoozed");
             snoozeBtn.removeAttribute("data-notif-snooze");
-            ctx.toast(zh ? "已暂停这条通知的提醒" : "Reminders snoozed for this notification", "ok");
+            ctx.toast(spotlightViewsT(ctx.locale, "remindersSnoozedForThisNotification"), "ok");
           })
           .catch(() => {
             snoozeBtn.disabled = false;
             snoozeBtn.textContent = originalText;
-            ctx.toast(zh ? "暂停失败，稍后重试" : "Couldn't snooze — try again", "error");
+            ctx.toast(spotlightViewsT(ctx.locale, "couldnTSnoozeTryAgain"), "error");
           });
         return;
       }
@@ -752,7 +752,7 @@ export function createNotificationsView(): SpotlightCapabilityView {
         }
         const careEl = ctx.body.querySelector<HTMLElement>("[data-notif-care]");
         if (careEl?.dataset.notifPrefsFailed === "true") {
-          ctx.toast(zh ? "偏好没读取到，先重开通知面板再改关怀开关。" : "Preferences didn't load — reopen notifications before changing this.", "error");
+          ctx.toast(spotlightViewsT(ctx.locale, "preferencesDidnTLoadReopenNotifications"), "error");
           return;
         }
         const nextEnabled = careBtn.dataset.notifCareToggle === "on";
@@ -768,15 +768,15 @@ export function createNotificationsView(): SpotlightCapabilityView {
           .then(() => {
             ctx.toast(
               nextEnabled
-                ? (zh ? "已开启 Cuu 关怀消息" : "Cuu care check-ins turned on")
-                : (zh ? "已关闭 Cuu 关怀消息" : "Cuu care check-ins turned off"),
+                ? (spotlightViewsT(ctx.locale, "cuuCareCheckInsTurnedOn"))
+                : (spotlightViewsT(ctx.locale, "cuuCareCheckInsTurnedOff")),
               "ok"
             );
             ctx.open("notifications", {});
           })
           .catch(() => {
             careBtn.disabled = false;
-            ctx.toast(zh ? "偏好没保存上，稍后重试" : "Couldn't save the preference. Try again.", "error");
+            ctx.toast(spotlightViewsT(ctx.locale, "couldnTSaveThePreferenceTry"), "error");
           });
         return;
       }
@@ -788,7 +788,7 @@ export function createNotificationsView(): SpotlightCapabilityView {
       }
       const listEl = ctx.body.querySelector<HTMLElement>("[data-notif-list]");
       if (listEl?.dataset.notifPrefsFailed === "true") {
-        ctx.toast(zh ? "静音设置没读取到，先重开通知面板再改静音。" : "Mute settings didn't load — reopen notifications before changing mutes.", "error");
+        ctx.toast(spotlightViewsT(ctx.locale, "muteSettingsDidnTLoadReopen"), "error");
         return;
       }
       let muted: string[] = [];
@@ -807,7 +807,7 @@ export function createNotificationsView(): SpotlightCapabilityView {
           ctx.open("notifications", {});
         })
         .catch(() => {
-          ctx.toast(zh ? "偏好没保存上，稍后重试" : "Couldn't save the preference. Try again.", "error");
+          ctx.toast(spotlightViewsT(ctx.locale, "couldnTSaveThePreferenceTry"), "error");
         });
     }
   });
@@ -815,8 +815,8 @@ export function createNotificationsView(): SpotlightCapabilityView {
 
 export function createCalendarView(): SpotlightCapabilityView {
   return readOnlyView("team", {
-    loadingLabel: (zh) => (zh ? "正在拉日程…" : "Loading schedule…"),
-    errorLabel: (zh) => (zh ? "日程没拉到，稍后重试" : "Couldn't load schedule — retry"),
+    loadingLabel: (zh) => (spotlightViewsT(zh, "loadingSchedule")),
+    errorLabel: (zh) => (spotlightViewsT(zh, "couldnTLoadScheduleRetry")),
     load: async (ctx, zh) => {
       // R5 双端一致：命令面板对 team 的承诺是「成员、日历与技能库」——此前只拉日历，技能承诺落空。
       // 与日历并行拉 pages.skills；技能拉取失败只降级该区块，不连累日历。
@@ -830,10 +830,10 @@ export function createCalendarView(): SpotlightCapabilityView {
         : `today ${vm.summary.today_count} · overdue ${vm.summary.overdue_count}`;
       const calendarHtml = blocks.length
         ? `<div class="wh-spot-list ds-stagger">${blocks.slice(0, 20).map((b) => blockRow(b, zh)).join("")}</div>`
-        : emptyHtml(FACE_ICON_CALENDAR, zh ? "近期没有日程" : "Nothing scheduled", zh ? "工作项到期、复盘窗口会出现在这里" : "Due items and review windows show here");
+        : emptyHtml(FACE_ICON_CALENDAR, spotlightViewsT(zh, "nothingScheduled"), spotlightViewsT(zh, "dueItemsAndReviewWindowsShow"));
       const skillsHtml = skills
         ? `<div class="wh-spot-list" data-team-skills data-team-skills-active="${escapeHtml(String(skills.totals.active))}">
-            <p class="wh-spot-card-desc"><strong>${escapeHtml(zh ? "团队技能库" : "Team skills")}</strong> · ${escapeHtml(zh
+            <p class="wh-spot-card-desc"><strong>${escapeHtml(spotlightViewsT(zh, "teamSkills"))}</strong> · ${escapeHtml(zh
               ? `激活 ${skills.totals.active} · AI 沉淀 ${skills.totals.ai_authored} · 精修 ${skills.totals.refined}`
               : `${skills.totals.active} active · ${skills.totals.ai_authored} AI-authored · ${skills.totals.refined} refined`)}</p>
             ${skills.skills.slice(0, 5).map((skill) => `<div class="wh-spot-row" data-team-skill="${escapeHtml(skill.skill_key)}">
@@ -844,7 +844,7 @@ export function createCalendarView(): SpotlightCapabilityView {
             </div>`).join("")}
             ${skills.skills.length > 5 ? `<p class="wh-spot-card-desc">${escapeHtml(zh ? `还有 ${skills.skills.length - 5} 项技能，去网页版技能页细看。` : `${skills.skills.length - 5} more on the web skills page.`)}</p>` : ""}
           </div>`
-        : `<p class="wh-spot-card-desc" data-team-skills-unavailable>${escapeHtml(zh ? "技能库暂时没拉到。" : "Skills are unavailable right now.")}</p>`;
+        : `<p class="wh-spot-card-desc" data-team-skills-unavailable>${escapeHtml(spotlightViewsT(zh, "skillsAreUnavailableRightNow"))}</p>`;
       return { html: calendarHtml + skillsHtml, subtitle };
     }
   });
@@ -871,7 +871,7 @@ function bubbleHtml(bubble: EvidenceBubble, zh: boolean): string {
 
 // 知识检索 API 要求在具体项目/事项内检索（裸查询 403）。故先选项目再搜。
 export function knowledgeNoProjectsEmptyHtml(zh: boolean): string {
-  return emptyHtml(FACE_ICON_SEARCH, zh ? "还没有可检索的项目" : "No project to search", zh ? "新建任务后，证据会沉淀在项目里" : "Create a task first — evidence accrues per project");
+  return emptyHtml(FACE_ICON_SEARCH, spotlightViewsT(zh, "noProjectToSearch"), spotlightViewsT(zh, "createATaskFirstEvidenceAccrues"));
 }
 
 export function createKnowledgeView(): SpotlightCapabilityView {
@@ -888,7 +888,7 @@ export function createKnowledgeView(): SpotlightCapabilityView {
       // rank22：副标题始终标出当前检索的项目（单项目时没有切换 chip，否则用户不知道在搜哪个项目）。
       const syncSubtitle = () => {
         const name = projects.find((p) => p.id === projectId)?.name;
-        ctx.setSubtitle(name ? (zh ? `在「${name}」里搜` : `Search in ${name}`) : zh ? "搜索沉淀的知识" : "Search knowledge");
+        ctx.setSubtitle(name ? (zh ? `在「${name}」里搜` : `Search in ${name}`) : spotlightViewsT(ctx.locale, "searchKnowledge"));
       };
       syncSubtitle();
 
@@ -913,8 +913,8 @@ export function createKnowledgeView(): SpotlightCapabilityView {
         ctx.body.innerHTML = `<div class="wh-spot-know">
           ${projectChips()}
           <div class="wh-spot-know-bar">
-            <input class="wh-spot-freetext" style="min-height:auto" data-know-input placeholder="${zh ? "在所选项目里搜什么？" : "Search within the project…"}" />
-            <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-know-go>${zh ? "搜索" : "Search"}</button>
+            <input class="wh-spot-freetext" style="min-height:auto" data-know-input placeholder="${spotlightViewsT(ctx.locale, "searchWithinTheProject")}" />
+            <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-know-go>${spotlightViewsT(ctx.locale, "search")}</button>
           </div>
           <div data-know-result>${resultHtml}</div>
         </div>`;
@@ -929,7 +929,7 @@ export function createKnowledgeView(): SpotlightCapabilityView {
         const reqProjectId = projectId;
         busy = true;
         const result = ctx.body.querySelector<HTMLElement>("[data-know-result]");
-        if (result) result.innerHTML = loadingHtml(zh, zh ? "正在检索…" : "Searching…");
+        if (result) result.innerHTML = loadingHtml(zh, spotlightViewsT(ctx.locale, "searching"));
         ctx.requestResize();
         try {
           const bubble = await ctx.client.searchKnowledge({ q, project_id: reqProjectId });
@@ -939,7 +939,7 @@ export function createKnowledgeView(): SpotlightCapabilityView {
         } catch {
           if (disposed || gen !== searchGen) return;
           const r = ctx.body.querySelector<HTMLElement>("[data-know-result]");
-          if (r) r.innerHTML = spotlightErrorHtml(zh, zh ? "检索失败" : "Search failed");
+          if (r) r.innerHTML = spotlightErrorHtml(zh, spotlightViewsT(ctx.locale, "searchFailed"));
         } finally {
           // 仅当本次仍是最新代次才解锁——避免被切项目作废的旧检索把新检索的 busy 解掉。
           if (gen === searchGen) busy = false;
@@ -947,7 +947,7 @@ export function createKnowledgeView(): SpotlightCapabilityView {
         }
       };
 
-      ctx.body.innerHTML = loadingHtml(zh, zh ? "正在准备…" : "Preparing…");
+      ctx.body.innerHTML = loadingHtml(zh, spotlightViewsT(ctx.locale, "preparing"));
       ctx.requestResize();
       void (async () => {
         try {
@@ -998,7 +998,7 @@ export function createKnowledgeView(): SpotlightCapabilityView {
           } else if (replayId) {
             ctx.open("replay", { id: decodeURIComponent(replayId), route: href });
           } else {
-            ctx.toast(zh ? "这类来源请在主窗口打开查看" : "Open this source in the main window", "info");
+            ctx.toast(spotlightViewsT(ctx.locale, "openThisSourceInTheMain"), "info");
           }
         }
       });

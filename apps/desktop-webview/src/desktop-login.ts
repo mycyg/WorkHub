@@ -21,6 +21,8 @@ import { desktopBootPanel, renderDesktopBootPanelHtml } from "./desktop-boot-pan
 import { markDesktopIdentityCreated } from "./desktop-first-run.js";
 import { writeDesktopClientToken } from "./desktop-client-token.js";
 
+import { desktopT } from "./locales.js";
+
 // 与 browser.ts / workbench/boot.ts 同一套登出标记键 + 令牌收口（DSK-06，desktop-client-token.ts）——
 // 写令牌前清登出标记，落新键。
 const DESKTOP_LOGGED_OUT_FLAG = "workhub_desktop_logged_out";
@@ -448,21 +450,19 @@ export function describeDesktopLoginError(error: unknown, locale: WorkHubLocale)
   const zh = locale === "zh-CN";
   if (error instanceof WorkHubApiError) {
     if (error.status === 401) {
-      return zh ? "邮箱或密码不正确，请重试。" : "Email or password is incorrect. Please try again.";
+      return desktopT(locale, "emailOrPasswordIsIncorrectPlease");
     }
     if (error.status === 429) {
-      return zh ? "登录尝试过于频繁，请稍后再试。" : "Too many attempts. Please wait a moment and retry.";
+      return desktopT(locale, "tooManyAttemptsPleaseWaitA");
     }
     if (error.status === 400 || error.status === 422) {
-      return zh ? "请填写有效的邮箱和密码。" : "Enter a valid email and password.";
+      return desktopT(locale, "enterAValidEmailAndPassword");
     }
     if (error.status === 404) {
-      return zh ? "当前后端未启用密码登录。" : "Password login isn't enabled on this backend.";
+      return desktopT(locale, "passwordLoginIsnTEnabledOn");
     }
   }
-  return zh
-    ? "登录失败，请检查后端连接后重试。"
-    : "Sign-in failed — check the backend connection and retry.";
+  return desktopT(locale, "signInFailedCheckTheBackend");
 }
 
 // 注册页签的错误文案（照 apps/web/src/auth-screen-mode.ts 的 describeAuthScreenError 同一口径——
@@ -471,21 +471,19 @@ export function describeDesktopRegisterError(error: unknown, locale: WorkHubLoca
   const zh = locale === "zh-CN";
   if (error instanceof WorkHubApiError) {
     if (error.status === 429) {
-      return zh ? "尝试过于频繁，请稍后再试。" : "Too many attempts. Please wait a moment and retry.";
+      return desktopT(locale, "tooManyAttemptsPleaseWaitA2");
     }
     if (error.status === 409) {
-      return zh ? "该邮箱已注册，请改用登录。" : "That email is already registered — sign in instead.";
+      return desktopT(locale, "thatEmailIsAlreadyRegisteredSign");
     }
     if (error.status === 400 || error.status === 422) {
-      return zh
-        ? "请检查邮箱、昵称和密码是否有效（密码至少 8 位）。"
-        : "Check that email, nickname, and password are valid (password needs at least 8 characters).";
+      return desktopT(locale, "checkThatEmailNicknameAndPassword");
     }
     if (error.status === 404) {
-      return zh ? "当前后端未启用密码注册。" : "Password registration isn't enabled on this backend.";
+      return desktopT(locale, "passwordRegistrationIsnTEnabledOn");
     }
   }
-  return zh ? "注册失败，请检查后端连接后重试。" : "Registration failed — check the backend connection and retry.";
+  return desktopT(locale, "registrationFailedCheckTheBackendConnection");
 }
 
 // 邀请页签的错误文案（照 apps/web/src/browser.ts inviteAcceptErrorText 同一口径）。
@@ -493,20 +491,16 @@ export function describeDesktopInviteError(error: unknown, locale: WorkHubLocale
   const zh = locale === "zh-CN";
   if (error instanceof WorkHubApiError) {
     if (error.status === 404) {
-      return zh
-        ? "邀请无效或已过期，请向管理员索取新的邀请。"
-        : "This invite is invalid or expired — ask your admin for a new one.";
+      return desktopT(locale, "thisInviteIsInvalidOrExpired");
     }
     if (error.status === 409) {
-      return zh ? "该邮箱已注册，请改用登录。" : "That email is already registered — sign in instead.";
+      return desktopT(locale, "thatEmailIsAlreadyRegisteredSign");
     }
     if (error.status === 400 || error.status === 422) {
-      return zh
-        ? "请检查邀请令牌、昵称和密码是否有效（密码至少 8 位）。"
-        : "Check that the invite token, nickname, and password are valid (password needs at least 8 characters).";
+      return desktopT(locale, "checkThatTheInviteTokenNickname");
     }
   }
-  return zh ? "接受邀请失败，请检查后端连接后重试。" : "Couldn't accept the invite — check the backend connection and retry.";
+  return desktopT(locale, "couldnTAcceptTheInviteCheck");
 }
 
 // 首启（first-run）与真登出（logged-out）共用同一张凭据门，只有标题/说明不同——同 desktop-rebind.ts
@@ -534,31 +528,23 @@ export function renderDesktopCredentialGateHtml(input: {
   const context = input.context ?? "logged-out";
   const title =
     context === "first-run"
-      ? zh
-        ? "欢迎使用 WorkHub"
-        : "Welcome to WorkHub"
-      : zh
-        ? "登录 WorkHub"
-        : "Sign in to WorkHub";
+      ? desktopT(input.locale, "welcomeToWorkhub")
+      : desktopT(input.locale, "signInToWorkhub");
   const subtitle =
     context === "first-run"
-      ? zh
-        ? "这台设备第一次连接这台服务器：登录已有账号、注册新账号，或用邀请令牌加入。"
-        : "This device hasn't connected to this server before — sign in, register, or join with an invite token."
-      : zh
-        ? "这台设备使用邮箱 + 密码登录。登录后会绑定为受信任设备。"
-        : "This device signs in with email and password, then binds as a trusted device.";
-  const emailLabel = zh ? "邮箱" : "Email";
-  const passwordLabel = zh ? "密码" : "Password";
-  const nicknameLabel = zh ? "昵称" : "Nickname";
-  const nicknamePlaceholder = zh ? "你的昵称" : "Your nickname";
-  const inviteTokenLabel = zh ? "邀请令牌" : "Invite token";
-  const signinTabLabel = zh ? "登录" : "Sign in";
-  const registerTabLabel = zh ? "注册" : "Register";
-  const inviteTabLabel = zh ? "我有邀请令牌" : "Have an invite token";
-  const signinSubmitLabel = zh ? "登录" : "Sign in";
-  const registerSubmitLabel = zh ? "注册" : "Register";
-  const inviteSubmitLabel = zh ? "接受邀请" : "Accept invite";
+      ? desktopT(input.locale, "thisDeviceHasnTConnectedTo")
+      : desktopT(input.locale, "thisDeviceSignsInWithEmail");
+  const emailLabel = desktopT(input.locale, "email");
+  const passwordLabel = desktopT(input.locale, "password");
+  const nicknameLabel = desktopT(input.locale, "nickname");
+  const nicknamePlaceholder = desktopT(input.locale, "yourNickname");
+  const inviteTokenLabel = desktopT(input.locale, "inviteToken");
+  const signinTabLabel = desktopT(input.locale, "signIn");
+  const registerTabLabel = desktopT(input.locale, "register");
+  const inviteTabLabel = desktopT(input.locale, "haveAnInviteToken");
+  const signinSubmitLabel = desktopT(input.locale, "signIn");
+  const registerSubmitLabel = desktopT(input.locale, "register");
+  const inviteSubmitLabel = desktopT(input.locale, "acceptInvite");
   const signinErrorHtml = input.error
     ? `<p data-desktop-login-error class="${desktopBootPanel.error}" role="alert">${escapeHtml(input.error)}</p>`
     : `<p data-desktop-login-error hidden class="${desktopBootPanel.error}" role="alert"></p>`;
@@ -574,7 +560,7 @@ export function renderDesktopCredentialGateHtml(input: {
     inner:
       `<h1>${escapeHtml(title)}</h1>` +
       `<p class="${desktopBootPanel.sub}">${escapeHtml(subtitle)}</p>` +
-      `<div class="${desktopBootPanel.tabs}" role="tablist" aria-label="${escapeHtml(zh ? "登录方式" : "Sign-in method")}">` +
+      `<div class="${desktopBootPanel.tabs}" role="tablist" aria-label="${escapeHtml(desktopT(input.locale, "signInMethod"))}">` +
       `<button type="button" role="tab" aria-selected="true" data-desktop-login-tab="signin">${escapeHtml(signinTabLabel)}</button>` +
       `<button type="button" role="tab" aria-selected="false" data-desktop-login-tab="register">${escapeHtml(registerTabLabel)}</button>` +
       `<button type="button" role="tab" aria-selected="false" data-desktop-login-tab="invite">${escapeHtml(inviteTabLabel)}</button>` +
@@ -593,7 +579,7 @@ export function renderDesktopCredentialGateHtml(input: {
       `<p data-desktop-register-error hidden class="${desktopBootPanel.error}" role="alert"></p>` +
       `</form>` +
       `<form data-desktop-invite-form class="wh-desktop-login-panel" data-desktop-login-panel="invite" hidden novalidate>` +
-      `<label>${escapeHtml(inviteTokenLabel)}<input data-desktop-invite-token name="token" type="text" maxlength="512" placeholder="${escapeHtml(zh ? "粘贴管理员发给你的邀请令牌" : "Paste the invite token your admin sent you")}" /></label>` +
+      `<label>${escapeHtml(inviteTokenLabel)}<input data-desktop-invite-token name="token" type="text" maxlength="512" placeholder="${escapeHtml(desktopT(input.locale, "pasteTheInviteTokenYourAdmin"))}" /></label>` +
       `<label>${escapeHtml(nicknameLabel)}<input data-desktop-invite-nickname name="nickname" type="text" maxlength="64" autocomplete="nickname" placeholder="${escapeHtml(nicknamePlaceholder)}" /></label>` +
       `<label>${escapeHtml(passwordLabel)}<input data-desktop-invite-password name="password" type="password" autocomplete="new-password" maxlength="1024" placeholder="••••••••" /></label>` +
       `<div class="${desktopBootPanel.actions}"><button data-desktop-invite-submit type="submit" class="wh-desktop-login-submit ${desktopBootPanel.primary} ds-pressable">${escapeHtml(inviteSubmitLabel)}</button></div>` +
@@ -665,7 +651,7 @@ export function bindDesktopCredentialGate(
     const email = emailEl?.value.trim() ?? "";
     const password = passwordEl?.value ?? "";
     if (!email || !password) {
-      showError(errorEl, zh ? "请填写邮箱和密码。" : "Enter your email and password.");
+      showError(errorEl, desktopT(input.locale, "enterYourEmailAndPassword"));
       return;
     }
     if (submitEl) {
@@ -704,7 +690,7 @@ export function bindDesktopCredentialGate(
     const nickname = registerNicknameEl?.value.trim() ?? "";
     const password = registerPasswordEl?.value ?? "";
     if (!email || !nickname || !password) {
-      showError(registerErrorEl, zh ? "请填写邮箱、昵称和密码。" : "Enter your email, nickname, and password.");
+      showError(registerErrorEl, desktopT(input.locale, "enterYourEmailNicknameAndPassword"));
       return;
     }
     if (registerSubmitEl) {
@@ -743,7 +729,7 @@ export function bindDesktopCredentialGate(
     const nickname = inviteNicknameEl?.value.trim() ?? "";
     const password = invitePasswordEl?.value ?? "";
     if (!token || !nickname || !password) {
-      showError(inviteErrorEl, zh ? "请填写邀请令牌、昵称和密码。" : "Enter the invite token, nickname, and password.");
+      showError(inviteErrorEl, desktopT(input.locale, "enterTheInviteTokenNicknameAnd"));
       return;
     }
     if (inviteSubmitEl) {

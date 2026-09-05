@@ -20,6 +20,8 @@ import {
 
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 
+import { spotlightViewsT } from "./locales.js";
+
 function proposalIdFromItem(item: AttentionItem): string | undefined {
   for (const action of item.actions) {
     const parsed = proposalActionFromHref(action.href);
@@ -85,14 +87,14 @@ function publicProposalSummary(markdown: string, zh: boolean) {
     .map(stripMarkdownLine)
     .filter((line) => line && !headingPattern.test(line));
   return publicProposalSummaryText(lines.join(" ").replace(/\s+/gu, " ").trim(), locale, 320) ||
-    (zh ? "先看总结和改动，再决定是否采纳。" : "Review the summary and changes before deciding.");
+    (spotlightViewsT(zh, "reviewTheSummaryAndChangesBefore"));
 }
 
 function checkText(check: ProposalDetailVM["manifest"]["checks"][number], zh: boolean) {
   const detail = check.status === "passed" ? "" : check.detail?.trim();
   const base = detail ? `${check.label}：${detail}` : check.label;
   // API-02：HTTP 自供 manifest 的 checks 被服务端标为 self_reported——评审时明示「提交者自报」。
-  return check.source === "self_reported" ? `${base}（${zh ? "提交者自报" : "self-reported"}）` : base;
+  return check.source === "self_reported" ? `${base}（${spotlightViewsT(zh, "selfReported")}）` : base;
 }
 
 export function detailHtml(vm: ProposalDetailVM, zh: boolean): string {
@@ -124,24 +126,24 @@ export function detailHtml(vm: ProposalDetailVM, zh: boolean): string {
   };
   const actions = isOpen
     ? `<div class="wh-spot-card-actions" data-prop-actions>
-        <p class="wh-spot-action-note">${zh ? "确认通过后再合入交付物，可用快照回滚。" : "Approve first, then merge this deliverable; the snapshot can roll back."}</p>
-        <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-prop-approve>${zh ? "确认通过" : "Mark approved"}</button>
-        <button type="button" class="wh-spot-act wh-spot-act--danger ds-pressable" data-prop-deny>${zh ? "打回修改" : "Request changes"}</button>
+        <p class="wh-spot-action-note">${spotlightViewsT(zh, "approveFirstThenMergeThisDeliverable")}</p>
+        <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-prop-approve>${spotlightViewsT(zh, "markApproved")}</button>
+        <button type="button" class="wh-spot-act wh-spot-act--danger ds-pressable" data-prop-deny>${spotlightViewsT(zh, "requestChanges")}</button>
       </div>`
     : canMerge
       ? `<div class="wh-spot-card-actions" data-prop-actions>
-        <p class="wh-spot-action-note">${holdAction ? (zh ? "已确认通过，可以开始执行，也可以先暂缓。" : "Approved; start now or hold it for later.") : (zh ? "已确认通过，只差合入交付物。" : "Approved; only the deliverable merge remains.")}</p>
-        <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-prop-merge${mergePayload}>${escapeHtml(vm.review_actions.merge?.label ?? (zh ? "合入交付物" : "Merge deliverable"))}</button>
+        <p class="wh-spot-action-note">${holdAction ? (spotlightViewsT(zh, "approvedStartNowOrHoldIt")) : (spotlightViewsT(zh, "approvedOnlyTheDeliverableMergeRemains"))}</p>
+        <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-prop-merge${mergePayload}>${escapeHtml(vm.review_actions.merge?.label ?? (spotlightViewsT(zh, "mergeDeliverable")))}</button>
         ${holdButton}
       </div>`
       : `<div class="wh-spot-card-actions"><span class="wh-spot-chip wh-spot-chip--info">${escapeHtml((zh ? statusLabel[vm.status]?.[0] : statusLabel[vm.status]?.[1]) ?? vm.status)}</span></div>`;
   return `<div class="wh-spot-dash ds-anim-fade-in">
-    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-prop-back style="align-self:flex-start">${zh ? "← 返回待审改动" : "← Back to changes"}</button>
+    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-prop-back style="align-self:flex-start">${spotlightViewsT(zh, "backToChanges")}</button>
     <div>
-      <div class="wh-spot-card-head"><span class="wh-spot-chip wh-spot-chip--${riskTone}">${escapeHtml(m.risk.human_label)}</span><span class="wh-spot-change-path">${m.changes.length} ${zh ? "处改动" : "changes"}</span></div>
+      <div class="wh-spot-card-head"><span class="wh-spot-chip wh-spot-chip--${riskTone}">${escapeHtml(m.risk.human_label)}</span><span class="wh-spot-change-path">${m.changes.length} ${spotlightViewsT(zh, "changes")}</span></div>
       <h3 class="wh-spot-card-title" style="margin-top:10px">${escapeHtml(displayTitle)}</h3>
       <div class="wh-spot-change" data-prop-summary="true">
-        <div class="wh-spot-change-head"><span class="wh-spot-chip wh-spot-chip--info">${zh ? "总结" : "Summary"}</span></div>
+        <div class="wh-spot-change-head"><span class="wh-spot-chip wh-spot-chip--info">${spotlightViewsT(zh, "summary")}</span></div>
         <div class="wh-spot-change-sum">${escapeHtml(summary)}</div>
       </div>
     </div>
@@ -158,10 +160,10 @@ export function proposalMergeConflictHtml(error: unknown, zh: boolean): string |
   }
   const rendered = renderProposalConflictCards(conflicts, { locale: zh ? "zh-CN" : "en-US" });
   return `<div class="wh-spot-dash ds-anim-fade-in" data-prop-conflict-panel="true">
-    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-prop-back style="align-self:flex-start">${zh ? "← 返回待审改动" : "← Back to changes"}</button>
+    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-prop-back style="align-self:flex-start">${spotlightViewsT(zh, "backToChanges")}</button>
     <div>
-      <h3 class="wh-spot-card-title">${zh ? "这份变更和别人的改动冲突了" : "This change has conflicts"}</h3>
-      <p class="wh-spot-action-note">${zh ? "先选择每个冲突怎么处理，再继续合入交付物。" : "Choose how to resolve each conflict, then merge the deliverable."}</p>
+      <h3 class="wh-spot-card-title">${spotlightViewsT(zh, "thisChangeHasConflicts")}</h3>
+      <p class="wh-spot-action-note">${spotlightViewsT(zh, "chooseHowToResolveEachConflict")}</p>
     </div>
     ${rendered.html}
   </div>`;
@@ -171,13 +173,13 @@ export function reasonComposerHtml(zh: boolean): string {
   // 同 attention 视图：「先放一放」提交的是打回，语义误导——移除。
   const reasons = zh ? ["方向不对", "细节要调整", "缺少依据"] : ["Wrong direction", "Needs tweaks", "Insufficient evidence"];
   return `<div class="wh-spot-reasons" data-prop-reasons>
-    <p class="wh-spot-reasons-q">${zh ? "打回说明" : "Feedback for changes"}</p>
+    <p class="wh-spot-reasons-q">${spotlightViewsT(zh, "feedbackForChanges")}</p>
     <div class="wh-spot-reasons-row">${reasons
       .map((r) => `<button type="button" class="wh-spot-reason ds-pressable" data-prop-reason="${escapeHtml(r)}" aria-pressed="false">${escapeHtml(r)}</button>`)
       .join("")}</div>
-    <textarea class="wh-spot-reason-text" data-prop-reason-text rows="3" placeholder="${zh ? "具体写哪里需要改，Cuu 会带着这段反馈继续修。" : "Describe what needs to change; Cuu will revise with this feedback."}"></textarea>
+    <textarea class="wh-spot-reason-text" data-prop-reason-text rows="3" placeholder="${spotlightViewsT(zh, "describeWhatNeedsToChangeCuu")}"></textarea>
     <div class="wh-spot-reason-actions">
-      <button type="button" class="wh-spot-act wh-spot-act--danger ds-pressable" data-prop-submit-deny>${zh ? "发送打回说明" : "Send feedback"}</button>
+      <button type="button" class="wh-spot-act wh-spot-act--danger ds-pressable" data-prop-submit-deny>${spotlightViewsT(zh, "sendFeedback")}</button>
     </div>
   </div>`;
 }
@@ -258,8 +260,8 @@ export function createProposalsView(): SpotlightCapabilityView {
       const showList = async () => {
         const gen = ++loadGen;
         currentId = undefined;
-        ctx.setSubtitle(zh ? "待审阅的改动" : "Changes to review");
-        body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉改动…" : "Loading…"}</div>`;
+        ctx.setSubtitle(spotlightViewsT(ctx.locale, "changesToReview"));
+        body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${spotlightViewsT(ctx.locale, "loading2")}</div>`;
         ctx.requestResize();
         try {
           const vm = await client.pages.attention({ locale: ctx.locale });
@@ -267,7 +269,7 @@ export function createProposalsView(): SpotlightCapabilityView {
           // 只保留能解析出 proposalId 的项——否则渲染出可点却点不开的死行(rank19)。
           const items = (vm.queue ?? []).filter((it) => !!proposalIdFromItem(it));
           if (!items.length) {
-            body.innerHTML = `<div class="wh-spot-empty"><div class="wh-spot-empty-face">٩(◜◡◝)۶</div><h3 class="wh-spot-empty-title">${zh ? "没有待看的改动" : "No changes to review"}</h3><p class="wh-spot-empty-sub">${zh ? "AI 产出改动后会出现在这里和审批队列" : "AI changes show here and in approvals"}</p></div>`;
+            body.innerHTML = `<div class="wh-spot-empty"><div class="wh-spot-empty-face">٩(◜◡◝)۶</div><h3 class="wh-spot-empty-title">${spotlightViewsT(ctx.locale, "noChangesToReview")}</h3><p class="wh-spot-empty-sub">${spotlightViewsT(ctx.locale, "aiChangesShowHereAndIn")}</p></div>`;
           } else {
             ctx.setSubtitle(zh ? `${items.length} 处待审阅` : `${items.length} to review`);
             body.innerHTML = `<div class="wh-spot-list ds-stagger">${items
@@ -284,7 +286,7 @@ export function createProposalsView(): SpotlightCapabilityView {
         } catch {
           if (!disposed && gen === loadGen) {
             retry = () => void showList();
-            body.innerHTML = spotlightErrorHtml(zh, zh ? "改动没拉到" : "Couldn't load");
+            body.innerHTML = spotlightErrorHtml(zh, spotlightViewsT(ctx.locale, "couldnTLoad"));
           }
         }
         ctx.requestResize();
@@ -295,17 +297,17 @@ export function createProposalsView(): SpotlightCapabilityView {
       const showDetail = async (id: string) => {
         const gen = ++loadGen;
         currentId = id;
-        body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉 diff…" : "Loading diff…"}</div>`;
+        body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${spotlightViewsT(ctx.locale, "loadingDiff")}</div>`;
         ctx.requestResize();
         try {
           const vm = await client.pages.proposal(id, { locale: ctx.locale });
           if (disposed || gen !== loadGen) return;
-          ctx.setSubtitle(zh ? "改动详情" : "Change detail");
+          ctx.setSubtitle(spotlightViewsT(ctx.locale, "changeDetail"));
           body.innerHTML = detailHtml(vm, zh);
         } catch {
           if (!disposed && gen === loadGen) {
             retry = () => void showDetail(id);
-            body.innerHTML = spotlightErrorHtml(zh, zh ? "diff 没拉到" : "Couldn't load diff");
+            body.innerHTML = spotlightErrorHtml(zh, spotlightViewsT(ctx.locale, "couldnTLoadDiff"));
           }
         }
         ctx.requestResize();
@@ -334,10 +336,10 @@ export function createProposalsView(): SpotlightCapabilityView {
         if (busy || !currentId) return;
         const startedProposalId = currentId;
         busy = true;
-        const restore = markBusy(btn, zh ? "确认中…" : "Approving…");
+        const restore = markBusy(btn, spotlightViewsT(ctx.locale, "approving"));
         try {
           const review = await reviewProposalWithoutMerge(client, startedProposalId, { locale: ctx.locale });
-          ctx.toast(summaryText(review) ?? (zh ? "已确认通过，下一步可合入交付物" : "Approved. You can merge the deliverable next."), "ok");
+          ctx.toast(summaryText(review) ?? (spotlightViewsT(ctx.locale, "approvedYouCanMergeTheDeliverable")), "ok");
           ctx.onActionSettled?.();
           busy = false;
           const refreshId = proposalDetailRefreshTargetAfterReview(startedProposalId, currentId);
@@ -347,7 +349,7 @@ export function createProposalsView(): SpotlightCapabilityView {
         } catch {
           busy = false;
           restore();
-          ctx.toast(zh ? "确认失败，稍后重试" : "Approval failed. Try again.", "error");
+          ctx.toast(spotlightViewsT(ctx.locale, "approvalFailedTryAgain"), "error");
         }
       };
 
@@ -355,17 +357,17 @@ export function createProposalsView(): SpotlightCapabilityView {
       const mergeOnly = async (btn: HTMLButtonElement | null = null) => {
         if (busy || !currentId) return;
         busy = true;
-        const restore = markBusy(btn, zh ? "处理中…" : "Working…");
+        const restore = markBusy(btn, spotlightViewsT(ctx.locale, "working"));
         try {
           const payload = btn ? actionElementMergePayload(btn) : { ok: true as const };
           if (!payload.ok) {
-            ctx.toast(zh ? "这个合入动作缺少必要参数" : "This merge action is missing details", "error");
+            ctx.toast(spotlightViewsT(ctx.locale, "thisMergeActionIsMissingDetails"), "error");
             busy = false;
             restore();
             return;
           }
           const merge = await client.mergeProposal(currentId, payload.payload, { locale: ctx.locale });
-          ctx.toast(summaryText(merge) ?? (zh ? "已合并" : "Merged"), "ok");
+          ctx.toast(summaryText(merge) ?? (spotlightViewsT(ctx.locale, "merged")), "ok");
           ctx.onActionSettled?.();
           busy = false;
           void showList();
@@ -375,11 +377,11 @@ export function createProposalsView(): SpotlightCapabilityView {
           const conflictHtml = proposalMergeConflictHtml(error, zh);
           if (conflictHtml) {
             body.innerHTML = conflictHtml;
-            ctx.toast(zh ? "需要先处理冲突" : "Resolve conflicts first", "info");
+            ctx.toast(spotlightViewsT(ctx.locale, "resolveConflictsFirst"), "info");
             ctx.requestResize();
             return;
           }
-          ctx.toast(zh ? "合并失败（可能有冲突），稍后重试" : "Merge failed (maybe a conflict)", "error");
+          ctx.toast(spotlightViewsT(ctx.locale, "mergeFailedMaybeAConflict"), "error");
         }
       };
 
@@ -408,33 +410,33 @@ export function createProposalsView(): SpotlightCapabilityView {
           } else if (action.kind === "apply") {
             const payload = actionElementApplyPayload(target);
             if (!payload.ok) {
-              ctx.toast(zh ? "冲突选项缺少必要参数" : "This conflict option is missing details", "error");
+              ctx.toast(spotlightViewsT(ctx.locale, "thisConflictOptionIsMissingDetails"), "error");
               return;
             }
             result = await client.applyMergeProposalCandidate(action.applyId, payload.payload, { locale: ctx.locale });
           } else if (action.kind === "merge") {
             const payload = actionElementMergePayload(target);
             if (!payload.ok) {
-              ctx.toast(zh ? "冲突选项缺少必要参数" : "This conflict option is missing details", "error");
+              ctx.toast(spotlightViewsT(ctx.locale, "thisConflictOptionIsMissingDetails"), "error");
               return;
             }
             result = await client.mergeProposal(action.proposalId, payload.payload, { locale: ctx.locale });
           }
           if (!result) {
-            ctx.toast(zh ? "这个冲突动作暂时不可执行" : "This conflict action is not available", "error");
+            ctx.toast(spotlightViewsT(ctx.locale, "thisConflictActionIsNotAvailable"), "error");
             return;
           }
-          ctx.toast(summaryText(result) ?? (zh ? "冲突已处理" : "Conflict resolved"), "ok");
+          ctx.toast(summaryText(result) ?? (spotlightViewsT(ctx.locale, "conflictResolved")), "ok");
           ctx.onActionSettled?.();
           void showList();
         } catch (error) {
           const conflictHtml = proposalMergeConflictHtml(error, zh);
           if (conflictHtml) {
             body.innerHTML = conflictHtml;
-            ctx.toast(zh ? "还需要继续处理冲突" : "More conflict handling is needed", "info");
+            ctx.toast(spotlightViewsT(ctx.locale, "moreConflictHandlingIsNeeded"), "info");
             ctx.requestResize();
           } else {
-            ctx.toast(zh ? "冲突处理失败，稍后重试" : "Conflict action failed. Try again.", "error");
+            ctx.toast(spotlightViewsT(ctx.locale, "conflictActionFailedTryAgain"), "error");
           }
         } finally {
           busy = false;
@@ -444,17 +446,17 @@ export function createProposalsView(): SpotlightCapabilityView {
       const deny = async (reason: string, btn: HTMLButtonElement | null = null) => {
         if (busy || !currentId) return;
         busy = true;
-        const restore = markBusy(btn, zh ? "打回中…" : "Sending back…");
+        const restore = markBusy(btn, spotlightViewsT(ctx.locale, "sendingBack"));
         try {
           const res = await client.reviewProposal(currentId, { decision: "request_changes", reason_md: reason, remember: "once" }, { locale: ctx.locale });
-          ctx.toast(summaryText(res) ?? (zh ? "已打回" : "Sent back"), "ok");
+          ctx.toast(summaryText(res) ?? (spotlightViewsT(ctx.locale, "sentBack")), "ok");
           ctx.onActionSettled?.();
           busy = false;
           void showList();
         } catch {
           busy = false;
           restore();
-          ctx.toast(zh ? "打回失败，稍后重试" : "Failed — retry", "error");
+          ctx.toast(spotlightViewsT(ctx.locale, "failedRetry"), "error");
         }
       };
 
@@ -521,7 +523,7 @@ export function createProposalsView(): SpotlightCapabilityView {
           const detail = composer?.querySelector<HTMLTextAreaElement>("[data-prop-reason-text]")?.value;
           const reasonMd = proposalRequestChangesReason(preset, detail);
           if (!reasonMd) {
-            ctx.toast(zh ? "先写一句打回说明" : "Add a short reason first", "error");
+            ctx.toast(spotlightViewsT(ctx.locale, "addAShortReasonFirst"), "error");
             composer?.querySelector<HTMLTextAreaElement>("[data-prop-reason-text]")?.focus();
             return;
           }

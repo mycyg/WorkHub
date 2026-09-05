@@ -11,8 +11,10 @@ import { resolveDesktopTauriInvoke } from "../../desktop-window-controls.js";
 import { stashPendingWorkbenchDeepLink } from "../../workbench/pending-deep-link.js";
 import type { SpotlightCapabilityView, SpotlightViewContext } from "../view-context.js";
 
+import { spotlightViewsT } from "./locales.js";
+
 function openWorkbenchLoadingHtml(zh: boolean): string {
-  return `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在打开工作台窗口…" : "Opening the workbench window…"}</div>`;
+  return `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${spotlightViewsT(zh, "openingTheWorkbenchWindow")}</div>`;
 }
 
 function openWorkbenchSuccessHtml(zh: boolean, projectLabel: string | undefined): string {
@@ -20,9 +22,7 @@ function openWorkbenchSuccessHtml(zh: boolean, projectLabel: string | undefined)
     ? zh
       ? `已在工作台窗口打开「${escapeHtml(projectLabel)}」。`
       : `Opened "${escapeHtml(projectLabel)}" in the workbench window.`
-    : zh
-      ? "已打开工作台窗口。"
-      : "Opened the workbench window.";
+    : spotlightViewsT(zh, "openedTheWorkbenchWindow");
   return `<div class="wh-spot-placeholder">
     <p class="wh-spot-placeholder-sub">${detail}</p>
   </div>`;
@@ -30,13 +30,13 @@ function openWorkbenchSuccessHtml(zh: boolean, projectLabel: string | undefined)
 
 function openWorkbenchUnavailableHtml(zh: boolean): string {
   return `<div class="wh-spot-placeholder">
-    <p class="wh-spot-placeholder-sub">${zh ? "工作台只在桌面客户端里可用，这个预览环境打不开原生窗口。" : "The workbench only opens inside the desktop app — this preview can't open a native window."}</p>
+    <p class="wh-spot-placeholder-sub">${spotlightViewsT(zh, "theWorkbenchOnlyOpensInsideThe")}</p>
   </div>`;
 }
 
 function openWorkbenchErrorHtml(zh: boolean): string {
-  return `<div class="wh-spot-error">${zh ? "没打开工作台窗口，稍后重试" : "Couldn't open the workbench window — retry"}
-    <div style="margin-top:13px"><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-spot-retry>${zh ? "重试" : "Retry"}</button></div>
+  return `<div class="wh-spot-error">${spotlightViewsT(zh, "couldnTOpenTheWorkbenchWindow")}
+    <div style="margin-top:13px"><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-spot-retry>${spotlightViewsT(zh, "retry")}</button></div>
   </div>`;
 }
 
@@ -49,7 +49,7 @@ export function createWorkbenchOpenView(id: CommandId, options: { bare: boolean 
       const zh = ctx.locale === "zh-CN";
       const projectId = options.bare ? undefined : ctx.target?.id;
       const projectLabel = options.bare ? undefined : ctx.target?.label;
-      ctx.setSubtitle(zh ? "打开中" : "Opening");
+      ctx.setSubtitle(spotlightViewsT(ctx.locale, "opening2"));
       const invoke = resolveDesktopTauriInvoke();
       if (!invoke) {
         ctx.body.innerHTML = openWorkbenchUnavailableHtml(zh);
