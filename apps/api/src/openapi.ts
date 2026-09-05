@@ -6233,6 +6233,7 @@ const pluginVmJsonSchema = {
     "source_path",
     "enabled",
     "status",
+    "trust_level",
     "tool_count",
     "compat_report",
     "created_at",
@@ -6246,7 +6247,10 @@ const pluginVmJsonSchema = {
     source_kind: { type: "string", enum: ["local_path"] },
     source_path: { type: "string", minLength: 1, maxLength: 1000 },
     enabled: { type: "boolean" },
-    status: { type: "string", enum: ["installed", "load_failed", "disabled"] },
+    status: { type: "string", enum: ["installed", "load_failed", "disabled", "crashed"] },
+    // Admin-asserted risk ceiling. A tool drops to the low-risk tier only when this is
+    // read_only AND the tool itself reports read-only; the plugin can never raise its own tier.
+    trust_level: { type: "string", enum: ["read_only", "external_effect"] },
     tool_count: { type: "integer", minimum: 0 },
     compat_report: pluginCompatReportJsonSchema,
     load_report: pluginLoadReportJsonSchema,
@@ -6270,7 +6274,16 @@ const installPluginRequestJsonSchema = {
   type: "object",
   required: ["source_path"],
   properties: {
-    source_path: { type: "string", minLength: 1, maxLength: 1000 }
+    source_path: { type: "string", minLength: 1, maxLength: 1000 },
+    trust_level: { type: "string", enum: ["read_only", "external_effect"] }
+  },
+  additionalProperties: false
+} as const;
+const updatePluginTrustRequestJsonSchema = {
+  type: "object",
+  required: ["trust_level"],
+  properties: {
+    trust_level: { type: "string", enum: ["read_only", "external_effect"] }
   },
   additionalProperties: false
 } as const;
@@ -8711,6 +8724,49 @@ export function getOpenApiDocument() {
           }
         }
       },
+      "/api/plugins/{id}": {
+        patch: {
+          tags: ["settings"],
+          summary: "Admin-only: set the risk ceiling asserted for a plugin",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(updatePluginTrustRequestJsonSchema),
+          responses: {
+            "200": jsonDataResponse(pluginVmJsonSchema, "The plugin at its new trust level").responses["200"],
+            "400": jsonErrorStatusResponse("400", "The request body was not a JSON object", [
+              "malformed_json",
+              "json_object_required"
+            ]).responses["400"],
+            "403": pluginAdminForbiddenResponse.responses["403"],
+            "404": pluginNotFoundResponse.responses["404"],
+            "422": jsonErrorStatusResponse("422", "trust_level is not one of the two accepted values", [
+              "validation_error"
+            ]).responses["422"],
+            "413": conversationPayloadTooLargeResponse,
+            "401": conversationAuthRequiredResponse,
+            "500": conversationInternalResponse
+          }
+        },
+        delete: {
+          tags: ["settings"],
+          summary: "Admin-only: remove a plugin from the registry (the directory on disk is left alone)",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse(
+              {
+                type: "object",
+                required: ["removed"],
+                properties: { removed: { type: "boolean", const: true } },
+                additionalProperties: false
+              },
+              "The plugin no longer contributes tools to any run"
+            ).responses["200"],
+            "403": pluginAdminForbiddenResponse.responses["403"],
+            "404": pluginNotFoundResponse.responses["404"],
+            "401": conversationAuthRequiredResponse,
+            "500": conversationInternalResponse
+          }
+        }
+      },
       "/api/plugins/{id}/enable": {
         post: {
           tags: ["settings"],
@@ -8732,28 +8788,6 @@ export function getOpenApiDocument() {
           parameters: [pathUuidParameter("id")],
           responses: {
             "200": jsonDataResponse(pluginVmJsonSchema, "The plugin, now disabled").responses["200"],
-            "403": pluginAdminForbiddenResponse.responses["403"],
-            "404": pluginNotFoundResponse.responses["404"],
-            "401": conversationAuthRequiredResponse,
-            "500": conversationInternalResponse
-          }
-        }
-      },
-      "/api/plugins/{id}": {
-        delete: {
-          tags: ["settings"],
-          summary: "Admin-only: remove a plugin from the registry (the directory on disk is left alone)",
-          parameters: [pathUuidParameter("id")],
-          responses: {
-            "200": jsonDataResponse(
-              {
-                type: "object",
-                required: ["removed"],
-                properties: { removed: { type: "boolean", const: true } },
-                additionalProperties: false
-              },
-              "The plugin no longer contributes tools to any run"
-            ).responses["200"],
             "403": pluginAdminForbiddenResponse.responses["403"],
             "404": pluginNotFoundResponse.responses["404"],
             "401": conversationAuthRequiredResponse,

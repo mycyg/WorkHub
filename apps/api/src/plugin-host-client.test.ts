@@ -14,6 +14,7 @@ import type { AuditLogRepository, AuditLogRow, CreateAuditLogInput } from "@work
 import {
   createPluginHostClient,
   createRegistryPluginPathSource,
+  PLUGIN_HOST_RESTART_LIMIT,
   type PluginHostSpawn
 } from "./services/plugin-host-client.js";
 
@@ -22,7 +23,8 @@ const DESCRIPTOR = {
   toolName: "echo",
   toolId: "plugin__dsh-plugin-echo__echo",
   description: "Echo a phrase back.",
-  jsonSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] }
+  jsonSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
+  selfReportedReadOnly: false
 };
 
 const LIST_RESULT: ListToolsResult = {
@@ -304,25 +306,180 @@ test("宿主中途崩掉：在飞调用返回工具错误，run 不被带崩；�
   await host.close();
 });
 
-test("反复崩溃超上限后整个插件面停用，后续 run 直接没有插件工具", async () => {
-  const spawnProcess: PluginHostSpawn = () =>
-    fakeChild((request, live) => {
+/**
+ * 一台「握手正常、一调用就把自己弄崩」的宿主。**按 env 里的 WORKHUB_PLUGIN_PATHS 过滤**
+ * 自己报出的插件与工具——真宿主就是这么工作的，不这样过滤就验不出「熔断之后新宿主的清单少了一个」。
+ */
+function crashingHost(all: ListToolsResult) {
+  const spawns: string[] = [];
+  const spawnProcess: PluginHostSpawn = ((input: { env: Record<string, string> }) => {
+    const loaded = (input.env["WORKHUB_PLUGIN_PATHS"] ?? "").split(",").filter((entry) => entry.length > 0);
+    spawns.push(input.env["WORKHUB_PLUGIN_PATHS"] ?? "");
+    const plugins = all.plugins.filter((report) => loaded.includes(report.path));
+    const pluginIds = new Set(plugins.map((report) => report.pluginId));
+    const result: ListToolsResult = {
+      ...all,
+      plugins,
+      tools: all.tools.filter((tool) => pluginIds.has(tool.pluginId))
+    };
+    return fakeChild((request, live) => {
       if (request.method === "list_tools") {
-        live.reply(encodeFrame({ id: request.id, ok: true, result: LIST_RESULT }));
+        live.reply(encodeFrame({ id: request.id, ok: true, result }));
         return;
       }
       live.exit(1);
-    }) as never;
-  const host = createPluginHostClient({ pluginPaths: ["/tmp/p"], auditLogs: false, spawnProcess });
-  for (let attempt = 0; attempt < 5; attempt += 1) {
+    });
+  }) as unknown as PluginHostSpawn;
+  return { spawnProcess, spawns };
+}
+
+/** LIST_RESULT 的插件报告路径是 `/tmp/p`——熔断用例得对得上这条路径。 */
+const SINGLE_PLUGIN_RESULT: ListToolsResult = {
+  ...LIST_RESULT,
+  plugins: [{ pluginId: "dsh-plugin-echo", path: "/tmp/p", ok: true, toolCount: 1, promptSectionCount: 1 }]
+};
+
+const BAD_DESCRIPTOR = {
+  pluginId: "dsh-plugin-bad",
+  toolName: "boom",
+  toolId: "plugin__dsh-plugin-bad__boom",
+  description: "Crashes the host.",
+  jsonSchema: { type: "object", properties: {} },
+  selfReportedReadOnly: false
+};
+
+test("反复崩溃超上限后这个插件被单独熔断——插件面整体仍然可用", async () => {
+  const host = createPluginHostClient({
+    pluginPaths: ["/tmp/p"],
+    auditLogs: false,
+    spawnProcess: crashingHost(SINGLE_PLUGIN_RESULT).spawnProcess
+  });
+  for (let attempt = 0; attempt < 6; attempt += 1) {
     const specs = await host.toolSpecs();
     if (specs.length === 0) {
       break;
     }
     await specs[0]!.execute({ text: "x" }, { workdir: "/tmp/w", runId: `run-${attempt}` });
   }
-  assert.equal(host.available(), false);
+  // 熔断的是那一个插件，不是整个插件面：available() 说的是「插件这条路还能不能走」。
+  assert.equal(host.available(), true);
+  assert.deepEqual(host.quarantinedPaths(), ["/tmp/p"]);
   assert.deepEqual(await host.toolSpecs(), []);
+  await host.close();
+});
+
+test("一个坏插件只关自己——同一个宿主里的另一个插件照常上线", async () => {
+  const twoPlugins: ListToolsResult = {
+    protocolVersion: PLUGIN_HOST_PROTOCOL_VERSION,
+    tools: [DESCRIPTOR, BAD_DESCRIPTOR],
+    plugins: [
+      { pluginId: "dsh-plugin-echo", path: "/tmp/good", ok: true, toolCount: 1, promptSectionCount: 0 },
+      { pluginId: "dsh-plugin-bad", path: "/tmp/bad", ok: true, toolCount: 1, promptSectionCount: 0 }
+    ]
+  };
+  const crashing = crashingHost(twoPlugins);
+  const host = createPluginHostClient({
+    pluginPaths: ["/tmp/good", "/tmp/bad"],
+    auditLogs: false,
+    spawnProcess: crashing.spawnProcess
+  });
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const specs = await host.toolSpecs();
+    const bad = specs.find((spec) => spec.id === BAD_DESCRIPTOR.toolId);
+    if (!bad) {
+      break;
+    }
+    // 只有坏插件的工具在飞——崩溃归因到它，而不是同一个宿主里的好插件。
+    await bad.execute({}, { workdir: "/tmp/w", runId: `run-${attempt}` });
+  }
+  assert.deepEqual(host.quarantinedPaths(), ["/tmp/bad"]);
+  const remaining = await host.toolSpecs();
+  assert.deepEqual(remaining.map((spec) => spec.id), [DESCRIPTOR.toolId], "好插件的工具照常在");
+  assert.equal(crashing.spawns.at(-1), "/tmp/good", "熔断之后新宿主的清单里不再带那个坏插件");
+  assert.equal(host.available(), true);
+  await host.close();
+});
+
+test("熔断落库：接了 sink 才写，写的是这个工作区里那一行", async () => {
+  const written: { workspaceId: string; sourcePath: string; pluginId?: string }[] = [];
+  const host = createPluginHostClient({
+    auditLogs: false,
+    pluginPathSource: () => ["/tmp/p"],
+    pluginCrashSink: (input) => {
+      written.push({
+        workspaceId: input.workspaceId,
+        sourcePath: input.sourcePath,
+        ...(input.pluginId ? { pluginId: input.pluginId } : {})
+      });
+    },
+    spawnProcess: crashingHost(SINGLE_PLUGIN_RESULT).spawnProcess
+  });
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const specs = await host.toolSpecs({ workspaceId: "ws-1" });
+    if (specs.length === 0) {
+      break;
+    }
+    await specs[0]!.execute({ text: "x" }, { workdir: "/tmp/w", runId: `run-${attempt}` });
+  }
+  assert.deepEqual(written, [{ workspaceId: "ws-1", sourcePath: "/tmp/p", pluginId: "dsh-plugin-echo" }]);
+  await host.close();
+});
+
+test("归因不到某一个插件的崩溃仍然熔断整个插件面（握手期就崩，且装了不止一个）", async () => {
+  let spawns = 0;
+  const spawnProcess: PluginHostSpawn = (() => {
+    spawns += 1;
+    return fakeChild((_request, live) => {
+      // 连 list_tools 都不回就死掉：没有在飞的工具调用，也不止一个插件——没得归因。
+      live.exit(1);
+    });
+  }) as unknown as PluginHostSpawn;
+  const host = createPluginHostClient({
+    pluginPaths: ["/tmp/a", "/tmp/b"],
+    auditLogs: false,
+    handshakeTimeoutMs: 50,
+    spawnProcess
+  });
+  await keepingEventLoopAlive(async () => {
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      await host.toolSpecs();
+    }
+  });
+  assert.equal(spawns > PLUGIN_HOST_RESTART_LIMIT, true);
+  assert.equal(host.available(), false, "归因不到就落回整插件面熔断——宁可保守");
+  assert.deepEqual(host.quarantinedPaths(), []);
+  await host.close();
+});
+
+test("热重载把单插件熔断也一并解除（管理员刚改过清单，该重试一次）", async () => {
+  let crash = true;
+  const spawnProcess: PluginHostSpawn = (() =>
+    fakeChild((request, live) => {
+      if (request.method === "list_tools") {
+        live.reply(encodeFrame({ id: request.id, ok: true, result: SINGLE_PLUGIN_RESULT }));
+        return;
+      }
+      if (crash) {
+        live.exit(1);
+        return;
+      }
+      live.reply(
+        encodeFrame({ id: request.id, ok: true, result: { ok: true, content: "OK", data: {}, durationMs: 1 } })
+      );
+    })) as unknown as PluginHostSpawn;
+  const host = createPluginHostClient({ pluginPaths: ["/tmp/p"], auditLogs: false, spawnProcess });
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const specs = await host.toolSpecs();
+    if (specs.length === 0) {
+      break;
+    }
+    await specs[0]!.execute({ text: "x" }, { workdir: "/tmp/w", runId: `run-${attempt}` });
+  }
+  assert.deepEqual(host.quarantinedPaths(), ["/tmp/p"]);
+  crash = false;
+  await host.reload();
+  assert.deepEqual(host.quarantinedPaths(), []);
+  assert.equal((await host.toolSpecs()).length, 1);
   await host.close();
 });
 
@@ -430,6 +587,7 @@ function pluginRow(sourcePath: string, overrides: Record<string, unknown> = {}) 
     sourcePath,
     enabled: true,
     status: "installed" as const,
+    trustLevel: "external_effect" as const,
     compatReport: {},
     loadReport: null,
     toolCount: 1,
@@ -576,7 +734,11 @@ test("createRegistryPluginPathSource 合并引导路径与启用行，没有工�
       }
     }
   });
-  assert.deepEqual(await source("ws-1"), ["/dev/echo", "/srv/plugins/a"]);
+  assert.deepEqual(await source("ws-1"), [
+    // 引导路径永远是最保守那一档：环境变量里的目录没有任何人对它表过态。
+    { path: "/dev/echo", trustLevel: "external_effect" },
+    { path: "/srv/plugins/a", trustLevel: "external_effect" }
+  ]);
   // 没有工作区上下文（离线工具/无租户的调用）不去查 DB——查不出「谁的插件」。
-  assert.deepEqual(await source(undefined), ["/dev/echo"]);
+  assert.deepEqual(await source(undefined), [{ path: "/dev/echo", trustLevel: "external_effect" }]);
 });

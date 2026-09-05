@@ -1092,6 +1092,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
           ...(plugin.version ? { version: plugin.version } : {}),
           enabled: plugin.enabled,
           status: plugin.status,
+          trust_level: plugin.trust_level,
           tool_count: plugin.tool_count,
           compat_verdict: plugin.compat_report.verdict
         }));

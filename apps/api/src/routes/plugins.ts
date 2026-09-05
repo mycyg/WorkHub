@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 
-import { installPluginRequestSchema } from "@workhub/contracts";
+import { installPluginRequestSchema, updatePluginTrustRequestSchema } from "@workhub/contracts";
 
 import {
   createCurrentUserMiddleware,
@@ -16,6 +16,7 @@ import { isUuidParam } from "./uuid-param.js";
 // R24-P 阶段 1：插件治理端点（全部仅管理员——鉴权判定在服务层 requireAdmin，路由不重复一份）。
 //   GET    /api/plugins            清单 + 宿主捆绑版本 + 还有几条来自环境变量的引导路径
 //   POST   /api/plugins            从本机目录安装（静态体检 → 登记 → 试加载）
+//   PATCH  /api/plugins/:id        改信任级别（管理员对这个插件断言的风险上限）
 //   POST   /api/plugins/:id/enable 启用（重新试加载，结果可能是装不上）
 //   POST   /api/plugins/:id/disable 停用（工具从此不出现在任何一次执行里）
 //   DELETE /api/plugins/:id        移除
@@ -51,6 +52,13 @@ export function createPluginRoutes(deps: PluginRoutesDependencies = {}) {
     const payload = installPluginRequestSchema.parse(await readJsonObject(c));
     const data = await service().install({ actor: c.var.actor, sourcePath: payload.source_path });
     return c.json({ ok: true, data }, 201);
+  });
+
+  routes.patch("/plugins/:id", requireCurrentUser, async (c) => {
+    const id = requirePluginId(c.req.param("id"));
+    const payload = updatePluginTrustRequestSchema.parse(await readJsonObject(c));
+    const data = await service().setTrustLevel({ actor: c.var.actor, id, trustLevel: payload.trust_level });
+    return c.json({ ok: true, data });
   });
 
   routes.post("/plugins/:id/enable", requireCurrentUser, async (c) => {
