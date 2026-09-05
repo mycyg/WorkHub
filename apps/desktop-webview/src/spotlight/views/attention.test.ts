@@ -25,13 +25,33 @@ class FakeElement {
   public textContent = "";
   public disabled = false;
   private readonly attributes = new Set<string>();
+  // F-05：closest 默认仍是「选择器命中就返回自己」(既有用法不受影响)；closestOverrides/queryResults
+  // 让个别测试按需配成「命中这个选择器时返回另一个（祖先/后代）伪元素」，够用来测冲突选择器
+  // （提交按钮 closest 找容器，容器 querySelector 找勾选的 radio/提示条）而不用引入真 DOM。
+  private readonly closestOverrides = new Map<string, FakeElement | null>();
+  private readonly queryResults = new Map<string, FakeElement | null>();
 
   constructor(private readonly selectors = new Set<string>(), dataset: Record<string, string> = {}) {
     this.dataset = dataset;
   }
 
   closest<T extends Element = Element>(selector: string): T | null {
+    if (this.closestOverrides.has(selector)) {
+      return (this.closestOverrides.get(selector) ?? null) as unknown as T | null;
+    }
     return this.selectors.has(selector) ? (this as unknown as T) : null;
+  }
+
+  querySelector<T extends Element = Element>(selector: string): T | null {
+    return (this.queryResults.get(selector) ?? null) as unknown as T | null;
+  }
+
+  setClosest(selector: string, element: FakeElement | null) {
+    this.closestOverrides.set(selector, element);
+  }
+
+  setQueryResult(selector: string, element: FakeElement | null) {
+    this.queryResults.set(selector, element);
   }
 
   setAttribute(name: string) {
@@ -40,6 +60,10 @@ class FakeElement {
 
   removeAttribute(name: string) {
     this.attributes.delete(name);
+  }
+
+  hasAttribute(name: string) {
+    return this.attributes.has(name);
   }
 }
 
@@ -317,6 +341,141 @@ test("mountAttentionInbox is a decoupled two-window entry: renders the queue and
     handle.dispose();
   } finally {
     globals.HTMLElement = previousHTMLElement;
+  }
+});
+
+// F-05：撞车「先选稿再采纳」——多处冲突各自带融合稿时，选择器提交按钮先 choose 勾选的候选、
+// 成功后才 apply，再走既有的 toast/onActionSettled/refresh 收尾（与 apply/merge 分支同一套）。
+test("F-05 mountAttentionInbox conflict chooser submit chooses the checked candidate before applying it", async () => {
+  // actionHrefFromElement（web-runtime）先判 `element instanceof HTMLAnchorElement` 才落到 dataset 兜底——
+  // 裸 Node 没有这个全局，不像 FakeElement 那样有既有的 HTMLElement 换入口，这里跟着一起换，避免
+  // 引用未声明全局直接抛 ReferenceError（此前没有测试真的点通 runConflictAction 到这一行）。
+  const globals = globalThis as typeof globalThis & { HTMLElement: typeof HTMLElement; HTMLAnchorElement: typeof HTMLAnchorElement };
+  const previousHTMLElement = globals.HTMLElement;
+  const previousHTMLAnchorElement = globals.HTMLAnchorElement;
+  globals.HTMLElement = FakeElement as unknown as typeof HTMLElement;
+  globals.HTMLAnchorElement = class {} as unknown as typeof HTMLAnchorElement;
+  const body = new FakeBody();
+  const calls: string[] = [];
+  const vm: AttentionHomeVM = { primary: undefined, queue: [], background_runs: [], cuu_state: "idle" };
+
+  try {
+    const handle = mountAttentionInbox({
+      body: body as unknown as HTMLElement,
+      locale: "zh-CN",
+      client: {
+        pages: {
+          async attention() {
+            calls.push("refresh");
+            return vm;
+          }
+        },
+        async chooseMergeProposalCandidate(id: string, payload: { option_key: string }) {
+          calls.push(`choose:${id}:${payload.option_key}`);
+          return { merge_proposal_id: id, chosen_option_key: payload.option_key };
+        },
+        async applyMergeProposalCandidate(id: string) {
+          calls.push(`apply:${id}`);
+          return { attention: { summary_text: "已采纳融合稿" } };
+        }
+      } as never,
+      setSubtitle() {},
+      toast(message: string, tone?: string) {
+        calls.push(`toast:${tone}:${message}`);
+      },
+      requestResize() {},
+      open() {},
+      onActionSettled() {
+        calls.push("settled");
+      }
+    });
+    await tick();
+    calls.length = 0; // 只看点击之后的调用序列，滤掉初次挂载的那次 hydrate refresh。
+
+    const checkedRadio = new FakeElement();
+    checkedRadio.dataset = { mergeProposalId: "mp-2", proposalId: "proposal-9" };
+    const chooserContainer = new FakeElement();
+    chooserContainer.setQueryResult("[data-conflict-chooser-option]:checked", checkedRadio);
+    const submit = new FakeElement(
+      new Set(["[data-prop-conflict-panel] a[href],[data-prop-conflict-panel] [data-action-href],[data-prop-conflict-panel] [data-href]"]),
+      { actionHref: "/api/merge-proposals/choose-selected", proposalConflictChooserSubmit: "true" }
+    );
+    submit.setClosest("[data-proposal-conflict-chooser]", chooserContainer);
+
+    body.click(submit);
+    await tick();
+
+    assert.deepEqual(calls, [
+      "choose:mp-2:ai_fusion",
+      "apply:mp-2",
+      "toast:ok:已采纳融合稿",
+      "settled",
+      "refresh"
+    ]);
+    handle.dispose();
+  } finally {
+    globals.HTMLElement = previousHTMLElement;
+    globals.HTMLAnchorElement = previousHTMLAnchorElement;
+  }
+});
+
+test("F-05 mountAttentionInbox conflict chooser submit reveals the pick-first warning instead of guessing a candidate", async () => {
+  const globals = globalThis as typeof globalThis & { HTMLElement: typeof HTMLElement; HTMLAnchorElement: typeof HTMLAnchorElement };
+  const previousHTMLElement = globals.HTMLElement;
+  const previousHTMLAnchorElement = globals.HTMLAnchorElement;
+  globals.HTMLElement = FakeElement as unknown as typeof HTMLElement;
+  globals.HTMLAnchorElement = class {} as unknown as typeof HTMLAnchorElement;
+  const body = new FakeBody();
+  const calls: string[] = [];
+  const vm: AttentionHomeVM = { primary: undefined, queue: [], background_runs: [], cuu_state: "idle" };
+
+  try {
+    const handle = mountAttentionInbox({
+      body: body as unknown as HTMLElement,
+      locale: "zh-CN",
+      client: {
+        pages: { async attention() { return vm; } },
+        async chooseMergeProposalCandidate(id: string) {
+          calls.push(`choose:${id}`);
+          return {};
+        },
+        async applyMergeProposalCandidate(id: string) {
+          calls.push(`apply:${id}`);
+          return { attention: { summary_text: "不该走到这" } };
+        }
+      } as never,
+      setSubtitle() {},
+      toast(message: string, tone?: string) {
+        calls.push(`toast:${tone}:${message}`);
+      },
+      requestResize() {},
+      open() {}
+    });
+    await tick();
+    calls.length = 0;
+
+    const warning = new FakeElement();
+    warning.setAttribute("hidden");
+    const chooserContainer = new FakeElement();
+    chooserContainer.setQueryResult("[data-conflict-chooser-option]:checked", null);
+    chooserContainer.setQueryResult("[data-proposal-conflict-chooser-warning]", warning);
+    const submit = new FakeElement(
+      new Set(["[data-prop-conflict-panel] a[href],[data-prop-conflict-panel] [data-action-href],[data-prop-conflict-panel] [data-href]"]),
+      { actionHref: "/api/merge-proposals/choose-selected", proposalConflictChooserSubmit: "true" }
+    );
+    submit.setClosest("[data-proposal-conflict-chooser]", chooserContainer);
+
+    assert.equal(warning.hasAttribute("hidden"), true);
+    body.click(submit);
+    await tick();
+
+    // 没选中就不猜——choose/apply/toast 都不该被调用，只点亮既有的提示条。
+    assert.deepEqual(calls, []);
+    assert.equal(warning.hasAttribute("hidden"), false);
+    handle.dispose();
+  } finally {
+    globals.HTMLElement = previousHTMLElement;
+    globals.HTMLAnchorElement = previousHTMLAnchorElement;
   }
 });
 
