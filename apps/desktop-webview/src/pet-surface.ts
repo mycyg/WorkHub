@@ -214,6 +214,17 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-kicker,.wh-pet-surface[data-pet-card-layout=compact] .wh-pet-status{font-size:10px}",
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-status{line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-action{font-size:11px;padding:5px 7px;max-width:112px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+  // R26 真机验收（W-QA，连接状态单一真相那一批）：「没有卡片、只有状态文本」的紧凑气泡——连接状态提示
+  // （desktopPetConnectionStatusText 产出的「连不上服务器 <地址> · 重连中（第 N 次）/ 已离线」）走的就是
+  // 这条路径——此前与"带卡片的紧凑气泡"共用上面那条 86px*scale 上限 + 2 行钳制。真机实测（75% 缩放）
+  // 这一行需要 3 行才排得下：服务器地址被 "…" 截掉、"· 重连中（第 N 次）/已离线"整段看不见，重连中与
+  // 已离线两态在屏幕上一模一样，用户无从判断。
+  // 只放宽这一种气泡（`:not([data-pet-bubble-kind])` —— 有卡片时那个属性必然存在，见 renderPetBubble）：
+  // 上限改成"气泡底边到窗口顶边之间的可用高度"，跟着 --wh-pet-scale 与窗口高度自适应，任何缩放档
+  // （75/100/125/150）下都不越窗；行数钳制同步放到 4 行。窗口尺寸仍由 body_only（260×340）钉死，
+  // 一个像素都没碰——L-06 的根治点在那里，不在这里。
+  ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-bubble:not([data-pet-bubble-kind]){max-height:calc(100% - calc(232px * var(--wh-pet-scale,1)))}",
+  ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-bubble:not([data-pet-bubble-kind]) .wh-pet-status{-webkit-line-clamp:4}",
   ".wh-pet-bubble .wh-liquid-glass-content>*{min-width:0;max-width:100%}",
   "@keyframes wh-pet-bubble-in{from{opacity:0}to{opacity:1}}",
   ".wh-pet-bubble{animation:wh-pet-bubble-in .34s ease-out both}",

@@ -636,10 +636,12 @@ fn set_client_token(state: tauri::State<'_, ShellClientToken>, token: String) {
     );
     // 递增身份代际并唤醒（RUST-1 + SEC P0-02）：挂起中的 worker 立即以新身份重连；活跃的旧身份 pump 感知代际
     // 变更后中止，再以新令牌重连——不再干等满一个退避周期，也不再拿旧身份续流。
+    // R26（W-QA）：同一个令牌重复推入不再递增代际（见 ShellClientToken::set），所以这行的
+    // generation 停在原值就意味着"身份没变、没有触发重连"——措辞不再断言"以新身份重连"。
     let generation = state.set(Some(trimmed.to_string()));
     shell_log_info(
         "client_token_generation",
-        format!("now {generation}; SSE reconnects with the new identity"),
+        format!("now {generation}; SSE authenticates with this identity"),
     );
 }
 
