@@ -235,6 +235,7 @@ function meetingPageVm(): MeetingPageVM {
       dismissed_insight_count: 0
     },
     can_manage: true,
+    ai_analysis_configured: true,
     selected_meeting_id: "95000000-0000-4000-8000-000000000002",
     meetings: [
       {
@@ -286,7 +287,15 @@ function meetingPageVm(): MeetingPageVM {
               }
             }
           }
-        ]
+        ],
+        actions: {
+          reanalyze: {
+            id: "meeting_reanalyze",
+            label: "Regenerate minutes",
+            method: "POST",
+            href: "/api/meetings/95000000-0000-4000-8000-000000000002/analyze"
+          }
+        }
       }
     ]
   };
@@ -3655,6 +3664,49 @@ test("WEB-08: meetings empty screen carries the empty copy exactly once (merged 
   const en = renderWebRouteComponent({ key: "meetings", meetings: vm }, { locale: "en-US" });
   assert.equal(en.html.split("This project does not have meeting insights yet.").length - 1, 1);
   assert.equal(en.html.includes("Meeting transcripts, minutes and insights land here."), true);
+});
+
+test("SA-02: meetings route offers a real regenerate-minutes action and carries it in primaryHrefs", () => {
+  const vm = meetingPageVm();
+  const rendered = renderWebRouteComponent({ key: "meetings", meetings: vm }, { locale: "zh-CN" });
+  assert.equal(rendered.html.includes('data-r23-meeting-reanalyze="95000000-0000-4000-8000-000000000002"'), true);
+  assert.equal(rendered.html.includes('data-action-id="meeting_reanalyze" data-method="POST"'), true);
+  assert.equal(
+    rendered.primaryHrefs.includes("/api/meetings/95000000-0000-4000-8000-000000000002/analyze"),
+    true
+  );
+  // AI 已配置时不出提示条。
+  assert.equal(rendered.html.includes("data-r23-meeting-ai-unconfigured"), false);
+  assertNoMainWindowBoundaryLeak(rendered.html);
+});
+
+test("SA-02: meetings route says AI is not configured instead of a bare 'no minutes yet'", () => {
+  const vm = structuredClone(meetingPageVm());
+  vm.ai_analysis_configured = false;
+  const meeting = vm.meetings[0]!;
+  meeting.status = "transcribed";
+  delete meeting.minutes_md;
+  delete meeting.actions.reanalyze;
+  const zh = renderWebRouteComponent({ key: "meetings", meetings: vm }, { locale: "zh-CN" });
+  assert.equal(zh.html.includes('data-r23-meeting-ai-unconfigured="true"'), true);
+  assert.equal(zh.html.includes("AI 还没有配置，这场会议只保存了转写。"), true);
+  // 未配置时不能再说「这次会议还没有纪要内容」——那句话暗示等一等就会有。
+  assert.equal(zh.html.includes("这次会议还没有纪要内容。"), false);
+  // 状态标签也要如实说「转写已导入」，而不是折叠成「处理中」。
+  assert.equal(zh.html.includes("转写已导入"), true);
+  const en = renderWebRouteComponent({ key: "meetings", meetings: vm }, { locale: "en-US" });
+  assert.equal(en.html.includes("AI is not configured, so this meeting only has its transcript."), true);
+  assertNoMainWindowBoundaryLeak(zh.html);
+});
+
+test("SA-02: a transcribed meeting with AI configured says the minutes are still being generated", () => {
+  const vm = structuredClone(meetingPageVm());
+  const meeting = vm.meetings[0]!;
+  meeting.status = "transcribed";
+  delete meeting.minutes_md;
+  const zh = renderWebRouteComponent({ key: "meetings", meetings: vm }, { locale: "zh-CN" });
+  assert.equal(zh.html.includes("纪要还在生成，稍后回来查看。"), true);
+  assert.equal(zh.html.includes("data-r23-meeting-ai-unconfigured"), false);
 });
 
 test("WEB-09: cost route formats large token counts with thousands separators (both locales)", () => {

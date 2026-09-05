@@ -164,6 +164,13 @@ export function meetingDraftProposalFromHref(href: string) {
   return match?.[1] ? { workItemId: decodeURIComponent(match[1]) } : undefined;
 }
 
+// SA-02 重新生成纪要。只有两段路径，与上面几条会议动作（projects/... / workitems/...）不会撞。
+export function meetingReanalyzeFromHref(href: string) {
+  const path = hrefPathname(href);
+  const match = /^\/api\/meetings\/([^/]+)\/analyze$/u.exec(path);
+  return match?.[1] ? { meetingId: decodeURIComponent(match[1]) } : undefined;
+}
+
 export function notificationActionFromHref(href: string) {
   const path = hrefPathname(href);
   if (path === "/api/notifications/read-all") {

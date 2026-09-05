@@ -387,11 +387,17 @@ export const meetingRecordVmSchema = z.object({
   audio_size_bytes: z.number().int().nonnegative(),
   transcript_text: z.string().optional(),
   minutes_md: z.string().optional(),
-  status: z.enum(["processing", "ready", "failed"]),
+  // SA-02（会议分析链路）：`transcribed` 从此是可见状态——转写已入库、AI 纪要尚未生成。此前
+  // 服务端把它折叠进 `processing`，于是「等 AI」和「AI 从没被叫起来」在页面上长得一模一样。
+  status: z.enum(["processing", "transcribed", "ready", "failed"]),
   job_id: idSchema.optional(),
   created_at: isoDateTimeSchema,
   updated_at: isoDateTimeSchema,
-  insights: z.array(meetingInsightVmSchema).default([])
+  insights: z.array(meetingInsightVmSchema).default([]),
+  // 重新生成纪要——仅项目管理者、且这场会议确实可以重跑分析时下发。
+  actions: z.object({
+    reanalyze: actionSpecSchema.optional()
+  }).default({})
 });
 export type MeetingRecordVM = z.infer<typeof meetingRecordVmSchema>;
 
@@ -412,6 +418,9 @@ export const meetingPageVmSchema = z.object({
     dismissed_insight_count: z.number().int().nonnegative()
   }),
   can_manage: z.boolean().default(false),
+  // SA-02：这个部署到底有没有配 AI。false 时页面必须直说「AI 未配置，只保存了转写」，
+  // 而不是让用户对着「还没有纪要」干等一个永远不会来的结果。默认 true 兼容旧生产者。
+  ai_analysis_configured: z.boolean().default(true),
   selected_meeting_id: idSchema.optional(),
   meetings: z.array(meetingRecordVmSchema),
   empty_state: z.enum(["no_project", "no_meetings"]).optional()

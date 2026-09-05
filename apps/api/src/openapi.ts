@@ -2753,6 +2753,8 @@ const meetingPageResponseSchema = {
       additionalProperties: false
     },
     can_manage: { type: "boolean" },
+    // SA-02：这个部署是否配了 AI。false 时页面必须直说「AI 未配置，只保存了转写」。
+    ai_analysis_configured: { type: "boolean" },
     selected_meeting_id: uuidStringSchema,
     meetings: { type: "array", items: { type: "object", additionalProperties: true } },
     empty_state: { type: "string", enum: ["no_project", "no_meetings"] }
@@ -7963,6 +7965,27 @@ export function getOpenApiDocument() {
             ...jsonErrorStatusResponse("409", "Drive comment draft cannot create a proposal in its current state", [
               "drive_draft_source_missing",
               "drive_comment_dismissed"
+            ]).responses
+          }
+        }
+      },
+      "/api/meetings/{meetingId}/analyze": {
+        post: {
+          tags: ["meetings"],
+          summary: "Regenerate the AI minutes and insights for one meeting",
+          parameters: [pathUuidParameter("meetingId"), localeQueryParameter],
+          responses: {
+            ...jsonOkResponse(meetingPageResponseSchema).responses,
+            "401": meetingMutationNotIdentifiedResponse,
+            "403": meetingInsightForbiddenResponse,
+            "404": meetingInsightNotFoundResponse,
+            ...jsonErrorStatusResponse("409", "Meeting analysis could not run", [
+              "meeting_analysis_unsupported",
+              "meeting_analysis_budget_exhausted",
+              "meeting_analysis_failed"
+            ]).responses,
+            ...jsonErrorStatusResponse("503", "AI analysis is not configured on this deployment", [
+              "meeting_analysis_unavailable"
             ]).responses
           }
         }

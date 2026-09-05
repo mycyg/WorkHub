@@ -445,6 +445,8 @@ export type WorkHubApiClient = {
   ) => Promise<ConversationMessagePageVM>;
   dismissMeetingInsight: (projectId: string, insightId: string, options?: PageRequestOptions) => Promise<MeetingPageVM>;
   createMeetingDraftProposal: (workItemId: string, options?: PageRequestOptions) => Promise<WorkItemDetailVM>;
+  /** SA-02：重新生成这场会议的纪要与洞察（AI 未配置 / 分析失败后的人工补跑入口）。 */
+  reanalyzeMeeting: (meetingId: string, options?: PageRequestOptions) => Promise<MeetingPageVM>;
   costUsage: () => Promise<CostSummaryVM>;
   costPolicies: () => Promise<BudgetPolicy[]>;
   updateCostPolicy: (scope: BudgetPolicy["scope_kind"], id: string, payload: BudgetPolicyUpdate) => Promise<BudgetPolicy>;

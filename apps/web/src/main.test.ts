@@ -101,6 +101,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async openapi() {
       throw new Error("not needed");
     },
+    async reanalyzeMeeting() {
+      throw new Error("not needed");
+    },
     async identify() {
       throw new Error("not needed");
     },

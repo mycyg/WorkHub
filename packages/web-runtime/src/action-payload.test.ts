@@ -27,6 +27,7 @@ import {
   mergeProposalCandidateApplyIdFromHref,
   meetingDraftProposalFromHref,
   meetingInsightActionFromHref,
+  meetingReanalyzeFromHref,
   memoryConflictActionFromHref,
   skipPlanProposalIdFromHref,
   taskPlanDispatchActionFromHref,
@@ -82,6 +83,11 @@ test("R4.21 shared runtime parses route action hrefs without app-specific code",
   assert.deepEqual(meetingDraftProposalFromHref("/api/meetings/workitems/w%201/proposal-draft"), {
     workItemId: "w 1"
   });
+  assert.deepEqual(meetingReanalyzeFromHref("/api/meetings/m%201/analyze"), { meetingId: "m 1" });
+  // 两段路径不能吃掉更长的会议动作路径，也不能吃掉别的 /api/meetings 读端点。
+  assert.equal(meetingReanalyzeFromHref("/api/meetings/projects/p-1/insights/i-1/draft"), undefined);
+  assert.equal(meetingReanalyzeFromHref("/api/meetings/workitems/w-1/proposal-draft"), undefined);
+  assert.equal(meetingReanalyzeFromHref("/api/meetings/m-1/analyze/extra"), undefined);
   assert.deepEqual(notificationActionFromHref("/api/notifications/n%201/read"), {
     notificationId: "n 1",
     action: "read"

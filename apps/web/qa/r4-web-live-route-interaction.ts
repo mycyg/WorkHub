@@ -974,6 +974,7 @@ function meetingPage(
       dismissed_insight_count: status === "dismissed" ? 1 : 0
     },
     can_manage: true,
+    ai_analysis_configured: true,
     selected_meeting_id: meetingId,
     meetings: [
       {
@@ -990,6 +991,14 @@ function meetingPage(
         status: "ready",
         created_at: "2026-06-11T09:20:00.000Z",
         updated_at: "2026-06-11T09:32:00.000Z",
+        actions: {
+          reanalyze: {
+            id: "meeting_reanalyze",
+            label: "Regenerate minutes",
+            method: "POST",
+            href: `/api/meetings/${meetingId}/analyze`
+          }
+        },
         insights: [
           {
             id: meetingInsightId,

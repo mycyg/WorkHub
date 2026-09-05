@@ -207,6 +207,9 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
     async openapi() {
       throw new Error("not needed");
     },
+    async reanalyzeMeeting() {
+      throw new Error("not needed");
+    },
     async identify() {
       throw new Error("not needed");
     },
