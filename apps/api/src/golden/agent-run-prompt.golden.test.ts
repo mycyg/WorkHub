@@ -15,10 +15,10 @@
  *
  * 这道门第一次生成就照出一个**现存缺口**（不是本轮引入的）：`FENCE_TAG_PATTERN`
  * （packages/agent/src/loop/loop.ts）覆盖了 work_item_context / user_memory / agent_private_memory
- * 等标签，但**没有覆盖 `task_plan_objective`**——所以 objective_md 里一行字面
+ * 等标签，R25 起已把 `task_plan_objective` 登记进 FENCE_TAG_NAMES（此前漏登记）——所以 objective_md 里一行字面
  * `</task_plan_objective>` 能提前闭合围栏，把后面的文字送出围栏外冒充指令。
  * 见 agent-run-initial-user-message.full.expected.md 里那一段：work_item_context 的探针被中和成
- * `‹/work_item_context›`，task_plan_objective 的探针**原样穿过**。
+ * `‹/work_item_context›`，task_plan_objective 的探针同样被中和成 `‹/task_plan_objective›`（R25 修前它原样穿过）。
  * 本轮只负责让它可见（修它会改模型可见文本，属于另一次有独立评审的行为变更）；修的时候这份
  * golden 会变红，那正是它该有的样子。
  */

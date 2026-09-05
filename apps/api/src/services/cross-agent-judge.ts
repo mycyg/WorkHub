@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { neutralizeFenceTags } from "@workhub/agent/loop";
+
 import type { LlmActor, LlmCreateResponse, ProviderRegistry } from "@workhub/agent/providers";
 import {
   confidenceGradeSchema,
@@ -232,8 +234,10 @@ function clip(value: string, maxChars: number) {
   return value.length > maxChars ? `${value.slice(0, maxChars)}\n[truncated ${value.length - maxChars} chars]` : value;
 }
 
+// R25：候选正文来自其它 agent、验收来自工单——都是不可信内容，装入前中和其中的围栏标签（含 candidate_N），
+// 否则一行字面 </candidate_1> 或 </acceptance> 就能提前闭合围栏、冒充评审指令。
 function fenced(name: string, value: string) {
-  return `<${name}>\n${value}\n</${name}>`;
+  return `<${name}>\n${neutralizeFenceTags(value)}\n</${name}>`;
 }
 
 function candidatePrompt(candidate: CrossAgentCandidate, index: number) {
