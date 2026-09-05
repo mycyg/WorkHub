@@ -78,6 +78,14 @@ export type ToolSpec<TInput = unknown> = {
    */
   promptGuidelines?: string[];
   schema: z.ZodType<TInput>;
+  /**
+   * JSON Schema 旁路（R24-P 阶段 0）：第三方插件工具（dsh `defineTool`）没有 Zod schema，只有一份
+   * 现成 JSON Schema。给了这个字段，注册表的 `modelInputSchema()` 直接用它喂模型 API，绕开
+   * `zod.toJSONSchema()`——否则 `z.custom()` 这类无结构 schema 会退化成 `{type:"object"}`，
+   * 模型就看不见参数了。**执行前的入参校验仍然走 `schema`**（这里只影响模型看到的形状），
+   * 插件侧的严格校验由插件自己的 execute 兜（dsh 的 execute 自带 INVALID_ARGS 校验）。
+   */
+  jsonSchema?: Record<string, unknown>;
   sideEffect: ToolSideEffect;
   minScope?: string;
   execute: (input: TInput, ctx: ToolExecutionContext) => Promise<ToolResult> | ToolResult;

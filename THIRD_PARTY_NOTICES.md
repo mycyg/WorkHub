@@ -15,6 +15,9 @@ This file lists every **direct** external dependency declared by a workspace `pa
 
 | Package | Version | License |
 | --- | --- | --- |
+| [`@deepseek-ai/cordis`](https://github.com/deepseek-ai/deepseek-harness) | 4.0.2 | MIT |
+| [`@deepseek-ai/dsh-tools`](https://github.com/deepseek-ai/deepseek-harness) | 0.1.0-rc.8 | MIT |
+| [`@deepseek-ai/schemastery`](https://github.com/deepseek-ai/deepseek-harness) | 3.18.2 | MIT |
 | [`@hono/node-server`](https://github.com/honojs/node-server) | 1.19.14 | MIT |
 | [`@types/node`](https://github.com/DefinitelyTyped/DefinitelyTyped) | 22.19.19 | MIT |
 | [`@types/pg`](https://github.com/DefinitelyTyped/DefinitelyTyped) | 8.20.0 | MIT |

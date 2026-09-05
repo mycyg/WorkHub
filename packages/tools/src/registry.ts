@@ -20,6 +20,12 @@ export type ToolPromptReference = {
 };
 
 function modelInputSchema(spec: AnyToolSpec): Record<string, unknown> {
+  // JSON Schema 旁路优先：插件工具（dsh defineTool）自带 JSON Schema，Zod 那份只是占位。
+  if (spec.jsonSchema) {
+    const bypass = { ...spec.jsonSchema };
+    delete bypass["$schema"];
+    return bypass;
+  }
   try {
     const schema = toJSONSchema(spec.schema) as Record<string, unknown>;
     delete schema["$schema"];

@@ -129,6 +129,7 @@ import {
 } from "../services/project-instructions-context.js";
 import { getDefaultProjectHydrator, type ProjectHydrator } from "./project-hydrate.js";
 import { getDefaultAuditStores } from "../services/audit-stores.js";
+import { getDefaultPluginHostClient } from "../services/plugin-host-client.js";
 import { createRunConversationReportHook } from "../services/run-conversation-report.js";
 import { createActionCardRunSettlementHook } from "../services/action-card-run-settlement.js";
 import { getDefaultTaskDispatcher } from "../services/task-dispatcher.js";
@@ -282,6 +283,24 @@ export type AgentRunToolsProvider = (input: AgentRunExecutionInput) => {
   toModelTools: (ctx: ToolExecutionContext) => Promise<unknown[]> | unknown[];
   execute: (toolId: string, input: unknown, ctx: ToolExecutionContext) => Promise<ToolResult> | ToolResult;
 };
+/**
+ * R24-P 阶段 0：插件工具规格提供者。返回的 spec 直接并进**默认**工具注册表，于是继承
+ * 既有的 canUse 双检 / 副作用快照门 / human-reserved 拦截 / 审批——插件宿主只提供能力实现。
+ * 自定义 `tools` 提供者（整体替换式注入）优先级更高，此时插件工具不参与（旧行为不变）。
+ */
+export type AgentRunPluginToolsProvider = (input: AgentRunExecutionInput) => Promise<AnyToolSpec[]> | AnyToolSpec[];
+
+/**
+ * 默认插件工具来源：进程内唯一的插件宿主客户端。没配 `WORKHUB_PLUGIN_PATHS` 时它同步返回
+ * 空数组、不 spawn 任何子进程——所以不配插件的部署与全部既有单测都是零行为变化。
+ */
+const defaultPluginToolsProvider: AgentRunPluginToolsProvider = (input) =>
+  getDefaultPluginHostClient().toolSpecs({
+    ...(input.run.workspace_id ? { workspaceId: input.run.workspace_id } : {}),
+    ...(input.run.actor_id ? { actorId: input.run.actor_id } : {}),
+    runId: input.run.run_id,
+    workItemId: input.run.work_item_id
+  });
 export type AgentRunNotificationPublisher = Pick<NotificationService, "notifyMilestone">;
 export type AgentRunEventBus = Pick<PushBus, "publish">;
 // R12 批 4b：createFromManifest 是唯一硬依赖（不接就完全没有「开提议」这条能力，行为不变）；
@@ -534,6 +553,10 @@ export function createInMemoryAgentRunQueue(options: {
   compactionClient?: AgentRunClientProvider;
   workdir?: AgentRunWorkdirProvider;
   tools?: AgentRunToolsProvider;
+  // R24-P 阶段 0：第三方插件（DeepSeek Harness 工具型）贡献的额外工具规格。默认走
+  // getDefaultPluginHostClient()——没配 WORKHUB_PLUGIN_PATHS 时它同步返回空数组、不起子进程，
+  // 所以对既有 run / 单测是零行为变化。传 false 明确关掉。
+  pluginTools?: AgentRunPluginToolsProvider | false;
   snapshot?: SnapshotHook;
   snapshotRoot?: string;
   snapshotId?: () => string;
@@ -685,11 +708,43 @@ export function createInMemoryAgentRunQueue(options: {
     return sideEffect === "external_effect" ? "external" : null;
   }
 
-  function defaultToolRegistryFor(role: TaskPlanItemRole | undefined, teamSkillContent?: Record<string, string>) {
+  function defaultToolRegistryFor(
+    role: TaskPlanItemRole | undefined,
+    teamSkillContent?: Record<string, string>,
+    // R24-P 阶段 0：插件贡献的额外工具。空数组（默认）时注册表与改造前逐字节一致。
+    extraSpecs: AnyToolSpec[] = []
+  ) {
+    const builtIn = [...createBuiltInFileTools(), createSkillTool(undefined, teamSkillContent)];
+    const builtInIds = new Set(builtIn.map((spec) => spec.id));
+    // 插件不许顶掉内置工具：重名直接丢弃并留日志，而不是让 register() 抛错把整次 run 带崩。
+    const safeExtras = extraSpecs.filter((spec) => {
+      if (builtInIds.has(spec.id)) {
+        getDefaultStructuredLogger().warn("plugin_tool_id_collides_with_builtin", { tool_id: spec.id });
+        return false;
+      }
+      return true;
+    });
     return createToolRegistry(
-      [...createBuiltInFileTools(), createSkillTool(undefined, teamSkillContent)],
+      [...builtIn, ...safeExtras],
       { canUse: (spec) => canUseDefaultToolForRole(role, spec) }
     );
+  }
+
+  /**
+   * 解析这次 run 可用的插件工具。任何失败都退化成「这次没有插件工具」——插件面出问题
+   * 不该让 run 起不来（报告 6.4 崩溃隔离）。
+   */
+  async function resolvePluginToolSpecs(executionInput: AgentRunExecutionInput): Promise<AnyToolSpec[]> {
+    if (options.pluginTools === false) {
+      return [];
+    }
+    const provider = options.pluginTools ?? defaultPluginToolsProvider;
+    try {
+      return await provider(executionInput);
+    } catch (error) {
+      getDefaultStructuredLogger().warn("plugin_tools_unavailable", { error });
+      return [];
+    }
   }
 
   const runs = new Map<string, AgentRunQueueRecord>();
@@ -1742,7 +1797,11 @@ export function createInMemoryAgentRunQueue(options: {
       const resolvedProjectInstructions = await projectInstructions?.(current);
       // 默认工具集时把团队技能内容塞进 load_skill；自定义 tools 提供者保持原样不动。
       const teamSkillContent = resolvedTeamSkills?.contentByKey;
-      const rawTools = options.tools?.(executionInput) ?? defaultToolRegistryFor(current.agent_role, teamSkillContent);
+      // R24-P 阶段 0：插件工具并进默认注册表（自定义 tools 提供者仍整体替换，行为不变）。
+      const pluginToolSpecs = options.tools ? [] : await resolvePluginToolSpecs(executionInput);
+      const rawTools =
+        options.tools?.(executionInput) ??
+        defaultToolRegistryFor(current.agent_role, teamSkillContent, pluginToolSpecs);
       let visibleToolSideEffects = new Map<string, ToolSideEffect>();
       const tools: ReturnType<AgentRunToolsProvider> = {
         toModelTools: async (ctx) => {
