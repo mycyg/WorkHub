@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { HealthResponse } from "@workhub/api-client";
-import type { ClientDeviceResponse, SettingsPageVM, UserAiProfileVM, UserProfileVM } from "@workhub/contracts";
+import type { ClientDeviceResponse, PluginVM, SettingsPageVM, UserAiProfileVM, UserProfileVM } from "@workhub/contracts";
 
 import {
   createSettingsView,
@@ -11,12 +11,15 @@ import {
   logoutErrorPanelHtml,
   permissionPoliciesSectionHtml,
   permissionPolicyFormHtml,
+  pluginInstallErrorText,
+  pluginsSectionHtml,
   runDesktopLogout,
   serverSectionHtml,
   type DesktopDevicesSectionState,
   type DesktopLogoutEffects,
   type DesktopLogoutStage,
   type DesktopLogoutView,
+  type DesktopPluginsSectionState,
   type DesktopServerSectionState,
   type PermissionPolicyFormState
 } from "./settings.js";
@@ -1921,5 +1924,323 @@ test("clicking 更换服务器/Change server mounts the connect-server screen in
         globals.document = originalDocument;
       }
     }
+  });
+});
+
+// —— R24-P 阶段 1：插件（桌面端是这块的主场：安装要给一台机器上的目录绝对路径） —— //
+
+function pluginVm(over: Partial<PluginVM> = {}): PluginVM {
+  return {
+    id: "80000000-0000-4000-8000-000000000001",
+    name: "dsh-plugin-echo",
+    version: "0.1.0",
+    source_kind: "local_path",
+    source_path: "/srv/plugins/dsh-plugin-echo",
+    enabled: true,
+    status: "installed",
+    tool_count: 2,
+    compat_report: { verdict: "ok", checks: [{ id: "manifest", level: "pass" }], checked_at: "2026-09-05T09:00:00.000Z" },
+    created_at: "2026-09-05T09:00:00.000Z",
+    updated_at: "2026-09-05T09:00:00.000Z",
+    ...over
+  } as unknown as PluginVM;
+}
+
+function pluginsState(over: Partial<DesktopPluginsSectionState> = {}): DesktopPluginsSectionState {
+  return {
+    visible: true,
+    plugins: [pluginVm()],
+    failed: false,
+    hostDshToolsVersion: "0.1.0-rc.8",
+    bootstrapPathCount: 0,
+    armedKey: undefined,
+    busyId: undefined,
+    errorText: undefined,
+    installPath: "",
+    installBusy: false,
+    installOutcome: undefined,
+    supported: true,
+    ...over
+  };
+}
+
+test("pluginsSectionHtml renders nothing for a non-admin (the settings VM structurally has no plugins field)", () => {
+  assert.equal(pluginsSectionHtml(pluginsState({ visible: false }), true), "");
+});
+
+test("pluginsSectionHtml lists name/version/status/tool count/path with enable-disable and remove controls", () => {
+  const html = pluginsSectionHtml(pluginsState(), true);
+  assert.match(html, /data-spot-plugins-section="true"/u);
+  assert.match(html, /dsh-plugin-echo 0\.1\.0/u);
+  assert.match(html, /已启用 · 2 个工具/u);
+  assert.match(html, /\/srv\/plugins\/dsh-plugin-echo/u);
+  assert.match(html, /data-set-plugin-toggle="80000000-0000-4000-8000-000000000001"/u);
+  assert.match(html, /data-set-plugin-remove="80000000-0000-4000-8000-000000000001"/u);
+  assert.match(html, /data-set-plugin-install="true"/u);
+});
+
+test("pluginsSectionHtml says 'won't load' with the host's reason — not the same thing as 'disabled'", () => {
+  const html = pluginsSectionHtml(
+    pluginsState({
+      plugins: [
+        pluginVm({
+          status: "load_failed",
+          tool_count: 0,
+          load_report: {
+            ok: false,
+            tool_count: 0,
+            prompt_section_count: 0,
+            error: "unsupported JSON schema",
+            loaded_at: "2026-09-05T09:00:00.000Z"
+          }
+        } as unknown as Partial<PluginVM>)
+      ]
+    }),
+    true
+  );
+  assert.match(html, /装不上：unsupported JSON schema/u);
+  assert.doesNotMatch(html, /已停用/u);
+});
+
+test("pluginsSectionHtml arms exactly one control at a time — enable-disable and remove never share an armed state", () => {
+  const armed = pluginsSectionHtml(pluginsState({ armedKey: "remove:80000000-0000-4000-8000-000000000001" }), true);
+  assert.equal((armed.match(/确定？再点一次移除/gu) ?? []).length, 1);
+  assert.doesNotMatch(armed, /确定？再点一次<\/button>/u);
+});
+
+test("pluginsSectionHtml turns the compatibility report into plain language, not an English diagnostic", () => {
+  const html = pluginsSectionHtml(
+    pluginsState({
+      plugins: [
+        pluginVm({
+          compat_report: {
+            verdict: "warn",
+            checks: [
+              { id: "manifest", level: "pass" },
+              { id: "dsh_tools_peer", level: "warn", detail: "wants ^0.2.0, host bundles 0.1.0-rc.8" }
+            ],
+            peer_dsh_tools_range: "^0.2.0",
+            host_dsh_tools_version: "0.1.0-rc.8",
+            checked_at: "2026-09-05T09:00:00.000Z"
+          }
+        } as unknown as Partial<PluginVM>)
+      ]
+    }),
+    true
+  );
+  assert.match(html, /它对着另一个版本的插件工具库发布/u);
+  assert.match(html, /它要 \^0\.2\.0，我们捆的是 0\.1\.0-rc\.8/u);
+  // pass 的检查不占一行——没问题的事不值得说（manifest 那条是 pass，它的诊断句不该出现）。
+  assert.doesNotMatch(html, /这个目录里没有可读的 package\.json/u);
+});
+
+test("pluginsSectionHtml says how many plugin directories still come from the server's environment", () => {
+  const html = pluginsSectionHtml(pluginsState({ bootstrapPathCount: 2 }), true);
+  assert.match(html, /另有 2 个插件目录来自服务端的环境变量/u);
+});
+
+test("pluginsSectionHtml degrades to an explanation (not a dead button) against a server without the endpoints", () => {
+  const html = pluginsSectionHtml(pluginsState({ supported: false }), true);
+  assert.doesNotMatch(html, /data-set-plugin-install="true"/u);
+  assert.match(html, /当前服务端版本还没有插件管理接口/u);
+});
+
+test("pluginInstallErrorText explains each refusal in the viewer's language, not by echoing the server string", () => {
+  assert.match(pluginInstallErrorText("plugin_client_surface_unsupported", true), /界面\/主题类插件/u);
+  assert.match(pluginInstallErrorText("plugin_client_surface_unsupported", false), /UI\/theme plugin/u);
+  assert.match(pluginInstallErrorText("plugin_install_scripts_refused", true), /安装期脚本/u);
+  assert.match(pluginInstallErrorText("plugin_manifest_unreadable", true), /package\.json/u);
+  assert.match(pluginInstallErrorText("plugin_already_installed", true), /已经装过/u);
+  assert.match(pluginInstallErrorText(undefined, true), /没装成/u);
+});
+
+test("the settings view installs a plugin from a path and renders the outcome card", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = { ...settingsVm(), plugins: [] } as unknown as SettingsPageVM;
+    const installed: Array<{ source_path: string }> = [];
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          },
+          async listPlugins() {
+            return { plugins: [], host_dsh_tools_version: "0.1.0-rc.8", bootstrap_path_count: 0 } as unknown as never;
+          },
+          async installPlugin(payload: { source_path: string }) {
+            installed.push(payload);
+            return pluginVm() as unknown as never;
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+    assert.match(body.innerHTML, /data-spot-plugins-section="true"/u);
+    assert.match(body.innerHTML, /还没有装任何插件/u);
+
+    // 路径走 focusout 收值（全量重绘架构下 input 事件会打断输入焦点），再点安装。
+    body.focusOutOn(
+      new FakeElement(new Set(["[data-set-plugin-install-path]"]), {}, "/srv/plugins/dsh-plugin-echo")
+    );
+    body.click(new FakeElement(new Set(["[data-set-plugin-install]"])));
+    await tick();
+    await tick();
+
+    assert.deepEqual(installed, [{ source_path: "/srv/plugins/dsh-plugin-echo" }]);
+    assert.match(body.innerHTML, /data-spot-plugin-outcome="installed"/u);
+    assert.match(body.innerHTML, /装好了，上线 2 个工具/u);
+    assert.match(body.innerHTML, /data-set-plugin-toggle="80000000-0000-4000-8000-000000000001"/u);
+  });
+});
+
+test("a refused install renders the reason card and never adds a row to the list", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = { ...settingsVm(), plugins: [] } as unknown as SettingsPageVM;
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          },
+          async listPlugins() {
+            return { plugins: [], bootstrap_path_count: 0 } as unknown as never;
+          },
+          async installPlugin() {
+            throw Object.assign(new Error("refused"), { status: 422, code: "plugin_install_scripts_refused" });
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+
+    body.focusOutOn(new FakeElement(new Set(["[data-set-plugin-install-path]"]), {}, "/srv/plugins/hooked"));
+    body.click(new FakeElement(new Set(["[data-set-plugin-install]"])));
+    await tick();
+    await tick();
+
+    assert.match(body.innerHTML, /data-spot-plugin-outcome="refused"/u);
+    assert.match(body.innerHTML, /安装期脚本/u);
+    assert.doesNotMatch(body.innerHTML, /data-set-plugin-toggle=/u);
+  });
+});
+
+test("disabling a plugin takes two clicks and replaces the row with the server's answer", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = { ...settingsVm(), plugins: [] } as unknown as SettingsPageVM;
+    const disabled: string[] = [];
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          },
+          async listPlugins() {
+            return { plugins: [pluginVm()], bootstrap_path_count: 0 } as unknown as never;
+          },
+          async disablePlugin(id: string) {
+            disabled.push(id);
+            return pluginVm({ enabled: false, status: "disabled", tool_count: 0 }) as unknown as never;
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+
+    const toggle = new FakeElement(new Set(["[data-set-plugin-toggle]"]), {
+      setPluginToggle: "80000000-0000-4000-8000-000000000001"
+    });
+    body.click(toggle);
+    assert.equal(disabled.length, 0, "第一下只武装，不真的停用");
+    assert.match(body.innerHTML, /确定？再点一次/u);
+
+    body.click(toggle);
+    await tick();
+    await tick();
+    assert.deepEqual(disabled, ["80000000-0000-4000-8000-000000000001"]);
+    assert.match(body.innerHTML, /已停用/u);
+    // 服务端是唯一事实源：停用后的状态用回执替换，本地不猜。
+    assert.match(body.innerHTML, /data-spot-plugin="80000000-0000-4000-8000-000000000001"/u);
+  });
+});
+
+test("removing a plugin takes two clicks and drops the row", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = { ...settingsVm(), plugins: [] } as unknown as SettingsPageVM;
+    const removed: string[] = [];
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          },
+          async listPlugins() {
+            return { plugins: [pluginVm()], bootstrap_path_count: 0 } as unknown as never;
+          },
+          async removePlugin(id: string) {
+            removed.push(id);
+            return { removed: true } as unknown as never;
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+
+    const remove = new FakeElement(new Set(["[data-set-plugin-remove]"]), {
+      setPluginRemove: "80000000-0000-4000-8000-000000000001"
+    });
+    body.click(remove);
+    assert.equal(removed.length, 0, "第一下只武装");
+    body.click(remove);
+    await tick();
+    await tick();
+    assert.deepEqual(removed, ["80000000-0000-4000-8000-000000000001"]);
+    assert.doesNotMatch(body.innerHTML, /data-set-plugin-remove=/u);
+    assert.match(body.innerHTML, /还没有装任何插件/u);
+  });
+});
+
+test("a non-admin settings view never fetches the plugin list at all", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    let listed = 0;
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return settingsVm(); } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          },
+          async listPlugins() {
+            listed += 1;
+            return { plugins: [], bootstrap_path_count: 0 } as unknown as never;
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+    assert.equal(listed, 0, "省一次注定 403 的请求");
+    assert.doesNotMatch(body.innerHTML, /data-spot-plugins-section/u);
   });
 });

@@ -16,7 +16,7 @@ import { getDefaultGithubSyncScheduler } from "./workers/github-poll.js";
 import { getDefaultPulseScheduler } from "./workers/pulse-scheduler.js";
 import { getDefaultEventOutboxDrainScheduler } from "./workers/event-outbox-drain.js";
 import { getDefaultMeetingAnalysisScheduler } from "./workers/meeting-analysis.js";
-import { closeDefaultPluginHostClient } from "./services/plugin-host-client.js";
+import { closeDefaultPluginHostClient, usePluginRegistryPathSource } from "./services/plugin-host-client.js";
 
 // 进程级兜底：未捕获异常/未处理 rejection 此前无人接，一次走线的 throw/reject 会静默杀掉 daemon
 // 或留下半死状态。早注册（先于 server start），与下方 SIGINT/SIGTERM 优雅退出互补、不替代。
@@ -75,6 +75,11 @@ githubPollScheduler.start();
 // 纯 DB 驱动的确定性巡检，无 LLM 依赖，与 risk-monitor 同档；仅 PULSE_SCHEDULER_ENABLED 总开关门控。
 const pulseScheduler = settings.pulse.enabled ? getDefaultPulseScheduler() : undefined;
 pulseScheduler?.start();
+
+// R24-P 阶段 1：让插件宿主从 `plugins` 表读该工作区启用的插件（`WORKHUB_PLUGIN_PATHS` 保留为
+// 开发/引导来源，两者合并去重）。**只在这里接线**：单测与离线工具不走 server.ts，于是它们的
+// 插件面仍然只认那个 env 变量，一次 PG 查询都不会发生（阶段 0 的「零行为变化」承诺继续成立）。
+usePluginRegistryPathSource();
 
 // R20 P2-01（事务性 outbox）：会话消息事件的 outbox drain——启动即补发上次崩溃残留在 pending 的行，
 // 之后周期性重放 publish 失败的行。纯 DB + bus，无 LLM 依赖，与 risk-monitor 同档无条件启动。

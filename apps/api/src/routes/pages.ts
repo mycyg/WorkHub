@@ -116,11 +116,15 @@ import {
   skillCurationAvailability
 } from "../workers/agent-skill-curation.js";
 import { getDefaultCostLedgerStore } from "../services/cost-ledger-store.js";
+import { getDefaultPluginService, type PluginService } from "../services/plugins.js";
 import { getDefaultBudgetPolicyStore } from "../services/cost-policy-store.js";
 
 export type PageRoutesDependencies = {
   auth?: AuthDependencySource;
   approvals?: ApprovalService;
+  // R24-P 阶段 1：设置页的只读插件清单（仅管理员）。懒解析——不注入时推迟到真有管理员请求
+  // 设置页才建默认服务，路由工厂本身不建 DB 连接。
+  plugins?: Pick<PluginService, "list">;
   escalations?: EscalationService;
   memoryConflicts?: Pick<MemoryConflictService, "listAttentionItems">;
   proposals?: ProposalService;
@@ -325,6 +329,8 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const authSettings = getAuthSettings(resolveAuthDependencies(authSource));
   const allowUnauthenticatedGoldPath = deps.allowUnauthenticatedGoldPath ?? authSettings.appEnv !== "production";
   const approvals = deps.approvals ?? createApprovalService();
+  let pluginsService: Pick<PluginService, "list"> | undefined = deps.plugins;
+  const plugins = () => (pluginsService ??= getDefaultPluginService());
   const escalations = deps.escalations ?? createEscalationService();
   const memoryConflicts = deps.memoryConflicts ?? createMemoryConflictService();
   const proposals = deps.proposals ?? getDefaultProposalService();
@@ -1073,6 +1079,26 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
         permissionPolicies = undefined;
       }
     }
+    // R24-P 阶段 1：网页设置页的**只读**插件清单，同一道管理员门（服务端只给管理员填，
+    // 非管理员字段结构性缺席）。取数失败降级为不渲这一区，不拖垮整页设置——与上面策略区同款取舍。
+    // 网页不做安装/启停：安装要给一个本机绝对路径，那是「这台服务器上的目录」，只在桌面端说得通。
+    let installedPlugins: Parameters<typeof buildSettingsPage>[0]["plugins"];
+    if (c.var.currentUser.isAdmin) {
+      try {
+        const listed = await plugins().list({ actor: c.var.actor });
+        installedPlugins = listed.plugins.map((plugin) => ({
+          id: plugin.id,
+          name: plugin.name,
+          ...(plugin.version ? { version: plugin.version } : {}),
+          enabled: plugin.enabled,
+          status: plugin.status,
+          tool_count: plugin.tool_count,
+          compat_verdict: plugin.compat_report.verdict
+        }));
+      } catch {
+        installedPlugins = undefined;
+      }
+    }
     const runtimeReadiness = await readiness(authSettings);
     return c.json(pageEnvelope(buildSettingsPage({
       settings: authSettings,
@@ -1080,7 +1106,8 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       locale,
       preferenceLocale,
       preferenceSource: "server",
-      ...(permissionPolicies ? { permissionPolicies } : {})
+      ...(permissionPolicies ? { permissionPolicies } : {}),
+      ...(installedPlugins ? { plugins: installedPlugins } : {})
     }), locale));
   });
 
