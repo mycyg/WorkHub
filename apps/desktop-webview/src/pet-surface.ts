@@ -96,7 +96,8 @@ import { openWorkbenchRouteFromPet } from "./workbench/cuu-bubble-open.js";
 import {
   parseDesktopShellConnectionChangedPayload,
   type DesktopShellConnectionChangedPayload,
-  type DesktopShellSystemNotificationPlan
+  type DesktopShellSystemNotificationPlan,
+  primeDesktopConnectionState
 } from "./shell-events.js";
 
 import { desktopT } from "./locales.js";
@@ -216,6 +217,17 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-kicker,.wh-pet-surface[data-pet-card-layout=compact] .wh-pet-status{font-size:10px}",
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-status{line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-action{font-size:11px;padding:5px 7px;max-width:112px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+  // R26 真机验收（W-QA，连接状态单一真相那一批）：「没有卡片、只有状态文本」的紧凑气泡——连接状态提示
+  // （desktopPetConnectionStatusText 产出的「连不上服务器 <地址> · 重连中（第 N 次）/ 已离线」）走的就是
+  // 这条路径——此前与"带卡片的紧凑气泡"共用上面那条 86px*scale 上限 + 2 行钳制。真机实测（75% 缩放）
+  // 这一行需要 3 行才排得下：服务器地址被 "…" 截掉、"· 重连中（第 N 次）/已离线"整段看不见，重连中与
+  // 已离线两态在屏幕上一模一样，用户无从判断。
+  // 只放宽这一种气泡（`:not([data-pet-bubble-kind])` —— 有卡片时那个属性必然存在，见 renderPetBubble）：
+  // 上限改成"气泡底边到窗口顶边之间的可用高度"，跟着 --wh-pet-scale 与窗口高度自适应，任何缩放档
+  // （75/100/125/150）下都不越窗；行数钳制同步放到 4 行。窗口尺寸仍由 body_only（260×340）钉死，
+  // 一个像素都没碰——L-06 的根治点在那里，不在这里。
+  ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-bubble:not([data-pet-bubble-kind]){max-height:calc(100% - calc(232px * var(--wh-pet-scale,1)))}",
+  ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-bubble:not([data-pet-bubble-kind]) .wh-pet-status{-webkit-line-clamp:4}",
   ".wh-pet-bubble .wh-liquid-glass-content>*{min-width:0;max-width:100%}",
   "@keyframes wh-pet-bubble-in{from{opacity:0}to{opacity:1}}",
   ".wh-pet-bubble{animation:wh-pet-bubble-in .34s ease-out both}",
@@ -1814,29 +1826,30 @@ export async function bootDesktopPetSurface(
     loggedInUnlisten = maybeLoggedInUnlisten;
   }
 
-  // R25-Q：连接状态"单一真相"——先拉一次 get_connection_state 补初值（不必等 SSE worker 下一次真实
-  // 迁移才第一次知道状态），再订阅运行期广播。两者都只更新 connectionStatus + render()，不碰
-  // currentCard/窗口尺寸（见 desktopPetConnectionStatusText 顶注——L-06 根治的关键就是这条提示完全
-  // 独立于卡片/resize 管线）。best-effort：拉取失败/无 __TAURI__ 时 connectionStatus 保持 undefined，
-  // 不渲任何提示。
-  void readDesktopConnectionState().then((raw) => {
-    const payload = parseDesktopShellConnectionChangedPayload(raw);
-    if (payload) {
-      connectionStatus = payload;
-      render();
-    }
-  });
+  // R25-Q：连接状态"单一真相"——订阅与快照都只更新 connectionStatus + render()，不碰 currentCard/
+  // 窗口尺寸（见 desktopPetConnectionStatusText 顶注——L-06 根治的关键就是这条提示完全独立于卡片/
+  // resize 管线）。顺序由 primeDesktopConnectionState 钉死：先订阅、订阅落地后再拉一次 get_connection_state
+  // 补初值、事件永远比快照新（真机验收 DEFECT-1）。best-effort：拉取失败/无 __TAURI__ 时
+  // connectionStatus 保持 undefined，不渲任何提示。
   let connectionChangedUnlisten: DesktopShellUnlisten | undefined;
-  const maybeConnectionChangedUnlisten = await shellListen?.("workhub-connection-changed", (event) => {
-    const payload = parseDesktopShellConnectionChangedPayload(event.payload);
-    if (payload) {
+  void primeDesktopConnectionState({
+    subscribe: async (onPayload) => {
+      const maybeUnlisten = await shellListen?.("workhub-connection-changed", (event) => {
+        const payload = parseDesktopShellConnectionChangedPayload(event.payload);
+        if (payload) {
+          onPayload(payload);
+        }
+      });
+      if (typeof maybeUnlisten === "function") {
+        connectionChangedUnlisten = maybeUnlisten;
+      }
+    },
+    read: () => readDesktopConnectionState(),
+    apply: (payload) => {
       connectionStatus = payload;
       render();
     }
   });
-  if (typeof maybeConnectionChangedUnlisten === "function") {
-    connectionChangedUnlisten = maybeConnectionChangedUnlisten;
-  }
 
   // MRG-20：OS 通知到达不再抢焦点/强制导航。壳层广播的 system-notification 计划先按路由暂存；
   // 用户在桌宠 Cuu 卡上点出同一目标路由的动作时，才把计划回传原生 focus_system_notification

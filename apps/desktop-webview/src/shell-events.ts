@@ -536,3 +536,45 @@ function isDesktopShellSystemNotificationUrgency(
 ): value is DesktopShellSystemNotificationPlan["urgency"] {
   return value === "high" || value === "urgent";
 }
+
+/**
+ * 三窗 boot 时接连接状态「单一真相」的固定顺序：先订阅运行期广播，订阅落地后再拉一次
+ * `get_connection_state` 补初值；快照到手时若已经收到过任何事件就丢弃——事件永远比快照新。
+ *
+ * 真机验收（R26）暴露的竞态：工作台 boot 早期推 client token 会让壳层把活跃 SSE 判成 Superseded，
+ * 先广播 reconnecting、约 60ms 后广播 connected。此前是「先拉快照、后订阅」且两者都异步：拉到的
+ * reconnecting 可能晚于 connected 事件落地（后写覆盖），或监听注册晚于 connected 广播（整条错过）；
+ * 之后连接一直稳定就再无迁移，头部永久停在「重连中」。
+ *
+ * best-effort：订阅失败仍拉快照（至少有个初值）；拉取失败/无桥接时什么都不做（调用方保持「未判定」）。
+ */
+export async function primeDesktopConnectionState(deps: {
+  subscribe: (onPayload: (payload: DesktopShellConnectionChangedPayload) => void) => unknown;
+  read: () => Promise<unknown> | unknown;
+  apply: (payload: DesktopShellConnectionChangedPayload) => void;
+}): Promise<void> {
+  let eventSeen = false;
+  try {
+    await Promise.resolve(
+      deps.subscribe((payload) => {
+        eventSeen = true;
+        deps.apply(payload);
+      })
+    );
+  } catch {
+    // 订阅没挂上：运行期迁移收不到，但初值还是要有——下面照常拉一次。
+  }
+  let raw: unknown;
+  try {
+    raw = await Promise.resolve(deps.read());
+  } catch {
+    return;
+  }
+  if (eventSeen) {
+    return;
+  }
+  const payload = parseDesktopShellConnectionChangedPayload(raw);
+  if (payload) {
+    deps.apply(payload);
+  }
+}

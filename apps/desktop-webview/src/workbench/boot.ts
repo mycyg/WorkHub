@@ -36,7 +36,10 @@ import {
   takeDesktopPendingDeepLink
 } from "../desktop-window-controls.js";
 import { scheduleWorkHubLiquidGlassFilterRebuild } from "../liquid-glass-filter.js";
-import { parseDesktopShellConnectionChangedPayload } from "../shell-events.js";
+import {
+  parseDesktopShellConnectionChangedPayload,
+  primeDesktopConnectionState
+} from "../shell-events.js";
 import { consumePendingWorkbenchDeepLink } from "./pending-deep-link.js";
 import { mountWorkbenchShell, renderWorkbenchDocumentHead, type WorkbenchShellHandle } from "./shell.js";
 import { isWorkbenchWindowControlPlan, parseWorkbenchDeepLinkPlan, parseWorkbenchRoute } from "./route.js";
@@ -270,19 +273,20 @@ function reloadAfterWorkbenchLogin(): void {
 export function bindWorkbenchConnectionChangedListener(
   onConnectionChanged: (payload: ReturnType<typeof parseDesktopShellConnectionChangedPayload>) => void,
   scope: unknown = globalThis
-): void {
+): Promise<void> {
   const listen = resolveWorkbenchTauriListen(scope);
   if (!listen) {
-    return;
+    return Promise.resolve();
   }
-  void Promise.resolve(
+  // 返回「订阅已落地」的 promise：boot 要先等它，再拉 get_connection_state 快照（见 primeDesktopConnectionState）。
+  return Promise.resolve(
     listen("workhub-connection-changed", (event) => {
       const payload = parseDesktopShellConnectionChangedPayload(event.payload);
       if (payload) {
         onConnectionChanged(payload);
       }
     })
-  ).catch((error) => {
+  ).then(() => undefined, (error) => {
     console.warn("WorkHub workbench: could not subscribe to the workhub-connection-changed event", error);
   });
 }
@@ -409,20 +413,21 @@ async function boot(): Promise<void> {
       window.location.reload();
     }
   });
-  // R25-Q：连接状态"单一真相"——先拉一次 get_connection_state 补初值（不必等 SSE worker 下一次真实
-  // 迁移才第一次知道状态），再订阅运行期广播。都写进 store.connectionState，rail.ts 的头部状态词
-  // 只读这一份，不再各自猜。best-effort：拉取失败/无 __TAURI__ 时 store 保持 undefined，rail.ts 对
-  // 这个"还没有判定"的兜底是"已连接"（见 store.ts connectionState 顶注）。
-  void readDesktopConnectionState().then((raw) => {
-    const payload = parseDesktopShellConnectionChangedPayload(raw);
-    if (payload) {
-      shell.store.setState({ connectionState: payload });
-    }
-  });
-  bindWorkbenchConnectionChangedListener((payload) => {
-    if (payload) {
-      shell.store.setState({ connectionState: payload });
-    }
+  // R25-Q：连接状态"单一真相"——都写进 store.connectionState，rail.ts 的头部状态词只读这一份，不再各自猜。
+  // 顺序由 primeDesktopConnectionState 钉死：先订阅运行期广播，订阅落地后再拉一次 get_connection_state
+  // 补初值，且事件已到时过期快照不覆盖（真机验收 DEFECT-1：此前先拉后订，boot 期间 SSE 因推 token 被
+  // 判 Superseded 重连一轮，快照拿到的 reconnecting 晚于 connected 事件落地，头部永久停在「重连中」）。
+  // best-effort：拉取失败/无 __TAURI__ 时 store 保持 undefined，rail.ts 对这个"还没有判定"的兜底是
+  // "已连接"（见 store.ts connectionState 顶注）。
+  void primeDesktopConnectionState({
+    subscribe: (onPayload) =>
+      bindWorkbenchConnectionChangedListener((payload) => {
+        if (payload) {
+          onPayload(payload);
+        }
+      }),
+    read: () => readDesktopConnectionState(),
+    apply: (payload) => shell.store.setState({ connectionState: payload })
   });
 }
 

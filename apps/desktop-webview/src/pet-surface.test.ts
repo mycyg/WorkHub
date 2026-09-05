@@ -936,6 +936,19 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(statusOnly.html, /<p class="wh-pet-status">Cuu look updated\.<\/p>/u);
   assert.match(statusOnly.css, /data-pet-card-layout=compact\] \.wh-pet-bubble\{left:auto;right:calc\(8px \* var\(--wh-pet-scale,1\)\);top:auto;bottom:calc\(224px \* var\(--wh-pet-scale,1\)\);width:calc\(150px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(statusOnly.css, /data-pet-card-layout=compact\] \.wh-pet-status\{line-height:1\.25;display:-webkit-box;-webkit-line-clamp:2/u);
+  // R26 真机验收（W-QA）：连接状态提示走的就是这条「无卡片、只有状态文本」的紧凑气泡。它不能沿用
+  // 上面那条 86px*scale + 2 行的钳制（真机 75% 缩放下服务器地址被截、计次/已离线整段看不见），故为
+  // `:not([data-pet-bubble-kind])` 单独放宽：上限跟着窗口高度与缩放自适应，行数放到 4 行。
+  // 选择器的前提：只有带卡片的气泡才渲 data-pet-bubble-kind（见 renderPetBubble），这里钉死它。
+  assert.doesNotMatch(statusOnly.html, /data-pet-bubble-kind/u);
+  assert.match(
+    statusOnly.css,
+    /data-pet-card-layout=compact\] \.wh-pet-bubble:not\(\[data-pet-bubble-kind\]\)\{max-height:calc\(100% - calc\(232px \* var\(--wh-pet-scale,1\)\)\)\}/u
+  );
+  assert.match(
+    statusOnly.css,
+    /data-pet-card-layout=compact\] \.wh-pet-bubble:not\(\[data-pet-bubble-kind\]\) \.wh-pet-status\{-webkit-line-clamp:4\}/u
+  );
 
   assert.match(card.html, /data-cuu-card-id="approval-card"/u);
   assert.match(card.html, /data-pet-payload-ref-entity-type="workitem"/u);

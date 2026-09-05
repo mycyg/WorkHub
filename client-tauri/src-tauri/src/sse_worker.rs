@@ -52,15 +52,26 @@ pub struct ClientTokenSnapshot {
 }
 
 impl ShellClientToken {
-    /// 写入令牌（`None`/空串路径由调用方归一为 `None` 表示清空）。无论写入还是清空，都递增身份代际并唤醒
+    /// 写入令牌（`None`/空串路径由调用方归一为 `None` 表示清空）。**令牌值真的变了**时递增身份代际并唤醒
     /// 等待者——**清空同样通知**是 SEC P0-02 的关键：退出/换号后挂起中的 worker 靠它醒来（重连/挂起），
     /// 活跃 pump 靠它醒来比对代际并中止旧身份连接。返回写入后的代际，便于诊断/测试。
+    ///
+    /// R26 真机验收（W-QA）：写入**同一个令牌**不再递增代际。三扇窗各自 boot 都会推一次同一个设备令牌
+    /// （`browser.ts` / `workbench/boot.ts` 的 `pushClientTokenToShell`），旧实现每次都递增代际 → 活跃
+    /// pump 判定 `Superseded` 中止 → 重连。后果有三：①每开一扇窗、每登录一次，三窗的连接提示都要闪一轮
+    /// "重连中 → 已连接"（真机实测一次登录连打三次）；②那一闪的 `attempt` 是 0，桌宠照字面渲成"重连中
+    /// （第 0 次）"；③后端真的挂着时，开一扇窗会把 `consecutive_failures` 复位，已经诚实显示的"已离线"
+    /// 被打回"重连中"，重新等满 35s 才敢再说离线。身份没变就没有"旧身份连接需要中止"这回事——代际是
+    /// **身份**代际，不是"写入次数"计数器。清空→再写同一个令牌仍然是两次真变化，照常各递增一次。
     pub fn set(&self, token: Option<String>) -> u64 {
         let generation = {
             let mut slot = self
                 .slot
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if slot.token == token {
+                return slot.generation;
+            }
             slot.token = token;
             slot.generation = slot.generation.wrapping_add(1);
             slot.generation
@@ -867,6 +878,34 @@ mod tests {
                 generation: 3
             }
         );
+    }
+
+    /// R26 真机验收（W-QA）：重复推入**同一个**令牌不算身份变更——三扇窗各自 boot 都会推一次同一个设备
+    /// 令牌，旧实现每次都递增代际把活跃 SSE 判成 Superseded 并重连，代价是三窗的连接提示各闪一轮
+    /// "重连中（第 0 次）→ 已连接"，且后端真挂着时会把 consecutive_failures 复位、把诚实的"已离线"
+    /// 打回"重连中"。清空之后再写回同一个令牌仍然是两次真变化，各递增一次。
+    #[test]
+    fn writing_the_same_client_token_twice_does_not_bump_the_identity_generation() {
+        let state = ShellClientToken::default();
+
+        // 清空一个本就为空的槽：没有身份可中止，不递增。
+        assert_eq!(state.set(None), 0);
+
+        assert_eq!(state.set(Some("token-a".to_string())), 1);
+        // 第二、第三扇窗 boot 时推同一个令牌：代际不动。
+        assert_eq!(state.set(Some("token-a".to_string())), 1);
+        assert_eq!(state.set(Some("token-a".to_string())), 1);
+        assert_eq!(
+            state.snapshot(),
+            ClientTokenSnapshot {
+                token: Some("token-a".to_string()),
+                generation: 1
+            }
+        );
+
+        // 退出 → 重新登录同一个账号：两次都是真变化。
+        assert_eq!(state.set(None), 2);
+        assert_eq!(state.set(Some("token-a".to_string())), 3);
     }
 
     // pump 的 select! 分支裁决：两个代际都没变=虚假唤醒/无关通知→继续；任一变了（退出/换号/换服务器）
