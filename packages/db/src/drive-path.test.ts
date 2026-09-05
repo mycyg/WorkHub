@@ -197,6 +197,21 @@ test("findings[#low] isActivePathUniqueViolation only matches the active-path un
   assert.equal(isActivePathUniqueViolation(null), false);
 });
 
+// R24 S3：drizzle-orm 真实把裸 pg 错误包进 `.cause`（顶层没有 code/constraint）——上面那组测试用的
+// 顶层塞 code 的假错误形状在生产里并不真实存在。这一条锁死 isActivePathUniqueViolation 也接得住
+// 真实的嵌套包装，不只是接住测试自己编的形状。
+test("R24 S3: isActivePathUniqueViolation also matches when the pg error is nested under drizzle-orm's `.cause`", () => {
+  const pgDatabaseError = Object.assign(
+    new Error('duplicate key value violates unique constraint "project_drive_items_active_path_uq"'),
+    { code: "23505", constraint: "project_drive_items_active_path_uq" }
+  );
+  const drizzleQueryError = Object.assign(new Error('Failed query: insert into "project_drive_items" ...'), {
+    cause: pgDatabaseError
+  });
+
+  assert.equal(isActivePathUniqueViolation(drizzleQueryError), true);
+});
+
 test("recordDraftProposal locks the drive comment before the idempotency gate", async () => {
   const existingOperation = driveOperation();
   const { db, queries } = createQueryRecorder([

@@ -12,18 +12,24 @@ import { applyIdentityLocale, browserLocale, setDocumentLocale } from "@workhub/
 import { isStaleDesktopClientTokenError } from "../auth-recovery.js";
 import {
   clearDesktopClientToken,
-  readDesktopClientToken,
-  writeDesktopClientToken
+  readDesktopClientToken
 } from "../desktop-client-token.js";
 import { resolveDesktopApiBaseFromStorage } from "../desktop-api-base.js";
 import {
   bindDesktopCredentialGate,
+  desktopBootScreenForGate,
   isPasswordModeBootstrapError,
   readDesktopAuthModeHint,
-  rememberDesktopAuthModeHint,
-  runDesktopBootstrapWithLock
+  resolveDesktopFirstRunGateWithLock,
+  type DesktopCredentialGateContext
 } from "../desktop-login.js";
+import {
+  bindDesktopConnectScreen,
+  bindDesktopServerChangedReload,
+  createDesktopServerChoiceEffects
+} from "../desktop-connect-screen.js";
 import { resolveDesktopTauriInvoke, takeDesktopPendingDeepLink } from "../desktop-window-controls.js";
+import { scheduleWorkHubLiquidGlassFilterRebuild } from "../liquid-glass-filter.js";
 import { consumePendingWorkbenchDeepLink } from "./pending-deep-link.js";
 import { mountWorkbenchShell, renderWorkbenchDocumentHead, type WorkbenchShellHandle } from "./shell.js";
 import { isWorkbenchWindowControlPlan, parseWorkbenchDeepLinkPlan, parseWorkbenchRoute } from "./route.js";
@@ -72,8 +78,15 @@ export async function ensureWorkbenchClientToken(
   }
   let identity: IdentityResponse | null = null;
   if (!clientToken()) {
-    if ((await bootstrapWorkbenchClientTokenWithLock(client)) === "needs-credentials") {
-      return { identity: null, gate: "needs-credentials" };
+    // R24 S4（E-03 根治）：首启不再盲打 desktop-bootstrap 传固定昵称——同 browser.ts 的
+    // ensureDesktopClientToken 同款改法，见 desktop-login.ts 的 resolveDesktopFirstRunGateWithLock 顶注。
+    const gate = await resolveDesktopFirstRunGateWithLock({
+      client,
+      storage: window.localStorage,
+      readToken: clientToken
+    });
+    if (gate === "needs-credentials" || gate === "logged-out") {
+      return { identity: null, gate };
     }
   } else {
     try {
@@ -81,8 +94,13 @@ export async function ensureWorkbenchClientToken(
     } catch (error) {
       if (isStaleDesktopClientTokenError(error)) {
         clearDesktopClientToken(window.localStorage);
-        if ((await bootstrapWorkbenchClientTokenWithLock(client)) === "needs-credentials") {
-          return { identity: null, gate: "needs-credentials" };
+        const gate = await resolveDesktopFirstRunGateWithLock({
+          client,
+          storage: window.localStorage,
+          readToken: clientToken
+        });
+        if (gate === "needs-credentials" || gate === "logged-out") {
+          return { identity: null, gate };
         }
       }
     }
@@ -93,45 +111,6 @@ export async function ensureWorkbenchClientToken(
     return { identity, gate: "ready" };
   }
   return { identity, gate: "offline" };
-}
-
-type WorkbenchBootstrapOutcome = "ready" | "needs-credentials" | "unavailable";
-
-async function bootstrapWorkbenchClientToken(client: WorkHubApiClient): Promise<WorkbenchBootstrapOutcome> {
-  try {
-    const result = await client.bootstrapDesktop({
-      nickname: "WorkHub Desktop",
-      device_name: "WorkHub Desktop",
-      platform: "desktop"
-    });
-    if (result?.client_token) {
-      writeDesktopClientToken(window.localStorage, result.client_token);
-      rememberDesktopAuthModeHint(window.localStorage, "nickname");
-      return "ready";
-    }
-    return "unavailable";
-  } catch (error) {
-    if (isPasswordModeBootstrapError(error)) {
-      rememberDesktopAuthModeHint(window.localStorage, "password");
-      return "needs-credentials";
-    }
-    console.warn("WorkHub workbench desktop bootstrap failed; continuing without client token", error);
-    return "unavailable";
-  }
-}
-
-// DSK-07：包一层跨窗启动锁（与 browser.ts 的 bootstrapDesktopClientTokenWithLock 同款）——工作台窗口
-// 与主窗/桌宠首启并发 bootstrap 会重复注册设备、双 token 互覆；败者短轮询重读胜者落盘的 token。
-async function bootstrapWorkbenchClientTokenWithLock(client: WorkHubApiClient): Promise<WorkbenchBootstrapOutcome> {
-  const locked = await runDesktopBootstrapWithLock({
-    storage: window.localStorage,
-    readToken: () => clientToken(),
-    run: () => bootstrapWorkbenchClientToken(client)
-  });
-  if (locked.kind === "ran") {
-    return locked.result;
-  }
-  return locked.kind === "token-ready" ? "ready" : "unavailable";
 }
 
 // —— 深链事件订阅 —— //
@@ -227,6 +206,25 @@ export function bindWorkbenchLoggedOutListener(onLoggedOut: () => void, scope: u
   });
 }
 
+// R24 S5（N-03 根治）：主窗登录/重新绑定成功（browser.ts 的 broadcastDesktopLoggedIn /
+// reloadAfterDesktopLogin）广播这个事件——工作台窗口如果这次会话里也开着（比如登录之前就已打开、
+// 静默拉数据失败），此前完全没有信号知道"手里现在有一个可用 token 了"，要么一直卡在旧状态，要么
+// 得等用户自己手动刷新才能捡到新 token。同 bindWorkbenchLoggedOutListener 一模一样的桥（事件名同样
+// 注册在 desktop-cuu-runtime.ts 的 DesktopShellEventName，桌宠窗口 pet-surface.ts 也订阅这同一个
+// 事件名），这里订阅后简单 reload 一次——boot() 会重新走一遍鉴权门判定，自然捡到新 token。
+export function bindWorkbenchLoggedInListener(onLoggedIn: () => void, scope: unknown = globalThis): void {
+  const listen = resolveWorkbenchTauriListen(scope);
+  if (!listen) {
+    // 浏览器 dev 预览 / 无 Tauri：no-op，不崩溃——同 bindWorkbenchLoggedOutListener 的既有降级路径。
+    return;
+  }
+  void Promise.resolve(
+    listen("workhub-logged-in", () => onLoggedIn())
+  ).catch((error) => {
+    console.warn("WorkHub workbench: could not subscribe to the workhub-logged-in event", error);
+  });
+}
+
 // 深链冷启动竞态兜底（批 1 遗留，见 pending-deep-link.ts 顶部注释）：本 App 自己发起的「打开工作台」
 // （Spotlight → workbench-open.ts）在 invoke 之前已经把目标同步写进 localStorage；这里在挂载 shell
 // 之后立即消费一次——命中就 selectProject，不命中（没有 stash / 已过期）就是正常的「从空态开始」冷启动，
@@ -267,16 +265,45 @@ async function boot(): Promise<void> {
     getClientToken: clientToken
   });
 
+  // R24 S2（跨窗跟随）：别的窗口换了服务器 → 壳层广播 workhub-server-changed → 本窗 reload 走新地址。
+  // 与 workhub-logged-out 的订阅同一条通用事件桥（bindWorkbenchLoggedOutListener 就在下面）。
+  // 订阅早于鉴权门分支，否则停在连接屏/登录门的工作台窗收不到广播、一直卡在旧地址。
+  bindDesktopServerChangedReload(resolveWorkbenchTauriListen(), () => window.location.reload());
+
   const auth = await ensureWorkbenchClientToken(client).catch(
     () => ({ identity: null, gate: "offline" as const })
   );
-  // P1-02（REL-5）：密码/hybrid 模式渲凭据登录门（login → device-token exchange），成功后 reload 走既有 token 流。
-  if (auth.gate === "needs-credentials") {
+  // 鉴权门 → 该渲哪一屏，与主窗共用同一张表（desktop-login.ts 的 desktopBootScreenForGate）——
+  // 两边此前各写一遍 if 链，已经实际漂移过（工作台既没有登出屏也没有连不上后端的分支）。
+  const screen = desktopBootScreenForGate(auth.gate, "workbench");
+  // P1-02（REL-5）：密码/hybrid 模式渲凭据登录门（login/register/邀请接受 → device-token exchange），
+  // 成功后 reload 走既有 token 流。R24 S4：context 区分首启欢迎文案与登出后的登录文案（这台设备
+  // 是从没连接过，还是曾经连接、被显式登出——isWorkbenchDesktopLoggedOut() 判定）。
+  if (screen === "credential-gate") {
     bindDesktopCredentialGate(root, {
       client,
       locale,
       storage: window.localStorage,
-      onSuccess: () => window.location.reload()
+      onSuccess: () => window.location.reload(),
+      context: isWorkbenchDesktopLoggedOut() ? "logged-out" : "first-run"
+    });
+    return;
+  }
+  // R24 S2（E-02）：连不上后端时此前直接挂载工作台外壳——所有取数静默失败，整窗看着像"正常但空"，
+  // 而工作台窗连离线卡都没有。补上与主窗同一屏：地址输入 → 测试连接 → 显式确认使用这台服务器。
+  if (screen === "connect-server") {
+    bindDesktopConnectScreen(root, {
+      locale,
+      apiBase: resolveWorkbenchApiBase(),
+      // C1：探测客户端不带令牌——/api/health 无需鉴权，令牌绝不发给一台还没被确认的服务器。
+      probe: (base) => createApiClient({ baseUrl: base }).health(),
+      effects: createDesktopServerChoiceEffects({
+        storage: window.localStorage,
+        invoke: resolveDesktopTauriInvoke()
+      }),
+      reload: () => window.location.reload(),
+      // 连接屏用的是主窗那套液态玻璃层，滤镜要在挂载后重建一次，否则工作台窗里这一屏渲不出玻璃。
+      scheduleRebuild: () => scheduleWorkHubLiquidGlassFilterRebuild(document)
     });
     return;
   }
@@ -291,20 +318,27 @@ async function boot(): Promise<void> {
   // G-desktop 止血批 3：这次 boot 本身可能就已经处在登出态（比如上一次收到跨窗口登出广播后这个窗口
   // 自己 reload 了一轮，见 shell.ts selectProject 的恢复路径注释）——必须先于下面两行深链消费判断，
   // 否则一次带着真实深链目标的冷启动会在还没展示「已登出」之前就先把请求发出去。
+  // R24 S4：昵称模式的首启（这台设备从没连接过，auth.gate 判定为 "logged-out" 但并没有真的登出过）
+  // 复用同一套"整窗替换"处理——workbench 不拥有登录 UI（那是主窗地盘，见 shell.ts
+  // renderWorkbenchLoggedOutHtml 顶注），首启同样只能提示去主窗口，不能在这个窗口里继续静默取数。
   const loggedOutAtBoot = isWorkbenchDesktopLoggedOut();
-  if (loggedOutAtBoot) {
-    shell.showLoggedOut();
+  const signedOutAtBoot = auth.gate === "logged-out";
+  if (signedOutAtBoot) {
+    shell.showLoggedOut(loggedOutAtBoot ? "logged-out" : "first-run");
   }
   bindWorkbenchDeepLinkListener(shell);
   // MRG-22：登出态不消费深链 stash（consume 是一次性删除，而 selectProject 会被 loggedOut 守卫拦下，
   // 照删就把目标吞了）。留着它——重新登录后恢复路径 reload → 干净 boot 会在这里原样接回（TTL 15s 兜底）。
-  applyPendingWorkbenchDeepLink(shell, window.localStorage, undefined, { enabled: !loggedOutAtBoot });
+  applyPendingWorkbenchDeepLink(shell, window.localStorage, undefined, { enabled: !signedOutAtBoot });
   // MRG-23：壳层暂存的深链重放（窗口创建期间错过的 emit），同口径登出态不消费。
-  void applyReplayedShellDeepLink(shell, { enabled: !loggedOutAtBoot });
+  void applyReplayedShellDeepLink(shell, { enabled: !signedOutAtBoot });
   // 运行期广播：这个窗口一直开着、之后才收到别的窗口发起的登出——见 bindWorkbenchLoggedOutListener
   // 顶部注释。showLoggedOut() 本身幂等，两条路径（这里的运行期监听 + 上面的 boot 时快照检查）都指向
   // 同一个方法，不会重复触发副作用。
   bindWorkbenchLoggedOutListener(() => shell.showLoggedOut());
+  // R24 S5（N-03 根治）：同上，但反方向——主窗登录/重新绑定成功后广播，这里 reload 一次重新走鉴权门
+  // 判定，捡到新落的 token（见 bindWorkbenchLoggedInListener 顶部注释）。
+  bindWorkbenchLoggedInListener(() => window.location.reload());
 }
 
 // node:test 环境没有 document——colocated boot.test.ts 只测上面导出的纯函数，不需要真跑 boot()。

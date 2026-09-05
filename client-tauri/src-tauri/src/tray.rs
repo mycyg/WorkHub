@@ -195,9 +195,153 @@ fn tray_menu_action_plan(id: &str, label: &str, kind: TrayMenuActionKind) -> Tra
     }
 }
 
+/// L-02：macOS 菜单栏托盘图标的边长（像素）。22pt 是 macOS 菜单栏图标的标准视觉尺寸，这里给 @2x。
+pub const TRAY_TEMPLATE_ICON_SIZE: u32 = 44;
+
+/// macOS 规范的**单色 template 托盘图标**像素（RGBA，逐行从上到下）。
+///
+/// L-02 根因：托盘此前直接复用 `app.default_window_icon()`——那是紫色圆角方块里塞两行 "Work Hub"
+/// 小字的应用图标。菜单栏里它跟旁边一水儿的单色 template 图标格格不入，深色菜单栏下不会自适应反色，
+/// 22pt 尺寸下那两行字根本读不出来。
+///
+/// macOS 的 template image 只看 **alpha 通道**（系统按菜单栏明暗自行填黑或填白），所以这里 RGB 恒为 0，
+/// 形状全部由 alpha 承载。图案是「hub」的字面含义：一个中心节点 + 四个卫星节点 + 连接的辐条——放弃了
+/// 从应用图标派生（紫色方块 + 两行文字在单色 22pt 下无论怎么处理都不可读），换一个在菜单栏尺寸下
+/// 真能认出来、且上下左右都对称的几何标记。
+///
+/// 像素是**算出来的**而不是打包一张 PNG：`Image::from_bytes` 需要 tauri 的 `image-png` feature（等于
+/// 往依赖树里加 `image`/`png` 一串 crate），而 `Image::new_owned` 直接收 RGBA 缓冲。纯函数、有单测。
+pub fn tray_template_icon_rgba(size: u32) -> Vec<u8> {
+    // 单位坐标（0..1）下的几何。四颗卫星摆在正上/右/下/左，上下左右都对称——菜单栏图标的落位由系统
+    // 决定，任何不对称都会在不同菜单栏密度下看起来「没对齐」。
+    const HUB_RADIUS: f32 = 0.105;
+    const NODE_RADIUS: f32 = 0.075;
+    const ORBIT: f32 = 0.315;
+    const SPOKE_HALF_WIDTH: f32 = 0.028;
+    /// 每个像素的抗锯齿采样密度（SAMPLES×SAMPLES 网格）。
+    const SAMPLES: u32 = 4;
+
+    let center = (0.5f32, 0.5f32);
+    let nodes = [-90.0f32, 0.0, 90.0, 180.0].map(|degrees| {
+        let radians = degrees.to_radians();
+        (
+            center.0 + ORBIT * radians.cos(),
+            center.1 + ORBIT * radians.sin(),
+        )
+    });
+
+    let inside = |x: f32, y: f32| {
+        if distance(x, y, center.0, center.1) <= HUB_RADIUS {
+            return true;
+        }
+        nodes.iter().any(|node| {
+            distance(x, y, node.0, node.1) <= NODE_RADIUS
+                || distance_to_segment(x, y, center, *node) <= SPOKE_HALF_WIDTH
+        })
+    };
+
+    let mut rgba = vec![0u8; (size as usize) * (size as usize) * 4];
+    let extent = size as f32;
+    let step = 1.0 / (extent * SAMPLES as f32);
+    for row in 0..size {
+        for column in 0..size {
+            let mut covered = 0u32;
+            for sub_y in 0..SAMPLES {
+                for sub_x in 0..SAMPLES {
+                    let x = (column as f32) / extent + (sub_x as f32 + 0.5) * step;
+                    let y = (row as f32) / extent + (sub_y as f32 + 0.5) * step;
+                    if inside(x, y) {
+                        covered += 1;
+                    }
+                }
+            }
+            let alpha = (covered * 255 / (SAMPLES * SAMPLES)) as u8;
+            // RGB 恒为 0：template image 的颜色由系统决定，我们只提供形状（alpha）。
+            let offset = ((row as usize) * (size as usize) + column as usize) * 4;
+            rgba[offset + 3] = alpha;
+        }
+    }
+    rgba
+}
+
+fn distance(x: f32, y: f32, to_x: f32, to_y: f32) -> f32 {
+    ((x - to_x).powi(2) + (y - to_y).powi(2)).sqrt()
+}
+
+fn distance_to_segment(x: f32, y: f32, start: (f32, f32), end: (f32, f32)) -> f32 {
+    let (dx, dy) = (end.0 - start.0, end.1 - start.1);
+    let length_squared = dx * dx + dy * dy;
+    if length_squared == 0.0 {
+        return distance(x, y, start.0, start.1);
+    }
+    let projection = (((x - start.0) * dx + (y - start.1) * dy) / length_squared).clamp(0.0, 1.0);
+    distance(x, y, start.0 + projection * dx, start.1 + projection * dy)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn alpha_at(pixels: &[u8], size: u32, x: u32, y: u32) -> u8 {
+        pixels[((y as usize) * (size as usize) + x as usize) * 4 + 3]
+    }
+
+    // L-02：macOS template image 只认 alpha，RGB 必须恒为 0——留下任何颜色都会让系统的明暗自适应失效。
+    #[test]
+    fn tray_template_icon_is_a_pure_alpha_mask() {
+        let size = TRAY_TEMPLATE_ICON_SIZE;
+        let pixels = tray_template_icon_rgba(size);
+
+        assert_eq!(pixels.len(), (size as usize) * (size as usize) * 4);
+        assert!(
+            pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|pixel| pixel[..3] == [0, 0, 0]),
+            "template icon must carry its shape in alpha only"
+        );
+        // 中心节点实心、四角透明——不是一张空图，也不是一整块实心方块。
+        assert_eq!(alpha_at(&pixels, size, size / 2, size / 2), 255);
+        assert_eq!(alpha_at(&pixels, size, 0, 0), 0);
+        assert_eq!(alpha_at(&pixels, size, size - 1, 0), 0);
+        assert_eq!(alpha_at(&pixels, size, 0, size - 1), 0);
+        assert_eq!(alpha_at(&pixels, size, size - 1, size - 1), 0);
+    }
+
+    #[test]
+    fn tray_template_icon_is_symmetric_and_reasonably_dense() {
+        let size = TRAY_TEMPLATE_ICON_SIZE;
+        let pixels = tray_template_icon_rgba(size);
+
+        for y in 0..size {
+            for x in 0..size {
+                assert_eq!(
+                    alpha_at(&pixels, size, x, y),
+                    alpha_at(&pixels, size, size - 1 - x, y),
+                    "the mark must stay left-right symmetric at ({x}, {y})"
+                );
+                assert_eq!(
+                    alpha_at(&pixels, size, x, y),
+                    alpha_at(&pixels, size, x, size - 1 - y),
+                    "the mark must stay top-bottom symmetric at ({x}, {y})"
+                );
+            }
+        }
+
+        let painted = pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|pixel| pixel[3] > 0)
+            .count() as f32;
+        let coverage = painted / ((size * size) as f32);
+        // 菜单栏图标既不能是几乎看不见的一点，也不能糊成一坨。
+        assert!(
+            (0.12..0.60).contains(&coverage),
+            "unexpected tray glyph coverage: {coverage}"
+        );
+    }
     use crate::window_controls::ShellWindowControlAction;
     use std::collections::HashSet;
 

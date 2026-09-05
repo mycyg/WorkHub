@@ -78,28 +78,18 @@ export function driveResourceHeaders(): Headers {
   return headers;
 }
 
-async function refreshDriveResourceToken(apiBaseUrl: string): Promise<boolean> {
+// R24 修正（走查遗留）：令牌失效时**不再**用硬编码昵称「WorkHub Desktop」悄悄重新报到——那会把已选自定义
+// 昵称的用户绑到另一个身份（甚至合并成同一个账号）。正确做法与主窗/设置页登出同口径：清掉本地令牌、
+// 通知壳层与其它窗口「已登出」，让用户走回登录门重新确认身份；本次请求按失败返回，由视图渲出错。
+async function refreshDriveResourceToken(_apiBaseUrl: string): Promise<boolean> {
   clearDriveResourceToken();
   try {
-    const response = await fetch(`${apiBaseUrl}/api/auth/desktop-bootstrap`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        nickname: "WorkHub Desktop",
-        device_name: "WorkHub Desktop",
-        platform: "desktop"
-      })
-    });
-    const body = await response.json() as { client_token?: unknown };
-    if (!response.ok || typeof body.client_token !== "string" || body.client_token.length === 0) {
-      return false;
-    }
-    storeDriveResourceToken(body.client_token);
-    return true;
+    const scope = globalThis as { __TAURI__?: { event?: { emit?: (name: string) => Promise<void> | void } } };
+    await Promise.resolve(scope.__TAURI__?.event?.emit?.("workhub-logged-out"));
   } catch {
-    return false;
+    // 通知失败不影响主流程：令牌已清，下一次任何请求都会落回登录门。
   }
+  return false;
 }
 
 async function shouldRefreshDriveResourceToken(response: Response): Promise<boolean> {
@@ -115,7 +105,33 @@ async function shouldRefreshDriveResourceToken(response: Response): Promise<bool
   }
 }
 
+// R24 S1 · C1（单 origin 钉死）：打包后的 CSP connect-src 已从「只放行本机回环」放开到 http:/https:
+// （否则连不上自托管的远端服务器，见 tauri.conf.json 与 desktop-api-base.ts 顶部注释）。网盘资源的
+// href 来自服务端响应（download_href / preview_href），而 fetchDriveResource 会给请求带上设备令牌头——
+// 一条被污染的绝对 href 就能把令牌送到第三方主机。这里在发出前钉死：href 解析出的 origin 必须等于当前
+// 配置的服务器地址 origin，不等就拒（抛错，绝不降级为「照发一次看看」）。同 api-client 的
+// resolveWorkHubApiUrl 与桌面 run 流的 DSK-08 同源校验一个口径。
+export function assertDriveResourceSameOrigin(href: string, apiBaseUrl: string): void {
+  let expected: string;
+  try {
+    expected = new URL(apiBaseUrl).origin;
+  } catch {
+    // 基地址不是绝对地址（相对代理模式）：href 会解析到页面自身源，没有跨源可言。
+    return;
+  }
+  let target: URL;
+  try {
+    target = new URL(href, apiBaseUrl);
+  } catch {
+    throw new Error(`Refused unparsable drive resource URL: ${href}`);
+  }
+  if (target.origin !== expected) {
+    throw new Error(`Refused cross-origin drive resource URL: ${href}`);
+  }
+}
+
 export async function fetchDriveResource(href: string, init: RequestInit = {}, apiBaseUrl = driveResourceApiBase()): Promise<Response> {
+  assertDriveResourceSameOrigin(href, apiBaseUrl);
   const withAuth = (): RequestInit => {
     const headers = new Headers(init.headers);
     driveResourceHeaders().forEach((value, key) => headers.set(key, value));
@@ -294,8 +310,10 @@ export function driveHtml(vm: DrivePageVM, projectChips: string, zh: boolean, ap
 }
 
 export function driveNoProjectsEmptyHtml(zh: boolean): string {
+  // L-01（R24 S3 走查）：曾是一个 emoji 文件夹——换成本文件已有的 FOLDER_ICON（同一套线性描边
+  // 语汇，SVG stroke=currentColor 继承 .wh-spot-empty-face 的强调色），不是新造视觉语言。
   return `<div class="wh-spot-empty">
-    <div class="wh-spot-empty-face">📁</div>
+    <div class="wh-spot-empty-face">${FOLDER_ICON}</div>
     <h3 class="wh-spot-empty-title">${zh ? "还没有项目" : "No projects"}</h3>
     <p class="wh-spot-empty-sub">${zh ? "先交给 Cuu 一个任务，它会自动建立项目和网盘。" : "Create a task and Cuu will create the project and drive."}</p>
     <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-drive-open-intake="true">${zh ? "＋ 新任务 / 交给 AI" : "＋ New task / Ask AI"}</button>

@@ -349,16 +349,32 @@ const acceptedDeliverablePreviewResponse = {
     ]).responses
   }
 } as const;
+// R24 S3：auth_mode/version/instance_name 是桌面「连接服务器」屏一次探测就要拿全的展示信息
+// （契约见 packages/contracts/src/health.ts）。服务端无条件返回，故列进 required；对客户端而言
+// 它们仍是可选的——新客户端连旧服务端会缺，必须按「未知」降级。
 const healthResponseSchema = {
   type: "object",
-  required: ["ok", "service", "env", "runtime", "port", "ai_provider_configured"],
+  required: [
+    "ok",
+    "service",
+    "env",
+    "runtime",
+    "port",
+    "ai_provider_configured",
+    "auth_mode",
+    "version",
+    "instance_name"
+  ],
   properties: {
     ok: { type: "boolean", const: true },
     service: { type: "string", const: "workhub-api" },
     env: { type: "string", enum: ["development", "test", "production"] },
     runtime: { type: "string", const: "node" },
     port: { type: "integer", minimum: 1, maximum: 65535 },
-    ai_provider_configured: { type: "boolean" }
+    ai_provider_configured: { type: "boolean" },
+    auth_mode: { type: "string", enum: ["nickname", "hybrid", "password"] },
+    version: { type: "string", minLength: 1 },
+    instance_name: { type: "string", minLength: 1, maxLength: 80 }
   },
   additionalProperties: false
 } as const;
@@ -566,7 +582,9 @@ const identifyRequestBodySchema = {
   required: ["nickname"],
   properties: {
     nickname: { type: "string", minLength: 1, maxLength: 64 },
-    admin_secret: { type: "string", maxLength: 256 }
+    admin_secret: { type: "string", maxLength: 256 },
+    // R24 S3 严重#4：新建用户时优先用它，其次探测 Accept-Language，都没有才落 zh-CN；已存在用户不受影响。
+    locale: { type: "string", enum: ["zh-CN", "en-US"] }
   },
   additionalProperties: false
 } as const;
@@ -577,7 +595,9 @@ const desktopBootstrapRequestBodySchema = {
     nickname: { type: "string", minLength: 1, maxLength: 64 },
     admin_secret: { type: "string", maxLength: 256 },
     device_name: { type: "string", minLength: 1, maxLength: 128 },
-    platform: { type: "string", maxLength: 64 }
+    platform: { type: "string", maxLength: 64 },
+    // R24 S3 严重#4：同 identifyRequestBodySchema 的 locale。
+    locale: { type: "string", enum: ["zh-CN", "en-US"] }
   },
   additionalProperties: false
 } as const;
@@ -597,7 +617,9 @@ const passwordRegisterRequestBodySchema = {
   properties: {
     email: { type: "string", format: "email", maxLength: 320 },
     password: { type: "string", minLength: 8, maxLength: 1024 },
-    nickname: { type: "string", minLength: 1, maxLength: 64 }
+    nickname: { type: "string", minLength: 1, maxLength: 64 },
+    // R24 S3 严重#4：同 identifyRequestBodySchema 的 locale。
+    locale: { type: "string", enum: ["zh-CN", "en-US"] }
   },
   additionalProperties: false
 } as const;
@@ -667,7 +689,9 @@ const inviteAcceptRequestBodySchema = {
   properties: {
     token: { type: "string", minLength: 1, maxLength: 512 },
     nickname: { type: "string", minLength: 1, maxLength: 64 },
-    password: { type: "string", minLength: 8, maxLength: 1024 }
+    password: { type: "string", minLength: 8, maxLength: 1024 },
+    // R24 S3 严重#4：同 identifyRequestBodySchema 的 locale。
+    locale: { type: "string", enum: ["zh-CN", "en-US"] }
   },
   additionalProperties: false
 } as const;

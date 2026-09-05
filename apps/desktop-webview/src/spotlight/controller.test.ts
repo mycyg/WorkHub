@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleSpotlightCapabilityEscape, renderSpotlightShellHtml, SPOTLIGHT_INTERNAL_BACK_SELECTOR } from "./controller.js";
+import { initialAskCuuState } from "./ask-cuu.js";
+import {
+  handleSpotlightCapabilityEscape,
+  renderFirstRunCardHtml,
+  renderLauncherGrid,
+  renderSpotlightShellHtml,
+  SPOTLIGHT_INTERNAL_BACK_SELECTOR
+} from "./controller.js";
 
 // D-01（R23 精简批）：这三条用例原来住在 apps/desktop-webview/src/main.test.ts（main.ts 死 barrel 的
 // 自证测试文件），但测的是 controller.ts 的真实行为——它没有自己的 controller.test.ts（只有专测拖拽
@@ -59,4 +66,65 @@ test("Spotlight shell renders native drag affordances without dead resize handle
   assert.doesNotMatch(html, /data-tauri-drag-region/u);
   assert.doesNotMatch(html, /data-spot-resize/u);
   assert.doesNotMatch(html, /ds-glass-strong/u);
+});
+
+// R24 S6（E-11）：聚焦盒顶部的「AI 未配置」横幅挂钩——初始隐藏，mountSpotlight 据 health 探测结果决定
+// 是否揭开（不在这里测那部分 DOM 接线，同本文件既有取舍：mountSpotlight 本身没有任何直接单测，见文件顶注）。
+test("Spotlight shell reserves a hidden-by-default AI-provider banner slot", () => {
+  const html = renderSpotlightShellHtml("zh-CN");
+  assert.match(html, /data-spot-ai-banner hidden/u);
+});
+
+// R24 S6（E-10）：首启引导卡——不落空网格，落「建你的第一个项目」+ 一个输入框。
+test("renderFirstRunCardHtml renders a project-name input and create button in the idle state", () => {
+  const html = renderFirstRunCardHtml("zh-CN", { kind: "idle" });
+  assert.match(html, /建你的第一个项目/u);
+  assert.match(html, /data-spot-first-run-name/u);
+  assert.match(html, /data-spot-first-run-create/u);
+  assert.doesNotMatch(html, /disabled/u);
+  assert.match(html, /data-spot-first-run-error hidden/u);
+
+  const en = renderFirstRunCardHtml("en-US", { kind: "idle" });
+  assert.match(en, /Create your first project/u);
+});
+
+test("renderFirstRunCardHtml disables the input/button and shows a busy label while creating", () => {
+  const html = renderFirstRunCardHtml("en-US", { kind: "creating" });
+  assert.match(html, /data-spot-first-run-name[^>]+disabled/u);
+  assert.match(html, /data-spot-first-run-create[^>]+disabled/u);
+  assert.match(html, /Creating…/u);
+});
+
+test("renderFirstRunCardHtml surfaces a visible, non-disabled retry state on error", () => {
+  const html = renderFirstRunCardHtml("zh-CN", { kind: "error", message: "创建失败，请重试。" });
+  assert.match(html, /data-spot-first-run-error[^>]*role="alert">创建失败，请重试。/u);
+  assert.doesNotMatch(html, /data-spot-first-run-error hidden/u);
+  assert.doesNotMatch(html, /data-spot-first-run-create[^>]+disabled/u);
+});
+
+// M-01（R24 S3 走查）：徽章此前写死"⌘K"，但真正注册的全局唤起热键是 Option+Space
+// （client-tauri/src-tauri/src/main.rs install_workhub_global_hotkey）——隐藏主窗后按 ⌘K 毫无反应。
+test("Spotlight shell badges the real global hotkey (Option+Space), not the stale Cmd+K claim", () => {
+  const en = renderSpotlightShellHtml("en-US");
+  const zh = renderSpotlightShellHtml("zh-CN");
+
+  assert.match(en, /class="wh-spot-kbd"[^>]*>⌥Space<\/kbd>/u);
+  assert.match(zh, /class="wh-spot-kbd"[^>]*>⌥Space<\/kbd>/u);
+  assert.doesNotMatch(en, />⌘K</u);
+  assert.doesNotMatch(zh, />⌘K</u);
+});
+
+// M-05（R24 S3 走查）："没有匹配的能力"/"No matching capability" 是黑话且自相矛盾——判词说没有匹配，
+// 紧接着又给两个可执行入口（问问 Cuu / 交给 Cuu 当新任务）。改成人话，同一个空态里不再自相矛盾。
+test("Launcher's empty-results copy talks like a person and stops contradicting the fallback actions it offers", () => {
+  const en = renderLauncherGrid([], "en-US", {}, false, initialAskCuuState, "totally unmatched query");
+  const zh = renderLauncherGrid([], "zh-CN", {}, false, initialAskCuuState, "完全不匹配的查询");
+
+  assert.doesNotMatch(en, /No matching capability/u);
+  assert.doesNotMatch(zh, /没有匹配的能力/u);
+  assert.match(en, /Nothing matched/u);
+  assert.match(zh, /没找到对应的功能/u);
+  // The two existing fallback exits must still be there — only the contradictory headline changed.
+  assert.match(en, /Hand this to Cuu as a new task/u);
+  assert.match(zh, /把这句话当新任务交给 Cuu/u);
 });

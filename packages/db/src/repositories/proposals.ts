@@ -13,6 +13,7 @@ import type {
 } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
+import { findPgError } from "../pg-error.js";
 import type { ProposalDiffStats } from "../schema/index.js";
 import { TaskPlanBudgetShareMismatch, validateDraftItemGraph } from "./task-plans.js";
 import {
@@ -291,12 +292,14 @@ export class ProposalRepositoryBranchWorkItemMismatchError extends Error {
 // findings[#low]：service 层 findById 预检与 createFromManifest 插入之间存在 TOCTOU——并发同
 // proposal_id 时输者撞 proposals_pkey / proposals_branch_round_uq 唯一约束抛裸 23505 冒泡成 500。
 // 在仓库层翻译成 proposal_already_exists（service 映射 409），其余错误原样抛出（镜像 drive.ts）。
+// R24 S3：drizzle-orm 把裸 pg 错误包进 `.cause`（顶层没有 `.code`/`.constraint`），改用
+// findPgError 沿 cause 链查找真正的 pg 错误对象，同时兼容测试里直接顶层塞 code 的假错误。
 export function isProposalsUniqueViolation(error: unknown): boolean {
-  if (!error || typeof error !== "object" || (error as { code?: string }).code !== "23505") {
+  const pgError = findPgError(error);
+  if (pgError?.code !== "23505") {
     return false;
   }
-  const constraint = (error as { constraint?: string }).constraint;
-  return constraint === "proposals_pkey" || constraint === "proposals_branch_round_uq";
+  return pgError.constraint === "proposals_pkey" || pgError.constraint === "proposals_branch_round_uq";
 }
 
 export class ProposalRepositoryInvalidMergeProposalCandidateError extends Error {

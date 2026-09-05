@@ -33,7 +33,14 @@ export type UserRepository = {
   findActiveByCookieToken: (cookieToken: string) => Promise<UserAuthRow | null>;
   findActiveByNickname: (nickname: string) => Promise<UserAuthRow | null>;
   createUser: (input: CreateUserInput) => Promise<UserAuthRow>;
-  getOrCreateActiveByNickname: (nickname: string, newCookieToken: string) => Promise<GetOrCreateUserResult>;
+  // R24 S3 严重#4：昵称模式的 identify/desktop-bootstrap 建号走的是这条路径，不是 createUser——
+  // 新增可选 options.preferredLocale，让路由层能把「请求体显式 locale / Accept-Language 探测」
+  // 传下来。只在真正新建（onConflictDoNothing 赢家）时生效；命中既有用户短路返回，不改其偏好。
+  getOrCreateActiveByNickname: (
+    nickname: string,
+    newCookieToken: string,
+    options?: { preferredLocale?: WorkHubLocale }
+  ) => Promise<GetOrCreateUserResult>;
   rotateCookieToken: (userId: string, cookieToken: string) => Promise<UserAuthRow | null>;
   updatePreferredLocale?: (userId: string, locale: WorkHubLocale) => Promise<UserAuthRow | null>;
   promoteToAdmin?: (userId: string) => Promise<UserAuthRow | null>;
@@ -155,7 +162,7 @@ export function createUserRepository(db: WorkHubDb): UserRepository {
       return user;
     },
 
-    async getOrCreateActiveByNickname(nickname, newCookieToken) {
+    async getOrCreateActiveByNickname(nickname, newCookieToken, options) {
       const existing = await this.findActiveByNickname(nickname);
       if (existing) {
         return { user: existing, created: false };
@@ -169,7 +176,9 @@ export function createUserRepository(db: WorkHubDb): UserRepository {
           id: randomUUID(),
           nickname,
           cookieToken: hashCookieToken(newCookieToken),
-          preferredLocale: "zh-CN",
+          // R24 S3 严重#4：只有新建（本次赢得 onConflictDoNothing）时才落 options.preferredLocale；
+          // 冲突回查复用既有行时既有 preferredLocale 原样保留，不经过这里。
+          preferredLocale: options?.preferredLocale ?? "zh-CN",
           isAdmin: false
         })
         .onConflictDoNothing()

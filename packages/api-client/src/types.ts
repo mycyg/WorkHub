@@ -26,6 +26,8 @@ import type {
   DeleteProjectResult,
   WorkspaceAuditListVM,
   WorkspaceAuditQuery,
+  // R24 S3：服务端认证模式（GET /api/health 的 auth_mode），枚举取自契约层的单一事实。
+  WorkHubAuthMode,
   // R23 P2（SA-05 web 个人空间新建）：GET/POST /api/me/personal-projects 复用团队项目 bootstrap 的响应形状。
   CreatePersonalProjectRequest,
   CreatePersonalProjectResult,
@@ -269,11 +271,21 @@ export type HealthResponse = {
   // 此前这个类型漏了它，桌面端只能绕过 client.health() 走裸类型的 client.request(...)；
   // 补上后 web 的常驻「AI 未配置」横幅（apps/web/src/ai-provider-status.ts）也能走同一个类型化方法。
   ai_provider_configured: boolean;
+  // R24 S3（桌面「连接服务器」屏）：一次探测拿全「这是哪台服务器、什么版本、怎么登」。
+  // 服务端无条件返回（openapi.ts 标 required），但这里必须是**可选**——新客户端会连到还没升级的
+  // 旧服务端，读取端要按「未知」降级，绝不因为缺字段就判定这台服务器不可用。
+  // 取值口径与 packages/contracts 的 serverHealthSchema 同一份事实。
+  auth_mode?: WorkHubAuthMode;
+  version?: string;
+  instance_name?: string;
 };
 
 export type IdentifyRequest = {
   nickname: string;
   admin_secret?: string;
+  // R24 S3 严重#4：新建用户时优先用它，其次探测 Accept-Language，都没有才落 zh-CN；
+  // 已存在用户不受影响（见 apps/api/src/middleware/auth.ts 的 resolveNewUserLocale）。
+  locale?: WorkHubLocale;
 };
 
 // R2 auth epic（密码登录）：桌面在密码/hybrid 模式先用凭据登录建会话，再走 bootstrapDesktop 换设备令牌。
@@ -289,6 +301,8 @@ export type PasswordRegisterRequest = {
   email: string;
   password: string;
   nickname: string;
+  // R24 S3 严重#4：同 IdentifyRequest 的 locale。
+  locale?: WorkHubLocale;
 };
 
 export type IdentityResponse = {

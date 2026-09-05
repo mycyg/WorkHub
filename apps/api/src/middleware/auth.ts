@@ -6,7 +6,7 @@ import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 
 import { authDefaults, settings as defaultSettings, type Settings } from "@workhub/config";
-import { defaultWorkHubLocale, type ActorKind } from "@workhub/contracts";
+import { defaultWorkHubLocale, type ActorKind, type WorkHubLocale } from "@workhub/contracts";
 import {
   createAuditLogRepository,
   createClientDeviceRepository,
@@ -257,6 +257,34 @@ export async function issueSessionCookie(c: Context, token: string, runtimeSetti
     secure: runtimeSettings.auth.cookieSecure,
     path: "/"
   });
+}
+
+// R24 S3 严重#4：新建用户的 preferredLocale 此前恒为 "zh-CN"（getOrCreateActiveByNickname/createUser
+// 的旧默认值），导致英文用户首次 identify/desktop-bootstrap/register/邀请入驻后 identity.locale
+// 回 zh-CN，桌面/web 整壳被 packages/web-runtime 的 applyIdentityLocale 强制翻译成中文。
+// 判优先级：
+//   1. 请求体显式 locale（四个建号入口新增的可选契约字段）——最高优先级，前端明确表态就照办。
+//   2. 请求方没带 locale 时，看 Accept-Language 首选（只取第一段主标签，不管 q 权重）：
+//      zh 系（"zh"/"zh-*"）→ zh-CN；任何其它可解析到的值（en/fr/ja/…，含无法识别的怪值）→ en-US。
+//      不复用 packages/contracts 的 normalizeWorkHubLocale——它对无法识别的值兜底 zh-CN，
+//      而这里要的语义是「有 Accept-Language 但不是中文」一律落 en-US，否则任何非中文非英文的
+//      Accept-Language（如 fr-FR/ja-JP）会被误当成中文用户对待。
+//   3. 请求方完全没带 Accept-Language（如内部脚本/curl 调用）才落旧默认 zh-CN——不改变这个
+//      无信号场景的既有行为。
+// 只在建号那一刻生效；已存在用户的偏好由 PATCH /api/auth/preferences 走 updatePreferredLocale
+// 单独改，getOrCreateActiveByNickname/createUser 命中已有行时压根不会看这个函数的返回值。
+export function resolveNewUserLocale(
+  explicitLocale: WorkHubLocale | undefined,
+  acceptLanguageHeader: string | null | undefined
+): WorkHubLocale {
+  if (explicitLocale) {
+    return explicitLocale;
+  }
+  if (!acceptLanguageHeader) {
+    return defaultWorkHubLocale;
+  }
+  const primaryTag = acceptLanguageHeader.split(",")[0]?.split(";")[0]?.trim().toLowerCase() ?? "";
+  return primaryTag === "zh" || primaryTag.startsWith("zh-") ? "zh-CN" : "en-US";
 }
 
 export function toIdentityResponse(user: UserAuthRow, created: boolean) {

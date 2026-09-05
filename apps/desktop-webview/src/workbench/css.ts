@@ -149,28 +149,46 @@ export const workbenchCss = [
   // R16-W4b2：中栏列容器（会话 tab 条 + 中栏视图纵向排布）——tab 条 flex:none 常驻顶部，视图 flex:1 填满。
   ".wh-wb-center-col{flex:1 1 auto;min-width:0;min-height:0;display:flex;flex-direction:column}",
   ".wh-wb-center{flex:1 1 auto;min-width:0;min-height:0;overflow-y:auto;padding:20px 26px}",
-  // —— R16-W4b2：中栏「已打开会话」tab 条（温和增强，位置照原型、贴玻璃体系；只在会话类视图且集合非空时现身） —— //
-  ".wh-wb-sess-strip{display:none;flex:0 0 auto;align-items:flex-end;gap:3px;padding:7px 14px 0;" +
+  // —— R16-W4b2：中栏「已打开会话」tab 条；R24-D 视觉打磨：改成一条真正的 tab strip —— //
+  // 改版前这一条是「三个组件拼出来的」：tab 本体有玻璃底色 + inset 下划线，两个 <button> 又都没复位
+  // 浏览器默认按钮外观（灰底 + 边框 + 圆角），于是同一条 tab 上同时出现「厚重灰药丸 + 蓝下划线 +
+  // 漂在右边的独立小灰块 x」三套视觉，互相打架（用户截图实锤）。现在：
+  //  1) 激活态只用底部 2px 强调线（不再叠底色/边框——「底色胶囊 or 下划线」二选一，选了下划线，
+  //     因为条底本来就有一条 hairline，下划线是同一根线的加粗，比再叠一层玻璃更克制）；
+  //  2) 两个 button 一律复位默认外观，容器 .wh-wb-sess-tab 才是唯一有背景/圆角的那层；
+  //  3) 关闭 x 收进 tab 内部右侧，平时不可见（opacity:0 + pointer-events:none，不留可点的隐形陷阱），
+  //     hover / 激活 / 键盘聚焦时才现身，且始终占位 → 出现时不推挤文字。
+  // 左内边距 12(条) + 8(tab) = 20px，与成员条/聊天区的 20px 左边距对齐成同一条竖线。
+  ".wh-wb-sess-strip{display:none;flex:0 0 auto;align-items:center;gap:2px;padding:6px 12px 0;" +
     "border-bottom:1px solid var(--ds-glass-border);overflow-x:auto;scrollbar-width:none}",
   ".wh-wb-sess-strip::-webkit-scrollbar{height:0}",
   ".wh-wb-sess-strip.is-visible{display:flex}",
-  ".wh-wb-sess-tab{flex:0 0 auto;display:flex;align-items:center;border-radius:9px 9px 0 0}",
-  ".wh-wb-sess-tab:hover{background:var(--ds-glass)}",
-  ".wh-wb-sess-tab.is-active{background:var(--ds-glass-strong);box-shadow:inset 0 -2px 0 var(--ds-accent)}",
-  ".wh-wb-sess-open{display:flex;align-items:center;gap:7px;height:30px;padding:0 4px 0 12px;border-radius:9px 9px 0 0;" +
-    "color:var(--ds-ink-muted);font:500 12.5px/1 var(--ds-font)}",
-  ".wh-wb-sess-open svg{width:13px;height:13px;color:var(--ds-ink-faint);flex:0 0 auto}",
+  ".wh-wb-sess-tab{position:relative;flex:0 0 auto;display:flex;align-items:center;height:34px;padding-right:4px;" +
+    "border-radius:8px 8px 0 0;transition:background var(--ds-dur-fast) var(--ds-ease)}",
+  ".wh-wb-sess-tab:hover{background:rgba(20,30,50,.045)}",
+  // 激活线：贴着条底那根 hairline（bottom:-1px 盖住它），两端各内缩 8px，读起来是「这一段线属于这条 tab」。
+  ".wh-wb-sess-tab.is-active::after{content:\"\";position:absolute;left:8px;right:8px;bottom:-1px;height:2px;" +
+    "border-radius:2px 2px 0 0;background:var(--ds-accent)}",
+  ".wh-wb-sess-open{display:flex;align-items:center;gap:7px;height:100%;padding:0 2px 0 8px;border:0;background:transparent;" +
+    "cursor:pointer;color:var(--ds-ink-faint);font:500 12.5px/1 var(--ds-font)}",
+  ".wh-wb-sess-open svg{width:13px;height:13px;color:currentColor;opacity:.75;flex:0 0 auto}",
+  ".wh-wb-sess-tab:hover .wh-wb-sess-open{color:var(--ds-ink-muted)}",
   ".wh-wb-sess-tab.is-active .wh-wb-sess-open{color:var(--ds-ink);font-weight:600}",
-  ".wh-wb-sess-tab.is-active .wh-wb-sess-open svg{color:var(--ds-accent)}",
-  ".wh-wb-sess-name{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
-  ".wh-wb-sess-unread{flex:0 0 auto;min-width:15px;height:15px;padding:0 4px;box-sizing:border-box;border-radius:99px;" +
-    "font:700 9.5px/15px var(--ds-font);text-align:center;color:#fff;background:var(--ds-danger);box-shadow:0 0 8px var(--ds-danger)}",
+  ".wh-wb-sess-tab.is-active .wh-wb-sess-open svg{color:var(--ds-accent);opacity:1}",
+  ".wh-wb-sess-name{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+  ".wh-wb-sess-unread{flex:0 0 auto;min-width:14px;height:14px;padding:0 4px;box-sizing:border-box;border-radius:99px;" +
+    "font:700 9.5px/14px var(--ds-font);text-align:center;color:#fff;background:var(--ds-danger)}",
   ".wh-wb-sess-dot{width:7px;height:7px;flex:0 0 auto;border-radius:50%;background:var(--ds-ink-faint);opacity:.5}",
-  ".wh-wb-sess-dot.is-online{background:var(--ds-success);opacity:1;box-shadow:0 0 6px var(--ds-success)}",
-  ".wh-wb-sess-close{flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:20px;height:20px;" +
-    "margin:0 4px 3px 1px;border-radius:6px;color:var(--ds-ink-faint)}",
-  ".wh-wb-sess-close svg{width:12px;height:12px}",
-  ".wh-wb-sess-close:hover{background:var(--ds-danger-soft);color:var(--ds-danger)}",
+  ".wh-wb-sess-dot.is-online{background:var(--ds-success);opacity:1}",
+  ".wh-wb-sess-close{flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:18px;height:18px;" +
+    "margin:0;border:0;background:transparent;border-radius:5px;color:var(--ds-ink-faint);cursor:pointer;opacity:0;" +
+    "pointer-events:none;transition:opacity var(--ds-dur-fast) var(--ds-ease),background var(--ds-dur-fast) var(--ds-ease)}",
+  ".wh-wb-sess-close svg{width:11px;height:11px}",
+  ".wh-wb-sess-tab:hover .wh-wb-sess-close,.wh-wb-sess-tab.is-active .wh-wb-sess-close," +
+    ".wh-wb-sess-close:focus-visible{opacity:1;pointer-events:auto}",
+  // 关 tab 不是删除，hover 反馈用中性灰而不是红——红留给真的会毁数据的动作。
+  ".wh-wb-sess-close:hover{background:rgba(20,30,50,.08);color:var(--ds-ink)}",
+  ".wh-wb-sess-open:focus-visible,.wh-wb-sess-close:focus-visible{outline:2px solid var(--ds-accent);outline-offset:-2px;border-radius:6px}",
   ".wh-wb-empty{max-width:420px;margin:14vh auto 0;text-align:center}",
   ".wh-wb-empty-icon{display:inline-flex;width:34px;height:34px;color:var(--ds-accent)}",
   ".wh-wb-empty-icon svg{width:34px;height:34px}",
@@ -475,9 +493,13 @@ export const workbenchCss = [
   // flex 布局不变），右边留给「请 Cuu 进来」开关（只在 DM/非主区协同会话渲染，见 view.ts renderHead）。
   // 挂载点本身没有类名，只有 data-wb-chat-head 属性——纯布局壳，不影响任何既有断言（既有测试只覆盖
   // renderMemberBarHtml/renderDmHeadBarHtml 各自返回的字符串，不检查这层壳）。
+  // R24-D：分隔线从 .wh-wb-chat-head（只有内容那么宽，于是那根线在成员条中途就断了，整行像临时占位）
+  // 挪到这层外壳上，横贯整个聊天区宽度。:not(:empty) 是为了退群后 headEl.innerHTML="" 的终态——那时
+  // 这层是真空节点，不该在聊天区顶上留一根孤零零的线。
   "[data-wb-chat-head]{display:flex;align-items:center;justify-content:space-between;gap:8px}",
-  ".wh-wb-chat-head{flex:none;display:flex;align-items:center;gap:10px;padding:9px 20px;" +
-    "border-bottom:1px solid var(--ds-glass-border);font:500 11.5px/1 var(--ds-font);color:var(--ds-ink-muted)}",
+  "[data-wb-chat-head]:not(:empty){border-bottom:1px solid var(--ds-glass-border)}",
+  ".wh-wb-chat-head{flex:none;display:flex;align-items:center;gap:10px;padding:10px 20px;" +
+    "font:500 13px/1.3 var(--ds-font);color:var(--ds-ink-muted)}",
   ".wh-wb-chat-cuu-toggle{flex:none;margin-right:16px;padding:5px 12px;border-radius:999px;" +
     "border:1px solid var(--ds-glass-border);background:var(--ds-glass);font:600 11px/1.2 var(--ds-font);" +
     "color:var(--ds-ink-muted);cursor:pointer}",
@@ -525,7 +547,16 @@ export const workbenchCss = [
     "height:100%;padding:40px 20px;text-align:center}",
   ".wh-wb-chat-left-terminal-title{margin:0;font:700 14px/1.3 var(--ds-font);color:var(--ds-ink)}",
   ".wh-wb-chat-left-terminal-note{margin:0;font:500 12.5px/1.5 var(--ds-font);color:var(--ds-ink-muted)}",
-  ".wh-wb-chat-avs{display:flex}",
+  // R24-D：头像组末尾那枚 tile 的 -6px 堆叠留白要还回来，否则「头像组 ↔ 文案」的实际间距被吃掉 6px，
+  // 看起来是文字贴着猫头（用户截图里的「对齐/间距粗糙」）。padding-right 抵掉负边距后，间距就干净地
+  // 由 .wh-wb-chat-head 的 gap:10px 一处说了算。
+  ".wh-wb-chat-avs{display:flex;align-items:center;padding-right:6px}",
+  // 堆叠顺序：靠前的头像压在后一枚之上（默认是后来的压前面，于是首位成员的首字母/中文字被下一枚的白描边
+  // 切掉一角）。成员最多渲 6 枚 + Cuu 一枚，逐位写死 z-index 就够，不需要运行时算。
+  ".wh-wb-chat-avs>*:nth-child(1){z-index:7}.wh-wb-chat-avs>*:nth-child(2){z-index:6}" +
+    ".wh-wb-chat-avs>*:nth-child(3){z-index:5}.wh-wb-chat-avs>*:nth-child(4){z-index:4}" +
+    ".wh-wb-chat-avs>*:nth-child(5){z-index:3}.wh-wb-chat-avs>*:nth-child(6){z-index:2}" +
+    ".wh-wb-chat-avs>*:nth-child(7){z-index:1}",
   // 头像堆叠的描边用白色（新壳体底色本就是近白的浅色玻璃），照 .wh-wb-chat-avatar--cuu/render.ts
   // avatarTileHtml 的深底色块配白字在浅底上依然成立——这条边框只是让重叠头像有「切出来」的轮廓感。
   ".wh-wb-chat-avatar{position:relative;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;" +
@@ -536,7 +567,7 @@ export const workbenchCss = [
   ".wh-wb-chat-avatar-dot{position:absolute;right:-1px;bottom:-1px;width:8px;height:8px;border-radius:50%;" +
     "background:var(--ds-success);border:1.5px solid #fff;z-index:2}",
   ".wh-wb-chat-avatar--cuu svg{width:12px;height:12px}",
-  ".wh-wb-chat-head-label{margin-left:4px}",
+  ".wh-wb-chat-head-label{color:var(--ds-ink-muted)}",
   ".wh-wb-chat-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;padding:16px 20px 6px}",
   ".wh-wb-chat-daysep{display:flex;align-items:center;gap:10px;color:var(--ds-ink-faint);font:600 10.5px/1 var(--ds-font);margin:6px 0 14px}",
   ".wh-wb-chat-daysep::before,.wh-wb-chat-daysep::after{content:\"\";flex:1;height:1px;background:var(--ds-glass-border)}",
@@ -586,11 +617,18 @@ export const workbenchCss = [
   ".wh-wb-chat-sysline{display:flex;align-items:center;justify-content:center;gap:8px;margin:8px 0;" +
     "font:500 11.5px/1.4 var(--ds-font);color:var(--ds-ink-faint)}",
   ".wh-wb-chat-sysline-tm{color:var(--ds-ink-faint)}",
-  ".wh-wb-chat-empty{max-width:380px;margin:10vh auto 0;text-align:center}",
-  ".wh-wb-chat-empty-icon{display:inline-flex;width:30px;height:30px;color:var(--wb-cuu)}",
-  ".wh-wb-chat-empty-icon svg{width:30px;height:30px}",
-  ".wh-wb-chat-empty-title{margin:12px 0 0;font:700 15.5px/1.35 var(--ds-font);color:var(--ds-ink)}",
-  ".wh-wb-chat-empty-body{margin:8px 0 0;font:500 12.5px/1.6 var(--ds-font);color:var(--ds-ink-muted)}",
+  // R24-D：空态原来是 `margin:10vh auto 0`——10vh 量的是整窗高度、不是聊天区，于是这一组图标/标题/说明
+  // 既没在聊天区里居中、又与上面的 tab 条/成员条各自为政。改成撑满滚动区并在其中垂直居中的一组
+  // （min-height:100% 拿的是聊天滚动区的高度；万一百分比解析不了也只是回落成顶对齐，不会塌）。
+  ".wh-wb-chat-empty{box-sizing:border-box;min-height:100%;display:flex;flex-direction:column;align-items:center;" +
+    "justify-content:center;padding:24px 20px;text-align:center}",
+  ".wh-wb-chat-empty-icon{display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;" +
+    "border-radius:50%;background:var(--ds-glass);border:1px solid var(--ds-glass-border);color:var(--ds-ink-faint)}",
+  ".wh-wb-chat-empty-icon svg{width:24px;height:24px}",
+  // Cuu 开场白那一版才用品牌橙圆底；无权限空态那把锁沿用中性灰（橙色的锁会读成 Cuu 的东西）。
+  ".wh-wb-chat-empty-icon--cuu{background:var(--wb-cuu-soft);border-color:rgba(255,171,94,.3);color:var(--wb-cuu)}",
+  ".wh-wb-chat-empty-title{margin:14px 0 0;font:700 20px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-chat-empty-body{margin:8px 0 0;max-width:56ch;font:500 14px/1.6 var(--ds-font);color:var(--ds-ink-muted)}",
   ".wh-wb-chat-error{padding:30px 18px;text-align:center;color:var(--ds-ink-muted);font:500 13px/1.6 var(--ds-font)}",
   // R12 批8：滚到顶「加载更早」占位——本地展开/服务端翻页共用同一套外观，loading/error 修饰符切换
   // 内容而不是重排布局，避免翻页时的视觉跳动。

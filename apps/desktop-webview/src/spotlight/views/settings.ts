@@ -31,6 +31,8 @@ import type {
   UserProfileVM
 } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
+import type { HealthResponse } from "@workhub/api-client";
+import { createApiClient } from "@workhub/api-client/client";
 
 import {
   AVATAR_CROP_OUTPUT_SIZE,
@@ -47,6 +49,11 @@ import {
 import { resolveDesktopShellEmitter } from "../../desktop-cuu-runtime.js";
 import { clearDesktopClientToken } from "../../desktop-client-token.js";
 import { resolveDesktopTauriInvoke } from "../../desktop-window-controls.js";
+import {
+  bindDesktopConnectScreen,
+  createDesktopServerChoiceEffects
+} from "../../desktop-connect-screen.js";
+import { scheduleWorkHubLiquidGlassFilterRebuild } from "../../liquid-glass-filter.js";
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 import { driveResourceApiBase, fetchDriveResource } from "./drive.js";
 
@@ -60,6 +67,19 @@ const PROFILE_PATH = "/api/me/profile";
 const AVATAR_PATH = "/api/me/avatar";
 function avatarHref(userId: string): string {
   return `/api/users/${encodeURIComponent(userId)}/avatar`;
+}
+
+// M-06（R24 S3 走查）：「AI assistant · Not set up」此前是个死状态——没有任何说明或入口，终端用户
+// 读到只会觉得东西坏了。桌面端没有配置能力（LLM_API_KEY 是服务端 .env，desktop client 连不到那台
+// 机器的文件系统），所以这里给不了「去配置」按钮，只能诚实说清楚谁能修、去哪看——与工作台聊天区
+// 已有的同款横幅（workbench/chat/render.ts）同一个信息来源，措辞对齐。
+const DEPLOY_DOC_URL = "https://github.com/mycyg/WorkHub/blob/main/DEPLOY.md";
+
+function aiNotConfiguredNoteHtml(zh: boolean): string {
+  const explanation = zh
+    ? "AI 助手还没配置——需要管理员在服务器的 .env 文件里设置 LLM_API_KEY 并重启服务后才能使用。"
+    : "The AI assistant isn't set up yet — an admin needs to set LLM_API_KEY in the server's .env file and restart it.";
+  return `<div class="wh-spot-row-sub wh-spot-row-sub--wrap" data-spot-ai-not-configured="true">${escapeHtml(explanation)} <button type="button" class="wh-spot-inline-link" data-set-ai-deploy-docs="true">${zh ? "查看部署说明" : "View deployment instructions"}</button></div>`;
 }
 
 function localeLabel(locale: string, zh: boolean): string {
@@ -494,14 +514,45 @@ export function devicesSectionHtml(state: DesktopDevicesSectionState, zh: boolea
   const error = state.errorText
     ? `<div class="wh-spot-row-sub" data-spot-devices-error="true" style="color:var(--ds-danger)">${escapeHtml(state.errorText)}</div>`
     : "";
+  // L-04（R24 S3 走查）：这段说明是完整的两句话，但 .wh-spot-row-sub 默认单行截断（给"行副标题"
+  // 用）——之前借用它渲这段长说明，实测被裁成一行省略号。加 --wrap 修饰类让它正常换行。
   return `<div class="wh-spot-set-group" data-spot-devices-section="true">
     <div class="wh-spot-set-label">${zh ? "已登录设备" : "Signed-in devices"}</div>
-    <div class="wh-spot-row-sub">${zh
+    <div class="wh-spot-row-sub wh-spot-row-sub--wrap">${zh
       ? "配对到这个账号的客户端设备。撤销不再使用的设备后，那台设备需要重新配对才能再次访问。"
       : "Client devices paired to this account. Revoking a device you no longer use requires it to re-pair before it can access your account again."
     }</div>
     ${rows}
     ${error}
+  </div>`;
+}
+
+// R24 S5（N-02/E-02 补齐）：全仓此前唯一能填服务器地址的地方是首启失败时才可能浮出的连接屏——
+// 已经登录之后想换一台服务器（或只是想看看自己连的是哪台），设置页里完全没有入口。这里补一行
+// 只读现状 + 一个「更换服务器」按钮，点了直接在设置视图内就地渲连接服务器屏（复用
+// desktop-connect-screen.ts 的 bindDesktopConnectScreen，同一套 probe/effects/applyDesktopServerChoice
+// 顺序——不是另起一份"设置页专属"的换服务器实现）。
+export type DesktopServerSectionState = {
+  apiBase: string;
+  // best-effort：拉不到（网络问题/老服务端缺字段）就只显示地址本身，不阻塞这一行的渲染。
+  health: HealthResponse | undefined;
+};
+
+export function serverSectionHtml(state: DesktopServerSectionState, zh: boolean): string {
+  const parts = [state.apiBase];
+  if (state.health?.instance_name) {
+    parts.push(state.health.instance_name);
+  }
+  if (state.health?.version) {
+    parts.push(`v${state.health.version}`);
+  }
+  const detail = parts.map((part) => escapeHtml(part)).join(" · ");
+  return `<div class="wh-spot-row" style="cursor:default" data-spot-server-section="true">
+    <div class="wh-spot-row-main">
+      <div class="wh-spot-row-title">${zh ? "服务器" : "Server"}</div>
+      <div class="wh-spot-row-sub">${detail}</div>
+    </div>
+    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-set-change-server="true">${zh ? "更换服务器" : "Change server"}</button>
   </div>`;
 }
 
@@ -515,7 +566,8 @@ function settingsHtml(
   profileFailed: boolean,
   profileErrorText: string | undefined,
   policiesHtml: string,
-  devicesHtml: string
+  devicesHtml: string,
+  serverHtml: string
 ): string {
   const lang = vm.language;
   const langChips = lang.supported_locales
@@ -534,12 +586,14 @@ function settingsHtml(
       <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "运行状态" : "Runtime"}</span><span class="wh-spot-metric-v" style="color:${runtimeOk ? "var(--ds-success)" : "var(--ds-warn)"}">${runtimeOk ? (zh ? "正常" : "Ready") : zh ? "需关注" : "Attention"}</span></div>
       <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "AI 助手" : "AI assistant"}</span><span class="wh-spot-metric-v" style="color:${vm.llm_runtime.api_key_configured ? "var(--ds-success)" : "var(--ds-warn)"}">${vm.llm_runtime.api_key_configured ? (zh ? "已就绪" : "Ready") : zh ? "待配置" : "Not set up"}</span></div>
     </div>
+    ${vm.llm_runtime.api_key_configured ? "" : aiNotConfiguredNoteHtml(zh)}
     ${aiSectionHtml(aiProfile, aiFailed, zh)}
     ${aiErrorText ? `<div class="wh-spot-row-sub" data-spot-ai-error="true" style="color:var(--ds-danger)">${escapeHtml(aiErrorText)}</div>` : ""}
     ${avatarSectionHtml(profile, profileFailed, zh)}
     ${profileSectionHtml(profile, profileFailed, zh)}
     ${profileErrorText ? `<div class="wh-spot-row-sub" data-spot-profile-error="true" style="color:var(--ds-danger)">${escapeHtml(profileErrorText)}</div>` : ""}
     ${policiesHtml}
+    ${serverHtml}
     ${devicesHtml}
     <button type="button" class="wh-spot-row" data-set-open-memory="true">
       <div class="wh-spot-row-main">
@@ -560,6 +614,7 @@ function settingsHtml(
       </div>
       <button type="button" class="wh-spot-act wh-spot-act--danger ds-pressable" data-set-logout="true">${zh ? "登出" : "Sign out"}</button>
     </div>
+    <div class="wh-spot-set-bottom-spacer" aria-hidden="true"></div>
   </div>`;
 }
 
@@ -941,6 +996,10 @@ export function createSettingsView(): SpotlightCapabilityView {
       let profile: UserProfileVM | undefined;
       let profileFailed = false;
       let profileErrorText: string | undefined;
+      // R24 S5（N-02/E-02 补齐）：服务器信息行的 best-effort 状态——地址本身走 driveResourceApiBase()
+      // 现拿现算（同步、不需要状态），只有 health（拉服务器名/版本）需要异步落进状态。拉不到就是
+      // undefined，这一行照样渲，只是详情少两截（见 serverSectionHtml）。
+      let serverHealth: HealthResponse | undefined;
       // R20 DSK-UX（R19-5）：自动通过策略撤销的两段式确认武装态 / 撤销进行中 / 失败提示。
       let policyRevokeArmedId: string | undefined;
       let policyRevokeBusyId: string | undefined;
@@ -1085,7 +1144,8 @@ export function createSettingsView(): SpotlightCapabilityView {
           },
           zh
         );
-        ctx.body.innerHTML = settingsHtml(vm, zh, aiProfile, aiFailed, aiErrorText, profile, profileFailed, profileErrorText, policiesHtml, devicesHtml);
+        const serverHtml = serverSectionHtml({ apiBase: driveResourceApiBase(), health: serverHealth }, zh);
+        ctx.body.innerHTML = settingsHtml(vm, zh, aiProfile, aiFailed, aiErrorText, profile, profileFailed, profileErrorText, policiesHtml, devicesHtml, serverHtml);
         ctx.requestResize();
         hydrateAvatarPreview();
       };
@@ -1132,6 +1192,17 @@ export function createSettingsView(): SpotlightCapabilityView {
         }
       };
 
+      // R24 S5（N-02/E-02 补齐）：服务器名/版本纯粹是锦上添花——拉不到（老服务端缺字段/一次性网络
+      // 抖动）就静默留 undefined，serverSectionHtml 照样渲地址本身，不因为这个次要信息挡住整页设置。
+      const loadServerHealth = async () => {
+        try {
+          serverHealth = await ctx.client.health();
+        } catch {
+          if (disposed) return;
+          serverHealth = undefined;
+        }
+      };
+
       // rank7：装载失败渲带「重试」的错误块，点重试重跑（不再死胡同）。
       const load = async () => {
         ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉设置…" : "Loading settings…"}</div>`;
@@ -1146,7 +1217,7 @@ export function createSettingsView(): SpotlightCapabilityView {
         }
         if (disposed) return;
         storageKey = vm.language.storage_key || storageKey;
-        await Promise.all([loadAiProfile(), loadProfile(), loadDevices()]);
+        await Promise.all([loadAiProfile(), loadProfile(), loadDevices(), loadServerHealth()]);
         if (disposed) return;
         renderAll();
       };
@@ -1370,6 +1441,30 @@ export function createSettingsView(): SpotlightCapabilityView {
         runLogoutFlow({ force: false });
       }
 
+      // R24 S5（N-02/E-02 补齐）：设置页「更换服务器」——就地把连接服务器屏渲进这个能力视图自己的
+      // ctx.body（不新开窗口/不整窗替换），走跟首启/离线兜底完全同一套 bindDesktopConnectScreen +
+      // applyDesktopServerChoice（探测不带令牌 C1、地址只认输入框 C2、确认顺序 C3——见
+      // desktop-connect-screen.ts 顶注，这里不重造一份"设置页专属"的换服务器实现）。
+      // onUnchanged：地址跟当前一样时 applyDesktopServerChoice 短路跳过清身份/通知壳层
+      // （R24 S5 N-07），这里对应地收起这一屏、重渲回设置本身，而不是 reload 掉一个正常在线的会话。
+      function openChangeServerScreen(): void {
+        bindDesktopConnectScreen(ctx.body, {
+          locale: ctx.locale,
+          apiBase: driveResourceApiBase(),
+          probe: (base) => createApiClient({ baseUrl: base }).health(),
+          effects: createDesktopServerChoiceEffects({
+            storage: window.localStorage,
+            invoke: resolveDesktopTauriInvoke()
+          }),
+          reload: () => window.location.reload(),
+          onUnchanged: () => {
+            renderAll();
+          },
+          scheduleRebuild: () => scheduleWorkHubLiquidGlassFilterRebuild(document)
+        });
+        ctx.requestResize();
+      }
+
       ctx.body.addEventListener("click", (event) => {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
@@ -1510,6 +1605,35 @@ export function createSettingsView(): SpotlightCapabilityView {
         // R14 批 MEM：设置区旁挂的记忆管理面入口——独立能力视图（views/memory.ts），不是内联区块。
         if (target.closest("[data-set-open-memory]")) {
           ctx.open("memory");
+          return;
+        }
+        // R24 S5（N-02/E-02 补齐）：登录之后想换一台服务器，此前全仓没有入口——直接在设置视图的内容区
+        // 就地渲连接服务器屏（同 openChangeServerScreen 顶注）。
+        if (target.closest("[data-set-change-server]")) {
+          openChangeServerScreen();
+          return;
+        }
+        // M-06：「查看部署说明」——桌面 Tauri webview 对外部链接没有承接（target=_blank 点了没反应，
+        // 同 dashboards.ts 的 GitHub 活动行 rank2 那条既有教训：不假装能内联打开外部站点）。这里退而
+        // 求其次，把链接复制进剪贴板并诚实告知，让用户自己粘到系统浏览器——比只说「去系统浏览器打开」
+        // 却不给链接本身更可行动。
+        if (target.closest("[data-set-ai-deploy-docs]")) {
+          const copied = globalThis.navigator?.clipboard?.writeText?.(DEPLOY_DOC_URL);
+          if (copied && typeof copied.then === "function") {
+            copied.then(
+              () => {
+                ctx.toast(
+                  zh ? "部署说明链接已复制，请到浏览器粘贴打开" : "Copied the deployment doc link — paste it into your browser",
+                  "ok"
+                );
+              },
+              () => {
+                ctx.toast(zh ? `未能复制，请手动打开：${DEPLOY_DOC_URL}` : `Couldn't copy — open manually: ${DEPLOY_DOC_URL}`, "error");
+              }
+            );
+          } else {
+            ctx.toast(zh ? `请在浏览器打开：${DEPLOY_DOC_URL}` : `Open in your browser: ${DEPLOY_DOC_URL}`, "info");
+          }
           return;
         }
         // R9 → R20 SEC P1-01：登出走有序状态机（runDesktopLogout：①服务端登出 ②清 Rust 壳层令牌

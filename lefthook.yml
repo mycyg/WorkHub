@@ -1,0 +1,51 @@
+# Git hooks (lefthook). Keep these local checkpoints fast; CI (pnpm lint /
+# pnpm verify, see .github/workflows/verify.yml) owns the full repository-wide
+# gate matrix — see AGENTS.md. Install: `pnpm install` (runs `lefthook install`
+# via the `prepare` script automatically); CI never invokes lefthook.
+#
+# Adapted from deepseek-harness (MIT), lefthook.yml.
+# Copyright (c) 2026 DeepSeek. Upstream commit d347e703908d0406b7a7ef80e3a0e594d86b2215.
+# Local changes: dropped the translation-pairing / archived-agent-notes /
+# vendor-manifest jobs (this repo has no *.i18n.yaml pairing file and no
+# vendor/ tree to guard) and the staged oxlint job (this repo has no linter
+# yet); kept the third-party-notices "regenerate rather than reject" job,
+# retargeted at this repo's generator and glob set; added a staged-diff job
+# blocking real .env files, secret-shaped strings, and reference/ paths
+# (mirrors the git.no-secret-diff / git.no-reference checks scripts/qa/
+# r2-release-gate-report.ts already runs at lint time, moved earlier to commit
+# time); added the copy-terms / agent-notes / desktop-version audits this repo
+# already runs in `pnpm lint`; added a non-empty commit-msg check (this repo
+# does not enforce a Co-Authored-By trailer, so pre-push/typecheck and every
+# other dsh job that does not apply here was left out rather than ported).
+
+pre-commit:
+  jobs:
+    - name: whitespace (staged)
+      run: git diff --cached --check
+
+    - name: blocked paths (staged .env / secret-shaped / reference)
+      run: node_modules/.bin/tsx scripts/dev/check-staged-paths.ts
+
+    - name: copy-terms
+      run: pnpm audit:copy-terms
+
+    - name: agent-notes
+      run: pnpm audit:agent-notes
+
+    - name: desktop-version
+      run: pnpm audit:desktop-version
+
+    # Regenerate rather than reject: a dependency edit that forgot to update
+    # the notices would otherwise only fail `pnpm audit:third-party-notices`
+    # in the lint chain, long after the commit. The glob matches every input
+    # the generator reads, including the generator itself. Deleting a manifest
+    # triggers no job here — lefthook only inspects files present on disk —
+    # so that one case still falls through to the lint-chain assertion.
+    - name: third-party notices (staged)
+      glob: "{package.json,*/*/package.json,pnpm-lock.yaml,scripts/dev/gen-third-party-notices.ts}"
+      run: pnpm gen:third-party-notices && git add THIRD_PARTY_NOTICES.md
+
+commit-msg:
+  jobs:
+    - name: non-empty message
+      run: node_modules/.bin/tsx scripts/dev/check-commit-msg.ts {1}

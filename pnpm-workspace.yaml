@@ -4,3 +4,4 @@ packages:
   - "workers/*"
 allowBuilds:
   esbuild: true
+  lefthook: true

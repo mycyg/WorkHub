@@ -66,6 +66,29 @@ docker compose --env-file .env.pilot -f docker-compose.pilot.yml ps
 
 完整的部署细节(备份恢复、单实例假设、故障排查、安全口径)见 [`DEPLOY.md`](DEPLOY.md)。本地开发(不经 Docker 打包镜像)见下方「本地开发」。
 
+## 下载桌面客户端
+
+服务器起好之后,再给每个人装一个桌面客户端——常驻的聚焦盒、桌宠 Cuu、系统通知、托盘,以及完整的项目工作台,都在客户端里。Web 端(浏览器直接开 `http://<服务器IP>:8787/`)功能不缺,只是没有这些常驻的原生能力。
+
+到 [Releases](https://github.com/mycyg/WorkHub/releases) 下载对应系统的安装包:
+
+| 系统 | 文件 |
+|---|---|
+| macOS(Apple 芯片,M1 及以后) | `WorkHub_<版本>_darwin_aarch64.dmg` |
+| macOS(Intel) | `WorkHub_<版本>_darwin_x64.dmg` |
+| Windows 10/11 x64 | `WorkHub_<版本>_windows_x64-setup.exe`(或 `.msi`) |
+| Linux x64 | `WorkHub_<版本>_linux_amd64.deb` 或 `.AppImage` |
+
+**首次打开**:安装包目前未经 Apple 公证 / Windows 代码签名,所以系统会先拦一道——
+
+- macOS:在"访达"里找到 WorkHub.app,**按住 Control 点按 → 打开**,弹窗里再点一次"打开";或终端执行 `xattr -dr com.apple.quarantine /Applications/WorkHub.app`。
+- Windows:SmartScreen 提示"已保护你的电脑"时,点"更多信息" → "仍要运行"。
+- Linux:`sudo dpkg -i WorkHub_<版本>_amd64.deb`;AppImage 先 `chmod +x` 再运行。
+
+**告诉客户端服务器在哪**:客户端默认连本机 `http://127.0.0.1:8787`。服务器在别的机器上时,在客户端弹出的连接失败卡片里点"打开设置",填服务器地址后"保存并重试"。远端地址要能连通,服务器的 `CORS_ALLOW_ORIGINS` 也必须放行桌面端的来源——详见 [`DEPLOY.md`](DEPLOY.md) 的「把服务器地址给客户端」。
+
+自己从源码构建客户端:本机平台一把梭用 `pnpm build:desktop`(等价于先建桌面前端再 `cargo tauri build`,产物未签名/ad-hoc);macOS 专用、额外带一层签名结构验证门禁的是 `pnpm build:desktop-macos`。三平台的完整交叉构建/签名/打包流程见 [`.github/workflows/desktop-release.yml`](.github/workflows/desktop-release.yml)。
+
 ## 核心闭环
 
 一句需求进来,到一份可信的交付物落地,中间是这样一条线:

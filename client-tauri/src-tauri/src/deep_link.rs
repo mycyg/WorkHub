@@ -327,6 +327,10 @@ fn allowed_direct_route(route: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::window_controls::{
+        shell_navigate_payload, ShellWindowControlAction, MAIN_WINDOW_LABEL,
+    };
+
     use super::*;
 
     #[test]
@@ -450,6 +454,42 @@ mod tests {
             deep_link_plan_from_url("workhub://open?route=https://evil.test").unwrap_err(),
             ShellDeepLinkError::UnsafeTarget("https://evil.test".to_string())
         );
+    }
+
+    // S5-N-04 复验锁：热态 `open workhub://open/{settings,notifications,approvals}` 的完整链路
+    // URL → 深链计划 → 发给主窗的 navigate payload。真机复验（2026-09-05）证实这三段一直是对的——
+    // 走查里"深链不导航"的现场，URL 根本没送进本进程（LaunchServices 把 workhub: 交给了另一份注册的
+    // WorkHub.app，第二实例被 single-instance 掐掉，而 macOS 的 URL 走 Apple Event、不在 argv 里）。
+    // 这条测试把"URL 一旦送到就必然导航"钉死，下次再出问题可直接排除这三段。
+    #[test]
+    fn hot_deep_links_produce_a_main_window_navigate_payload() {
+        for (url, route, capability_hint) in [
+            ("workhub://open/settings", "/settings", "settings"),
+            (
+                "workhub://open/notifications",
+                "/notifications",
+                "notifications",
+            ),
+            ("workhub://open/approvals", "/approvals", "approvals"),
+        ] {
+            let plan = deep_link_plan_from_url(url).expect("deep link should parse");
+            assert_eq!(plan.route, route, "{url} should resolve to {route}");
+            assert_eq!(plan.window_control.label, MAIN_WINDOW_LABEL);
+            assert_eq!(
+                plan.window_control.action,
+                ShellWindowControlAction::ShowAndFocus
+            );
+
+            let payload = shell_navigate_payload(&plan.window_control)
+                .unwrap_or_else(|| panic!("{url} must reach the spotlight as a navigation"));
+            assert_eq!(payload.route, route);
+            assert_eq!(payload.label, MAIN_WINDOW_LABEL);
+            assert_eq!(payload.source, ShellWindowControlSource::DeepLink);
+            assert_eq!(payload.reason, "focus-main-route");
+            // 能力映射本身住在 webview（spotlight/state.ts SHELL_ROUTE_CAPABILITIES），这里只钉路由形状：
+            // 前导 `/` + 与能力同名的单段，改成 `settings`（无斜杠）或 `/dashboard/settings` 都会断链。
+            assert_eq!(payload.route, format!("/{capability_hint}"));
+        }
     }
 
     #[test]

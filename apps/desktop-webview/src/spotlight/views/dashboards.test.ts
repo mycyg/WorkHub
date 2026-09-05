@@ -1,10 +1,26 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { AgentArmyDashboardVM, CostDashboardVM, ProjectHomePageVM } from "@workhub/contracts";
+import type { AgentArmyDashboardVM, CalendarPageVM, CostDashboardVM, NotificationPageVM, ProjectHomePageVM } from "@workhub/contracts";
 
 import type { SpotlightViewContext } from "../view-context.js";
-import { agentArmyDashboardView, agentArmyPlanDetailHtml, costView, createCostView, knowledgeNoProjectsEmptyHtml, projectHomeDetailHtml, projectListEmptyHtml } from "./dashboards.js";
+import {
+  agentArmyDashboardView,
+  agentArmyPlanDetailHtml,
+  costView,
+  createCalendarView,
+  createCostView,
+  createNotificationsView,
+  knowledgeNoProjectsEmptyHtml,
+  projectHomeDetailHtml,
+  projectListEmptyHtml
+} from "./dashboards.js";
+
+// no emoji anywhere in the pictograph blocks (U+1F300-1FAFF) — the product bar is "no emoji, ever"
+// in the interface; SVG/character tiles instead (see labels.ts and command-palette.ts icons).
+function assertNoEmoji(html: string, where: string) {
+  assert.doesNotMatch(html, /[\u{1F300}-\u{1FAFF}]/u, `${where} must not contain emoji`);
+}
 
 function agentArmyVm(over: Partial<AgentArmyDashboardVM> = {}): AgentArmyDashboardVM {
   return {
@@ -206,6 +222,97 @@ test("R9.7 desktop dashboard generic empty states avoid dispatch copy", () => {
   assert.match(zhKnowledge, /新建任务后/u);
   assert.match(enKnowledge, /Create a task/u);
   assert.match(enProjectList, /New task \/ Ask AI/u);
+
+  // L-01（R24 S3 走查）：这几处空态"脸"此前是 emoji（文件夹/放大镜/勾选）——全部换成内联 SVG。
+  assertNoEmoji(zh, "empty-state faces (zh)");
+  assertNoEmoji(en, "empty-state faces (en)");
+  assert.match(zhProjectList, /<svg /u, "project-list empty state uses an SVG face, not emoji text");
+  assert.match(zhKnowledge, /<svg /u, "knowledge empty state uses an SVG face, not emoji text");
+  assert.match(zhProjectHome, /<svg /u, "project-home 'no open work' empty state uses an SVG face, not emoji text");
+});
+
+test("L-01: notifications empty state has no emoji and shows a plain-English 'awaiting your decision' subtitle", async () => {
+  const emptyVm = {
+    generated_at: "2026-09-05T00:00:00.000Z",
+    actor_user_id: "60000000-0000-4000-8000-000000000001",
+    summary: { total_count: 0, unread_count: 0, needs_decision_count: 0, fyi_count: 0, done_count: 0, urgent_count: 0 },
+    buckets: { needs_decision: [], fyi: [], done: [] },
+    items: [],
+    actions: {}
+  } as unknown as NotificationPageVM;
+
+  let subtitle = "";
+  let resolveReady!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    resolveReady = resolve;
+  });
+  const body = { innerHTML: "", addEventListener: () => {} };
+  createNotificationsView().mount({
+    client: {
+      pages: { notifications: async () => emptyVm },
+      getNotificationPreferences: async () => ({ muted_notification_types: [], care_messages_enabled: true })
+    },
+    locale: "en-US",
+    body,
+    back: () => {},
+    open: () => {},
+    setSubtitle: (value: string) => {
+      subtitle = value;
+      resolveReady();
+    },
+    toast: () => {},
+    requestResize: () => {},
+    refocusBody: () => {},
+    signal: new AbortController().signal
+  } as unknown as SpotlightViewContext);
+  await ready;
+
+  assertNoEmoji(body.innerHTML, "notifications empty state");
+  assert.match(body.innerHTML, /Inbox is empty/u);
+  assert.match(body.innerHTML, /<svg /u, "renders an SVG bell face, not an emoji");
+  // L-09: "0 unread · 0 need a call" was a stilted literal translation of "待决策" — now plain English.
+  assert.equal(subtitle, "0 unread · 0 awaiting your decision");
+  assert.doesNotMatch(subtitle, /need a call/u);
+});
+
+test("L-01: team/schedule empty state has no emoji face", async () => {
+  const emptyVm = {
+    generated_at: "2026-09-05T00:00:00.000Z",
+    summary: { today_count: 0, overdue_count: 0 },
+    blocks: []
+  } as unknown as CalendarPageVM;
+
+  let ready!: () => void;
+  const readyPromise = new Promise<void>((resolve) => {
+    ready = resolve;
+  });
+  const body = { innerHTML: "", addEventListener: () => {} };
+  createCalendarView().mount({
+    client: {
+      pages: {
+        calendar: async () => emptyVm,
+        skills: async () => {
+          throw new Error("skills unavailable in this fixture");
+        }
+      }
+    },
+    locale: "zh-CN",
+    body,
+    back: () => {},
+    open: () => {},
+    setSubtitle: () => {
+      ready();
+    },
+    toast: () => {},
+    requestResize: () => {},
+    refocusBody: () => {},
+    signal: new AbortController().signal
+  } as unknown as SpotlightViewContext);
+  await readyPromise;
+
+  assertNoEmoji(body.innerHTML, "team/schedule empty state");
+  assert.match(body.innerHTML, /近期没有日程/u);
+  assert.match(body.innerHTML, /<svg /u, "renders an SVG calendar face, not an emoji");
 });
 
 test("L16: cost trend bars carry aria-labels + a visible date-range/peak caption (not tooltip-only)", () => {

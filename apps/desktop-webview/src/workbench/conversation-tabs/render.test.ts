@@ -131,3 +131,37 @@ test("renderConversationTabsHtml escapes tab titles (no raw HTML injection from 
   assert.doesNotMatch(html, /<img src=x/u);
   assert.match(html, /&lt;img/u);
 });
+
+// R24-D：关闭按钮平时隐形（CSS 只在 hover/激活/键盘聚焦时显出来），所以它的无障碍名字必须带上会话名，
+// 否则读屏里就是一串分不清的「关闭」。会话名是用户输入，进属性同样要转义。
+test("renderConversationTabsHtml names each tab in its close button's accessible label, escaped", () => {
+  const html = renderConversationTabsHtml({
+    tabs: [tab({ conversationId: "c1", title: "隐私区文案讨论" })],
+    activeConversationId: "c1",
+    dmList: [],
+    currentUserId: SELF,
+    onlineUserIds: new Set(),
+    locale: "zh-CN"
+  });
+  assert.match(html, /aria-label="关闭「隐私区文案讨论」"/u);
+
+  const en = renderConversationTabsHtml({
+    tabs: [tab({ conversationId: "c1", title: "Ops Pilot" })],
+    activeConversationId: "c1",
+    dmList: [],
+    currentUserId: SELF,
+    onlineUserIds: new Set(),
+    locale: "en-US"
+  });
+  assert.match(en, /aria-label="Close &quot;Ops Pilot&quot;"/u);
+
+  const injected = renderConversationTabsHtml({
+    tabs: [tab({ conversationId: "c1", title: '"><img src=x onerror=alert(1)>' })],
+    activeConversationId: "c1",
+    dmList: [],
+    currentUserId: SELF,
+    onlineUserIds: new Set(),
+    locale: "zh-CN"
+  });
+  assert.doesNotMatch(injected, /<img src=x/u);
+});

@@ -6,6 +6,7 @@ pub mod locale;
 pub mod notify;
 pub mod pet_commands;
 pub mod pet_window;
+pub mod shell_log;
 pub mod single_instance;
 pub mod sse;
 pub mod sse_worker;

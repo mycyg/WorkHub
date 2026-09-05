@@ -163,10 +163,12 @@ test("desktop drive renders an inline preview panel with a token-aware download 
   assert.match(html, /data-drive-resource="download"/u);
 });
 
-test("desktop drive preview refreshes a missing desktop token before retrying", async () => {
+test("desktop drive preview clears the stale desktop token and signs out instead of re-bootstrapping a hardcoded nickname", async () => {
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   const originalFetch = globalThis.fetch;
-  const stored = new Map<string, string>();
+  const originalTauri = Object.getOwnPropertyDescriptor(globalThis, "__TAURI__");
+  const stored = new Map<string, string>([["workhub_client_token", "stale-desktop-token"]]);
+  const emitted: string[] = [];
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: {
@@ -181,45 +183,39 @@ test("desktop drive preview refreshes a missing desktop token before retrying", 
       }
     }
   });
+  Object.defineProperty(globalThis, "__TAURI__", {
+    configurable: true,
+    value: { event: { emit: async (name: string) => { emitted.push(name); } } }
+  });
 
-  const calls: { url: string; headers: Headers }[] = [];
+  const calls: string[] = [];
   Object.defineProperty(globalThis, "fetch", {
     configurable: true,
-    value: async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input);
-      calls.push({ url, headers: new Headers(init?.headers) });
-      if (url.endsWith("/preview") && calls.length === 1) {
-        return new Response(JSON.stringify({ ok: false, error: { code: "not_identified", message: "not identified" } }), { status: 401 });
-      }
-      if (url.endsWith("/api/auth/desktop-bootstrap")) {
-        return new Response(JSON.stringify({ client_token: "fresh-desktop-token" }), { status: 201 });
-      }
-      return new Response(JSON.stringify({
-        ok: true,
-        data: {
-          filename: "草稿.md",
-          size_bytes: 12,
-          preview_type: "text",
-          text: "验收内容",
-          download_href: "/api/drive/projects/p/items/i/download"
-        }
-      }), { status: 200 });
+    value: async (input: string | URL | Request) => {
+      calls.push(String(input));
+      return new Response(JSON.stringify({ ok: false, error: { code: "not_identified", message: "not identified" } }), { status: 401 });
     }
   });
 
   try {
-    const preview = await fetchDrivePreview("http://127.0.0.1:8787/api/drive/projects/p/items/i/preview", "http://127.0.0.1:8787");
-
-    assert.equal(preview.text, "验收内容");
-    assert.equal(stored.get("workhub_client_token"), "fresh-desktop-token");
-    assert.equal(calls.length, 3);
-    assert.equal(calls[2]?.headers.get("X-WorkHub-Client-Token"), "fresh-desktop-token");
-    assert.equal(calls[2]?.headers.get("X-YQGL-Client-Token"), "fresh-desktop-token");
+    await assert.rejects(
+      fetchDrivePreview("http://127.0.0.1:8787/api/drive/projects/p/items/i/preview", "http://127.0.0.1:8787"),
+      /not identified/u
+    );
+    // 令牌失效：只清令牌 + 广播登出，绝不再用硬编码昵称去 /api/auth/desktop-bootstrap 造/换身份。
+    assert.equal(stored.has("workhub_client_token"), false);
+    assert.deepEqual(calls, ["http://127.0.0.1:8787/api/drive/projects/p/items/i/preview"]);
+    assert.deepEqual(emitted, ["workhub-logged-out"]);
   } finally {
     if (originalWindow) {
       Object.defineProperty(globalThis, "window", originalWindow);
     } else {
       Reflect.deleteProperty(globalThis, "window");
+    }
+    if (originalTauri) {
+      Object.defineProperty(globalThis, "__TAURI__", originalTauri);
+    } else {
+      Reflect.deleteProperty(globalThis, "__TAURI__");
     }
     Object.defineProperty(globalThis, "fetch", { configurable: true, value: originalFetch });
   }
@@ -279,4 +275,11 @@ test("R9.7 desktop drive no-project empty state avoids dispatch copy", () => {
   assert.doesNotMatch(en, /Dispatch|dispatch/u);
   assert.match(zh, /交给 Cuu 一个任务/u);
   assert.match(en, /Create a task/u);
+});
+
+test("L-01 (R24 S3 walkthrough): drive no-project empty state uses an SVG face, not an emoji", () => {
+  const html = driveNoProjectsEmptyHtml(true);
+
+  assert.doesNotMatch(html, /[\u{1F300}-\u{1FAFF}]/u, "must not contain emoji");
+  assert.match(html, /<div class="wh-spot-empty-face"><svg /u);
 });

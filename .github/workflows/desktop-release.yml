@@ -1,0 +1,400 @@
+# WorkHub 桌面端 · 发布流水线（R24-S2 W-1）。
+#
+# 目标：给自托管用户产出可下载的桌面客户端安装包（macOS arm64/x64、Windows x64、Linux x64），
+# 上传到 GitHub Release 草稿，由人工确认后发布。
+#
+# 设计要点（详见 scratchpad/r24-S2-release-pipeline.md，落仓库时已核对并修正）：
+#   1. 触发面极窄：只有 `v*` tag push 与手动 workflow_dispatch。没有 push/pull_request 触发，
+#      因此把本文件合进 main 是**零风险**的——在打 tag 或手动点之前它永远不会跑。
+#   2. 签名可选：APPLE_* / Windows 证书 secret 缺失时仍然出**未签名（macOS 为 ad-hoc 自签）**产物，
+#      并在 Release 说明里写清 Gatekeeper / SmartScreen 绕过方式。
+#   3. 干跑：workflow_dispatch 的 dry_run=true（默认）只构建 + 传 workflow artifacts，不碰 Release。
+#   4. 版本号取自 client-tauri/src-tauri/tauri.conf.json 的 `version`（tauri-action 自己读；
+#      `pnpm audit:desktop-version` 门禁保证它与另外三处版本号一致，见 scripts/dev/check-desktop-version.ts）。
+#      产物名里带版本 + 平台 + 架构。
+#
+# 落地前必须先处理的仓库侧改动（见设计稿「阻塞项清单」B-1..B-4）——B-1（CSP 只放行本机回环导致打包后
+# 客户端连不上远端服务器）不在本次改动范围内，由另一条线处理；本文件不受影响（干跑只验证打包本身）。
+
+name: desktop-release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "干跑：只构建并上传 workflow artifacts，不创建、不写入任何 Release"
+        type: boolean
+        default: true
+      draft:
+        description: "非干跑时创建的 Release 是否为草稿（建议保持 true，人工过一遍再发布）"
+        type: boolean
+        default: true
+      tag_name:
+        description: "非干跑时要发布到的 tag，例 v0.2.0；干跑时留空"
+        type: string
+        required: false
+
+# 发布流水线不该被后续推送打断（一次发布跑到底），所以 cancel-in-progress 关闭。
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+# 只有创建 Release / 上传资产需要写权限；其余 job 用不到。
+permissions:
+  contents: write
+
+env:
+  PNPM_VERSION: "11.0.9"
+  NODE_VERSION: "22"
+  # 与本机 `cargo tauri --version`（2.11.3）对齐；不写死会让 tauri-action 自行安装浮动 latest CLI，
+  # 与 Cargo.lock 里的 tauri 2.11.2 存在版本漂移风险。
+  TAURI_CLI_VERSION: "2.11.3"
+  # 默认无额外 tauri build 参数；macOS/Windows 签名预检步骤会按需覆写（写 $GITHUB_ENV）。
+  WH_EXTRA_ARGS: ""
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 把「tag push」与「手动 dispatch」两种入口归一成一组输出，顺带做参数合法性校验，
+  # 避免四个矩阵 job 各自重复一遍 if 表达式。
+  #
+  # release_tag_name / release_name 是特意在这里算好、而不是留给 bundle job 用
+  # `${{ dry_run == 'true' && '' || tag }}` 这种内联表达式算的：GitHub Actions 的
+  # `&&`/`||` 是 JS 语义的短路求值，`X && '' || Y` 在 X 为真时会先得到 `''`，
+  # 但空字符串是 falsy，所以 `|| Y` 会把结果又换回 Y —— 干跑时 tagName 会被错误地
+  # 填成真实 tag，dry_run 就形同虚设。这里改用 bash 的 `[ cond ] && echo a || echo b`
+  # （靠退出码而非值的真假来分支），在唯一入口算一次，bundle job 直接引用输出。
+  # ---------------------------------------------------------------------------
+  plan:
+    name: 解析发布参数
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      dry_run: ${{ steps.resolve.outputs.dry_run }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      draft: ${{ steps.resolve.outputs.draft }}
+      release_tag_name: ${{ steps.resolve.outputs.release_tag_name }}
+      release_name: ${{ steps.resolve.outputs.release_name }}
+    steps:
+      - id: resolve
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_DRAFT: ${{ inputs.draft }}
+          INPUT_TAG: ${{ inputs.tag_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "push" ]; then
+            # v* tag push：永远是真发布，永远先落草稿（人工点 Publish 才对外可见）。
+            dry_run="false"
+            tag="$REF_NAME"
+            draft="true"
+          else
+            dry_run="${INPUT_DRY_RUN:-true}"
+            draft="${INPUT_DRAFT:-true}"
+            tag="${INPUT_TAG:-}"
+          fi
+
+          if [ "$dry_run" != "true" ] && [ -z "$tag" ]; then
+            echo "非干跑必须给出 tag_name（或改用 v* tag push 触发）。" >&2
+            exit 1
+          fi
+          if [ -n "$tag" ] && ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "tag 形如 v0.2.0 / v0.2.0-rc.1，收到：$tag" >&2
+            exit 1
+          fi
+
+          # 干跑时 tagName/releaseName 必须是空字符串——tauri-action 用它是否非空判断
+          # 要不要碰 Release。用 bash 退出码分支（不是 GH 表达式的 &&/||）保证正确性。
+          if [ "$dry_run" = "true" ]; then
+            release_tag_name=""
+            release_name=""
+          else
+            release_tag_name="$tag"
+            release_name="WorkHub 桌面端 $tag"
+          fi
+
+          {
+            echo "dry_run=$dry_run"
+            echo "tag=$tag"
+            echo "draft=$draft"
+            echo "release_tag_name=$release_tag_name"
+            echo "release_name=$release_name"
+          } >> "$GITHUB_OUTPUT"
+          echo "解析结果：dry_run=$dry_run tag=${tag:-<无>} draft=$draft"
+
+  # ---------------------------------------------------------------------------
+  # 四平台打包。fail-fast 关闭：一个平台炸掉不该连带把另外三个已经跑了 20 分钟的构建杀掉。
+  # ---------------------------------------------------------------------------
+  bundle:
+    name: 打包 ${{ matrix.label }}
+    needs: plan
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macos-latest 现在是 Apple Silicon runner；x86_64 走交叉编译（Rust 官方支持，
+          # 前端是纯 JS 无关架构）。两个 target 各出一份 .app + .dmg。
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            label: macOS Apple Silicon
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            label: macOS Intel
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: Windows x64
+          # 钉 22.04 而非 latest：glibc 越老，产出的 deb/AppImage 能覆盖的发行版越广。
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            label: Linux x64
+    steps:
+      - uses: actions/checkout@v4
+
+      # Tauri 的 Linux 系统依赖，照抄 .github/workflows/verify.yml 的 rust-system-i18n job
+      # （含它对 runner 上会 404 的 azure-cli / microsoft-prod 源的规避）。
+      - name: 安装 Tauri Linux 系统依赖
+        if: runner.os == 'Linux'
+        run: |
+          sudo find /etc/apt/sources.list.d -maxdepth 1 -type f \( -name 'azure-cli.*' -o -name 'microsoft-prod.*' \) -print -exec sudo mv {} {}.disabled \;
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libxdo-dev libssl-dev pkg-config build-essential
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # 每个 target 一份缓存槽：交叉编译产物互不复用，混在一个 key 里会持续 miss。
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: client-tauri/src-tauri
+          key: ${{ matrix.target }}
+
+      - run: pnpm install --frozen-lockfile
+
+      # tauri.conf.json 的 beforeBuildCommand 本来就会再跑一次这条命令（几秒，产物幂等）。
+      # 这里显式先跑一遍，是为了让「前端 tsc/vite 失败」与「Rust 编译失败」在日志里分属不同步骤，
+      # 排障时不用去 tauri build 的输出里翻。
+      - name: 预构建桌面 webview（失败归因用）
+        run: pnpm --filter @workhub/desktop-webview build
+
+      # -----------------------------------------------------------------------
+      # macOS 签名 / 公证预检。
+      #
+      # 为什么必须有这一步（依据 tauri-bundler 2.9.3 源码，见设计稿 §1.5）：
+      #   a) src/bundle/macos/sign.rs:19-44 —— 同时给了 APPLE_CERTIFICATE + APPLE_CERTIFICATE_PASSWORD 时，
+      #      若配置里还写着 signingIdentity，会做 `certificate_identity.contains(identity)` 校验。
+      #      仓库当前 tauri.conf.json 写死 `"signingIdentity": "-"`（ad-hoc），真证书身份串里几乎
+      #      不会含 "-"，于是直接报错中断。所以有真证书时必须用 --config 覆写成真身份。
+      #   b) src/bundle/macos/sign.rs:68 —— hardened runtime 取自配置；仓库当前是 false，
+      #      而 Apple 公证**要求**开启 hardened runtime。签名路径下一并覆写为 true。
+      #   c) src/bundle/macos/app.rs:135-149 + sign.rs:96-110 —— 只给了 APPLE_ID + APPLE_PASSWORD
+      #      却没给 APPLE_TEAM_ID 时，是 `return Err(MissingTeamId)` 硬失败（不是跳过公证）。
+      #      因此三件套必须齐全才把它们注入环境，否则宁可不注入、走「签名但不公证」。
+      #
+      # 没有任何证书 secret 时：本步骤什么都不做，保留 tauri.conf.json 的 ad-hoc "-"，
+      # 产出结构完整、可本机启动、但未经 Apple 公证的 .app/.dmg（正是 build-macos-app.sh 描述的形态）。
+      # -----------------------------------------------------------------------
+      - name: macOS 签名 / 公证预检
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [ -n "${APPLE_CERTIFICATE:-}" ] && [ -n "${APPLE_CERTIFICATE_PASSWORD:-}" ] && [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+            echo "检测到完整的 Developer ID 证书三件套，走真签名路径。"
+            jq -n --arg identity "$APPLE_SIGNING_IDENTITY" \
+              '{bundle:{macOS:{signingIdentity:$identity, hardenedRuntime:true}}}' \
+              > client-tauri/src-tauri/tauri.release-signing.conf.json
+            # --config 的相对路径按 projectPath（client-tauri）解析，故这里写 src-tauri/ 前缀。
+            echo "WH_EXTRA_ARGS=--config src-tauri/tauri.release-signing.conf.json" >> "$GITHUB_ENV"
+            {
+              echo "APPLE_CERTIFICATE=$APPLE_CERTIFICATE"
+              echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD"
+            } >> "$GITHUB_ENV"
+
+            if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+              echo "公证三件套齐全，构建后将提交 Apple 公证并 staple。"
+              {
+                echo "APPLE_ID=$APPLE_ID"
+                echo "APPLE_PASSWORD=$APPLE_PASSWORD"
+                echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+              } >> "$GITHUB_ENV"
+              echo "WH_MACOS_SIGN_MODE=notarized" >> "$GITHUB_ENV"
+            else
+              echo "公证凭据不完整（需 APPLE_ID + APPLE_PASSWORD + APPLE_TEAM_ID 同时存在），跳过公证。"
+              echo "WH_MACOS_SIGN_MODE=signed" >> "$GITHUB_ENV"
+            fi
+          else
+            echo "未配置 Developer ID 证书，走 ad-hoc 自签路径（沿用 tauri.conf.json 的 signingIdentity=\"-\"）。"
+            echo "WH_MACOS_SIGN_MODE=adhoc" >> "$GITHUB_ENV"
+          fi
+
+      # -----------------------------------------------------------------------
+      # Windows 代码签名（可选，第二阶段）。
+      # Tauri 走「证书导入 Windows 证书存储 + 配置里给 thumbprint」这条路，没有 APPLE_CERTIFICATE
+      # 那样的单一环境变量入口，所以这里先把 pfx 导进 CurrentUser\My 再算 thumbprint。
+      # 未配置证书时脚本体内 exit 0 跳过，产出未签名 msi/nsis（用户首次运行会看到 SmartScreen 警告）。
+      #
+      # 注意：GitHub 的上下文可用性表里，`secrets` 在 step 级 `if` 里**不可用**（只在 env/with 可用），
+      # 所以"有没有配证书"的判断放在脚本体内做，不写进 if 表达式。
+      # -----------------------------------------------------------------------
+      - name: Windows 代码签名预检
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
+            Write-Host "未配置 Windows 代码签名证书，产出未签名安装包（用户首次运行会看到 SmartScreen 警告）。"
+            exit 0
+          }
+          $pfxPath = Join-Path $env:RUNNER_TEMP "workhub-signing.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $password = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          Remove-Item $pfxPath -Force
+          $config = @{ bundle = @{ windows = @{
+              certificateThumbprint = $cert.Thumbprint
+              digestAlgorithm       = "sha256"
+              timestampUrl          = "http://timestamp.digicert.com"
+          } } } | ConvertTo-Json -Depth 6 -Compress
+          $configPath = "client-tauri/src-tauri/tauri.release-signing.conf.json"
+          Set-Content -Path $configPath -Value $config -Encoding utf8
+          "WH_EXTRA_ARGS=--config src-tauri/tauri.release-signing.conf.json" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: 打包并（按需）上传到 Release
+        id: tauri
+        uses: tauri-apps/tauri-action@v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 苹果签名 / 公证变量不在这里直接展开——由上面的预检步骤按「组合完整」条件写入 $GITHUB_ENV，
+          # 避免残缺组合触发 tauri-bundler 的硬失败分支。
+        with:
+          # 必须指向含 src-tauri 的目录，且该目录不能被 gitignore。
+          projectPath: client-tauri
+          # 钉死 CLI 版本。不指定的话 tauri-action 会自行安装浮动 latest 的 @tauri-apps/cli。
+          tauriScript: pnpm dlx @tauri-apps/cli@${{ env.TAURI_CLI_VERSION }}
+          args: --target ${{ matrix.target }} ${{ env.WH_EXTRA_ARGS }}
+
+          # 干跑时 plan job 已把这两项算成空字符串——此时 action 只构建 + 传 workflow artifacts，
+          # 不碰 Release（不要在这里用 `dry_run == 'true' && '' || tag` 这种内联表达式，
+          # 见 plan job 顶部注释：falsy 真分支会被 GH 表达式的 || 悄悄换掉）。
+          tagName: ${{ needs.plan.outputs.release_tag_name }}
+          releaseName: ${{ needs.plan.outputs.release_name }}
+          releaseDraft: ${{ needs.plan.outputs.draft }}
+          prerelease: false
+          # 用 GitHub 自带的 tag 间 commit 生成变更说明；下面的 releaseBody 会被前置到它上面。
+          generateReleaseNotes: ${{ needs.plan.outputs.dry_run != 'true' }}
+          releaseBody: |
+            ## 下载哪一个
+
+            | 系统 | 文件 |
+            |---|---|
+            | macOS（Apple 芯片 M1 及以后） | `WorkHub_<版本>_darwin_aarch64.dmg` |
+            | macOS（Intel） | `WorkHub_<版本>_darwin_x64.dmg` |
+            | Windows 10/11 x64 | `WorkHub_<版本>_windows_x64-setup.exe`（或 `.msi`） |
+            | Linux x64 | `WorkHub_<版本>_linux_amd64.deb` / `.AppImage` |
+
+            ## 首次打开
+
+            **macOS**：本安装包未经 Apple 公证，直接双击会提示"无法打开"。两种放行方式，任选其一——
+
+            - 在"访达"里找到 WorkHub.app，**按住 Control 点按 → 打开**，在弹窗里再点一次"打开"；
+            - 或在终端执行：`xattr -dr com.apple.quarantine /Applications/WorkHub.app`
+
+            **Windows**：未经代码签名，SmartScreen 会提示"已保护你的电脑"。点"更多信息" → "仍要运行"。
+
+            **Linux**：`sudo dpkg -i WorkHub_<版本>_amd64.deb`；AppImage 需先 `chmod +x` 再运行。
+
+            ## 连到你自己的服务器
+
+            客户端默认连本机 `http://127.0.0.1:8787`。服务器在别处时，在客户端的离线卡里点"打开设置"，
+            填入服务器地址后"保存并重试"。服务器侧的部署方法见仓库 `DEPLOY.md`。
+
+          # 第一阶段不接自动更新：不生成 latest.json，免得发出一个没有签名、谁也用不了的更新端点。
+          uploadUpdaterJson: false
+          uploadUpdaterSignatures: false
+          # 干跑与真发布都传 workflow artifacts：干跑靠它验证产物，真发布靠它做失败复盘。
+          uploadWorkflowArtifacts: true
+          workflowArtifactNamePattern: "workhub-[version]-[platform]-[arch]-[bundle]"
+          releaseAssetNamePattern: "WorkHub_[version]_[platform]_[arch][setup][ext]"
+          # 四个矩阵 job 会并发去「找/建」同一个 tag 的 Release，存在建重的竞态；重试可覆盖。
+          retryAttempts: 3
+
+      # 复用 scripts/dev/build-macos-app.sh 的验签口径。该脚本原先把路径写死成
+      # target/release/bundle/macos/WorkHub.app，带 --target 时实际产物在
+      # target/<triple>/release/bundle/macos/ 下 —— 已给脚本加 WORKHUB_MACOS_BUILD_APP_PATH
+      # 覆盖口（见 scripts/dev/build-macos-app.sh），这里直接调脚本、跳过重新构建，
+      # 消掉「验签逻辑两处维护」的重复，同时让 qa:desktop-macos-codesign-smoke 真正接入 CI。
+      - name: macOS 验签门（bundle 封印必须完整）
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          WORKHUB_MACOS_BUILD_SKIP_BUILD: "1"
+          WORKHUB_MACOS_BUILD_APP_PATH: client-tauri/src-tauri/target/${{ matrix.target }}/release/bundle/macos/WorkHub.app
+        # build-macos-app.sh 自己的 OK 提示写死「ad-hoc signed」——脚本是本机/CI 共用的通用验签口，
+        # 不该为了 CI 独有的签名模式概念改措辞（W-4 的约束是「不改其行为语义」）。签名模式的报告
+        # 放在这里单独 echo 一行，更准确地反映本次矩阵 job 实际走的是哪一档（adhoc/signed/notarized）。
+        run: |
+          bash scripts/dev/build-macos-app.sh
+          echo "签名模式：${WH_MACOS_SIGN_MODE:-adhoc}"
+
+      - name: 产物清单
+        shell: bash
+        run: |
+          echo "artifactPaths: ${{ steps.tauri.outputs.artifactPaths }}"
+          echo "appVersion:    ${{ steps.tauri.outputs.appVersion }}"
+          echo "releaseHtmlUrl: ${{ steps.tauri.outputs.releaseHtmlUrl }}"
+
+  # ---------------------------------------------------------------------------
+  # 四个平台都成功后给一句人话总结，方便在 Actions 摘要页一眼看到该去哪儿点 Publish。
+  # ---------------------------------------------------------------------------
+  summary:
+    name: 发布小结
+    needs: [plan, bundle]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - shell: bash
+        run: |
+          {
+            echo "## WorkHub 桌面端发布"
+            echo ""
+            echo "- 模式：${{ needs.plan.outputs.dry_run == 'true' && '干跑（未创建 Release）' || '正式发布' }}"
+            echo "- tag：${{ needs.plan.outputs.tag || '（无）' }}"
+            echo "- 草稿：${{ needs.plan.outputs.draft }}"
+            echo "- 打包结果：${{ needs.bundle.result }}"
+            echo ""
+            if [ "${{ needs.plan.outputs.dry_run }}" = "true" ]; then
+              echo "干跑产物在本次运行的 Artifacts 区（workhub-<版本>-<平台>-<架构>-<类型>）。"
+            else
+              echo "四个平台的资产已上传到 Release 草稿，人工核对后在 Releases 页点 Publish。"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

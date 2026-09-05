@@ -26,6 +26,19 @@ function loadingHtml(zh: boolean, label: string): string {
   return `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${escapeHtml(label)}</div>`;
 }
 
+// L-01（R24 S3 走查）：几处空态"脸"此前用了 emoji（文件夹/铃铛/日历/放大镜四种）——违反
+// 「界面一律不用 emoji」的产品口径。换成内联 SVG（同 command-palette.ts 的线性描边风格，
+// stroke=currentColor 继承 .wh-spot-empty-face 的强调色），不新增视觉语言，只是把这几处能力网格
+// 里已有的图标语汇挪过来用。
+function faceIcon(inner: string): string {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+}
+const FACE_ICON_FOLDER = faceIcon('<path d="M3 8a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>');
+const FACE_ICON_DONE = faceIcon('<circle cx="12" cy="12" r="9"/><path d="M8 12.3l2.6 2.6L16 9.3"/>');
+const FACE_ICON_BELL = faceIcon('<path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 19a2 2 0 0 0 4 0"/>');
+const FACE_ICON_CALENDAR = faceIcon('<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M8 3v4M16 3v4"/>');
+const FACE_ICON_SEARCH = faceIcon('<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.3-4.3"/>');
+
 function emptyHtml(face: string, title: string, sub: string): string {
   return `<div class="wh-spot-empty"><div class="wh-spot-empty-face">${face}</div><h3 class="wh-spot-empty-title">${escapeHtml(title)}</h3><p class="wh-spot-empty-sub">${escapeHtml(sub)}</p></div>`;
 }
@@ -278,7 +291,7 @@ function newTaskCta(zh: boolean): string {
 }
 
 export function projectListEmptyHtml(zh: boolean): string {
-  return `<div class="wh-spot-dash ds-anim-fade-in">${emptyHtml("📁", zh ? "还没有项目" : "No projects yet", zh ? "新建任务后会自动建立项目和网盘" : "Create a task to create one")}<div style="text-align:center">${newTaskCta(zh)}</div></div>`;
+  return `<div class="wh-spot-dash ds-anim-fade-in">${emptyHtml(FACE_ICON_FOLDER, zh ? "还没有项目" : "No projects yet", zh ? "新建任务后会自动建立项目和网盘" : "Create a task to create one")}<div style="text-align:center">${newTaskCta(zh)}</div></div>`;
 }
 
 // R14 批 GH（07-gh-design.md §5.1）：项目主页 github_activities 区块——GH-B 已把它接进
@@ -331,7 +344,7 @@ export function projectHomeDetailHtml(vm: ProjectHomePageVM, zh: boolean): strin
       </button>`
         )
         .join("")
-    : emptyHtml("✅", zh ? "暂无进行中的工作" : "No open work", zh ? "点「新任务」创建下一项工作" : "Use New task to create work");
+    : emptyHtml(FACE_ICON_DONE, zh ? "暂无进行中的工作" : "No open work", zh ? "点「新任务」创建下一项工作" : "Use New task to create work");
   // 隐藏量按全量算(曾用可见数自减恒为 0,提示从不出现)。原因可能是列表截断或权限过滤，
   // 当前 VM 无法区分，文案保持中性。
   const hidden = totalOpen - vm.open_work_items.length;
@@ -696,11 +709,12 @@ export function createNotificationsView(): SpotlightCapabilityView {
       </div>`;
       const listHtml = rows.length || muted.length
         ? `<div class="wh-spot-list ds-stagger" data-notif-list data-notif-muted="${escapeHtml(JSON.stringify(muted))}"${prefsFailed ? " data-notif-prefs-failed=\"true\"" : ""}>${prefsFailedNote}${rows.map((item) => notificationRow(item, zh)).join("")}${overflow}${mutedPanel}</div>`
-        : emptyHtml("🔔", zh ? "通知箱是空的" : "Inbox is empty", zh ? "审批、军团收工和升级会出现在这里" : "Approvals, team completions and escalations show here");
+        : emptyHtml(FACE_ICON_BELL, zh ? "通知箱是空的" : "Inbox is empty", zh ? "审批、军团收工和升级会出现在这里" : "Approvals, team completions and escalations show here");
       const html = `${careCard}${listHtml}`;
+      // L-09（R24 S3 走查）："need a call" 是"待决策"的生硬直译，英文读起来不知所云——改成通顺表达。
       const subtitle = zh
         ? `未读 ${vm.summary.unread_count} · 待决策 ${vm.summary.needs_decision_count}`
-        : `${vm.summary.unread_count} unread · ${vm.summary.needs_decision_count} need a call`;
+        : `${vm.summary.unread_count} unread · ${vm.summary.needs_decision_count} awaiting your decision`;
       return { html, subtitle };
     },
     onAction: (target, ctx) => {
@@ -816,7 +830,7 @@ export function createCalendarView(): SpotlightCapabilityView {
         : `today ${vm.summary.today_count} · overdue ${vm.summary.overdue_count}`;
       const calendarHtml = blocks.length
         ? `<div class="wh-spot-list ds-stagger">${blocks.slice(0, 20).map((b) => blockRow(b, zh)).join("")}</div>`
-        : emptyHtml("🗓️", zh ? "近期没有日程" : "Nothing scheduled", zh ? "工作项到期、复盘窗口会出现在这里" : "Due items and review windows show here");
+        : emptyHtml(FACE_ICON_CALENDAR, zh ? "近期没有日程" : "Nothing scheduled", zh ? "工作项到期、复盘窗口会出现在这里" : "Due items and review windows show here");
       const skillsHtml = skills
         ? `<div class="wh-spot-list" data-team-skills data-team-skills-active="${escapeHtml(String(skills.totals.active))}">
             <p class="wh-spot-card-desc"><strong>${escapeHtml(zh ? "团队技能库" : "Team skills")}</strong> · ${escapeHtml(zh
@@ -857,7 +871,7 @@ function bubbleHtml(bubble: EvidenceBubble, zh: boolean): string {
 
 // 知识检索 API 要求在具体项目/事项内检索（裸查询 403）。故先选项目再搜。
 export function knowledgeNoProjectsEmptyHtml(zh: boolean): string {
-  return emptyHtml("🔍", zh ? "还没有可检索的项目" : "No project to search", zh ? "新建任务后，证据会沉淀在项目里" : "Create a task first — evidence accrues per project");
+  return emptyHtml(FACE_ICON_SEARCH, zh ? "还没有可检索的项目" : "No project to search", zh ? "新建任务后，证据会沉淀在项目里" : "Create a task first — evidence accrues per project");
 }
 
 export function createKnowledgeView(): SpotlightCapabilityView {

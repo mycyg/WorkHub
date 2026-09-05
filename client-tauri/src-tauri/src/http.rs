@@ -17,14 +17,20 @@ pub struct ShellRequestPlan {
     pub headers: Vec<ShellHeader>,
 }
 
-pub fn daemon_url(config: &WorkHubShellConfig, path: &str) -> String {
-    let base = normalize_server_url(&config.server_url);
+/// 拼「基地址 + 路径」。从 `daemon_url` 抽出，因为 SSE worker 现在每次(重)连都要按**运行时**服务器地址
+/// 重拼订阅 URL（`ShellServerUrl`），而它手上没有 `WorkHubShellConfig`——那份配置只是启动时的快照。
+pub fn join_daemon_url(base: &str, path: &str) -> String {
+    let base = normalize_server_url(base);
     let normalized_path = if path.starts_with('/') {
         path.to_string()
     } else {
         format!("/{path}")
     };
     format!("{base}{normalized_path}")
+}
+
+pub fn daemon_url(config: &WorkHubShellConfig, path: &str) -> String {
+    join_daemon_url(&config.server_url, path)
 }
 
 pub fn plan_daemon_request(config: &WorkHubShellConfig, path: &str) -> ShellRequestPlan {
@@ -67,6 +73,19 @@ mod tests {
                 .map(|header| header.name.as_str())
                 .collect::<Vec<_>>(),
             vec![WORKHUB_CLIENT_TOKEN_HEADER, LEGACY_CLIENT_TOKEN_HEADER]
+        );
+    }
+
+    // S5：worker 换服务器后用它按运行时地址重拼 URL——基地址的尾斜杠与路径的首斜杠都不该拼出 `//`。
+    #[test]
+    fn join_daemon_url_normalizes_the_seam_between_base_and_path() {
+        assert_eq!(
+            join_daemon_url("https://workhub.example.com/", "/api/push/stream/me"),
+            "https://workhub.example.com/api/push/stream/me"
+        );
+        assert_eq!(
+            join_daemon_url(" http://192.168.1.10:8787 ", "api/health"),
+            "http://192.168.1.10:8787/api/health"
         );
     }
 }

@@ -207,6 +207,31 @@ test("renderArmyPanelHtml renders the scheduled-tasks and proactivity blocks fro
   assert.match(html, /已克制/u); // suppressed
 });
 
+// M-10（R24 S3 走查）：pulse-scheduler.ts 后来注册的 clarification-chase/proactive-intent-recovery
+// 两个任务没跟进 BACKGROUND_TASK_LABEL 表，情境面板里就混进了两条没翻译的内部调度器 id
+// （用户读到"定时任务 7"下面夹着生僻的英文短横线字符串）。锁死两条都能翻成人话，不再漏译。
+test("renderArmyPanelHtml translates every registered pulse task name, including the two that were missing", () => {
+  const state: ArmyPanelViewState = { mode: "list", vm: panelVm(), loadingMore: false };
+  const html = renderArmyPanelHtml(state, "zh-CN", noMembers, {
+    status: "ready",
+    vm: {
+      generated_at: "2026-09-05T00:00:00.000Z",
+      scheduler: {
+        enabled: true,
+        tasks: [
+          { name: "clarification-chase", interval_ms: 60_000, running: false, tick_count: 3, skipped_count: 0, error_count: 0, last_tick_at: "2026-09-05T00:00:00.000000Z" },
+          { name: "proactive-intent-recovery", interval_ms: 300_000, running: false, tick_count: 1, skipped_count: 0, error_count: 0, last_tick_at: null }
+        ]
+      },
+      proactive: { items: [], capped: false }
+    }
+  });
+  assert.match(html, /澄清待办提醒/u);
+  assert.match(html, /主动提醒补投/u);
+  assert.doesNotMatch(html, /clarification-chase/u, "the raw scheduler id must not leak through untranslated");
+  assert.doesNotMatch(html, /proactive-intent-recovery/u, "the raw scheduler id must not leak through untranslated");
+});
+
 test("renderArmyPanelHtml background section honestly reports a disabled scheduler instead of faking activity", () => {
   const state: ArmyPanelViewState = { mode: "list", vm: panelVm(), loadingMore: false };
   const html = renderArmyPanelHtml(state, "zh-CN", noMembers, {

@@ -850,18 +850,31 @@ function primaryDesktopCuuAction(card: CuuCard, actionId: string, freeText?: str
 // （见 boot.ts/workbench/interrupt-broadcast.ts 同款 emit/listen 通路),换成一张诚实的「已登出」卡片——
 // 不再假装 Cuu 还能干活,也把 setCard 里"新卡没有 run id 就关掉旧 run 订阅"的既有逻辑顺带用上,不用
 // 另外手写一次 close()。
-export function createDesktopPetLoggedOutCard(locale: WorkHubLocale): CuuCard {
+// R24 S4：这张卡也服务首启（这台设备从没连接过、还没有可用的 client token）——同一份「没法在桌宠这
+// 260×340 的小窗里放一张登录表单，去主窗口」道理，只是标题/说明换成欢迎文案而不是「已登出」。
+// context 默认 "logged-out"（向后兼容既有调用方/既有测试）。
+export function createDesktopPetLoggedOutCard(
+  locale: WorkHubLocale,
+  context: "first-run" | "logged-out" = "logged-out"
+): CuuCard {
   const zh = locale === "zh-CN";
   const state: CuuState = "offline";
+  const title = context === "first-run" ? (zh ? "欢迎使用 WorkHub" : "Welcome to WorkHub") : zh ? "已登出" : "Signed out";
+  const message =
+    context === "first-run"
+      ? zh
+        ? "这台设备第一次连接，去主窗口登录后 Cuu 才能开始帮你。"
+        : "This device hasn't connected before — sign in from the main window before Cuu can help."
+      : zh
+        ? "这台设备已经登出，去主窗口重新登录后 Cuu 才能继续帮你。"
+        : "This device signed out — sign back in from the main window before Cuu can help again.";
   return {
-    id: "pet-logged-out",
+    id: context === "first-run" ? "pet-first-run" : "pet-logged-out",
     kind: "offline",
     state,
     motion: cuuMotionForState(state),
-    title: zh ? "已登出" : "Signed out",
-    message: zh
-      ? "这台设备已经登出，去主窗口重新登录后 Cuu 才能继续帮你。"
-      : "This device signed out — sign back in from the main window before Cuu can help again.",
+    title,
+    message,
     priority: "high",
     actions: [],
     chips: []
@@ -877,6 +890,13 @@ export async function bootDesktopPetSurface(
     petWindowBridge?: DesktopPetWindowBridge | undefined;
     shellEmitter?: DesktopShellEmitter | undefined;
     client?: DesktopPetSurfaceClient | undefined;
+    // R24 S4：调用方（browser.ts）已经探过鉴权门——不是 "ready" 时传对应上下文，桌宠开机就直接亮
+    // 「去主窗口登录」卡，不再尝试恢复卡片/浮现待拍板（那些请求反正会因为没有 token 静默失败）。
+    signInNeededContext?: "first-run" | "logged-out" | undefined;
+    // R24 S5（N-03 根治）：收到 workhub-logged-in 广播后执行的动作——默认真 window.location.reload()，
+    // 单测注入假函数断言被调用，不用摸真 window.location（同 client/listen/petWindowBridge 等既有的
+    // 依赖注入取舍）。
+    reload?: () => void;
   } = {}
 ): Promise<DesktopPetSurfaceRuntime> {
   let locale = desktopPetLocale();
@@ -886,6 +906,7 @@ export async function bootDesktopPetSurface(
   const shellEmitter = input.shellEmitter ?? resolveDesktopShellEmitter();
   const qaScenario = desktopPetQaScenarioFromGlobal();
   const shellListen = input.listen ?? createDesktopPetQaShellListenFromGlobal() ?? resolveDesktopShellListen();
+  const reload = input.reload ?? (() => window.location.reload());
   const client = input.client ?? createApiClient({
     baseUrl: "",
     getClientToken: clientToken
@@ -1306,7 +1327,11 @@ export async function bootDesktopPetSurface(
   };
 
   render();
-  if (!desktopPetQaScenarioSkipsLocalRestore(qaScenario)) {
+  if (input.signInNeededContext) {
+    // R24 S4：调用方已经探明这台设备没有可用身份（首启或真登出）——直接亮「去主窗口登录」卡，
+    // 不再尝试恢复卡片/浮现待拍板：那些请求反正会因为没有 client token 静默失败，不如诚实告知现状。
+    setCard(createDesktopPetLoggedOutCard(locale, input.signInNeededContext), undefined, { persist: false });
+  } else if (!desktopPetQaScenarioSkipsLocalRestore(qaScenario)) {
     // 先尝试恢复上次会话/运行卡；没有可恢复的卡时，主动浮现一条待拍板（S2）。QA 场景跳过，避免干扰固定卡。
     void restoreDesktopPetCard().then(() => surfacePendingDecision());
   }
@@ -1741,6 +1766,20 @@ export async function bootDesktopPetSurface(
     loggedOutUnlisten = maybeLoggedOutUnlisten;
   }
 
+  // R24 S5（N-03 根治）：主窗登录/重新绑定成功此前只 reload 主窗自己那一扇窗口——桌宠窗（一直挂着
+  // input.signInNeededContext 渲的那张"去主窗登录"卡，见上面 setCard(createDesktopPetLoggedOutCard(...))
+  // 那次调用）全程收不到信号，本次会话内永远装死，直到用户自己重启应用才会偶然读到新落的 token。
+  // 直接 reload 就够：render() 的结构化渲染分支每次 boot 都会用当时真实的 currentCard 重新算一遍
+  // desiredMode 并调 syncPetWindowMode（见下方 render 定义），这次 reload 后 signInNeededContext 不再
+  // 成立（已经有 token），窗口尺寸/卡片自然回到正常态——不需要额外的"收起卡片/恢复尺寸"代码。
+  let loggedInUnlisten: DesktopShellUnlisten | undefined;
+  const maybeLoggedInUnlisten = await shellListen?.("workhub-logged-in", () => {
+    reload();
+  });
+  if (typeof maybeLoggedInUnlisten === "function") {
+    loggedInUnlisten = maybeLoggedInUnlisten;
+  }
+
   // MRG-20：OS 通知到达不再抢焦点/强制导航。壳层广播的 system-notification 计划先按路由暂存；
   // 用户在桌宠 Cuu 卡上点出同一目标路由的动作时，才把计划回传原生 focus_system_notification
   // → handle_deep_link_plan 落地（审批通知落审批面板、消息通知落对应会话，含 workbench 按需建窗）。
@@ -1946,6 +1985,7 @@ export async function bootDesktopPetSurface(
       trayActionUnlisten?.();
       attentionRefreshUnlisten?.();
       loggedOutUnlisten?.();
+      loggedInUnlisten?.();
       await runtime.dispose();
     }
   };
