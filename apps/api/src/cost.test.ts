@@ -40,6 +40,12 @@ import { createPageRoutes } from "./routes/pages.js";
 import { createApiProviderRegistry } from "./services/provider-registry.js";
 
 const now = new Date("2026-06-05T00:00:00.000Z");
+// 成本看板的账目窗口在 routes/pages.ts（costDashboardSinceBucket，近 90 天）里按**真实时钟**算，
+// 测试注入不进去。所以「要被看板聚合出来」的账目夹具不能钉在固定的 now 上：2026-06-05 的账目在
+// 2026-09-03 之后整体掉出窗口，total_cost_cny / by_task_plan 这类断言会无声地塌成 "0"/[]（本文件的
+// 三条断言就是这样到期变红的，与产线行为无关）。ledgerNow 取「2 天前」：稳定落在 90 天窗口内，
+// 又不落进当天的日预算窗口，保留原夹具「不是今天」的语义。断言用的固定 now 保持不变。
+const ledgerNow = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
 const adminId = "10000000-0000-4000-8000-0000000000a1";
 const userId = "10000000-0000-4000-8000-0000000000b1";
 
@@ -636,7 +642,7 @@ test("R9.5 cost dashboard keeps army task plan and objective breakdowns admin-on
     inputTokens: 1000,
     outputTokens: 500,
     costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
-    createdAt: now
+    createdAt: ledgerNow
   }));
   const scopesCalls: unknown[] = [];
   const spyStore: CostLedgerStore = {
@@ -780,7 +786,7 @@ test("cost dashboard page scopes admin ledger totals to the actor workspace", as
     inputTokens: 1_000_000,
     outputTokens: 0,
     costTier: { inputCnyPerMtok: 1, outputCnyPerMtok: 1 },
-    createdAt: now
+    createdAt: ledgerNow
   }));
   await ledgerStore.recordUsage(buildUsageRecord({
     provider: "deepseek",
@@ -791,7 +797,7 @@ test("cost dashboard page scopes admin ledger totals to the actor workspace", as
     outputTokens: 0,
     source: "curation",
     costTier: { inputCnyPerMtok: 1, outputCnyPerMtok: 1 },
-    createdAt: now
+    createdAt: ledgerNow
   }));
   await ledgerStore.recordUsage(buildUsageRecord({
     provider: "deepseek",
@@ -803,7 +809,7 @@ test("cost dashboard page scopes admin ledger totals to the actor workspace", as
     inputTokens: 2_000_000,
     outputTokens: 0,
     costTier: { inputCnyPerMtok: 1, outputCnyPerMtok: 1 },
-    createdAt: now
+    createdAt: ledgerNow
   }));
   const app = withErrors(new Hono<AuthEnv>());
   app.route("/api/pages", createPageRoutes({
@@ -908,7 +914,7 @@ test("cost dashboard page aggregates ledger entries without exposing all users t
     inputTokens: 1000,
     outputTokens: 500,
     costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
-    createdAt: now
+    createdAt: ledgerNow
   }));
   // 另一个用户的花费：非管理员绝不能在自己的总额/趋势里看到它（M8）。
   await ledgerStore.recordUsage(buildUsageRecord({
@@ -921,7 +927,7 @@ test("cost dashboard page aggregates ledger entries without exposing all users t
     inputTokens: 9000,
     outputTokens: 9000,
     costTier: { inputCnyPerMtok: 4, outputCnyPerMtok: 16 },
-    createdAt: now
+    createdAt: ledgerNow
   }));
   // 同一个用户在另一个 workspace 的花费也不能混进当前 workspace 的「我的成本」。
   await ledgerStore.recordUsage(buildUsageRecord({
@@ -935,7 +941,7 @@ test("cost dashboard page aggregates ledger entries without exposing all users t
     inputTokens: 7000,
     outputTokens: 7000,
     costTier: { inputCnyPerMtok: 4, outputCnyPerMtok: 16 },
-    createdAt: now
+    createdAt: ledgerNow
   }));
   const app = withErrors(new Hono<AuthEnv>());
   app.route("/api/pages", createPageRoutes({
@@ -975,6 +981,8 @@ test("cost dashboard page aggregates ledger entries without exposing all users t
 
 test("L[1] cost dashboard fails closed (empty) for a non-admin when the store lacks scope-filtered reads", async () => {
   const runtimeSettings = settings();
+  // 账目必须用 ledgerNow（落在看板 90 天窗口内）：夹具一旦掉出窗口，就算路由 fail-open 回退到
+  // listEntries() 全量账本，token_in 也会因窗口过滤而是 0，这条越权守卫就变成空转的假绿。
   const fullStore = createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId });
   await fullStore.recordUsage(buildUsageRecord({
     provider: "deepseek",
@@ -986,7 +994,7 @@ test("L[1] cost dashboard fails closed (empty) for a non-admin when the store la
     inputTokens: 1000,
     outputTokens: 500,
     costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
-    createdAt: now
+    createdAt: ledgerNow
   }));
   await fullStore.recordUsage(buildUsageRecord({
     provider: "deepseek",
@@ -998,7 +1006,7 @@ test("L[1] cost dashboard fails closed (empty) for a non-admin when the store la
     inputTokens: 9000,
     outputTokens: 9000,
     costTier: { inputCnyPerMtok: 4, outputCnyPerMtok: 16 },
-    createdAt: now
+    createdAt: ledgerNow
   }));
   // 模拟一个未实现按 scope 查询的 store 注入：保留 listEntries/entries（全量），但去掉 listEntriesForScopes。
   // 非管理员请求绝不能 fail-open 回退到全量账目——必须 fail-closed 返回空。
@@ -1028,6 +1036,7 @@ test("L[1] cost dashboard fails closed (empty) for a non-admin when the store la
 
 test("R9.7 cost dashboard fails closed for an admin when the store lacks workspace-filtered reads", async () => {
   const runtimeSettings = settings();
+  // 同 L[1]：账目走 ledgerNow，否则窗口过滤会替 fail-closed 背书，守卫空转。
   const fullStore = createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId });
   await fullStore.recordUsage(buildUsageRecord({
     provider: "deepseek",
@@ -1039,7 +1048,7 @@ test("R9.7 cost dashboard fails closed for an admin when the store lacks workspa
     inputTokens: 1000,
     outputTokens: 500,
     costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
-    createdAt: now
+    createdAt: ledgerNow
   }));
   await fullStore.recordUsage(buildUsageRecord({
     provider: "deepseek",
@@ -1051,7 +1060,7 @@ test("R9.7 cost dashboard fails closed for an admin when the store lacks workspa
     inputTokens: 9000,
     outputTokens: 9000,
     costTier: { inputCnyPerMtok: 4, outputCnyPerMtok: 16 },
-    createdAt: now
+    createdAt: ledgerNow
   }));
   const storeWithoutWorkspaceReads: CostLedgerStore = {
     records: fullStore.records,
