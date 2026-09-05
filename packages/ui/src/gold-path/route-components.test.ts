@@ -2959,6 +2959,95 @@ test("R4.11 Settings route component uses a typed Settings Page VM without leaki
   assertNoMainWindowBoundaryLeak(settings.html);
 });
 
+test("R26 M8 settings MCP server list is admin-gated and read-only: members never see the section at all", () => {
+  const base = settingsVm("zh-CN");
+  const withoutServers = renderWebRouteComponent({ key: "settings", settings: base, isAdmin: true }, { locale: "zh-CN" });
+  // 非管理员：服务端结构性不填 vm.mcp_servers（不是空数组——空数组会被读成「一台都没接」），整区不渲。
+  assert.equal(withoutServers.html.includes("data-r26-settings-mcp"), false);
+
+  const empty = renderWebRouteComponent(
+    { key: "settings", settings: { ...base, mcp_servers: [] }, isAdmin: true },
+    { locale: "zh-CN" }
+  );
+  assert.equal(empty.html.includes('data-r26-settings-mcp="0"'), true);
+  assert.equal(empty.html.includes("还没有接入 MCP 服务器。"), true);
+  // 空态也要给出去处：网页不做添加，入口在桌面客户端。
+  assert.equal(empty.html.includes("添加、启停和移除在桌面客户端的设置里操作。"), true);
+
+  const withServers = renderWebRouteComponent(
+    {
+      key: "settings",
+      isAdmin: true,
+      settings: {
+        ...base,
+        mcp_servers: [
+          {
+            id: "66666666-6666-4666-8666-666666666666",
+            server_name: "gh",
+            display_name: "GitHub",
+            transport: "stdio",
+            enabled: true,
+            status: "connected",
+            trust_level: "read_only",
+            tool_count: 3,
+            precheck_verdict: "ok"
+          },
+          {
+            id: "77777777-7777-4777-8777-777777777777",
+            server_name: "empty",
+            transport: "stdio",
+            enabled: true,
+            status: "connected",
+            trust_level: "external_effect",
+            tool_count: 0,
+            precheck_verdict: "warn"
+          },
+          {
+            id: "88888888-8888-4888-8888-888888888888",
+            server_name: "slow",
+            transport: "stdio",
+            enabled: true,
+            status: "connect_failed",
+            trust_level: "external_effect",
+            tool_count: 0,
+            precheck_verdict: "ok",
+            last_error_code: "mcp_handshake_timeout"
+          },
+          {
+            id: "99999999-9999-4999-8999-999999999999",
+            server_name: "old",
+            transport: "stdio",
+            enabled: false,
+            status: "disabled",
+            trust_level: "external_effect",
+            tool_count: 0,
+            precheck_verdict: "ok"
+          }
+        ]
+      }
+    },
+    { locale: "zh-CN" }
+  );
+  assert.equal(withServers.html.includes('data-r26-settings-mcp="4"'), true);
+  assert.equal(withServers.html.includes("GitHub（gh）"), true);
+  // 四种状态各说各的话，不合并成一种。
+  assert.equal(withServers.html.includes("已连接 · 3 个工具"), true);
+  assert.equal(withServers.html.includes("已连接 · 它没有提供工具"), true);
+  assert.equal(withServers.html.includes("连不上"), true);
+  assert.equal(withServers.html.includes("已停用"), true);
+  // 连不上的那一行按**稳定码**出话，而不是把服务端的英文诊断串渲上去。
+  assert.equal(withServers.html.includes('data-r26-settings-mcp-error="mcp_handshake_timeout"'), true);
+  assert.equal(withServers.html.includes("服务器没有在规定时间内应答。"), true);
+  assert.equal(withServers.html.includes(" · 启动前检查有提醒"), true);
+  // 信任级别两档各说各的。
+  assert.equal(withServers.html.includes('data-r26-settings-mcp-trust="read_only"'), true);
+  assert.equal(withServers.html.includes("已断言为只读"), true);
+  assert.equal(withServers.html.includes("按最高风险运行"), true);
+  // 网页只读：这一区不该出现任何添加/启停/测试连接的动作按钮。
+  assert.equal(withServers.html.includes('data-action-id="add_mcp_server"'), false);
+  assert.equal(withServers.html.includes('data-action-id="disable_mcp_server"'), false);
+});
+
 test("R24-P settings plugins list is admin-gated and read-only: members never see the section at all", () => {
   const base = settingsVm("zh-CN");
   const withoutPlugins = renderWebRouteComponent({ key: "settings", settings: base }, { locale: "zh-CN" });

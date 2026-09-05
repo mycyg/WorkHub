@@ -3537,6 +3537,11 @@ const settingsPageResponseSchema = {
   properties: {
     generated_at: dateTimeStringSchema,
     locale: { type: "string", enum: ["zh-CN", "en-US"] },
+    // 下面三段只在请求者是管理员时才出现，非管理员是**结构性缺席**（不是空数组——空数组会被
+    // 读成「一条都没有」）。additionalProperties: false 之下漏掉它们等于说这个响应不合法。
+    permission_policies: { type: "array", items: { type: "object", additionalProperties: true } },
+    plugins: { type: "array", items: { type: "object", additionalProperties: true } },
+    mcp_servers: { type: "array", items: { type: "object", additionalProperties: true } },
     runtime: { type: "object", additionalProperties: true },
     llm_runtime: { type: "object", additionalProperties: true },
     budgets: { type: "object", additionalProperties: true },

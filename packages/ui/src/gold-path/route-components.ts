@@ -5163,6 +5163,95 @@ function renderSettingsPluginsSection(vm: SettingsPageVM, locale: WorkHubLocale)
       </section>`;
 }
 
+// R26 M8：网页设置页的**只读** MCP（模型上下文协议）服务器清单（仅管理员——服务端只给管理员填
+// vm.mcp_servers，非管理员时字段结构性缺席，整区不渲）。网页刻意不做添加/启停：要填的是一条在
+// 「跑着 API 的那台机器」上执行的启动命令，只在桌面端说得通；这里只回答「接了什么、还连得上吗」，
+// 动作入口指向桌面客户端（与插件区同款分工）。
+type SettingsMcpServer = NonNullable<SettingsPageVM["mcp_servers"]>[number];
+
+/** 四种说法：已停用 / 已连接·N 个工具 / 已连接·没有工具 / 连不上。 */
+function settingsMcpStatusLabel(server: SettingsMcpServer, locale: WorkHubLocale): string {
+  if (!server.enabled || server.status === "disabled") {
+    return goldPathCopyT(locale, "disabled");
+  }
+  if (server.status === "connect_failed") {
+    return routeT(locale, "settings.mcpCantConnect");
+  }
+  if (server.tool_count === 0) {
+    // 「连上了但一个工具都没有」和「连不上」是两件事，下一步动作也不同，不合并成一种说法。
+    return routeT(locale, "settings.mcpConnectedNoTools");
+  }
+  return server.tool_count === 1
+    ? routeT(locale, "settings.mcpConnectedToolsOne")
+    : routeTf(locale, "settings.mcpConnectedToolsMany", { count: server.tool_count });
+}
+
+/**
+ * 连不上的原因，按**稳定码**出话。
+ *
+ * 网页这一行结构性拿不到 `last_error`（那是宿主机现场诊断，和命令、工作目录同属不该上网页的事实），
+ * 所以这里只有码；码缺席就不多说一句——回落到状态行那句「连不上」，而不是编一个并不知道的原因。
+ */
+function settingsMcpReasonLine(server: SettingsMcpServer, locale: WorkHubLocale): string {
+  switch (server.last_error_code) {
+    case "mcp_spawn_failed":
+      return routeT(locale, "settings.mcpErrSpawnFailed");
+    case "mcp_handshake_timeout":
+      return routeT(locale, "settings.mcpErrHandshakeTimeout");
+    case "mcp_protocol_version_unsupported":
+      return routeT(locale, "settings.mcpErrProtocolVersion");
+    case "mcp_protocol_error":
+      return routeT(locale, "settings.mcpErrProtocol");
+    case "mcp_server_error":
+      return routeT(locale, "settings.mcpErrServerRefused");
+    case "mcp_call_timeout":
+      return routeT(locale, "settings.mcpErrCallTimeout");
+    case "mcp_not_running":
+      return routeT(locale, "settings.mcpErrNotRunning");
+    case "mcp_exited":
+      return routeT(locale, "settings.mcpErrExited");
+    default:
+      return "";
+  }
+}
+
+function settingsMcpPrecheckNote(server: SettingsMcpServer, locale: WorkHubLocale): string {
+  if (server.precheck_verdict === "blocked") {
+    return routeT(locale, "settings.mcpPrecheckBlocked");
+  }
+  if (server.precheck_verdict === "warn") {
+    return routeT(locale, "settings.mcpPrecheckWarn");
+  }
+  return "";
+}
+
+function renderSettingsMcpSection(vm: SettingsPageVM, locale: WorkHubLocale): string {
+  const servers = vm.mcp_servers;
+  if (!servers) {
+    return "";
+  }
+  const body = servers.length === 0
+    ? `<p class="wh-subtle">${escapeHtml(routeT(locale, "settings.mcpEmpty"))}</p>`
+    : servers
+        .map((server) => {
+          const reason = settingsMcpReasonLine(server, locale);
+          return `<div role="listitem" class="wh-r4-route-row" data-r26-settings-mcp-server="${escapeHtml(server.id)}" data-r26-settings-mcp-status="${escapeHtml(server.status)}" data-r26-settings-mcp-trust="${escapeHtml(server.trust_level)}"${server.last_error_code ? ` data-r26-settings-mcp-error="${escapeHtml(server.last_error_code)}"` : ""}>
+            <div>
+              <strong>${escapeHtml(server.display_name ? `${server.display_name}（${server.server_name}）` : server.server_name)}</strong>
+              <p>${escapeHtml(`${settingsMcpStatusLabel(server, locale)}${settingsMcpPrecheckNote(server, locale)}`)}</p>
+              ${reason ? `<p class="wh-subtle">${escapeHtml(reason)}</p>` : ""}
+              <p class="wh-subtle">${escapeHtml(routeT(locale, server.trust_level === "read_only" ? "settings.mcpTrustReadOnly" : "settings.mcpTrustExternalEffect"))}</p>
+            </div>
+          </div>`;
+        })
+        .join("");
+  return `<section class="wh-card wh-r4-route-card" data-r26-settings-mcp="${escapeHtml(String(servers.length))}">
+        <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "settings.mcpServers"))}</h3>
+        <p class="wh-subtle">${escapeHtml(routeT(locale, "settings.mcpIntro"))}</p>
+        <div class="wh-r4-route-timeline" role="list">${body}</div>
+      </section>`;
+}
+
 function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale, isAdmin = false): WebRouteComponent {
   const membersSection = isAdmin ? renderSettingsMembersSection(locale) : "";
   const budgetPolicySection = isAdmin ? renderSettingsBudgetPolicySection(locale) : "";
@@ -5225,6 +5314,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale,
           : `<p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "noStandingRulesYet"))}</p>`}</div>
       </section>` : ""}
       ${renderSettingsPluginsSection(vm, locale)}
+      ${renderSettingsMcpSection(vm, locale)}
       ${membersSection}
       ${budgetPolicySection}
       ${workspaceAuditSection}
