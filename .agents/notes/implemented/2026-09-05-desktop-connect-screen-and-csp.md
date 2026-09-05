@@ -103,3 +103,38 @@ window/事件权限，与网络出口无关，无需改动。
   注入过设计系统，一直是死类），颜色改走 `CanvasText`/`color-mix` 并补一段深色外观补偿。改面板样式时
   注意：面板里的 `p` 规则是「类 + 标签」（0,1,1），任何修饰类都必须带面板前缀才压得住它——不带前缀的
   `.wh-connect-hint` / `.wh-connect-manual` 此前就是这么被静默盖掉的。
+
+
+### 2026-09-05 追补（R24 S5 真机复验修复批）
+
+- **不可达三态**：真机复验（`scratchpad/r24-S5-reverify.md` N-02）揪出本批遗漏——
+  `probeDesktopAuthMode` 此前把「网络错误/超时/非 2xx」与「可达但探不到 auth_mode 字段（老服务端）」
+  一律折叠成同一个 `null`，`resolveDesktopFirstRunGate` 据此一律猜成 nickname 模式，把连不上后端的
+  用户直接扔进一张注定失败的登录门——本 Note 设计的「gate `"offline"` → 连接屏」这条分支，在「后端
+  真的连不上」这个最该触发它的场景下反而从没被触发过。修复：`probeDesktopAuthMode` 回三态
+  `{reachable:true, mode}` / `{reachable:false}`，`resolveDesktopFirstRunGate` 不可达时回 `"offline"`。
+  `desktopBootScreenForGate`／`ensureDesktopClientToken`／`ensureWorkbenchClientToken`
+  （browser.ts/workbench/boot.ts）已有的「非 needs-credentials/logged-out 时落到无 token 检查」兜底
+  正好接住这个新增的 offline 分支，两处 boot 入口与桌宠窗共用同一个 gate 判定，均不需要改动。
+- **登录之后换服务器的入口**：本 Note 原「服务器地址入口全仓只留连接屏这一处」在真机复验中发现是句
+  空话——连接屏只有 gate `"offline"` 时才会挂载，而**登录之后**想换一台服务器完全无路可走。设置页
+  （`spotlight/views/settings.ts`）新增「服务器」行，显示当前 `workhub_api_base` + best-effort 的
+  `/api/health` `instance_name`/`version`，「更换服务器」按钮直接在设置视图内就地挂载
+  `bindDesktopConnectScreen`——同一份实现的第二个触发点，不是第二套实现。
+- **同址不清令牌**：`applyDesktopServerChoice` 新增可选 `currentBase` 参数，归一化后与目标地址一致就
+  短路，`clearIdentity`/`rememberServer`/`notifyShell` 三个 effects 全部跳过（回 `unchanged:true`）。
+  真机复验（N-07）实测：换服务器哪怕选中地址和当前完全一样，也会清设备令牌 + 通知壳层涨
+  endpoint generation，把「点错了再点一次」变成一次货真价实的掉线重登。`bindDesktopConnectScreen`
+  新增 `onUnchanged` 回调，未提供时（首启/离线兜底两个调用方）保留旧行为照样 reload——不可达兜底没有
+  「原来的屏」可以退回去，必须靠 reload 重新走一遍鉴权门判定。
+- **登录成功的跨窗广播**：登录/重新绑定成功（desktop-login.ts 凭据门三条路径 / desktop-rebind.ts
+  昵称屏，均由 browser.ts 的两处 `onSuccess` 触发）此前只 `window.location.reload()` 自己那一扇
+  窗口——桌宠窗（挂着「去主窗口登录」卡）与工作台窗全程收不到任何信号，会在本次会话内一直装死
+  （N-03）。新增事件名 `workhub-logged-in`（`desktop-cuu-runtime.ts` 的 `DesktopShellEventName`），
+  与 `workhub-logged-out`/`workhub-server-changed` 同一条通用 Tauri 事件桥；编排本身
+  （`desktop-login.ts` 的 `completeDesktopLoginSuccess`：先广播、再本窗 reload）跟
+  `runDesktopLogout`/`applyDesktopServerChoice` 同一套「effects 注入 + 顺序即安全属性」取舍，可单测。
+  桌宠（`pet-surface.ts`）与工作台（`workbench/boot.ts`）订阅后各自 reload；桌宠不需要额外的「收起卡片/
+  恢复窗口尺寸」代码——`render()` 的结构化渲染分支在下一次全新 boot 时会用真实 `currentCard`
+  重新算 `desiredMode` 并调 `syncPetWindowMode`，reload 本身就足以复位。主窗（发起广播的那一扇）不
+  自我订阅，对称于 `workhub-logged-out` 从不在主窗自己的 boot 路径里被监听的既有先例。

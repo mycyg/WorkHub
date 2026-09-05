@@ -177,7 +177,45 @@ test("applyDesktopServerChoice clears the identity before writing the address an
   const result = await applyDesktopServerChoice("http://192.168.1.10:8787", effects, health());
   // C3：顺序即安全属性——A 服务器的令牌绝不能在地址切过去之后还留着。
   assert.deepEqual(order, ["clearIdentity", "rememberServer", "notifyShell"]);
-  assert.deepEqual(result, { base: "http://192.168.1.10:8787", shellAccepted: true });
+  assert.deepEqual(result, { base: "http://192.168.1.10:8787", shellAccepted: true, unchanged: false });
+});
+
+// R24 S5（N-07 根治）：真机复验发现——设置页「更换服务器」哪怕选中的地址和当前一模一样，也照样
+// 清令牌+通知壳层（涨 endpoint generation），把「点错了再点一次」变成一次货真价实的掉线重登。
+test("applyDesktopServerChoice short-circuits (no clearIdentity/rememberServer/notifyShell) when the address is unchanged", async () => {
+  const { order, effects } = recordingEffects();
+  const result = await applyDesktopServerChoice(
+    "http://192.168.1.10:8787",
+    effects,
+    health(),
+    "http://192.168.1.10:8787"
+  );
+  assert.deepEqual(order, []);
+  assert.deepEqual(result, { base: "http://192.168.1.10:8787", shellAccepted: true, unchanged: true });
+});
+
+test("applyDesktopServerChoice treats a currentBase that only differs by a trailing slash as unchanged", async () => {
+  const { order, effects } = recordingEffects();
+  const result = await applyDesktopServerChoice(
+    "http://192.168.1.10:8787",
+    effects,
+    health(),
+    "http://192.168.1.10:8787/"
+  );
+  assert.deepEqual(order, []);
+  assert.equal(result.unchanged, true);
+});
+
+test("applyDesktopServerChoice still runs the full switch when currentBase genuinely differs", async () => {
+  const { order, effects } = recordingEffects();
+  const result = await applyDesktopServerChoice(
+    "http://192.168.1.10:8787",
+    effects,
+    health(),
+    "http://127.0.0.1:8787"
+  );
+  assert.deepEqual(order, ["clearIdentity", "rememberServer", "notifyShell"]);
+  assert.equal(result.unchanged, false);
 });
 
 test("applyDesktopServerChoice still switches the webview side when the shell command is missing", async () => {
@@ -385,6 +423,91 @@ test("bindDesktopConnectScreen keeps confirm locked when the probe fails, and re
   assert.equal(confirm.disabled, true);
   await confirm.dispatch("click");
   assert.equal(switched, 0);
+});
+
+// R24 S5（N-07 根治）：设置页「更换服务器」入口会传 onUnchanged——地址跟 apiBase 一样时必须收起
+// 这一屏而不是 reload，且三个 effects 一个都不该被调用（见 applyDesktopServerChoice 的短路）。
+test("bindDesktopConnectScreen calls onUnchanged instead of reloading when the confirmed address matches apiBase", async () => {
+  const form = fakeElement();
+  const address = fakeElement({ value: "http://127.0.0.1:8787", focus: () => undefined });
+  const testButton = fakeElement({ disabled: false, textContent: "" });
+  const confirm = fakeElement({ disabled: true });
+  const status = fakeElement({ innerHTML: "" });
+  const root = fakeRoot({
+    "[data-desktop-connect-form]": form,
+    "[data-desktop-connect-address]": address,
+    "[data-desktop-connect-test]": testButton,
+    "[data-desktop-connect-confirm]": confirm,
+    "[data-desktop-connect-status]": status
+  });
+
+  const order: string[] = [];
+  let reloaded = 0;
+  let unchangedCalls = 0;
+  bindDesktopConnectScreen(root, {
+    locale: "zh-CN",
+    // 这一屏打开时正在用的地址——跟下面测通/确认的地址完全一样。
+    apiBase: "http://127.0.0.1:8787",
+    probe: async () => health({ instance_name: "研发一组" }),
+    effects: {
+      clearIdentity: () => order.push("clearIdentity"),
+      rememberServer: (base) => order.push(`rememberServer:${base}`),
+      notifyShell: async (base) => {
+        order.push(`notifyShell:${base}`);
+        return { url: base };
+      }
+    },
+    reload: () => {
+      reloaded += 1;
+    },
+    onUnchanged: () => {
+      unchangedCalls += 1;
+    }
+  });
+
+  await form.dispatch("submit");
+  assert.equal(confirm.disabled, false, "a healthy probe must unlock the confirm button even when unchanged");
+
+  await confirm.dispatch("click");
+  assert.deepEqual(order, [], "no effect may run when the address did not actually change");
+  assert.equal(reloaded, 0, "onUnchanged must be preferred over a hard reload");
+  assert.equal(unchangedCalls, 1);
+});
+
+// 首启/离线兜底两个调用方（browser.ts/workbench/boot.ts）没有传 onUnchanged——没有"原来的屏"可退回，
+// 必须保留旧行为照样 reload，靠它重新走一遍鉴权门判定（否则用户会卡在一张确认过的静止连接屏上）。
+test("bindDesktopConnectScreen still reloads on an unchanged address when no onUnchanged is provided", async () => {
+  const form = fakeElement();
+  const address = fakeElement({ value: "http://127.0.0.1:8787", focus: () => undefined });
+  const testButton = fakeElement({ disabled: false, textContent: "" });
+  const confirm = fakeElement({ disabled: true });
+  const status = fakeElement({ innerHTML: "" });
+  const root = fakeRoot({
+    "[data-desktop-connect-form]": form,
+    "[data-desktop-connect-address]": address,
+    "[data-desktop-connect-test]": testButton,
+    "[data-desktop-connect-confirm]": confirm,
+    "[data-desktop-connect-status]": status
+  });
+
+  let reloaded = 0;
+  bindDesktopConnectScreen(root, {
+    locale: "zh-CN",
+    apiBase: "http://127.0.0.1:8787",
+    probe: async () => health(),
+    effects: {
+      clearIdentity: () => undefined,
+      rememberServer: () => undefined,
+      notifyShell: async () => undefined
+    },
+    reload: () => {
+      reloaded += 1;
+    }
+  });
+
+  await form.dispatch("submit");
+  await confirm.dispatch("click");
+  assert.equal(reloaded, 1);
 });
 
 // --- 跨窗跟随 ---------------------------------------------------------------

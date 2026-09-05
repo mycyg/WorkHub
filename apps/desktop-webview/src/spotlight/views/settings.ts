@@ -31,6 +31,8 @@ import type {
   UserProfileVM
 } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
+import type { HealthResponse } from "@workhub/api-client";
+import { createApiClient } from "@workhub/api-client/client";
 
 import {
   AVATAR_CROP_OUTPUT_SIZE,
@@ -47,6 +49,11 @@ import {
 import { resolveDesktopShellEmitter } from "../../desktop-cuu-runtime.js";
 import { clearDesktopClientToken } from "../../desktop-client-token.js";
 import { resolveDesktopTauriInvoke } from "../../desktop-window-controls.js";
+import {
+  bindDesktopConnectScreen,
+  createDesktopServerChoiceEffects
+} from "../../desktop-connect-screen.js";
+import { scheduleWorkHubLiquidGlassFilterRebuild } from "../../liquid-glass-filter.js";
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 import { driveResourceApiBase, fetchDriveResource } from "./drive.js";
 
@@ -520,6 +527,35 @@ export function devicesSectionHtml(state: DesktopDevicesSectionState, zh: boolea
   </div>`;
 }
 
+// R24 S5（N-02/E-02 补齐）：全仓此前唯一能填服务器地址的地方是首启失败时才可能浮出的连接屏——
+// 已经登录之后想换一台服务器（或只是想看看自己连的是哪台），设置页里完全没有入口。这里补一行
+// 只读现状 + 一个「更换服务器」按钮，点了直接在设置视图内就地渲连接服务器屏（复用
+// desktop-connect-screen.ts 的 bindDesktopConnectScreen，同一套 probe/effects/applyDesktopServerChoice
+// 顺序——不是另起一份"设置页专属"的换服务器实现）。
+export type DesktopServerSectionState = {
+  apiBase: string;
+  // best-effort：拉不到（网络问题/老服务端缺字段）就只显示地址本身，不阻塞这一行的渲染。
+  health: HealthResponse | undefined;
+};
+
+export function serverSectionHtml(state: DesktopServerSectionState, zh: boolean): string {
+  const parts = [state.apiBase];
+  if (state.health?.instance_name) {
+    parts.push(state.health.instance_name);
+  }
+  if (state.health?.version) {
+    parts.push(`v${state.health.version}`);
+  }
+  const detail = parts.map((part) => escapeHtml(part)).join(" · ");
+  return `<div class="wh-spot-row" style="cursor:default" data-spot-server-section="true">
+    <div class="wh-spot-row-main">
+      <div class="wh-spot-row-title">${zh ? "服务器" : "Server"}</div>
+      <div class="wh-spot-row-sub">${detail}</div>
+    </div>
+    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-set-change-server="true">${zh ? "更换服务器" : "Change server"}</button>
+  </div>`;
+}
+
 function settingsHtml(
   vm: SettingsPageVM,
   zh: boolean,
@@ -530,7 +566,8 @@ function settingsHtml(
   profileFailed: boolean,
   profileErrorText: string | undefined,
   policiesHtml: string,
-  devicesHtml: string
+  devicesHtml: string,
+  serverHtml: string
 ): string {
   const lang = vm.language;
   const langChips = lang.supported_locales
@@ -556,6 +593,7 @@ function settingsHtml(
     ${profileSectionHtml(profile, profileFailed, zh)}
     ${profileErrorText ? `<div class="wh-spot-row-sub" data-spot-profile-error="true" style="color:var(--ds-danger)">${escapeHtml(profileErrorText)}</div>` : ""}
     ${policiesHtml}
+    ${serverHtml}
     ${devicesHtml}
     <button type="button" class="wh-spot-row" data-set-open-memory="true">
       <div class="wh-spot-row-main">
@@ -958,6 +996,10 @@ export function createSettingsView(): SpotlightCapabilityView {
       let profile: UserProfileVM | undefined;
       let profileFailed = false;
       let profileErrorText: string | undefined;
+      // R24 S5（N-02/E-02 补齐）：服务器信息行的 best-effort 状态——地址本身走 driveResourceApiBase()
+      // 现拿现算（同步、不需要状态），只有 health（拉服务器名/版本）需要异步落进状态。拉不到就是
+      // undefined，这一行照样渲，只是详情少两截（见 serverSectionHtml）。
+      let serverHealth: HealthResponse | undefined;
       // R20 DSK-UX（R19-5）：自动通过策略撤销的两段式确认武装态 / 撤销进行中 / 失败提示。
       let policyRevokeArmedId: string | undefined;
       let policyRevokeBusyId: string | undefined;
@@ -1102,7 +1144,8 @@ export function createSettingsView(): SpotlightCapabilityView {
           },
           zh
         );
-        ctx.body.innerHTML = settingsHtml(vm, zh, aiProfile, aiFailed, aiErrorText, profile, profileFailed, profileErrorText, policiesHtml, devicesHtml);
+        const serverHtml = serverSectionHtml({ apiBase: driveResourceApiBase(), health: serverHealth }, zh);
+        ctx.body.innerHTML = settingsHtml(vm, zh, aiProfile, aiFailed, aiErrorText, profile, profileFailed, profileErrorText, policiesHtml, devicesHtml, serverHtml);
         ctx.requestResize();
         hydrateAvatarPreview();
       };
@@ -1149,6 +1192,17 @@ export function createSettingsView(): SpotlightCapabilityView {
         }
       };
 
+      // R24 S5（N-02/E-02 补齐）：服务器名/版本纯粹是锦上添花——拉不到（老服务端缺字段/一次性网络
+      // 抖动）就静默留 undefined，serverSectionHtml 照样渲地址本身，不因为这个次要信息挡住整页设置。
+      const loadServerHealth = async () => {
+        try {
+          serverHealth = await ctx.client.health();
+        } catch {
+          if (disposed) return;
+          serverHealth = undefined;
+        }
+      };
+
       // rank7：装载失败渲带「重试」的错误块，点重试重跑（不再死胡同）。
       const load = async () => {
         ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉设置…" : "Loading settings…"}</div>`;
@@ -1163,7 +1217,7 @@ export function createSettingsView(): SpotlightCapabilityView {
         }
         if (disposed) return;
         storageKey = vm.language.storage_key || storageKey;
-        await Promise.all([loadAiProfile(), loadProfile(), loadDevices()]);
+        await Promise.all([loadAiProfile(), loadProfile(), loadDevices(), loadServerHealth()]);
         if (disposed) return;
         renderAll();
       };
@@ -1387,6 +1441,30 @@ export function createSettingsView(): SpotlightCapabilityView {
         runLogoutFlow({ force: false });
       }
 
+      // R24 S5（N-02/E-02 补齐）：设置页「更换服务器」——就地把连接服务器屏渲进这个能力视图自己的
+      // ctx.body（不新开窗口/不整窗替换），走跟首启/离线兜底完全同一套 bindDesktopConnectScreen +
+      // applyDesktopServerChoice（探测不带令牌 C1、地址只认输入框 C2、确认顺序 C3——见
+      // desktop-connect-screen.ts 顶注，这里不重造一份"设置页专属"的换服务器实现）。
+      // onUnchanged：地址跟当前一样时 applyDesktopServerChoice 短路跳过清身份/通知壳层
+      // （R24 S5 N-07），这里对应地收起这一屏、重渲回设置本身，而不是 reload 掉一个正常在线的会话。
+      function openChangeServerScreen(): void {
+        bindDesktopConnectScreen(ctx.body, {
+          locale: ctx.locale,
+          apiBase: driveResourceApiBase(),
+          probe: (base) => createApiClient({ baseUrl: base }).health(),
+          effects: createDesktopServerChoiceEffects({
+            storage: window.localStorage,
+            invoke: resolveDesktopTauriInvoke()
+          }),
+          reload: () => window.location.reload(),
+          onUnchanged: () => {
+            renderAll();
+          },
+          scheduleRebuild: () => scheduleWorkHubLiquidGlassFilterRebuild(document)
+        });
+        ctx.requestResize();
+      }
+
       ctx.body.addEventListener("click", (event) => {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
@@ -1527,6 +1605,12 @@ export function createSettingsView(): SpotlightCapabilityView {
         // R14 批 MEM：设置区旁挂的记忆管理面入口——独立能力视图（views/memory.ts），不是内联区块。
         if (target.closest("[data-set-open-memory]")) {
           ctx.open("memory");
+          return;
+        }
+        // R24 S5（N-02/E-02 补齐）：登录之后想换一台服务器，此前全仓没有入口——直接在设置视图的内容区
+        // 就地渲连接服务器屏（同 openChangeServerScreen 顶注）。
+        if (target.closest("[data-set-change-server]")) {
+          openChangeServerScreen();
           return;
         }
         // M-06：「查看部署说明」——桌面 Tauri webview 对外部链接没有承接（target=_blank 点了没反应，

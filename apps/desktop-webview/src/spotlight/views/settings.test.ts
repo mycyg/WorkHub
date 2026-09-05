@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { HealthResponse } from "@workhub/api-client";
 import type { ClientDeviceResponse, SettingsPageVM, UserAiProfileVM, UserProfileVM } from "@workhub/contracts";
 
 import {
@@ -11,10 +12,12 @@ import {
   permissionPoliciesSectionHtml,
   permissionPolicyFormHtml,
   runDesktopLogout,
+  serverSectionHtml,
   type DesktopDevicesSectionState,
   type DesktopLogoutEffects,
   type DesktopLogoutStage,
   type DesktopLogoutView,
+  type DesktopServerSectionState,
   type PermissionPolicyFormState
 } from "./settings.js";
 import type { SpotlightViewContext } from "../view-context.js";
@@ -1764,5 +1767,159 @@ test("the settings view retries loading devices after a failure", async () => {
 
     assert.equal(listCalls, 2);
     assert.doesNotMatch(body.innerHTML, /data-set-devices-retry/u);
+  });
+});
+
+// ── R24 S5（N-02/E-02 补齐）：设置页「服务器」行 ──────────────────────────────────────────
+
+function serverHealth(overrides: Partial<HealthResponse> = {}): HealthResponse {
+  return {
+    ok: true,
+    service: "workhub-api",
+    runtime: "node",
+    port: 8787,
+    ai_provider_configured: true,
+    auth_mode: "nickname",
+    version: "0.1.0",
+    instance_name: "研发一组",
+    ...overrides
+  } as HealthResponse;
+}
+
+test("serverSectionHtml shows the address alone when health couldn't be fetched", () => {
+  const html = serverSectionHtml({ apiBase: "http://127.0.0.1:8787", health: undefined } as DesktopServerSectionState, true);
+  assert.match(html, /data-spot-server-section="true"/u);
+  assert.match(html, /http:\/\/127\.0\.0\.1:8787/u);
+  assert.match(html, /服务器/u);
+  assert.match(html, /data-set-change-server="true"/u);
+  assert.match(html, /更换服务器/u);
+  assert.doesNotMatch(html, /研发一组/u);
+});
+
+test("serverSectionHtml appends the instance name and version once health is known, and escapes them", () => {
+  const html = serverSectionHtml(
+    { apiBase: "http://192.168.1.10:8787", health: serverHealth({ instance_name: "<b>x</b>" }) } as DesktopServerSectionState,
+    false
+  );
+  assert.match(html, /http:\/\/192\.168\.1\.10:8787/u);
+  assert.match(html, /v0\.1\.0/u);
+  assert.match(html, /&lt;b&gt;x&lt;\/b&gt;/u);
+  assert.doesNotMatch(html, /<b>x<\/b>/u);
+  assert.match(html, /Change server/u);
+});
+
+test("the settings view renders the server row with the current api base and, best-effort, the server's name/version", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = settingsVm();
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          },
+          async health() {
+            return serverHealth();
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+
+    assert.match(body.innerHTML, /data-spot-server-section="true"/u);
+    // 没有 window 全局时 driveResourceApiBase() 落回本机默认地址——这就是桌面首启的真实取值。
+    assert.match(body.innerHTML, /http:\/\/127\.0\.0\.1:8787/u);
+    assert.match(body.innerHTML, /研发一组/u);
+    assert.match(body.innerHTML, /v0\.1\.0/u);
+  });
+});
+
+test("the settings view still renders the server row (address only) when GET /api/health fails", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = settingsVm();
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          },
+          async health() {
+            throw new Error("network down");
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+
+    assert.match(body.innerHTML, /data-spot-server-section="true"/u);
+    assert.match(body.innerHTML, /http:\/\/127\.0\.0\.1:8787/u);
+  });
+});
+
+// 点「更换服务器」必须就地渲连接服务器屏（同首启/离线兜底那同一套 bindDesktopConnectScreen），
+// 而不是另起一份"设置页专属"实现。document/window 都要打桩——scheduleWorkHubLiquidGlassFilterRebuild
+// 眼下是个彻底空转的桩（SVG 折射整体关着），但它的参数是裸 `document` 引用，真调用一次就得让这个
+// 标识符能解析，同 D1 那条"plain Node 没有 window 全局"注释同款取舍。
+test("clicking 更换服务器/Change server mounts the connect-server screen in place and re-measures the box", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = settingsVm();
+    let resizeCalls = 0;
+
+    const globals = globalThis as unknown as { window?: unknown; document?: unknown };
+    const originalWindow = globals.window;
+    const originalDocument = globals.document;
+    globals.window = { localStorage: { setItem() {}, removeItem() {} } };
+    globals.document = {};
+
+    try {
+      await createSettingsView().mount(
+        baseCtx(body, {
+          requestResize() {
+            resizeCalls += 1;
+          },
+          client: {
+            pages: { async settings() { return vm; } },
+            async request<T>(path: string) {
+              if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+              return aiProfileVm() as unknown as T;
+            },
+            async health() {
+              return serverHealth();
+            }
+          } as unknown as SpotlightViewContext["client"]
+        })
+      );
+      await tick();
+      await tick();
+      const resizeCallsAfterLoad = resizeCalls;
+
+      body.click(new FakeElement(new Set(["[data-set-change-server]"])));
+      await tick();
+
+      assert.match(body.innerHTML, /data-desktop-connect-form/u);
+      assert.match(body.innerHTML, /连接到你的服务器/u);
+      assert.ok(resizeCalls > resizeCallsAfterLoad, "mounting the connect screen must re-measure the box");
+    } finally {
+      if (originalWindow === undefined) {
+        delete globals.window;
+      } else {
+        globals.window = originalWindow;
+      }
+      if (originalDocument === undefined) {
+        delete globals.document;
+      } else {
+        globals.document = originalDocument;
+      }
+    }
   });
 });
