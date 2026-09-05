@@ -127,3 +127,139 @@ export function renderOnboardingScreen(input: OnboardingScreenInput = {}) {
     </main>`;
   return { html, locale };
 }
+
+// R23 P2（SA-04）：生产环境强制 AUTH_MODE!='nickname' 时，上面的 renderOnboardingScreen（昵称 +
+// 管理员口令）不适用——POST /api/auth/identify 在这个模式下恒 404。这是密码/hybrid 模式的对应入口屏：
+// 登录（POST /api/auth/login）与注册（POST /api/auth/register）同屏两个 tab，调用方
+// （apps/web/src/browser.ts）按 auth-screen-mode.ts 探测到的模式二选一渲染这个还是上面那个。
+// 零管理员实例的首个注册者服务端自动提为管理员（同 packages/api-client/src/types.ts 的
+// PasswordRegisterRequest 注释）——register tab 用一句提示说明这件事，而不是让用户毫无准备地
+// 「顺手注册」出一个自己都不知道拥有管理员权限的账号。
+export type PasswordAuthScreenTab = "login" | "register";
+
+export type PasswordAuthScreenInput = {
+  locale?: WorkHubLocale | undefined;
+  tab?: PasswordAuthScreenTab | undefined;
+  /** 服务端/校验失败的人话错误（邮箱或密码不正确、该邮箱已注册等）。原文呈现，不翻译。 */
+  errorText?: string | undefined;
+  /** 登录成功后将进入的目标路径（深链保持的可见承诺，同 renderOnboardingScreen）。 */
+  targetRoute?: string | undefined;
+  /** 报错重渲后保留用户已输入的邮箱，不用重打一遍。 */
+  presetEmail?: string | undefined;
+  /** 报错重渲后保留用户已输入的昵称（仅 register tab）。 */
+  presetNickname?: string | undefined;
+};
+
+type PasswordAuthCopyKey =
+  | "kicker"
+  | "loginTitle"
+  | "loginSummary"
+  | "registerTitle"
+  | "registerSummary"
+  | "tabLogin"
+  | "tabRegister"
+  | "emailLabel"
+  | "emailPlaceholder"
+  | "passwordLabel"
+  | "nicknameLabel"
+  | "nicknamePlaceholder"
+  | "localeLabel"
+  | "submitLogin"
+  | "submitRegister"
+  | "firstAdminHint"
+  | "targetPrefix";
+
+const passwordAuthCopy: Record<WorkHubLocale, Record<PasswordAuthCopyKey, string>> = {
+  "zh-CN": {
+    kicker: "WorkHub",
+    loginTitle: "登录 WorkHub",
+    loginSummary: "这个实例要求账号和密码登录。输入邮箱和密码进入工作台。",
+    registerTitle: "创建账号",
+    registerSummary: "还没有账号？用邮箱和密码创建一个。",
+    tabLogin: "登录",
+    tabRegister: "注册",
+    emailLabel: "邮箱",
+    emailPlaceholder: "you@example.com",
+    passwordLabel: "密码",
+    nicknameLabel: "你的昵称",
+    nicknamePlaceholder: "例如：小拓",
+    localeLabel: "界面语言",
+    submitLogin: "登录",
+    submitRegister: "创建账号",
+    firstAdminHint: "本实例目前还没有管理员——如果你是第一个注册的人，这个账号会自动成为管理员。",
+    targetPrefix: "完成后将打开"
+  },
+  "en-US": {
+    kicker: "WorkHub",
+    loginTitle: "Sign in to WorkHub",
+    loginSummary: "This instance requires an account and password. Enter your email and password to continue.",
+    registerTitle: "Create your account",
+    registerSummary: "No account yet? Create one with an email and password.",
+    tabLogin: "Sign in",
+    tabRegister: "Register",
+    emailLabel: "Email",
+    emailPlaceholder: "you@example.com",
+    passwordLabel: "Password",
+    nicknameLabel: "Your nickname",
+    nicknamePlaceholder: "e.g. Alex",
+    localeLabel: "Interface language",
+    submitLogin: "Sign in",
+    submitRegister: "Create account",
+    firstAdminHint: "This instance has no admin yet — if you're the first person to register, this account becomes the admin automatically.",
+    targetPrefix: "You will land on"
+  }
+};
+
+function authT(locale: WorkHubLocale, key: PasswordAuthCopyKey) {
+  return passwordAuthCopy[locale][key];
+}
+
+const passwordAuthScreenCss = [
+  ".wh-auth-tabs{display:flex;gap:8px}",
+  ".wh-auth-tabs button{flex:1;border:1px solid #cdd8ea;border-radius:8px;background:#fff;color:#46536e;font-size:13px;font-weight:850;line-height:1.35;padding:9px 10px;cursor:pointer;font-family:inherit}",
+  ".wh-auth-tabs button[aria-selected=true]{background:#3b6fe0;border-color:#3b6fe0;color:#fff}",
+  ".wh-auth-hint{border:1px solid #cdd8ea;background:#f6f9fd;border-radius:8px;color:#46536e;font-size:12px;line-height:1.5;padding:9px 12px;overflow-wrap:anywhere}"
+].join("");
+
+export function renderPasswordAuthScreen(input: PasswordAuthScreenInput = {}) {
+  const locale = normalizeWorkHubLocale(input.locale);
+  const tab: PasswordAuthScreenTab = input.tab === "register" ? "register" : "login";
+  const isRegister = tab === "register";
+  const targetRoute = input.targetRoute && input.targetRoute !== "/" ? input.targetRoute : "";
+  const html = `<style>${onboardingScreenCss}${passwordAuthScreenCss}</style>
+    <main class="wh-onboarding-screen" data-r4-web-route-status="onboarding" data-r23-auth-screen="true" data-r23-auth-tab="${tab}" data-r23-auth-locale="${escapeHtml(locale)}">
+      <form class="wh-onboarding-card" data-r23-auth-form="true" data-r23-auth-form-tab="${tab}" novalidate>
+        <span class="wh-onboarding-kicker">${escapeHtml(authT(locale, "kicker"))}</span>
+        <div class="wh-auth-tabs" role="tablist">
+          <button type="button" role="tab" aria-selected="${String(!isRegister)}" data-r23-auth-tab-option="login">${escapeHtml(authT(locale, "tabLogin"))}</button>
+          <button type="button" role="tab" aria-selected="${String(isRegister)}" data-r23-auth-tab-option="register">${escapeHtml(authT(locale, "tabRegister"))}</button>
+        </div>
+        <h1>${escapeHtml(authT(locale, isRegister ? "registerTitle" : "loginTitle"))}</h1>
+        <p>${escapeHtml(authT(locale, isRegister ? "registerSummary" : "loginSummary"))}</p>
+        ${input.errorText ? `<div class="wh-onboarding-error" data-r23-auth-error="true" role="alert">${escapeHtml(input.errorText)}</div>` : ""}
+        <div class="wh-onboarding-field">
+          <label for="wh-auth-email">${escapeHtml(authT(locale, "emailLabel"))}</label>
+          <input id="wh-auth-email" name="email" type="email" required maxlength="320" autocomplete="username" inputmode="email" placeholder="${escapeHtml(authT(locale, "emailPlaceholder"))}" value="${escapeHtml(input.presetEmail ?? "")}" data-r23-auth-email="true" />
+        </div>
+        ${isRegister ? `<div class="wh-onboarding-field">
+          <label for="wh-auth-nickname">${escapeHtml(authT(locale, "nicknameLabel"))}</label>
+          <input id="wh-auth-nickname" name="nickname" type="text" required maxlength="64" autocomplete="nickname" placeholder="${escapeHtml(authT(locale, "nicknamePlaceholder"))}" value="${escapeHtml(input.presetNickname ?? "")}" data-r23-auth-nickname="true" />
+        </div>` : ""}
+        <div class="wh-onboarding-field">
+          <label for="wh-auth-password">${escapeHtml(authT(locale, "passwordLabel"))}</label>
+          <input id="wh-auth-password" name="password" type="password" required minlength="8" maxlength="1024" autocomplete="${isRegister ? "new-password" : "current-password"}" data-r23-auth-password="true" />
+        </div>
+        ${isRegister ? `<p class="wh-auth-hint" data-r23-auth-first-admin-hint="true">${escapeHtml(authT(locale, "firstAdminHint"))}</p>` : ""}
+        <div class="wh-onboarding-field">
+          <label>${escapeHtml(authT(locale, "localeLabel"))}</label>
+          <div class="wh-onboarding-locales" role="group" aria-label="${escapeHtml(authT(locale, "localeLabel"))}">
+            <button type="button" data-r23-auth-locale-option="zh-CN" aria-pressed="${String(locale === "zh-CN")}">中文</button>
+            <button type="button" data-r23-auth-locale-option="en-US" aria-pressed="${String(locale === "en-US")}">English</button>
+          </div>
+        </div>
+        <button type="submit" class="wh-onboarding-submit" data-r23-auth-submit="true">${escapeHtml(authT(locale, isRegister ? "submitRegister" : "submitLogin"))}</button>
+        ${targetRoute ? `<p class="wh-onboarding-target" data-r23-auth-target="${escapeHtml(targetRoute)}">${escapeHtml(authT(locale, "targetPrefix"))} ${escapeHtml(targetRoute)}</p>` : ""}
+      </form>
+    </main>`;
+  return { html, locale, tab };
+}
