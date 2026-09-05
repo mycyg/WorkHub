@@ -13,6 +13,7 @@ import type {
 import { AI_FEEDBACK_NOTE_MAX_CHARS } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
+import { noAiProviderConfiguredText } from "../../ai-provider-banner-copy.js";
 import { workbenchIcons } from "../icons.js";
 import { hasOwnReaction, REACTION_KEYS } from "./reactions.js";
 import {
@@ -1721,10 +1722,7 @@ export function renderConnectionBannerHtml(state: ConnectionBannerState, locale:
 // 横幅是常驻的（不是点掉就消失的一次性提示）：只要服务端确实没配置，每次挂载都应该如实提醒，不阻塞
 // 输入——人与人聊天不受影响，composer 的发送闸门不读这个状态。
 export function renderNoAiProviderBannerHtml(locale: Locale): string {
-  const zh = locale === "zh-CN";
-  const text = zh
-    ? "AI 服务未配置，Cuu 不会回应——需要在服务端配置模型密钥（见部署文档 DEPLOY.md）"
-    : "The AI service isn't configured, so Cuu won't reply — a model key needs to be set up on the server (see DEPLOY.md).";
+  const text = noAiProviderConfiguredText(locale);
   return `<div class="wh-wb-chat-banner" data-wb-chat-no-ai-provider-banner="true">${escapeHtml(text)}</div>`;
 }
 
