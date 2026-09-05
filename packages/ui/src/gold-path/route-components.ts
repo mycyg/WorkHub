@@ -6034,6 +6034,64 @@ function renderSettingsWorkspaceAuditSection(locale: WorkHubLocale): string {
       </section>`;
 }
 
+// R24-P 阶段 1：网页设置页的**只读**插件清单（仅管理员——服务端只给管理员填 vm.plugins，
+// 非管理员时字段结构性缺席，整区不渲）。网页刻意不做安装/启停：安装要给一个本机绝对路径，
+// 那是「这台服务器上的目录」，只在桌面端说得通；这里只回答「这个部署上装了什么、还活着吗」，
+// 动作入口指向桌面客户端（与「自动通过规则」区块同款分工）。
+function settingsPluginStatusLabel(
+  plugin: NonNullable<SettingsPageVM["plugins"]>[number],
+  zh: boolean
+): string {
+  if (!plugin.enabled || plugin.status === "disabled") {
+    return zh ? "已停用" : "Disabled";
+  }
+  if (plugin.status === "load_failed") {
+    return zh ? "装不上" : "Won't load";
+  }
+  return zh
+    ? `已启用 · ${plugin.tool_count} 个工具`
+    : `Enabled · ${plugin.tool_count} tool${plugin.tool_count === 1 ? "" : "s"}`;
+}
+
+function settingsPluginCompatNote(
+  plugin: NonNullable<SettingsPageVM["plugins"]>[number],
+  zh: boolean
+): string {
+  if (plugin.compat_verdict === "blocked") {
+    return zh ? " · 安装前体检说它跟当前部署不兼容" : " · the pre-install check found it incompatible here";
+  }
+  if (plugin.compat_verdict === "warn") {
+    return zh ? " · 安装前体检有提醒" : " · the pre-install check raised a warning";
+  }
+  return "";
+}
+
+function renderSettingsPluginsSection(vm: SettingsPageVM, locale: WorkHubLocale): string {
+  const plugins = vm.plugins;
+  if (!plugins) {
+    return "";
+  }
+  const zh = locale === "zh-CN";
+  const body = plugins.length === 0
+    ? `<p class="wh-subtle">${escapeHtml(zh ? "还没有装任何插件。" : "No plugins installed yet.")}</p>`
+    : plugins
+        .map((plugin) => `<div role="listitem" class="wh-r4-route-row" data-r24-settings-plugin="${escapeHtml(plugin.id)}" data-r24-settings-plugin-status="${escapeHtml(plugin.status)}">
+            <div>
+              <strong>${escapeHtml(plugin.version ? `${plugin.name} ${plugin.version}` : plugin.name)}</strong>
+              <p>${escapeHtml(`${settingsPluginStatusLabel(plugin, zh)}${settingsPluginCompatNote(plugin, zh)}`)}</p>
+            </div>
+          </div>`)
+        .join("");
+  return `<section class="wh-card wh-r4-route-card" data-r24-settings-plugins="${escapeHtml(String(plugins.length))}">
+        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "插件" : "Plugins")}</h3>
+        <p class="wh-subtle">${escapeHtml(zh
+          ? "这里是这台服务器上装好的插件（兼容 DeepSeek Harness 的工具类插件）。安装、启用停用、移除都在桌面客户端的设置里做——安装要指到本机的一个目录。"
+          : "Plugins installed on this server (DeepSeek Harness tool plugins). Install, enable, disable and remove them from the desktop app's settings — installing needs a directory on that machine."
+        )}</p>
+        <div class="wh-r4-route-timeline" role="list">${body}</div>
+      </section>`;
+}
+
 function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale, isAdmin = false): WebRouteComponent {
   const membersSection = isAdmin ? renderSettingsMembersSection(locale) : "";
   const budgetPolicySection = isAdmin ? renderSettingsBudgetPolicySection(locale) : "";
@@ -6095,6 +6153,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale,
           </div>`).join("")
           : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "还没有常驻规则。" : "No standing rules yet.")}</p>`}</div>
       </section>` : ""}
+      ${renderSettingsPluginsSection(vm, locale)}
       ${membersSection}
       ${budgetPolicySection}
       ${workspaceAuditSection}

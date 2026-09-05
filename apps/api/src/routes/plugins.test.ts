@@ -22,6 +22,7 @@ import type { PluginVM } from "@workhub/contracts";
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "../middleware/auth.js";
 import { createPluginService, PluginServiceError } from "../services/plugins.js";
 import type { PluginInspection } from "../services/plugin-compat.js";
+import { buildSettingsPage } from "../pages/settings.js";
 import { createPluginRoutes } from "./plugins.js";
 
 // R24-P 阶段 1：插件治理端点的端到端行为（真路由 + 真服务 + 内存仓储 + 假宿主）。
@@ -527,4 +528,34 @@ test("不存在的插件是 404；不是 uuid 的 id 连服务都不进", async 
 
   const malformed = await app.request("/api/plugins/not-a-uuid", { method: "DELETE", headers });
   assert.equal(malformed.status, 404);
+});
+
+// —— 网页设置页的只读清单（同一道管理员门；网页不做安装/启停） —— //
+
+test("设置页 VM 只在调用方真的填了清单时才带 plugins；摘要里没有本机绝对路径", () => {
+  const runtimeSettings = settings();
+  const readiness = { ready: true, checks: { database: { ok: true }, broker: { ok: true } } } as const;
+  const base = buildSettingsPage({ settings: runtimeSettings, readiness, locale: "zh-CN", generatedAt: now });
+  // 非管理员：路由不取不填 → 字段结构性缺席（不是空数组，空数组会被读成「一个都没装」）。
+  assert.equal(base.plugins, undefined);
+
+  const withPlugins = buildSettingsPage({
+    settings: runtimeSettings,
+    readiness,
+    locale: "zh-CN",
+    generatedAt: now,
+    plugins: [
+      {
+        id: pluginId,
+        name: "dsh-plugin-echo",
+        version: "0.1.0",
+        enabled: true,
+        status: "installed",
+        tool_count: 2,
+        compat_verdict: "ok"
+      }
+    ]
+  });
+  assert.equal(withPlugins.plugins?.length, 1);
+  assert.equal(JSON.stringify(withPlugins.plugins).includes("source_path"), false);
 });
