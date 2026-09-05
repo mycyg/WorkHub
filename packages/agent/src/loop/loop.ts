@@ -14,6 +14,7 @@ import {
 } from "../deliverables/index.js";
 import type { LlmMessage, LlmStreamEvent } from "../providers/types.js";
 import { checkLoopBudget, controlFromAssistant, createInitialUsage, DoomLoopDetector, isTruncatedToolBatch } from "./control.js";
+import { buildDoomLoopReminder, DOOM_LOOP_ESCALATION_REASON } from "./doom-loop-reminder.js";
 import { nextRetryDecision } from "../providers/retry.js";
 import { buildStructuredHandoff } from "./handoff.js";
 import type {
@@ -1419,12 +1420,14 @@ export class AgentLoop {
         }
       });
 
-      const loopSignature = doomLoop.push(step);
-      if (loopSignature) {
+      // B6「先劝再断」：重复动作不再一命中就叫醒人。前两档（默认连续 3 步、5 步）只往对话里
+      // 追加一条运行环境提醒后继续跑，第三档（默认连续 8 步）才走下面的升级路径。
+      const loopSignal = doomLoop.push(step);
+      if (loopSignal?.tier === 3) {
         const handoff = buildStructuredHandoff({
           steps,
           budgetHit: "doom_loop",
-          reason: "连续多步执行了相同动作，已自动升级。"
+          reason: DOOM_LOOP_ESCALATION_REASON
         });
         await input.emit?.({
           type: eventTypes.agentRunEscalated,
@@ -1461,6 +1464,13 @@ export class AgentLoop {
             is_error: result.isError
           }))
         });
+        // B6：前两档提醒作为一条独立的 user 消息跟在 tool_result 之后（Anthropic 会把连续的同角色
+        // 回合并成一个回合，因此不破坏 tool_use/tool_result 配对）。只在「这一步还要继续」的工具路径上
+        // 注入：control === "compact" 的纯文本截断路径本就要发一条纠偏提示 + 压缩次数自带上限，
+        // 再叠一条提醒既冗余又会打乱压缩收尾；tier 3 已在上面升级，走不到这里。
+        if (loopSignal) {
+          messages.push({ role: "user", content: buildDoomLoopReminder(loopSignal) });
+        }
         continue;
       }
 
