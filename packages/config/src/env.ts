@@ -117,9 +117,14 @@ export const envSchema = z.object({
   AGENT_RUN_RECOVERY_INTERVAL_MS: z.coerce.number().int().min(0).default(30000),
   // 一条 run 因租约过期被恢复（requeue）的最大次数；超过即转入死信 failed，不再无限重跑。
   AGENT_RUN_MAX_RECOVER_ATTEMPTS: z.coerce.number().int().positive().default(3),
-  // 默认 false：run_command 默认 fail-closed（不执行宿主命令）。仅在受信本地/单机环境显式置 true，
-  // 才把无约束 nodeCommandRunner 接进 agent 循环（白名单解释器但不隔离，可访问宿主路径）。
-  // 多租户/生产环境应保持 false，并由部署方注入真正隔离的 commandRunner。
+  // R26 B8 起语义改为「**允许降级到软沙箱**」，不再是「允许无约束执行」：
+  // - macOS：argv 一律被包进 Seatbelt（`sandbox-exec`，出网全拒、写只限工作目录），执行完整度上报
+  //   full。这一档不需要本开关，本开关也不会放宽它。
+  // - 没有可用后端的平台（当前是 Linux / Windows）：默认 **fail-closed 拒绝执行**，命令结果里带
+  //   SANDBOX_UNAVAILABLE。置 true 才降级到用户态软沙箱（命令白名单 + 路径围栏 + 预算，执行完整度
+  //   上报 partial）——软沙箱不是安全边界，子进程可读写宿主路径、可出网。
+  // 因此：多租户/公网部署应保持 false（宁可 run_command 不可用，也不要无边界执行）；受信 LAN 单机
+  // 试点（`.env.pilot.example`）才置 true。真正的隔离仍应由部署方注入独立 runner（容器/namespace）。
   AGENT_RUN_ALLOW_UNSANDBOXED_COMMANDS: booleanString.default(false),
   // R23 SA-06：默认 true——此前默认 false 让「AI 从真实工作里攒技能」这条产品承诺在所有默认部署上
   // 是断的（用户的差评被收集了却从没有人消费）。敢默认开的前提是 worker 自身两道兜底：
@@ -263,6 +268,7 @@ export type Settings = {
     heartbeatIntervalMs?: number;
     recoveryIntervalMs: number;
     maxRecoverAttempts: number;
+    /** 允许在没有操作系统级沙箱后端的平台上降级到软沙箱（partial）；false = fail-closed 拒绝执行。 */
     allowUnsandboxedCommands: boolean;
     skillCurationEnabled: boolean;
     skillCurationIntervalMs: number;

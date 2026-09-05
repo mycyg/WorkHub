@@ -18,7 +18,8 @@
  *   | isError propagation            | `afterToolCall: workhubAfterToolCall`           |
  *   | truncation sanitize (400 fix)  | `convertToLlm` cleans non-object tool_use args  |
  *   | budget stop (steps/time/tok/$) | `shouldStopAfterTurn` = checkLoopBudget         |
- *   | doom-loop escalate             | `shouldStopAfterTurn` = DoomLoopDetector        |
+ *   | doom-loop escalate (tier 3)    | `shouldStopAfterTurn` = DoomLoopDetector        |
+ *   | doom-loop remind (tier 1/2)    | `getSteeringMessages` = buildDoomLoopReminder   |
  *   | context compaction (+summary)  | `transformContext` = threshold + shared L3 sum  |
  *   | overflow self-heal (text trunc)| `shouldStopAfterTurn` + `getFollowUpMessages`   |
  *   | dynamic tool visibility (P3c)  | `prepareNextTurn` re-resolves toModelTools/turn |
@@ -47,6 +48,7 @@ import { eventTypes } from "@workhub/contracts";
 
 import type { LlmMessage } from "../providers/types.js";
 import { checkLoopBudget, controlFromAssistant, createInitialUsage, DoomLoopDetector } from "../loop/control.js";
+import { buildDoomLoopReminder, DOOM_LOOP_ESCALATION_REASON } from "../loop/doom-loop-reminder.js";
 import { buildStructuredHandoff } from "../loop/handoff.js";
 import {
 	finalizeL3,
@@ -314,6 +316,10 @@ async function runAgentLoop2Body(
 	// Shared mutable state accumulated across turns (mirrors loop.ts run() locals).
 	// usage/steps 由外层包装器注入（CORE-09：兜底 catch 路径也要拿到已耗用量/已记步骤）。
 	const doomLoop = new DoomLoopDetector(input.budget.doomLoopWindow ?? 3);
+	// B6「先劝再断」：shouldStopAfterTurn 判出前两档时把提醒正文暂存在这里，由 getSteeringMessages
+	// 在下一轮模型请求之前注入成一条 user 消息——与 loop.ts 追加在 tool_result 之后的那条同文本、
+	// 同角色、同顺序（pi 把连续的 toolResult 收成一条 user 消息，随后这条 user 消息独立成一条）。
+	let pendingDoomLoopReminder: string | null = null;
 	let compactions = 0;
 	let nextCompactionAtTokens = 0;
 	let forceCompactBeforeNext = false; // overflow self-heal: text-only max_tokens
@@ -513,6 +519,17 @@ async function runAgentLoop2Body(
 		// prepareNextTurn fires after every turn_end (including the last, whose refresh is discarded when
 		// shouldStopAfterTurn ends the run) — a benign extra registry read, never an extra provider call.
 		prepareNextTurn: async ({ context }) => ({ context: { ...context, tools: await buildPiTools() } }),
+		// B6: inject the pending repeat-tool reminder before the next turn. pi pushes steering
+		// messages into the transcript (and into newMessages) right before the next model request,
+		// which is exactly where loop.ts appends its reminder — same text, same user role, same
+		// position relative to that turn's tool results. Returns [] when nothing is pending, so the
+		// hook never resurrects a turn that would otherwise have ended.
+		getSteeringMessages: async () => {
+			if (!pendingDoomLoopReminder) return [];
+			const content = pendingDoomLoopReminder;
+			pendingDoomLoopReminder = null;
+			return [{ role: "user", content, timestamp: Date.now() }];
+		},
 		getFollowUpMessages: async () => {
 			if (!wantOverflowRetry) return [];
 			wantOverflowRetry = false;
@@ -562,15 +579,24 @@ async function runAgentLoop2Body(
 
 			if (fatalToolError) return true; // re-thrown after the loop
 
-			// Doom loop (identical fingerprint / window as loop.ts).
-			if (doomLoop.push(step)) {
+			// Doom loop (identical fingerprint / window / reminder tiers as loop.ts). B6「先劝再断」：
+			// tier 1/2 只暂存一条提醒（getSteeringMessages 在下一轮之前注入）并继续跑，tier 3 才升级。
+			// 提醒只在这一轮有工具结果时暂存：那时 pi 的内层循环本来就要继续（hasMoreToolCalls），
+			// 注入不会改变是否继续。纯文本 max_tokens 那一轮（control === "compact"）走的是
+			// getFollowUpMessages 的溢出重试，若在那里塞 steering 消息会把内层循环续住、
+			// 让 getFollowUpMessages 永远不被调用（压缩因此不触发）——与 loop.ts 只在工具路径注入一致。
+			const loopSignal = doomLoop.push(step);
+			if (loopSignal?.tier === 3) {
 				escalation = {
 					resultReason: "doom_loop",
-					handoffReason: "连续多步执行了相同动作，已自动升级。",
+					handoffReason: DOOM_LOOP_ESCALATION_REASON,
 					budgetHit: "doom_loop",
 					control: "escalate",
 				};
 				return true;
+			}
+			if (loopSignal && workhubResults.length > 0) {
+				pendingDoomLoopReminder = buildDoomLoopReminder(loopSignal);
 			}
 
 			// Budget escalate (steps / timeout / tokens / cost) — same predicate + timing as loop.ts

@@ -39,8 +39,9 @@ use workhub_client_tauri::spotlight_window::{
     plan_spotlight_growth, reconcile_spotlight_anchor, spotlight_show_anchor, SpotlightAnchor,
     SpotlightGrowthPlan, SpotlightRect, SPOTLIGHT_GROWTH_FRAME_MS,
 };
+use workhub_client_tauri::sse::ShellConnectionChangedPayload;
 use workhub_client_tauri::sse_worker::{
-    spawn_default_shell_sse_workers, ShellClientToken, ShellServerUrl,
+    spawn_default_shell_sse_workers, ShellClientToken, ShellConnectionStatus, ShellServerUrl,
 };
 use workhub_client_tauri::tray::{
     shell_badge_count, tray_menu_action_plan_by_id_for_locale, tray_tooltip,
@@ -635,10 +636,12 @@ fn set_client_token(state: tauri::State<'_, ShellClientToken>, token: String) {
     );
     // 递增身份代际并唤醒（RUST-1 + SEC P0-02）：挂起中的 worker 立即以新身份重连；活跃的旧身份 pump 感知代际
     // 变更后中止，再以新令牌重连——不再干等满一个退避周期，也不再拿旧身份续流。
+    // R26（W-QA）：同一个令牌重复推入不再递增代际（见 ShellClientToken::set），所以这行的
+    // generation 停在原值就意味着"身份没变、没有触发重连"——措辞不再断言"以新身份重连"。
     let generation = state.set(Some(trimmed.to_string()));
     shell_log_info(
         "client_token_generation",
-        format!("now {generation}; SSE reconnects with the new identity"),
+        format!("now {generation}; SSE authenticates with this identity"),
     );
 }
 
@@ -769,6 +772,17 @@ fn get_server_url(server: tauri::State<'_, ShellServerUrl>) -> ShellServerUrlQue
     ShellServerUrlQuery {
         url: (!trimmed.is_empty()).then(|| trimmed.to_string()),
     }
+}
+
+/// R25-Q：壳层连接状态"单一真相"——三窗（工作台头部状态词/主窗聚焦盒顶部细条/桌宠离线卡）boot 时
+/// 各调一次拿初值，不必等 SSE worker 下一次真实状态迁移才第一次知道当前是 connected/reconnecting/
+/// offline。运行期的后续变化走 `workhub-connection-changed` 广播（`sse_worker::emit_connection_transition`），
+/// 这个命令只负责"我刚开机，现在是什么状态"这一次性问题。
+#[tauri::command]
+fn get_connection_state(
+    status: tauri::State<'_, ShellConnectionStatus>,
+) -> ShellConnectionChangedPayload {
+    status.snapshot()
 }
 
 // R8 真·Spotlight：webview 测得盒子内容高度后调它缩放主窗（盒子随内容生长/收缩，苹果聚焦风）。
@@ -2633,6 +2647,7 @@ macro_rules! workhub_invoke_handler {
             set_client_token,
             set_server_url,
             get_server_url,
+            get_connection_state,
             set_spotlight_size,
             set_shell_badge,
             set_shell_locale,
@@ -2676,6 +2691,11 @@ fn main() {
         // 因为 .manage() 早于 .setup()（配置文件那时还没读）——setup 里再把配置/环境变量里的真值 set 进去。
         // 先托管的好处是：即使 setup 因为别的原因失败，两个命令也不会因为 state 缺席而炸。
         .manage(ShellServerUrl::default())
+        // R25-Q：壳层连接状态"单一真相"（SSE worker 每次状态迁移写入 + 广播 workhub-connection-changed，
+        // get_connection_state 命令读它给窗口 boot 拉初值）。同 ShellServerUrl 一样先托管默认值——
+        // SSE worker 在 .setup() 里才 spawn，命令在那之前也得拿到一个能用的值（不撒谎的占位，
+        // 见 ShellConnectionChangedPayload::default 顶部注释）。
+        .manage(ShellConnectionStatus::default())
         // S5-M-07：设备名的解析结果（setup 里读完配置后灌进来），供 webview 报到时取用。
         .manage(ShellDeviceName::default())
         // MRG-23：深链事件重放兜底（见 handle_deep_link_plan / take_pending_deep_link）。

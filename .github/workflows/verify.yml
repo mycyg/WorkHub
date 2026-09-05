@@ -27,6 +27,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
+      # 插件宿主端到端冒烟（不需要 PG / 不需要模型 key）：起一个 tsx 子进程装 echo 夹具，证明插件工具被 Cuu 调到、结果进轨迹、调用落审计。
+      - run: pnpm qa:plugin-smoke
 
   web-live-route-smoke:
     runs-on: ubuntu-latest
@@ -131,6 +133,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm qa:r1-pg-smoke
+      # R24-P 阶段 1 的插件治理链（迁移 0072 / 清单 / 启停 / 移除 / 工具注册表 / 审计）。
+      # 复用上一步同一个容器与同一份 env——插件清单只来自 plugins 表，不设 WORKHUB_PLUGIN_PATHS。
+      - run: pnpm qa:r1-pg-plugin-smoke
 
   r2-pg-redis-smoke:
     runs-on: ubuntu-latest

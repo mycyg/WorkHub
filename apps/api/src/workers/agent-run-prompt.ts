@@ -57,6 +57,9 @@ export function defaultWorkerSystemPrompt(
     "5. 输出语言：从工单内容判定任务语言，并用该语言撰写交付物与总结；以上工作纪律不随输出语言改变，始终适用。交付物命名用清晰的小写连字符文件名。",
     // findings[#7]：步数有限，先把完整初稿落进 outputs/ 再打磨；优先一次定向读取而非广撒网式探索。
     "6. 步数有限：尽早把一份完整初稿写进 outputs/，再迭代打磨；优先一次定向读取（直接读相关文件），而不是大范围浏览。",
+    // R26 B8：沙箱拒绝会被模型当成命令写错，然后不停换写法绕——这是真实的失控路径，所以把
+    // 「这是策略不是 bug」写死进纪律（借 deepseek-harness 的同款提示词条款）。
+    "7. 沙箱边界：命令结果里出现 [sandbox: … denied by policy] 或 [sandbox: SANDBOX_UNAVAILABLE] 时，那是沙箱策略拒绝，不是命令写错——不要换写法绕过。改在工作目录内完成，或把它列为 blocker。",
     // R16 批 W4a：项目自定义指令——位置紧接在上面的工作纪律之后、可用工具清单之前，与
     // packages/agent/src/turns/prompt.ts 的 buildTurnProjectInstructionsSection 同一优先级承诺：
     // 高于没配置时的通用默认，低于上面的工作纪律（冲突时纪律赢）。空则 filter 掉，不留空段。

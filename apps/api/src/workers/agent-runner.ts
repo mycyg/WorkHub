@@ -50,7 +50,7 @@ import {
   createBuiltInFileTools,
   createToolRegistry,
   errorToolResult,
-  nodeCommandRunner,
+  createSandboxedCommandRunner,
   type CommandRunner,
   type AnyToolSpec,
   type SnapshotHook,
@@ -3070,9 +3070,13 @@ export function getDefaultAgentRunQueue() {
       ? { heartbeatIntervalMs: runtimeSettings.agentRun.heartbeatIntervalMs }
       : {}),
     maxRecoverAttempts: runtimeSettings.agentRun.maxRecoverAttempts,
-    // 默认 run_command fail-closed；仅当显式 opt-in 才接入无约束 nodeCommandRunner（受信本地/单机）。
-    // 生产/多租户应保持 false 并改注入真正隔离的 runner。
-    ...(runtimeSettings.agentRun.allowUnsandboxedCommands ? { commandRunner: nodeCommandRunner } : {}),
+    // R26 B8：命令执行器一律接入，由沙箱层自己 fail-closed——macOS 上 argv 被包进 Seatbelt
+    // （出网全拒、写只限工作目录，执行完整度 full）；没有可用后端的平台默认拒绝执行并回
+    // SANDBOX_UNAVAILABLE，只有显式置 AGENT_RUN_ALLOW_UNSANDBOXED_COMMANDS=true 才降级到软沙箱
+    // （partial，不是安全边界）。生产/多租户仍应保持 false，或改注入真正隔离的 runner。
+    commandRunner: createSandboxedCommandRunner({
+      allowDegraded: runtimeSettings.agentRun.allowUnsandboxedCommands
+    }),
     notificationWorkItem: createAgentRunNotificationWorkItemResolver(),
     resolveUserRefs: createAgentRunUserRefResolver(),
     transitionWorkItemStatus: getDefaultWorkItemStatusWriter(),

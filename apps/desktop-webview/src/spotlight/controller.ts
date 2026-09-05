@@ -19,8 +19,10 @@ import {
 import { commandRegistry, type CommandId, type CommandMatch } from "../command-palette.js";
 import { renderWorkHubLiquidGlassLayer, scheduleWorkHubLiquidGlassFilterRebuild } from "../liquid-glass-filter.js";
 import { noAiProviderConfiguredText } from "../ai-provider-banner-copy.js";
+import { desktopConnectionBannerText } from "../connection-banner-copy.js";
 import { resolveDesktopTauriInvoke } from "../desktop-window-controls.js";
 import { applyGlassAlphaOverride, readGlassAlphaSource } from "../desktop-glass-alpha.js";
+import type { DesktopShellConnectionChangedPayload } from "../shell-events.js";
 import { stashPendingWorkbenchDeepLink } from "../workbench/pending-deep-link.js";
 import { resolveCapabilityView } from "./registry.js";
 import {
@@ -72,6 +74,10 @@ export type SpotlightHandle = {
   reset: () => void;
   // 更新角标并（若在 launcher）刷新网格。
   setBadges: (badges: Partial<Record<CommandId, number>>) => void;
+  // R25-Q：连接状态"单一真相"——boot 时拉一次 get_connection_state 初值 + 运行期收到
+  // workhub-connection-changed 广播都调这个，驱动顶部细条（同 AI 未配置横幅样式）的文案/显隐。
+  // undefined = 还没有任何判定（不渲，同 aiProviderConfigured 未知时不渲的既有取舍）。
+  setConnectionState: (payload: DesktopShellConnectionChangedPayload | undefined) => void;
   // 卸载：断开 controller 自身的 window 监听器 + 当前 view，幂等。供未来重挂/多宿主场景。
   dispose: () => void;
 };
@@ -136,6 +142,7 @@ export function renderSpotlightShellHtml(locale: WorkHubLocale): string {
           <button type="button" class="wh-spot-ask-banner-undo ds-pressable" data-spot-ask-banner-undo>${zh ? "撤回" : "Undo"}</button>
         </div>
         <div class="wh-spot-ai-banner" data-spot-ai-banner hidden role="status"></div>
+        <div class="wh-spot-connection-banner" data-spot-connection-banner hidden role="status" aria-live="polite"></div>
         <div class="wh-spot-body" data-spot-body></div>
       </div>
     </div>`;
@@ -329,6 +336,17 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   const updateAiBannerVisibility = () => {
     aiBanner.hidden = !showAiProviderBanner || box.dataset.collapsed === "true";
   };
+  // R25-Q：连接状态"单一真相"细条——同 AI 未配置横幅一样只在盒子展开时显示，但内容是活的（boot 拉
+  // 初值 + 运行期广播都会更新，见下面 setConnectionState），不像 AI 横幅那样挂载时烘死一次。
+  const connectionBanner = host.querySelector<HTMLElement>("[data-spot-connection-banner]")!;
+  let connectionState: DesktopShellConnectionChangedPayload | undefined;
+  const updateConnectionBannerVisibility = () => {
+    const text = connectionState ? desktopConnectionBannerText(connectionState.state, locale) : undefined;
+    if (text !== undefined) {
+      connectionBanner.textContent = text;
+    }
+    connectionBanner.hidden = text === undefined || box.dataset.collapsed === "true";
+  };
   let suppressNextFocusExpansion = false;
   let suppressSearchFocusUntil = 0;
   let suppressSearchClickUntil = 0;
@@ -442,6 +460,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
         : renderLauncherGrid(launcherMatches(state, locale), locale, badges, state.query.trim().length === 0, askCuuState, state.query);
     syncLauncherActiveDescendant();
     updateAiBannerVisibility();
+    updateConnectionBannerVisibility();
   };
 
   // 「问问 Cuu」区块随 askCuuState 变化时的重渲——只重画能力网格区，不动 mode/顶栏（还在 launcher 内）。
@@ -484,6 +503,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     // 内容(审批/工作项/diff/网盘)藏起来,只剩标题栏。能力态从不是收起态,这里显式展开(同时解 52px 钳制)。
     box.dataset.collapsed = "false";
     updateAiBannerVisibility();
+    updateConnectionBannerVisibility();
     const cmd = commandRegistry.find((c) => c.id === id);
     titleEl.textContent = cmd ? cmd.label[zh ? "zh-CN" : "en"] : id;
     subtitleEl.textContent = "";
@@ -1245,6 +1265,16 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
         // R24 S6：复用 renderLauncherBody 而不是重复内联同一段渲染逻辑——它已经知道该渲首启卡
         // 还是能力网格（角标刷新在首启卡还没让位时触发也不该把卡片错渲成网格）。
         renderLauncherBody();
+        requestResize();
+      }
+    },
+    setConnectionState: (payload) => {
+      const wasHidden = connectionBanner.hidden;
+      connectionState = payload;
+      updateConnectionBannerVisibility();
+      // 细条出现/消失都会改盒子高度：不主动请求一次尺寸重算，窗口要等下一次别的尺寸变更才跟上
+      // （真机实测细条隐藏后有约 15 秒的 35px 透明空窗会吃点击）。
+      if (connectionBanner.hidden !== wasHidden) {
         requestResize();
       }
     },

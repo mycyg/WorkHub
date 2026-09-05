@@ -11,7 +11,8 @@ import {
   parseDesktopShellPushPayload,
   parseDesktopShellSystemNotificationPlan,
   workHubEventFromDesktopShellPush,
-  type DesktopShellPushPayload
+  type DesktopShellPushPayload,
+  primeDesktopConnectionState
 } from "./shell-events.js";
 
 const now = () => new Date("2026-06-05T01:00:00.000Z");
@@ -244,5 +245,63 @@ test("desktop shell bridge parses Rust system-notification plans for Cuu follow-
       window_control: payload.windowControl
     })?.streamKind,
     "me"
+  );
+});
+
+const connectedPayload = { state: "connected", server_url: "http://127.0.0.1:8787", since_ms: 1, attempt: 0 };
+const reconnectingPayload = { state: "reconnecting", server_url: "http://127.0.0.1:8787", since_ms: 1, attempt: 1 };
+
+test("primeDesktopConnectionState 先订阅后拉快照：事件已到时过期快照不覆盖（真机 DEFECT-1）", async () => {
+  const applied: unknown[] = [];
+  let deliver: ((payload: never) => void) | undefined;
+  let resolveRead: ((value: unknown) => void) | undefined;
+  const done = primeDesktopConnectionState({
+    subscribe: (onPayload) => {
+      deliver = onPayload as never;
+      return Promise.resolve();
+    },
+    read: () => new Promise((resolve) => { resolveRead = resolve; }),
+    apply: (payload) => applied.push(payload)
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.ok(deliver, "订阅必须先于拉快照落地");
+  // 运行期事件先到：connected；随后过期的快照才回来：reconnecting。
+  deliver!(connectedPayload as never);
+  resolveRead!(reconnectingPayload);
+  await done;
+  assert.deepEqual(applied, [connectedPayload]);
+});
+
+test("primeDesktopConnectionState 没有事件时用快照补初值；快照不合法时什么都不写", async () => {
+  const applied: unknown[] = [];
+  await primeDesktopConnectionState({
+    subscribe: () => Promise.resolve(),
+    read: () => Promise.resolve(reconnectingPayload),
+    apply: (payload) => applied.push(payload)
+  });
+  assert.deepEqual(applied, [reconnectingPayload]);
+  const none: unknown[] = [];
+  await primeDesktopConnectionState({
+    subscribe: () => Promise.resolve(),
+    read: () => Promise.resolve({ state: "什么都不是" }),
+    apply: (payload) => none.push(payload)
+  });
+  assert.deepEqual(none, []);
+});
+
+test("primeDesktopConnectionState 订阅失败仍拉快照；拉取失败静默", async () => {
+  const applied: unknown[] = [];
+  await primeDesktopConnectionState({
+    subscribe: () => Promise.reject(new Error("no bridge")),
+    read: () => Promise.resolve(connectedPayload),
+    apply: (payload) => applied.push(payload)
+  });
+  assert.deepEqual(applied, [connectedPayload]);
+  await assert.doesNotReject(() =>
+    primeDesktopConnectionState({
+      subscribe: () => undefined,
+      read: () => Promise.reject(new Error("invoke failed")),
+      apply: () => assert.fail("不该写入")
+    })
   );
 });

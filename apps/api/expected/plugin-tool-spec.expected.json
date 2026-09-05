@@ -1,0 +1,28 @@
+{
+  "id": "plugin__dsh-plugin-echo__echo",
+  "description": "Echo a phrase back, optionally repeated and upper-cased. Use it to prove that a DeepSeek Harness plugin tool is reachable from a WorkHub agent run.",
+  "json_schema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string",
+        "description": "Phrase to echo back."
+      },
+      "times": {
+        "type": "integer",
+        "description": "How many times to repeat the phrase (default 1)."
+      },
+      "upper": {
+        "type": "boolean",
+        "description": "Upper-case the echoed phrase."
+      }
+    },
+    "required": [
+      "text"
+    ]
+  },
+  "side_effect": "external_effect",
+  "min_scope": "plugin:dsh-plugin-echo:external_effect",
+  "prompt_snippet": null,
+  "prompt_guidelines": null
+}

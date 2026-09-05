@@ -17,6 +17,7 @@ import {
 import { resolveDesktopApiBaseFromStorage } from "../desktop-api-base.js";
 import {
   bindDesktopCredentialGate,
+  completeDesktopLoginSuccess,
   desktopBootScreenForGate,
   isPasswordModeBootstrapError,
   readDesktopAuthModeHint,
@@ -28,8 +29,17 @@ import {
   bindDesktopServerChangedReload,
   createDesktopServerChoiceEffects
 } from "../desktop-connect-screen.js";
-import { resolveDesktopTauriInvoke, takeDesktopPendingDeepLink } from "../desktop-window-controls.js";
+import { resolveDesktopShellEmitter } from "../desktop-cuu-runtime.js";
+import {
+  readDesktopConnectionState,
+  resolveDesktopTauriInvoke,
+  takeDesktopPendingDeepLink
+} from "../desktop-window-controls.js";
 import { scheduleWorkHubLiquidGlassFilterRebuild } from "../liquid-glass-filter.js";
+import {
+  parseDesktopShellConnectionChangedPayload,
+  primeDesktopConnectionState
+} from "../shell-events.js";
 import { consumePendingWorkbenchDeepLink } from "./pending-deep-link.js";
 import { mountWorkbenchShell, renderWorkbenchDocumentHead, type WorkbenchShellHandle } from "./shell.js";
 import { isWorkbenchWindowControlPlan, parseWorkbenchDeepLinkPlan, parseWorkbenchRoute } from "./route.js";
@@ -212,16 +222,70 @@ export function bindWorkbenchLoggedOutListener(onLoggedOut: () => void, scope: u
 // 得等用户自己手动刷新才能捡到新 token。同 bindWorkbenchLoggedOutListener 一模一样的桥（事件名同样
 // 注册在 desktop-cuu-runtime.ts 的 DesktopShellEventName，桌宠窗口 pet-surface.ts 也订阅这同一个
 // 事件名），这里订阅后简单 reload 一次——boot() 会重新走一遍鉴权门判定，自然捡到新 token。
-export function bindWorkbenchLoggedInListener(onLoggedIn: () => void, scope: unknown = globalThis): void {
+//
+// R25-Q：工作台自己的凭据门现在也会广播这同一个事件（见下面 reloadAfterWorkbenchLogin），意味着
+// 这扇窗口有可能收到"自己刚刚发起的那次广播"——payload 带 `source`，回调把它透传给调用方，调用方
+// （boot.ts 底部）据 source !== "workbench" 判断要不要真的 reload，避免和 reloadAfterWorkbenchLogin
+// 自己的直接 reload() 打一次空转的双重刷新。
+export function bindWorkbenchLoggedInListener(
+  onLoggedIn: (source: string | undefined) => void,
+  scope: unknown = globalThis
+): void {
   const listen = resolveWorkbenchTauriListen(scope);
   if (!listen) {
     // 浏览器 dev 预览 / 无 Tauri：no-op，不崩溃——同 bindWorkbenchLoggedOutListener 的既有降级路径。
     return;
   }
   void Promise.resolve(
-    listen("workhub-logged-in", () => onLoggedIn())
+    listen("workhub-logged-in", (event) => {
+      const source = (event.payload as { source?: string } | undefined)?.source;
+      onLoggedIn(source);
+    })
   ).catch((error) => {
     console.warn("WorkHub workbench: could not subscribe to the workhub-logged-in event", error);
+  });
+}
+
+// R25-Q（源头对称）：工作台自己的凭据门（密码/hybrid 模式，desktop-login.ts 的 bindDesktopCredentialGate）
+// 成功登录后，此前只 window.location.reload() 工作台自己这扇窗口——主窗/桌宠若这次会话里也开着，
+// 完全收不到信号（此前只有主窗那边的凭据门/重绑屏会广播 workhub-logged-in，见 browser.ts 的
+// reloadAfterDesktopLogin 顶部注释）。同一份 completeDesktopLoginSuccess 编排（先广播、再本窗
+// reload；同 runDesktopLogout/applyDesktopServerChoice 一样的"effects 注入 + 顺序即安全属性"取舍），
+// payload 带 `source: "workbench"`——主窗新增的订阅（browser.ts）与本文件上面的
+// bindWorkbenchLoggedInListener 都据此跳过"自己发起的这次广播"。
+function reloadAfterWorkbenchLogin(): void {
+  completeDesktopLoginSuccess({
+    broadcastLoggedIn: () => {
+      const shellEmitter = resolveDesktopShellEmitter();
+      void Promise.resolve(shellEmitter?.emit?.("workhub-logged-in", { source: "workbench" })).catch(() => undefined);
+    },
+    reload: () => window.location.reload()
+  });
+}
+
+// R25-Q：连接状态"单一真相"（workhub-connection-changed）——工作台头部状态词（rail.ts 的
+// viewerLabel）只从这一个事件取值，不再硬编码"已连接"。同 bindWorkbenchLoggedOutListener 一样的桥，
+// 但这个事件是持续性的状态广播（不是一次性触发 reload），回调只负责把解析后的 payload 交给调用方
+// 写进 store——boot.ts 底部还会在挂载 shell 后先拉一次 get_connection_state 补初值，不必等第一次
+// 真实迁移。
+export function bindWorkbenchConnectionChangedListener(
+  onConnectionChanged: (payload: ReturnType<typeof parseDesktopShellConnectionChangedPayload>) => void,
+  scope: unknown = globalThis
+): Promise<void> {
+  const listen = resolveWorkbenchTauriListen(scope);
+  if (!listen) {
+    return Promise.resolve();
+  }
+  // 返回「订阅已落地」的 promise：boot 要先等它，再拉 get_connection_state 快照（见 primeDesktopConnectionState）。
+  return Promise.resolve(
+    listen("workhub-connection-changed", (event) => {
+      const payload = parseDesktopShellConnectionChangedPayload(event.payload);
+      if (payload) {
+        onConnectionChanged(payload);
+      }
+    })
+  ).then(() => undefined, (error) => {
+    console.warn("WorkHub workbench: could not subscribe to the workhub-connection-changed event", error);
   });
 }
 
@@ -284,7 +348,9 @@ async function boot(): Promise<void> {
       client,
       locale,
       storage: window.localStorage,
-      onSuccess: () => window.location.reload(),
+      // R25-Q：工作台自己的凭据门成功登录后也要广播 workhub-logged-in（此前只 reload 自己这扇窗口，
+      // 主窗/桌宠若也开着收不到信号）——见 reloadAfterWorkbenchLogin 顶部注释。
+      onSuccess: reloadAfterWorkbenchLogin,
       context: isWorkbenchDesktopLoggedOut() ? "logged-out" : "first-run"
     });
     return;
@@ -337,8 +403,30 @@ async function boot(): Promise<void> {
   // 同一个方法，不会重复触发副作用。
   bindWorkbenchLoggedOutListener(() => shell.showLoggedOut());
   // R24 S5（N-03 根治）：同上，但反方向——主窗登录/重新绑定成功后广播，这里 reload 一次重新走鉴权门
-  // 判定，捡到新落的 token（见 bindWorkbenchLoggedInListener 顶部注释）。
-  bindWorkbenchLoggedInListener(() => window.location.reload());
+  // 判定，捡到新落的 token（见 bindWorkbenchLoggedInListener 顶部注释）。R25-Q：工作台自己也能是
+  // 广播源（reloadAfterWorkbenchLogin）——source==="workbench" 时跳过，避免和它自己的直接 reload()
+  // 打一次空转的双重刷新；main 或未来其它来源仍然 reload。
+  bindWorkbenchLoggedInListener((source) => {
+    if (source !== "workbench") {
+      window.location.reload();
+    }
+  });
+  // R25-Q：连接状态"单一真相"——都写进 store.connectionState，rail.ts 的头部状态词只读这一份，不再各自猜。
+  // 顺序由 primeDesktopConnectionState 钉死：先订阅运行期广播，订阅落地后再拉一次 get_connection_state
+  // 补初值，且事件已到时过期快照不覆盖（真机验收 DEFECT-1：此前先拉后订，boot 期间 SSE 因推 token 被
+  // 判 Superseded 重连一轮，快照拿到的 reconnecting 晚于 connected 事件落地，头部永久停在「重连中」）。
+  // best-effort：拉取失败/无 __TAURI__ 时 store 保持 undefined，rail.ts 对这个"还没有判定"的兜底是
+  // "已连接"（见 store.ts connectionState 顶注）。
+  void primeDesktopConnectionState({
+    subscribe: (onPayload) =>
+      bindWorkbenchConnectionChangedListener((payload) => {
+        if (payload) {
+          onPayload(payload);
+        }
+      }),
+    read: () => readDesktopConnectionState(),
+    apply: (payload) => shell.store.setState({ connectionState: payload })
+  });
 }
 
 // node:test 环境没有 document——colocated boot.test.ts 只测上面导出的纯函数，不需要真跑 boot()。

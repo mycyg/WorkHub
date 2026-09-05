@@ -4,6 +4,7 @@ use tauri::{Emitter, Manager};
 use tokio::time::{sleep, Duration};
 
 use crate::config::WorkHubShellConfig;
+use crate::events::{event_channel_name, ShellEvent};
 use crate::locale::WorkHubLocale;
 use crate::notify::{
     show_system_notification, system_notification_event_channel,
@@ -12,9 +13,10 @@ use crate::notify::{
 };
 use crate::shell_log::{shell_log_error, shell_log_warn};
 use crate::sse::{
-    plan_shell_sse_worker, push_payload_from_frame, startup_shell_sse_targets,
-    status_event_channel, status_payload, ShellSseConnectionState, ShellSseFrameBuffer,
-    ShellSsePlanError, ShellSseSubscription, ShellSseWorkerPlan, MAX_SSE_PENDING_BYTES,
+    next_shell_connection_payload, plan_shell_sse_worker, push_payload_from_frame,
+    startup_shell_sse_targets, status_event_channel, status_payload, ShellConnectionChangedPayload,
+    ShellSseConnectionState, ShellSseFrameBuffer, ShellSsePlanError, ShellSseSubscription,
+    ShellSseWorkerPlan, MAX_SSE_PENDING_BYTES,
 };
 
 pub const DEFAULT_SSE_RECONNECT_DELAY_MS: u64 = 5_000;
@@ -50,15 +52,26 @@ pub struct ClientTokenSnapshot {
 }
 
 impl ShellClientToken {
-    /// 写入令牌（`None`/空串路径由调用方归一为 `None` 表示清空）。无论写入还是清空，都递增身份代际并唤醒
+    /// 写入令牌（`None`/空串路径由调用方归一为 `None` 表示清空）。**令牌值真的变了**时递增身份代际并唤醒
     /// 等待者——**清空同样通知**是 SEC P0-02 的关键：退出/换号后挂起中的 worker 靠它醒来（重连/挂起），
     /// 活跃 pump 靠它醒来比对代际并中止旧身份连接。返回写入后的代际，便于诊断/测试。
+    ///
+    /// R26 真机验收（W-QA）：写入**同一个令牌**不再递增代际。三扇窗各自 boot 都会推一次同一个设备令牌
+    /// （`browser.ts` / `workbench/boot.ts` 的 `pushClientTokenToShell`），旧实现每次都递增代际 → 活跃
+    /// pump 判定 `Superseded` 中止 → 重连。后果有三：①每开一扇窗、每登录一次，三窗的连接提示都要闪一轮
+    /// "重连中 → 已连接"（真机实测一次登录连打三次）；②那一闪的 `attempt` 是 0，桌宠照字面渲成"重连中
+    /// （第 0 次）"；③后端真的挂着时，开一扇窗会把 `consecutive_failures` 复位，已经诚实显示的"已离线"
+    /// 被打回"重连中"，重新等满 35s 才敢再说离线。身份没变就没有"旧身份连接需要中止"这回事——代际是
+    /// **身份**代际，不是"写入次数"计数器。清空→再写同一个令牌仍然是两次真变化，照常各递增一次。
     pub fn set(&self, token: Option<String>) -> u64 {
         let generation = {
             let mut slot = self
                 .slot
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if slot.token == token {
+                return slot.generation;
+            }
             slot.token = token;
             slot.generation = slot.generation.wrapping_add(1);
             slot.generation
@@ -163,6 +176,56 @@ impl ShellServerUrl {
     /// 地址变更通知句柄（`Arc<Notify>`）。worker 克隆它，pump/退避里 `select!` 监听。
     pub fn change_notifier(&self) -> Arc<tokio::sync::Notify> {
         Arc::clone(&self.notify)
+    }
+}
+
+/// R25-Q：壳层"连接状态单一真相"的运行时持有者——`run_sse_subscription` 每拍状态迁移后把结果写这里
+/// 并广播 `workhub-connection-changed`（见 [`emit_connection_transition`]）；`get_connection_state`
+/// 命令读它给窗口 boot 拉初值，不必等下一次真实迁移才第一次知道状态。三窗（工作台头部状态词/主窗
+/// 聚焦盒顶部细条/桌宠离线卡）只从这一份状态取值，不再各自从 `sse-status`（per-subscription 原始信号）
+/// 猜一遍——那正是 `r24-S5-reverify.md` 项 9 记录的"三窗各说各话"的根因。
+///
+/// 挂起等 client token（[`SseConnectAction::Suspend`]）期间不写：那是"这台设备还没登录"，不是
+/// "服务器连不上"——三窗的连接横幅/卡片只在登录后的常规 chrome 里渲，不需要用这个槽位区分这两种
+/// "暂时没有判定"的原因。默认值（[`ShellConnectionChangedPayload::default`]）已经是个不撒谎的占位。
+#[derive(Default)]
+pub struct ShellConnectionStatus {
+    slot: Mutex<ShellConnectionChangedPayload>,
+}
+
+impl ShellConnectionStatus {
+    /// 当前持有的连接状态快照——`get_connection_state` 命令直接透传这个返回值。
+    pub fn snapshot(&self) -> ShellConnectionChangedPayload {
+        self.slot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// 迁移判定 + 落盘一步做完：同一把锁内"读上一份 → 用 [`next_shell_connection_payload`] 算下一份
+    /// → 写回"，防止（未来若多条 SSE 订阅并存时）两条协程各自读到同一份旧值、都误判成"迁移"而重复
+    /// 广播。返回 `Some` 时调用方负责真正 `emit`；`None` 说明这一拍不是真正的迁移（虚假唤醒/重复
+    /// tick），什么都不用做。
+    fn record_transition(
+        &self,
+        sse_state: ShellSseConnectionState,
+        consecutive_failures: u32,
+        server_url: &str,
+        now_ms: u64,
+    ) -> Option<ShellConnectionChangedPayload> {
+        let mut slot = self
+            .slot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let next = next_shell_connection_payload(
+            &slot,
+            sse_state,
+            consecutive_failures,
+            server_url,
+            now_ms,
+        )?;
+        *slot = next.clone();
+        Some(next)
     }
 }
 
@@ -350,6 +413,12 @@ async fn run_sse_subscription(
             Some(server) => crate::http::join_daemon_url(&server.url, &subscription.path),
             None => subscription.url.clone(),
         };
+        // R25-Q：`ShellConnectionChangedPayload.server_url` 要的是**基址**（三窗文案"连不上服务器
+        // <地址>"点名的地址），不是拼了订阅路径的 `url` 变量——同样每拍重读，换服务器后下一拍就报新地址。
+        let server_base_url = match &server {
+            Some(server) => server.url.clone(),
+            None => subscription.url.clone(),
+        };
         let generations = StreamGenerations {
             token: snapshot.generation,
             server: server.map(|server| server.generation).unwrap_or_default(),
@@ -381,11 +450,23 @@ async fn run_sse_subscription(
                     ShellSseConnectionState::Connecting,
                     None,
                 );
+                emit_connection_transition(
+                    &app,
+                    ShellSseConnectionState::Connecting,
+                    consecutive_failures,
+                    &server_base_url,
+                );
                 match open_sse_response(&client, &subscription, &url, token.as_deref()).await {
                     Ok(response) => {
                         emit_sse_status(&app, &subscription, ShellSseConnectionState::Open, None);
                         // 成功打开连接 → 退避复位（连上之后即便流随后中断，也按基准快速重连）。
                         consecutive_failures = 0;
+                        emit_connection_transition(
+                            &app,
+                            ShellSseConnectionState::Open,
+                            consecutive_failures,
+                            &server_base_url,
+                        );
                         match pump_sse_response(
                             &app,
                             &subscription,
@@ -408,6 +489,12 @@ async fn run_sse_subscription(
                                             .to_string(),
                                     ),
                                 );
+                                emit_connection_transition(
+                                    &app,
+                                    ShellSseConnectionState::Retrying,
+                                    consecutive_failures,
+                                    &server_base_url,
+                                );
                                 continue;
                             }
                             Err(message) => {
@@ -416,6 +503,12 @@ async fn run_sse_subscription(
                                     &subscription,
                                     ShellSseConnectionState::Retrying,
                                     Some(message),
+                                );
+                                emit_connection_transition(
+                                    &app,
+                                    ShellSseConnectionState::Retrying,
+                                    consecutive_failures,
+                                    &server_base_url,
                                 );
                             }
                         }
@@ -427,6 +520,12 @@ async fn run_sse_subscription(
                             &subscription,
                             ShellSseConnectionState::Retrying,
                             Some(message),
+                        );
+                        emit_connection_transition(
+                            &app,
+                            ShellSseConnectionState::Retrying,
+                            consecutive_failures,
+                            &server_base_url,
                         );
                     }
                 }
@@ -694,6 +793,39 @@ fn emit_sse_status(
     );
 }
 
+/// R25-Q：`emit_sse_status` 的姊妹函数——同一拍状态迁移，额外把对外三态摘要判定一遍，真正迁移时才
+/// 广播 `workhub-connection-changed`（`ShellConnectionStatus::record_transition` 内部去重，虚假
+/// 唤醒/重复 tick 不广播）。挂起等 client token 期间调用方不调这个函数（见 `run_sse_subscription`
+/// 的 `SseConnectAction::Suspend` 分支），不是遗漏。
+///
+/// 拿不到 `ShellConnectionStatus` state（降级/无 App 的测试路径）时静默跳过，不影响 `emit_sse_status`
+/// 本身——两个函数各自独立失败，互不阻塞。
+fn emit_connection_transition(
+    app: &tauri::AppHandle,
+    sse_state: ShellSseConnectionState,
+    consecutive_failures: u32,
+    server_url: &str,
+) {
+    let Some(status) = app.try_state::<ShellConnectionStatus>() else {
+        return;
+    };
+    let now_ms = now_epoch_ms();
+    if let Some(payload) =
+        status.record_transition(sse_state, consecutive_failures, server_url, now_ms)
+    {
+        let _ = app.emit(event_channel_name(ShellEvent::ConnectionChanged), payload);
+    }
+}
+
+/// 当前 unix 毫秒时间戳，供 `ShellConnectionChangedPayload::since_ms` 用。`SystemTime::now()` 早于
+/// `UNIX_EPOCH`（时钟被人为拨回）是本来就不该发生的环境异常，降级回 0 而不是 panic 掉整条 SSE worker。
+fn now_epoch_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -746,6 +878,34 @@ mod tests {
                 generation: 3
             }
         );
+    }
+
+    /// R26 真机验收（W-QA）：重复推入**同一个**令牌不算身份变更——三扇窗各自 boot 都会推一次同一个设备
+    /// 令牌，旧实现每次都递增代际把活跃 SSE 判成 Superseded 并重连，代价是三窗的连接提示各闪一轮
+    /// "重连中（第 0 次）→ 已连接"，且后端真挂着时会把 consecutive_failures 复位、把诚实的"已离线"
+    /// 打回"重连中"。清空之后再写回同一个令牌仍然是两次真变化，各递增一次。
+    #[test]
+    fn writing_the_same_client_token_twice_does_not_bump_the_identity_generation() {
+        let state = ShellClientToken::default();
+
+        // 清空一个本就为空的槽：没有身份可中止，不递增。
+        assert_eq!(state.set(None), 0);
+
+        assert_eq!(state.set(Some("token-a".to_string())), 1);
+        // 第二、第三扇窗 boot 时推同一个令牌：代际不动。
+        assert_eq!(state.set(Some("token-a".to_string())), 1);
+        assert_eq!(state.set(Some("token-a".to_string())), 1);
+        assert_eq!(
+            state.snapshot(),
+            ClientTokenSnapshot {
+                token: Some("token-a".to_string()),
+                generation: 1
+            }
+        );
+
+        // 退出 → 重新登录同一个账号：两次都是真变化。
+        assert_eq!(state.set(None), 2);
+        assert_eq!(state.set(Some("token-a".to_string())), 3);
     }
 
     // pump 的 select! 分支裁决：两个代际都没变=虚假唤醒/无关通知→继续；任一变了（退出/换号/换服务器）
@@ -960,5 +1120,73 @@ mod tests {
                 data: "1".to_string(),
             }]
         );
+    }
+
+    // R25-Q：连接状态单一真相——`ShellConnectionStatus` 是薄薄一层"记住上一份 payload + 用
+    // `next_shell_connection_payload` 判定要不要广播"，这里钉死它的去重与落盘语义本身
+    // （状态机的纯函数迁移边界已经在 sse.rs 的单测里覆盖过，不重复）。
+
+    #[test]
+    fn connection_status_default_snapshot_is_the_honest_placeholder() {
+        let status = ShellConnectionStatus::default();
+        let snapshot = status.snapshot();
+        assert_eq!(
+            snapshot.state,
+            crate::sse::ShellConnectionState::Reconnecting
+        );
+        assert_eq!(snapshot.attempt, 0);
+    }
+
+    #[test]
+    fn connection_status_record_transition_updates_the_snapshot_and_returns_the_new_payload() {
+        let status = ShellConnectionStatus::default();
+        let emitted = status
+            .record_transition(
+                ShellSseConnectionState::Open,
+                0,
+                "http://127.0.0.1:8787",
+                1_000,
+            )
+            .expect("boot's first real judgement is a transition");
+        assert_eq!(emitted.state, crate::sse::ShellConnectionState::Connected);
+        assert_eq!(status.snapshot(), emitted);
+    }
+
+    #[test]
+    fn connection_status_record_transition_is_none_and_leaves_the_snapshot_untouched_when_nothing_changed(
+    ) {
+        let status = ShellConnectionStatus::default();
+        let first = status
+            .record_transition(
+                ShellSseConnectionState::Open,
+                0,
+                "http://127.0.0.1:8787",
+                1_000,
+            )
+            .expect("first judgement is a transition");
+
+        // 同一状态、同一地址、同一 attempt 再判定一次——虚假唤醒/重复 tick 不应该覆盖已经落盘的
+        // since_ms，也不该再广播一次。
+        let second = status.record_transition(
+            ShellSseConnectionState::Open,
+            0,
+            "http://127.0.0.1:8787",
+            9_999,
+        );
+        assert_eq!(second, None);
+        assert_eq!(
+            status.snapshot(),
+            first,
+            "unchanged snapshot keeps its since_ms"
+        );
+    }
+
+    #[test]
+    fn now_epoch_ms_returns_a_plausible_unix_millisecond_timestamp() {
+        // 不钉死具体值（跑测试的那一刻），只钉死量级——是"当前时间"而不是 unix epoch 附近的 0，
+        // 也不是溢出出来的荒谬大数。2024-01-01 00:00:00 UTC 之后即可，留够未来运行这份测试的余量。
+        const YEAR_2024_MS: u64 = 1_704_067_200_000;
+        let now = now_epoch_ms();
+        assert!(now > YEAR_2024_MS, "now_epoch_ms={now} looks implausible");
     }
 }

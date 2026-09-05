@@ -17,6 +17,20 @@ export type DesktopShellSseStatusPayload = {
   message?: string;
 };
 
+// R25-Q：壳层"连接状态单一真相"（client-tauri/src-tauri/src/sse.rs 的 ShellConnectionState /
+// ShellConnectionChangedPayload，事件名 "workhub-connection-changed"）——三窗（工作台头部状态词/
+// 主窗聚焦盒顶部细条/桌宠离线卡）只从这一个事件取状态，不再各自从 DesktopShellSseStatusPayload
+// （per-subscription 的协议粒度原始信号）猜一遍。字段形状必须与 Rust 侧的 serde 输出逐字对齐——
+// 改任一边都要同步看另一边（Rust 单测 sse.rs 的 connection_payload_shape_* 钉死了序列化形状）。
+export type DesktopShellConnectionState = "connected" | "reconnecting" | "offline";
+
+export type DesktopShellConnectionChangedPayload = {
+  state: DesktopShellConnectionState;
+  server_url: string;
+  since_ms: number;
+  attempt: number;
+};
+
 export type DesktopShellWindowControlPlan = {
   label: string;
   action: "show" | "hide" | "toggle" | "focus" | "show_and_focus";
@@ -441,8 +455,40 @@ function booleanField(record: Record<string, unknown> | undefined, key: string) 
   return typeof value === "boolean" ? value : undefined;
 }
 
+function numberField(record: Record<string, unknown> | undefined, key: string) {
+  const value = record?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 function isDesktopShellSseStatus(value: string | undefined): value is DesktopShellSseStatus {
   return value === "connecting" || value === "open" || value === "retrying" || value === "closed";
+}
+
+function isDesktopShellConnectionState(value: string | undefined): value is DesktopShellConnectionState {
+  return value === "connected" || value === "reconnecting" || value === "offline";
+}
+
+// R25-Q：三窗（browser.ts/workbench/boot.ts/pet-surface.ts）boot 时的 get_connection_state 拉取与
+// 运行期的 workhub-connection-changed 广播共用同一个契约，都经这个函数解析——防守式：任一字段缺失/
+// 类型不对就整体判 undefined，调用方保持当前状态不动（不拿半份数据渲一个断言错误的连接横幅）。
+export function parseDesktopShellConnectionChangedPayload(input: unknown): DesktopShellConnectionChangedPayload | undefined {
+  const record = asRecord(input);
+  if (!record) {
+    return undefined;
+  }
+  const state = stringField(record, "state");
+  const serverUrl = stringField(record, "server_url");
+  const sinceMs = numberField(record, "since_ms");
+  const attempt = numberField(record, "attempt");
+  if (!isDesktopShellConnectionState(state) || serverUrl === undefined || sinceMs === undefined || attempt === undefined) {
+    return undefined;
+  }
+  return {
+    state,
+    server_url: serverUrl,
+    since_ms: sinceMs,
+    attempt
+  };
 }
 
 function parseDesktopShellWindowControlPlan(input: unknown): DesktopShellWindowControlPlan | undefined {
@@ -489,4 +535,46 @@ function isDesktopShellSystemNotificationUrgency(
   value: string | undefined
 ): value is DesktopShellSystemNotificationPlan["urgency"] {
   return value === "high" || value === "urgent";
+}
+
+/**
+ * 三窗 boot 时接连接状态「单一真相」的固定顺序：先订阅运行期广播，订阅落地后再拉一次
+ * `get_connection_state` 补初值；快照到手时若已经收到过任何事件就丢弃——事件永远比快照新。
+ *
+ * 真机验收（R26）暴露的竞态：工作台 boot 早期推 client token 会让壳层把活跃 SSE 判成 Superseded，
+ * 先广播 reconnecting、约 60ms 后广播 connected。此前是「先拉快照、后订阅」且两者都异步：拉到的
+ * reconnecting 可能晚于 connected 事件落地（后写覆盖），或监听注册晚于 connected 广播（整条错过）；
+ * 之后连接一直稳定就再无迁移，头部永久停在「重连中」。
+ *
+ * best-effort：订阅失败仍拉快照（至少有个初值）；拉取失败/无桥接时什么都不做（调用方保持「未判定」）。
+ */
+export async function primeDesktopConnectionState(deps: {
+  subscribe: (onPayload: (payload: DesktopShellConnectionChangedPayload) => void) => unknown;
+  read: () => Promise<unknown> | unknown;
+  apply: (payload: DesktopShellConnectionChangedPayload) => void;
+}): Promise<void> {
+  let eventSeen = false;
+  try {
+    await Promise.resolve(
+      deps.subscribe((payload) => {
+        eventSeen = true;
+        deps.apply(payload);
+      })
+    );
+  } catch {
+    // 订阅没挂上：运行期迁移收不到，但初值还是要有——下面照常拉一次。
+  }
+  let raw: unknown;
+  try {
+    raw = await Promise.resolve(deps.read());
+  } catch {
+    return;
+  }
+  if (eventSeen) {
+    return;
+  }
+  const payload = parseDesktopShellConnectionChangedPayload(raw);
+  if (payload) {
+    deps.apply(payload);
+  }
 }
