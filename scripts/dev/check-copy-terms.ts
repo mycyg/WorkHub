@@ -21,17 +21,21 @@
  * 用法：
  *   pnpm audit:copy-terms
  *   tsx scripts/dev/check-copy-terms.ts --write-baseline
+ *   tsx scripts/dev/check-copy-terms.ts --files a.ts b.ts   # 只扫指定文件（pre-commit 用）
  */
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
+  BASELINE_PATH as UI_I18N_BASELINE_PATH,
   ROOT,
   buildBaseline,
   collectCjkLiterals,
   copyTermScanTargets,
   diffAgainstBaseline,
+  isLocaleOwnerFile,
   loadBaselineFile,
+  relativizeToRoot,
   type UiI18nViolation
 } from "./check-ui-i18n.ts";
 
@@ -79,11 +83,37 @@ async function collectHits(targets: readonly string[]): Promise<UiI18nViolation[
 }
 
 async function main() {
-  const writeBaseline = process.argv.includes("--write-baseline");
-  const targets = copyTermScanTargets();
-  if (targets.length < 5) {
+  const argv = process.argv.slice(2);
+  const writeBaseline = argv.includes("--write-baseline");
+  const filesFlag = argv.indexOf("--files");
+  const explicitFiles =
+    filesFlag < 0 ? undefined : argv.slice(filesFlag + 1).filter((value) => !value.startsWith("--"));
+
+  if (writeBaseline && explicitFiles !== undefined) {
+    console.error("文案禁词扫描：--write-baseline 需要全量扫描，不能与 --files 同用");
+    process.exit(1);
+  }
+
+  // --files 免掉全量 glob（pre-commit 预算）：暂存文件里只有词典或基线文件才需要扫。
+  const baselineFiles = new Set(Object.keys(loadBaselineFile(BASELINE_PATH).entries));
+  const uiI18nBaselineFiles = new Set(Object.keys(loadBaselineFile(UI_I18N_BASELINE_PATH).entries));
+  const targets =
+    explicitFiles === undefined
+      ? copyTermScanTargets()
+      : [
+          ...new Set(
+            explicitFiles
+              .map((file) => relativizeToRoot(file))
+              .filter((file) => isLocaleOwnerFile(file) || baselineFiles.has(file) || uiI18nBaselineFiles.has(file))
+          )
+        ].sort();
+  if (explicitFiles === undefined && targets.length < 5) {
     console.error(`文案禁词扫描：只发现 ${targets.length} 个文案文件，扫描范围疑似失效，拒绝通过`);
     process.exit(1);
+  }
+  if (explicitFiles !== undefined && targets.length === 0) {
+    console.log("文案禁词扫描：本次没有需要检查的文案文件");
+    return;
   }
   const hits = await collectHits(targets);
 

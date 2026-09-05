@@ -26,11 +26,13 @@ pre-commit:
     - name: blocked paths (staged .env / secret-shaped / reference)
       run: node_modules/.bin/tsx scripts/dev/check-staged-paths.ts
 
-    - name: copy-terms
-      run: pnpm audit:copy-terms
+    # 两个文案门都只扫暂存的 .ts：2026-09-05 起禁词门覆盖 260 个文件、locale 独占门覆盖
+    # 587 个，全量 AST 遍历各要 3-6 秒，进不了 commit 时预算。全量由 `pnpm lint` / CI 兜底；
+    # 这里管住的是「你这次改的文件」，与改动范围一致。
+    - name: copy-terms (staged)
+      glob: "{apps,packages}/*/src/**/*.ts"
+      run: node_modules/.bin/tsx scripts/dev/check-copy-terms.ts --files {staged_files}
 
-    # 只扫暂存的 .ts：全量 AST 遍历 587 个源文件要 3 秒以上，进不了 commit 时预算。
-    # 全量由 `pnpm lint` / CI 兜底。
     - name: ui-i18n (staged)
       glob: "{apps,packages}/*/src/**/*.ts"
       run: node_modules/.bin/tsx scripts/dev/check-ui-i18n.ts --files {staged_files}

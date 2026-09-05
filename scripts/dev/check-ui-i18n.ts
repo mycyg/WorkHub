@@ -280,7 +280,8 @@ export function copyTermScanTargets(root: string = ROOT): string[] {
   return [...new Set([...dictionaries, ...baselineFiles])].sort();
 }
 
-function relativize(input: string, root: string): string {
+/** 把命令行传来的路径（绝对或相对 cwd）折回仓库相对、POSIX 分隔的形式。 */
+export function relativizeToRoot(input: string, root: string = ROOT): string {
   const absolute = path.isAbsolute(input) ? input : path.resolve(process.cwd(), input);
   return path.relative(root, absolute).replaceAll("\\", "/");
 }
@@ -315,7 +316,7 @@ function main(argv: readonly string[]): number {
   const targets =
     explicitFiles === undefined
       ? allSources
-      : [...new Set(explicitFiles.map((file) => relativize(file, ROOT)).filter(isProductSourcePath))].sort();
+      : [...new Set(explicitFiles.map((file) => relativizeToRoot(file)).filter(isProductSourcePath))].sort();
   if (explicitFiles !== undefined && targets.length === 0) {
     console.log("文案 locale 独占门禁：本次没有需要检查的产品源文件");
     return 0;
