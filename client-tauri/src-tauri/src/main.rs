@@ -608,14 +608,19 @@ fn set_server_url(
     }
 
     // 三窗（main / pet / workbench）订阅这条广播后各自 reload——照既有 workhub-logged-out 的模式，
-    // 不新造协议。发广播失败要上抛：地址已经换了却没人知道，比整条命令失败更难查。
-    app.emit(
+    // 不新造协议。**广播失败不上抛**：地址此刻已经落盘并生效了，回一个 Err 会让 webview 以为切换失败、
+    // 不去更新自己那份 api base——那正是本批要消灭的「壳层连 A、webview 连 B」分叉。降级后果只是另外两窗
+    // 要等各自重启才跟上（= S5 之前的行为），比分叉轻得多。
+    if let Err(error) = app.emit(
         event_channel_name(ShellEvent::ServerChanged),
         ShellServerUrlResponse {
             url: normalized.clone(),
         },
-    )
-    .map_err(|error| format!("failed to broadcast the server change: {error}"))?;
+    ) {
+        eprintln!(
+            "WorkHub: failed to broadcast the server change ({error}); other windows keep the old address until they reload"
+        );
+    }
 
     Ok(ShellServerUrlResponse { url: normalized })
 }
