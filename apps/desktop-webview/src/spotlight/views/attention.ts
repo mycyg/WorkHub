@@ -11,10 +11,12 @@ import {
   actionElementMergePayload,
   actionHrefFromElement,
   approvalRespondIdFromHref,
+  chooseThenApplyMergeCandidate,
   escapeHtml,
   escalationActionFromHref,
   memoryConflictActionFromHref,
   proposalActionFromHref,
+  selectedConflictChooserCandidate,
   skipPlanProposalIdFromHref,
   safeHref
 } from "@workhub/web-runtime";
@@ -323,6 +325,8 @@ export type AttentionInboxApiClient = Pick<
   | "reviewProposal"
   | "mergeProposal"
   | "applyMergeProposalCandidate"
+  // F-05：撞车「先选稿再采纳」——多候选融合稿分组选择器确认后先 choose 再 apply。
+  | "chooseMergeProposalCandidate"
   | "resolveBudgetDecision"
   | "resolveEscalation"
   | "resolveMemoryConflict"
@@ -415,10 +419,21 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
           return;
         }
         if (busy) return;
+        // F-05：多处冲突各自带融合稿时，选择器（renderConflictChooser）把它们折进一个单选 + 确认按钮，
+        // 提交时先读勾选的 radio 拿 merge_proposal_id，没选中就点亮选择器自带的提示条，不静默失败。
+        const chooserSubmit = target.dataset.proposalConflictChooserSubmit === "true" ? target : undefined;
+        const chooserContainer = chooserSubmit?.closest<HTMLElement>("[data-proposal-conflict-chooser]");
+        const chooserSelection = chooserContainer ? selectedConflictChooserCandidate(chooserContainer) : undefined;
+        if (chooserSubmit && !chooserSelection) {
+          chooserContainer?.querySelector<HTMLElement>("[data-proposal-conflict-chooser-warning]")?.removeAttribute("hidden");
+          return;
+        }
         busy = true;
         try {
           let result: unknown;
-          if (action.kind === "apply") {
+          if (chooserSelection) {
+            result = await chooseThenApplyMergeCandidate(client, chooserSelection.mergeProposalId, { locale: ctx.locale });
+          } else if (action.kind === "apply") {
             const payload = actionElementApplyPayload(target);
             if (!payload.ok) {
               ctx.toast(zh ? "冲突选项缺少必要参数" : "This conflict option is missing details", "error");
