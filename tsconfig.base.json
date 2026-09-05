@@ -22,6 +22,7 @@
       "@workhub/agent/deliverables": ["packages/agent/src/deliverables/index.ts"],
       "@workhub/agent/providers": ["packages/agent/src/providers/index.ts"],
       "@workhub/tools": ["packages/tools/src/index.ts"],
+      "@workhub/tools/test-support": ["packages/tools/src/test-support/capture-stream.ts"],
       "@workhub/plugin-host": ["packages/plugin-host/src/index.ts"],
       "@workhub/plugin-host/host": ["packages/plugin-host/src/host.ts"],
       "@workhub/mcp-client": ["packages/mcp-client/src/index.ts"],

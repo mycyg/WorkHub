@@ -8,6 +8,10 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./test-support": {
+      "types": "./src/test-support/capture-stream.ts",
+      "import": "./src/test-support/capture-stream.ts"
     }
   },
   "scripts": {

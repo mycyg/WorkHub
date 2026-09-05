@@ -13,6 +13,7 @@ import {
 } from "./broker/presence.js";
 import { RedisPushBus, type RedisPubSubClient, type RedisPubSubClientFactory } from "./broker/redis.js";
 import type { PushEvent } from "@workhub/events";
+import { captureStdoutLines } from "@workhub/tools/test-support";
 
 test("in-process bus preserves per-subscriber queue delivery", async () => {
   const bus = new InProcessPushBus();
@@ -50,19 +51,12 @@ test("local queue keeps the old maxsize/drop-slow-subscriber backpressure rule",
 test("INF-12: an event dropped under backpressure emits a structured warn and bumps the drop counter", async () => {
   const bus = new InProcessPushBus(2);
   const subscription = await bus.subscribe("run:r-drop"); // 订阅但不消费
-  const lines: string[] = [];
-  const originalWrite = process.stdout.write.bind(process.stdout);
-  process.stdout.write = ((chunk: string | Uint8Array) => {
-    lines.push(String(chunk));
-    return true;
-  }) as typeof process.stdout.write;
-  try {
+  // 捕获且透传（见 @workhub/tools/test-support）：整段替换 process.stdout.write 会吞掉报告器的 TAP 行。
+  const { lines } = await captureStdoutLines(async () => {
     await bus.publish("run:r-drop", "agent_run.step", { step: 1 });
     await bus.publish("run:r-drop", "agent_run.step", { step: 2 });
     await bus.publish("run:r-drop", "agent_run.step", { step: 3 }); // 满队列 → drop → 结构化 warn + 计数
-  } finally {
-    process.stdout.write = originalWrite;
-  }
+  });
   const warnLines = lines
     .map((line) => {
       try {

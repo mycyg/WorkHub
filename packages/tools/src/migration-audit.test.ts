@@ -10,6 +10,7 @@ import {
   runMigrationAudit,
   type MigrationReplayPlan
 } from "../../../scripts/dev/check-migrations.js";
+import { captureStderrLines } from "./test-support/capture-stream.js";
 
 async function writeRequiredMigrationAuditSkeleton(root: string) {
   const migrationsDir = path.join(root, "packages", "db", "migrations");
@@ -95,16 +96,10 @@ test("migration audit replays all migrations fresh, then R9 migrations against t
   }
 });
 
-test("migration audit pools handle forced-cleanup idle client errors without crashing", () => {
+test("migration audit pools handle forced-cleanup idle client errors without crashing", async () => {
   const pool = new EventEmitter();
-  const originalWrite = process.stderr.write;
-  const writes: string[] = [];
-  process.stderr.write = ((chunk: string | Uint8Array) => {
-    writes.push(String(chunk));
-    return true;
-  }) as typeof process.stderr.write;
-
-  try {
+  // 捕获且透传（见 @workhub/tools/test-support）：整段替换 process.stderr.write 会吞掉别人的输出。
+  const { lines: writes } = await captureStderrLines(async () => {
     attachMigrationAuditIdlePoolErrorHandler(pool, "scratch");
 
     assert.equal(pool.listenerCount("error"), 1);
@@ -118,10 +113,8 @@ test("migration audit pools handle forced-cleanup idle client errors without cra
         { processID: 94 }
       );
     });
-    assert.match(writes.join(""), /migration_audit_pg_pool_idle_client_error/);
-    assert.match(writes.join(""), /57P01/);
-    assert.match(writes.join(""), /scratch/);
-  } finally {
-    process.stderr.write = originalWrite;
-  }
+  });
+  assert.match(writes.join(""), /migration_audit_pg_pool_idle_client_error/);
+  assert.match(writes.join(""), /57P01/);
+  assert.match(writes.join(""), /scratch/);
 });

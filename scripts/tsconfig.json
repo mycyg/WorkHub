@@ -10,5 +10,11 @@
     "types": ["node"],
     "allowImportingTsExtensions": true
   },
-  "files": ["dev/check-ui-i18n.ts", "dev/check-ui-i18n.test.ts", "dev/check-copy-terms.ts"]
+  "files": [
+    "dev/check-ui-i18n.ts",
+    "dev/check-ui-i18n.test.ts",
+    "dev/check-copy-terms.ts",
+    "dev/check-test-conventions.ts",
+    "dev/check-test-conventions.test.ts"
+  ]
 }
