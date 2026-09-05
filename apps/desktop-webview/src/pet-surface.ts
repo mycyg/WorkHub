@@ -42,7 +42,7 @@ import {
 } from "./cuu-cat-live2d-runtime.js";
 import { writeDesktopPetQaDomSnapshot } from "./cuu-qa-dom-report.js";
 import { readDesktopClientToken } from "./desktop-client-token.js";
-import { resolveDesktopTauriInvoke } from "./desktop-window-controls.js";
+import { readDesktopConnectionState, resolveDesktopTauriInvoke } from "./desktop-window-controls.js";
 import { liquidGlassHeadHtml } from "./liquid-glass.js";
 import {
   liquidGlassFilterCss,
@@ -93,7 +93,11 @@ import {
 } from "./pet-window-bridge.js";
 import { parseWorkbenchDeepLinkHref } from "./workbench/cuu-bubble-deeplink.js";
 import { openWorkbenchRouteFromPet } from "./workbench/cuu-bubble-open.js";
-import type { DesktopShellSystemNotificationPlan } from "./shell-events.js";
+import {
+  parseDesktopShellConnectionChangedPayload,
+  type DesktopShellConnectionChangedPayload,
+  type DesktopShellSystemNotificationPlan
+} from "./shell-events.js";
 
 export type DesktopSurface = "main" | "pet";
 
@@ -880,6 +884,30 @@ export function createDesktopPetLoggedOutCard(
   };
 }
 
+// R25-Q（L-06 根治）：连接状态"单一真相"（workhub-connection-changed）驱动的桌宠提示——诚实点名
+// 连不上的服务器地址 + 重连计次/已离线，不再靠旧的 sse-status 离线卡（已撤，见
+// desktop-cuu-runtime.ts 顶部注释）。这行文字走 renderDesktopPetSurface 既有的"无卡片、只有
+// status_text"紧凑气泡路径（compactStatusOnly），窗口尺寸维持 body_only（260×340）不变——旧离线卡
+// 的 CuuState 是"offline"，非 idle 态一律走 windowModeForState 的"card"分支撑到 520×720、原生窗口
+// 跟着挪位置，这正是 r24-S5-reverify.md 记录的 L-06。state === "connected"（或还没收到任何判定）
+// 时返回 undefined——恢复后这行提示随下一次 render() 自然消失，桌宠回到正常待命态，不需要额外的
+// "收起提示"代码。
+export function desktopPetConnectionStatusText(
+  payload: DesktopShellConnectionChangedPayload | undefined,
+  locale: WorkHubLocale
+): string | undefined {
+  if (!payload || payload.state === "connected") {
+    return undefined;
+  }
+  const zh = locale === "zh-CN";
+  const unreachable = zh ? `连不上服务器 ${payload.server_url}` : `Can't reach the server ${payload.server_url}`;
+  const status =
+    payload.state === "offline"
+      ? zh ? "已离线" : "Offline"
+      : zh ? `重连中（第 ${payload.attempt} 次）` : `Reconnecting (attempt ${payload.attempt})`;
+  return `${unreachable} · ${status}`;
+}
+
 export async function bootDesktopPetSurface(
   root: HTMLElement,
   input: {
@@ -924,6 +952,11 @@ export async function bootDesktopPetSurface(
     ? idleScheduler.snapshot().last_action ?? "idle_breathe"
     : desktopPetInitialIdleAction;
   let statusText: string | undefined;
+  // R25-Q：连接状态"单一真相"——boot 拉一次 get_connection_state 初值 + 订阅 workhub-connection-changed
+  // 写入，独立于 statusText（那是右键菜单会清掉的瞬态动作反馈，这个是持续性的连接状态，两者不能共用
+  // 同一个变量，否则右键打开设置菜单会意外清掉"服务器连不上"的提示）。render() 里两者合并成一行：
+  // 有 statusText 优先显示它（动作反馈），否则在没有 currentCard 时退回连接状态提示。
+  let connectionStatus: DesktopShellConnectionChangedPayload | undefined;
   let pendingAction: DesktopCuuActionRequest | undefined;
   // WIRE-07：中止执行的两段式确认武装态（5 秒窗口，判定见 desktop-cuu-runtime 的
   // decideDesktopCuuAbortConfirmation）——纯变量记忆，渲染层不重画按钮。
@@ -982,6 +1015,10 @@ export async function bootDesktopPetSurface(
     const compactCard = Boolean(currentCard && petWindowBridge && desiredMode === "card" && confirmedPetWindowMode !== "card");
     const windowModeError = compactCard ? petWindowModeError ?? cuuT(locale, "pet.windowModeExpanding") : undefined;
     const windowModeStatus = compactCard ? petWindowModeError ? "failed" : "syncing" : undefined;
+    // R25-Q：statusText（右键菜单会清掉的瞬态动作反馈）优先；没有它、也没有真实卡片占着窗口时，
+    // 退回连接状态提示——两者都走同一个 status_text 槽位（既有的 compactStatusOnly 紧凑气泡），
+    // 有真实卡片时不叠加连接提示（卡片已经在用这块气泡空间，见 desktopPetConnectionStatusText 顶注）。
+    const effectiveStatusText = statusText ?? (currentCard ? undefined : desktopPetConnectionStatusText(connectionStatus, locale));
     const bubbleIntroIdentityKey = desktopPetBubbleIntroIdentityKey(currentCard, {
       compact_card: compactCard,
       window_mode_status: windowModeStatus
@@ -993,7 +1030,7 @@ export async function bootDesktopPetSurface(
     const structuralRenderKey = desktopPetStructuralRenderKey({
       card_revision: currentCard ? cardRevision : 0,
       card_id: currentCard?.id,
-      status_text: statusText,
+      status_text: effectiveStatusText,
       include_reject_reasons: Boolean(pendingAction),
       pet_window_settings: petWindowSettings,
       requested_model_pack_id: preferences.pet_model_pack_id,
@@ -1024,7 +1061,7 @@ export async function bootDesktopPetSurface(
     const surface = renderDesktopPetSurface({
       card: currentCard,
       idle_action: idleAction,
-      status_text: statusText,
+      status_text: effectiveStatusText,
       include_reject_reasons: Boolean(pendingAction),
       pet_window_settings: petWindowSettings,
       requested_model_pack_id: preferences.pet_model_pack_id,
@@ -1779,6 +1816,30 @@ export async function bootDesktopPetSurface(
     loggedInUnlisten = maybeLoggedInUnlisten;
   }
 
+  // R25-Q：连接状态"单一真相"——先拉一次 get_connection_state 补初值（不必等 SSE worker 下一次真实
+  // 迁移才第一次知道状态），再订阅运行期广播。两者都只更新 connectionStatus + render()，不碰
+  // currentCard/窗口尺寸（见 desktopPetConnectionStatusText 顶注——L-06 根治的关键就是这条提示完全
+  // 独立于卡片/resize 管线）。best-effort：拉取失败/无 __TAURI__ 时 connectionStatus 保持 undefined，
+  // 不渲任何提示。
+  void readDesktopConnectionState().then((raw) => {
+    const payload = parseDesktopShellConnectionChangedPayload(raw);
+    if (payload) {
+      connectionStatus = payload;
+      render();
+    }
+  });
+  let connectionChangedUnlisten: DesktopShellUnlisten | undefined;
+  const maybeConnectionChangedUnlisten = await shellListen?.("workhub-connection-changed", (event) => {
+    const payload = parseDesktopShellConnectionChangedPayload(event.payload);
+    if (payload) {
+      connectionStatus = payload;
+      render();
+    }
+  });
+  if (typeof maybeConnectionChangedUnlisten === "function") {
+    connectionChangedUnlisten = maybeConnectionChangedUnlisten;
+  }
+
   // MRG-20：OS 通知到达不再抢焦点/强制导航。壳层广播的 system-notification 计划先按路由暂存；
   // 用户在桌宠 Cuu 卡上点出同一目标路由的动作时，才把计划回传原生 focus_system_notification
   // → handle_deep_link_plan 落地（审批通知落审批面板、消息通知落对应会话，含 workbench 按需建窗）。
@@ -1984,6 +2045,7 @@ export async function bootDesktopPetSurface(
       attentionRefreshUnlisten?.();
       loggedOutUnlisten?.();
       loggedInUnlisten?.();
+      connectionChangedUnlisten?.();
       await runtime.dispose();
     }
   };
