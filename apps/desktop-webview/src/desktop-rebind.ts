@@ -21,6 +21,10 @@
 import type { WorkHubApiClient } from "@workhub/api-client";
 import type { WorkHubLocale } from "@workhub/ui/gold-path";
 
+import {
+  desktopBootScreenFitAttribute,
+  desktopBootScreenFitPaddingPx
+} from "./desktop-boot-screen-fit.js";
 import { markDesktopIdentityCreated } from "./desktop-first-run.js";
 import { writeDesktopClientToken } from "./desktop-client-token.js";
 import { isPasswordModeBootstrapError, rememberDesktopAuthModeHint } from "./desktop-login.js";
@@ -89,6 +93,11 @@ export function describeDesktopRebindError(error: unknown, locale: WorkHubLocale
 
 // 重绑/首启屏的 HTML（自带 <style>，不依赖外部 CSS 已加载——渲进 boot 首帧壳也成立，同凭据登录门）。
 // context 默认 "logged-out"（向后兼容既有调用方/既有测试对「已登出」文案的断言）。
+// R24 H（首启窗口裁切）：这张屏渲进主窗时，原生窗口还是聚焦盒 idle 的细搜索条尺寸（720×64）——
+// 卡片会被裁得只剩标题。卡片上的 desktopBootScreenFitAttribute 是量高锚点，主窗挂载后由
+// desktop-boot-screen-fit.ts 量它 + 外壳 padding 把窗口撑到内容大小；外壳 padding 与那边的加法共用
+// desktopBootScreenFitPaddingPx，两边漂移就会重新裁边。自带的 html/body 归零是因为这张屏会整个替换掉
+// boot 首帧壳（连同 spotlightCss 一起），不补就会吃到 UA 默认的 8px body margin（卡片偏移 + 出滚动条）。
 export function renderDesktopRebindScreenHtml(input: {
   locale: WorkHubLocale;
   error?: string;
@@ -112,8 +121,9 @@ export function renderDesktopRebindScreenHtml(input: {
     ? `<p data-desktop-rebind-error style="margin:0;font-size:12px;color:#E5484D" role="alert">${escapeHtml(input.error)}</p>`
     : `<p data-desktop-rebind-error hidden style="margin:0;font-size:12px;color:#E5484D" role="alert"></p>`;
   return `<style>
-    .wh-desktop-rebind-shell{min-height:100vh;display:grid;place-items:center;font-family:'M PLUS Rounded 1c','Noto Sans SC',system-ui,sans-serif;background:transparent}
-    .wh-desktop-rebind-card{box-sizing:border-box;min-width:300px;max-width:min(420px,calc(100vw - 36px));padding:28px 30px;border-radius:16px;background:rgba(255,255,255,.86);border:1px solid rgba(255,255,255,.5);box-shadow:0 26px 70px -40px rgba(20,24,45,.55);display:grid;gap:12px;backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%)}
+    html,body,#root{margin:0;padding:0;background:rgba(0,0,0,0)!important}
+    .wh-desktop-rebind-shell{box-sizing:border-box;min-height:100vh;padding:${desktopBootScreenFitPaddingPx}px;display:grid;place-items:center;font-family:'M PLUS Rounded 1c','Noto Sans SC',system-ui,sans-serif;background:transparent}
+    .wh-desktop-rebind-card{box-sizing:border-box;min-width:300px;max-width:min(420px,calc(100vw - ${desktopBootScreenFitPaddingPx * 2}px));padding:28px 30px;border-radius:22px;background:rgba(255,255,255,.86);border:1px solid rgba(255,255,255,.5);box-shadow:0 26px 70px -40px rgba(20,24,45,.55);display:grid;gap:12px;backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%)}
     .wh-desktop-rebind-card h1{margin:0;font-size:19px;font-weight:900;color:#141a2d}
     .wh-desktop-rebind-card p.wh-desktop-rebind-sub{margin:0;font-size:13px;line-height:1.5;color:#5B616E}
     .wh-desktop-rebind-card input{box-sizing:border-box;width:100%;padding:9px 11px;border:1px solid #E6E7EB;border-radius:9px;font-size:14px;background:#fff;color:#141a2d;outline:none}
@@ -122,7 +132,7 @@ export function renderDesktopRebindScreenHtml(input: {
     .wh-desktop-rebind-card button[data-desktop-rebind]:disabled{opacity:.6;cursor:progress}
   </style>
   <div class="wh-ds wh-desktop-rebind-shell">
-    <form data-desktop-rebind-form class="wh-desktop-rebind-card" novalidate>
+    <form ${desktopBootScreenFitAttribute} data-desktop-rebind-form class="wh-desktop-rebind-card" novalidate>
       <h1>${escapeHtml(title)}</h1>
       <p class="wh-desktop-rebind-sub">${escapeHtml(subtitle)}</p>
       <input data-desktop-rebind-nickname name="nickname" type="text" maxlength="64" autocomplete="nickname" placeholder="${escapeHtml(nicknameLabel)}" aria-label="${escapeHtml(nicknameLabel)}" />

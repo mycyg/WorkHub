@@ -25,6 +25,7 @@ import {
   bindDesktopServerChangedReload,
   createDesktopServerChoiceEffects
 } from "./desktop-connect-screen.js";
+import { fitDesktopMainWindowToBootScreen } from "./desktop-boot-screen-fit.js";
 import { renderDesktopSpotlightBootShell } from "./desktop-spotlight-boot.js";
 import { bootDesktopPetSurface, resolveDesktopSurface } from "./pet-surface.js";
 import { scheduleWorkHubLiquidGlassFilterRebuild } from "./liquid-glass-filter.js";
@@ -188,6 +189,20 @@ function desktopCredentialGateContext(): DesktopCredentialGateContext {
   return desktopLoggedOut() ? "logged-out" : "first-run";
 }
 
+// R24 H（首启窗口裁切）：三张 boot 屏（首启/重绑昵称屏、凭据门、连接服务器屏）都是直接渲进主窗根节点
+// 的，从不经过聚焦盒控制器——而 set_spotlight_size 只有那个控制器的 applyResize 会调，于是首启时窗口
+// 一直停在出厂的细搜索条尺寸（720×64，client-tauri windows.rs），卡片被原生窗裁得只剩标题（用户截图）。
+// 这里给三张屏共用一条「量内容 → 缩放主窗」的通道（desktop-boot-screen-fit.ts，与 applyResize 同口径）。
+// 换屏前先 dispose 上一次：屏与屏之间共用同一个 #root，不摘掉旧观察者会有两套各自下发同一个尺寸。
+let disposeBootScreenFit: (() => void) | undefined;
+function fitBootScreenToMainWindow(rootEl: HTMLElement): void {
+  disposeBootScreenFit?.();
+  disposeBootScreenFit = fitDesktopMainWindowToBootScreen(rootEl, {
+    // 与聚焦盒同一条壳层命令（set_spotlight_size）；浏览器开发态无 __TAURI__ → no-op。
+    resize: (width, height) => resizeDesktopMainWindow(width, height)
+  });
+}
+
 // 密码/hybrid 模式凭据门：接到既有 login/register/邀请接受 → device-token exchange 流程，成功后 reload
 // 走既有 token 流。
 function mountDesktopCredentialGate(rootEl: HTMLElement, client: BrowserApiClient, locale: WorkHubLocale): void {
@@ -198,6 +213,7 @@ function mountDesktopCredentialGate(rootEl: HTMLElement, client: BrowserApiClien
     onSuccess: () => window.location.reload(),
     context: desktopCredentialGateContext()
   });
+  fitBootScreenToMainWindow(rootEl);
 }
 
 // DSK-01：昵称模式显式登出态的重新绑定屏（原死 boot() 里的内联实现，抽到 desktop-rebind.ts 便于单测）；
@@ -211,8 +227,11 @@ function mountDesktopRebindScreen(rootEl: HTMLElement, client: BrowserApiClient,
     storage: window.localStorage,
     onSuccess: () => window.location.reload(),
     context: desktopCredentialGateContext(),
+    // 就地换成凭据门：mountDesktopCredentialGate 自己会重新贴合窗口（凭据门比昵称屏高一截，
+    // 不重量的话新卡片会被裁掉下半张）。
     onPasswordModeDetected: () => mountDesktopCredentialGate(rootEl, client, locale)
   });
+  fitBootScreenToMainWindow(rootEl);
 }
 
 // R8 真·Spotlight：把内容高度同步给原生壳，缩放主窗（盒子随内容生长/收缩）。浏览器开发态无 __TAURI__ → no-op。
@@ -253,6 +272,7 @@ function mountDesktopConnectScreen(rootEl: HTMLElement, locale: WorkHubLocale, e
     reload: () => window.location.reload(),
     scheduleRebuild: () => scheduleWorkHubLiquidGlassFilterRebuild(document)
   });
+  fitBootScreenToMainWindow(rootEl);
 }
 
 // R8 彻底重构主窗：苹果聚焦搜索式「会生长的玻璃盒」就是整个 app（旧的 gold-path 全屏壳 boot() 已随 DSK-01 删除——

@@ -17,6 +17,10 @@ import type { IdentityResponse, PasswordLoginRequest, PasswordRegisterRequest, W
 import type { InviteAcceptRequest } from "@workhub/contracts";
 import type { WorkHubLocale } from "@workhub/ui/gold-path";
 
+import {
+  desktopBootScreenFitAttribute,
+  desktopBootScreenFitPaddingPx
+} from "./desktop-boot-screen-fit.js";
 import { markDesktopIdentityCreated } from "./desktop-first-run.js";
 import { writeDesktopClientToken } from "./desktop-client-token.js";
 
@@ -471,6 +475,11 @@ export function describeDesktopInviteError(error: unknown, locale: WorkHubLocale
 export type DesktopCredentialGateContext = "first-run" | "logged-out";
 
 // 密码/hybrid 模式凭据门的 HTML（自带 <style>，不依赖外部 CSS 已加载——渲进 boot 首帧壳也成立）。
+// R24 H（首启窗口裁切）：渲进主窗时原生窗口还是聚焦盒 idle 的细搜索条尺寸（720×64），卡片会被裁掉；
+// 卡片上的 desktopBootScreenFitAttribute 是量高锚点，主窗挂载后由 desktop-boot-screen-fit.ts 量它 +
+// 外壳 padding 把窗口撑到内容大小（切页签让卡片变高矮时 MutationObserver 会重量）。外壳 padding 与那边
+// 的加法共用 desktopBootScreenFitPaddingPx；html/body 归零是因为这张屏整个替换掉 boot 首帧壳（连同
+// spotlightCss 的 margin 归零一起），不补就会吃到 UA 默认的 8px body margin。
 // 结构：三个页签共享一张卡——登录（邮箱+密码，既有）/ 注册（邮箱+昵称+密码）/ 我有邀请令牌
 // （令牌+昵称+密码）；密码全部只走 <input type=password>，绝不进 URL。默认页签固定是「登录」，
 // 不随 context 变——不给「首启该默认哪个页签」加判断分支，交给用户自己点。
@@ -512,8 +521,9 @@ export function renderDesktopCredentialGateHtml(input: {
     ? `<p data-desktop-login-error style="margin:0;font-size:12px;color:#E5484D" role="alert">${escapeHtml(input.error)}</p>`
     : `<p data-desktop-login-error hidden style="margin:0;font-size:12px;color:#E5484D" role="alert"></p>`;
   return `<style>
-    .wh-desktop-login-shell{min-height:100vh;display:grid;place-items:center;font-family:'M PLUS Rounded 1c','Noto Sans SC',system-ui,sans-serif;background:transparent}
-    .wh-desktop-login-card{box-sizing:border-box;min-width:320px;max-width:min(420px,calc(100vw - 36px));padding:28px 30px;border-radius:16px;background:rgba(255,255,255,.86);border:1px solid rgba(255,255,255,.5);box-shadow:0 26px 70px -40px rgba(20,24,45,.55);display:grid;gap:12px;backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%)}
+    html,body,#root{margin:0;padding:0;background:rgba(0,0,0,0)!important}
+    .wh-desktop-login-shell{box-sizing:border-box;min-height:100vh;padding:${desktopBootScreenFitPaddingPx}px;display:grid;place-items:center;font-family:'M PLUS Rounded 1c','Noto Sans SC',system-ui,sans-serif;background:transparent}
+    .wh-desktop-login-card{box-sizing:border-box;min-width:320px;max-width:min(420px,calc(100vw - ${desktopBootScreenFitPaddingPx * 2}px));padding:28px 30px;border-radius:22px;background:rgba(255,255,255,.86);border:1px solid rgba(255,255,255,.5);box-shadow:0 26px 70px -40px rgba(20,24,45,.55);display:grid;gap:12px;backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%)}
     .wh-desktop-login-card h1{margin:0;font-size:19px;font-weight:900;color:#141a2d}
     .wh-desktop-login-card p.wh-desktop-login-sub{margin:0;font-size:13px;line-height:1.5;color:#5B616E}
     .wh-desktop-login-card label{display:grid;gap:5px;font-size:12px;font-weight:800;color:#3a4256}
@@ -527,7 +537,7 @@ export function renderDesktopCredentialGateHtml(input: {
     .wh-desktop-login-panel[hidden]{display:none}
   </style>
   <div class="wh-ds wh-desktop-login-shell">
-    <div class="wh-desktop-login-card">
+    <div ${desktopBootScreenFitAttribute} class="wh-desktop-login-card">
       <h1>${escapeHtml(title)}</h1>
       <p class="wh-desktop-login-sub">${escapeHtml(subtitle)}</p>
       <div class="wh-desktop-login-tabs" role="tablist" aria-label="${escapeHtml(zh ? "登录方式" : "Sign-in method")}">
