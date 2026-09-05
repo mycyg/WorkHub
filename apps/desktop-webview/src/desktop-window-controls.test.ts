@@ -22,16 +22,40 @@ test("desktop native window commands invoke movement without resize-drag plumbin
     }
   };
 
-  assert.equal(resizeDesktopMainWindow(480, 320, scope), true);
+  assert.equal(resizeDesktopMainWindow(480, 320, false, scope), true);
   assert.equal(dragDesktopMainWindow(scope), true);
   assert.equal(moveDesktopMainWindowBy(12, -8, scope), true);
   assert.equal(dismissDesktopMainWindow(scope), true);
   assert.equal(dragDesktopMainWindow({}), false);
   assert.deepEqual(calls, [
-    { command: "set_spotlight_size", args: { width: 480, height: 320 } },
+    { command: "set_spotlight_size", args: { width: 480, height: 320, reducedMotion: false } },
     { command: "start_main_window_drag", args: undefined },
     { command: "move_main_window_by", args: { deltaX: 12, deltaY: -8 } },
     { command: "hide_main_window", args: undefined }
   ]);
   assert.equal(calls.some((call) => call.command === "start_main_window_resize_drag"), false);
+});
+
+// R25（BX-06）：壳层的生长补间由 webview 递进来的 reducedMotion 关掉——这一位必须真的到得了
+// invoke 载荷里，否则「减弱动态效果」开着的机器仍会看到 180ms 的补间。
+test("spotlight resize forwards the reduced-motion flag so the shell can skip its growth tween", () => {
+  const calls: Array<Record<string, unknown> | undefined> = [];
+  const scope = {
+    __TAURI__: {
+      core: {
+        invoke(_command: string, args?: Record<string, unknown>) {
+          calls.push(args);
+          return Promise.resolve();
+        }
+      }
+    }
+  };
+
+  resizeDesktopMainWindow(720, 480, true, scope);
+  resizeDesktopMainWindow(720, 64, undefined, scope);
+  assert.deepEqual(calls, [
+    { width: 720, height: 480, reducedMotion: true },
+    // 省略该实参时按"照常补间"处理（老调用点不必逐个改）。
+    { width: 720, height: 64, reducedMotion: false }
+  ]);
 });

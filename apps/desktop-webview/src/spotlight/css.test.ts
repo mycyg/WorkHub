@@ -33,6 +33,15 @@ test("Spotlight focus ring is scoped to interactive controls, not the whole cont
   assert.doesNotMatch(css, /\.wh-spot :focus-visible\{/u);
 });
 
+test("BX-06: the box is clamped to the window so the growth tween never shows a square-cut bottom", () => {
+  // 壳层把窗口高度摊成 ~16ms 的中间帧（client-tauri spotlight_window.rs），DOM 里的盒子却在第一帧
+  // 就已经是目标高度。不钳到 100vh 的话，补间途中盒子比透明窗高——圆角底边和边框落在窗口外面，
+  // 屏幕上就是一条直角断口在往下爬。
+  assert.match(css, /\.wh-spot\{[^}]*max-height:100vh/u);
+  // 内容淡入挂在每次重渲都换新节点的网格上（body 是常驻节点，CSS 动画只会在挂载时跑一次）。
+  assert.match(css, /\.wh-spot-grid\{[^}]*animation:ds-fade-in var\(--ds-dur-fast\)/u);
+});
+
 test("Spotlight visual language uses Apple blue/cyan accents instead of purple gradients", () => {
   assert.match(css, /\.wh-spot-act--primary\{[^}]*linear-gradient\(135deg,#0a84ff,#64d2ff\)/u);
   assert.match(css, /\.wh-spot-card-bar--approval\{background:linear-gradient\(180deg,#0a84ff,#64d2ff\)/u);

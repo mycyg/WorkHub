@@ -255,8 +255,9 @@ function mountDesktopRebindScreen(rootEl: HTMLElement, client: BrowserApiClient,
 }
 
 // R8 真·Spotlight：把内容高度同步给原生壳，缩放主窗（盒子随内容生长/收缩）。浏览器开发态无 __TAURI__ → no-op。
-const resizeMainWindow: SpotlightResizeFn = (width, height) => {
-  resizeDesktopMainWindow(width, height);
+// R25（BX-06）：第三个实参把系统「减弱动态效果」直通壳层，壳层据此在补间与直落之间二选一。
+const resizeMainWindow: SpotlightResizeFn = (width, height, reducedMotion) => {
+  resizeDesktopMainWindow(width, height, reducedMotion);
 };
 
 // 搜索条像系统 Spotlight 一样可拖动；浏览器开发态无 __TAURI__ → no-op。
