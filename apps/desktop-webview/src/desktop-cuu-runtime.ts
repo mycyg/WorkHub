@@ -67,7 +67,12 @@ export type DesktopShellEventName =
   // 没有信号告诉它们"手里的 client token 刚被清空了"，只会拿着废 token 静默连环 401。这个事件让
   // workbench（boot.ts/shell.ts）切到「已登出」全屏态并停止后续请求，桌宠（pet-surface.ts）换成一张
   // 诚实的「已登出」卡片——两边共用这同一条通用 Tauri 事件桥，不另起协议。
-  | "workhub-logged-out";
+  | "workhub-logged-out"
+  // R24 S2（换服务器）：webview 在「连接服务器」屏确认新地址后调壳层 set_server_url，壳层落盘 +
+  // 换 SSE 订阅 base 之后广播这个事件（payload {url}）。其余窗口收到即自行 reload 走新地址重新 boot——
+  // 与 workhub-logged-out 同一条通用 Tauri 事件桥，不另起协议（订阅入口 desktop-connect-screen.ts 的
+  // bindDesktopServerChangedReload）。
+  | "workhub-server-changed";
 
 export type DesktopShellListen = (
   eventName: DesktopShellEventName,

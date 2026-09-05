@@ -115,7 +115,33 @@ async function shouldRefreshDriveResourceToken(response: Response): Promise<bool
   }
 }
 
+// R24 S1 · C1（单 origin 钉死）：打包后的 CSP connect-src 已从「只放行本机回环」放开到 http:/https:
+// （否则连不上自托管的远端服务器，见 tauri.conf.json 与 desktop-api-base.ts 顶部注释）。网盘资源的
+// href 来自服务端响应（download_href / preview_href），而 fetchDriveResource 会给请求带上设备令牌头——
+// 一条被污染的绝对 href 就能把令牌送到第三方主机。这里在发出前钉死：href 解析出的 origin 必须等于当前
+// 配置的服务器地址 origin，不等就拒（抛错，绝不降级为「照发一次看看」）。同 api-client 的
+// resolveWorkHubApiUrl 与桌面 run 流的 DSK-08 同源校验一个口径。
+export function assertDriveResourceSameOrigin(href: string, apiBaseUrl: string): void {
+  let expected: string;
+  try {
+    expected = new URL(apiBaseUrl).origin;
+  } catch {
+    // 基地址不是绝对地址（相对代理模式）：href 会解析到页面自身源，没有跨源可言。
+    return;
+  }
+  let target: URL;
+  try {
+    target = new URL(href, apiBaseUrl);
+  } catch {
+    throw new Error(`Refused unparsable drive resource URL: ${href}`);
+  }
+  if (target.origin !== expected) {
+    throw new Error(`Refused cross-origin drive resource URL: ${href}`);
+  }
+}
+
 export async function fetchDriveResource(href: string, init: RequestInit = {}, apiBaseUrl = driveResourceApiBase()): Promise<Response> {
+  assertDriveResourceSameOrigin(href, apiBaseUrl);
   const withAuth = (): RequestInit => {
     const headers = new Headers(init.headers);
     driveResourceHeaders().forEach((value, key) => headers.set(key, value));

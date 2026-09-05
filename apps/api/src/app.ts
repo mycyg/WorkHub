@@ -7,6 +7,7 @@ import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 import { settings } from "@workhub/config";
 import { getDefaultProviderRegistry } from "./services/provider-registry.js";
+import { workHubApiVersion } from "./app-version.js";
 
 import { getOpenApiDocument } from "./openapi.js";
 import { createAuthRoutes, createUserDirectoryRoutes } from "./routes/auth.js";
@@ -227,7 +228,15 @@ app.get("/api/health", (c) =>
     port: settings.port,
     // R14 FIX#8（无 key 自托管的静默死）：LLM provider 未配置时观察者/判定器不启动、turn 直接失败，
     // 而用户端此前毫无感知。健康端点先把事实亮出来，前端横幅（合并波后接）与自托管排障都读这里。
-    ai_provider_configured: getDefaultProviderRegistry().isConfigured()
+    ai_provider_configured: getDefaultProviderRegistry().isConfigured(),
+    // R24 S3（桌面「连接服务器」屏）：用户敲一个自托管地址点「测试连接」，一次请求就要拿全
+    // 「这是不是我要连的那台、连上之后能干活吗」的事实。此前客户端要靠「拿 identify 的 404 当探针」
+    // 反推认证模式（apps/web/src/auth-screen-mode.ts 自陈是权衡之举），版本与实例名则根本无处可取。
+    // 三个字段都是纯增量：旧客户端不读即无感，新客户端连旧服务端要按「未知」降级（契约里声明为可选，
+    // 见 packages/contracts/src/health.ts）。
+    auth_mode: settings.auth.authMode,
+    version: workHubApiVersion(),
+    instance_name: settings.instanceName
   })
 );
 

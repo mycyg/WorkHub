@@ -46,6 +46,68 @@ export function joinApiUrl(baseUrl: string | undefined, path: string) {
   return `${trimTrailingSlash(base)}${normalizedPath}`;
 }
 
+// R24 S1 · C1（单 origin 钉死）：桌面端打包后的 CSP `connect-src` 从「只放行本机回环」放开到
+// `http: https: ws: wss:`（client-tauri/src-tauri/tauri.conf.json）——否则自托管在局域网 IP 或公司域名上的
+// 后端一律连不出去，桌面端作为产品核心的定位不成立。CSP 那道**出口闸**放开之后，「请求只能打到用户
+// 亲手确认过的那台服务器」这条约束必须由应用层自己守住，这里就是那道闸：
+//   1) path 不许是绝对地址（带 scheme 的 `http://…`/`javascript:` 等）——调用方只能给「这台服务器上的
+//      一条路径」。此前这类输入被 joinApiUrl 拼成 base + "/" + 绝对地址的畸形串（打到自己服务器的 404），
+//      静默且难查；现在直接拒。
+//   2) path 不许是协议相对地址（`//host/x`）——在 baseUrl 为空的相对模式（web 同源）下，浏览器会把它
+//      解析到**外部主机**，是真实的跨源外发通道。
+//   3) 拼出来的绝对地址，其 origin 必须与配置的 baseUrl origin 逐字节相等。
+// 每个请求都带设备令牌头（见 request()），所以「拒绝」必须发生在发出之前——抛错，绝不降级为静默改写。
+// 先例：桌面 run 流 URL 的同源校验（DSK-08，apps/desktop-webview/src/desktop-cuu-runtime.ts 的
+// desktopCuuRunStreamUrl）。baseUrl 为空或本身就是相对基址（如 "/api-proxy"）时没有跨源可言，只查 1)/2)。
+const ABSOLUTE_URL_SCHEME = /^[a-z][a-z0-9+.-]*:/iu;
+
+function apiBaseOrigin(baseUrl: string | undefined): string | undefined {
+  const base = baseUrl?.trim();
+  if (!base) {
+    return undefined;
+  }
+  try {
+    return new URL(base).origin;
+  } catch {
+    // 相对基址（"/api-proxy" 之类）：与页面同源，没有跨源可言。
+    return undefined;
+  }
+}
+
+function crossOriginRefusal(path: string, reason: string): WorkHubApiError {
+  return new WorkHubApiError(
+    0,
+    "cross_origin_request",
+    `WorkHub API 拒绝跨源请求（${reason}）：${path}`
+  );
+}
+
+// 解析出最终请求地址，并在返回前完成上面三条断言。所有真正会发出去的地址（请求 + SSE 流 URL）都走它。
+export function resolveWorkHubApiUrl(baseUrl: string | undefined, path: string): string {
+  const trimmed = path.trim();
+  if (ABSOLUTE_URL_SCHEME.test(trimmed)) {
+    throw crossOriginRefusal(path, "路径不能是绝对地址");
+  }
+  if (trimmed.startsWith("//")) {
+    throw crossOriginRefusal(path, "路径不能是协议相对地址");
+  }
+  const url = joinApiUrl(baseUrl, path);
+  const expected = apiBaseOrigin(baseUrl);
+  if (!expected) {
+    return url;
+  }
+  let actual: string;
+  try {
+    actual = new URL(url).origin;
+  } catch {
+    throw crossOriginRefusal(path, "地址无法解析");
+  }
+  if (actual !== expected) {
+    throw crossOriginRefusal(path, `目标 origin ${actual} 与服务器地址 ${expected} 不一致`);
+  }
+  return url;
+}
+
 function isEnvelope<T>(value: unknown): value is ApiEnvelope<T> {
   if (!value || typeof value !== "object") {
     return false;
@@ -416,7 +478,7 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
     let response: Response;
     let body: unknown;
     try {
-      response = await fetchFn(joinApiUrl(options.baseUrl, path), {
+      response = await fetchFn(resolveWorkHubApiUrl(options.baseUrl, path), {
         ...init,
         credentials,
         headers,
@@ -460,15 +522,17 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
 
   return {
     request,
-    streamUrl: (path) => joinApiUrl(options.baseUrl, path),
+    // C1：SSE 流地址与普通请求同一道同源闸——自制 fetch EventSource 也给连接带令牌头（见桌面
+    // desktop-cuu-runtime.ts），一条被污染的流地址等同令牌外发。
+    streamUrl: (path) => resolveWorkHubApiUrl(options.baseUrl, path),
     streams: {
-      all: () => joinApiUrl(options.baseUrl, "/api/push/stream"),
-      me: () => joinApiUrl(options.baseUrl, "/api/push/stream/me"),
-      workItem: (id) => joinApiUrl(options.baseUrl, encodedStreamPath("workitem", id)),
-      run: (id) => joinApiUrl(options.baseUrl, encodedStreamPath("run", id)),
-      session: (id) => joinApiUrl(options.baseUrl, encodedStreamPath("session", id)),
-      proposal: (id) => joinApiUrl(options.baseUrl, encodedStreamPath("proposal", id)),
-      conversation: (id) => joinApiUrl(options.baseUrl, encodedStreamPath("conversation", id))
+      all: () => resolveWorkHubApiUrl(options.baseUrl, "/api/push/stream"),
+      me: () => resolveWorkHubApiUrl(options.baseUrl, "/api/push/stream/me"),
+      workItem: (id) => resolveWorkHubApiUrl(options.baseUrl, encodedStreamPath("workitem", id)),
+      run: (id) => resolveWorkHubApiUrl(options.baseUrl, encodedStreamPath("run", id)),
+      session: (id) => resolveWorkHubApiUrl(options.baseUrl, encodedStreamPath("session", id)),
+      proposal: (id) => resolveWorkHubApiUrl(options.baseUrl, encodedStreamPath("proposal", id)),
+      conversation: (id) => resolveWorkHubApiUrl(options.baseUrl, encodedStreamPath("conversation", id))
     },
     health: () => request<HealthResponse>("/api/health"),
     openapi: () => request<unknown>("/api/openapi.json"),

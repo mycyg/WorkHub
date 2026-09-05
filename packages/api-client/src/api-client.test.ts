@@ -3,11 +3,68 @@ import test from "node:test";
 
 import { conversationMessageCreatedEventSchema, deliverableManifestFixtures } from "@workhub/contracts";
 
-import { createApiClient, joinApiUrl, parseRunEventSse, parseWorkHubEventSse, parseWorkHubSse, WorkHubApiError } from "./index.js";
+import {
+  createApiClient,
+  joinApiUrl,
+  parseRunEventSse,
+  parseWorkHubEventSse,
+  parseWorkHubSse,
+  resolveWorkHubApiUrl,
+  WorkHubApiError
+} from "./index.js";
 
 test("joinApiUrl preserves relative mode and absolute daemon base URLs", () => {
   assert.equal(joinApiUrl(undefined, "/api/health"), "/api/health");
   assert.equal(joinApiUrl("http://127.0.0.1:8787/", "/api/health"), "http://127.0.0.1:8787/api/health");
+});
+
+// R24 S1 · C1（单 origin 钉死）：桌面端打包后的 CSP connect-src 放开到 http:/https: 之后，
+// 「只能打到用户确认过的那台服务器」这条约束由这里守。
+test("resolveWorkHubApiUrl keeps same-origin paths and refuses anything that could leave the configured server", () => {
+  assert.equal(
+    resolveWorkHubApiUrl("http://192.168.1.10:8787", "/api/health"),
+    "http://192.168.1.10:8787/api/health"
+  );
+  assert.equal(resolveWorkHubApiUrl(undefined, "/api/health"), "/api/health");
+  // 相对基址（同源代理模式）不参与 origin 比对，但仍要挡掉协议相对地址。
+  assert.equal(resolveWorkHubApiUrl("/api-proxy", "/api/health"), "/api-proxy/api/health");
+
+  for (const [base, path] of [
+    ["http://127.0.0.1:8787", "https://evil.example.com/steal"],
+    ["http://127.0.0.1:8787", "javascript:fetch('x')"],
+    ["http://127.0.0.1:8787", "//evil.example.com/steal"],
+    [undefined, "//evil.example.com/steal"]
+  ] as Array<[string | undefined, string]>) {
+    assert.throws(
+      () => resolveWorkHubApiUrl(base, path),
+      (error: unknown) => error instanceof WorkHubApiError && error.code === "cross_origin_request",
+      `expected ${String(base)} + ${path} to be refused`
+    );
+  }
+});
+
+test("api client refuses cross-origin request paths before the token headers ever leave", async () => {
+  let called = false;
+  const client = createApiClient({
+    baseUrl: "http://192.168.1.10:8787",
+    getClientToken: () => "device-token",
+    fetchFn: async () => {
+      called = true;
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+  });
+
+  await assert.rejects(
+    client.request("https://evil.example.com/steal"),
+    (error: unknown) => error instanceof WorkHubApiError && error.code === "cross_origin_request"
+  );
+  assert.equal(called, false, "the refused request must never reach fetch");
+  // SSE 流地址走同一道闸（自制 fetch EventSource 也带令牌头）。
+  assert.throws(
+    () => client.streamUrl("http://evil.example.com/api/push/stream"),
+    (error: unknown) => error instanceof WorkHubApiError && error.code === "cross_origin_request"
+  );
+  assert.equal(client.streams.me(), "http://192.168.1.10:8787/api/push/stream/me");
 });
 
 test("api client unwraps WorkHub envelopes and injects the desktop token headers", async () => {

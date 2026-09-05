@@ -5,6 +5,7 @@ export * from "./experience.js";
 export * from "./pages.js";
 export * from "./identity.js";
 export * from "./auth.js";
+export * from "./health.js";
 export * from "./approval.js";
 export * from "./escalation.js";
 export * from "./task-plan.js";

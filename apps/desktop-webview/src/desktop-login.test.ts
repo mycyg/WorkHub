@@ -5,6 +5,8 @@ import { WorkHubApiError } from "@workhub/api-client/client";
 
 import {
   describeDesktopLoginError,
+  desktopBootScreenForGate,
+  forgetDesktopAuthModeHint,
   isPasswordModeBootstrapError,
   readDesktopAuthModeHint,
   rememberDesktopAuthModeHint,
@@ -15,7 +17,7 @@ import {
 } from "./desktop-login.js";
 
 // 这个 workspace 的测试运行器没有真实 DOM（node --import tsx --test）——只测纯渲染字符串 + 纯编排逻辑，
-// bindDesktopCredentialGate 的 DOM 接线不在此单测（同 desktop-offline-card 只测 renderXHtml 的取舍）。
+// bindDesktopCredentialGate 的 DOM 接线不在此单测（同 desktop-rebind 只测 renderXHtml 的取舍）。
 
 function fakeReadWriteStorage(initial: Record<string, string> = {}) {
   const values = new Map(Object.entries(initial));
@@ -328,4 +330,42 @@ test("runDesktopBootstrapWithLock: run failure still releases the lock (TTL is o
     })
   );
   assert.equal(h.values.get("workhub_desktop_bootstrap_lock"), undefined);
+});
+
+// R24 S2：鉴权门 → 该渲哪一屏。主窗与工作台窗此前各写一遍 if 链并且已经漂移过——
+// 两边都没有「连不上后端」分支，工作台连登出态分支也没有。这张表是唯一事实。
+test("desktopBootScreenForGate routes every gate state, including the offline one both surfaces used to drop", () => {
+  assert.equal(desktopBootScreenForGate("ready", "spotlight"), "mount");
+  assert.equal(desktopBootScreenForGate("ready", "workbench"), "mount");
+
+  assert.equal(desktopBootScreenForGate("needs-credentials", "spotlight"), "credential-gate");
+  assert.equal(desktopBootScreenForGate("needs-credentials", "workbench"), "credential-gate");
+
+  // 连不上后端：两个窗口都渲「连接到你的服务器」屏（此前主窗挂空聚焦盒、工作台直接挂外壳）。
+  assert.equal(desktopBootScreenForGate("offline", "spotlight"), "connect-server");
+  assert.equal(desktopBootScreenForGate("offline", "workbench"), "connect-server");
+
+  // 登出态是唯一一处刻意的差异：主窗渲重新绑定屏，工作台交给外壳自己的「已登出」整窗态。
+  assert.equal(desktopBootScreenForGate("logged-out", "spotlight"), "rebind");
+  assert.equal(desktopBootScreenForGate("logged-out", "workbench"), "mount");
+});
+
+test("forgetDesktopAuthModeHint drops the previous server's mode hint and tolerates a broken storage", () => {
+  const store = new Map<string, string>([["workhub_auth_mode", "password"]]);
+  const storage = {
+    getItem: (key: string) => store.get(key) ?? null,
+    removeItem: (key: string) => {
+      store.delete(key);
+    }
+  };
+  forgetDesktopAuthModeHint(storage);
+  assert.equal(readDesktopAuthModeHint(storage), null);
+
+  assert.doesNotThrow(() =>
+    forgetDesktopAuthModeHint({
+      removeItem: () => {
+        throw new Error("storage unavailable");
+      }
+    })
+  );
 });
