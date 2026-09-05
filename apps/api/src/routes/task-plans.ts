@@ -27,6 +27,7 @@ import {
   getSharedDatabaseClient
 } from "@workhub/db";
 import { readJsonObject } from "./json-body.js";
+import { serviceT } from "../services/locales.js";
 import { isUuidParam } from "./uuid-param.js";
 
 // B-R9.1-2（branch-review 注入面）：请求体禁止携带 memories——那是可伪造的
@@ -50,7 +51,7 @@ export type TaskPlanRoutesDependencies = {
 
 function requireWorkItemId(value: string) {
   if (!isUuidParam(value)) {
-    throw new HTTPException(404, { message: "没有找到这个事项。" });
+    throw new HTTPException(404, { message: serviceT("zh-CN", "taskNotFound") });
   }
   return value;
 }
@@ -92,7 +93,7 @@ export function createTaskPlanRoutes(deps: TaskPlanRoutesDependencies = {}) {
   // （与 B-R9.0-1 升级写动作同一道 fence），找不到/跨工作区一律 404 不泄露存在性。
   async function requireMutablePlan(c: { req: { param: (key: string) => string }; var: { actor: AuthActor } }) {
     if (!workItems) {
-      throw new HTTPException(403, { message: "没有权限修改这个事项。" });
+      throw new HTTPException(403, { message: serviceT("zh-CN", "taskEditForbidden") });
     }
     const planId = requirePlanId(c.req.param("planId"));
     const workspaceId = c.var.actor.workspaceId;
@@ -159,7 +160,7 @@ export function createTaskPlanRoutes(deps: TaskPlanRoutesDependencies = {}) {
 
   routes.post("/workitems/:id/task-plan", createCurrentUserMiddleware(authSource), async (c) => {
     if (!workItems) {
-      throw new HTTPException(403, { message: "没有权限修改这个事项。" });
+      throw new HTTPException(403, { message: serviceT("zh-CN", "taskEditForbidden") });
     }
     const workItemId = requireWorkItemId(c.req.param("id"));
     await workItems.assertCanMutateArtifacts({ workItemId, actor: c.var.actor });

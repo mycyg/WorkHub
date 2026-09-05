@@ -1380,7 +1380,7 @@ test("agent run enqueue reports malformed work item ids as missing work items be
 
   assert.equal(response.status, 404);
   assert.equal(body.error.code, "http_error");
-  assert.equal(body.error.message, "没有找到这个事项。");
+  assert.equal(body.error.message, "没有找到这个任务。");
   assert.equal(enqueued, false);
 });
 

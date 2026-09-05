@@ -41,6 +41,7 @@ import {
   type WorkItemService
 } from "../services/work-items.js";
 import { readJsonObject } from "./json-body.js";
+import { serviceT } from "../services/locales.js";
 import { isUuidParam } from "./uuid-param.js";
 
 function auditLogRunId(detailJson: unknown) {
@@ -256,7 +257,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
   }
 
   routes.post("/workitems/:id/agent-runs", createCurrentUserMiddleware(authSource), async (c) => {
-    const workItemId = requireUuidParam(c.req.param("id"), "没有找到这个事项。");
+    const workItemId = requireUuidParam(c.req.param("id"), serviceT("zh-CN", "taskNotFound"));
     await assertCanReadWorkItem(workItemId, c.var.actor);
     await assertCanMutateWorkItem(workItemId, c.var.actor);
     const payload = startAgentRunRequestSchema.parse(await readJsonObject(c));
@@ -301,7 +302,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
         throw new AgentRunnerError(
           409,
           "agent_run_not_startable",
-          "当前事项状态不能启动 AI，请刷新后再试。",
+          serviceT("zh-CN", "agentRunNotStartableStatus"),
           { work_item_status: kickoffResult?.status ?? null }
         );
       }

@@ -41,6 +41,7 @@ import {
 } from "@workhub/db";
 
 import { isUuidParam } from "./uuid-param.js";
+import { serviceT } from "../services/locales.js";
 
 import { buildAttentionHomePage } from "../pages/attention.js";
 import { buildAgentArmyDashboardPage } from "../pages/agent-army.js";
@@ -661,9 +662,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       if (pending.counts.pending_total_capped === 1) {
         sourceWarnings.push({
           source: "approvals",
-          message: locale === "en-US"
-            ? "There are more pending approvals than shown here — open Approvals for the full list."
-            : "待审批的事项比这里显示的更多——去审批页看完整清单。"
+          message: serviceT(locale, "approvalsCappedMore")
         });
       }
     } catch {
@@ -763,7 +762,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     // 路由 uuid 形参先校验：非 uuid 串原本直达 detailPage 的 uuid 列 → PG 22P02 → 误报 500；
     // 与「合法但不存在」同样回 404，不泄露事项存在性。
     if (!isUuidParam(c.req.param("id"))) {
-      throw new HTTPException(404, { message: "没有找到这个事项。" });
+      throw new HTTPException(404, { message: serviceT("zh-CN", "taskNotFound") });
     }
     try {
       const data = await workItems.detailPage({
