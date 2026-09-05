@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
+import { findPgError } from "../pg-error.js";
 import { allocateProjectCode } from "../sequences.js";
 import {
   acceptedDeliverableChanges,
@@ -122,13 +123,11 @@ export class DriveRepositoryConflictError extends Error {
 // findings[#low]：name 预检和实际写入之间存在 TOCTOU 窗口——并发同名 upload/restore 会撞上
 // project_drive_items_active_path_uq 唯一索引、抛 pg 23505 冒泡成 500。把这一特定唯一冲突
 // 在仓库层翻译成 drive_name_conflict（已映射 409），其余错误原样抛出。
+// R24 S3：drizzle-orm 把裸 pg 错误包进 `.cause`（顶层没有 `.code`/`.constraint`），改用
+// findPgError 沿 cause 链查找真正的 pg 错误对象，同时兼容测试里直接顶层塞 code 的假错误。
 export function isActivePathUniqueViolation(error: unknown): boolean {
-  return Boolean(
-    error &&
-      typeof error === "object" &&
-      (error as { code?: string }).code === "23505" &&
-      (error as { constraint?: string }).constraint === "project_drive_items_active_path_uq"
-  );
+  const pgError = findPgError(error);
+  return pgError?.code === "23505" && pgError?.constraint === "project_drive_items_active_path_uq";
 }
 
 // 项目主页(/projects/:id)的「最近文件」卡片用：只取文件（非文件夹）、未删除，按最近更新倒序。

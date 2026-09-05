@@ -39,6 +39,7 @@ import {
   createUserProfileRepository,
   createWorkItemRepository,
   getSharedDatabaseClient,
+  isPgErrorCode,
   type ActionCardConversationMessageRow,
   type ActionCardItemKind,
   type ActionCardItemStatus,
@@ -834,11 +835,14 @@ async function emitActionCardUpdated(
 
 type AnalyzeOutcome = "card_created" | "card_appended" | "no_card" | "budget_blocked" | "duplicate_write";
 
-// 裸 PG 唯一冲突（23505）——同一判定手法照 packages/db/src/repositories/drive.ts /
-// proposals.ts、apps/api/src/routes/auth.ts 的既有 isUniqueViolation：`pg` 驱动的
-// DatabaseError 直接把 SQLSTATE 挂在 `.code` 上，drizzle-orm/node-postgres 不做二次包装。
+// 裸 PG 唯一冲突（23505）——同一判定手法照 packages/db/src/repositories/drive.ts / proposals.ts、
+// apps/api/src/routes/auth.ts 的既有 isUniqueViolation。R24 S3 严重#7：这里原先直接读顶层
+// error.code——但 drizzle-orm 0.45 的 node-postgres 驱动把裸 pg DatabaseError 包进
+// DrizzleQueryError 的 `.cause`，顶层 code 恒为 undefined，判定死代码从不命中（同一根因见
+// apps/api/src/routes/auth.ts 的 isUniqueViolation 修复）。改用 @workhub/db 的 isPgErrorCode
+// （沿 `.cause` 链查找），同时兼容测试里直接顶层塞 code 的假错误。
 function isUniqueViolation(error: unknown): boolean {
-  return !!error && typeof error === "object" && (error as { code?: string }).code === "23505";
+  return isPgErrorCode(error, "23505");
 }
 
 async function analyzeConversation(

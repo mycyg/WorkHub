@@ -115,18 +115,34 @@ class MemoryUsers implements UserRepository {
       id: input.id ?? `10000000-0000-4000-8000-${String(this.rows.length + 10).padStart(12, "0")}`,
       nickname: input.nickname,
       cookieToken: input.cookieToken,
-      isAdmin: input.isAdmin ?? false
+      isAdmin: input.isAdmin ?? false,
+      // R24 S3 严重#4：镜像真实仓库 createUser 的默认值——未显式传入才落 zh-CN。
+      preferredLocale: input.preferredLocale ?? "zh-CN"
     });
     this.rows.push(row);
     return row;
   }
 
-  async getOrCreateActiveByNickname(nickname: string, newCookieToken: string) {
+  async getOrCreateActiveByNickname(
+    nickname: string,
+    newCookieToken: string,
+    options?: Parameters<UserRepository["getOrCreateActiveByNickname"]>[2]
+  ) {
     const existing = await this.findActiveByNickname(nickname);
     if (existing) {
       return { user: existing, created: false };
     }
-    return { user: await this.createUser({ nickname, cookieToken: newCookieToken }), created: true };
+    return {
+      // exactOptionalPropertyTypes：不能显式传 preferredLocale: undefined，这里镜像真实仓库
+      // 的默认值在同一层落地（真实 getOrCreateActiveByNickname 也是 options?.preferredLocale
+      // ?? "zh-CN" 直接进 insert values，不是转手交给 createUser 的默认值）。
+      user: await this.createUser({
+        nickname,
+        cookieToken: newCookieToken,
+        preferredLocale: options?.preferredLocale ?? "zh-CN"
+      }),
+      created: true
+    };
   }
 
   async rotateCookieToken(userId: string, cookieToken: string) {
@@ -1079,6 +1095,210 @@ test("ENV-01: desktop-bootstrap also creates a default workspace membership for 
   assert.equal(memberships.rows[0]?.defaultWorkspace, true);
 });
 
+// ── S-04（R24 S3 严重#7）：并发 desktop-bootstrap 撞 workspace_memberships 唯一索引 ──────────
+// 走查复现：首启主窗 + 桌宠两个 WKWebView 进程同刻打 POST /api/auth/desktop-bootstrap，都通过了
+// ensureDefaultWorkspaceMembership 的「先查后建」检查（都看不到对方还没提交的行），随后两边都
+// memberships.create()——真实 PG 让输家撞 (workspace_id,user_id) 唯一索引 23505。drizzle-orm 0.45
+// 的 node-postgres 驱动把这个裸 pg 错误包进 DrizzleQueryError 的 `.cause`，顶层没有 `.code`：
+// 修复前的 isUniqueViolation 直接读顶层 code，永远判不中，输家的这次请求就整个冒泡成未捕获 500
+// （而不是像预期那样被幂等吞掉、正常拿到已存在的身份）。
+test("S-04: two racing desktop-bootstrap calls for the same brand-new nickname both succeed even though the loser's membership insert throws a drizzle-wrapped (nested `.cause`) unique violation", async () => {
+  const { deps: authDeps, memberships } = identifyCtx();
+  const originalCreate = memberships.create.bind(memberships);
+  // 模拟两个窗口首启同一昵称的真实竞态：两次的「先查后建」检查都还看不到对方（真实并发下常见的
+  // 可见性窗口）——固定回 null，逼两次调用都走到 create()。
+  memberships.findActiveForUserWorkspace = async () => null;
+  let createCalls = 0;
+  memberships.create = async (input) => {
+    createCalls += 1;
+    if (createCalls === 1) {
+      return originalCreate(input); // 赢家：真实 PG 里第一个提交的那个请求，正常建行。
+    }
+    // 输家：真实 PG 唯一索引冲突——drizzle-orm 把裸错误包进 `.cause`，顶层没有 `.code`
+    // （packages/db/src/repositories/memberships.ts 的 create() 对驱动异常不做二次包装，原样上抛，
+    // 这里手搭同样的形状而不是顶层塞 code，否则测试会绕过真正要钉的 bug）。
+    const pgDatabaseError = Object.assign(
+      new Error('duplicate key value violates unique constraint "workspace_memberships_workspace_id_user_id_uq"'),
+      { code: "23505", constraint: "workspace_memberships_workspace_id_user_id_uq" }
+    );
+    throw Object.assign(new Error('Failed query: insert into "workspace_memberships" ...'), {
+      cause: pgDatabaseError
+    });
+  };
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+  const bootstrap = (deviceName: string) =>
+    app.request("/api/auth/desktop-bootstrap", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ nickname: "Nova", device_name: deviceName, platform: "desktop" })
+    });
+
+  const first = await bootstrap("Window A");
+  assert.equal(first.status, 201, "the winner of the membership-insert race must bootstrap normally");
+  const second = await bootstrap("Window B");
+  assert.equal(
+    second.status,
+    201,
+    "the loser of the membership-insert race must still bootstrap successfully, not bubble a 500"
+  );
+
+  const firstBody = (await first.json()) as { identity: { id: string } };
+  const secondBody = (await second.json()) as { identity: { id: string } };
+  assert.equal(
+    firstBody.identity.id,
+    secondBody.identity.id,
+    "both racing requests must resolve to the same underlying user identity"
+  );
+  assert.equal(
+    memberships.rows.length,
+    1,
+    "only the winning insert leaves a membership row; the loser's is swallowed idempotently, not duplicated"
+  );
+});
+
+// ── R24 S3 严重#4：新建用户 locale 判优先级（identify） ─────────────────────────────────────
+// 显式 locale > Accept-Language 首选（zh 系→zh-CN，其它→en-US）> 都没有才落旧默认 zh-CN；
+// 已存在用户永远不受影响（getOrCreateActiveByNickname 命中 existing 就短路，压根不看这个值）。
+
+test("R24 S3: identify honors an explicit locale on the request body for a brand-new user", async () => {
+  const { deps: authDeps, users } = identifyCtx();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const response = await app.request("/api/auth/identify", jsonPost({ nickname: "Nova", locale: "en-US" }));
+
+  assert.equal(response.status, 201);
+  const body = (await response.json()) as { locale: string };
+  assert.equal(body.locale, "en-US");
+  const created = await users.findActiveByNickname("Nova");
+  assert.equal(created?.preferredLocale, "en-US");
+});
+
+test("R24 S3: identify falls back to Accept-Language when no explicit locale is given — a zh-prefixed tag resolves to zh-CN", async () => {
+  const { deps: authDeps, users } = identifyCtx();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const response = await app.request("/api/auth/identify", {
+    method: "POST",
+    headers: { "content-type": "application/json", "accept-language": "zh-Hans-SG,zh;q=0.9,en;q=0.8" },
+    body: JSON.stringify({ nickname: "Nova" })
+  });
+
+  assert.equal(response.status, 201);
+  const created = await users.findActiveByNickname("Nova");
+  assert.equal(created?.preferredLocale, "zh-CN");
+});
+
+test("R24 S3: identify falls back to Accept-Language when no explicit locale is given — any non-zh tag resolves to en-US", async () => {
+  // 走查复现的真实设备语言：AppleLanguages = en-SG, zh-Hans-SG（系统语言英文，输入法简体拼音）。
+  const { deps: authDeps, users } = identifyCtx();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const response = await app.request("/api/auth/identify", {
+    method: "POST",
+    headers: { "content-type": "application/json", "accept-language": "en-SG,en;q=0.9,zh-Hans-SG;q=0.8" },
+    body: JSON.stringify({ nickname: "Nova" })
+  });
+
+  assert.equal(response.status, 201);
+  const created = await users.findActiveByNickname("Nova");
+  assert.equal(
+    created?.preferredLocale,
+    "en-US",
+    "must not fall back to zh-CN just because it's the ultimate default — an English Accept-Language must win en-US"
+  );
+});
+
+test("R24 S3: identify without any locale signal (no body locale, no Accept-Language) keeps the old zh-CN default", async () => {
+  const { deps: authDeps, users } = identifyCtx();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const response = await app.request("/api/auth/identify", jsonPost({ nickname: "Nova" }));
+
+  assert.equal(response.status, 201);
+  const created = await users.findActiveByNickname("Nova");
+  assert.equal(created?.preferredLocale, "zh-CN");
+});
+
+test("R24 S3: identify never overrides an already-existing user's preferredLocale, regardless of body locale or Accept-Language", async () => {
+  const alice = user({ nickname: "alice", preferredLocale: "zh-CN" });
+  const { deps: authDeps, users } = identifyCtx([alice]);
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const response = await app.request("/api/auth/identify", {
+    method: "POST",
+    headers: { "content-type": "application/json", "accept-language": "en-US" },
+    body: JSON.stringify({ nickname: "alice", locale: "en-US" })
+  });
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as { locale: string };
+  assert.equal(body.locale, "zh-CN", "an existing user's stored preference must win over any request-supplied signal");
+  const stored = await users.findActiveByNickname("alice");
+  assert.equal(stored?.preferredLocale, "zh-CN");
+});
+
+// ── 同一判优先级在 desktop-bootstrap（S-04 走查复现的确切端点）也要接住 ─────────────────────
+
+test("R24 S3: desktop-bootstrap honors an explicit locale on the request body for a brand-new user", async () => {
+  const { deps: authDeps, users } = identifyCtx();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const response = await app.request("/api/auth/desktop-bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ nickname: "Nova", device_name: "Nova's Mac", platform: "desktop", locale: "en-US" })
+  });
+
+  assert.equal(response.status, 201);
+  const body = (await response.json()) as { identity: { locale: string } };
+  assert.equal(body.identity.locale, "en-US");
+  const created = await users.findActiveByNickname("Nova");
+  assert.equal(created?.preferredLocale, "en-US");
+});
+
+test("R24 S3: desktop-bootstrap falls back to Accept-Language when no explicit locale is given", async () => {
+  const { deps: authDeps, users } = identifyCtx();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const response = await app.request("/api/auth/desktop-bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json", "accept-language": "en-SG,en;q=0.9,zh-Hans-SG;q=0.8" },
+    body: JSON.stringify({ nickname: "Nova", device_name: "Nova's Mac", platform: "desktop" })
+  });
+
+  assert.equal(response.status, 201);
+  const created = await users.findActiveByNickname("Nova");
+  assert.equal(created?.preferredLocale, "en-US");
+});
+
+test("R24 S3: desktop-bootstrap never overrides an already-existing user's preferredLocale", async () => {
+  const alice = user({ nickname: "alice", preferredLocale: "zh-CN" });
+  const { deps: authDeps, users } = identifyCtx([alice]);
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const response = await app.request("/api/auth/desktop-bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ nickname: "alice", device_name: "Alice's Mac", platform: "desktop", locale: "en-US" })
+  });
+
+  assert.equal(response.status, 201, "an existing nickname bootstraps a new device, still 201");
+  const body = (await response.json()) as { identity: { locale: string } };
+  assert.equal(body.identity.locale, "zh-CN", "existing user's stored preference wins over the request's locale");
+  const stored = await users.findActiveByNickname("alice");
+  assert.equal(stored?.preferredLocale, "zh-CN");
+});
+
 test("ENV-01: identify degrades to no membership (not a 500) when the default workspace row is missing (FK violation)", async () => {
   // pilot-stack-smoke 病根回归钉：migrate-only 库里 workspaces 表为空，memberships.create 撞 FK
   //（PG code 23503）。identify 必须照常登录成功，而不是把 FK 违约冒泡成 500。
@@ -1505,6 +1725,34 @@ test("POST /register does not auto-admin when an admin already exists, and rejec
     nickname: "Member Two"
   }));
   assert.equal(dup.status, 409);
+});
+
+test("R24 S3: POST /register honors an explicit locale, and falls back to zh-CN with no locale signal", async () => {
+  const { deps, users } = passwordCtx();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const withLocale = await app.request("/auth/register", jsonPost({
+    email: "founder@example.com",
+    password: "founder-pass-1",
+    nickname: "Founder",
+    locale: "en-US"
+  }));
+  assert.equal(withLocale.status, 201);
+  assert.equal(((await withLocale.json()) as { locale: string }).locale, "en-US");
+  assert.equal((await users.findActiveByNickname("Founder"))?.preferredLocale, "en-US");
+
+  const withoutLocale = await app.request("/auth/register", jsonPost({
+    email: "second@example.com",
+    password: "second-pass-1",
+    nickname: "Second"
+  }));
+  assert.equal(withoutLocale.status, 201);
+  assert.equal(
+    ((await withoutLocale.json()) as { locale: string }).locale,
+    "zh-CN",
+    "no body locale and no Accept-Language keeps the old zh-CN default"
+  );
 });
 
 test("POST /register and /login are 404 in nickname mode (gate off by default)", async () => {
@@ -2240,6 +2488,33 @@ test("invite create→accept end-to-end builds an account, credential, default m
   assert.ok(await credentials.findByEmail("newbie@example.com"), "credential created with the invited email (citext)");
   assert.equal(memberships.rows.some((m) => m.defaultWorkspace && m.role === "member"), true, "default membership created");
   assert.equal(invites.rows[0]?.acceptedAt !== null, true, "invite marked accepted (cannot be reused)");
+});
+
+test("R24 S3: invite accept honors an explicit locale for the newly-created account", async () => {
+  const admin = user({ id: "10000000-0000-4000-8000-0000000000aa", nickname: "admin", isAdmin: true });
+  const { deps, memberships, invites, users, runtimeSettings } = inviteCtx(admin);
+  await memberships.create({ workspaceId: runtimeSettings.auth.defaultWorkspaceId, userId: admin.id, role: "owner", defaultWorkspace: true });
+  const { token: adminToken } = await mintSession(deps, admin, { authMethod: "password" });
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const createRes = await app.request("/auth/invites", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: await signedCookie(adminToken, runtimeSettings) },
+    body: JSON.stringify({ email: "newbie2@example.com" })
+  });
+  const inviteToken = ((await createRes.json()) as { token: string }).token;
+
+  const acceptRes = await app.request("/auth/invites/accept", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: inviteToken, nickname: "Newbie2", password: "newbie-pass-1", locale: "en-US" })
+  });
+  assert.equal(acceptRes.status, 201);
+  assert.equal(((await acceptRes.json()) as { locale: string }).locale, "en-US");
+  assert.equal((await users.findActiveByNickname("Newbie2"))?.preferredLocale, "en-US");
+  assert.ok(invites.rows.some((row) => row.email === "newbie2@example.com" && row.acceptedAt !== null));
 });
 
 test("invite accept rejects an invalid token (404); create requires admin (403)", async () => {

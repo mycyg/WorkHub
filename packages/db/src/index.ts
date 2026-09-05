@@ -2,6 +2,7 @@ export * from "./schema/index.js";
 export * from "./relations/index.js";
 export * from "./client.js";
 export * from "./locks.js";
+export * from "./pg-error.js";
 export * from "./migrate.js";
 export * from "./sequences.js";
 export * from "./seed.js";

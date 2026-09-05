@@ -283,6 +283,9 @@ export type HealthResponse = {
 export type IdentifyRequest = {
   nickname: string;
   admin_secret?: string;
+  // R24 S3 严重#4：新建用户时优先用它，其次探测 Accept-Language，都没有才落 zh-CN；
+  // 已存在用户不受影响（见 apps/api/src/middleware/auth.ts 的 resolveNewUserLocale）。
+  locale?: WorkHubLocale;
 };
 
 // R2 auth epic（密码登录）：桌面在密码/hybrid 模式先用凭据登录建会话，再走 bootstrapDesktop 换设备令牌。
@@ -298,6 +301,8 @@ export type PasswordRegisterRequest = {
   email: string;
   password: string;
   nickname: string;
+  // R24 S3 严重#4：同 IdentifyRequest 的 locale。
+  locale?: WorkHubLocale;
 };
 
 export type IdentityResponse = {

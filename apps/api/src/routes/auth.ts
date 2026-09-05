@@ -11,7 +11,7 @@ import {
   passwordRegisterRequestSchema,
   updateUserPreferencesRequestSchema
 } from "@workhub/contracts";
-import { generateSessionToken, hashSessionToken } from "@workhub/db";
+import { generateSessionToken, hashSessionToken, isPgErrorCode } from "@workhub/db";
 
 import {
   currentPasswordAlgo,
@@ -38,6 +38,7 @@ import {
   resolveAuthDependencies,
   resolveCurrentUser,
   resolveHumanActor,
+  resolveNewUserLocale,
   resolveOptionalCurrentUser,
   toIdentityResponse,
   validateNickname,
@@ -67,13 +68,18 @@ function passwordModeEnabled(deps: AuthDependencies): boolean {
 }
 
 // 裸 PG 唯一冲突（23505）→ 路由层转 409，不冒泡成 500（mirror drive/proposals 的 isXxxUniqueViolation）。
+// R24 S3 严重#7：这两个判定曾经直接读顶层 error.code——但 drizzle-orm 0.45 的 node-postgres 驱动把
+// 裸 pg DatabaseError 包进 DrizzleQueryError 的 `.cause`，顶层 code 恒为 undefined，判定死代码从不
+// 命中（走查复现：首启主窗+桌宠并发打 desktop-bootstrap，输家在 ensureDefaultWorkspaceMembership
+// 插 workspace_memberships 撞唯一索引，本该被这里吞掉，却直接冒泡成未捕获 500）。改用
+// @workhub/db 的 isPgErrorCode（沿 `.cause` 链查找），同时兼容测试里直接顶层塞 code 的假错误。
 function isUniqueViolation(error: unknown): boolean {
-  return !!error && typeof error === "object" && (error as { code?: string }).code === "23505";
+  return isPgErrorCode(error, "23505");
 }
 
 // 裸 PG 外键违约（23503）→ ensureDefaultWorkspaceMembership 的 best-effort 降级判定，见其 catch。
 function isForeignKeyViolation(error: unknown): boolean {
-  return !!error && typeof error === "object" && (error as { code?: string }).code === "23503";
+  return isPgErrorCode(error, "23503");
 }
 
 // 唯一冲突就地映射成 409（昵称/邮箱各自的文案），其余原样抛出。在事务内抛出即触发整笔回滚。
@@ -333,7 +339,12 @@ export function createAuthRoutes(
     const payload = identifyRequestSchema.parse(await readJsonObject(c));
     const nickname = validateNickname(payload.nickname);
     const current = await resolveOptionalCurrentUser(c, deps);
-    let { user, created } = await deps.users.getOrCreateActiveByNickname(nickname, makeCookieToken());
+    // R24 S3 严重#4：只在真正新建时生效——命中既有用户 getOrCreateActiveByNickname 内部短路，
+    // 不会碰这个 locale。
+    const newUserLocale = resolveNewUserLocale(payload.locale, c.req.header("Accept-Language"));
+    let { user, created } = await deps.users.getOrCreateActiveByNickname(nickname, makeCookieToken(), {
+      preferredLocale: newUserLocale
+    });
 
     const secret = getAuthSettings(deps).auth.adminClaimSecret;
     const provided = payload.admin_secret ?? "";
@@ -438,7 +449,11 @@ export function createAuthRoutes(
     }
     const payload = desktopBootstrapRequestSchema.parse(await readJsonObject(c));
     const nickname = validateNickname(payload.nickname);
-    const { user, created } = await deps.users.getOrCreateActiveByNickname(nickname, makeCookieToken());
+    // R24 S3 严重#4：同 /identify——只在真正新建时生效，命中既有用户不改其偏好。
+    const newUserLocale = resolveNewUserLocale(payload.locale, c.req.header("Accept-Language"));
+    const { user, created } = await deps.users.getOrCreateActiveByNickname(nickname, makeCookieToken(), {
+      preferredLocale: newUserLocale
+    });
     if (user.isAdmin) {
       const throttleKey = adminClaimClientKey(c.req.raw.headers);
       const gate = adminClaimThrottle.check(throttleKey);
@@ -506,6 +521,8 @@ export function createAuthRoutes(
     const passwordHash = await hashPassword(payload.password);
     // 首管引导：零管理员实例的首个注册者直接建为 admin（建行前判定，避免多一次提权写）。
     const shouldBeAdmin = deps.users.hasAnyActiveAdmin ? !(await deps.users.hasAnyActiveAdmin()) : false;
+    // R24 S3 严重#4：/register 总是新建用户（上面已做邮箱唯一预检），locale 直接落 createUser。
+    const newUserLocale = resolveNewUserLocale(payload.locale, c.req.header("Accept-Language"));
 
     const credentials = deps.credentials;
     // R2 audit 修复（孤儿 user + 烧昵称）：user+credential 两笔写要么都成功要么都不留痕。
@@ -515,7 +532,12 @@ export function createAuthRoutes(
     // 对应 409（昵称 vs 邮箱），异常向上冒泡即触发事务回滚，HTTP 语义与原逐步写逐字一致。
     const user = await runAuthWrites(deps, { users: deps.users, credentials, memberships: deps.memberships }, async ({ users, credentials: credentialsTx, memberships }) => {
       // cookieToken 在会话模式下是 vestigial，但列 NOT NULL，仍生成一个。
-      const created = await createUserOr409(users, { nickname, cookieToken: makeCookieToken(), isAdmin: shouldBeAdmin });
+      const created = await createUserOr409(users, {
+        nickname,
+        cookieToken: makeCookieToken(),
+        isAdmin: shouldBeAdmin,
+        preferredLocale: newUserLocale
+      });
       await createCredentialOr409(credentialsTx, {
         userId: created.id,
         email,
@@ -856,6 +878,8 @@ export function createAuthRoutes(
     const invites = deps.invites;
     const passwordHash = await hashPassword(payload.password);
     const workspaceId = invite.workspaceId ?? getAuthSettings(deps).auth.defaultWorkspaceId;
+    // R24 S3 严重#4：邀请接受总是新建用户（上面已做邮箱唯一预检），locale 直接落 createUser。
+    const newUserLocale = resolveNewUserLocale(payload.locale, c.req.header("Accept-Language"));
     // R2 audit 修复（孤儿 user + 烧昵称）：建 user → 建凭据 →（建成员）→ 标记邀请已用，整组同进退。
     // 生产在单事务内做（任一步抛即全回滚，邀请不被消费、昵称/邮箱不被烧）；假仓库注入时回退顺序写，
     // 假仓库不会在中途失败，故单测语义不变（真库的跨表失败窗口才走事务）。
@@ -867,7 +891,11 @@ export function createAuthRoutes(
         if (!invitesTx) {
           throw new HTTPException(501, { message: "当前运行时不支持邀请" });
         }
-        const created = await createUserOr409(users, { nickname, cookieToken: makeCookieToken() });
+        const created = await createUserOr409(users, {
+          nickname,
+          cookieToken: makeCookieToken(),
+          preferredLocale: newUserLocale
+        });
         // 邀请即证明邮箱控制权（trust-on-invite）→ email_verified_at 置 at。
         await createCredentialOr409(credentialsTx, {
           userId: created.id,

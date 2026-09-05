@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createProposalRepository } from "./repositories/proposals.js";
+import { createProposalRepository, isProposalsUniqueViolation } from "./repositories/proposals.js";
 import { projects, proposals, reviews, workItems } from "./schema/index.js";
 import { createQueryRecorder, queryParamValues, queryReferences } from "./test-query-recorder.js";
 
@@ -150,4 +150,27 @@ test("updateDiffStats issues a single-column UPDATE scoped to the proposal id", 
   assert.deepEqual(query?.setValue, { diffStatsJson: diffStats });
   assert.ok(queryReferences(query?.where, proposals.id));
   assert.deepEqual(queryParamValues(query?.where), ["proposal-1"]);
+});
+
+// ── R24 S3：isProposalsUniqueViolation 要接得住 drizzle-orm 真实的嵌套 `.cause` 包装 ──────────
+
+test("isProposalsUniqueViolation matches proposals_pkey / proposals_branch_round_uq, top-level code shape", () => {
+  assert.equal(isProposalsUniqueViolation({ code: "23505", constraint: "proposals_pkey" }), true);
+  assert.equal(isProposalsUniqueViolation({ code: "23505", constraint: "proposals_branch_round_uq" }), true);
+  assert.equal(isProposalsUniqueViolation({ code: "23505", constraint: "some_other_uq" }), false);
+  assert.equal(isProposalsUniqueViolation({ code: "23503", constraint: "proposals_pkey" }), false);
+  assert.equal(isProposalsUniqueViolation(new Error("boom")), false);
+  assert.equal(isProposalsUniqueViolation(null), false);
+});
+
+test("R24 S3: isProposalsUniqueViolation also matches when the pg error is nested under drizzle-orm's `.cause`", () => {
+  const pgDatabaseError = Object.assign(
+    new Error('duplicate key value violates unique constraint "proposals_branch_round_uq"'),
+    { code: "23505", constraint: "proposals_branch_round_uq" }
+  );
+  const drizzleQueryError = Object.assign(new Error('Failed query: insert into "proposals" ...'), {
+    cause: pgDatabaseError
+  });
+
+  assert.equal(isProposalsUniqueViolation(drizzleQueryError), true);
 });
