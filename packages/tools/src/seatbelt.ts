@@ -103,11 +103,16 @@ export function pathAliases(target: string): string[] {
  * nvm / pyenv / conda 装的解释器不在系统前缀里，不放行它自己的标准库就跑不起来。
  * 只给**读**权限，且绝不退化成 `/`（那等于放弃整个只读围栏）。
  */
-export function interpreterReadRoot(binary: string): string | undefined {
+export function interpreterReadRoot(
+  binary: string,
+  // 可注入的规范化函数：生产用 realpath；单测传恒等函数，免得断言依赖机器布局
+  // （Ubuntu 合并 /usr 后 /bin/sh 的 realpath 是 /usr/bin/sh，前缀就成了 /usr 而不是 /）。
+  canonicalize: (target: string) => string = canonicalPath
+): string | undefined {
   if (!path.isAbsolute(binary)) {
     return undefined;
   }
-  const real = canonicalPath(binary);
+  const real = canonicalize(binary);
   const dir = path.dirname(real);
   const prefix = path.basename(dir) === "bin" ? path.dirname(dir) : dir;
   if (prefix === "/" || prefix === "" || prefix === ".") {

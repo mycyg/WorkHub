@@ -101,11 +101,16 @@ test("pathAliases 同时给出 /var 与 /private/var 两种拼法", () => {
 });
 
 test("interpreterReadRoot 取解释器的安装前缀，且绝不退化成根目录", () => {
-  assert.equal(interpreterReadRoot("/opt/whatever/node22/bin/node"), "/opt/whatever/node22");
-  assert.equal(interpreterReadRoot("/opt/whatever/python3"), "/opt/whatever");
+  // 传恒等规范化函数：这条测的是前缀算术，不是机器上的符号链接布局
+  // （Ubuntu 合并 /usr 后 realpath("/bin/sh") 是 /usr/bin/sh，CI 上会把前缀算成 /usr）。
+  const asIs = (target: string) => target;
+  assert.equal(interpreterReadRoot("/opt/whatever/node22/bin/node", asIs), "/opt/whatever/node22");
+  assert.equal(interpreterReadRoot("/opt/whatever/python3", asIs), "/opt/whatever");
   // /bin/sh → 前缀会是 "/"，必须拒绝（否则等于放弃整个只读围栏）。
-  assert.equal(interpreterReadRoot("/bin/sh"), undefined);
-  assert.equal(interpreterReadRoot("node"), undefined);
+  assert.equal(interpreterReadRoot("/bin/sh", asIs), undefined);
+  assert.equal(interpreterReadRoot("node", asIs), undefined);
+  // 符号链接解析后落在 /usr/bin 下的解释器：前缀 /usr 是合法的只读放行前缀，不该被拒。
+  assert.equal(interpreterReadRoot("/bin/sh", () => "/usr/bin/sh"), "/usr");
 });
 
 test("seatbeltArgv 把命令包成 sandbox-exec -p '<profile>' -- <argv>", () => {
