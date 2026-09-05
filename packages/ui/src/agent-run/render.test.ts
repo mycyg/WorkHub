@@ -126,3 +126,58 @@ test("findings: budget card token unit is localized, no hardcoded English 'token
   const renderedEn = renderAgentRunLive(baseRun, "web", { locale: "en-US" });
   assert.equal(renderedEn.html.includes("tokens<"), true);
 });
+
+// R26 批 B6 观测面：「重复动作被劝过几次、劝的是什么」要在实时时间线上看得见。
+test("B6: 实时时间线在被劝的那一步之后补一条人话提醒行", () => {
+  const rendered = renderAgentRunLive(
+    {
+      ...baseRun,
+      trace: [
+        { ...baseRun.trace[0]!, step_no: 3, phase: "tool_call" },
+        { ...baseRun.trace[0]!, id: "60000000-0000-4000-8000-000000000002", step_no: 4, phase: "tool_call" }
+      ],
+      reminders: [{ step_no: 3, tier: 1, repeats: 3, shape: "identical", tool_id: "run_command" }]
+    },
+    "web"
+  );
+
+  assert.equal(rendered.html.includes("第一次提醒：Cuu 连续 3 步做了同一件事"), true);
+  assert.equal(rendered.html.includes("run_command"), false, "原始工具 id 不该渲给用户");
+  // 提醒行紧跟第 3 步、排在第 4 步之前。
+  const reminderAt = rendered.html.indexOf('data-phase="reminded"');
+  const step4At = rendered.html.lastIndexOf('<span class="wh-dot">4</span>');
+  assert.equal(reminderAt > -1 && step4At > reminderAt, true);
+});
+
+test("B6: 英文界面渲英文提醒行；脏数据整行不渲，不把半截事实编成句子", () => {
+  const withJunk = {
+    ...baseRun,
+    reminders: [
+      { step_no: 1, tier: 2, repeats: 5, shape: "identical", tool_id: "echo" },
+      { step_no: 1, repeats: 5, shape: "identical" },
+      { step_no: 1, tier: 1, repeats: 3, shape: "spiral" },
+      "not-an-object"
+    ]
+  };
+
+  const en = renderAgentRunLive(withJunk, "web", { locale: "en-US" });
+  assert.equal(en.html.includes("Second reminder: Cuu repeated the same action for 5 steps"), true);
+  assert.equal(en.html.match(/data-phase="reminded"/gu)?.length, 1, "只有合法的那一条被渲出来");
+
+  const zh = renderAgentRunLive(withJunk, "web");
+  assert.equal(zh.html.includes("第二次提醒：Cuu 连续 5 步做了同一件事"), true);
+});
+
+test("B6: 对不上任何步骤的提醒补在时间线末尾，不被悄悄丢掉", () => {
+  const rendered = renderAgentRunLive(
+    { ...baseRun, reminders: [{ step_no: 99, tier: 1, repeats: 3, shape: "alternating" }] },
+    "web"
+  );
+
+  assert.equal(rendered.html.includes("第一次提醒：Cuu 连续 3 步在两个动作之间来回切换"), true);
+});
+
+test("B6: 没有提醒的运行渲染完全不变（additive optional，存量响应零回归）", () => {
+  assert.equal(renderAgentRunLive(baseRun, "web").html, renderAgentRunLive({ ...baseRun, reminders: [] }, "web").html);
+  assert.equal(renderAgentRunLive(baseRun, "web").html.includes('data-phase="reminded"'), false);
+});

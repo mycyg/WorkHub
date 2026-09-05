@@ -103,6 +103,17 @@ export function readAgentRunReminderFacts(value: unknown): AgentRunReminderFacts
   return parsed.success ? parsed.data : undefined;
 }
 
+/**
+ * 工具 id 的去下划线人话版：界面上绝不裸露 `run_command` / `mcp__gh__list_issues` 这种原名。
+ * 规则只有两条——先取最后一段（插件/MCP 工具 id 形如 `mcp__<服务器>__<工具>`，前缀对用户无意义），
+ * 再把下划线换成空格。没有既有的「工具 id → 人话名」对照表，所以不做任何猜词映射；有了对照表之后
+ * 由调用方先查表、查不到再退到这里。两端共用一份，避免中英文界面各写一套后名字对不上。
+ */
+export function humanizeAgentToolId(toolId: string): string {
+  const tail = toolId.split("__").filter(Boolean).at(-1) ?? toolId;
+  return tail.replace(/_/gu, " ").trim() || toolId;
+}
+
 export const agentToolCallSchema = z.object({
   id: z.string().min(1),
   tool_id: z.string().min(1),

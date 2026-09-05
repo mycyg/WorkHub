@@ -1,5 +1,7 @@
 import {
+  humanizeAgentToolId,
   normalizeWorkHubLocale,
+  type AgentRunReminderFacts,
   type AgentRunStatus,
   type AgentStepPhase,
   type DeliverableTargetKind,
@@ -220,7 +222,44 @@ const copy = {
   "agent.handoffDone": { "zh-CN": "已完成", "en-US": "Done" },
   "agent.handoffRemaining": { "zh-CN": "还剩", "en-US": "Remaining" },
   "agent.handoffNext": { "zh-CN": "下一步", "en-US": "Next" },
-  "agent.handoffBlocker": { "zh-CN": "阻塞", "en-US": "Blocked" }
+  "agent.handoffBlocker": { "zh-CN": "阻塞", "en-US": "Blocked" },
+
+  // R26 批 B6 观测面：重复动作「先劝再断」的两档提醒在时间线上的人话行。八条都是完整句子（档位 ×
+  // 重复形态 × 有没有工具名），而不是拼半句——中英文的标点与语序不一样，拆成碎片拼装迟早会拼出病句。
+  // {repeats} 是连续重复步数，{tools} 是已人话化并加引号的工具名（humanizeAgentToolId）。
+  "agent.reminderIdenticalToolFirst": {
+    "zh-CN": "第一次提醒：Cuu 连续 {repeats} 步做了同一件事（重复的是{tools}），已让它换个做法再继续。",
+    "en-US": "First reminder: Cuu repeated the same action for {repeats} steps (it kept using {tools}). Asked it to try another approach."
+  },
+  "agent.reminderIdenticalPlainFirst": {
+    "zh-CN": "第一次提醒：Cuu 连续 {repeats} 步做了同一件事，已让它换个做法再继续。",
+    "en-US": "First reminder: Cuu repeated the same action for {repeats} steps. Asked it to try another approach."
+  },
+  "agent.reminderAlternatingToolFirst": {
+    "zh-CN": "第一次提醒：Cuu 连续 {repeats} 步在两个动作之间来回切换（来回切换的是{tools}），已让它换个做法再继续。",
+    "en-US": "First reminder: Cuu kept switching between two actions for {repeats} steps (switching between {tools}). Asked it to try another approach."
+  },
+  "agent.reminderAlternatingPlainFirst": {
+    "zh-CN": "第一次提醒：Cuu 连续 {repeats} 步在两个动作之间来回切换，已让它换个做法再继续。",
+    "en-US": "First reminder: Cuu kept switching between two actions for {repeats} steps. Asked it to try another approach."
+  },
+  "agent.reminderIdenticalToolSecond": {
+    "zh-CN": "第二次提醒：Cuu 连续 {repeats} 步做了同一件事（重复的是{tools}）。再重复下去，这次执行会自动交给人接手。",
+    "en-US": "Second reminder: Cuu repeated the same action for {repeats} steps (it kept using {tools}). If it keeps going, this run is handed to a person."
+  },
+  "agent.reminderIdenticalPlainSecond": {
+    "zh-CN": "第二次提醒：Cuu 连续 {repeats} 步做了同一件事。再重复下去，这次执行会自动交给人接手。",
+    "en-US": "Second reminder: Cuu repeated the same action for {repeats} steps. If it keeps going, this run is handed to a person."
+  },
+  "agent.reminderAlternatingToolSecond": {
+    "zh-CN": "第二次提醒：Cuu 连续 {repeats} 步在两个动作之间来回切换（来回切换的是{tools}）。再重复下去，这次执行会自动交给人接手。",
+    "en-US": "Second reminder: Cuu kept switching between two actions for {repeats} steps (switching between {tools}). If it keeps going, this run is handed to a person."
+  },
+  "agent.reminderAlternatingPlainSecond": {
+    "zh-CN": "第二次提醒：Cuu 连续 {repeats} 步在两个动作之间来回切换。再重复下去，这次执行会自动交给人接手。",
+    "en-US": "Second reminder: Cuu kept switching between two actions for {repeats} steps. If it keeps going, this run is handed to a person."
+  },
+  "agent.reminderPhase": { "zh-CN": "换个做法", "en-US": "Change of approach" }
 } satisfies Record<string, Copy>;
 
 const workItemStatusLabels = {
@@ -484,6 +523,8 @@ const NOTIFICATION_TYPE_EXACT: Record<string, [string, string]> = {
   "proposal.ready": ["改动待审", "Proposal ready"],
   "proposal.opened": ["改动待审", "Proposal ready"],
   "agent_run.step": ["AI 进展", "AI progress"], // term-allow：key 是事件名标识符，值已人话
+  // R26 批 B6：重复动作提醒（前两档）。第三档升级走 agent_run.escalated → 已有「需要负责人介入」。
+  "agent_run.reminded": ["AI 换个做法", "AI course correction"], // term-allow：key 是事件名标识符，值已人话
   "agent_run.succeeded": ["AI 完成", "AI done"], // term-allow：key 是事件名标识符，值已人话
   "agent_run.failed": ["AI 失败", "AI failed"], // term-allow：key 是事件名标识符，值已人话
   "approval.decided": ["审批已定", "Decided"],
@@ -595,6 +636,41 @@ export function agentStepPublicSummary(
     default:
       return step.output_excerpt ?? uiT(locale, "agent.stepFallback");
   }
+}
+
+// R26 批 B6 观测面：把一条「重复动作提醒」的结构化事实渲成时间线上的一句人话。
+//
+// 事件/VM 里只有档位、连续步数、重复形态和原始工具 id——句子在这里按 locale 组装，八条模板都是
+// 完整句子（见上方词典注释）。工具名一律经 humanizeAgentToolId 去下划线并加引号，绝不裸露
+// run_command 这类原名；重复的那一步没有工具调用时退到不提工具的那半边模板。
+// 脏数据（缺档位 / 形态不认识）由 readAgentRunReminderFacts 挡在门外，调用方拿到 undefined 就整行不渲。
+const REMINDER_COPY_KEYS = {
+  "identical:tool:1": "agent.reminderIdenticalToolFirst",
+  "identical:plain:1": "agent.reminderIdenticalPlainFirst",
+  "alternating:tool:1": "agent.reminderAlternatingToolFirst",
+  "alternating:plain:1": "agent.reminderAlternatingPlainFirst",
+  "identical:tool:2": "agent.reminderIdenticalToolSecond",
+  "identical:plain:2": "agent.reminderIdenticalPlainSecond",
+  "alternating:tool:2": "agent.reminderAlternatingToolSecond",
+  "alternating:plain:2": "agent.reminderAlternatingPlainSecond"
+} as const satisfies Record<string, UiCopyKey>;
+
+// 引号与顿号是排版而不是文案：中文用直角引号 + 顿号，英文用弯引号 + 逗号。两边都不裸出工具 id。
+function reminderToolNames(facts: AgentRunReminderFacts, locale: WorkHubLocale): string {
+  const ids = facts.tool_ids ?? (facts.tool_id ? [facts.tool_id] : []);
+  const quoted = ids.map((id) => (locale === "zh-CN" ? `「${humanizeAgentToolId(id)}」` : `“${humanizeAgentToolId(id)}”`));
+  return quoted.join(locale === "zh-CN" ? "、" : ", ");
+}
+
+export function agentRunReminderLine(locale: WorkHubLocale, facts: AgentRunReminderFacts): string {
+  const tools = reminderToolNames(facts, locale);
+  const key = REMINDER_COPY_KEYS[`${facts.shape}:${tools ? "tool" : "plain"}:${facts.tier}`];
+  return uiT(locale, key).replace("{repeats}", String(facts.repeats)).replace("{tools}", tools);
+}
+
+/** 时间线上这一行的左侧标签（与 agentStepPhaseLabel 同位）。 */
+export function agentRunReminderPhaseLabel(locale: WorkHubLocale) {
+  return uiT(locale, "agent.reminderPhase");
 }
 
 export function deliverableTargetLabel(locale: WorkHubLocale, kind: DeliverableTargetKind | string) {
