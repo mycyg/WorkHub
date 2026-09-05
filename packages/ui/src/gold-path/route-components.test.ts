@@ -1531,7 +1531,7 @@ test("R9.2 WorkItem route component renders the task-plan run tree without inlin
 
   assert.equal(workitem.html.includes('data-r9-agent-team-panel="true"'), true);
   assert.equal(workitem.html.includes(`data-r9-agent-team-plan-id="${planId}"`), true);
-  assert.equal(workitem.html.includes("军团进行中 1/2"), true);
+  assert.equal(workitem.html.includes("AI 小组进行中 1/2"), true);
   assert.equal(workitem.html.includes('data-r9-agent-team-item="93000000-0000-4000-8000-000000000902"'), true);
   assert.equal(workitem.html.includes('data-r9-agent-team-status="needs_human"'), true);
   assert.equal(workitem.html.includes("看产出"), true);
@@ -1658,7 +1658,7 @@ test("B-R9.6 workitem plan slot switches between plan snapshot and army panel by
   const banner = renderWebRouteComponent({ key: "workitem", workitem: bannerVm }, { locale: "zh-CN" });
   assert.equal(banner.html.includes('data-r9-agent-team-banner="needs_human"'), true);
   assert.equal(banner.html.includes("1 个子任务需要你拍板"), true);
-  assert.equal(banner.html.includes("军团进行中 1/3"), true, "顶部徽章细化为军团标题");
+  assert.equal(banner.html.includes("AI 小组进行中 1/3"), true, "顶部徽章细化为 AI 小组标题");
 
   const retroVm: WorkItemDetailVM = {
     ...base,
@@ -1695,7 +1695,7 @@ test("B-R9.6 workitem plan slot switches between plan snapshot and army panel by
     agent_team: { ...teamBase, status: "done" }
   };
   const partial = renderWebRouteComponent({ key: "workitem", workitem: partialVm }, { locale: "zh-CN" });
-  assert.equal(partial.html.includes("军团部分完成 1/3"), true);
+  assert.equal(partial.html.includes("AI 小组部分完成 1/3"), true);
 });
 
 // B-R9.6 §3.1：VM 带 dispatch_control 才渲「暂停派发/恢复派发」按钮；paused 头行
@@ -1744,7 +1744,7 @@ test("B-R9.6 WorkItem agent team panel renders the dispatch control from the VM"
     }
   };
   const paused = renderWebRouteComponent({ key: "workitem", workitem: pausedVm }, { locale: "zh-CN" });
-  assert.equal(paused.html.includes("军团已暂停 1/2"), true);
+  assert.equal(paused.html.includes("AI 小组已暂停 1/2"), true);
   assert.equal(paused.html.includes('data-r9-agent-team-dispatch-control="resume"'), true);
   assert.equal(paused.html.includes("恢复派发"), true);
 });
@@ -2147,14 +2147,15 @@ test("R10-0c intake start renders an explicit project picker instead of silently
     } as never
   }, { locale: "zh-CN" });
   assert.equal(withProjects.html.includes('data-s4c-intake-project-select="true"'), true);
-  // 首项默认选中（真活跃排序第一位），且保留「新建试点项目」兜底出路。
+  // 首项默认选中（真活跃排序第一位），且保留「新建默认项目」兜底出路。
   assert.equal(withProjects.html.includes('value="93000000-0000-4000-8000-000000000001" selected'), true);
-  assert.equal(withProjects.html.includes("＋ 新建试点项目"), true);
+  assert.equal(withProjects.html.includes("＋ 新建默认项目"), true);
 
   // 无项目清单（拉取失败/零项目）退化为原试点起点，不渲空选择器。
   const withoutProjects = renderWebRouteComponent({ key: "intake", start: true }, { locale: "zh-CN" });
   assert.equal(withoutProjects.html.includes("data-s4c-intake-project-select"), false);
-  assert.equal(withoutProjects.html.includes("试点项目"), true);
+  assert.equal(withoutProjects.html.includes("默认项目"), true);
+  assert.equal(withoutProjects.html.includes("试点"), false);
 
   // 绑定项目（从项目主页进入）优先于选择器——不重复渲选择器。
   const bound = renderWebRouteComponent({
@@ -2246,7 +2247,7 @@ test("B-R9.6 project home rows show the army progress pill only for armied work 
   const projectHome = renderWebRouteComponent({ key: "project-home", project: vm }, { locale: "zh-CN" });
   assert.equal(projectHome.html.includes('data-r9-project-army-pill="94000000-0000-4000-8000-000000000001"'), true);
   // NAMING pass：pill 文案带「子任务」限定词，新人不再猜 2/4 是什么。
-  assert.equal(projectHome.html.includes("军团子任务 2/4"), true);
+  assert.equal(projectHome.html.includes("AI 小组子任务 2/4"), true);
   assert.equal(projectHome.html.includes('data-r9-project-army-pill="94000000-0000-4000-8000-000000000002"'), false);
   // R18-H1：项目主页「成员」摘要小块——SSR 骨架 + hydration 锚点（真计数/主区会话链接由 browser.ts 注入）。
   assert.equal(projectHome.html.includes('data-r18-project-home-members="true"'), true);
@@ -2491,10 +2492,9 @@ test("R9.6 Agent dashboard route component renders observable dashboard cards wi
   assert.equal(agents.html.includes('data-r9-agent-plan-card="96000000-0000-4000-8000-000000000001"'), true);
   assert.equal(agents.html.includes('href="/workitems/96000000-0000-4000-8000-000000000002"'), true);
   assert.equal(agents.html.includes('data-r9-agent-recent-activity="accordion"'), true);
-  // R9.7 UX spec uses the web-facing concept name "军团"; the old "智能代理军团"
-  // assertion was implementation copy, not the product glossary.
-  assert.equal(agents.html.includes("军团"), true);
-  assert.equal(agents.html.includes("智能代理军团"), false);
+  // A2-10：同一实体在导航/页面标题/卡片上只有一个名字——「AI 小组」。「军团」是内部项目代号。
+  assert.equal(agents.html.includes("AI 小组"), true);
+  assert.equal(agents.html.includes("军团"), false);
   assert.equal(agents.html.includes("竞品资料梳理"), true);
   assert.equal(agents.html.includes('data-r9-agent-plan-objective="96000000-0000-4000-8000-000000000003"'), true);
   assert.equal(agents.html.includes("目标 · 季度上市策略 · 40%"), true);
@@ -2529,12 +2529,12 @@ test("R9.7 Agent dashboard renders cap warnings as visible product copy", () => 
 
   assert.ok(agents);
   assert.equal(agents.html.includes('data-r9-agent-dashboard-cap-warning="true"'), true);
-  assert.equal(agents.html.includes("Showing the first 20 agent teams"), true);
-  assert.equal(agents.html.includes("Some task, run, or escalation rows are capped"), true);
+  assert.equal(agents.html.includes("Showing the first 20 teams"), true);
+  assert.equal(agents.html.includes("Some subtask, run or handover rows are capped"), true);
   assertNoMainWindowBoundaryLeak(agents.html);
 });
 
-test("R9.7 web agent dashboard uses product-facing Agent team copy", () => {
+test("R9.7 web agent dashboard uses product-facing AI team copy", () => {
   const agents = renderWebRouteComponent({ key: "agents", agents: agentArmyDashboardVm() }, { locale: "en-US" });
   const emptyAgents = renderWebRouteComponent({
     key: "agents",
@@ -2563,9 +2563,9 @@ test("R9.7 web agent dashboard uses product-facing Agent team copy", () => {
 
   assert.ok(agents);
   assert.ok(emptyAgents);
-  assert.match(agents.html, /Agent teams/u);
-  assert.match(emptyAgents.html, /No agent teams are running yet/u);
-  assert.doesNotMatch(`${agents.html}\n${emptyAgents.html}`, /Agent Army|agent armies/u);
+  assert.match(agents.html, /AI teams/u);
+  assert.match(emptyAgents.html, /No AI teams are running yet/u);
+  assert.doesNotMatch(`${agents.html}\n${emptyAgents.html}`, /Agent Army|agent armies|Agent teams/u);
 });
 
 test("R9.6 Agent Army route component renders empty state without fake plan cards", () => {
@@ -2596,7 +2596,7 @@ test("R9.6 Agent Army route component renders empty state without fake plan card
 
   assert.ok(agents);
   assert.equal(agents.html.includes('data-r9-agent-dashboard-empty="no_agent_armies"'), true);
-  assert.equal(agents.html.includes("还没有军团在跑"), true);
+  assert.equal(agents.html.includes("还没有 AI 小组在跑"), true);
   assert.equal(agents.html.includes('href="/intake"'), true);
   assert.equal(agents.html.includes('data-r9-agent-plan-card='), false);
   assertNoMainWindowBoundaryLeak(agents.html);
@@ -2789,7 +2789,7 @@ test("B-R9.6 Cost route component renders agent army spend grouped by task plan"
         ...base.page_vms.cost,
         by_task_plan: [
           { task_plan_id: "0f8b1c2d-1111-4222-8333-444455556666", cost_cny: "1.25", tokens: 5000, child_runs: 3, status: "dispatching", budget_cny: "1.000000", burn_pct: 125 },
-          { task_plan_id: "1a2b3c4d-2222-4333-8444-555566667777", label: "上市材料军团", cost_cny: "0.4", tokens: 900, child_runs: 1, status: "done", budget_cny: "3.000000", burn_pct: 13 }
+          { task_plan_id: "1a2b3c4d-2222-4333-8444-555566667777", label: "上市材料小组", cost_cny: "0.4", tokens: 900, child_runs: 1, status: "done", budget_cny: "3.000000", burn_pct: 13 }
         ]
       }
     }
@@ -2800,8 +2800,11 @@ test("B-R9.6 Cost route component renders agent army spend grouped by task plan"
   assert.equal(cost.html.includes('data-r9-cost-army-count="2"'), true);
   assert.equal(cost.html.includes('data-r9-cost-army-plan="0f8b1c2d-1111-4222-8333-444455556666"'), true);
   // UX-H4：行结构 = 名称 + 燃烧条（tone 分级）+ 子运行数 + 状态；超限行红字 +「去处理」锚到预算卡。
-  assert.equal(cost.html.includes("3 个子运行"), true);
-  assert.equal(cost.html.includes("上市材料军团"), true);
+  assert.equal(cost.html.includes("3 个子任务"), true);
+  // A2-37：分组行副标题不再拼任务计划 uuid 前 8 位（完整 id 仍在 data-* 上）。
+  assert.equal(cost.html.includes("个子运行 · 1a2b3c4d"), false);
+  assert.equal(cost.html.includes(">1a2b3c4d<"), false);
+  assert.equal(cost.html.includes("上市材料小组"), true);
   assert.equal(cost.html.includes('data-r9-cost-army-burn="danger"'), true);
   assert.equal(cost.html.includes('data-r9-cost-army-burn="ok"'), true);
   assert.equal(cost.html.includes('data-r9-cost-army-over="0f8b1c2d-1111-4222-8333-444455556666"'), true);
@@ -3353,7 +3356,8 @@ test("R4.10 Approvals route component keeps action reasons and Page VM counts vi
   assert.equal(approvals.html.includes("Rejected work must include a reason so AI can revise it."), true);
   assert.equal(approvals.html.includes(`data-r4-approval-pending="${vm.page_vms.approvals.counts.pending ?? vm.page_vms.approvals.items.length}"`), true);
   assert.equal(approvals.html.includes('data-r4-approval-routed="true"'), true);
-  assert.equal(approvals.html.includes(">Routed</span>"), true);
+  assert.equal(approvals.html.includes(">Approver assigned</span>"), true);
+  assert.equal(approvals.html.includes(">Routed</span>"), false);
   assert.equal(approvals.html.includes('data-requires-reason="true"'), true);
   assert.deepEqual(approvals.primaryHrefs, vm.page_vms.approvals.items[0]?.actions.map((action) => action.href) ?? []);
   assertNoMainWindowBoundaryLeak(approvals.html);
@@ -3413,7 +3417,8 @@ test("Approvals route component does not leak raw approval facts", () => {
   assert.equal(approvals.html.includes("<strong>Tool approval</strong>"), true);
   // UI-02：本地时区渲染，期望值由格式化助手算出（时区无关）。
   assert.equal(approvals.html.includes(`Pending · due ${formatLocalTimestamp("2026-07-05T00:00:00.000Z")}`), true);
-  assert.equal(approvals.html.includes(">Routed</span>"), true);
+  assert.equal(approvals.html.includes(">Approver assigned</span>"), true);
+  assert.equal(approvals.html.includes(">Routed</span>"), false);
   assertNoMainWindowBoundaryLeak(approvals.html);
 });
 
@@ -4008,7 +4013,9 @@ test("R8 Team skills route component renders active skills, K2 provenance, and t
   assert.equal(en.html.includes('data-r8-skill-refined="true"'), true);
   assert.equal(en.html.includes("refined from v2 · 1 edit"), true);
   assert.equal(en.html.includes('data-r8-skill-refined-ops="1"'), true);
-  assert.equal(en.html.includes("补边界情况"), true);
+  // A2-93：rationale_md 是 AI 精修时写给自己的理由，不进用户面；徽章仍说清「改了几处」。
+  assert.equal(en.html.includes("补边界情况"), false);
+  assert.equal(zh.html.includes("补边界情况"), false);
   assert.equal(en.html.includes("Team skills"), true);
   assert.equal(zh.html.includes("团队技能"), true);
   assertNoMainWindowBoundaryLeak(en.html);
@@ -4070,7 +4077,9 @@ test("R23 SA-06 team skills route tells the truth about self-learning in all thr
     { locale: "zh-CN" }
   );
   assert.match(disabled.html, /data-r23-skills-curation="disabled"/u);
-  assert.ok(disabled.html.includes("没有开启 AI 自学"));
+  assert.equal(disabled.html.includes("AI 自学没有开启"), true);
+  // A2-41：不再说「这台服务器」——进程/部署口径不进用户面。
+  assert.doesNotMatch(disabled.html, /这台服务器|服务器这次启动/u);
   // 未启用时不渲按钮——服务端必然 409，渲出来就是假入口。
   assert.doesNotMatch(disabled.html, /data-r23-skills-curate-now/u);
 
@@ -4090,7 +4099,7 @@ test("R23 SA-06 team skills route tells the truth about self-learning in all thr
   assert.match(idle.html, /data-r23-skills-curation-last-run="2026-09-04T18:30:00\.000Z"/u);
   assert.match(idle.html, /data-r23-skills-curate-now/u);
 
-  // last_run_at 为空时照实说「这次启动后还没自学过」，不显示空白也不假装从没开过。
+  // last_run_at 为空时照实说「还没有自学记录」，不显示空白也不假装从没开过。
   const neverRan = renderWebRouteComponent(
     { key: "skills", skills: r23SkillsVm({ enabled: true, running: false, last_run_at: null }), isAdmin: true },
     { locale: "zh-CN" }
@@ -4925,7 +4934,7 @@ test("R23 P4: renderWorkItemCommentRows shows the latest comments and offers an 
 
   const empty = renderWorkItemCommentRows([], "en-US");
   assert.equal(empty.includes("No comments on this item yet"), true);
-  assert.equal(renderWorkItemCommentRows([], "zh-CN").includes("还没有人在这个事项下留言"), true);
+  assert.equal(renderWorkItemCommentRows([], "zh-CN").includes("还没有人在这个任务下留言"), true);
 
   const few = renderWorkItemCommentRows([comment(1), comment(2)], "zh-CN");
   assert.equal(few.includes('data-r23-workitem-comment="comment-1"'), true);
@@ -5039,7 +5048,9 @@ test("R23 P4: renderWorkspaceAuditRows localizes action/actor/object columns and
   // R20 P2A 的四个写动作此前没有任何界面读它们，标签一并补齐，不能裸吐 "project.archived"。
   assert.equal(rows.includes("归档项目"), true);
   assert.equal(rows.includes("指派事项"), true);
-  assert.equal(rows.includes("项目 93000000"), true);
+  // A2-36：审计行只说改的是什么类型的东西，不再拼内部 id 前 8 位（完整值仍在 data-* 上）。
+  assert.equal(rows.includes("项目 93000000"), false);
+  assert.equal(rows.includes("项目"), true);
   assert.equal(rows.includes("小拓"), true);
   assert.equal(rows.includes(formatLocalDate("2026-07-10T09:00:00.000Z")), true);
 
@@ -5049,7 +5060,8 @@ test("R23 P4: renderWorkspaceAuditRows localizes action/actor/object columns and
 
   const en = renderWorkspaceAuditRows([entry("a3", "work_item.claimed")], "en-US");
   assert.equal(en.includes("Item claimed"), true);
-  assert.equal(en.includes("Project 93000000"), true);
+  assert.equal(en.includes("Project 93000000"), false);
+  assert.equal(en.includes("Project"), true);
 });
 
 test("R23 F-04 Approvals workbench keeps its shared picker with no href (browser derives it from the selected row)", () => {

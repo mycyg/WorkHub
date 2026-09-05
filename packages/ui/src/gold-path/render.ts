@@ -21,6 +21,7 @@ import {
 } from "../structured-field-details.js";
 
 import { goldPathCopyT } from "./locales.js";
+import { pageTitles } from "./render-copy.js";
 
 export type GoldPathRenderSurface = "web" | "desktop";
 export type GoldPathRenderOptions = {
@@ -132,57 +133,6 @@ function formatApprovalFactTimestamp(iso: string | undefined) {
 function t(locale: WorkHubLocale, key: GoldPathCopyKey) {
   return goldPathT(locale, key);
 }
-
-const pageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"], string>> = {
-  "zh-CN": {
-    home: "AI 优先首页",
-    projects: "项目",
-    "project-home": "项目主页",
-    "project-timeline": "时间线",
-    intake: "选项接入",
-    approvals: "审批中心",
-    workitem: "任务详情",
-    proposal: "变更申请",
-    conversation: "会话镜像",
-    drive: "项目网盘",
-    meetings: "会议洞察",
-    notifications: "通知中心",
-    calendar: "日程",
-    health: "项目健康",
-    replay: "执行回放",
-    cost: "成本看板",
-    agents: "智能代理军团",
-    knowledge: "证据检索",
-    search: "搜索",
-    skills: "团队技能",
-    settings: "设置",
-    memory: "记忆管理"
-  },
-  "en-US": {
-    home: "AI-first Home",
-    projects: "Projects",
-    "project-home": "Project Home",
-    "project-timeline": "Timeline",
-    intake: "Option Intake",
-    approvals: "Approval Center",
-    workitem: "WorkItem Detail",
-    proposal: "Proposal Detail",
-    conversation: "Conversation Mirror",
-    drive: "Project Drive",
-    meetings: "Meeting Insights",
-    notifications: "Notifications",
-    calendar: "Calendar",
-    health: "Project Health",
-    replay: "Replay Work",
-    cost: "Cost Dashboard",
-    agents: "Agent Army",
-    knowledge: "Evidence Search",
-    search: "Search",
-    skills: "Team Skills",
-    settings: "Settings",
-    memory: "Memory"
-  }
-};
 
 function pageTitle(locale: WorkHubLocale, key: GoldPathRenderedPage["key"]) {
   return pageTitles[locale][key];
@@ -693,7 +643,7 @@ function renderCost(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, local
     : "";
   const statusText = nearestRisk
     ? budgetStatusLabel(locale, nearestRisk.status)
-    : cost.empty_state ?? t(locale, "cost.statusFallback");
+    : cost.empty_state ?? budgetStatusLabel(locale, "ok");
   const main = `<span class="wh-kicker">${escapeHtml(t(locale, "cost.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(t(locale, "cost.title"))}</h1>
     <p class="wh-subtle">${escapeHtml(t(locale, "cost.summary"))}</p>
