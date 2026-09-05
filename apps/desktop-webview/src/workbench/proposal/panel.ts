@@ -25,6 +25,7 @@ import {
 } from "./render.js";
 
 import { proposalT } from "./locales.js";
+import { withErrorDetail } from "../../load-state-copy.js";
 
 type Locale = "zh-CN" | "en-US";
 
@@ -115,7 +116,7 @@ export function mountProposalSidePanel(
         state = {
           mode: "error",
           proposalId,
-          message: error instanceof Error && error.message ? error.message : proposalT(input.locale, "couldnTLoadTheProposal")
+          message: withErrorDetail(input.locale, proposalT(input.locale, "couldnTLoadTheProposal"), error)
         };
         publish();
       });

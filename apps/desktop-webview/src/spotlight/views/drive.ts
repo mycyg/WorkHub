@@ -16,6 +16,7 @@ import {
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 
 import { spotlightViewsT } from "./locales.js";
+import { withErrorDetail } from "../../load-state-copy.js";
 
 const FOLDER_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
@@ -401,7 +402,7 @@ export function createDriveView(): SpotlightCapabilityView {
                 ctx.body.insertAdjacentHTML("afterbegin", drivePreviewPanelHtml(preview, zh, driveResourceApiBase()));
                 ctx.requestResize();
               })
-              .catch((error) => ctx.toast(error instanceof Error ? error.message : spotlightViewsT(ctx.locale, "previewFailed"), "error"))
+              .catch((error) => ctx.toast(withErrorDetail(ctx.locale, spotlightViewsT(ctx.locale, "previewFailed"), error), "error"))
               .finally(() => {
                 resource.textContent = label;
               });
@@ -412,7 +413,7 @@ export function createDriveView(): SpotlightCapabilityView {
           resource.textContent = spotlightViewsT(ctx.locale, "downloading");
           void downloadDriveResource(resource.href, fallbackName)
             .then(() => ctx.toast(spotlightViewsT(ctx.locale, "downloadStarted"), "ok"))
-            .catch((error) => ctx.toast(error instanceof Error ? error.message : spotlightViewsT(ctx.locale, "downloadFailed"), "error"))
+            .catch((error) => ctx.toast(withErrorDetail(ctx.locale, spotlightViewsT(ctx.locale, "downloadFailed"), error), "error"))
             .finally(() => {
               resource.textContent = label;
             });

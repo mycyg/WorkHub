@@ -57,8 +57,8 @@ export const PROJECT_GRANULAR_KEYS: readonly GranularKey[] = [
 export function projectGranularLabel(key: GranularKey, zh: boolean): string {
   const table: Record<GranularKey, { zh: string; en: string }> = {
     create_work_item: { zh: "建任务", en: "Create tasks" },
-    dispatch_run: { zh: "派 run", en: "Dispatch runs" },
-    mutate_drive: { zh: "动网盘", en: "Touch drive" },
+    dispatch_run: { zh: "派活给 AI", en: "Start AI runs" },
+    mutate_drive: { zh: "改网盘文件", en: "Modify drive files" },
     send_notification: { zh: "发通知", en: "Send notifications" }
   };
   return zh ? table[key].zh : table[key].en;

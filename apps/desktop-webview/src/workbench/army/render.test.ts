@@ -166,13 +166,13 @@ test("renderArmyPanelHtml renders outputs and runs in list mode", () => {
   assert.match(html, /阿墨/u);
 });
 
-// R17 G3(#8 拍板 B)：后台任务区接真数据源后恢复渲染。没传 background(还没拉到)时诚实显示「正在拉」；
+// R17 G3(#8 拍板 B)：后台任务区接真数据源后恢复渲染。没传 background(还没拿到)时诚实显示加载态；
 // ready 时渲两块（定时任务 + 主动性动态）。此前那条「永远不渲染」的止血断言随本批接活作废。
 test("renderArmyPanelHtml shows a loading note for the background section when background data hasn't arrived yet", () => {
   const state: ArmyPanelViewState = { mode: "list", vm: panelVm(), loadingMore: false };
   const html = renderArmyPanelHtml(state, "zh-CN", noMembers);
   assert.match(html, /后台任务/u);
-  assert.match(html, /正在拉后台任务/u);
+  assert.match(html, /正在加载定时任务/u);
 });
 
 test("renderArmyPanelHtml renders the scheduled-tasks and proactivity blocks from real background data", () => {
@@ -198,13 +198,13 @@ test("renderArmyPanelHtml renders the scheduled-tasks and proactivity blocks fro
     }
   });
   assert.match(html, /定时任务/u);
-  assert.match(html, /审批超时巡检/u);
-  assert.match(html, /主动关怀扫描/u);
-  assert.match(html, /还没跑过/u); // care-scan last_tick_at null
-  assert.match(html, /主动性动态/u);
+  assert.match(html, /审批超时提醒/u);
   assert.match(html, /主动关怀/u);
-  assert.match(html, /已送达/u);
-  assert.match(html, /已克制/u); // suppressed
+  assert.match(html, /还没跑过/u); // care-scan last_tick_at null
+  assert.match(html, /Cuu 主动做的事/u);
+  assert.match(html, /主动关怀/u);
+  assert.match(html, /已发提醒/u);
+  assert.match(html, /没发提醒/u); // suppressed
 });
 
 // M-10（R24 S3 走查）：pulse-scheduler.ts 后来注册的 clarification-chase/proactive-intent-recovery
@@ -227,7 +227,7 @@ test("renderArmyPanelHtml translates every registered pulse task name, including
     }
   });
   assert.match(html, /澄清待办提醒/u);
-  assert.match(html, /主动提醒补投/u);
+  assert.match(html, /主动提醒重发/u);
   assert.doesNotMatch(html, /clarification-chase/u, "the raw scheduler id must not leak through untranslated");
   assert.doesNotMatch(html, /proactive-intent-recovery/u, "the raw scheduler id must not leak through untranslated");
 });
@@ -242,8 +242,8 @@ test("renderArmyPanelHtml background section honestly reports a disabled schedul
       proactive: { items: [], capped: false }
     }
   });
-  assert.match(html, /后台调度器当前未启用/u);
-  assert.match(html, /最近没有主动性动态/u);
+  assert.match(html, /这台服务器上的定时提醒没有开启/u);
+  assert.match(html, /Cuu 最近没有主动做什么/u);
 });
 
 // R14 批 APPROVE-CHAT：输出行从「<details> 折叠 + 深链死文本（跳转后续批次开放）」翻成真接线的可点按钮——
@@ -353,7 +353,7 @@ test("renderArmyPanelHtml shows an empty note when there are no runs or outputs,
   };
   const html = renderArmyPanelHtml(state, "zh-CN", noMembers);
   assert.match(html, /这个会话还没有输出/u);
-  assert.match(html, /这里还没有军团在跑/u);
+  assert.match(html, /这里还没有小队干过活/u);
 });
 
 test("renderArmyPanelHtml renders a load-more control exactly when the runs page is capped (contract invariant)", () => {
@@ -407,7 +407,7 @@ test("renderArmyPanelHtml detail mode renders the full trace timeline once the r
 
 test("renderArmyPanelHtml surfaces a loading state and an error state distinctly", () => {
   const loading = renderArmyPanelHtml({ mode: "loading" }, "zh-CN", noMembers);
-  assert.match(loading, /正在拉军团面板/u);
+  assert.match(loading, /正在加载小队面板/u);
   const errored = renderArmyPanelHtml({ mode: "error", message: "网络断了" }, "zh-CN", noMembers);
   assert.match(errored, /网络断了/u);
 });

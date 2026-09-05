@@ -26,6 +26,7 @@ import {
 } from "./render.js";
 
 import { armyT } from "./locales.js";
+import { withErrorDetail } from "../../load-state-copy.js";
 
 type Locale = "zh-CN" | "en-US";
 
@@ -59,11 +60,9 @@ const PROPOSAL_OWNER_ID = "proposal";
 // 同样不能把它挤掉（与 drive/proposal 同一优先级，见下 publish background 守卫）。
 const FILES_OWNER_ID = "files";
 
+// S-4：产品文案在前，原始报错只作次级信息（旧写法真出错时把服务端裸串顶替了产品句子）。
 function errorMessage(error: unknown, locale: Locale): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return armyT(locale, "couldnTLoadTryAgain");
+  return withErrorDetail(locale, armyT(locale, "couldnTLoadTheArmyPanel"), error);
 }
 
 export function mountArmyContextPanel(

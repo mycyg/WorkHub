@@ -127,7 +127,7 @@ export function desktopPetQaScriptForScenario(
           stream_kind: "me",
           stream_path: "/api/push/stream/me",
           state: "retrying",
-          message: "QA: daemon disconnected so Cuu should show a calm reconnect bubble."
+          message: "The connection dropped — Cuu is reconnecting."
         }
       }
     ];
@@ -228,7 +228,7 @@ function eventForScenario(
           work_item_id: workItemId,
           source_ref: { entity_type: "approval_request", entity_id: approvalId },
           title: "请确认 workhub-app-upload.txt 的验收标准",
-          summary_text: "AI 已读取需求和项目文件，需要确认三条验收要点应面向谁、采用哪条 smoke 记录。",
+          summary_text: "Cuu 已读完需求和项目文件，需要确认三条验收要点面向谁、用哪一份测试记录。",
           actions: [
             { id: "submit_option", label: "提交回答", style: "primary", method: "POST", href: `/api/sessions/${sessionId}/next-question` }
           ],
@@ -245,7 +245,7 @@ function eventForScenario(
         ts,
         work_item_id: workItemId,
         proposal_id: proposalId,
-        preview_text: "Cuu 需要你批准这次 file-only 变更。",
+        preview_text: "Cuu 需要你批准这次文件改动。",
         attention: {
           id: "20000000-0000-4000-8000-000000000212",
           kind: "approval",

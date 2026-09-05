@@ -9,13 +9,20 @@
 
 import { normalizeWorkHubLocale, type WorkHubLocale } from "@workhub/contracts";
 
+import {
+  loadFailedRetryEn,
+  loadFailedRetryZh,
+  loadingEn,
+  loadingZh
+} from "../../load-state-copy.js";
+
 const zh = {
   allFiles: "所有文件",
   changed: "变动文件",
-  changedProposalManifestChangeSetOpen: "变动 = 提议 manifest 的变更集（待审 / 已合），点文件看逐句对照。",
-  couldnTLoadTryAgain: "没拉到，请重试",
-  loadingChangedFiles: "正在拉变动文件…",
-  loadingDrive: "正在拉网盘…",
+  changedProposalManifestChangeSetOpen: "这里是待审和已合入的变更涉及的文件，点文件看逐句对照。",
+  couldnTLoadTryAgain: loadFailedRetryZh("这块内容"),
+  loadingChangedFiles: loadingZh("变动文件"),
+  loadingDrive: loadingZh("网盘"),
   noOpenChangeProposalsInThis: "这个会话还没有开着的变更提议。",
   preview: "预览",
   thisProjectSDriveIsEmpty: "这个项目的网盘还是空的。",
@@ -25,10 +32,10 @@ const zh = {
 const en = {
   allFiles: "All files",
   changed: "Changed",
-  changedProposalManifestChangeSetOpen: "Changed = proposal manifest change set; open a file for the line-by-line diff.",
-  couldnTLoadTryAgain: "Couldn't load — try again",
-  loadingChangedFiles: "Loading changed files…",
-  loadingDrive: "Loading drive…",
+  changedProposalManifestChangeSetOpen: "These are the files touched by open and merged changes. Open one for the line-by-line comparison.",
+  couldnTLoadTryAgain: loadFailedRetryEn("this"),
+  loadingChangedFiles: loadingEn("changed files"),
+  loadingDrive: loadingEn("the drive"),
   noOpenChangeProposalsInThis: "No open change proposals in this conversation yet.",
   preview: "Preview",
   thisProjectSDriveIsEmpty: "This project's drive is empty.",

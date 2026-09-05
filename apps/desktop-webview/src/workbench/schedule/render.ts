@@ -56,7 +56,7 @@ function planDraftStatusLabel(status: string, zh: boolean): string {
     pending_review: { zh: "待审阅", en: "Pending review" },
     approved: { zh: "已批准", en: "Approved" },
     rejected: { zh: "已驳回", en: "Rejected" },
-    materialized: { zh: "已物化", en: "Materialized" }
+    materialized: { zh: "已写入时间线", en: "Added to the timeline" }
   };
   const entry = map[status];
   return entry ? (zh ? entry.zh : entry.en) : status;
@@ -188,7 +188,7 @@ function statusLabelShort(status: TimelineWorkItemVM["status"], zh: boolean): st
     spec_ready: { zh: "待开工", en: "Ready" },
     ai_working: { zh: "进行中", en: "Working" },
     escalated: { zh: "已升级", en: "Escalated" },
-    pm_mode: { zh: "人工接管", en: "PM" },
+    pm_mode: { zh: "人工接管", en: "Handled by a person" },
     in_review: { zh: "评审中", en: "In review" },
     merged: { zh: "已合并", en: "Merged" },
     done: { zh: "已完成", en: "Done" },
@@ -300,7 +300,7 @@ function renderPlanListBody(drafts: SchedulePlanDraft[], zh: boolean): string {
         <div class="wh-wb-sc-plan-draft-main">
           <div class="wh-wb-sc-plan-draft-title">${escapeHtml(title)}</div>
           <div class="wh-wb-sc-plan-draft-meta">${escapeHtml(planShortDate(draft.updated_at, zh))} · ${escapeHtml(
-            zh ? `${draft.milestones.length} 里程碑 · ${draft.items.length} 工作项` : `${draft.milestones.length} milestones · ${draft.items.length} items`
+            zh ? `${draft.milestones.length} 个里程碑 · ${draft.items.length} 个任务` : `${draft.milestones.length} milestones · ${draft.items.length} items`
           )}</div>
         </div>
         <span class="wh-wb-sc-plan-chip wh-wb-sc-plan-chip--${planDraftStatusTone(draft.status)}">${escapeHtml(planDraftStatusLabel(draft.status, zh))}</span>
@@ -358,8 +358,8 @@ function renderPlanDetailBody(draft: SchedulePlanDraft, plan: SchedulePlanUiStat
   const resultSummary = draft.status === "materialized" && draft.result
     ? `<p class="wh-wb-sc-plan-note" data-wb-sc-plan-result>${escapeHtml(
         zh
-          ? `已物化到时间线：${draft.result.milestone_ids.length} 里程碑 · ${draft.result.work_item_ids.length} 工作项 · ${draft.result.dependency_count} 依赖。`
-          : `Materialized: ${draft.result.milestone_ids.length} milestones · ${draft.result.work_item_ids.length} items · ${draft.result.dependency_count} dependencies.`
+          ? `已写入时间线：${draft.result.milestone_ids.length} 个里程碑 · ${draft.result.work_item_ids.length} 个任务 · ${draft.result.dependency_count} 条依赖。`
+          : `Added to the timeline: ${draft.result.milestone_ids.length} milestones · ${draft.result.work_item_ids.length} tasks · ${draft.result.dependency_count} dependencies.`
       )}</p>`
     : "";
 

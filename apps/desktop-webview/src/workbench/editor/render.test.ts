@@ -86,7 +86,7 @@ test("renderEditorHtml collapses a long unchanged run behind an expand toggle, a
 
 test("renderEditorHtml surfaces an honest banner when the base version is unavailable", () => {
   const html = renderEditorHtml(ready({ diff: diff({ base_available: false, segments: [{ type: "context", lines: ["only proposed"] }] }) }), "zh-CN");
-  assert.match(html, /无法比对改动前的版本/u);
+  assert.match(html, /改动前的版本已经读不到了/u);
   assert.doesNotMatch(html, /wh-wb-ed-line--add/u);
 });
 

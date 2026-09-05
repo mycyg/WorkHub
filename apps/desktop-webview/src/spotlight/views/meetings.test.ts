@@ -474,7 +474,7 @@ test("a failed initial load renders a retry affordance, and retry re-issues the 
     createMeetingsView().mount(baseCtx(body, client as unknown as ReturnType<typeof fakeClient>));
     await tick();
     await tick();
-    assert.match(body.innerHTML, /会议没拉到/u);
+    assert.match(body.innerHTML, /会议没加载出来/u);
     assert.match(body.innerHTML, /data-spot-retry/u);
 
     body.click(new FakeElement(new Set(["[data-spot-retry]"])));

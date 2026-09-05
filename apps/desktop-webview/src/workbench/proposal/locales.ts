@@ -9,17 +9,24 @@
 
 import { normalizeWorkHubLocale, type WorkHubLocale } from "@workhub/contracts";
 
+import {
+  loadFailedEn,
+  loadFailedZh,
+  loadingEn,
+  loadingZh
+} from "../../load-state-copy.js";
+
 const zh = {
   addAShortReasonFirst: "先写一句打回说明。",
-  approveFirstThenMergeTheSnapshot: "确认通过后再合入交付物，可用快照回滚。",
+  approveFirstThenMergeTheSnapshot: "确认通过后再合入交付物，随时能还原到改之前。",
   approvedOnlyTheDeliverableMergeRemains: "已确认通过，只差合入交付物。",
   approving: "确认中…",
-  backToArmyPanel: "‹ 返回军团面板",
+  backToArmyPanel: "‹ 返回小队面板",
   changes: "处改动",
-  couldnTLoadTheProposal: "提议详情没拉到",
+  couldnTLoadTheProposal: loadFailedZh("变更申请详情"),
   describeWhatNeedsToChangeCuu: "具体写哪里需要改，Cuu 会带着这段反馈继续修。",
   feedbackForChanges: "打回说明",
-  loadingTheProposal: "正在拉提议详情…",
+  loadingTheProposal: loadingZh("变更申请详情"),
   markApproved: "确认通过",
   mergeDeliverable: "合入交付物",
   merging: "合入中…",
@@ -37,15 +44,15 @@ const zh = {
 
 const en = {
   addAShortReasonFirst: "Add a short reason first.",
-  approveFirstThenMergeTheSnapshot: "Approve first, then merge; the snapshot can roll back.",
+  approveFirstThenMergeTheSnapshot: "Approve first, then merge — you can always restore the version from before.",
   approvedOnlyTheDeliverableMergeRemains: "Approved; only the deliverable merge remains.",
   approving: "Approving…",
-  backToArmyPanel: "‹ Back to army panel",
+  backToArmyPanel: "‹ Back to the squad panel",
   changes: "changes",
-  couldnTLoadTheProposal: "Couldn't load the proposal",
+  couldnTLoadTheProposal: loadFailedEn("the change request"),
   describeWhatNeedsToChangeCuu: "Describe what needs to change; Cuu will revise with this feedback.",
   feedbackForChanges: "Feedback for changes",
-  loadingTheProposal: "Loading the proposal…",
+  loadingTheProposal: loadingEn("the change request"),
   markApproved: "Mark approved",
   mergeDeliverable: "Merge deliverable",
   merging: "Merging…",

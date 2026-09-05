@@ -19,7 +19,7 @@ function detailState(over: Partial<ProposalDetailVM> = {}, ui: Extract<ProposalS
 test("loading state renders a spinner line, error state renders the message with back and reload actions", () => {
   const loading = renderProposalSidePanelHtml({ mode: "loading" }, "zh-CN");
   assert.match(loading, /wh-wb-spinner/u);
-  assert.match(loading, /正在拉提议详情/u);
+  assert.match(loading, /正在加载变更申请详情/u);
   const errored = renderProposalSidePanelHtml({ mode: "error", message: "网络断了", proposalId: "prop-1" }, "zh-CN");
   assert.match(errored, /网络断了/u);
   assert.match(errored, /data-wb-prop-back/u);

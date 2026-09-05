@@ -400,7 +400,7 @@ const budgetActionLabels = {
     add_budget: "追加预算继续",
     finish_current_output: "就用现有产出收尾",
     close_scope: "整体收工（取消这个任务）",
-    downgrade_model: "降级模型继续",
+    downgrade_model: "换更省的模型继续",
     pause: "先暂停",
     ask_admin: "找管理员"
   },

@@ -600,10 +600,10 @@ const cuuPreferenceCopy = {
     toggleAria: "打开 Cuu 偏好",
     panelAria: "Cuu 偏好",
     modelPack: "形象",
-    modelPackAria: "Cuu 模型包",
+    modelPackAria: "Cuu 形象",
     current: "当前默认",
     available: "可选择",
-    experimentalLocked: "实验锁定",
+    experimentalLocked: "暂未开放",
     attention: "提醒",
     attentionAria: "Cuu 提醒模式",
     normal: "正常",
@@ -629,10 +629,10 @@ const cuuPreferenceCopy = {
     toggleAria: "Open Cuu preferences",
     panelAria: "Cuu preferences",
     modelPack: "Look",
-    modelPackAria: "Cuu model pack",
+    modelPackAria: "Cuu look",
     current: "Current default",
     available: "Available",
-    experimentalLocked: "Experiment locked",
+    experimentalLocked: "Not available yet",
     attention: "Attention",
     attentionAria: "Cuu attention mode",
     normal: "Normal",
@@ -660,7 +660,7 @@ const desktopPetSettingsCopy = {
   "zh-CN": {
     panelAria: "桌面客户端桌宠窗口设置",
     title: "桌面客户端",
-    summary: "管理独立桌宠窗口的可恢复交互。这里不显示桌宠形象；形象切换留在独立桌宠右键菜单里。",
+    summary: "调整桌宠窗口的大小、透明度和点击穿透。换形象请右键点桌宠。",
     size: "窗口尺寸",
     sizeAria: "桌宠窗口尺寸",
     opacity: "窗口透明度",
@@ -668,7 +668,7 @@ const desktopPetSettingsCopy = {
     passThrough: "点击穿透",
     passThroughHelp: "开启后鼠标会穿过桌宠。需要从本页或系统托盘恢复可交互状态。",
     hideOnHover: "悬停避让",
-    hideOnHoverHelp: "只做软隐藏和透明度变化，不移动整只桌宠的锚点。",
+    hideOnHoverHelp: "鼠标靠近时桌宠会淡出，位置不变。",
     restoreInteraction: "恢复可交互",
     showPet: "显示桌宠",
     hidePet: "隐藏桌宠",
@@ -680,12 +680,12 @@ const desktopPetSettingsCopy = {
     shown: "桌宠窗口已显示。",
     hidden: "桌宠窗口已隐藏。",
     applyFailed: "桌宠窗口设置应用失败，请稍后再试。",
-    bridgeUnavailable: "桌面桥接不可用，请从系统托盘恢复。"
+    bridgeUnavailable: "这里改不了桌宠窗口，请从系统托盘恢复。"
   },
   "en-US": {
     panelAria: "Desktop client pet window settings",
     title: "Desktop client",
-    summary: "Manage recoverable behavior for the independent pet window. No pet image is shown here; look choice stays in the pet right-click menu.",
+    summary: "Adjust the pet window's size, opacity, and click-through. To change its look, right-click the pet.",
     size: "Window size",
     sizeAria: "Pet window size",
     opacity: "Window opacity",
@@ -693,7 +693,7 @@ const desktopPetSettingsCopy = {
     passThrough: "Click through",
     passThroughHelp: "When enabled, pointer events pass through the pet. Recover interaction from this page or the system tray.",
     hideOnHover: "Dodge hover",
-    hideOnHoverHelp: "Uses soft hiding and opacity only; the pet anchor must not move.",
+    hideOnHoverHelp: "The pet fades out when your pointer comes close; it stays where it is.",
     restoreInteraction: "Restore interaction",
     showPet: "Show pet",
     hidePet: "Hide pet",
@@ -705,7 +705,7 @@ const desktopPetSettingsCopy = {
     shown: "Pet window is visible.",
     hidden: "Pet window is hidden.",
     applyFailed: "Could not apply pet window settings. Try again later.",
-    bridgeUnavailable: "Desktop bridge is unavailable. Recover from the system tray."
+    bridgeUnavailable: "The pet window can't be changed here — restore it from the system tray."
   }
 } as const;
 

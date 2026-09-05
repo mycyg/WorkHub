@@ -438,8 +438,8 @@ async function boot(): Promise<void> {
 function renderFatalBootError(error: unknown): void {
   const detail = error instanceof Error ? `${error.name}: ${error.message}\n${error.stack ?? ""}` : String(error);
   document.body.innerHTML = `<div style="font:500 13px/1.7 -apple-system,sans-serif;color:#1c2333;background:rgba(248,250,253,.92);height:100vh;box-sizing:border-box;padding:48px 56px;overflow:auto">
-    <div style="font-size:17px;font-weight:700;margin-bottom:10px">工作台没能启动</div>
-    <div style="color:#5a6478;margin-bottom:18px">把下面这段原样发给开发,或直接截图。</div>
+    <div style="font-size:17px;font-weight:700;margin-bottom:10px">工作台没能启动 · The workbench didn't start</div>
+    <div style="color:#5a6478;margin-bottom:18px">把下面这段发给技术支持，或直接截图。<br />Send this to support, or take a screenshot.</div>
     <pre style="white-space:pre-wrap;background:rgba(20,30,50,.06);border-radius:10px;padding:14px 16px;font-size:11.5px">${detail.replace(/&/gu, "&amp;").replace(/</gu, "&lt;")}</pre>
   </div>`;
 }

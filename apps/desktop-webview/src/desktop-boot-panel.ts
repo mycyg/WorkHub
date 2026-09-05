@@ -81,7 +81,7 @@ export const desktopBootPanelCss = [
   `.${desktopBootPanel.primary}{border:0;border-radius:12px;padding:10px 18px;font:inherit;font-weight:850;color:#fff;background:linear-gradient(135deg,#0a84ff,#64d2ff);box-shadow:0 14px 26px -10px rgba(10,132,255,.45);cursor:pointer}`,
   `.${desktopBootPanel.secondary}{border:1px solid rgba(255,255,255,.30);border-radius:12px;padding:10px 18px;font:inherit;font-weight:850;color:CanvasText;background:transparent;box-shadow:inset 0 1px 0 rgba(255,255,255,.22);cursor:pointer}`,
   `.${desktopBootPanelClass} button:disabled{opacity:.5;cursor:not-allowed}`,
-  // 页签（登录 / 注册 / 我有邀请令牌）：同一套玻璃语言的下划线页签，选中态用系统蓝。
+  // 页签（登录 / 注册 / 我有邀请码）：同一套玻璃语言的下划线页签，选中态用系统蓝。
   `.${desktopBootPanel.tabs}{display:flex;gap:4px;border-bottom:1px solid color-mix(in srgb, CanvasText 16%, transparent);margin-bottom:2px}`,
   `.${desktopBootPanel.tabs} button{flex:1;padding:8px 6px;border:0;border-radius:10px 10px 0 0;background:transparent;font:inherit;font-size:12.5px;font-weight:850;color:color-mix(in srgb, CanvasText 55%, transparent);cursor:pointer;border-bottom:2px solid transparent}`,
   `.${desktopBootPanel.tabs} button:hover{color:color-mix(in srgb, CanvasText 80%, transparent)}`,

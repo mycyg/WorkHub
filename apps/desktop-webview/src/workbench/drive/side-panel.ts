@@ -18,6 +18,7 @@ import {
 import { renderDriveSidePanelHtml, type DriveSidePanelState } from "./render.js";
 
 import { driveT } from "./locales.js";
+import { withErrorDetail } from "../../load-state-copy.js";
 
 type Locale = "zh-CN" | "en-US";
 
@@ -137,7 +138,7 @@ export function mountDriveSidePanel(
         state = {
           mode: "preview_error",
           itemName: target.itemName,
-          error: error instanceof Error ? error.message : driveT(input.locale, "previewFailed")
+          error: withErrorDetail(input.locale, driveT(input.locale, "previewFailed"), error)
         };
         publish();
       });
@@ -163,7 +164,7 @@ export function mountDriveSidePanel(
         state = {
           mode: "versions_error",
           itemName: target.itemName,
-          error: error instanceof Error ? error.message : driveT(input.locale, "couldnTLoadVersionHistory")
+          error: withErrorDetail(input.locale, driveT(input.locale, "couldnTLoadVersionHistory"), error)
         };
         publish();
       });
@@ -224,7 +225,7 @@ export function mountDriveSidePanel(
           rollback: {
             versionId,
             busy: false,
-            error: error instanceof Error ? error.message : driveT(input.locale, "recoveryFailedRetry")
+            error: withErrorDetail(input.locale, driveT(input.locale, "recoveryFailedRetry"), error)
           }
         };
         publish();

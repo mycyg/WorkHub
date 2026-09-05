@@ -268,7 +268,7 @@ test("plan (ready, detail approved): shows the materialize action", () => {
     plan: planUi({ mode: "detail", selectedDraftId: "d1" })
   });
   assert.equal(html.includes("data-wb-sc-plan-materialize"), true);
-  assert.equal(html.includes("物化到时间线"), true);
+  assert.equal(html.includes("写入时间线"), true);
 });
 
 test("plan (ready, detail rejecting): reject reason box + confirm/cancel", () => {
@@ -289,7 +289,7 @@ test("plan (ready, detail materialized): shows the result summary, no actions", 
     plan: planUi({ mode: "detail", selectedDraftId: "d1" })
   });
   assert.equal(html.includes("data-wb-sc-plan-result"), true);
-  assert.equal(html.includes("已物化到时间线"), true);
+  assert.equal(html.includes("已写入时间线"), true);
   assert.equal(html.includes("data-wb-sc-plan-approve"), false);
 });
 

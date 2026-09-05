@@ -957,7 +957,7 @@ export function createDesktopCuuDemoScript(
         stream_kind: "global",
         stream_path: "/api/push/stream",
         state: "retrying",
-        message: "开发预览：daemon 连接不稳定，Cuu 正在重试。"
+        message: "连接不太稳，Cuu 正在重连。"
       }
     });
   }

@@ -69,7 +69,7 @@ WorkHub 有**两套词汇**,且必须严格分层:
 |---|---|---|---|
 | `branch` | **Branch(工作分支)** *(新增)* | **「我的工作副本」/「草稿」** | 某协作者或某 AI 工人对一个 WorkItem 的独立工作空间,互不阻塞。概念演进自现有 `RequirementWorkspace`(`models.py:378`,已是「每人一份 phase/进度」的雏形)。 |
 | `commit` / `diff` | **改动集(changeset)** *(新增)* | **「改动」/「这次做的内容」** | 用户只感知「做了哪些改动」,不感知提交粒度。 |
-| `open a PR` | **Proposal(提议)** *(新增,核心)* | **「提交给负责人确认」** | 一个分支请求汇入正式版的变更集 = 去黑话的 PR。脊梁骨是现有 `Delivery`(`models.py:515`,按 `round` 版本化的交付包)。 |
+| `open a PR` | **Proposal(提议)** *(新增,核心)* | 动作说**「提交给负责人确认」**;名词一律叫**「变更申请」**/ *change request*(不说「提议 / 改动 / 变更提案」) | 一个分支请求汇入正式版的变更集 = 去黑话的 PR。脊梁骨是现有 `Delivery`(`models.py:515`,按 `round` 版本化的交付包)。 |
 | `review` | **Review(审阅)** | **「查看 / 看一眼」** | — |
 | `approve` / `accept` | **Approve(批准)** | **「确认 / 通过 / 采纳」** | 落地自现有验收:状态 `accepted`,用户标签**「已完成」**(`status-vocab.ts:38`);客户端按钮文案已是**「通过」**(`client-tauri/web-src/src/routes/HubDispatch.tsx`)。 |
 | `reject` / `request changes` | **Reject / RevisionRequest(打回)** | **「打回(说原因)/ 退回重做」** | **必须带理由**。落地自现有 `RevisionRequest`(`models.py:535`,`reason_md` 非空)+ 状态 `revision_requested`,用户标签**「等你重做」**(`status-vocab.ts:37`)。 |
@@ -146,7 +146,7 @@ WorkHub 有**两套词汇**,且必须严格分层:
 | **CollaborationGraph** | 「谁擅长什么、与谁合作过、命中率」的聚合视图 | (不暴露;表现为)「AI 为什么推荐他」 | *(新增,聚合)*;聚合来源 `ActivityLog`(`models.py:554`) |
 | **Org / Workspace** | 租户与工作区(治理/多租户预留) | 「组织 / 工作区」 | *(新增)*;现有有 `app/routers/workspaces.py`(注意:与 WorkItem 内的 `RequirementWorkspace` 不同概念,见下方「易混词」) |
 | **Project** | 项目(slug / owner / 编号序列) | 「项目」 | `models.py:71`(`slug`、`owner_user_id`、`next_seq` 生成 `PROJ-001`) |
-| **WorkItem** | **主轴**:状态机驱动的「一个活」 | 「需求 / 任务 / 这个活」 | 演进自 `Requirement`(`models.py:314`;`code`、`status`、`priority`、`due_at`) |
+| **WorkItem** | **主轴**:状态机驱动的「一个活」 | **「任务」**(唯一叫法;曾并存「工作项 / 工单」,R26 起一律说「任务」/ *task*) | 演进自 `Requirement`(`models.py:314`;`code`、`status`、`priority`、`due_at`) |
 | **Assignment** | lead + N 协作者的指派 | 「负责人 / 协作者」 | `models.py:363`(`role` = `lead\|collaborator`) |
 | **Delivery** | 交付包,按 `round` 版本化 | 「交付物 / 这一版」 | `models.py:515`(`package_sha256`、`round`、`delivery_doc_md`) |
 | **AcceptanceCriteria** | 可对照的验收清单 | 「验收标准」 | `models.py:464`(`RequirementAcceptanceItem`,`status` = `open\|…`) |
@@ -172,7 +172,7 @@ WorkHub 有**两套词汇**,且必须严格分层:
 
 | 内部术语 | 一句话定义 | 用户用语 | 现有代码锚点 |
 |---|---|---|---|
-| **AgentRun** | 一次 AI 自治执行(工人或经理),含完整 trace | 「AI 这次的处理过程」 | 演进自 `auto_agent.run_auto`(`auto_agent.py:374`);现回执 `AutoResult`(`auto_agent.py:365`)/`AutoOutcome`(`auto_agent.py:592`) |
+| **AgentRun** | 一次 AI 自治执行(工人或经理),含完整 trace | **「这次执行」**(名词说「执行 / 执行记录」,不说「运行」;`agent-run`/`agent run`/`AgentRun` 一律不进用户面) | 演进自 `auto_agent.run_auto`(`auto_agent.py:374`);现回执 `AutoResult`(`auto_agent.py:365`)/`AutoOutcome`(`auto_agent.py:592`) |
 | **runLoop / agent loop(执行循环)** | 单循环:每步装配工具+上下文、调模型、按控制信号分支 | (不暴露) | `auto_agent.py:405` 的 `for turn in range(1, MAX_TURNS+1)` |
 | **control signal(控制信号)** | `continue / stop / compact / escalate` 的分支裁决 | (不暴露) | 现为隐式:`submit` → stop;`end_turn` 无产物 → fail(`auto_agent.py:501`)。WorkHub 显式化(借鉴 opencode) |
 | **完成判定(done)** | AI 不再请求动作即完成,**非显式 flag** | (不暴露) | 现状用 `submit` 工具显式声明 + 产物目录非空校验(`_has_deliverables`,`auto_agent.py:510`) |
@@ -183,7 +183,7 @@ WorkHub 有**两套词汇**,且必须严格分层:
 | **Budget(预算)** | 每个 AgentRun 的硬上限(轮次/超时/token) | (不暴露;耗尽时给交接件) | `MAX_TURNS=15`、`TOTAL_TIMEOUT_DEFAULT=5min`、`COMMAND_TIMEOUT=45s`(`auto_agent.py:36-41`) |
 | **LLM Review(AI 复审)** | 独立一次 LLM 调用判「产物是否真满足需求」 | **「AI 自己又检查了一遍」** | `auto_agent.py:544` `llm_review` → `{"meets_requirement": bool, "reason"}`(触发器①) |
 | **trace** | 每步动作 + 工具输入输出的可审记录 | **「AI 都做了哪些步骤」** | 现以 SSE 事件流呈现(`ai.thinking`/`ai.tool_call`/`ai.done`,`auto_agent.py:438-507`);`KnowledgeAskRun.trace_json` 是落库雏形 |
-| **Snapshot(快照)** | AI 每次副作用前的可回滚存档 | **「改之前的版本」** | *(新增,安全红线)*;现有可回滚雏形见 §2「revert」行 |
+| **Snapshot(快照)** | AI 每次副作用前的可回滚存档 | **「还原点」**(作为可点的存档点时);讲述语境说**「改之前的版本」** | *(新增,安全红线)*;现有可回滚雏形见 §2「revert」行 |
 | **Provider(模型提供方)** | 统一注册表,DeepSeek-via-Anthropic 为其一 | (不暴露) | `auto_agent.py:34` `AsyncAnthropic(base_url=settings.llm_base_url)`;端点见 `config.py` |
 | **置信度 / 风险 / 升级 / doom-loop / 回灌** | — | — | 见 §3(专表) |
 
@@ -278,6 +278,9 @@ WorkHub 有**两套词汇**,且必须严格分层:
 | **YQGL** | 「需求管理大师」拼音首字母 | 现有代码前缀(`yqgl_id` cookie、`X-YQGL-Client-Token`、`logger "yqgl.*"`);新仓品牌切到 **WorkHub**,迁移期标识符可能并存 |
 | **lead / collaborator** | 指派角色 | 负责人 / 协作者(`models.py:370`) |
 | **deliverables / outputs** | 交付物目录 | AI 沙箱里的 `outputs/`(`auto_agent.py:510`) |
+| **Agent Army / squad** | 一个任务背后的一队 AI | 用户面统一叫**「小队」**/ *squad*(曾并存「军团 / Army」);`army` 只留在代码与接口路径里 |
+| **Spotlight(聚焦盒)** | 桌面主窗那个会生长的搜索盒 | 用户面叫**「快捷入口」**/ *quick launcher*;「聚焦盒」是内部设计代号,不进界面 |
+| **materialize(物化)** | 把已批准的计划草案落库成里程碑+任务 | 用户面说**「写入时间线」**/ *add to the timeline* |
 
 ---
 
@@ -300,5 +303,9 @@ WorkHub 有**两套词汇**,且必须严格分层:
 4. 凡涉及协作动作 → 用 §2 右列(草稿/改动/提交确认/采纳/打回说原因/撞车了 AI 给方案)。
 5. 凡 AI 给结论(派活/升级/判分)→ **必附人话理由 + 证据引用**(承袭 `confidence_reason`,落地 `FR-EXPLAIN-001`)。
 6. 「升级」「合并」「冲突」「分支」这些**内部词不进用户面**;按 §2/§3 翻成人话。
+7. **界面只服务产品目标,不解说自己**:不写「本页面用于展示…」「这里会显示…」「稍后只展示…」这类解释型文案,也不把设计权衡、实现推理、施工进度(「即将上线」「正在接入」)写进界面。真正的帮助文本与空状态除外——它们说的是**用户下一步能做什么**,不是界面的构造。
+8. **加载态与失败态有统一句式**,不要一处一个说法:桌面端见 `apps/desktop-webview/src/load-state-copy.ts`(「正在加载 X…」/「X 没加载出来」/「X 没加载出来,稍后重试」)。失败提示里**产品句子在前**,原始 `error.message` 只能作括号里的次级信息,绝不许顶替产品文案。
+9. **枚举查不到映射时回退到人话**(「未知状态」「未标注」「还原点」「其它」),绝不把 snake_case 的原始取值渲染给用户;漏配文案该在测试里红(见 `apps/desktop-webview/src/spotlight/labels.test.ts` 按 contracts 枚举取值域逐个断言那条)。
+10. 机械可查的部分由 `pnpm audit:copy-terms` 守(禁词表在 `scripts/dev/check-copy-terms.ts`,中文表跑全部扫描目标、英文表跑词典文件);词典独占由 `pnpm audit:ui-i18n` 守。
 
 > **一句话收尾**:内部我们用 GitHub 的精确;对用户,我们只说「AI 拟好了,确认?」。这张表就是这两个世界之间唯一的翻译官。

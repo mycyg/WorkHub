@@ -19,6 +19,7 @@ import { workbenchIcons } from "./icons.js";
 import type { WorkbenchCenterTab, WorkbenchStore } from "./store.js";
 
 import { workbenchT } from "./locales.js";
+import { withErrorDetail } from "../load-state-copy.js";
 
 // R15 批 B：rail 的 presence 轮询周期——同 chat/view.ts 成员条的 30s 节奏。
 const RAIL_PRESENCE_POLL_INTERVAL_MS = 30_000;
@@ -1140,7 +1141,7 @@ export function mountWorkbenchRail(
       }
       modalSubmitting = false;
       modalError =
-        error instanceof Error ? error.message : workbenchT(input.locale, "couldnTCreateTheProjectRetry");
+        withErrorDetail(input.locale, workbenchT(input.locale, "couldnTCreateTheProjectRetry"), error);
       render();
     }
   };
@@ -1185,7 +1186,7 @@ export function mountWorkbenchRail(
       }
       personalSpaceSubmitting = false;
       personalSpaceError =
-        error instanceof Error ? error.message : workbenchT(input.locale, "couldnTCreateItRetry");
+        withErrorDetail(input.locale, workbenchT(input.locale, "couldnTCreateItRetry"), error);
       render();
     }
   };
@@ -1260,7 +1261,7 @@ export function mountWorkbenchRail(
       }
       newCollabSubmitting = false;
       newCollabError =
-        error instanceof Error ? error.message : workbenchT(input.locale, "couldnTCreateItRetry");
+        withErrorDetail(input.locale, workbenchT(input.locale, "couldnTCreateItRetry"), error);
       render();
     }
   };
@@ -1305,7 +1306,7 @@ export function mountWorkbenchRail(
       }
       newCollabSubmitting = false;
       newCollabError =
-        error instanceof Error ? error.message : workbenchT(input.locale, "couldnTCreateItRetry");
+        withErrorDetail(input.locale, workbenchT(input.locale, "couldnTCreateItRetry"), error);
       render();
     }
   };
@@ -1365,7 +1366,7 @@ export function mountWorkbenchRail(
       }
       renameSubmitting = false;
       renameError =
-        error instanceof Error ? error.message : workbenchT(input.locale, "couldnTRenameItRetry");
+        withErrorDetail(input.locale, workbenchT(input.locale, "couldnTRenameItRetry"), error);
       render();
     }
   };
@@ -1416,11 +1417,11 @@ export function mountWorkbenchRail(
       const zh = input.locale === "zh-CN";
       const note = copied
         ? zh
-          ? `已生成邀请并复制 token，发给 ${result.email} 即可加入。`
-          : `Invite created and token copied — send it to ${result.email}.`
+          ? `邀请码已复制，发给 ${result.email} 即可加入。`
+          : `Invite code copied. Send it to ${result.email} to let them join.`
         : zh
-          ? `邀请 token（复制失败，请手动复制）：${result.token}`
-          : `Invite token (copy failed, copy manually): ${result.token}`;
+          ? `邀请码（没能自动复制，请手动复制）：${result.token}`
+          : `Invite code (couldn't copy automatically — copy it manually): ${result.token}`;
       rosterInvite = { open: true, email: "", submitting: false, note };
       render();
     } catch (error) {

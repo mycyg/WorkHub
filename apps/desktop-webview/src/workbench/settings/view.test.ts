@@ -489,7 +489,7 @@ test("R14 GH: a load failure renders a scoped retry that reloads only the GitHub
     });
     await tick();
 
-    assert.match(container.innerHTML, /GitHub 绑定状态没拉到，稍后重试/u);
+    assert.match(container.innerHTML, /GitHub 绑定状态没加载出来，稍后重试/u);
     fail = false;
     container.dispatch("click", new FakeElement(new Set(["[data-wb-gh-retry]"])));
     await tick();
@@ -674,7 +674,7 @@ test("R14 GH: a non-owner viewer never issues a write request no matter what wri
   });
 });
 
-// —— R14 批 RISK：风险巡检阈值分区读写接线 —— //
+// —— R14 批 RISK：风险汇总阈值分区读写接线 —— //
 
 test("toggling the risk-monitor enable switch PATCHes the full risk_monitor object (not just { enabled }), preserving the existing thresholds", async () => {
   await withFakeDomGlobals(async () => {
@@ -749,7 +749,7 @@ test("the risk threshold save button validates each field against the contract b
     container.dispatch("click", new FakeElement(new Set(["[data-wb-risk-save]"])));
     await tick();
     assert.equal(patched.length, 0);
-    assert.match(container.innerHTML, /工单停滞天数阈值要在 1 到 90 天之间/u);
+    assert.match(container.innerHTML, /「多少天没进展算停滞」要填 1 到 90 天/u);
   });
 });
 
