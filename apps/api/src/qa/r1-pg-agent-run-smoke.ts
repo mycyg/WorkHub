@@ -296,6 +296,27 @@ async function main() {
   try {
     const db = client.db;
     await ensureDefaultSeed(db);
+    // R26 批 B6b：迁移 0075 的 agent_runs.reminders_json 必须真落在库里，而且**可空、无默认值**。
+    // 列不在，就等于「Cuu 被劝过几次」只活在 SSE 流里——回放页读的是库，永远看不到那一行；
+    // 列若写成 NOT NULL/带默认，既有行与「这次没被劝过」的新行就无处安放（null 与空数组同义）。
+    const remindersColumnResult = await db.execute(
+      "select data_type, is_nullable, column_default from information_schema.columns"
+      + " where table_name = 'agent_runs' and column_name = 'reminders_json'"
+    );
+    type RemindersColumnRow = { data_type: string; is_nullable: string; column_default: string | null };
+    const remindersColumnRows = (remindersColumnResult as unknown as { rows?: RemindersColumnRow[] }).rows
+      ?? (remindersColumnResult as unknown as RemindersColumnRow[]);
+    const remindersColumn = remindersColumnRows[0];
+    if (
+      !remindersColumn
+      || remindersColumn.data_type !== "jsonb"
+      || remindersColumn.is_nullable !== "YES"
+      || remindersColumn.column_default !== null
+    ) {
+      throw new Error(
+        `Expected migration 0075 to add a nullable jsonb agent_runs.reminders_json with no default, got ${JSON.stringify(remindersColumnRows)}`
+      );
+    }
     const userRepo = createUserRepository(db);
     const deviceRepo = createClientDeviceRepository(db);
     const auth: AuthDependencies = {

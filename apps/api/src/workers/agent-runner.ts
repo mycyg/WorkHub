@@ -23,6 +23,8 @@ import { settings as runtimeSettings, type Settings } from "@workhub/config";
 import {
   eventTypes,
   evidenceRefSchema,
+  readAgentRunReminderFacts,
+  type AgentRunReminderFacts,
   type ConfidenceVerdict,
   type CuuState,
   type EvidenceRef,
@@ -193,6 +195,10 @@ export type AgentRunQueueRecord = {
     estimated_cost_cny: string;
   };
   trace: AgentRunTraceStepRecord[];
+  // R26 批 B6b：这次运行里「重复动作被劝过几次、劝的是什么」。每条对应一次 agent_run.reminded
+  // （前两档；第三档走升级，不发提醒）。**不进 trace**：提醒不是模型的一步，占了步号会让
+  // 「跑了几步」撒谎；渲染层按 step_no 把它插在所属步骤之后。缺席与空数组同义。
+  reminders?: AgentRunReminderFacts[];
   handoff?: {
     done: string[];
     remaining: string[];
@@ -210,6 +216,13 @@ export type AgentRunQueueRecord = {
   created_at: string;
   updated_at: string;
 };
+
+/**
+ * R26 批 B6b：单次运行最多保留的提醒条数。正常上限是 2（第一档一次、第二档一次，第三档改走升级），
+ * 32 纯属防御——真出现「每步都重新命中第一档」的病态序列时，别让一列 jsonb 无限长、也别让时间线被
+ * 同一句话刷屏。到顶后丢新的留旧的：最早那两条（第一/第二档）才是解释这次运行为什么会升级的证据。
+ */
+export const AGENT_RUN_REMINDER_CAP = 32;
 
 // chain1/rank2：proposal.opened 的目标话题——既发工作项流(看改动/审批页等订阅者)，也发派活用户的 per-user
 // /me 流。桌面富 Cuu 决策卡只订 topics.user，不发 /me 则旗舰「AI 把决策端到你面前」降级成一条干巴巴通知。
@@ -1882,7 +1895,26 @@ export function createInMemoryAgentRunQueue(options: {
             };
           }
         },
-        emit: (event) => emitRunEvent(event, current),
+        // B6b 观测面：提醒在这里累进运行记录。提醒不是模型的一步（不进 trace、不占步号），但
+        // 「被劝过几次、劝的是什么」必须留在记录里——否则回放页（读的是库）永远看不到这一行，
+        // 换个 worker 接手也不知道已经劝过。累加不额外触发一次写：随这次运行既有的落盘路径
+        // （终态/失败的 persistRunWithTrace）一并进 agent_runs.reminders_json。
+        emit: (event) => {
+          if (event.type === eventTypes.agentRunReminded) {
+            const facts = readAgentRunReminderFacts(event.data);
+            const live = runs.get(current.run_id);
+            // 与 recordStep 同款守卫：run 已被取消/租约被回收就不再往记录里写。
+            if (facts && live?.status === "running" && (live.reminders?.length ?? 0) < AGENT_RUN_REMINDER_CAP) {
+              current = updateRun({
+                ...live,
+                // 同 recordStep：recordUsage 只写 current 不写 runs map，spread live 会把最新用量盖掉。
+                usage: current.usage,
+                reminders: [...(live.reminders ?? []), facts]
+              });
+            }
+          }
+          return emitRunEvent(event, current);
+        },
         now
       };
       const result = loop2Mode === "off"

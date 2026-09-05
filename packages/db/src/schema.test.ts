@@ -693,7 +693,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0074 plugin_trust_level", () => {
+test("migration journal ends with 0075 agent_run_reminders", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -709,31 +709,67 @@ test("migration journal ends with 0074 plugin_trust_level", () => {
       when: finalEntry.when
     },
     {
-      // R26 X：0074(plugin_trust_level,when=1783929006000)接在 0073(mcp_servers,when=1783929005000)
-      // 之后，journal 收于 0074，when 严格递增。
-      idx: 74,
+      // R26 B6b：0075(agent_run_reminders,when=1783929007000)接在 0074(plugin_trust_level,
+      // when=1783929006000)之后，journal 收于 0075，when 严格递增。
+      idx: 75,
       version: "7",
-      tag: "0074_plugin_trust_level",
+      tag: "0075_agent_run_reminders",
       breakpoints: true,
-      when: 1783929006000
+      when: 1783929007000
     }
   );
-  // when 严格递增——0069 → 0070 → 0071 → 0072 → 0073 → 0074 的时间戳必须依次增大。
+  // when 严格递增——0069 → 0070 → 0071 → 0072 → 0073 → 0074 → 0075 的时间戳必须依次增大。
   const entry0069 = journal.entries.find((entry) => entry.tag === "0069_event_outbox");
   const entry0070 = journal.entries.find((entry) => entry.tag === "0070_proactive_intent_delivering");
   const entry0071 = journal.entries.find((entry) => entry.tag === "0071_event_outbox_failed");
   const entry0072 = journal.entries.find((entry) => entry.tag === "0072_plugins");
   const entry0073 = journal.entries.find((entry) => entry.tag === "0073_mcp_servers");
-  assert.ok(entry0069 && entry0070 && entry0071 && entry0072 && entry0073 && finalEntry);
+  const entry0074 = journal.entries.find((entry) => entry.tag === "0074_plugin_trust_level");
+  assert.ok(entry0069 && entry0070 && entry0071 && entry0072 && entry0073 && entry0074 && finalEntry);
   assert.equal(entry0070.idx, 70);
   assert.equal(entry0071.idx, 71);
   assert.equal(entry0072.idx, 72);
   assert.equal(entry0073.idx, 73);
+  assert.equal(entry0074.idx, 74);
   assert.ok(entry0070.when > entry0069.when);
   assert.ok(entry0071.when > entry0070.when);
   assert.ok(entry0072.when > entry0071.when);
   assert.ok(entry0073.when > entry0072.when);
-  assert.ok(finalEntry.when > entry0073.when);
+  assert.ok(entry0074.when > entry0073.when);
+  assert.ok(finalEntry.when > entry0074.when);
+});
+
+/**
+ * R26 批 B6b：重复动作提醒的持久化列。钉三件事——(a) 迁移 replay 安全（ADD COLUMN IF NOT EXISTS）；
+ * (b) 这一列**可空且无默认值**：null = 没被劝过，与空数组同义，既有行不用回填；
+ * (c) drizzle schema 与迁移同步，且提醒**没有**混进 agent_steps（它不是模型的一步，占了步号会让
+ * 「跑了几步」撒谎——B6 的落地档案已把这条记成否决项）。
+ */
+test("R26-B6b migration 0075 adds a nullable replay-safe reminders_json to agent_runs", () => {
+  const migrationUrl = new URL("../migrations/0075_agent_run_reminders.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0075_agent_run_reminders.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  assert.match(
+    migration,
+    /ALTER TABLE "agent_runs" ADD COLUMN IF NOT EXISTS "reminders_json" jsonb;/u,
+    "整链重跑安全要求 ADD COLUMN IF NOT EXISTS"
+  );
+  assert.equal(/NOT NULL/u.test(migration), false, "reminders_json 必须可空：null 与空数组同义");
+  assert.equal(/DEFAULT/u.test(migration), false, "reminders_json 不给默认值，既有行不回填");
+  assert.equal(/CONCURRENTLY/u.test(migration), false, "迁移里不许有 CONCURRENTLY（事务里跑不了）");
+
+  const reminders = getTableConfig(agentRuns).columns.find((column) => column.name === "reminders_json");
+  assert.ok(reminders, "drizzle schema 少了 reminders_json 列");
+  assert.equal(reminders.notNull, false);
+  assert.equal(reminders.default, undefined);
+  assert.equal(reminders.getSQLType(), "jsonb");
+
+  // 提醒不落 agent_steps：那张表只有六个标量列，多一列就等于给提醒发了个步号。
+  assert.equal(
+    tableColumnNames(agentSteps).some((name) => /remind/u.test(name)),
+    false,
+    "提醒不是模型的一步，不许混进 agent_steps"
+  );
 });
 
 /**
