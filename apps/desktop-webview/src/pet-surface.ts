@@ -850,18 +850,31 @@ function primaryDesktopCuuAction(card: CuuCard, actionId: string, freeText?: str
 // （见 boot.ts/workbench/interrupt-broadcast.ts 同款 emit/listen 通路),换成一张诚实的「已登出」卡片——
 // 不再假装 Cuu 还能干活,也把 setCard 里"新卡没有 run id 就关掉旧 run 订阅"的既有逻辑顺带用上,不用
 // 另外手写一次 close()。
-export function createDesktopPetLoggedOutCard(locale: WorkHubLocale): CuuCard {
+// R24 S4：这张卡也服务首启（这台设备从没连接过、还没有可用的 client token）——同一份「没法在桌宠这
+// 260×340 的小窗里放一张登录表单，去主窗口」道理，只是标题/说明换成欢迎文案而不是「已登出」。
+// context 默认 "logged-out"（向后兼容既有调用方/既有测试）。
+export function createDesktopPetLoggedOutCard(
+  locale: WorkHubLocale,
+  context: "first-run" | "logged-out" = "logged-out"
+): CuuCard {
   const zh = locale === "zh-CN";
   const state: CuuState = "offline";
+  const title = context === "first-run" ? (zh ? "欢迎使用 WorkHub" : "Welcome to WorkHub") : zh ? "已登出" : "Signed out";
+  const message =
+    context === "first-run"
+      ? zh
+        ? "这台设备第一次连接，去主窗口登录后 Cuu 才能开始帮你。"
+        : "This device hasn't connected before — sign in from the main window before Cuu can help."
+      : zh
+        ? "这台设备已经登出，去主窗口重新登录后 Cuu 才能继续帮你。"
+        : "This device signed out — sign back in from the main window before Cuu can help again.";
   return {
-    id: "pet-logged-out",
+    id: context === "first-run" ? "pet-first-run" : "pet-logged-out",
     kind: "offline",
     state,
     motion: cuuMotionForState(state),
-    title: zh ? "已登出" : "Signed out",
-    message: zh
-      ? "这台设备已经登出，去主窗口重新登录后 Cuu 才能继续帮你。"
-      : "This device signed out — sign back in from the main window before Cuu can help again.",
+    title,
+    message,
     priority: "high",
     actions: [],
     chips: []
@@ -877,6 +890,9 @@ export async function bootDesktopPetSurface(
     petWindowBridge?: DesktopPetWindowBridge | undefined;
     shellEmitter?: DesktopShellEmitter | undefined;
     client?: DesktopPetSurfaceClient | undefined;
+    // R24 S4：调用方（browser.ts）已经探过鉴权门——不是 "ready" 时传对应上下文，桌宠开机就直接亮
+    // 「去主窗口登录」卡，不再尝试恢复卡片/浮现待拍板（那些请求反正会因为没有 token 静默失败）。
+    signInNeededContext?: "first-run" | "logged-out" | undefined;
   } = {}
 ): Promise<DesktopPetSurfaceRuntime> {
   let locale = desktopPetLocale();
@@ -1306,7 +1322,11 @@ export async function bootDesktopPetSurface(
   };
 
   render();
-  if (!desktopPetQaScenarioSkipsLocalRestore(qaScenario)) {
+  if (input.signInNeededContext) {
+    // R24 S4：调用方已经探明这台设备没有可用身份（首启或真登出）——直接亮「去主窗口登录」卡，
+    // 不再尝试恢复卡片/浮现待拍板：那些请求反正会因为没有 client token 静默失败，不如诚实告知现状。
+    setCard(createDesktopPetLoggedOutCard(locale, input.signInNeededContext), undefined, { persist: false });
+  } else if (!desktopPetQaScenarioSkipsLocalRestore(qaScenario)) {
     // 先尝试恢复上次会话/运行卡；没有可恢复的卡时，主动浮现一条待拍板（S2）。QA 场景跳过，避免干扰固定卡。
     void restoreDesktopPetCard().then(() => surfacePendingDecision());
   }

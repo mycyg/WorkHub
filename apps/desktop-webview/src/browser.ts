@@ -10,8 +10,7 @@ import {
 
 import {
   clearDesktopClientToken,
-  readDesktopClientToken,
-  writeDesktopClientToken
+  readDesktopClientToken
 } from "./desktop-client-token.js";
 import { resolveDesktopApiBaseFromStorage } from "./desktop-api-base.js";
 import { startVisibilityAwarePolling } from "./desktop-visibility-polling.js";
@@ -54,9 +53,10 @@ import {
   desktopBootScreenForGate,
   isPasswordModeBootstrapError,
   readDesktopAuthModeHint,
-  rememberDesktopAuthModeHint,
-  runDesktopBootstrapWithLock
+  resolveDesktopFirstRunGateWithLock,
+  type DesktopCredentialGateContext
 } from "./desktop-login.js";
+import { isDesktopFirstRun, markDesktopOnboarded } from "./desktop-first-run.js";
 
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
@@ -110,49 +110,11 @@ function pushShellBadgeToShell(count: number, locale: WorkHubLocale): void {
   }
 }
 
-// P1-02（REL-5）：昵称模式成功=拿到 token(ready)；密码/hybrid 模式 desktop-bootstrap 会 404 →
-// 需要凭据登录(needs-credentials)，不再当「离线」静默吞；后端不可达等=unavailable。
-type DesktopBootstrapOutcome = "ready" | "needs-credentials" | "unavailable";
-
-async function bootstrapDesktopClientToken(client: BrowserApiClient): Promise<DesktopBootstrapOutcome> {
-  try {
-    const result = await client.bootstrapDesktop({
-      nickname: "WorkHub Desktop",
-      device_name: "WorkHub Desktop",
-      platform: "desktop"
-    });
-    if (result?.client_token) {
-      writeDesktopClientToken(window.localStorage, result.client_token);
-      rememberDesktopAuthModeHint(window.localStorage, "nickname");
-      return "ready";
-    }
-    return "unavailable";
-  } catch (error) {
-    if (isPasswordModeBootstrapError(error)) {
-      // 密码/hybrid 模式：桌面要凭据登录换令牌（见 desktop-login.ts）。记下模式，供登出后选对登录门。
-      rememberDesktopAuthModeHint(window.localStorage, "password");
-      return "needs-credentials";
-    }
-    // 后端不可达等：保持无 token；上层取数失败会显示连接错误。记一行便于诊断（不含敏感信息）。
-    console.warn("WorkHub desktop bootstrap failed; continuing without client token", error);
-    return "unavailable";
-  }
-}
-
-// DSK-07：包一层跨窗启动锁——主窗/桌宠/工作台首启并发 bootstrap 会重复注册设备、双 token 互覆。
-// 没抢到锁的窗口短轮询重读 token，胜者落盘即拿到现成令牌（见 desktop-login.ts 顶部注释）。
-async function bootstrapDesktopClientTokenWithLock(client: BrowserApiClient): Promise<DesktopBootstrapOutcome> {
-  const locked = await runDesktopBootstrapWithLock({
-    storage: window.localStorage,
-    readToken: clientToken,
-    run: () => bootstrapDesktopClientToken(client)
-  });
-  if (locked.kind === "ran") {
-    return locked.result;
-  }
-  // token-ready（胜者已落盘，下面 clientToken() 会读到）/ busy（放弃，落离线兜底）。
-  return locked.kind === "token-ready" ? "ready" : "unavailable";
-}
+// R24 S4（E-03 根治）：首启无 token 时不再盲打 desktop-bootstrap 传固定昵称——那条路在昵称模式下有
+// 真实副作用（会建/复用一个昵称为 "WorkHub Desktop" 的账号，全团队装同一个包=服务器上同一个人）。
+// 判定该渲哪张登录门改用 resolveDesktopFirstRunGateWithLock（desktop-login.ts）：先看 /api/health 的
+// auth_mode（或已记的提示），跨窗锁只在"另一扇窗口这段时间已经完成登录"时省一次判定，不再保护任何
+// 会创建账号的调用——真正换 token 的调用现在只发生在用户在登录门/首启屏里显式提交之后。
 
 // R10（真登出）：登出后 boot 不许再用固定昵称自动 bootstrap 绑回同一账户——否则登出形同虚设。
 const DESKTOP_LOGGED_OUT_FLAG = "workhub_desktop_logged_out";
@@ -179,8 +141,17 @@ async function ensureDesktopClientToken(client: BrowserApiClient): Promise<Deskt
     return readDesktopAuthModeHint(window.localStorage) === "password" ? "needs-credentials" : "logged-out";
   }
   if (!clientToken()) {
-    if ((await bootstrapDesktopClientTokenWithLock(client)) === "needs-credentials") {
-      return "needs-credentials";
+    // R24 S4（E-03 根治）：首启不再盲打 desktop-bootstrap——先判定该渲哪张登录门（昵称首启屏 or
+    // 密码/hybrid 凭据门），真正换 token 的调用只在用户显式提交之后发生（desktop-rebind.ts /
+    // desktop-login.ts）。"ready" 只在另一扇窗口这段时间已经落了 token 时出现，直接落到下面统一的
+    // token 检查收尾；"offline" 同样落到下面（会发现仍然没有 token，如实回退离线）。
+    const gate = await resolveDesktopFirstRunGateWithLock({
+      client,
+      storage: window.localStorage,
+      readToken: clientToken
+    });
+    if (gate === "needs-credentials" || gate === "logged-out") {
+      return gate;
     }
   } else {
     // rank16：已有 token 也要探活一次——若被吊销/陈旧(not_identified)，清掉重铸，
@@ -191,8 +162,13 @@ async function ensureDesktopClientToken(client: BrowserApiClient): Promise<Deskt
     } catch (error) {
       if (isStaleDesktopClientTokenError(error)) {
         clearDesktopClientToken(window.localStorage);
-        if ((await bootstrapDesktopClientTokenWithLock(client)) === "needs-credentials") {
-          return "needs-credentials";
+        const gate = await resolveDesktopFirstRunGateWithLock({
+          client,
+          storage: window.localStorage,
+          readToken: clientToken
+        });
+        if (gate === "needs-credentials" || gate === "logged-out") {
+          return gate;
         }
       }
     }
@@ -205,24 +181,37 @@ async function ensureDesktopClientToken(client: BrowserApiClient): Promise<Deskt
   return "offline";
 }
 
-// 密码/hybrid 模式凭据登录门：接到既有 login → device-token exchange 流程，成功后 reload 走既有 token 流。
+// 首启（这台设备第一次连接，从未有过 token）与真登出用同一张凭据门/重绑屏，只是标题/说明不同——
+// desktopLoggedOut() 为真才是真登出，否则就是首启（gate 复用同一个 "logged-out"/"needs-credentials"
+// 值只是为了不用在 bootSpotlight 里再加一条分支，见该函数调用处的注释）。
+function desktopCredentialGateContext(): DesktopCredentialGateContext {
+  return desktopLoggedOut() ? "logged-out" : "first-run";
+}
+
+// 密码/hybrid 模式凭据门：接到既有 login/register/邀请接受 → device-token exchange 流程，成功后 reload
+// 走既有 token 流。
 function mountDesktopCredentialGate(rootEl: HTMLElement, client: BrowserApiClient, locale: WorkHubLocale): void {
   bindDesktopCredentialGate(rootEl, {
     client,
     locale,
     storage: window.localStorage,
-    onSuccess: () => window.location.reload()
+    onSuccess: () => window.location.reload(),
+    context: desktopCredentialGateContext()
   });
 }
 
-// DSK-01：昵称模式显式登出态的重新绑定屏（原死 boot() 里的内联实现，抽到 desktop-rebind.ts 便于单测）。
-// 输入昵称 → desktop-bootstrap 重新绑定这台设备 → 清登出标记 → reload 走既有 token 流。
+// DSK-01：昵称模式显式登出态的重新绑定屏（原死 boot() 里的内联实现，抽到 desktop-rebind.ts 便于单测）；
+// R24 S4：同一张屏也服务首启（这台设备从未连接过、resolveDesktopFirstRunGate 判定/默认为昵称模式）。
+// 输入昵称 → desktop-bootstrap → 落 token → reload 走既有 token 流；如果首启的默认假设猜错了（提交后
+// 探到 404，说明其实是密码/hybrid 模式），就地切到凭据门，不需要用户自己诊断。
 function mountDesktopRebindScreen(rootEl: HTMLElement, client: BrowserApiClient, locale: WorkHubLocale): void {
   bindDesktopRebindScreen(rootEl, {
     client,
     locale,
     storage: window.localStorage,
-    onSuccess: () => window.location.reload()
+    onSuccess: () => window.location.reload(),
+    context: desktopCredentialGateContext(),
+    onPasswordModeDetected: () => mountDesktopCredentialGate(rootEl, client, locale)
   });
 }
 
@@ -338,6 +327,12 @@ async function bootSpotlight() {
         // 桥不可用/桌宠窗未就绪：忽略，主窗照常。
       }
     })();
+    // R24 S6：落地页首次登录渲「建你的第一个项目」引导卡，而不是空网格（E-10）；顺带把 AI
+    // 是否配置的事实亮在聚焦盒顶部（E-11，只用聚焦盒的人此前完全看不到工作台聊天区才有的那条提示）。
+    // 两者都是 best-effort：health 探测失败就不渲横幅（同 workbench 聊天区 loadAiProviderHealth 的
+    // 既有取舍——探测失败≠没配置，不能吓用户）。
+    const health = await client.health().catch(() => undefined);
+    const firstRun = isDesktopFirstRun(window.localStorage);
     const spotlight = mountSpotlight({
       host: hostEl,
       client,
@@ -346,6 +341,11 @@ async function bootSpotlight() {
       drag: dragMainWindow,
       dragMove: moveMainWindowBy,
       dismiss: dismissMainWindow,
+      firstRun,
+      onFirstRunComplete: () => markDesktopOnboarded(window.localStorage),
+      ...(typeof health?.ai_provider_configured === "boolean"
+        ? { aiProviderConfigured: health.ai_provider_configured }
+        : {}),
       onActionSettled: () => {
         void refreshApprovalsBadge();
         notifyPetAttentionRefresh();
@@ -431,8 +431,16 @@ if (root && resolveDesktopSurface() === "pet") {
       baseUrl: resolveDesktopApiBase(),
       getClientToken: clientToken
     });
-    await ensureDesktopClientToken(petClient);
-    await bootDesktopPetSurface(root, { client: petClient });
+    const gate = await ensureDesktopClientToken(petClient);
+    // R24 S4：桌宠窗没有表单空间渲登录门（260×340）——沿用桌宠既有「工作台不拥有重新登录 UI，
+    // 那是主窗的地盘」同款取舍（见 workbench/shell.ts renderWorkbenchLoggedOutHtml 顶注），把用户
+    // 导向主窗；first-run 与真登出共用同一张提示卡，只是文案不同（desktopLoggedOut() 判定上下文）。
+    const signInNeededContext: DesktopCredentialGateContext | undefined =
+      gate === "needs-credentials" || gate === "logged-out" ? desktopCredentialGateContext() : undefined;
+    await bootDesktopPetSurface(root, {
+      client: petClient,
+      ...(signInNeededContext ? { signInNeededContext } : {})
+    });
   })();
 } else {
   void bootSpotlight();
