@@ -25,6 +25,8 @@ import {
 } from "../../spotlight/views/attention.js";
 import { workbenchInboxCss } from "./css.js";
 
+import { inboxT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 export type InboxViewApiClient = AttentionInboxApiClient;
@@ -82,8 +84,8 @@ export function mountInboxView(
   container.innerHTML = `<style>${workbenchInboxCss}</style>
     <div class="wh-wb-inbox">
       <div class="wh-wb-inbox-head">
-        <h2 class="wh-wb-inbox-title">${zh ? "待拍板" : "Decisions"}</h2>
-        <p class="wh-wb-inbox-sub" data-wb-inbox-sub>${zh ? "所有要你拍板的，都汇到这里" : "Everything waiting on your call, in one place"}</p>
+        <h2 class="wh-wb-inbox-title">${inboxT(input.locale, "decisions")}</h2>
+        <p class="wh-wb-inbox-sub" data-wb-inbox-sub>${inboxT(input.locale, "everythingWaitingOnYourCallIn")}</p>
       </div>
       <div class="wh-wb-inbox-controls" data-wb-inbox-controls hidden>
         <div class="wh-wb-inbox-chips" data-wb-inbox-chips></div>
@@ -131,7 +133,7 @@ export function mountInboxView(
       input.onOpenProposal(target.id);
       return;
     }
-    toast(zh ? "这项去主窗口对应能力查看" : "Open this in its capability in the main window", "info");
+    toast(inboxT(input.locale, "openThisInItsCapabilityIn"), "info");
   };
 
   const mountHandle = mountAttentionInbox({
@@ -210,15 +212,15 @@ export function mountInboxView(
       return;
     }
     if (batchState === "busy") {
-      batchEl.innerHTML = `<button type="button" class="wh-wb-inbox-batchbtn" disabled>${zh ? "处理中…" : "Working…"}</button>`;
+      batchEl.innerHTML = `<button type="button" class="wh-wb-inbox-batchbtn" disabled>${inboxT(input.locale, "working")}</button>`;
       return;
     }
     if (batchState === "confirm") {
       batchEl.innerHTML = `<span class="wh-wb-inbox-batch-q">${
         zh ? `确认通过全部 ${approvalCount} 条审批？` : `Approve all ${approvalCount} approvals?`
       }</span>
-        <button type="button" class="wh-wb-inbox-batchbtn wh-wb-inbox-batchbtn--go" data-wb-inbox-batch-confirm>${zh ? "全部通过" : "Approve all"}</button>
-        <button type="button" class="wh-wb-inbox-batchbtn" data-wb-inbox-batch-cancel>${zh ? "取消" : "Cancel"}</button>`;
+        <button type="button" class="wh-wb-inbox-batchbtn wh-wb-inbox-batchbtn--go" data-wb-inbox-batch-confirm>${inboxT(input.locale, "approveAll")}</button>
+        <button type="button" class="wh-wb-inbox-batchbtn" data-wb-inbox-batch-cancel>${inboxT(input.locale, "cancel")}</button>`;
       return;
     }
     batchEl.innerHTML = `<button type="button" class="wh-wb-inbox-batchbtn" data-wb-inbox-batch-start>${
@@ -269,14 +271,14 @@ export function mountInboxView(
           host.insertAdjacentHTML(
             "beforeend",
             `<p class="wh-wb-inbox-failmark" data-wb-inbox-failmark>${
-              zh ? "批量通过时这条没成功，单独再试一次。" : "This one didn't go through in the batch — try it individually."
+              inboxT(input.locale, "thisOneDidnTGoThrough")
             }</p>`
           );
         }
       }
       if (filterNoteEl) {
         if (visible === 0) {
-          filterNoteEl.textContent = zh ? "当前筛选下没有待办。" : "Nothing under this filter.";
+          filterNoteEl.textContent = inboxT(input.locale, "nothingUnderThisFilter");
           filterNoteEl.hidden = false;
         } else {
           filterNoteEl.hidden = true;
@@ -327,7 +329,7 @@ export function mountInboxView(
         "info"
       );
     } else {
-      toast(zh ? "没有审批通过（可能都已被处理）" : "None approved (they may already be handled)", "error");
+      toast(inboxT(input.locale, "noneApprovedTheyMayAlreadyBe"), "error");
     }
     input.onActionSettled?.();
     // 重拉队列：通过的掉出、失败的仍在——观察器 reconcile 会把失败标注重新贴上。

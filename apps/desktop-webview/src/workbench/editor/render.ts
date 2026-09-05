@@ -11,6 +11,8 @@ import { escapeHtml } from "@workhub/web-runtime";
 
 import { workbenchIcons } from "../icons.js";
 
+import { editorT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 // 未变段落超过这么多行才折叠；折叠时保留上下各若干行做锚点，别把用户读上下文的能力也一起收走。
@@ -115,12 +117,12 @@ function filesBarHtml(files: EditorFilesState | undefined, zh: boolean): string 
     .join("");
   return `<div class="wh-wb-ed-files" data-wb-ed-files>
     <button type="button" class="wh-wb-ed-fnav" data-wb-ed-file-prev${atFirst ? " disabled" : ""} aria-label="${
-      zh ? "上一个文件" : "Previous file"
-    }" title="${zh ? "上一个文件" : "Previous file"}">${workbenchIcons.chevronLeft}</button>
+      editorT(zh, "previousFile")
+    }" title="${editorT(zh, "previousFile")}">${workbenchIcons.chevronLeft}</button>
     <div class="wh-wb-ed-ftabs">${chips}</div>
     <button type="button" class="wh-wb-ed-fnav" data-wb-ed-file-next${atLast ? " disabled" : ""} aria-label="${
-      zh ? "下一个文件" : "Next file"
-    }" title="${zh ? "下一个文件" : "Next file"}">${workbenchIcons.chevronRight}</button>
+      editorT(zh, "nextFile")
+    }" title="${editorT(zh, "nextFile")}">${workbenchIcons.chevronRight}</button>
     <span class="wh-wb-ed-fcount">${activeIdx + 1}/${files.tabs.length}</span>
   </div>`;
 }
@@ -130,7 +132,7 @@ function headerHtml(filename: string, statusChip: string, zh: boolean): string {
     <span class="wh-wb-ed-file">${workbenchIcons.file}<span class="wh-wb-ed-file-name">${escapeHtml(filename)}</span></span>
     ${statusChip}
     <div class="wh-wb-titlebar-spacer"></div>
-    <button type="button" class="wh-wb-winbtn" data-wb-ed-close aria-label="${zh ? "关闭编辑器" : "Close editor"}" title="${zh ? "关闭" : "Close"}">${workbenchIcons.close}</button>
+    <button type="button" class="wh-wb-winbtn" data-wb-ed-close aria-label="${editorT(zh, "closeEditor")}" title="${editorT(zh, "close")}">${workbenchIcons.close}</button>
   </div>`;
 }
 
@@ -147,7 +149,7 @@ function contextSegmentHtml(lines: string[], index: number, expanded: boolean, z
     // 展开态给一个「收起」把手（只在原本会被折叠的长段落上出现）。
     const collapse =
       lines.length > CONTEXT_COLLAPSE_THRESHOLD && expanded
-        ? `<button type="button" class="wh-wb-ed-fold" data-wb-ed-collapse="${index}">${zh ? "收起未变更段落" : "Collapse unchanged"}</button>`
+        ? `<button type="button" class="wh-wb-ed-fold" data-wb-ed-collapse="${index}">${editorT(zh, "collapseUnchanged")}</button>`
         : "";
     return `${collapse}${rows}`;
   }
@@ -170,18 +172,16 @@ function segmentHtml(segment: ProposalChangeDiffSegment, index: number, expanded
 function bodyHtml(diff: ProposalChangeDiffVM, ui: EditorReadyUi, zh: boolean): string {
   const banner = !diff.base_available
     ? `<div class="wh-wb-ed-banner">${
-        zh
-          ? "无法比对改动前的版本（快照已不可读），下面只展示提议后的内容。"
-          : "Couldn't compare against the previous version (snapshot unreadable) — showing the proposed content only."
+        editorT(zh, "couldnTCompareAgainstThePrevious")
       }</div>`
     : diff.truncated
       ? `<div class="wh-wb-ed-banner">${
-          zh ? "这份变更较大，逐行对照已被截断，仅供参考。" : "This change is large; the line-by-line diff is truncated."
+          editorT(zh, "thisChangeIsLargeTheLine")
         }</div>`
       : "";
   const rows = diff.segments.length
     ? diff.segments.map((segment, index) => segmentHtml(segment, index, ui.expanded, zh)).join("")
-    : `<div class="wh-wb-ed-empty">${zh ? "这条变更没有可展示的正文。" : "This change has no body to show."}</div>`;
+    : `<div class="wh-wb-ed-empty">${editorT(zh, "thisChangeHasNoBodyTo")}</div>`;
   return `<div class="wh-wb-ed-paper">
     <div class="wh-wb-ed-paper-head">
       <span class="wh-wb-ed-lede">${escapeHtml(diff.title)}</span>
@@ -194,19 +194,19 @@ function bodyHtml(diff: ProposalChangeDiffVM, ui: EditorReadyUi, zh: boolean): s
 function actionsHtml(actions: EditorReadyActions, ui: EditorReadyUi, zh: boolean): string {
   const notice = ui.notice ? `<div class="wh-wb-ed-notice">${escapeHtml(ui.notice)}</div>` : "";
   if (actions.status === "opened") {
-    const approveLabel = ui.busy === "approve" ? (zh ? "确认中…" : "Approving…") : zh ? "确认通过" : "Mark approved";
+    const approveLabel = ui.busy === "approve" ? (editorT(zh, "approving")) : editorT(zh, "markApproved");
     return `<div class="wh-wb-ed-actionbar">${notice}
-      <p class="wh-wb-ed-actionnote">${zh ? "确认通过后再合入交付物，可用快照回滚。" : "Approve first, then merge; the snapshot can roll back."}</p>
+      <p class="wh-wb-ed-actionnote">${editorT(zh, "approveFirstThenMergeTheSnapshot")}</p>
       <div class="wh-wb-ed-actionrow">
-        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-ed-deny${ui.busy ? " disabled" : ""}>${zh ? "打回修改" : "Request changes"}</button>
+        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-ed-deny${ui.busy ? " disabled" : ""}>${editorT(zh, "requestChanges")}</button>
         <button type="button" class="wh-wb-btn wh-wb-btn--primary" data-wb-ed-approve${ui.busy ? " disabled" : ""}>${escapeHtml(approveLabel)}</button>
       </div>
     </div>`;
   }
   if (actions.status === "reviewed" && actions.mergeLabel) {
-    const mergeLabel = ui.busy === "merge" ? (zh ? "合入中…" : "Merging…") : actions.mergeLabel;
+    const mergeLabel = ui.busy === "merge" ? (editorT(zh, "merging")) : actions.mergeLabel;
     return `<div class="wh-wb-ed-actionbar">${notice}
-      <p class="wh-wb-ed-actionnote">${zh ? "已确认通过，只差合入交付物。" : "Approved; only the deliverable merge remains."}</p>
+      <p class="wh-wb-ed-actionnote">${editorT(zh, "approvedOnlyTheDeliverableMergeRemains")}</p>
       <div class="wh-wb-ed-actionrow">
         <button type="button" class="wh-wb-btn wh-wb-btn--primary" data-wb-ed-merge${ui.busy ? " disabled" : ""}>${escapeHtml(mergeLabel)}</button>
       </div>
@@ -223,29 +223,27 @@ export function renderEditorHtml(state: EditorViewState, locale: Locale): string
   const zh = locale === "zh-CN";
   if (state.mode === "loading") {
     return `<div class="wh-wb-ed">${headerHtml(state.filename, "", zh)}
-      <div class="wh-wb-ed-scroll"><div class="wh-wb-loading"><span class="wh-wb-spinner"></span>${zh ? "正在打开变更…" : "Opening the change…"}</div></div>
+      <div class="wh-wb-ed-scroll"><div class="wh-wb-loading"><span class="wh-wb-spinner"></span>${editorT(locale, "openingTheChange")}</div></div>
     </div>`;
   }
   if (state.mode === "error") {
     return `<div class="wh-wb-ed">${headerHtml(state.filename, "", zh)}
       <div class="wh-wb-ed-scroll"><div class="wh-wb-ed-empty">${escapeHtml(state.message)}
-        <div style="margin-top:12px"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-ed-retry>${zh ? "重试" : "Try again"}</button></div>
+        <div style="margin-top:12px"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-ed-retry>${editorT(locale, "tryAgain")}</button></div>
       </div></div>
     </div>`;
   }
   if (state.mode === "unsupported") {
     return `<div class="wh-wb-ed">${headerHtml(state.filename, "", zh)}
       <div class="wh-wb-ed-scroll"><div class="wh-wb-ed-empty">${
-        zh
-          ? "这条变更没有可逐行对照的文本内容。采纳后可到工作项或网盘查看正式版。"
-          : "This change has no line-comparable text. After it's merged, view the final version in the work item or drive."
+        editorT(locale, "thisChangeHasNoLineComparable")
       }</div></div>
     </div>`;
   }
   // #12：合并撞真实冲突——渲复用的逐冲突解决面板（conflictHtml 是 proposalMergeConflictHtml 产出的可信 HTML，
   // 内含 data-prop-back 返回把手 + 各冲突选项动作，view.ts 接管点击）。没有动作条：处理走面板内的冲突动作。
   if (state.mode === "conflict") {
-    const conflictChip = `<span class="wh-wb-ed-tag wh-wb-ed-tag--rejected">${escapeHtml(zh ? "有冲突" : "Conflict")}</span>`;
+    const conflictChip = `<span class="wh-wb-ed-tag wh-wb-ed-tag--rejected">${escapeHtml(editorT(locale, "conflict"))}</span>`;
     return `<div class="wh-wb-ed">
       ${headerHtml(state.filename, conflictChip, zh)}
       <div class="wh-wb-ed-scroll"><div class="wh-wb-ed-conflict" data-wb-ed-conflict>${state.conflictHtml}</div></div>

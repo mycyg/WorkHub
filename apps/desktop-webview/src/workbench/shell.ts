@@ -60,6 +60,8 @@ import { createPresenceHandle } from "./presence-store.js";
 import { createWorkbenchStore, type WorkbenchStore, type WorkbenchStoreState } from "./store.js";
 import { isMacOsWebview, resolveWorkbenchWindowBridge } from "./window-bridge.js";
 
+import { workbenchT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 // R12 批 2：中栏在项目选中且 VM 就绪时渲染真实群聊（chat/view.ts），需要 request（消息/typing 走
@@ -123,18 +125,18 @@ export function renderWorkbenchShellHtml(locale: Locale, chrome: WorkbenchShellC
   const titlebarControlsHtml = nativeWindowChrome
     ? ""
     : `<div class="wh-wb-titlebar-controls">
-          <button type="button" class="wh-wb-winbtn" data-wb-minimize aria-label="${zh ? "最小化" : "Minimize"}">${workbenchIcons.minimize}</button>
-          <button type="button" class="wh-wb-winbtn wh-wb-winbtn--close" data-wb-close aria-label="${zh ? "关闭" : "Close"}">${workbenchIcons.close}</button>
+          <button type="button" class="wh-wb-winbtn" data-wb-minimize aria-label="${workbenchT(locale, "minimize")}">${workbenchIcons.minimize}</button>
+          <button type="button" class="wh-wb-winbtn wh-wb-winbtn--close" data-wb-close aria-label="${workbenchT(locale, "close")}">${workbenchIcons.close}</button>
         </div>`;
   // G-desktop 止血批 5：顶栏「打开聚焦盒」入口——不是窗口帧控件（不像 min/close 那样在原生红绿灯
   // 接管时该消失），所以放在 titlebarControlsHtml 判断之外、始终渲染。真实接线见 mountWorkbenchShell
   // 的点击处理：invoke("show_main_window")，main.rs 已注册的既有 command（托盘/深链/单实例冷启动都在
   // 用同一个），不是新造的协议。
-  const openSpotlightBtnHtml = `<button type="button" class="wh-wb-winbtn" data-wb-open-spotlight aria-label="${zh ? "打开聚焦盒" : "Open Spotlight"}" title="${zh ? "打开聚焦盒" : "Open Spotlight"}">${workbenchIcons.search}</button>`;
+  const openSpotlightBtnHtml = `<button type="button" class="wh-wb-winbtn" data-wb-open-spotlight aria-label="${workbenchT(locale, "openSpotlight")}" title="${workbenchT(locale, "openSpotlight")}">${workbenchIcons.search}</button>`;
   return `<div class="wh-ds wh-wb">
     <div class="wh-wb-window" data-wb-window>
       <div class="${titlebarClass}" data-wb-titlebar>
-        <span class="wh-wb-crumb" data-wb-crumb>${zh ? "WorkHub 工作台" : "WorkHub Workbench"}</span>
+        <span class="wh-wb-crumb" data-wb-crumb>${workbenchT(locale, "workhubWorkbench")}</span>
         <div class="wh-wb-titlebar-spacer"></div>
         ${openSpotlightBtnHtml}
         ${titlebarControlsHtml}
@@ -148,9 +150,9 @@ export function renderWorkbenchShellHtml(locale: Locale, chrome: WorkbenchShellC
         <div class="wh-wb-side" data-wb-side data-open="true">
           <div class="wh-wb-side-head">
             ${workbenchIcons.army}
-            <span class="wh-wb-side-title">${zh ? "情境面板" : "Context panel"}</span>
+            <span class="wh-wb-side-title">${workbenchT(locale, "contextPanel")}</span>
             <div class="wh-wb-titlebar-spacer"></div>
-            <button type="button" class="wh-wb-winbtn" data-wb-toggle-side aria-label="${zh ? "收起情境面板" : "Collapse context panel"}">${workbenchIcons.chevronRight}</button>
+            <button type="button" class="wh-wb-winbtn" data-wb-toggle-side aria-label="${workbenchT(locale, "collapseContextPanel")}">${workbenchIcons.chevronRight}</button>
           </div>
           <div class="wh-wb-side-tabs" data-wb-side-tabs hidden></div>
           <div class="wh-wb-side-body" data-wb-side-body></div>
@@ -162,12 +164,10 @@ export function renderWorkbenchShellHtml(locale: Locale, chrome: WorkbenchShellC
 
 export function renderEmptyStateHtml(locale: Locale, hasProjects: boolean): string {
   const zh = locale === "zh-CN";
-  const title = hasProjects ? (zh ? "选一个项目开始" : "Pick a project to start") : zh ? "先建一个项目" : "Create your first project";
-  const sub = zh
-    ? "每个项目都有自己的群聊、网盘和 Cuu——挑左边一个项目，或建一个新的。"
-    : "Every project gets its own team chat, drive, and Cuu — pick one on the left, or create a new one.";
+  const title = hasProjects ? (workbenchT(locale, "pickAProjectToStart")) : workbenchT(locale, "createYourFirstProject");
+  const sub = workbenchT(locale, "everyProjectGetsItsOwnTeam");
   const cta = !hasProjects
-    ? `<div class="wh-wb-empty-actions"><button type="button" class="wh-wb-btn wh-wb-btn--primary" data-wb-new-project>${zh ? "新建项目" : "New project"}</button></div>`
+    ? `<div class="wh-wb-empty-actions"><button type="button" class="wh-wb-btn wh-wb-btn--primary" data-wb-new-project>${workbenchT(locale, "newProject")}</button></div>`
     : "";
   return `<div class="wh-wb-empty ds-anim-fade-in">
     <span class="wh-wb-empty-icon">${workbenchIcons.chat}</span>
@@ -179,13 +179,13 @@ export function renderEmptyStateHtml(locale: Locale, hasProjects: boolean): stri
 
 export function renderCenterLoadingHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  return `<div class="wh-wb-loading"><span class="wh-wb-spinner"></span>${zh ? "正在打开工作台…" : "Opening the workbench…"}</div>`;
+  return `<div class="wh-wb-loading"><span class="wh-wb-spinner"></span>${workbenchT(locale, "openingTheWorkbench")}</div>`;
 }
 
 export function renderCenterErrorHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  return `<div class="wh-wb-error">${zh ? "没打开这个项目的工作台，稍后重试" : "Couldn't open this project's workbench — retry"}
-    <div style="margin-top:13px"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-retry-vm>${zh ? "重试" : "Retry"}</button></div>
+  return `<div class="wh-wb-error">${workbenchT(locale, "couldnTOpenThisProjectS")}
+    <div style="margin-top:13px"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-retry-vm>${workbenchT(locale, "retry")}</button></div>
   </div>`;
 }
 
@@ -200,15 +200,11 @@ export function renderCenterErrorHtml(locale: Locale): string {
 // context 默认 "logged-out"（向后兼容既有调用方/既有测试对「已登出」文案的断言）。
 export function renderWorkbenchLoggedOutHtml(locale: Locale, context: "first-run" | "logged-out" = "logged-out"): string {
   const zh = locale === "zh-CN";
-  const title = context === "first-run" ? (zh ? "欢迎使用 WorkHub" : "Welcome to WorkHub") : zh ? "已登出" : "Signed out";
+  const title = context === "first-run" ? (workbenchT(locale, "welcomeToWorkhub")) : workbenchT(locale, "signedOut");
   const body =
     context === "first-run"
-      ? zh
-        ? "这台设备第一次连接这台服务器。去主窗口登录后，回来打开这个工作台就能继续用。"
-        : "This device hasn't connected to this server before. Sign in from the main window, then reopen this workbench to continue."
-      : zh
-        ? "这台设备已经登出。去主窗口重新登录后，回来打开这个工作台就能继续用。"
-        : "This device signed out. Sign back in from the main window, then reopen this workbench to continue.";
+      ? workbenchT(locale, "thisDeviceHasnTConnectedTo")
+      : workbenchT(locale, "thisDeviceSignedOutSignBack");
   return `<div class="wh-ds wh-wb" data-wb-loggedout>
     <div style="min-height:100vh;display:grid;place-items:center;box-sizing:border-box;padding:24px">
       <div class="ds-glass" style="padding:28px 30px;border-radius:16px;display:grid;gap:10px;max-width:340px;text-align:center">
@@ -849,7 +845,7 @@ export function mountWorkbenchShell(
     if (!fetchWorkbench) {
       store.setState({
         vmLoad: "error",
-        vmError: input.locale === "zh-CN" ? "这个客户端不支持工作台数据" : "This client does not support workbench data"
+        vmError: workbenchT(input.locale, "thisClientDoesNotSupportWorkbench")
       });
       return;
     }
@@ -1074,7 +1070,7 @@ export function mountWorkbenchShell(
         client: input.client,
         locale: input.locale,
         projectId: dm.conversation.project_id,
-        projectName: peer?.nickname ?? (zh ? "私聊" : "Direct message"),
+        projectName: peer?.nickname ?? (workbenchT(input.locale, "directMessage")),
         conversationId: dm.conversation.id,
         conversationKind: "collab",
         ...(dmFocusSeq !== undefined ? { focusSeq: dmFocusSeq } : {}),
@@ -1479,8 +1475,8 @@ export function mountWorkbenchShell(
     const zh = input.locale === "zh-CN";
     const mode = state.sideContextMode;
     sideTabsEl.innerHTML = `
-      <button type="button" class="wh-wb-smode${mode === "proposals" ? " is-active" : ""}" data-wb-side-mode="proposals" aria-pressed="${mode === "proposals"}">${zh ? "提议" : "Proposals"}</button>
-      <button type="button" class="wh-wb-smode${mode === "files" ? " is-active" : ""}" data-wb-side-mode="files" aria-pressed="${mode === "files"}">${zh ? "文件" : "Files"}</button>`;
+      <button type="button" class="wh-wb-smode${mode === "proposals" ? " is-active" : ""}" data-wb-side-mode="proposals" aria-pressed="${mode === "proposals"}">${workbenchT(input.locale, "proposals")}</button>
+      <button type="button" class="wh-wb-smode${mode === "files" ? " is-active" : ""}" data-wb-side-mode="files" aria-pressed="${mode === "files"}">${workbenchT(input.locale, "files")}</button>`;
   };
 
   sideTabsEl?.addEventListener("click", (event) => {
@@ -1507,10 +1503,10 @@ export function mountWorkbenchShell(
     }
     const zh = input.locale === "zh-CN";
     if (!state.vm) {
-      crumbEl.textContent = zh ? "WorkHub 工作台" : "WorkHub Workbench";
+      crumbEl.textContent = workbenchT(input.locale, "workhubWorkbench");
       return;
     }
-    crumbEl.innerHTML = `WorkHub ${zh ? "工作台" : "Workbench"} · <b>${escapeHtml(state.vm.project.name)}</b>`;
+    crumbEl.innerHTML = `WorkHub ${workbenchT(input.locale, "workbench")} · <b>${escapeHtml(state.vm.project.name)}</b>`;
   };
 
   // ── R16-W4b2（中栏「已打开会话」tab 条） ───────────────────────────────────────────────
@@ -1539,7 +1535,7 @@ export function mountWorkbenchShell(
         kind: "dm",
         conversationId: id,
         projectId: dm.conversation.project_id,
-        title: peer?.nickname ?? (zh ? "私聊" : "Direct message")
+        title: peer?.nickname ?? (workbenchT(input.locale, "directMessage"))
       };
     }
     const vm = state.vm;
@@ -1847,14 +1843,14 @@ export function mountWorkbenchShell(
           const peerNickname =
             state.vm?.workspace_members.items.find((member) => member.user_id === userId)?.nickname
             ?? state.dmList.flatMap((dm) => dm.participants).find((p) => p.user_id === userId)?.nickname
-            ?? (input.locale === "zh-CN" ? "私聊" : "Direct message");
+            ?? (workbenchT(input.locale, "directMessage"));
           const selfUserId = currentUserId ?? selfMember?.user_id ?? result.conversation.created_by ?? "";
           const item = {
             conversation: result.conversation,
             participants: [
               {
                 user_id: selfUserId,
-                nickname: selfMember?.nickname ?? (input.locale === "zh-CN" ? "我" : "Me"),
+                nickname: selfMember?.nickname ?? (workbenchT(input.locale, "me")),
                 is_self: true
               },
               { user_id: userId, nickname: peerNickname, is_self: false }

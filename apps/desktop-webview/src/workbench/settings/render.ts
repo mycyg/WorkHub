@@ -20,6 +20,8 @@ import type {
 import { DEFAULT_RISK_MONITOR_SETTINGS, PROJECT_INSTRUCTIONS_MAX_CHARS } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
+import { settingsT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 // —— 分钟 <-> HH:MM 换算（quiet_hours 的 start_minute/end_minute 是 0-1439 的当日分钟数）—— //
@@ -92,13 +94,13 @@ function quietHoursBodyHtml(quiet: AiQuietHours, zh: boolean, editable: boolean)
     .join("");
   return `<div class="wh-wb-pset-quiet-body">
     <div class="wh-wb-pset-inline">
-      <label class="wh-wb-pset-inline-k">${zh ? "从" : "From"}</label>
+      <label class="wh-wb-pset-inline-k">${settingsT(zh, "from")}</label>
       <input type="time" class="wh-wb-pset-time" value="${escapeHtml(minuteToHhmm(quiet.start_minute))}" data-wb-pset-quiet-start${dis} />
-      <label class="wh-wb-pset-inline-k">${zh ? "到" : "to"}</label>
+      <label class="wh-wb-pset-inline-k">${settingsT(zh, "to")}</label>
       <input type="time" class="wh-wb-pset-time" value="${escapeHtml(minuteToHhmm(quiet.end_minute))}" data-wb-pset-quiet-end${dis} />
     </div>
     <div class="wh-wb-pset-days">${weekdayChips}</div>
-    <div class="wh-wb-pset-note">${zh ? "时区" : "Timezone"}: ${escapeHtml(quiet.timezone)}</div>
+    <div class="wh-wb-pset-note">${settingsT(zh, "timezone")}: ${escapeHtml(quiet.timezone)}</div>
   </div>`;
 }
 
@@ -165,23 +167,23 @@ function riskMonitorGroupHtml(risk: RiskMonitorSettings, zh: boolean, editable: 
       value: resolved.stall_days_threshold,
       min: RISK_MONITOR_BOUNDS.stall_days_threshold.min,
       max: RISK_MONITOR_BOUNDS.stall_days_threshold.max,
-      label: zh ? "工单停滞天数阈值" : "Stall threshold",
-      unit: zh ? "天" : "days"
+      label: settingsT(zh, "stallThreshold"),
+      unit: settingsT(zh, "days")
     }),
     numberRow({
       hook: "data-wb-risk-deadline-input",
       value: resolved.deadline_lookahead_days,
       min: RISK_MONITOR_BOUNDS.deadline_lookahead_days.min,
       max: RISK_MONITOR_BOUNDS.deadline_lookahead_days.max,
-      label: zh ? "deadline 前瞻天数" : "Deadline lookahead",
-      unit: zh ? "天" : "days"
+      label: settingsT(zh, "deadlineLookahead"),
+      unit: settingsT(zh, "days")
     }),
     numberRow({
       hook: "data-wb-risk-cost-ratio-input",
       value: resolved.cost_spike_ratio_pct,
       min: RISK_MONITOR_BOUNDS.cost_spike_ratio_pct.min,
       max: RISK_MONITOR_BOUNDS.cost_spike_ratio_pct.max,
-      label: zh ? "成本放量比例" : "Cost spike ratio",
+      label: settingsT(zh, "costSpikeRatio"),
       unit: "%"
     }),
     numberRow({
@@ -189,22 +191,22 @@ function riskMonitorGroupHtml(risk: RiskMonitorSettings, zh: boolean, editable: 
       value: resolved.cost_spike_min_cny,
       min: RISK_MONITOR_BOUNDS.cost_spike_min_cny.min,
       step: "0.01",
-      label: zh ? "成本放量下限" : "Cost spike floor",
+      label: settingsT(zh, "costSpikeFloor"),
       unit: "¥"
     })
   ].join("");
 
   const saveButton = editable
-    ? `<button type="button" class="wh-wb-btn" data-wb-risk-save${saving ? " disabled" : ""}>${saving ? (zh ? "保存中…" : "Saving…") : zh ? "保存阈值" : "Save thresholds"}</button>`
+    ? `<button type="button" class="wh-wb-btn" data-wb-risk-save${saving ? " disabled" : ""}>${saving ? (settingsT(zh, "saving")) : settingsT(zh, "saveThresholds")}</button>`
     : "";
 
   return `<section class="wh-wb-pset-group wh-wb-risk-set" data-wb-pset-risk-group="true">
     <div class="wh-wb-pset-row">
       <div class="wh-wb-pset-row-main">
-        <div class="wh-wb-pset-row-title">${zh ? "风险巡检" : "Risk monitor"}</div>
-        <div class="wh-wb-pset-row-sub">${zh ? "PM 视角每日巡检——工单停滞、临期未动工、项目成本异常放量，一天一次合并汇报" : "A daily PM-style patrol — stalled work, looming deadlines, cost spikes, merged into one digest a day"}</div>
+        <div class="wh-wb-pset-row-title">${settingsT(zh, "riskMonitor")}</div>
+        <div class="wh-wb-pset-row-sub">${settingsT(zh, "aDailyPmStylePatrolStalled")}</div>
       </div>
-      ${switchHtml({ on: resolved.enabled, hook: "data-wb-risk-enabled", editable, label: zh ? "风险巡检" : "Risk monitor" })}
+      ${switchHtml({ on: resolved.enabled, hook: "data-wb-risk-enabled", editable, label: settingsT(zh, "riskMonitor") })}
     </div>
     <div class="wh-wb-risk-set-fields">${fields}</div>
     ${saveButton ? `<div class="wh-wb-pset-inline" style="margin-top:9px">${saveButton}</div>` : ""}
@@ -226,14 +228,14 @@ export function renderProjectSettingsHtml(input: {
 
   const granularChips = PROJECT_GRANULAR_KEYS.map((key) => {
     const allowed = projectGranularEffective(gov.granular_settings, key);
-    const stateText = allowed ? (zh ? "允许" : "allowed") : zh ? "已禁止" : "blocked";
+    const stateText = allowed ? (settingsT(input.locale, "allowed")) : settingsT(input.locale, "blocked");
     const hook = input.editable ? ` data-wb-pset-granular="${key}"` : " disabled";
     return `<button type="button" class="wh-wb-pset-chip" data-sel="${!allowed}"${hook}>${escapeHtml(projectGranularLabel(key, zh))} · ${stateText}</button>`;
   }).join("");
 
   const readOnlyNote = input.editable
     ? ""
-    : `<p class="wh-wb-pset-readonly-note">${zh ? "只有项目负责人能修改这些设置。" : "Only the project owner can change these settings."}</p>`;
+    : `<p class="wh-wb-pset-readonly-note">${settingsT(input.locale, "onlyTheProjectOwnerCanChange")}</p>`;
 
   const errorRow = input.errorText
     ? `<div class="wh-wb-pset-error" data-wb-pset-error="true">${escapeHtml(input.errorText)}</div>`
@@ -241,11 +243,9 @@ export function renderProjectSettingsHtml(input: {
 
   return `<div class="wh-wb-pset ds-anim-fade-in">
     <div class="wh-wb-pset-head">
-      <h2 class="wh-wb-pset-title">${zh ? "项目设置" : "Project settings"} · ${escapeHtml(input.projectName)}</h2>
+      <h2 class="wh-wb-pset-title">${settingsT(input.locale, "projectSettings")} · ${escapeHtml(input.projectName)}</h2>
       <p class="wh-wb-pset-sub">${
-        zh
-          ? "AI 治理——只影响这个项目的主区观察者与项目级 AI 行为；个人单聊模式在 设置 · AI 里调。"
-          : "AI governance — affects this project's main-chat observer and project-level AI behavior; your personal 1:1 mode lives in Settings · AI."
+        settingsT(input.locale, "aiGovernanceAffectsThisProjectS")
       }</p>
       ${readOnlyNote}
     </div>
@@ -253,40 +253,40 @@ export function renderProjectSettingsHtml(input: {
     <section class="wh-wb-pset-group" data-wb-pset-observer-group="true">
       <div class="wh-wb-pset-row">
         <div class="wh-wb-pset-row-main">
-          <div class="wh-wb-pset-row-title">${zh ? "静默观察者" : "Silence observer"}</div>
-          <div class="wh-wb-pset-row-sub">${zh ? "群聊安静一段时间后，Cuu 自动把讨论里的活拎出来（行动卡）" : "After the chat goes quiet, Cuu pulls actionable work out of the discussion (action cards)"}</div>
+          <div class="wh-wb-pset-row-title">${settingsT(input.locale, "silenceObserver")}</div>
+          <div class="wh-wb-pset-row-sub">${settingsT(input.locale, "afterTheChatGoesQuietCuu")}</div>
         </div>
-        ${switchHtml({ on: gov.observer_enabled, hook: "data-wb-pset-observer", editable: input.editable, label: zh ? "静默观察者" : "Silence observer" })}
+        ${switchHtml({ on: gov.observer_enabled, hook: "data-wb-pset-observer", editable: input.editable, label: settingsT(input.locale, "silenceObserver") })}
       </div>
     </section>
     <section class="wh-wb-pset-group" data-wb-pset-silence-group="true">
       <div class="wh-wb-pset-row">
         <div class="wh-wb-pset-row-main">
-          <div class="wh-wb-pset-row-title">${zh ? "静默窗口" : "Silence window"}</div>
-          <div class="wh-wb-pset-row-sub">${zh ? "聊天停多少秒后观察者开始分析（0-86400）" : "How many quiet seconds before the observer analyzes (0-86400)"}</div>
+          <div class="wh-wb-pset-row-title">${settingsT(input.locale, "silenceWindow")}</div>
+          <div class="wh-wb-pset-row-sub">${settingsT(input.locale, "howManyQuietSecondsBeforeThe")}</div>
         </div>
         <div class="wh-wb-pset-inline">
           <input type="number" min="0" max="86400" step="1" class="wh-wb-pset-num" value="${escapeHtml(String(gov.silence_window_seconds))}" data-wb-pset-silence-input${dis} />
-          <span class="wh-wb-pset-inline-k">${zh ? "秒" : "s"}</span>
-          ${input.editable ? `<button type="button" class="wh-wb-btn" data-wb-pset-silence-save${input.savingSilenceWindow ? " disabled" : ""}>${input.savingSilenceWindow ? (zh ? "保存中…" : "Saving…") : zh ? "保存" : "Save"}</button>` : ""}
+          <span class="wh-wb-pset-inline-k">${settingsT(input.locale, "s")}</span>
+          ${input.editable ? `<button type="button" class="wh-wb-btn" data-wb-pset-silence-save${input.savingSilenceWindow ? " disabled" : ""}>${input.savingSilenceWindow ? (settingsT(input.locale, "saving")) : settingsT(input.locale, "save")}</button>` : ""}
         </div>
       </div>
     </section>
     <section class="wh-wb-pset-group" data-wb-pset-quiet-group="true">
       <div class="wh-wb-pset-row">
         <div class="wh-wb-pset-row-main">
-          <div class="wh-wb-pset-row-title">${zh ? "安静时段" : "Quiet hours"}</div>
-          <div class="wh-wb-pset-row-sub">${zh ? "这段时间里观察者不打扰（不分析、不发行动卡）" : "The observer stays quiet during these hours (no analysis, no action cards)"}</div>
+          <div class="wh-wb-pset-row-title">${settingsT(input.locale, "quietHours")}</div>
+          <div class="wh-wb-pset-row-sub">${settingsT(input.locale, "theObserverStaysQuietDuringThese")}</div>
         </div>
-        ${switchHtml({ on: gov.quiet_hours.enabled, hook: "data-wb-pset-quiet-toggle", editable: input.editable, label: zh ? "安静时段" : "Quiet hours" })}
+        ${switchHtml({ on: gov.quiet_hours.enabled, hook: "data-wb-pset-quiet-toggle", editable: input.editable, label: settingsT(input.locale, "quietHours") })}
       </div>
       ${quietHoursBodyHtml(gov.quiet_hours, zh, input.editable)}
     </section>
     <section class="wh-wb-pset-group" data-wb-pset-granular-group="true">
       <div class="wh-wb-pset-row">
         <div class="wh-wb-pset-row-main">
-          <div class="wh-wb-pset-row-title">${zh ? "AI 在这个项目里能做什么" : "What AI can do in this project"}</div>
-          <div class="wh-wb-pset-row-sub">${zh ? "按能力细分——禁了的能力观察者不会做" : "Per-capability switches — the observer won't do what's blocked"}</div>
+          <div class="wh-wb-pset-row-title">${settingsT(input.locale, "whatAiCanDoInThis")}</div>
+          <div class="wh-wb-pset-row-sub">${settingsT(input.locale, "perCapabilitySwitchesTheObserverWon")}</div>
         </div>
       </div>
       <div class="wh-wb-pset-chips">${granularChips}</div>
@@ -313,7 +313,7 @@ export function renderProjectMembersSectionHtml(input: {
   const { totalMembers, collabConversations } = input.overview;
   const mainRow = `<div class="wh-wb-pset-row">
     <div class="wh-wb-pset-row-main">
-      <div class="wh-wb-pset-row-title">${zh ? "主区群聊 · 全员" : "Main chat · everyone"}</div>
+      <div class="wh-wb-pset-row-title">${settingsT(input.locale, "mainChatEveryone")}</div>
       <div class="wh-wb-pset-row-sub">${
         zh
           ? `工作区全部 ${totalMembers} 名成员都能进主区群聊，无需单独拉人。`
@@ -327,27 +327,23 @@ export function renderProjectMembersSectionHtml(input: {
           (conversation) => `<div class="wh-wb-pset-row">
       <div class="wh-wb-pset-row-main">
         <div class="wh-wb-pset-row-title">${escapeHtml(conversation.title)}</div>
-        <div class="wh-wb-pset-row-sub">${zh ? "协同会话——在会话成员条里加人/退群/移出" : "Collab chat — add or remove members from its member bar"}</div>
+        <div class="wh-wb-pset-row-sub">${settingsT(input.locale, "collabChatAddOrRemoveMembers")}</div>
       </div>
       <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-pset-open-conversation="${escapeHtml(
         conversation.id
-      )}">${zh ? "管理成员" : "Manage members"}</button>
+      )}">${settingsT(input.locale, "manageMembers")}</button>
     </div>`
         )
         .join("")
     : `<p class="wh-wb-pset-readonly-note">${
-        zh
-          ? "还没有协同会话——在左栏「新建协同会话」建群时选人，之后可在会话成员条里加人/退群。"
-          : "No collab chats yet — create one from the sidebar and pick members; manage them later in its member bar."
+        settingsT(input.locale, "noCollabChatsYetCreateOne")
       }</p>`;
   return `<section class="wh-wb-pset-group" data-wb-pset-members-section="true">
     <div class="wh-wb-pset-row">
       <div class="wh-wb-pset-row-main">
-        <div class="wh-wb-pset-row-title">${zh ? "成员" : "Members"}</div>
+        <div class="wh-wb-pset-row-title">${settingsT(input.locale, "members")}</div>
         <div class="wh-wb-pset-row-sub">${
-          zh
-            ? "谁在这个项目里：主区对全员开放，协同会话各有参与者。"
-            : "Who's in this project: the main chat is open to everyone; each collab chat has its own participants."
+          settingsT(input.locale, "whoSInThisProjectThe")
         }</div>
       </div>
     </div>
@@ -358,13 +354,13 @@ export function renderProjectMembersSectionHtml(input: {
 
 export function renderProjectSettingsLoadingHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  return `<div class="wh-wb-loading"><span class="wh-wb-spinner"></span>${zh ? "正在拉项目设置…" : "Loading project settings…"}</div>`;
+  return `<div class="wh-wb-loading"><span class="wh-wb-spinner"></span>${settingsT(locale, "loadingProjectSettings")}</div>`;
 }
 
 export function renderProjectSettingsErrorHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  return `<div class="wh-wb-error">${zh ? "没拉到这个项目的设置，稍后重试" : "Couldn't load this project's settings — retry"}
-    <div style="margin-top:13px"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-pset-retry>${zh ? "重试" : "Retry"}</button></div>
+  return `<div class="wh-wb-error">${settingsT(locale, "couldnTLoadThisProjectS")}
+    <div style="margin-top:13px"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-pset-retry>${settingsT(locale, "retry")}</button></div>
   </div>`;
 }
 
@@ -373,7 +369,7 @@ export function renderProjectSettingsErrorHtml(locale: Locale): string {
 export function renderProjectSettingsOwnerOnlyHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
   return `<div class="wh-wb-error" data-wb-pset-owner-only="true">${
-    zh ? "这个项目的 AI 治理设置只有项目负责人能查看和修改。" : "Only the project owner can view and change this project's AI governance."
+    settingsT(locale, "onlyTheProjectOwnerCanView")
   }</div>`;
 }
 
@@ -392,11 +388,11 @@ function githubDateTime(iso: string | undefined): string | undefined {
 function githubActivityKindLabel(kind: GithubActivityKind, zh: boolean): string {
   switch (kind) {
     case "commit":
-      return zh ? "提交" : "Commit";
+      return settingsT(zh, "commit");
     case "pull_request":
       return "PR";
     case "issue":
-      return zh ? "议题" : "Issue";
+      return settingsT(zh, "issue");
     default:
       return kind;
   }
@@ -406,13 +402,11 @@ function githubBoundStatusFieldsHtml(status: GithubBindingStatusVM, zh: boolean)
   const visibilityPill =
     status.repo_private === undefined
       ? ""
-      : `<span class="wh-wb-pset-chip" data-sel="false">${escapeHtml(status.repo_private ? (zh ? "私有" : "Private") : zh ? "公开" : "Public")}</span>`;
+      : `<span class="wh-wb-pset-chip" data-sel="false">${escapeHtml(status.repo_private ? (settingsT(zh, "private")) : settingsT(zh, "public"))}</span>`;
   const syncedAt = githubDateTime(status.last_synced_at);
   const syncedLine = syncedAt
     ? (zh ? `最近同步 ${syncedAt}` : `Last synced ${syncedAt}`)
-    : zh
-      ? "尚未完成过同步"
-      : "Not synced yet";
+    : settingsT(zh, "notSyncedYet");
   const activityLine =
     status.activity_count_7d === undefined
       ? ""
@@ -440,14 +434,14 @@ function githubTestResultHtml(result: GithubTestConnectionResult | undefined, zh
   }
   if (result.ok) {
     const bits = [
-      zh ? "连接成功" : "Connection succeeded",
+      settingsT(zh, "connectionSucceeded"),
       result.repo_full_name,
       result.repo_default_branch ? (zh ? `默认分支 ${result.repo_default_branch}` : `default branch ${result.repo_default_branch}`) : undefined,
-      result.repo_private === undefined ? undefined : result.repo_private ? (zh ? "私有仓库" : "private repo") : zh ? "公开仓库" : "public repo"
+      result.repo_private === undefined ? undefined : result.repo_private ? (settingsT(zh, "privateRepo")) : settingsT(zh, "publicRepo")
     ].filter((part): part is string => Boolean(part));
     return `<div class="wh-wb-pset-note" data-wb-gh-test-result="ok">${escapeHtml(bits.join(" · "))}</div>`;
   }
-  return `<div class="wh-wb-pset-error" data-wb-gh-test-result="fail">${escapeHtml(result.error ?? (zh ? "连接失败" : "Connection failed"))}</div>`;
+  return `<div class="wh-wb-pset-error" data-wb-gh-test-result="fail">${escapeHtml(result.error ?? (settingsT(zh, "connectionFailed")))}</div>`;
 }
 
 function githubFormHtml(input: {
@@ -467,17 +461,17 @@ function githubFormHtml(input: {
     ? `<div class="wh-wb-pset-error" data-wb-gh-form-error="true">${escapeHtml(input.errorText)}</div>`
     : "";
   return `<form class="wh-wb-pset-gh-form" data-wb-gh-form="true">
-    <label class="wh-wb-pset-inline-k" for="wh-wb-gh-repo-input">${zh ? "仓库（owner/repo）" : "Repository (owner/repo)"}</label>
+    <label class="wh-wb-pset-inline-k" for="wh-wb-gh-repo-input">${settingsT(zh, "repositoryOwnerRepo")}</label>
     <input id="wh-wb-gh-repo-input" class="wh-wb-pset-text" type="text" placeholder="octocat/Hello-World" value="${escapeHtml(input.formRepo)}" data-wb-gh-repo-input${dis} />
     <label class="wh-wb-pset-inline-k" for="wh-wb-gh-pat-input">Personal Access Token</label>
     <input id="wh-wb-gh-pat-input" class="wh-wb-pset-text" type="password" placeholder="ghp_..." value="${escapeHtml(input.formPat)}" data-wb-gh-pat-input${dis} autocomplete="off" />
-    <p class="wh-wb-pset-note">${zh ? "只用于连接测试与后台同步，绝不会再次显示。" : "Used only to test the connection and sync in the background — it is never shown again."}</p>
+    <p class="wh-wb-pset-note">${settingsT(zh, "usedOnlyToTestTheConnection")}</p>
     ${errorRow}
     ${githubTestResultHtml(input.testResult, zh)}
     <div class="wh-wb-pset-gh-actions">
-      <button type="button" class="wh-wb-btn" data-wb-gh-test${dis}>${input.testPending ? (zh ? "正在测试…" : "Testing…") : zh ? "测试连接" : "Test connection"}</button>
-      <button type="button" class="wh-wb-btn wh-wb-btn--primary" data-wb-gh-submit${dis}>${input.saving ? (zh ? "保存中…" : "Saving…") : zh ? "绑定仓库" : "Link repository"}</button>
-      ${input.showCancel ? `<button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-gh-cancel${dis}>${zh ? "取消" : "Cancel"}</button>` : ""}
+      <button type="button" class="wh-wb-btn" data-wb-gh-test${dis}>${input.testPending ? (settingsT(zh, "testing")) : settingsT(zh, "testConnection")}</button>
+      <button type="button" class="wh-wb-btn wh-wb-btn--primary" data-wb-gh-submit${dis}>${input.saving ? (settingsT(zh, "saving")) : settingsT(zh, "linkRepository")}</button>
+      ${input.showCancel ? `<button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-gh-cancel${dis}>${settingsT(zh, "cancel")}</button>` : ""}
     </div>
   </form>`;
 }
@@ -499,11 +493,9 @@ export function renderGithubBindingSectionHtml(input: {
   const zh = input.locale === "zh-CN";
   const head = `<div class="wh-wb-pset-row">
     <div class="wh-wb-pset-row-main">
-      <div class="wh-wb-pset-row-title">${zh ? "GitHub 集成" : "GitHub integration"}</div>
+      <div class="wh-wb-pset-row-title">${settingsT(input.locale, "githubIntegration")}</div>
       <div class="wh-wb-pset-row-sub">${
-        zh
-          ? "把这个项目关联到一个 GitHub 仓库，commit/issue/PR 动态会同步进项目主页。"
-          : "Link this project to a GitHub repository — commit/issue/PR activity syncs into the project home page."
+        settingsT(input.locale, "linkThisProjectToAGithub")
       }</div>
     </div>
   </div>`;
@@ -511,27 +503,27 @@ export function renderGithubBindingSectionHtml(input: {
   if (input.loadState === "loading") {
     return `<section class="wh-wb-pset-group" data-wb-gh-section="true" data-wb-gh-loading="true">
       ${head}
-      <div class="wh-wb-pset-gh-loading-row"><span class="wh-wb-spinner"></span>${zh ? "正在拉 GitHub 绑定状态…" : "Loading the GitHub binding…"}</div>
+      <div class="wh-wb-pset-gh-loading-row"><span class="wh-wb-spinner"></span>${settingsT(input.locale, "loadingTheGithubBinding")}</div>
     </section>`;
   }
   if (input.loadState === "error" || !input.status) {
     return `<section class="wh-wb-pset-group" data-wb-gh-section="true" data-wb-gh-error="true">
       ${head}
-      <p class="wh-wb-pset-error">${zh ? "GitHub 绑定状态没拉到，稍后重试" : "Couldn't load the GitHub binding — retry"}</p>
-      <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-gh-retry>${zh ? "重试" : "Retry"}</button>
+      <p class="wh-wb-pset-error">${settingsT(input.locale, "couldnTLoadTheGithubBinding")}</p>
+      <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-gh-retry>${settingsT(input.locale, "retry")}</button>
     </section>`;
   }
 
   const status = input.status;
   const readonlyNote = input.editable
     ? ""
-    : `<p class="wh-wb-pset-readonly-note">${zh ? "只有项目负责人能管理 GitHub 绑定。" : "Only the project owner can manage the GitHub binding."}</p>`;
+    : `<p class="wh-wb-pset-readonly-note">${settingsT(input.locale, "onlyTheProjectOwnerCanManage")}</p>`;
 
   if (!input.editable) {
     // 非负责人：只读态——已绑定显示状态字段，未绑定显示诚实的空说明，两者都不给任何写钩子。
     const body = status.bound
       ? githubBoundStatusFieldsHtml(status, zh)
-      : `<p class="wh-wb-pset-note" data-wb-gh-unbound="true">${zh ? "还没有关联 GitHub 仓库。" : "No GitHub repository linked yet."}</p>`;
+      : `<p class="wh-wb-pset-note" data-wb-gh-unbound="true">${settingsT(input.locale, "noGithubRepositoryLinkedYet")}</p>`;
     return `<section class="wh-wb-pset-group" data-wb-gh-section="true" data-wb-gh-bound="${escapeHtml(String(status.bound))}">
       ${head}
       ${body}
@@ -558,20 +550,16 @@ export function renderGithubBindingSectionHtml(input: {
   if (!status.bound) {
     return `<section class="wh-wb-pset-group" data-wb-gh-section="true" data-wb-gh-bound="false" data-wb-gh-mode="status">
       ${head}
-      <p class="wh-wb-pset-note" data-wb-gh-unbound="true">${zh ? "还没有关联 GitHub 仓库。" : "No GitHub repository linked yet."}</p>
+      <p class="wh-wb-pset-note" data-wb-gh-unbound="true">${settingsT(input.locale, "noGithubRepositoryLinkedYet")}</p>
       <div class="wh-wb-pset-gh-actions">
-        <button type="button" class="wh-wb-btn wh-wb-btn--primary" data-wb-gh-bind-cta>${zh ? "绑定 GitHub 仓库" : "Link a GitHub repository"}</button>
+        <button type="button" class="wh-wb-btn wh-wb-btn--primary" data-wb-gh-bind-cta>${settingsT(input.locale, "linkAGithubRepository")}</button>
       </div>
     </section>`;
   }
 
   const unbindLabel = input.unbindArmed
-    ? zh
-      ? "确认解绑？"
-      : "Confirm unbind?"
-    : zh
-      ? "解绑"
-      : "Unbind";
+    ? settingsT(input.locale, "confirmUnbind")
+    : settingsT(input.locale, "unbind");
   const busy = input.saving || input.testPending;
   return `<section class="wh-wb-pset-group" data-wb-gh-section="true" data-wb-gh-bound="true" data-wb-gh-mode="status">
     ${head}
@@ -579,8 +567,8 @@ export function renderGithubBindingSectionHtml(input: {
     ${input.errorText ? `<div class="wh-wb-pset-error" data-wb-gh-form-error="true">${escapeHtml(input.errorText)}</div>` : ""}
     ${githubTestResultHtml(input.testResult, zh)}
     <div class="wh-wb-pset-gh-actions">
-      <button type="button" class="wh-wb-btn" data-wb-gh-retest${busy ? " disabled" : ""}>${input.testPending ? (zh ? "正在测试…" : "Testing…") : zh ? "重新测试连接" : "Test connection again"}</button>
-      <button type="button" class="wh-wb-btn" data-wb-gh-edit-cta${busy ? " disabled" : ""}>${zh ? "更换仓库 / PAT" : "Change repo / PAT"}</button>
+      <button type="button" class="wh-wb-btn" data-wb-gh-retest${busy ? " disabled" : ""}>${input.testPending ? (settingsT(input.locale, "testing")) : settingsT(input.locale, "testConnectionAgain")}</button>
+      <button type="button" class="wh-wb-btn" data-wb-gh-edit-cta${busy ? " disabled" : ""}>${settingsT(input.locale, "changeRepoPat")}</button>
       <button type="button" class="wh-wb-btn wh-wb-btn--ghost${input.unbindArmed ? " wh-wb-pset-gh-unbind--armed" : ""}" data-wb-gh-unbind${busy ? " disabled" : ""}>${unbindLabel}</button>
     </div>
   </section>`;
@@ -625,15 +613,13 @@ export function renderProjectInstructionsSectionHtml(input: {
 }): string {
   const zh = input.locale === "zh-CN";
   const savedPill = input.loadState === "ready" && input.savedPillVisible
-    ? `<span class="wh-wb-pset-saved-pill ds-anim-pop" data-wb-instr-saved-pill="true">${zh ? "已保存" : "Saved"}</span>`
+    ? `<span class="wh-wb-pset-saved-pill ds-anim-pop" data-wb-instr-saved-pill="true">${settingsT(input.locale, "saved")}</span>`
     : "";
   const head = `<div class="wh-wb-pset-row">
     <div class="wh-wb-pset-row-main">
-      <div class="wh-wb-pset-row-title">${zh ? "自定义指令" : "Custom instructions"}</div>
+      <div class="wh-wb-pset-row-title">${settingsT(input.locale, "customInstructions")}</div>
       <div class="wh-wb-pset-row-sub">${
-        zh
-          ? "该项目的所有 Cuu 对话与 agent-run 都会读到这段指令；与系统工作纪律冲突时以纪律为准。"
-          : "Every Cuu conversation and agent-run in this project reads this text; when it conflicts with the system's working discipline, the discipline wins."
+        settingsT(input.locale, "everyCuuConversationAndAgentRun")
       }</div>
     </div>
     ${savedPill}
@@ -642,7 +628,7 @@ export function renderProjectInstructionsSectionHtml(input: {
   if (input.loadState === "loading") {
     return `<section class="wh-wb-pset-group" data-wb-instr-section="true" data-wb-instr-state="loading">
       ${head}
-      <div class="wh-wb-pset-gh-loading-row"><span class="wh-wb-spinner"></span>${zh ? "正在拉自定义指令…" : "Loading custom instructions…"}</div>
+      <div class="wh-wb-pset-gh-loading-row"><span class="wh-wb-spinner"></span>${settingsT(input.locale, "loadingCustomInstructions")}</div>
     </section>`;
   }
 
@@ -650,9 +636,7 @@ export function renderProjectInstructionsSectionHtml(input: {
     return `<section class="wh-wb-pset-group" data-wb-instr-section="true" data-wb-instr-state="forbidden">
       ${head}
       <p class="wh-wb-pset-readonly-note" data-wb-instr-forbidden="true">${
-        zh
-          ? "需要项目管理权限才能查看和修改自定义指令。"
-          : "You need project management permission to view or change custom instructions."
+        settingsT(input.locale, "youNeedProjectManagementPermissionTo")
       }</p>
     </section>`;
   }
@@ -660,8 +644,8 @@ export function renderProjectInstructionsSectionHtml(input: {
   if (input.loadState === "error") {
     return `<section class="wh-wb-pset-group" data-wb-instr-section="true" data-wb-instr-state="error">
       ${head}
-      <p class="wh-wb-pset-error">${zh ? "自定义指令没拉到，稍后重试" : "Couldn't load custom instructions — retry"}</p>
-      <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-instr-retry-load>${zh ? "重试" : "Retry"}</button>
+      <p class="wh-wb-pset-error">${settingsT(input.locale, "couldnTLoadCustomInstructionsRetry")}</p>
+      <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-instr-retry-load>${settingsT(input.locale, "retry")}</button>
     </section>`;
   }
 
@@ -669,11 +653,11 @@ export function renderProjectInstructionsSectionHtml(input: {
   if (!input.editable) {
     const body = input.draft
       ? `<pre class="wh-wb-pset-instr-readonly" data-wb-instr-readonly="true">${escapeHtml(input.draft)}</pre>`
-      : `<p class="wh-wb-pset-note" data-wb-instr-empty="true">${zh ? "还没有配置自定义指令。" : "No custom instructions configured yet."}</p>`;
+      : `<p class="wh-wb-pset-note" data-wb-instr-empty="true">${settingsT(input.locale, "noCustomInstructionsConfiguredYet")}</p>`;
     return `<section class="wh-wb-pset-group" data-wb-instr-section="true" data-wb-instr-state="ready" data-wb-instr-editable="false">
       ${head}
       ${body}
-      <p class="wh-wb-pset-readonly-note">${zh ? "只有项目负责人能修改自定义指令。" : "Only the project owner can change custom instructions."}</p>
+      <p class="wh-wb-pset-readonly-note">${settingsT(input.locale, "onlyTheProjectOwnerCanChange2")}</p>
     </section>`;
   }
 
@@ -682,16 +666,14 @@ export function renderProjectInstructionsSectionHtml(input: {
   const counterClass = counterState === "over" ? " wh-wb-pset-instr-count--over" : counterState === "warn" ? " wh-wb-pset-instr-count--warn" : "";
   const counter = `<span class="wh-wb-pset-instr-count${counterClass}" data-wb-instr-count="${length}">${length} / ${PROJECT_INSTRUCTIONS_MAX_CHARS}</span>`;
 
-  const placeholder = zh
-    ? "例如：\n- 所有输出用简体中文，避免技术黑话\n- 引用数据时标注来源，不夸大能力\n- 未经批准禁止调用网络搜索工具"
-    : "e.g.\n- Reply in plain English, no jargon\n- Cite sources when quoting data\n- Don't call the web search tool without approval";
+  const placeholder = settingsT(input.locale, "eGReplyInPlainEnglish");
 
   const errorRow = input.saveErrorText
     ? `<div class="${input.saveErrorKind === "validation" ? "wh-wb-pset-error" : "wh-wb-pset-note"}" data-wb-instr-error="${input.saveErrorKind ?? "generic"}">${escapeHtml(
         input.saveErrorText
       )}${
         input.saveErrorKind === "network"
-          ? ` <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-instr-retry-save${input.saving ? " disabled" : ""}>${zh ? "重试" : "Retry"}</button>`
+          ? ` <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-instr-retry-save${input.saving ? " disabled" : ""}>${settingsT(input.locale, "retry")}</button>`
           : ""
       }</div>`
     : "";
@@ -703,7 +685,7 @@ export function renderProjectInstructionsSectionHtml(input: {
     }>${escapeHtml(input.draft)}</textarea>
     <div class="wh-wb-pset-instr-foot">
       ${counter}
-      ${input.saving ? `<span class="wh-wb-pset-note" data-wb-instr-saving="true">${zh ? "保存中…" : "Saving…"}</span>` : `<span class="wh-wb-pset-note">${zh ? "失焦自动保存。留空则不注入项目级指令。" : "Saves automatically when you leave the field. Leave it blank to skip project-level instructions."}</span>`}
+      ${input.saving ? `<span class="wh-wb-pset-note" data-wb-instr-saving="true">${settingsT(input.locale, "saving")}</span>` : `<span class="wh-wb-pset-note">${settingsT(input.locale, "savesAutomaticallyWhenYouLeaveThe")}</span>`}
     </div>
     ${errorRow}
   </section>`;

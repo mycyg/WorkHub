@@ -10,6 +10,8 @@ import type { ProjectTimelinePageVM, TimelineWorkItemVM } from "@workhub/contrac
 import { workbenchIcons } from "../icons.js";
 import type { SchedulePlanDraft } from "./api.js";
 
+import { scheduleT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 const DAY_MS = 86_400_000;
@@ -218,13 +220,11 @@ function formatRange(week: ScheduleWeek, zh: boolean): string {
 function renderTaskCardHtml(item: TimelineWorkItemVM, zh: boolean): string {
   const assignee = item.assignee
     ? escapeHtml(item.assignee.label)
-    : zh
-      ? "未指派"
-      : "Unassigned";
-  const overdue = item.overdue ? `<span class="wh-wb-sc-overdot" title="${zh ? "逾期" : "Overdue"}"></span>` : "";
+    : scheduleT(zh, "unassigned");
+  const overdue = item.overdue ? `<span class="wh-wb-sc-overdot" title="${scheduleT(zh, "overdue")}"></span>` : "";
   return `<div class="wh-wb-sc-task" style="border-left-color:${statusBorder(item)}" data-wb-sc-card data-wb-sc-id="${escapeHtml(
     item.id
-  )}" role="button" tabindex="0" title="${zh ? "点击查看这件在时间线上的位置" : "Open this item on the timeline"}">
+  )}" role="button" tabindex="0" title="${scheduleT(zh, "openThisItemOnTheTimeline")}">
     <div class="wh-wb-sc-task-title">${overdue}${escapeHtml(item.title)}</div>
     <div class="wh-wb-sc-task-meta">${escapeHtml(item.code)} · ${escapeHtml(statusLabelShort(item.status, zh))} · ${assignee}</div>
   </div>`;
@@ -234,7 +234,7 @@ function planDueLabel(value: string | null, zh: boolean): string {
   const due = parseDate(value);
   return due
     ? `<span class="wh-wb-sc-plan-due">${due.getUTCMonth() + 1}/${due.getUTCDate()}</span>`
-    : `<span class="wh-wb-sc-plan-due wh-wb-sc-plan-due--none">${zh ? "未定期" : "TBD"}</span>`;
+    : `<span class="wh-wb-sc-plan-due wh-wb-sc-plan-due--none">${scheduleT(zh, "tbd")}</span>`;
 }
 
 function planShortDate(value: string, zh: boolean): string {
@@ -251,40 +251,34 @@ function renderMilestoneFallbackBody(vm: ProjectTimelinePageVM, zh: boolean, can
   if (milestones.length === 0) {
     return `<p class="wh-wb-sc-plan-empty">${
       canDraft
-        ? (zh
-          ? "还没有项目计划，也还没有里程碑。点上方「用 Cuu 起草计划」让 Cuu 拟一份。"
-          : "No plan and no milestones yet. Use “Draft a plan with Cuu” above to have Cuu propose one.")
-        : (zh
-          ? "还没有已批准的项目计划，也还没有里程碑。"
-          : "No approved plan and no milestones yet.")
+        ? (scheduleT(zh, "noPlanAndNoMilestonesYet"))
+        : (scheduleT(zh, "noApprovedPlanAndNoMilestones"))
     }</p>`;
   }
   const list = milestones
     .map((m) => {
-      const doneTag = m.status === "done" ? `<span class="wh-wb-sc-plan-done">${zh ? "已达成" : "Reached"}</span>` : "";
+      const doneTag = m.status === "done" ? `<span class="wh-wb-sc-plan-done">${scheduleT(zh, "reached")}</span>` : "";
       return `<li>${workbenchIcons.pin}<span class="wh-wb-sc-plan-ms-t">${escapeHtml(m.title)}</span>${planDueLabel(m.due_at, zh)}${doneTag}</li>`;
     })
     .join("");
-  return `<p class="wh-wb-sc-plan-note">${zh ? "当前里程碑：" : "Current milestones:"}</p>
+  return `<p class="wh-wb-sc-plan-note">${scheduleT(zh, "currentMilestones")}</p>
     <ul class="wh-wb-sc-plan-ms">${list}</ul>`;
 }
 
 // 起草表单（mode=compose）。intentDraft 只在提交时快照回填，不逐字重渲——textarea 的 DOM 值自然保留。
 function renderPlanComposeBody(plan: SchedulePlanUiState, zh: boolean): string {
   return `<form class="wh-wb-sc-plan-compose" data-wb-sc-plan-compose>
-    <label class="wh-wb-sc-plan-compose-label">${zh ? "规划意图（目标 / 期限 / 约束）" : "Planning intent (goal / deadline / constraints)"}</label>
+    <label class="wh-wb-sc-plan-compose-label">${scheduleT(zh, "planningIntentGoalDeadlineConstraints")}</label>
     <textarea class="wh-wb-sc-plan-compose-intent" data-wb-sc-plan-compose-intent rows="5" maxlength="4000" placeholder="${escapeHtml(
-      zh
-        ? "例如：两周内做出可演示的邀请码注册流程，覆盖埋点与基础测试。"
-        : "e.g. Ship a demoable invite-code signup flow within two weeks, with analytics and basic tests."
+      scheduleT(zh, "eGShipADemoableInvite")
     )}"${plan.busy ? " disabled" : ""}>${escapeHtml(plan.intentDraft)}</textarea>
     <div class="wh-wb-sc-plan-actions">
       <button type="submit" class="wh-wb-tl-btn wh-wb-tl-btn--primary" data-wb-sc-plan-compose-submit${plan.busy ? " disabled" : ""}>${
-        plan.busy ? (zh ? "生成中…" : "Drafting…") : (zh ? "用 Cuu 起草" : "Draft with Cuu")
+        plan.busy ? (scheduleT(zh, "drafting")) : (scheduleT(zh, "draftWithCuu"))
       }</button>
-      <button type="button" class="wh-wb-tl-btn" data-wb-sc-plan-compose-cancel${plan.busy ? " disabled" : ""}>${zh ? "取消" : "Cancel"}</button>
+      <button type="button" class="wh-wb-tl-btn" data-wb-sc-plan-compose-cancel${plan.busy ? " disabled" : ""}>${scheduleT(zh, "cancel")}</button>
     </div>
-    <p class="wh-wb-sc-plan-hint">${zh ? "Cuu 会据此拟里程碑与工作项草案，落库后交你审批。" : "Cuu drafts milestones and work items from this, saved for your review."}</p>
+    <p class="wh-wb-sc-plan-hint">${scheduleT(zh, "cuuDraftsMilestonesAndWorkItems")}</p>
   </form>`;
 }
 
@@ -292,19 +286,17 @@ function renderPlanComposeBody(plan: SchedulePlanUiState, zh: boolean): string {
 function renderPlanListBody(drafts: SchedulePlanDraft[], zh: boolean): string {
   if (drafts.length === 0) {
     return `<p class="wh-wb-sc-plan-empty" data-wb-sc-plan-list-empty>${
-      zh
-        ? "还没有计划草案。点上方「用 Cuu 起草计划」让 Cuu 拟一份。"
-        : "No plan drafts yet. Use “Draft a plan with Cuu” above to have Cuu propose one."
+      scheduleT(zh, "noPlanDraftsYetUseDraft")
     }</p>`;
   }
   const rows = [...drafts]
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
     .map((draft) => {
       const firstLine = (draft.intent_md.split("\n").find((line) => line.trim().length > 0) ?? "").trim();
-      const title = firstLine || (zh ? "（无意图描述）" : "(no intent)");
+      const title = firstLine || (scheduleT(zh, "noIntent"));
       return `<div class="wh-wb-sc-plan-draft-row" data-wb-sc-plan-draft="${escapeHtml(draft.id)}" data-wb-sc-plan-draft-status="${escapeHtml(
         draft.status
-      )}" role="button" tabindex="0" title="${zh ? "查看这份草案的详情" : "Open this draft"}">
+      )}" role="button" tabindex="0" title="${scheduleT(zh, "openThisDraft")}">
         <div class="wh-wb-sc-plan-draft-main">
           <div class="wh-wb-sc-plan-draft-title">${escapeHtml(title)}</div>
           <div class="wh-wb-sc-plan-draft-meta">${escapeHtml(planShortDate(draft.updated_at, zh))} · ${escapeHtml(
@@ -321,7 +313,7 @@ function renderPlanListBody(drafts: SchedulePlanDraft[], zh: boolean): string {
 // 草案详情（mode=detail）：里程碑 / 工作项 / 理由 / 审阅意见 + 按状态给动作按钮。
 function renderPlanDetailBody(draft: SchedulePlanDraft, plan: SchedulePlanUiState, zh: boolean): string {
   const back = `<button type="button" class="wh-wb-sc-plan-back" data-wb-sc-plan-back>${workbenchIcons.chevronLeft}<span>${
-    zh ? "返回草案列表" : "Back to drafts"
+    scheduleT(zh, "backToDrafts")
   }</span></button>`;
   const statusChip = `<span class="wh-wb-sc-plan-chip wh-wb-sc-plan-chip--${planDraftStatusTone(draft.status)}">${escapeHtml(
     planDraftStatusLabel(draft.status, zh)
@@ -329,12 +321,12 @@ function renderPlanDetailBody(draft: SchedulePlanDraft, plan: SchedulePlanUiStat
 
   const milestones = [...draft.milestones].sort((a, b) => a.sort - b.sort);
   const milestoneList = milestones.length
-    ? `<h2 class="wh-wb-sc-plan-h2">${zh ? "里程碑" : "Milestones"}</h2><ul class="wh-wb-sc-plan-ms">${milestones
+    ? `<h2 class="wh-wb-sc-plan-h2">${scheduleT(zh, "milestones")}</h2><ul class="wh-wb-sc-plan-ms">${milestones
         .map((m) => `<li>${workbenchIcons.pin}<span class="wh-wb-sc-plan-ms-t">${escapeHtml(m.title)}</span>${planDueLabel(m.due_at, zh)}</li>`)
         .join("")}</ul>`
     : "";
   const itemList = draft.items.length
-    ? `<h2 class="wh-wb-sc-plan-h2">${zh ? "工作项" : "Work items"}</h2><ul class="wh-wb-sc-plan-items">${draft.items
+    ? `<h2 class="wh-wb-sc-plan-h2">${scheduleT(zh, "workItems")}</h2><ul class="wh-wb-sc-plan-items">${draft.items
         .map((it) => {
           const deps = it.depends_on_refs.length
             ? `<span class="wh-wb-sc-plan-item-dep">${escapeHtml(zh ? `依赖 ${it.depends_on_refs.join("、")}` : `needs ${it.depends_on_refs.join(", ")}`)}</span>`
@@ -351,7 +343,7 @@ function renderPlanDetailBody(draft: SchedulePlanDraft, plan: SchedulePlanUiStat
         .join("")}</ul>`
     : "";
   const rationale = draft.rationale_md
-    ? `<h2 class="wh-wb-sc-plan-h2">${zh ? "计划说明" : "Rationale"}</h2>${draft.rationale_md
+    ? `<h2 class="wh-wb-sc-plan-h2">${scheduleT(zh, "rationale")}</h2>${draft.rationale_md
         .split("\n")
         .map((line) => line.trim())
         .filter((line) => line.length > 0)
@@ -359,7 +351,7 @@ function renderPlanDetailBody(draft: SchedulePlanDraft, plan: SchedulePlanUiStat
         .join("")}`
     : "";
   const reviewReason = draft.review_reason_md
-    ? `<h2 class="wh-wb-sc-plan-h2">${zh ? "审阅意见" : "Review note"}</h2><p class="wh-wb-sc-plan-p wh-wb-sc-plan-review">${escapeHtml(
+    ? `<h2 class="wh-wb-sc-plan-h2">${scheduleT(zh, "reviewNote")}</h2><p class="wh-wb-sc-plan-p wh-wb-sc-plan-review">${escapeHtml(
         draft.review_reason_md
       )}</p>`
     : "";
@@ -377,33 +369,33 @@ function renderPlanDetailBody(draft: SchedulePlanDraft, plan: SchedulePlanUiStat
   if (plan.rejecting) {
     actions = `<div class="wh-wb-sc-plan-reject" data-wb-sc-plan-reject-panel>
       <textarea class="wh-wb-sc-plan-reject-reason" data-wb-sc-plan-reject-reason rows="3" maxlength="2000" placeholder="${escapeHtml(
-        zh ? "写明驳回理由（会带给下一次重拟）" : "Reason for rejection (fed into the next redraft)"
+        scheduleT(zh, "reasonForRejectionFedIntoThe")
       )}"${busyAttr}>${escapeHtml(plan.rejectDraft)}</textarea>
       <div class="wh-wb-sc-plan-actions">
         <button type="button" class="wh-wb-tl-btn wh-wb-tl-btn--danger" data-wb-sc-plan-reject-confirm${busyAttr}>${
-          plan.busy ? (zh ? "驳回中…" : "Rejecting…") : (zh ? "确认驳回" : "Confirm reject")
+          plan.busy ? (scheduleT(zh, "rejecting")) : (scheduleT(zh, "confirmReject"))
         }</button>
-        <button type="button" class="wh-wb-tl-btn" data-wb-sc-plan-reject-cancel${busyAttr}>${zh ? "取消" : "Cancel"}</button>
+        <button type="button" class="wh-wb-tl-btn" data-wb-sc-plan-reject-cancel${busyAttr}>${scheduleT(zh, "cancel")}</button>
       </div>
     </div>`;
   } else if (draft.status === "pending_review") {
     actions = `<div class="wh-wb-sc-plan-actions">
       <button type="button" class="wh-wb-tl-btn wh-wb-tl-btn--primary" data-wb-sc-plan-approve${busyAttr}>${
-        plan.busy ? (zh ? "处理中…" : "Working…") : (zh ? "批准" : "Approve")
+        plan.busy ? (scheduleT(zh, "working")) : (scheduleT(zh, "approve"))
       }</button>
-      <button type="button" class="wh-wb-tl-btn" data-wb-sc-plan-reject${busyAttr}>${zh ? "驳回" : "Reject"}</button>
+      <button type="button" class="wh-wb-tl-btn" data-wb-sc-plan-reject${busyAttr}>${scheduleT(zh, "reject")}</button>
     </div>`;
   } else if (draft.status === "approved") {
     actions = `<div class="wh-wb-sc-plan-actions">
       <button type="button" class="wh-wb-tl-btn wh-wb-tl-btn--primary" data-wb-sc-plan-materialize${busyAttr}>${
-        plan.busy ? (zh ? "物化中…" : "Materializing…") : (zh ? "物化到时间线" : "Materialize to timeline")
+        plan.busy ? (scheduleT(zh, "materializing")) : (scheduleT(zh, "materializeToTimeline"))
       }</button>
     </div>`;
   }
 
   return `${back}
     <div class="wh-wb-sc-plan-detail-head">${statusChip}</div>
-    <h2 class="wh-wb-sc-plan-h2">${zh ? "规划意图" : "Intent"}</h2>
+    <h2 class="wh-wb-sc-plan-h2">${scheduleT(zh, "intent")}</h2>
     <p class="wh-wb-sc-plan-p wh-wb-sc-plan-intent">${escapeHtml(draft.intent_md)}</p>
     ${milestoneList}${itemList}${rationale}${reviewReason}${resultSummary}${actions}`;
 }
@@ -450,15 +442,15 @@ function renderPlanPanelHtml(input: {
 
 export function renderScheduleLoadingHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  return `<div class="wh-wb-sc-state"><span class="wh-wb-spinner"></span>${zh ? "正在加载日程…" : "Loading schedule…"}</div>`;
+  return `<div class="wh-wb-sc-state"><span class="wh-wb-spinner"></span>${scheduleT(locale, "loadingSchedule")}</div>`;
 }
 
 export function renderScheduleErrorHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
   return `<div class="wh-wb-sc-state wh-wb-sc-state--error">${
-    zh ? "没能加载日程，稍后重试" : "Couldn't load the schedule — retry"
+    scheduleT(locale, "couldnTLoadTheScheduleRetry")
   }<div style="margin-top:12px"><button type="button" class="wh-wb-tl-btn" data-wb-sc-retry>${
-    zh ? "重试" : "Retry"
+    scheduleT(locale, "retry")
   }</button></div></div>`;
 }
 
@@ -498,21 +490,21 @@ function viewToggleHtml(mode: ScheduleViewMode, zh: boolean): string {
     `<button type="button" class="wh-wb-sc-modechip${mode === m ? " wh-wb-sc-modechip--active" : ""}" data-wb-sc-mode="${m}"${
       mode === m ? ' aria-current="true"' : ""
     }>${label}</button>`;
-  return `<div class="wh-wb-sc-modes" role="group" aria-label="${zh ? "视图切换" : "View mode"}">${chip(
+  return `<div class="wh-wb-sc-modes" role="group" aria-label="${scheduleT(zh, "viewMode")}">${chip(
     "week",
-    zh ? "周" : "Week"
-  )}${chip("month", zh ? "月" : "Month")}</div>`;
+    scheduleT(zh, "week")
+  )}${chip("month", scheduleT(zh, "month"))}</div>`;
 }
 
 function calHeadHtml(title: string, mode: ScheduleViewMode, zh: boolean): string {
-  const prevLabel = mode === "month" ? (zh ? "上个月" : "Previous month") : zh ? "上一周" : "Previous week";
-  const nextLabel = mode === "month" ? (zh ? "下个月" : "Next month") : zh ? "下一周" : "Next week";
+  const prevLabel = mode === "month" ? (scheduleT(zh, "previousMonth")) : scheduleT(zh, "previousWeek");
+  const nextLabel = mode === "month" ? (scheduleT(zh, "nextMonth")) : scheduleT(zh, "nextWeek");
   return `<div class="wh-wb-sc-cal-head">
     <span class="wh-wb-sc-range">${escapeHtml(title)}</span>
     ${viewToggleHtml(mode, zh)}
     <div class="wh-wb-sc-nav">
       <button type="button" class="wh-wb-sc-navbtn" data-wb-sc-prev title="${prevLabel}" aria-label="${prevLabel}">${workbenchIcons.chevronLeft}</button>
-      <button type="button" class="wh-wb-tl-btn" data-wb-sc-today>${zh ? "今天" : "Today"}</button>
+      <button type="button" class="wh-wb-tl-btn" data-wb-sc-today>${scheduleT(zh, "today")}</button>
       <button type="button" class="wh-wb-sc-navbtn" data-wb-sc-next title="${nextLabel}" aria-label="${nextLabel}">${workbenchIcons.chevronRight}</button>
     </div>
   </div>`;
@@ -578,9 +570,7 @@ function monthCellHtml(
     ? zh
       ? `${day.getUTCMonth() + 1}/${day.getUTCDate()}：${dayItems.length} 项，点击查看这周`
       : `${day.getUTCMonth() + 1}/${day.getUTCDate()}: ${dayItems.length} item(s) — open this week`
-    : zh
-      ? "点击查看这周"
-      : "Open this week";
+    : scheduleT(zh, "openThisWeek");
   return `<div class="wh-wb-sc-mcell${inMonth ? "" : " wh-wb-sc-mcell--out"}${isToday ? " wh-wb-sc-mcell--today" : ""}" data-wb-sc-day="${key}" role="button" tabindex="0" title="${title}">
     <div class="wh-wb-sc-mcell-top"><span class="wh-wb-sc-mdate">${day.getUTCDate()}</span>${msDot}</div>
     ${dayItems.length ? `<div class="wh-wb-sc-mdots">${dots}${overflow}</div>` : ""}
@@ -622,7 +612,7 @@ function renderUndatedStripHtml(vm: ProjectTimelinePageVM, zh: boolean): string 
     .map(
       (item) =>
         `<div class="wh-wb-sc-undated-item" data-wb-sc-card data-wb-sc-id="${escapeHtml(item.id)}" role="button" tabindex="0" title="${
-          zh ? "点击查看这件在时间线上的位置" : "Open this item on the timeline"
+          scheduleT(zh, "openThisItemOnTheTimeline")
         }">
           <span class="wh-wb-sc-undated-code">${escapeHtml(item.code)}</span>
           <span class="wh-wb-sc-undated-title">${escapeHtml(item.title)}</span>
@@ -632,7 +622,7 @@ function renderUndatedStripHtml(vm: ProjectTimelinePageVM, zh: boolean): string 
     .join("");
   return `<div class="wh-wb-sc-undated" data-wb-sc-undated>
     <div class="wh-wb-sc-undated-head">
-      <span class="wh-wb-sc-undated-t">${zh ? "未定期" : "Undated"}</span>
+      <span class="wh-wb-sc-undated-t">${scheduleT(zh, "undated")}</span>
       <span class="wh-wb-sc-undated-count">${undated.length}</span>
     </div>
     <div class="wh-wb-sc-undated-list">${rows}</div>

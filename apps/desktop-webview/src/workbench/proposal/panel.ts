@@ -24,6 +24,8 @@ import {
   type ProposalSidePanelState
 } from "./render.js";
 
+import { proposalT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 export type ProposalSidePanelApiClient = Pick<WorkHubApiClient, "pages" | "reviewProposal" | "mergeProposal">;
@@ -113,7 +115,7 @@ export function mountProposalSidePanel(
         state = {
           mode: "error",
           proposalId,
-          message: error instanceof Error && error.message ? error.message : input.locale === "zh-CN" ? "提议详情没拉到" : "Couldn't load the proposal"
+          message: error instanceof Error && error.message ? error.message : proposalT(input.locale, "couldnTLoadTheProposal")
         };
         publish();
       });
@@ -260,7 +262,7 @@ export function mountProposalSidePanel(
       // 空理由拦截：把提示塞进理由器里的错误容器（直接改 textContent，不整体重渲）+ 聚焦，绝不发请求。
       const errorEl = composer?.querySelector<HTMLElement>("[data-wb-prop-reason-error]");
       if (errorEl) {
-        errorEl.textContent = input.locale === "zh-CN" ? "先写一句打回说明。" : "Add a short reason first.";
+        errorEl.textContent = proposalT(input.locale, "addAShortReasonFirst");
       }
       composer?.querySelector<HTMLTextAreaElement>("[data-wb-prop-reason-text]")?.focus();
       return;

@@ -13,6 +13,8 @@ import { escapeHtml } from "@workhub/web-runtime";
 import { avatarTileHtml } from "./chat/render.js";
 import type { WorkbenchStore, WorkbenchStoreState } from "./store.js";
 
+import { workbenchT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 export type ProfileCardData = {
@@ -83,13 +85,13 @@ export function profileTargetFor(target: Element): string | undefined {
 export function renderProfilePopoverHtml(input: { data: ProfileCardData; locale: Locale }): string {
   const zh = input.locale === "zh-CN";
   const { data } = input;
-  const statusText = data.online ? (zh ? "在线" : "Online") : zh ? "离线" : "Offline";
+  const statusText = data.online ? (workbenchT(input.locale, "online")) : workbenchT(input.locale, "offline");
   const statusClass = data.online ? "wh-wb-profile-status wh-wb-profile-status--online" : "wh-wb-profile-status";
   const avatar = avatarTileHtml({ label: data.nickname, id: data.userId, ...(data.online ? { online: true } : {}) });
   const action = data.isSelf
-    ? `<div class="wh-wb-profile-self">${zh ? "这是你" : "This is you"}</div>`
+    ? `<div class="wh-wb-profile-self">${workbenchT(input.locale, "thisIsYou")}</div>`
     : `<button type="button" class="wh-wb-profile-dm" data-wb-popover-dm="${escapeHtml(data.userId)}">${
-        zh ? "发私聊" : "Message"
+        workbenchT(input.locale, "message")
       }</button>`;
   return `<div class="wh-wb-profile-card ds-glass-strong">
     <div class="wh-wb-profile-head">

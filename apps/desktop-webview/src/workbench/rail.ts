@@ -18,6 +18,8 @@ import { dmPeerParticipant, fetchDmList, fetchPresenceEntries } from "./dm.js";
 import { workbenchIcons } from "./icons.js";
 import type { WorkbenchCenterTab, WorkbenchStore } from "./store.js";
 
+import { workbenchT } from "./locales.js";
+
 // R15 批 B：rail 的 presence 轮询周期——同 chat/view.ts 成员条的 30s 节奏。
 const RAIL_PRESENCE_POLL_INTERVAL_MS = 30_000;
 
@@ -277,32 +279,32 @@ function renderProjectTreeLeavesHtml(
       // 当前标题，mountWorkbenchRail 据此预填重命名弹窗。
       return `<div class="wh-wb-collab-leaf"><button type="button" class="wh-wb-leaf wh-wb-leaf--live${selected ? " sel" : ""}" data-wb-open-collab-chat="${escapeHtml(conversation.id)}">${workbenchIcons.collab}<span>${escapeHtml(conversation.title)}</span>${
         (conversation.unread_count ?? 0) > 0 ? `<span class="wh-wb-leaf-count wh-wb-leaf-count--unread">${conversation.unread_count}</span>` : ""
-      }</button><button type="button" class="wh-wb-collab-rename" data-wb-rename-collab="${escapeHtml(conversation.id)}" data-wb-rename-collab-title="${escapeHtml(conversation.title)}" title="${zh ? "重命名" : "Rename"}" aria-label="${zh ? "重命名会话" : "Rename chat"}">${workbenchIcons.edit}</button></div>`;
+      }</button><button type="button" class="wh-wb-collab-rename" data-wb-rename-collab="${escapeHtml(conversation.id)}" data-wb-rename-collab-title="${escapeHtml(conversation.title)}" title="${workbenchT(zh, "rename")}" aria-label="${workbenchT(zh, "renameChat")}">${workbenchIcons.edit}</button></div>`;
     })
     .join("");
   // R14FIX 批 workbench（缺「单独和 Cuu 聊」入口 · 2026-07-15 用户反馈）：显眼快捷入口——一键建一条只有
   // 自己 + Cuu 的私有会话并打开（不用先开建群弹窗、再刻意不选人）。文案桌面用 Cuu。
   const soloCuuButton = `<button type="button" class="wh-wb-leaf wh-wb-leaf--live wh-wb-leaf--solo-cuu" data-wb-new-solo-cuu${newCollab.submitting ? " disabled" : ""}>${workbenchIcons.cat}<span>${
-    newCollab.submitting ? (zh ? "创建中…" : "Creating…") : zh ? "和 Cuu 单独聊" : "Chat just with Cuu"
+    newCollab.submitting ? (workbenchT(zh, "creating")) : workbenchT(zh, "chatJustWithCuu")
   }</span></button>`;
   const newCollabButton = `<div class="wh-wb-new-collab">${soloCuuButton}
     <button type="button" class="wh-wb-leaf wh-wb-leaf--new" data-wb-new-collab-conversation${newCollab.submitting ? " disabled" : ""}>${workbenchIcons.plus}<span>${
-      newCollab.submitting ? (zh ? "创建中…" : "Creating…") : zh ? "新建协同会话" : "New collab chat"
+      newCollab.submitting ? (workbenchT(zh, "creating")) : workbenchT(zh, "newCollabChat")
     }</span></button>${newCollab.error ? `<p class="wh-wb-new-collab-error">${escapeHtml(newCollab.error)}</p>` : ""}
   </div>`;
   const fileCount = vm.recent_project_files.items.length;
-  const driveLeaf = `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "drive" ? " sel" : ""}" data-wb-open-drive>${workbenchIcons.folder}<span>${zh ? "网盘" : "Drive"}</span>${
+  const driveLeaf = `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "drive" ? " sel" : ""}" data-wb-open-drive>${workbenchIcons.folder}<span>${workbenchT(zh, "drive")}</span>${
     fileCount > 0 ? `<span class="wh-wb-leaf-count">${fileCount}</span>` : ""
   }</button>`;
   // R15 批 E2（项目时间线 / 甘特）：与网盘同级的「时间线」树叶——切中栏到 timeline 标签（见 shell.ts 的
   // onOpenTimeline）。选中态跟 centerTab === "timeline" 走，同其它树叶的 sel 约定。
-  const timelineLeaf = `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "timeline" ? " sel" : ""}" data-wb-open-timeline>${workbenchIcons.timeline}<span>${zh ? "时间线" : "Timeline"}</span></button>`;
+  const timelineLeaf = `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "timeline" ? " sel" : ""}" data-wb-open-timeline>${workbenchIcons.timeline}<span>${workbenchT(zh, "timeline")}</span></button>`;
   // R16 批 W2：与时间线同级的「任务看板」树叶——切中栏到 kanban 标签（见 shell.ts 的 onOpenKanban）。
   // 首发带「新」小徽标（复用现有 wh-wb-leaf-count 徽标体系，不造新样式；可后续摘除）。
-  const kanbanLeaf = `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "kanban" ? " sel" : ""}" data-wb-open-kanban>${workbenchIcons.kanban}<span>${zh ? "任务看板" : "Board"}</span><span class="wh-wb-leaf-count">${zh ? "新" : "New"}</span></button>`;
+  const kanbanLeaf = `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "kanban" ? " sel" : ""}" data-wb-open-kanban>${workbenchIcons.kanban}<span>${workbenchT(zh, "board")}</span><span class="wh-wb-leaf-count">${workbenchT(zh, "new")}</span></button>`;
   // R16 批 W2：与时间线同级的「日程」树叶——切中栏到 schedule 标签（见 shell.ts 的 onOpenSchedule）。
   // 首发同样带「新」小徽标（复用现有 wh-wb-leaf-count 徽标体系）。
-  const scheduleLeaf = `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "schedule" ? " sel" : ""}" data-wb-open-schedule>${workbenchIcons.calendar}<span>${zh ? "日程" : "Schedule"}</span><span class="wh-wb-leaf-count">${zh ? "新" : "New"}</span></button>`;
+  const scheduleLeaf = `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "schedule" ? " sel" : ""}" data-wb-open-schedule>${workbenchIcons.calendar}<span>${workbenchT(zh, "schedule")}</span><span class="wh-wb-leaf-count">${workbenchT(zh, "new")}</span></button>`;
   return `<div class="wh-wb-tree">${mainLeaf}${collabLeaves}${newCollabButton}${driveLeaf}${timelineLeaf}${kanbanLeaf}${scheduleLeaf}</div>`;
 }
 
@@ -326,14 +328,14 @@ function renderProjectRowHtml(
   // 点开只会撞 404 的按钮违反 04 §4 铁律 3）。齿轮是 .wh-wb-project-row 的兄弟节点而不是子节点
   // （按钮里不能套按钮），选中态跟 centerTab === "project-settings" 走，同树叶的 sel 约定。
   const gear = activeVm?.viewer.is_project_owner
-    ? `<button type="button" class="wh-wb-project-gear${centerTab === "project-settings" ? " sel" : ""}" data-wb-open-project-settings aria-label="${zh ? "项目设置" : "Project settings"}" title="${zh ? "项目设置" : "Project settings"}">${workbenchIcons.gear}</button>`
+    ? `<button type="button" class="wh-wb-project-gear${centerTab === "project-settings" ? " sel" : ""}" data-wb-open-project-settings aria-label="${workbenchT(zh, "projectSettings")}" title="${workbenchT(zh, "projectSettings")}">${workbenchIcons.gear}</button>`
     : "";
   return `<div class="wh-wb-project${active ? " active" : ""}">
     <div class="wh-wb-project-head">
     <button type="button" class="wh-wb-project-row" data-wb-select-project="${escapeHtml(project.id)}" aria-current="${active ? "true" : "false"}">
       <span class="wh-wb-tile ${tileVariantClass(project.id)}">${escapeHtml(projectInitial(project.name))}</span>
       <span class="wh-wb-project-name">${escapeHtml(project.name)}</span>
-      ${project.open_work_item_count > 0 ? `<span class="wh-wb-project-dot" title="${zh ? "有进行中工作项" : "Has open work"}"></span>` : ""}
+      ${project.open_work_item_count > 0 ? `<span class="wh-wb-project-dot" title="${workbenchT(zh, "hasOpenWork")}"></span>` : ""}
     </button>
     ${gear}
     </div>
@@ -369,10 +371,10 @@ export function renderProjectTreeHtml(input: {
   const newProjectRow = `<div class="wh-wb-project">
     <button type="button" class="wh-wb-project-row" data-wb-new-project>
       <span class="wh-wb-tile wh-wb-tile--new">${workbenchIcons.plus}</span>
-      <span class="wh-wb-project-name wh-wb-project-name--muted">${zh ? "新建项目" : "New project"}</span>
+      <span class="wh-wb-project-name wh-wb-project-name--muted">${workbenchT(input.locale, "newProject")}</span>
     </button>
   </div>`;
-  return `<div class="wh-wb-rail-head">${zh ? "项目" : "Projects"}</div>${rows}${newProjectRow}`;
+  return `<div class="wh-wb-rail-head">${workbenchT(input.locale, "projects")}</div>${rows}${newProjectRow}`;
 }
 
 // R13 批 S3（个人空间）：rail 顶部独立分组，与「项目」平级但视觉/语义分开——个人空间没有团队
@@ -408,7 +410,7 @@ export function renderPersonalSpaceSectionHtml(input: {
   const newPersonalSpaceRow = `<div class="wh-wb-project">
     <button type="button" class="wh-wb-project-row" data-wb-new-personal-space>
       <span class="wh-wb-tile wh-wb-tile--new">${workbenchIcons.plus}</span>
-      <span class="wh-wb-project-name wh-wb-project-name--muted">${zh ? "新建个人空间" : "New personal space"}</span>
+      <span class="wh-wb-project-name wh-wb-project-name--muted">${workbenchT(input.locale, "newPersonalSpace")}</span>
     </button>
   </div>`;
   // R14 批 ONBOARD（个人空间发现性，2026-07-14）：一个人还没建过任何个人空间时，多数人不知道这行
@@ -419,9 +421,9 @@ export function renderPersonalSpaceSectionHtml(input: {
   // 既有先例：hue 色块也是内联 style，不是每一处视觉细节都值得为它专门开一条 CSS 规则）——字号/颜色
   // 抄的是 wh-wb-army-empty-note 同一档"小字浅色提示"视觉语言（12px/ds-ink-faint），保持全应用观感一致。
   const discoveryHint = input.personalProjects.length === 0
-    ? `<p data-wb-personal-space-discovery-hint="true" style="margin:2px 14px 10px;font:500 12px/1.5 var(--ds-font);color:var(--ds-ink-faint)">${zh ? "你的私人 AI 工作台——想周报、读材料、记待办都行" : "Your private AI workspace — draft reports, read through materials, or track your own to-dos"}</p>`
+    ? `<p data-wb-personal-space-discovery-hint="true" style="margin:2px 14px 10px;font:500 12px/1.5 var(--ds-font);color:var(--ds-ink-faint)">${workbenchT(input.locale, "yourPrivateAiWorkspaceDraftReports")}</p>`
     : "";
-  return `<div class="wh-wb-rail-head wh-wb-rail-head--personal">${zh ? "我的空间" : "My space"}</div>${rows}${newPersonalSpaceRow}${discoveryHint}`;
+  return `<div class="wh-wb-rail-head wh-wb-rail-head--personal">${workbenchT(input.locale, "mySpace")}</div>${rows}${newPersonalSpaceRow}${discoveryHint}`;
 }
 
 // R13 批 P1：军团总览从这条预告条升级成左栏一级入口（renderArmyOverviewNavHtml，与项目列表平级，见
@@ -440,7 +442,7 @@ export function renderArmyOverviewNavHtml(zh: boolean, active: boolean): string 
   return `<div class="wh-wb-rail-group">
     <button type="button" class="wh-wb-army-nav${active ? " active" : ""}" data-wb-open-army-overview aria-current="${active ? "true" : "false"}">
       ${workbenchIcons.army}
-      <span class="wh-wb-army-nav-label">${zh ? "军团总览" : "Army overview"}</span>
+      <span class="wh-wb-army-nav-label">${workbenchT(zh, "armyOverview")}</span>
     </button>
   </div>`;
 }
@@ -457,7 +459,7 @@ export function renderInboxNavHtml(zh: boolean, active: boolean, count: number):
   return `<div class="wh-wb-rail-group wh-wb-rail-group--inbox">
     <button type="button" class="wh-wb-inbox-nav${active ? " active" : ""}" data-wb-open-inbox aria-current="${active ? "true" : "false"}">
       ${workbenchIcons.check}
-      <span class="wh-wb-inbox-nav-label">${zh ? "待拍板" : "Decisions"}</span>
+      <span class="wh-wb-inbox-nav-label">${workbenchT(zh, "decisions")}</span>
       ${badge}
     </button>
   </div>`;
@@ -530,22 +532,22 @@ export function renderRosterGroupHtml(input: {
       const busy = input.busyUserId === member.user_id;
       let control: string;
       if (input.confirmRemoveUserId === member.user_id) {
-        control = `<span class="wh-wb-roster-confirm">${zh ? "确认移出？" : "Remove?"}<button type="button" class="wh-wb-roster-confirm-yes" data-wb-remove-member-confirm="${escapeHtml(
+        control = `<span class="wh-wb-roster-confirm">${workbenchT(input.locale, "remove")}<button type="button" class="wh-wb-roster-confirm-yes" data-wb-remove-member-confirm="${escapeHtml(
           member.user_id
-        )}"${busy ? " disabled" : ""}>${busy ? (zh ? "移出中…" : "Removing…") : zh ? "确认" : "Yes"}</button><button type="button" class="wh-wb-roster-confirm-no" data-wb-remove-member-cancel${busy ? " disabled" : ""}>${zh ? "取消" : "No"}</button></span>`;
+        )}"${busy ? " disabled" : ""}>${busy ? (workbenchT(input.locale, "removing")) : workbenchT(input.locale, "yes")}</button><button type="button" class="wh-wb-roster-confirm-no" data-wb-remove-member-cancel${busy ? " disabled" : ""}>${workbenchT(input.locale, "no")}</button></span>`;
       } else {
         control = `<button type="button" class="wh-wb-roster-remove" data-wb-remove-member="${escapeHtml(
           member.user_id
-        )}"${busy ? " disabled" : ""}>${zh ? "移出" : "Remove"}</button>`;
+        )}"${busy ? " disabled" : ""}>${workbenchT(input.locale, "remove2")}</button>`;
       }
       return `<div class="wh-wb-roster-row-wrap">${profileBtn}${control}</div>`;
     })
     .join("");
-  let head = `<div class="wh-wb-rail-head wh-wb-rail-head--flush">${zh ? "成员" : "Members"}`;
+  let head = `<div class="wh-wb-rail-head wh-wb-rail-head--flush">${workbenchT(input.locale, "members")}`;
   if (canManage) {
     head += `<span class="wh-wb-roster-actions"><button type="button" class="wh-wb-roster-action" data-wb-roster-manage-toggle>${
-      manage ? (zh ? "完成" : "Done") : zh ? "管理" : "Manage"
-    }</button><button type="button" class="wh-wb-roster-action" data-wb-invite-member>${zh ? "邀请" : "Invite"}</button></span>`;
+      manage ? (workbenchT(input.locale, "done")) : workbenchT(input.locale, "manage")
+    }</button><button type="button" class="wh-wb-roster-action" data-wb-invite-member>${workbenchT(input.locale, "invite")}</button></span>`;
   }
   head += "</div>";
   const inviteBox = canManage && input.invite?.open ? renderRosterInviteBoxHtml(input.invite, zh) : "";
@@ -564,15 +566,15 @@ function renderRosterInviteBoxHtml(state: RosterInviteUiState, zh: boolean): str
       : "";
   return `<div class="wh-wb-roster-invite">
     <input class="wh-wb-roster-invite-input" type="email" inputmode="email" maxlength="320" placeholder="${
-      zh ? "被邀请人邮箱" : "Invitee email"
+      workbenchT(zh, "inviteeEmail")
     }" data-wb-invite-email value="${escapeHtml(state.email)}"${state.submitting ? " disabled" : ""} />
     <div class="wh-wb-roster-invite-actions">
       <button type="button" class="wh-wb-roster-action" data-wb-invite-cancel${state.submitting ? " disabled" : ""}>${
-        zh ? "取消" : "Cancel"
+        workbenchT(zh, "cancel")
       }</button>
       <button type="button" class="wh-wb-roster-action wh-wb-roster-action--primary" data-wb-invite-submit${
         state.submitting || !state.email.trim() ? " disabled" : ""
-      }>${state.submitting ? (zh ? "生成中…" : "Creating…") : zh ? "生成邀请" : "Create invite"}</button>
+      }>${state.submitting ? (workbenchT(zh, "creating2")) : workbenchT(zh, "createInvite")}</button>
     </div>
     ${note}
   </div>`;
@@ -613,15 +615,15 @@ export function renderDmGroupHtml(input: {
   locale: Locale;
 }): string {
   const zh = input.locale === "zh-CN";
-  const head = `<div class="wh-wb-rail-head wh-wb-rail-head--flush">${zh ? "私聊" : "Direct messages"}</div>`;
+  const head = `<div class="wh-wb-rail-head wh-wb-rail-head--flush">${workbenchT(input.locale, "directMessages")}</div>`;
   if (input.dmList.length === 0) {
-    const hint = `<p class="wh-wb-dm-empty">${zh ? "点成员头像发起私聊" : "Click a member's avatar to start a chat"}</p>`;
+    const hint = `<p class="wh-wb-dm-empty">${workbenchT(input.locale, "clickAMemberSAvatarTo")}</p>`;
     return `<div class="wh-wb-rail-group">${head}${hint}</div>`;
   }
   const rows = input.dmList
     .map((dm) => {
       const peer = dmPeerParticipant(dm, input.currentUserId);
-      const nickname = peer?.nickname ?? (zh ? "私聊" : "Direct message");
+      const nickname = peer?.nickname ?? (workbenchT(input.locale, "directMessage"));
       const peerId = peer?.user_id ?? dm.conversation.id;
       const online = peer ? input.onlineUserIds.has(peer.user_id) : false;
       const selected = input.centerTab === "dm" && input.activeDmConversationId === dm.conversation.id;
@@ -650,27 +652,25 @@ export function renderNewProjectModalHtml(input: {
 }): string {
   const zh = input.locale === "zh-CN";
   return `<div class="wh-wb-modal-overlay" data-wb-new-project-overlay data-open="${input.open ? "true" : "false"}">
-    <div class="wh-wb-modal" role="dialog" aria-modal="true" aria-label="${zh ? "新建项目" : "New project"}">
-      <h3 class="wh-wb-modal-title">${zh ? "新建项目" : "New project"}</h3>
+    <div class="wh-wb-modal" role="dialog" aria-modal="true" aria-label="${workbenchT(input.locale, "newProject")}">
+      <h3 class="wh-wb-modal-title">${workbenchT(input.locale, "newProject")}</h3>
       <input
         class="wh-wb-modal-input"
         type="text"
         maxlength="128"
-        placeholder="${zh ? "项目名，如：产品路线图" : "Project name, e.g. Product roadmap"}"
+        placeholder="${workbenchT(input.locale, "projectNameEGProductRoadmap")}"
         data-wb-new-project-name
         value="${escapeHtml(input.name)}"
         ${input.submitting ? "disabled" : ""}
       />
       <p class="wh-wb-modal-note">${
-        zh
-          ? "创建即自动配好：<b>主区群聊（全员可聊）· 项目网盘 · Cuu 入驻 · 模式默认「分级自动」</b>。项目成员在设置的「成员」分区查看，加人/退群在各协同会话里管理。"
-          : "Creating it wires up <b>a team chat, project drive, and Cuu — mode defaults to \"tiered auto\"</b>. See project members under Settings; add or remove people inside each collab chat."
+        workbenchT(input.locale, "creatingItWiresUpBA")
       }</p>
       ${input.error ? `<p class="wh-wb-modal-error">${escapeHtml(input.error)}</p>` : ""}
       <div class="wh-wb-modal-actions">
-        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-new-project-cancel ${input.submitting ? "disabled" : ""}>${zh ? "取消" : "Cancel"}</button>
+        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-new-project-cancel ${input.submitting ? "disabled" : ""}>${workbenchT(input.locale, "cancel")}</button>
         <button type="button" class="wh-wb-btn wh-wb-btn--primary" data-wb-new-project-submit ${input.submitting || !input.name.trim() ? "disabled" : ""}>
-          ${input.submitting ? (zh ? "创建中…" : "Creating…") : zh ? "创建项目" : "Create project"}
+          ${input.submitting ? (workbenchT(input.locale, "creating")) : workbenchT(input.locale, "createProject")}
         </button>
       </div>
     </div>
@@ -689,27 +689,25 @@ export function renderNewPersonalSpaceModalHtml(input: {
 }): string {
   const zh = input.locale === "zh-CN";
   return `<div class="wh-wb-modal-overlay" data-wb-new-personal-space-overlay data-open="${input.open ? "true" : "false"}">
-    <div class="wh-wb-modal" role="dialog" aria-modal="true" aria-label="${zh ? "新建个人空间" : "New personal space"}">
-      <h3 class="wh-wb-modal-title">${zh ? "新建个人空间" : "New personal space"}</h3>
+    <div class="wh-wb-modal" role="dialog" aria-modal="true" aria-label="${workbenchT(input.locale, "newPersonalSpace")}">
+      <h3 class="wh-wb-modal-title">${workbenchT(input.locale, "newPersonalSpace")}</h3>
       <input
         class="wh-wb-modal-input"
         type="text"
         maxlength="128"
-        placeholder="${zh ? "留空即自动命名「我的空间」" : "Leave blank to auto-name it \"My space\""}"
+        placeholder="${workbenchT(input.locale, "leaveBlankToAutoNameIt")}"
         data-wb-new-personal-space-name
         value="${escapeHtml(input.name)}"
         ${input.submitting ? "disabled" : ""}
       />
       <p class="wh-wb-modal-note">${
-        zh
-          ? "个人空间只有你自己能看到，跳过团队邀请与治理设置，建好即可和 Cuu 对话。"
-          : "Only you can see a personal space — no team invites or governance setup, just you and Cuu."
+        workbenchT(input.locale, "onlyYouCanSeeAPersonal")
       }</p>
       ${input.error ? `<p class="wh-wb-modal-error">${escapeHtml(input.error)}</p>` : ""}
       <div class="wh-wb-modal-actions">
-        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-new-personal-space-cancel ${input.submitting ? "disabled" : ""}>${zh ? "取消" : "Cancel"}</button>
+        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-new-personal-space-cancel ${input.submitting ? "disabled" : ""}>${workbenchT(input.locale, "cancel")}</button>
         <button type="button" class="wh-wb-btn wh-wb-btn--primary" data-wb-new-personal-space-submit ${input.submitting ? "disabled" : ""}>
-          ${input.submitting ? (zh ? "创建中…" : "Creating…") : zh ? "创建个人空间" : "Create personal space"}
+          ${input.submitting ? (workbenchT(input.locale, "creating")) : workbenchT(input.locale, "createPersonalSpace")}
         </button>
       </div>
     </div>
@@ -766,32 +764,32 @@ export function renderNewCollabModalHtml(input: {
       </label>`;
           })
           .join("")
-      : `<p class="wh-wb-new-collab-member-empty">${zh ? "这个工作区暂时没有其他成员" : "No other workspace members yet"}</p>`;
+      : `<p class="wh-wb-new-collab-member-empty">${workbenchT(input.locale, "noOtherWorkspaceMembersYet")}</p>`;
   return `<div class="wh-wb-modal-overlay" data-wb-new-collab-overlay data-open="${state.open ? "true" : "false"}">
-    <div class="wh-wb-modal" role="dialog" aria-modal="true" aria-label="${zh ? "新建协同会话" : "New collab chat"}">
-      <h3 class="wh-wb-modal-title">${zh ? "新建协同会话" : "New collab chat"}</h3>
+    <div class="wh-wb-modal" role="dialog" aria-modal="true" aria-label="${workbenchT(input.locale, "newCollabChat")}">
+      <h3 class="wh-wb-modal-title">${workbenchT(input.locale, "newCollabChat")}</h3>
       <input
         class="wh-wb-modal-input"
         type="text"
         maxlength="256"
-        placeholder="${zh ? "会话名，如：改第三幕" : "Chat name"}"
+        placeholder="${workbenchT(input.locale, "chatName")}"
         data-wb-new-collab-title
         value="${escapeHtml(state.title)}"
         ${state.submitting ? "disabled" : ""}
       />
       <div class="wh-wb-new-collab-members">
-        <p class="wh-wb-new-collab-members-label">${zh ? "拉人进来（不选就只有你和 Cuu）" : "Add members (leave empty for just you and Cuu)"}</p>
+        <p class="wh-wb-new-collab-members-label">${workbenchT(input.locale, "addMembersLeaveEmptyForJust")}</p>
         ${memberRowsHtml}
       </div>
       <label class="wh-wb-new-collab-cuu-toggle">
         <input type="checkbox" data-wb-new-collab-cuu-toggle ${state.cuuEnabled ? "checked" : ""} ${state.submitting ? "disabled" : ""} />
-        <span>${zh ? "Cuu 参与这个会话" : "Cuu takes part in this chat"}</span>
+        <span>${workbenchT(input.locale, "cuuTakesPartInThisChat")}</span>
       </label>
       ${state.error ? `<p class="wh-wb-modal-error">${escapeHtml(state.error)}</p>` : ""}
       <div class="wh-wb-modal-actions">
-        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-new-collab-cancel ${state.submitting ? "disabled" : ""}>${zh ? "取消" : "Cancel"}</button>
+        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-new-collab-cancel ${state.submitting ? "disabled" : ""}>${workbenchT(input.locale, "cancel")}</button>
         <button type="button" class="wh-wb-btn wh-wb-btn--primary" data-wb-new-collab-submit ${state.submitting || !state.title.trim() ? "disabled" : ""}>
-          ${state.submitting ? (zh ? "创建中…" : "Creating…") : zh ? "创建" : "Create"}
+          ${state.submitting ? (workbenchT(input.locale, "creating")) : workbenchT(input.locale, "create")}
         </button>
       </div>
     </div>
@@ -819,22 +817,22 @@ export function renderRenameCollabModalHtml(input: { locale: Locale; state: Rena
   const zh = input.locale === "zh-CN";
   const state = input.state;
   return `<div class="wh-wb-modal-overlay" data-wb-rename-collab-overlay data-open="${state.open ? "true" : "false"}">
-    <div class="wh-wb-modal" role="dialog" aria-modal="true" aria-label="${zh ? "重命名会话" : "Rename chat"}">
-      <h3 class="wh-wb-modal-title">${zh ? "重命名会话" : "Rename chat"}</h3>
+    <div class="wh-wb-modal" role="dialog" aria-modal="true" aria-label="${workbenchT(input.locale, "renameChat")}">
+      <h3 class="wh-wb-modal-title">${workbenchT(input.locale, "renameChat")}</h3>
       <input
         class="wh-wb-modal-input"
         type="text"
         maxlength="256"
-        placeholder="${zh ? "会话名，如：改第三幕" : "Chat name"}"
+        placeholder="${workbenchT(input.locale, "chatName")}"
         data-wb-rename-collab-input
         value="${escapeHtml(state.title)}"
         ${state.submitting ? "disabled" : ""}
       />
       ${state.error ? `<p class="wh-wb-modal-error">${escapeHtml(state.error)}</p>` : ""}
       <div class="wh-wb-modal-actions">
-        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-rename-collab-cancel ${state.submitting ? "disabled" : ""}>${zh ? "取消" : "Cancel"}</button>
+        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-rename-collab-cancel ${state.submitting ? "disabled" : ""}>${workbenchT(input.locale, "cancel")}</button>
         <button type="button" class="wh-wb-btn wh-wb-btn--primary" data-wb-rename-collab-submit ${state.submitting || !state.title.trim() ? "disabled" : ""}>
-          ${state.submitting ? (zh ? "保存中…" : "Saving…") : zh ? "保存" : "Save"}
+          ${state.submitting ? (workbenchT(input.locale, "saving")) : workbenchT(input.locale, "save")}
         </button>
       </div>
     </div>
@@ -927,10 +925,10 @@ export function mountWorkbenchRail(
     // 证据，好过在这极短空窗期里显示一个更消极的猜测。
     const connectionWord =
       state.connectionState?.state === "offline"
-        ? zh ? "离线" : "Offline"
+        ? workbenchT(input.locale, "offline")
         : state.connectionState?.state === "reconnecting"
-          ? zh ? "重连中" : "Reconnecting"
-          : zh ? "已连接" : "connected";
+          ? workbenchT(input.locale, "reconnecting")
+          : workbenchT(input.locale, "connected");
     const viewerLabel = state.vm
       ? `${state.vm.workspace_members.items[0]?.nickname ?? ""} · ${connectionWord}`
       : undefined;
@@ -1142,7 +1140,7 @@ export function mountWorkbenchRail(
       }
       modalSubmitting = false;
       modalError =
-        error instanceof Error ? error.message : input.locale === "zh-CN" ? "创建失败，请重试" : "Couldn't create the project — retry";
+        error instanceof Error ? error.message : workbenchT(input.locale, "couldnTCreateTheProjectRetry");
       render();
     }
   };
@@ -1187,7 +1185,7 @@ export function mountWorkbenchRail(
       }
       personalSpaceSubmitting = false;
       personalSpaceError =
-        error instanceof Error ? error.message : input.locale === "zh-CN" ? "创建失败，请重试" : "Couldn't create it — retry";
+        error instanceof Error ? error.message : workbenchT(input.locale, "couldnTCreateItRetry");
       render();
     }
   };
@@ -1262,7 +1260,7 @@ export function mountWorkbenchRail(
       }
       newCollabSubmitting = false;
       newCollabError =
-        error instanceof Error ? error.message : input.locale === "zh-CN" ? "创建失败，请重试" : "Couldn't create it — retry";
+        error instanceof Error ? error.message : workbenchT(input.locale, "couldnTCreateItRetry");
       render();
     }
   };
@@ -1286,7 +1284,7 @@ export function mountWorkbenchRail(
     render();
     try {
       const result = await createCollabConversation(input.client, projectId, {
-        title: input.locale === "zh-CN" ? "和 Cuu 单独聊" : "Just me and Cuu",
+        title: workbenchT(input.locale, "justMeAndCuu"),
         participantUserIds: [],
         cuuEnabled: true
       });
@@ -1307,7 +1305,7 @@ export function mountWorkbenchRail(
       }
       newCollabSubmitting = false;
       newCollabError =
-        error instanceof Error ? error.message : input.locale === "zh-CN" ? "创建失败，请重试" : "Couldn't create it — retry";
+        error instanceof Error ? error.message : workbenchT(input.locale, "couldnTCreateItRetry");
       render();
     }
   };
@@ -1367,7 +1365,7 @@ export function mountWorkbenchRail(
       }
       renameSubmitting = false;
       renameError =
-        error instanceof Error ? error.message : input.locale === "zh-CN" ? "改名失败，请重试" : "Couldn't rename it — retry";
+        error instanceof Error ? error.message : workbenchT(input.locale, "couldnTRenameItRetry");
       render();
     }
   };
@@ -1435,9 +1433,7 @@ export function mountWorkbenchRail(
         error:
           error instanceof Error
             ? error.message
-            : input.locale === "zh-CN"
-              ? "生成邀请失败，请重试"
-              : "Couldn't create the invite — retry"
+            : workbenchT(input.locale, "couldnTCreateTheInviteRetry")
       };
       render();
     }
@@ -1496,9 +1492,7 @@ export function mountWorkbenchRail(
       rosterManageError =
         error instanceof Error
           ? error.message
-          : input.locale === "zh-CN"
-            ? "移出失败，请重试"
-            : "Couldn't remove them — retry";
+          : workbenchT(input.locale, "couldnTRemoveThemRetry");
       render();
     }
   };

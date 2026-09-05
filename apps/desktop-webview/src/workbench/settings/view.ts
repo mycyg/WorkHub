@@ -49,6 +49,8 @@ import {
   type ProjectMembersOverview
 } from "./render.js";
 
+import { settingsT } from "./locales.js";
+
 // R14 批 GH 解绑武装态自动复原时长——同 drive/side-panel.ts 版本回滚两段式确认的既有先例（5 秒）。
 const GITHUB_UNBIND_ARM_TIMEOUT_MS = 5000;
 
@@ -239,9 +241,7 @@ export function mountProjectSettingsView(
           return;
         }
         instructionsSaveErrorKind = "network";
-        instructionsSaveErrorText = zh
-          ? "没保存成功，你刚才写的内容还在——点重试，或者再改一下、失焦即可重新保存。"
-          : "Couldn't save — what you typed is still here. Retry, or edit and leave the field again.";
+        instructionsSaveErrorText = settingsT(input.locale, "couldnTSaveWhatYouTyped");
         render();
       });
   }
@@ -354,18 +354,16 @@ export function mountProjectSettingsView(
   function githubErrorMessage(error: unknown): string {
     if (error instanceof WorkHubApiError) {
       if (error.status === 503) {
-        return zh
-          ? "GitHub 集成未配置加密密钥，请联系管理员查看部署文档完成配置。"
-          : "GitHub integration isn't configured with an encryption key yet — ask an administrator to check the deployment docs.";
+        return settingsT(input.locale, "githubIntegrationIsnTConfiguredWith");
       }
       if (error.status === 403) {
-        return zh ? "只有项目负责人能管理 GitHub 绑定。" : "Only the project owner can manage the GitHub binding.";
+        return settingsT(input.locale, "onlyTheProjectOwnerCanManage");
       }
       if (error.message) {
         return error.message;
       }
     }
-    return zh ? "没保存成功，再试一次。" : "Couldn't save — try again.";
+    return settingsT(input.locale, "couldnTSaveTryAgain");
   }
 
   function loadGithub(): void {
@@ -428,7 +426,7 @@ export function mountProjectSettingsView(
 
   function submitGithubBinding(): void {
     if (!githubFormRepo || !githubFormPat) {
-      githubErrorText = zh ? "仓库和 PAT 都要填。" : "Fill in both the repository and the token.";
+      githubErrorText = settingsT(input.locale, "fillInBothTheRepositoryAnd");
       render();
       return;
     }
@@ -510,12 +508,8 @@ export function mountProjectSettingsView(
         savingRiskThresholds = false;
         errorText =
           error instanceof WorkHubApiError && error.status === 404
-            ? zh
-              ? "只有项目负责人能改这里。"
-              : "Only the project owner can change this."
-            : zh
-              ? "没保存成功，再试一次。"
-              : "Couldn't save — try again.";
+            ? settingsT(input.locale, "onlyTheProjectOwnerCanChange3")
+            : settingsT(input.locale, "couldnTSaveTryAgain");
         render();
       });
   }
@@ -576,7 +570,7 @@ export function mountProjectSettingsView(
       const has = quiet.weekdays.includes(day);
       if (has && quiet.weekdays.length === 1) {
         // 契约要求 weekdays 至少一天（aiQuietHoursSchema min(1)）——别发一个必被 422 拒掉的 patch。
-        showInlineError(zh ? "至少保留一天，或直接关掉安静时段。" : "Keep at least one day, or turn quiet hours off.");
+        showInlineError(settingsT(input.locale, "keepAtLeastOneDayOr"));
         return;
       }
       const nextWeekdays = has ? quiet.weekdays.filter((value) => value !== day) : [...quiet.weekdays, day].sort((a, b) => a - b);
@@ -593,7 +587,7 @@ export function mountProjectSettingsView(
       const field = container.querySelector<HTMLInputElement>("[data-wb-pset-silence-input]");
       const value = Number(field?.value ?? "");
       if (!Number.isInteger(value) || value < 0 || value > 86400) {
-        showInlineError(zh ? "静默窗口要在 0 到 86400 秒之间。" : "The silence window must be 0-86400 seconds.");
+        showInlineError(settingsT(input.locale, "theSilenceWindowMustBe0"));
         return;
       }
       if (value === governance.silence_window_seconds) {
@@ -719,13 +713,13 @@ export function mountProjectSettingsView(
     }
     const minute = hhmmToMinute(target.value);
     if (minute === undefined) {
-      showInlineError(zh ? "时间格式不对，用 HH:MM。" : "Bad time format — use HH:MM.");
+      showInlineError(settingsT(input.locale, "badTimeFormatUseHhMm"));
       return;
     }
     const nextStart = isStart ? minute : quiet.start_minute;
     const nextEnd = isEnd ? minute : quiet.end_minute;
     if (nextStart === nextEnd) {
-      showInlineError(zh ? "开始和结束时间不能相同。" : "Start and end times must differ.");
+      showInlineError(settingsT(input.locale, "startAndEndTimesMustDiffer"));
       return;
     }
     if (nextStart === quiet.start_minute && nextEnd === quiet.end_minute) {
