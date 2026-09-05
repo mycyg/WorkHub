@@ -98,6 +98,55 @@ AGENT_RUN_SKILL_CURATION_ENABLED=false
 管理员不想等今晚的，可以在「团队技能」页点「立即自学一轮」（`POST /api/team-skills/curate-now`）——
 非管理员没有这个按钮且调用会被拒；已经在跑时会明确告知「正在进行」，不会并发起第二轮。
 
+## 3.5 把服务器地址给客户端
+
+桌面客户端（见 README「下载桌面客户端」）默认连**本机** `http://127.0.0.1:8787`。只有客户端和服务器
+在同一台机器上时这个默认值才对；团队里其他人的电脑上必须改成服务器地址。
+
+**改法（每台客户端各做一次）**：客户端连不上时会弹出一张连接失败卡片——点「打开设置」，在「服务器
+地址」里填 `http://<服务器IP>:8787`（或你的域名），点「保存并重试」。地址会记在这台机器上，下次启动
+自动使用。
+
+**地址写法要求**：必须是完整的 http/https 绝对地址，不能带用户名密码、查询串或 `#` 片段（末尾斜杠
+会被自动去掉）。填错时保存会被拒绝，不会把脏值带进请求。
+
+**桌面端的鉴权与 Web 端不同**：客户端与服务器不同源，拿不到浏览器 cookie，所以首次连接会走
+`POST /api/auth/desktop-bootstrap` 换一枚设备令牌存在本机，之后每个请求带 `X-YQGL-Client-Token` 头。
+
+**CORS 必须放行桌面端的来源，否则连了也白连**：服务端的 CORS 中间件（`apps/api/src/app.ts`
+第 185-193 行左右，`corsAllowOrigins` / `isDevReflectableOrigin` / `app.use("/api/*", cors({...}))`
+那一段）只有在 `CORS_ALLOW_ORIGINS=*`（通配/开发默认）时才会**自动**反射本机回环与桌面 `tauri`
+来源；`.env.pilot.example` 默认就是 `*`，LAN 单机试运行不用改这里。但生产环境（`APP_ENV=production`）
+**禁止 `CORS_ALLOW_ORIGINS` 包含 `*`**（fail-closed 配置守卫，见 `packages/config/src/env.ts` 第
+442-445 行左右），此时 `corsAllowOrigins` 会被当成**精确白名单**直接使用，不再有任何自动反射——
+桌面客户端的来源必须**显式**写进这份白名单，否则预检请求（preflight）直接被拒，客户端所有写请求
+和 SSE 订阅都连不上，且报错信息只会是笼统的网络错误，不会指向 CORS。
+
+桌面端的来源在不同系统上的字符串不一样（Tauri 2 各平台的 webview 起源不同）：
+
+```bash
+# .env.pilot 生产模式下需要显式列出（逗号分隔，与你自己的 web 来源写在一起）：
+CORS_ALLOW_ORIGINS=https://your-domain.example,tauri://localhost,http://tauri.localhost
+```
+
+- `tauri://localhost` —— macOS（以及 Linux）桌面客户端的来源，自定义协议，永远不带端口。
+- `http://tauri.localhost` —— Windows 桌面客户端的来源（Windows 上 WebView2 不支持自定义协议
+  当顶层来源，Tauri 退化成这个伪 http 域名）。
+
+两条都写上就对了，不需要按用户实际用的操作系统挑一条——多写不产生任何风险（这两个值都不是可路由的
+公网地址，谁都伪造不出"从这个来源发起的浏览器请求"）。
+
+**注意（当前版本的限制）**：打包后的客户端出于安全收敛，网络层还有第二道闸——`client-tauri/src-tauri/tauri.conf.json`
+的 CSP `connect-src` 只放行本机回环——**远端服务器地址就算填了、CORS 也放行了，打包后的 webview 仍然连不出去**。
+要让客户端连远端服务器，还需要放宽这条 CSP（属于另一条改动线，不在本节范围）。在那之前，桌面客户端
+只支持"客户端与服务器同机"的用法；本节讲的 CORS 配置是让"服务器已经放宽 CSP 之后"能正常工作的必要
+前提，现在配置好不吃亏。
+
+**运维侧要配合的事**：
+- 服务器要监听 `0.0.0.0`（pilot 的 compose 编排已经是），防火墙放行 8787；
+- 暴露到公网时按 §8 切 `APP_ENV=production` + HTTPS + `AUTH_MODE=password`，此时客户端地址填
+  `https://...`，客户端登录屏也会自动切成邮箱 + 密码。
+
 ## 4. 备份与恢复
 
 ```bash

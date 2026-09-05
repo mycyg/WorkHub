@@ -101,6 +101,42 @@ Full deployment details (backup/restore, the single-instance assumption, trouble
 posture) live in [`DEPLOY.md`](DEPLOY.md). For local development without building a Docker image,
 see "Local development" below.
 
+## Download the desktop client
+
+Once the server is up, give everyone a desktop client too — the always-on spotlight box, the Cuu
+desktop pet, system notifications, a tray icon, and the full project workbench all live there. The
+web client (open `http://<server IP>:8787/` in a browser) doesn't lack any feature — it just
+doesn't have these always-on native pieces.
+
+Download the installer for your OS from [Releases](https://github.com/mycyg/WorkHub/releases):
+
+| OS | File |
+|---|---|
+| macOS (Apple silicon, M1 and later) | `WorkHub_<version>_darwin_aarch64.dmg` |
+| macOS (Intel) | `WorkHub_<version>_darwin_x64.dmg` |
+| Windows 10/11 x64 | `WorkHub_<version>_windows_x64-setup.exe` (or `.msi`) |
+| Linux x64 | `WorkHub_<version>_linux_amd64.deb` or `.AppImage` |
+
+**First launch**: the installers aren't Apple-notarized or Windows-code-signed yet, so the OS will
+block them once —
+
+- macOS: find WorkHub.app in Finder, **Control-click → Open**, then click "Open" again in the
+  dialog; or run `xattr -dr com.apple.quarantine /Applications/WorkHub.app` in a terminal.
+- Windows: when SmartScreen says "Windows protected your PC," click "More info" → "Run anyway."
+- Linux: `sudo dpkg -i WorkHub_<version>_amd64.deb`; for the AppImage, `chmod +x` it first.
+
+**Pointing the client at your server**: the client defaults to `http://127.0.0.1:8787`. If the
+server runs on a different machine, open the connection-failure card the client shows, click
+"Open settings," enter the server address, and "Save and retry." For the remote address to
+actually connect, the server's `CORS_ALLOW_ORIGINS` must also allow the desktop client's origin —
+see "Give the client your server's address" in [`DEPLOY.md`](DEPLOY.md).
+
+Building the client yourself: `pnpm build:desktop` builds for whatever platform you're on
+(equivalent to building the desktop frontend then `cargo tauri build`; the output is
+unsigned/ad-hoc). `pnpm build:desktop-macos` is the macOS-specific variant with an extra
+code-signature structural verification gate. The full three-platform cross-build/sign/package
+pipeline lives in [`.github/workflows/desktop-release.yml`](.github/workflows/desktop-release.yml).
+
 ## The core loop
 
 From a single request to a trustworthy deliverable, the line runs like this:
