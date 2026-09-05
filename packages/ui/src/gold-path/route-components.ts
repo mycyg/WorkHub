@@ -6079,7 +6079,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale,
       </div>
       ${vm.permission_policies !== undefined ? `<section class="wh-card wh-r4-route-card" data-r9-settings-policies="${escapeHtml(String(vm.permission_policies.length))}">
         <h3 role="heading" aria-level="2">${escapeHtml(locale === "zh-CN" ? "自动通过规则" : "Auto-approve rules")}</h3>
-        <p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "勾选「以后同类自动通过」留下的常驻规则都在这里；撤销需在桌面端操作。" : "Standing rules from \u201calways allow\u201d live here; revoking requires the desktop app.")}</p>
+        <p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "勾选「以后同类自动通过」留下的常驻规则都在这里；新增、调整、撤销都在桌面客户端里管理。" : "Standing rules from \u201calways allow\u201d live here; add, adjust, and revoke them from the desktop app.")}</p>
         <div class="wh-r4-route-timeline" role="list">${vm.permission_policies.length
           ? vm.permission_policies.map((policy) => `<div role="listitem" class="wh-r4-route-row" data-r9-settings-policy="${escapeHtml(policy.id)}">
             <div>
