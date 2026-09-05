@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import {
   defaultSandboxBudget,
+  defaultSandboxMode,
   errorToolResult,
   okToolResult,
   type AnyToolSpec,
@@ -319,7 +320,7 @@ export function createBuiltInFileTools(): AnyToolSpec[] {
     tool({
       id: "run_command",
       description:
-        "Run a single allowlisted command inside the sandbox. `args` is an argv array executed with no shell: there is no globbing, piping, redirection, or `&&` — pass one program and its arguments, and call the tool again for the next step. Only vetted interpreters and utilities are permitted; dependency installs and remote execution are refused. run_command is also disabled unless the deployment injects a sandboxed command runner, in which case it returns a clear error. Use it to compute results (python3 / node) or to grep / sed -n a span out of a file that read_file truncated.",
+        "Run a single allowlisted command inside the sandbox. `args` is an argv array executed with no shell: there is no globbing, piping, redirection, or `&&` — pass one program and its arguments, and call the tool again for the next step. Only vetted interpreters and utilities are permitted; dependency installs and remote execution are refused. Where the platform provides one, the command runs under an operating-system sandbox: there is no network access, and writes land only inside the run workspace; a `[sandbox: ... denied by policy]` result is that policy refusing, not a malformed command. run_command is also disabled unless the deployment injects a sandboxed command runner, in which case it returns a clear error. Use it to compute results (python3 / node) or to grep / sed -n a span out of a file that read_file truncated.",
       promptSnippet: "Run one allowlisted command in the sandbox (no shell)",
       promptGuidelines: [
         "Give run_command an argv array with no shell features — no pipes, globs, redirection, or &&; run one command per call."
@@ -347,7 +348,9 @@ export function createBuiltInFileTools(): AnyToolSpec[] {
           cwd: input.cwd,
           workdir: ctx.workdir,
           timeoutSeconds,
-          runner: ctx.commandRunner
+          runner: ctx.commandRunner,
+          // 沙箱模式：默认 workspace-write（工人要能把交付物写进 outputs/）。
+          mode: ctx.sandboxMode ?? defaultSandboxMode
         });
         await enforceBudget(ctx);
         return result.exitCode === 0
