@@ -28,12 +28,16 @@ function invokeDesktopWindowCommand(
   return true;
 }
 
+// R25（BX-06）：reducedMotion 是壳层补间的开关——为真时 Rust 侧直接落到目标尺寸，不走 180ms 的
+// ease-out 帧序列。放在 webview 递而不是壳层自己问系统，是因为 WKWebView 的
+// prefers-reduced-motion 已经直接映射 macOS 的「减弱动态效果」，壳层不必为此多挂一个 AppKit 依赖。
 export function resizeDesktopMainWindow(
   width: number,
   height: number,
+  reducedMotion = false,
   scope: DesktopWindowControlsScope = globalThis as DesktopWindowControlsScope
 ): boolean {
-  return invokeDesktopWindowCommand("set_spotlight_size", { width, height }, scope);
+  return invokeDesktopWindowCommand("set_spotlight_size", { width, height, reducedMotion }, scope);
 }
 
 export function dragDesktopMainWindow(

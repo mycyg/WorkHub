@@ -33,7 +33,9 @@ import {
 } from "./state.js";
 import type { SpotlightApiClient, SpotlightTarget, SpotlightViewContext } from "./view-context.js";
 
-export type SpotlightResizeFn = (width: number, height: number) => void;
+// reducedMotion：系统「减弱动态效果」开着时置真，壳层据此跳过生长补间直接落到目标（见
+// desktop-window-controls.ts 的 resizeDesktopMainWindow）。浏览器开发态的 no-op 实现可忽略它。
+export type SpotlightResizeFn = (width: number, height: number, reducedMotion?: boolean) => void;
 export type SpotlightManualDragFn = (deltaX: number, deltaY: number) => void;
 
 export type MountSpotlightInput = {
@@ -363,6 +365,11 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       suppressNextFocusExpansion = false;
     }
   };
+  // R25（BX-06）：系统「减弱动态效果」直通壳层——壳层据此跳过生长补间。每次量高时现问一遍
+  // （而不是启动时读一次缓存住），用户在系统设置里改完立刻生效，也不必挂 change 监听。
+  // 测试/无 matchMedia 环境安全回落为 false。
+  const prefersReducedMotion = () =>
+    typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const applyResize = () => {
     resizeRaf = 0;
     if (!input.resize) {
@@ -371,6 +378,11 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     const stagePad = 0; // .wh-spot-stage 现无 padding，玻璃盒自身贴边收边。
     const collapsed = box.dataset.mode === "launcher" && box.dataset.collapsed === "true";
     body.style.maxHeight = "none";
+    // R25（BX-06）：css 给盒子加了 max-height:100vh（生长途中让盒子跟着窗口走，圆角底边才不会被
+    // 透明窗裁成直角）。100vh 在补间过程中就是"当前这一帧的窗口高"，若不在量高前摘掉它，测出来的
+    // natural 会被窗口反向钳住 → 盒子再也长不回内容的真实高度。与下面 body 的 maxHeight 同款手法：
+    // 量之前置 none，量完还给 css。
+    box.style.maxHeight = "none";
     const top = collapsed ? Math.max(48, topEl.offsetHeight) : box.offsetHeight - body.offsetHeight; // 顶栏 + 边框
     const natural = collapsed ? top + stagePad : box.offsetHeight + stagePad;
     const screenMax = Math.round((window.screen?.availHeight ?? 900) * 0.86);
@@ -380,15 +392,19 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     const winH = Math.max(minH, Math.min(natural, screenMax));
     const bodyMax = Math.max(80, winH - stagePad - top);
     body.style.maxHeight = collapsed ? "0px" : `${bodyMax}px`;
+    box.style.maxHeight = "";
     const width = Math.max(360, Math.round(window.innerWidth));
     // M1：缓存上次下发尺寸——set_size 会回弹一个 window resize 事件，若不去重就会
     // set_size→resize→requestResize→set_size 抖动。尺寸没变就不再下发。
+    // R25：生长补间让这条回弹变成每帧一次，但中间尺寸永远走不到这一行——量高只看内容
+    // （box/body 的 maxHeight 在量之前都被摘成 none），补间途中算出的 winH 与目标一致，
+    // 于是在上面这条去重里就返回了。lastSent 记的因此始终是目标尺寸，不是中间帧。
     if (width === lastSentW && winH === lastSentH) {
       return;
     }
     lastSentW = width;
     lastSentH = winH;
-    input.resize(width, winH);
+    input.resize(width, winH, prefersReducedMotion());
     scheduleWorkHubLiquidGlassFilterRebuild(doc);
   };
   const requestResize = () => {
