@@ -69,11 +69,11 @@ export const PLUGIN_HOST_MAX_LIVE_PROCESSES = 4;
 /** 审计 detail 里参数/结果摘要的长度上限——审计表不是日志表。 */
 const AUDIT_SUMMARY_MAX_CHARS = 400;
 /**
- * 插件抛出的错误消息进模型可见通道前的长度上限。与 `translate.ts` 的
- * `PLUGIN_RESULT_MAX_CHARS` 同一档：正常返回值和抛出的错误是同一类第三方数据，
- * 走的也是同一条「进 ToolResult.content → 被工人抄进 outputs/ → 被装进围栏」的路。
+ * 插件抛出的错误信息进工具结果前的上限。与 `packages/plugin-host/src/translate.ts` 的
+ * `PLUGIN_RESULT_MAX_CHARS` 同口径：错误路径和成功路径面对的是同一个模型、同一道围栏，
+ * 一个字面 `</outputs>` 或一条几十 MB 的 message 在两条路上的危害完全一样。
  */
-const PLUGIN_ERROR_MAX_CHARS = 32 * 1024;
+const PLUGIN_ERROR_MESSAGE_MAX_CHARS = 32 * 1024;
 
 export type PluginHostSpawn = (input: {
   command: string;
@@ -771,14 +771,8 @@ export function createPluginHostClient(options: PluginHostClientOptions = {}): P
       });
       return okToolResult(result.content, { data: result.data });
     } catch (error) {
-      const raw = error instanceof Error ? error.message : String(error);
-      // 插件**抛错**这条路不经过 `translate.ts` 的 renderToolContent，但它同样把一段第三方文本
-      // 送进模型可见通道（工具结果）。R26 M1b 的 Note 把这条列成「发现但未修的相邻缺口」——
-      // 这里补上同一份中和：围栏标签中和 + 长度上限，口径与正常返回值完全一致。
-      const message = sanitizeModelFacingText(raw, {
-        maxChars: PLUGIN_ERROR_MAX_CHARS,
-        neutralizeFenceTags: true
-      });
+      const message = error instanceof Error ? error.message : String(error);
+      // 审计留**原始**信息：它给人看、给排障用，中和过的文本反而丢掉了现场。
       await writeAudit({
         descriptor,
         audit,
@@ -788,7 +782,14 @@ export function createPluginHostClient(options: PluginHostClientOptions = {}): P
         summary: summarize(message),
         trustLevel
       });
-      return errorToolResult(`插件工具 ${descriptor.toolName} 没能完成：${message}`);
+      // 插件 execute() 抛出的 message 跨过 RPC 边界原样到这里：成功路径已在宿主子进程里过
+      // sanitizeModelFacingText（M1b），错误路径同样要中和围栏标签并封顶，否则插件能借一条
+      // 异常提前闭合 <outputs> 围栏或把一次调用撑成超长上下文。
+      const safeMessage = sanitizeModelFacingText(message, {
+        maxChars: PLUGIN_ERROR_MESSAGE_MAX_CHARS,
+        neutralizeFenceTags: true
+      });
+      return errorToolResult(`插件工具 ${descriptor.toolName} 没能完成：${safeMessage}`);
     }
   }
 
