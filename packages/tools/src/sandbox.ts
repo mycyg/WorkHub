@@ -1,9 +1,22 @@
 import { spawn } from "node:child_process";
-import { realpathSync } from "node:fs";
+import { accessSync, constants, realpathSync } from "node:fs";
 import { lstat, readdir } from "node:fs/promises";
 import path from "node:path";
 
-import type { CommandRunner, SandboxBudget } from "./types.js";
+import {
+  SANDBOX_EXEC_PATH,
+  buildSeatbeltProfile,
+  detectSandboxDenial,
+  detectSeatbeltRunnerFailure,
+  interpreterReadRoot,
+  resolveExecutable,
+  resolveSandboxBackend,
+  sandboxDenialNotice,
+  sandboxUnavailableMessage,
+  seatbeltArgv,
+  seatbeltRunnerFailureMessage
+} from "./seatbelt.js";
+import { defaultSandboxMode, type CommandRunner, type CommandRunnerInput, type CommandRunnerOutput, type SandboxBudget, type SandboxMode } from "./types.js";
 
 export const allowedCommands = new Set([
   "python",
@@ -137,12 +150,11 @@ export async function enforceSandboxBudget(workdir: string, budget: Pick<Sandbox
 
 function sandboxEnv(workdir: string): Record<string, string> {
   return {
-    // CORE-16 风险标注（高危，刻意保留）：透传宿主 PATH 意味着白名单命令（python3/node/…）解析到的是
-    // 宿主真实解释器及其整套 site-packages/全局工具，子进程可读到宿主 PATH 上的一切可执行文件。
-    // 本 env 是「预算+路径围栏」级别的软沙箱，不是安全边界：一旦部署方置
-    // AGENT_RUN_ALLOW_UNSANDBOXED_COMMANDS=true（默认 false，见 DEPLOY.md），run_command 即把宿主机
-    // 交给模型生成的命令——仅限受信 LAN 单机试点；多租户/公网部署必须保持 false 并注入真正隔离的
-    // runner（容器/namespace/firejail）。若未来要做真隔离，此处应换成最小白名单 PATH 而非宿主透传。
+    // CORE-16 风险标注：透传宿主 PATH 意味着白名单命令（python3/node/…）解析到的是宿主真实解释器
+    // 及其整套 site-packages/全局工具。R26 B8 起这不再是唯一的一道防线——macOS 上 argv 会被包进
+    // Seatbelt（`(deny default)` + 出网全拒 + 写只限工作目录），PATH 上的东西即便被执行也受同一策略
+    // 约束。但在没有 Seatbelt 的平台上（Linux/Windows），本 env 仍然只是「预算+路径围栏」级别的软
+    // 沙箱、不是安全边界，因此那些平台默认 fail-closed 拒绝执行（见 resolveSandboxBackend）。
     PATH: process.env.PATH ?? "",
     PYTHONPATH: workdir,
     HOME: workdir,
@@ -153,8 +165,14 @@ function sandboxEnv(workdir: string): Record<string, string> {
   };
 }
 
-export const nodeCommandRunner: CommandRunner = async ({ args, cwd, timeoutSeconds, env }) =>
-  new Promise((resolve) => {
+function spawnCommand(input: {
+  args: string[];
+  cwd: string;
+  timeoutSeconds: number;
+  env: Record<string, string>;
+}): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  const { args, cwd, timeoutSeconds, env } = input;
+  return new Promise((resolve) => {
     const child = spawn(args[0] as string, args.slice(1), {
       cwd,
       env,
@@ -216,6 +234,99 @@ export const nodeCommandRunner: CommandRunner = async ({ args, cwd, timeoutSecon
       });
     });
   });
+}
+
+function seatbeltAvailable(sandboxExecPath: string): boolean {
+  try {
+    accessSync(sandboxExecPath, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export type SandboxedCommandRunnerOptions = {
+  /**
+   * 允许在没有操作系统级后端的平台上降级到用户态软沙箱（enforcement=partial）。
+   * 对应 `AGENT_RUN_ALLOW_UNSANDBOXED_COMMANDS`；不开就 fail-closed 拒绝执行。
+   */
+  allowDegraded?: boolean;
+  /** 覆写平台判定（测试用）。 */
+  platform?: string;
+  /** 覆写 sandbox-exec 路径（测试用）。 */
+  sandboxExecPath?: string;
+  /** 覆写宿主临时目录（测试用）。 */
+  hostTempDir?: string;
+};
+
+/**
+ * 受控命令执行器：spawn 之前先决策后端，macOS 上把 argv 包成
+ * `sandbox-exec -p '<profile>' -- <argv>`，并把执行完整度与拒绝签名一起上报。
+ * 没有可用后端且没显式允许降级时**拒绝执行**（fail-closed），绝不静默无约束地跑。
+ */
+export function createSandboxedCommandRunner(options: SandboxedCommandRunnerOptions = {}): CommandRunner {
+  const platform = options.platform ?? process.platform;
+  const sandboxExecPath = options.sandboxExecPath ?? SANDBOX_EXEC_PATH;
+  const allowDegraded = options.allowDegraded ?? false;
+  return async (input: CommandRunnerInput): Promise<CommandRunnerOutput> => {
+    const mode: SandboxMode = input.mode ?? defaultSandboxMode;
+    const decision = resolveSandboxBackend({
+      platform,
+      mode,
+      allowDegraded,
+      seatbeltAvailable: platform === "darwin" && seatbeltAvailable(sandboxExecPath)
+    });
+    if (decision.backend === "unavailable") {
+      // fail-closed：命令根本没有执行。
+      return { exitCode: 126, stdout: "", stderr: decision.message, sandboxUnavailable: true };
+    }
+    if (decision.backend !== "seatbelt") {
+      const raw = await spawnCommand(input);
+      return { ...raw, enforcement: decision.enforcement, backend: decision.backend };
+    }
+
+    const workdir = input.workdir ?? input.cwd;
+    // 解释器可能装在 nvm/pyenv/conda 这类非系统前缀里，把它的安装前缀一起放行（只读）。
+    const executable = resolveExecutable(input.args[0] ?? "", input.env.PATH ?? process.env.PATH ?? "");
+    const interpreterRoot = executable ? interpreterReadRoot(executable) : undefined;
+    const profile = buildSeatbeltProfile({
+      mode,
+      workdir,
+      ...(interpreterRoot ? { readExtras: [interpreterRoot] } : {}),
+      ...(options.hostTempDir ? { hostTempDir: options.hostTempDir } : {})
+    });
+    const raw = await spawnCommand({
+      ...input,
+      args: seatbeltArgv({ args: input.args, profile, sandboxExecPath })
+    });
+
+    const runnerFailure = detectSeatbeltRunnerFailure(raw);
+    if (runnerFailure.failed && runnerFailure.kind === "profile") {
+      // 包裹器拒了 profile → 命令没跑。绝不退回无包裹重试。
+      return {
+        exitCode: raw.exitCode,
+        stdout: raw.stdout,
+        stderr: seatbeltRunnerFailureMessage(runnerFailure.reason ?? "sandbox-exec refused the profile"),
+        sandboxUnavailable: true
+      };
+    }
+    const denial = detectSandboxDenial(raw);
+    return {
+      ...raw,
+      enforcement: decision.enforcement,
+      backend: decision.backend,
+      ...(denial.denied && denial.operation
+        ? { sandboxDenied: true, stderr: `${sandboxDenialNotice(denial.operation)}\n${raw.stderr}`.trim() }
+        : {})
+    };
+  };
+}
+
+/**
+ * 默认执行器：macOS 走 Seatbelt（full），其余平台在未显式允许降级时 fail-closed。
+ * 需要降级到软沙箱的部署请显式 `createSandboxedCommandRunner({ allowDegraded: true })`。
+ */
+export const nodeCommandRunner: CommandRunner = createSandboxedCommandRunner();
 
 export async function runSandboxedCommand(input: {
   args: string[];
@@ -223,6 +334,7 @@ export async function runSandboxedCommand(input: {
   workdir: string;
   timeoutSeconds: number;
   runner?: CommandRunner;
+  mode?: SandboxMode;
 }) {
   ensureCommandAllowed(input.args);
   const cwd = safeResolvePath(input.workdir, input.cwd);
@@ -232,6 +344,8 @@ export async function runSandboxedCommand(input: {
     args: input.args,
     cwd,
     timeoutSeconds,
-    env: sandboxEnv(input.workdir)
+    env: sandboxEnv(input.workdir),
+    mode: input.mode ?? defaultSandboxMode,
+    workdir: path.resolve(input.workdir)
   });
 }

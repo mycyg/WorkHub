@@ -8,6 +8,28 @@ export type SandboxBudget = {
   commandTimeoutSeconds: number;
 };
 
+/**
+ * 命令沙箱模式（R26 B8，借 deepseek-harness `packages/sandbox` 的三档契约）：
+ * - `read-only`：可读系统运行库与工作目录，**任何写都被拒**（含工作目录本身）；
+ * - `workspace-write`：默认档。可写工作目录与本进程自己的临时目录，其余一律拒；
+ * - `danger-full-access`：**不包裹**，等于没有操作系统级边界。只有部署方显式配置才可能取到。
+ */
+export type SandboxMode = "read-only" | "workspace-write" | "danger-full-access";
+
+/** agent run 的默认档：工人要能把交付物写进 workdir 下的 outputs/。 */
+export const defaultSandboxMode: SandboxMode = "workspace-write";
+
+/**
+ * 一次包裹的**执行完整度**（不是承诺，是事实上报）：
+ * - `full`：操作系统级强制（macOS Seatbelt），进程及其子进程都受同一策略约束；
+ * - `partial`：仅用户态软沙箱（路径围栏 + 预算 + 命令白名单），不是安全边界。
+ * 消费者据此区分「沙箱坏了/没装」与「命令被策略拒了」。
+ */
+export type SandboxEnforcement = "full" | "partial";
+
+/** 实际生效的后端。`unavailable` 只会以 fail-closed 错误的形式出现，不会真的执行命令。 */
+export type SandboxBackend = "seatbelt" | "soft" | "danger-full-access";
+
 export const defaultSandboxBudget: SandboxBudget = {
   maxFiles: 800,
   maxBytes: 200 * 1024 * 1024,
@@ -39,12 +61,24 @@ export type CommandRunnerInput = {
   cwd: string;
   timeoutSeconds: number;
   env: Record<string, string>;
+  /** 本次执行的沙箱模式；缺省按 {@link defaultSandboxMode}。 */
+  mode?: SandboxMode;
+  /** 沙箱根目录（写白名单的基准）。缺省退回 `cwd`。 */
+  workdir?: string;
 };
 
 export type CommandRunnerOutput = {
   exitCode: number;
   stdout: string;
   stderr: string;
+  /** 本次实际拿到的执行完整度。老的自注入 runner 不填 → 消费者按「未知」处理。 */
+  enforcement?: SandboxEnforcement;
+  /** 实际生效的后端。 */
+  backend?: SandboxBackend;
+  /** 命令被沙箱策略拒绝（不是命令本身写错）。 */
+  sandboxDenied?: boolean;
+  /** 平台没有可用沙箱后端 → fail-closed 拒绝执行，命令根本没跑。 */
+  sandboxUnavailable?: boolean;
 };
 
 export type CommandRunner = (input: CommandRunnerInput) => Promise<CommandRunnerOutput>;
@@ -58,6 +92,8 @@ export type ToolExecutionContext = {
   snapshot?: SnapshotHook;
   snapshotId?: string;
   commandRunner?: CommandRunner;
+  /** 命令沙箱模式；缺省 {@link defaultSandboxMode}。 */
+  sandboxMode?: SandboxMode;
 };
 
 export type ToolSpec<TInput = unknown> = {
