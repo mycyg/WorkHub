@@ -78,6 +78,8 @@ import type {
   TeamSkillManagementItemVM,
   PatchUserMemoryRequest,
   PatchTeamSkillRequest,
+  // R23 SA-06：管理员手动催一轮「AI 自学团队技能」的回执契约。
+  TeamSkillCurateNowResponse,
   // R14 批 FEEDBACK（web-feedback-ui）：提议详情页「有用/没用」反馈的 PUT 请求体契约。
   PutAiFeedbackRequest,
   // R20 DSK-UX（R19-5 撤销学到的自动通过策略 / R19-3 撤销 AI 文件改动）：治理策略与快照回滚的写契约。
@@ -465,6 +467,9 @@ export type WorkHubApiClient = {
   listTeamSkillsManage: () => Promise<TeamSkillManagementPageVM>;
   patchTeamSkillManage: (id: string, payload: PatchTeamSkillRequest) => Promise<TeamSkillManagementItemVM>;
   deactivateTeamSkillManage: (id: string, payload?: { reason?: string }) => Promise<{ deprecated: true }>;
+  // R23 SA-06：立刻跑一轮「AI 自学团队技能」，不等今晚。仅管理员（403）；已经在跑或开关关着 409、
+  // 没配 LLM 密钥 503。回执只承诺「已开跑」，跑完的结果去技能页的 curation 区块看。
+  curateTeamSkillsNow: () => Promise<TeamSkillCurateNowResponse>;
   pages: PageClient;
   streams: PushStreamClient;
   streamUrl: (path: string) => string;

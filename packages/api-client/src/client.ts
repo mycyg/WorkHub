@@ -743,6 +743,8 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    // R23 SA-06：管理员手动催一轮夜间自学（无请求体——这一轮覆盖整个部署的技能库，没有可选参数）。
+    curateTeamSkillsNow: () => request("/api/team-skills/curate-now", { method: "POST" }),
     pages: {
       attention: (options) => request(withPageLocale("/api/pages/attention", options)),
       approvals: (options) => request(withApprovalPageOptions("/api/pages/approvals", options)),
