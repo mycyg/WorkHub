@@ -442,7 +442,8 @@ export function renderTimelineHtml(input: {
 
   const window = computeWindow(vm);
 
-  // 空态：无里程碑、且没有任何可排期/工作项时——给引导（真可用的「新建里程碑」入口 + Cuu 起草计划预留说明）。
+  // 空态：无里程碑、且没有任何可排期/工作项时——给引导（真可用的「新建里程碑」入口 + 指向「日程」
+  // 标签「用 Cuu 起草计划」真入口的一句话；E3 已落地，这里不再是预留说明）。
   if (vm.milestones.length === 0 && (vm.empty_state === "no_work_items" || vm.items.length === 0)) {
     return `<div class="wh-wb-tl">${header}${errorBanner}<div class="wh-wb-tl-empty">
       <span class="wh-wb-tl-empty-icon">${workbenchIcons.timeline}</span>
@@ -454,8 +455,8 @@ export function renderTimelineHtml(input: {
       }</p>
       <p class="wh-wb-tl-empty-note">${
         zh
-          ? "让 Cuu 起草整份计划的入口即将上线（E3）。"
-          : "Drafting the whole plan with Cuu is coming soon (E3)."
+          ? "想让 Cuu 起草整份计划？切到左侧「日程」标签，点「用 Cuu 起草计划」。"
+          : "Want Cuu to draft the whole plan? Switch to the \u201cSchedule\u201d tab and use \u201cDraft a plan with Cuu\u201d."
       }</p>
     </div></div>`;
   }

@@ -42,6 +42,7 @@ import {
 
 import { resolveDesktopShellEmitter } from "../../desktop-cuu-runtime.js";
 import { clearDesktopClientToken } from "../../desktop-client-token.js";
+import { resolveDesktopTauriInvoke } from "../../desktop-window-controls.js";
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 import { driveResourceApiBase, fetchDriveResource } from "./drive.js";
 
@@ -1090,7 +1091,17 @@ export function createSettingsView(): SpotlightCapabilityView {
           }
           void ctx.client
             .updatePreferences({ locale: next as "zh-CN" | "en-US" })
-            .then(() => window.location.reload())
+            .then(() => {
+              // D1（R19-13 托盘语言联动补线）：webview 切语言成功后要把新 locale 同步给原生外壳
+              // （托盘菜单/tooltip/通知兜底文案），否则那些地方永远停在启动语言——见 set_shell_locale
+              // 顶部注释。best-effort、fire-and-forget：非 Tauri 环境（web/测试）没有 invoke 时直接
+              // 跳过，绝不阻塞 reload。
+              const invokeShell = resolveDesktopTauriInvoke();
+              if (invokeShell) {
+                void Promise.resolve(invokeShell("set_shell_locale", { locale: next })).catch(() => undefined);
+              }
+              window.location.reload();
+            })
             .catch(() => ctx.toast(zh ? "切换失败，稍后重试" : "Failed — retry", "error"));
           return;
         }

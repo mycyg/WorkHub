@@ -41,6 +41,7 @@ import {
 } from "./cuu-cat-live2d-runtime.js";
 import { writeDesktopPetQaDomSnapshot } from "./cuu-qa-dom-report.js";
 import { readDesktopClientToken } from "./desktop-client-token.js";
+import { resolveDesktopTauriInvoke } from "./desktop-window-controls.js";
 import { liquidGlassHeadHtml } from "./liquid-glass.js";
 import {
   liquidGlassFilterCss,
@@ -1270,6 +1271,13 @@ export async function bootDesktopPetSurface(
     // ③广播主窗——两窗语言态不再长期漂移。
     void client.updatePreferences({ locale: nextLocale })
       .then(() => {
+        // D1（R19-13 托盘语言联动补线）：同 spotlight/views/settings.ts——桌宠窗切语言成功后
+        // 也要让原生外壳（托盘菜单/tooltip/通知兜底文案）跟着换，否则只有主窗改了偏好、壳层
+        // 停在启动语言。best-effort、fire-and-forget，非 Tauri 环境没有 invoke 时直接跳过。
+        const invokeShell = resolveDesktopTauriInvoke();
+        if (invokeShell) {
+          void Promise.resolve(invokeShell("set_shell_locale", { locale: nextLocale })).catch(() => undefined);
+        }
         void refreshVisibleAttentionCard();
         try {
           shellEmitter?.emitTo?.("main", "pet-locale-changed", { locale: nextLocale });

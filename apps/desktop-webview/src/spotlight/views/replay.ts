@@ -1,12 +1,21 @@
 // WorkHub 桌面 · Spotlight「回放」能力内联视图（S8）。
 // 列出在跑/排队的 AI 运行（pages.attention.background_runs）→ 点开看该运行的时间线（getAgentRun trace）。
 // list→detail 都在盒子内联 morph；历史已完成运行从工作项/审批进入，这里聚焦「Cuu 正在干什么」。
+//
+// F-06（一键回滚桌面挂载）：详情态在既有 trace 之外补一块「改动快照」区——README 承诺的「一键回滚」
+// 端点/契约/binder 早就齐了（POST /api/agent-runs/:id/revert、@workhub/ui 的 bindReplayRevertActions），
+// 唯独没有真实桌面 UI 调用；这里补上，但不复用 packages/ui/src/replay/render.ts 整页视觉（那是给独立
+// 回放整页用的 gold-path 旧卡片语言），改用 Spotlight 自己的玻璃组件词汇（wh-spot-*）画同一份数据，
+// 复用同一套 data-* 属性契约让既有、已测试的 binder 原样生效。
 
-import type { AgentRunLiveVM, AgentStep, AttentionHomeVM } from "@workhub/contracts";
+import type { AgentRunLiveVM, AgentStep, AttentionHomeVM, ReplayTraceVM } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
+import { formatLocalTimestamp } from "@workhub/ui";
+import type { ReplayRevertRoot } from "@workhub/ui/replay";
 
+import { bindDesktopAgentRunReplayRevert } from "../../desktop-agent-run-replay.js";
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
-import { agentRunStatusLabel, agentStepPhaseLabel, agentStepPublicSummary } from "../labels.js";
+import { agentRunStatusLabel, agentStepPhaseLabel, agentStepPublicSummary, snapshotKindLabel } from "../labels.js";
 
 type BgRun = AttentionHomeVM["background_runs"][number];
 
@@ -76,6 +85,40 @@ function traceHtml(vm: AgentRunLiveVM, zh: boolean, waiting = false): string {
   return `<div class="wh-spot-dash ds-anim-fade-in"><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-run-back style="align-self:flex-start">${zh ? "← 返回运行列表" : "← Back to runs"}</button>${header}${decideBtn}${timeline}</div>`;
 }
 
+// F-06：改动快照区——每个未回滚快照给一颗「撤销此次改动」按钮（POST /api/agent-runs/:id/revert，
+// snapshot_id 走 body），已回滚的只显示「已回滚」标签。data-* 属性与 packages/ui/src/replay/render.ts
+// 的 renderSnapshots 同一契约，好让不变的 bindDesktopAgentRunReplayRevert（真正的二次确认状态机）
+// 原样生效——这里只换视觉词汇，不碰那份 binder 的行为。零快照、或客户端缺 revertAgentRun（极旧客户端
+// 替身）时整块按钮换成纯文本，不渲染点了没反应的假按钮。
+export function snapshotsSectionHtml(replay: ReplayTraceVM | undefined, runId: string, zh: boolean, canRevert: boolean): string {
+  const snapshots = replay?.snapshots ?? [];
+  if (snapshots.length === 0) {
+    return "";
+  }
+  const rows = snapshots
+    .map((snap) => {
+      const reverted = Boolean(snap.reverted_at);
+      const meta = [snapshotKindLabel(snap.kind, zh), snap.created_at ? formatLocalTimestamp(snap.created_at) : ""]
+        .filter(Boolean)
+        .join(" · ");
+      let action: string;
+      if (reverted) {
+        action = `<span class="wh-spot-row-metalabel" data-replay-snapshot-reverted="true">${escapeHtml(zh ? "已回滚" : "Reverted")}</span>`;
+      } else if (canRevert) {
+        action = `<button type="button" class="wh-spot-act wh-spot-act--danger ds-pressable" data-replay-revert-snapshot="${escapeHtml(snap.id)}" data-replay-revert-run="${escapeHtml(runId)}" data-revert-label-idle="${escapeHtml(zh ? "撤销此次改动" : "Undo these changes")}" data-revert-label-arm="${escapeHtml(zh ? "确认撤销？再点一次" : "Undo? Click again")}" data-revert-label-reverting="${escapeHtml(zh ? "撤销中…" : "Undoing…")}" data-revert-label-reverted="${escapeHtml(zh ? "已回滚" : "Reverted")}" data-revert-label-retry="${escapeHtml(zh ? "撤销失败，点此重试" : "Undo failed — retry")}">${escapeHtml(zh ? "撤销此次改动" : "Undo these changes")}</button>`;
+      } else {
+        action = `<span class="wh-spot-row-metalabel">${escapeHtml(zh ? "本机暂不支持撤销" : "Undo unavailable")}</span>`;
+      }
+      return `<div class="wh-spot-row" data-replay-snapshot="${escapeHtml(snap.id)}" data-replay-snapshot-kind="${escapeHtml(snap.kind)}" style="cursor:default"><div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(snap.ref)}</div><div class="wh-spot-row-sub">${escapeHtml(meta)}</div></div>${action}</div>`;
+    })
+    .join("");
+  return `<div style="margin-top:16px;display:flex;flex-direction:column;gap:8px">
+    <div class="wh-spot-row-title">${escapeHtml(zh ? "改动快照" : "Change snapshots")}</div>
+    <p class="wh-spot-row-sub">${escapeHtml(zh ? "撤销会把文件还原到这份快照，并覆盖之后的改动。" : "Undoing restores files to that snapshot and overwrites later changes.")}</p>
+    ${rows}
+  </div>`;
+}
+
 export function createReplayView(): SpotlightCapabilityView {
   return {
     id: "replay",
@@ -89,6 +132,19 @@ export function createReplayView(): SpotlightCapabilityView {
       // R20 R19-30：增量轮询定时器——list↔trace 切换、离开能力都要先停旧的，否则前一个 run 的轮询
       // 会在后台继续拿新 run 名下不存在的 after 游标乱撞（虽然服务端会正确按 runId 过滤，但纯属浪费）。
       let pollTimer: ReturnType<typeof setTimeout> | undefined;
+      // F-06：快照区撤销 binder 的清理函数——离开详情态/换 run/整个能力卸载都要先停掉，否则武装态的
+      // 5 秒解除定时器会在已经不可见的 DOM 上空跑。
+      let stopRevertBinding: (() => void) | undefined;
+
+      // F-06：详情态当前展示的 run/replay 快照，供轮询 tick 与「回滚成功后重拉」共用同一份
+      // 「整体重渲 + 重绑」逻辑（见 renderDetailNow）——不用 querySelector 拆分子槽位，因为
+      // bindDesktopAgentRunReplayRevert 的假替身/真实 DOM 都只需要 querySelectorAll 这一个入口，
+      // 整体覆盖反而更简单可靠（唯一代价：轮询恰好撞上撤销按钮的二次确认武装窗口会把它重置回
+      // 未武装态，需要用户再点一次确认——不丢数据，只是要多点一下，可接受）。
+      let currentRunId = "";
+      let currentVm: AgentRunLiveVM | undefined;
+      let currentReplay: ReplayTraceVM | undefined;
+      let currentWaiting = false;
 
       const stopPolling = () => {
         if (pollTimer !== undefined) {
@@ -97,8 +153,14 @@ export function createReplayView(): SpotlightCapabilityView {
         }
       };
 
+      const teardownRevertBinding = () => {
+        stopRevertBinding?.();
+        stopRevertBinding = undefined;
+      };
+
       const showList = async () => {
         stopPolling();
+        teardownRevertBinding();
         const gen = ++loadGen;
         ctx.setSubtitle(zh ? "AI 运行" : "AI runs");
         ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉运行…" : "Loading runs…"}</div>`;
@@ -118,6 +180,36 @@ export function createReplayView(): SpotlightCapabilityView {
           ctx.body.innerHTML = spotlightErrorHtml(zh, zh ? "运行没拉到" : "Couldn't load runs");
         }
         ctx.requestResize();
+      };
+
+      // 详情态整体重渲：trace + 快照区一起画，画完立即（重新）绑定撤销 binder——旧 binder 必须先停，
+      // 否则重复绑定会让同一批按钮叠加监听器（每点一下发出成倍的确认/请求）。
+      const renderDetailNow = (gen: number) => {
+        if (!currentVm) return;
+        const canRevert = Boolean(ctx.client.revertAgentRun);
+        ctx.body.innerHTML = `${traceHtml(currentVm, zh, currentWaiting)}${snapshotsSectionHtml(currentReplay, currentRunId, zh, canRevert)}`;
+        teardownRevertBinding();
+        stopRevertBinding = bindDesktopAgentRunReplayRevert(ctx.body as unknown as ReplayRevertRoot, ctx.client, {
+          onReverted: () => {
+            if (disposed || gen !== loadGen) return;
+            void refreshSnapshots(gen);
+          }
+        });
+        ctx.requestResize();
+      };
+
+      // 回滚成功后重拉快照（不只信任 binder 自己对被点按钮的乐观 DOM patch）——服务端如果因这次撤销
+      // 联动改了其它快照的状态，重拉才能落到权威态。失败保留当前（已乐观更新的）展示，不额外报错
+      // 盖住时间线——见 bindReplayRevertActions 对失败态的处理（保留武装，允许原地重试）。
+      const refreshSnapshots = async (gen: number) => {
+        try {
+          const replay = await ctx.client.replayAgentRun(currentRunId);
+          if (disposed || gen !== loadGen) return;
+          currentReplay = replay;
+          renderDetailNow(gen);
+        } catch {
+          // best-effort：见上方注释。
+        }
       };
 
       // R20 R19-30：仅当详情页打开时这个 run 还在跑（queued/running）才起轮询；已终结的 run 时间线不会
@@ -141,7 +233,8 @@ export function createReplayView(): SpotlightCapabilityView {
             if (newSteps.length > 0) {
               cursor = Math.max(cursor, highestStepNo(newSteps));
               activeVm = { ...activeVm, trace: [...(activeVm.trace ?? []), ...newSteps] };
-              ctx.body.innerHTML = traceHtml(activeVm, zh, waiting);
+              currentVm = activeVm;
+              renderDetailNow(gen);
               ctx.requestResize();
             }
             const shouldResync = newSteps.some((step) => step.phase === "final")
@@ -151,7 +244,8 @@ export function createReplayView(): SpotlightCapabilityView {
               if (disposed || gen !== loadGen) return;
               activeVm = refreshed;
               cursor = Math.max(cursor, highestStepNo(refreshed.trace ?? []));
-              ctx.body.innerHTML = traceHtml(activeVm, zh, waiting);
+              currentVm = activeVm;
+              renderDetailNow(gen);
               ctx.requestResize();
               if (!isActiveRunStatus(refreshed.status)) {
                 return;
@@ -169,15 +263,29 @@ export function createReplayView(): SpotlightCapabilityView {
 
       const showTrace = async (runId: string, runState?: string) => {
         stopPolling();
+        teardownRevertBinding();
         const gen = ++loadGen;
+        currentRunId = runId;
         ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉时间线…" : "Loading trace…"}</div>`;
         ctx.requestResize();
         try {
-          const vm = await ctx.client.getAgentRun(runId);
+          const vmPromise = ctx.client.getAgentRun(runId);
+          // F-06：快照是回放 VM 的附属数据，独立取——旧/测试用的客户端替身可能没实现这个方法，缺失时
+          // 当「没有快照」处理，不阻塞主时间线；真出错（服务端 5xx 等）同样 best-effort 吞掉。
+          // 与 getAgentRun 并发发起，不因为串行等待多绕一圈网络。
+          const replayPromise = typeof ctx.client.replayAgentRun === "function"
+            ? ctx.client.replayAgentRun(runId).catch(() => undefined)
+            : Promise.resolve(undefined);
+          const vm = await vmPromise;
           if (disposed || gen !== loadGen) return;
           ctx.setSubtitle(zh ? "运行时间线" : "Run trace");
           const waiting = runState === "waiting_for_user";
-          ctx.body.innerHTML = traceHtml(vm, zh, waiting);
+          const replay = await replayPromise;
+          if (disposed || gen !== loadGen) return;
+          currentVm = vm;
+          currentReplay = replay;
+          currentWaiting = waiting;
+          renderDetailNow(gen);
           pollTrace(runId, gen, vm, waiting);
         } catch {
           if (disposed || gen !== loadGen) return;
@@ -218,6 +326,7 @@ export function createReplayView(): SpotlightCapabilityView {
       return () => {
         disposed = true;
         stopPolling();
+        teardownRevertBinding();
       };
     }
   };

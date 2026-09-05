@@ -94,3 +94,17 @@ export function agentStepPublicSummary(
 export function riskHintLabel(level: string, zh: boolean): string {
   return pick(riskHintMap, level, zh);
 }
+
+// F-06：改动快照种类（contracts snapshotSchema.kind: pre_step/merge/manual/base）——与
+// packages/ui/src/replay/render.ts 的 replay.snapshotKind* 词典同口径，供桌面 Spotlight 回放视图
+// 的快照区使用。
+const snapshotKindMap: Record<string, [string, string]> = {
+  pre_step: ["执行前快照", "Pre-step snapshot"],
+  merge: ["合并快照", "Merge snapshot"],
+  manual: ["手动快照", "Manual snapshot"],
+  base: ["基线快照", "Base snapshot"]
+};
+
+export function snapshotKindLabel(kind: string, zh: boolean): string {
+  return pick(snapshotKindMap, kind, zh);
+}

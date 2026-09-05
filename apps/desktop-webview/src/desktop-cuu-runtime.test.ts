@@ -2935,6 +2935,95 @@ test("resolveDesktopCuuAction dispatches the agent-run abort href", () => {
   assert.equal(resolveDesktopCuuAction("/api/agent-runs/run-1/revert"), undefined);
 });
 
+// C1（桌宠死按钮修复）：spec_ready 工作项卡的「启动」动作（packages/cuu/src/cards.ts 的
+// start_agent）此前分发穷举里没有分支，点了既不提交也不导航——现在能解析并真调 startAgentRun。
+test("resolveDesktopCuuAction dispatches the spec_ready work item start-agent href", () => {
+  assert.deepEqual(resolveDesktopCuuAction("/api/workitems/wi-1/agent-runs", { actionId: "start_agent" }), {
+    kind: "start-agent-run",
+    workItemId: "wi-1"
+  });
+  // 评论等同前缀端点不误判。
+  assert.equal(resolveDesktopCuuAction("/api/workitems/wi-1/comments"), undefined);
+});
+
+test("submitDesktopCuuAction starts an agent run directly for an existing spec_ready work item", async () => {
+  const calls: unknown[] = [];
+  const run: AgentRunLiveVM = {
+    run_id: "10000000-0000-4000-8000-000000000401",
+    work_item_id: "wi-1",
+    title: "补齐验收要点",
+    status: "queued",
+    run: {
+      id: "10000000-0000-4000-8000-000000000401",
+      work_item_id: "wi-1",
+      mode: "worker",
+      actor: "AI",
+      status: "queued",
+      model: "deepseek-v4-flash",
+      turns_used: 0,
+      max_turns: 15,
+      token_in: 0,
+      token_out: 0,
+      created_at: "2026-06-10T01:00:00.000Z",
+      updated_at: "2026-06-10T01:00:00.000Z"
+    },
+    budget: {
+      max_steps: 15,
+      total_timeout_s: 300,
+      max_tokens: 120000,
+      max_cost_cny: "5.00"
+    },
+    budget_decision: {
+      decision_id: "budget-1",
+      allowed: true,
+      model_route: {
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        reason: "start-agent-run smoke"
+      }
+    },
+    usage: {
+      steps_used: 0,
+      token_in: 0,
+      token_out: 0,
+      estimated_cost_cny: "0.00"
+    },
+    trace: [],
+    stream_href: "/api/push/stream/run/10000000-0000-4000-8000-000000000401",
+    replay_href: "/api/agent-runs/10000000-0000-4000-8000-000000000401/replay"
+  };
+  const client = {
+    async respondApproval() { throw new Error("unused"); },
+    async nextQuestion() { throw new Error("unused"); },
+    async searchKnowledge() { throw new Error("unused"); },
+    async useEvidenceForWorkItem() { throw new Error("unused"); },
+    async startAgentRun(workItemId: string, payload: unknown, options: unknown) {
+      calls.push({ workItemId, payload, options });
+      return run;
+    }
+  } as never;
+
+  const action = resolveDesktopCuuAction("/api/workitems/wi-1/agent-runs", { actionId: "start_agent" });
+  const result = await submitDesktopCuuAction({ client, action: action!, locale: "zh-CN" });
+
+  assert.deepEqual(calls, [{ workItemId: "wi-1", payload: undefined, options: { locale: "zh-CN" } }]);
+  assert.match(result.message, /已启动/u);
+  assert.equal(result.card?.payload_ref?.entity_type, "agent_run");
+  assert.equal(result.agentRun?.run_id, run.run_id);
+
+  // 没有启动能力的客户端替身要给出人话错误，而不是静默 no-op。
+  const noStartClient = {
+    async respondApproval() { throw new Error("unused"); },
+    async nextQuestion() { throw new Error("unused"); },
+    async searchKnowledge() { throw new Error("unused"); },
+    async useEvidenceForWorkItem() { throw new Error("unused"); }
+  } as never;
+  await assert.rejects(
+    () => submitDesktopCuuAction({ client: noStartClient, action: action!, locale: "zh-CN" }),
+    /缺少启动 AI 执行的客户端能力/u
+  );
+});
+
 test("decideDesktopCuuAbortConfirmation arms first and executes only on the second click of the same run", () => {
   assert.deepEqual(decideDesktopCuuAbortConfirmation(undefined, "run-1"), { kind: "arm", runId: "run-1" });
   assert.deepEqual(decideDesktopCuuAbortConfirmation("run-1", "run-1"), { kind: "execute", runId: "run-1" });
