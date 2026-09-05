@@ -37,6 +37,7 @@
     "@workhub/db": "workspace:*",
     "@workhub/events": "workspace:*",
     "@workhub/permissions": "workspace:*",
+    "@workhub/plugin-host": "workspace:*",
     "@workhub/tools": "workspace:*",
     "hono": "^4.13.7",
     "redis": "^5.5.6",

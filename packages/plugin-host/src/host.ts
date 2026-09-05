@@ -187,9 +187,12 @@ export type PluginHostRuntime = {
  */
 export async function createPluginHostRuntime(pluginPaths: string[]): Promise<PluginHostRuntime> {
   const state = createPluginHostState();
-  const ctx = new Context();
-  await ctx.plugin(HostToolsService as never, state as never);
-  await ctx.plugin(HostSystemPromptService as never, state as never);
+  // Cordis 的 `plugin()` 类型面按「插件自带 Config 推导」设计，我们这里装的是自定义 service 类与
+  // 运行时才知道形状的第三方模块，两者都推不出静态 config 类型——统一收窄到一个最小签名，
+  // 而不是在每个调用点撒 `as never`（那会把参数个数校验也一并关掉）。
+  const ctx = new Context() as Context & { plugin: (plugin: unknown, config?: unknown) => PromiseLike<unknown> };
+  await ctx.plugin(HostToolsService, state);
+  await ctx.plugin(HostSystemPromptService, state);
   const reports: PluginLoadReport[] = [];
 
   for (const pluginPath of pluginPaths) {
@@ -202,7 +205,7 @@ export async function createPluginHostRuntime(pluginPaths: string[]): Promise<Pl
       state.currentPluginId = pluginId;
       const module = (await import(pathToFileURL(resolved.entryPath).href)) as Record<string, unknown>;
       const plugin = normalizePluginModule(module);
-      await ctx.plugin(plugin as never);
+      await ctx.plugin(plugin);
       reports.push({
         pluginId,
         path: pluginPath,
@@ -289,10 +292,11 @@ export function serveStdio(
         respond({ id: request.id, ok: true, result: await runtime.callTool(request.params.toolId, request.params.input) });
         return;
       }
+      const unknown = request as { id: number; method: string };
       respond({
-        id: request.id,
+        id: unknown.id,
         ok: false,
-        error: { code: "unknown_method", message: `unknown method: ${(request as { method: string }).method}` }
+        error: { code: "unknown_method", message: `unknown method: ${unknown.method}` }
       });
     } catch (error) {
       respond({ id: request.id, ok: false, error: { code: "plugin_tool_failed", message: readErrorMessage(error) } });

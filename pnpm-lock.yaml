@@ -53,6 +53,9 @@ importers:
       '@workhub/permissions':
         specifier: workspace:*
         version: link:../../packages/permissions
+      '@workhub/plugin-host':
+        specifier: workspace:*
+        version: link:../../packages/plugin-host
       '@workhub/tools':
         specifier: workspace:*
         version: link:../../packages/tools
