@@ -9,3 +9,4 @@ export * from "./protocol.js";
 export * from "./env.js";
 export * from "./translate.js";
 export * from "./to-tool-spec.js";
+export * from "./bundled-versions.js";
