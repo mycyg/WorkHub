@@ -6,6 +6,8 @@ import {
   mcpPrecheckCheckIdSchema,
   mcpPrecheckReportSchema,
   mcpServerActionResultSchema,
+  mcpServerConnectionVmSchema,
+  mcpServerErrorCodeSchema,
   mcpServerListVmSchema,
   mcpServerStatusSchema,
   mcpServerSummaryVmSchema,
@@ -161,6 +163,61 @@ test("the web-facing summary row never carries command, args, env, secret_refs o
     }).success,
     false
   );
+});
+
+// —— R26 M8（稳定错误码）：连不上的原因有码可依 —— //
+
+test("M8 the failure code enum covers all eight session reasons plus the no-reason fallback", () => {
+  // 这九条是两端界面唯一允许 switch 的东西。少一条，桌面端/网页端就只能回去解析英文诊断串；
+  // 多一条没人认识的，界面会掉进 default 分支说一句笼统的话——所以整份词表在契约层钉死。
+  assert.deepEqual(mcpServerErrorCodeSchema.options, [
+    "mcp_spawn_failed",
+    "mcp_handshake_timeout",
+    "mcp_protocol_version_unsupported",
+    "mcp_protocol_error",
+    "mcp_server_error",
+    "mcp_call_timeout",
+    "mcp_not_running",
+    "mcp_exited",
+    "mcp_connect_failed"
+  ]);
+  assert.equal(mcpServerErrorCodeSchema.safeParse("mcp_admin_required").success, false, "治理面的 HTTP 错误码不属于这张表");
+});
+
+test("M8 last_error_code is optional on all three read shapes and rejects free text", () => {
+  // 可选是刻意的：行上存的是诊断文本，表里没有存码的列，重启 API 之后码就没了。
+  // 缺席 = 「这个进程说不出这一次的原因」，不是「没出过错」。
+  assert.equal(mcpServerVmSchema.parse(serverVm()).last_error_code, undefined);
+  assert.equal(
+    mcpServerVmSchema.parse(serverVm({ last_error: "spawn ENOENT", last_error_code: "mcp_spawn_failed" })).last_error_code,
+    "mcp_spawn_failed"
+  );
+  // 自由文本进不了这个字段——它存在的全部意义就是「界面不必解析自由文本」。
+  assert.equal(mcpServerVmSchema.safeParse(serverVm({ last_error_code: "spawn ENOENT" })).success, false);
+
+  const connection = mcpServerConnectionVmSchema.parse({
+    live: false,
+    tool_count: 0,
+    last_error: "handshake timed out after 10000ms",
+    last_error_code: "mcp_handshake_timeout"
+  });
+  assert.equal(connection.last_error_code, "mcp_handshake_timeout");
+  assert.equal(mcpServerConnectionVmSchema.parse({ live: true, tool_count: 3 }).last_error_code, undefined);
+
+  const summary = mcpServerSummaryVmSchema.parse({
+    id: "22222222-2222-4222-8222-222222222222",
+    server_name: "gh",
+    transport: "stdio",
+    enabled: true,
+    status: "connect_failed",
+    trust_level: "external_effect",
+    tool_count: 0,
+    precheck_verdict: "ok",
+    last_error_code: "mcp_exited"
+  });
+  assert.equal(summary.last_error_code, "mcp_exited");
+  // 码不带宿主机信息，所以网页只读行收得下它；诊断文本仍然结构性没有位置。
+  assert.equal("last_error" in summary, false);
 });
 
 // —— R26 M3（治理服务与端点）：请求与响应契约 —— //

@@ -112,6 +112,17 @@ const zh = {
   fullAutonomyAdopted: "在「全托管」下，AI 复核通过后按你的授权直接采纳。",
   budgetUncheckable: "预算暂时算不出来，这次没有启动，请稍后再试。",
   budgetFullyReserved: "正在跑的任务已经占满了预算，这次没能开始。等其中一个跑完，或者先调高预算。",
+  // R26 M8（F2 遗留 3）：五个 service 里剩余的「事项 / 工单」按 glossary §11 统一成「任务」。
+  meetingDraftNotFromInsight: "这个任务不是从会议洞察生成的草稿。",
+  driveDraftNotFromComment: "这个任务不是从网盘评论生成的草稿。",
+  taskCommentsNotFound: "没有找到这个任务。(Work item not found.)",
+  taskCommentsForbidden: "你没有权限查看这个任务的评论。",
+  riskStalledParagraph: "任务停滞（{count} 项）：{items}",
+  riskStalledRemainder: "；及其余 {count} 项",
+  riskStalledSummary: "{count} 项任务停滞",
+  taskUntitled: "(未命名任务)",
+  turnWorkItemCreated: "建任务：{title}",
+  turnWorkItemCreateFailed: "建任务失败",
   runRecoveredRequeued: "这次执行已恢复，正在重新排队。"
 } as const;
 
@@ -208,6 +219,16 @@ const en = {
   fullAutonomyAdopted: "Under full autonomy, AI adopts its own work after its review, as you authorized.",
   budgetUncheckable: "Budget couldn't be checked just now, so this didn't start. Try again shortly.",
   budgetFullyReserved: "Running tasks are already using the full budget, so this one didn't start. Wait for one to finish, or raise the budget.",
+  meetingDraftNotFromInsight: "This task did not come from a meeting insight draft.",
+  driveDraftNotFromComment: "This task did not come from a drive comment draft.",
+  taskCommentsNotFound: "That task wasn't found.",
+  taskCommentsForbidden: "You don't have permission to read this task's comments.",
+  riskStalledParagraph: "Stalled tasks ({count}): {items}",
+  riskStalledRemainder: "; and {count} more",
+  riskStalledSummary: "{count} stalled tasks",
+  taskUntitled: "(untitled task)",
+  turnWorkItemCreated: "Task created: {title}",
+  turnWorkItemCreateFailed: "Couldn't create the task",
   runRecoveredRequeued: "This run recovered and is back in the queue."
 } as const satisfies Record<keyof typeof zh, string>;
 

@@ -9,6 +9,7 @@ import type { AuthActor } from "../middleware/auth.js";
 import {
   createMcpServerService,
   describeMcpSessionFailure,
+  mcpSessionFailureCode,
   McpServiceError,
   resolveMcpCommandOnDisk,
   serverNameRiskTokens,
@@ -248,4 +249,93 @@ test("行 → VM：缺席的可选字段是缺席，不是空串或空数组", (
   assert.equal("tools" in vm, false);
   assert.deepEqual(toMcpServerVm(row({ toolsJson: ["echo"] })).tools, ["echo"]);
   assert.equal(toMcpServerVm(row({ lastError: "spawn ENOENT" })).last_error, "spawn ENOENT");
+});
+
+test("M8 会话失败原因 → 稳定码：八条逐条对上，没有原因时是「连不上」", () => {
+  // 这一层与 describeMcpSessionFailure 共用同一张表——M2 的快照只回原因枚举（它不认识 mcp_* 码，
+  // 认识了就要反过来 import 治理服务，绕成循环），翻码固定发生在这里。
+  assert.equal(mcpSessionFailureCode("spawn_failed"), "mcp_spawn_failed");
+  assert.equal(mcpSessionFailureCode("handshake_timeout"), "mcp_handshake_timeout");
+  assert.equal(mcpSessionFailureCode("protocol_version_unsupported"), "mcp_protocol_version_unsupported");
+  assert.equal(mcpSessionFailureCode("protocol_error"), "mcp_protocol_error");
+  assert.equal(mcpSessionFailureCode("server_error"), "mcp_server_error");
+  assert.equal(mcpSessionFailureCode("call_timeout"), "mcp_call_timeout");
+  assert.equal(mcpSessionFailureCode("not_running"), "mcp_not_running");
+  assert.equal(mcpSessionFailureCode("exited"), "mcp_exited");
+  assert.equal(mcpSessionFailureCode(undefined), "mcp_connect_failed");
+  assert.equal(
+    mcpSessionFailureCode("handshake_timeout"),
+    describeMcpSessionFailure(new McpSessionError("handshake_timeout", "raw")).code,
+    "两个出口必须给同一个码，否则界面会按两套说法出话"
+  );
+});
+
+test("M8 行 → VM 的 last_error_code 只在本进程还记得那次失败时才有", () => {
+  const failed = row({ status: "connect_failed", lastError: "handshake timed out after 10000ms" });
+  const snapshot = {
+    id: serverId,
+    serverName: "gh",
+    status: "connect_failed" as const,
+    toolCount: 0,
+    live: false,
+    lastError: "handshake timed out after 10000ms",
+    lastErrorReason: "handshake_timeout" as const,
+    toolIds: []
+  };
+  assert.equal(toMcpServerVm(failed, snapshot).last_error_code, "mcp_handshake_timeout");
+  // 重启 API 之后行还在、连接记录没了：诊断文本仍然如实给，码缺席——界面回落到通用的一句话，
+  // 而不是编一个它并不知道的原因。
+  const restarted = toMcpServerVm(failed);
+  assert.equal(restarted.last_error, "handshake timed out after 10000ms");
+  assert.equal("last_error_code" in restarted, false);
+  // 非会话级失败（工具清单坍缩这类）没有原因枚举 → 兜底码，而不是硬塞一个不成立的具体原因。
+  const { lastErrorReason: _dropped, ...withoutReason } = snapshot;
+  assert.equal(toMcpServerVm(failed, withoutReason).last_error_code, "mcp_connect_failed");
+});
+
+test("M8 清单里每台服务器的连接快照都带码，成功的那台一个字都不多说", async () => {
+  const { repository, rows } = addOnlyRepository();
+  rows.push(row({ status: "connect_failed", lastError: "mcp server 'gh' exited unexpectedly (code 1, signal null)" }));
+  const instance = createMcpServerService({
+    repository,
+    auditLog: { async createAuditLog(input) { return { id: "audit-1", ...input } as never; } },
+    client: {
+      status: () => [
+        {
+          id: serverId,
+          serverName: "gh",
+          status: "connect_failed",
+          toolCount: 0,
+          live: false,
+          lastError: "mcp server 'gh' exited unexpectedly (code 1, signal null)",
+          lastErrorReason: "exited",
+          toolIds: []
+        }
+      ],
+      reload: async () => []
+    },
+    resolveCommand: async () => ({ found: true, executable: true, resolvedPath: "/usr/local/bin/mcp-server-github" }),
+    envSource: { PATH: "/usr/bin" },
+    now: () => now
+  });
+  const listed = await instance.list({ actor: admin });
+  assert.equal(listed.connections[serverId]?.last_error_code, "mcp_exited");
+  assert.equal(listed.servers[0]?.last_error_code, "mcp_exited");
+
+  const healthy = createMcpServerService({
+    repository,
+    auditLog: { async createAuditLog(input) { return { id: "audit-1", ...input } as never; } },
+    client: {
+      status: () => [
+        { id: serverId, serverName: "gh", status: "connected", toolCount: 2, live: true, toolIds: ["mcp__gh__search"] }
+      ],
+      reload: async () => []
+    },
+    resolveCommand: async () => ({ found: true, executable: true, resolvedPath: "/usr/local/bin/mcp-server-github" }),
+    envSource: { PATH: "/usr/bin" },
+    now: () => now
+  });
+  const green = await healthy.list({ actor: admin });
+  // 没出错就没有码——空串或一个「一切正常」的伪码都会让界面多渲一行本不存在的原因。
+  assert.equal("last_error_code" in (green.connections[serverId] ?? {}), false);
 });

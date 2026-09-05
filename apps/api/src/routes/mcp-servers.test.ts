@@ -21,6 +21,7 @@ import type { McpServerActionResult, McpServerListVM } from "@workhub/contracts"
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "../middleware/auth.js";
 import { createMcpServerService, McpServiceError } from "../services/mcp-servers.js";
 import type { McpServerStatusSnapshot } from "../services/mcp-client.js";
+import { buildSettingsPage } from "../pages/settings.js";
 import { createMcpServerRoutes } from "./mcp-servers.js";
 
 // R26 M3：MCP 服务器治理端点的端到端行为（真路由 + 真服务 + 内存仓储 + 假连接监督）。
@@ -737,5 +738,43 @@ test("六个写动作各落一条审计，动作名与插件那一系不共用�
     // 环境变量与密钥引用只记键名——值里可能有配置也可能有别人以为不敏感的东西。
     assert.ok(Array.isArray(entry.detailJson?.["env_keys"]));
     assert.ok(Array.isArray(entry.detailJson?.["secret_ref_keys"]));
+  }
+});
+
+// —— 网页设置页的只读清单（同一道管理员门；网页不做添加/启停） —— //
+
+test("M8 设置页 VM 只在调用方真的填了清单时才带 mcp_servers；摘要里没有命令、参数、环境变量、密钥引用、工作目录", () => {
+  const runtimeSettings = settings();
+  const readiness = { ready: true, checks: { database: { ok: true }, broker: { ok: true } } } as const;
+  const base = buildSettingsPage({ settings: runtimeSettings, readiness, locale: "zh-CN", generatedAt: now });
+  // 非管理员：路由不取不填 → 字段结构性缺席（不是空数组，空数组会被读成「一台都没接」）。
+  assert.equal(base.mcp_servers, undefined);
+
+  const withServers = buildSettingsPage({
+    settings: runtimeSettings,
+    readiness,
+    locale: "zh-CN",
+    generatedAt: now,
+    mcpServers: [
+      {
+        id: serverId,
+        server_name: "gh",
+        transport: "stdio",
+        enabled: true,
+        status: "connect_failed",
+        trust_level: "external_effect",
+        tool_count: 0,
+        precheck_verdict: "ok",
+        last_error_code: "mcp_handshake_timeout"
+      }
+    ]
+  });
+  assert.equal(withServers.mcp_servers?.length, 1);
+  assert.equal(withServers.mcp_servers?.[0]?.last_error_code, "mcp_handshake_timeout");
+  const summary = withServers.mcp_servers?.[0] ?? {};
+  // 宿主机事实与潜在凭据指针结构性不进网页；诊断串（last_error）同理——它是命令路径与 stderr
+  // 尾巴，只有**码**能上网页。
+  for (const hostFact of ["command", "args", "env", "secret_refs", "cwd", "last_error"]) {
+    assert.equal(hostFact in summary, false, `网页只读摘要不该带 ${hostFact}`);
   }
 });

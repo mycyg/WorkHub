@@ -24,6 +24,7 @@ import { canManageProjectMeeting, canViewProjectMeetings, canViewWorkItemRecord 
 
 import type { AuthActor } from "../middleware/auth.js";
 import { parseOutputContract } from "../pages/output-contract.js";
+import { serviceT } from "./locales.js";
 import {
   getDefaultMeetingAnalysisService,
   type MeetingAnalysisService
@@ -510,7 +511,7 @@ export function createMeetingPageService(deps: MeetingPageServiceDependencies): 
   }) {
     const source = input.page.source_context;
     if (!source || source.source_type !== "meeting_insight") {
-      throw new MeetingPageServiceError(409, "这个事项不是从会议洞察生成的草稿。", "meeting_draft_source_missing");
+      throw new MeetingPageServiceError(409, serviceT("zh-CN", "meetingDraftNotFromInsight"), "meeting_draft_source_missing");
     }
     const workItem = input.page.workitem;
     const proposalId = stableUuid(`meeting-draft-proposal:${workItem.id}:${source.insight_id}`);
@@ -783,7 +784,7 @@ export function createMeetingPageService(deps: MeetingPageServiceDependencies): 
       });
       const source = initialPage.source_context;
       if (!source || source.source_type !== "meeting_insight") {
-        throw new MeetingPageServiceError(409, "这个事项不是从会议洞察生成的草稿。", "meeting_draft_source_missing");
+        throw new MeetingPageServiceError(409, serviceT("zh-CN", "meetingDraftNotFromInsight"), "meeting_draft_source_missing");
       }
       await ensureCanReadInsight({
         actor: input.actor,
