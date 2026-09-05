@@ -125,21 +125,34 @@ export type DesktopServerChoiceResult = {
   // 壳层是否接住了这次切换。false = 命令不存在（浏览器 dev 态/旧壳层）或调用失败——
   // 本屏照常继续（webview 侧已经切好了），只把事实记下来，绝不因此阻断用户。
   shellAccepted: boolean;
+  // R24 S5（N-07 根治）：这次确认有没有真的换了地址——currentBase 与 base 归一化后相同时为 true。
+  // 调用方据此跳过 reload（bindDesktopConnectScreen 的 onUnchanged）：地址没变，没有任何东西需要
+  // 重新加载,硬 reload 只会让一个正常在线的会话平白重新走一遍鉴权。
+  unchanged: boolean;
 };
 
 export async function applyDesktopServerChoice(
   base: string,
   effects: DesktopServerChoiceEffects,
-  health?: HealthResponse
+  health?: HealthResponse,
+  // R24 S5（N-07 根治）：真机复验发现——设置页「更换服务器」时哪怕选中的地址和当前完全一样，
+  // 也照样清设备令牌 + 通知壳层（涨 endpoint generation，触发 SSE 重连），把一次"点错了再点一次"
+  // 的误操作变成一次货真价实的掉线重登。currentBase 是"这一屏打开时正在用的地址"（调用方传
+  // bindDesktopConnectScreen 收到的 apiBase）；归一化后与 base 相同就短路，三个 effects 全跳过——
+  // 没有变化，没有任何东西需要清或通知。
+  currentBase?: string
 ): Promise<DesktopServerChoiceResult> {
+  if (currentBase !== undefined && normalizeDesktopApiBase(currentBase) === base) {
+    return { base, shellAccepted: true, unchanged: true };
+  }
   effects.clearIdentity(health);
   effects.rememberServer(base);
   try {
     await effects.notifyShell(base);
-    return { base, shellAccepted: true };
+    return { base, shellAccepted: true, unchanged: false };
   } catch (error) {
     console.warn("WorkHub desktop: the shell did not accept the new server address", error);
-    return { base, shellAccepted: false };
+    return { base, shellAccepted: false, unchanged: false };
   }
 }
 
@@ -373,6 +386,11 @@ export type DesktopConnectScreenInput = {
   // 确认之后本窗自己 reload（其余窗口靠壳层广播 workhub-server-changed 跟随）。
   reload: () => void;
   scheduleRebuild?: () => void;
+  // R24 S5（N-07 根治）：确认的地址与 apiBase（这一屏打开时正在用的地址）归一化后一致时调用这个
+  // 而不是 reload——applyDesktopServerChoice 已经短路跳过了清身份/通知壳层，这里没有任何变化需要
+  // reload 去承接。首启/离线兜底两个调用方（browser.ts/workbench/boot.ts）没有"原来的屏"可以退回去，
+  // 不传这个字段时保留旧行为（照样 reload，靠它重新走一遍鉴权门判定，见 mountDesktopConnectScreen）。
+  onUnchanged?: () => void;
 };
 
 export function bindDesktopConnectScreen(rootEl: HTMLElement, input: DesktopConnectScreenInput): void {
@@ -440,7 +458,15 @@ export function bindDesktopConnectScreen(rootEl: HTMLElement, input: DesktopConn
     }
     setConfirmEnabled(false);
     // 顺序即安全属性：清身份 → 写地址 → 通知壳层 → 本窗 reload（见 applyDesktopServerChoice）。
-    void applyDesktopServerChoice(confirmed.base, input.effects, confirmed.health).then(() => input.reload());
+    // R24 S5（N-07 根治）：传 input.apiBase 作为 currentBase——地址跟打开这一屏时一样就短路，
+    // 那种情况下 unchanged 为 true，交给 onUnchanged 收起这一屏（未提供则保留旧行为照样 reload）。
+    void applyDesktopServerChoice(confirmed.base, input.effects, confirmed.health, input.apiBase).then((result) => {
+      if (result.unchanged && input.onUnchanged) {
+        input.onUnchanged();
+        return;
+      }
+      input.reload();
+    });
   });
 
   input.scheduleRebuild?.();
