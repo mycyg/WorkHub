@@ -349,18 +349,18 @@ export function createPluginService(deps: PluginServiceDependencies): PluginServ
         trustLevel,
         now: now()
       });
-      if (!updated) {
-        throw new PluginServiceError(404, "plugin_not_found", "没有找到这个插件。");
-      }
+      // 更新落空只可能是这一行在两步之间被并发移除了：重查一次，由 requireRow 出同一条 404，
+      // 而不是在这里另写一份一模一样的文案。
+      const settled = updated ?? (await requireRow(scope.workspaceId, id));
       // 不热重载：子进程加载的还是同一批目录，分级是主进程这一侧的参数，下一次
       // `toolSpecs()` 就按新档算。为一次授权改动掐断在飞的插件调用没有道理。
       await writeAudit({
         scope,
-        row: updated,
+        row: settled,
         action: "plugin.trust_changed",
         detail: { previous_trust_level: row.trustLevel }
       });
-      return toPluginVm(updated);
+      return toPluginVm(settled);
     },
 
     async remove({ actor, id }) {

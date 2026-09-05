@@ -6019,9 +6019,20 @@ function settingsPluginStatusLabel(
   if (plugin.status === "load_failed") {
     return goldPathCopyT(zh, "wonTLoad");
   }
+  if (plugin.status === "crashed") {
+    return goldPathCopyT(zh, "pluginStoppedAfterRepeatedFailures");
+  }
   return zh
     ? `已启用 · ${plugin.tool_count} 个工具`
     : `Enabled · ${plugin.tool_count} tool${plugin.tool_count === 1 ? "" : "s"}`;
+}
+
+/** 信任级别一行——一个部署上「哪些插件被断言成只读」是所有人都该看得见的事实，网页也照说。 */
+function settingsPluginTrustLabel(
+  plugin: NonNullable<SettingsPageVM["plugins"]>[number],
+  zh: boolean
+): string {
+  return goldPathCopyT(zh, plugin.trust_level === "read_only" ? "pluginTrustReadOnly" : "pluginTrustExternalEffect");
 }
 
 function settingsPluginCompatNote(
@@ -6046,10 +6057,11 @@ function renderSettingsPluginsSection(vm: SettingsPageVM, locale: WorkHubLocale)
   const body = plugins.length === 0
     ? `<p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "noPluginsInstalledYet"))}</p>`
     : plugins
-        .map((plugin) => `<div role="listitem" class="wh-r4-route-row" data-r24-settings-plugin="${escapeHtml(plugin.id)}" data-r24-settings-plugin-status="${escapeHtml(plugin.status)}">
+        .map((plugin) => `<div role="listitem" class="wh-r4-route-row" data-r24-settings-plugin="${escapeHtml(plugin.id)}" data-r24-settings-plugin-status="${escapeHtml(plugin.status)}" data-r24-settings-plugin-trust="${escapeHtml(plugin.trust_level)}">
             <div>
               <strong>${escapeHtml(plugin.version ? `${plugin.name} ${plugin.version}` : plugin.name)}</strong>
               <p>${escapeHtml(`${settingsPluginStatusLabel(plugin, zh)}${settingsPluginCompatNote(plugin, zh)}`)}</p>
+              <p class="wh-subtle">${escapeHtml(settingsPluginTrustLabel(plugin, zh))}</p>
             </div>
           </div>`)
         .join("");

@@ -390,7 +390,9 @@ export function createPluginHostClient(options: PluginHostClientOptions = {}): P
           restarts_in_window: timestamps.length
         });
         if (over) {
-          const reason = `插件在 ${PLUGIN_HOST_RESTART_WINDOW_MS / 60_000} 分钟内把宿主弄崩超过 ${PLUGIN_HOST_RESTART_LIMIT} 次`;
+          // 运维诊断，不是界面文案：它落进 plugins.load_report.error 与结构化日志，
+          // 两端界面对 status='crashed' 渲的是各自 locales.ts 里的那句话（同宿主自报的英文错误）。
+          const reason = `plugin crashed the plugin host more than ${PLUGIN_HOST_RESTART_LIMIT} times within ${PLUGIN_HOST_RESTART_WINDOW_MS / 60_000} minutes`;
           quarantine.set(suspect, {
             ...(suspectPluginId ? { pluginId: suspectPluginId } : {}),
             reason,
