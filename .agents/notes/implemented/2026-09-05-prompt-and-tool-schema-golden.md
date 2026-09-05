@@ -84,5 +84,14 @@ AGENTS.md 评审规则第 8 条早就写着「稳定的模型可见文本变化�
     project-planner / 策展同构，属于同一模式的第 N 份，本批按优先级留到后续；
   - 「管理员 vs 普通成员」的工具可见集：**这个维度在本仓不存在**。工具可见性只有两条闸——
     agent run 的任务计划角色（`canUseToolForTaskPlanRole`）与 turn 的 `allowCreateWorkItem`，
-    两条都已覆盖，没有任何按 `isAdmin` 分叉的工具集。
-  - 插件工具的翻译形状：**本仓没有插件工具**（全库无 plugin tool 概念），无从落门。
+    两条都已覆盖，没有任何按 `isAdmin` 分叉的工具集。若将来真按角色/管理员分叉工具集，
+    `agent-run-prompt.golden.test.ts` 里那条「三种角色可见集当前一致」的断言会先红。
+  - **插件工具的翻译形状 —— 合并后的第一优先补丁**。本分支基线 `bea2ab0e` 上全库没有插件工具，
+    所以本批无从落门；但 PR #22（`fa5935fa`，`packages/plugin-host`）在此之后并入 main，
+    现在插件工具会经 `to-tool-spec.ts` 翻成 `ToolSpec` 并入默认注册表，于是**通过
+    `toModelTools` 的 tool description 通道对模型可见**。该文件顶部注释本身就写着「插件文案会进
+    系统提示词，属于提示词注入面，要排在提示词 golden 之后」——也就是说它明确在等这道门。
+    合并后应补：装了插件的 actor 的工具可见集 golden（含 `sanitizePluginText` 的
+    `PLUGIN_TEXT_MAX_CHARS`=4000 截断形状、以及阶段 0 把 `sideEffect` 一律按 `external_effect`
+    对待这一保守口径在 schema 里的呈现）。届时 `KNOWN_ENGINE_DELTA` 那条断言也要复核一次：
+    插件工具同样会带 `side_effect` 走 legacy 通道。
