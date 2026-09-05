@@ -39,10 +39,12 @@ import {
   dismissDesktopMainWindow,
   dragDesktopMainWindow,
   moveDesktopMainWindowBy as moveDesktopMainWindowByCommand,
+  readDesktopConnectionState,
   resizeDesktopMainWindow,
   resolveDesktopTauriInvoke,
   takeDesktopPendingDeepLink
 } from "./desktop-window-controls.js";
+import { parseDesktopShellConnectionChangedPayload } from "./shell-events.js";
 import {
   mountSpotlight,
   type SpotlightManualDragFn,
@@ -213,11 +215,15 @@ function fitBootScreenToMainWindow(rootEl: HTMLElement): void {
 // （浏览器 dev 预览）时 resolveDesktopShellEmitter() 返回 undefined，广播静默 no-op，不影响 reload
 // 照常执行。桌宠订阅见 pet-surface.ts 的 bootDesktopPetSurface，工作台订阅见 workbench/boot.ts 的
 // bindWorkbenchLoggedOutListener 旁边新增的同款监听。
+// R25-Q：payload 补了 `source: "main"`——工作台自己的凭据门现在也会广播这同一个事件（boot.ts 的
+// reloadAfterWorkbenchLogin，source:"workbench"），主窗新增的 "workhub-logged-in" 订阅（见 bootSpotlight
+// 里 shellListen 那段）据 source 跳过"自己刚发起的这次广播"，避免和这里的直接 reload() 打一次空转的
+// 双重刷新。
 function reloadAfterDesktopLogin(): void {
   completeDesktopLoginSuccess({
     broadcastLoggedIn: () => {
       const shellEmitter = resolveDesktopShellEmitter();
-      void Promise.resolve(shellEmitter?.emit?.("workhub-logged-in")).catch(() => undefined);
+      void Promise.resolve(shellEmitter?.emit?.("workhub-logged-in", { source: "main" })).catch(() => undefined);
     },
     reload: () => window.location.reload()
   });
@@ -415,6 +421,29 @@ async function bootSpotlight() {
         spotlight,
         saveProjectContextFromRoute: saveDesktopCuuProjectContextFromRoute
       });
+    });
+    // R25-Q：连接状态"单一真相"——先拉一次 get_connection_state 补初值（不必等 SSE worker 下一次
+    // 真实迁移才第一次知道状态），再订阅运行期广播。都喂给 spotlight.setConnectionState，聚焦盒顶部
+    // 细条只读这一份，不再各自猜。best-effort：拉取失败/无 __TAURI__ 时保持"未知"（不渲横幅）。
+    void readDesktopConnectionState().then((raw) => {
+      spotlight.setConnectionState(parseDesktopShellConnectionChangedPayload(raw));
+    });
+    void shellListen?.("workhub-connection-changed", (event) => {
+      const payload = parseDesktopShellConnectionChangedPayload(event.payload);
+      if (payload) {
+        spotlight.setConnectionState(payload);
+      }
+    });
+    // R25-Q（源头对称）：登录成功现在可能由工作台窗口广播（reloadAfterWorkbenchLogin，source:
+    // "workbench"）——此前主窗从不订阅这个事件（它自己就是唯一的广播源，reloadAfterDesktopLogin
+    // 已经直接 reload() 了自己）。现在广播源不止一个，主窗必须订阅才能在"工作台登录成功"时跟着刷新；
+    // 但收到"自己刚发起的那次广播"（source==="main"）要跳过——reloadAfterDesktopLogin 的直接
+    // reload() 已经在处理它了，再 reload 一次只是空转的双重刷新。
+    void shellListen?.("workhub-logged-in", (event) => {
+      const source = (event.payload as { source?: string } | undefined)?.source;
+      if (source !== "main") {
+        window.location.reload();
+      }
     });
     // MRG-23：冷启动深链（应用未运行时 OS 直接唤起 workhub://…）在主窗 webview 订阅前就 emit 了——
     // 挂载完成后向壳层取回暂存的最后一条（按窗口 label 认领，这里只会拿到发给 main 的），不再丢。

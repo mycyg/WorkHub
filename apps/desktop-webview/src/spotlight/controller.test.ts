@@ -75,6 +75,13 @@ test("Spotlight shell reserves a hidden-by-default AI-provider banner slot", () 
   assert.match(html, /data-spot-ai-banner hidden/u);
 });
 
+// R25-Q：连接状态"单一真相"细条——同上取舍，只测静态壳挂了这个槽位（初始隐藏），不在这里测
+// mountSpotlight 据 workhub-connection-changed 揭开它的那部分 DOM 接线。
+test("Spotlight shell reserves a hidden-by-default connection-status banner slot", () => {
+  const html = renderSpotlightShellHtml("zh-CN");
+  assert.match(html, /data-spot-connection-banner hidden/u);
+});
+
 // R24 S6（E-10）：首启引导卡——不落空网格，落「建你的第一个项目」+ 一个输入框。
 test("renderFirstRunCardHtml renders a project-name input and create button in the idle state", () => {
   const html = renderFirstRunCardHtml("zh-CN", { kind: "idle" });

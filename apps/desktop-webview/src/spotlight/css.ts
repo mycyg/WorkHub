@@ -317,6 +317,11 @@ export const spotlightCss = [
   // 只用聚焦盒的人也能看到同一个事实（此前只有工作台聊天区才有这条提示）。
   ".wh-spot-ai-banner{padding:8px 14px;text-align:center;font:600 12px/1.5 var(--ds-font);color:var(--ds-warn);background:var(--ds-warn-soft);border-bottom:1px solid var(--ds-glass-hairline);overflow-wrap:anywhere}",
   ".wh-spot-ai-banner[hidden]{display:none}",
+  // R25-Q：连接状态"单一真相"细条——与上面的 AI 未配置横幅同样式（同一套 warn 语义色/内边距/边框），
+  // 只是内容源不同（workhub-connection-changed 而不是 health.ai_provider_configured）。两条横幅可能
+  // 同时出现（连不上服务器 + 没配置 AI 密钥是两件独立的事），故不复用同一个类名/元素，各自独立隐藏。
+  ".wh-spot-connection-banner{padding:8px 14px;text-align:center;font:600 12px/1.5 var(--ds-font);color:var(--ds-warn);background:var(--ds-warn-soft);border-bottom:1px solid var(--ds-glass-hairline);overflow-wrap:anywhere}",
+  ".wh-spot-connection-banner[hidden]{display:none}",
   // R24 S6（E-10）：首启引导卡复用 .wh-spot-intake（intake.ts 的能力内联卡同款壳），但这里是直接塞进
   // launcher 的两列 .wh-spot-grid（renderLauncherGrid），不像 .wh-spot-empty-grid 那样自带跨列——
   // 补一条跨列规则，否则卡片会被挤成半宽（.wh-spot-intake 的其它既有用法都不在 grid 容器内，不受影响）。
