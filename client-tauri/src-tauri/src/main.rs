@@ -2073,6 +2073,22 @@ fn handle_single_instance_launch(
             plan.deep_links.len()
         ),
     );
+    // S5-N-04 的可诊断化：macOS 上 `open workhub://…` 的 URL 是 Apple Event，**不在 argv 里**。
+    // 当 LaunchServices 把链接交给了另一份注册的 WorkHub.app（同 bundle id 的多份副本）时，那个第二
+    // 进程会被 single-instance 在插件 setup 里掐掉，URL 随它一起消失，主实例只会收到一条没有深链的
+    // 交接——肉眼现象正是「点了链接，窗口跳出来但没导航」。这行日志把那个静默的黑洞变成可 grep 的证据。
+    #[cfg(target_os = "macos")]
+    if plan.deep_links.is_empty() {
+        shell_log_warn(
+            "single_instance_without_deep_link",
+            format!(
+                "a second WorkHub copy handed off to this instance; on macOS a workhub:// URL \
+                 travels as an Apple Event and cannot cross this handoff, so a link that triggered \
+                 it is lost. Keep a single registered copy of WorkHub.app (secondary executable: {})",
+                args.first().map(String::as_str).unwrap_or("<unknown>")
+            ),
+        );
+    }
     if plan.deep_links.is_empty() {
         execute_window_control(app, plan.window_control.clone())?;
     } else {
@@ -2374,10 +2390,16 @@ fn main() {
                     let where_to_look = dir.display().to_string();
                     init_shell_log_dir(dir);
                     // 路径也写进日志：用户报障时「日志在哪」这一问必须有答案，而这一行本身就在那份文件里。
+                    // S5-N-04：同一个 bundle id 在一台机器上常常注册着好几份 .app（DMG 还挂着、装了
+                    // 两处、开发构建）。「是哪一份应答了这次 workhub:// 」是排查深链的第一问，所以启动
+                    // 第一行就写下本进程的可执行体路径。
+                    let running_from = std::env::current_exe()
+                        .map(|path| path.display().to_string())
+                        .unwrap_or_else(|_| "<unknown>".to_string());
                     shell_log_info(
                         "shell_started",
                         format!(
-                            "WorkHub {} started; shell logs are written to {where_to_look}",
+                            "WorkHub {} started from {running_from}; shell logs are written to {where_to_look}",
                             app.package_info().version
                         ),
                     );
