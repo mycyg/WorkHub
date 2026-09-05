@@ -2240,10 +2240,12 @@ test("B-R9.6 project home rows show the army progress pill only for armied work 
   assertNoMainWindowBoundaryLeak(projectHome.html);
 });
 
-// R20 wave4（R19-1 OKR 前端接线）：/api/objectives（创建）与 /api/objectives/:id/link（挂链）此前
-// 端点在但前端完全不可达。项目主页新增 OKR 卡——创建目标表单常渲（不依赖任何 GET，纯 POST 表单），
-// 会话内创建列表骨架给一条诚实空态说明（服务端没有列全部目标的端点）。
-test("R20 wave4 (R19-1): project home renders an OKR card with a create-objective form and an honest session-scoped empty state", () => {
+// R20 wave4（R19-1 OKR 前端接线）→ R23 F-01（OKR 列表/详情持久化）：/api/objectives（创建）与
+// /api/objectives/:id/link（挂链）此前端点在但前端完全不可达；列表随后一度只是会话内内存态。
+// 项目主页 OKR 卡——创建目标表单常渲（不依赖任何 GET，纯 POST 表单），列表容器只出 SSR 加载骨架
+// （同 plansSection/membersSection 先例，真实列表由 browser.ts 客户端水合 GET
+// /api/projects/:id/objectives 后填充，不在 SSR 内嵌）。
+test("R20 wave4 (R19-1) / R23 F-01: project home renders an OKR card with a create-objective form and a loading skeleton for the persisted list", () => {
   const vm = {
     generated_at: "2026-06-11T09:00:00.000Z",
     project: {
@@ -2269,7 +2271,9 @@ test("R20 wave4 (R19-1): project home renders an OKR card with a create-objectiv
   assert.equal(projectHome.html.includes('data-r20-okr-title-input'), true);
   assert.equal(projectHome.html.includes('data-r20-okr-kr-input'), true);
   assert.equal(projectHome.html.includes('data-r20-okr-create-submit="true"'), true);
-  assert.equal(projectHome.html.includes('data-r20-okr-list-empty="true"'), true);
+  assert.equal(projectHome.html.includes('data-r20-okr-list-loading="true"'), true);
+  // R23 F-01：列表不再谎称「服务端没有列表端点」——GET /api/projects/:id/objectives 已就位。
+  assert.doesNotMatch(projectHome.html, /服务端(暂不提供|没有)列出?全部/u);
   // 诚实缺省：文案不应暗示目标是「这个项目的」，因为 objectives 表没有 project_id（工作区级实体）。
   assert.doesNotMatch(projectHome.html, /项目目标/u);
   assertNoMainWindowBoundaryLeak(projectHome.html);

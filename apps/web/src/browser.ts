@@ -1,5 +1,5 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
-import { eventTypes, type ActionSpec, type AiFeedbackVerdict, type ClientDeviceResponse, type DmListVM, type ProjectListVM, type PutAiFeedbackRequest, type SearchResultsVm, type SkillEditOp } from "@workhub/contracts";
+import { eventTypes, type ActionSpec, type AiFeedbackVerdict, type ClientDeviceResponse, type DmListVM, type ObjectiveDetailResponse, type ProjectListVM, type PutAiFeedbackRequest, type SearchResultsVm, type SkillEditOp } from "@workhub/contracts";
 import {
   classifyGoldPathHref,
   goldPathT,
@@ -124,6 +124,14 @@ import {
 import { resolveWebMemoryConflictAction } from "./attention-actions.js";
 import { liveStreamTargetsForRoute } from "./live-stream-targets.js";
 import { renderMyConversationsSectionHtml } from "./my-conversations.js";
+import {
+  objectiveDetailBodyHtml,
+  objectiveDetailErrorHtml,
+  objectiveDetailLoadingHtml,
+  objectiveListBodyHtml,
+  objectiveListErrorHtml,
+  objectiveListLoadingHtml
+} from "./objective-panel.js";
 import { fetchWorkspaceRosterMembers, type WorkspaceRosterVM } from "./workspace-roster.js";
 
 const root = document.getElementById("root");
@@ -2858,12 +2866,17 @@ function bindProjectHomeMembersPanel(
   void hydrate();
 }
 
-// R20 wave4（R19-1 OKR 前端接线）：项目主页 OKR 卡的客户端接线。创建目标表单是纯 POST（不依赖任何
-// GET，SSR 已常渲、不锁禁用），提交调 client.createObjective；成功后本地追加一行「刚创建的目标」，
-// 带「挂到某个工作项」的选择器（数据源用本页已加载的 open_work_items，不额外发请求）+ 挂链按钮
-// （client.linkObjective）。服务端没有列全部已有目标的端点，故这份列表只是会话内、不持久化——
-// 空态文案已诚实说明这点（route-components renderProjectHomeObjectivesSection）。两个动作失败都要
-// 显式报错（4xx/5xx 都在状态行报文案），不静默吞。
+// R20 wave4（R19-1 OKR 前端接线）→ R23 F-01（OKR 列表/详情持久化）：项目主页 OKR 卡的客户端接线。
+// 创建目标表单是纯 POST（不依赖任何 GET，SSR 已常渲、不锁禁用），提交调 client.createObjective；
+// 挂链调 client.linkObjective。此前列表只是会话内内存态（刷新即失）——服务端已补
+// GET /api/projects/:id/objectives（首屏真拉取，工作区级列表，不做项目过滤）与
+// GET /api/objectives/:id（详情：关键结果 + 挂链工作项 + 挂链执行计划），这里改为：
+//   * 挂载时真拉取列表，fail-soft（403 与其它失败分开报，同 P1-07 project-home-plans 先例）；
+//   * 创建/挂链成功后整表重拉（不做本地乐观拼接，服务端已是唯一真相源）；
+//   * 每行「详情」按钮首次展开时拉 GET /api/objectives/:id 并缓存，收起不重拉；挂链成功会使该
+//     目标的详情缓存失效（下次展开重新拉，避免展示挂链前的旧快照）。
+// 列表/行/详情的纯字符串渲染在 ./objective-panel.js（不碰 DOM，单测覆盖）；这里只管取数与事件接线，
+// 全部用事件委托挂在 list 容器上（整表重拉会替换所有子节点，逐行绑定的监听器活不过一次重拉）。
 function bindProjectHomeObjectivesPanel(
   container: HTMLElement,
   result: WebRouteReadyResult,
@@ -2882,12 +2895,13 @@ function bindProjectHomeObjectivesPanel(
   const submitButton = form?.querySelector<HTMLButtonElement>("[data-r20-okr-create-submit]");
   const createStatus = section?.querySelector<HTMLElement>("[data-r20-okr-create-status]");
   const list = section?.querySelector<HTMLElement>("[data-r20-okr-list]");
-  const emptyNote = list?.querySelector<HTMLElement>("[data-r20-okr-list-empty]");
-  if (!section || !form || !titleInput || !descriptionInput || !krInput || !submitButton || !list) {
+  const projectId = section?.getAttribute("data-r20-project-home-objectives-project") ?? "";
+  if (!section || !form || !titleInput || !descriptionInput || !krInput || !submitButton || !list || !projectId) {
     return;
   }
   const zh = locale === "zh-CN";
   const openWorkItems = result.surface.project.open_work_items;
+  const detailCache = new Map<string, ObjectiveDetailResponse>();
 
   const setCreateStatus = (text: string, tone: "saving" | "saved" | "error") => {
     if (!createStatus) {
@@ -2906,65 +2920,85 @@ function bindProjectHomeObjectivesPanel(
       .slice(0, 8)
       .map((title) => ({ title }));
 
-  const renderObjectiveRow = (objective: { objective_id: string; title: string; status: string; progress_percent: number }) => {
-    if (emptyNote) {
-      emptyNote.hidden = true;
-    }
-    const row = document.createElement("div");
-    row.className = "wh-r4-route-row";
-    row.setAttribute("data-r20-okr-item", objective.objective_id);
-    const options = openWorkItems
-      .map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(`${item.code} · ${item.title}`)}</option>`)
-      .join("");
-    const linkControls = openWorkItems.length
-      ? `<select class="wh-pill" data-r20-okr-link-select aria-label="${escapeHtml(zh ? "选择要挂的工作项" : "Pick a work item to link")}">
-          <option value="">${escapeHtml(zh ? "选择工作项…" : "Pick a work item…")}</option>
-          ${options}
-        </select>
-        <button type="button" class="wh-btn" data-r20-okr-link-submit="true">${escapeHtml(zh ? "挂链" : "Link")}</button>`
-      : `<span class="wh-subtle">${escapeHtml(zh ? "这个项目暂无进行中工作项可挂。" : "No open work items in this project to link yet.")}</span>`;
-    row.innerHTML = `<div>
-        <strong>${escapeHtml(objective.title)}</strong>
-        <div class="wh-r4-route-meta">
-          <span class="wh-pill">${escapeHtml(objective.status)}</span>
-          <span class="wh-pill">${escapeHtml(`${objective.progress_percent}%`)}</span>
-        </div>
-      </div>
-      <div>
-        ${linkControls}
-        <p class="wh-subtle" data-r20-okr-link-status hidden></p>
-      </div>`;
-    list.append(row);
-
-    const select = row.querySelector<HTMLSelectElement>("[data-r20-okr-link-select]");
-    const linkButton = row.querySelector<HTMLButtonElement>("[data-r20-okr-link-submit]");
-    const linkStatus = row.querySelector<HTMLElement>("[data-r20-okr-link-status]");
-    const setLinkStatus = (text: string, tone: "saving" | "saved" | "error") => {
-      if (!linkStatus) {
+  const load = async () => {
+    list.innerHTML = objectiveListLoadingHtml(locale);
+    try {
+      const data = await client.listObjectives(projectId);
+      if (signal.aborted) {
         return;
       }
-      linkStatus.hidden = false;
-      linkStatus.textContent = text;
-      linkStatus.setAttribute("data-r20-okr-link-status", tone);
-    };
-    linkButton?.addEventListener(
-      "click",
-      () => {
+      list.innerHTML = objectiveListBodyHtml(data.objectives, data.capped, openWorkItems, locale);
+    } catch (error) {
+      if (signal.aborted) {
+        return;
+      }
+      const forbidden = error instanceof WorkHubApiError && error.status === 403;
+      list.innerHTML = objectiveListErrorHtml(locale, forbidden);
+    }
+  };
+
+  const loadDetail = (objectiveId: string, detailBody: HTMLElement) => {
+    detailBody.innerHTML = objectiveDetailLoadingHtml(locale);
+    void client
+      .getObjective(objectiveId)
+      .then((detail) => {
+        if (signal.aborted) {
+          return;
+        }
+        detailCache.set(objectiveId, detail);
+        detailBody.innerHTML = objectiveDetailBodyHtml(detail, locale);
+      })
+      .catch(() => {
+        if (signal.aborted) {
+          return;
+        }
+        detailBody.innerHTML = objectiveDetailErrorHtml(locale);
+      });
+  };
+
+  const setLinkStatus = (row: HTMLElement, text: string, tone: "saving" | "saved" | "error") => {
+    const linkStatus = row.querySelector<HTMLElement>("[data-r20-okr-link-status]");
+    if (!linkStatus) {
+      return;
+    }
+    linkStatus.hidden = false;
+    linkStatus.textContent = text;
+    linkStatus.setAttribute("data-r20-okr-link-status", tone);
+  };
+
+  // 事件委托：list 的子节点在每次 load() 后整体替换，逐行绑定的监听器会随之失效——统一挂在
+  // 稳定的 list 容器上，按点击目标 closest() 出具体动作，兼容重拉后的新 DOM。
+  list.addEventListener(
+    "click",
+    (event) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) {
+        return;
+      }
+      const linkButton = target.closest<HTMLButtonElement>("[data-r20-okr-link-submit]");
+      if (linkButton) {
+        const row = linkButton.closest<HTMLElement>("[data-r20-okr-item]");
+        const objectiveId = row?.getAttribute("data-r20-okr-item") ?? "";
+        const select = row?.querySelector<HTMLSelectElement>("[data-r20-okr-link-select]");
         const workItemId = select?.value ?? "";
+        if (!row || !objectiveId) {
+          return;
+        }
         if (!workItemId) {
-          setLinkStatus(zh ? "先选一个工作项。" : "Pick a work item first.", "error");
+          setLinkStatus(row, zh ? "先选一个工作项。" : "Pick a work item first.", "error");
           return;
         }
         linkButton.disabled = true;
-        setLinkStatus(zh ? "挂链中…" : "Linking…", "saving");
+        setLinkStatus(row, zh ? "挂链中…" : "Linking…", "saving");
         void client
-          .linkObjective(objective.objective_id, { work_item_id: workItemId })
+          .linkObjective(objectiveId, { work_item_id: workItemId })
           .then(() => {
             if (signal.aborted) {
               return;
             }
-            linkButton.disabled = false;
-            setLinkStatus(zh ? "已挂链" : "Linked", "saved");
+            detailCache.delete(objectiveId);
+            setLinkStatus(row, zh ? "已挂链" : "Linked", "saved");
+            void load();
           })
           .catch((error: unknown) => {
             if (signal.aborted) {
@@ -2972,14 +3006,60 @@ function bindProjectHomeObjectivesPanel(
             }
             linkButton.disabled = false;
             setLinkStatus(
+              row,
               error instanceof WorkHubApiError ? error.message : (zh ? "挂链失败，请重试" : "Link failed — please retry"),
               "error"
             );
           });
-      },
-      { signal }
-    );
-  };
+        return;
+      }
+
+      const detailToggle = target.closest<HTMLButtonElement>("[data-r23-okr-detail-toggle]");
+      if (detailToggle) {
+        const row = detailToggle.closest<HTMLElement>("[data-r20-okr-item]");
+        const objectiveId = row?.getAttribute("data-r20-okr-item") ?? "";
+        const detailBody = objectiveId
+          ? list.querySelector<HTMLElement>(`[data-r23-okr-detail-body="${objectiveId}"]`)
+          : null;
+        if (!objectiveId || !detailBody) {
+          return;
+        }
+        const expanded = detailToggle.getAttribute("aria-expanded") === "true";
+        if (expanded) {
+          detailToggle.setAttribute("aria-expanded", "false");
+          detailToggle.textContent = zh ? "详情" : "Details";
+          detailBody.hidden = true;
+          return;
+        }
+        detailToggle.setAttribute("aria-expanded", "true");
+        detailToggle.textContent = zh ? "收起" : "Collapse";
+        detailBody.hidden = false;
+        const cached = detailCache.get(objectiveId);
+        if (cached) {
+          detailBody.innerHTML = objectiveDetailBodyHtml(cached, locale);
+          return;
+        }
+        loadDetail(objectiveId, detailBody);
+        return;
+      }
+
+      const detailRetry = target.closest<HTMLButtonElement>("[data-r23-okr-detail-retry]");
+      if (detailRetry) {
+        const detailBody = detailRetry.closest<HTMLElement>("[data-r23-okr-detail-body]");
+        const objectiveId = detailBody?.getAttribute("data-r23-okr-detail-body") ?? "";
+        if (objectiveId && detailBody) {
+          loadDetail(objectiveId, detailBody);
+        }
+        return;
+      }
+
+      const listRetry = target.closest<HTMLButtonElement>("[data-r20-okr-list-retry]");
+      if (listRetry) {
+        void load();
+      }
+    },
+    { signal }
+  );
 
   form.addEventListener(
     "submit",
@@ -3001,7 +3081,7 @@ function bindProjectHomeObjectivesPanel(
           ...(description ? { description_md: description } : {}),
           ...(keyResults.length ? { key_results: keyResults } : {})
         })
-        .then((created) => {
+        .then(() => {
           if (signal.aborted) {
             return;
           }
@@ -3010,7 +3090,7 @@ function bindProjectHomeObjectivesPanel(
           titleInput.value = "";
           descriptionInput.value = "";
           krInput.value = "";
-          renderObjectiveRow(created);
+          void load();
         })
         .catch((error: unknown) => {
           if (signal.aborted) {
@@ -3025,6 +3105,8 @@ function bindProjectHomeObjectivesPanel(
     },
     { signal }
   );
+
+  void load();
 }
 
 // R18 批 H1（web 会话镜像成员管理）：只读会话镜像的「参与者」侧区水合。SSR（route-components

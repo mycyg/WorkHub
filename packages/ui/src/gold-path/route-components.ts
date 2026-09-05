@@ -4566,12 +4566,14 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
         <h3 role="heading" aria-level="2">${escapeHtml(zh ? "成员" : "Members")}</h3>
         <div data-r18-project-home-members-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载成员摘要…" : "Loading member summary…")}</p></div>
       </section>`;
-  // R20 wave4（R19-1 OKR 前端接线）：服务端 POST /api/objectives（建目标+关键结果）与
-  // POST /api/objectives/:id/link（挂工作项）此前完全没有前端入口。目标是工作区级实体（objectives 表
-  // 没有 project_id 列），不是「这个项目的目标」——文案刻意不说「项目目标」。服务端没有列目标的端点
-  // （只有按 id 批量取标题/按状态取 id 列表），故本卡只能话本次会话内创建过的目标（不持久化列表），
-  // 创建成功后立刻在下面追加一行，带「挂到这里的某个工作项」选择器——数据源直接用本页已有的
-  // open_work_items（不额外请求）。
+  // R20 wave4（R19-1 OKR 前端接线）→ R23 F-01（OKR 列表/详情持久化）：服务端 POST /api/objectives
+  // （建目标+关键结果）与 POST /api/objectives/:id/link（挂工作项）此前没有前端入口；列表也一度只是
+  // 会话内内存态。目标是工作区级实体（objectives 表没有 project_id 列），不是「这个项目的目标」——
+  // 文案刻意不说「项目目标」。服务端现已提供 GET /api/projects/:id/objectives（该项目所在工作区的全部
+  // 目标，仍不做项目级过滤）与 GET /api/objectives/:id（详情），browser.ts 的
+  // bindProjectHomeObjectivesPanel 挂载后真拉取——这里只出 SSR 加载骨架（同 plansSection/
+  // membersSection 的既有先例：GET 数据永不在 SSR 内嵌，一律客户端水合），不再假装「服务端没有列表
+  // 端点」。
   const objectivesSection = `<section class="wh-card wh-r4-route-card" data-r20-project-home-objectives="true" data-r20-project-home-objectives-project="${escapeHtml(project.id)}">
         <h3 role="heading" aria-level="2">${escapeHtml(zh ? "OKR · 目标与关键结果" : "OKR — objectives & key results")}</h3>
         <p class="wh-subtle">${escapeHtml(zh
@@ -4591,9 +4593,7 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
           <button type="submit" class="wh-btn wh-btn-primary" data-r20-okr-create-submit="true">${escapeHtml(zh ? "创建目标" : "Create objective")}</button>
         </form>
         <div data-r20-okr-list role="list">
-          <p class="wh-subtle" data-r20-okr-list-empty="true">${escapeHtml(zh
-            ? "本次会话里还没有创建目标——服务端暂不提供列出全部已有目标的端点，创建后会立刻显示在这里。"
-            : "No objectives created in this session yet — the server has no endpoint to list existing ones, so newly created objectives appear here right away.")}</p>
+          <p class="wh-subtle" data-r20-okr-list-loading="true">${escapeHtml(zh ? "正在加载目标…" : "Loading objectives…")}</p>
         </div>
       </section>`;
   const instructionsSection = `<section class="wh-card wh-r4-route-card" data-r17-project-home-instructions="true" data-r17-project-home-instructions-project="${escapeHtml(project.id)}">

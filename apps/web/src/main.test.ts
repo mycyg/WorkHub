@@ -189,6 +189,28 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async linkObjective(objectiveId: string) {
       return { objective_id: objectiveId, work_item_id: "50000000-0000-4000-8000-000000000021" };
     },
+    // R23 F-01（OKR 列表/详情持久化）：新增必填方法同样补最小桩——这两个不是本文件要覆盖的行为。
+    async listObjectives() {
+      return { objectives: [], capped: false };
+    },
+    async getObjective(objectiveId: string) {
+      return {
+        objective_id: objectiveId,
+        title: "mock objective",
+        description_md: null,
+        status: "active" as const,
+        progress_percent: 0,
+        owner_user_id: null,
+        created_at: "2026-06-05T01:00:00.000Z",
+        updated_at: "2026-06-05T01:00:00.000Z",
+        key_results: [],
+        key_results_capped: false,
+        linked_work_items: [],
+        linked_work_items_capped: false,
+        linked_task_plans: [],
+        linked_task_plans_capped: false
+      };
+    },
     async createTaskPlan() {
       return {
         plan_id: "70000000-0000-4000-8000-000000000011",

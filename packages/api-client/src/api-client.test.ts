@@ -725,6 +725,54 @@ test("api client exposes the objective create + link endpoints (R19-1 OKR wiring
   ]);
 });
 
+// R23 F-01（OKR 列表/详情持久化）：服务端新增的两个读端点——GET /api/projects/:id/objectives（项目
+// 主页 OKR 面板首屏，实际列出该项目所在工作区的全部目标）与 GET /api/objectives/:id（详情：关键结果 +
+// 挂链工作项 + 挂链执行计划）——此前没有任何类型化客户端方法能调用。锁死 URL/方法与信封解包正确。
+test("api client exposes the objective list + detail read endpoints (R23 F-01 wiring)", async () => {
+  const calls: Array<{ url: string; method: string }> = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET" });
+      if (String(input).includes("/objectives/objective-1")) {
+        return new Response(JSON.stringify({
+          ok: true,
+          data: {
+            objective_id: "objective-1",
+            title: "R23 稳定性目标",
+            description_md: null,
+            status: "active",
+            progress_percent: 40,
+            owner_user_id: null,
+            created_at: "2026-09-01T00:00:00.000Z",
+            updated_at: "2026-09-01T00:00:00.000Z",
+            key_results: [],
+            key_results_capped: false,
+            linked_work_items: [],
+            linked_work_items_capped: false,
+            linked_task_plans: [],
+            linked_task_plans_capped: false
+          }
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({
+        ok: true,
+        data: { objectives: [], capped: false }
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+  });
+
+  const list = await client.listObjectives("project-1");
+  const detail = await client.getObjective("objective-1");
+
+  assert.deepEqual(calls, [
+    { url: "/api/projects/project-1/objectives", method: "GET" },
+    { url: "/api/objectives/objective-1", method: "GET" }
+  ]);
+  assert.deepEqual(list, { objectives: [], capped: false });
+  assert.equal(detail.objective_id, "objective-1");
+  assert.equal(detail.title, "R23 稳定性目标");
+});
+
 // R20 R19-27（工作项跨 run 审计时间线）：后端早有 GET /api/workitems/:id/audit（快照 + 审计事实 +
 // manifest 校验，packages/db audit-repository 有测试覆盖），但此前客户端没有任何类型化方法能调用
 // 它——web 端因此从没拉过这份数据、更别提渲染。锁定 URL/方法与信封解包（envelope → data）正确。

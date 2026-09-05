@@ -513,6 +513,11 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    // R23 F-01（OKR 列表/详情持久化）：项目主页 OKR 面板首屏真拉取 + 详情抽屉——GET /api/projects/:id/
+    // objectives 与 GET /api/objectives/:id，同 createObjective/linkObjective 一样直接透传信封解包出的
+    // data，无额外加工。
+    listObjectives: (projectId) => request(`/api/projects/${encodeURIComponent(projectId)}/objectives`),
+    getObjective: (objectiveId) => request(`/api/objectives/${encodeURIComponent(objectiveId)}`),
     startAgentRun: (workItemId, payload = {}, options) =>
       request(withPageLocale(`/api/workitems/${encodeURIComponent(workItemId)}/agent-runs`, options), {
         method: "POST",

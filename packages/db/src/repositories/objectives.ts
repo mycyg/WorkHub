@@ -9,6 +9,7 @@ import {
   keyResults,
   objectiveWorkItemLinks,
   objectives,
+  taskPlans,
   workItems
 } from "../schema/index.js";
 
@@ -66,6 +67,30 @@ export type ObjectiveProgressSnapshot = {
   workItemsCapped: boolean;
 };
 
+// R23 F-01（OKR 列表/详情持久化）——列表只喂项目主页 OKR 卡的行渲染（标题/状态/进度），不带 key
+// results（列表页从不展示它们，详情页才展示），避免每次列出一整屏目标时再搭一份不会用到的联表。
+export type ObjectiveListResult = {
+  items: ObjectiveRow[];
+  capped: boolean;
+};
+
+// 比 ObjectiveLinkedWorkItemRow（进度刷新用，只要 id+status）多带 code/title——详情页要能渲一行
+// 可点的工作项链接，不能只给裸 uuid。
+export type ObjectiveDetailLinkedWorkItemRow = Pick<typeof workItems.$inferSelect, "id" | "code" | "title" | "status">;
+// task_plans.objective_id 这条既有列此前没有任何查询读过（只有反向：按 plan 找它挂的 objective，见
+// task-plans 仓库的 listDashboardPlans）——详情页顺手把「挂了这个目标的执行计划」列出来。
+export type ObjectiveDetailLinkedTaskPlanRow = Pick<typeof taskPlans.$inferSelect, "id" | "workItemId" | "status" | "createdAt">;
+
+export type ObjectiveDetailResult = {
+  objective: ObjectiveRow;
+  keyResults: KeyResultRow[];
+  linkedWorkItems: ObjectiveDetailLinkedWorkItemRow[];
+  linkedTaskPlans: ObjectiveDetailLinkedTaskPlanRow[];
+  keyResultsCapped: boolean;
+  workItemsCapped: boolean;
+  taskPlansCapped: boolean;
+};
+
 export type ObjectiveRepository = {
   createObjective: (input: CreateObjectiveInput) => Promise<ObjectiveRow>;
   linkWorkItem: (input: LinkObjectiveWorkItemInput) => Promise<ObjectiveWorkItemLinkRow>;
@@ -91,6 +116,18 @@ export type ObjectiveRepository = {
   // UX-M10：成本页按目标维度的标题源。
   listObjectiveTitlesByIds: (input: { workspaceId: string; objectiveIds: string[] }) => Promise<Map<string, string>>;
   listActiveObjectiveIdsForWorkspace: (input: { workspaceId: string; limit?: number }) => Promise<string[]>;
+  // R23 F-01：项目主页 OKR 面板首屏真拉取——按工作区列全部状态的目标（不只 active），按最近更新排序。
+  listObjectivesForWorkspace: (input: { workspaceId: string; limit?: number }) => Promise<ObjectiveListResult>;
+  // R23 F-01：目标详情——同 readObjectiveProgressSnapshot 的对象/关键结果/挂链工作项查询，但工作项带
+  // code/title（供渲染），并额外带上挂了这个目标的任务计划。刻意与 readObjectiveProgressSnapshot 分开
+  // （不复用同一条查询）：后者是夜间刷新进度的热路径，不该为一个展示增强字段多担一条计划表联查的成本。
+  readObjectiveDetail: (input: {
+    workspaceId: string;
+    objectiveId: string;
+    keyResultLimit?: number;
+    workItemLimit?: number;
+    planLimit?: number;
+  }) => Promise<ObjectiveDetailResult | null>;
 };
 
 export class ObjectiveLinkScopeMismatch extends Error {
@@ -106,6 +143,12 @@ const DEFAULT_KEY_RESULT_LIMIT = 8;
 const MAX_KEY_RESULT_LIMIT = 40;
 const DEFAULT_WORK_ITEM_LIMIT = 100;
 const MAX_WORK_ITEM_LIMIT = 300;
+// R23 F-01：用户可见的「列出目标」页比 LLM 规划上下文（DEFAULT_OBJECTIVE_LIMIT=5，专为提示词预算裁的
+// 小值）宽松得多——独立一组常量，别复用规划上下文那两个。
+const DEFAULT_OBJECTIVE_LIST_LIMIT = 20;
+const MAX_OBJECTIVE_LIST_LIMIT = 50;
+const DEFAULT_LINKED_TASK_PLAN_LIMIT = 20;
+const MAX_LINKED_TASK_PLAN_LIMIT = 50;
 
 function boundedLimit(input: number | undefined, fallback: number, max: number) {
   if (!Number.isFinite(input)) {
@@ -363,6 +406,91 @@ export function createObjectiveRepository(db: WorkHubDb): ObjectiveRepository {
         .orderBy(desc(objectives.updatedAt))
         .limit(limit);
       return rows.map((row) => row.id);
+    },
+
+    // R23 F-01：项目主页 OKR 面板首屏——不筛状态（已完成/暂停的目标用户仍应能在列表里看到），按最近
+    // 更新时间倒序。只取目标行本身，不带 key results（列表行渲染用不到，见 ObjectiveListResult 注释）。
+    async listObjectivesForWorkspace(input) {
+      const limit = boundedLimit(input.limit, DEFAULT_OBJECTIVE_LIST_LIMIT, MAX_OBJECTIVE_LIST_LIMIT);
+      const rows = await db
+        .select()
+        .from(objectives)
+        .where(eq(objectives.workspaceId, input.workspaceId))
+        .orderBy(desc(objectives.updatedAt), asc(objectives.id))
+        .limit(limit + 1);
+      return {
+        items: rows.slice(0, limit),
+        capped: rows.length > limit
+      };
+    },
+
+    async readObjectiveDetail(input) {
+      const [objective] = await db
+        .select()
+        .from(objectives)
+        .where(and(
+          eq(objectives.workspaceId, input.workspaceId),
+          eq(objectives.id, input.objectiveId)
+        ))
+        .limit(1);
+      if (!objective) {
+        return null;
+      }
+      const keyResultLimit = boundedLimit(input.keyResultLimit, DEFAULT_KEY_RESULT_LIMIT, MAX_KEY_RESULT_LIMIT);
+      const workItemLimit = boundedLimit(input.workItemLimit, DEFAULT_WORK_ITEM_LIMIT, MAX_WORK_ITEM_LIMIT);
+      const planLimit = boundedLimit(input.planLimit, DEFAULT_LINKED_TASK_PLAN_LIMIT, MAX_LINKED_TASK_PLAN_LIMIT);
+      const [keyResultRows, workItemRows, planRows] = await Promise.all([
+        db
+          .select()
+          .from(keyResults)
+          .where(and(
+            eq(keyResults.workspaceId, input.workspaceId),
+            eq(keyResults.objectiveId, input.objectiveId)
+          ))
+          .orderBy(asc(keyResults.seq), asc(keyResults.id))
+          .limit(keyResultLimit + 1),
+        db
+          .select({
+            id: workItems.id,
+            code: workItems.code,
+            title: workItems.title,
+            status: workItems.status
+          })
+          .from(objectiveWorkItemLinks)
+          .innerJoin(workItems, eq(objectiveWorkItemLinks.workItemId, workItems.id))
+          .where(and(
+            eq(objectiveWorkItemLinks.workspaceId, input.workspaceId),
+            eq(objectiveWorkItemLinks.objectiveId, input.objectiveId),
+            eq(workItems.workspaceId, input.workspaceId),
+            isNull(workItems.deletedAt)
+          ))
+          .orderBy(desc(workItems.updatedAt), asc(workItems.id))
+          .limit(workItemLimit + 1),
+        // task_plans.objective_id 是可空的直接列（不经链接表），按目标反查它挂了哪些执行计划。
+        db
+          .select({
+            id: taskPlans.id,
+            workItemId: taskPlans.workItemId,
+            status: taskPlans.status,
+            createdAt: taskPlans.createdAt
+          })
+          .from(taskPlans)
+          .where(and(
+            eq(taskPlans.workspaceId, input.workspaceId),
+            eq(taskPlans.objectiveId, input.objectiveId)
+          ))
+          .orderBy(desc(taskPlans.createdAt), asc(taskPlans.id))
+          .limit(planLimit + 1)
+      ]);
+      return {
+        objective,
+        keyResults: keyResultRows.slice(0, keyResultLimit),
+        linkedWorkItems: workItemRows.slice(0, workItemLimit),
+        linkedTaskPlans: planRows.slice(0, planLimit),
+        keyResultsCapped: keyResultRows.length > keyResultLimit,
+        workItemsCapped: workItemRows.length > workItemLimit,
+        taskPlansCapped: planRows.length > planLimit
+      };
     }
   };
 }
