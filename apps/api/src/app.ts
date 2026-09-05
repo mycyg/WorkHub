@@ -66,6 +66,8 @@ import { createDriveVersionRoutes } from "./routes/drive-versions.js";
 import { createSpotlightIntentRoutes } from "./routes/spotlight-intent.js";
 import { createPersonalProjectRoutes } from "./routes/personal-projects.js";
 import { createWorkspaceAuditRoutes } from "./routes/workspace-audit.js";
+import { createPluginRoutes } from "./routes/plugins.js";
+import { PluginServiceError } from "./services/plugins.js";
 import { TaskPlanApprovalError } from "./services/task-plan-approval.js";
 import { ProjectServiceError } from "./services/projects.js";
 import { PilotDay1MetricsServiceError } from "./services/pilot-day1-metrics.js";
@@ -318,6 +320,8 @@ app.route("/api", createSpotlightIntentRoutes());
 app.route("/api", createPersonalProjectRoutes());
 // R20 P2A（R19-21）：工作区级审计列表（GET /api/workspace/audit，仅管理员，工作区硬隔离）。
 app.route("/api", createWorkspaceAuditRoutes());
+// R24-P 阶段 1：插件治理（清单/安装/启停/移除，仅管理员，四个动作各落一条审计）。
+app.route("/api", createPluginRoutes());
 app.route("/api/pilot", createPilotRoutes());
 // R20 R19-29：/api/ai-worklog/today（createAiWorklogRoutes）已删——web/desktop 均无调用者，同样的今日
 // AI 工作量数据早已由 GET /api/pages/attention 等页面 VM 内嵌 AiWorklogMetricsService 交付。核实零消费
@@ -517,6 +521,20 @@ app.onError((error, c) => {
 
   // R14 批 MEM：记忆/技能管理面的类型化 400/403/404/409——不进这张表会被兜底压成 500。
   if (error instanceof UserMemoryGovernanceServiceError || error instanceof TeamSkillGovernanceServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
+    );
+  }
+
+  // R24-P 阶段 1：插件治理的类型化 403/404/409/422——不进这张表会被兜底压成无语义码的 500。
+  if (error instanceof PluginServiceError) {
     return c.json(
       {
         ok: false,

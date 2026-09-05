@@ -6180,6 +6180,108 @@ const teamSkillManagementPageJsonSchema = {
   },
   additionalProperties: false
 } as const;
+// R24-P 阶段 1：插件治理。compat_report 是**安装前不执行任何插件代码**的静态体检结论；
+// load_report 是宿主试加载的结果（装不上时原因在这里，而不是只在日志里一闪而过）。
+const pluginCompatReportJsonSchema = {
+  type: "object",
+  required: ["verdict", "checks", "checked_at"],
+  properties: {
+    verdict: { type: "string", enum: ["ok", "warn", "blocked"] },
+    checks: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["id", "level"],
+        properties: {
+          id: {
+            type: "string",
+            enum: ["manifest", "client_surface", "install_scripts", "dsh_tools_peer", "bundle_manifest"]
+          },
+          level: { type: "string", enum: ["pass", "warn", "block"] },
+          detail: { type: "string", maxLength: 500 }
+        },
+        additionalProperties: false
+      }
+    },
+    manifest_name: { type: "string", maxLength: 200 },
+    manifest_version: { type: "string", maxLength: 80 },
+    manifest_license: { type: "string", maxLength: 120 },
+    peer_dsh_tools_range: { type: "string", maxLength: 120 },
+    host_dsh_tools_version: { type: "string", maxLength: 80 },
+    checked_at: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
+const pluginLoadReportJsonSchema = {
+  type: "object",
+  required: ["ok", "tool_count", "prompt_section_count", "loaded_at"],
+  properties: {
+    ok: { type: "boolean" },
+    tool_count: { type: "integer", minimum: 0 },
+    prompt_section_count: { type: "integer", minimum: 0 },
+    error: { type: "string", maxLength: 2000 },
+    loaded_at: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
+const pluginVmJsonSchema = {
+  type: "object",
+  required: [
+    "id",
+    "name",
+    "source_kind",
+    "source_path",
+    "enabled",
+    "status",
+    "tool_count",
+    "compat_report",
+    "created_at",
+    "updated_at"
+  ],
+  properties: {
+    id: uuidStringSchema,
+    name: { type: "string", minLength: 1, maxLength: 200 },
+    version: { type: "string", maxLength: 80 },
+    // 单值枚举不是笔误：npm 包名 / git url / tarball 会在安装期跑包自己的 prepare/postinstall。
+    source_kind: { type: "string", enum: ["local_path"] },
+    source_path: { type: "string", minLength: 1, maxLength: 1000 },
+    enabled: { type: "boolean" },
+    status: { type: "string", enum: ["installed", "load_failed", "disabled"] },
+    tool_count: { type: "integer", minimum: 0 },
+    compat_report: pluginCompatReportJsonSchema,
+    load_report: pluginLoadReportJsonSchema,
+    installed_by: uuidStringSchema,
+    created_at: dateTimeStringSchema,
+    updated_at: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
+const pluginListJsonSchema = {
+  type: "object",
+  required: ["plugins", "bootstrap_path_count"],
+  properties: {
+    plugins: { type: "array", items: pluginVmJsonSchema },
+    host_dsh_tools_version: { type: "string", maxLength: 80 },
+    bootstrap_path_count: { type: "integer", minimum: 0 }
+  },
+  additionalProperties: false
+} as const;
+const installPluginRequestJsonSchema = {
+  type: "object",
+  required: ["source_path"],
+  properties: {
+    source_path: { type: "string", minLength: 1, maxLength: 1000 }
+  },
+  additionalProperties: false
+} as const;
+const pluginAdminForbiddenResponse = jsonErrorStatusResponse("403", "Managing plugins requires an admin", [
+  "invalid_client_token",
+  "forbidden",
+  "plugin_admin_required"
+]);
+const pluginNotFoundResponse = jsonErrorStatusResponse("404", "No such plugin in this workspace", [
+  "plugin_not_found"
+]);
 const patchUserMemoryRequestJsonSchema = {
   type: "object",
   required: ["value_md", "expected_updated_at"],
@@ -8560,6 +8662,102 @@ export function getOpenApiDocument() {
             "403": jsonErrorStatusResponse("403", "Workspace audit is admin-only", [
               "forbidden"
             ]).responses["403"]
+          }
+        }
+      },
+      "/api/plugins": {
+        get: {
+          tags: ["settings"],
+          summary: "Admin-only: installed plugins, the host's bundled dsh-tools version, and how many paths still come from the environment",
+          responses: {
+            "200": jsonDataResponse(pluginListJsonSchema, "Every plugin registered in this workspace").responses["200"],
+            "403": pluginAdminForbiddenResponse.responses["403"],
+            "401": conversationAuthRequiredResponse,
+            "500": conversationInternalResponse
+          }
+        },
+        post: {
+          tags: ["settings"],
+          summary: "Admin-only: install a plugin from a local directory (static health check, then register, then try to load)",
+          ...jsonRequestBody(installPluginRequestJsonSchema),
+          responses: {
+            "201": jsonDataStatusResponse(
+              pluginVmJsonSchema,
+              "201",
+              "Registered; status says whether the host could actually load it"
+            ).responses["201"],
+            "400": jsonErrorStatusResponse("400", "The request body was not a JSON object", [
+              "malformed_json",
+              "json_object_required"
+            ]).responses["400"],
+            "403": pluginAdminForbiddenResponse.responses["403"],
+            "409": jsonErrorStatusResponse("409", "That directory is already installed in this workspace", [
+              "plugin_already_installed"
+            ]).responses["409"],
+            "422": jsonErrorStatusResponse(
+              "422",
+              "The static health check refused it: unreadable manifest, a browser-side UI/theme plugin, or install-time scripts",
+              [
+                "validation_error",
+                "plugin_manifest_unreadable",
+                "plugin_client_surface_unsupported",
+                "plugin_install_scripts_refused",
+                "plugin_incompatible"
+              ]
+            ).responses["422"],
+            "413": conversationPayloadTooLargeResponse,
+            "401": conversationAuthRequiredResponse,
+            "500": conversationInternalResponse
+          }
+        }
+      },
+      "/api/plugins/{id}/enable": {
+        post: {
+          tags: ["settings"],
+          summary: "Admin-only: enable a plugin and try to load it again (the host hot-reloads)",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse(pluginVmJsonSchema, "The plugin after the reload attempt").responses["200"],
+            "403": pluginAdminForbiddenResponse.responses["403"],
+            "404": pluginNotFoundResponse.responses["404"],
+            "401": conversationAuthRequiredResponse,
+            "500": conversationInternalResponse
+          }
+        }
+      },
+      "/api/plugins/{id}/disable": {
+        post: {
+          tags: ["settings"],
+          summary: "Admin-only: disable a plugin — its tools stop appearing in any run",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse(pluginVmJsonSchema, "The plugin, now disabled").responses["200"],
+            "403": pluginAdminForbiddenResponse.responses["403"],
+            "404": pluginNotFoundResponse.responses["404"],
+            "401": conversationAuthRequiredResponse,
+            "500": conversationInternalResponse
+          }
+        }
+      },
+      "/api/plugins/{id}": {
+        delete: {
+          tags: ["settings"],
+          summary: "Admin-only: remove a plugin from the registry (the directory on disk is left alone)",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse(
+              {
+                type: "object",
+                required: ["removed"],
+                properties: { removed: { type: "boolean", const: true } },
+                additionalProperties: false
+              },
+              "The plugin no longer contributes tools to any run"
+            ).responses["200"],
+            "403": pluginAdminForbiddenResponse.responses["403"],
+            "404": pluginNotFoundResponse.responses["404"],
+            "401": conversationAuthRequiredResponse,
+            "500": conversationInternalResponse
           }
         }
       },
