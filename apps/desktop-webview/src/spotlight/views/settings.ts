@@ -62,6 +62,19 @@ function avatarHref(userId: string): string {
   return `/api/users/${encodeURIComponent(userId)}/avatar`;
 }
 
+// M-06（R24 S3 走查）：「AI assistant · Not set up」此前是个死状态——没有任何说明或入口，终端用户
+// 读到只会觉得东西坏了。桌面端没有配置能力（LLM_API_KEY 是服务端 .env，desktop client 连不到那台
+// 机器的文件系统），所以这里给不了「去配置」按钮，只能诚实说清楚谁能修、去哪看——与工作台聊天区
+// 已有的同款横幅（workbench/chat/render.ts）同一个信息来源，措辞对齐。
+const DEPLOY_DOC_URL = "https://github.com/mycyg/WorkHub/blob/main/DEPLOY.md";
+
+function aiNotConfiguredNoteHtml(zh: boolean): string {
+  const explanation = zh
+    ? "AI 助手还没配置——需要管理员在服务器的 .env 文件里设置 LLM_API_KEY 并重启服务后才能使用。"
+    : "The AI assistant isn't set up yet — an admin needs to set LLM_API_KEY in the server's .env file and restart it.";
+  return `<div class="wh-spot-row-sub wh-spot-row-sub--wrap" data-spot-ai-not-configured="true">${escapeHtml(explanation)} <button type="button" class="wh-spot-inline-link" data-set-ai-deploy-docs="true">${zh ? "查看部署说明" : "View deployment instructions"}</button></div>`;
+}
+
 function localeLabel(locale: string, zh: boolean): string {
   if (locale === "zh-CN") return zh ? "简体中文" : "Chinese";
   if (locale === "en-US" || locale === "en") return zh ? "English" : "English";
@@ -494,9 +507,11 @@ export function devicesSectionHtml(state: DesktopDevicesSectionState, zh: boolea
   const error = state.errorText
     ? `<div class="wh-spot-row-sub" data-spot-devices-error="true" style="color:var(--ds-danger)">${escapeHtml(state.errorText)}</div>`
     : "";
+  // L-04（R24 S3 走查）：这段说明是完整的两句话，但 .wh-spot-row-sub 默认单行截断（给"行副标题"
+  // 用）——之前借用它渲这段长说明，实测被裁成一行省略号。加 --wrap 修饰类让它正常换行。
   return `<div class="wh-spot-set-group" data-spot-devices-section="true">
     <div class="wh-spot-set-label">${zh ? "已登录设备" : "Signed-in devices"}</div>
-    <div class="wh-spot-row-sub">${zh
+    <div class="wh-spot-row-sub wh-spot-row-sub--wrap">${zh
       ? "配对到这个账号的客户端设备。撤销不再使用的设备后，那台设备需要重新配对才能再次访问。"
       : "Client devices paired to this account. Revoking a device you no longer use requires it to re-pair before it can access your account again."
     }</div>
@@ -534,6 +549,7 @@ function settingsHtml(
       <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "运行状态" : "Runtime"}</span><span class="wh-spot-metric-v" style="color:${runtimeOk ? "var(--ds-success)" : "var(--ds-warn)"}">${runtimeOk ? (zh ? "正常" : "Ready") : zh ? "需关注" : "Attention"}</span></div>
       <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "AI 助手" : "AI assistant"}</span><span class="wh-spot-metric-v" style="color:${vm.llm_runtime.api_key_configured ? "var(--ds-success)" : "var(--ds-warn)"}">${vm.llm_runtime.api_key_configured ? (zh ? "已就绪" : "Ready") : zh ? "待配置" : "Not set up"}</span></div>
     </div>
+    ${vm.llm_runtime.api_key_configured ? "" : aiNotConfiguredNoteHtml(zh)}
     ${aiSectionHtml(aiProfile, aiFailed, zh)}
     ${aiErrorText ? `<div class="wh-spot-row-sub" data-spot-ai-error="true" style="color:var(--ds-danger)">${escapeHtml(aiErrorText)}</div>` : ""}
     ${avatarSectionHtml(profile, profileFailed, zh)}
@@ -560,6 +576,7 @@ function settingsHtml(
       </div>
       <button type="button" class="wh-spot-act wh-spot-act--danger ds-pressable" data-set-logout="true">${zh ? "登出" : "Sign out"}</button>
     </div>
+    <div class="wh-spot-set-bottom-spacer" aria-hidden="true"></div>
   </div>`;
 }
 
@@ -1510,6 +1527,29 @@ export function createSettingsView(): SpotlightCapabilityView {
         // R14 批 MEM：设置区旁挂的记忆管理面入口——独立能力视图（views/memory.ts），不是内联区块。
         if (target.closest("[data-set-open-memory]")) {
           ctx.open("memory");
+          return;
+        }
+        // M-06：「查看部署说明」——桌面 Tauri webview 对外部链接没有承接（target=_blank 点了没反应，
+        // 同 dashboards.ts 的 GitHub 活动行 rank2 那条既有教训：不假装能内联打开外部站点）。这里退而
+        // 求其次，把链接复制进剪贴板并诚实告知，让用户自己粘到系统浏览器——比只说「去系统浏览器打开」
+        // 却不给链接本身更可行动。
+        if (target.closest("[data-set-ai-deploy-docs]")) {
+          const copied = globalThis.navigator?.clipboard?.writeText?.(DEPLOY_DOC_URL);
+          if (copied && typeof copied.then === "function") {
+            copied.then(
+              () => {
+                ctx.toast(
+                  zh ? "部署说明链接已复制，请到浏览器粘贴打开" : "Copied the deployment doc link — paste it into your browser",
+                  "ok"
+                );
+              },
+              () => {
+                ctx.toast(zh ? `未能复制，请手动打开：${DEPLOY_DOC_URL}` : `Couldn't copy — open manually: ${DEPLOY_DOC_URL}`, "error");
+              }
+            );
+          } else {
+            ctx.toast(zh ? `请在浏览器打开：${DEPLOY_DOC_URL}` : `Open in your browser: ${DEPLOY_DOC_URL}`, "info");
+          }
           return;
         }
         // R9 → R20 SEC P1-01：登出走有序状态机（runDesktopLogout：①服务端登出 ②清 Rust 壳层令牌
