@@ -39,6 +39,9 @@ import type {
   CreateObjectiveResponse,
   LinkObjectiveRequest,
   LinkObjectiveResponse,
+  // R23 F-01（OKR 列表/详情持久化）：项目主页 OKR 面板首屏真拉取 + 详情抽屉的响应契约。
+  ListObjectivesResponse,
+  ObjectiveDetailResponse,
   DrivePageVM,
   MeetingPageVM,
   ApplyMergeProposalCandidateRequest,
@@ -375,6 +378,14 @@ export type WorkHubApiClient = {
   // POST /api/objectives 与 POST /api/objectives/:id/link，此前没有任何类型化客户端方法能调用它们。
   createObjective: (payload: CreateObjectiveRequest) => Promise<CreateObjectiveResponse>;
   linkObjective: (objectiveId: string, payload: LinkObjectiveRequest) => Promise<LinkObjectiveResponse>;
+  // R23 F-01（OKR 列表/详情持久化）：项目主页 OKR 面板首屏真拉取（按 project id 挂 URL，实际列出该
+  // 项目所在工作区的全部目标——目标是工作区级实体）+ 详情抽屉（含关键结果/挂链工作项/挂链执行计划）。
+  // 服务端 GET /api/projects/:id/objectives 与 GET /api/objectives/:id 早已就位（routes/projects.ts、
+  // routes/objectives.ts），此前没有任何类型化客户端方法能调用——与 createObjective/linkObjective 同批
+  // 加入、同样标必填（本文件手写全量字面量 mock 的两处需跟着补桩，见 apps/web、apps/desktop-webview 的
+  // main.test.ts）。
+  listObjectives: (projectId: string) => Promise<ListObjectivesResponse>;
+  getObjective: (objectiveId: string) => Promise<ObjectiveDetailResponse>;
   startAgentRun: (workItemId: string, payload?: StartAgentRunRequest, options?: PageRequestOptions) => Promise<AgentRunLiveVM>;
   getAgentRun: (runId: string) => Promise<AgentRunLiveVM>;
   getAgentRunTrace: (runId: string, after?: number) => Promise<AgentStep[]>;

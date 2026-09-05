@@ -6,6 +6,7 @@ import {
   keyResults,
   objectiveWorkItemLinks,
   objectives,
+  taskPlans,
   workItems
 } from "./schema/index.js";
 import { createQueryRecorder, queryParamValues, queryReferences } from "./test-query-recorder.js";
@@ -19,6 +20,9 @@ const userId = "96000000-0000-4000-8000-000000000005";
 const firstKeyResultId = "96000000-0000-4000-8000-000000000011";
 const secondKeyResultId = "96000000-0000-4000-8000-000000000012";
 const linkId = "96000000-0000-4000-8000-000000000021";
+const secondWorkItemId = "96000000-0000-4000-8000-000000000031";
+const firstTaskPlanId = "96000000-0000-4000-8000-000000000041";
+const secondTaskPlanId = "96000000-0000-4000-8000-000000000042";
 
 const objectiveRow = {
   id: objectiveId,
@@ -333,4 +337,114 @@ test("R9.5 objective repository refreshes progress only inside the objective wor
   assert.ok(queryReferences(query?.where, objectives.id));
   assert.ok(queryParamValues(query?.where).includes(workspaceId));
   assert.ok(queryParamValues(query?.where).includes(objectiveId));
+});
+
+// R23 F-01（OKR 列表/详情持久化）：项目主页 OKR 面板首屏——按工作区列全部状态的目标（不筛 active，
+// 已完成/暂停的目标用户仍应能看到），按最近更新时间倒序、诚实上限（多取一条判断 capped，不多返回）。
+test("R23 F-01 objective repository lists workspace objectives by recency with an honest cap", async () => {
+  const { db, queries } = createQueryRecorder([[objectiveRow, secondObjectiveRow]]);
+  const repository = createObjectiveRepository(db);
+
+  const result = await repository.listObjectivesForWorkspace({ workspaceId, limit: 1 });
+
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0]?.id, objectiveId);
+  assert.equal(result.capped, true);
+  assert.equal(queries.length, 1);
+  const [query] = queries;
+  assert.equal(query?.fromTable, objectives);
+  assert.equal(query?.limit, 2, "requests limit+1 rows to detect an honest cap");
+  assert.ok(queryReferences(query?.where, objectives.workspaceId));
+  assert.ok(queryParamValues(query?.where).includes(workspaceId));
+  assert.ok(queryReferences(query?.orderBy, objectives.updatedAt), "orders by most-recently-updated first");
+  assert.ok(queryReferences(query?.orderBy, objectives.id), "tie-breaks by id for stable pagination");
+});
+
+test("R23 F-01 objective repository reports no cap when the workspace has fewer objectives than the limit", async () => {
+  const { db } = createQueryRecorder([[objectiveRow]]);
+  const repository = createObjectiveRepository(db);
+
+  const result = await repository.listObjectivesForWorkspace({ workspaceId });
+
+  assert.equal(result.items.length, 1);
+  assert.equal(result.capped, false);
+});
+
+// R23 F-01：详情——目标不在这个工作区（或压根不存在）时，只发一条查询就短路返回 null，不会去联查
+// 关键结果/挂链工作项/挂链执行计划（不该为一个查不到的目标白跑三条查询）。
+test("R23 F-01 objective repository returns null detail for an objective outside the workspace", async () => {
+  const { db, queries } = createQueryRecorder([[]]);
+  const repository = createObjectiveRepository(db);
+
+  const result = await repository.readObjectiveDetail({ workspaceId, objectiveId });
+
+  assert.equal(result, null);
+  assert.equal(queries.length, 1);
+  const [query] = queries;
+  assert.equal(query?.fromTable, objectives);
+  assert.equal(query?.limit, 1);
+  assert.ok(queryReferences(query?.where, objectives.workspaceId));
+  assert.ok(queryReferences(query?.where, objectives.id));
+  assert.ok(queryParamValues(query?.where).includes(workspaceId));
+  assert.ok(queryParamValues(query?.where).includes(objectiveId));
+});
+
+// R23 F-01：详情——找到目标后并发读关键结果 + 挂链工作项（联工作项表拿 code/title，供渲染一行可点
+// 链接，过滤软删）+ 挂链执行计划（task_plans.objective_id 反查，这条既有列此前从没有查询读过），
+// 三路各自诚实上限。
+test("R23 F-01 objective repository reads full detail with key results, linked work items, and linked task plans", async () => {
+  const firstLinkedWorkItem = { id: workItemId, code: "WI-1", title: "调研竞品", status: "ai_working" };
+  const secondLinkedWorkItem = { id: secondWorkItemId, code: "WI-2", title: "撰写方案", status: "done" };
+  const firstTaskPlan = { id: firstTaskPlanId, workItemId, status: "approved", createdAt: now };
+  const secondTaskPlan = { id: secondTaskPlanId, workItemId: secondWorkItemId, status: "draft", createdAt: now };
+  const { db, queries } = createQueryRecorder([
+    [objectiveRow],
+    [firstKeyResult, secondKeyResult],
+    [firstLinkedWorkItem, secondLinkedWorkItem],
+    [firstTaskPlan, secondTaskPlan]
+  ]);
+  const repository = createObjectiveRepository(db);
+
+  const result = await repository.readObjectiveDetail({
+    workspaceId,
+    objectiveId,
+    keyResultLimit: 1,
+    workItemLimit: 1,
+    planLimit: 1
+  });
+
+  assert.ok(result);
+  assert.equal(result?.objective.id, objectiveId);
+  assert.deepEqual(result?.keyResults.map((row) => row.id), [firstKeyResultId]);
+  assert.equal(result?.keyResultsCapped, true);
+  assert.deepEqual(result?.linkedWorkItems.map((row) => row.id), [workItemId]);
+  assert.equal(result?.workItemsCapped, true);
+  assert.deepEqual(result?.linkedTaskPlans.map((row) => row.id), [firstTaskPlanId]);
+  assert.equal(result?.taskPlansCapped, true);
+
+  assert.equal(queries.length, 4);
+  const [objectiveQuery, keyResultQuery, workItemQuery, taskPlanQuery] = queries;
+  assert.equal(objectiveQuery?.limit, 1);
+
+  assert.equal(keyResultQuery?.fromTable, keyResults);
+  assert.equal(keyResultQuery?.limit, 2);
+  assert.ok(queryReferences(keyResultQuery?.where, keyResults.workspaceId));
+  assert.ok(queryReferences(keyResultQuery?.where, keyResults.objectiveId));
+  assert.ok(queryParamValues(keyResultQuery?.where).includes(objectiveId));
+
+  assert.equal(workItemQuery?.fromTable, objectiveWorkItemLinks);
+  assert.deepEqual(workItemQuery?.joins.map((join) => [join.kind, join.table]), [
+    ["inner", workItems]
+  ]);
+  assert.equal(workItemQuery?.limit, 2);
+  assert.ok(queryReferences(workItemQuery?.where, objectiveWorkItemLinks.workspaceId));
+  assert.ok(queryReferences(workItemQuery?.where, objectiveWorkItemLinks.objectiveId));
+  assert.ok(queryReferences(workItemQuery?.where, workItems.workspaceId));
+  assert.ok(queryReferences(workItemQuery?.where, workItems.deletedAt));
+
+  assert.equal(taskPlanQuery?.fromTable, taskPlans);
+  assert.equal(taskPlanQuery?.limit, 2);
+  assert.ok(queryReferences(taskPlanQuery?.where, taskPlans.workspaceId));
+  assert.ok(queryReferences(taskPlanQuery?.where, taskPlans.objectiveId));
+  assert.ok(queryParamValues(taskPlanQuery?.where).includes(objectiveId));
 });

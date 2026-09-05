@@ -9239,6 +9239,91 @@ export function getOpenApiDocument() {
           }
         }
       },
+      // R23 F-01（OKR 列表/详情持久化）：objectives 表没有 objective 级的软删/取消枚举以外的状态机变化，
+      // status 字段是 objectiveStatuses/keyResultStatuses（active/paused/done/archived、
+      // active/done/at_risk/cancelled）——与契约层 packages/contracts/src/enums.ts 保持一致。
+      "/api/objectives/{id}": {
+        get: {
+          tags: ["objectives"],
+          summary: "Read one objective's detail (key results + linked work items + linked task plans)",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: [
+                "objective_id", "title", "description_md", "status", "progress_percent",
+                "owner_user_id", "created_at", "updated_at",
+                "key_results", "key_results_capped",
+                "linked_work_items", "linked_work_items_capped",
+                "linked_task_plans", "linked_task_plans_capped"
+              ],
+              properties: {
+                objective_id: uuidStringSchema,
+                title: { type: "string", minLength: 1 },
+                description_md: { anyOf: [{ type: "string" }, { type: "null" }] },
+                status: { type: "string", enum: ["active", "paused", "done", "archived"] },
+                progress_percent: { type: "integer" },
+                owner_user_id: { anyOf: [uuidStringSchema, { type: "null" }] },
+                created_at: dateTimeStringSchema,
+                updated_at: dateTimeStringSchema,
+                key_results: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    required: ["id", "seq", "title", "target_value", "current_value", "unit", "status", "progress_percent"],
+                    properties: {
+                      id: uuidStringSchema,
+                      seq: { type: "integer" },
+                      title: { type: "string", minLength: 1 },
+                      target_value: { anyOf: [{ type: "string" }, { type: "null" }] },
+                      current_value: { anyOf: [{ type: "string" }, { type: "null" }] },
+                      unit: { anyOf: [{ type: "string" }, { type: "null" }] },
+                      status: { type: "string", enum: ["active", "done", "at_risk", "cancelled"] },
+                      progress_percent: { type: "integer" }
+                    },
+                    additionalProperties: false
+                  }
+                },
+                key_results_capped: { type: "boolean" },
+                linked_work_items: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    required: ["id", "code", "title", "status"],
+                    properties: {
+                      id: uuidStringSchema,
+                      code: { type: "string", minLength: 1 },
+                      title: { anyOf: [{ type: "string" }, { type: "null" }] },
+                      status: { type: "string" }
+                    },
+                    additionalProperties: false
+                  }
+                },
+                linked_work_items_capped: { type: "boolean" },
+                linked_task_plans: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    required: ["id", "work_item_id", "status", "created_at"],
+                    properties: {
+                      id: uuidStringSchema,
+                      work_item_id: uuidStringSchema,
+                      status: { type: "string" },
+                      created_at: dateTimeStringSchema
+                    },
+                    additionalProperties: false
+                  }
+                },
+                linked_task_plans_capped: { type: "boolean" }
+              },
+              additionalProperties: false
+            }, "Objective detail").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": proposalForbiddenResponse,
+            "404": proposalNotFoundResponse
+          }
+        }
+      },
       "/api/projects/{id}/milestones": {
         post: {
           tags: ["projects"],
@@ -9365,6 +9450,46 @@ export function getOpenApiDocument() {
             "404": jsonErrorStatusResponse("404", "Project was not found or is already deleted", [
               "project_not_found"
             ]).responses["404"]
+          }
+        }
+      },
+      // R23 F-01（OKR 列表/详情持久化）：项目主页 OKR 面板首屏——目标是工作区级实体，这条路由只是给
+      // 项目主页一个顺手入口，返回该项目所在工作区的全部目标（不做项目级过滤），与
+      // apps/api/src/routes/projects.ts 的实现注释一致。
+      "/api/projects/{id}/objectives": {
+        get: {
+          tags: ["projects"],
+          summary: "List a workspace's objectives from a project's home page (objectives are workspace-wide, not project-scoped)",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["objectives", "capped"],
+              properties: {
+                objectives: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    required: ["objective_id", "title", "description_md", "status", "progress_percent", "owner_user_id", "updated_at"],
+                    properties: {
+                      objective_id: uuidStringSchema,
+                      title: { type: "string", minLength: 1 },
+                      description_md: { anyOf: [{ type: "string" }, { type: "null" }] },
+                      status: { type: "string", enum: ["active", "paused", "done", "archived"] },
+                      progress_percent: { type: "integer" },
+                      owner_user_id: { anyOf: [uuidStringSchema, { type: "null" }] },
+                      updated_at: dateTimeStringSchema
+                    },
+                    additionalProperties: false
+                  }
+                },
+                capped: { type: "boolean" }
+              },
+              additionalProperties: false
+            }, "Workspace objectives list").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": proposalForbiddenResponse,
+            "404": jsonErrorStatusResponse("404", "Project was not found", ["project_not_found"]).responses["404"]
           }
         }
       },
