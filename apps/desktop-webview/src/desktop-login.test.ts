@@ -131,14 +131,21 @@ test("runDesktopCredentialLogin logs in, exchanges for a device token, stores it
   const result = await runDesktopCredentialLogin({
     client,
     credentials: { email: "  alice@example.com  ", password: "hunter2-strong-pass" },
+    locale: "zh-CN",
     storage
   });
 
   assert.equal(result.client_token, "device-token-that-is-long-enough-000000");
-  // 邮箱去空白后作为请求体传给 login；密码原样（明文只走请求体）。
+  // 邮箱去空白后作为请求体传给 login；密码原样（明文只走请求体）；login 没有 locale 字段（既有用户）。
   assert.deepEqual(calls.login, { email: "alice@example.com", password: "hunter2-strong-pass" });
-  // exchange 调 bootstrapDesktop（密码模式据会话换令牌）。
-  assert.ok(calls.bootstrap, "must call bootstrapDesktop to exchange the session for a device token");
+  // exchange 调 bootstrapDesktop（密码模式据会话换令牌），仍带上 locale（R24 S4：四个 bootstrapDesktop
+  // 调用点形状统一，密码模式该分支服务端忽略它）。
+  assert.deepEqual(calls.bootstrap, {
+    nickname: "WorkHub Desktop",
+    device_name: "WorkHub Desktop",
+    platform: "desktop",
+    locale: "zh-CN"
+  });
   // 令牌落库；登出标记被清（成功登录后不该再停在登出态）。
   assert.equal(values.get("workhub_client_token"), "device-token-that-is-long-enough-000000");
   assert.ok(removed.includes("workhub_desktop_logged_out"));
@@ -166,6 +173,7 @@ test("runDesktopCredentialLogin propagates a bad-credentials error and does not 
       runDesktopCredentialLogin({
         client,
         credentials: { email: "alice@example.com", password: "wrong" },
+        locale: "zh-CN",
         storage
       }),
     (error) => error instanceof WorkHubApiError && error.status === 401
@@ -193,6 +201,7 @@ test("runDesktopCredentialLogin fails loudly when the exchange returns no client
     runDesktopCredentialLogin({
       client,
       credentials: { email: "alice@example.com", password: "hunter2-strong-pass" },
+      locale: "zh-CN",
       storage
     })
   );
@@ -601,12 +610,25 @@ test("runDesktopCredentialRegister registers, exchanges for a device token, and 
   const result = await runDesktopCredentialRegister({
     client,
     registration: { email: "  bob@example.com  ", nickname: "  bob  ", password: "hunter2-strong-pass" },
+    locale: "en-US",
     storage
   });
 
   assert.equal(result.client_token, "device-token-that-is-long-enough-000000");
   assert.equal(result.created, true);
-  assert.deepEqual(calls.register, { email: "bob@example.com", nickname: "bob", password: "hunter2-strong-pass" });
+  // register 总是新建用户——locale 直接落请求体（R24 S4，服务端 resolveNewUserLocale 优先用它）。
+  assert.deepEqual(calls.register, {
+    email: "bob@example.com",
+    nickname: "bob",
+    password: "hunter2-strong-pass",
+    locale: "en-US"
+  });
+  assert.deepEqual(calls.bootstrap, {
+    nickname: "WorkHub Desktop",
+    device_name: "WorkHub Desktop",
+    platform: "desktop",
+    locale: "en-US"
+  });
   assert.equal(values.get("workhub_client_token"), "device-token-that-is-long-enough-000000");
   assert.ok(removed.includes("workhub_desktop_logged_out"));
   // 首启标记：register 恒 created=true，落地页据此渲「建你的第一个项目」。
@@ -635,6 +657,7 @@ test("runDesktopCredentialRegister propagates a duplicate-email conflict and doe
       runDesktopCredentialRegister({
         client,
         registration: { email: "bob@example.com", nickname: "bob", password: "hunter2-strong-pass" },
+        locale: "zh-CN",
         storage
       }),
     (error) => error instanceof WorkHubApiError && error.status === 409
@@ -705,13 +728,26 @@ test("runDesktopInviteAccept posts the token/nickname/password to invites/accept
   const result = await runDesktopInviteAccept({
     client,
     invite: { token: "  invite-token-abc  ", nickname: "  carol  ", password: "hunter2-strong-pass" },
+    locale: "en-US",
     storage
   });
 
   assert.equal(result.client_token, "device-token-that-is-long-enough-111111");
   assert.equal(result.created, true);
   assert.equal(calls.request?.path, "/api/auth/invites/accept");
-  assert.deepEqual(calls.request?.body, { token: "invite-token-abc", nickname: "carol", password: "hunter2-strong-pass" });
+  // 接受邀请总是新建用户——locale 直接落请求体（R24 S4，服务端 resolveNewUserLocale 优先用它）。
+  assert.deepEqual(calls.request?.body, {
+    token: "invite-token-abc",
+    nickname: "carol",
+    password: "hunter2-strong-pass",
+    locale: "en-US"
+  });
+  assert.deepEqual(calls.bootstrap, {
+    nickname: "WorkHub Desktop",
+    device_name: "WorkHub Desktop",
+    platform: "desktop",
+    locale: "en-US"
+  });
   assert.equal(values.get("workhub_client_token"), "device-token-that-is-long-enough-111111");
   assert.ok(removed.includes("workhub_desktop_logged_out"));
   assert.equal(values.get("workhub_desktop_identity_created"), "1");
@@ -739,6 +775,7 @@ test("runDesktopInviteAccept propagates an expired/invalid invite error and does
       runDesktopInviteAccept({
         client,
         invite: { token: "expired", nickname: "carol", password: "hunter2-strong-pass" },
+        locale: "zh-CN",
         storage
       }),
     (error) => error instanceof WorkHubApiError && error.status === 404
@@ -795,7 +832,12 @@ test("runDesktopCredentialLogin does not touch the first-run identity marker eit
   };
   const { storage, values } = fakeReadWriteStorage({ workhub_desktop_identity_created: "1" });
 
-  await runDesktopCredentialLogin({ client, credentials: { email: "alice@example.com", password: "hunter2-strong-pass" }, storage });
+  await runDesktopCredentialLogin({
+    client,
+    credentials: { email: "alice@example.com", password: "hunter2-strong-pass" },
+    locale: "zh-CN",
+    storage
+  });
 
   // 标记原样留着——login 不是首次注册，但也不该替用户清掉一个可能仍然有效的"还没建过项目"事实。
   assert.equal(values.get("workhub_desktop_identity_created"), "1");

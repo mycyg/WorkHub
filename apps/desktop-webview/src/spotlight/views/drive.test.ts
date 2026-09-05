@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { DriveItemVM, DrivePageVM } from "@workhub/contracts";
+import { workHubLocaleStorageKey, type DriveItemVM, type DrivePageVM } from "@workhub/contracts";
 
 import { driveHtml, driveNoProjectsEmptyHtml, drivePreviewPanelHtml, driveResourceHref, driveTargetItemIdFromRoute, fetchDrivePreview } from "./drive.js";
 
@@ -167,6 +167,10 @@ test("desktop drive preview refreshes a missing desktop token before retrying", 
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   const originalFetch = globalThis.fetch;
   const stored = new Map<string, string>();
+  // R24 S4（桌面端接线）：预置一份已保存的语言偏好，让 refreshDriveResourceToken 的 locale 解析
+  // （resolveDesktopRequestLocale）走「已保存偏好」这一支，不依赖真实 globalThis.navigator.language
+  // （Node 测试运行器自带一个随系统区域设置变化的 navigator，不能让断言踩这个不确定性）。
+  stored.set(workHubLocaleStorageKey, "en-US");
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: {
@@ -182,12 +186,12 @@ test("desktop drive preview refreshes a missing desktop token before retrying", 
     }
   });
 
-  const calls: { url: string; headers: Headers }[] = [];
+  const calls: { url: string; headers: Headers; body?: unknown }[] = [];
   Object.defineProperty(globalThis, "fetch", {
     configurable: true,
     value: async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
-      calls.push({ url, headers: new Headers(init?.headers) });
+      calls.push({ url, headers: new Headers(init?.headers), body: init?.body ? JSON.parse(init.body as string) : undefined });
       if (url.endsWith("/preview") && calls.length === 1) {
         return new Response(JSON.stringify({ ok: false, error: { code: "not_identified", message: "not identified" } }), { status: 401 });
       }
@@ -215,6 +219,13 @@ test("desktop drive preview refreshes a missing desktop token before retrying", 
     assert.equal(calls.length, 3);
     assert.equal(calls[2]?.headers.get("X-WorkHub-Client-Token"), "fresh-desktop-token");
     assert.equal(calls[2]?.headers.get("X-YQGL-Client-Token"), "fresh-desktop-token");
+    // 令牌自愈请求同样带上 locale（R24 S4）：该昵称若真是首次建号，服务端据此定 preferred_locale。
+    assert.deepEqual(calls[1]?.body, {
+      nickname: "WorkHub Desktop",
+      device_name: "WorkHub Desktop",
+      platform: "desktop",
+      locale: "en-US"
+    });
   } finally {
     if (originalWindow) {
       Object.defineProperty(globalThis, "window", originalWindow);

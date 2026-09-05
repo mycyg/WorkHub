@@ -3,6 +3,8 @@ import { test } from "node:test";
 
 import { WorkHubApiError } from "@workhub/api-client/client";
 
+import { applyIdentityLocale } from "@workhub/web-runtime";
+
 import {
   describeDesktopRebindError,
   renderDesktopRebindScreenHtml,
@@ -93,12 +95,13 @@ test("runDesktopRebind bootstraps with the entered nickname, stores the token an
   const result = await runDesktopRebind({
     client: fakeRebindClient(calls),
     nickname: "  alice  ",
+    locale: "zh-CN",
     storage
   });
 
   assert.equal(result.client_token, "device-token-that-is-long-enough-000000");
-  // 昵称去空白后提交给 desktop-bootstrap（identify + 设备注册一步到位）。
-  assert.deepEqual(calls, [{ nickname: "alice", device_name: "WorkHub Desktop", platform: "desktop" }]);
+  // 昵称去空白后提交给 desktop-bootstrap（identify + 设备注册一步到位）；locale 原样转发（R24 S4）。
+  assert.deepEqual(calls, [{ nickname: "alice", device_name: "WorkHub Desktop", platform: "desktop", locale: "zh-CN" }]);
   // 令牌落库；登出标记被清（重新绑定成功后不该再停在登出态）。
   assert.equal(values.get("workhub_client_token"), "device-token-that-is-long-enough-000000");
   assert.ok(removed.includes("workhub_desktop_logged_out"));
@@ -109,7 +112,7 @@ test("runDesktopRebind rejects an empty nickname without calling bootstrap", asy
   const { storage } = fakeReadWriteStorage();
 
   await assert.rejects(() =>
-    runDesktopRebind({ client: fakeRebindClient(calls), nickname: "   ", storage })
+    runDesktopRebind({ client: fakeRebindClient(calls), nickname: "   ", locale: "zh-CN", storage })
   );
   assert.equal(calls.length, 0, "empty nickname must not hit the network");
 });
@@ -123,7 +126,7 @@ test("runDesktopRebind propagates a backend failure and does not clear the logge
   const { storage, values, removed } = fakeReadWriteStorage({ workhub_desktop_logged_out: "1" });
 
   await assert.rejects(() =>
-    runDesktopRebind({ client, nickname: "alice", storage })
+    runDesktopRebind({ client, nickname: "alice", locale: "zh-CN", storage })
   );
   assert.equal(values.get("workhub_client_token"), undefined, "no token stored on failed re-bind");
   assert.equal(removed.includes("workhub_desktop_logged_out"), false, "logged-out flag stays on failure");
@@ -136,7 +139,7 @@ test("runDesktopRebind fails loudly when bootstrap returns no client token", asy
   const { storage, values } = fakeReadWriteStorage();
 
   await assert.rejects(() =>
-    runDesktopRebind({ client, nickname: "alice", storage })
+    runDesktopRebind({ client, nickname: "alice", locale: "zh-CN", storage })
   );
   assert.equal(values.get("workhub_client_token"), undefined);
 });
@@ -199,7 +202,7 @@ test("runDesktopRebind marks the first-run identity flag when desktop-bootstrap 
   };
   const { storage } = fakeReadWriteStorage();
 
-  const result = await runDesktopRebind({ client, nickname: "dana", storage });
+  const result = await runDesktopRebind({ client, nickname: "dana", locale: "zh-CN", storage });
 
   assert.equal(result.created, true);
   assert.equal(isDesktopFirstRun(storage), true);
@@ -208,10 +211,59 @@ test("runDesktopRebind marks the first-run identity flag when desktop-bootstrap 
 test("runDesktopRebind does not mark first-run when the nickname resolves to an existing account", async () => {
   const { storage } = fakeReadWriteStorage({ workhub_desktop_identity_created: "1" });
 
-  const result = await runDesktopRebind({ client: fakeRebindClient([]), nickname: "alice", storage });
+  const result = await runDesktopRebind({ client: fakeRebindClient([]), nickname: "alice", locale: "zh-CN", storage });
 
   assert.equal(result.created, false);
   // 复用已有账号：即便这台设备之前残留过一个（可能属于另一个昵称的）首启标记，也要如实清掉——
   // 这个账号是不是真的第一次用，以这次探明的事实为准，不能让陈旧标记继续误导落地页。
   assert.equal(isDesktopFirstRun(storage), false);
+});
+
+// —— R24 S4（桌面端接线）：英文用户首启不再被服务端旧默认翻译成中文 —— //
+// 走查复现的原始 bug：服务端新建用户 preferred_locale 曾恒为 zh-CN，applyIdentityLocale 又以服务端为
+// 准——英文系统的用户首启后整个桌面端被翻成中文。修法是让桌面端把当前应用语言原样报给
+// desktop-bootstrap；这条测试锁死两件事：①请求体确实带上了 en-US（不再是走查里那次「压根没传」），
+// ②即便服务端现在如实回填 en-US，下一轮 applyIdentityLocale 也不会把它拉回 zh-CN。
+test("runDesktopRebind reports en-US for an English-locale first run, and the server's honoring it survives applyIdentityLocale", async () => {
+  const calls: Array<unknown> = [];
+  const client: DesktopRebindClient = {
+    bootstrapDesktop: async (payload) => {
+      calls.push(payload);
+      // 模拟已修复的服务端（.agents/notes/implemented/2026-09-05-bootstrap-idempotency-and-locale.md）：
+      // 真正新建用户时尊重请求体里的 locale，不再无条件写死 zh-CN。
+      return {
+        identity: {
+          id: "u10",
+          nickname: "erin",
+          display_name: "erin",
+          created: true,
+          locale: "en-US",
+          preferences: { locale: "en-US" },
+          is_admin: false,
+          availability_status: "online"
+        },
+        device: {
+          id: "d10",
+          user_id: "u10",
+          device_name: "WorkHub Desktop",
+          platform: "desktop",
+          created_at: "2026-09-05T00:00:00.000Z",
+          updated_at: "2026-09-05T00:00:00.000Z"
+        },
+        client_token: "device-token-that-is-long-enough-444444"
+      };
+    }
+  };
+  const { storage } = fakeReadWriteStorage();
+
+  // 首启：bindDesktopRebindScreen 把挂屏时已经解出的应用语言（英文系统 → en-US）原样传下来。
+  const result = await runDesktopRebind({ client, nickname: "erin", locale: "en-US", storage });
+
+  assert.equal(result.client_token, "device-token-that-is-long-enough-444444");
+  assert.deepEqual(calls, [{ nickname: "erin", device_name: "WorkHub Desktop", platform: "desktop", locale: "en-US" }]);
+
+  // reload 后的下一次 boot：browserLocale() 解出的 fallback 仍是 en-US（同一套系统语言），
+  // applyIdentityLocale 以服务端回的 identity 为准——必须仍是 en-US，绝不能被拉回 zh-CN。
+  const nextLocale = applyIdentityLocale({ locale: "en-US", preferences: { locale: "en-US" } }, "en-US");
+  assert.equal(nextLocale, "en-US");
 });

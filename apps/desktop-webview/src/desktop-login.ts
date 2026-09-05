@@ -285,9 +285,15 @@ export function isPasswordModeBootstrapError(error: unknown): boolean {
 //   2) client.bootstrapDesktop：密码模式下据会话换 client_token（服务端忽略 nickname 字段，用会话身份签发设备令牌）；
 //   3) 令牌落 localStorage，并清掉登出标记，后续同昵称流（getClientToken 每请求实时读它走 header）。
 // 明文密码只作为请求体传给 login，绝不进 URL/query。
+// R24 S4（桌面端接线）：login 本身没有 locale 字段（PasswordLoginRequest 契约没有——登录操作的是
+// 已存在用户，服务端不会因为登录请求改写其偏好）；exchange 用的 bootstrapDesktop 在密码模式下也是
+// 已存在用户（凭会话解析，不建号，见 apps/api/src/routes/auth.ts），同样不读 locale。这里仍然带上
+// input.locale——additive 且服务端在这个分支忽略它，与另外三个建号函数保持同一份请求体形状，不用
+// 记「哪几个 bootstrapDesktop 调用有 locale、哪几个没有」。
 export async function runDesktopCredentialLogin(input: {
   client: DesktopLoginClient;
   credentials: PasswordLoginRequest;
+  locale: WorkHubLocale;
   deviceName?: string;
   platform?: string;
   storage: Pick<Storage, "setItem" | "removeItem">;
@@ -298,7 +304,8 @@ export async function runDesktopCredentialLogin(input: {
     // 密码模式服务端据会话身份签发令牌、忽略 nickname；仍按 schema 传一个占位值（nickname 必填）。
     nickname: "WorkHub Desktop",
     device_name: input.deviceName?.trim() || "WorkHub Desktop",
-    platform: input.platform ?? "desktop"
+    platform: input.platform ?? "desktop",
+    locale: input.locale
   });
   if (!exchange?.client_token) {
     throw new Error("desktop exchange did not return a client token");
@@ -317,20 +324,31 @@ export async function runDesktopCredentialLogin(input: {
 //      「建你的第一个项目」引导卡（见 desktop-first-run.ts）。exchange 响应里的 created 不能用：密码模式
 //      分支服务端写死 toIdentityResponse(user, false)（这个字段在那个分支的语义是「这次 bootstrap 调用
 //      有没有新建用户」，不是「这个用户是不是新的」，两者在密码模式下永远是后者）。
+// R24 S4（桌面端接线）：register 总是新建用户——locale 直接落 register 请求体（PasswordRegisterRequest
+// 契约已带这个可选字段，服务端 resolveNewUserLocale 优先用它，见 apps/api/src/routes/auth.ts）。
+// exchange 那次 bootstrapDesktop 调用同 runDesktopCredentialLogin 顶注的理由，一并带上 input.locale
+// （密码模式该分支忽略它，纯粹为了四个 bootstrapDesktop 调用点形状统一）。
 export async function runDesktopCredentialRegister(input: {
   client: DesktopLoginClient;
   registration: PasswordRegisterRequest;
+  locale: WorkHubLocale;
   deviceName?: string;
   platform?: string;
   storage: Pick<Storage, "setItem" | "removeItem">;
 }): Promise<{ client_token: string; created: boolean }> {
   const email = input.registration.email.trim();
   const nickname = input.registration.nickname.trim();
-  const registered = await input.client.register({ email, nickname, password: input.registration.password });
+  const registered = await input.client.register({
+    email,
+    nickname,
+    password: input.registration.password,
+    locale: input.locale
+  });
   const exchange = await input.client.bootstrapDesktop({
     nickname: "WorkHub Desktop",
     device_name: input.deviceName?.trim() || "WorkHub Desktop",
-    platform: input.platform ?? "desktop"
+    platform: input.platform ?? "desktop",
+    locale: input.locale
   });
   if (!exchange?.client_token) {
     throw new Error("desktop exchange did not return a client token");
@@ -346,9 +364,13 @@ export async function runDesktopCredentialRegister(input: {
 // 具名 client 方法（同 apps/web/src/browser.ts submitInviteAccept 的既有取舍，走裸 client.request——
 // 不为单个批次特性扩大 WorkHubApiClient 的具名方法面），响应形状与 register/login 一致（IdentityResponse，
 // 已登记进 api-client 的 RAW_JSON_RESPONSE_PATHS）。created 同样恒为 true，同 register 分支的理由。
+// R24 S4（桌面端接线）：接受邀请总是新建用户——locale 直接落这条裸 request 的请求体
+// （InviteAcceptRequest 契约已带这个可选字段，服务端 resolveNewUserLocale 优先用它，见
+// apps/api/src/routes/auth.ts）。exchange 那次 bootstrapDesktop 调用同上两个函数顶注的理由。
 export async function runDesktopInviteAccept(input: {
   client: DesktopLoginClient;
   invite: InviteAcceptRequest;
+  locale: WorkHubLocale;
   deviceName?: string;
   platform?: string;
   storage: Pick<Storage, "setItem" | "removeItem">;
@@ -358,13 +380,15 @@ export async function runDesktopInviteAccept(input: {
     body: JSON.stringify({
       token: input.invite.token.trim(),
       nickname: input.invite.nickname.trim(),
-      password: input.invite.password
+      password: input.invite.password,
+      locale: input.locale
     })
   });
   const exchange = await input.client.bootstrapDesktop({
     nickname: "WorkHub Desktop",
     device_name: input.deviceName?.trim() || "WorkHub Desktop",
-    platform: input.platform ?? "desktop"
+    platform: input.platform ?? "desktop",
+    locale: input.locale
   });
   if (!exchange?.client_token) {
     throw new Error("desktop exchange did not return a client token");
@@ -626,6 +650,7 @@ export function bindDesktopCredentialGate(
     void runDesktopCredentialLogin({
       client: input.client,
       credentials: { email, password },
+      locale: input.locale,
       ...(input.deviceName ? { deviceName: input.deviceName } : {}),
       ...(input.platform ? { platform: input.platform } : {}),
       storage: input.storage
@@ -664,6 +689,7 @@ export function bindDesktopCredentialGate(
     void runDesktopCredentialRegister({
       client: input.client,
       registration: { email, nickname, password },
+      locale: input.locale,
       ...(input.deviceName ? { deviceName: input.deviceName } : {}),
       ...(input.platform ? { platform: input.platform } : {}),
       storage: input.storage
@@ -702,6 +728,7 @@ export function bindDesktopCredentialGate(
     void runDesktopInviteAccept({
       client: input.client,
       invite: { token, nickname, password },
+      locale: input.locale,
       ...(input.deviceName ? { deviceName: input.deviceName } : {}),
       ...(input.platform ? { platform: input.platform } : {}),
       storage: input.storage

@@ -155,6 +155,19 @@ WorkHubLocale`（`DesktopBootstrapRequest` 已经是从 `@workhub/contracts`
   请求体，才能让这批服务端修复真正在桌面端生效；这批修复即使桌面端不接线也不
   会更差——没有 `locale` 字段时行为退回 `Accept-Language`/旧默认，与修复前一致，
   纯粹是新增可选项。
+- **桌面端接线（TS 侧已收口，工位 wt-g，分支 r24/g-desktop-locale-wiring）**：上面这条遗留的
+  `apps/desktop-webview` 一侧已补上——`desktop-rebind.ts` 的 `runDesktopRebind`、
+  `desktop-login.ts` 的 `runDesktopCredentialLogin`/`runDesktopCredentialRegister`/
+  `runDesktopInviteAccept` 新增必填 `locale` 参数，由调用方（`bindDesktopRebindScreen`/
+  `bindDesktopCredentialGate`）原样转发它们挂屏时已用 `browserLocale()` 解出的应用语言；
+  `spotlight/views/drive.ts` 的令牌自愈路径（`refreshDriveResourceToken`）没有现成的已解析
+  locale 可转发，改用新抽的 `desktop-locale-source.ts`（`resolveDesktopRequestLocale`）就地解
+  一份——优先级同样是「已保存偏好 > navigator.language」，但刻意不复用 `normalizeWorkHubLocale`：
+  navigator.language 认不出是不是中文时这里落 en-US，与本 Agent Note 「Alternatives considered」
+  一节里 `resolveNewUserLocale` 拒绝复用 `normalizeWorkHubLocale` 的同一个理由（它对无法识别的值
+  兜底 zh-CN，方向相反）。**仍未接线**：Tauri 侧
+  `client-tauri/src-tauri/src/locale.rs` 的 `DEFAULT_WORKHUB_LOCALE` 是否该读系统语言——按本轮
+  并行分工交给同批改 client-tauri 系统语言的另一工位，不在本工位范围内。
 - `getOrCreateActiveByNickname` 的仓库接口签名多了一个可选第三参数，是
   additive 变更（TS 结构类型下少参数的实现依然赋值兼容），但测试里的
   `MemoryUsers` 假仓库已经同步更新以真正尊重这个参数——若后续还有其它自定义假
