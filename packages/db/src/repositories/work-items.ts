@@ -243,7 +243,10 @@ export type StoredWorkItemDetailRows = {
   projectWorkspaceId: string | null;
   projectArchived: boolean | null;
   projectDeletedAt: Date | null;
-  assignments: Array<{ userId: string; role: string }>;
+  // R23 P4（R20 P2A 端点上界面）：详情页要把「谁被指派了」渲出来，就不能只给 userId——裸 uuid 对读者
+  // 没有意义。nickname 走 users 左连接同源取（与 claimedByNickname 一样），可选：旧的内存仓库/夹具不带
+  // 它照常编译，服务层按缺省处理（不渲名字、只渲角色行）。权限判定只吃 userId/role，多一个字段无影响。
+  assignments: Array<{ userId: string; role: string; nickname?: string | null }>;
   acceptance: WorkItemAcceptanceRow[];
   agentSteps: WorkItemAgentStepRow[];
   latestProposal: WorkItemProposalRow | null;
@@ -1265,9 +1268,16 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
 
       const detailWorkspaceId = row.workItem.workspaceId ?? row.projectWorkspaceId;
       const [assignments, acceptance, latestProposals, acceptedDeliverables, evidenceBindings, driveSourceComments, meetingSourceInsights, latestTaskPlans] = await Promise.all([
+        // R23 P4：左连 users 顺手把展示名取回来（与 claimedByNickname 同源），详情页的指派名单才不用吐裸 uuid。
+        // 左连接：账号被硬删/查不到时 nickname 为 null，指派行本身仍然要显示（不能因为名字缺席就把人吞掉）。
         db
-          .select({ userId: workItemAssignments.userId, role: workItemAssignments.role })
+          .select({
+            userId: workItemAssignments.userId,
+            role: workItemAssignments.role,
+            nickname: users.nickname
+          })
           .from(workItemAssignments)
+          .leftJoin(users, eq(users.id, workItemAssignments.userId))
           .where(eq(workItemAssignments.workItemId, workItemId)),
         db
           .select()

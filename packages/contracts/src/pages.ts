@@ -715,7 +715,11 @@ export const projectHomePageVmSchema = z.object({
   // R14 批 GH（07-gh-design.md §5.1）：GitHub 活动展示切片，additive/optional——省略时表示"没绑定
   // repo 或绑定了但暂无活动"，不是渲染空列表/占位区块（诚实缺省，同 army/empty_state 的手法）。
   // 取数失败同样降级为省略，不拖垮整个项目主页（照 army pill 的 try/catch 静默降级）。
-  github_activities: z.array(githubActivityVmSchema).optional()
+  github_activities: z.array(githubActivityVmSchema).optional(),
+  // R23 P4（R20 P2A 端点上界面）：能不能归档/删除这个项目——服务端用与 POST /api/projects/:id/{archive,delete}
+  // 完全相同的判定算出（管理员且确证同工作区，或项目所有者），前端据此决定「项目生命周期」分区渲不渲。
+  // 可选（additive）：旧夹具不带时按 false 处理，不会给没权限的人渲出会 403 的按钮。
+  can_manage_lifecycle: z.boolean().optional()
 });
 export type ProjectHomePageVM = z.infer<typeof projectHomePageVmSchema>;
 
@@ -1243,7 +1247,22 @@ export const workItemDetailVmSchema = z.object({
   })).default([]),
   actions: z.object({
     create_proposal_draft: actionSpecSchema.optional()
-  }).default({})
+  }).default({}),
+  // R23 P4（R20 P2A 端点上界面）：详情页要能渲「认领」「指派给…」两个动作，就得先知道当前这个人有没有
+  // 资格——两个布尔由服务端用与 POST /api/workitems/:id/{claim,assign} 完全相同的权限判定算出
+  // （canClaimWorkItem / canManageWorkItemAssignees），前端据此决定按钮渲不渲，不自己猜规则。
+  // 可选（additive）：旧夹具/旧客户端不带这两个字段时，前端按「不渲按钮」处理，不会凭空多出假入口。
+  can_claim: z.boolean().optional(),
+  can_assign: z.boolean().optional(),
+  // R23 P4（R20 P2A 端点上界面）：指派名单（work_item_assignments 的行）。POST /api/workitems/:id/assign
+  // 写的是这张表、**不是** claimed_by——详情页若只渲「现在谁在跟」（认领人），指派完页面会毫无变化，
+  // 那就是个看不出结果的假动作。nickname 与认领人一样由服务端 join users 同源下发，前端不吐裸 user id。
+  // 省略＝这个事项没有任何指派（诚实缺省，不渲空名单区块，同 github_activities 的手法）。
+  assignees: z.array(z.object({
+    user_id: idSchema,
+    nickname: z.string().min(1).max(120).optional(),
+    role: z.enum(["lead", "collaborator"])
+  })).max(50).optional()
 });
 export type WorkItemDetailVM = z.infer<typeof workItemDetailVmSchema>;
 

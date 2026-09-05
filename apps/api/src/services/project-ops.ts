@@ -49,6 +49,35 @@ function toProjectVm(project: Pick<ProjectRow, "id" | "workspaceId" | "name" | "
   };
 }
 
+// R23 P4（R20 P2A 端点上界面）：判定被提到模块层并导出——项目主页 VM（services/project-home-pages.ts）
+// 要按同一把尺子算 can_manage_lifecycle，让「渲不渲归档/删除按钮」与「POST 会不会 403」严格同源。
+// 两处若各写一份，迟早漂移成「看得见点了却 403」或「有权限却没入口」。
+// 仅管理员或项目所有者，且同租户作用域内（workspace/org 不跨界）。
+// R21 加固（NULL 旁路收口）：旧写法「任一侧为空则不设限」让 workspaceId 为 NULL 的孤儿项目对任意租户的
+// 管理员敞开——跨租户 admin 可归档/删除别家（或无主）的项目。收紧为：admin 特权只在「项目 workspaceId
+// 非空且与 actor 同租户」时生效，孤儿 NULL 行 admin 一律不得管理；owner 路径保留（ownerUserId===actor
+// 即可管理自己的 NULL workspace 项目——所有权本身就是最强归属证明），但仍受「两侧都非空且不等→false」
+// 的先决拒绝约束。
+export function canManageProjectLifecycle(
+  project: Pick<WorkItemProjectRow, "workspaceId" | "orgId" | "ownerUserId">,
+  actor: AuthActor
+): boolean {
+  // 先决拒绝：项目与 actor 的 workspace/org 两侧都非空且不等 → 明确跨租户，直接拒。
+  if (project.workspaceId && actor.workspaceId && project.workspaceId !== actor.workspaceId) {
+    return false;
+  }
+  if (project.orgId && actor.orgId && project.orgId !== actor.orgId) {
+    return false;
+  }
+  if (actor.isAdmin) {
+    // admin 特权要求「确证同租户」：两侧 workspaceId 都非空且相等。NULL 不算同租户——孤儿行谁的
+    // admin 都不该拿它当自家资产处置。
+    return Boolean(project.workspaceId && actor.workspaceId && project.workspaceId === actor.workspaceId);
+  }
+  const actorUserId = actor.userId ?? actor.id;
+  return project.ownerUserId != null && project.ownerUserId === actorUserId;
+}
+
 export function createProjectOpsService(deps: ProjectOpsServiceDependencies): ProjectOpsService {
   const now = deps.now ?? (() => new Date());
 
@@ -70,35 +99,12 @@ export function createProjectOpsService(deps: ProjectOpsServiceDependencies): Pr
     }
   }
 
-  // 仅管理员或项目所有者，且同租户作用域内（workspace/org 不跨界）。
-  // R21 加固（NULL 旁路收口）：旧写法「任一侧为空则不设限」让 workspaceId 为 NULL 的孤儿项目对任意租户的
-  // 管理员敞开——跨租户 admin 可归档/删除别家（或无主）的项目。收紧为：admin 特权只在「项目 workspaceId
-  // 非空且与 actor 同租户」时生效，孤儿 NULL 行 admin 一律不得管理；owner 路径保留（ownerUserId===actor
-  // 即可管理自己的 NULL workspace 项目——所有权本身就是最强归属证明），但仍受「两侧都非空且不等→false」
-  // 的先决拒绝约束。
-  function canManageLifecycle(project: WorkItemProjectRow, actor: AuthActor): boolean {
-    // 先决拒绝：项目与 actor 的 workspace/org 两侧都非空且不等 → 明确跨租户，直接拒。
-    if (project.workspaceId && actor.workspaceId && project.workspaceId !== actor.workspaceId) {
-      return false;
-    }
-    if (project.orgId && actor.orgId && project.orgId !== actor.orgId) {
-      return false;
-    }
-    if (actor.isAdmin) {
-      // admin 特权要求「确证同租户」：两侧 workspaceId 都非空且相等。NULL 不算同租户——孤儿行谁的
-      // admin 都不该拿它当自家资产处置。
-      return Boolean(project.workspaceId && actor.workspaceId && project.workspaceId === actor.workspaceId);
-    }
-    const actorUserId = actor.userId ?? actor.id;
-    return project.ownerUserId != null && project.ownerUserId === actorUserId;
-  }
-
   async function requireManageableProject(projectId: string, actor: AuthActor): Promise<WorkItemProjectRow> {
     const project = await deps.projectLookup.findProjectById(projectId);
     if (!project) {
       throw new ProjectServiceError(404, "project_not_found", "没有找到这个项目。");
     }
-    if (!canManageLifecycle(project, actor)) {
+    if (!canManageProjectLifecycle(project, actor)) {
       throw new ProjectServiceError(403, "project_forbidden", "你没有权限管理这个项目。");
     }
     return project;

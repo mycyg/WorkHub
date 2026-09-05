@@ -51,7 +51,13 @@ import {
 } from "@workhub/contracts";
 import type { ProviderRegistry } from "@workhub/agent/providers";
 
-import { ASSIGNMENT_ROLES, canViewProjectDrive, canViewWorkItemRecord } from "@workhub/permissions";
+import {
+  ASSIGNMENT_ROLES,
+  canClaimWorkItem,
+  canManageWorkItemAssignees,
+  canViewProjectDrive,
+  canViewWorkItemRecord
+} from "@workhub/permissions";
 
 import type { AuthActor } from "../middleware/auth.js";
 import { parseOutputContract } from "../pages/output-contract.js";
@@ -1504,7 +1510,14 @@ function taskPlanAgentTeamToVm(
 function buildWorkItemDetail(
   rows: StoredWorkItemDetailRows,
   locale: WorkHubLocale = "zh-CN",
-  options: { includeAcceptedDeliverableRestore?: boolean; includeSourceProposalDraftAction?: boolean } = {}
+  options: {
+    includeAcceptedDeliverableRestore?: boolean;
+    includeSourceProposalDraftAction?: boolean;
+    // R23 P4（R20 P2A 端点上界面）：详情页「认领 / 指派给…」两个动作的资格。只有 detailPage 这条路径
+    // 会算（它拿得到 actor），其它构造路径（新建/更新后回显）省略——省略即前端不渲按钮，不是渲个会 403 的。
+    canClaim?: boolean;
+    canAssign?: boolean;
+  } = {}
 ): WorkItemDetailVM {
   const latestProposal = rows.latestProposal
     ? deliverableChangeManifestSchema.safeParse(rows.latestProposal.diffManifest)
@@ -1581,6 +1594,22 @@ function buildWorkItemDetail(
     }
     : undefined;
   const sourceContext = driveSourceContext ?? meetingSourceContext ?? observerSourceContext;
+  // R23 P4（R20 P2A 端点上界面）：指派名单摊平成 VM 行。lead 排在 collaborator 前面（谁主责是读者第一
+  // 眼要找的），同角色内按展示名稳定排序，页面刷新两次不会自己换顺序。上限 50 与契约一致——真被指派
+  // 50 人以上时截断，不让一个异常事项把详情页撑爆。
+  const assigneeList = [...rows.assignments]
+    .map((assignment) => ({
+      user_id: assignment.userId,
+      ...(assignment.nickname ? { nickname: assignment.nickname } : {}),
+      role: assignment.role === "lead" ? ("lead" as const) : ("collaborator" as const)
+    }))
+    .sort((left, right) => {
+      if (left.role !== right.role) {
+        return left.role === "lead" ? -1 : 1;
+      }
+      return (left.nickname ?? left.user_id).localeCompare(right.nickname ?? right.user_id);
+    })
+    .slice(0, 50);
   const taskPlan = taskPlanToVm(rows.taskPlan);
   const agentTeam = taskPlanAgentTeamToVm(rows.taskPlan, locale);
   // R13 批 P4：conversation_observer 没有评论/纪要正文可转草稿——三路显式分支，第三路（观察者来源）
@@ -1640,7 +1669,14 @@ function buildWorkItemDetail(
     })),
     actions: {
       ...(createProposalAction ? { create_proposal_draft: createProposalAction } : {})
-    }
+    },
+    ...(options.canClaim === undefined ? {} : { can_claim: options.canClaim }),
+    ...(options.canAssign === undefined ? {} : { can_assign: options.canAssign }),
+    // R23 P4（R20 P2A 端点上界面）：指派名单。POST /api/workitems/:id/assign 写 work_item_assignments，
+    // 与 claimed_by 是两回事——不把它端出来，指派成功后详情页会毫无变化（看不出结果的假动作）。
+    // 空名单省略字段（诚实缺省，前端不渲空区块）；未知角色的历史行按 collaborator 收口，
+    // 不让一条脏数据把整页 VM 校验打挂。
+    ...(assigneeList.length > 0 ? { assignees: assigneeList } : {})
   }, "work-item.detail");
 }
 
@@ -2408,9 +2444,17 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     async detailPage(input) {
       const rows = await requireDetail(input.workItemId, input.actor);
       const canMutate = canMutateWorkItem(rows, input.actor);
+      // R23 P4：认领/指派资格用与 POST /api/workitems/:id/{claim,assign} 服务层完全相同的谓词算
+      // （@workhub/permissions 的 canClaimWorkItem / canManageWorkItemAssignees，作用域同样只按 workspace——
+      // 见 work-item-assignment.ts 里 permissionScope 的说明），前端据此决定按钮渲不渲。
+      const accessRecord = detailToWorkItemAccessRecord(rows);
+      const permissionUser = { id: input.actor.userId ?? input.actor.id, isAdmin: input.actor.isAdmin };
+      const permissionScope = input.actor.workspaceId ? { workspaceId: input.actor.workspaceId } : undefined;
       return buildWorkItemDetail(rows, input.locale, {
         includeAcceptedDeliverableRestore: canMutate,
-        includeSourceProposalDraftAction: canMutate
+        includeSourceProposalDraftAction: canMutate,
+        canClaim: canClaimWorkItem(accessRecord, permissionUser, permissionScope),
+        canAssign: canManageWorkItemAssignees(accessRecord, permissionUser, permissionScope)
       });
     },
 

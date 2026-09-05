@@ -1033,3 +1033,76 @@ test("R20 DSK-UX (R19-5): api client DELETEs a permission policy against /api/pe
   assert.equal(policy.id, "policy-1");
   assert.deepEqual(calls, [{ url: "/api/permissions/policy-1", method: "DELETE", body: undefined }]);
 });
+
+// R23 P4（R20 P2A 端点上界面）：指派/认领/评论/归档/软删/工作区审计七个端点此前一个类型化客户端方法
+// 都没有——前端因此永远调不到它们。这里钉死每个方法打的 URL、方法与请求体形状（尤其是 id 必须 URL 编码、
+// 无请求体的动作不许硬塞一个空 body）。
+test("R23 P4: api client wires the R20 P2A work item / project / workspace-audit endpoints", async () => {
+  const calls: Array<{ url: string; method: string; body: string | undefined }> = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push({
+        url: String(input),
+        method: init?.method ?? "GET",
+        body: typeof init?.body === "string" ? init.body : undefined
+      });
+      return new Response(JSON.stringify({ ok: true, data: {} }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  await client.assignWorkItem("wi 1", { assignee_user_id: "u-9", role: "lead" });
+  await client.claimWorkItem("wi 1");
+  await client.listWorkItemComments("wi 1");
+  await client.createWorkItemComment("wi 1", { body: "看过了，可以推进" });
+  await client.archiveProject("p 1");
+  await client.deleteProject("p 1");
+
+  assert.deepEqual(calls, [
+    { url: "/api/workitems/wi%201/assign", method: "POST", body: JSON.stringify({ assignee_user_id: "u-9", role: "lead" }) },
+    { url: "/api/workitems/wi%201/claim", method: "POST", body: undefined },
+    { url: "/api/workitems/wi%201/comments", method: "GET", body: undefined },
+    { url: "/api/workitems/wi%201/comments", method: "POST", body: JSON.stringify({ body: "看过了，可以推进" }) },
+    { url: "/api/projects/p%201/archive", method: "POST", body: undefined },
+    { url: "/api/projects/p%201/delete", method: "POST", body: undefined }
+  ]);
+  // 留言正文只走请求体，绝不出现在 URL 里。
+  assert.ok(!calls[3]!.url.includes("可以推进"));
+});
+
+test("R23 P4: workspace audit query string carries filters and paging, never a workspace id", async () => {
+  const urls: string[] = [];
+  const client = createApiClient({
+    fetchFn: async (input) => {
+      urls.push(String(input));
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          data: {
+            generated_at: "2026-09-05T09:00:00.000Z",
+            workspace_id: "11111111-1111-4111-8111-111111111111",
+            audit_logs: [],
+            page: { limit: 25, offset: 0, count: 0 }
+          }
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+  });
+
+  const page = await client.listWorkspaceAudit();
+  assert.equal(page.page.limit, 25);
+  await client.listWorkspaceAudit({ limit: 25, offset: 50 });
+  await client.listWorkspaceAudit({ action: "project.archived", actor_user_id: "u-9", from: "2026-09-01T00:00:00.000Z" });
+
+  assert.deepEqual(urls, [
+    // 无参数时不拼一个空 "?"。
+    "/api/workspace/audit",
+    "/api/workspace/audit?limit=25&offset=50",
+    "/api/workspace/audit?actor_user_id=u-9&action=project.archived&from=2026-09-01T00%3A00%3A00.000Z"
+  ]);
+  // 工作区恒取自认证身份（服务端硬隔离）——客户端不许把 workspace 塞进查询串。
+  assert.ok(urls.every((url) => !url.includes("workspace_id=")));
+});

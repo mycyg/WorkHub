@@ -3653,6 +3653,22 @@ const workItemDetailResponseSchema = {
         create_proposal_draft: actionSpecSchema
       },
       additionalProperties: false
+    },
+    can_claim: { type: "boolean" },
+    can_assign: { type: "boolean" },
+    // R23 P4：指派名单（POST /api/workitems/:id/assign 写入的 work_item_assignments 行）。省略＝无人被指派。
+    assignees: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          user_id: { type: "string", format: "uuid" },
+          nickname: { type: "string" },
+          role: { type: "string", enum: ["lead", "collaborator"] }
+        },
+        required: ["user_id", "role"],
+        additionalProperties: false
+      }
     }
   },
   additionalProperties: false
@@ -3724,7 +3740,8 @@ const projectHomePageResponseSchema = {
       },
       additionalProperties: false
     },
-    empty_state: { type: "string", enum: ["no_open_work"] }
+    empty_state: { type: "string", enum: ["no_open_work"] },
+    can_manage_lifecycle: { type: "boolean" }
   },
   additionalProperties: false
 } as const;

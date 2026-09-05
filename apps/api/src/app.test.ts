@@ -2657,6 +2657,8 @@ test("Drive and Project page OpenAPI responses document their page VM envelopes"
   ]);
   assert.deepEqual(Object.keys(projectData?.properties ?? {}).sort(), [
     "actions",
+    // R23 P4（R20 P2A 端点上界面）：项目主页据它渲不渲「归档 / 删除」——服务端用与两个写端点相同的谓词算。
+    "can_manage_lifecycle",
     "drive",
     "empty_state",
     "generated_at",

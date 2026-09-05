@@ -11,6 +11,17 @@ import type {
   BudgetPolicyUpdate,
   BootstrapProjectRequest,
   BootstrapProjectResult,
+  // R23 P4（R20 P2A 端点上界面）：指派/认领、工作项评论、项目归档/软删、工作区审计流的请求与响应契约。
+  AssignWorkItemRequest,
+  AssignWorkItemResult,
+  ClaimWorkItemResult,
+  CreateWorkItemCommentRequest,
+  WorkItemComment,
+  WorkItemCommentsResult,
+  ArchiveProjectResult,
+  DeleteProjectResult,
+  WorkspaceAuditListVM,
+  WorkspaceAuditQuery,
   ClientDeviceRegisterRequest,
   ClientDeviceRegisterResponse,
   ClientDeviceResponse,
@@ -398,6 +409,13 @@ export type WorkHubApiClient = {
   // 服务端已有 GET /api/workitems/:id/audit（fail-closed 走 detailPage 同一套可见性），此前没有
   // 任何类型化客户端方法能调用它——前端因此从来没有拉过这份数据、更别提渲染。
   getWorkItemAuditTimeline: (workItemId: string) => Promise<AuditTimelineVM>;
+  // R23 P4（R20 P2A 端点上界面）：工作项指派/认领与评论流四个端点此前零客户端方法、两端零界面。
+  // assign 需要「管理员 / 提交人 / 现任 lead」资格，claim 只在事项还没人认领且处于可认领状态时成立——
+  // 两个资格都由详情页 VM 的 can_assign / can_claim 下发，前端不自己判权限。
+  assignWorkItem: (workItemId: string, payload: AssignWorkItemRequest) => Promise<AssignWorkItemResult>;
+  claimWorkItem: (workItemId: string) => Promise<ClaimWorkItemResult>;
+  listWorkItemComments: (workItemId: string) => Promise<WorkItemCommentsResult>;
+  createWorkItemComment: (workItemId: string, payload: CreateWorkItemCommentRequest) => Promise<WorkItemComment>;
   getProposal: (id: string) => Promise<Proposal>;
   reviewProposal: (id: string, payload: ReviewProposalRequest, options?: PageRequestOptions) => Promise<ProposalReviewResult>;
   mergeProposal: (id: string, payload?: MergeProposalRequest, options?: PageRequestOptions) => Promise<ProposalMergeResult>;
@@ -456,6 +474,13 @@ export type WorkHubApiClient = {
   revokePermissionPolicy?: (id: string) => Promise<PermissionPolicy>;
   pilotDay1Metrics: (options?: PilotDay1MetricsRequestOptions) => Promise<PilotDay1MetricsSnapshot>;
   listProjects: () => Promise<ProjectListVM>;
+  // R23 P4（R20 P2A 端点上界面）：项目生命周期两个破坏性动作。归档＝从团队项目列表隐去（可恢复语义由
+  // 服务端定义），删除＝落墓碑。两者都只有管理员/项目所有者能做，项目主页据 can_manage_lifecycle 渲入口。
+  archiveProject: (projectId: string) => Promise<ArchiveProjectResult>;
+  deleteProject: (projectId: string) => Promise<DeleteProjectResult>;
+  // R23 P4（R20 P2A 端点上界面）：工作区级审计流（仅管理员）。工作区不由客户端指定——服务端恒取自
+  // 认证身份，这里只能传过滤与分页参数。
+  listWorkspaceAudit: (query?: WorkspaceAuditQuery) => Promise<WorkspaceAuditListVM>;
   replayAgentRun: (runId: string, options?: PageRequestOptions) => Promise<ReplayTraceVM>;
   // R14 批 MEM（记忆可见可治理）：用户记忆治理面——本人可读写，管理员也不能代读/代改他人记忆。
   // 必需字段（集成收口改定，与 search 同口径）：可选方法会诱导 ?. 调用静默吞；两个穷举 mock 的存根
