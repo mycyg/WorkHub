@@ -52,8 +52,8 @@ macOS 上 `open workhub://…`（应用已在跑）会同时触发两件事：de
 
 ### 4. Rust 侧没有统一日志出口（BX-01）
 
-诊断全是散落的 `eprintln!`（main.rs 20 处、sse_worker.rs 2 处）。开发时从终端跑还看得到，打包成
-`.app` 双击启动后 stderr 没有任何人在读——用户报「深链没反应 / Cuu 一直离线」时，现场没有任何可回收
+诊断全是散落的 `eprintln!`（S4 台账记的是 main.rs 20 处 + sse_worker.rs 2 处，逐行数实为 26 + 2）。
+开发时从终端跑还看得到，打包成 `.app` 双击启动后 stderr 没有任何人在读——用户报「深链没反应 / Cuu 一直离线」时，现场没有任何可回收
 的证据。依赖树里只有 `log` / `tracing` 两个传递依赖（都没有配套 file appender），`tauri-plugin-log`
 根本不在树里。
 
@@ -68,15 +68,17 @@ macOS 上 `open workhub://…`（应用已在跑）会同时触发两件事：de
 
 新增 `window_controls::ShellNavigatePayload` 与纯函数 `shell_navigate_payload(plan)`：
 
-| 计划 | 是否广播 navigate |
+| 计划 | 是否发 navigate |
 | --- | --- |
 | `focus_main_route(_, "/settings")`（深链/托盘/系统通知） | 是，payload `{route, label, source, reason}` |
 | `show_main_window(_)`（route = `/`） | **否**——显示窗口不是导航 |
 | `hide_main_window(_)`（无 route） | 否 |
 | 桌宠窗 / 工作台窗的任何计划 | 否（只有聚焦盒消费 navigate；工作台走 `deep-link` 通道） |
 
-发送从 `app.emit`（全局广播）改成 `app.emit_to(label, …)`——桌宠/工作台从不消费 navigate，广播只是平白
-扩大事件面。payload 从裸字符串换成结构体，让接收端能判断这条导航是谁、为什么发的。
+发送从 `app.emit`（全局广播）改成 `app.emit_to(label, …)` 指名收件人——桌宠/工作台从不消费 navigate，
+事件面越窄越好。需要注意 Tauri 的这层过滤只作用于**显式限定了 target 的**监听器，JS 侧 `listen()` 默认
+注册的是 `Any`，仍会收到；所以 payload 里同时带 `label`，接收端要自证时有据可依。payload 从裸字符串换成
+结构体，也让接收端能判断这条导航是谁、为什么发的。
 
 webview 侧把破坏性默认值翻过来，契约收敛成三条：
 
@@ -128,8 +130,9 @@ JSON 在读系统语言之前就被 Tauri 消费了，写死任何一种语言�
 影响应用）；翻篇（跨天/首次写）时才扫目录做清理，不是每行都扫；启动第一行日志里写上日志目录本身，
 用户报障时「日志在哪」有答案。时间戳自算（Howard Hinnant `civil_from_days`），纯函数带单测。
 
-22 处 `eprintln!` 全部收敛，只剩三处是正确的例外：日志出口自己还没装好时（`init_shell_log_dir` 内部、
-以及 setup 里解析日志目录失败那一支）。
+基线（`d3657ecc`）上 main.rs 26 处 + sse_worker.rs 2 处 `eprintln!` 全部收敛。剩下的都是正确的例外：
+main.rs 1 处（setup 里连日志目录都解析不出来时，此刻还没有别的出口）、shell_log.rs 3 处（自身的 stderr
+镜像与 `init_shell_log_dir` 建目录失败）。S4 台账当时数的是「20 处」，实际逐行数为 26。
 
 ### 5. 托盘：macOS 单色 template 图标，像素算出来而不是打包 PNG
 
