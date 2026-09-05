@@ -108,6 +108,22 @@ test("desktop proposal detail makes navigation, merge consequence, and skipped c
   assert.match(html, /证据引用：未传入证据引用，等待人工确认/u);
 });
 
+test("API-02 desktop proposal detail labels self-reported checks", () => {
+  const html = detailHtml(proposalVm({
+    manifest: {
+      ...proposalVm().manifest,
+      checks: [
+        { id: "exists", label: "交付物存在", status: "passed", detail: "已生成。", source: "self_reported" },
+        { id: "verified", label: "服务端核验", status: "passed", source: "verified" }
+      ]
+    }
+  }), true);
+
+  assert.match(html, /交付物存在（提交者自报）/u);
+  assert.match(html, /服务端核验/u);
+  assert.doesNotMatch(html, /服务端核验（提交者自报）/u);
+});
+
 test("desktop reviewed proposal detail exposes merge as a second explicit step", () => {
   const html = detailHtml(proposalVm({
     status: "reviewed",

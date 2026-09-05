@@ -6,11 +6,16 @@
 
 import { createApiClient } from "@workhub/api-client/client";
 import type { IdentityResponse, WorkHubApiClient } from "@workhub/api-client";
-import { defaultPorts } from "@workhub/config/ports";
 import type { WorkHubLocale } from "@workhub/ui/gold-path";
 import { applyIdentityLocale, browserLocale, setDocumentLocale } from "@workhub/web-runtime";
 
 import { isStaleDesktopClientTokenError } from "../auth-recovery.js";
+import {
+  clearDesktopClientToken,
+  readDesktopClientToken,
+  writeDesktopClientToken
+} from "../desktop-client-token.js";
+import { resolveDesktopApiBaseFromStorage } from "../desktop-api-base.js";
 import {
   bindDesktopCredentialGate,
   isPasswordModeBootstrapError,
@@ -18,32 +23,21 @@ import {
   rememberDesktopAuthModeHint,
   runDesktopBootstrapWithLock
 } from "../desktop-login.js";
-import { resolveDesktopTauriInvoke } from "../desktop-window-controls.js";
+import { resolveDesktopTauriInvoke, takeDesktopPendingDeepLink } from "../desktop-window-controls.js";
 import { consumePendingWorkbenchDeepLink } from "./pending-deep-link.js";
 import { mountWorkbenchShell, renderWorkbenchDocumentHead, type WorkbenchShellHandle } from "./shell.js";
 import { isWorkbenchWindowControlPlan, parseWorkbenchDeepLinkPlan, parseWorkbenchRoute } from "./route.js";
 
-const CLIENT_TOKEN_KEYS = ["workhub_client_token", "yqgl_client_token"] as const;
 const DESKTOP_LOGGED_OUT_FLAG = "workhub_desktop_logged_out";
 
-// 照 browser.ts:128 的 clientToken()——先读新键，兼容期回退旧的 yqgl_* 键。
+// DSK-06：令牌读写统一走 ../desktop-client-token.ts（明文 localStorage 的已知风险见该文件头部注释）。
 export function clientToken(storage: Pick<Storage, "getItem"> = window.localStorage): string | undefined {
-  for (const key of CLIENT_TOKEN_KEYS) {
-    const value = storage.getItem(key);
-    if (value) {
-      return value;
-    }
-  }
-  return undefined;
+  return readDesktopClientToken(storage);
 }
 
-// 照 browser.ts:136 的 resolveDesktopApiBase()——本机复制一份小 helper，不 import browser.ts。
+// 照 browser.ts 的 resolveDesktopApiBase()——同一个收口 helper（DSK-05），不 import browser.ts。
 export function resolveWorkbenchApiBase(storage: Pick<Storage, "getItem"> = window.localStorage): string {
-  const override = storage.getItem("workhub_api_base");
-  if (override && override.trim().length > 0) {
-    return override.trim().replace(/\/+$/u, "");
-  }
-  return `http://127.0.0.1:${defaultPorts.api}`;
+  return resolveDesktopApiBaseFromStorage(storage);
 }
 
 export function isWorkbenchDesktopLoggedOut(storage: Pick<Storage, "getItem"> = window.localStorage): boolean {
@@ -86,7 +80,7 @@ export async function ensureWorkbenchClientToken(
       identity = await client.me();
     } catch (error) {
       if (isStaleDesktopClientTokenError(error)) {
-        window.localStorage.removeItem("workhub_client_token");
+        clearDesktopClientToken(window.localStorage);
         if ((await bootstrapWorkbenchClientTokenWithLock(client)) === "needs-credentials") {
           return { identity: null, gate: "needs-credentials" };
         }
@@ -111,7 +105,7 @@ async function bootstrapWorkbenchClientToken(client: WorkHubApiClient): Promise<
       platform: "desktop"
     });
     if (result?.client_token) {
-      window.localStorage.setItem("workhub_client_token", result.client_token);
+      writeDesktopClientToken(window.localStorage, result.client_token);
       rememberDesktopAuthModeHint(window.localStorage, "nickname");
       return "ready";
     }
@@ -156,6 +150,20 @@ export function resolveWorkbenchTauriListen(scope: unknown = globalThis): Workbe
 
 // 只处理 windowControl.label === "workbench" 的深链 plan：解析 route 里的 projectId/conversationId，
 // 切当前工作台窗口的项目上下文。非工作台目标（主窗深链）忽略——那条广播其它窗口也会收到。
+function applyWorkbenchDeepLinkPayload(
+  shell: Pick<WorkbenchShellHandle, "selectProject">,
+  payload: unknown
+): void {
+  const plan = parseWorkbenchDeepLinkPlan(payload);
+  if (!plan || !isWorkbenchWindowControlPlan(plan)) {
+    return;
+  }
+  const context = parseWorkbenchRoute(plan.route);
+  if (context?.projectId) {
+    shell.selectProject(context.projectId, context.conversationId);
+  }
+}
+
 export function bindWorkbenchDeepLinkListener(
   shell: Pick<WorkbenchShellHandle, "selectProject">,
   scope: unknown = globalThis
@@ -169,18 +177,33 @@ export function bindWorkbenchDeepLinkListener(
   }
   void Promise.resolve(
     listen("deep-link", (event) => {
-      const plan = parseWorkbenchDeepLinkPlan(event.payload);
-      if (!plan || !isWorkbenchWindowControlPlan(plan)) {
-        return;
-      }
-      const context = parseWorkbenchRoute(plan.route);
-      if (context?.projectId) {
-        shell.selectProject(context.projectId, context.conversationId);
-      }
+      applyWorkbenchDeepLinkPayload(shell, event.payload);
     })
   ).catch((error) => {
     console.warn("WorkHub workbench: could not subscribe to the deep-link event", error);
   });
+}
+
+// MRG-23：订阅解决的是「窗口活着之后到来的事件」；但 workbench 窗是 create:false 按需建，Rust 侧建窗后
+// 立刻 emit 的 "deep-link" 几乎总是赶在 webview 订阅之前（冷启动 URL / single-instance argv /
+// focus_system_notification 三条入口都没有发起窗可以预写 localStorage stash，见 pending-deep-link.ts
+// 顶部「覆盖不到的场景」）。壳层现在把最后一条深链计划按目标窗 label 暂存（TTL 15s），这里 boot 完
+// 取回一次补上。与 applyPendingWorkbenchDeepLink 互补：那条管「本 App 自己发起」的路径，这条管外部唤起。
+export async function applyReplayedShellDeepLink(
+  shell: Pick<WorkbenchShellHandle, "selectProject">,
+  options: { enabled?: boolean; takePendingDeepLink?: () => Promise<unknown> } = {}
+): Promise<void> {
+  // 与 applyPendingWorkbenchDeepLink 同口径（MRG-22）：登出态不消费——selectProject 会被 loggedOut
+  // 守卫拦下。壳侧 stash 是一次性的，取了就被清；登出时宁可不取（留在壳侧等 TTL 过期），
+  // 也不在这里消费掉一个没法落地的目标。
+  if (options.enabled === false) {
+    return;
+  }
+  const take = options.takePendingDeepLink ?? (() => takeDesktopPendingDeepLink());
+  const plan = await take().catch(() => undefined);
+  if (plan) {
+    applyWorkbenchDeepLinkPayload(shell, plan);
+  }
 }
 
 // G-desktop 止血批 3（跨窗口登出广播）：登出动作发生在别的窗口（browser.ts 主窗 / spotlight 设置
@@ -276,6 +299,8 @@ async function boot(): Promise<void> {
   // MRG-22：登出态不消费深链 stash（consume 是一次性删除，而 selectProject 会被 loggedOut 守卫拦下，
   // 照删就把目标吞了）。留着它——重新登录后恢复路径 reload → 干净 boot 会在这里原样接回（TTL 15s 兜底）。
   applyPendingWorkbenchDeepLink(shell, window.localStorage, undefined, { enabled: !loggedOutAtBoot });
+  // MRG-23：壳层暂存的深链重放（窗口创建期间错过的 emit），同口径登出态不消费。
+  void applyReplayedShellDeepLink(shell, { enabled: !loggedOutAtBoot });
   // 运行期广播：这个窗口一直开着、之后才收到别的窗口发起的登出——见 bindWorkbenchLoggedOutListener
   // 顶部注释。showLoggedOut() 本身幂等，两条路径（这里的运行期监听 + 上面的 boot 时快照检查）都指向
   // 同一个方法，不会重复触发副作用。

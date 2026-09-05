@@ -118,6 +118,9 @@ export const users = pgTable(
   {
     id: id(),
     nickname: varchar("nickname", { length: 64 }).notNull(),
+    // CORE-02：bearer 凭据只存 sha256 哈希（64 hex，varchar(128) 足够），与同库 sessions/client_devices
+    // 的哈希纪律一致。过渡期库里可能还有旧明文行——读取侧（repositories/users.ts findActiveByCookieToken）
+    // 双读并在命中明文时就地升级为哈希。
     cookieToken: varchar("cookie_token", { length: 128 }).notNull(),
     preferredLocale: varchar("preferred_locale", { length: 16 }).$type<WorkHubLocale>().notNull().default("zh-CN"),
     availabilityStatus: varchar("availability_status", { length: 16 }).notNull().default("free"),
@@ -1579,8 +1582,12 @@ export const branches = pgTable(
     workItemId: uuid("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
     actorKind: varchar("actor_kind", { length: 16 }).notNull(),
     actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    // CORE-15：刻意无 FK——agent_runs.branch_id 已 FK 指向 branches（run 先入队、branch 后建再回填
+    // run.branchId），此处再加 FK 会形成 branches↔agent_runs 环；trace 链由应用层对齐，允许悬空。
     agentRunId: uuid("agent_run_id"),
     kind: varchar("kind", { length: 16 }).notNull().default("work"),
+    // CORE-15：刻意无 FK——snapshots.branch_id 已 FK 指向 branches，此处再加 FK 会形成
+    // branches↔snapshots 环（branch 行先于 base 快照创建，run 起步后由 agent-runner 回填本列）。
     baseSnapshotId: uuid("base_snapshot_id"),
     headRef: varchar("head_ref", { length: 128 }),
     status: varchar("status", { length: 16 }).notNull().default("open"),
@@ -1608,6 +1615,8 @@ export const proposals = pgTable(
     diffManifest: jsonb("diff_manifest").$type<DeliverableChangeManifest>().notNull(),
     // R13 批 P1.5：nullable——历史行/未跑过统计的允许为 null，读侧不得冒充 0（见类型定义处注释）。
     diffStatsJson: jsonb("diff_stats_json").$type<ProposalDiffStats>(),
+    // CORE-15：刻意无 FK——confidence_records.proposal_id 已 FK 指向 proposals（置信度可先于
+    // proposal 落库、proposal 开启后再回填本列），此处再加 FK 会形成 proposals↔confidence_records 环。
     confidenceId: uuid("confidence_id"),
     mergeSnapshotId: uuid("merge_snapshot_id"),
     openedByKind: varchar("opened_by_kind", { length: 16 }).notNull(),
@@ -1883,6 +1892,8 @@ export const agentSteps = pgTable(
     inputJson: jsonb("input_json").$type<JsonObject>().notNull().default({}),
     outputExcerpt: text("output_excerpt"),
     controlSignal: varchar("control_signal", { length: 16 }),
+    // CORE-15：刻意无 FK——snapshotId 也可能来自纯文件快照通道（agent-runner 的 snapshot hook 可整体
+    // 覆写，无 persistence 时快照不落 snapshots 表），加 FK 会拒掉这类 step 行；trace 链允许悬空。
     snapshotId: uuid("snapshot_id"),
     createdAt: createdAt()
   },
@@ -2462,6 +2473,10 @@ export const proactiveIntents = pgTable(
 
 export const workHubTables = {
   users,
+  // CORE-12：补收此前漏注册的 5 张表——session/凭据/邀请/成员/预算预留都在活跃 graph 里，
+  // 漏收会让以 workHubTables 为准的 schema 漂移测试对它们失明。
+  userCredentials,
+  sessions,
   userMemories,
   // R14 集成收口：ai_feedback 补注册进活跃 graph（施工分支漏注册，F02 计数以注册表为准）。
   aiFeedback,
@@ -2473,6 +2488,8 @@ export const workHubTables = {
   userProfiles,
   orgs,
   workspaces,
+  workspaceMemberships,
+  userInvites,
   projects,
   backgroundJobs,
   knowledgeDocuments,
@@ -2527,6 +2544,7 @@ export const workHubTables = {
   usageRecords,
   costLedgerEntries,
   budgetPolicies,
+  budgetReservations,
   confidenceRecords,
   escalationEvents,
   snapshots,

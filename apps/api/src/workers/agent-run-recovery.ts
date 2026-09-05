@@ -34,7 +34,7 @@ export type AgentRunRecoveryScheduler = {
 };
 
 export function createAgentRunRecoveryScheduler(options: {
-  queue: Pick<AgentRunQueue, "recoverExpiredClaims" | "runNext"> & Partial<Pick<AgentRunQueue, "recoverUnsettledTaskPlanRuns">>;
+  queue: Pick<AgentRunQueue, "recoverExpiredClaims" | "runNext"> & Partial<Pick<AgentRunQueue, "recoverUnsettledTaskPlanRuns" | "startNext">>;
   intervalMs?: number;
   autoDrain?: boolean;
   maxDrainPerTick?: number;
@@ -95,8 +95,13 @@ export function createAgentRunRecoveryScheduler(options: {
         // 额外加锁），直到 runNext() 返回 null（队列已空）或撞到硬上限 maxDrainPerTick 为止，效果等价于
         // 「min(可 claim 的 queued 存量, maxDrainPerTick)」。死信 run（status==='failed'）从不会被
         // claimNextQueued 选中（它的查询谓词固定 status='queued'），天然被排除出 drain，不需要额外判断。
+        // INF-07：drain 优先走 startNext（只认领、后台启动，不等 run 跑完）——旧路径逐条 await runNext
+        // 会把最多 maxDrainPerTick 个 run 的完整执行串行进 tick（单个 run 上限 300s，一个 tick 可堵
+        // 40 分钟，期间过期租约回收停摆）。queue 未提供 startNext（旧测试桩/自定义队列）时退回 runNext，
+        // 保持原有串行语义不变。
+        const drainNext = options.queue.startNext ?? (() => options.queue.runNext());
         while (drained < maxDrainPerTick) {
-          const run = await options.queue.runNext();
+          const run = await drainNext();
           if (!run) {
             break;
           }

@@ -31,6 +31,9 @@ test("first click arms (relabels, does NOT execute); second click executes and d
   armConfirmButton(btn, opts);
   assert.equal(confirmed, 1, "second click within the window executes");
   assert.equal(btn.dataset["r9ConfirmArmed"], undefined, "armed flag cleared after confirm");
+  // MRG-27：确认后立即复原原始文案——异步动作失败（不重渲）也不该永久停在确认文案上。
+  assert.equal(btn.textContent, "移出", "label restored to the original right after confirm");
+  assert.equal(btn.dataset["r20ConfirmOriginalLabel"], undefined, "label snapshot invalidated after confirm");
 });
 
 test("timeout reverts the label and clears the armed state when never confirmed", () => {

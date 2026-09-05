@@ -48,7 +48,9 @@ import {
 // R14 批 FEEDBACK：新增 ai_feedback 一张表（迁移 0058），graph 涨到 69。
 // R14 批 GH：新增 project_github_bindings + project_github_activities 两张表（迁移 0060），graph 涨到 71。
 // R15 批 E1：新增 project_milestones + work_item_dependencies 两张表（迁移 0064），graph 涨到 74。
-const F02_TABLE_COUNT = 75;
+// CORE-12：补收此前漏注册的 5 张既有表（user_credentials/sessions/user_invites/workspace_memberships/
+// budget_reservations），graph 涨到 80——漂移测试从此对这 5 张表同样生效。
+const F02_TABLE_COUNT = 80;
 
 type WorkHubTable = (typeof workHubTables)[keyof typeof workHubTables];
 
@@ -151,6 +153,12 @@ test("F02 declares the full table graph expected by the plan", () => {
   assert.equal(tableNames.includes("usage_records"), true);
   assert.equal(tableNames.includes("cost_ledger_entries"), true);
   assert.equal(tableNames.includes("budget_policies"), true);
+  // CORE-12：此前漏收、现已补进 workHubTables 的 5 张表，逐一钉住防止再次漏注册。
+  assert.equal(tableNames.includes("user_credentials"), true);
+  assert.equal(tableNames.includes("sessions"), true);
+  assert.equal(tableNames.includes("user_invites"), true);
+  assert.equal(tableNames.includes("workspace_memberships"), true);
+  assert.equal(tableNames.includes("budget_reservations"), true);
   assert.equal(tableNames.includes("user_memories"), true);
   assert.equal(tableNames.includes("team_skills"), true);
   assert.equal(tableNames.includes("task_plans"), true);

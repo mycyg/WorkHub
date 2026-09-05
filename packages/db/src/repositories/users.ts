@@ -1,11 +1,17 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 
 import type { WorkHubLocale } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
 import { users, workspaceMemberships } from "../schema/index.js";
+
+// CORE-02：users.cookie_token 是 bearer 凭据，落库一律 sha256 哈希（与同库 sessions.token_hash /
+// client_devices.token_hash 的纪律一致）——一次 DB 读泄漏不再等于全员可冒充。
+export function hashCookieToken(token: string): string {
+  return createHash("sha256").update(token, "utf8").digest("hex");
+}
 
 export type UserAuthRow = typeof users.$inferSelect;
 
@@ -98,12 +104,27 @@ export function createUserRepository(db: WorkHubDb): UserRepository {
       // H1：nickname/cookieToken 是部分唯一索引(WHERE deleted_at IS NULL)，同值可有多行(含墓碑)。
       // 必须把 isNull(deletedAt) 推进 WHERE(对齐索引谓词)，否则 limit(1) 无 ORDER BY 可能取到软删墓碑、
       // 再被 JS 后置过滤成 null → 重新注册过的昵称/令牌偶发登录失败。
+      // CORE-02（过渡期）：优先按 sha256(入参) 匹配（新写法）；落空再按明文匹配旧行——命中即升级为
+      // 哈希（客户端 cookie 值不变，下次请求走哈希分支），随后返回行的 cookieToken 已是哈希值。
+      const tokenHash = hashCookieToken(cookieToken);
       const rows = await db
         .select()
         .from(users)
-        .where(and(eq(users.cookieToken, cookieToken), isNull(users.deletedAt)))
+        .where(and(
+          or(eq(users.cookieToken, tokenHash), eq(users.cookieToken, cookieToken)),
+          isNull(users.deletedAt)
+        ))
         .limit(1);
-      return rows[0] ?? null;
+      const row = rows[0] ?? null;
+      if (!row || row.cookieToken === tokenHash) {
+        return row;
+      }
+      const upgraded = await db
+        .update(users)
+        .set({ cookieToken: tokenHash, updatedAt: new Date() })
+        .where(and(eq(users.id, row.id), isNull(users.deletedAt)))
+        .returning();
+      return upgraded[0] ?? { ...row, cookieToken: tokenHash };
     },
 
     async findActiveByNickname(nickname) {
@@ -121,7 +142,8 @@ export function createUserRepository(db: WorkHubDb): UserRepository {
         .values({
           id: input.id ?? randomUUID(),
           nickname: input.nickname,
-          cookieToken: input.cookieToken,
+          // CORE-02：bearer 凭据只存 sha256；签发侧用返回行的哈希值作 cookie（读取侧兼容）。
+          cookieToken: hashCookieToken(input.cookieToken),
           preferredLocale: input.preferredLocale ?? "zh-CN",
           isAdmin: input.isAdmin ?? false
         })
@@ -146,7 +168,7 @@ export function createUserRepository(db: WorkHubDb): UserRepository {
         .values({
           id: randomUUID(),
           nickname,
-          cookieToken: newCookieToken,
+          cookieToken: hashCookieToken(newCookieToken),
           preferredLocale: "zh-CN",
           isAdmin: false
         })
@@ -166,7 +188,8 @@ export function createUserRepository(db: WorkHubDb): UserRepository {
     async rotateCookieToken(userId, cookieToken) {
       const rows = await db
         .update(users)
-        .set({ cookieToken, updatedAt: new Date() })
+        // CORE-02：轮换同样只落哈希——旧 cookie 立即失效（库里已没有它的明文/旧哈希）。
+        .set({ cookieToken: hashCookieToken(cookieToken), updatedAt: new Date() })
         .where(eq(users.id, userId))
         .returning();
       const user = rows[0] ?? null;

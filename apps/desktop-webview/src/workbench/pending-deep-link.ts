@@ -15,10 +15,11 @@
 // 于是：发起 invoke 之前，先把目标写进 localStorage（同步、零 IPC 往返，不存在竞态）；workbench 窗口
 // boot() 时读一次、命中就消费并立即清除（一次性令牌，不参与后续 reconcile）。
 //
-// 覆盖不到的场景（诚实说明，写进批 2 汇报）：应用完全没启动时，操作系统直接用 workhub:// URL 唤起
+// 覆盖不到的场景（诚实说明）：应用完全没启动时，操作系统直接用 workhub:// URL 唤起
 // （用户点了系统级的深链，不经过本 App 自己的 Spotlight UI）——这条路径没有"发起窗口"能提前写
-// localStorage，Rust 侧仍会在前端订阅前把事件发出去、照样丢。这需要 Rust 侧补一个"窗口就绪后重放
-// 最后一条 deep-link"的机制，不在本批范围（client-tauri/** 禁止改动）。
+// localStorage。MRG-23 已在 Rust 侧补上「窗口就绪后按 label 认领暂存的最后一条 deep-link」
+// （main.rs handle_deep_link_plan 暂存 + take_pending_deep_link 认领，workbench boot 的
+// applyReplayedShellDeepLink 消费）——本 stash 机制仍保留，覆盖「本 App 自己发起」路径（同步、零 IPC）。
 
 const PENDING_DEEP_LINK_STORAGE_KEY = "workhub_workbench_pending_deep_link";
 // 冷启动路径：invoke → 原生窗口创建 → webview 加载 → boot() 跑到 consume 这一步，正常应在几百毫秒内

@@ -3,9 +3,7 @@ import { test } from "node:test";
 
 import {
   commandRegistry,
-  matchCommands,
-  renderCommandPalette,
-  resolveCommandAction
+  matchCommands
 } from "./command-palette.js";
 
 test("registry covers every backend capability surface", () => {
@@ -94,53 +92,24 @@ test("ranking: exact/prefix beats substring beats subsequence", () => {
   assert.equal(matchCommands("zzzzzz", "en").length, 0);
 });
 
-test("resolveCommandAction returns the routing descriptor", () => {
-  assert.deepEqual(resolveCommandAction("intake"), { kind: "start-flow", target: "intake" });
-  assert.deepEqual(resolveCommandAction("drive"), { kind: "open-window", target: "drive" });
-  assert.equal(resolveCommandAction("nope" as never), undefined);
-});
+// WIRE-05：renderCommandPalette/resolveCommandAction/commandPaletteCss（玻璃命令面板浮层 UI）已随死代码
+// 清理删除——文案/关键词纪律改为直接断言注册表数据（launcher 只消费 commandRegistry + matchCommands）。
+test("R9.7 command registry uses new-task wording instead of dispatch copy", () => {
+  const intake = commandRegistry.find((command) => command.id === "intake");
 
-test("render emits a glass palette with routable rows + input + badges", () => {
-  const html = renderCommandPalette({ query: "", locale: "zh-CN", badges: { approvals: 3 } });
-  assert.match(html, /data-wh-command-palette/u);
-  assert.match(html, /data-command-input/u);
-  // 每行带可路由的 data 属性
-  assert.match(html, /data-command-id="intake"[^>]*data-command-kind="start-flow"[^>]*data-command-target="intake"/u);
-  assert.match(html, /data-command-id="drive"[^>]*data-command-target="drive"/u);
-  // 徽标计数（如审批 3）
-  assert.match(html, /wh-cmd-badge">3</u);
-  // 用设计系统玻璃 + 入场动画类
-  assert.match(html, /ds-glass-strong/u);
-  assert.match(html, /ds-anim-spring-in/u);
-  // 离线安全图标（内联 svg，非 emoji）
-  assert.match(html, /<svg viewBox="0 0 24 24"/u);
-  assert.doesNotMatch(html, /📥|📝|⚖️|💰/u);
-});
-
-test("render escapes the query (no HTML injection via the search box)", () => {
-  const html = renderCommandPalette({ query: '"><img src=x onerror=alert(1)>', locale: "en" });
-  assert.doesNotMatch(html, /<img src=x/u);
-  assert.match(html, /&quot;&gt;&lt;img/u);
-});
-
-test("R9.7 command palette uses new-task wording instead of dispatch copy", () => {
-  const zh = renderCommandPalette({ query: "", locale: "zh-CN" });
-  const en = renderCommandPalette({ query: "", locale: "en" });
-
-  assert.doesNotMatch(zh, /派活/u);
-  assert.doesNotMatch(en, /Dispatch|dispatch/u);
-  assert.match(zh, /新任务 \/ 交给 AI/u);
-  assert.match(en, /New task/u);
+  assert.doesNotMatch(intake?.label["zh-CN"] ?? "", /派活/u);
+  assert.doesNotMatch(intake?.label.en ?? "", /Dispatch|dispatch/u);
+  assert.match(intake?.label["zh-CN"] ?? "", /新任务 \/ 交给 AI/u);
+  assert.match(intake?.label.en ?? "", /New task/u);
   assert.equal(matchCommands("dispatch", "en")[0]?.command.id, "intake");
 });
 
 test("R9.7 desktop agents command uses Cuu squad wording instead of Agent Army copy", () => {
-  const zh = renderCommandPalette({ query: "军团", locale: "zh-CN" });
-  const en = renderCommandPalette({ query: "agents", locale: "en" });
+  const agents = commandRegistry.find((command) => command.id === "agents");
 
-  assert.match(zh, /Cuu 的小队/u);
-  assert.match(en, /Cuu&#39;s squad/u);
-  assert.doesNotMatch(zh + en, /Agent Army/u);
+  assert.match(agents?.label["zh-CN"] ?? "", /Cuu 的小队/u);
+  assert.match(agents?.label.en ?? "", /Cuu's squad/u);
+  assert.doesNotMatch(`${agents?.label["zh-CN"]}${agents?.label.en}`, /Agent Army/u);
   assert.equal(matchCommands("army", "en")[0]?.command.id, "agents");
   assert.equal(matchCommands("agent army", "en")[0]?.command.id, "agents");
 });

@@ -365,7 +365,15 @@ export function createAgentRunRepository(db: WorkHubDb): AgentRunRepository {
         .set(runUpdateValues(run))
         .where(and(
           eq(agentRuns.id, run.runId),
-          fencingWorkerId ? eq(agentRuns.claimedBy, fencingWorkerId) : undefined
+          fencingWorkerId ? eq(agentRuns.claimedBy, fencingWorkerId) : undefined,
+          // INF-05（取消竞态）：cancelActiveRun 只翻 status、不摘 claimedBy，故 claimedBy fencing 本身
+          // 挡不住「用户已取消、worker 随后落终态」的覆盖（cancelled 被写回 succeeded）。执行路径落终态时
+          // 追加 `status='running'` 谓词：行已不在 running（取消/其它终态）即命中 0 行，调用方走
+          // returnPersistedAfterLostClaim 出口。仅限 fencing 的执行路径——enqueue 补偿（failUnstartedRun，
+          // 无 fencing）等合法地从 queued 直落 failed 的写入不受影响。
+          fencingWorkerId && terminalStatuses.includes(run.status)
+            ? eq(agentRuns.status, "running")
+            : undefined
         ))
         .returning();
       return rows[0] ?? null;

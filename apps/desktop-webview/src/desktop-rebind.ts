@@ -13,8 +13,10 @@
 import type { WorkHubApiClient } from "@workhub/api-client";
 import type { WorkHubLocale } from "@workhub/ui/gold-path";
 
-// 与 browser.ts / desktop-login.ts 同一套令牌键 + 登出标记键——拿到新令牌后落键、清登出标记。
-const CLIENT_TOKEN_KEY = "workhub_client_token";
+import { writeDesktopClientToken } from "./desktop-client-token.js";
+
+// 与 browser.ts / desktop-login.ts 同一套登出标记键 + 令牌收口（DSK-06，desktop-client-token.ts）——
+// 拿到新令牌后落键、清登出标记。
 const DESKTOP_LOGGED_OUT_FLAG = "workhub_desktop_logged_out";
 
 // 重绑只需要客户端的 bootstrapDesktop 一个能力——收窄依赖便于测试注入假客户端（同 DesktopLoginClient 取舍）。
@@ -48,7 +50,7 @@ export async function runDesktopRebind(input: {
   if (!result?.client_token) {
     throw new Error("desktop re-bind did not return a client token");
   }
-  input.storage.setItem(CLIENT_TOKEN_KEY, result.client_token);
+  writeDesktopClientToken(input.storage, result.client_token);
   input.storage.removeItem(DESKTOP_LOGGED_OUT_FLAG);
   return { client_token: result.client_token };
 }

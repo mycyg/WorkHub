@@ -34,6 +34,7 @@ import {
 } from "@workhub/contracts";
 
 import { createDesktopShellEventBridge, parseDesktopShellSseStatusPayload } from "./shell-events.js";
+import { readDesktopClientToken } from "./desktop-client-token.js";
 import type { DesktopShellSystemNotificationPlan } from "./shell-events.js";
 import { buildDispatchAskBubbleCopy, buildWorkbenchDeepLinkHref } from "./workbench/cuu-bubble-deeplink.js";
 import {
@@ -572,11 +573,14 @@ export function subscribeDesktopCuuAgentRunStream(input: {
   timers?: {
     setTimeout?: (handler: () => void, delayMs: number) => TimerId;
     clearTimeout?: (id: TimerId) => void;
+    // DSK-11：兜底轮询的「SSE 活跃让位」判定需要时钟；默认 Date.now。
+    now?: () => number;
   };
 }): DesktopCuuRunStreamSubscription {
   const runId = input.run.run_id;
   const setTimeoutFn = input.timers?.setTimeout ?? ((handler, delayMs) => globalThis.setTimeout(handler, delayMs));
   const clearTimeoutFn = input.timers?.clearTimeout ?? ((id: TimerId) => globalThis.clearTimeout(id));
+  const nowFn = input.timers?.now ?? (() => Date.now());
   const EventSourceCtor = input.EventSourceCtor ?? resolveDesktopCuuEventSource();
   if (!EventSourceCtor) {
     input.onStatus?.({ state: "unavailable", runId, reason: "event_source_unavailable" });
@@ -611,6 +615,11 @@ export function subscribeDesktopCuuAgentRunStream(input: {
   let fallbackRefreshTimer: TimerId | undefined;
   // L#84 / R20 P1-03：兜底轮询带退避，连续失败只退避到慢节拍（封顶 60s）继续轮询，**永不永久停摆**。
   let consecutiveRefreshFailures = 0;
+  // DSK-11：最近一次 SSE 事件/（重）连成功的时间。兜底轮询与 SSE 是双通道——SSE 事件还在流动时
+  // 兜底全量 getAgentRun 只是重复流量，判定活跃期（2 拍内）则跳过这一次、只续表。
+  // 初始 -∞：订阅刚建立、还没确认流是活的之前，兜底必须照常跑（不能用 0，否则注入假时钟从 0 起算时
+  // 第一拍就被误判「活跃」而跳过）。
+  let lastStreamEventAt = Number.NEGATIVE_INFINITY;
 
   const close = (reason = "closed") => {
     if (closed) {
@@ -661,6 +670,7 @@ export function subscribeDesktopCuuAgentRunStream(input: {
       return;
     }
     input.onStatus?.({ state: "event", runId, eventType: workHubEvent?.type ?? eventName });
+    lastStreamEventAt = nowFn();
     // findings[#low]：收到有效 SSE 事件视为连接已恢复，重置错误卡闩，使后续真实断连可再次提示
     //（否则一次断连后 errorCardShown 永久为 true，重连后再断也不再弹卡）。
     errorCardShown = false;
@@ -680,6 +690,7 @@ export function subscribeDesktopCuuAgentRunStream(input: {
     }
     errorCardShown = false;
     consecutiveRefreshFailures = 0;
+    lastStreamEventAt = nowFn();
     if (fallbackRefreshTimer !== undefined) {
       clearTimeoutFn(fallbackRefreshTimer);
       fallbackRefreshTimer = undefined;
@@ -709,6 +720,12 @@ export function subscribeDesktopCuuAgentRunStream(input: {
     const delay = Math.min(fallbackRefreshMs * 2 ** Math.min(consecutiveRefreshFailures, 6), MAX_FALLBACK_DELAY_MS);
     fallbackRefreshTimer = setTimeoutFn(() => {
       fallbackRefreshTimer = undefined;
+      // DSK-11：SSE 事件/（重）连在最近 2 拍内仍活跃 → 跳过这次兜底全量拉取，只续下一拍。
+      // 兜底轮询的职责只剩「流静默/断流时兜住」，双通道不再并行打重复流量。
+      if (nowFn() - lastStreamEventAt < Math.max(fallbackRefreshMs * 2, 1)) {
+        scheduleFallbackRefresh();
+        return;
+      }
       void refresh().finally(scheduleFallbackRefresh);
     }, delay);
   };
@@ -1168,6 +1185,9 @@ export async function bindDesktopShellCuuRuntime(input: {
   controller?: CuuController;
   onDecision?: (decision: CuuControllerDecision) => void;
   onSystemNotification?: (plan: DesktopShellSystemNotificationPlan) => void;
+  // INF-08：SSE 断线重连成功（同一 stream_kind 第二次及以后的 open）时回调——后端不回放断线窗口，
+  // 订阅方据此做一次全量重拉对账（桌宠侧接 refreshVisibleAttentionCard），不靠下一条增量事件兜底。
+  onSseReconnected?: (() => void) | undefined;
   now?: () => Date;
   locale?: CuuLocaleOptions["locale"];
   retryingDelayMs?: number;
@@ -1238,6 +1258,8 @@ export async function bindDesktopShellCuuRuntime(input: {
     }
   });
   const unlisten: DesktopShellUnlisten[] = [];
+  // INF-08：按 stream_kind 累计 open 次数。首次 open=首连（壳层刚拉过），>1 即断线重连——触发全量对账回调。
+  const sseOpenCounts = new Map<string, number>();
   let retryingStatusTimer: ReturnType<typeof setTimeout> | undefined;
   const clearRetryingStatusTimer = () => {
     if (retryingStatusTimer) {
@@ -1267,6 +1289,13 @@ export async function bindDesktopShellCuuRuntime(input: {
       clearRetryingStatusTimer();
       dismissCardIfPresent(`sse-status:${payload.stream_kind}:retrying`);
       dismissCardIfPresent(`sse-status:${payload.stream_kind}:closed`);
+      // INF-08：断线重连成功 → 全量重拉对账。首连不触发（壳层启动已拉过），重连窗口里漏掉的
+      // push 事件（后端无回放）靠这次补拉收敛到服务端真实状态。
+      const openCount = (sseOpenCounts.get(payload.stream_kind) ?? 0) + 1;
+      sseOpenCounts.set(payload.stream_kind, openCount);
+      if (openCount > 1) {
+        input.onSseReconnected?.();
+      }
       return;
     }
     if (payload?.state === "closed") {
@@ -1965,11 +1994,11 @@ function desktopCuuFetchEventSourceAvailable() {
     typeof ReadableStream !== "undefined";
 }
 
+// DSK-06：令牌读取走 desktop-client-token.ts 单一收口（明文 localStorage 的已知风险见该文件头部注释）。
 function desktopCuuBrowserClientToken() {
   try {
-    return globalThis.localStorage?.getItem("workhub_client_token") ??
-      globalThis.localStorage?.getItem("yqgl_client_token") ??
-      undefined;
+    const storage = globalThis.localStorage;
+    return storage ? readDesktopClientToken(storage) : undefined;
   } catch {
     return undefined;
   }

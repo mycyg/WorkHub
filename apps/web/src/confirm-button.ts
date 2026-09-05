@@ -54,6 +54,14 @@ export function armConfirmButton(button: ConfirmButtonLike, options: ArmConfirmO
     return;
   }
   delete button.dataset[ARMED_FLAG];
+  // MRG-27：确认瞬间即复原原始文案并作废快照——onConfirm 多是异步动作，失败路径未必触发重渲，
+  // 不复原的话按钮会永久卡在确认文案（「再点一次」）上。onConfirm 在复原之后执行，
+  // 需要 busy/禁用文案的调用方仍可自行覆盖。
+  const confirmedOriginal = button.dataset[ORIGINAL_LABEL];
+  if (confirmedOriginal !== undefined) {
+    delete button.dataset[ORIGINAL_LABEL];
+    button.textContent = confirmedOriginal;
+  }
   options.onConfirm();
 }
 

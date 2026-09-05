@@ -151,8 +151,7 @@ test("R20 P2-06 live runtime honors a per-target eventTypes override (conversati
     {
       key: "conversation",
       url: "/api/push/stream/conversation/c-1",
-      eventTypes: ["conversation.message.created"],
-      refreshOnReconnect: true
+      eventTypes: ["conversation.message.created"]
     }
   ]);
 
@@ -172,7 +171,8 @@ test("R20 P2-06 live runtime honors a per-target eventTypes override (conversati
   await flushTimer();
   assert.deepEqual(refreshes, [{ eventType: "conversation.message.created", targetKey: "conversation" }], "a new conversation message triggers a single (deduped) full route refetch");
 
-  // 重连补拉：第一次 connected 不刷（首连即刚拉过），断线后第二次 connected → 补拉全量对账。
+  // 重连补拉（INF-08 起对所有流无条件生效）：第一次 connected 不刷（首连即刚拉过），断线后第二次
+  // connected → 补拉全量对账。
   convSource.emit("connected", { data: JSON.stringify({ event_id: "evt-conv-1" }) });
   await flushTimer();
   assert.equal(refreshes.length, 1, "first connect does not trigger a redundant refetch");
@@ -184,14 +184,25 @@ test("R20 P2-06 live runtime honors a per-target eventTypes override (conversati
     "a reconnect re-pulls the full page so events lost during the disconnect window are recovered"
   );
 
+  // INF-08：没有逐流开关的普通流（me）重连同样补拉——断线窗口丢失的事件不再依赖下一条增量才补齐。
+  meSource.emit("connected", { data: JSON.stringify({ event_id: "evt-me-1" }) });
+  await flushTimer();
+  assert.equal(refreshes.length, 2, "first connect of the me stream does not refetch");
+  meSource.emit("connected", { data: JSON.stringify({ event_id: "evt-me-1" }) });
+  await flushTimer();
+  assert.deepEqual(
+    refreshes[2],
+    { eventType: "reconnect", targetKey: "me" },
+    "any stream's reconnect (not just opted-in ones) triggers a full reconciliation refetch"
+  );
+
   // 切到另一个会话：旧会话流关闭（不泄漏），新会话流打开。
   runtime.syncTargets([
     { key: "me", url: "/api/push/stream/me" },
     {
       key: "conversation",
       url: "/api/push/stream/conversation/c-2",
-      eventTypes: ["conversation.message.created"],
-      refreshOnReconnect: true
+      eventTypes: ["conversation.message.created"]
     }
   ]);
   assert.equal(convSource.closed, true, "leaving conversation c-1 closes its stream (no leak)");

@@ -41,6 +41,7 @@ import {
 } from "@workhub/ui";
 
 import { resolveDesktopShellEmitter } from "../../desktop-cuu-runtime.js";
+import { clearDesktopClientToken } from "../../desktop-client-token.js";
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 import { driveResourceApiBase, fetchDriveResource } from "./drive.js";
 
@@ -907,11 +908,21 @@ export function createSettingsView(): SpotlightCapabilityView {
       // 当前身份是管理员（服务端只给管理员填 permission_policies）。
       function revokePolicy(policyId: string): void {
         clearPolicyRevokeArm();
+        // MRG-25：revokePermissionPolicy 在 api-client 类型上是可选方法——旧版客户端缺它时不能
+        // 非空断言硬调（会抛 TypeError，按钮永久卡「撤销中…」）。缺方法=安静降级：复位 busy、给行内
+        // 错误提示，不发请求。
+        const revoke = ctx.client.revokePermissionPolicy;
+        if (!revoke) {
+          policyRevokeBusyId = undefined;
+          policyRevokeError = zh ? "当前客户端版本不支持撤销，请升级后再试。" : "This client version can't revoke policies — please update.";
+          renderAll();
+          return;
+        }
         policyRevokeBusyId = policyId;
         policyRevokeError = undefined;
         renderAll();
-        void ctx.client
-          .revokePermissionPolicy!(policyId)
+        void revoke
+          .call(ctx.client, policyId)
           .then(() => {
             if (disposed) return;
             policyRevokeBusyId = undefined;
@@ -937,8 +948,8 @@ export function createSettingsView(): SpotlightCapabilityView {
         clearShellToken: () => invokeShellClearClientToken(),
         clearLocalIdentity: () => {
           try {
-            window.localStorage.removeItem("workhub_client_token");
-            window.localStorage.removeItem("yqgl_client_token");
+            // DSK-06：清令牌走单一收口（新旧两键都删）。
+            clearDesktopClientToken(window.localStorage);
             // R10：落显式登出标记——boot 见它则停在重新绑定屏，不再用固定昵称自动绑回同一账户。
             window.localStorage.setItem("workhub_desktop_logged_out", "1");
           } catch {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, mkdir, writeFile, utimes, stat } from "node:fs/promises";
+import { mkdtemp, readFile, mkdir, writeFile, utimes, stat, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -113,6 +113,13 @@ class MemoryAgentRunPersistence implements AgentRunPersistence {
   async updateRun(run: AgentRunQueueRecord, workerId?: string) {
     const existing = this.rows.get(run.run_id);
     if (workerId && existing?.claim?.claimed_by !== workerId) {
+      return false;
+    }
+    // INF-05：镜像 DB 仓库的新守卫（packages/db/src/repositories/agent-runs.ts updateRun）——
+    // 执行路径（带 fencing workerId）落终态时要求行仍在 running；行已被取消/落其它终态则命中 0 行，
+    // 由调用方走 lost-claim 出口，不把 cancelled 覆盖回 succeeded。
+    const terminalStatuses = new Set(["succeeded", "failed", "escalated", "cancelled"]);
+    if (workerId && terminalStatuses.has(run.status) && existing?.status !== "running") {
       return false;
     }
     this.rows.set(run.run_id, structuredClone(run));
@@ -474,6 +481,9 @@ function agentRunRecord(partial: Partial<AgentRunQueueRecord> = {}): AgentRunQue
 
 class MemorySnapshots implements SnapshotRepository {
   public rows: SnapshotRow[] = [];
+  // INF-10：可选的原子写（与 SnapshotRepository 同签名）。默认不实现（走两写回退路径）；
+  // 需要验证原子路径的测试在实例上挂一个实现。
+  public createSnapshotWithAudit?: NonNullable<SnapshotRepository["createSnapshotWithAudit"]>;
 
   async createSnapshot(input: Parameters<SnapshotRepository["createSnapshot"]>[0]) {
     const row = snapshotRow({
@@ -3176,6 +3186,10 @@ test("agent run route auto-pump drains through runNext instead of direct run id"
     },
     async runNext() {
       runNextCalls += 1;
+      return null;
+    },
+    // INF-07：契约新增——路由 auto-pump 不用它（走 runNext），补一个桩满足类型。
+    async startNext() {
       return null;
     }
   };
@@ -7527,4 +7541,542 @@ test("INF-02: a failed dead-letter escalation does not strand the rest of the ba
   assert.equal(status.statuses.get(otherWorkItemId), "escalated", "the rest of the batch is still processed");
   assert.equal(decisions.escalationRows.length, 1);
   assert.equal(decisions.escalationRows[0]?.agentRunId, second.run_id);
+});
+
+test("INF-05: a terminal write racing a committed cancellation cannot flip cancelled back to succeeded", async () => {
+  // 竞态窗口：worker 的 loop 已跑完、失租检查已通过，落终态的 UPDATE 在飞；此刻用户的取消
+  // （cancelActiveRun——只翻 status、不摘 claimedBy）先行提交。旧实现里 worker 的终态 UPDATE 仅凭
+  // claimedBy fencing 仍能命中，把 cancelled 覆盖回 succeeded 并开出提议。现在终态 UPDATE 带
+  // status='running' 谓词（DB 仓库 + 本测试的 Memory persistence 同口径），命中 0 行即走
+  // lost-claim 出口。这里在 worker 的终态 fenced 写入落库前注入一次「已提交的取消」来复现该窗口。
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-cancel-race-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-cancel-race-snapshot-test-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const proposals = createInMemoryProposalService({
+    now: () => now,
+    id: (() => {
+      const ids = ["60000000-0000-4000-8000-0000000000c1"];
+      return () => {
+        const id = ids.shift();
+        if (!id) {
+          throw new Error("No fake proposal id queued");
+        }
+        return id;
+      };
+    })()
+  });
+  const originalUpdateRun = persistence.updateRun.bind(persistence);
+  let raceInjected = false;
+  persistence.updateRun = async (run, workerId) => {
+    if (!raceInjected && run.status === "succeeded" && workerId === "worker-cancel-race") {
+      raceInjected = true;
+      // 模拟并发取消已提交：行已 cancelled（claimedBy 仍在——cancelActiveRun 不摘租约）。
+      // 不直接返回 false，让带守卫的原实现自己判（行不在 running → 0 行）。
+      const persisted = await persistence.get(run.run_id);
+      if (persisted) {
+        persistence.rows.set(run.run_id, {
+          ...persisted,
+          status: "cancelled",
+          updated_at: new Date(now.getTime() + 1_000).toISOString()
+        });
+      }
+    }
+    return originalUpdateRun(run, workerId);
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000c1",
+    workerId: "worker-cancel-race",
+    heartbeatIntervalMs: 0,
+    workdir: () => workdir,
+    client: () => executableAgentClient(),
+    snapshotRoot,
+    snapshots,
+    auditLogs,
+    proposals,
+    persistence,
+    confidence: false,
+    notifications: false,
+    eventBus: false
+  });
+  const queued = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Cancel race run"
+  });
+
+  const executed = await queue.runNext();
+  const opened = await proposals.listByWorkItem(workItemId);
+  const persisted = await persistence.get(queued.run_id);
+
+  assert.equal(raceInjected, true, "the terminal write must actually race the committed cancellation");
+  assert.equal(executed?.status, "cancelled", "the committed cancellation wins over the late terminal write");
+  assert.equal(persisted?.status, "cancelled", "cancelled is not overwritten back to succeeded");
+  assert.equal(opened.length, 0, "a cancelled run must not open a proposal");
+});
+
+test("INF-06: a recovered run reuses its persisted workdir when the directory still exists", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-workdir-reuse-snapshot-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  // 关键：不注入 options.workdir——走默认的 defaultWorkdirResuming（mkdtemp 新建 / 按 workdir_ref 复用）。
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000c2",
+    workerId: "worker-workdir-a",
+    heartbeatIntervalMs: 0,
+    client: () => executableAgentClient(),
+    snapshotRoot,
+    snapshots,
+    auditLogs,
+    persistence,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "Workdir reuse run" });
+  const first = await queue.runNext();
+  assert.equal(first?.status, "succeeded");
+  const firstWorkdir = await queue.workdir(queued.run_id);
+  assert.ok(firstWorkdir, "first execution persists a workdir");
+  assert.equal(await readFile(path.join(firstWorkdir, "outputs", "result.md"), "utf8"), "done");
+
+  // 模拟崩溃恢复：同一条 run 被重排回 queued（租约清掉），workdir_ref 仍在；换一个 queue 实例
+  // （等价新进程/新 worker）再跑。
+  const persistedRow = await persistence.get(queued.run_id);
+  assert.ok(persistedRow);
+  const requeuedRow = { ...persistedRow, status: "queued" as const, updated_at: now.toISOString() };
+  delete requeuedRow.claim;
+  persistence.rows.set(queued.run_id, requeuedRow);
+  const recoveredQueue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000c3",
+    workerId: "worker-workdir-b",
+    heartbeatIntervalMs: 0,
+    client: () => executableAgentClient(),
+    snapshotRoot,
+    snapshots,
+    auditLogs,
+    persistence,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+
+  const second = await recoveredQueue.runNext();
+
+  assert.equal(second?.status, "succeeded");
+  assert.equal(
+    await recoveredQueue.workdir(queued.run_id),
+    firstWorkdir,
+    "same-host recovery reuses the persisted workdir instead of starting from an empty mkdtemp"
+  );
+  assert.equal(
+    await readFile(path.join(firstWorkdir, "outputs", "result.md"), "utf8"),
+    "done",
+    "outputs produced before the crash survive the recovery re-run"
+  );
+});
+
+test("INF-06: a recovered run falls back to a fresh workdir when the persisted one is gone", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-workdir-fallback-snapshot-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000c4",
+    workerId: "worker-workdir-c",
+    heartbeatIntervalMs: 0,
+    client: () => executableAgentClient(),
+    snapshotRoot,
+    snapshots,
+    auditLogs,
+    persistence,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "Workdir fallback run" });
+  const first = await queue.runNext();
+  assert.equal(first?.status, "succeeded");
+  const firstWorkdir = await queue.workdir(queued.run_id);
+  assert.ok(firstWorkdir);
+
+  // 目录已不在（跨机恢复 / 被 sweeper 回收）→ 必须新建，不能对着一个消失的目录跑。
+  await rm(firstWorkdir, { recursive: true, force: true });
+  const persistedRow = await persistence.get(queued.run_id);
+  assert.ok(persistedRow);
+  const requeuedRow = { ...persistedRow, status: "queued" as const, updated_at: now.toISOString() };
+  delete requeuedRow.claim;
+  persistence.rows.set(queued.run_id, requeuedRow);
+  const recoveredQueue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000c5",
+    workerId: "worker-workdir-d",
+    heartbeatIntervalMs: 0,
+    client: () => executableAgentClient(),
+    snapshotRoot,
+    snapshots,
+    auditLogs,
+    persistence,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+
+  const second = await recoveredQueue.runNext();
+
+  assert.equal(second?.status, "succeeded");
+  const secondWorkdir = await recoveredQueue.workdir(queued.run_id);
+  assert.ok(secondWorkdir);
+  assert.notEqual(secondWorkdir, firstWorkdir, "a missing persisted workdir falls back to a fresh mkdtemp");
+  assert.equal(await readFile(path.join(secondWorkdir, "outputs", "result.md"), "utf8"), "done");
+});
+
+test("INF-07: startNext claims a queued run without waiting for its execution to finish", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const providerStarted = deferred<void>();
+  const releaseProvider = deferred<void>();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-start-next-test-"));
+  let firstCall = true;
+  const blockingClient: AgentLoopClient = {
+    model: "deepseek-v4-flash",
+    messages: {
+      async create() {
+        if (firstCall) {
+          firstCall = false;
+          providerStarted.resolve();
+          await releaseProvider.promise;
+          return {
+            id: "msg-start-next",
+            stopReason: "end_turn",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            usageRecord: {
+              provider: "deepseek",
+              model: "deepseek-v4-flash",
+              task: "worker",
+              inputTokens: 1,
+              outputTokens: 1,
+              estimatedCostCny: "0.001",
+              source: "agent_step",
+              createdAt: "2026-06-05T00:00:00.000Z"
+            },
+            content: [{ type: "text", text: "done" }]
+          };
+        }
+        // 后续调用（loop 的 llm_review）直接给合法评审结论，不阻塞。
+        return {
+          id: "msg-start-next-review",
+          stopReason: "end_turn",
+          usage: { inputTokens: 0, outputTokens: 0 },
+          content: [{ type: "text", text: "{\"grade\": 5, \"rationale\": \"可直接采纳\"}" }]
+        };
+      }
+    }
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000c6",
+    workerId: "worker-start-next",
+    heartbeatIntervalMs: 0,
+    workdir: () => workdir,
+    client: () => blockingClient,
+    persistence,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false,
+    requireDeliverable: false
+  });
+  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "Start-next run" });
+
+  const started = await queue.startNext();
+  assert.equal(started?.run_id, queued.run_id, "startNext returns the claimed run immediately");
+  await providerStarted.promise;
+  const midRun = await queue.get(queued.run_id);
+  assert.equal(midRun?.status, "running", "startNext did NOT wait for the run to finish executing");
+
+  releaseProvider.resolve();
+  const settled = await waitForRunStatus(queue, queued.run_id, "succeeded");
+  assert.equal(settled.status, "succeeded", "the background execution still settles normally");
+});
+
+test("INF-07: recovery tick drains via startNext instead of serially awaiting full executions", async () => {
+  const requeuedRun: AgentRunQueueRecord = {
+    run_id: "40000000-0000-4000-8000-0000000000c7",
+    work_item_id: workItemId,
+    actor_id: userId,
+    mode: "worker",
+    status: "queued",
+    title: "Fire-and-forget drained run",
+    budget: {
+      max_steps: 15,
+      total_timeout_s: 300,
+      max_tokens: 120000,
+      max_cost_cny: "5"
+    },
+    budget_decision: {
+      decision_id: "budget-1",
+      allowed: true,
+      model_route: {
+        provider: "test",
+        model: "test",
+        reason: "default"
+      }
+    },
+    usage: {
+      steps_used: 0,
+      token_in: 0,
+      token_out: 0,
+      estimated_cost_cny: "0"
+    },
+    trace: [],
+    created_at: now.toISOString(),
+    updated_at: now.toISOString()
+  };
+  let startNextCalls = 0;
+  let runNextCalled = false;
+  const scheduler = createAgentRunRecoveryScheduler({
+    intervalMs: 0,
+    now: () => now,
+    queue: {
+      async recoverExpiredClaims() {
+        return [requeuedRun];
+      },
+      async runNext() {
+        runNextCalled = true;
+        return null;
+      },
+      // startNext 只认领、立刻返回；run 的完整执行在后台进行，不拖住 tick（旧路径逐条 await
+      // runNext，最多 8 条串行执行可堵 40 分钟）。
+      async startNext() {
+        startNextCalls += 1;
+        return startNextCalls > 1 ? null : requeuedRun;
+      }
+    }
+  });
+
+  const result = await scheduler.tick();
+
+  assert.equal(result.drained, 1);
+  assert.equal(startNextCalls, 2, "drain loops startNext until the queue is empty");
+  assert.equal(runNextCalled, false, "the tick never falls back to the serial runNext when startNext exists");
+});
+
+test("INF-11: an unknown persisted run status maps to failed AND emits a structured warn", async () => {
+  const runId = "40000000-0000-4000-8000-0000000000c8";
+  const storedRun = {
+    run: {
+      id: runId,
+      orgId: null,
+      workspaceId: null,
+      workItemId,
+      parentRunId: null,
+      taskPlanId: null,
+      taskPlanItemId: null,
+      taskPlanItemEpoch: null,
+      sourceConversationId: null,
+      sourceActionCardItemId: null,
+      executionHint: null,
+      objectiveId: null,
+      agentRole: null,
+      objectiveMd: null,
+      actor: "human",
+      actorUserId: userId,
+      mode: "worker",
+      // 未来 schema 新增、当前映射表不认识的状态——此前静默映射 failed，无人察觉。
+      status: "mystery_future_status",
+      title: "Unknown status run",
+      model: "deepseek-v4-flash",
+      turnsUsed: 0,
+      maxTurns: 15,
+      totalTimeoutS: 300,
+      maxTokens: 120000,
+      maxCostCny: "5",
+      tokenIn: 0,
+      tokenOut: 0,
+      costEstimate: "0",
+      budgetDecisionJson: {},
+      handoffJson: {},
+      workdirRef: null,
+      claimedBy: null,
+      claimedAt: null,
+      heartbeatAt: null,
+      leaseExpiresAt: null,
+      createdAt: now,
+      updatedAt: now
+    },
+    steps: []
+  } as unknown as Awaited<ReturnType<AgentRunRepository["findById"]>>;
+  const repository: AgentRunRepository = {
+    async createRun() {
+      throw new Error("not used");
+    },
+    async createRunIfWorkItemIdle() {
+      throw new Error("not used");
+    },
+    async updateRun() {
+      throw new Error("not used");
+    },
+    async cancelActiveRun() {
+      throw new Error("not used");
+    },
+    async replaceTrace() {
+      throw new Error("not used");
+    },
+    async setWorkdir() {
+      throw new Error("not used");
+    },
+    async findById() {
+      return storedRun;
+    },
+    async listActive() {
+      return [];
+    },
+    async claimQueued() {
+      throw new Error("not used");
+    },
+    async claimNextQueued() {
+      throw new Error("not used");
+    },
+    async heartbeatClaim() {
+      throw new Error("not used");
+    },
+    async requeueExpiredClaims() {
+      throw new Error("not used");
+    },
+    async restoreDeadLetterClaim() {
+      throw new Error("not used");
+    },
+    async listUnsettledTaskPlanRuns() {
+      throw new Error("not used");
+    }
+  };
+  const persistence = createDbAgentRunPersistence(repository);
+  const lines: string[] = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: string | Uint8Array) => {
+    lines.push(String(chunk));
+    return true;
+  }) as typeof process.stdout.write;
+  let mapped;
+  try {
+    mapped = await persistence.get(runId);
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+
+  assert.equal(mapped?.status, "failed", "unknown statuses still fall back to failed (behavior unchanged)");
+  const warned = lines.some((line) => {
+    try {
+      const entry = JSON.parse(line) as { level?: string; event?: string; status?: string; runId?: string };
+      return entry.level === "warn"
+        && entry.event === "agent_run_unknown_status_mapped_to_failed"
+        && entry.status === "mystery_future_status"
+        && entry.runId === runId;
+    } catch {
+      return false;
+    }
+  });
+  assert.equal(warned, true, "the silent mapping now leaves a structured warn for operators");
+});
+
+test("INF-10: the snapshot hook writes snapshot + audit atomically when the repository supports it", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-snapshot-atomic-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-snapshot-atomic-root-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  let atomicCalls = 0;
+  // 模拟生产 PG 仓储的原子写：快照与审计同生同灭（同一事务的内存版等价物）。
+  snapshots.createSnapshotWithAudit = async (snapshotInput, auditInput) => {
+    atomicCalls += 1;
+    const row = snapshotRow({
+      id: snapshotInput.id ?? snapshotId,
+      workItemId: snapshotInput.workItemId,
+      branchId: snapshotInput.branchId ?? null,
+      kind: snapshotInput.kind,
+      ref: snapshotInput.ref,
+      contentSha256: snapshotInput.contentSha256 ?? null,
+      createdByKind: snapshotInput.createdByKind
+    });
+    snapshots.rows.push(row);
+    await auditLogs.createAuditLog({ ...auditInput, snapshotId: row.id });
+    return row;
+  };
+  const hook = createAgentRunSnapshotHook({
+    run: agentRunRecord(),
+    settings: runtimeSettings,
+    snapshotRoot,
+    snapshots,
+    auditLogs,
+    now: () => now,
+    id: () => snapshotId
+  });
+
+  const result = await hook({
+    toolId: "write_file",
+    sideEffect: "sandbox_file",
+    input: { path: "outputs/result.md" },
+    workdir,
+    runId: "40000000-0000-4000-8000-0000000000c9",
+    workItemId
+  });
+
+  assert.equal(atomicCalls, 1, "the hook prefers the repository's atomic write");
+  assert.equal(snapshots.rows.length, 1);
+  assert.equal(auditLogs.rows.length, 1);
+  assert.equal(auditLogs.rows[0]?.snapshotId, result.snapshotId, "the audit row points at its snapshot");
+});
+
+test("INF-10: the snapshot hook leaves no orphan snapshot row when the atomic write fails", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-snapshot-atomic-fail-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-snapshot-atomic-fail-root-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  snapshots.createSnapshotWithAudit = async () => {
+    throw new Error("audit sink unavailable");
+  };
+  const hook = createAgentRunSnapshotHook({
+    run: agentRunRecord(),
+    settings: runtimeSettings,
+    snapshotRoot,
+    snapshots,
+    auditLogs,
+    now: () => now,
+    id: () => snapshotId
+  });
+
+  await assert.rejects(
+    async () => hook({
+      toolId: "write_file",
+      sideEffect: "sandbox_file",
+      input: { path: "outputs/result.md" },
+      workdir,
+      runId: "40000000-0000-4000-8000-0000000000ca",
+      workItemId
+    }),
+    /audit sink unavailable/u
+  );
+  assert.equal(snapshots.rows.length, 0, "a failed atomic write leaves no orphan snapshot row");
+  assert.equal(auditLogs.rows.length, 0);
 });

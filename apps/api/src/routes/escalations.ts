@@ -2,9 +2,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 
 import {
-  delegateEscalationRequestSchema,
-  normalizeWorkHubLocale,
-  resolveEscalationRequestSchema
+  normalizeWorkHubLocale
 } from "@workhub/contracts";
 import type { WorkHubLocale } from "@workhub/contracts";
 
@@ -44,8 +42,8 @@ export function createEscalationRoutes(deps: EscalationRoutesDependencies = {}) 
 
   routes.post("/:id/resolve", createCurrentUserMiddleware(authSource), async (c) => {
     const id = requireEscalationId(c.req.param("id"));
-    const payload = resolveEscalationRequestSchema.parse(await readJsonObject(c));
-    const data = await service.resolve(id, c.var.actor, payload, requestLocale(c));
+    // API-06：先鉴权后解析——schema 校验在 service 内、权限检查之后进行，这里只传原始 body。
+    const data = await service.resolve(id, c.var.actor, await readJsonObject(c), requestLocale(c));
     return c.json({ ok: true, data });
   });
 
@@ -58,8 +56,8 @@ export function createEscalationRoutes(deps: EscalationRoutesDependencies = {}) 
 
   routes.post("/:id/delegate", createCurrentUserMiddleware(authSource), async (c) => {
     const id = requireEscalationId(c.req.param("id"));
-    const payload = delegateEscalationRequestSchema.parse(await readJsonObject(c));
-    const data = await service.delegate(id, c.var.actor, payload, requestLocale(c));
+    // API-06：同 /resolve——先鉴权后解析。
+    const data = await service.delegate(id, c.var.actor, await readJsonObject(c), requestLocale(c));
     return c.json({ ok: true, data });
   });
 

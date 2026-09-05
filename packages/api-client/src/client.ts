@@ -52,6 +52,84 @@ function isEnvelope<T>(value: unknown): value is ApiEnvelope<T> {
   return (record.ok === true && "data" in record) || (record.ok === false && "error" in record);
 }
 
+// UI-06：契约上就回「裸 JSON」（无 {ok,data} 信封）的 2xx 端点全集。这份名单与 apps/api/src/openapi.ts
+// 里用 rawJsonResponse/rawJsonStatusResponse 声明的响应一一对应（探针/文档/根信息，以及 auth 与
+// client-devices 两族历史契约端点）——它们的裸形状被 apps/web、apps/desktop-webview、client-tauri
+// 与 QA 脚本直接消费（如 client.identify() 直接拿 IdentityResponse、GET /api/client-devices/me 直接
+// 拿设备数组），给它们套信封是破坏性契约变更，故校验器放行而非改后端。
+// 其余路径的 2xx 响应必须是完整信封、裸 ack（{ok:true}，如 logout/revoke 一族）或空 body；其它形状
+// 在此前会原样塞给调用方，畸形 VM 到渲染期才炸成整页错误卡——这里 fail-fast，抛带 path 的契约错误。
+const RAW_JSON_RESPONSE_PATHS = new Set([
+  "/",
+  "/api/health",
+  "/api/ready",
+  "/api/openapi.json",
+  "/openapi.json",
+  "/api/auth/identify",
+  "/api/auth/desktop-bootstrap",
+  "/api/auth/register",
+  "/api/auth/login",
+  "/api/auth/logout",
+  "/api/auth/password",
+  "/api/auth/me",
+  "/api/auth/preferences",
+  "/api/auth/invites",
+  "/api/auth/invites/accept",
+  "/api/client-devices/register",
+  "/api/client-devices/me",
+  "/api/client-devices/current",
+  "/api/client-devices/revoke-current"
+]);
+
+// 同一份名单里带路径参数的成员（openapi.ts 中的 {id}/{inviteId}/{deviceId}）。
+const RAW_JSON_RESPONSE_PATTERNS = [
+  /^\/api\/auth\/users\/[^/]+\/deactivate$/,
+  /^\/api\/auth\/invites\/[^/]+$/,
+  /^\/api\/client-devices\/[^/]+\/revoke$/
+];
+
+function pathWithoutQuery(path: string) {
+  return path.split("?")[0]?.split("#")[0] ?? path;
+}
+
+function isRawJsonResponsePath(path: string) {
+  const clean = pathWithoutQuery(path);
+  return RAW_JSON_RESPONSE_PATHS.has(clean) || RAW_JSON_RESPONSE_PATTERNS.some((pattern) => pattern.test(clean));
+}
+
+function contractViolation(responseStatus: number, path: string, detail: string): WorkHubApiError {
+  return new WorkHubApiError(
+    responseStatus,
+    "contract_violation",
+    `WorkHub API 响应不符合契约（${path}）：${detail}`
+  );
+}
+
+function assertSuccessBodyShape(body: unknown, path: string, responseStatus: number) {
+  if (body === null || body === undefined) {
+    return;
+  }
+  if (typeof body !== "object") {
+    // SPA fallback / 网关错误页把 HTML 或纯文本塞进 2xx——绝不能当 VM 交给渲染层。
+    throw contractViolation(responseStatus, path, "non-json body");
+  }
+  const record = body as Record<string, unknown>;
+  if ("ok" in record) {
+    if (typeof record.ok !== "boolean") {
+      throw contractViolation(responseStatus, path, "envelope ok flag is not a boolean");
+    }
+    // ok:false 却缺 error 半边（错误被吞比炸页面更难查）；{ok:true} 无 data 是合法裸 ack。
+    if (record.ok === false) {
+      throw contractViolation(responseStatus, path, "error envelope missing error field");
+    }
+    return;
+  }
+  if (isRawJsonResponsePath(path)) {
+    return;
+  }
+  throw contractViolation(responseStatus, path, "missing envelope");
+}
+
 function encodedStreamPath(kind: "workitem" | "run" | "session" | "proposal" | "conversation", id: string) {
   return `/api/push/stream/${kind}/${encodeURIComponent(id)}`;
 }
@@ -348,6 +426,7 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       }
       return body.data;
     }
+    assertSuccessBodyShape(body, path, response.status);
     return body as T;
   }
 

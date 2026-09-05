@@ -244,6 +244,9 @@ export const deliverableCheckSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
   status: z.enum(["passed", "failed", "warning", "skipped"]),
+  // API-02：HTTP 入口的 manifest 由客户端自供，其 checks 一律被服务端改标为 self_reported——
+  // 评审页不能把提交者编造的「检查通过」当成服务端核实过的事实。缺省（内部 agent 流程）不展示该标记。
+  source: z.enum(["verified", "self_reported"]).optional(),
   detail: z.string().optional(),
   evidence_refs: z.array(evidenceRefSchema).optional()
 });

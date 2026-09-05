@@ -265,13 +265,20 @@ export function fieldValueRequiredNotice(locale: WorkHubLocale, actionId?: strin
 }
 
 export function intakeOptionRequiredNotice(locale: WorkHubLocale, actionId?: string): RouteNoticeVM {
+  // E2E-09：确认屏「创建任务」未选方向被拦时，通用「请先选择一个选项」对不上用户心智（他要做的是
+  // 选方向）。create_workitem 动作用确认步专用文案，其余（澄清步）保持通用口径。
+  const confirmStep = actionId === "create_workitem";
   return {
     kind: "intake_option_required",
     tone: "warning",
     source: "client",
     locale,
     title: goldPathT(locale, "runtime.notice.intakeOptionRequiredTitle"),
-    body: goldPathT(locale, "runtime.notice.intakeOptionRequiredBody"),
+    body: confirmStep
+      ? (locale === "en-US"
+        ? "Pick a direction before creating — nothing is created until you do."
+        : "先选一个方向再创建——没选时不会创建。")
+      : goldPathT(locale, "runtime.notice.intakeOptionRequiredBody"),
     actionId
   };
 }

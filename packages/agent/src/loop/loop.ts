@@ -192,6 +192,12 @@ async function callModelWithRetry(input: AgentLoopInput, params: Parameters<type
     try {
       return await callModel(input, params);
     } catch (error) {
+      // CORE-13：运行级取消优先于重试判定——用户取消经 provider 归一化（normalizeAbortError）后
+      // 会变成 llm_request_timeout，被 nextRetryDecision 当瞬态错误先重试一次、发出误导的
+      // provider_retry 事件后才真正中止。signal 已 aborted 说明是取消而非故障，直接原样抛出。
+      if (input.signal?.aborted) {
+        throw error;
+      }
       // findings[#49]：钳住重试延迟。上限取「配置上限(默认 60s)」与「整 run 超时」的较小值——单次重试延迟绝不
       // 应超过整个 run 的预算，更不能让上游用一个超大 Retry-After 把 worker park 数小时（totalTimeoutSeconds
       // 只在循环顶部检查、sleep 期间打断不了）。

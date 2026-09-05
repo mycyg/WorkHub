@@ -154,6 +154,7 @@ function emptyQueue(): AgentRunQueue {
   return {
     async enqueue() { throw new Error("not needed"); },
     async runNext() { return null; },
+    async startNext() { return null; },
     async get() { return null; },
     async workdir() { return null; },
     async trace() { return []; },

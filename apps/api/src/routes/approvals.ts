@@ -78,7 +78,10 @@ export function createApprovalRoutes(deps: ApprovalRoutesDependencies = {}) {
   }
 
   function assertCanActOnApproval(approval: ApprovalRequest, actor: AuthEnv["Variables"]["actor"]) {
-    if (actor.isAdmin) {
+    // API-08：与服务层 ensureCanActOnApproval 对齐——admin 放行仅限挂了 work item 的审批；
+    // 无 work item 的审批（工具/权限类）没有租户边界，admin 也只能处理派给自己的。此前路由层
+    // 无条件放行 admin 是误导性死代码（服务层最终仍会 403）。
+    if (actor.isAdmin && approval.work_item_id) {
       return;
     }
     const actorUserId = actor.userId ?? actor.id;
@@ -171,7 +174,8 @@ export function createApprovalRoutes(deps: ApprovalRoutesDependencies = {}) {
     const rawIds = Array.isArray((body as { ids?: unknown }).ids) ? (body as { ids: unknown[] }).ids : [];
     const ids = [...new Set(rawIds.filter((value): value is string => typeof value === "string" && value.length > 0))].slice(0, 50);
     if (ids.length === 0) {
-      return c.json({ ok: false, code: "field_value_required", message: "请至少勾选一条要通过的审批。" }, 422);
+      // API-08：错误信封与全局 {error:{code,message}} 一致（此前顶层 code/message 会让客户端拿不到错误信息）。
+      return c.json({ ok: false, error: { code: "field_value_required", message: "请至少勾选一条要通过的审批。" } }, 422);
     }
     let approved = 0;
     let skipped = 0;

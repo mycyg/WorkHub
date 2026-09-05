@@ -74,6 +74,7 @@ import {
   taskPlanStatusLabel,
   uiCount,
   uiFormatCny,
+  uiFormatCount,
   uiHumanize,
   uiT,
   workItemStatusLabel
@@ -1758,9 +1759,13 @@ function renderIntakeStartRouteComponent(
   const projectCardHeading = project ? (zh ? "项目上下文" : "Project context") : routeT(locale, "intake.startProject");
   // start 动作：有项目则带 data-s4b-project-id（browser 据此 createSession 直绑该项目、不 bootstrap）；
   // 无项目则保留原 bootstrap 负载（新建/复用「试点项目」）。两路都走 start_intake 调度。
+  // INT-01（评估结论）：主操作保持 <a href="/api/..."> 而非 <button>——classifyGoldPathHref 分发、
+  // primaryHrefs 契约（冒烟/探针计数）与样式钩子全挂在 href 上，改 button 面大；委托点击处理器对
+  // api-action 一律 preventDefault（不会真导航到 API 地址），这里补 role="button" 把语义摆正
+  // （Space 激活由 browser.ts 的 role=button keydown 兜底）。下同（intake.createWorkItem 等）。
   const startAction = project
-    ? `<a class="wh-btn wh-btn-primary" href="/api/projects/bootstrap" data-action-id="start_intake" data-method="POST" data-s1-day0-start-intake="true" data-s4b-project-id="${escapeHtml(project.id)}">${escapeHtml(routeT(locale, "intake.startAction"))}</a>`
-    : `<a class="wh-btn wh-btn-primary" href="/api/projects/bootstrap" data-action-id="start_intake" data-method="POST" data-s1-day0-start-intake="true" data-request-json="${jsonAttr(bootstrapPayload)}">${escapeHtml(routeT(locale, "intake.startAction"))}</a>`;
+    ? `<a class="wh-btn wh-btn-primary" href="/api/projects/bootstrap" role="button" data-action-id="start_intake" data-method="POST" data-s1-day0-start-intake="true" data-s4b-project-id="${escapeHtml(project.id)}">${escapeHtml(routeT(locale, "intake.startAction"))}</a>`
+    : `<a class="wh-btn wh-btn-primary" href="/api/projects/bootstrap" role="button" data-action-id="start_intake" data-method="POST" data-s1-day0-start-intake="true" data-request-json="${jsonAttr(bootstrapPayload)}">${escapeHtml(routeT(locale, "intake.startAction"))}</a>`;
   // 来自的项目无法访问(已删/无权限/旧链接)时不静默切换：给一条明确提示，再退化为通用起点。
   const unavailableNotice = projectUnavailable
     ? `<p class="wh-subtle" data-s4b-project-unavailable="true">${escapeHtml(zh ? "你来自的项目暂时不可用（可能已删除或无访问权限），已切换到通用工作起点。" : "The project you came from is unavailable (deleted or no access); switched to a generic work start.")}</p>`
@@ -1869,7 +1874,7 @@ function renderIntakeRouteComponent(vm: SessionVM, locale: WorkHubLocale): WebRo
   // L11：进度速览卡别把内部管道(SSE topic / stream_href)当药丸暴露给用户;改显「当前在澄清哪一步」这种人话。
   const activeStepLabel = question.progress.find((step) => step.state === "active")?.label ?? "";
   const createAction = question.input_mode === "confirm"
-    ? `<a class="wh-btn wh-btn-primary" href="/api/workitems" data-action-id="create_workitem" data-method="POST" data-intake-create-workitem="true" data-session-id="${escapeHtml(vm.session_id)}" data-request-json="${jsonAttr(createPayload)}">${escapeHtml(routeT(locale, "intake.createWorkItem"))}</a>`
+    ? `<a class="wh-btn wh-btn-primary" href="/api/workitems" role="button" data-action-id="create_workitem" data-method="POST" data-intake-create-workitem="true" data-session-id="${escapeHtml(vm.session_id)}" data-request-json="${jsonAttr(createPayload)}">${escapeHtml(routeT(locale, "intake.createWorkItem"))}</a>`
     : "";
   // L16：澄清步骤里「继续」常是用户唯一的前进按钮（非 confirm 步没有「创建任务」主按钮）。
   // 当它是唯一前进动作时给它主按钮样式，别让第一道问题的前进键看着像被弱化的次要按钮；
@@ -3466,9 +3471,11 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
         ? `只列出最近 10 场会议（共 ${vm.meetings.length} 场）。`
         : `Showing the 10 most recent meetings of ${vm.meetings.length}.`)}</p>`
       : "")
-    : `<p class="wh-subtle">${escapeHtml(selectedMeeting
-      ? (locale === "zh-CN" ? "这场会议还没有洞察。" : "No insights from this meeting yet.")
-      : routeT(locale, "meeting.empty"))}</p>`;
+    // WEB-08：空态合并——没有会议时列表卡内不再重复「还没有会议」文案（此前与头部副标题、底部
+    // 引导卡同屏三连）；整页只保留下方 data-r5-meeting-empty 一张有引导的空态卡。
+    : (selectedMeeting
+      ? `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "这场会议还没有洞察。" : "No insights from this meeting yet.")}</p>`
+      : "");
   const transcript = selectedMeeting?.transcript_text?.trim() || meetingContentFallback("transcript", selectedMeeting?.status, locale);
   const minutes = selectedMeeting?.minutes_md?.trim() || meetingContentFallback("minutes", selectedMeeting?.status, locale);
   const insightRows = selectedMeeting?.insights.length
@@ -3527,7 +3534,10 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "meeting.kicker"))}</span>
           <h1>${escapeHtml(projectTitle)}</h1>
-          <p>${escapeHtml(selectedMeeting?.title ?? routeT(locale, "meeting.empty"))}</p>
+          <p>${escapeHtml(selectedMeeting?.title ?? (locale === "zh-CN"
+            // WEB-08：无会议时头部副标题用中性描述，不再与下方引导空态卡重复同一句「还没有会议」。
+            ? "会议转写、纪要和洞察都会归到这里。"
+            : "Meeting transcripts, minutes and insights land here."))}</p>
         </div>
         <span class="wh-r4-route-count" title="${escapeHtml(locale === "zh-CN" ? "待确认洞察" : "Insights pending review")}">${escapeHtml(`${vm.summary.pending_insight_count} ${locale === "zh-CN" ? "条待确认" : "pending"}`)}</span>
       </header>
@@ -3975,7 +3985,7 @@ function renderBudgetRows(vm: CostDashboardVM, locale: WorkHubLocale) {
     return `<div role="listitem" class="wh-r4-route-row" data-r4-cost-budget-row="${escapeHtml(String(index))}" data-r4-cost-budget-status="${escapeHtml(usage.status)}" data-r4-cost-budget-enabled="true">
       <div>
         <strong>${escapeHtml(usage.scope_label)}</strong>
-        <p>${escapeHtml(`${usage.total_tokens}/${usage.max_tokens} tokens · ${costAmount(usage.estimated_cost_cny, locale)}/${costAmount(usage.max_cost_cny, locale)} · ${budgetPeriodLabel(usage.period, locale)}`)}</p>
+        <p>${escapeHtml(`${uiFormatCount(usage.total_tokens, locale)}/${uiFormatCount(usage.max_tokens, locale)} tokens · ${costAmount(usage.estimated_cost_cny, locale)}/${costAmount(usage.max_cost_cny, locale)} · ${budgetPeriodLabel(usage.period, locale)}`)}</p>
         <div class="wh-r4-route-meter" aria-hidden="true"><span style="width:${escapeHtml(String(Math.min(100, ratio)))}%"></span></div>
       </div>
       <span class="wh-pill">${escapeHtml(budgetStatusLabel(locale, usage.status))}</span>
@@ -5004,7 +5014,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
       return `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r20-cost-trend-day="${escapeHtml(point.date)}">
         <div>
           <strong>${escapeHtml(point.date)}</strong>
-          <p>${escapeHtml(`${costAmount(point.cost_cny, locale)} · ${point.tokens} ${zhNotice ? "个 token" : point.tokens === 1 ? "token" : "tokens"}`)}</p>
+          <p>${escapeHtml(`${costAmount(point.cost_cny, locale)} · ${uiFormatCount(point.tokens, locale)} ${zhNotice ? "个 token" : point.tokens === 1 ? "token" : "tokens"}`)}</p>
           <div class="wh-r4-route-meter" aria-hidden="true"><span style="width:${escapeHtml(String(pct))}%"></span></div>
         </div>
       </div>`;
@@ -5124,7 +5134,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-cost-metrics="true">
           <h3 role="heading" aria-level="2">${escapeHtml(goldPathT(locale, "cost.estimatedTitle"))}</h3>
           <div class="wh-r4-route-meta">
-            <span class="wh-pill">${escapeHtml(`${goldPathT(locale, "cost.tokenTitle")}: ${props.totalTokens} ${locale === "zh-CN" ? "个 token" : "tokens"}`)}</span>
+            <span class="wh-pill">${escapeHtml(`${goldPathT(locale, "cost.tokenTitle")}: ${uiFormatCount(props.totalTokens, locale)} ${locale === "zh-CN" ? "个 token" : "tokens"}`)}</span>
             <span class="wh-pill">${escapeHtml(goldPathT(locale, "cost.estimatedTitle"))}: ${escapeHtml(costAmount(props.totalCostCny, locale))}</span>
             <span class="wh-pill" data-r4-cost-trend-days="${escapeHtml(String(props.trendCount))}">${escapeHtml(`${routeT(locale, "cost.trend")}: ${props.trendCount}`)}</span>
           </div>

@@ -16,9 +16,12 @@ import {
   armApprovalSendBack,
   armProposalSendBack,
   clearPendingSendBack,
+  createApprovalReasonDrafts,
   createPendingSendBackState,
   pendingSendBackActive,
-  resolvePendingSendBack
+  resolvePendingSendBack,
+  resolveSendBackReasonMd,
+  settleApprovalReasonDrafts
 } from "./review-reason-pending.js";
 import { runOnboardingLocaleSync } from "./onboarding-locale-sync.js";
 import { buildSettingsDeviceRow, humanizeDeviceRevokeError } from "./settings-devices.js";
@@ -201,7 +204,8 @@ function endBusyAction(key: string) {
   busyActionKeys.delete(key);
 }
 // R10-P1-2：审批打回理由草稿按事项隔离——key=approval id。跨重渲保留（respond 后重渲不丢在写的草稿）。
-const approvalReasonDrafts = new Map<string, string>();
+// UI-12：审批处理成功（通过/打回/批量通过）后须 settle 清条目——此前只增不减，条目常驻内存。
+const approvalReasonDrafts = createApprovalReasonDrafts();
 let readyRouteBindings: AbortController | undefined;
 let liveDirtyGuardCount = 0;
 let liveRuntime: ReturnType<typeof createWebLiveRuntime> | undefined;
@@ -551,7 +555,10 @@ function showPayloadFailureNotice(
   if (payload.reason === "field_value_required") {
     showRouteNotice(shellRoot, fieldValueRequiredNotice(locale, actionId));
   } else if (payload.reason === "intake_option_required") {
-    showRouteNotice(shellRoot, intakeOptionRequiredNotice(locale, actionId));
+    // E2E-09：确认屏「创建任务」按钮在页面底部，顶部 toast 4.6s 自动消失等于没反馈——
+    // 这条拦截提示持久化（timeoutMs=0，直到用户真的选了方向/其它提示顶替）并滚进视野。
+    showRouteNotice(shellRoot, intakeOptionRequiredNotice(locale, actionId), undefined, 0);
+    shellRoot.querySelector<HTMLElement>("[data-wh-app-notice]")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   } else {
     showRouteNotice(shellRoot, actionErrorNotice(locale, new Error(goldPathT(locale, "runtime.actionFail")), actionId));
   }
@@ -672,6 +679,12 @@ function bindGoldPathNavigation(
         delete batchButton.dataset.r20ConfirmOriginalLabel;
         batchButton.hidden = checkedCount === 0;
         batchButton.textContent = batchApproveLabel(locale, checkedCount);
+      }
+      // UI-08：勾选态此前不参与 dirty-guard——SSE 整页重渲会静默清空已勾选的审批行，
+      // 用户以为选好了、批量通过却落空。有勾选时标脏（SSE 刷新改延迟+提示）；清零不主动清脏，
+      // 与 input 监听「只在非空时标脏」的既有先例同口径（脏标记由后续动作/导航结算）。
+      if (checkedCount > 0) {
+        markActiveRouteDirty("approval_selection");
       }
       return;
     }
@@ -1018,6 +1031,8 @@ function bindGoldPathNavigation(
           void (async () => {
             try {
               const result = await client.respondApprovalsBatch(ids);
+              // UI-12：批量通过成功后清掉这些审批的打回理由草稿（Map 不再只增不减）。
+              settleApprovalReasonDrafts(approvalReasonDrafts, ...ids);
               await renderCurrentRoute(client, locale);
               showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, locale === "en-US"
                 ? `Approved ${result.approved} item${result.approved === 1 ? "" : "s"}${result.skipped ? `, ${result.skipped} skipped (already handled)` : ""}.`
@@ -1081,21 +1096,49 @@ function bindGoldPathNavigation(
           endBusyAction("proposal_request_changes");
         }
       } else {
+        // UI-11：文本框里残留的手写理由此前会静默盖过用户刚点的预设理由按钮（customReason || reasonMd
+        // 提交的不是他点的那条）。改武装式确认（escalation cancel 同款）：草稿非空第一次点只提示——
+        // 5 秒内再点同一按钮=确认用手写理由打回；想用预设理由就清空文本框再点。不替用户删字。
+        const customReason = shellRoot.querySelector<HTMLTextAreaElement>("[data-r4-approval-reason]")?.value;
+        const reasonResolution = resolveSendBackReasonMd(
+          reasonMd,
+          customReason,
+          reasonButton.dataset.r11UseDraftArmed === "true"
+        );
+        if (!reasonResolution.ok) {
+          reasonButton.dataset.r11UseDraftArmed = "true";
+          window.setTimeout(() => {
+            if (reasonButton.isConnected) {
+              delete reasonButton.dataset.r11UseDraftArmed;
+            }
+          }, 5000);
+          showRouteNotice(shellRoot, {
+            kind: "reason_required",
+            tone: "warning",
+            source: "client",
+            locale,
+            title: locale === "en-US" ? "The text box already has a written reason" : "文本框里已有手写理由",
+            body: locale === "en-US"
+              ? "Submitting now would use the written text, not the preset you clicked. Click the same preset again within 5s to send back with your written reason — or clear the text box to use the preset."
+              : "现在提交会用文本框里的手写理由，而不是你点的预设理由。5 秒内再点一次该预设=用手写理由打回；想用预设理由，请先清空文本框。",
+            actionId: pendingSendBackTarget.actionId
+          }, undefined, 0);
+          return;
+        }
+        delete reasonButton.dataset.r11UseDraftArmed;
         if (!beginBusyAction("approval_deny")) {
           return;
         }
         showRouteNotice(shellRoot, actionInProgressNotice(locale, pendingSendBackTarget.actionId), undefined, 0);
         try {
           const remember = shellRoot.querySelector<HTMLInputElement>("[data-r4-approval-remember]")?.checked ? "always" : "once";
-          // L#W2-17：优先用决策面板里手写的「意见说明」，没写才回落到预设理由按钮。
-          const customReason = shellRoot.querySelector<HTMLTextAreaElement>("[data-r4-approval-reason]")?.value.trim();
           const result = await client.respondApproval(pendingSendBackTarget.approvalId, {
             decision: "deny",
-            reason_md: customReason || reasonMd,
+            reason_md: reasonResolution.reasonMd,
             remember
           });
           const settledApprovalActionId = pendingSendBackTarget.actionId;
-          approvalReasonDrafts.delete(pendingSendBackTarget.approvalId);
+          settleApprovalReasonDrafts(approvalReasonDrafts, pendingSendBackTarget.approvalId);
           clearPendingSendBack(pendingSendBack);
           clearActiveRouteDirty();
           // R8（引导承接 high）：打回后同样重渲——已处理项移出队列，回执在重渲后弹。
@@ -1719,6 +1762,8 @@ function bindGoldPathNavigation(
         try {
           const remember = shellRoot.querySelector<HTMLInputElement>("[data-r4-approval-remember]")?.checked ? "always" : "once";
           const result = await client.respondApproval(approvalRespondId, { decision: "allow", remember });
+          // UI-12：通过也算处理完——清掉这条审批可能残留的打回理由草稿（Map 不再只增不减）。
+          settleApprovalReasonDrafts(approvalReasonDrafts, approvalRespondId);
           // R8（引导承接 high）：批准后列表原地不动——已处理项还在、处理完最后一条也见不到空态。
           // 与 reviewProposal 同口径：成功即重渲（下一条自动成为 primary），回执在重渲后弹。
           await renderCurrentRoute(client, locale);
@@ -2139,6 +2184,11 @@ function createBrowserLiveRuntime(client: BrowserApiClient, locale: WorkHubLocal
 
 function bindLiveRouteStreams(result: WebRouteReadyResult, client: BrowserApiClient, locale: WorkHubLocale) {
   liveRuntime ??= createBrowserLiveRuntime(client, locale);
+  // WEB-10（核实结论）：每次路由切换都会走到这里，syncTargets 内部对新目标集做 diff——不在新目标里
+  // 的旧 EventSource 一律显式 close()（live-runtime.ts syncTargets → closeLiveEventSource），同源同
+  // 事件面的连接直接复用不重建。路由切换时 Network/Console 里那条 EventSource net::ERR_ABORTED
+  // 就是这个「主动关闭在飞 SSE 连接」的必然副产品（浏览器对任何被 abort 的连接都记 ERR_ABORTED），
+  // 属预期噪音而非泄漏或失败；不close才是问题（旧路由的流会挂着继续收事件）。
   liveRuntime.syncTargets(liveStreamTargetsForRoute(result, client.streams));
 }
 
@@ -5177,7 +5227,17 @@ async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocal
       // 新内容渲染前拿着上一页的 ready 误判（CI 慢机器必现，本机偶发）。
       root.querySelector("[data-r4-web-route-status]")?.setAttribute("data-r4-web-route-status", "loading");
       if (!root.querySelector("[data-r7-nav-progress]")) {
-        root.insertAdjacentHTML("afterbegin", `<div data-r7-nav-progress="true" style="position:fixed;top:0;left:0;right:0;height:2px;z-index:80;background:linear-gradient(90deg,#355cff,#7aa2ff);animation:whNavProgress 1.1s ease-in-out infinite alternate;transform-origin:left"></div><style>@keyframes whNavProgress{from{transform:scaleX(.15)}to{transform:scaleX(.9)}}</style>`);
+        // UI-09：进度条不能插到 root 最前（afterbegin）——那样 root.firstElementChild 变成进度条 div，
+        // 下方 R12 样式复用（比较屏上首个 <style> 与新内容 style 段）恒失败，主动导航永远全量
+        // innerHTML 重解析 ~36KB CSS。屏上有 shell 样式节点时插到它后面：复用比较不受影响，
+        // 替换时进度条随 nextSibling 清理（或全量 innerHTML）一并移除，无需单独回收。
+        const navProgressHtml = `<div data-r7-nav-progress="true" style="position:fixed;top:0;left:0;right:0;height:2px;z-index:80;background:linear-gradient(90deg,#355cff,#7aa2ff);animation:whNavProgress 1.1s ease-in-out infinite alternate;transform-origin:left"></div><style>@keyframes whNavProgress{from{transform:scaleX(.15)}to{transform:scaleX(.9)}}</style>`;
+        const firstStyle = root.firstElementChild;
+        if (firstStyle instanceof HTMLStyleElement) {
+          firstStyle.insertAdjacentHTML("afterend", navProgressHtml);
+        } else {
+          root.insertAdjacentHTML("afterbegin", navProgressHtml);
+        }
       }
     }
   }
@@ -5295,6 +5355,11 @@ async function submitOnboarding(client: BrowserApiClient, locale: WorkHubLocale)
     return;
   }
   const adminSecret = root.querySelector<HTMLInputElement>("[data-r5-9-onboarding-admin-secret]")?.value.trim() ?? "";
+  // UI-07：注册提交此前无防重——双击/Enter 连击会并发 identify 两次。复用 busyActionKeys 分区锁，
+  // 与全站其它动作同口径；失败/成功路径都在 finally 释放（错误重渲注册屏后锁已解开，可重试）。
+  if (!beginBusyAction("onboarding_identify")) {
+    return;
+  }
   try {
     const identity = await client.identify({
       nickname,
@@ -5328,6 +5393,8 @@ async function submitOnboarding(client: BrowserApiClient, locale: WorkHubLocale)
       ? error.message
       : goldPathT(locale, "runtime.actionFail");
     showOnboardingScreen(client, locale, { errorText, presetNickname: nickname });
+  } finally {
+    endBusyAction("onboarding_identify");
   }
 }
 

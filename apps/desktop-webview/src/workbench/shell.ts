@@ -12,6 +12,7 @@ import { eventTypes } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { appleGlassDesignSystemCss } from "../design-system.js";
+import { readDesktopClientToken } from "../desktop-client-token.js";
 import { resolveDesktopShellEmitter } from "../desktop-cuu-runtime.js";
 import { resolveDesktopTauriInvoke } from "../desktop-window-controls.js";
 import { mountArmyOverviewView, type ArmyOverviewApiClient, type ArmyOverviewViewHandle } from "./army/overview.js";
@@ -88,12 +89,10 @@ export type WorkbenchShellApiClient = WorkbenchRailApiClient &
 
 // 照 boot.ts 的 clientToken() 同款 helper——shell.ts 不 import boot.ts（避免 boot.ts → shell.ts →
 // chat/view.ts → ... 的循环 import 风险），改由 mountWorkbenchShell 的调用方（boot.ts 本尊）注入
-// 同一个函数引用；这里只是没传时的兜底默认值，独立实现一份和 desktop-cuu-runtime.ts 的
-// desktopCuuBrowserClientToken 同款最小 helper（这个仓库里第三份，都是同样 6 行，没有值得抽共享
-// 模块的复杂度）。
+// 同一个函数引用；这里只是没传时的兜底默认值（DSK-06：走 desktop-client-token.ts 单一收口）。
 function defaultClientTokenReader(): string | undefined {
   try {
-    return window.localStorage.getItem("workhub_client_token") ?? window.localStorage.getItem("yqgl_client_token") ?? undefined;
+    return readDesktopClientToken(window.localStorage);
   } catch {
     return undefined;
   }

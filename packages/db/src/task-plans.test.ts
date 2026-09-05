@@ -585,6 +585,7 @@ test("R9.1 task plan repository cancels only draft plans within the workspace sc
   const result = await repository.cancelDraftPlan({
     planId,
     workspaceId,
+    workItemId,
     cancelledAt: now
   });
 
@@ -599,8 +600,39 @@ test("R9.1 task plan repository cancels only draft plans within the workspace sc
   assert.ok(queryReferences(query?.where, taskPlans.id));
   assert.ok(queryReferences(query?.where, taskPlans.workspaceId));
   assert.ok(queryReferences(query?.where, taskPlans.status));
+  // API-01：取消必须带 workItemId 谓词——否则伪造提议可跨事项取消他人草稿（IDOR）。
+  assert.ok(queryReferences(query?.where, taskPlans.workItemId));
   assert.ok(queryParamValues(query?.where).includes(planId));
   assert.ok(queryParamValues(query?.where).includes(workspaceId));
+  assert.ok(queryParamValues(query?.where).includes(workItemId));
+  assert.ok(queryParamValues(query?.where).includes("draft"));
+});
+
+test("API-01 task plan repository scopes draft lookup by work item for proposal validation", async () => {
+  const draftRow = {
+    id: planId,
+    workItemId,
+    workspaceId,
+    status: "draft",
+    objectiveId: null,
+    budgetJson: {},
+    decompositionContextJson: {},
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now
+  };
+  const { db, queries } = createQueryRecorder([[draftRow]]);
+  const repository = createTaskPlanRepository(db);
+
+  const result = await repository.findDraftPlanByIdAndWorkItem({ planId, workItemId });
+
+  assert.equal(result?.id, planId);
+  const [query] = queries;
+  assert.ok(queryReferences(query?.where, taskPlans.id));
+  assert.ok(queryReferences(query?.where, taskPlans.workItemId));
+  assert.ok(queryReferences(query?.where, taskPlans.status));
+  assert.ok(queryParamValues(query?.where).includes(planId));
+  assert.ok(queryParamValues(query?.where).includes(workItemId));
   assert.ok(queryParamValues(query?.where).includes("draft"));
 });
 

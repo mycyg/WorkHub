@@ -112,6 +112,32 @@ test("drive project gates block archived projects even for admins", () => {
   assert.equal(canManageProjectDrive(archived, { id: "admin", isAdmin: true }), false);
 });
 
+test("CORE-07: tenant fence fails closed on null workspaceId (legacy untagged rows stay invisible cross-workspace)", () => {
+  // 存量行：workspaceId 为 null（列可空 + onDelete:set null）。此前双 null 直接放行 → 跨工作区可见。
+  const untagged = {
+    archived: false,
+    deletedAt: null,
+    ownerUserId: "10000000-0000-4000-8000-000000000003",
+    workspaceId: null,
+    orgId: "org-1"
+  };
+
+  // 非 admin 即便本人是 owner 也不再放行（遇 null fail-closed；owner 可见性以带租户标签的行为准）。
+  assert.equal(
+    canViewProjectDrive(untagged, { id: "owner", userId: untagged.ownerUserId, workspaceId: "workspace-1", orgId: "org-1" }),
+    false
+  );
+  // actor 侧 workspaceId 缺失同样拒（此前 `actor.workspaceId` 为 null 时栅栏短路放行）。
+  const tagged = { ...untagged, workspaceId: "workspace-1" };
+  assert.equal(canViewProjectDrive(tagged, { id: "member", orgId: "org-1" }), false);
+  // 正常同工作区成员不受影响。
+  assert.equal(canViewProjectDrive(tagged, { id: "member", workspaceId: "workspace-1", orgId: "org-1" }), true);
+  // admin 写管理同样 fail-closed：项目丢了 workspace 标签后不再可管。
+  assert.equal(canManageProjectDrive(untagged, { id: "admin", isAdmin: true, workspaceId: "workspace-1", orgId: "org-1" }), false);
+  // admin 只读总览仍按 org 级口径（不走 projectScopeMatches），行为不变。
+  assert.equal(canViewProjectDrive(untagged, { id: "admin", isAdmin: true, workspaceId: "workspace-9", orgId: "org-1" }), true);
+});
+
 test("action gate resolves by scope, priority, specificity, and fail-safe effect strength", () => {
   const actor: PermissionActor = {
     id: "run-1",
@@ -131,6 +157,28 @@ test("action gate resolves by scope, priority, specificity, and fail-safe effect
   assert.equal(resolvePermissionDecision(actor, "tool.delete_file", policies, { now }).effect, "allow");
   assert.equal(resolvePermissionDecision(actor, "tool.write_file", policies, { now }).effect, "deny");
   assert.equal(resolvePermissionDecision(actor, "tool.unknown", [], { now }).effect, "ask");
+});
+
+test("CORE-06: session-scoped policy matches only sessionId, never actor.id (no permanent user grant)", () => {
+  const actor: PermissionActor = {
+    id: "user-1",
+    isAdmin: false,
+    orgId: "org-1",
+    workspaceId: "workspace-1",
+    sessionId: "run-2"
+  };
+  // remember=always 沉淀的 session 策略（scopeId 落在用户 id 上，如人 actor 无 run 的 /ask 路径）。
+  const learned: PermissionPolicyRecord[] = [
+    { scopeKind: "session", scopeId: "user-1", actionPattern: "tool.write_file", effect: "allow", learnedFromSession: true }
+  ];
+
+  // 同用户但在别的会话（agent run）里：不得命中——「总是允许」不是跨会话的永久授权。
+  assert.equal(resolvePermissionDecision(actor, "tool.write_file", learned, { now }).effect, "ask");
+  // 同会话内仍命中（sessionId === scopeId），学习规则在其声明的作用域内生效。
+  assert.equal(
+    resolvePermissionDecision({ ...actor, sessionId: "user-1" }, "tool.write_file", learned, { now }).effect,
+    "allow"
+  );
 });
 
 test("action gate ignores policies whose tenant metadata does not match the actor", () => {

@@ -650,9 +650,12 @@ export function createTaskPlanRepository(db: WorkHubDb) {
       return row ?? null;
     },
 
+    // API-01：workItemId 谓词是 IDOR 防线——提议打回会带 proposal.work_item_id 进来，
+    // 缺了它，伪造的 task_plan 提议可以取消同工作区任意事项的草稿计划。
     async cancelDraftPlan(input: {
       planId: string;
       workspaceId: string;
+      workItemId: string;
       cancelledAt?: Date;
     }): Promise<TaskPlanRow | null> {
       const cancelledAt = input.cancelledAt ?? new Date();
@@ -665,9 +668,28 @@ export function createTaskPlanRepository(db: WorkHubDb) {
         .where(and(
           eq(taskPlans.id, input.planId),
           eq(taskPlans.workspaceId, input.workspaceId),
+          eq(taskPlans.workItemId, input.workItemId),
           eq(taskPlans.status, "draft" satisfies TaskPlanStatus)
         ))
         .returning();
+      return row ?? null;
+    },
+
+    // API-01：提议落库前校验——task_plan change 引用的计划必须是该事项自己的草稿，
+    // 否则 422 拒收，把「跨事项引用他人草稿」挡在创建时。
+    async findDraftPlanByIdAndWorkItem(input: {
+      planId: string;
+      workItemId: string;
+    }): Promise<TaskPlanRow | null> {
+      const [row] = await db
+        .select()
+        .from(taskPlans)
+        .where(and(
+          eq(taskPlans.id, input.planId),
+          eq(taskPlans.workItemId, input.workItemId),
+          eq(taskPlans.status, "draft" satisfies TaskPlanStatus)
+        ))
+        .limit(1);
       return row ?? null;
     },
 

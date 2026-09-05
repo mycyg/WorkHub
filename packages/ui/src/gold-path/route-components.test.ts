@@ -3643,6 +3643,69 @@ test("xreview batch D: meetings empty state renders a tailored card, not phantom
   assert.equal(meetings.html.includes('data-r5-meeting-list="true"'), true);
 });
 
+test("WEB-08: meetings empty screen carries the empty copy exactly once (merged guided empty state)", () => {
+  const vm = structuredClone(meetingPageVm());
+  vm.meetings = [];
+  vm.summary = { meeting_count: 0, ready_count: 0, pending_insight_count: 0, confirmed_insight_count: 0, dismissed_insight_count: 0 };
+  vm.empty_state = "no_meetings";
+  const zh = renderWebRouteComponent({ key: "meetings", meetings: vm }, { locale: "zh-CN" });
+  // 空态文案只在引导卡出现一次——头部副标题与列表卡不再重复同一句。
+  assert.equal(zh.html.split("这个项目还没有会议洞察。").length - 1, 1);
+  assert.equal(zh.html.includes("会议转写、纪要和洞察都会归到这里。"), true);
+  const en = renderWebRouteComponent({ key: "meetings", meetings: vm }, { locale: "en-US" });
+  assert.equal(en.html.split("This project does not have meeting insights yet.").length - 1, 1);
+  assert.equal(en.html.includes("Meeting transcripts, minutes and insights land here."), true);
+});
+
+test("WEB-09: cost route formats large token counts with thousands separators (both locales)", () => {
+  const vm = surfaceVm();
+  vm.page_vms.cost.token_in = 2_000_000;
+  vm.page_vms.cost.token_out = 1_500_000;
+  vm.page_vms.cost.budget = [{
+    scope: { kind: "user", user_id: "97000000-0000-4000-8000-000000000004" },
+    scope_label: "My AI budget today",
+    policy_id: "pcost-user-day-v0:big",
+    period: "day",
+    period_start: "2026-06-11T00:00:00.000Z",
+    period_end: "2026-06-12T00:00:00.000Z",
+    token_in: 1_000_000,
+    token_out: 500_000,
+    total_tokens: 1_500_000,
+    max_tokens: 5_000_000,
+    remaining_tokens: 3_500_000,
+    estimated_cost_cny: "12.5",
+    max_cost_cny: "40",
+    remaining_cost_cny: "27.5",
+    warning_ratio: 0.3,
+    enabled: true,
+    status: "ok"
+  }];
+
+  const zh = renderWebRouteComponents(vm, { locale: "zh-CN" }).cost;
+  assert.ok(zh);
+  assert.equal(zh.html.includes("1,500,000/5,000,000 tokens"), true);
+  assert.equal(zh.html.includes("3,500,000 个 token"), true);
+  const en = renderWebRouteComponents(vm, { locale: "en-US" }).cost;
+  assert.ok(en);
+  assert.equal(en.html.includes("1,500,000/5,000,000 tokens"), true);
+  assert.equal(en.html.includes("3,500,000 tokens"), true);
+});
+
+test("INT-01: primary API actions expose button semantics via role=button", () => {
+  const confirmVm = {
+    ...surfaceVm(),
+    intake_session: routeSession("confirm")
+  };
+  const confirmIntake = renderWebRouteComponents(confirmVm, { locale: "zh-CN" }).intake;
+  assert.ok(confirmIntake);
+  // 确认屏「创建任务」。
+  assert.match(confirmIntake.html, /<a class="wh-btn wh-btn-primary" href="\/api\/workitems" role="button" data-action-id="create_workitem"/u);
+
+  // 无项目上下文的起点「开始新任务」。
+  const startIntake = renderWebRouteComponent({ key: "intake", start: true }, { locale: "zh-CN" });
+  assert.match(startIntake.html, /<a class="wh-btn wh-btn-primary" href="\/api\/projects\/bootstrap" role="button" data-action-id="start_intake"/u);
+});
+
 test("R5.6 Notifications route component groups inbox buckets and exposes audited actions", () => {
   const notifications = renderWebRouteComponent({ key: "notifications", notifications: notificationPageVm() }, { locale: "en-US" });
   const zh = renderWebRouteComponent({ key: "notifications", notifications: notificationPageVm() }, { locale: "zh-CN" });

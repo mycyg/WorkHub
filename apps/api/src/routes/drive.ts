@@ -498,12 +498,19 @@ export function createDriveRoutes(deps: DriveRoutesDependencies = {}) {
 
   routes.post("/projects/:projectId/comments", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
-    const payload = driveCreateCommentSchema.parse(await readJsonObject(c));
     try {
+      // API-06：先鉴权后解析请求体（与 delete 一致）——未授权者发畸形 body 应拿 403/404 而非泄露 schema 的 422。
+      const projectId = requireUuidParam(c.req.param("projectId"), "项目", "drive_not_found");
+      await assertCanManageDriveProject({
+        actor: c.var.actor,
+        projectId,
+        locale
+      });
+      const payload = driveCreateCommentSchema.parse(await readJsonObject(c));
       const data = await drivePages.createComment({
         actor: c.var.actor,
         locale,
-        projectId: requireUuidParam(c.req.param("projectId"), "项目", "drive_not_found"),
+        projectId,
         body: payload.body,
         ...(payload.folder_id ? { folderId: payload.folder_id } : {})
       });

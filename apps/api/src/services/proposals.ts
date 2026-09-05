@@ -31,6 +31,7 @@ import { readSnapshotFile } from "@workhub/audit";
 import {
   getSharedDatabaseClient,
   createProposalRepository,
+  createTaskPlanRepository,
   ProposalRepositoryBranchWorkItemMismatchError,
   ProposalRepositoryConflictError,
   ProposalRepositoryDuplicateTargetKeyError,
@@ -49,6 +50,7 @@ import {
   type MergeProposalRow,
   type ProposalRepository,
   type StoredProposalRows,
+  type TaskPlanRow,
   type UserMemoryRepository,
   type WorkHubDatabaseClient
 } from "@workhub/db";
@@ -1847,6 +1849,10 @@ export function createDbProposalService(repository: ProposalRepository, options:
   storageRoot?: string;
   fusionCandidateGenerator?: MergeFusionCandidateGenerator;
   userMemoryRepository?: Pick<UserMemoryRepository, "upsert">;
+  // API-01：task_plan change 的引用校验。缺省时（测试双）跳过；默认装配一定注入真仓库。
+  taskPlanDrafts?: {
+    findDraftPlanByIdAndWorkItem: (input: { planId: string; workItemId: string }) => Promise<TaskPlanRow | null>;
+  };
   onMerged?: TaskPlanMergeApprovalHandler;
   onRejected?: TaskPlanReviewRejectionHandler;
 } = {}): ProposalService {
@@ -1931,6 +1937,26 @@ export function createDbProposalService(repository: ProposalRepository, options:
     async createFromManifest(input) {
       if (input.manifest.work_item_id !== input.workItemId) {
         throw new ProposalServiceError(422, "manifest_workitem_mismatch", "变更申请与事项不匹配。");
+      }
+
+      // API-01：客户端可自供 manifest——task_plan change 引用的计划必须存在、挂在该事项下且仍是草稿，
+      // 否则评审「打回」会顺着 entity_id 取消掉别人事项的草稿计划（IDOR）。
+      if (options.taskPlanDrafts) {
+        for (const change of input.manifest.changes) {
+          if (change.target_kind !== "structured_record" || change.target_ref.entity_type !== "task_plan") {
+            continue;
+          }
+          const planId = change.target_ref.entity_id;
+          const draft = planId
+            ? await options.taskPlanDrafts.findDraftPlanByIdAndWorkItem({
+                planId,
+                workItemId: input.workItemId
+              })
+            : null;
+          if (!draft) {
+            throw new ProposalServiceError(422, "task_plan_draft_mismatch", "这份计划提议引用的任务计划不存在或已处理，请刷新后重试。");
+          }
+        }
       }
 
       const at = now();
@@ -2339,6 +2365,7 @@ export function getDefaultProposalService() {
   if (!defaultProposalService) {
     defaultProposalDbClient = getSharedDatabaseClient();
     defaultProposalService = createDbProposalService(createProposalRepository(defaultProposalDbClient.db), {
+      taskPlanDrafts: createTaskPlanRepository(defaultProposalDbClient.db),
       onMerged: getDefaultTaskPlanMergeApprovalHandler(),
       onRejected: getDefaultTaskPlanReviewRejectionHandler()
     });

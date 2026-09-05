@@ -68,15 +68,15 @@ export function liveStreamTargetsForRoute(
     }
   } else if (result.match.key === "conversation") {
     // R20 P2-06：只读会话镜像订阅该会话专属 SSE 窄流。逐流 eventTypes 只订 conversation.*（不污染 me
-    // 流的全局窄化面）；refreshOnReconnect 让断线重连补拉全量对账，而不只依赖增量。收到订阅面内任一事件
-    // 即触发一次全量重渲（renderCurrentRouteOrOnboard 按当前 pathname+search 重拉会话页 VM）。
+    // 流的全局窄化面）。断线重连的全量补拉由 live-runtime 对所有流统一兜底（INF-08），这里无需再开
+    // 逐流开关。收到订阅面内任一事件即触发一次全量重渲（renderCurrentRouteOrOnboard 按当前
+    // pathname+search 重拉会话页 VM）。
     const conversationId = result.match.params["id"];
     if (conversationId) {
       targets.push({
         key: "conversation",
         url: streams.conversation(conversationId),
-        eventTypes: [...CONVERSATION_MIRROR_LIVE_EVENT_TYPES],
-        refreshOnReconnect: true
+        eventTypes: [...CONVERSATION_MIRROR_LIVE_EVENT_TYPES]
       });
     }
   }

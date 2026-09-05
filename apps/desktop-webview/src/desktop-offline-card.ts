@@ -1,5 +1,9 @@
 import type { WorkHubLocale } from "@workhub/ui/gold-path";
 
+import {
+  DESKTOP_API_BASE_STORAGE_KEY,
+  normalizeDesktopApiBase
+} from "./desktop-api-base.js";
 import { liquidGlassHeadHtml } from "./liquid-glass.js";
 import {
   liquidGlassFilterCss,
@@ -56,9 +60,11 @@ html,body,#root{margin:0;min-height:100%;background:rgba(0,0,0,0)!important}
   .wh-desktop-offline-settings-row{display:flex;gap:8px;flex-wrap:wrap}
   .wh-desktop-offline-settings-row button{border:1px solid rgba(255,255,255,.30);border-radius:12px;background:transparent;color:CanvasText;padding:9px 14px;font:inherit;font-weight:850;cursor:pointer}
   .wh-desktop-offline-settings-row button:first-child{border:0;color:#fff;background:linear-gradient(135deg,#0a84ff,#64d2ff)}
+  .wh-desktop-offline-settings-error{margin:0;font-size:12px;font-weight:750;color:#c43d2b}
+  .wh-desktop-offline-settings-error[hidden]{display:none}
   .wh-desktop-offline-detail{margin-top:2px;font-size:11px;color:color-mix(in srgb, CanvasText 52%, transparent);word-break:break-all}
   .wh-desktop-offline-detail summary{cursor:pointer;font-weight:850}
-  </style><main class="wh-desktop-offline-shell"><section class="wh-desktop-offline-card" aria-live="polite">${renderWorkHubLiquidGlassLayer("spotlight")}<span class="wh-liquid-glass-rim" aria-hidden="true"></span><div class="wh-liquid-glass-content"><div class="wh-desktop-offline-mark" aria-hidden="true"></div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(body)}</p><p class="wh-desktop-offline-hint">${escapeHtml(hint)}</p><div class="wh-desktop-offline-actions"><button id="wh-retry" type="button">${zh ? "重试" : "Retry"}</button><button id="wh-open-settings" type="button">${zh ? "打开设置" : "Open Settings"}</button></div><form id="wh-offline-settings" class="wh-desktop-offline-settings" hidden><label>${zh ? "服务器地址" : "Server address"}<input id="wh-api-base" name="apiBase" type="url" value="${escapeHtml(input.apiBase)}" placeholder="http://127.0.0.1:8787" /></label><div class="wh-desktop-offline-settings-row"><button type="submit">${zh ? "保存并重试" : "Save and Retry"}</button><button id="wh-default-api" type="button">${zh ? "使用默认" : "Use Default"}</button></div></form><details class="wh-desktop-offline-detail"><summary>${zh ? "高级详情" : "Details"}</summary>${escapeHtml(input.detail)}</details></div></section></main>`;
+  </style><main class="wh-desktop-offline-shell"><section class="wh-desktop-offline-card" aria-live="polite">${renderWorkHubLiquidGlassLayer("spotlight")}<span class="wh-liquid-glass-rim" aria-hidden="true"></span><div class="wh-liquid-glass-content"><div class="wh-desktop-offline-mark" aria-hidden="true"></div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(body)}</p><p class="wh-desktop-offline-hint">${escapeHtml(hint)}</p><div class="wh-desktop-offline-actions"><button id="wh-retry" type="button">${zh ? "重试" : "Retry"}</button><button id="wh-open-settings" type="button">${zh ? "打开设置" : "Open Settings"}</button></div><form id="wh-offline-settings" class="wh-desktop-offline-settings" hidden><label>${zh ? "服务器地址" : "Server address"}<input id="wh-api-base" name="apiBase" type="url" value="${escapeHtml(input.apiBase)}" placeholder="http://127.0.0.1:8787" /></label><p id="wh-api-base-error" class="wh-desktop-offline-settings-error" hidden></p><div class="wh-desktop-offline-settings-row"><button type="submit">${zh ? "保存并重试" : "Save and Retry"}</button><button id="wh-default-api" type="button">${zh ? "使用默认" : "Use Default"}</button></div></form><details class="wh-desktop-offline-detail"><summary>${zh ? "高级详情" : "Details"}</summary>${escapeHtml(input.detail)}</details></div></section></main>`;
   }
 
 export function bindDesktopOfflineCard(rootEl: HTMLElement, input: DesktopOfflineCardBindingInput): void {
@@ -70,17 +76,32 @@ export function bindDesktopOfflineCard(rootEl: HTMLElement, input: DesktopOfflin
     rootEl.querySelector<HTMLInputElement>("#wh-api-base")?.focus({ preventScroll: true });
   });
   rootEl.querySelector<HTMLButtonElement>("#wh-default-api")?.addEventListener("click", () => {
-    input.storage.removeItem("workhub_api_base");
+    input.storage.removeItem(DESKTOP_API_BASE_STORAGE_KEY);
     input.reload();
   });
+  // DSK-05：服务器地址先过 normalizeDesktopApiBase（仅 http/https、不带凭据/查询串）再落盘——
+  // 非法值拒存、不 reload，行内给出错误提示（此前原样保存任意输入，javascript:/畸形串也会进基地址）。
   rootEl.querySelector<HTMLFormElement>("#wh-offline-settings")?.addEventListener("submit", (event) => {
     event.preventDefault();
-    const next = rootEl.querySelector<HTMLInputElement>("#wh-api-base")?.value.trim().replace(/\/+$/u, "") ?? "";
-    if (next.length > 0) {
-      input.storage.setItem("workhub_api_base", next);
-    } else {
-      input.storage.removeItem("workhub_api_base");
+    const raw = rootEl.querySelector<HTMLInputElement>("#wh-api-base")?.value ?? "";
+    const errorEl = rootEl.querySelector<HTMLElement>("#wh-api-base-error");
+    if (raw.trim().length === 0) {
+      input.storage.removeItem(DESKTOP_API_BASE_STORAGE_KEY);
+      input.reload();
+      return;
     }
+    const normalized = normalizeDesktopApiBase(raw);
+    if (!normalized) {
+      if (errorEl) {
+        errorEl.textContent = input.locale === "zh-CN"
+          ? "地址格式不对——只接受 http:// 或 https:// 开头的完整地址。"
+          : "That address is not valid — use a full http:// or https:// URL.";
+        errorEl.removeAttribute("hidden");
+      }
+      return;
+    }
+    errorEl?.setAttribute("hidden", "");
+    input.storage.setItem(DESKTOP_API_BASE_STORAGE_KEY, normalized);
     input.reload();
   });
   input.scheduleRebuild?.();

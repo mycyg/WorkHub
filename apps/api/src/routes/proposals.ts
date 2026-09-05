@@ -20,6 +20,7 @@ import {
   reviewProposalRequestSchema,
   type AuditLogFact,
   type AttentionItem,
+  type DeliverableChangeManifest,
   type ProposalReviewResult,
   type WorkHubLocale
 } from "@workhub/contracts";
@@ -644,9 +645,16 @@ function mergeResultFor(input: {
   const attention = input.attention ?? genericMergeAttention(input.proposal, input.createdAt, input.locale);
   const mergeSnapshotId = input.proposal.merge_snapshot_id;
   if (!mergeSnapshotId) {
-    throw new ProposalServiceError(409, "merge_snapshot_missing", input.locale === "en-US"
-        ? "This change request is missing its merge snapshot — refresh and regenerate, or contact an admin."
-        : "这份变更申请缺少合并快照，请刷新后重新生成或联系管理员处理。");
+    // API-07：走到这里说明合并已落库但快照 id 缺失——这是服务端数据不完整，不是客户端冲突。
+    // 回 409 会让客户端把成功合并当失败重试；改 500 + 日志给 on-call 排查。
+    console.error("proposal.merge_snapshot_missing", {
+      proposal_id: input.proposal.id,
+      work_item_id: input.proposal.work_item_id,
+      status: input.proposal.status
+    });
+    throw new ProposalServiceError(500, "merge_snapshot_missing", input.locale === "en-US"
+        ? "The merge succeeded but its snapshot record is incomplete — please contact an admin before retrying."
+        : "变更已采纳，但合并快照记录不完整，请勿重试，请联系管理员核查。");
   }
   const proposalMerged = makeWorkHubEvent({
     event_id: randomUUID(),
@@ -1321,10 +1329,16 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
     // 泄露 schema 的校验 422。assertCanReadWorkItem 同时承担 uuid 形参校验，置于解析之前。
     await assertCanMutateWorkItem(c.req.param("id"), c.var.actor);
     const payload = createProposalFromManifestRequestSchema.parse(await readJsonObject(c));
+    // API-02：HTTP 来源 manifest 的 checks 是提交者自供——统一改标 self_reported，
+    // 评审 VM 据 source 显示「提交者自报」，不把伪造的「检查通过」当事实展示。
+    const manifest: DeliverableChangeManifest = {
+      ...payload.manifest,
+      checks: payload.manifest.checks.map((check) => ({ ...check, source: "self_reported" as const }))
+    };
     try {
       const proposal = await proposals.createFromManifest({
         workItemId: c.req.param("id"),
-        manifest: payload.manifest,
+        manifest,
         actor: proposalActorFor(c.var.actor),
         ...(payload.title ? { title: payload.title } : {}),
         ...(payload.branch_id ? { branchId: payload.branch_id } : {})

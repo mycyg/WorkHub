@@ -36,6 +36,13 @@ export type CreateAuditLogInput = {
 
 export type SnapshotRepository = {
   createSnapshot: (input: CreateSnapshotInput) => Promise<SnapshotRow>;
+  // INF-10：快照行 + 其审计行必须原子——分开写时审计写失败会留下孤儿快照行（replay 反查不到、
+  // 回滚点口径失真）。两表写在同一事务里，任一失败整体回滚。返回落库的快照行。
+  // 可选（additive）：旧测试 fake 不实现时调用方退回两写路径，见 services/agent-run-snapshots.ts。
+  createSnapshotWithAudit?: (
+    snapshot: CreateSnapshotInput,
+    audit: Omit<CreateAuditLogInput, "snapshotId">
+  ) => Promise<SnapshotRow>;
   findSnapshotById: (id: string) => Promise<SnapshotRow | null>;
   listSnapshotsForWorkItem: (
     workItemId: string,
@@ -51,7 +58,7 @@ export const AUDIT_LOGS_FOR_WORK_ITEM_LIMIT = 200;
 
 export type AuditLogRepository = {
   createAuditLog: (input: CreateAuditLogInput) => Promise<AuditLogRow>;
-  listAuditLogsForEntity: (entityType: string, entityId: string) => Promise<AuditLogRow[]>;
+  listAuditLogsForEntity: (entityType: string, entityId: string, options?: { limit?: number }) => Promise<AuditLogRow[]>;
   listAuditLogsForWorkItem: (workItemId: string, options?: { limit?: number }) => Promise<AuditLogRow[]>;
   markAuditLogUndone: (id: string, at: Date) => Promise<AuditLogRow | null>;
 };
@@ -109,25 +116,57 @@ export function createWorkspaceAuditLogRepository(db: WorkHubDb): WorkspaceAudit
 }
 
 export function createSnapshotRepository(db: WorkHubDb): SnapshotRepository {
+  // 事务 tx 与库句柄同构可插入（event-outbox.ts 同款写法），让同事务复用这段 insert。
+  async function insertSnapshot(executor: Pick<WorkHubDb, "insert">, input: CreateSnapshotInput): Promise<SnapshotRow> {
+    const rows = await executor
+      .insert(snapshots)
+      .values({
+        id: input.id ?? randomUUID(),
+        workItemId: input.workItemId,
+        ...(input.branchId ? { branchId: input.branchId } : {}),
+        kind: input.kind,
+        ref: input.ref,
+        ...(input.contentSha256 ? { contentSha256: input.contentSha256 } : {}),
+        createdByKind: input.createdByKind
+      })
+      .returning();
+    const snapshot = rows[0];
+    if (!snapshot) {
+      throw new Error("Failed to create snapshot");
+    }
+    return snapshot;
+  }
+
   return {
     async createSnapshot(input) {
-      const rows = await db
-        .insert(snapshots)
-        .values({
-          id: input.id ?? randomUUID(),
-          workItemId: input.workItemId,
-          ...(input.branchId ? { branchId: input.branchId } : {}),
-          kind: input.kind,
-          ref: input.ref,
-          ...(input.contentSha256 ? { contentSha256: input.contentSha256 } : {}),
-          createdByKind: input.createdByKind
-        })
-        .returning();
-      const snapshot = rows[0];
-      if (!snapshot) {
-        throw new Error("Failed to create snapshot");
-      }
-      return snapshot;
+      return insertSnapshot(db, input);
+    },
+
+    async createSnapshotWithAudit(snapshotInput, auditInput) {
+      // INF-10：快照行 + 审计行同事务——审计写失败整体回滚，不再留下 replay 反查不到的孤儿快照行。
+      return db.transaction(async (tx) => {
+        const snapshot = await insertSnapshot(tx, snapshotInput);
+        const rows = await tx
+          .insert(auditLogs)
+          .values({
+            id: auditInput.id ?? randomUUID(),
+            ...(auditInput.orgId ? { orgId: auditInput.orgId } : {}),
+            ...(auditInput.workspaceId ? { workspaceId: auditInput.workspaceId } : {}),
+            actorKind: auditInput.actorKind,
+            ...(auditInput.actorUserId ? { actorUserId: auditInput.actorUserId } : {}),
+            ...(auditInput.actorNickname ? { actorNickname: auditInput.actorNickname } : {}),
+            entityType: auditInput.entityType,
+            entityId: auditInput.entityId,
+            action: auditInput.action,
+            detailJson: auditInput.detailJson ?? {},
+            snapshotId: snapshot.id
+          })
+          .returning();
+        if (!rows[0]) {
+          throw new Error("Failed to create snapshot audit log");
+        }
+        return snapshot;
+      });
     },
 
     async findSnapshotById(id) {
@@ -187,12 +226,16 @@ export function createAuditLogRepository(db: WorkHubDb): AuditLogRepository {
       return auditLog;
     },
 
-    async listAuditLogsForEntity(entityType, entityId) {
+    async listAuditLogsForEntity(entityType, entityId, options = {}) {
+      // CORE-14：与 listAuditLogsForWorkItem 同口径封顶——实体时间线是「最近 N 条」视图，
+      // 不封顶则随 audit_logs 增长退化成无界扫描（唯一调用方 agent-runs replay 只消费最近记录）。
+      const limit = options.limit ?? AUDIT_LOGS_FOR_WORK_ITEM_LIMIT;
       return db
         .select()
         .from(auditLogs)
         .where(and(eq(auditLogs.entityType, entityType), eq(auditLogs.entityId, entityId)))
-        .orderBy(desc(auditLogs.createdAt));
+        .orderBy(desc(auditLogs.createdAt))
+        .limit(limit);
     },
 
     async listAuditLogsForWorkItem(workItemId, options = {}) {

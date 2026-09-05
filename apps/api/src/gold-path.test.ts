@@ -183,6 +183,9 @@ function emptyQueue(): AgentRunQueue {
     },
     async runNext() {
       return null;
+    },
+    async startNext() {
+      return null;
     }
   };
 }

@@ -76,6 +76,11 @@ test("capabilityForShellRoute maps tray/deep-link/pet routes to capabilities", (
   assert.equal(capabilityForShellRoute("/p/project-7"), "projects");
   assert.equal(capabilityForShellRoute("/dashboard/cost"), "cost");
   assert.equal(capabilityForShellRoute("/dashboard/agents"), "agents");
+  // WIRE-02：深链三条断路由补映射——通知中心、legacy 需求直链（需求即工作项）、桌宠白名单的 /files。
+  assert.equal(capabilityForShellRoute("/notifications"), "notifications");
+  assert.equal(capabilityForShellRoute("/r/REQ-42"), "workitem");
+  assert.equal(capabilityForShellRoute("/files"), "drive");
+  assert.equal(capabilityForShellRoute("/files/folder-1"), "drive");
   // 回主页或无匹配 → undefined（控制器据此回 launcher）。
   assert.equal(capabilityForShellRoute("/"), undefined);
   assert.equal(capabilityForShellRoute("/unknown-thing"), undefined);
@@ -89,6 +94,8 @@ test("entityIdFromShellRoute extracts the target entity id for deep-links (rank1
   // 带 URL 编码的段要解码。
   assert.equal(entityIdFromShellRoute("/workitems/a%20b"), "a b");
   assert.equal(entityIdFromShellRoute("/p/project-7"), "project-7");
+  // WIRE-02：legacy 需求直链的 id 也要能抽出来（workitem 能力据此直接打开该项）。
+  assert.equal(entityIdFromShellRoute("/r/REQ-42"), "REQ-42");
   // 无路径 id 时回退查询参数（如网盘 project_id）。
   assert.equal(entityIdFromShellRoute("/drive?project_id=p1"), "p1");
   // 列表路由 / 无 id / 回主页 → undefined。

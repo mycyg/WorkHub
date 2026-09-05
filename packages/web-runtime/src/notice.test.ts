@@ -91,3 +91,21 @@ test("R9.7 route notices expose a monotonic sequence for live smoke freshness", 
     (globalThis as unknown as { window: unknown }).window = originalWindow;
   }
 });
+
+// E2E-09：确认屏「创建任务」未选方向被拦时给确认步专用文案（「先选一个方向再创建」级别），
+// 澄清步保持通用口径。
+test("E2E-09: intake option required notice names the direction pick on the confirm step", () => {
+  assert.equal(intakeOptionRequiredNotice("zh-CN", "create_workitem").body, "先选一个方向再创建——没选时不会创建。");
+  assert.equal(
+    intakeOptionRequiredNotice("en-US", "create_workitem").body,
+    "Pick a direction before creating — nothing is created until you do."
+  );
+  // 非确认步（澄清问题）仍走词典通用文案。
+  assert.equal(intakeOptionRequiredNotice("zh-CN", "next_question").body, "请先选择一个选项，没选时不会提交。");
+});
+
+// UI-10：未知/未接线的服务端动作必须明确告知「暂未支持」，不再像「处理中」那样让用户干等。
+test("UI-10: pending fallback states the action is unsupported, bilingually", () => {
+  assert.equal(actionPendingNotice("zh-CN").body, "此动作暂未支持。");
+  assert.equal(actionPendingNotice("en-US").body, "This action isn't supported yet.");
+});

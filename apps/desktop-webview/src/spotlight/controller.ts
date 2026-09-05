@@ -694,6 +694,29 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     },
     { capture: true }
   );
+  // DSK-09：拖拽 mousemove 的 IPC（dragMove → move_main_window_by）按 rAF 合帧——高频 mousemove
+  // 事件（可达每秒数百个）不再每个都发一次 IPC，只在每帧把累计位移发一次。
+  let dragMoveFramePending = false;
+  let dragMoveAccumX = 0;
+  let dragMoveAccumY = 0;
+  const flushDragMove = () => {
+    dragMoveFramePending = false;
+    const deltaX = dragMoveAccumX;
+    const deltaY = dragMoveAccumY;
+    dragMoveAccumX = 0;
+    dragMoveAccumY = 0;
+    if (deltaX !== 0 || deltaY !== 0) {
+      input.dragMove?.(deltaX, deltaY);
+    }
+  };
+  const scheduleDragMove = (deltaX: number, deltaY: number) => {
+    dragMoveAccumX += deltaX;
+    dragMoveAccumY += deltaY;
+    if (!dragMoveFramePending) {
+      dragMoveFramePending = true;
+      requestAnimationFrame(flushDragMove);
+    }
+  };
   window.addEventListener(
     "mousemove",
     (event) => {
@@ -710,7 +733,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       event.preventDefault();
       event.stopPropagation();
       if (input.dragMove) {
-        input.dragMove?.(event.screenX - manualDrag.lastScreenX, event.screenY - manualDrag.lastScreenY);
+        scheduleDragMove(event.screenX - manualDrag.lastScreenX, event.screenY - manualDrag.lastScreenY);
         manualDrag.lastScreenX = event.screenX;
         manualDrag.lastScreenY = event.screenY;
       } else {
@@ -724,6 +747,10 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     (event) => {
       if (!manualDrag) {
         return;
+      }
+      // 抬起时把合帧里还没发出去的尾量补发——不丢最后一段位移。
+      if (dragMoveFramePending) {
+        flushDragMove();
       }
       const moved = Math.hypot(event.clientX - manualDrag.startClientX, event.clientY - manualDrag.startClientY);
       if (!manualDrag.dragging && moved < 4) {
@@ -792,7 +819,8 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     event.preventDefault();
     event.stopPropagation();
     if (input.dragMove) {
-      input.dragMove?.(event.screenX - dragSheetDrag.lastScreenX, event.screenY - dragSheetDrag.lastScreenY);
+      // DSK-09：与主拖拽区同一套 rAF 合帧（scheduleDragMove/flushDragMove，见上方 mousemove 注释）。
+      scheduleDragMove(event.screenX - dragSheetDrag.lastScreenX, event.screenY - dragSheetDrag.lastScreenY);
       dragSheetDrag.lastScreenX = event.screenX;
       dragSheetDrag.lastScreenY = event.screenY;
     } else {
@@ -802,6 +830,10 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   const finishDragSheet = (event: PointerEvent) => {
     if (!dragSheetDrag) {
       return;
+    }
+    // 抬起/取消时补发合帧里还没发出去的尾量。
+    if (dragMoveFramePending) {
+      flushDragMove();
     }
     const wasDragging = dragSheetDrag.dragging;
     try {

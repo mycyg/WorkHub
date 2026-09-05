@@ -1,7 +1,7 @@
 import { createApiClient, type CreateTaskPlanRequest, type WorkHubApiClient } from "@workhub/api-client";
 import { defaultPorts } from "@workhub/config/ports";
 import type { CreateSessionRequest, CreateWorkItemRequest, ProposalConflict, ProposalDetailVM, StartAgentRunRequest, WorkHubEvent } from "@workhub/contracts";
-import { cardFromAgentRunLive, cardFromEvent, cardFromProposalDetail, cardsFromProposalConflicts, cardFromSessionVm, cardFromWorkItemDetail, type CuuCard } from "@workhub/cuu";
+import { cardFromAgentRunLive, cardFromEvent, cardFromSessionVm, cardFromWorkItemDetail, type CuuCard } from "@workhub/cuu";
 import { renderAgentRunLive } from "@workhub/ui/agent-run";
 import { renderGoldPathSurface, type WorkHubLocale } from "@workhub/ui/gold-path";
 import { renderIntakeSession } from "@workhub/ui/intake";
@@ -188,18 +188,9 @@ export function desktopCuuCardFromEvent(event: WorkHubEvent<unknown>, locale?: W
   return cardFromEvent(event, locale ? { locale } : undefined);
 }
 
-export async function loadDesktopProposalCuuCard(client: WorkHubApiClient, proposalId: string, locale?: WorkHubLocale): Promise<CuuCard> {
-  return cardFromProposalDetail(await loadDesktopProposalDetail(client, proposalId, locale), locale ? { locale } : undefined);
-}
-
-export async function loadDesktopProposalConflictCuuCards(
-  client: WorkHubApiClient,
-  proposalId: string,
-  locale?: WorkHubLocale
-): Promise<CuuCard[]> {
-  const proposal = await loadDesktopProposalDetail(client, proposalId, locale);
-  return cardsFromProposalConflicts(await loadDesktopProposalConflicts(client, proposal), locale ? { locale } : undefined);
-}
+// WIRE-06：loadDesktopProposalCuuCard / loadDesktopProposalConflictCuuCards 已删——它们只被这个死 barrel
+// 自己引用（其依赖的 cuu 侧死导出 cardFromProposalDetail/cardsFromProposalConflicts 同步删除）；
+// 提议卡的真实生产路径是 attention 卡（cardFromAttentionItem）与桌宠冲突卡（cardFromProposalConflict）。
 
 export async function loadDesktopIntakeCuuCard(
   client: WorkHubApiClient,

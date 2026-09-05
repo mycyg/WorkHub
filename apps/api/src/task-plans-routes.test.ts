@@ -289,9 +289,9 @@ class MemoryTaskPlans implements TaskPlanWorkflowRepository {
     this.rows.set(input.id, { status: "draft", input });
   }
 
-  async cancelDraftPlan(input: { planId: string; workspaceId: string; cancelledAt?: Date }): Promise<TaskPlanRow | null> {
+  async cancelDraftPlan(input: { planId: string; workspaceId: string; workItemId: string; cancelledAt?: Date }): Promise<TaskPlanRow | null> {
     const row = this.rows.get(input.planId);
-    if (!row || row.input.workspaceId !== input.workspaceId || row.status !== "draft") {
+    if (!row || row.input.workspaceId !== input.workspaceId || row.input.workItemId !== input.workItemId || row.status !== "draft") {
       return null;
     }
     row.status = "cancelled";
@@ -1080,6 +1080,103 @@ test("R9.7 task-plan proposal merge cannot approve a plan from a different work 
   assert.equal(taskPlans.rows.get(foreignPlanId)?.status, "draft");
 });
 
+test("API-01 task-plan proposal rejection cannot cancel a plan from a different work item", async () => {
+  const runtimeSettings = settings();
+  const workItems = new WorkItems();
+  const taskPlans = new MemoryTaskPlans();
+  await taskPlans.createDraftPlan({
+    id: planId,
+    workItemId,
+    workspaceId,
+    budgetJson: {},
+    decompositionContextJson: {},
+    createdByUserId: userId,
+    items: [],
+    now
+  });
+  await taskPlans.createDraftPlan({
+    id: foreignPlanId,
+    workItemId: foreignWorkItemId,
+    workspaceId,
+    budgetJson: {},
+    decompositionContextJson: {},
+    createdByUserId: userId,
+    items: [],
+    now
+  });
+  const proposals = createInMemoryProposalService({
+    now: () => now,
+    id: ids([proposalId, branchId, reviewId]),
+    onRejected: createTaskPlanReviewRejectionHandler({ taskPlans })
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createWorkItemProposalRoutes({ auth: authDeps(runtimeSettings), proposals, workItems }));
+  app.route("/api/proposals", createProposalRoutes({ auth: authDeps(runtimeSettings), proposals, workItems }));
+  const headers = {
+    cookie: await cookie(runtimeSettings),
+    "content-type": "application/json"
+  };
+
+  const created = await app.request(`/api/workitems/${workItemId}/proposals`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      manifest: {
+        version: 0,
+        work_item_id: workItemId,
+        title: "篡改计划提议",
+        summary_md: "这份提议挂在当前事项上，但 manifest 指向另一个事项的任务计划，诱使评审打回取消它。",
+        author: { actor_kind: "ai", label: "WorkHub Meta-Planner" },
+        base: { created_at: now.toISOString() },
+        changes: [{
+          id: foreignPlanId,
+          target_kind: "structured_record",
+          target_ref: {
+            entity_type: "task_plan",
+            entity_id: foreignPlanId,
+            path: `/workspaces/${workspaceId}/task-plans/${foreignPlanId}`
+          },
+          change_type: "generated",
+          human_summary: "恶意指向另一个事项的任务计划。",
+          machine_summary: {
+            changed_fields: ["task_plan_items"],
+            generated_content_md: "1. 外部事项计划"
+          }
+        }],
+        checks: [],
+        evidence_refs: [],
+        risk: {
+          level: "low",
+          human_label: "低风险",
+          reversible: true
+        },
+        rollback: {
+          available: false,
+          description: "测试用 manifest"
+        },
+        review: {
+          suggested_decision: "needs_human",
+          reason_required_on_reject: true
+        }
+      }
+    })
+  });
+  assert.equal(created.status, 201);
+
+  const rejected = await app.request(`/api/proposals/${proposalId}/review`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "request_changes", reason_md: "打回试试。" })
+  });
+
+  // API-01：cancelDraftPlan 的 workItemId 谓词让跨事项引用 miss → 409，受害草稿保持 draft。
+  assert.equal(rejected.status, 409);
+  const body = await rejected.json() as { error: { code: string } };
+  assert.equal(body.error.code, "task_plan_rejection_failed");
+  assert.equal(taskPlans.rows.get(planId)?.status, "draft");
+  assert.equal(taskPlans.rows.get(foreignPlanId)?.status, "draft");
+});
+
 test("R9.1 task-plan workflow cancels its draft when proposal creation fails", async () => {
   const taskPlans = new MemoryTaskPlans();
   const service = createTaskPlanWorkflowService({
@@ -1372,4 +1469,47 @@ test("B-R9.6 task-plan pause 404s for missing plans without leaking existence", 
   });
   assert.equal(response.status, 404);
   assert.deepEqual(harness.workItems.mutations, []);
+});
+
+test("API-04 task-plan creation refuses to decompose when the budget gate rejects", async () => {
+  const runtimeSettings = settings();
+  const workItems = new WorkItems();
+  const taskPlans = new MemoryTaskPlans();
+  const proposals = createInMemoryProposalService({
+    now: () => now,
+    id: ids([proposalId, branchId])
+  });
+  let plannerCalls = 0;
+  const service = createTaskPlanWorkflowService({
+    taskPlans,
+    proposals,
+    id: ids([planId]),
+    now: () => now,
+    planner: {
+      async createDraft() {
+        plannerCalls += 1;
+        throw new Error("planner must not run when the budget gate rejects");
+      }
+    },
+    async budgetGate() {
+      throw new TaskPlanServiceError(429, "budget_exhausted", "团队本期 AI 预算已用完，请追加或上调预算后再试。");
+    }
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createTaskPlanRoutes({ auth: authDeps(runtimeSettings), service, workItems }));
+
+  const response = await app.request(`/api/workitems/${workItemId}/task-plan`, {
+    method: "POST",
+    headers: {
+      cookie: await cookie(runtimeSettings),
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({})
+  });
+
+  assert.equal(response.status, 429);
+  const body = await response.json() as { error: { code: string } };
+  assert.equal(body.error.code, "budget_exhausted");
+  assert.equal(plannerCalls, 0);
+  assert.equal(taskPlans.rows.size, 0);
 });

@@ -49,7 +49,7 @@ export function createAgentRunSnapshotHook(options: AgentRunSnapshotHookOptions)
       kind: "pre_step",
       createdByKind: "ai"
     });
-    const row = await stores.snapshots.createSnapshot({
+    const snapshotInput = {
       id: snapshot.id,
       workItemId: snapshot.workItemId,
       ...(snapshot.branchId ? { branchId: snapshot.branchId } : {}),
@@ -57,23 +57,33 @@ export function createAgentRunSnapshotHook(options: AgentRunSnapshotHookOptions)
       ref: snapshot.ref,
       ...(snapshot.contentSha256 ? { contentSha256: snapshot.contentSha256 } : {}),
       createdByKind: snapshot.createdByKind
-    });
+    } as const;
     const action = `tool.${input.toolId}.snapshot`;
+    const auditInput = {
+      orgId: options.run.org_id ?? options.settings.auth.defaultOrgId,
+      workspaceId: options.run.workspace_id ?? options.settings.auth.defaultWorkspaceId,
+      actorKind: "ai" as const,
+      actorNickname: "WorkHub AI",
+      entityType: "work_item",
+      entityId: snapshotInput.workItemId,
+      action,
+      detailJson: {
+        run_id: input.runId ?? options.run.run_id,
+        tool_id: input.toolId,
+        side_effect: input.sideEffect,
+        input_preview: preview(input.input)
+      }
+    };
+    // INF-10：快照行 + 审计行同事务（仓储实现了 createSnapshotWithAudit 时）——审计写失败整体回滚，
+    // 不再留下 replay 反查不到的孤儿快照行。未实现该方法的旧注入（单测 fake）退回原两写路径。
+    if (stores.snapshots.createSnapshotWithAudit) {
+      const row = await stores.snapshots.createSnapshotWithAudit(snapshotInput, auditInput);
+      return { snapshotId: row.id };
+    }
+    const row = await stores.snapshots.createSnapshot(snapshotInput);
     try {
       await stores.auditLogs.createAuditLog({
-        orgId: options.run.org_id ?? options.settings.auth.defaultOrgId,
-        workspaceId: options.run.workspace_id ?? options.settings.auth.defaultWorkspaceId,
-        actorKind: "ai",
-        actorNickname: "WorkHub AI",
-        entityType: "work_item",
-        entityId: row.workItemId,
-        action,
-        detailJson: {
-          run_id: input.runId ?? options.run.run_id,
-          tool_id: input.toolId,
-          side_effect: input.sideEffect,
-          input_preview: preview(input.input)
-        },
+        ...auditInput,
         snapshotId: row.id
       });
     } catch (error) {

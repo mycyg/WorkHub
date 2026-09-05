@@ -93,8 +93,9 @@ export function writeEventStream(
         topic,
         last_event_id: lastEventId || undefined,
         // findings[#170]：诚实声明。后端不按 Last-Event-ID 重放（memory/redis bus 都不存 per-topic 回放日志），
-        // 此前 cursor 在场就报 "reconcile" 是假承诺。客户端本就不读 resume_mode，且每条实时事件都整路由重拉
-        // (live-runtime onRefresh)，断线期间的事件靠下一条事件后的全量重拉补齐——故恒报 "fresh"，不谎称重放。
+        // 此前 cursor 在场就报 "reconcile" 是假承诺。客户端本就不读 resume_mode；断线窗口漏掉的事件由
+        // 客户端在重连成功（connected）时做一次全量重拉补齐（INF-08，web live-runtime 与桌面端同口径），
+        // 逐事件到来时也会整路由重拉（live-runtime onRefresh）——故恒报 "fresh"，不谎称重放。
         resume_mode: "fresh"
       })));
 

@@ -10,7 +10,6 @@ import {
   type CostDashboardVM,
   type EvidenceBubble,
   type ProposalConflict,
-  type ProposalDetailVM,
   type QuestionCard,
   type ReplayTraceVM,
   type SessionVM,
@@ -24,9 +23,7 @@ import {
   cardFromAttentionItem,
   cardFromEvent,
   cardFromEvidenceBubble,
-  cardFromProposalDetail,
   cardFromProposalConflict,
-  cardsFromProposalConflicts,
   cardFromQuestionCard,
   cardFromReplayTrace,
   cardFromSessionVm,
@@ -236,140 +233,6 @@ test("session VMs become option-first Cuu question cards", () => {
   assert.equal(card.chips?.find((chip) => chip.id === "brief")?.recommended, true);
 });
 
-test("proposal detail becomes a PR-like Cuu deliverable card", () => {
-  const proposal: ProposalDetailVM = {
-    proposal_id: "proposal-1",
-    work_item_id: "work-1",
-    title: "周报草稿变更申请",
-    status: "opened",
-    manifest: {
-      version: 0,
-      proposal_id: "proposal-1",
-      work_item_id: "work-1",
-      title: "周报草稿变更申请",
-      summary_md: "新增一份周报草稿，并附上证据与回滚说明。",
-      author: { actor_kind: "ai", label: "Cuu" },
-      base: { created_at: ts },
-      changes: [
-        {
-          id: "change-1",
-          target_kind: "text_doc",
-          target_ref: { entity_type: "drive_item", path: "docs/weekly-report.md" },
-          change_type: "generated",
-          human_summary: "新增 weekly-report.md"
-        }
-      ],
-      checks: [
-        { id: "scope", label: "file-only 范围", status: "passed", detail: "未触碰外部发送。" },
-        { id: "budget", label: "预算提醒", status: "warning", detail: "接近本次预算线。" }
-      ],
-      evidence_refs: [
-        {
-          id: "evidence-1",
-          source_type: "work_item",
-          source_id: "work-1",
-          title: "原始需求",
-          confidence_hint: "found"
-        }
-      ],
-      risk: { level: "low", human_label: "低风险，可回滚", reversible: true },
-      rollback: { available: true, description: "删除生成草稿即可回滚。" },
-      review: { suggested_decision: "needs_human", reason_required_on_reject: true }
-    },
-    evidence_refs: [],
-    review_actions: {
-      approve: { id: "approve", label: "批准", method: "POST", href: "/api/proposals/proposal-1/review" },
-      request_changes: {
-        id: "request_changes",
-        label: "要求修改",
-        method: "POST",
-        href: "/api/proposals/proposal-1/review",
-        requires_reason: true
-      },
-      merge: { id: "merge", label: "合入", method: "POST", href: "/api/proposals/proposal-1/merge" }
-    },
-    comments: []
-  };
-
-  const card = cardFromProposalDetail(proposal);
-
-  assert.equal(card.kind, "proposal");
-  assert.equal(card.state, "carrying_document");
-  assert.deepEqual(card.actions.map((action) => action.id), ["approve", "request_changes"]);
-  assert.equal(card.actions.find((action) => action.id === "request_changes")?.requires_reason, true);
-  assert.equal(card.sections?.[0]?.title, "总结");
-  assert.equal(card.sections?.[0]?.lines[0], "新增一份周报草稿，并附上证据与回滚说明。");
-  assert.equal(card.sections?.some((section) => section.title === "风险与回滚"), true);
-  const zhChecks = card.sections?.find((section) => section.title === "检查结果");
-  assert.deepEqual(zhChecks?.lines, [
-    "file-only 范围: 通过 - 未触碰外部发送。",
-    "预算提醒: 有提醒 - 接近本次预算线。"
-  ]);
-  assert.equal(zhChecks?.lines.some((line) => /: (?:passed|warning)(?:\b| -)/u.test(line)), false);
-  assert.equal(card.chips?.[0]?.label, "docs/weekly-report.md");
-  assert.equal(card.evidence_refs?.[0]?.title, "原始需求");
-
-  const english = cardFromProposalDetail(proposal, { locale: "en-US" });
-  assert.equal(english.sections?.some((section) => section.title === "Risk and rollback"), true);
-  assert.equal(english.sections?.some((section) => section.lines.includes("Rollback snapshot kept (manual restore)")), true);
-  const enChecks = english.sections?.find((section) => section.title === "Check results");
-  assert.deepEqual(enChecks?.lines, [
-    "file-only 范围: Passed - 未触碰外部发送。",
-    "预算提醒: Warning - 接近本次预算线。"
-  ]);
-  assert.equal(enChecks?.lines.some((line) => /: (?:passed|warning)(?:\b| -)/u.test(line)), false);
-});
-
-test("reviewed proposal Cuu card only exposes merge as the next step", () => {
-  const proposal: ProposalDetailVM = {
-    proposal_id: "proposal-reviewed",
-    work_item_id: "work-1",
-    title: "周报草稿变更申请",
-    status: "reviewed",
-    manifest: {
-      version: 0,
-      proposal_id: "proposal-reviewed",
-      work_item_id: "work-1",
-      title: "周报草稿变更申请",
-      summary_md: "新增一份周报草稿。",
-      author: { actor_kind: "ai", label: "Cuu" },
-      base: { created_at: ts },
-      changes: [
-        {
-          id: "change-1",
-          target_kind: "text_doc",
-          target_ref: { entity_type: "drive_item", path: "docs/weekly-report.md" },
-          change_type: "generated",
-          human_summary: "新增 weekly-report.md"
-        }
-      ],
-      checks: [],
-      evidence_refs: [],
-      risk: { level: "low", human_label: "低风险，可回滚", reversible: true },
-      rollback: { available: true, description: "删除生成草稿即可回滚。" },
-      review: { suggested_decision: "needs_human", reason_required_on_reject: true }
-    },
-    evidence_refs: [],
-    review_actions: {
-      approve: { id: "approve", label: "确认通过", method: "POST", href: "/api/proposals/proposal-reviewed/review" },
-      request_changes: {
-        id: "request_changes",
-        label: "打回修改",
-        method: "POST",
-        href: "/api/proposals/proposal-reviewed/review",
-        requires_reason: true
-      },
-      merge: { id: "merge", label: "合入交付物", method: "POST", href: "/api/proposals/proposal-reviewed/merge" }
-    },
-    comments: []
-  };
-
-  const card = cardFromProposalDetail(proposal);
-
-  assert.deepEqual(card.actions.map((action) => action.id), ["merge"]);
-  assert.equal(card.actions[0]?.label, "合入交付物");
-});
-
 test("reviewed proposal attention cards say merge instead of asking for approval again", () => {
   const attention: AttentionItem = {
     id: "30000000-0000-4000-8000-000000000011",
@@ -424,50 +287,7 @@ test("proposal cards replace model self-narration titles with public review copy
     cuu_state: "asking_approval",
     created_at: ts
   };
-  const proposal: ProposalDetailVM = {
-    proposal_id: "proposal-raw-title",
-    work_item_id: workItemId,
-    title: modelNarration,
-    status: "opened",
-    manifest: {
-      version: 0,
-      proposal_id: "proposal-raw-title",
-      work_item_id: workItemId,
-      title: modelNarration,
-      summary_md: "新增一份验收要点 Markdown。",
-      author: { actor_kind: "ai", label: "Cuu" },
-      base: { created_at: ts },
-      changes: [
-        {
-          id: "change-raw-title",
-          target_kind: "text_doc",
-          target_ref: { entity_type: "drive_item", path: "outputs/acceptance-checks.md" },
-          change_type: "generated",
-          human_summary: "新增验收要点 Markdown"
-        }
-      ],
-      checks: [],
-      evidence_refs: [],
-      risk: { level: "low", human_label: "低风险，可回滚", reversible: true },
-      rollback: { available: true, description: "删除生成文件即可回滚。" },
-      review: { suggested_decision: "needs_human", reason_required_on_reject: true }
-    },
-    evidence_refs: [],
-    review_actions: {
-      approve: { id: "approve", label: "批准", method: "POST", href: "/api/proposals/proposal-raw-title/review" },
-      request_changes: {
-        id: "request_changes",
-        label: "要求修改",
-        method: "POST",
-        href: "/api/proposals/proposal-raw-title/review",
-        requires_reason: true
-      }
-    },
-    comments: []
-  };
-
   const attentionCard = cardFromAttentionItem(attention);
-  const proposalCard = cardFromProposalDetail(proposal);
   const englishAttentionCard = cardFromAttentionItem(attention, { locale: "en-US" });
   const fileNarrationCard = cardFromAttentionItem({
     ...attention,
@@ -479,25 +299,16 @@ test("proposal cards replace model self-narration titles with public review copy
     title: chineseNarration,
     summary_text: `AI 已生成变更申请: ${chineseNarration}`
   });
-  const chineseProposalCard = cardFromProposalDetail({
-    ...proposal,
-    title: chineseNarration,
-    manifest: { ...proposal.manifest, title: chineseNarration }
-  });
 
   assert.equal(attentionCard.title, "Cuu 等你确认变更");
-  assert.equal(proposalCard.title, "Cuu 等你确认变更");
   assert.equal(englishAttentionCard.title, "Cuu has a change for review");
   assert.equal(fileNarrationCard.title, "Cuu 等你确认变更");
   assert.equal(chineseAttentionCard.title, "Cuu 等你确认变更");
-  assert.equal(chineseProposalCard.title, "Cuu 等你确认变更");
   // 旧断言继续使用「采纳」；proposal 流程其它状态/action 已用「合入」，Cuu 卡片里再混用会误导用户。
   assert.equal(chineseAttentionCard.message, "变更申请已生成。先看总结和改动，再决定是否合入。");
   assert.equal(chineseAttentionCard.sections?.[0]?.title, "总结");
   assert.equal(chineseAttentionCard.sections?.[1]?.title, "下一步");
   assert.equal(chineseAttentionCard.sections?.[1]?.lines[0], "先看总结和改动，再确认通过或打回修改。");
-  assert.equal(chineseProposalCard.sections?.[1]?.title, "下一步");
-  assert.equal(chineseProposalCard.sections?.[1]?.lines[0], "先看总结和改动，再确认通过或打回修改。");
   assert.deepEqual(chineseAttentionCard.actions.map((action) => action.id), ["open_proposal", "approve", "request_changes"]);
   assert.equal(chineseAttentionCard.actions.find((action) => action.id === "open_proposal")?.label, "查看变更申请");
   assert.equal(chineseAttentionCard.actions.find((action) => action.id === "approve")?.label, "确认通过");
@@ -505,7 +316,7 @@ test("proposal cards replace model self-narration titles with public review copy
   assert.equal(englishAttentionCard.actions.find((action) => action.id === "open_proposal")?.label, "View change request");
   assert.equal(englishAttentionCard.actions.find((action) => action.id === "approve")?.label, "Mark approved");
   assert.doesNotMatch(
-    `${attentionCard.title} ${proposalCard.title} ${englishAttentionCard.title} ${fileNarrationCard.title} ${chineseAttentionCard.title} ${chineseProposalCard.title}`,
+    `${attentionCard.title} ${englishAttentionCard.title} ${fileNarrationCard.title} ${chineseAttentionCard.title}`,
     /Let me|deliverable looks complete|well-structured|让我|人话总结/i
   );
 });
@@ -629,7 +440,6 @@ test("proposal conflicts become option-first Cuu cards with merge payloads", () 
   );
   assert.deepEqual(card.actions.find((action) => action.id === "ai_fusion")?.payload, { confirm: true });
   assert.equal(card.actions.some((action) => action.id === "open_proposal"), true);
-  assert.equal(cardsFromProposalConflicts([conflict]).length, 1);
   assert.equal(english.title, "Change conflict");
   assert.equal(english.actions.find((action) => action.id === "keep_current")?.label, "Keep current");
   assert.equal(english.actions.find((action) => action.id === "ai_fusion")?.label, "Use AI fusion draft");

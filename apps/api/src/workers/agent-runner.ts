@@ -367,6 +367,11 @@ export type AgentRunQueue = {
   recoverExpiredClaims: () => Promise<AgentRunQueueRecord[]>;
   run: (runId: string) => Promise<AgentRunQueueRecord>;
   runNext: () => Promise<AgentRunQueueRecord | null>;
+  // INF-07：只认领下一条 queued run 并后台启动执行（fire-and-forget），不等待 run 跑完。
+  // 恢复 tick（agent-run-recovery.ts）用它做 drain——tick 内 await runNext 会把最多 8 个 run 的
+  // 完整执行串行进 tick，单 tick 可堵 40 分钟。返回认领到的 run（队列空则 null），执行结果经
+  // run 自身的终态持久化/事件落地，不从这里的返回值上报。
+  startNext: () => Promise<AgentRunQueueRecord | null>;
 };
 
 const UNSETTLED_TASK_PLAN_RUN_RECOVERY_LIMIT = 20;
@@ -762,6 +767,23 @@ export function createInMemoryAgentRunQueue(options: {
 
   async function defaultWorkdir(input: AgentRunExecutionInput) {
     return mkdtemp(path.join(os.tmpdir(), `workhub-agent-${input.run.run_id}-`));
+  }
+
+  // INF-06：恢复重跑此前总 mkdtemp 一个全新空 workdir，不读已持久化的 workdir_ref——上次已产出
+  // 的 outputs/ 全部丢失、token 全额重烧。这里优先复用：run 记录里已有 workdir_ref 且目录仍在
+  // （同机且未被 sweepStaleAgentWorkdirs 的 6h TTL 回收）即复用；目录不在（跨机恢复/已清扫/从未
+  // 落盘）则退回新建。注入的 options.workdir 是显式覆写，不走这条复用逻辑。
+  async function defaultWorkdirResuming(input: AgentRunExecutionInput) {
+    const existing = input.run.workdir_ref;
+    if (existing) {
+      const reusable = await stat(existing)
+        .then((info) => info.isDirectory())
+        .catch(() => false);
+      if (reusable) {
+        return existing;
+      }
+    }
+    return defaultWorkdir(input);
   }
 
   async function defaultClient(input: AgentRunExecutionInput) {
@@ -1656,7 +1678,7 @@ export function createInMemoryAgentRunQueue(options: {
         : options.client
           ? client
           : await defaultCompactionClient(executionInput);
-      const workdir = await (options.workdir ?? defaultWorkdir)(executionInput);
+      const workdir = await (options.workdir ?? defaultWorkdirResuming)(executionInput);
       runWorkdirs.set(current.run_id, workdir);
       current = updateRun({
         ...current,
@@ -2529,6 +2551,20 @@ export function createInMemoryAgentRunQueue(options: {
     async runNext() {
       const run = await queuedRun();
       return run ? executeRun(run.run_id, run.status === "running" ? run : undefined) : null;
+    },
+
+    async startNext() {
+      const run = await queuedRun();
+      if (!run) {
+        return null;
+      }
+      // INF-07：只认领、不等待——executeRun 后台跑，认领方（恢复 tick）立即继续放行下一条。
+      // 执行异常绝大多数已被 executeRun 内部收敛为 failed 终态；仍能抛出的（404/409/结算钩子失败）
+      // 在这里兜底记日志，绝不以 unhandled rejection 砸进程。
+      void executeRun(run.run_id, run.status === "running" ? run : undefined).catch((error) => {
+        getDefaultStructuredLogger().warn("agent_run_start_next_failed", { runId: run.run_id, error });
+      });
+      return run;
     }
   };
 }

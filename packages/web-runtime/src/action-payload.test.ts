@@ -199,7 +199,8 @@ test("R8 /projects create reads the typed name and fails closed on empty", () =>
 
   const filled = actionElementCreateProjectPayload(button);
   assert.equal(filled.ok, true);
-  assert.deepEqual(filled.payload, { name: "Aurora Launch" });
+  // INT-03：显式空 description——阻止服务端回落英文样板描述（用户自建项目不该带它）。
+  assert.deepEqual(filled.payload, { name: "Aurora Launch", description: "" });
 
   nameValue = "   ";
   const empty = actionElementCreateProjectPayload(button);

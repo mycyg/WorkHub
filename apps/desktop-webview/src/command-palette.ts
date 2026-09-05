@@ -1,10 +1,9 @@
-// WorkHub R8 客户端 · Cuu 命令面板 + 能力路由（desktop-only）。
+// WorkHub R8 客户端 · Cuu 能力注册表 + 模糊匹配路由（desktop-only）。
 // 「极简交互 + 所有后端功能有机集成」的核心：一个输入框，输入意图 → 模糊匹配 → 直达任意能力
 // （派活/澄清·审批·改动diff·网盘·项目·工作项·回放·成本·知识·团队·设置）。
-// 匹配是纯逻辑（高度可单测）；渲染产出带 data-command-* 的玻璃面板 HTML，点击由壳层路由到对应玻璃窗。
-// 用设计系统类名（design-system.ts），不进共享 @workhub/ui。
-
-import { designSystem } from "./design-system.js";
+// 匹配是纯逻辑（高度可单测），由 Spotlight launcher（spotlight/state.ts）消费。
+// WIRE-05：旧的玻璃命令面板渲染层（renderCommandPalette/commandPaletteCss/resolveCommandAction）
+// 自死 boot() 删除后零活调用方，已删——能力打开走 Spotlight 盒子，不再有独立浮层面板。
 
 export type CommandId =
   | "intake"
@@ -199,10 +198,6 @@ export const commandRegistry: DesktopCommand[] = [
   }
 ];
 
-export function resolveCommandAction(id: CommandId): DesktopCommand["action"] | undefined {
-  return commandRegistry.find((command) => command.id === id)?.action;
-}
-
 function isSubsequence(needle: string, haystack: string): boolean {
   if (!needle) {
     return true;
@@ -257,78 +252,3 @@ export function matchCommands(query: string, locale: string | undefined = "zh-CN
     .sort((a, b) => b.score - a.score || a.index - b.index)
     .map(({ command, score }) => ({ command, score }));
 }
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/gu, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] ?? c));
-}
-
-export type CommandPaletteRenderInput = {
-  query?: string;
-  locale?: string;
-  badges?: Partial<Record<CommandId, number>>; // 如 approvals:3 在行尾显数字
-};
-
-// 渲染玻璃命令面板。每行带 data-command-id / data-command-kind / data-command-target，壳层点击委托用它路由。
-export function renderCommandPalette(input: CommandPaletteRenderInput = {}): string {
-  const loc = normalizeLocale(input.locale);
-  const query = input.query ?? "";
-  const matches = matchCommands(query, loc);
-  const ds = designSystem;
-  const placeholder = loc === "zh-CN" ? "想做什么？新任务 / 审批 / 网盘 / 项目…" : "What do you need? new task / approve / drive…";
-  const emptyHint = loc === "zh-CN" ? "没有匹配的能力，换个说法试试" : "No matching capability — try another phrase";
-
-  const rows =
-    matches.length === 0
-      ? `<div class="wh-cmd-empty ds-subtle">${escapeHtml(emptyHint)}</div>`
-      : `<div class="wh-cmd-list ${ds.stagger}">${matches
-          .map(({ command }) => {
-            const badge = input.badges?.[command.id];
-            const badgeHtml =
-              typeof badge === "number" && badge > 0
-                ? `<span class="wh-cmd-badge">${badge}</span>`
-                : "";
-            return `<button type="button" class="wh-cmd-row ${ds.interactive}" data-command-id="${command.id}" data-command-kind="${command.action.kind}" data-command-target="${escapeHtml(command.action.target)}">
-              <span class="wh-cmd-icon">${command.icon}</span>
-              <span class="wh-cmd-text"><span class="wh-cmd-label">${escapeHtml(command.label[loc])}</span><span class="wh-cmd-hint">${escapeHtml(command.hint[loc])}</span></span>
-              ${badgeHtml}
-            </button>`;
-          })
-          .join("")}</div>`;
-
-  return `<div class="wh-cmd ${ds.glassStrong} ${ds.panel} ${ds.springIn}" data-wh-command-palette>
-    <div class="wh-cmd-field-wrap">
-      <span class="wh-cmd-field-icon">${ic('<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.3-4.3"/>')}</span>
-      <input class="wh-cmd-field" type="search" data-command-input value="${escapeHtml(query)}" placeholder="${escapeHtml(placeholder)}" aria-label="${escapeHtml(placeholder)}" />
-    </div>
-    ${rows}
-  </div>`;
-}
-
-// 命令面板自身的样式（依赖 design-system 的 token；只补面板特有的布局）。
-export const commandPaletteCss = [
-  ".wh-cmd{width:min(460px,calc(100vw - 32px));box-sizing:border-box;display:flex;flex-direction:column;gap:var(--ds-s3)}",
-  ".wh-cmd-field-wrap{display:flex;align-items:center;gap:10px;border:1px solid var(--ds-glass-border);background:rgba(255,255,255,.6);border-radius:var(--ds-radius-md);padding:10px 13px}",
-  ".wh-cmd-field-icon{display:inline-flex;width:18px;height:18px;color:var(--ds-ink-muted);flex:0 0 auto}",
-  ".wh-cmd-field-icon svg{width:18px;height:18px}",
-  ".wh-cmd-field{flex:1 1 auto;min-width:0;border:0;background:transparent;outline:none;font:500 15px/1.3 var(--ds-font);color:var(--ds-ink)}",
-  ".wh-cmd-field::placeholder{color:var(--ds-ink-faint)}",
-  ".wh-cmd-list{display:flex;flex-direction:column;gap:2px;max-height:min(360px,60vh);overflow-y:auto;overscroll-behavior:contain}",
-  ".wh-cmd-row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:0;background:transparent;border-radius:var(--ds-radius-md);padding:9px 11px;cursor:pointer;color:var(--ds-ink)}",
-  ".wh-cmd-row:hover,.wh-cmd-row:focus-visible{background:rgba(255,255,255,.7)}",
-  ".wh-cmd-row[data-active=true]{background:rgba(10,132,255,.14);box-shadow:inset 0 0 0 1px rgba(10,132,255,.28)}",
-  ".wh-cmd-icon{display:inline-flex;width:22px;height:22px;flex:0 0 auto;color:var(--ds-accent)}",
-  ".wh-cmd-icon svg{width:22px;height:22px}",
-  ".wh-cmd-text{display:flex;flex-direction:column;gap:1px;min-width:0}",
-  ".wh-cmd-label{font:600 14px/1.3 var(--ds-font);color:var(--ds-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
-  ".wh-cmd-hint{font:500 11.5px/1.3 var(--ds-font);color:var(--ds-ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
-  ".wh-cmd-badge{margin-left:auto;flex:0 0 auto;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--ds-danger);color:#fff;font:700 11px/18px var(--ds-font);text-align:center}",
-  ".wh-cmd-empty{padding:18px 8px;text-align:center}",
-  // 命令面板浮层（Spotlight 风：顶部居中召出）+ 背景遮罩。
-  ".wh-cmd-backdrop{position:fixed;inset:0;z-index:70;display:flex;align-items:flex-start;justify-content:center;padding:12vh 24px 24px;box-sizing:border-box;background:rgba(28,28,30,.16);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}",
-  // 常驻搜索条（全 app 交互中心：点它或按 ⌘K 召出命令面板）。顶部居中、玻璃风、像一根搜索栏。
-  ".wh-cmd-launcher{position:fixed;top:11px;left:50%;transform:translateX(-50%);z-index:55;-webkit-app-region:no-drag;display:inline-flex;align-items:center;gap:9px;width:min(460px,46vw);box-sizing:border-box;border:1px solid var(--ds-glass-border);background:var(--ds-glass-strong);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);border-radius:var(--ds-radius-pill);box-shadow:var(--ds-shadow-2);color:var(--ds-ink-muted);font:500 13px/1 var(--ds-font);padding:9px 14px;cursor:text;transition:transform var(--ds-dur-fast) var(--ds-spring),box-shadow var(--ds-dur-fast),border-color var(--ds-dur-fast)}",
-  ".wh-cmd-launcher:hover{border-color:var(--ds-accent);box-shadow:var(--ds-shadow-3)}.wh-cmd-launcher:active{transform:translateX(-50%) scale(.99)}",
-  ".wh-cmd-launcher-icon{display:inline-flex;width:16px;height:16px;flex:0 0 auto;color:var(--ds-ink-muted)}.wh-cmd-launcher-icon svg{width:16px;height:16px}",
-  ".wh-cmd-launcher-text{flex:1 1 auto;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
-  ".wh-cmd-launcher kbd{margin-left:auto;flex:0 0 auto;font:700 11px/1 var(--ds-font);color:var(--ds-accent);background:var(--ds-accent-soft);border-radius:6px;padding:3px 6px}"
-].join("");
