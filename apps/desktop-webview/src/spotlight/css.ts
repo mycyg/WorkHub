@@ -134,6 +134,10 @@ export const spotlightCss = [
   // 空/加载/错误/占位。
   ".wh-spot-empty{text-align:center;padding:34px 18px}",
   ".wh-spot-empty-face{font:700 30px/1 var(--ds-font);color:var(--ds-accent)}",
+  // L-01（R24 S3 走查）：空态"脸"此前部分用 emoji（drive/notifications/team/knowledge 等）——
+  // 换成内联 SVG 后，用 currentColor 继承 .wh-spot-empty-face 的强调色；尺寸单独钳制
+  // （父级 font-size 是给文字排版用的，SVG 不会跟着字号走）。
+  ".wh-spot-empty-face svg{width:32px;height:32px;vertical-align:middle}",
   ".wh-spot-empty-title{margin:14px 0 0;font:800 18px/1.3 var(--ds-font);color:var(--ds-ink)}",
   ".wh-spot-empty-sub{margin:8px 0 0;font:500 13px/1.5 var(--ds-font);color:var(--ds-ink-muted)}",
   ".wh-spot-loading{display:flex;align-items:center;justify-content:center;gap:10px;padding:34px 18px;color:var(--ds-ink-muted);font:600 13px/1 var(--ds-font)}",
@@ -183,6 +187,12 @@ export const spotlightCss = [
   ".wh-spot-row-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:3px}",
   ".wh-spot-row-title{display:flex;align-items:center;gap:8px;font:600 13.5px/1.3 var(--ds-font);color:var(--ds-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
   ".wh-spot-row-sub{font:500 12px/1.45 var(--ds-font);color:var(--ds-ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+  // L-04（R24 S3 走查）：.wh-spot-row-sub 默认单行截断——适合真正的"行副标题"，但被借去放多句
+  // 说明文字（如设备列表的解释段）时，长句会被 nowrap+ellipsis 掐成一行省略号。这个修饰类让文字
+  // 正常换行，专给"说明段"用；短行副标题继续用不带这个类的默认单行截断。
+  ".wh-spot-row-sub--wrap{overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere}",
+  // M-06：设置页「查看部署说明」这类行内文字链接——之前没有通用的内联链接样式。
+  ".wh-spot-inline-link{color:var(--ds-accent);font-weight:600;text-decoration:underline;cursor:pointer;background:none;border:none;padding:0;font-size:inherit;font-family:inherit}",
   ".wh-spot-row-tag{font:700 10px/1 var(--ds-font);color:var(--ds-ink-muted);background:transparent;border-radius:6px;padding:3px 6px}",
   ".wh-spot-row[data-drive-item-selected=true]{border-color:rgba(10,132,255,.42);background:transparent;box-shadow:inset 3px 0 0 var(--ds-accent),0 14px 30px rgba(10,132,255,.12)}",
   ".wh-spot-row-current{flex:0 0 auto;font:800 10px/1 var(--ds-font);letter-spacing:0;color:var(--ds-accent);background:transparent;border:1px solid rgba(10,132,255,.22);border-radius:999px;padding:5px 7px}",
@@ -259,6 +269,10 @@ export const spotlightCss = [
   // 设置。
   ".wh-spot-set-group{display:flex;flex-direction:column;gap:8px}",
   ".wh-spot-set-label{font:600 12px/1 var(--ds-font);color:var(--ds-ink-muted)}",
+  // L-05（R24 S3 走查）：设置页最后一行（账户/登出）滚到底后仍贴着窗口下边缘——.wh-spot-body 的
+  // 12px 内边距在实测里不够，视觉上像被切了一刀。给设置页末尾单独留一段余量，别改全局 body 内边距
+  // （会牵动所有能力视图的上下留白）。
+  ".wh-spot-set-bottom-spacer{block-size:14px}",
   // 内联轻提示。
   ".wh-spot-toast{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);max-width:calc(100% - 28px);z-index:5;display:flex;align-items:center;gap:8px;border-radius:var(--ds-radius-pill);padding:9px 15px;font:600 12.5px/1.3 var(--ds-font);color:#fff;background:rgba(28,28,30,.92);box-shadow:var(--ds-shadow-2);animation:ds-pop var(--ds-dur) var(--ds-spring) both;-webkit-app-region:no-drag}",
   ".wh-spot-toast--ok{background:linear-gradient(135deg,#30d158,#64d2ff)}",
