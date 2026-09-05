@@ -28,6 +28,7 @@ import {
   buildTurnMessages,
   buildTurnProjectInstructionsSection,
   buildTurnSystemPrompt,
+  composeTurnSystemPrompt,
   buildTurnToolDefinitions,
   parseTurnToolCall,
   type AskClarifyingQuestionToolInput,
@@ -1251,17 +1252,15 @@ async function runLegacyTurnLoop(
 
       const allowTools = toolCallsUsed < MAX_TURN_TOOL_CALLS && round < MAX_TURN_MODEL_ROUNDS;
       const tools = allowTools ? buildTurnToolDefinitions({ allowCreateWorkItem: Boolean(pendingClarification) }) : undefined;
-      const system = [
-        buildTurnSystemPrompt(pendingClarification ? { pendingClarification } : {}),
-        // R16 批 W4a：项目自定义指令——位置在通用工作纪律之后、会话上下文（滚动摘要/记忆）之前。
+      // R25 批 B1：拼接顺序（工作纪律 → 项目指令 → 滚动摘要 → 记忆/技能 → 本轮引用材料）收进
+      // @workhub/agent 的 composeTurnSystemPrompt，两条 turn 路径共用同一个纯函数，也是 golden 的入口。
+      const system = composeTurnSystemPrompt({
+        base: buildTurnSystemPrompt(pendingClarification ? { pendingClarification } : {}),
         projectInstructionsSection,
-        contextSummaryMd ? buildTurnContextSummarySection(contextSummaryMd) : "",
-        memorySection.promptSection,
-        // R23 F-07：这一轮消息里 `#会话` / `/技能` 点名带进来的材料——放在最后，紧挨着正题。
+        contextSummarySection: contextSummaryMd ? buildTurnContextSummarySection(contextSummaryMd) : "",
+        memorySection: memorySection.promptSection,
         referenceSection
-      ]
-        .filter((part) => part.length > 0)
-        .join("\n\n");
+      });
 
       let final: TurnLlmFinalMessage;
       try {
@@ -1539,17 +1538,14 @@ async function runConversationTurnSegment(
   const timeoutMs = deps.turnTimeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  const system = [
-    buildTurnSystemPrompt(prepared.pendingClarification ? { pendingClarification: prepared.pendingClarification } : {}),
-    // R16 批 W4a：项目自定义指令——位置在通用工作纪律之后、会话上下文（滚动摘要/记忆）之前。
-    prepared.projectInstructionsSection,
-    prepared.contextSummaryMd ? buildTurnContextSummarySection(prepared.contextSummaryMd) : "",
-    prepared.memorySection.promptSection,
-    // R23 F-07：同 runLegacyTurnLoop 的拼接顺序——引用材料放在最后，紧挨着正题。
-    prepared.referenceSection
-  ]
-    .filter((part) => part.length > 0)
-    .join("\n\n");
+  // R25 批 B1：与 runLegacyTurnLoop 共用同一个 composeTurnSystemPrompt（原先两处各抄一份拼接规则）。
+  const system = composeTurnSystemPrompt({
+    base: buildTurnSystemPrompt(prepared.pendingClarification ? { pendingClarification: prepared.pendingClarification } : {}),
+    projectInstructionsSection: prepared.projectInstructionsSection,
+    contextSummarySection: prepared.contextSummaryMd ? buildTurnContextSummarySection(prepared.contextSummaryMd) : "",
+    memorySection: prepared.memorySection.promptSection,
+    referenceSection: prepared.referenceSection
+  });
 
   const toolDefs = buildTurnToolDefinitions({ allowCreateWorkItem: Boolean(prepared.pendingClarification) });
 

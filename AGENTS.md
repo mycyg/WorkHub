@@ -44,7 +44,8 @@ pnpm verify      # typecheck && test && lint —— CI 的 workspace job 就跑�
 - **用户可见文案**走 i18n 字典（不是内联三元），禁黑话（表见 `docs/workhub/00-overview/glossary-dejargon.md`），禁 emoji（chat reaction 表情是唯一例外，见 `CONTRIBUTING.md`）。
 - **非平凡变更必须带 Agent Note**：`.agents/notes/{proposed,implemented,rejected,archived}/`，格式见 `.agents/notes/README.md`，`pnpm audit:agent-notes` 校验。
 - **`docs/workhub/*.md` 计数门**：增删该目录下 `.md` 必须同 commit 改 `docs/workhub/README.md` 里「N 篇文档已落盘」那一行，否则 `qa:r2-release-gate` 的 `docs.count` 门红。
-- **生成物重生成而非手改**：`THIRD_PARTY_NOTICES.md`（`pnpm gen:third-party-notices`）、桌面版本号（`pnpm sync:desktop-version`）——改了输入就重跑生成脚本，别手改产出文件。
+- **生成物重生成而非手改**：`THIRD_PARTY_NOTICES.md`（`pnpm gen:third-party-notices`）、桌面版本号（`pnpm sync:desktop-version`）、`*/expected/*.expected.{md,json}`（`pnpm gen:expected`）——改了输入就重跑生成脚本，别手改产出文件。
+- **改提示词或工具 schema 必须重生成 expected 并在 PR 贴 diff 摘要**：模型可见文本（系统提示词、初始用户消息、工具 name/description/input_schema）由 `apps/api/expected/` 与 `packages/agent/expected/` 的逐字节 golden 钉住，`pnpm test` 里比对。改动后跑 `pnpm gen:expected` 重生成，**先把 `git diff` 读一遍确认这正是你要的变化**，再把 diff 摘要（哪几份 expected、改了什么措辞）贴进 PR。golden 变红不是"跑一下重生成就完事"的噪声——它就是评审规则第 8 条要的那份可见证据。
 - **桌面端改动必须真机走查**：`apps/desktop-webview` 在浏览器预览里渲染不出（没有 Tauri 运行时），typecheck/单测能过不代表界面对，改动要在 `.app`（模拟器或真机）里实际看一眼。
 
 ## 评审规则（借鉴 deepseek-harness `packages/AGENTS.md`）

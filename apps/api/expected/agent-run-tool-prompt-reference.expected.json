@@ -1,0 +1,52 @@
+{
+  "snippets": [
+    {
+      "id": "list_files",
+      "snippet": "List files and folders in the sandbox"
+    },
+    {
+      "id": "read_file",
+      "snippet": "Read a UTF-8 text file from the sandbox"
+    },
+    {
+      "id": "write_file",
+      "snippet": "Create or overwrite a UTF-8 text file in the sandbox"
+    },
+    {
+      "id": "write_base64_file",
+      "snippet": "Write a binary file from base64 into the sandbox"
+    },
+    {
+      "id": "mkdir",
+      "snippet": "Create a directory in the sandbox"
+    },
+    {
+      "id": "move_path",
+      "snippet": "Move or rename a file or folder in the sandbox"
+    },
+    {
+      "id": "delete_path",
+      "snippet": "Delete a file or folder from the sandbox"
+    },
+    {
+      "id": "run_command",
+      "snippet": "Run one allowlisted command in the sandbox (no shell)"
+    },
+    {
+      "id": "zip_path",
+      "snippet": "Bundle sandbox files into a zip archive"
+    },
+    {
+      "id": "load_skill",
+      "snippet": "加载某类交付物的技能（库用法合同与模板）"
+    }
+  ],
+  "guidelines": [
+    "Use list_files to discover what exists before reading; do not guess file paths.",
+    "Use read_file to inspect a file's contents instead of shelling out to cat or sed.",
+    "When read_file marks its output [truncated], continue with a narrower read or extract the needed span with run_command (grep / sed -n) rather than re-reading the whole file.",
+    "Use write_file to create or fully rewrite a text file; it replaces the entire file, so always pass the complete contents.",
+    "Write deliverables under outputs/ with write_file or write_base64_file; anything left outside outputs/ is not collected.",
+    "Give run_command an argv array with no shell features — no pipes, globs, redirection, or &&; run one command per call."
+  ]
+}

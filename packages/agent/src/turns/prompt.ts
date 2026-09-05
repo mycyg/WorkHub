@@ -336,3 +336,39 @@ export function buildTurnInvokedSkillSection(skills: readonly TurnInvokedSkillIn
     ...blocks
   ].join("\n");
 }
+
+// ── R25 批 B1（提示词 golden）────────────────────────────────────────────────────────────
+//
+// 上面这些 build*Section 各自是纯函数，但「按什么顺序拼、用什么分隔、空段怎么丢」这条组装规则原先
+// 在 apps/api/src/services/conversation-turns.ts 里抄了两份（runLegacyTurnLoop 与
+// runConversationTurnSegment 各一份 `[...].filter().join("\n\n")`）。两份不同步就是一次静默的
+// 模型可见文本漂移，而且没有任何单元可以调用到「最终发给模型的那一整段 system」。
+//
+// 这里把这条组装规则本身收成一个纯函数：取数（项目指令/摘要/记忆/引用材料从 DB 查）留在服务层，
+// 拼字符串全在这里。两个调用点改为都调它，golden 也就有了一个可直接调用的组装入口。
+// 顺序契约（与改造前逐字一致，不是新口径）：
+//   工作纪律 → 项目自定义指令 → 会话滚动摘要 → 用户记忆/团队技能 → 本轮 #会话 / 技能唤起材料。
+export type TurnSystemPromptSections = {
+  /** buildTurnSystemPrompt 的产物——通用工作纪律，永不为空。 */
+  base: string;
+  /** buildTurnProjectInstructionsSection 的产物；未配置时为空串。 */
+  projectInstructionsSection?: string;
+  /** buildTurnContextSummarySection 的产物；没有滚动摘要时为空串。 */
+  contextSummarySection?: string;
+  /** buildTurnMemorySection 的 promptSection；没有记忆/技能时为空串。 */
+  memorySection?: string;
+  /** #会话引用 / 技能唤起拼成的一段；没有时为空串。 */
+  referenceSection?: string;
+};
+
+export function composeTurnSystemPrompt(sections: TurnSystemPromptSections): string {
+  return [
+    sections.base,
+    sections.projectInstructionsSection ?? "",
+    sections.contextSummarySection ?? "",
+    sections.memorySection ?? "",
+    sections.referenceSection ?? ""
+  ]
+    .filter((part) => part.length > 0)
+    .join("\n\n");
+}

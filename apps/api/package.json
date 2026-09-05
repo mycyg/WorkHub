@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "gen:expected": "WORKHUB_UPDATE_EXPECTED=1 node --import tsx --test \"src/golden/*.golden.test.ts\"",
     "lint": "tsc -p tsconfig.json --noEmit",
     "start": "node --import tsx src/server.ts",
     "qa:r5-10-dry": "tsx --tsconfig ../../tsconfig.base.json src/qa/r5-10-dry-agent-pipeline.ts",
