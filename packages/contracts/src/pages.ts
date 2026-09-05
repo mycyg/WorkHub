@@ -45,6 +45,7 @@ import {
 import { userMemoryCategorySchema } from "./domain/user-memory.js";
 import { skillEditOpSchema, teamSkillStatusSchema, TEAM_SKILL_MAX_EDIT_OPS } from "./domain/team-skill.js";
 import { githubActivityVmSchema } from "./domain/github.js";
+import { pluginSummaryVmSchema } from "./domain/plugin.js";
 
 export const actionSpecSchema = z.object({
   id: z.string().min(1),
@@ -1556,6 +1557,10 @@ export const settingsPageVmSchema = z.object({
     created_at: isoDateTimeSchema,
     revoke_href: z.string().min(1)
   })).optional(),
+  // R24-P 阶段 1：已安装插件的**只读**清单（仅管理员——服务端只给管理员填，同 permission_policies）。
+  // 网页端不做安装/启停：安装要给一个本机绝对路径，那是「这台服务器上的目录」，只在桌面端说得通；
+  // 网页在这里只回答「这个部署上装了什么、还活着吗」，动作入口指向桌面客户端。
+  plugins: z.array(pluginSummaryVmSchema).optional(),
   runtime: z.object({
     app_env: z.enum(["development", "test", "production"]),
     runtime_status: z.enum(["ready", "attention_needed"]),

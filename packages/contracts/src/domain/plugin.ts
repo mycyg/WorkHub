@@ -113,3 +113,16 @@ export const pluginListVmSchema = z.object({
   bootstrap_path_count: z.number().int().nonnegative()
 });
 export type PluginListVM = z.infer<typeof pluginListVmSchema>;
+
+// web 设置页的**只读**行。刻意不含 source_path——那是本机绝对路径，属于桌面端管理面的信息，
+// 网页只回答「这个部署上装了什么、还活着吗」。
+export const pluginSummaryVmSchema = z.object({
+  id: idSchema,
+  name: z.string().min(1).max(200),
+  version: z.string().max(80).optional(),
+  enabled: z.boolean(),
+  status: pluginStatusSchema,
+  tool_count: z.number().int().nonnegative(),
+  compat_verdict: pluginCompatReportSchema.shape.verdict
+});
+export type PluginSummaryVM = z.infer<typeof pluginSummaryVmSchema>;

@@ -7,7 +7,9 @@ import {
   pluginListVmSchema,
   pluginSourceKindSchema,
   pluginStatusSchema,
-  pluginVmSchema
+  pluginSummaryVmSchema,
+  pluginVmSchema,
+  settingsPageVmSchema
 } from "./index.js";
 
 // R24-P 阶段 1：插件治理契约。这些断言钉的是治理红线，不是字段拼写。
@@ -112,4 +114,83 @@ test("the list VM reports how many bootstrap paths are still coming from the env
   });
   assert.equal(list.bootstrap_path_count, 2);
   assert.equal(pluginListVmSchema.safeParse({ plugins: [], bootstrap_path_count: -1 }).success, false);
+});
+
+test("the web-facing summary row never carries the host directory path", () => {
+  const summary = pluginSummaryVmSchema.parse({
+    id: "22222222-2222-4222-8222-222222222222",
+    name: "dsh-plugin-echo",
+    version: "0.1.0",
+    enabled: true,
+    status: "installed",
+    tool_count: 1,
+    compat_verdict: "ok"
+  });
+  // source_path 是这台服务器上的绝对路径——网页只读列表不需要它，契约层就不给它一个位置。
+  assert.equal("source_path" in summary, false);
+  assert.equal(
+    pluginSummaryVmSchema.safeParse({
+      id: "22222222-2222-4222-8222-222222222222",
+      name: "dsh-plugin-echo",
+      enabled: true,
+      status: "installed",
+      tool_count: 1,
+      compat_verdict: "sure-why-not"
+    }).success,
+    false
+  );
+});
+
+test("the settings page carries plugins only when the server decides to fill them (admin-only, same gate as policies)", () => {
+  const base = settingsPageVmSchema.parse({
+    generated_at: checkedAt,
+    locale: "zh-CN",
+    runtime: {
+      app_env: "test",
+      runtime_status: "ready",
+      worker_count: 1,
+      broker_backend: "memory",
+      broker_configured: true,
+      database_configured: true,
+      agent_run_lease_ms: 1000,
+      agent_run_recovery_interval_ms: 0
+    },
+    llm_runtime: {
+      default_provider: "deepseek",
+      default_model: "deepseek-chat",
+      provider_count: 1,
+      api_key_configured: false,
+      base_url_configured: false
+    },
+    budgets: {
+      run_tokens: 1,
+      user_daily_tokens: 1,
+      team_daily_tokens: 1,
+      team_monthly_tokens: 1,
+      run_cost_cny: "1.00",
+      user_daily_cost_cny: "1.00",
+      team_daily_cost_cny: "1.00",
+      team_monthly_cost_cny: "1.00"
+    },
+    language: {
+      active_locale: "zh-CN",
+      preference_locale: "zh-CN",
+      preference_source: "server",
+      preference_synced: true,
+      supported_locales: ["zh-CN"],
+      storage_key: "workhub_locale",
+      update_href: "/api/auth/preferences"
+    },
+    device: {
+      desktop_client: "tauri",
+      local_execution_boundary: true,
+      independent_pet_window: true,
+      pet_model_settings_in_web: false,
+      restore_href: "/settings?panel=desktop",
+      restore_requires_desktop: true,
+      web_local_actions_enabled: false
+    }
+  });
+  // 非管理员：字段结构性缺席（不是空数组——空数组会被读成「一个都没装」）。
+  assert.equal(base.plugins, undefined);
 });
