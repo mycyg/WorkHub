@@ -8,7 +8,8 @@ import {
   createSkillTool,
   formatSkillCatalog,
   listSkills,
-  skillCatalogForPrompt, createBuiltInFileTools, createToolRegistry, ensureCommandAllowed, safeResolvePath } from "./index.js";
+  skillCatalogForPrompt, createBuiltInFileTools, createToolRegistry, ensureCommandAllowed, okToolResult, safeResolvePath } from "./index.js";
+import { z } from "zod";
 
 async function tempWorkdir() {
   return mkdtemp(path.join(os.tmpdir(), "workhub-tools-"));
@@ -210,6 +211,56 @@ test("toModelTools exposes concrete JSON schema for provider tool calling", asyn
   assert.ok(writeFile.input_schema?.properties?.["path"]);
   assert.ok(writeFile.input_schema?.properties?.["content"]);
   assert.deepEqual(writeFile.input_schema?.required?.sort(), ["content", "path"]);
+});
+
+test("jsonSchema 旁路优先于 Zod：没有真 Zod schema 的第三方工具照样能把参数暴露给模型", async () => {
+  const workdir = await tempWorkdir();
+  const jsonSchema = {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    properties: { text: { type: "string", description: "Phrase to echo." } },
+    required: ["text"]
+  };
+  const registry = createToolRegistry([
+    {
+      id: "plugin__demo__echo",
+      description: "Echo a phrase.",
+      // 插件工具没有 Zod schema，只做「是个对象」的粗校验——模型可见形状全靠 jsonSchema。
+      schema: z.custom<Record<string, unknown>>((value) => typeof value === "object" && value !== null),
+      jsonSchema,
+      sideEffect: "none",
+      execute: () => okToolResult("echoed")
+    }
+  ]);
+
+  const [modelTool] = (await registry.toModelTools({ workdir })) as {
+    name: string;
+    input_schema: { properties?: Record<string, unknown>; required?: string[]; $schema?: string };
+  }[];
+  assert.equal(modelTool?.name, "plugin__demo__echo");
+  assert.ok(modelTool?.input_schema.properties?.["text"], "旁路没生效：模型看不到 text 参数");
+  assert.deepEqual(modelTool?.input_schema.required, ["text"]);
+  // $schema 不该漏给模型（与 Zod 那条路同口径）。
+  assert.equal(modelTool?.input_schema.$schema, undefined);
+  // 旁路不改原对象。
+  assert.equal(jsonSchema.$schema, "https://json-schema.org/draft/2020-12/schema");
+});
+
+test("没给 jsonSchema 时仍走 Zod 那条路（旁路是加法，不改既有行为）", async () => {
+  const workdir = await tempWorkdir();
+  const registry = createToolRegistry([
+    {
+      id: "zod_only",
+      description: "Zod only.",
+      schema: z.object({ name: z.string() }),
+      sideEffect: "none",
+      execute: () => okToolResult("ok")
+    }
+  ]);
+  const [modelTool] = (await registry.toModelTools({ workdir })) as {
+    input_schema: { properties?: Record<string, unknown> };
+  }[];
+  assert.ok(modelTool?.input_schema.properties?.["name"]);
 });
 
 test("promptReference collects snippets/guidelines separately from the model description channel", () => {
