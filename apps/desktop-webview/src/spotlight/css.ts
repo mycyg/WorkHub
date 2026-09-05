@@ -292,6 +292,14 @@ export const spotlightCss = [
   ".wh-spot-ask-banner-text{flex:1 1 auto;min-width:0;font:600 12.5px/1.4 var(--ds-font);color:var(--ds-ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
   ".wh-spot-ask-banner-undo{flex:0 0 auto;border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-pill);background:transparent;color:var(--ds-accent);font:700 12px/1 var(--ds-font);padding:6px 11px;cursor:pointer}",
   ".wh-spot-ask-banner-undo:hover{filter:brightness(1.04)}.wh-spot-ask-banner-undo:active{transform:scale(.95)}",
+  // R24 S6（E-11）：「AI 服务未配置」横幅——同工作台聊天区 wh-wb-chat-banner 共用 --ds-warn 语义色，
+  // 只用聚焦盒的人也能看到同一个事实（此前只有工作台聊天区才有这条提示）。
+  ".wh-spot-ai-banner{padding:8px 14px;text-align:center;font:600 12px/1.5 var(--ds-font);color:var(--ds-warn);background:var(--ds-warn-soft);border-bottom:1px solid var(--ds-glass-hairline);overflow-wrap:anywhere}",
+  ".wh-spot-ai-banner[hidden]{display:none}",
+  // R24 S6（E-10）：首启引导卡复用 .wh-spot-intake（intake.ts 的能力内联卡同款壳），但这里是直接塞进
+  // launcher 的两列 .wh-spot-grid（renderLauncherGrid），不像 .wh-spot-empty-grid 那样自带跨列——
+  // 补一条跨列规则，否则卡片会被挤成半宽（.wh-spot-intake 的其它既有用法都不在 grid 容器内，不受影响）。
+  ".wh-spot-grid>.wh-spot-intake{grid-column:1 / -1}",
   // 内层控件只保留透明边线和高光；折射统一交给外层 liquid-glass warp，避免多层 backing 叠出可变底色。
   // 尊重「减少动态效果」系统偏好：去掉装饰性位移/缩放，保留颜色提示（苹果级无障碍）。
   "@media (prefers-reduced-motion:reduce){.wh-spot-cap,.wh-spot-act,.wh-spot-back,.wh-spot-opt,.wh-spot-reason,a.wh-spot-row,button.wh-spot-row,.wh-spot-ask-cuu-row{transition-duration:.01ms!important}.wh-spot-cap:hover,.wh-spot-cap:active,.wh-spot-act:active,.wh-spot-back:active,.wh-spot-opt:hover,.wh-spot-opt:active,.wh-spot-reason:active,a.wh-spot-row:hover,a.wh-spot-row:active,button.wh-spot-row:hover,button.wh-spot-row:active,.wh-spot-ask-cuu-row:hover,.wh-spot-ask-cuu-row:active{transform:none}.wh-spot-ask-cuu-breathe{animation:none;opacity:1}}"
