@@ -68,6 +68,9 @@ export const envSchema = z.object({
   // 逐项目调没有意义，且不想为一个数字再扩 project_ai_governance 的契约面。
   GITHUB_STALE_DAYS: z.coerce.number().int().min(1).max(90).default(7),
   CORS_ALLOW_ORIGINS: z.string().default("*"),
+  // R24 S3（连接服务器屏）：管理员给这台自托管实例起的名字。桌面客户端「测试连接」拿 GET /api/health
+  // 时把它显示出来，用户据此确认「我连的是团队那台，不是隔壁的测试机」。空/未设=默认 "WorkHub"。
+  WORKHUB_INSTANCE_NAME: z.preprocess(emptyToUndefined, z.string().trim().min(1).max(80).optional()),
   TOUCH_DEVICE_ON_AUTH: booleanString.default(true),
   DEFAULT_ORG_ID: z.string().uuid().default(authDefaults.defaultOrgId),
   DEFAULT_WORKSPACE_ID: z.string().uuid().default(authDefaults.defaultWorkspaceId),
@@ -205,6 +208,9 @@ export type Settings = {
     backend: BrokerBackend;
     url: string;
   };
+  // R24 S3：自托管实例名（env WORKHUB_INSTANCE_NAME，默认 "WorkHub"）——GET /api/health 亮出来给
+  // 桌面连接服务器屏用。纯展示字段，不参与任何鉴权/路由判定。
+  instanceName: string;
   auth: {
     cookieSecret: string;
     cookieSecure: boolean;
@@ -322,6 +328,7 @@ export function loadSettings(env: EnvInput = process.env): Settings {
       backend: parsed.BROKER_BACKEND,
       url: parsed.BROKER_URL
     },
+    instanceName: parsed.WORKHUB_INSTANCE_NAME ?? "WorkHub",
     auth: {
       cookieSecret: parsed.COOKIE_SECRET,
       cookieSecure: parsed.COOKIE_SECURE,

@@ -349,16 +349,32 @@ const acceptedDeliverablePreviewResponse = {
     ]).responses
   }
 } as const;
+// R24 S3：auth_mode/version/instance_name 是桌面「连接服务器」屏一次探测就要拿全的展示信息
+// （契约见 packages/contracts/src/health.ts）。服务端无条件返回，故列进 required；对客户端而言
+// 它们仍是可选的——新客户端连旧服务端会缺，必须按「未知」降级。
 const healthResponseSchema = {
   type: "object",
-  required: ["ok", "service", "env", "runtime", "port", "ai_provider_configured"],
+  required: [
+    "ok",
+    "service",
+    "env",
+    "runtime",
+    "port",
+    "ai_provider_configured",
+    "auth_mode",
+    "version",
+    "instance_name"
+  ],
   properties: {
     ok: { type: "boolean", const: true },
     service: { type: "string", const: "workhub-api" },
     env: { type: "string", enum: ["development", "test", "production"] },
     runtime: { type: "string", const: "node" },
     port: { type: "integer", minimum: 1, maximum: 65535 },
-    ai_provider_configured: { type: "boolean" }
+    ai_provider_configured: { type: "boolean" },
+    auth_mode: { type: "string", enum: ["nickname", "hybrid", "password"] },
+    version: { type: "string", minLength: 1 },
+    instance_name: { type: "string", minLength: 1, maxLength: 80 }
   },
   additionalProperties: false
 } as const;

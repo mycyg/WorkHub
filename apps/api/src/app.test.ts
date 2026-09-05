@@ -14,8 +14,10 @@ import {
   permissionPolicyWriteSchema,
   resolveEscalationRequestSchema,
   respondApprovalRequestSchema,
+  serverHealthSchema,
   useEvidenceForTaskRequestSchema
 } from "@workhub/contracts";
+import { settings } from "@workhub/config";
 
 import app from "./app.js";
 import { httpErrorCodeFor } from "./http-error-codes.js";
@@ -230,6 +232,31 @@ test("GET /api/health returns the daemon health payload", async () => {
   assert.equal(body.ok, true);
   assert.equal(body.service, "workhub-api");
   assert.equal(body.runtime, "node");
+});
+
+// R24 S3（桌面「连接服务器」屏）：一次探测就要拿全「这是哪台服务器、什么版本、怎么登、能不能干活」。
+test("GET /api/health carries the fields the connect-to-a-server screen needs", async () => {
+  const response = await app.request("/api/health");
+  const body = (await response.json()) as HealthBody & {
+    auth_mode?: unknown;
+    version?: unknown;
+    instance_name?: unknown;
+    ai_provider_configured?: unknown;
+  };
+
+  assert.ok(
+    body.auth_mode === "nickname" || body.auth_mode === "hybrid" || body.auth_mode === "password",
+    `auth_mode should be one of the three server modes, got ${String(body.auth_mode)}`
+  );
+  assert.equal(body.auth_mode, settings.auth.authMode);
+  assert.equal(typeof body.version, "string");
+  assert.ok((body.version as string).length > 0, "version must not be empty");
+  // 未设 WORKHUB_INSTANCE_NAME 时是默认实例名——连接屏据此显示「这台服务器叫什么」。
+  assert.equal(body.instance_name, settings.instanceName);
+  assert.equal(typeof body.ai_provider_configured, "boolean");
+  // 契约层（packages/contracts）与实际响应必须能对上：新客户端解析的就是这个 schema。
+  const parsed = serverHealthSchema.safeParse(body);
+  assert.equal(parsed.success, true, JSON.stringify(parsed.error?.issues ?? []));
 });
 
 test("global body limit does not shadow the Drive upload size contract", async () => {
@@ -3030,7 +3057,17 @@ test("health, ready, and client-device OpenAPI routes document startup contracts
   const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
 
   const health = jsonResponseSchema(body.paths, "/api/health", "get", "200");
-  assert.deepEqual(health?.required, ["ok", "service", "env", "runtime", "port", "ai_provider_configured"]);
+  assert.deepEqual(health?.required, [
+    "ok",
+    "service",
+    "env",
+    "runtime",
+    "port",
+    "ai_provider_configured",
+    "auth_mode",
+    "version",
+    "instance_name"
+  ]);
 
   for (const status of ["200", "503"] as const) {
     const ready = jsonResponseSchema(body.paths, "/api/ready", "get", status);
