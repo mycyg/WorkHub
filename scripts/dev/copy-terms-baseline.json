@@ -26,9 +26,6 @@
     "apps/api/src/workers/agent-runner.ts": {
       "租约|lease | AI 执行租约已恢复，正在重新排队。": 1
     },
-    "apps/desktop-webview/src/cuu-qa-scenarios.ts": {
-      "option-first|file-only | Cuu 需要你批准这次 file-only 变更。": 1
-    },
     "packages/agent/src/evaluation/confidence.ts": {
       "AgentRun|agent_run(?!_) | 当前 AgentRun 未提供自评": 1
     },

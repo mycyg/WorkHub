@@ -339,7 +339,7 @@ test("proposal opened events use a public title and clickable proposal route", (
   assert.equal(card.kind, "proposal");
   assert.equal(card.title, "Cuu 等你确认变更");
   assert.equal(card.message, "变更摘要 本次 AgentRun 从 outputs/ 生成 1 个交付物变更草案：文本稿 1。");
-  assert.equal(card.sections?.find((section) => section.id === "next_step")?.lines[0], "点「查看变更申请」会打开变更详情，里面有总结、改动和确认按钮。");
+  assert.equal(card.sections?.find((section) => section.id === "next_step")?.lines[0], "打开变更申请，看完总结和改动再决定。");
   assert.equal(card.actions[0]?.id, "open_proposal");
   assert.equal(card.actions[0]?.label, "查看变更申请");
   assert.equal(card.actions[0]?.href, "/proposals/60000000-0000-4000-8000-000000000088");

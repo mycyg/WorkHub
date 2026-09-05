@@ -1290,7 +1290,7 @@ export async function bootDesktopPetSurface(
   async function startRunStreamQaScenario() {
     try {
       const demand = "请根据项目网盘 workhub-app-upload.txt 生成三条验收要点。";
-      const clarificationAnswer = "以 workhub-app-upload.txt 的 smoke 记录作为验收标准，输出给验收同学。";
+      const clarificationAnswer = "以这份文件里的测试记录作为验收标准。";
       const launcher = createLauncherCard();
       setCard(launcher);
       const launcherAction = primaryDesktopCuuAction(launcher, "start_agent_from_cuu", demand);
