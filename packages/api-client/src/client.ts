@@ -719,6 +719,20 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       request(`/api/permissions/${encodeURIComponent(id)}`, {
         method: "DELETE"
       }),
+    // R23 F-02：GET /api/permissions（admin-only）——列出当前租户全部权限策略。
+    listPermissionPolicies: () => request("/api/permissions"),
+    // R23 F-02：PUT /api/permissions（本地客户端 + 管理员门）——新增/调整一条权限策略。
+    createPermissionPolicy: (payload) =>
+      request("/api/permissions", {
+        method: "PUT",
+        body: JSON.stringify(payload)
+      }),
+    // R23 F-02：POST /api/permissions/ask——主动申请审批。
+    askPermission: (payload) =>
+      request("/api/permissions/ask", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
     pilotDay1Metrics: (options) => request(withPilotDay1MetricsOptions("/api/pilot/day1/metrics", options)),
     listProjects: () => request("/api/projects"),
     replayAgentRun: (runId, options) => request(withPageLocale(`/api/agent-runs/${encodeURIComponent(runId)}/replay`, options)),

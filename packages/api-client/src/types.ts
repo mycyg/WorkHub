@@ -7,6 +7,10 @@ import type {
   AttentionHomeVM,
   // R20 R19-27（工作项跨 run 审计时间线）：GET /api/workitems/:id/audit 的响应契约。
   AuditTimelineVM,
+  // R23 F-02（权限策略新增/调整 + 主动申请审批的 ask 响应）：POST /api/permissions/ask 复用既有
+  // 审批创建契约（work_item_id 可选，无事项上下文的审批只能路由给自己，见 routes/permissions.ts）。
+  ApprovalRequest,
+  AttentionItem,
   BudgetPolicy,
   BudgetPolicyUpdate,
   BootstrapProjectRequest,
@@ -14,6 +18,7 @@ import type {
   ClientDeviceRegisterRequest,
   ClientDeviceRegisterResponse,
   ClientDeviceResponse,
+  CreateApprovalRequest,
   DesktopBootstrapRequest,
   DesktopBootstrapResponse,
   CostDashboardVM,
@@ -81,7 +86,9 @@ import type {
   // R14 批 FEEDBACK（web-feedback-ui）：提议详情页「有用/没用」反馈的 PUT 请求体契约。
   PutAiFeedbackRequest,
   // R20 DSK-UX（R19-5 撤销学到的自动通过策略 / R19-3 撤销 AI 文件改动）：治理策略与快照回滚的写契约。
+  PermissionEffect,
   PermissionPolicy,
+  PermissionPolicyWrite,
   RevertAgentRunRequest,
   Snapshot
 } from "@workhub/contracts";
@@ -287,6 +294,15 @@ export type EscalationDelegateResult = {
   };
 };
 
+// R23 F-02：POST /api/permissions/ask 的对外收窄结果。服务端 routes/permissions.ts 的
+// toPublicApprovalCreationResult 已经把内部 ApprovalCreationResult（还带 consideredPolicies 等
+// 评估细节）收窄成这四种形状之一——这里的类型跟着收窄后的真实响应走，不是重新照抄内部类型。
+export type AskPermissionResult =
+  | { outcome: "allowed"; decision: { effect: PermissionEffect; action_pattern: string; reason?: string } }
+  | { outcome: "denied"; decision: { effect: PermissionEffect; action_pattern: string; reason?: string } }
+  | { outcome: "escalated"; reason: "no_approver" }
+  | { outcome: "pending"; approval: ApprovalRequest; attention: AttentionItem };
+
 export type PageClient = {
   attention: (options?: PageRequestOptions) => Promise<AttentionHomeVM>;
   approvals: (options?: ApprovalPageRequestOptions) => Promise<ApprovalCenterVM>;
@@ -452,6 +468,20 @@ export type WorkHubApiClient = {
   // ——桌面壳层天然满足本地客户端门；策略列表本身也只有管理员能读到（见 settings VM 的 permission_policies）。
   // 可选：同 revertAgentRun 的取舍（避免强迫 apps/web 完整 client 字面量 mock 补桩），调用点用 `!` 断言。
   revokePermissionPolicy?: (id: string) => Promise<PermissionPolicy>;
+  // R23 F-02：GET /api/permissions（admin-only）——列出当前租户全部权限策略。桌面设置页目前经由
+  // pages.settings() 的 permission_policies 拿列表（那份 VM 已经够用，且撤销走的是本地乐观过滤，不需要
+  // 整表重拉），这个方法暂无内置消费者，留作对齐 4 端点的 SDK 完整面（同 listUsers/costUsage 等已被记录
+  // 为「零调用即正常」的既有先例，见 2026-08-20-reserved-endpoints-and-sdk-policy.md）。可选：同
+  // revokePermissionPolicy 的取舍。
+  listPermissionPolicies?: () => Promise<PermissionPolicy[]>;
+  // R23 F-02：PUT /api/permissions（本地客户端 + 管理员门）——新增/调整一条权限策略。等价规则会被
+  // 服务端收敛为已存在的记录直接返回（见 services/approvals.ts createPolicy 的
+  // findEquivalentActivePolicy），调用方按响应里的 id 去重合并进本地列表即可。可选：同上。
+  createPermissionPolicy?: (payload: PermissionPolicyWrite) => Promise<PermissionPolicy>;
+  // R23 F-02：POST /api/permissions/ask——主动申请审批（无匹配策略时落 pending 审批供人审；命中
+  // allow/deny 策略时服务端直接给出决策；无审批人可路由时 escalated）。可选：同上（避免强迫既有
+  // WorkHubApiClient 字面量 mock 补一个当前无内置消费者的桩）。
+  askPermission?: (payload: CreateApprovalRequest) => Promise<AskPermissionResult>;
   pilotDay1Metrics: (options?: PilotDay1MetricsRequestOptions) => Promise<PilotDay1MetricsSnapshot>;
   listProjects: () => Promise<ProjectListVM>;
   replayAgentRun: (runId: string, options?: PageRequestOptions) => Promise<ReplayTraceVM>;

@@ -926,3 +926,99 @@ test("R20 DSK-UX (R19-5): api client DELETEs a permission policy against /api/pe
   assert.equal(policy.id, "policy-1");
   assert.deepEqual(calls, [{ url: "/api/permissions/policy-1", method: "DELETE", body: undefined }]);
 });
+
+test("R23 F-02: api client GETs the permission policy list against /api/permissions", async () => {
+  const calls: Array<{ url: string; method: string }> = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET" });
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          data: [
+            {
+              id: "policy-1",
+              scope_kind: "workspace",
+              scope_id: "ws-1",
+              action_pattern: "drive.write:*",
+              effect: "allow",
+              priority: 0,
+              learned_from_session: false,
+              created_at: "2026-07-17T08:00:00.000Z",
+              updated_at: "2026-07-17T08:00:00.000Z"
+            }
+          ]
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+  });
+
+  const policies = await client.listPermissionPolicies!();
+  assert.equal(policies.length, 1);
+  assert.equal(policies[0]!.id, "policy-1");
+  assert.deepEqual(calls, [{ url: "/api/permissions", method: "GET" }]);
+});
+
+test("R23 F-02: api client PUTs a new/adjusted permission policy against /api/permissions", async () => {
+  const calls: Array<{ url: string; method: string; body: string | undefined }> = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET", body: typeof init?.body === "string" ? init.body : undefined });
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          data: {
+            id: "policy-2",
+            scope_kind: "workspace",
+            scope_id: "ws-1",
+            action_pattern: "drive.write:*",
+            effect: "ask",
+            priority: 0,
+            learned_from_session: false,
+            created_at: "2026-07-17T08:00:00.000Z",
+            updated_at: "2026-07-17T08:00:00.000Z"
+          }
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+  });
+
+  const payload = {
+    scope_kind: "workspace" as const,
+    scope_id: "ws-1",
+    action_pattern: "drive.write:*",
+    effect: "ask" as const,
+    priority: 0,
+    learned_from_session: false
+  };
+  const policy = await client.createPermissionPolicy!(payload);
+  assert.equal(policy.id, "policy-2");
+  assert.deepEqual(calls, [{ url: "/api/permissions", method: "PUT", body: JSON.stringify(payload) }]);
+});
+
+test("R23 F-02: api client POSTs an ask-permission request against /api/permissions/ask", async () => {
+  const calls: Array<{ url: string; method: string; body: string | undefined }> = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET", body: typeof init?.body === "string" ? init.body : undefined });
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          data: {
+            outcome: "pending",
+            approval: { id: "appr-1", action_pattern: "drive.write:*", status: "pending", created_at: "2026-07-17T08:00:00.000Z", updated_at: "2026-07-17T08:00:00.000Z" },
+            attention: { id: "att-1", kind: "approval", summary_text: "有一条待你拍板的申请" }
+          }
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+  });
+
+  const payload = { action_pattern: "drive.write:*", kind: "tool" as const, payload_json: { raw_args: {} } };
+  const result = await client.askPermission!(payload);
+  assert.equal(result.outcome, "pending");
+  assert.deepEqual(calls, [{ url: "/api/permissions/ask", method: "POST", body: JSON.stringify(payload) }]);
+});
