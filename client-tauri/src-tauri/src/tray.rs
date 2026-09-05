@@ -294,7 +294,11 @@ mod tests {
 
         assert_eq!(pixels.len(), (size as usize) * (size as usize) * 4);
         assert!(
-            pixels.chunks_exact(4).all(|pixel| pixel[..3] == [0, 0, 0]),
+            pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|pixel| pixel[..3] == [0, 0, 0]),
             "template icon must carry its shape in alpha only"
         );
         // 中心节点实心、四角透明——不是一张空图，也不是一整块实心方块。
@@ -325,7 +329,12 @@ mod tests {
             }
         }
 
-        let painted = pixels.chunks_exact(4).filter(|pixel| pixel[3] > 0).count() as f32;
+        let painted = pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|pixel| pixel[3] > 0)
+            .count() as f32;
         let coverage = painted / ((size * size) as f32);
         // 菜单栏图标既不能是几乎看不见的一点，也不能糊成一坨。
         assert!(
