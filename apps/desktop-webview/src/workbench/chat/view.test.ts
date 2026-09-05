@@ -4,12 +4,17 @@ import { test } from "node:test";
 import {
   addAttachment,
   clampPickerHighlight,
+  createPickerSearchRunner,
   createRenderScrollScheduler,
+  filterConversationRefOptions,
+  filterSkillOptions,
   mapAiProviderHealthState,
   movePickerHighlight,
   removeAttachment,
   shouldShowNoAiProviderBanner,
-  type ChatRenderScrollClock
+  toConversationRefOptions,
+  type ChatRenderScrollClock,
+  type PickerSearchClock
 } from "./view.js";
 
 // mountChatView 本身没有直接单测——这个 workspace 的测试运行器没有真实 DOM（node --import tsx --test，
@@ -243,4 +248,257 @@ test("createRenderScrollScheduler cancel() clears the fallback timeout too", () 
   assert.equal(cleared, 42, "the outstanding fallback timer handle is cleared on dispose");
   timeoutCb?.();
   assert.equal(runs, 0, "and even if the timer still fires, the render is suppressed");
+});
+
+// —— R23 F-07：#会话引用 / /技能唤起 picker 的可测内核 —— //
+//
+// mountChatView 的 DOM 接线在这个 workspace 里测不了（见文件顶部注释），所以三块判断成分最重的逻辑
+// 都做成了导出的纯函数/可注入时钟的工厂：候选映射（谁能进列表）、本地过滤（打字时看到什么）、取数
+// 节奏（debounce + 单调代次，晚到的旧响应不许覆盖新结果）。这里逐一钉住。
+
+test("toConversationRefOptions keeps every visible conversation as a pickable option", () => {
+  const options = toConversationRefOptions({
+    conversations: [
+      { id: "conv-1", title: "预算复盘" },
+      { id: "conv-2", title: "投放排期" }
+    ]
+  });
+  assert.deepEqual(options, [
+    { conversationId: "conv-1", title: "预算复盘" },
+    { conversationId: "conv-2", title: "投放排期" }
+  ]);
+});
+
+test("toConversationRefOptions drops the conversation the user is currently speaking in", () => {
+  // 服务端解析引用时同样跳过自引用（resolveConversationRefs 的 excludeConversationId）——列一条选了
+  // 也不会生效的行就是骗人。
+  const options = toConversationRefOptions(
+    {
+      conversations: [
+        { id: "conv-1", title: "预算复盘" },
+        { id: "conv-2", title: "投放排期" }
+      ]
+    },
+    { excludeConversationId: "conv-1" }
+  );
+  assert.deepEqual(
+    options.map((option) => option.conversationId),
+    ["conv-2"]
+  );
+});
+
+test("toConversationRefOptions matches the excluded id case-insensitively", () => {
+  const options = toConversationRefOptions(
+    { conversations: [{ id: "CONV-1", title: "预算复盘" }] },
+    { excludeConversationId: "conv-1" }
+  );
+  assert.deepEqual(options, []);
+});
+
+test("toConversationRefOptions drops a titleless conversation instead of rendering a blank row", () => {
+  // 无标题的会话按名字根本引用不上（服务端靠标题解析），列一行空白只会让人点了没反应。
+  const options = toConversationRefOptions({
+    conversations: [
+      { id: "conv-1", title: "" },
+      { id: "conv-2", title: "投放排期" }
+    ]
+  });
+  assert.deepEqual(
+    options.map((option) => option.conversationId),
+    ["conv-2"]
+  );
+});
+
+test("filterConversationRefOptions returns everything when the trigger query is still empty", () => {
+  const all = [
+    { conversationId: "conv-1", title: "预算复盘" },
+    { conversationId: "conv-2", title: "投放排期" }
+  ];
+  assert.deepEqual(filterConversationRefOptions(all, ""), all);
+});
+
+test("filterConversationRefOptions narrows by a case-insensitive substring of the title", () => {
+  const all = [
+    { conversationId: "conv-1", title: "预算复盘" },
+    { conversationId: "conv-2", title: "Launch plan" }
+  ];
+  assert.deepEqual(
+    filterConversationRefOptions(all, "launch").map((option) => option.conversationId),
+    ["conv-2"]
+  );
+  assert.deepEqual(
+    filterConversationRefOptions(all, "复盘").map((option) => option.conversationId),
+    ["conv-1"]
+  );
+});
+
+test("filterConversationRefOptions caps how many rows the picker can show", () => {
+  const many = Array.from({ length: 30 }, (_, index) => ({
+    conversationId: `conv-${index}`,
+    title: `会话 ${index}`
+  }));
+  assert.equal(filterConversationRefOptions(many, "会话").length, 8);
+  assert.equal(filterConversationRefOptions(many, "会话", 3).length, 3);
+});
+
+test("filterSkillOptions matches on the skill name only, not on the when-to-use hint", () => {
+  // 插进正文的是技能名——能搜到却看不出为什么搜到，比少几条结果更糟。
+  const skills = [{ skillKey: "weekly-report", name: "周报模板", whenToUse: "写周报之前" }];
+  assert.equal(filterSkillOptions(skills, "周报模板").length, 1);
+  assert.equal(filterSkillOptions(skills, "写周报之前").length, 0);
+});
+
+test("filterSkillOptions returns everything for an empty query and caps the result count", () => {
+  const many = Array.from({ length: 30 }, (_, index) => ({
+    skillKey: `skill-${index}`,
+    name: `技能 ${index}`,
+    whenToUse: ""
+  }));
+  assert.equal(filterSkillOptions(many, "").length, 8);
+});
+
+// —— 取数节奏：debounce + 单调代次 —— //
+
+function fakePickerClock(): { clock: PickerSearchClock; fire: () => void; cleared: number[]; pending: () => boolean } {
+  let nextHandle = 1;
+  const timers = new Map<number, () => void>();
+  const cleared: number[] = [];
+  return {
+    clock: {
+      setTimeout: (callback) => {
+        const handle = nextHandle++;
+        timers.set(handle, callback);
+        return handle;
+      },
+      clearTimeout: (handle) => {
+        cleared.push(handle);
+        timers.delete(handle);
+      }
+    },
+    // 让所有还挂着的定时器各触发一次（真实时钟里它们本来就是独立到点的）。
+    fire: () => {
+      const due = [...timers.entries()];
+      timers.clear();
+      for (const [, callback] of due) {
+        callback();
+      }
+    },
+    cleared,
+    pending: () => timers.size > 0
+  };
+}
+
+test("createPickerSearchRunner does not fetch until the debounce timer fires", async () => {
+  const { clock, fire } = fakePickerClock();
+  const runner = createPickerSearchRunner(250, clock);
+  let fetched = 0;
+  let settled: string | undefined = "untouched";
+  runner.run(
+    async () => {
+      fetched += 1;
+      return "page";
+    },
+    (result) => {
+      settled = result;
+    }
+  );
+  assert.equal(fetched, 0, "typing alone must not hit the server");
+  fire();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(fetched, 1);
+  assert.equal(settled, "page");
+});
+
+test("createPickerSearchRunner collapses rapid re-runs into a single fetch", () => {
+  const { clock, cleared } = fakePickerClock();
+  const runner = createPickerSearchRunner(250, clock);
+  const noop = (): void => {};
+  runner.run(async () => "a", noop);
+  runner.run(async () => "b", noop);
+  runner.run(async () => "c", noop);
+  // 每一次新的 run 都先撤掉上一次还没到点的定时器——连按/连删触发符不该排出一串请求。
+  assert.deepEqual(cleared, [1, 2]);
+});
+
+test("createPickerSearchRunner discards a stale response that lands after a newer run", async () => {
+  const { clock, fire } = fakePickerClock();
+  const runner = createPickerSearchRunner(250, clock);
+  const settled: string[] = [];
+  let releaseSlow: ((value: string) => void) | undefined;
+  runner.run(
+    () =>
+      new Promise<string>((resolve) => {
+        releaseSlow = resolve;
+      }),
+    (result) => {
+      settled.push(`slow:${result}`);
+    }
+  );
+  fire();
+  // 第一次已经在飞了，这时用户又改了触发符 —— 代次 +1。
+  runner.run(async () => "fresh", (result) => {
+    settled.push(`fresh:${result}`);
+  });
+  fire();
+  await Promise.resolve();
+  await Promise.resolve();
+  releaseSlow?.("stale");
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(settled, ["fresh:fresh"], "the late first response must not overwrite the newer result");
+});
+
+test("createPickerSearchRunner settles with undefined when the fetch rejects, instead of throwing", async () => {
+  const { clock, fire } = fakePickerClock();
+  const runner = createPickerSearchRunner(250, clock);
+  let settled: string | undefined = "untouched";
+  let settleCount = 0;
+  runner.run(
+    async () => {
+      throw new Error("offline");
+    },
+    (result: string | undefined) => {
+      settleCount += 1;
+      settled = result;
+    }
+  );
+  fire();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(settleCount, 1);
+  // 取数失败＝这一次没有候选（picker 渲诚实的空态），不弹错误横幅打断正在打字的人。
+  assert.equal(settled, undefined);
+});
+
+test("createPickerSearchRunner cancel() clears the pending timer and voids an in-flight fetch", async () => {
+  const { clock, fire, cleared, pending } = fakePickerClock();
+  const runner = createPickerSearchRunner(250, clock);
+  let settleCount = 0;
+  let releaseSlow: ((value: string) => void) | undefined;
+  runner.run(
+    () =>
+      new Promise<string>((resolve) => {
+        releaseSlow = resolve;
+      }),
+    () => {
+      settleCount += 1;
+    }
+  );
+  fire();
+  // dispose：撤掉还没到点的定时器 + 代次 +1，让已经在飞的那次回来时也落不了地。
+  runner.cancel();
+  releaseSlow?.("late");
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(settleCount, 0, "nothing may be written after the view is disposed");
+  // 再排一次也不会留下悬空定时器：cancel 之后 pending 为空。
+  runner.run(async () => "x", () => {});
+  assert.equal(pending(), true);
+  runner.cancel();
+  assert.equal(pending(), false);
+  assert.ok(cleared.length > 0);
 });
