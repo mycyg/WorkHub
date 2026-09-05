@@ -259,6 +259,9 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(rendered.conflictCount, 1);
   assert.equal(rendered.html.includes("data-proposal-conflicts=\"1\""), true);
   assert.equal(rendered.html.includes("data-proposal-conflict-workbench=\"true\""), false);
+  // F-05：只有一处融合稿时不分组——保留既有一键采纳，不新增「先选稿」步骤。
+  assert.equal(rendered.html.includes("data-proposal-conflict-chooser=\"true\""), false);
+  assert.equal(rendered.html.includes("data-conflict-option-handled-above=\"true\""), false);
   assert.equal(rendered.html.includes("data-conflict-option-id=\"keep_current\""), true);
   assert.equal(rendered.html.includes("data-conflict-option-id=\"accept_incoming\""), true);
   assert.equal(rendered.html.includes("data-conflict-option-id=\"ai_fusion\""), true);
@@ -482,6 +485,144 @@ test("proposal renderer exposes a folded bulk conflict review only for multiple 
   assert.equal(english.html.includes("Use all incoming"), true);
   assert.equal(english.html.includes("<span class=\"wh-pill\">Text document</span>"), true);
   assert.equal(english.html.includes("<span class=\"wh-pill\">Structured record</span>"), true);
+});
+
+test("F-05 proposal renderer groups multiple fusion drafts into a single choose-then-adopt picker", () => {
+  const vm = createP05GoldPathFixture().proposalDetail;
+  const createFusionConflict = (input: {
+    id: string;
+    mergeProposalId: string;
+    targetKey: string;
+    targetPath: string;
+    rationale: string;
+  }): ProposalConflict => ({
+    id: input.id,
+    work_item_id: vm.work_item_id,
+    proposal_id: vm.proposal_id,
+    merge_proposal_id: input.mergeProposalId,
+    change_id: vm.manifest.changes[0]?.id ?? "change-1",
+    target_key: input.targetKey,
+    target_kind: "text_doc",
+    change_type: "updated",
+    target_path: input.targetPath,
+    headline: `${input.targetPath} 已经被另一份变更更新`,
+    summary_text: "正式版和这次版本都改了同一处，Cuu 已经生成融合稿。",
+    existing: {
+      proposal_id: "10000000-0000-4000-8000-000000000111",
+      change_id: "10000000-0000-4000-8000-000000000112",
+      sha256: "a".repeat(64)
+    },
+    incoming: {
+      sha256_before: "b".repeat(64),
+      sha256_after: "c".repeat(64)
+    },
+    recommended_option_id: "ai_fusion",
+    options: [
+      {
+        id: "keep_current",
+        label: "保留正式版",
+        summary_text: "保留已正式采纳的版本。",
+        action: {
+          id: "keep_current",
+          label: "保留正式版",
+          method: "POST",
+          href: `/api/proposals/${vm.proposal_id}/merge`,
+          request_json: { conflict_resolution: { accept_incoming_target_keys: [] } }
+        }
+      },
+      {
+        id: "accept_incoming",
+        label: "采纳这次版本",
+        summary_text: "用这次版本覆盖正式版。",
+        action: {
+          id: "accept_incoming",
+          label: "采纳这次版本",
+          method: "POST",
+          href: `/api/proposals/${vm.proposal_id}/merge`,
+          request_json: { conflict_resolution: { accept_incoming_target_keys: [input.targetKey] } }
+        }
+      },
+      {
+        id: "ai_fusion",
+        label: "采用 AI 融合稿",
+        summary_text: input.rationale,
+        recommended: true,
+        action: {
+          id: "apply_ai_fusion",
+          label: "采用 AI 融合稿",
+          method: "POST",
+          href: `/api/merge-proposals/${input.mergeProposalId}/apply`,
+          request_json: { confirm: true }
+        }
+      }
+    ]
+  });
+  const conflicts = [
+    createFusionConflict({
+      id: "conflict-a",
+      mergeProposalId: "20000000-0000-4000-8000-000000000401",
+      targetKey: "drive_item:docs/weekly-report.md",
+      targetPath: "docs/weekly-report.md",
+      rationale: "融合稿合并了双方对本周进展的补充。"
+    }),
+    createFusionConflict({
+      id: "conflict-b",
+      mergeProposalId: "20000000-0000-4000-8000-000000000402",
+      targetKey: "drive_item:docs/risk-log.md",
+      targetPath: "docs/risk-log.md",
+      rationale: "融合稿保留了双方新增的风险项。"
+    })
+  ];
+
+  const rendered = renderProposalDetail(vm, "web", { conflicts });
+  const english = renderProposalDetail(vm, "web", { locale: "en-US", conflicts });
+
+  // 选择器本体：单选分组 + 确认按钮，出现在两处冲突卡片之前。
+  assert.equal(rendered.html.includes("data-proposal-conflict-chooser=\"true\""), true);
+  assert.equal(rendered.html.includes("data-proposal-conflict-chooser-count=\"2\""), true);
+  assert.equal(rendered.html.includes("选一份合并方案"), true);
+  assert.equal(rendered.html.includes("这几处冲突都生成了融合稿"), true);
+  assert.match(
+    rendered.html,
+    /data-conflict-chooser-option="true"[^>]*data-merge-proposal-id="20000000-0000-4000-8000-000000000401"/u
+  );
+  assert.match(
+    rendered.html,
+    /data-conflict-chooser-option="true"[^>]*data-merge-proposal-id="20000000-0000-4000-8000-000000000402"/u
+  );
+  assert.equal(rendered.html.includes("合并方案 1"), true);
+  assert.equal(rendered.html.includes("合并方案 2"), true);
+  assert.equal(rendered.html.includes("融合稿合并了双方对本周进展的补充。"), true);
+  assert.equal(rendered.html.includes("融合稿保留了双方新增的风险项。"), true);
+  assert.equal(rendered.html.includes("data-proposal-conflict-chooser-submit=\"true\""), true);
+  assert.equal(rendered.html.includes("采纳选中的方案"), true);
+  assert.equal(rendered.html.includes("data-proposal-conflict-chooser-warning=\"true\""), true);
+  assert.match(rendered.html, /data-proposal-conflict-chooser-warning="true"[^>]*hidden/u);
+  assert.equal(rendered.html.includes("请先选择一个合并方案"), true);
+  // 不出现内部黑话——只出现在契约/请求体层面，不出现在可见文案里。
+  assert.equal(visibleText(rendered.html).includes("ai_fusion"), false);
+  assert.equal(visibleText(rendered.html).includes("candidate_id"), false);
+
+  // 两处的 ai_fusion 简单按钮都已并入上方，换成指路条，不留第二个能打的一键采纳。
+  assert.equal((rendered.html.match(/data-conflict-option-handled-above="true"/gu) ?? []).length, 2);
+  assert.equal(rendered.html.includes("已并入上方"), true);
+  assert.equal(rendered.html.includes("data-action-id=\"apply_ai_fusion\""), false);
+
+  // keep_current / accept_incoming 是独立决策，两处冲突都还保留、可点。
+  assert.equal((rendered.html.match(/data-conflict-option-id="keep_current"/gu) ?? []).length, 2);
+  assert.equal((rendered.html.match(/data-conflict-option-id="accept_incoming"/gu) ?? []).length, 2);
+
+  // actionHrefs 汇总里带上两份融合稿的 apply href，供上层安全面核对。
+  assert.equal(rendered.actionHrefs.includes("/api/merge-proposals/20000000-0000-4000-8000-000000000401/apply"), true);
+  assert.equal(rendered.actionHrefs.includes("/api/merge-proposals/20000000-0000-4000-8000-000000000402/apply"), true);
+
+  assert.equal(english.html.includes("Choose a merge plan"), true);
+  assert.equal(english.html.includes("These conflicts each have a drafted merge plan"), true);
+  assert.equal(english.html.includes("Merge plan 1"), true);
+  assert.equal(english.html.includes("Merge plan 2"), true);
+  assert.equal(english.html.includes("Adopt selected plan"), true);
+  assert.equal(english.html.includes("Pick a merge plan first"), true);
+  assert.equal(english.html.includes("Handled in the “Choose a merge plan” panel above."), true);
 });
 
 test("findings: conflicts whose ids collapse to the same safeId still get distinct line-editor panel ids", () => {

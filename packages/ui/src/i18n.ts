@@ -107,6 +107,17 @@ const copy = {
   "proposal.conflictWorkbenchRecommended": { "zh-CN": "建议", "en-US": "Recommended" },
   "proposal.conflictWorkbenchBulkKeep": { "zh-CN": "全部保留正式版", "en-US": "Keep all current" },
   "proposal.conflictWorkbenchBulkIncoming": { "zh-CN": "全部采纳这次版本", "en-US": "Use all incoming" },
+  // F-05：撞车「先选稿再采纳」——一份提议有多处冲突、每处都生成了融合稿时，先分组选一份要采纳的方案，
+  // 确认后再采纳，避免手误采纳错的稿子；只有一处时仍是一键采纳（不新增这一步）。
+  "proposal.conflictChooserTitle": { "zh-CN": "选一份合并方案", "en-US": "Choose a merge plan" },
+  "proposal.conflictChooserBody": {
+    "zh-CN": "这几处冲突都生成了融合稿，先选定要采纳的一份，确认后再采纳。",
+    "en-US": "These conflicts each have a drafted merge plan. Pick the one to adopt, then confirm."
+  },
+  "proposal.conflictChooserPlanPrefix": { "zh-CN": "合并方案", "en-US": "Merge plan" },
+  "proposal.conflictChooserSubmit": { "zh-CN": "采纳选中的方案", "en-US": "Adopt selected plan" },
+  "proposal.conflictChooserPickFirst": { "zh-CN": "请先选择一个合并方案", "en-US": "Pick a merge plan first" },
+  "proposal.conflictChooserHandledAbove": { "zh-CN": "已并入上方“选一份合并方案”，请在那里操作。", "en-US": "Handled in the “Choose a merge plan” panel above." },
   "proposal.patchTitle": { "zh-CN": "采用前预览", "en-US": "Preview before apply" },
   "proposal.patchChanged": { "zh-CN": "有改动", "en-US": "Changed" },
   "proposal.patchUnchanged": { "zh-CN": "无改动", "en-US": "Unchanged" },
