@@ -28,6 +28,10 @@ import {
   defaultDesktopApiBase,
   normalizeDesktopApiBase
 } from "./desktop-api-base.js";
+import {
+  desktopBootScreenFitAttribute,
+  desktopBootScreenFitPaddingPx
+} from "./desktop-boot-screen-fit.js";
 import { clearDesktopClientToken } from "./desktop-client-token.js";
 import { forgetDesktopAuthModeHint, rememberDesktopAuthModeHint } from "./desktop-login.js";
 import { liquidGlassHeadHtml } from "./liquid-glass.js";
@@ -308,6 +312,11 @@ export function desktopConnectResultHtml(
   return `<div class="wh-connect-card wh-connect-card--good" role="status"><p class="wh-connect-ok">${escapeHtml(copy.readyTitle(name))}</p><p class="wh-connect-hint">${escapeHtml(outcome.base)}</p>${rowsHtml}</div>`;
 }
 
+// R24 H（首启窗口裁切）：这一屏渲进主窗时，原生窗口还是聚焦盒 idle 的细搜索条尺寸（720×64）——面板
+// 会被裁得只剩一行标题。面板上的 desktopBootScreenFitAttribute 是量高锚点，主窗挂载后由
+// desktop-boot-screen-fit.ts 量它 + 外壳 padding 把窗口撑到内容大小（「测试连接」的结果卡让面板变高时
+// 也会重量）。外壳 padding 与那边的加法共用 desktopBootScreenFitPaddingPx——CSS 的 padding 一旦大过
+// 那个值，窗口就会重新开始裁面板边缘。工作台窗（1280×800）不做贴合，这些样式在那边照旧只是居中留白。
 export function renderDesktopConnectScreenHtml(input: {
   locale: WorkHubLocale;
   apiBase?: string;
@@ -321,7 +330,7 @@ export function renderDesktopConnectScreenHtml(input: {
     : "";
   return `${liquidGlassHeadHtml}${liquidGlassFilterHtml}<style>${liquidGlassFilterCss}
 html,body,#root{margin:0;min-height:100%;background:rgba(0,0,0,0)!important}
-.wh-connect-shell{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px;box-sizing:border-box;font-family:'M PLUS Rounded 1c','Noto Sans SC','Segoe UI',sans-serif;color:CanvasText;background:transparent}
+.wh-connect-shell{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:${desktopBootScreenFitPaddingPx}px;box-sizing:border-box;font-family:'M PLUS Rounded 1c','Noto Sans SC','Segoe UI',sans-serif;color:CanvasText;background:transparent}
 .wh-connect-panel{position:relative;box-sizing:border-box;width:min(540px,100%);border-radius:22px;background:transparent;border:1px solid rgba(255,255,255,.26);box-shadow:0 24px 76px -46px rgba(0,0,0,.52);overflow:hidden;--wh-liquid-edge:16px}
 .wh-connect-panel>.wh-liquid-glass-content{display:grid;gap:12px;padding:30px 30px 26px;text-shadow:0 1px 12px rgba(255,255,255,.42),0 0 2px rgba(255,255,255,.66)}
 .wh-connect-mark{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#0a84ff,#64d2ff);box-shadow:0 10px 22px -6px rgba(10,132,255,.45)}
@@ -347,7 +356,7 @@ html,body,#root{margin:0;min-height:100%;background:rgba(0,0,0,0)!important}
 .wh-connect-hint{font-size:12px;color:color-mix(in srgb, CanvasText 62%, transparent);word-break:break-all}
 .wh-connect-detail{font-size:11px;color:color-mix(in srgb, CanvasText 52%, transparent);word-break:break-all}
 .wh-connect-detail summary{cursor:pointer;font-weight:850}
-</style><main class="wh-connect-shell"><section class="wh-connect-panel" aria-live="polite">${renderWorkHubLiquidGlassLayer("spotlight")}<span class="wh-liquid-glass-rim" aria-hidden="true"></span><div class="wh-liquid-glass-content"><div class="wh-connect-mark" aria-hidden="true"></div><h2>${escapeHtml(copy.title)}</h2><p>${escapeHtml(copy.subtitle)}</p><p class="wh-connect-manual">${escapeHtml(copy.manualOnly)}</p><form class="wh-connect-form" data-desktop-connect-form novalidate><label>${escapeHtml(copy.addressLabel)}<input data-desktop-connect-address name="apiBase" type="url" autocomplete="off" spellcheck="false" value="${escapeHtml(prefill)}" placeholder="http://192.168.1.10:8787" aria-label="${escapeHtml(copy.addressLabel)}" /></label><div class="wh-connect-actions"><button data-desktop-connect-test type="submit">${escapeHtml(copy.testLabel)}</button><button data-desktop-connect-confirm type="button" disabled>${escapeHtml(copy.confirmLabel)}</button></div></form><div data-desktop-connect-status></div>${bootDetail}</div></section></main>`;
+</style><main class="wh-connect-shell"><section ${desktopBootScreenFitAttribute} class="wh-connect-panel" aria-live="polite">${renderWorkHubLiquidGlassLayer("spotlight")}<span class="wh-liquid-glass-rim" aria-hidden="true"></span><div class="wh-liquid-glass-content"><div class="wh-connect-mark" aria-hidden="true"></div><h2>${escapeHtml(copy.title)}</h2><p>${escapeHtml(copy.subtitle)}</p><p class="wh-connect-manual">${escapeHtml(copy.manualOnly)}</p><form class="wh-connect-form" data-desktop-connect-form novalidate><label>${escapeHtml(copy.addressLabel)}<input data-desktop-connect-address name="apiBase" type="url" autocomplete="off" spellcheck="false" value="${escapeHtml(prefill)}" placeholder="http://192.168.1.10:8787" aria-label="${escapeHtml(copy.addressLabel)}" /></label><div class="wh-connect-actions"><button data-desktop-connect-test type="submit">${escapeHtml(copy.testLabel)}</button><button data-desktop-connect-confirm type="button" disabled>${escapeHtml(copy.confirmLabel)}</button></div></form><div data-desktop-connect-status></div>${bootDetail}</div></section></main>`;
 }
 
 // ---------------------------------------------------------------------------
