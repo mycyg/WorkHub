@@ -288,6 +288,27 @@ export async function resolveDesktopFirstRunGateWithLock(input: {
   return locked.kind === "token-ready" ? "ready" : "offline";
 }
 
+// —— R24 S5（N-03 根治）：登录/重新绑定成功后的编排 —— //
+//
+// 旧行为：凭据门三条路径（登录/注册/邀请接受，见下方 runDesktopCredentialLogin/Register/InviteAccept）
+// 与昵称重绑屏（desktop-rebind.ts）成功之后，调用方（browser.ts/workbench/boot.ts）的 onSuccess
+// 一律只 window.location.reload() 自己那一扇窗口——已经开着的桌宠窗（挂着「去主窗口登录」卡）、
+// 工作台窗完全收不到任何信号，会在本次会话里一直装死，直到应用重启才可能偶然读到新落的 token
+// （真机复验 N-03）。
+// 修法：跟 runDesktopLogout/applyDesktopServerChoice 同一套"effects 注入 + 顺序即安全属性"取舍——
+// 先广播跨窗事件（桌宠 pet-surface.ts / 工作台 workbench/boot.ts 订阅后各自 reload），再本窗 reload；
+// 广播本身是 fire-and-forget（无 __TAURI__ 时 no-op，见调用方传入的 broadcastLoggedIn 实现），不阻塞
+// 也不等待 reload。事件名 "workhub-logged-in" 注册在 desktop-cuu-runtime.ts 的 DesktopShellEventName。
+export type DesktopLoginSuccessEffects = {
+  broadcastLoggedIn: () => void;
+  reload: () => void;
+};
+
+export function completeDesktopLoginSuccess(effects: DesktopLoginSuccessEffects): void {
+  effects.broadcastLoggedIn();
+  effects.reload();
+}
+
 // 桌面 exchange 需要客户端的 login / register / bootstrapDesktop 三个能力 + 裸 request（邀请接受目前
 // 没有具名方法，同 apps/web/src/browser.ts 的既有取舍——不为单个批次特性扩大 WorkHubApiClient 的具名
 // 方法面，见 workbench/rail.ts submitNewPersonalSpace 顶部注释同款先例）。收窄依赖便于测试注入假客户端。

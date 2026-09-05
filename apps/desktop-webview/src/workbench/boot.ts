@@ -206,6 +206,25 @@ export function bindWorkbenchLoggedOutListener(onLoggedOut: () => void, scope: u
   });
 }
 
+// R24 S5（N-03 根治）：主窗登录/重新绑定成功（browser.ts 的 broadcastDesktopLoggedIn /
+// reloadAfterDesktopLogin）广播这个事件——工作台窗口如果这次会话里也开着（比如登录之前就已打开、
+// 静默拉数据失败），此前完全没有信号知道"手里现在有一个可用 token 了"，要么一直卡在旧状态，要么
+// 得等用户自己手动刷新才能捡到新 token。同 bindWorkbenchLoggedOutListener 一模一样的桥（事件名同样
+// 注册在 desktop-cuu-runtime.ts 的 DesktopShellEventName，桌宠窗口 pet-surface.ts 也订阅这同一个
+// 事件名），这里订阅后简单 reload 一次——boot() 会重新走一遍鉴权门判定，自然捡到新 token。
+export function bindWorkbenchLoggedInListener(onLoggedIn: () => void, scope: unknown = globalThis): void {
+  const listen = resolveWorkbenchTauriListen(scope);
+  if (!listen) {
+    // 浏览器 dev 预览 / 无 Tauri：no-op，不崩溃——同 bindWorkbenchLoggedOutListener 的既有降级路径。
+    return;
+  }
+  void Promise.resolve(
+    listen("workhub-logged-in", () => onLoggedIn())
+  ).catch((error) => {
+    console.warn("WorkHub workbench: could not subscribe to the workhub-logged-in event", error);
+  });
+}
+
 // 深链冷启动竞态兜底（批 1 遗留，见 pending-deep-link.ts 顶部注释）：本 App 自己发起的「打开工作台」
 // （Spotlight → workbench-open.ts）在 invoke 之前已经把目标同步写进 localStorage；这里在挂载 shell
 // 之后立即消费一次——命中就 selectProject，不命中（没有 stash / 已过期）就是正常的「从空态开始」冷启动，
@@ -317,6 +336,9 @@ async function boot(): Promise<void> {
   // 顶部注释。showLoggedOut() 本身幂等，两条路径（这里的运行期监听 + 上面的 boot 时快照检查）都指向
   // 同一个方法，不会重复触发副作用。
   bindWorkbenchLoggedOutListener(() => shell.showLoggedOut());
+  // R24 S5（N-03 根治）：同上，但反方向——主窗登录/重新绑定成功后广播，这里 reload 一次重新走鉴权门
+  // 判定，捡到新落的 token（见 bindWorkbenchLoggedInListener 顶部注释）。
+  bindWorkbenchLoggedInListener(() => window.location.reload());
 }
 
 // node:test 环境没有 document——colocated boot.test.ts 只测上面导出的纯函数，不需要真跑 boot()。

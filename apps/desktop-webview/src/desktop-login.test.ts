@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { WorkHubApiError } from "@workhub/api-client/client";
 
 import {
+  completeDesktopLoginSuccess,
   describeDesktopInviteError,
   describeDesktopLoginError,
   desktopBootScreenForGate,
@@ -610,6 +611,19 @@ test("resolveDesktopFirstRunGateWithLock propagates offline when this window win
     sleep: h.sleep
   });
   assert.equal(result, "offline");
+});
+
+// R24 S5（N-03 根治）：登录/重新绑定成功此前只 reload 发起动作的那一扇窗口——桌宠/工作台收不到任何
+// 信号，本次会话内一直挂着旧状态装死。这条测试钉死顺序：先广播（跨窗事件，桌宠/工作台订阅后各自
+// reload），再本窗 reload——顺序颠倒会让"本窗已经在 reload 路上、事件却还没发出去"这种竞态成为可能
+// （虽然本窗即将卸载不受影响，但同一份 effects 未来若被复用到不 reload 的场景就会露馅）。
+test("completeDesktopLoginSuccess broadcasts workhub-logged-in before reloading this window", () => {
+  const order: string[] = [];
+  completeDesktopLoginSuccess({
+    broadcastLoggedIn: () => order.push("broadcast"),
+    reload: () => order.push("reload")
+  });
+  assert.deepEqual(order, ["broadcast", "reload"]);
 });
 
 // —— R24 S4：注册页签 —— //

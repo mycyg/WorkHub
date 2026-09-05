@@ -51,6 +51,7 @@ import {
 import { isStaleDesktopClientTokenError } from "./auth-recovery.js";
 import {
   bindDesktopCredentialGate,
+  completeDesktopLoginSuccess,
   desktopBootScreenForGate,
   isPasswordModeBootstrapError,
   readDesktopAuthModeHint,
@@ -203,6 +204,25 @@ function fitBootScreenToMainWindow(rootEl: HTMLElement): void {
   });
 }
 
+// R24 S5（N-03 根治）：登录/重新绑定成功此前只 window.location.reload() 自己——桌宠窗（一直挂着「去
+// 主窗登录」卡）与工作台窗（如果也开着）收不到任何信号，会在本次会话里一直装死，直到应用重启才会
+// 偶然读到新落的 token。编排本身（先广播、再本窗 reload）是 desktop-login.ts 的
+// completeDesktopLoginSuccess（同 runDesktopLogout/applyDesktopServerChoice 一样的可单测 effects
+// 编排），这里只提供两个真实副作用：跨窗广播走同一条通用 Tauri 事件桥（desktop-cuu-runtime.ts 的
+// DesktopShellEventName），照 workhub-logged-out/workhub-server-changed 的既有模式，无 __TAURI__
+// （浏览器 dev 预览）时 resolveDesktopShellEmitter() 返回 undefined，广播静默 no-op，不影响 reload
+// 照常执行。桌宠订阅见 pet-surface.ts 的 bootDesktopPetSurface，工作台订阅见 workbench/boot.ts 的
+// bindWorkbenchLoggedOutListener 旁边新增的同款监听。
+function reloadAfterDesktopLogin(): void {
+  completeDesktopLoginSuccess({
+    broadcastLoggedIn: () => {
+      const shellEmitter = resolveDesktopShellEmitter();
+      void Promise.resolve(shellEmitter?.emit?.("workhub-logged-in")).catch(() => undefined);
+    },
+    reload: () => window.location.reload()
+  });
+}
+
 // 密码/hybrid 模式凭据门：接到既有 login/register/邀请接受 → device-token exchange 流程，成功后 reload
 // 走既有 token 流。
 function mountDesktopCredentialGate(rootEl: HTMLElement, client: BrowserApiClient, locale: WorkHubLocale): void {
@@ -210,7 +230,7 @@ function mountDesktopCredentialGate(rootEl: HTMLElement, client: BrowserApiClien
     client,
     locale,
     storage: window.localStorage,
-    onSuccess: () => window.location.reload(),
+    onSuccess: reloadAfterDesktopLogin,
     context: desktopCredentialGateContext()
   });
   fitBootScreenToMainWindow(rootEl);
@@ -225,7 +245,7 @@ function mountDesktopRebindScreen(rootEl: HTMLElement, client: BrowserApiClient,
     client,
     locale,
     storage: window.localStorage,
-    onSuccess: () => window.location.reload(),
+    onSuccess: reloadAfterDesktopLogin,
     context: desktopCredentialGateContext(),
     // 就地换成凭据门：mountDesktopCredentialGate 自己会重新贴合窗口（凭据门比昵称屏高一截，
     // 不重量的话新卡片会被裁掉下半张）。

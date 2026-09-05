@@ -72,7 +72,13 @@ export type DesktopShellEventName =
   // 换 SSE 订阅 base 之后广播这个事件（payload {url}）。其余窗口收到即自行 reload 走新地址重新 boot——
   // 与 workhub-logged-out 同一条通用 Tauri 事件桥，不另起协议（订阅入口 desktop-connect-screen.ts 的
   // bindDesktopServerChangedReload）。
-  | "workhub-server-changed";
+  | "workhub-server-changed"
+  // R24 S5（N-03 根治）：主窗登录/重新绑定成功（desktop-login.ts 凭据门三条路径 / desktop-rebind.ts
+  // 昵称屏）此前只 reload 自己那一扇窗口——桌宠窗全程挂着「去主窗登录」卡装死，工作台窗（若也开着）
+  // 同样收不到信号。登录成功后广播这个事件，桌宠（pet-surface.ts）与工作台（workbench/boot.ts）
+  // 收到即自行 reload——与 workhub-logged-out 同一条通用 Tauri 事件桥，不另起协议（广播入口
+  // browser.ts 的 broadcastDesktopLoggedIn / reloadAfterDesktopLogin）。
+  | "workhub-logged-in";
 
 export type DesktopShellListen = (
   eventName: DesktopShellEventName,

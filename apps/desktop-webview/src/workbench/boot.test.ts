@@ -5,6 +5,7 @@ import {
   applyPendingWorkbenchDeepLink,
   applyReplayedShellDeepLink,
   bindWorkbenchDeepLinkListener,
+  bindWorkbenchLoggedInListener,
   bindWorkbenchLoggedOutListener,
   clientToken,
   isWorkbenchDesktopLoggedOut,
@@ -259,6 +260,36 @@ test("bindWorkbenchLoggedOutListener subscribes to the workhub-logged-out event 
   };
 
   bindWorkbenchLoggedOutListener(() => calls.push(1), scope);
+  assert.ok(handler);
+  handler?.({ payload: undefined });
+
+  assert.deepEqual(calls, [1]);
+});
+
+// R24 S5（N-03 根治）——反方向的同一条桥：主窗登录/重新绑定成功广播 workhub-logged-in，工作台
+// 订阅后 reload 一次重新走鉴权门判定。断言纪律与上面的 workhub-logged-out 测试完全对称。
+test("bindWorkbenchLoggedInListener no-ops without a Tauri listen bridge instead of throwing", () => {
+  const calls: number[] = [];
+  assert.doesNotThrow(() => bindWorkbenchLoggedInListener(() => calls.push(1), {}));
+  assert.deepEqual(calls, []);
+});
+
+test("bindWorkbenchLoggedInListener subscribes to the workhub-logged-in event and forwards it to the callback", () => {
+  const calls: number[] = [];
+  let handler: ((event: { payload: unknown }) => void) | undefined;
+  const scope = {
+    __TAURI__: {
+      event: {
+        listen: (eventName: string, cb: (event: { payload: unknown }) => void) => {
+          assert.equal(eventName, "workhub-logged-in");
+          handler = cb;
+          return () => {};
+        }
+      }
+    }
+  };
+
+  bindWorkbenchLoggedInListener(() => calls.push(1), scope);
   assert.ok(handler);
   handler?.({ payload: undefined });
 

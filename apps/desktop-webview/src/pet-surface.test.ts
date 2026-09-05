@@ -2494,6 +2494,43 @@ test("pet surface swaps to an honest signed-out card when it receives the workhu
   }
 });
 
+// R24 S5（N-03 根治）：反方向的同一条桥——主窗登录/重新绑定成功广播 workhub-logged-in，桌宠窗此前
+// 全程收不到任何信号，即便主窗已经登录、项目已建，桌宠仍会挂着「去主窗口登录」卡装死一整个会话
+// （真机复验 N-03）。这条测试钉死：桌宠收到广播后调用注入的 reload（不摸真 window.location——
+// render() 的结构化渲染分支在下一次全新 boot 时会用真实 currentCard 重新算窗口尺寸，reload 本身
+// 就足以复位，不需要额外的"收起卡片"代码，见 bootDesktopPetSurface 里这段监听的顶部注释），
+// dispose 时把这个新监听也一并解绑。
+test("pet surface reloads (via the injected reload effect) when it receives the workhub-logged-in broadcast, and unlistens on dispose", async () => {
+  const target = globalThis as typeof globalThis & { __WORKHUB_CUU_QA_LOCALE__?: unknown };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "zh-CN";
+  try {
+    await withFakePetDom(async (root) => {
+      const handlers = new Map<string, (event: { payload: unknown }) => void>();
+      const stopped: string[] = [];
+      const listen: DesktopShellListen = (eventName, handler) => {
+        handlers.set(eventName, handler);
+        return () => stopped.push(eventName);
+      };
+      const reloadCalls: number[] = [];
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient([]),
+        listen,
+        reload: () => reloadCalls.push(1)
+      });
+      try {
+        handlers.get("workhub-logged-in")?.({ payload: undefined });
+        assert.deepEqual(reloadCalls, [1]);
+      } finally {
+        await runtime.dispose();
+      }
+      assert.ok(stopped.includes("workhub-logged-in"));
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+  }
+});
+
 // R24 S4：pet 窗没有表单空间渲登录门/首启屏——调用方（browser.ts）在 boot 之前就探过鉴权门，
 // 探到"这台设备还没有可用身份"时直接传 signInNeededContext，桌宠开机就亮对应文案的卡，
 // 不再尝试恢复上次卡片/浮现待拍板（那些请求反正会因为没有 client token 静默失败）。
