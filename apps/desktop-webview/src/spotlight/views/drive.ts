@@ -13,7 +13,6 @@ import {
   readDesktopClientToken,
   writeDesktopClientToken
 } from "../../desktop-client-token.js";
-import { resolveDesktopRequestLocale } from "../../desktop-locale-source.js";
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 
 const FOLDER_ICON =
@@ -79,33 +78,18 @@ export function driveResourceHeaders(): Headers {
   return headers;
 }
 
-async function refreshDriveResourceToken(apiBaseUrl: string): Promise<boolean> {
+// R24 修正（走查遗留）：令牌失效时**不再**用硬编码昵称「WorkHub Desktop」悄悄重新报到——那会把已选自定义
+// 昵称的用户绑到另一个身份（甚至合并成同一个账号）。正确做法与主窗/设置页登出同口径：清掉本地令牌、
+// 通知壳层与其它窗口「已登出」，让用户走回登录门重新确认身份；本次请求按失败返回，由视图渲出错。
+async function refreshDriveResourceToken(_apiBaseUrl: string): Promise<boolean> {
   clearDriveResourceToken();
   try {
-    // R24 S4（桌面端接线）：这条自愈路径没有一个 boot 时已解析好的 locale 变量可转发（深处独立函数，
-    // 够不到 browser.ts/workbench boot.ts 那份），故用 resolveDesktopRequestLocale 就地从存储/系统
-    // 语言解一份——只有该昵称真正首次建号时服务端才会用它（见 apps/api/src/routes/auth.ts 的
-    // resolveNewUserLocale），复用既有账号（本自愈路径的常态）不受影响。
-    const response = await fetch(`${apiBaseUrl}/api/auth/desktop-bootstrap`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        nickname: "WorkHub Desktop",
-        device_name: "WorkHub Desktop",
-        platform: "desktop",
-        locale: resolveDesktopRequestLocale({ storage: driveResourceStorage() })
-      })
-    });
-    const body = await response.json() as { client_token?: unknown };
-    if (!response.ok || typeof body.client_token !== "string" || body.client_token.length === 0) {
-      return false;
-    }
-    storeDriveResourceToken(body.client_token);
-    return true;
+    const scope = globalThis as { __TAURI__?: { event?: { emit?: (name: string) => Promise<void> | void } } };
+    await Promise.resolve(scope.__TAURI__?.event?.emit?.("workhub-logged-out"));
   } catch {
-    return false;
+    // 通知失败不影响主流程：令牌已清，下一次任何请求都会落回登录门。
   }
+  return false;
 }
 
 async function shouldRefreshDriveResourceToken(response: Response): Promise<boolean> {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { workHubLocaleStorageKey, type DriveItemVM, type DrivePageVM } from "@workhub/contracts";
+import type { DriveItemVM, DrivePageVM } from "@workhub/contracts";
 
 import { driveHtml, driveNoProjectsEmptyHtml, drivePreviewPanelHtml, driveResourceHref, driveTargetItemIdFromRoute, fetchDrivePreview } from "./drive.js";
 
@@ -163,14 +163,12 @@ test("desktop drive renders an inline preview panel with a token-aware download 
   assert.match(html, /data-drive-resource="download"/u);
 });
 
-test("desktop drive preview refreshes a missing desktop token before retrying", async () => {
+test("desktop drive preview clears the stale desktop token and signs out instead of re-bootstrapping a hardcoded nickname", async () => {
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   const originalFetch = globalThis.fetch;
-  const stored = new Map<string, string>();
-  // R24 S4（桌面端接线）：预置一份已保存的语言偏好，让 refreshDriveResourceToken 的 locale 解析
-  // （resolveDesktopRequestLocale）走「已保存偏好」这一支，不依赖真实 globalThis.navigator.language
-  // （Node 测试运行器自带一个随系统区域设置变化的 navigator，不能让断言踩这个不确定性）。
-  stored.set(workHubLocaleStorageKey, "en-US");
+  const originalTauri = Object.getOwnPropertyDescriptor(globalThis, "__TAURI__");
+  const stored = new Map<string, string>([["workhub_client_token", "stale-desktop-token"]]);
+  const emitted: string[] = [];
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: {
@@ -185,52 +183,39 @@ test("desktop drive preview refreshes a missing desktop token before retrying", 
       }
     }
   });
+  Object.defineProperty(globalThis, "__TAURI__", {
+    configurable: true,
+    value: { event: { emit: async (name: string) => { emitted.push(name); } } }
+  });
 
-  const calls: { url: string; headers: Headers; body?: unknown }[] = [];
+  const calls: string[] = [];
   Object.defineProperty(globalThis, "fetch", {
     configurable: true,
-    value: async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input);
-      calls.push({ url, headers: new Headers(init?.headers), body: init?.body ? JSON.parse(init.body as string) : undefined });
-      if (url.endsWith("/preview") && calls.length === 1) {
-        return new Response(JSON.stringify({ ok: false, error: { code: "not_identified", message: "not identified" } }), { status: 401 });
-      }
-      if (url.endsWith("/api/auth/desktop-bootstrap")) {
-        return new Response(JSON.stringify({ client_token: "fresh-desktop-token" }), { status: 201 });
-      }
-      return new Response(JSON.stringify({
-        ok: true,
-        data: {
-          filename: "草稿.md",
-          size_bytes: 12,
-          preview_type: "text",
-          text: "验收内容",
-          download_href: "/api/drive/projects/p/items/i/download"
-        }
-      }), { status: 200 });
+    value: async (input: string | URL | Request) => {
+      calls.push(String(input));
+      return new Response(JSON.stringify({ ok: false, error: { code: "not_identified", message: "not identified" } }), { status: 401 });
     }
   });
 
   try {
-    const preview = await fetchDrivePreview("http://127.0.0.1:8787/api/drive/projects/p/items/i/preview", "http://127.0.0.1:8787");
-
-    assert.equal(preview.text, "验收内容");
-    assert.equal(stored.get("workhub_client_token"), "fresh-desktop-token");
-    assert.equal(calls.length, 3);
-    assert.equal(calls[2]?.headers.get("X-WorkHub-Client-Token"), "fresh-desktop-token");
-    assert.equal(calls[2]?.headers.get("X-YQGL-Client-Token"), "fresh-desktop-token");
-    // 令牌自愈请求同样带上 locale（R24 S4）：该昵称若真是首次建号，服务端据此定 preferred_locale。
-    assert.deepEqual(calls[1]?.body, {
-      nickname: "WorkHub Desktop",
-      device_name: "WorkHub Desktop",
-      platform: "desktop",
-      locale: "en-US"
-    });
+    await assert.rejects(
+      fetchDrivePreview("http://127.0.0.1:8787/api/drive/projects/p/items/i/preview", "http://127.0.0.1:8787"),
+      /not identified/u
+    );
+    // 令牌失效：只清令牌 + 广播登出，绝不再用硬编码昵称去 /api/auth/desktop-bootstrap 造/换身份。
+    assert.equal(stored.has("workhub_client_token"), false);
+    assert.deepEqual(calls, ["http://127.0.0.1:8787/api/drive/projects/p/items/i/preview"]);
+    assert.deepEqual(emitted, ["workhub-logged-out"]);
   } finally {
     if (originalWindow) {
       Object.defineProperty(globalThis, "window", originalWindow);
     } else {
       Reflect.deleteProperty(globalThis, "window");
+    }
+    if (originalTauri) {
+      Object.defineProperty(globalThis, "__TAURI__", originalTauri);
+    } else {
+      Reflect.deleteProperty(globalThis, "__TAURI__");
     }
     Object.defineProperty(globalThis, "fetch", { configurable: true, value: originalFetch });
   }
