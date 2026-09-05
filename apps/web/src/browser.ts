@@ -24,7 +24,7 @@ import {
   settleApprovalReasonDrafts
 } from "./review-reason-pending.js";
 import { runOnboardingLocaleSync } from "./onboarding-locale-sync.js";
-import { buildSettingsDeviceRow, humanizeDeviceRevokeError } from "./settings-devices.js";
+import { buildSettingsDeviceRow, humanizeDeviceRevokeError, shouldSignOutDespiteRevokeCurrentDeviceFailure } from "./settings-devices.js";
 import {
   acceptedDeliverableRestoreFromHref,
   actionElementApplyPayload,
@@ -4518,6 +4518,13 @@ function bindSettingsMyProfilePanel(
 // 不是 bug，见 settings-devices.ts isCurrentDevice 顶部注释）+ 撤销（POST /:id/revoke，两段式确认同
 // P2-08 参与者移出的 armConfirmButton 范式；已撤销/本机行不出撤销按钮）。格式化/判定纯逻辑拆在
 // apps/web/src/settings-devices.ts（可单测，这里只是 DOM 拼装胶水）。
+//
+// R23 F-03（撤销本机收尾）：额外挂一个不依附于任何具体行的「撤销本机并登出」动作——「本机」探测
+// 在纯网页会话上结构性地几乎总是探测不到（见上面注释），意味着"哪一行是本机"这件事本来就常年是
+// 空——但登出这件事本身不该因此没有入口。两段式确认后先调 revokeCurrentClientDevice（本机若真是
+// 已注册的本地客户端设备，这里会真的撤销它；纯网页会话下这一步几乎总是 403/404，按 settings-devices.ts
+// shouldSignOutDespiteRevokeCurrentDeviceFailure 的判定折叠为"没有可撤销的记录，继续登出"，不是失败），
+// 再复用既有 client.logout() + showOnboardingScreen 收尾（同 shellRoot 的 data-wh-logout 处理器）。
 function bindSettingsDevicesPanel(
   container: HTMLElement,
   result: WebRouteReadyResult,
@@ -4535,30 +4542,39 @@ function bindSettingsDevicesPanel(
     return;
   }
 
-  const render = (devices: ClientDeviceResponse[], currentDeviceId: string | null) => {
-    if (!devices.length) {
-      body.innerHTML = `<p class="wh-subtle" data-r20-settings-devices-empty="true">${escapeHtml(
-        zh ? "还没有已登录的设备。" : "No signed-in devices yet."
-      )}</p>`;
-      return;
-    }
+  const revokeCurrentRowHtml = `<div class="wh-r4-route-row" data-r20-settings-devices-revoke-current-row="true">
+      <div>
+        <strong>${escapeHtml(zh ? "撤销本机并登出" : "Revoke this device and sign out")}</strong>
+        <p>${escapeHtml(zh
+          ? "撤销这台设备的本地登录凭证（若有），并退出登录回到登录页。"
+          : "Revokes this device's local sign-in credential (if any) and signs you out back to the login screen."
+        )}</p>
+      </div>
+      <button type="button" class="wh-btn wh-btn-danger" data-r20-settings-devices-revoke-current="true">${escapeHtml(zh ? "撤销本机" : "Revoke this device")}</button>
+    </div>`;
 
-    const rowsHtml = devices
-      .map((raw) => {
-        const row = buildSettingsDeviceRow(raw, currentDeviceId, locale);
-        const revokeBtn = row.canRevoke
-          ? `<button type="button" class="wh-btn" data-r20-settings-device-revoke="${escapeHtml(row.id)}">${escapeHtml(zh ? "撤销" : "Revoke")}</button>`
-          : "";
-        return `<div class="wh-r4-route-row" data-r20-settings-device="${escapeHtml(row.id)}" data-r20-settings-device-current="${escapeHtml(String(row.isCurrent))}" data-r20-settings-device-revoked="${escapeHtml(String(row.isRevoked))}">
-            <div>
-              <strong>${escapeHtml(row.deviceName)}</strong>
-              <p>${escapeHtml(row.platform)} · ${escapeHtml(row.lastSeenLabel)}</p>
-            </div>
-            <div class="wh-r4-route-meta"><span class="wh-pill">${escapeHtml(row.statusLabel)}</span>${revokeBtn}</div>
-          </div>`;
-      })
-      .join("");
-    body.innerHTML = `<div class="wh-r4-route-table" data-r20-settings-devices-count="${escapeHtml(String(devices.length))}">${rowsHtml}</div>
+  const render = (devices: ClientDeviceResponse[], currentDeviceId: string | null) => {
+    const rowsHtml = !devices.length
+      ? `<p class="wh-subtle" data-r20-settings-devices-empty="true">${escapeHtml(
+          zh ? "还没有已登录的设备。" : "No signed-in devices yet."
+        )}</p>`
+      : `<div class="wh-r4-route-table" data-r20-settings-devices-count="${escapeHtml(String(devices.length))}">${devices
+          .map((raw) => {
+            const row = buildSettingsDeviceRow(raw, currentDeviceId, locale);
+            const revokeBtn = row.canRevoke
+              ? `<button type="button" class="wh-btn" data-r20-settings-device-revoke="${escapeHtml(row.id)}">${escapeHtml(zh ? "撤销" : "Revoke")}</button>`
+              : "";
+            return `<div class="wh-r4-route-row" data-r20-settings-device="${escapeHtml(row.id)}" data-r20-settings-device-current="${escapeHtml(String(row.isCurrent))}" data-r20-settings-device-revoked="${escapeHtml(String(row.isRevoked))}">
+                <div>
+                  <strong>${escapeHtml(row.deviceName)}</strong>
+                  <p>${escapeHtml(row.platform)} · ${escapeHtml(row.lastSeenLabel)}</p>
+                </div>
+                <div class="wh-r4-route-meta"><span class="wh-pill">${escapeHtml(row.statusLabel)}</span>${revokeBtn}</div>
+              </div>`;
+          })
+          .join("")}</div>`;
+    body.innerHTML = `${rowsHtml}
+      ${revokeCurrentRowHtml}
       <p class="wh-subtle" data-r20-settings-devices-status hidden></p>`;
 
     const status = body.querySelector<HTMLElement>("[data-r20-settings-devices-status]");
@@ -4601,6 +4617,61 @@ function bindSettingsDevicesPanel(
         { signal }
       );
     });
+
+    // R23 F-03：撤销本机并登出——先尽力撤销本机的本地客户端凭证，结构性的"没有可撤销记录"
+    // （403/404，见 shouldSignOutDespiteRevokeCurrentDeviceFailure）不挡登出；任何其它错误都停下、
+    // 可见、可重试，不假装已经登出。
+    const doRevokeCurrentAndSignOut = async (button: HTMLButtonElement) => {
+      button.disabled = true;
+      setStatus(zh ? "正在撤销本机…" : "Revoking this device…", "saving");
+      try {
+        await client.revokeCurrentClientDevice();
+      } catch (error) {
+        if (signal.aborted) {
+          return;
+        }
+        if (!shouldSignOutDespiteRevokeCurrentDeviceFailure(error)) {
+          button.disabled = false;
+          setStatus(humanizeDeviceRevokeError(error, locale), "error");
+          return;
+        }
+        // 结构性的"没有可撤销记录"——不是失败，继续走登出。
+      }
+      if (signal.aborted) {
+        return;
+      }
+      setStatus(zh ? "正在登出…" : "Signing out…", "saving");
+      try {
+        await client.logout();
+      } catch (error) {
+        if (signal.aborted) {
+          return;
+        }
+        // 同 shellRoot 的 data-wh-logout 处理器：只有「会话本就无效」才可视为已登出，
+        // 网络中断/服务端 5xx 时必须停下显式报错，不能在共享设备上假装已经登出。
+        const sessionAlreadyGone = error instanceof WorkHubApiError
+          && (error.status === 401 || error.code === "not_identified");
+        if (!sessionAlreadyGone) {
+          button.disabled = false;
+          setStatus(zh ? "登出失败，请重试。" : "Sign-out failed — please try again.", "error");
+          showRouteNotice(container, logoutFailedNotice(locale));
+          return;
+        }
+      }
+      showOnboardingScreen(client, locale);
+    };
+
+    const revokeCurrentBtn = body.querySelector<HTMLButtonElement>("[data-r20-settings-devices-revoke-current]");
+    if (revokeCurrentBtn) {
+      revokeCurrentBtn.addEventListener(
+        "click",
+        () => armConfirmButton(revokeCurrentBtn, {
+          confirmLabel: zh ? "确认撤销并登出？再点一次" : "Revoke & sign out — click again",
+          onConfirm: () => void doRevokeCurrentAndSignOut(revokeCurrentBtn)
+        }),
+        { signal }
+      );
+    }
   };
 
   const load = async () => {
