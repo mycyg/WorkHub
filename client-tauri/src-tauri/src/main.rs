@@ -1,6 +1,7 @@
 use workhub_client_tauri::config::{
-    load_shell_config_from_json_env_and_system, normalize_shell_server_url,
-    shell_config_json_with_server_url, WorkHubShellConfig, WORKHUB_SERVER_URL_ENV,
+    detect_system_device_name, load_shell_config_from_json_env_system_and_device,
+    normalize_shell_server_url, shell_config_json_with_server_url, WorkHubShellConfig,
+    WORKHUB_SERVER_URL_ENV,
 };
 use workhub_client_tauri::deep_link::{
     deep_link_plan_from_url, describe_deep_link_error, ShellDeepLinkPlan,
@@ -651,6 +652,20 @@ fn set_server_url(
     Ok(ShellServerUrlResponse { url: normalized })
 }
 
+/// S5-M-07：这台机器报到时用的设备名。真相在启动配置里
+/// （`DEFAULT_DEVICE_NAME` < 机器名 < 配置文件 `device_name` < `WORKHUB_DEVICE_NAME`），
+/// 但真正调 `/api/auth/desktop-bootstrap` 报到的是 webview，所以壳层把解析结果托管一份供它取。
+#[derive(Default)]
+struct ShellDeviceName(Mutex<String>);
+
+/// webview 报到前问一次：这台机器该叫什么。取不到（浏览器 dev 态/壳层没解析出来）时返回 None，
+/// 由 webview 保留它自己的兜底名。
+#[tauri::command]
+fn get_device_name(state: tauri::State<'_, ShellDeviceName>) -> Option<String> {
+    let name = state.0.lock().ok()?.trim().to_string();
+    (!name.is_empty()).then_some(name)
+}
+
 /// 壳层当前持有的服务器地址。webview 用它核对「壳层和我连的是不是同一台」——两份地址曾经可以永久分叉，
 /// 现在至少能被看见。
 #[tauri::command]
@@ -1051,13 +1066,35 @@ fn execute_window_control(
     // 全局 emit：桌宠/工作台窗从不消费 navigate（工作台走 deep-link 通道），事件面越窄越好。
     // 注意 Tauri 的过滤只作用于**显式限定了 target 的**监听器，JS 侧默认的 Any 监听仍会收到——
     // 所以 payload 里也带上 label，接收端要自证时有据可依。
-    if let Some(payload) = shell_navigate_payload(&plan) {
-        app.emit_to(
-            payload.label.clone(),
-            event_channel_name(ShellEvent::Navigate),
-            payload,
-        )
-        .map_err(|error| format!("failed to emit main window navigation: {error}"))?;
+    match shell_navigate_payload(&plan) {
+        Some(payload) => {
+            let route = payload.route.clone();
+            let label = payload.label.clone();
+            app.emit_to(
+                label.clone(),
+                event_channel_name(ShellEvent::Navigate),
+                payload,
+            )
+            .map_err(|error| format!("failed to emit main window navigation: {error}"))?;
+            shell_log_info(
+                "shell_navigate_emitted",
+                format!(
+                    "route={route} label={label} source={:?} reason={}",
+                    plan.source, plan.reason
+                ),
+            );
+        }
+        None => shell_log_info(
+            "shell_navigate_skipped",
+            format!(
+                "label={} action={:?} source={:?} reason={} route={}",
+                plan.label,
+                plan.action,
+                plan.source,
+                plan.reason,
+                plan.route.as_deref().unwrap_or("-")
+            ),
+        ),
     }
 
     Ok(plan)
@@ -1134,6 +1171,28 @@ fn apply_dock_reopen(app: &tauri::AppHandle) -> Result<(), String> {
 // applicationShouldHandleReopen）。非 macOS 上整段 cfg 掉，参数随之未用，故 allow(unused_variables)。
 #[allow(unused_variables)]
 fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
+    // S5-N-04 诊断：macOS 热态深链的每一段都要留痕。`Opened` 是 deep-link 插件唯一的热态入口
+    // （插件在自己的 on_event 里把它转成 `deep-link://new-url` 事件），`Reopen` 则是"应用被激活"
+    // 那条与之赛跑的路径——两条分别记一行，日志里就能直接读出"URL 到底有没有送到壳层"。
+    #[cfg(target_os = "macos")]
+    match &event {
+        tauri::RunEvent::Opened { urls } => {
+            let joined = urls
+                .iter()
+                .map(|url| url.as_str().to_string())
+                .collect::<Vec<_>>()
+                .join(" ");
+            shell_log_info("run_event_opened", format!("urls=[{joined}]"));
+        }
+        tauri::RunEvent::Reopen {
+            has_visible_windows,
+            ..
+        } => shell_log_info(
+            "run_event_reopen",
+            format!("has_visible_windows={has_visible_windows}"),
+        ),
+        _ => {}
+    }
     #[cfg(target_os = "macos")]
     if let tauri::RunEvent::Reopen { .. } = event {
         if let Err(error) = apply_dock_reopen(app) {
@@ -1830,6 +1889,13 @@ fn install_workhub_deep_links(app: &tauri::App) -> Result<(), String> {
         .deep_link()
         .get_current()
         .map_err(|error| format!("failed to read startup deep-link URLs: {error}"))?;
+    shell_log_info(
+        "deep_link_startup_urls",
+        format!(
+            "count={}",
+            start_urls.as_ref().map(|urls| urls.len()).unwrap_or(0)
+        ),
+    );
     if let Some(urls) = start_urls {
         for url in urls {
             // A malformed cold-start deep link must never brick launch: log and
@@ -1844,6 +1910,7 @@ fn install_workhub_deep_links(app: &tauri::App) -> Result<(), String> {
     let listener_app = app.handle().clone();
     app.deep_link().on_open_url(move |event| {
         for url in event.urls() {
+            shell_log_info("deep_link_url_received", url.as_str());
             if let Err(error) = handle_deep_link_url(&listener_app, url.as_str()) {
                 shell_log_error("deep_link_failed", format!("{url}: {error}"));
             }
@@ -1953,6 +2020,41 @@ fn take_pending_deep_link(
     take_pending_deep_link_from(&mut pending.plan, window.label(), Instant::now())
 }
 
+// S5-N-04 诊断出口：webview 侧（聚焦盒的 navigate/deep-link 处理）把自己看到的东西写进同一份壳层日志。
+// 打包后的 release webview 没有检查器、stderr 也没人读，缺了这条就只能靠"窗口有没有变"猜前端收没收到事件。
+// 纪律：事件名归一成 `webview_` 前缀的 snake_case（与壳层自己的事件名不撞车、便于 grep），长度设硬上限，
+// 换行压平——一条日志一行是 shell_log 的既定形状。
+const WEBVIEW_DIAGNOSTIC_EVENT_MAX: usize = 64;
+const WEBVIEW_DIAGNOSTIC_MESSAGE_MAX: usize = 512;
+
+fn webview_diagnostic_event_name(event: &str) -> String {
+    let sanitized: String = event
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .take(WEBVIEW_DIAGNOSTIC_EVENT_MAX)
+        .collect();
+    if sanitized.is_empty() {
+        "webview_diagnostic".to_string()
+    } else {
+        format!("webview_{sanitized}")
+    }
+}
+
+fn webview_diagnostic_message(message: &str) -> String {
+    message
+        .chars()
+        .take(WEBVIEW_DIAGNOSTIC_MESSAGE_MAX)
+        .collect()
+}
+
+#[tauri::command]
+fn record_shell_diagnostic(event: String, message: String) {
+    shell_log_info(
+        &webview_diagnostic_event_name(&event),
+        webview_diagnostic_message(&message),
+    );
+}
+
 fn handle_deep_link_url(app: &tauri::AppHandle, raw_url: &str) -> Result<(), String> {
     let locale = current_workhub_locale(app);
     let plan = deep_link_plan_from_url(raw_url).map_err(|error| {
@@ -1962,6 +2064,13 @@ fn handle_deep_link_url(app: &tauri::AppHandle, raw_url: &str) -> Result<(), Str
         )
     })?;
 
+    shell_log_info(
+        "deep_link_plan",
+        format!(
+            "url={raw_url} route={} label={} action={:?}",
+            plan.route, plan.window_control.label, plan.window_control.action
+        ),
+    );
     handle_deep_link_plan(app, &plan)
 }
 
@@ -1971,6 +2080,30 @@ fn handle_single_instance_launch(
     cwd: String,
 ) -> Result<(), String> {
     let plan = single_instance_plan_from_args_for_locale(&args, &cwd, current_workhub_locale(app));
+    shell_log_info(
+        "single_instance_launch",
+        format!(
+            "args=[{}] deep_links={}",
+            args.join(" "),
+            plan.deep_links.len()
+        ),
+    );
+    // S5-N-04 的可诊断化：macOS 上 `open workhub://…` 的 URL 是 Apple Event，**不在 argv 里**。
+    // 当 LaunchServices 把链接交给了另一份注册的 WorkHub.app（同 bundle id 的多份副本）时，那个第二
+    // 进程会被 single-instance 在插件 setup 里掐掉，URL 随它一起消失，主实例只会收到一条没有深链的
+    // 交接——肉眼现象正是「点了链接，窗口跳出来但没导航」。这行日志把那个静默的黑洞变成可 grep 的证据。
+    #[cfg(target_os = "macos")]
+    if plan.deep_links.is_empty() {
+        shell_log_warn(
+            "single_instance_without_deep_link",
+            format!(
+                "a second WorkHub copy handed off to this instance; on macOS a workhub:// URL \
+                 travels as an Apple Event and cannot cross this handoff, so a link that triggered \
+                 it is lost. Keep a single registered copy of WorkHub.app (secondary executable: {})",
+                args.first().map(String::as_str).unwrap_or("<unknown>")
+            ),
+        );
+    }
     if plan.deep_links.is_empty() {
         execute_window_control(app, plan.window_control.clone())?;
     } else {
@@ -2133,12 +2266,49 @@ fn load_workhub_shell_config(app: &tauri::AppHandle) -> Result<WorkHubShellConfi
             None
         };
 
-    load_shell_config_from_json_env_and_system(
+    load_shell_config_from_json_env_system_and_device(
         raw.as_deref(),
         |name| std::env::var(name).ok(),
         system_workhub_locale(),
+        system_device_name(),
     )
     .map_err(|error| format!("failed to load shell config {}: {error:?}", path.display()))
+}
+
+// S5-M-07：设备名的第一来源是**机器名**（此前恒为一个常量，两台 mac 在设备列表里两行同名）。
+// 纯逻辑在 config.rs（normalize_system_device_name / detect_system_device_name），这里只负责取回来源。
+// 与系统语言同一条纪律：用现成命令读，不引新 crate；只在启动时跑一次；任何失败都静默换下一个来源，
+// 一个都问不出来时由 detect_system_device_name 回 None，配置层保留 DEFAULT_DEVICE_NAME。
+fn system_device_name() -> Option<String> {
+    let mut candidates: Vec<String> = Vec::new();
+    // macOS：「共享」偏好里用户自己起的那个名字（可含空格与中文），比 hostname 好读得多。
+    #[cfg(target_os = "macos")]
+    if let Some(value) = command_output("scutil", &["--get", "ComputerName"]) {
+        candidates.push(value);
+    }
+    // Windows 的 COMPUTERNAME / 各平台 shell 的 HOSTNAME。`.app` 双击启动时继承不到 shell 环境变量，
+    // 所以它排在系统来源之后（同 AppleLanguages 优先于 LANG 的取舍）。
+    for name in ["COMPUTERNAME", "HOSTNAME"] {
+        if let Ok(value) = std::env::var(name) {
+            candidates.push(value);
+        }
+    }
+    if let Some(value) = command_output("hostname", &[]) {
+        candidates.push(value);
+    }
+    detect_system_device_name(candidates)
+}
+
+// 只给上面两个系统来源用：跑一条命令取 stdout，任何失败（命令不存在/非零退出）都回 None。
+fn command_output(program: &str, args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new(program)
+        .args(args)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 // S3 严重 #4：壳层语言的第一来源是**系统语言**（此前写死中文）。纯逻辑在 locale.rs
@@ -2215,7 +2385,9 @@ macro_rules! workhub_invoke_handler {
             show_pet_window,
             hide_pet_window,
             toggle_pet_window,
-            take_pending_deep_link
+            take_pending_deep_link,
+            record_shell_diagnostic,
+            get_device_name
             $(, $qa_command)*
         ]
     };
@@ -2243,6 +2415,8 @@ fn main() {
         // 因为 .manage() 早于 .setup()（配置文件那时还没读）——setup 里再把配置/环境变量里的真值 set 进去。
         // 先托管的好处是：即使 setup 因为别的原因失败，两个命令也不会因为 state 缺席而炸。
         .manage(ShellServerUrl::default())
+        // S5-M-07：设备名的解析结果（setup 里读完配置后灌进来），供 webview 报到时取用。
+        .manage(ShellDeviceName::default())
         // MRG-23：深链事件重放兜底（见 handle_deep_link_plan / take_pending_deep_link）。
         .manage(Mutex::new(PendingShellDeepLink::default()))
         .on_window_event(|window, event| {
@@ -2271,10 +2445,16 @@ fn main() {
                     let where_to_look = dir.display().to_string();
                     init_shell_log_dir(dir);
                     // 路径也写进日志：用户报障时「日志在哪」这一问必须有答案，而这一行本身就在那份文件里。
+                    // S5-N-04：同一个 bundle id 在一台机器上常常注册着好几份 .app（DMG 还挂着、装了
+                    // 两处、开发构建）。「是哪一份应答了这次 workhub:// 」是排查深链的第一问，所以启动
+                    // 第一行就写下本进程的可执行体路径。
+                    let running_from = std::env::current_exe()
+                        .map(|path| path.display().to_string())
+                        .unwrap_or_else(|_| "<unknown>".to_string());
                     shell_log_info(
                         "shell_started",
                         format!(
-                            "WorkHub {} started; shell logs are written to {where_to_look}",
+                            "WorkHub {} started from {running_from}; shell logs are written to {where_to_look}",
                             app.package_info().version
                         ),
                     );
@@ -2294,6 +2474,9 @@ fn main() {
             // 代际 1 不会打断任何连接——worker 稍后开流时读到的就是它。
             app.state::<ShellServerUrl>()
                 .set(shell_config.server_url.clone());
+            if let Ok(mut device_name) = app.state::<ShellDeviceName>().0.lock() {
+                device_name.clone_from(&shell_config.device_name);
+            }
             create_pet_window_with_surface_flag(app)?;
             if let Ok(Some(saved)) = load_pet_window_saved_placement(app.handle()) {
                 let work_area = app

@@ -190,3 +190,87 @@ main.rs 1 处（setup 里连日志目录都解析不出来时，此刻还没有�
 - **未做真机验证**：本批全部改动只跑了 `cargo test` / `cargo clippy` / webview 单测，没有重新打包 `.app`
   跑一遍走查。深链热态、托盘菜单三项、托盘图标观感、系统语言（需要一台英文系统或临时改 AppleLanguages）、
   数据迁移与日志落盘，都需要下一轮真机复验。
+
+---
+
+## Consequences（R24-K 真机复验补记，2026-09-05）
+
+上一节最后一条「未做真机验证」已经补上了：本机打包 `.app` 跑了一轮，结论与两处后续改动如下。
+
+### 深链热态（S5-N-04）：壳层代码本来就是对的，坏的是「哪一份副本接住了 URL」
+
+先在 `handle_run_event` / `on_open_url` / `handle_deep_link_url` / `execute_window_control` /
+webview 的 `handleDesktopSpotlightShellNavigate` 五处落了逐段日志（保留，见下），再真机跑。
+
+链路通的时候，日志六行齐全：
+
+```
+INFO deep_link_url_received   workhub://open/settings
+INFO deep_link_plan           url=workhub://open/settings route=/settings label=main action=ShowAndFocus
+INFO shell_navigate_emitted   route=/settings label=main source=DeepLink reason=focus-main-route
+INFO run_event_opened         urls=[workhub://open/settings]
+INFO webview_shell_navigate_received route=/settings source=deep_link reason=focus-main-route
+INFO webview_shell_navigate_handled  kind=open route=/settings capability=settings
+```
+
+走查里「不导航」的那一次，日志只有两行，URL 根本没进本进程：
+
+```
+INFO single_instance_launch   args=[…/另一份 WorkHub.app/Contents/MacOS/workhub-client-tauri] deep_links=0
+INFO shell_navigate_skipped   label=main action=ShowAndFocus source=Startup reason=show-main route=/
+```
+
+**根因是两件事叠在一起：**
+
+1. **被测 `.app` 装在 `/private/tmp/...`（工位 scratchpad）**。LaunchServices 不会把临时目录里的应用
+   绑成 URL scheme 处理器——同一份包拷到 `$HOME` 下、其余副本注销后，它是唯一 claimant，
+   `open workhub://open/settings` 立刻通；留在 `/private/tmp` 时，即使它是**唯一** claimant，
+   `open` 也只回 `kLSApplicationNotFoundErr`。S5 用 `lsregister -f` 钉不住，正是因为问题不在「谁注册了」，
+   而在「这个位置根本不被接受」。
+2. 于是链接被交给了机器上另一份同 bundle id 的 `WorkHub.app`。那个第二进程被
+   `tauri-plugin-single-instance` 在插件 `setup` 里 `std::process::exit(0)` 掐掉，
+   而 **macOS 的 `workhub://` 是 Apple Event（`application:openURLs:`），从来不进 argv**——
+   URL 随第二进程一起消失，主实例只收到一条没有深链的交接，只能「把主窗显示出来」。
+   `b463d96c` 之后它不再复位聚焦盒（`shell_navigate_skipped` 正是那道闸生效的证据），
+   所以肉眼就是「窗口跳出来、什么也没变」。
+
+**因此没有导航侧的根因修复可做**——已验证的现场（S5 走查的原样场景：盒子停在 Notifications →
+Option+Space 收起 → `open workhub://open/settings`）现在停在设置页；`/notifications` `/approvals`
+同样各自打开对应能力。做的是把这条脆弱点从「静默黑洞」变成可诊断，并把链路钉死：
+
+- 启动第一行日志补上**本进程可执行体路径**——「是哪一份副本应答的」是排查深链的第一问；
+- macOS 上收到**无深链**的第二实例交接时打 WARN，直说链接不可能跨过这道交接、应只保留一份注册副本；
+- `deep_link.rs` 新增 URL → 计划 → navigate payload 的端到端断言（三条 route 各钉 route/label/action/
+  source/reason）；`single_instance.rs` 把根因写成测试：argv 只有可执行体路径时必然 `deep_links` 为空，
+  且那条窗口控制计划**不产生** navigate payload（显示窗口不是导航，广播 `/` 就复现 S3-#6）。
+- 诊断日志保留（低频：只在深链/窗口控制/应用激活时各一两行，按天滚动留 5 天）。新增
+  `record_shell_diagnostic` 命令 + `logDesktopShellDiagnostic()`，让 release 包里没有检查器的 webview
+  也能把「收到什么 / 判成什么」写进同一份日志——这次能一次定位，靠的就是它。
+
+**给后来者的操作纪律**：验证深链**不能**用裸 `open workhub://…` 去打工位里构建的 `.app`，
+LaunchServices 不认那个位置。要么 `open -a <绝对路径的 .app> "workhub://…"` 指名投递，
+要么把包拷到 `$HOME` 下再 `lsregister -f`。
+
+### 设备名（S5-M-07）：默认改成机器名
+
+默认值有两处，两处都改了：壳层 `config.rs` 的常量，和 webview 报到时的同名字面量。
+分层与系统语言同款（多一层，不改既有优先级）：
+`DEFAULT_DEVICE_NAME`（`WorkHub Desktop`）< **机器名** < 配置文件 `device_name` < `WORKHUB_DEVICE_NAME`。
+机器名来源按 macOS `scutil --get ComputerName` → `COMPUTERNAME`/`HOSTNAME` → `hostname` 的顺序问
+（不引新 crate，启动跑一次，失败静默换下一个；`.app` 双击起不到 shell 环境变量，故系统来源排在环境变量
+之前，同 AppleLanguages 的取舍）。归一口径：FQDN/mDNS 名只取首段、内部空白压成单空格、`localhost`
+一族当「没问到」、按字符截断到 48。
+
+真正调 `/api/auth/desktop-bootstrap` 报到的是 webview，所以补了 `get_device_name` 命令与
+`resolveDesktopDeviceName()`，由 `runDesktopRebind`（首启与登出重绑共用的那条真实链路）优先取用。
+`desktop-login.ts` 里另有三处同款兜底字面量属并行线的施工范围，本批未动——那三处走的是密码/hybrid
+模式的凭据门，昵称模式（走查现场）不经过它们。
+
+### 主区标题（S5-N-06）：按创建者语言生成
+
+`packages/db/src/repositories/projects.ts` 的 `ensureActiveMain` 把内置会话标题写死成了「主区」。
+主区不可改名（`conversation-rename.ts` 对 kind='main' 一律 403），所以它本就是纯展示常量：
+仓库层新增 `mainConversationTitle?`（这一层不认识 locale），服务层按 locale 给 `Main` / `主区`，
+两条路由按「显式 `?locale=` > 用户 `preferred_locale` > Accept-Language」解析。
+**边界**：只作用于新建项目；已存在项目的主区标题仍是库里那份中文，要一并翻篇得在读侧按 kind='main'
+映射显示（`services/conversations.ts` 的 VM 装配处），属另一处改动，未做。

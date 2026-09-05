@@ -25,6 +25,7 @@ import { desktopBootPanel, renderDesktopBootPanelHtml } from "./desktop-boot-pan
 import { markDesktopIdentityCreated } from "./desktop-first-run.js";
 import { writeDesktopClientToken } from "./desktop-client-token.js";
 import { isPasswordModeBootstrapError, rememberDesktopAuthModeHint } from "./desktop-login.js";
+import { resolveDesktopDeviceName } from "./desktop-window-controls.js";
 
 // 与 browser.ts / desktop-login.ts 同一套登出标记键 + 令牌收口（DSK-06，desktop-client-token.ts）——
 // 拿到新令牌后落键、清登出标记。
@@ -64,9 +65,12 @@ export async function runDesktopRebind(input: {
   if (!nickname) {
     throw new Error("nickname is required to re-bind this device");
   }
+  // S5-M-07：设备名优先用壳层解出的机器名（macOS「共享」里那个名字），调用方显式传入的更优先；
+  // 两者都没有才回兜底常量——否则同一账号的每台机器在设置页里都叫「WorkHub Desktop」，分不出该撤销哪台。
+  const deviceName = input.deviceName?.trim() || (await resolveDesktopDeviceName()) || "WorkHub Desktop";
   const result = await input.client.bootstrapDesktop({
     nickname,
-    device_name: input.deviceName?.trim() || "WorkHub Desktop",
+    device_name: deviceName,
     platform: input.platform ?? "desktop",
     locale: input.locale
   });

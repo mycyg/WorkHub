@@ -40,6 +40,9 @@ export type BootstrapProjectInput = {
   description?: string | null;
   ownerNickname: string;
   ownerUserId: string;
+  // R24-K（S5-N-06）：项目内置「主区」会话的标题。这一层不认识 locale——文案由调用方（服务层）决定，
+  // 仓库层只负责把它写进去。不传即沿用中文默认，既有调用方零改动。
+  mainConversationTitle?: string;
   at?: Date;
 };
 
@@ -57,6 +60,7 @@ export type BootstrapPersonalProjectInput = {
   slug: string;
   ownerNickname: string;
   ownerUserId: string;
+  mainConversationTitle?: string;
   at?: Date;
 };
 
@@ -109,10 +113,15 @@ export type ProjectRepository = {
   softDeleteProject: (input: SoftDeleteProjectInput) => Promise<ProjectRow | null>;
 };
 
+// R24-K（S5-N-06）：主区会话的标题此前写死中文「主区」——英文界面下侧栏那一行是整窗唯一的中文。
+// 主区不可改名（apps/api/src/routes/conversation-rename.ts 对 kind='main' 一律 403），所以这个标题
+// 是纯展示常量，由创建方按语言给定；给不出时保留原中文默认，既有调用方与既有数据都不受影响。
+const DEFAULT_MAIN_CONVERSATION_TITLE = "主区";
+
 async function ensureActiveMain(
   tx: WorkHubDb,
   project: ProjectRow,
-  input: Pick<BootstrapProjectInput, "workspaceId" | "ownerUserId">,
+  input: Pick<BootstrapProjectInput, "workspaceId" | "ownerUserId" | "mainConversationTitle">,
   at: Date
 ) {
   const inserted = await tx
@@ -122,7 +131,7 @@ async function ensureActiveMain(
       workspaceId: input.workspaceId,
       projectId: project.id,
       kind: "main",
-      title: "主区",
+      title: input.mainConversationTitle?.trim() || DEFAULT_MAIN_CONVERSATION_TITLE,
       visibility: "project",
       nextSeq: 0,
       createdBy: project.ownerUserId ?? input.ownerUserId,

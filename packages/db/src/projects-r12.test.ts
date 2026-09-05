@@ -115,6 +115,25 @@ test("R12 project bootstrap creates a project and its main conversation in one t
   assertMainInsert(mainInsert(queries), requestOwnerUserId);
 });
 
+// R24-K（S5-N-06）：调用方给了标题就照写（服务层按建项目者的语言给 `Main` / `主区`）；
+// 上一条测试锁的是"不给就沿用中文默认"，两条一起把这层契约钉死。
+test("R12 project bootstrap names the main conversation as the caller asked", async () => {
+  const createdProject = project();
+  const { db, queries } = createQueryRecorder([
+    [],
+    [],
+    [],
+    [createdProject],
+    [{ id: "12000000-0000-4000-8000-000000000009" }]
+  ]);
+  const repository = createProjectRepository(db);
+
+  await repository.bootstrapPilotProject({ ...input, mainConversationTitle: "Main" });
+
+  const values = mainInsert(queries)?.valuesValue as Record<string, unknown>;
+  assert.equal(values["title"], "Main");
+});
+
 test("R12 project bootstrap repairs an existing active project without a main before returning", async () => {
   const existing = project({ ownerUserId: existingOwnerUserId });
   const { db, queries, transactions } = createQueryRecorder([

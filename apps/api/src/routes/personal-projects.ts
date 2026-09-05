@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { createPersonalProjectRequestSchema } from "@workhub/contracts";
+import { createPersonalProjectRequestSchema, normalizeWorkHubLocale } from "@workhub/contracts";
 
 import {
   createCurrentUserMiddleware,
@@ -49,7 +49,14 @@ export function createPersonalProjectRoutes(deps: PersonalProjectRoutesDependenc
   routes.post("/me/personal-projects", createCurrentUserMiddleware(authSource), async (c) => {
     const payload = createPersonalProjectRequestSchema.parse(await readJsonObject(c));
     try {
-      const data = await projects.createPersonalProject({ payload, actor: c.var.actor });
+      const data = await projects.createPersonalProject({
+        payload,
+        actor: c.var.actor,
+        // 同 /api/projects/bootstrap：主区会话的名字跟建号时存下的用户语言走，见 routes/projects.ts。
+        locale: normalizeWorkHubLocale(
+          c.req.query("locale") ?? c.var.currentUser?.preferredLocale ?? c.req.header("Accept-Language")
+        )
+      });
       return c.json({ ok: true, data }, data.created ? 201 : 200);
     } catch (error) {
       handleProjectError(error);

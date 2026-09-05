@@ -7,7 +7,7 @@ import {
   type ProjectRepository,
   type WorkHubDatabaseClient
 } from "@workhub/db";
-import { projectListVmSchema } from "@workhub/contracts";
+import { projectListVmSchema, type WorkHubLocale } from "@workhub/contracts";
 import type {
   BootstrapProjectRequest,
   BootstrapProjectResult,
@@ -36,6 +36,8 @@ export type ProjectService = {
   bootstrapProject: (input: {
     payload: BootstrapProjectRequest;
     actor: AuthActor;
+    // R24-K（S5-N-06）：建项目时内置的「主区」会话标题按这个语言生成。不传即中文（既有调用方不变）。
+    locale?: WorkHubLocale;
   }) => Promise<BootstrapProjectResult>;
   listProjects: (input: { actor: AuthActor }) => Promise<ProjectListVM>;
   // R13 批 S3（个人空间）：与团队项目 bootstrap/list 分开的两个方法——个人空间没有 slug 幂等复用
@@ -43,6 +45,7 @@ export type ProjectService = {
   createPersonalProject: (input: {
     payload: CreatePersonalProjectRequest;
     actor: AuthActor;
+    locale?: WorkHubLocale;
   }) => Promise<CreatePersonalProjectResult>;
   listPersonalProjects: (input: { actor: AuthActor }) => Promise<ProjectListVM>;
 };
@@ -54,6 +57,13 @@ export type ProjectServiceOptions = {
 
 let defaultDbClient: WorkHubDatabaseClient | undefined;
 let defaultProjectService: ProjectService | undefined;
+
+// R24-K（S5-N-06）：项目内置「主区」会话的名字。真机走查里，英文系统的新用户建完项目，工作台侧栏那一行
+// 是整窗唯一的中文——服务端建项目时把标题写死成了「主区」。主区不可改名（conversation-rename 对
+// kind='main' 一律 403），所以这就是个纯展示常量，按建项目那一刻的语言给出即可。
+export function mainConversationTitleForLocale(locale: WorkHubLocale | undefined): string {
+  return locale === "en-US" ? "Main" : "主区";
+}
 
 function slugFromName(name: string) {
   const ascii = name
@@ -144,6 +154,7 @@ export function createProjectService(
           description: input.payload.description ?? "Pilot Day 0 project context created from the WorkHub intake entry.",
           ownerNickname: input.actor.label,
           ownerUserId: input.actor.userId,
+          mainConversationTitle: mainConversationTitleForLocale(input.locale),
           at: now()
         });
       } catch (error) {
@@ -191,6 +202,7 @@ export function createProjectService(
           slug: personalProjectSlug(input.actor.userId, at),
           ownerNickname: input.actor.label,
           ownerUserId: input.actor.userId,
+          mainConversationTitle: mainConversationTitleForLocale(input.locale),
           at
         });
       } catch (error) {

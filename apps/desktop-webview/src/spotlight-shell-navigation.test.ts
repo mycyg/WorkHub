@@ -161,3 +161,36 @@ test("a replayed cold-start deep-link plan opens the same capability as the hot 
   assert.equal(result.kind, "open");
   assert.deepEqual(h.opened, [{ id: "settings", target: { route: "/settings" } }]);
 });
+
+// S5-N-04：release 包的 webview 没有检查器，深链排查必须能从壳层日志读出「前端收到了什么、判成了什么」。
+// 这两行日志是那次真机复验唯一的前端证据，故连同它们的字段一起钉死。
+test("shell navigate reports what it received and what it decided", () => {
+  const h = harness();
+  const lines: string[] = [];
+
+  handleDesktopSpotlightShellNavigate(
+    { route: "/settings", label: "main", source: "deep_link", reason: "focus-main-route" },
+    { ...h.input, log: (event, message) => lines.push(`${event} ${message}`) }
+  );
+
+  assert.deepEqual(lines, [
+    "shell_navigate_received route=/settings source=deep_link reason=focus-main-route",
+    "shell_navigate_handled kind=open route=/settings capability=settings"
+  ]);
+});
+
+test("an ignored navigate still reports why it was ignored", () => {
+  const h = harness();
+  const lines: string[] = [];
+
+  handleDesktopSpotlightShellNavigate(
+    { route: "/", label: "main", source: "setting", reason: "show-main" },
+    { ...h.input, log: (event, message) => lines.push(`${event} ${message}`) }
+  );
+
+  assert.deepEqual(lines, [
+    "shell_navigate_received route=/ source=setting reason=show-main",
+    "shell_navigate_handled kind=ignored route=/ reason=window-control"
+  ]);
+  assert.equal(h.resets.count, 0);
+});
