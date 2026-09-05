@@ -65,9 +65,11 @@ export const desktopBootPanelCss = [
   `.${desktopBootPanel.mark}{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#0a84ff,#64d2ff);box-shadow:0 10px 22px -6px rgba(10,132,255,.45)}`,
   // 标题两种标签都认：连接屏在 <section> 里用 h2，另外两张是整屏唯一标题用 h1。
   `.${desktopBootPanelClass} h1,.${desktopBootPanelClass} h2{margin:2px 0 0;font-size:20px;font-weight:900;line-height:1.24;color:CanvasText}`,
+  // 段落的默认口径。下面每一条修饰类都必须带上面板前缀——不带就只有一个类的权重（0,1,0），
+  // 会被这条「类 + 标签」（0,1,1）盖掉，说明/细则/错误行全都会退回同一个灰。
   `.${desktopBootPanelClass} p{margin:0;font-size:13px;line-height:1.55;color:color-mix(in srgb, CanvasText 78%, transparent)}`,
-  `.${desktopBootPanel.sub}{font-size:13px}`,
-  `.${desktopBootPanel.fineprint}{font-size:12px;color:color-mix(in srgb, CanvasText 60%, transparent)}`,
+  `.${desktopBootPanelClass} .${desktopBootPanel.sub}{font-size:13px}`,
+  `.${desktopBootPanelClass} .${desktopBootPanel.fineprint}{font-size:12px;color:color-mix(in srgb, CanvasText 60%, transparent)}`,
   // 表单：标签在上、输入在下的两行栅格；输入框透明 + 发丝白描边（同聚焦盒的输入语言）。
   `.${desktopBootPanel.form}{display:grid;gap:9px}`,
   `.${desktopBootPanelClass} label{display:grid;gap:6px;font-size:12px;font-weight:850;color:color-mix(in srgb, CanvasText 72%, transparent)}`,
@@ -84,13 +86,13 @@ export const desktopBootPanelCss = [
   `.${desktopBootPanel.tabs} button{flex:1;padding:8px 6px;border:0;border-radius:10px 10px 0 0;background:transparent;font:inherit;font-size:12.5px;font-weight:850;color:color-mix(in srgb, CanvasText 55%, transparent);cursor:pointer;border-bottom:2px solid transparent}`,
   `.${desktopBootPanel.tabs} button:hover{color:color-mix(in srgb, CanvasText 80%, transparent)}`,
   `.${desktopBootPanel.tabs} button[aria-selected="true"]{color:#0a84ff;border-bottom-color:#0a84ff;background:rgba(10,132,255,.10)}`,
-  `.${desktopBootPanel.error}{margin:0;font-size:12px;font-weight:850;color:#c43d2b}`,
+  `.${desktopBootPanelClass} .${desktopBootPanel.error}{margin:0;font-size:12px;font-weight:850;color:#c43d2b}`,
   // 深色外观：白光晕换暗光晕（白字被白晕糊掉），描边/投影压深一档，错误色提亮到深底上可读。
   "@media (prefers-color-scheme: dark){" +
     `.${desktopBootPanelClass}{border-color:rgba(255,255,255,.16);box-shadow:0 24px 76px -46px rgba(0,0,0,.78)}` +
     `.${desktopBootPanelClass}>.wh-liquid-glass-content{text-shadow:0 1px 12px rgba(0,0,0,.5),0 0 2px rgba(0,0,0,.66)}` +
     `.${desktopBootPanelClass} input{border-color:rgba(255,255,255,.22);background:rgba(255,255,255,.06)}` +
-    `.${desktopBootPanel.error}{color:#ff8f85}` +
+    `.${desktopBootPanelClass} .${desktopBootPanel.error}{color:#ff8f85}` +
   "}"
 ].join("\n");
 

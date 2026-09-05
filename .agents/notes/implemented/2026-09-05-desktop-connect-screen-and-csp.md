@@ -91,3 +91,15 @@ window/事件权限，与网络出口无关，无需改动。
   编码，且对「命令不存在」是容错的——两条线可以独立合入，先合哪条都不会让桌面端变得更差。
 - `/api/health` 的三个新字段在 openapi 里是 `required`（服务端无条件返回），但在客户端类型里是可选。
   这个不对称是刻意的，改任一侧前先读 `packages/contracts/src/health.ts` 的顶部说明。
+- **三张首启屏统一到同一套液态玻璃面板（R24 I，走查 M-09）**：这张连接屏落地时是唯一用液态玻璃面板的
+  boot 屏，而同一条链路上的「昵称首启/重绑屏」（`desktop-rebind.ts`）与「密码模式凭据门」
+  （`desktop-login.ts`）仍是 `rgba(255,255,255,.86)` 的平白卡、420px 宽、靠 `backdrop-filter` 起毛玻璃
+  ——后者在透明 + 原生 vibrancy 的 Tauri 主窗里是空操作，用户在同一次首启里会先后看到「灰底上一张白纸」
+  和「一块玻璃」，与聚焦盒断层。现已抽出 `apps/desktop-webview/src/desktop-boot-panel.ts` 作为三张屏
+  唯一的面板实现（字体/玻璃层/高光描边/内容层、`width:min(540px,100%)`、圆角 22px、内边距 30px、
+  输入与按钮语言、页签语言，以及量高锚点 `data-desktop-boot-fit` 与继续同源于
+  `desktopBootScreenFitPaddingPx` 的外壳 padding），三张屏只提供内容与自己那点补充样式；同批注入
+  `appleGlassDesignSystemCss` 并给外壳挂 `.wh-ds`（模板里早就写着的 `ds-pressable` 等工具类此前从未
+  注入过设计系统，一直是死类），颜色改走 `CanvasText`/`color-mix` 并补一段深色外观补偿。改面板样式时
+  注意：面板里的 `p` 规则是「类 + 标签」（0,1,1），任何修饰类都必须带面板前缀才压得住它——不带前缀的
+  `.wh-connect-hint` / `.wh-connect-manual` 此前就是这么被静默盖掉的。

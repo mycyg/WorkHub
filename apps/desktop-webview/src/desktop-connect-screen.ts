@@ -305,16 +305,18 @@ export function desktopConnectResultHtml(
 
 // 这张屏独有的补充样式：探测结果卡（成功/失败）与原始错误折叠区。面板外框、表单、按钮、标题层级
 // 全部来自 desktop-boot-panel.ts 的共享样式，三张 boot 屏一份。
+// 全部带面板前缀：结果卡里的 <p> 会被共享样式的「面板 p」（0,1,1）盖过单个类（0,1,0），
+// 不加前缀的话「连上了 / 地址 / 原始错误」三层就会全退回同一个灰、同一个字号。
 const connectExtraCss = [
-  ".wh-connect-card{display:grid;gap:6px;border-radius:14px;padding:12px 14px;border:1px solid rgba(255,255,255,.26)}",
-  ".wh-connect-card--good{background:rgba(10,132,255,.08)}",
-  ".wh-connect-card--bad{background:rgba(196,61,43,.08)}",
-  ".wh-connect-row{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;color:color-mix(in srgb, CanvasText 72%, transparent)}",
-  ".wh-connect-row strong{font-weight:850;color:CanvasText;text-align:right}",
-  ".wh-connect-ok{font-weight:900}",
-  ".wh-connect-hint{font-size:12px;color:color-mix(in srgb, CanvasText 62%, transparent);word-break:break-all}",
-  ".wh-connect-detail{font-size:11px;color:color-mix(in srgb, CanvasText 52%, transparent);word-break:break-all}",
-  ".wh-connect-detail summary{cursor:pointer;font-weight:850}"
+  `.${desktopBootPanel.panel} .wh-connect-card{display:grid;gap:6px;border-radius:14px;padding:12px 14px;border:1px solid rgba(255,255,255,.26)}`,
+  `.${desktopBootPanel.panel} .wh-connect-card--good{background:rgba(10,132,255,.08)}`,
+  `.${desktopBootPanel.panel} .wh-connect-card--bad{background:rgba(196,61,43,.08)}`,
+  `.${desktopBootPanel.panel} .wh-connect-row{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;color:color-mix(in srgb, CanvasText 72%, transparent)}`,
+  `.${desktopBootPanel.panel} .wh-connect-row strong{font-weight:850;color:CanvasText;text-align:right}`,
+  `.${desktopBootPanel.panel} .wh-connect-ok{font-weight:900;color:CanvasText}`,
+  `.${desktopBootPanel.panel} .wh-connect-hint{font-size:12px;color:color-mix(in srgb, CanvasText 62%, transparent);word-break:break-all}`,
+  `.${desktopBootPanel.panel} .wh-connect-detail{font-size:11px;color:color-mix(in srgb, CanvasText 52%, transparent);word-break:break-all}`,
+  `.${desktopBootPanel.panel} .wh-connect-detail summary{cursor:pointer;font-weight:850}`
 ].join("\n");
 
 // R24 H（首启窗口裁切）：这一屏渲进主窗时，原生窗口还是聚焦盒 idle 的细搜索条尺寸（720×64）——面板
