@@ -9,6 +9,7 @@ import {
   runDesktopRebind,
   type DesktopRebindClient
 } from "./desktop-rebind.js";
+import { isDesktopFirstRun } from "./desktop-first-run.js";
 
 // DSK-01：登出后的「输入昵称重新绑定这台设备」屏。这个 workspace 的测试运行器没有真实 DOM
 //（node --import tsx --test）——只测纯渲染字符串 + 纯编排逻辑，bindDesktopRebindScreen 的 DOM 接线
@@ -143,4 +144,74 @@ test("runDesktopRebind fails loudly when bootstrap returns no client token", asy
 test("describeDesktopRebindError returns a retryable, non-leaky message", () => {
   assert.match(describeDesktopRebindError(new WorkHubApiError(500, "server_error", "x"), "zh-CN"), /登录失败/u);
   assert.match(describeDesktopRebindError(new Error("Failed to fetch"), "en-US"), /check the backend connection/u);
+});
+
+// —— R24 S4：首启（first-run）复用同一张屏，只换标题/说明 —— //
+
+test("renderDesktopRebindScreenHtml defaults to the signed-out copy and swaps to first-run welcome copy on request", () => {
+  const loggedOut = renderDesktopRebindScreenHtml({ locale: "en-US" });
+  assert.match(loggedOut, /Signed out/u);
+  assert.match(loggedOut, /re-bind this device/u);
+
+  const loggedOutExplicit = renderDesktopRebindScreenHtml({ locale: "en-US", context: "logged-out" });
+  assert.match(loggedOutExplicit, /Signed out/u);
+
+  const firstRun = renderDesktopRebindScreenHtml({ locale: "en-US", context: "first-run" });
+  assert.match(firstRun, /Welcome to WorkHub/u);
+  assert.doesNotMatch(firstRun, /Signed out/u);
+  // 表单挂钩不随 context 变——同一套 DOM 接线服务两种上下文。
+  assert.match(firstRun, /data-desktop-rebind-nickname/u);
+  assert.match(firstRun, /data-desktop-rebind-form/u);
+
+  const firstRunZh = renderDesktopRebindScreenHtml({ locale: "zh-CN", context: "first-run" });
+  assert.match(firstRunZh, /欢迎使用 WorkHub/u);
+});
+
+// —— R24 S4：runDesktopRebind 落首启标记（供 Spotlight 落地页判定「建你的第一个项目」卡） —— //
+
+test("runDesktopRebind marks the first-run identity flag when desktop-bootstrap reports a freshly created user", async () => {
+  const calls: Array<unknown> = [];
+  const client: DesktopRebindClient = {
+    bootstrapDesktop: async (payload) => {
+      calls.push(payload);
+      return {
+        identity: {
+          id: "u9",
+          nickname: "dana",
+          display_name: "dana",
+          created: true,
+          locale: "zh-CN",
+          preferences: { locale: "zh-CN" },
+          is_admin: false,
+          availability_status: "online"
+        },
+        device: {
+          id: "d9",
+          user_id: "u9",
+          device_name: "WorkHub Desktop",
+          platform: "desktop",
+          created_at: "2026-09-05T00:00:00.000Z",
+          updated_at: "2026-09-05T00:00:00.000Z"
+        },
+        client_token: "device-token-that-is-long-enough-333333"
+      };
+    }
+  };
+  const { storage } = fakeReadWriteStorage();
+
+  const result = await runDesktopRebind({ client, nickname: "dana", storage });
+
+  assert.equal(result.created, true);
+  assert.equal(isDesktopFirstRun(storage), true);
+});
+
+test("runDesktopRebind does not mark first-run when the nickname resolves to an existing account", async () => {
+  const { storage } = fakeReadWriteStorage({ workhub_desktop_identity_created: "1" });
+
+  const result = await runDesktopRebind({ client: fakeRebindClient([]), nickname: "alice", storage });
+
+  assert.equal(result.created, false);
+  // 复用已有账号：即便这台设备之前残留过一个（可能属于另一个昵称的）首启标记，也要如实清掉——
+  // 这个账号是不是真的第一次用，以这次探明的事实为准，不能让陈旧标记继续误导落地页。
+  assert.equal(isDesktopFirstRun(storage), false);
 });
