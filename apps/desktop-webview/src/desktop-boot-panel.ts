@@ -88,10 +88,16 @@ export const desktopBootPanelCss = [
   `.${desktopBootPanel.tabs} button[aria-selected="true"]{color:#0a84ff;border-bottom-color:#0a84ff;background:rgba(10,132,255,.10)}`,
   `.${desktopBootPanelClass} .${desktopBootPanel.error}{margin:0;font-size:12px;font-weight:850;color:#c43d2b}`,
   // 深色外观：白光晕换暗光晕（白字被白晕糊掉），描边/投影压深一档，错误色提亮到深底上可读。
+  // 次级层次（说明/细则/标签/未选中页签）同时整体提一档：玻璃的雾面本身是浅色的，深色外观下面板是
+  // 一块中灰，同样的百分比在白字上比在黑字上淡得多。
   "@media (prefers-color-scheme: dark){" +
     `.${desktopBootPanelClass}{border-color:rgba(255,255,255,.16);box-shadow:0 24px 76px -46px rgba(0,0,0,.78)}` +
     `.${desktopBootPanelClass}>.wh-liquid-glass-content{text-shadow:0 1px 12px rgba(0,0,0,.5),0 0 2px rgba(0,0,0,.66)}` +
     `.${desktopBootPanelClass} input{border-color:rgba(255,255,255,.22);background:rgba(255,255,255,.06)}` +
+    `.${desktopBootPanelClass} p{color:color-mix(in srgb, CanvasText 88%, transparent)}` +
+    `.${desktopBootPanelClass} .${desktopBootPanel.fineprint}{color:color-mix(in srgb, CanvasText 74%, transparent)}` +
+    `.${desktopBootPanelClass} label{color:color-mix(in srgb, CanvasText 84%, transparent)}` +
+    `.${desktopBootPanel.tabs} button{color:color-mix(in srgb, CanvasText 70%, transparent)}` +
     `.${desktopBootPanelClass} .${desktopBootPanel.error}{color:#ff8f85}` +
   "}"
 ].join("\n");

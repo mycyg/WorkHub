@@ -316,7 +316,13 @@ const connectExtraCss = [
   `.${desktopBootPanel.panel} .wh-connect-ok{font-weight:900;color:CanvasText}`,
   `.${desktopBootPanel.panel} .wh-connect-hint{font-size:12px;color:color-mix(in srgb, CanvasText 62%, transparent);word-break:break-all}`,
   `.${desktopBootPanel.panel} .wh-connect-detail{font-size:11px;color:color-mix(in srgb, CanvasText 52%, transparent);word-break:break-all}`,
-  `.${desktopBootPanel.panel} .wh-connect-detail summary{cursor:pointer;font-weight:850}`
+  `.${desktopBootPanel.panel} .wh-connect-detail summary{cursor:pointer;font-weight:850}`,
+  // 结果卡里的次级层次同样在深色外观下整体提一档（同共享面板里的那段说明）。
+  "@media (prefers-color-scheme: dark){" +
+    `.${desktopBootPanel.panel} .wh-connect-row{color:color-mix(in srgb, CanvasText 84%, transparent)}` +
+    `.${desktopBootPanel.panel} .wh-connect-hint{color:color-mix(in srgb, CanvasText 76%, transparent)}` +
+    `.${desktopBootPanel.panel} .wh-connect-detail{color:color-mix(in srgb, CanvasText 66%, transparent)}` +
+  "}"
 ].join("\n");
 
 // R24 H（首启窗口裁切）：这一屏渲进主窗时，原生窗口还是聚焦盒 idle 的细搜索条尺寸（720×64）——面板
