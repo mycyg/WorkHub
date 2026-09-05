@@ -1945,6 +1945,13 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
     };
     requestLog.push(requestRecord);
 
+    // UI-06：真实 API 除 auth / client-devices 两族（openapi.ts 里 rawJsonResponse 声明的裸 JSON 契约）
+    // 之外，2xx 一律回 {ok,data,meta} 信封（见 apps/api/src/routes/pages.ts 的 pageEnvelope）。本模拟服务
+    // 此前对一部分路径直接回裸 VM，与线上契约不同形；api-client 的信封 fail-fast 上线后会把这种不一致
+    // 当场逮成 contract_violation。统一经本 helper 出信封，让模拟服务与线上契约同形。
+    const sendVm = (status: number, data: unknown) =>
+      sendJson(response, status, { ok: true, data, meta: { locale: currentLocale } });
+
     if (request.method === "GET" && (url.pathname === "/api/push/stream" || url.pathname.startsWith("/api/push/stream/"))) {
       const streamKey = sseStreamKey(url.pathname);
       response.writeHead(200, {
@@ -2017,48 +2024,48 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/attention") {
-      sendJson(response, 200, surface.page_vms.attention);
+      sendVm(200, surface.page_vms.attention);
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/approvals") {
-      sendJson(response, 200, surface.page_vms.approvals);
+      sendVm(200, surface.page_vms.approvals);
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/cost") {
-      sendJson(response, 200, surface.page_vms.cost);
+      sendVm(200, surface.page_vms.cost);
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/agents") {
-      sendJson(response, 200, agentArmyDashboardVm());
+      sendVm(200, agentArmyDashboardVm());
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/skills") {
-      sendJson(response, 200, teamSkillsPage());
+      sendVm(200, teamSkillsPage());
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/settings") {
-      sendJson(response, 200, settingsPage(currentLocale));
+      sendVm(200, settingsPage(currentLocale));
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/drive") {
       if (isEmptyDriveProbe(request)) {
         // 网盘无项目上下文 → 服务端返回 empty_state=no_project,加载器收口成通用 "empty" 态(引导去 /projects)。
-        sendJson(response, 200, { ...drivePage(surface, driveQaState, driveCommentDraftCreated, driveDraftProposalCreated), empty_state: "no_project" });
+        sendVm(200, { ...drivePage(surface, driveQaState, driveCommentDraftCreated, driveDraftProposalCreated), empty_state: "no_project" });
         return;
       }
-      sendJson(response, 200, drivePage(surface, driveQaState, driveCommentDraftCreated, driveDraftProposalCreated));
+      sendVm(200, drivePage(surface, driveQaState, driveCommentDraftCreated, driveDraftProposalCreated));
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/projects") {
       // 网盘是 GitHub 式核心:面板内项目切换器需要全量项目清单。首条与 drivePage().project 同 id(当前高亮),次条提供切换目标。
-      sendJson(response, 200, projectListPage(namedProjectCreated));
+      sendVm(200, projectListPage(namedProjectCreated));
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/projects/bootstrap") {
       requestRecord.body = await requestBody(request);
       const body = JSON.parse(requestRecord.body || "{}") as { name?: string; description?: string };
       namedProjectCreated = true;
-      sendJson(response, 200, {
+      sendVm(200, {
         project: {
           id: qaCreatedProjectId,
           name: body.name?.trim() || qaCreatedProjectName,
@@ -2077,18 +2084,18 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
         sendApiError(response, 404, "project_not_found", "Project not found.");
         return;
       }
-      sendJson(response, 200, projectHomePage(
+      sendVm(200, projectHomePage(
         projectHomeMatch[1],
         projectHomeMatch[1] === qaCreatedProjectId ? qaCreatedProjectName : "区域发布资料库"
       ));
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/meetings") {
-      sendJson(response, 200, meetingPage(meetingInsightDraftCreated, meetingDraftProposalCreated, meetingInsightDismissed));
+      sendVm(200, meetingPage(meetingInsightDraftCreated, meetingDraftProposalCreated, meetingInsightDismissed));
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/notifications") {
-      sendJson(response, 200, notificationPage(currentLocale, {
+      sendVm(200, notificationPage(currentLocale, {
         meetingRead: notificationMeetingRead,
         driveRead: notificationDriveRead,
         meetingDone: notificationMeetingDone,
@@ -2097,13 +2104,13 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/health") {
-      sendJson(response, 200, projectHealthPage(currentLocale));
+      sendVm(200, projectHealthPage(currentLocale));
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/calendar") {
       const view = url.searchParams.get("view") === "day" ? "day" : "week";
       const date = url.searchParams.get("date") ?? "2026-06-11";
-      sendJson(response, 200, calendarPage(currentLocale, view, date));
+      sendVm(200, calendarPage(currentLocale, view, date));
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/notifications/read-all") {
@@ -2225,36 +2232,36 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/gold-path") {
-      sendJson(response, 200, surface);
+      sendVm(200, surface);
       return;
     }
     const sessionMatch = /^\/api\/sessions\/([^/]+)$/u.exec(url.pathname);
     if (request.method === "GET" && sessionMatch?.[1]) {
-      sendJson(response, 200, r4LiveSession(sessionStage, surface, currentLocale));
+      sendVm(200, r4LiveSession(sessionStage, surface, currentLocale));
       return;
     }
     const nextQuestionMatch = /^\/api\/sessions\/([^/]+)\/next-question$/u.exec(url.pathname);
     if (request.method === "POST" && nextQuestionMatch?.[1]) {
       requestRecord.body = await requestBody(request);
       sessionStage = "confirm";
-      sendJson(response, 200, r4LiveSession(sessionStage, surface, currentLocale));
+      sendVm(200, r4LiveSession(sessionStage, surface, currentLocale));
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/workitems") {
       requestRecord.body = await requestBody(request);
-      sendJson(response, 200, qaWorkItemDetail(surface, driveCommentDraftCreated, driveDraftProposalCreated));
+      sendVm(200, qaWorkItemDetail(surface, driveCommentDraftCreated, driveDraftProposalCreated));
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/knowledge/search") {
       requestRecord.body = await requestBody(request);
-      sendJson(response, 200, r4LiveEvidence(currentLocale));
+      sendVm(200, r4LiveEvidence(currentLocale));
       return;
     }
     const approvalRespondMatch = /^\/api\/approvals\/([^/]+)\/respond$/u.exec(url.pathname);
     if (request.method === "POST" && approvalRespondMatch?.[1]) {
       requestRecord.body = await requestBody(request);
       const body = JSON.parse(requestRecord.body || "{}") as { decision?: string };
-      sendJson(response, 200, {
+      sendVm(200, {
         approval: { id: approvalRespondMatch[1], status: body.decision === "deny" ? "denied" : "allowed" },
         attention: {
           summary_text: currentLocale === "en-US"
@@ -2275,16 +2282,16 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
         return;
       }
       if (workItemMatch[1] === meetingWorkItemId) {
-        sendJson(response, 200, qaMeetingWorkItemDetail(surface, meetingDraftProposalCreated));
+        sendVm(200, qaMeetingWorkItemDetail(surface, meetingDraftProposalCreated));
         return;
       }
-      sendJson(response, 200, qaWorkItemDetail(surface, driveCommentDraftCreated, driveDraftProposalCreated));
+      sendVm(200, qaWorkItemDetail(surface, driveCommentDraftCreated, driveDraftProposalCreated));
       return;
     }
     const evidenceBindingMatch = /^\/api\/workitems\/([^/]+)\/evidence-bindings$/u.exec(url.pathname);
     if (request.method === "POST" && evidenceBindingMatch?.[1]) {
       requestRecord.body = await requestBody(request);
-      sendJson(response, 200, qaWorkItemDetail(surface, driveCommentDraftCreated, driveDraftProposalCreated));
+      sendVm(200, qaWorkItemDetail(surface, driveCommentDraftCreated, driveDraftProposalCreated));
       return;
     }
     const acceptedDeliverableRestoreMatch = /^\/api\/workitems\/([^/]+)\/deliverables\/([^/]+)\/restore$/u.exec(url.pathname);
@@ -2292,7 +2299,7 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       requestRecord.body = await requestBody(request);
       const acceptedDeliverable = surface.page_vms.replay.accepted_deliverables.find((item) => item.id === acceptedDeliverableRestoreMatch[2])
         ?? surface.page_vms.replay.accepted_deliverables[0];
-      sendJson(response, 200, {
+      sendVm(200, {
         accepted_deliverable: acceptedDeliverable
       });
       return;
@@ -2300,7 +2307,7 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
     const conflictsMatch = /^\/api\/workitems\/([^/]+)\/conflicts$/u.exec(url.pathname);
     if (request.method === "GET" && conflictsMatch?.[1]) {
       const conflicts = proposalConflictsFromSurface(surface).filter((conflict) => conflict.work_item_id === conflictsMatch[1]);
-      sendJson(response, 200, {
+      sendVm(200, {
         conflicts,
         ...(conflicts.length === 0 ? { empty_state: "no_conflicts" } : {})
       });
@@ -2312,7 +2319,7 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
         sendApiError(response, 404, "not_found", "Proposal not found");
         return;
       }
-      sendJson(response, 200, surface.page_vms.proposal);
+      sendVm(200, surface.page_vms.proposal);
       return;
     }
     const proposalReviewMatch = /^\/api\/proposals\/([^/]+)\/review$/u.exec(url.pathname);
@@ -2328,7 +2335,7 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
         }
       })();
       if (reviewDecision === "approve") {
-        sendJson(response, 200, {
+        sendVm(200, {
           attention: {
             summary_text: currentLocale === "en-US"
               ? "Confirmed. You can now accept it into the official version."
@@ -2343,7 +2350,7 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
         });
         return;
       }
-      sendJson(response, 200, {
+      sendVm(200, {
         attention: {
           summary_text: currentLocale === "en-US"
             ? "Change request sent back to AI with your reason."
@@ -2355,7 +2362,7 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
     const proposalMergeMatch = /^\/api\/proposals\/([^/]+)\/merge$/u.exec(url.pathname);
     if (request.method === "POST" && proposalMergeMatch?.[1]) {
       requestRecord.body = await requestBody(request);
-      sendJson(response, 200, {
+      sendVm(200, {
         attention: {
           summary_text: currentLocale === "en-US"
             ? "Accepted into the official version."
@@ -2367,7 +2374,7 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
     const mergeApplyMatch = /^\/api\/merge-proposals\/([^/]+)\/apply$/u.exec(url.pathname);
     if (request.method === "POST" && mergeApplyMatch?.[1]) {
       requestRecord.body = await requestBody(request);
-      sendJson(response, 200, {
+      sendVm(200, {
         merge_proposal_id: mergeApplyMatch[1],
         attention: {
           summary_text: currentLocale === "en-US"
@@ -2379,7 +2386,7 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
     }
     const replayMatch = /^\/api\/agent-runs\/([^/]+)\/replay$/u.exec(url.pathname);
     if (request.method === "GET" && replayMatch?.[1]) {
-      sendJson(response, 200, surface.page_vms.replay);
+      sendVm(200, surface.page_vms.replay);
       return;
     }
     sendApiError(response, 404, "not_found", `Unhandled R4 live mock endpoint: ${url.pathname}`);

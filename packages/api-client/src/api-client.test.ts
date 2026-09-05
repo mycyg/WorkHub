@@ -188,6 +188,109 @@ test("UI-06: bare {ok:true} acks and empty 200 bodies stay valid", async () => {
   assert.equal(await empty.me(), null);
 });
 
+// UI-06 修正（web-live-route-smoke 红）：auth 与 client-devices 两族端点在 openapi.ts 里就是
+// rawJsonResponse/rawJsonStatusResponse 声明的裸 JSON 契约，被 web/desktop/QA 按裸形状直接消费。
+// 一刀切的信封校验会把注册后的 /api/auth/identify 误杀成 contract_violation，把用户永久钉在
+// onboarding 页——这些路径必须放行。
+test("UI-06 fix: raw-JSON contract endpoints (auth + client-devices) pass the envelope check untouched", async () => {
+  const identity = {
+    id: "u-1",
+    nickname: "阿真",
+    display_name: "阿真",
+    created: true,
+    locale: "zh-CN",
+    preferences: { locale: "zh-CN" },
+    is_admin: false,
+    availability_status: "available"
+  };
+  const jsonOf = (body: unknown, status = 200) =>
+    createApiClient({
+      fetchFn: async () =>
+        new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
+    });
+
+  // 出问题的那一条：注册/识别回裸 identity（201 新建 / 200 已存在），必须原样透传。
+  assert.deepEqual(await jsonOf(identity, 201).identify({ nickname: "阿真" }), identity);
+  assert.deepEqual(await jsonOf({ ...identity, created: false }).login({ email: "a@b.c", password: "x" }), {
+    ...identity,
+    created: false
+  });
+
+  // /api/auth/me 已识别时是 identity + 内嵌 identity 块（同样裸形状）。
+  const meBody = { ...identity, created: false, identity: { actor_kind: "human", actor_id: "u-1" } };
+  assert.deepEqual(await jsonOf(meBody).me(), meBody);
+
+  // 偏好更新、桌面引导、邀请一族。
+  assert.deepEqual(await jsonOf(identity).updatePreferences({ locale: "zh-CN" }), identity);
+  const bootstrap = { identity, device: { id: "d-1" }, client_token: "tok" };
+  assert.deepEqual(await jsonOf(bootstrap, 201).bootstrapDesktop({ nickname: "阿真", device_name: "mac" }), bootstrap);
+  const invite = { invite_id: "i-1", token: "t", email: "a@b.c", expires_at: "2026-09-06T00:00:00.000Z" };
+  await assert.doesNotReject(() => jsonOf(invite, 201).request("/api/auth/invites", { method: "POST" }));
+  await assert.doesNotReject(() => jsonOf({ invites: [] }).request("/api/auth/invites?status=pending"));
+  await assert.doesNotReject(() => jsonOf(identity, 201).request("/api/auth/invites/accept", { method: "POST" }));
+
+  // client-devices 五端点：register/me（裸数组！）/current/:id revoke/revoke-current。
+  const device = { id: "d-1", user_id: "u-1", device_name: "mac", platform: "desktop" };
+  assert.deepEqual(await jsonOf({ device, client_token: "tok" }, 201).registerClientDevice({ device_name: "mac" }), {
+    device,
+    client_token: "tok"
+  });
+  assert.deepEqual(await jsonOf([device]).listClientDevices(), [device]);
+  assert.deepEqual(await jsonOf(device).currentClientDevice(), device);
+  assert.deepEqual(await jsonOf(device).revokeClientDevice("d-1"), device);
+  assert.deepEqual(await jsonOf(device).revokeCurrentClientDevice(), device);
+});
+
+test("UI-06 fix: the raw-JSON allowlist stays narrow and still catches malformed envelopes", async () => {
+  const jsonOf = (body: unknown, status = 200) =>
+    createApiClient({
+      fetchFn: async () =>
+        new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
+    });
+
+  // 带信封端点的正常形状：{ok:true,data} 照常拆包出 data。
+  assert.deepEqual(await jsonOf({ ok: true, data: { users: [{ id: "u-1" }] } }).listUsers(), {
+    users: [{ id: "u-1" }]
+  });
+
+  // 同一个带信封端点的畸形信封仍必须被逮住——放行名单没把 auth 之外的路径带偏。
+  for (const bad of [{ users: [] }, { ok: "yes", data: {} }, { ok: false }]) {
+    await assert.rejects(
+      () => jsonOf(bad).listUsers(),
+      (error) =>
+        error instanceof WorkHubApiError && error.code === "contract_violation" && error.message.includes("/api/users"),
+      `bare ${JSON.stringify(bad)} on /api/users must stay a contract violation`
+    );
+  }
+
+  // 名单按整条路径匹配，不是前缀——auth/client-devices 之下的非契约路径不被顺带放行。
+  for (const path of [
+    "/api/auth/identify/extra",
+    "/api/client-devices/me/extra",
+    "/api/client-devices",
+    "/api/authx/identify"
+  ]) {
+    await assert.rejects(
+      () => jsonOf({ some: "vm" }).request(path),
+      (error) => error instanceof WorkHubApiError && error.code === "contract_violation",
+      `${path} must not inherit the raw-JSON exemption`
+    );
+  }
+
+  // 裸响应端点上的 HTML（SPA fallback / 网关错误页）仍然 fail-fast，不因放行而漏网。
+  const html = createApiClient({
+    fetchFn: async () =>
+      new Response("<html>login</html>", { status: 200, headers: { "Content-Type": "text/html" } })
+  });
+  await assert.rejects(
+    () => html.identify({ nickname: "阿真" }),
+    (error) =>
+      error instanceof WorkHubApiError &&
+      error.code === "contract_violation" &&
+      error.message.includes("/api/auth/identify")
+  );
+});
+
 test("api client surfaces inner error.details consistently on non-2xx errors", async () => {  const client = createApiClient({
     fetchFn: async () =>
       new Response(
