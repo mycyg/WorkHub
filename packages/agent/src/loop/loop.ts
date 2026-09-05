@@ -1257,7 +1257,9 @@ export class AgentLoop {
           // 摘要来源第三态：本次靠剪枝解决，没有发摘要请求（因此没有 context_compact 计费）。
           summary_kind: "pruned",
           pruned_results: pruned.prunedResults,
-          pruned_chars: pruned.prunedChars
+          pruned_chars: pruned.prunedChars,
+          // 剪后估出的上下文规模：两套引擎必须算出同一个数（投影口径对齐的证据）。
+          context_chars: pruned.contextChars
         }
       });
       return true;

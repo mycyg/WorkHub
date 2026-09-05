@@ -583,6 +583,7 @@ async function runAgentLoop2Body(
 				summary_kind: "pruned",
 				pruned_results: pruned.prunedResults,
 				pruned_chars: pruned.prunedChars,
+				context_chars: pruned.contextChars,
 			},
 		});
 		return true;

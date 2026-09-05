@@ -36,6 +36,9 @@
  */
 
 import assert from "node:assert/strict";
+import { mkdtemp, readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import { errorToolResult, okToolResult, type ToolExecutionContext, type ToolResult } from "@workhub/tools";
@@ -80,6 +83,8 @@ type Scenario = {
 	budget?: Partial<AgentLoopBudget>;
 	/** Scripted compaction-summary responses (P3b): wires a compactionClient when present. */
 	compactionResponses?: LlmCreateResponse[];
+	/** Run workdir (B10 spill writes under `<workdir>/.spill/`); defaults to a fixed path. */
+	workdir?: string;
 };
 
 type Harness = {
@@ -135,7 +140,7 @@ function makeHarness(scenario: Scenario): Harness {
 	const input: AgentLoopInput = {
 		runId: "run-eqv",
 		workItemId: "wi-eqv",
-		workdir: "/tmp/loop2-eqv",
+		workdir: scenario.workdir ?? "/tmp/loop2-eqv",
 		systemPrompt: "you are a worker",
 		initialUserMessage: "please do the task",
 		client: {
@@ -217,6 +222,11 @@ const EVENT_DATA_KEYS = [
 	"trigger",
 	"compactions",
 	"summary_kind",
+	// B10: the free-pruning path emits summary_kind "pruned" plus what it freed.
+	"pruned_results",
+	"pruned_chars",
+	// 剪后上下文规模：两侧投影口径一旦漂移，这一项立刻不等。
+	"context_chars",
 	"provider_event_type",
 	// provider_retry fields (delay_ms is deterministic: nextRetryDecision has no jitter).
 	"attempt",
@@ -694,4 +704,90 @@ test("equivalence: B6 nudges never outrun the step budget — steps run out firs
 	// Exactly one nudge got in before the budget ended the run.
 	assert.equal(reminderBodies(loop2H.requestMessages[3] ?? []).length, 1);
 	assert.deepEqual(loop2H.requestMessages, legacyH.requestMessages, "wire transcript diverged");
+});
+
+// --- (B10) 两段式压缩：剪枝标记 / spill 提示 / 摘要请求数 --------------------
+
+test("equivalence: B10 spill — 超大工具结果落盘后，两套引擎的截断文本与定位提示逐字相同", async () => {
+	// 单条上下文预算 500 字符，工具吐 9000 字符：两套引擎都得先落盘到 <workdir>/.spill/0001-echo.txt，
+	// 再把「截断正文 + 中英各一句定位提示」写进对话。两次运行共用同一个 workdir——写的是同样的
+	// 内容、同样的文件名，正好顺带证明落盘是确定性的。
+	const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-eqv-spill-"));
+	const huge = "料".repeat(9000);
+	const { loop2H, legacyH } = await runBoth(() => ({
+		responses: [toolResponse("m1", [{ id: "c1", name: "echo", input: { message: "大" } }]), textResponse("m2", "done")],
+		toolSpecs: [ECHO_TOOL],
+		execute: () => okToolResult(huge),
+		budget: { toolResultContextChars: 500 },
+		workdir,
+	}));
+
+	assert.deepEqual(loop2H.requestMessages, legacyH.requestMessages, "wire transcript diverged");
+	const body = JSON.stringify(loop2H.requestMessages[1] ?? []);
+	assert.match(body, /…\[已截断 8550 字符，中段省略\]/u);
+	assert.match(body, /\[完整内容已保存到 \.spill\/0001-echo\.txt，需要时用 read_file 读取它\]/u);
+	assert.match(body, /\[The full output is saved at \.spill\/0001-echo\.txt; use read_file to read the rest\.\]/u);
+	// 完整原文落在盘上，不在对话里。
+	assert.equal((await readFile(path.join(workdir, ".spill", "0001-echo.txt"), "utf8")).length, 9000);
+});
+
+test("equivalence: B10 剪枝够用 — 两套引擎都跳过摘要请求，剪枝标记逐字相同", async () => {
+	// 4 步各产 5000 字符工具结果、每步 5000 token：累计 token 第 4 步后越过 20000 × 0.8 的压缩线，
+	// 但剪掉最老 3 条之后历史只剩约 1.1 万字符（≈5500 token），远在线下 → 两边都不发摘要请求。
+	// compactionResponses 照样挂上：真发了请求就会被计数抓到，比「没配 client」是更强的断言。
+	const chunk = "料".repeat(5000);
+	const { loop2H, legacyH } = await runBoth(() => ({
+		responses: [
+			toolResponse("m1", [{ id: "c1", name: "echo", input: { message: "1" } }], 5000, 0),
+			toolResponse("m2", [{ id: "c2", name: "echo", input: { message: "2" } }], 5000, 0),
+			toolResponse("m3", [{ id: "c3", name: "echo", input: { message: "3" } }], 5000, 0),
+			toolResponse("m4", [{ id: "c4", name: "echo", input: { message: "4" } }], 5000, 0),
+			textResponse("m5", "done", 5000, 0),
+		],
+		toolSpecs: [ECHO_TOOL],
+		execute: () => okToolResult(chunk),
+		budget: { contextWindowTokens: 20000, compactThreshold: 0.8, maxCompactions: 2 },
+		compactionResponses: [compactionSummaryResponse("不该被用到的摘要")],
+	}));
+
+	assert.equal(legacyH.compactionRequests.length, 0, "legacy 不该发摘要请求");
+	assert.equal(loop2H.compactionRequests.length, 0, "loop2 不该发摘要请求");
+	const kinds = (harness: typeof loop2H) =>
+		harness.emittedEvents.filter((event) => event.type === "agent_run.compacting").map((event) => event.data.summary_kind);
+	assert.deepEqual(kinds(legacyH), ["pruned"]);
+	assert.deepEqual(kinds(loop2H), ["pruned"]);
+	// 剪枝省下的字符量必须一模一样——两侧的上下文投影口径若漂了，这里立刻红。
+	const prunedChars = (harness: typeof loop2H) =>
+		harness.emittedEvents.find((event) => event.type === "agent_run.compacting")?.data.pruned_chars;
+	assert.equal(prunedChars(loop2H), prunedChars(legacyH));
+	assert.deepEqual(loop2H.requestMessages, legacyH.requestMessages, "wire transcript diverged");
+	// 最后一次请求里：老结果带剪枝标记，最近一条原样保留。
+	const last = JSON.stringify(loop2H.requestMessages[loop2H.requestMessages.length - 1] ?? []);
+	assert.match(last, /…\[中段已剪枝：为节省上下文省略 \d+ 个字符；这是运行环境删的，不是原始输出缺失。需要完整内容请重新执行产生它的那一步。\]/u);
+	assert.match(last, /…\[middle pruned: \d+ characters were removed here to save context/u);
+});
+
+test("equivalence: B10 剪枝不够 — 两套引擎都恰好发一次摘要请求", async () => {
+	// 压缩线 = 6000 × 0.8 = 4800 token = 9600 字符；3 条 8000 字符的结果剪完仍有约 1.2 万字符 → 不够。
+	const chunk = "料".repeat(8000);
+	const { loop2H, legacyH } = await runBoth(() => ({
+		responses: [
+			toolResponse("m1", [{ id: "c1", name: "echo", input: { message: "1" } }], 2000, 0),
+			toolResponse("m2", [{ id: "c2", name: "echo", input: { message: "2" } }], 2000, 0),
+			toolResponse("m3", [{ id: "c3", name: "echo", input: { message: "3" } }], 2000, 0),
+			textResponse("m4", "done", 2000, 0),
+		],
+		toolSpecs: [ECHO_TOOL],
+		execute: () => okToolResult(chunk),
+		budget: { contextWindowTokens: 6000, compactThreshold: 0.8, maxCompactions: 2 },
+		compactionResponses: [compactionSummaryResponse("## 目标（Goal）\n继续整理")],
+	}));
+
+	assert.equal(legacyH.compactionRequests.length, 1);
+	assert.equal(loop2H.compactionRequests.length, 1);
+	assert.equal(loop2H.compactionRequests[0]?.source, "compact");
+	const kind = (harness: typeof loop2H) =>
+		harness.emittedEvents.find((event) => event.type === "agent_run.compacting")?.data.summary_kind;
+	assert.equal(kind(legacyH), "structured");
+	assert.equal(kind(loop2H), "structured");
 });
