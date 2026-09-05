@@ -117,6 +117,14 @@ export type DesktopCuuActionRequest =
       runTitle?: string;
       mode?: StartAgentRunRequest["mode"];
     }
+  // C1（桌宠死按钮修复）：工作项卡在 spec_ready 且无提议时产出的 start_agent 动作
+  // （href /api/workitems/:id/agent-runs），与 cuu-start-agent 的会话式启动不是同一回事——
+  // 这里工作项已经存在且已 spec_ready，直接开工，语义对齐 web 的 start_agent_run 分支
+  // （apps/web/src/browser.ts 的 startAgentRunActionFromHref）与桌面看板 dispatchWorkItem。
+  | {
+      kind: "start-agent-run";
+      workItemId: string;
+    }
   | {
       kind: "approval-response";
       approvalId: string;
@@ -1402,6 +1410,17 @@ export function resolveDesktopCuuAction(
     };
   }
 
+  // C1（桌宠死按钮修复）：spec_ready 工作项卡的「启动」动作此前在这份穷举里没有分支，
+  // 点了既不提交也不导航。href 只有 /api/workitems/:id/agent-runs 这一种用法（发起端见
+  // packages/cuu/src/cards.ts 的 start_agent 动作），无需按 method 再区分。
+  const startAgentRunMatch = /^\/api\/workitems\/([^/]+)\/agent-runs$/u.exec(path);
+  if (startAgentRunMatch?.[1]) {
+    return {
+      kind: "start-agent-run",
+      workItemId: decodeURIComponent(startAgentRunMatch[1])
+    };
+  }
+
   const approvalMatch = /^\/api\/approvals\/([^/]+)\/respond$/u.exec(path);
   if (approvalMatch?.[1]) {
     return {
@@ -1550,6 +1569,22 @@ export async function submitDesktopCuuAction(input: {
       message: launch.message,
       card: launch.card,
       ...(launch.outcome === "started" ? { agentRun: launch.run } : {})
+    };
+  }
+
+  // C1（桌宠死按钮修复）：工作项已 spec_ready，直接开工——不经过 Cuu 会话式启动器，
+  // 与 web 的 client.startAgentRun(workItemId) 零 payload 调法保持一致（apps/web/src/browser.ts
+  // 的 startAgentRunActionFromHref 分支、apps/desktop-webview/src/workbench/kanban/api.ts 的
+  // dispatchWorkItem 同一份端点）。
+  if (input.action.kind === "start-agent-run") {
+    if (!input.client.startAgentRun) {
+      throw new Error(cuuT(input.locale, "cuuStart.unavailable"));
+    }
+    const run = await input.client.startAgentRun(input.action.workItemId, undefined, localeOptions);
+    return {
+      message: cuuFormat(input.locale, "cuuStart.started", { title: run.title }),
+      card: cardFromAgentRunLive(run, input),
+      agentRun: run
     };
   }
 
