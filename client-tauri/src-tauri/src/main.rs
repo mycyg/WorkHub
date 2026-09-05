@@ -8,8 +8,12 @@ use workhub_client_tauri::deep_link::{
 use workhub_client_tauri::events::{event_channel_name, ShellEvent};
 use workhub_client_tauri::locale::{
     detect_system_workhub_locale, normalize_optional_workhub_locale, normalize_workhub_locale,
-    parse_macos_preferred_languages, WorkHubLocale, DEFAULT_WORKHUB_LOCALE,
+    WorkHubLocale, DEFAULT_WORKHUB_LOCALE,
 };
+// 只有 macOS 的 macos_preferred_languages() 用得到它——非 macOS 上留着这条 use 会是未用导入，
+// 而 Linux CI 的 clippy 是 -D warnings（同 MainWindowStartupFallbackStep 那处 cfg 的先例）。
+#[cfg(target_os = "macos")]
+use workhub_client_tauri::locale::parse_macos_preferred_languages;
 use workhub_client_tauri::notify::{
     deep_link_plan_for_notification_click, ShellSystemNotificationPlan,
 };
@@ -33,11 +37,14 @@ use workhub_client_tauri::sse_worker::{
     spawn_default_shell_sse_workers, ShellClientToken, ShellServerUrl,
 };
 use workhub_client_tauri::tray::{
-    shell_badge_count, tray_menu_action_plan_by_id_for_locale, tray_template_icon_rgba,
-    tray_tooltip, tray_tooltip_with_badge, TRAY_HIDE_MAIN_ID, TRAY_OPEN_INBOX_ID,
-    TRAY_OPEN_SETTINGS_ID, TRAY_OPEN_WORKBENCH_ID, TRAY_QUIT_ID, TRAY_RESTORE_PET_INTERACTION_ID,
-    TRAY_SHOW_MAIN_ID, TRAY_TEMPLATE_ICON_SIZE, TRAY_TOGGLE_PET_ID, WORKHUB_TRAY_ID,
+    shell_badge_count, tray_menu_action_plan_by_id_for_locale, tray_tooltip,
+    tray_tooltip_with_badge, TRAY_HIDE_MAIN_ID, TRAY_OPEN_INBOX_ID, TRAY_OPEN_SETTINGS_ID,
+    TRAY_OPEN_WORKBENCH_ID, TRAY_QUIT_ID, TRAY_RESTORE_PET_INTERACTION_ID, TRAY_SHOW_MAIN_ID,
+    TRAY_TOGGLE_PET_ID, WORKHUB_TRAY_ID,
 };
+// 单色 template 托盘图标只在 macOS 上使用（其它平台的托盘图标是彩色的），同上 cfg 理由。
+#[cfg(target_os = "macos")]
+use workhub_client_tauri::tray::{tray_template_icon_rgba, TRAY_TEMPLATE_ICON_SIZE};
 use workhub_client_tauri::window_controls::{
     focus_main_route as focus_main_route_plan, hide_main_window as hide_main_window_plan,
     hide_pet_window as hide_pet_window_plan, shell_navigate_payload,
@@ -1039,9 +1046,11 @@ fn execute_window_control(
         }
     }
 
-    // S3-#6：只有真正的导航目标才广播（根路径 = 「显示窗口」而非「导航」，广播它会让 webview 复位
-    // 聚焦盒、洗掉深链/托盘刚打开的能力，见 shell_navigate_payload 的根因注释）。定向发给目标窗口，
-    // 不再全局广播——桌宠/工作台窗从不消费 navigate，广播只会平白扩大事件面。
+    // S3-#6：只有真正的导航目标才发（根路径 = 「显示窗口」而非「导航」，发它会让 webview 复位聚焦盒、
+    // 洗掉深链/托盘刚打开的能力，见 shell_navigate_payload 的根因注释）。用 emit_to 指名收件人而不是
+    // 全局 emit：桌宠/工作台窗从不消费 navigate（工作台走 deep-link 通道），事件面越窄越好。
+    // 注意 Tauri 的过滤只作用于**显式限定了 target 的**监听器，JS 侧默认的 Any 监听仍会收到——
+    // 所以 payload 里也带上 label，接收端要自证时有据可依。
     if let Some(payload) = shell_navigate_payload(&plan) {
         app.emit_to(
             payload.label.clone(),
