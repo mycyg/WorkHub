@@ -4738,6 +4738,8 @@ test("R23 P4: work item route component renders a discussion slot with a post-co
   assert.equal(zh.html.includes("正在加载讨论"), true);
   assert.equal(en.html.includes("Loading discussion"), true);
   assert.equal(en.html.includes("Post comment"), true);
+});
+
 // ── R23 F-04（升级转交端到端）─────────────────────────────────────────────────────
 // 此前 web 通用卡直接把 /delegate 动作剥掉（rank1 的临时办法：没有选人 UI，渲出来就是个死按钮），
 // 于是服务端即便发了这个动作，web 也永远看不见。现在改成：动作行不渲它，动作行下面挂一份选人器。
@@ -4916,6 +4918,8 @@ test("R23 P4: renderWorkspaceAuditRows localizes action/actor/object columns and
   const en = renderWorkspaceAuditRows([entry("a3", "work_item.claimed")], "en-US");
   assert.equal(en.includes("Item claimed"), true);
   assert.equal(en.includes("Project 93000000"), true);
+});
+
 test("R23 F-04 Approvals workbench keeps its shared picker with no href (browser derives it from the selected row)", () => {
   const vm = surfaceVm();
 
