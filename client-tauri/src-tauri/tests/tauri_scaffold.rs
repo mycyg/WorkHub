@@ -123,17 +123,25 @@ fn macos_main_window_restores_native_vibrancy_for_real_frosted_glass() {
         raw.contains("apply_vibrancy("),
         "main window must re-apply native vibrancy so the Spotlight glass actually frosts the desktop"
     );
-    // R14 真机反馈：聚焦盒肉眼太透（HudWindow 是深色 HUD 材质、不跟随外观，跟聚焦盒硬编码浅色 CSS 前景不搭，
-    // 同一类问题工作台窗踩过一次、R13 F-01 换成了跟随外观的 UnderWindowBackground——聚焦盒抄同一份材质）。
+    // R14 曾把材质定死成 UnderWindowBackground（当时反馈「太透」）。R24 真机对比反转了这个结论：
+    // UnderWindowBackground 是 AppKit 里最不透的一档衬底材质，几乎只吃桌面壁纸、不显示背后的窗口，
+    // 用户看到的是「一块实灰」。默认材质改为 Popover——跟随外观的浅色材质里最通透的一档
+    // （对比表见 .agents/notes/implemented/2026-09-05-spotlight-glass-translucency.md）。
     assert!(
-        raw.contains("NSVisualEffectMaterial::UnderWindowBackground"),
-        "Spotlight vibrancy should use the UnderWindowBackground material like the workbench window, not the dark HudWindow HUD material"
+        raw.contains("#[default]\n    Popover,"),
+        "the default glass material must be Popover: the R24 real-device pass measured it as the most see-through of the appearance-following light materials, which is what the user asked for"
     );
+    // 深色 HUD 材质更透，但不跟随外观、与聚焦盒硬编码浅色前景打架——R14 换掉它是对的，别退回去。
     assert!(
-        !raw.contains("NSVisualEffectMaterial::HudWindow"),
-        "Spotlight vibrancy must not regress to the dark HudWindow material that read as too see-through against the light glass foreground"
+        !raw.contains("#[default]\n    HudWindow,"),
+        "the default glass material must not regress to the dark HudWindow material that fights the hardcoded-light glass foreground"
     );
-    // UnderWindowBackground follows system appearance; the Spotlight CSS is hardcoded light-only
+    // 主窗与工作台窗必须读同一个默认值：两扇窗同屏，材质分叉只会让它们看起来不是一家的。
+    assert!(
+        raw.matches("workhub_glass_material_from_env").count() >= 3,
+        "both the Spotlight and workbench windows must resolve their material through workhub_glass_material_from_env instead of hardcoding divergent materials"
+    );
+    // Popover follows system appearance; the Spotlight CSS is hardcoded light-only
     // (no prefers-color-scheme branch), so the window appearance must be pinned Light or dark mode
     // would flip the vibrancy black behind light content — same fix the workbench window needed.
     assert!(

@@ -95,6 +95,92 @@ const WORKHUB_CUU_QA_RESTORE_STATE_ENV: &str = "WORKHUB_CUU_QA_RESTORE_STATE";
 const WORKHUB_CUU_QA_TRAY_QUIT_DRY_RUN_ENV: &str = "WORKHUB_CUU_QA_TRAY_QUIT_DRY_RUN";
 const WORKHUB_CUU_RESTORE_STORAGE_KEY: &str = "workhub.cuu.currentRun.v1";
 
+// R24 玻璃通透度调试开关（与 WORKHUB_DISABLE_VIBRANCY 同族，只为真机肉眼对比留着；两个都不置位
+// = 走下面写死的默认值，生产零行为变化）。WORKHUB_GLASS_MATERIAL 换原生材质，WORKHUB_GLASS_ALPHA
+// 覆写盒子的半透白底（真正决定"能不能看见背后的窗口"的那一档，前端 token 见 spotlight/css.ts）。
+// 一次构建就能把"材质 × 白底"的候选组合跑完，不必为每个候选各编一次。
+const WORKHUB_GLASS_MATERIAL_ENV: &str = "WORKHUB_GLASS_MATERIAL";
+const WORKHUB_GLASS_ALPHA_ENV: &str = "WORKHUB_GLASS_ALPHA";
+
+/// 聚焦盒/工作台窗的原生毛玻璃材质。做成跨平台可测的纯枚举，只有映射到 AppKit
+/// NSVisualEffectMaterial 的那一步是 macOS 专属。
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum GlassMaterial {
+    /// R24 默认：弹出层材质。真机对比里它是「跟随外观的浅色材质」中最通透的一档——背后的窗口
+    /// 透出可辨的模糊色块，而黑字仍有 9.8:1（对比表见 Agent Note）。
+    #[default]
+    Popover,
+    Sidebar,
+    Menu,
+    HeaderView,
+    /// AppKit 里最不透的一档衬底材质：几乎只吃桌面壁纸、不显示背后的窗口。R14–R23 的默认值，
+    /// 也正是 R24 用户反馈「盒子是一块实灰」的根因。留着当对照。
+    UnderWindowBackground,
+    /// 深色 HUD 材质，不跟随系统外观——R14 之前用的就是它，留着当对照。
+    HudWindow,
+}
+
+impl GlassMaterial {
+    fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "popover" => Some(Self::Popover),
+            "sidebar" => Some(Self::Sidebar),
+            "menu" => Some(Self::Menu),
+            "header" | "header_view" | "headerview" => Some(Self::HeaderView),
+            "under_window" | "under_window_background" | "underwindowbackground" => {
+                Some(Self::UnderWindowBackground)
+            }
+            "hud" | "hud_window" | "hudwindow" => Some(Self::HudWindow),
+            _ => None,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn ns_material(self) -> window_vibrancy::NSVisualEffectMaterial {
+        use window_vibrancy::NSVisualEffectMaterial as M;
+        match self {
+            Self::UnderWindowBackground => M::UnderWindowBackground,
+            Self::Popover => M::Popover,
+            Self::Sidebar => M::Sidebar,
+            Self::Menu => M::Menu,
+            Self::HeaderView => M::HeaderView,
+            Self::HudWindow => M::HudWindow,
+        }
+    }
+}
+
+/// 认不出的值静默退回默认材质——调试开关拼错不该让窗口失去玻璃。
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn workhub_glass_material_from_env(get_env: impl Fn(&str) -> Option<String>) -> GlassMaterial {
+    get_env(WORKHUB_GLASS_MATERIAL_ENV)
+        .as_deref()
+        .and_then(GlassMaterial::parse)
+        .unwrap_or_default()
+}
+
+/// 白底 alpha 覆写：只认 (0,1] 的有限数（0 = 盒子全透明、字读不了，不给这个脚）。
+fn workhub_glass_alpha_from_env(get_env: impl Fn(&str) -> Option<String>) -> Option<f64> {
+    let raw = get_env(WORKHUB_GLASS_ALPHA_ENV)?;
+    let value: f64 = raw.trim().parse().ok()?;
+    if value.is_finite() && value > 0.0 && value <= 1.0 {
+        Some(value)
+    } else {
+        None
+    }
+}
+
+/// 把 alpha 递给 webview：既写 window.__WORKHUB_GLASS_ALPHA__（挂载时由 desktop-glass-alpha.ts 读），
+/// 也直接补写已经挂好的宿主元素——两种先后顺序都能落地。没置位时不注入任何脚本。
+fn glass_alpha_override_script(alpha: Option<f64>) -> Option<String> {
+    let alpha = alpha?;
+    Some(format!(
+        "(function(){{try{{window.__WORKHUB_GLASS_ALPHA__={alpha};var h=document.querySelector('.wh-spot-stage');if(h){{h.style.setProperty('--wh-spot-glass-top','rgba(255,255,255,{alpha})');h.style.setProperty('--wh-spot-glass-bottom','rgba(255,255,255,{bottom})');h.style.setProperty('--ds-glass-strong','rgba(255,255,255,{alpha})');}}}}catch(e){{}}}})()",
+        alpha = (alpha * 100.0).round() / 100.0,
+        bottom = (alpha * 77.0).round() / 100.0,
+    ))
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct CuuQaPreferenceOverrides {
     pet_scale_percent: Option<u16>,
@@ -1342,16 +1428,18 @@ fn apply_workbench_glass(window: &tauri::WebviewWindow) {
         shell_log_warn("workbench_background_failed", error);
     }
     // R13 V1：固定浅色玻璃（用户拍板）——先把窗口外观钉死 light（系统深色模式下浅色材质会翻黑,
-    // set_theme 在 macOS 落到 NSAppearance）,材质从深色 HudWindow 换 UnderWindowBackground
-    // （浅外观下的标准衬底毛玻璃;真机 A/B 候选还有 Sidebar/Popover,以与聚焦盒浅色面板协调为准）。
+    // set_theme 在 macOS 落到 NSAppearance）。R24 起材质与聚焦盒共用同一个默认值（见 GlassMaterial）：
+    // 两个窗是同一套玻璃语言，工作台没有"要更实"的理由，材质分叉只会让同屏两个窗看起来不是一家的。
     if let Err(error) = window.set_theme(Some(tauri::Theme::Light)) {
         shell_log_warn("workbench_appearance_failed", error);
     }
     #[cfg(target_os = "macos")]
     if std::env::var("WORKHUB_DISABLE_VIBRANCY").is_err() {
+        let material =
+            workhub_glass_material_from_env(|name| std::env::var(name).ok()).ns_material();
         if let Err(error) = window_vibrancy::apply_vibrancy(
             window,
-            window_vibrancy::NSVisualEffectMaterial::UnderWindowBackground,
+            material,
             Some(window_vibrancy::NSVisualEffectState::Active),
             Some(24.0),
         ) {
@@ -2245,6 +2333,22 @@ fn main() {
         .manage(ShellServerUrl::default())
         // MRG-23：深链事件重放兜底（见 handle_deep_link_plan / take_pending_deep_link）。
         .manage(Mutex::new(PendingShellDeepLink::default()))
+        // R24 玻璃调试开关的前端半边：材质在 Rust 里贴，盒子的半透白底只有 webview 能改，
+        // 所以 WORKHUB_GLASS_ALPHA 置位时在页面加载完成后把值递进去（不置位=不注入任何脚本）。
+        // 只递给带聚焦盒外壳的两个窗；桌宠窗没有玻璃盒，不掺和。
+        .on_page_load(|webview, _payload| {
+            if !matches!(webview.label(), "main" | "workbench") {
+                return;
+            }
+            let Some(script) = glass_alpha_override_script(workhub_glass_alpha_from_env(|name| {
+                std::env::var(name).ok()
+            })) else {
+                return;
+            };
+            if let Err(error) = webview.eval(&script) {
+                shell_log_warn("glass_alpha_override_failed", error);
+            }
+        })
         .on_window_event(|window, event| {
             // findings[#132/H15]：主窗口带 OS 关闭按钮(tauri.conf decorations:true)，Tauri v2 默认关闭即销毁 webview，
             // 之后托盘/深链/通知再想唤起主窗都会因 get_webview_window("main")==None 而失败（execute_window_control 报错），
@@ -2348,12 +2452,17 @@ fn main() {
                 }
                 #[cfg(target_os = "macos")]
                 if std::env::var("WORKHUB_DISABLE_VIBRANCY").is_err() {
-                    // R14 真机反馈：聚焦盒肉眼看"太透"（背景穿透强），但 screencapture 截图仍是预期的半透明——
-                    // vibrancy 是窗口服务器原生合成，截图工具天生看不到它，只有肉眼能看出真实观感。根因是材质：
-                    // HudWindow 是深色 HUD 材质、不跟随系统外观；工作台窗踩过同一类"材质与浅色玻璃前景不搭"的坑
-                    // （R13 F-01，见 r13-workbench-refinement/00-plan.md），修法是换成跟随外观的
-                    // UnderWindowBackground 并把外观钉死 Light（聚焦盒 CSS 本就是硬编码浅色，不适配系统深色，
-                    // 不钉死的话深色模式下 UnderWindowBackground 会翻黑）。聚焦盒抄同一份材质。
+                    // R14 真机反馈：聚焦盒肉眼看"太透"，于是从深色 HudWindow 换成跟随外观的
+                    // UnderWindowBackground，白底也从 .52/.36 提到 .78/.6（工作台窗踩过同一类"材质与浅色
+                    // 玻璃前景不搭"的坑，R13 F-01，见 r13-workbench-refinement/00-plan.md）。
+                    //
+                    // R24 用户反馈把这个结论反转了：把一个深色终端窗放到聚焦盒后面，盒子仍是一块实灰，
+                    // 「桌面版怎么不透明了」。根因是两档叠着一起收紧了——UnderWindowBackground 是 AppKit
+                    // 里最不透的一档衬底材质（几乎不显示背后的窗口，只吃桌面壁纸），前面又压了 .78 白底。
+                    // 修法：材质换 GlassMaterial 的默认值，白底降档（token 在 spotlight/css.ts）。
+                    // 外观仍钉死 Light —— 聚焦盒 CSS 是硬编码浅色，不钉死的话系统深色下浅色材质会翻黑、
+                    // 黑字压在深材质上直接不可读（R24 真机深色外观复验过）。工作台窗抄同一份材质。
+                    // 材质/白底都留了 env 覆写（WORKHUB_GLASS_MATERIAL / WORKHUB_GLASS_ALPHA）供真机对比。
                     if let Err(error) = main_window.set_theme(Some(tauri::Theme::Light)) {
                         log_main_window_startup_fallback(
                             MainWindowStartupFallbackStep::MacosVibrancy,
@@ -2362,9 +2471,11 @@ fn main() {
                     }
                     // state=Active 强制毛玻璃常亮：默认 FollowsWindowActiveState 会让窗口"没被点中(非 key)"时
                     // vibrancy 退成扁平不透明材质 —— 表现就是"点一下才有毛玻璃"。聚焦盒不抢焦点也要一直是玻璃。
+                    let material = workhub_glass_material_from_env(|name| std::env::var(name).ok())
+                        .ns_material();
                     if let Err(error) = window_vibrancy::apply_vibrancy(
                         &main_window,
-                        window_vibrancy::NSVisualEffectMaterial::UnderWindowBackground,
+                        material,
                         Some(window_vibrancy::NSVisualEffectState::Active),
                         Some(24.0),
                     ) {
@@ -2419,6 +2530,87 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
     use workhub_client_tauri::single_instance::single_instance_plan_from_args;
+
+    // R24 玻璃通透度开关：材质/白底两档都只在真机上肉眼可判，能自动测的就是"env 解析别把默认值弄丢"。
+    fn env_map(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> + use<> {
+        let owned: Vec<(String, String)> = pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect();
+        move |name: &str| {
+            owned
+                .iter()
+                .find(|(key, _)| key == name)
+                .map(|(_, value)| value.clone())
+        }
+    }
+
+    #[test]
+    fn glass_material_defaults_and_parses_every_documented_alias() {
+        assert_eq!(
+            workhub_glass_material_from_env(env_map(&[])),
+            GlassMaterial::default(),
+            "没置位就必须是默认材质"
+        );
+        assert_eq!(
+            workhub_glass_material_from_env(env_map(&[(WORKHUB_GLASS_MATERIAL_ENV, "  PopOver ")])),
+            GlassMaterial::Popover,
+            "大小写/空白都该收——真机对比时是手敲的"
+        );
+        for (raw, expected) in [
+            ("sidebar", GlassMaterial::Sidebar),
+            ("menu", GlassMaterial::Menu),
+            ("header", GlassMaterial::HeaderView),
+            ("under_window", GlassMaterial::UnderWindowBackground),
+            ("hud", GlassMaterial::HudWindow),
+        ] {
+            assert_eq!(
+                workhub_glass_material_from_env(env_map(&[(WORKHUB_GLASS_MATERIAL_ENV, raw)])),
+                expected,
+                "别名 {raw} 应当解析成 {expected:?}"
+            );
+        }
+        assert_eq!(
+            workhub_glass_material_from_env(env_map(&[(WORKHUB_GLASS_MATERIAL_ENV, "frosted")])),
+            GlassMaterial::default(),
+            "拼错的调试值该静默退回默认，不该让窗口失去玻璃"
+        );
+    }
+
+    #[test]
+    fn glass_alpha_env_only_accepts_a_readable_range() {
+        assert_eq!(workhub_glass_alpha_from_env(env_map(&[])), None);
+        assert_eq!(
+            workhub_glass_alpha_from_env(env_map(&[(WORKHUB_GLASS_ALPHA_ENV, " 0.45 ")])),
+            Some(0.45)
+        );
+        assert_eq!(
+            workhub_glass_alpha_from_env(env_map(&[(WORKHUB_GLASS_ALPHA_ENV, "1")])),
+            Some(1.0)
+        );
+        for bad in ["0", "-0.2", "1.4", "abc", ""] {
+            assert_eq!(
+                workhub_glass_alpha_from_env(env_map(&[(WORKHUB_GLASS_ALPHA_ENV, bad)])),
+                None,
+                "{bad} 该被拒——全透明/越界的盒子读不了字"
+            );
+        }
+    }
+
+    #[test]
+    fn glass_alpha_script_is_only_injected_when_the_switch_is_set() {
+        assert_eq!(glass_alpha_override_script(None), None);
+        let script = glass_alpha_override_script(Some(0.5)).expect("置位时该有脚本");
+        assert!(script.contains("window.__WORKHUB_GLASS_ALPHA__=0.5"));
+        // 渐变底端按 .77 比例更透一档，与 desktop-glass-alpha.ts 的 BOTTOM_RATIO 对齐。
+        assert!(script.contains("--wh-spot-glass-top','rgba(255,255,255,0.5)"));
+        assert!(script.contains("--wh-spot-glass-bottom','rgba(255,255,255,0.39)"));
+        assert!(script.contains("--ds-glass-strong','rgba(255,255,255,0.5)"));
+        assert!(
+            script.contains("try{") && script.contains("catch(e){}"),
+            "注入脚本必须自带兜底：调试开关不该让 webview 起不来"
+        );
+    }
 
     // L-07：一次性数据迁移（Application Support 根目录 → 应用专属目录）。用真实临时目录跑，
     // 因为这条逻辑的全部风险都在文件系统语义上（已存在就不覆盖、搬完删旧、缺目录先建）。

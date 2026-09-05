@@ -41,10 +41,11 @@ test("Spotlight visual language uses Apple blue/cyan accents instead of purple g
 
 test("Spotlight shell keeps a translucent liquid-glass surface", () => {
   assert.match(css, /html,body,#root\{margin:0;background:rgba\(0,0,0,0\)!important\}/u);
-  // R14: real-device feedback said the box read as too see-through (screenshots can't show this —
-  // vibrancy is native compositing that capture tools don't render — only eyes catch it), so the
-  // base alpha moved up from .52/.36 to .78/.6 to give the content more footing over the blur.
-  assert.match(css, /\.wh-spot\{[^}]*-webkit-app-region:no-drag;[^}]*background:linear-gradient\(135deg,rgba\(255,255,255,\.78\),rgba\(255,255,255,\.6\)\)/u);
+  // R14 把白底从 .52/.36 提到 .78/.6（当时反馈“太透”）。R24 用户反馈反转：深色窗口放到盒子后面
+  // 完全看不见，盒子读作一块实灰。白底降回 .78/.6 以下，通透感交回给原生材质（main.rs GlassMaterial）。
+  // 底色抽成 token，运行期可被 desktop-glass-alpha.ts 覆写（一次构建跑完多个候选值）。
+  assert.match(css, /:root\{--wh-spot-glass-top:rgba\(255,255,255,\.5\);--wh-spot-glass-bottom:rgba\(255,255,255,\.39\)\}/u);
+  assert.match(css, /\.wh-spot\{[^}]*-webkit-app-region:no-drag;[^}]*background:linear-gradient\(135deg,var\(--wh-spot-glass-top\),var\(--wh-spot-glass-bottom\)\)/u);
   assert.doesNotMatch(css, /\.wh-spot::before\{/u);
   assert.doesNotMatch(css, /background:rgba\(255,255,255,\.0[0-9]+\)/u);
   assert.match(css, /\.wh-spot\{[^}]*backdrop-filter:blur\(40px\) saturate\(185%\)/u);
