@@ -28,18 +28,9 @@ import {
   defaultDesktopApiBase,
   normalizeDesktopApiBase
 } from "./desktop-api-base.js";
-import {
-  desktopBootScreenFitAttribute,
-  desktopBootScreenFitPaddingPx
-} from "./desktop-boot-screen-fit.js";
+import { desktopBootPanel, renderDesktopBootPanelHtml } from "./desktop-boot-panel.js";
 import { clearDesktopClientToken } from "./desktop-client-token.js";
 import { forgetDesktopAuthModeHint, rememberDesktopAuthModeHint } from "./desktop-login.js";
-import { liquidGlassHeadHtml } from "./liquid-glass.js";
-import {
-  liquidGlassFilterCss,
-  liquidGlassFilterHtml,
-  renderWorkHubLiquidGlassLayer
-} from "./liquid-glass-filter.js";
 
 // 壳层换服务器后的跨窗广播事件名（Rust 侧 set_server_url 成功后 emit，payload {url}）。
 // 与 workhub-logged-out 同一条通用 Tauri 事件桥，不另起协议。
@@ -289,12 +280,12 @@ export function desktopConnectResultHtml(
   }
   const copy = connectCopy(locale);
   if (outcome.kind === "invalid-address") {
-    return `<p class="wh-connect-error" role="alert">${escapeHtml(copy.invalidAddress)}</p>`;
+    return `<p class="${desktopBootPanel.error}" role="alert">${escapeHtml(copy.invalidAddress)}</p>`;
   }
   if (outcome.kind === "unreachable" || outcome.kind === "not-workhub") {
     const title = outcome.kind === "unreachable" ? copy.unreachableTitle : copy.notWorkHubTitle;
     const hint = outcome.kind === "unreachable" ? copy.unreachableHint : copy.notWorkHubHint;
-    return `<div class="wh-connect-card wh-connect-card--bad" role="alert"><p class="wh-connect-error">${escapeHtml(title)}</p><p class="wh-connect-hint">${escapeHtml(hint)}</p><details class="wh-connect-detail"><summary>${escapeHtml(copy.detailSummary)}</summary>${escapeHtml(outcome.detail)}</details></div>`;
+    return `<div class="wh-connect-card wh-connect-card--bad" role="alert"><p class="${desktopBootPanel.error}">${escapeHtml(title)}</p><p class="wh-connect-hint">${escapeHtml(hint)}</p><details class="wh-connect-detail"><summary>${escapeHtml(copy.detailSummary)}</summary>${escapeHtml(outcome.detail)}</details></div>`;
   }
   const health = outcome.health;
   const rows = [
@@ -312,11 +303,26 @@ export function desktopConnectResultHtml(
   return `<div class="wh-connect-card wh-connect-card--good" role="status"><p class="wh-connect-ok">${escapeHtml(copy.readyTitle(name))}</p><p class="wh-connect-hint">${escapeHtml(outcome.base)}</p>${rowsHtml}</div>`;
 }
 
+// 这张屏独有的补充样式：探测结果卡（成功/失败）与原始错误折叠区。面板外框、表单、按钮、标题层级
+// 全部来自 desktop-boot-panel.ts 的共享样式，三张 boot 屏一份。
+const connectExtraCss = [
+  ".wh-connect-card{display:grid;gap:6px;border-radius:14px;padding:12px 14px;border:1px solid rgba(255,255,255,.26)}",
+  ".wh-connect-card--good{background:rgba(10,132,255,.08)}",
+  ".wh-connect-card--bad{background:rgba(196,61,43,.08)}",
+  ".wh-connect-row{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;color:color-mix(in srgb, CanvasText 72%, transparent)}",
+  ".wh-connect-row strong{font-weight:850;color:CanvasText;text-align:right}",
+  ".wh-connect-ok{font-weight:900}",
+  ".wh-connect-hint{font-size:12px;color:color-mix(in srgb, CanvasText 62%, transparent);word-break:break-all}",
+  ".wh-connect-detail{font-size:11px;color:color-mix(in srgb, CanvasText 52%, transparent);word-break:break-all}",
+  ".wh-connect-detail summary{cursor:pointer;font-weight:850}"
+].join("\n");
+
 // R24 H（首启窗口裁切）：这一屏渲进主窗时，原生窗口还是聚焦盒 idle 的细搜索条尺寸（720×64）——面板
-// 会被裁得只剩一行标题。面板上的 desktopBootScreenFitAttribute 是量高锚点，主窗挂载后由
-// desktop-boot-screen-fit.ts 量它 + 外壳 padding 把窗口撑到内容大小（「测试连接」的结果卡让面板变高时
-// 也会重量）。外壳 padding 与那边的加法共用 desktopBootScreenFitPaddingPx——CSS 的 padding 一旦大过
-// 那个值，窗口就会重新开始裁面板边缘。工作台窗（1280×800）不做贴合，这些样式在那边照旧只是居中留白。
+// 会被裁得只剩一行标题。面板上的 desktopBootScreenFitAttribute 是量高锚点（由共享面板打上），主窗挂载
+// 后由 desktop-boot-screen-fit.ts 量它 + 外壳 padding 把窗口撑到内容大小（「测试连接」的结果卡让面板
+// 变高时也会重量）。外壳 padding 与那边的加法共用 desktopBootScreenFitPaddingPx——CSS 的 padding 一旦
+// 大过那个值，窗口就会重新开始裁面板边缘。工作台窗（1280×800）不做贴合，这些样式在那边只是居中留白。
+// R24 I：面板外框改由 desktop-boot-panel.ts 统一提供，本屏与昵称首启屏/凭据门共用同一套玻璃语言。
 export function renderDesktopConnectScreenHtml(input: {
   locale: WorkHubLocale;
   apiBase?: string;
@@ -328,35 +334,22 @@ export function renderDesktopConnectScreenHtml(input: {
   const bootDetail = input.detail?.trim()
     ? `<details class="wh-connect-detail" data-desktop-connect-boot-detail><summary>${escapeHtml(copy.detailSummary)}</summary>${escapeHtml(input.detail)}</details>`
     : "";
-  return `${liquidGlassHeadHtml}${liquidGlassFilterHtml}<style>${liquidGlassFilterCss}
-html,body,#root{margin:0;min-height:100%;background:rgba(0,0,0,0)!important}
-.wh-connect-shell{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:${desktopBootScreenFitPaddingPx}px;box-sizing:border-box;font-family:'M PLUS Rounded 1c','Noto Sans SC','Segoe UI',sans-serif;color:CanvasText;background:transparent}
-.wh-connect-panel{position:relative;box-sizing:border-box;width:min(540px,100%);border-radius:22px;background:transparent;border:1px solid rgba(255,255,255,.26);box-shadow:0 24px 76px -46px rgba(0,0,0,.52);overflow:hidden;--wh-liquid-edge:16px}
-.wh-connect-panel>.wh-liquid-glass-content{display:grid;gap:12px;padding:30px 30px 26px;text-shadow:0 1px 12px rgba(255,255,255,.42),0 0 2px rgba(255,255,255,.66)}
-.wh-connect-mark{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#0a84ff,#64d2ff);box-shadow:0 10px 22px -6px rgba(10,132,255,.45)}
-.wh-connect-panel h2{margin:2px 0 0;font-size:20px;font-weight:900;line-height:1.24;color:CanvasText}
-.wh-connect-panel p{margin:0;color:color-mix(in srgb, CanvasText 78%, transparent);line-height:1.55}
-.wh-connect-manual{font-size:12px;color:color-mix(in srgb, CanvasText 60%, transparent)}
-.wh-connect-form{display:grid;gap:9px}
-.wh-connect-form label{display:grid;gap:6px;font-size:12px;font-weight:850;color:color-mix(in srgb, CanvasText 72%, transparent)}
-.wh-connect-form input{width:100%;box-sizing:border-box;border:1px solid rgba(255,255,255,.32);border-radius:12px;background:transparent;color:CanvasText;padding:10px 12px;font:700 13px/1.3 inherit;outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.18)}
-.wh-connect-form input:focus{border-color:rgba(10,132,255,.48);box-shadow:0 0 0 3px rgba(10,132,255,.16),inset 0 1px 0 rgba(255,255,255,.24)}
-.wh-connect-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:2px}
-.wh-connect-actions button{border-radius:12px;padding:10px 18px;font:inherit;font-weight:850;cursor:pointer}
-.wh-connect-actions button[data-desktop-connect-test]{border:1px solid rgba(255,255,255,.30);color:CanvasText;background:transparent;box-shadow:inset 0 1px 0 rgba(255,255,255,.22)}
-.wh-connect-actions button[data-desktop-connect-confirm]{border:0;color:#fff;background:linear-gradient(135deg,#0a84ff,#64d2ff);box-shadow:0 14px 26px -10px rgba(10,132,255,.45)}
-.wh-connect-actions button:disabled{opacity:.5;cursor:not-allowed}
-.wh-connect-card{display:grid;gap:6px;border-radius:14px;padding:12px 14px;border:1px solid rgba(255,255,255,.26)}
-.wh-connect-card--good{background:rgba(10,132,255,.08)}
-.wh-connect-card--bad{background:rgba(196,61,43,.08)}
-.wh-connect-row{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;color:color-mix(in srgb, CanvasText 72%, transparent)}
-.wh-connect-row strong{font-weight:850;color:CanvasText;text-align:right}
-.wh-connect-ok{font-weight:900}
-.wh-connect-error{margin:0;font-size:13px;font-weight:800;color:#c43d2b}
-.wh-connect-hint{font-size:12px;color:color-mix(in srgb, CanvasText 62%, transparent);word-break:break-all}
-.wh-connect-detail{font-size:11px;color:color-mix(in srgb, CanvasText 52%, transparent);word-break:break-all}
-.wh-connect-detail summary{cursor:pointer;font-weight:850}
-</style><main class="wh-connect-shell"><section ${desktopBootScreenFitAttribute} class="wh-connect-panel" aria-live="polite">${renderWorkHubLiquidGlassLayer("spotlight")}<span class="wh-liquid-glass-rim" aria-hidden="true"></span><div class="wh-liquid-glass-content"><div class="wh-connect-mark" aria-hidden="true"></div><h2>${escapeHtml(copy.title)}</h2><p>${escapeHtml(copy.subtitle)}</p><p class="wh-connect-manual">${escapeHtml(copy.manualOnly)}</p><form class="wh-connect-form" data-desktop-connect-form novalidate><label>${escapeHtml(copy.addressLabel)}<input data-desktop-connect-address name="apiBase" type="url" autocomplete="off" spellcheck="false" value="${escapeHtml(prefill)}" placeholder="http://192.168.1.10:8787" aria-label="${escapeHtml(copy.addressLabel)}" /></label><div class="wh-connect-actions"><button data-desktop-connect-test type="submit">${escapeHtml(copy.testLabel)}</button><button data-desktop-connect-confirm type="button" disabled>${escapeHtml(copy.confirmLabel)}</button></div></form><div data-desktop-connect-status></div>${bootDetail}</div></section></main>`;
+  return renderDesktopBootPanelHtml({
+    shellClass: "wh-connect-shell",
+    panelAttrs: 'aria-live="polite"',
+    extraCss: connectExtraCss,
+    inner:
+      `<h2>${escapeHtml(copy.title)}</h2>` +
+      `<p class="${desktopBootPanel.sub}">${escapeHtml(copy.subtitle)}</p>` +
+      `<p class="${desktopBootPanel.fineprint}">${escapeHtml(copy.manualOnly)}</p>` +
+      `<form class="${desktopBootPanel.form}" data-desktop-connect-form novalidate>` +
+      `<label>${escapeHtml(copy.addressLabel)}<input data-desktop-connect-address name="apiBase" type="url" autocomplete="off" spellcheck="false" value="${escapeHtml(prefill)}" placeholder="http://192.168.1.10:8787" aria-label="${escapeHtml(copy.addressLabel)}" /></label>` +
+      `<div class="${desktopBootPanel.actions}">` +
+      `<button data-desktop-connect-test type="submit" class="${desktopBootPanel.secondary} ds-pressable">${escapeHtml(copy.testLabel)}</button>` +
+      `<button data-desktop-connect-confirm type="button" class="${desktopBootPanel.primary} ds-pressable" disabled>${escapeHtml(copy.confirmLabel)}</button>` +
+      `</div></form>` +
+      `<div data-desktop-connect-status></div>${bootDetail}`
+  });
 }
 
 // ---------------------------------------------------------------------------
