@@ -78,7 +78,18 @@ export type DesktopShellEventName =
   // 同样收不到信号。登录成功后广播这个事件，桌宠（pet-surface.ts）与工作台（workbench/boot.ts）
   // 收到即自行 reload——与 workhub-logged-out 同一条通用 Tauri 事件桥，不另起协议（广播入口
   // browser.ts 的 broadcastDesktopLoggedIn / reloadAfterDesktopLogin）。
-  | "workhub-logged-in";
+  // R25-Q：工作台自己的凭据门（密码/hybrid 模式）登录成功后也会广播这个事件（boot.ts 的
+  // reloadAfterWorkbenchLogin），不再只有主窗能发起。payload 补了 `{ source: "main" | "workbench" }`——
+  // 广播窗口自己已经在走 completeDesktopLoginSuccess 的直接 reload() 路径，主窗/工作台各自新增的
+  // 订阅据 source 跳过"自己刚发起的这次广播"，避免双重 reload 空转（桌宠从不广播这个事件，它的既有
+  // 订阅不需要看 source，收到就 reload）。
+  | "workhub-logged-in"
+  // R25-Q：壳层连接状态"单一真相"（client-tauri/src-tauri/src/sse.rs 的 ShellConnectionChangedPayload，
+  // 解析见 shell-events.ts 的 parseDesktopShellConnectionChangedPayload）。三窗（工作台头部状态词/
+  // 主窗聚焦盒顶部细条/桌宠离线卡）只从这一个事件取状态，不再各自从 "sse-status"（per-subscription
+  // 原始信号）猜一遍——那正是 r24-S5-reverify.md 项 9 记录的"三窗各说各话"的根因。boot 时另有
+  // get_connection_state 命令拉初值，不必等第一次真实迁移。
+  | "workhub-connection-changed";
 
 export type DesktopShellListen = (
   eventName: DesktopShellEventName,

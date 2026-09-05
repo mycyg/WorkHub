@@ -17,6 +17,20 @@ export type DesktopShellSseStatusPayload = {
   message?: string;
 };
 
+// R25-Q：壳层"连接状态单一真相"（client-tauri/src-tauri/src/sse.rs 的 ShellConnectionState /
+// ShellConnectionChangedPayload，事件名 "workhub-connection-changed"）——三窗（工作台头部状态词/
+// 主窗聚焦盒顶部细条/桌宠离线卡）只从这一个事件取状态，不再各自从 DesktopShellSseStatusPayload
+// （per-subscription 的协议粒度原始信号）猜一遍。字段形状必须与 Rust 侧的 serde 输出逐字对齐——
+// 改任一边都要同步看另一边（Rust 单测 sse.rs 的 connection_payload_shape_* 钉死了序列化形状）。
+export type DesktopShellConnectionState = "connected" | "reconnecting" | "offline";
+
+export type DesktopShellConnectionChangedPayload = {
+  state: DesktopShellConnectionState;
+  server_url: string;
+  since_ms: number;
+  attempt: number;
+};
+
 export type DesktopShellWindowControlPlan = {
   label: string;
   action: "show" | "hide" | "toggle" | "focus" | "show_and_focus";
@@ -441,8 +455,40 @@ function booleanField(record: Record<string, unknown> | undefined, key: string) 
   return typeof value === "boolean" ? value : undefined;
 }
 
+function numberField(record: Record<string, unknown> | undefined, key: string) {
+  const value = record?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 function isDesktopShellSseStatus(value: string | undefined): value is DesktopShellSseStatus {
   return value === "connecting" || value === "open" || value === "retrying" || value === "closed";
+}
+
+function isDesktopShellConnectionState(value: string | undefined): value is DesktopShellConnectionState {
+  return value === "connected" || value === "reconnecting" || value === "offline";
+}
+
+// R25-Q：三窗（browser.ts/workbench/boot.ts/pet-surface.ts）boot 时的 get_connection_state 拉取与
+// 运行期的 workhub-connection-changed 广播共用同一个契约，都经这个函数解析——防守式：任一字段缺失/
+// 类型不对就整体判 undefined，调用方保持当前状态不动（不拿半份数据渲一个断言错误的连接横幅）。
+export function parseDesktopShellConnectionChangedPayload(input: unknown): DesktopShellConnectionChangedPayload | undefined {
+  const record = asRecord(input);
+  if (!record) {
+    return undefined;
+  }
+  const state = stringField(record, "state");
+  const serverUrl = stringField(record, "server_url");
+  const sinceMs = numberField(record, "since_ms");
+  const attempt = numberField(record, "attempt");
+  if (!isDesktopShellConnectionState(state) || serverUrl === undefined || sinceMs === undefined || attempt === undefined) {
+    return undefined;
+  }
+  return {
+    state,
+    server_url: serverUrl,
+    since_ms: sinceMs,
+    attempt
+  };
 }
 
 function parseDesktopShellWindowControlPlan(input: unknown): DesktopShellWindowControlPlan | undefined {
