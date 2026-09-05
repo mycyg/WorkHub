@@ -84,6 +84,161 @@ export type SpotlightCopyKey = keyof typeof zh;
 // 第一参数收 `boolean` 是过渡口子：这一层的渲染函数历史上大量以 `zh: boolean` 传语言，
 // 把这些签名一起改成 `locale` 是另一件事，不该和「文案搬家」混在一批里。
 export function spotlightT(locale: WorkHubLocale | boolean, key: SpotlightCopyKey): string {
-  const isZh = typeof locale === "boolean" ? locale : normalizeWorkHubLocale(locale) === "zh-CN";
-  return (isZh ? zh : en)[key];
+  return (isZhLocale(locale) ? zh : en)[key];
+}
+
+function isZhLocale(locale: WorkHubLocale | boolean): boolean {
+  return typeof locale === "boolean" ? locale : normalizeWorkHubLocale(locale) === "zh-CN";
+}
+
+// —— 枚举 → 标签的对照表 ——
+// 原本以 `["中文", "English"]` 元组内联在 labels.ts 里。元组读不出「哪个是中文」，也没法让编译器
+// 盯住两侧对称，所以搬进来时拆成 zh/en 两张表：中文表是 key 集事实源，英文表 satisfies 对齐——
+// 少一个枚举取值或多一个都编译不过。文案逐字未改。
+const zhEnumLabels = {
+  agentRunStatus: {
+    queued: "排队中",
+    running: "进行中",
+    succeeded: "已完成",
+    failed: "失败",
+    escalated: "已升级",
+    cancelled: "已取消"
+  },
+  agentStepPhase: {
+    think: "思考",
+    tool_call: "调用工具",
+    tool_result: "工具结果",
+    final: "最终整理"
+  },
+  meetingInsightKind: {
+    new_requirement: "新需求",
+    requirement_change: "需求变更",
+    normal_note: "普通记录"
+  },
+  meetingInsightStatus: {
+    pending: "待确认",
+    confirmed: "已确认",
+    dismissed: "已忽略"
+  },
+  meetingRecordStatus: {
+    transcribed: "转写已导入",
+    processing: "处理中",
+    ready: "已就绪",
+    failed: "失败"
+  },
+  riskHint: {
+    low: "低风险",
+    medium: "中风险",
+    high: "高风险"
+  },
+  snapshotKind: {
+    pre_step: "执行前快照",
+    merge: "合并快照",
+    manual: "手动快照",
+    base: "基线快照"
+  },
+  workItemPriority: {
+    low: "低",
+    normal: "普通",
+    high: "高",
+    urgent: "紧急"
+  },
+  workItemStatus: {
+    intake: "接收中",
+    ai_clarifying: "澄清中",
+    spec_ready: "规格已就绪",
+    ai_working: "AI 正在处理",
+    in_progress: "进行中",
+    in_review: "待审阅",
+    delivery_ready: "待交付",
+    escalated: "已升级",
+    pm_mode: "人工处理",
+    merged: "已合并",
+    accepted: "已采纳",
+    done: "已完成",
+    cancelled: "已取消"
+  }
+} as const;
+
+const enEnumLabels = {
+  agentRunStatus: {
+    queued: "Queued",
+    running: "In progress",
+    succeeded: "Succeeded",
+    failed: "Failed",
+    escalated: "Escalated",
+    cancelled: "Cancelled"
+  },
+  agentStepPhase: {
+    think: "Thinking",
+    tool_call: "Tool call",
+    tool_result: "Tool result",
+    final: "Final"
+  },
+  meetingInsightKind: {
+    new_requirement: "New requirement",
+    requirement_change: "Requirement change",
+    normal_note: "Note"
+  },
+  meetingInsightStatus: {
+    pending: "Pending",
+    confirmed: "Confirmed",
+    dismissed: "Dismissed"
+  },
+  meetingRecordStatus: {
+    transcribed: "Transcript imported",
+    processing: "Processing",
+    ready: "Ready",
+    failed: "Failed"
+  },
+  riskHint: {
+    low: "Low risk",
+    medium: "Medium risk",
+    high: "High risk"
+  },
+  snapshotKind: {
+    pre_step: "Pre-step snapshot",
+    merge: "Merge snapshot",
+    manual: "Manual snapshot",
+    base: "Base snapshot"
+  },
+  workItemPriority: {
+    low: "Low",
+    normal: "Normal",
+    high: "High",
+    urgent: "Urgent"
+  },
+  workItemStatus: {
+    intake: "Intake",
+    ai_clarifying: "Clarifying",
+    spec_ready: "Spec ready",
+    ai_working: "AI working",
+    in_progress: "In progress",
+    in_review: "In review",
+    delivery_ready: "Delivery ready",
+    escalated: "Escalated",
+    pm_mode: "PM mode",
+    merged: "Merged",
+    accepted: "Accepted",
+    done: "Done",
+    cancelled: "Cancelled"
+  }
+} as const satisfies {
+  [Group in keyof typeof zhEnumLabels]: Record<keyof (typeof zhEnumLabels)[Group], string>;
+};
+
+export type SpotlightEnumGroup = keyof typeof zhEnumLabels;
+
+/**
+ * 查一个枚举取值的本地化标签。
+ * @returns 表里没有这个取值时返回 undefined——兜底怎么说由调用方决定（有的原样渲染裸值，
+ *   有的换一句人话），这里不替它决定。
+ */
+export function spotlightEnumLabel(
+  group: SpotlightEnumGroup,
+  value: string,
+  locale: WorkHubLocale | boolean
+): string | undefined {
+  const table: Record<string, string | undefined> = (isZhLocale(locale) ? zhEnumLabels : enEnumLabels)[group];
+  return table[value];
 }
