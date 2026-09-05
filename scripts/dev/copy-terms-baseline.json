@@ -26,19 +26,8 @@
     "apps/api/src/workers/agent-runner.ts": {
       "租约|lease | AI 执行租约已恢复，正在重新排队。": 1
     },
-    "apps/desktop-webview/src/command-palette.ts": {
-      "沉淀 | 搜索沉淀的知识与证据": 1
-    },
     "apps/desktop-webview/src/cuu-qa-scenarios.ts": {
       "option-first|file-only | Cuu 需要你批准这次 file-only 变更。": 1
-    },
-    "apps/desktop-webview/src/spotlight/views/dashboards.ts": {
-      "沉淀 | 激活 · AI 沉淀 · 精修": 1
-    },
-    "apps/desktop-webview/src/spotlight/views/locales.ts": {
-      "沉淀 | 搜索沉淀的知识": 1,
-      "沉淀 | 新建任务后，证据会沉淀在项目里": 1,
-      "蒸馏 | AI 蒸馏生成": 1
     },
     "packages/agent/src/evaluation/confidence.ts": {
       "AgentRun|agent_run(?!_) | 当前 AgentRun 未提供自评": 1

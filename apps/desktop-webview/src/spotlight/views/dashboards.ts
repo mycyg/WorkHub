@@ -112,8 +112,8 @@ function taskPlanStatusLabel(status: AgentArmyDashboardPlanVM["status"], zh: boo
 function agentArmyCappedCopy(hiddenCount: number, zh: boolean): string {
   if (hiddenCount > 0) {
     return zh
-      ? `还有 ${hiddenCount} 个小队未在这里显示，打开工作项查看详情。`
-      : `+${hiddenCount} more squads not shown here — open work items for detail.`;
+      ? `还有 ${hiddenCount} 个小队没有显示在这里，打开任务查看详情。`
+      : `${hiddenCount} more squads aren't shown here — open the task for detail.`;
   }
   return spotlightViewsT(zh, "moreSquadsAreNotShownHere");
 }
@@ -349,7 +349,7 @@ export function projectHomeDetailHtml(vm: ProjectHomePageVM, zh: boolean): strin
   // 当前 VM 无法区分，文案保持中性。
   const hidden = totalOpen - vm.open_work_items.length;
   const moreNote = hidden > 0
-    ? `<p class="wh-spot-row-sub" style="text-align:center">${escapeHtml(zh ? `还有 ${hidden} 条进行中工作未在此处显示（可能是列表截断或权限过滤）。` : `+${hidden} more open items are not shown here (list cap or visibility filter).`)}</p>`
+    ? `<p class="wh-spot-row-sub" style="text-align:center">${escapeHtml(zh ? `还有 ${hidden} 条进行中的工作没有显示在这里。` : `${hidden} more open items aren't shown here.`)}</p>`
     : "";
   // 网盘同步是核心：项目主页直接呈现最近文件（点任意文件/「打开网盘」进完整文件树）。
   const fileRows = vm.drive.recent_files.length
@@ -834,8 +834,8 @@ export function createCalendarView(): SpotlightCapabilityView {
       const skillsHtml = skills
         ? `<div class="wh-spot-list" data-team-skills data-team-skills-active="${escapeHtml(String(skills.totals.active))}">
             <p class="wh-spot-card-desc"><strong>${escapeHtml(spotlightViewsT(zh, "teamSkills"))}</strong> · ${escapeHtml(zh
-              ? `激活 ${skills.totals.active} · AI 沉淀 ${skills.totals.ai_authored} · 精修 ${skills.totals.refined}`
-              : `${skills.totals.active} active · ${skills.totals.ai_authored} AI-authored · ${skills.totals.refined} refined`)}</p>
+              ? `生效 ${skills.totals.active} · AI 写的 ${skills.totals.ai_authored} · 人工精修 ${skills.totals.refined}`
+              : `${skills.totals.active} active · ${skills.totals.ai_authored} written by AI · ${skills.totals.refined} refined`)}</p>
             ${skills.skills.slice(0, 5).map((skill) => `<div class="wh-spot-row" data-team-skill="${escapeHtml(skill.skill_key)}">
               <div class="wh-spot-row-main">
                 <div class="wh-spot-row-title">${escapeHtml(skill.name)} · v${escapeHtml(String(skill.version))}</div>

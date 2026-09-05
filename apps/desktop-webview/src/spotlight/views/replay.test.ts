@@ -229,7 +229,7 @@ test("F-06 snapshotsSectionHtml renders nothing when there are no snapshots", ()
 
 test("F-06 snapshotsSectionHtml gives an unreverted snapshot a real undo button carrying the binder's data-* contract", () => {
   const html = snapshotsSectionHtml(replayVm([snapshot()]), "run-7", true, true);
-  assert.match(html, /改动快照/u);
+  assert.match(html, /改动还原点/u);
   assert.match(html, /data-replay-revert-snapshot="94000000-0000-4000-8000-000000000001"/u);
   assert.match(html, /data-replay-revert-run="run-7"/u);
   assert.match(html, /data-revert-label-idle="撤销此次改动"/u);
@@ -241,7 +241,7 @@ test("F-06 snapshotsSectionHtml gives an unreverted snapshot a real undo button 
 
 test("F-06 snapshotsSectionHtml renders en-US copy", () => {
   const html = snapshotsSectionHtml(replayVm([snapshot()]), "run-7", false, true);
-  assert.match(html, /Change snapshots/u);
+  assert.match(html, /Restore points/u);
   assert.match(html, />Undo these changes</u);
 });
 
@@ -359,7 +359,7 @@ test("F-06 opening a run with a snapshot renders a real undo button wired throug
   await tick();
   await tick();
 
-  assert.match(body.innerHTML, /改动快照/u);
+  assert.match(body.innerHTML, /改动还原点/u);
   const buttons = body.querySelectorAll("[data-replay-revert-snapshot]");
   assert.equal(buttons.length, 1, "the rendered snapshot must carry exactly one real undo button");
   const button = buttons[0]!;
@@ -412,7 +412,7 @@ test("F-06 a snapshot renders as unactionable text (not a dead button) when the 
   await tick();
   await tick();
 
-  assert.match(body.innerHTML, /改动快照/u);
+  assert.match(body.innerHTML, /改动还原点/u);
   assert.match(body.innerHTML, /本机暂不支持撤销/u);
   assert.equal(body.querySelectorAll("[data-replay-revert-snapshot]").length, 0);
 

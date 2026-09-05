@@ -274,7 +274,9 @@ test("M-06: settings explains an unconfigured AI assistant with an actionable li
   await tick();
 
   assert.match(notConfigured.innerHTML, /data-spot-ai-not-configured="true"/u);
-  assert.match(notConfigured.innerHTML, /LLM_API_KEY/u, "names the concrete env var an admin needs to set");
+  // 部署细节（环境变量名 / .env 路径）属于部署文档，旁边的「查看部署说明」按钮才是它的位置。
+  assert.doesNotMatch(notConfigured.innerHTML, /LLM_API_KEY|\.env/u, "deployment details belong in the docs, not in product copy");
+  assert.match(notConfigured.innerHTML, /请让管理员在服务器上配置模型密钥/u, "tells the user who can fix it");
   assert.match(notConfigured.innerHTML, /data-set-ai-deploy-docs="true"/u, "gives a link to the deployment docs");
 
   const configured = new FakeBody();
@@ -1362,11 +1364,11 @@ test("permissionPolicyFormHtml marks the selected scope-kind/effect chips, and o
   const askHtml = permissionPolicyFormHtml(policyFormState({ effect: "ask" }), true);
   assert.match(askHtml, /data-set-policy-scope-kind="workspace" data-sel="true"/u);
   assert.match(askHtml, /data-set-policy-effect="ask" data-sel="true"/u);
-  assert.doesNotMatch(askHtml, /跨范围强制熔断/u);
+  assert.doesNotMatch(askHtml, /一票否决/u);
 
   const denyHtml = permissionPolicyFormHtml(policyFormState({ effect: "deny" }), true);
   assert.match(denyHtml, /data-set-policy-effect="deny" data-sel="true"/u);
-  assert.match(denyHtml, /跨范围强制熔断/u, "the OVERRIDE_DENY_PRIORITY warning must only show for a deny rule");
+  assert.match(denyHtml, /一票否决/u, "the OVERRIDE_DENY_PRIORITY warning must only show for a deny rule");
 });
 
 test("permissionPolicyFormHtml disables inputs and shows a submitting label while busy, and surfaces errorText", () => {
@@ -1492,7 +1494,7 @@ test("R23 F-02: submitting the new-policy form with empty fields shows a validat
     await tick();
 
     assert.equal(createCalls, 0, "blank scope_id/action_pattern must never reach the server");
-    assert.match(body.innerHTML, /请填写范围 ID 与动作模式/u);
+    assert.match(body.innerHTML, /请填写组织 \/ 工作区 \/ 角色 \/ 会话的标识与动作模式/u);
   });
 });
 
@@ -2029,14 +2031,14 @@ test("pluginsSectionHtml turns the compatibility report into plain language, not
     true
   );
   assert.match(html, /它对着另一个版本的插件工具库发布/u);
-  assert.match(html, /它要 \^0\.2\.0，我们捆的是 0\.1\.0-rc\.8/u);
+  assert.match(html, /它需要 \^0\.2\.0，当前自带的是 0\.1\.0-rc\.8/u);
   // pass 的检查不占一行——没问题的事不值得说（manifest 那条是 pass，它的诊断句不该出现）。
   assert.doesNotMatch(html, /这个目录里没有可读的 package\.json/u);
 });
 
 test("pluginsSectionHtml says how many plugin directories still come from the server's environment", () => {
   const html = pluginsSectionHtml(pluginsState({ bootstrapPathCount: 2 }), true);
-  assert.match(html, /另有 2 个插件目录来自服务端的环境变量/u);
+  assert.match(html, /另有 2 个插件由服务器直接加载/u);
 });
 
 test("pluginsSectionHtml degrades to an explanation (not a dead button) against a server without the endpoints", () => {

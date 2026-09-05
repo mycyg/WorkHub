@@ -100,7 +100,7 @@ test("desktop proposal detail makes navigation, merge consequence, and skipped c
   }), true);
 
   assert.match(html, /返回待审改动/u);
-  assert.match(html, /确认通过后再合入交付物，可用快照回滚/u);
+  assert.match(html, /确认通过后再合入交付物，随时能还原到改之前/u);
   assert.match(html, /确认通过/u);
   assert.doesNotMatch(html, /采纳并合并/u);
   assert.match(html, /打回修改/u);

@@ -20,6 +20,7 @@ import { commandRegistry, type CommandId, type CommandMatch } from "../command-p
 import { renderWorkHubLiquidGlassLayer, scheduleWorkHubLiquidGlassFilterRebuild } from "../liquid-glass-filter.js";
 import { noAiProviderConfiguredText } from "../ai-provider-banner-copy.js";
 import { desktopConnectionBannerText } from "../connection-banner-copy.js";
+import { withErrorDetail } from "../load-state-copy.js";
 import { resolveDesktopTauriInvoke } from "../desktop-window-controls.js";
 import { applyGlassAlphaOverride, readGlassAlphaSource } from "../desktop-glass-alpha.js";
 import type { DesktopShellConnectionChangedPayload } from "../shell-events.js";
@@ -1062,9 +1063,10 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       resetLauncher();
     } catch (error) {
       firstRunState = {
+        // S-4：产品文案在前，原始报错只作次级信息——旧写法真出错时把服务端的裸英文串
+        // 顶替掉了本地化文案，用户读到的是一句看不懂的技术话。
         kind: "error",
-        message:
-          error instanceof Error ? error.message : spotlightT(locale, "couldnTCreateTheProjectRetry")
+        message: withErrorDetail(locale, spotlightT(locale, "couldnTCreateTheProjectRetry"), error)
       };
       renderLauncherBody();
     }

@@ -198,13 +198,13 @@ test("renderArmyPanelHtml renders the scheduled-tasks and proactivity blocks fro
     }
   });
   assert.match(html, /定时任务/u);
-  assert.match(html, /审批超时巡检/u);
-  assert.match(html, /主动关怀扫描/u);
-  assert.match(html, /还没跑过/u); // care-scan last_tick_at null
-  assert.match(html, /主动性动态/u);
+  assert.match(html, /审批超时提醒/u);
   assert.match(html, /主动关怀/u);
-  assert.match(html, /已送达/u);
-  assert.match(html, /已克制/u); // suppressed
+  assert.match(html, /还没跑过/u); // care-scan last_tick_at null
+  assert.match(html, /Cuu 主动做的事/u);
+  assert.match(html, /主动关怀/u);
+  assert.match(html, /已发提醒/u);
+  assert.match(html, /没发提醒/u); // suppressed
 });
 
 // M-10（R24 S3 走查）：pulse-scheduler.ts 后来注册的 clarification-chase/proactive-intent-recovery
@@ -227,7 +227,7 @@ test("renderArmyPanelHtml translates every registered pulse task name, including
     }
   });
   assert.match(html, /澄清待办提醒/u);
-  assert.match(html, /主动提醒补投/u);
+  assert.match(html, /主动提醒重发/u);
   assert.doesNotMatch(html, /clarification-chase/u, "the raw scheduler id must not leak through untranslated");
   assert.doesNotMatch(html, /proactive-intent-recovery/u, "the raw scheduler id must not leak through untranslated");
 });
@@ -242,8 +242,8 @@ test("renderArmyPanelHtml background section honestly reports a disabled schedul
       proactive: { items: [], capped: false }
     }
   });
-  assert.match(html, /后台调度器当前未启用/u);
-  assert.match(html, /最近没有主动性动态/u);
+  assert.match(html, /这台服务器上的定时提醒没有开启/u);
+  assert.match(html, /Cuu 最近没有主动做什么/u);
 });
 
 // R14 批 APPROVE-CHAT：输出行从「<details> 折叠 + 深链死文本（跳转后续批次开放）」翻成真接线的可点按钮——
@@ -353,7 +353,7 @@ test("renderArmyPanelHtml shows an empty note when there are no runs or outputs,
   };
   const html = renderArmyPanelHtml(state, "zh-CN", noMembers);
   assert.match(html, /这个会话还没有输出/u);
-  assert.match(html, /这里还没有军团在跑/u);
+  assert.match(html, /这里还没有小队干过活/u);
 });
 
 test("renderArmyPanelHtml renders a load-more control exactly when the runs page is capped (contract invariant)", () => {

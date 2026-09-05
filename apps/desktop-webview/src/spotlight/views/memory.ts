@@ -68,7 +68,7 @@ export function teamSkillStatusLabel(status: TeamSkillStatus, zh: boolean): stri
   const table: Record<TeamSkillStatus, [string, string]> = {
     draft: ["草稿", "Draft"],
     active: ["生效中", "Active"],
-    deprecated: ["已停用", "Deprecated"]
+    deprecated: ["已停用", "Retired"]
   };
   const entry = table[status];
   return zh ? entry[0] : entry[1];
@@ -139,7 +139,10 @@ const SKILL_ERROR_MESSAGES: Record<string, [string, string]> = {
     "内容包含可能干扰 AI 的指令式措辞，请改写后再保存。",
     "This looks like it's trying to instruct the AI — please rewrite it."
   ],
-  team_skill_edit_low_confidence: ["没有通过置信度校验。", "This didn't pass the confidence check."]
+  team_skill_edit_low_confidence: [
+    "Cuu 对这条改动还没有足够把握，补一点依据再保存。",
+    "Cuu isn't confident enough about this edit yet — add more detail and save again."
+  ]
 };
 
 // 服务端错误信息永远是中文硬编码字面量（无 i18n 分支），en-US 桌面客户端不能直接透传给用户——按

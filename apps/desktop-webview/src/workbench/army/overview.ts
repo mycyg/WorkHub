@@ -15,6 +15,7 @@ import { fetchArmyOverview } from "./api.js";
 import { armyDataAgeLabel, mergeArmyRunPages, renderArmyOverviewHtml, type ArmyOverviewViewState } from "./render.js";
 
 import { armyT } from "./locales.js";
+import { withErrorDetail } from "../../load-state-copy.js";
 
 type Locale = "zh-CN" | "en-US";
 
@@ -33,11 +34,9 @@ export type ArmyOverviewViewHandle = {
   refresh: () => void;
 };
 
+// S-4：产品文案在前，原始报错只作次级信息（旧写法真出错时把服务端裸串顶替了产品句子）。
 function errorMessage(error: unknown, locale: Locale): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return armyT(locale, "couldnTLoadTryAgain");
+  return withErrorDetail(locale, armyT(locale, "couldnTLoadTheArmyOverview"), error);
 }
 
 export function mountArmyOverviewView(

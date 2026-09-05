@@ -58,7 +58,8 @@ export function searchScopeLabel(scope: SearchScope, zh: boolean): string {
     case "meetings":
       return spotlightViewsT(zh, "meetings");
     default:
-      return scope;
+      // 契约新增了检索域而这里忘了配词时，宁可显示「其它」也不把 snake_case 的域名渲染给用户。
+      return spotlightViewsT(zh, "other");
   }
 }
 

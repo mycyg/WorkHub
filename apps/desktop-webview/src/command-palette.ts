@@ -76,15 +76,15 @@ export const commandRegistry: DesktopCommand[] = [
   },
   {
     id: "proposals",
-    label: { "zh-CN": "看改动 / diff", en: "Review changes" },
-    hint: { "zh-CN": "AI 改动的 diff、审阅与合并", en: "Diff, review and merge" },
+    label: { "zh-CN": "看改动", en: "Review changes" },
+    hint: { "zh-CN": "逐行看 AI 改了什么，再决定合不合", en: "See what changed line by line, then merge" },
     keywords: ["改动", "提案", "diff", "proposal", "pr", "pull request", "审阅", "合并", "merge"],
     icon: ic('<circle cx="7" cy="6" r="2.2"/><circle cx="7" cy="18" r="2.2"/><circle cx="17" cy="12" r="2.2"/><path d="M7 8v8M9 18h4a2 2 0 0 0 2-2v-2"/>'),
     action: { kind: "open-window", target: "proposals" }
   },
   {
     id: "workitem",
-    label: { "zh-CN": "工作项 / 任务", en: "Work items" },
+    label: { "zh-CN": "任务", en: "Tasks" },
     hint: { "zh-CN": "进行中的任务与交付物", en: "Tasks and deliverables" },
     keywords: ["工作项", "任务", "事项", "work item", "issue", "ticket", "task"],
     icon: ic('<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/>'),
@@ -92,7 +92,7 @@ export const commandRegistry: DesktopCommand[] = [
   },
   {
     id: "agents",
-    label: { "zh-CN": "Cuu 的小队", en: "Cuu's squad" },
+    label: { "zh-CN": "Cuu 的小队", en: "Cuu's squads" },
     hint: { "zh-CN": "分工方案、子任务和卡点", en: "Plans, subtasks, blockers" },
     keywords: ["军团", "小队", "分工", "计划", "agents", "agent army", "army", "squad", "task plan"],
     icon: ic('<circle cx="7" cy="8" r="2.5"/><circle cx="17" cy="8" r="2.5"/><circle cx="12" cy="16" r="2.5"/><path d="M9 9.5l2 4M15 9.5l-2 4M9.5 16h5"/>'),
@@ -117,7 +117,7 @@ export const commandRegistry: DesktopCommand[] = [
   {
     id: "replay",
     label: { "zh-CN": "回放", en: "Replay" },
-    hint: { "zh-CN": "AI 运行的时间线与快照", en: "Run timeline and snapshots" },
+    hint: { "zh-CN": "AI 每一步做了什么，可回退", en: "Every step the AI took, with rollback points" },
     keywords: ["回放", "记录", "历史", "replay", "history", "trace", "timeline"],
     icon: ic('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
     action: { kind: "open-window", target: "replay" }
@@ -127,7 +127,7 @@ export const commandRegistry: DesktopCommand[] = [
     // 检索）区分：knowledge=知识/证据，search=全局跨源，文案上明确「全部」。
     id: "search",
     label: { "zh-CN": "搜索全部", en: "Search all" },
-    hint: { "zh-CN": "跨会话·网盘·工单·会议", en: "Across chat, drive, tasks, meetings" },
+    hint: { "zh-CN": "跨会话·网盘·任务·会议", en: "Across chat, drive, tasks, meetings" },
     keywords: ["搜索", "查找", "全局", "search", "find", "global"],
     icon: ic('<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.3-4.3"/>'),
     action: { kind: "open-window", target: "search" }
@@ -135,7 +135,7 @@ export const commandRegistry: DesktopCommand[] = [
   {
     id: "knowledge",
     label: { "zh-CN": "知识检索", en: "Knowledge" },
-    hint: { "zh-CN": "搜索沉淀的知识与证据", en: "Search knowledge and evidence" },
+    hint: { "zh-CN": "搜索攒下的知识与证据", en: "Search knowledge and evidence" },
     keywords: ["知识", "检索", "搜索", "knowledge", "search", "wiki", "docs"],
     icon: ic('<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.3-4.3"/>'),
     action: { kind: "open-window", target: "knowledge" }
@@ -196,7 +196,7 @@ export const commandRegistry: DesktopCommand[] = [
   {
     id: "workbench",
     label: { "zh-CN": "打开工作台", en: "Open workbench" },
-    hint: { "zh-CN": "项目群聊、网盘、军团在一个窗口里", en: "Team chat, drive, and the army in one window" },
+    hint: { "zh-CN": "项目群聊、网盘、小队在一个窗口里", en: "Team chat, drive, and squads in one window" },
     keywords: ["工作台", "群聊", "workbench", "project window", "team chat"],
     icon: ic('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/>'),
     action: { kind: "open-window", target: "workbench" }

@@ -11,7 +11,7 @@ import { normalizeWorkHubLocale, type WorkHubLocale } from "@workhub/contracts";
 
 const zh = {
   addMembersLeaveEmptyForJust: "拉人进来（不选就只有你和 Cuu）",
-  armyOverview: "军团总览",
+  armyOverview: "小队总览",
   board: "任务看板",
   cancel: "取消",
   chatJustWithCuu: "和 Cuu 单独聊",
@@ -43,7 +43,7 @@ const zh = {
   drive: "网盘",
   everyProjectGetsItsOwnTeam: "每个项目都有自己的群聊、网盘和 Cuu——挑左边一个项目，或建一个新的。",
   files: "文件",
-  hasOpenWork: "有进行中工作项",
+  hasOpenWork: "有进行中任务",
   invite: "邀请",
   inviteeEmail: "被邀请人邮箱",
   justMeAndCuu: "和 Cuu 单独聊",
@@ -95,7 +95,7 @@ const zh = {
 
 const en = {
   addMembersLeaveEmptyForJust: "Add members (leave empty for just you and Cuu)",
-  armyOverview: "Army overview",
+  armyOverview: "Squad overview",
   board: "Board",
   cancel: "Cancel",
   chatJustWithCuu: "Chat just with Cuu",

@@ -402,7 +402,7 @@ test("the project-settings gear is marked selected while the project-settings ta
 // 见下面新测试）——rail-foot 现在只剩「我」这一行，旧的"即将上线"摘要条已退役（用户拍板 4）。
 test("renderRailFootHtml no longer carries the retired army-overview summary strip, only the viewer label", () => {
   const withViewer = renderRailFootHtml(true, "阿曼 · 已连接");
-  assert.doesNotMatch(withViewer, /军团总览/u);
+  assert.doesNotMatch(withViewer, /小队总览/u);
   assert.doesNotMatch(withViewer, /wh-wb-army-sum/u);
   assert.match(withViewer, /阿曼 · 已连接/u);
   const withoutViewer = renderRailFootHtml(true, undefined);
@@ -411,7 +411,7 @@ test("renderRailFootHtml no longer carries the retired army-overview summary str
 
 test("renderArmyOverviewNavHtml is a real, clickable top-level entry point (peer to the project list)", () => {
   const html = renderArmyOverviewNavHtml(true, false);
-  assert.match(html, /<button[^>]*data-wb-open-army-overview[^>]*>[^]*军团总览/u);
+  assert.match(html, /<button[^>]*data-wb-open-army-overview[^>]*>[^]*小队总览/u);
 });
 
 test("renderArmyOverviewNavHtml marks itself active only when the caller says so", () => {

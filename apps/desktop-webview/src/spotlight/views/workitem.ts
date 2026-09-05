@@ -41,16 +41,16 @@ function agentTeamTitle(team: WorkItemAgentTeamVM, zh: boolean) {
   const ratio = `${team.completed_count}/${team.total_count}`;
   if (team.status === "done") {
     return team.completed_count < team.total_count
-      ? (zh ? `军团部分完成 ${ratio}` : `Agent team partially done ${ratio}`)
-      : (zh ? `军团已完成 ${ratio}` : `Agent team completed ${ratio}`);
+      ? (zh ? `小队部分完成 ${ratio}` : `Squad partially done ${ratio}`)
+      : (zh ? `小队已完成 ${ratio}` : `Squad completed ${ratio}`);
   }
   if (team.status === "paused") {
-    return zh ? `军团已暂停 ${ratio}` : `Agent team paused ${ratio}`;
+    return zh ? `小队已暂停 ${ratio}` : `Squad paused ${ratio}`;
   }
   if (team.status === "approved") {
-    return zh ? `军团待出发 ${ratio}` : `Agent team ready ${ratio}`;
+    return zh ? `小队待出发 ${ratio}` : `Squad ready ${ratio}`;
   }
-  return zh ? `军团进行中 ${ratio}` : `Agent team in progress ${ratio}`;
+  return zh ? `小队进行中 ${ratio}` : `Squad in progress ${ratio}`;
 }
 
 function agentTeamItemStatusLabel(status: WorkItemAgentTeamVM["items"][number]["status"], zh: boolean) {
@@ -112,7 +112,7 @@ export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
     !vm.task_plan &&
     !vm.agent_team &&
     (vm.agent_trace_preview?.length ?? 0) === 0;
-  // #11：从网盘评论/会议洞察生成的工作项带 create_proposal_draft 动作 → 桌面也给「生成变更草稿」入口。
+  // #11：从网盘评论/会议洞察生成的任务带 create_proposal_draft 动作 → 桌面也给「起草变更」入口。
   const createDraft = vm.actions.create_proposal_draft
     ? `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-wi-create-proposal="${escapeHtml(w.id)}">${spotlightViewsT(zh, "createProposalDraft")}</button>`
     : "";
