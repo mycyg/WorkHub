@@ -182,10 +182,7 @@ enum StreamPumpDecision {
     Superseded,
 }
 
-fn decide_stream_pump(
-    open: StreamGenerations,
-    current: StreamGenerations,
-) -> StreamPumpDecision {
+fn decide_stream_pump(open: StreamGenerations, current: StreamGenerations) -> StreamPumpDecision {
     if current == open {
         StreamPumpDecision::Continue
     } else {

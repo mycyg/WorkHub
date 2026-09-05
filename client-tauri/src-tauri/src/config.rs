@@ -344,7 +344,10 @@ mod tests {
 
     #[test]
     fn shell_server_url_rejects_everything_that_is_not_a_bare_http_base() {
-        assert_eq!(normalize_shell_server_url("   "), Err(ShellServerUrlError::Empty));
+        assert_eq!(
+            normalize_shell_server_url("   "),
+            Err(ShellServerUrlError::Empty)
+        );
         // 没有 scheme 的裸主机端口：JS 的 new URL 同样抛（"127.0.0.1" 不是合法 scheme）。
         assert_eq!(
             normalize_shell_server_url("127.0.0.1:8787"),
@@ -356,7 +359,9 @@ mod tests {
         );
         assert_eq!(
             normalize_shell_server_url("javascript:alert(1)"),
-            Err(ShellServerUrlError::UnsupportedScheme("javascript".to_string()))
+            Err(ShellServerUrlError::UnsupportedScheme(
+                "javascript".to_string()
+            ))
         );
         assert_eq!(
             normalize_shell_server_url("file:///etc/passwd"),
@@ -416,8 +421,10 @@ mod tests {
     // 重读：写出来的文件必须能被启动路径原样读回（落盘 → 重读闭环）。
     #[test]
     fn the_written_shell_config_reloads_into_the_new_server_url() {
-        let raw = r#"{"server_url":"http://127.0.0.1:8787","client_token":"stale","device_name":"desk"}"#;
-        let next = shell_config_json_with_server_url(Some(raw), "http://192.168.1.10:8787").unwrap();
+        let raw =
+            r#"{"server_url":"http://127.0.0.1:8787","client_token":"stale","device_name":"desk"}"#;
+        let next =
+            shell_config_json_with_server_url(Some(raw), "http://192.168.1.10:8787").unwrap();
 
         let reloaded = load_shell_config_from_json_and_env(Some(&next), |_| None).unwrap();
 
@@ -433,7 +440,10 @@ mod tests {
         let reloaded = load_shell_config_from_json_and_env(Some(&next), |_| None).unwrap();
 
         assert_eq!(reloaded.server_url, "https://workhub.example.com");
-        assert_eq!(reloaded.device_name, WorkHubShellConfig::lan_default().device_name);
+        assert_eq!(
+            reloaded.device_name,
+            WorkHubShellConfig::lan_default().device_name
+        );
     }
 
     #[test]

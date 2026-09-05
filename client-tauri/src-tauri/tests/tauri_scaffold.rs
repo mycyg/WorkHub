@@ -216,6 +216,88 @@ fn macos_info_plist_overrides_legacy_carbon_requirement() {
     assert!(!raw.contains("<true/>"));
 }
 
+// R24 S5 核实（S1 侦察报告 E-13「macOS 深链 scheme 注册未经真机核实」）：**不需要修，配置已经是官方形态**。
+//
+// 证据链，三条都亲自验过：
+//  1. 真实产物。本仓 `client-tauri/src-tauri/target/release/bundle/macos/WorkHub.app/Contents/Info.plist`
+//     里确实有 `CFBundleURLTypes → [{ CFBundleURLSchemes: ["workhub", "yqgl"], CFBundleTypeRole: Editor }]`，
+//     是打包器从 `plugins.deep-link.desktop.schemes` 生成的；同一份 plist 里还留着手写文件那条
+//     `LSRequiresCarbon`——说明 `bundle.macOS.infoPlist` 是**合并**进生成结果，不是替换它。
+//  2. 插件源码。`tauri-plugin-deep-link` 的 `DesktopProtocol` 字段带着 `// Used in tauri-bundler` 注释，
+//     `tauri_utils::config::DeepLinkProtocol` 的 `name`/`role` 也直说映射到 `CFBundleTypeName`/`CFBundleTypeRole`
+//     ——desktop schemes 的 macOS 归宿就是打包器。
+//  3. `register_all()` 的 Win/Linux cfg 守卫同样是对的：插件的 `register()` 在 macOS 上明确返回
+//     `UnsupportedPlatform`（LaunchServices 只从 app bundle 读注册信息，不接受运行时注册）。
+//
+// 所以这里钉死的是「别去手写那份 CFBundleURLTypes」：合并时手写文件的键会**盖掉**打包器生成的那份，
+// 从此 scheme 得靠人肉两处同步，反而是引入缺陷。
+#[test]
+fn macos_deep_link_schemes_are_generated_by_the_bundler_not_hand_written_into_info_plist() {
+    let config = read_json("tauri.conf.json");
+    let schemes = config["plugins"]["deep-link"]["desktop"]["schemes"]
+        .as_array()
+        .expect(
+            "deep-link desktop schemes must stay declared for the bundler to emit CFBundleURLTypes",
+        )
+        .iter()
+        .map(|value| value.as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        schemes,
+        vec!["workhub", "yqgl"],
+        "macOS registers deep links from the bundled Info.plist, which the bundler generates from this list"
+    );
+
+    let plist_path = manifest_dir().join("Info.plist");
+    let raw = fs::read_to_string(&plist_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", plist_path.display()));
+    assert!(
+        !raw.contains("CFBundleURLTypes"),
+        "the hand-written Info.plist is merged over the generated one, so a hand-written \
+         CFBundleURLTypes would shadow the bundler's and drift from plugins.deep-link.desktop.schemes"
+    );
+
+    let main_rs_path = manifest_dir().join("src/main.rs");
+    let main_rs = fs::read_to_string(&main_rs_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", main_rs_path.display()));
+    assert!(
+        main_rs.contains("#[cfg(any(windows, target_os = \"linux\"))]"),
+        "register_all() must stay gated off macOS, where the plugin returns UnsupportedPlatform"
+    );
+}
+
+// S5：换服务器的两条命令必须留在 invoke handler 里。它们是壳层地址的唯一写/读入口——掉出清单等于
+// 托盘角标、系统通知、Cuu 推送重新钉死在启动时那个地址上（S1 报告 E-06）。
+//
+// 这里**不该**有对应的 capabilities/*.json 条目：Tauri v2 的 ACL 只管插件命令，应用自己 `generate_handler!`
+// 出来的命令不走权限表（既有的 set_client_token / open_workbench 等二十来条同样没有条目，真实 .app 上工作正常）。
+#[test]
+fn runtime_server_url_commands_stay_registered_without_widening_the_capability_surface() {
+    let main_rs_path = manifest_dir().join("src/main.rs");
+    let raw = fs::read_to_string(&main_rs_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", main_rs_path.display()));
+
+    assert!(raw.contains("            set_server_url,"));
+    assert!(raw.contains("            get_server_url,"));
+    assert!(
+        raw.contains(".manage(ShellServerUrl::default())"),
+        "the runtime server url must be managed before setup so both commands always find their state"
+    );
+
+    for capability in ["capabilities/default.json", "capabilities/workbench.json"] {
+        let permissions = read_json(capability)["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str().unwrap().to_string())
+            .collect::<Vec<_>>();
+        assert!(
+            permissions.iter().all(|permission| permission.starts_with("core:")),
+            "{capability} should only carry core plugin permissions; app commands are not ACL-gated"
+        );
+    }
+}
+
 #[test]
 fn default_capability_is_local_and_window_scoped() {
     let capability = read_json("capabilities/default.json");

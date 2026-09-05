@@ -1,4 +1,7 @@
-use workhub_client_tauri::config::{load_shell_config_from_json_and_env, WorkHubShellConfig};
+use workhub_client_tauri::config::{
+    load_shell_config_from_json_and_env, normalize_shell_server_url,
+    shell_config_json_with_server_url, WorkHubShellConfig, WORKHUB_SERVER_URL_ENV,
+};
 use workhub_client_tauri::deep_link::{
     deep_link_plan_from_url, describe_deep_link_error, ShellDeepLinkPlan,
 };
@@ -23,7 +26,9 @@ use workhub_client_tauri::pet_window::{
     PetWindowSettings, DEFAULT_PET_CURSOR_NEAR_RADIUS,
 };
 use workhub_client_tauri::single_instance::single_instance_plan_from_args_for_locale;
-use workhub_client_tauri::sse_worker::{spawn_default_shell_sse_workers, ShellClientToken};
+use workhub_client_tauri::sse_worker::{
+    spawn_default_shell_sse_workers, ShellClientToken, ShellServerUrl,
+};
 use workhub_client_tauri::tray::{
     shell_badge_count, tray_menu_action_plan_by_id_for_locale, tray_tooltip,
     tray_tooltip_with_badge, TRAY_HIDE_MAIN_ID, TRAY_OPEN_INBOX_ID, TRAY_OPEN_SETTINGS_ID,
@@ -521,6 +526,109 @@ fn set_client_token(state: tauri::State<'_, ShellClientToken>, token: String) {
     eprintln!(
         "WorkHub: client token generation now {generation}; SSE reconnects with the new identity"
     );
+}
+
+/// `set_server_url` / `get_server_url` 的返回体。`get` 的 `url` 可空，表示壳层手上没有地址——正常路径
+/// 下不会发生（兜底值是本机默认），但 webview 那边必须能区分「壳层说不知道」和「壳层说是本机」，否则
+/// 一个空配置会被当成"已经连上本机了"。
+#[derive(Clone, Debug, serde::Serialize)]
+struct ShellServerUrlResponse {
+    url: String,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+struct ShellServerUrlQuery {
+    url: Option<String>,
+}
+
+/// 把新的服务器地址写回 `workhub-shell-config.json`（`load_workhub_shell_config` 读的同一份）。
+/// 只改 `server_url` 并删掉 `client_token`，其余键（含用户手写的）原样保留——见
+/// `shell_config_json_with_server_url` 的说明。
+fn save_workhub_shell_server_url(app: &tauri::AppHandle, server_url: &str) -> Result<(), String> {
+    let path = shell_config_path(app)?;
+    let raw =
+        if path.exists() {
+            Some(fs::read_to_string(&path).map_err(|error| {
+                format!("failed to read shell config {}: {error}", path.display())
+            })?)
+        } else {
+            None
+        };
+    let next = shell_config_json_with_server_url(raw.as_deref(), server_url).map_err(|error| {
+        format!(
+            "failed to update shell config {}: {error:?}",
+            path.display()
+        )
+    })?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("failed to create shell config directory: {error}"))?;
+    }
+    fs::write(&path, format!("{next}\n"))
+        .map_err(|error| format!("failed to write shell config {}: {error}", path.display()))
+}
+
+/// S5（S1 报告 E-06）：壳层服务器地址的**唯一**写入口。
+///
+/// 在此之前壳层的 `server_url` 只能来自 `workhub-shell-config.json` / `WORKHUB_SERVER_URL`，且在
+/// `.setup()` 里按值捕获一次；webview 那边用户改了 API 地址，壳层的 SSE 仍连着旧地址。而托盘角标、系统
+/// 通知、Cuu 上线状态全部只由这条 SSE 供给——地址分叉的后果不是"少一点功能"，是这三样**静默地永远不响**。
+///
+/// 顺序是刻意的：**校验 → 落盘 → 改运行时 → 广播**。先落盘是因为写盘失败时整条命令失败、什么都不变，
+/// 绝不留下「这次连新服务器、重启又回旧的」这种只有重启才暴露的分裂态。
+#[tauri::command]
+fn set_server_url(
+    app: tauri::AppHandle,
+    server: tauri::State<'_, ShellServerUrl>,
+    token: tauri::State<'_, ShellClientToken>,
+    url: String,
+) -> Result<ShellServerUrlResponse, String> {
+    // 与 webview 的 normalizeDesktopApiBase 同口径（见 config::normalize_shell_server_url）。webview 已经
+    // 校验过一遍，这里不是冗余：命令是进程边界，不能假设调用方一定是自家那段 JS。
+    let normalized = normalize_shell_server_url(&url).map_err(|error| error.to_string())?;
+    let previous = server.snapshot().url;
+
+    save_workhub_shell_server_url(&app, &normalized)?;
+
+    // 换服务器 = 换身份域：A 服务器铸的设备令牌对 B 毫无意义，留着只会被当成有效凭据发给 B。webview 侧
+    // 也会清一遍（双保险）。清空同样递增身份代际 → 活跃的旧连接立刻中止（SEC P0-02 的既有机制）。
+    let token_generation = token.set(None);
+    let server_generation = server.set(normalized.clone());
+    eprintln!(
+        "WorkHub: shell server url changed from {previous} to {normalized}; client token cleared \
+         (identity generation {token_generation}), endpoint generation {server_generation}; SSE \
+         reconnects against the new server"
+    );
+    if std::env::var(WORKHUB_SERVER_URL_ENV).is_ok() {
+        // 环境变量在启动时覆盖配置文件（见 load_shell_config_from_json_and_env）——本次改动在运行期生效，
+        // 但下次启动会被环境变量顶回去。这是运维自己设的优先级，不去偷偷改它，只留一行诊断。
+        eprintln!(
+            "WorkHub: {WORKHUB_SERVER_URL_ENV} is set and will override this saved address on the next launch"
+        );
+    }
+
+    // 三窗（main / pet / workbench）订阅这条广播后各自 reload——照既有 workhub-logged-out 的模式，
+    // 不新造协议。发广播失败要上抛：地址已经换了却没人知道，比整条命令失败更难查。
+    app.emit(
+        event_channel_name(ShellEvent::ServerChanged),
+        ShellServerUrlResponse {
+            url: normalized.clone(),
+        },
+    )
+    .map_err(|error| format!("failed to broadcast the server change: {error}"))?;
+
+    Ok(ShellServerUrlResponse { url: normalized })
+}
+
+/// 壳层当前持有的服务器地址。webview 用它核对「壳层和我连的是不是同一台」——两份地址曾经可以永久分叉，
+/// 现在至少能被看见。
+#[tauri::command]
+fn get_server_url(server: tauri::State<'_, ShellServerUrl>) -> ShellServerUrlQuery {
+    let url = server.snapshot().url;
+    let trimmed = url.trim();
+    ShellServerUrlQuery {
+        url: (!trimmed.is_empty()).then(|| trimmed.to_string()),
+    }
 }
 
 // R8 真·Spotlight：webview 测得盒子内容高度后调它缩放主窗（盒子随内容生长/收缩，苹果聚焦风）。
@@ -1890,6 +1998,8 @@ macro_rules! workhub_invoke_handler {
             pet_cursor_client_position,
             set_pet_window_click_through,
             set_client_token,
+            set_server_url,
+            get_server_url,
             set_spotlight_size,
             set_shell_badge,
             set_shell_locale,
@@ -1927,6 +2037,10 @@ fn main() {
         .manage(Mutex::new(WorkHubLocale::default()))
         // R8：webview bootstrap 拿到的设备令牌经 set_client_token 写入此处，供 Rust SSE worker 鉴权（修 Cuu 重连中）。
         .manage(ShellClientToken::default())
+        // S5：壳层服务器地址的运行时真相（set_server_url 写、SSE worker 每次重连读）。这里先托管本机默认值，
+        // 因为 .manage() 早于 .setup()（配置文件那时还没读）——setup 里再把配置/环境变量里的真值 set 进去。
+        // 先托管的好处是：即使 setup 因为别的原因失败，两个命令也不会因为 state 缺席而炸。
+        .manage(ShellServerUrl::default())
         // MRG-23：深链事件重放兜底（见 handle_deep_link_plan / take_pending_deep_link）。
         .manage(Mutex::new(PendingShellDeepLink::default()))
         .on_window_event(|window, event| {
@@ -1952,6 +2066,10 @@ fn main() {
             if let Ok(mut locale) = app.state::<Mutex<WorkHubLocale>>().lock() {
                 *locale = shell_config.locale;
             }
+            // S5：把启动配置里的地址灌进运行时真相。此刻还没有任何 SSE worker 在跑，故这里递增到的端点
+            // 代际 1 不会打断任何连接——worker 稍后开流时读到的就是它。
+            app.state::<ShellServerUrl>()
+                .set(shell_config.server_url.clone());
             create_pet_window_with_surface_flag(app)?;
             if let Ok(Some(saved)) = load_pet_window_saved_placement(app.handle()) {
                 let work_area = app
