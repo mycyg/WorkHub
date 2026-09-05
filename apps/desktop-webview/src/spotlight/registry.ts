@@ -12,6 +12,7 @@ import {
   createProjectsView, createNotificationsView } from "./views/dashboards.js";
 import { createDriveView } from "./views/drive.js";
 import { createIntakeView } from "./views/intake.js";
+import { createMeetingsView } from "./views/meetings.js";
 import { createMemoryView } from "./views/memory.js";
 import { createPlaceholderView } from "./views/placeholder.js";
 import { createProposalsView } from "./views/proposals.js";
@@ -33,6 +34,8 @@ const builtViews: Partial<Record<CommandId, () => SpotlightCapabilityView>> = {
   cost: createCostView,
   team: createCalendarView,
   knowledge: createKnowledgeView,
+  // F-09：会议列表 → 转写/纪要/洞察详情。
+  meetings: createMeetingsView,
   search: createSearchView,
   drive: createDriveView,
   replay: createReplayView,
