@@ -82,6 +82,33 @@ function sha256Text(value: string) {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
+type SmokeSessionResponse = {
+  data: {
+    session_id: string;
+    question: {
+      input_mode: string;
+      options?: Array<{ id: string }>;
+      recommended_option_ids?: string[];
+    };
+  };
+};
+
+// CHAT-02：nextQuestion 只接受「当前问题真实渲染出去的选项 id」。真客户端（web
+// materializeIntakePayload / desktop defaultSelectedOptionIds）都是从上一步响应的
+// question.options 里取，冒烟也必须照做——硬编码选项 id 会在澄清草稿一变就 422。
+function selectedScopeOptionId(session: SmokeSessionResponse, label: string): string {
+  const question = session.data.question;
+  const options = question.options ?? [];
+  const recommended = (question.recommended_option_ids ?? []).find((id) => options.some((option) => option.id === id));
+  const optionId = recommended ?? options[0]?.id;
+  if (options.length < 2 || !optionId) {
+    throw new Error(
+      `Expected ${label} scope question to render option-first choices, got input_mode=${question.input_mode} options=${JSON.stringify(options)}`
+    );
+  }
+  return optionId;
+}
+
 function executableAgentClient(): AgentLoopClient {
   const responses = [
     {
@@ -324,7 +351,15 @@ async function main() {
       clarificationGenerator: async (input) => ({
         title: `请确认「${(input.workItem.title ?? "").slice(0, 60)}」的交付重点与验收口径？`,
         body: `PG smoke deterministic clarification. Intent: ${(input.workItem.rawDescription ?? input.workItem.title ?? "").slice(0, 200)}`,
-        placeholder: "例如：按需求原文执行即可。"
+        placeholder: "例如：按需求原文执行即可。",
+        // R10-0c 选项优先契约：产线 LLM 草稿会给 2-4 个候选，问题才渲成 single_choice，
+        // 客户端也才有合法选项可提交。确定性草稿必须同形，否则冒烟走的是长文本退化路径，
+        // 与真实客户端行为不一致（且提交任何选项都会被 CHAT-02 校验正确地 422 拒）。
+        options: [
+          { id: "document-draft", label: "文档/方案草稿" },
+          { id: "structured-data", label: "结构化数据" }
+        ],
+        recommended_option_id: "document-draft"
       })
     });
     const taskPlanService = createTaskPlanWorkflowService({
@@ -434,11 +469,12 @@ async function main() {
     if (session.status !== 200) {
       throw new Error(`Expected session create 200, got ${session.status}: ${await session.text()}`);
     }
-    const sessionBody = await session.json() as { data: { session_id: string } };
+    const sessionBody = await session.json() as SmokeSessionResponse;
+    const scopeOptionId = selectedScopeOptionId(sessionBody, "agent-run");
     const nextQuestion = await app.request(`/api/sessions/${sessionBody.data.session_id}/next-question`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ selected_option_ids: ["document-draft"] })
+      body: JSON.stringify({ selected_option_ids: [scopeOptionId] })
     });
     if (nextQuestion.status !== 200) {
       throw new Error(`Expected next question 200, got ${nextQuestion.status}: ${await nextQuestion.text()}`);
@@ -448,7 +484,7 @@ async function main() {
       headers,
       body: JSON.stringify({
         session_id: sessionBody.data.session_id,
-        selected_option_ids: ["document-draft"]
+        selected_option_ids: [scopeOptionId]
       })
     });
     if (createdWorkItem.status !== 201) {
@@ -469,11 +505,12 @@ async function main() {
     if (taskPlanSession.status !== 200) {
       throw new Error(`Expected task-plan session create 200, got ${taskPlanSession.status}: ${await taskPlanSession.text()}`);
     }
-    const taskPlanSessionBody = await taskPlanSession.json() as { data: { session_id: string } };
+    const taskPlanSessionBody = await taskPlanSession.json() as SmokeSessionResponse;
+    const taskPlanScopeOptionId = selectedScopeOptionId(taskPlanSessionBody, "task-plan");
     const taskPlanNextQuestion = await app.request(`/api/sessions/${taskPlanSessionBody.data.session_id}/next-question`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ selected_option_ids: ["document-draft"] })
+      body: JSON.stringify({ selected_option_ids: [taskPlanScopeOptionId] })
     });
     if (taskPlanNextQuestion.status !== 200) {
       throw new Error(`Expected task-plan next question 200, got ${taskPlanNextQuestion.status}: ${await taskPlanNextQuestion.text()}`);
@@ -483,7 +520,7 @@ async function main() {
       headers,
       body: JSON.stringify({
         session_id: taskPlanSessionBody.data.session_id,
-        selected_option_ids: ["document-draft"]
+        selected_option_ids: [taskPlanScopeOptionId]
       })
     });
     if (taskPlanWorkItem.status !== 201) {
