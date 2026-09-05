@@ -2657,6 +2657,82 @@ test("pet surface falls back to an honest 'could not open' message when no Tauri
   }
 });
 
+// D1（R19-13 托盘语言联动补线）：桌宠设置菜单切语言此前只广播给主窗、更新本地偏好，
+// 从没通知原生外壳——托盘菜单/tooltip/通知兜底文案永远停在启动语言。现在切换成功后
+// 真调 set_shell_locale，与 spotlight/views/settings.ts 的主窗切语言同一份修法。
+test("pet settings menu locale switch also syncs the native shell via set_shell_locale", async () => {
+  const invokeCalls: Array<{ command: string; args: Record<string, unknown> | undefined }> = [];
+  const target = globalThis as typeof globalThis & { __TAURI__?: unknown };
+  const originalTauri = target.__TAURI__;
+  target.__TAURI__ = {
+    core: {
+      async invoke(command: string, args?: Record<string, unknown>) {
+        invokeCalls.push({ command, args });
+        return undefined;
+      }
+    }
+  };
+
+  try {
+    await withFakePetDom(async (root) => {
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient([])
+      });
+      try {
+        await root.click(fakePetTarget({ "data-pet-menu-locale": "en-US" }));
+        // setLocalePreference 的原生外壳同步挂在 client.updatePreferences(...).then(...)——
+        // fire-and-forget，不在点击处理器内 await，故需要多等一拍微任务让它真正落地。
+        await Promise.resolve();
+        await Promise.resolve();
+        // 只筛 set_shell_locale——挂载期间桌宠还会为窗口设置发其它 invoke（如 set_pet_window_settings），
+        // 那些跟本条修复无关，不该让这条断言对它们的存在/顺序敏感。
+        assert.deepEqual(
+          invokeCalls.filter((call) => call.command === "set_shell_locale"),
+          [{ command: "set_shell_locale", args: { locale: "en-US" } }]
+        );
+      } finally {
+        await runtime.dispose();
+      }
+    });
+  } finally {
+    if (originalTauri === undefined) {
+      delete target.__TAURI__;
+    } else {
+      target.__TAURI__ = originalTauri;
+    }
+  }
+});
+
+// 非 Tauri 环境（web 预览/无壳层测试替身）没有 invoke 时，切语言仍要正常完成——best-effort
+// 跳过，不抛错、不卡住偏好更新。
+test("pet settings menu locale switch degrades quietly with no Tauri invoke available", async () => {
+  const target = globalThis as typeof globalThis & { __TAURI__?: unknown };
+  const originalTauri = target.__TAURI__;
+  delete target.__TAURI__;
+
+  try {
+    await withFakePetDom(async (root) => {
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient([])
+      });
+      try {
+        await root.click(fakePetTarget({ "data-pet-menu-locale": "en-US" }));
+        await Promise.resolve();
+        await Promise.resolve();
+        assert.match(root.innerHTML, /data-pet-menu-locale="en-US" aria-pressed="true"/u);
+      } finally {
+        await runtime.dispose();
+      }
+    });
+  } finally {
+    if (originalTauri === undefined) {
+      delete target.__TAURI__;
+    } else {
+      target.__TAURI__ = originalTauri;
+    }
+  }
+});
+
 test("pet surface persists and restores the current session question card", async () => {
   const storage = createFakeLocalStorage();
   const target = globalThis as typeof globalThis & {

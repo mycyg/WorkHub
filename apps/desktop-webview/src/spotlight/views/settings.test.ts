@@ -399,6 +399,145 @@ test("a failed AI profile fetch does not block the rest of settings, and offers 
   });
 });
 
+// D1（R19-13 托盘语言联动补线）：主窗设置页切语言此前只更新偏好 + reload，从没通知原生外壳——
+// 托盘菜单/tooltip/通知兜底文案永远停在启动语言。现在 reload 前真调 set_shell_locale，与
+// pet-surface.ts 桌宠菜单切语言同一份修法（对应用例见 pet-surface.test.ts）。plain Node 没有
+// window 全局，故这里连同 __TAURI__ 一起临时打桩，覆盖「storage 写入 → invoke → reload」全链。
+test("clicking a locale option syncs the native shell via set_shell_locale before reloading", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = settingsVm();
+    const invokeCalls: Array<{ command: string; args: Record<string, unknown> | undefined }> = [];
+    const reloadCalls: number[] = [];
+    const storageCalls: Array<{ key: string; value: string }> = [];
+
+    const globals = globalThis as typeof globalThis & { __TAURI__?: unknown; window?: unknown };
+    const originalTauri = globals.__TAURI__;
+    const originalWindow = globals.window;
+    globals.__TAURI__ = {
+      core: {
+        async invoke(command: string, args?: Record<string, unknown>) {
+          invokeCalls.push({ command, args });
+          return undefined;
+        }
+      }
+    };
+    globals.window = {
+      localStorage: {
+        setItem(key: string, value: string) {
+          storageCalls.push({ key, value });
+        }
+      },
+      location: {
+        reload() {
+          reloadCalls.push(1);
+        }
+      }
+    };
+
+    try {
+      await createSettingsView().mount(
+        baseCtx(body, {
+          client: {
+            pages: { async settings() { return vm; } },
+            async request<T>(path: string) {
+              if (path === "/api/me/profile") {
+                return userProfileVm() as unknown as T;
+              }
+              return aiProfileVm() as unknown as T;
+            },
+            async updatePreferences() {
+              return {} as never;
+            }
+          } as unknown as SpotlightViewContext["client"]
+        })
+      );
+      await tick();
+
+      body.click(new FakeElement(new Set(["[data-set-locale]"]), { setLocale: "en-US" }));
+      await tick();
+      await tick();
+      await tick();
+
+      assert.deepEqual(storageCalls, [{ key: "workhub_locale", value: "en-US" }]);
+      // invoke 必须发生——且是在 reload 之前调用的语句序（见 settings.ts 的 .then() 回调顺序）。
+      assert.deepEqual(invokeCalls, [{ command: "set_shell_locale", args: { locale: "en-US" } }]);
+      assert.deepEqual(reloadCalls, [1]);
+    } finally {
+      if (originalTauri === undefined) {
+        delete globals.__TAURI__;
+      } else {
+        globals.__TAURI__ = originalTauri;
+      }
+      if (originalWindow === undefined) {
+        delete globals.window;
+      } else {
+        globals.window = originalWindow;
+      }
+    }
+  });
+});
+
+test("clicking a locale option still reloads when no Tauri invoke is available (web/non-desktop degrade)", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = settingsVm();
+    const reloadCalls: number[] = [];
+
+    const globals = globalThis as typeof globalThis & { __TAURI__?: unknown; window?: unknown };
+    const originalTauri = globals.__TAURI__;
+    const originalWindow = globals.window;
+    delete globals.__TAURI__;
+    globals.window = {
+      localStorage: { setItem() {} },
+      location: {
+        reload() {
+          reloadCalls.push(1);
+        }
+      }
+    };
+
+    try {
+      await createSettingsView().mount(
+        baseCtx(body, {
+          client: {
+            pages: { async settings() { return vm; } },
+            async request<T>(path: string) {
+              if (path === "/api/me/profile") {
+                return userProfileVm() as unknown as T;
+              }
+              return aiProfileVm() as unknown as T;
+            },
+            async updatePreferences() {
+              return {} as never;
+            }
+          } as unknown as SpotlightViewContext["client"]
+        })
+      );
+      await tick();
+
+      body.click(new FakeElement(new Set(["[data-set-locale]"]), { setLocale: "en-US" }));
+      await tick();
+      await tick();
+      await tick();
+
+      // best-effort：没有 invoke 时安静跳过，绝不阻塞 reload。
+      assert.deepEqual(reloadCalls, [1]);
+    } finally {
+      if (originalTauri === undefined) {
+        delete globals.__TAURI__;
+      } else {
+        globals.__TAURI__ = originalTauri;
+      }
+      if (originalWindow === undefined) {
+        delete globals.window;
+      } else {
+        globals.window = originalWindow;
+      }
+    }
+  });
+});
+
 // ── R13 批 A2（派人推荐 v2）："我的资料"分区 ──────────────────────────────────────────────
 
 test("settings view renders the my-profile section with the profile's current values", async () => {
