@@ -310,3 +310,54 @@ test("剪枝不够 → 恰好发一次摘要请求", async () => {
   assert.equal(compacting.length, 1);
   assert.equal(compacting[0]?.data.summary_kind, "structured");
 });
+
+// --- .spill/ 不是交付物 ------------------------------------------------------
+
+test(".spill/ 不被当作交付物：只落了盘、没写 outputs/ 的运行照样过不了交付物门", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-spill-not-deliverable-"));
+  const { createAgentLoop } = await import("./index.js");
+  let calls = 0;
+  const result = await createAgentLoop().run({
+    runId: "40000000-0000-4000-8000-0000000000d1",
+    workItemId: "50000000-0000-4000-8000-0000000000d1",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "开始",
+    client: {
+      model: "fake-model",
+      messages: {
+        async create() {
+          calls += 1;
+          if (calls === 1) {
+            return {
+              id: "m1",
+              stopReason: "tool_use",
+              content: [{ type: "tool_use", id: "t1", name: "probe", input: {} }]
+            };
+          }
+          return { id: "m2", stopReason: "end_turn", content: [{ type: "text", text: "我干完了" }] };
+        }
+      }
+    },
+    tools: {
+      toModelTools: async () => [{ name: "probe", description: "probe", input_schema: { type: "object" } }],
+      execute: async () => okToolResult("料".repeat(9000))
+    },
+    budget: {
+      maxSteps: 4,
+      totalTimeoutSeconds: 300,
+      maxTokens: 1_000_000,
+      maxCostCny: "0",
+      toolResultContextChars: 500
+    },
+    // 交付物门开着（生产默认）：.spill/ 若被算进交付物，这条运行就会假装成功。
+    requireDeliverable: true
+  });
+
+  // 盘上确实有落盘文件，但它在 workdir 根下的 .spill/，不在 outputs/ 里。
+  assert.deepEqual(await readdir(path.join(workdir, ".spill")), ["0001-probe.txt"]);
+  assert.deepEqual(await readdir(workdir), [".spill"]);
+  assert.equal(result.status, "failed");
+  assert.equal(result.reason, "AI 没产出交付物");
+  assert.equal(result.manifest, undefined);
+});
