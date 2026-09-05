@@ -4,6 +4,7 @@ import test from "node:test";
 import type { CreateAuditLogInput, PromoteTeamSkillInput, TeamSkillRow } from "@workhub/db";
 
 import type { AuthActor } from "./middleware/auth.js";
+import type { SkillCurationAvailability } from "./workers/agent-skill-curation.js";
 import {
   createTeamSkillGovernanceService,
   TeamSkillGovernanceServiceError,
@@ -56,7 +57,28 @@ function skillRow(overrides: Partial<TeamSkillRow> = {}): TeamSkillRow {
 
 type RepoOverrides = Partial<TeamSkillGovernanceServiceDependencies["repository"]>;
 
-function makeDeps(overrides: RepoOverrides = {}) {
+// R23 SA-06：手动触发一轮自学的替身。默认「已启用、当前没在跑、跑起来就把 running 翻真」——
+// 与真调度器同款语义（tick 开头同步置 running=true），防抖断言才有意义。
+function makeCurationStub(over: {
+  availability?: SkillCurationAvailability;
+  running?: boolean;
+  lastRunAt?: string | null;
+  runOnce?: () => Promise<never>;
+} = {}) {
+  const state = { running: over.running ?? false, lastRunAt: over.lastRunAt ?? null, runs: 0 };
+  const curation: NonNullable<TeamSkillGovernanceServiceDependencies["curation"]> = {
+    availability: () => over.availability ?? { enabled: true },
+    runState: () => ({ running: state.running, lastRunAt: state.lastRunAt }),
+    runOnce: () => {
+      state.runs += 1;
+      state.running = true;
+      return (over.runOnce ? over.runOnce() : Promise.resolve({} as never));
+    }
+  };
+  return { curation, state };
+}
+
+function makeDeps(overrides: RepoOverrides = {}, curation?: TeamSkillGovernanceServiceDependencies["curation"]) {
   const calls = { promote: [] as PromoteTeamSkillInput[], deprecate: [] as unknown[], audits: [] as CreateAuditLogInput[] };
   const repo: TeamSkillGovernanceServiceDependencies["repository"] = {
     async listForWorkspace(id) {
@@ -84,7 +106,9 @@ function makeDeps(overrides: RepoOverrides = {}) {
         return { id: "audit" } as never;
       }
     },
-    now: () => now
+    now: () => now,
+    // 不注入时用一个「已启用、当前空闲」的替身——绝不让单测掉进真调度器（会拉起 DB / provider registry）。
+    curation: curation ?? makeCurationStub().curation
   };
   return { service: createTeamSkillGovernanceService(deps), calls };
 }
@@ -216,4 +240,81 @@ test("deactivateSkill is idempotent on an already-deprecated skill (no deprecate
 test("deactivateSkill 404s when the skill does not exist in the workspace", async () => {
   const { service } = makeDeps({ getById: async () => undefined });
   await assert.rejects(service.deactivateSkill({ actor: actor(), id: skillId }), (e: unknown) => e instanceof TeamSkillGovernanceServiceError && e.status === 404);
+});
+
+// ── R23 SA-06：管理员手动催一轮「AI 自学团队技能」 ─────────────────────────────────────────
+// 这条端点会真的花钱打 LLM，三道闸各自要有独立断言：谁能按（管理员）、按了会不会重复起
+// （防抖）、这台部署到底能不能跑（开关 / 密钥）。
+
+test("R23 SA-06 curateNow is admin-only — a member never gets a round started", async () => {
+  const stub = makeCurationStub();
+  const { service } = makeDeps({}, stub.curation);
+  await assert.rejects(
+    () => service.curateNow({ actor: actor({ isAdmin: false }) }),
+    (e: unknown) => e instanceof TeamSkillGovernanceServiceError && e.status === 403 && e.code === "team_skill_admin_required"
+  );
+  // 关键：拒绝必须发生在起跑之前，不能「先跑起来再报 403」。
+  assert.equal(stub.state.runs, 0);
+});
+
+test("R23 SA-06 curateNow starts one round, reports it as running, and writes an audit trail", async () => {
+  const stub = makeCurationStub();
+  const { service, calls } = makeDeps({}, stub.curation);
+
+  const result = await service.curateNow({ actor: actor() });
+
+  assert.equal(result.started, true);
+  assert.equal(stub.state.runs, 1);
+  // 回执里的 running 是「起跑之后」的真状态——tick 开头同步置真，所以这里必然是 true。
+  assert.equal(result.curation.running, true);
+  assert.equal(result.curation.enabled, true);
+  const audit = calls.audits.at(-1);
+  assert.equal(audit?.action, "team_skill.curation_triggered");
+  assert.equal(audit?.actorUserId, adminUserId);
+  // entityId 用工作区 id：这一轮覆盖整个部署的技能库，不是某一条技能。
+  assert.equal(audit?.entityId, workspaceId);
+  assert.deepEqual(audit?.detailJson, { trigger: "manual", triggered_at: now.toISOString() });
+});
+
+test("R23 SA-06 curateNow refuses to pile a second round onto one already running", async () => {
+  const stub = makeCurationStub({ running: true });
+  const { service, calls } = makeDeps({}, stub.curation);
+
+  await assert.rejects(
+    () => service.curateNow({ actor: actor() }),
+    (e: unknown) =>
+      e instanceof TeamSkillGovernanceServiceError && e.status === 409 && e.code === "team_skill_curation_in_progress"
+  );
+  assert.equal(stub.state.runs, 0);
+  // 被防抖挡下的这次不该留审计——什么都没发生。
+  assert.equal(calls.audits.filter((entry) => entry.action === "team_skill.curation_triggered").length, 0);
+});
+
+test("R23 SA-06 curateNow tells apart 'switched off' from 'no LLM key' so operators know what to fix", async () => {
+  const off = makeCurationStub({ availability: { enabled: false, reason: "disabled_by_setting" } });
+  await assert.rejects(
+    () => makeDeps({}, off.curation).service.curateNow({ actor: actor() }),
+    (e: unknown) =>
+      e instanceof TeamSkillGovernanceServiceError && e.status === 409 && e.code === "team_skill_curation_disabled"
+  );
+  assert.equal(off.state.runs, 0);
+
+  const noKey = makeCurationStub({ availability: { enabled: false, reason: "llm_provider_not_configured" } });
+  await assert.rejects(
+    () => makeDeps({}, noKey.curation).service.curateNow({ actor: actor() }),
+    (e: unknown) =>
+      e instanceof TeamSkillGovernanceServiceError && e.status === 503 && e.code === "ai_provider_not_configured"
+  );
+  assert.equal(noKey.state.runs, 0);
+});
+
+test("R23 SA-06 a round that blows up later still returns 202 — the HTTP request never waits for the LLM", async () => {
+  const stub = makeCurationStub({ runOnce: () => Promise.reject(new Error("上游 429")) });
+  const { service } = makeDeps({}, stub.curation);
+
+  // 不 await 这一轮就是设计本身：一轮要逐个工作区打 LLM，HTTP 请求等不起。失败只记日志，
+  // 用户下次读技能页从 running/last_run_at 看真实结果——这里断言的是「失败不会冒泡成 500」。
+  const result = await service.curateNow({ actor: actor() });
+  assert.equal(result.started, true);
+  assert.equal(stub.state.runs, 1);
 });

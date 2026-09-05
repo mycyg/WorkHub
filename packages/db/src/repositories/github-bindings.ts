@@ -314,12 +314,13 @@ export function createGithubBindingRepository(db: WorkHubDb): GithubBindingRepos
   };
 }
 
-// §5.3 RISK digest 扩展钩子：本批不被任何调用方使用，纯粹为未来 RISK v2 准备的独立可测函数
-// （「这个项目绑了 repo 但 N 天没有新 commit」），不产生跨批次运行时耦合。
+// §5.3 RISK digest 第四信号的取数（R23 P3b / SA-03 起真正接线：apps/api/src/services/risk-monitor.ts
+// 的 github_stale 信号——「这个项目绑了 repo 但 N 天没有新提交」）。R14 落地时只留签名不接线，
+// 现在有了调用方；返回值同批加 repoFullName，日报文案要点名具体仓库而不是只说「有个仓库」。
 export async function listStaleReposSinceThreshold(
   db: WorkHubDb,
   input: { projectIds: string[]; thresholdDays: number; now: Date }
-): Promise<Array<{ projectId: string; lastActivityAt: Date | null }>> {
+): Promise<Array<{ projectId: string; repoFullName: string; lastActivityAt: Date | null }>> {
   if (input.projectIds.length === 0) {
     return [];
   }
@@ -335,6 +336,7 @@ export async function listStaleReposSinceThreshold(
   const rows = await db
     .select({
       projectId: projectGithubBindings.projectId,
+      repoFullName: projectGithubBindings.repoFullName,
       lastActivityAt: lastActivity.lastActivityAt
     })
     .from(projectGithubBindings)
@@ -343,11 +345,19 @@ export async function listStaleReposSinceThreshold(
       and(
         eq(projectGithubBindings.enabled, true),
         sql`${projectGithubBindings.projectId} = ANY(${input.projectIds})`,
+        // R23 P3b（SA-03）诚实性两道闸，缺一就会报假警：
+        //   1) 从没成功同步过的绑定一律不算「仓库没动静」——那时我们根本不知道仓库动没动（PAT 失效、
+        //      GITHUB_TOKEN_ENC_KEY 没配导致轮询空转、首轮还没跑），说「已 N 天没有新提交」是撒谎。
+        sql`${projectGithubBindings.lastSyncedAt} is not null`,
+        //   2) 绑定本身得先满 N 天。今天刚绑上的仓库谈不上「N 天没有新提交」，否则用户绑完当晚就会
+        //      收到一条指责自己仓库没动静的日报。
+        sql`${projectGithubBindings.createdAt} < ${cutoff}`,
         sql`(${lastActivity.lastActivityAt} IS NULL OR ${lastActivity.lastActivityAt} < ${cutoff})`
       )
     );
   return rows.map((row) => ({
     projectId: row.projectId,
+    repoFullName: row.repoFullName,
     lastActivityAt: row.lastActivityAt ?? null
   }));
 }

@@ -112,10 +112,10 @@ test("buildRiskDigest assembles a single-signal digest with a PM-toned template 
   assert.equal(digest.notificationTitle, "星尘短剧 · 今日风险巡检");
   assert.match(digest.notificationBody, /工单停滞（1 项）：WI-1（接入支付）已停滞 6 天/u);
   assert.equal(digest.chatSummary, "今天巡检发现 1 项风险信号——1 项工单停滞");
-  assert.deepEqual(digest.chatCounts, { stalled: 1, deadline: 0, costSpike: false });
+  assert.deepEqual(digest.chatCounts, { stalled: 1, deadline: 0, costSpike: false, githubStale: false });
 });
 
-test("buildRiskDigest combines all three signal kinds into one multi-paragraph digest", () => {
+test("buildRiskDigest combines the work-item and cost signal kinds into one multi-paragraph digest", () => {
   const signals: RiskDigestSignal[] = [
     { kind: "stalled", items: [{ code: "WI-1", title: "接入支付", daysIdle: 6 }], totalCount: 2 },
     { kind: "deadline", items: [{ code: "WI-2", title: "上线检查", daysUntilDue: 1 }], totalCount: 1 },
@@ -125,7 +125,7 @@ test("buildRiskDigest combines all three signal kinds into one multi-paragraph d
 
   // 4 = 2 项停滞 + 1 项临期 + 成本放量计 1（信号计数按「项」累计，成本是项目级信号恒记 1）。
   assert.equal(digest.chatSummary, "今天巡检发现 4 项风险信号——2 项工单停滞、1 项临期未动工、成本异常放量");
-  assert.deepEqual(digest.chatCounts, { stalled: 2, deadline: 1, costSpike: true });
+  assert.deepEqual(digest.chatCounts, { stalled: 2, deadline: 1, costSpike: true, githubStale: false });
   const paragraphs = digest.notificationBody.split("\n");
   assert.equal(paragraphs.length, 3);
   assert.match(paragraphs[0]!, /工单停滞（2 项）/u);
@@ -464,4 +464,88 @@ test("runOnce completes normally with no LLM/provider dependency wired in at all
 
   assert.equal(result.sent, 1);
   assert.equal(result.failed, 0);
+});
+
+// ── R23 P3b（SA-03）：第四信号 github_stale ─────────────────────────────────────────────────
+
+test("buildRiskDigest names the stale repository and folds it into the summary", () => {
+  const signals: RiskDigestSignal[] = [
+    { kind: "github_stale", repoFullName: "acme/stardust", daysIdle: 12 }
+  ];
+  const digest = buildRiskDigest({ projectId, projectName: "星尘短剧", signals });
+
+  assert.equal(digest.notificationBody, "代码仓库：acme/stardust 已经 12 天没有新提交。");
+  assert.equal(digest.chatSummary, "今天巡检发现 1 项风险信号——代码仓库长期没有新提交");
+  assert.deepEqual(digest.chatCounts, { stalled: 0, deadline: 0, costSpike: false, githubStale: true });
+});
+
+test("buildRiskDigest says the repo has no synced commits at all instead of inventing a day count", () => {
+  const digest = buildRiskDigest({
+    projectId,
+    projectName: "星尘短剧",
+    signals: [{ kind: "github_stale", repoFullName: "acme/stardust", daysIdle: null }]
+  });
+
+  assert.equal(digest.notificationBody, "代码仓库：acme/stardust 绑定后还没有同步到任何提交记录。");
+});
+
+test("runOnce turns a stale bound repository into a risk digest entry for that project only", async () => {
+  const otherProjectId = "20000000-0000-4000-8000-0000000000ff";
+  const staleCalls: Array<{ projectIds: string[]; thresholdDays: number }> = [];
+  const { deps, notificationCalls, postSystemMessageCalls } = baseDeps({
+    candidates: [candidate(), candidate({ projectId: otherProjectId, projectName: "另一个项目" })],
+    githubStaleDays: 9
+  });
+  deps.repository.listStaleRepos = async (input) => {
+    staleCalls.push({ projectIds: input.projectIds, thresholdDays: input.thresholdDays });
+    return [{ projectId, repoFullName: "acme/stardust", lastActivityAt: daysAgo(11) }];
+  };
+  const service = createRiskMonitorService(deps);
+
+  const result = await service.runOnce();
+
+  // 一次批量查（两个项目一起问），不是逐项目 N+1。
+  assert.equal(staleCalls.length, 1);
+  assert.deepEqual(staleCalls[0]!.projectIds, [projectId, otherProjectId]);
+  assert.equal(staleCalls[0]!.thresholdDays, 9, "threshold must come from the configured GITHUB_STALE_DAYS");
+  assert.equal(result.sent, 1, "only the project with the stale repo has a signal");
+  assert.equal(result.no_signal, 1);
+  assert.equal(notificationCalls.length, 1);
+  assert.match(
+    (notificationCalls[0] as { body: string }).body,
+    /代码仓库：acme\/stardust 已经 11 天没有新提交。/u
+  );
+  assert.equal((postSystemMessageCalls[0] as { content: { github_stale: boolean } }).content.github_stale, true);
+});
+
+test("runOnce keeps the other three signals alive when the stale-repo query blows up", async () => {
+  const warnings: string[] = [];
+  const { deps, notificationCalls } = baseDeps({
+    workItems: [workItem({ updatedAt: daysAgo(6), status: "spec_ready" })],
+    logger: { warn: (event: string) => { warnings.push(event); } }
+  });
+  deps.repository.listStaleRepos = async () => {
+    throw new Error("github table exploded");
+  };
+  const service = createRiskMonitorService(deps);
+
+  const result = await service.runOnce();
+
+  assert.equal(result.sent, 1);
+  assert.equal(result.failed, 0);
+  assert.ok(warnings.includes("risk_monitor_stale_repo_query_failed"));
+  assert.doesNotMatch((notificationCalls[0] as { body: string }).body, /代码仓库/u);
+});
+
+test("runOnce leaves the github signal out entirely when no stale-repo query is wired in", async () => {
+  const { deps, notificationCalls } = baseDeps({
+    workItems: [workItem({ updatedAt: daysAgo(6), status: "spec_ready" })]
+  });
+  assert.equal(deps.repository.listStaleRepos, undefined);
+  const service = createRiskMonitorService(deps);
+
+  const result = await service.runOnce();
+
+  assert.equal(result.sent, 1);
+  assert.doesNotMatch((notificationCalls[0] as { body: string }).body, /代码仓库/u);
 });

@@ -25,6 +25,9 @@ function makeDeps(over: {
   optedOut?: Set<string>;
   quietHours?: ProactiveQuietHours;
   weeklyCap?: number;
+  // R23 P3b（SA-07）：每个用户的「助手主动性」档位（userId → 档位）。不传=全员默认档（均衡）。
+  proactivity?: Record<string, string>;
+  proactivityReads?: string[];
   deliverOutcome?: (intent: ProactiveIntentInput) => ProactiveDeliverResult;
 }): { deps: CareScanServiceDeps; recorded: Recorded } {
   const recorded: Recorded = { upserts: [], delivered: [] };
@@ -49,6 +52,14 @@ function makeDeps(over: {
         return outcome;
       }
     },
+    ...(over.proactivity || over.proactivityReads
+      ? {
+        loadProactivity: async ({ userId }: { workspaceId: string; userId: string }) => {
+          over.proactivityReads?.push(userId);
+          return over.proactivity?.[userId];
+        }
+      }
+      : {}),
     quietHours: over.quietHours ?? null,
     weeklyCap: over.weeklyCap ?? 2,
     highLoadThreshold: 8,
@@ -182,4 +193,61 @@ test("localWeekBounds spans Monday 00:00 to next Monday 00:00 with a stable week
   assert.equal(bounds.key, "20260713"); // 2026-07-13 是那一周的周一
   // 同一周内不同天算出同一个周键（周频闸稳定）。
   assert.equal(localWeekBounds(new Date(2026, 6, 17, 23, 0)).key, bounds.key);
+});
+
+// ── R23 P3b（SA-07）：「助手主动性」三档 ───────────────────────────────────────────────────
+
+test("care-scan SA-07: the quiet level stops care delivery entirely, counted apart from an explicit opt-out", async () => {
+  const { deps, recorded } = makeDeps({ active: [signal()], proactivity: { [u1]: "quiet" } });
+  const result = await createCareScanService(deps).runOnce();
+  assert.equal(result.delivered, 0);
+  assert.equal(result.skipped_quiet_profile, 1);
+  // 「整体调低了主动性」不是「专门关掉了关怀」——两个计数必须分得开，运维才知道该去哪儿看。
+  assert.equal(result.skipped_opted_out, 0);
+  assert.deepEqual(recorded.delivered, []);
+});
+
+test("care-scan SA-07: the balanced and proactive levels both keep delivering care (balanced = behaviour before this wiring)", async () => {
+  for (const level of ["balanced", "proactive"]) {
+    const { deps, recorded } = makeDeps({ active: [signal()], proactivity: { [u1]: level } });
+    const result = await createCareScanService(deps).runOnce();
+    assert.equal(result.delivered, 1, `${level} must still deliver care`);
+    assert.equal(result.skipped_quiet_profile, 0, `${level} must not be counted as quiet`);
+    assert.equal(recorded.delivered.length, 1);
+  }
+});
+
+test("care-scan SA-07: an unreadable or missing profile falls back to the balanced level rather than muting care", async () => {
+  const { deps } = makeDeps({ active: [signal()], proactivity: {} });
+  const result = await createCareScanService(deps).runOnce();
+  assert.equal(result.delivered, 1, "no saved profile must behave exactly as before the wiring");
+  assert.equal(result.skipped_quiet_profile, 0);
+});
+
+test("care-scan SA-07: the profile is read once per user per tick, not once per signal", async () => {
+  const proactivityReads: string[] = [];
+  const { deps } = makeDeps({
+    // 同一个人本轮撞出三条信号，档案只该读一次。
+    active: [signal(), signal({ signalType: "late_night" }), signal({ signalType: "frustration" })],
+    weeklyCap: 5,
+    proactivity: { [u1]: "balanced" },
+    proactivityReads
+  });
+  await createCareScanService(deps).runOnce();
+  assert.deepEqual(proactivityReads, [u1]);
+});
+
+test("care-scan SA-07: the quiet level does not burn the weekly care quota lookup", async () => {
+  const weeklyLookups: string[] = [];
+  const { deps } = makeDeps({ active: [signal()], proactivity: { [u1]: "quiet" } });
+  const withCounter: CareScanServiceDeps = {
+    ...deps,
+    countWeeklyCareForUser: async ({ targetUserId }) => {
+      weeklyLookups.push(targetUserId);
+      return 0;
+    }
+  };
+  const result = await createCareScanService(withCounter).runOnce();
+  assert.equal(result.skipped_quiet_profile, 1);
+  assert.deepEqual(weeklyLookups, [], "a muted user must not consume a weekly-quota query");
 });

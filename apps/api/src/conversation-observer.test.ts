@@ -20,10 +20,13 @@ import {
   buildDispatchAskTargetUrl,
   createConversationObserverScheduler,
   DEFAULT_MAX_MESSAGES_PER_ANALYSIS,
+  isObserverSilenceElapsed,
   isWithinQuietHours,
+  observerSilenceWindowMs,
   type ConversationObserverDeps
 } from "./workers/conversation-observer.js";
-import { ACTION_CARD_ANALYSIS_LIMIT_MAX } from "@workhub/db";
+import { ACTION_CARD_ANALYSIS_LIMIT_MAX, OBSERVER_SILENCE_SCAN_FLOOR_FACTOR } from "@workhub/db";
+import { resolveProactivityPolicy } from "./services/proactivity-policy.js";
 import type { AgentRunQueueRecord } from "./workers/agent-runner.js";
 
 const now = new Date("2026-07-12T09:00:00.000Z");
@@ -44,6 +47,8 @@ function candidate(overrides: Partial<ObserverCandidateRow> = {}): ObserverCandi
     activeCardId: null,
     consecutiveFailures: 0,
     silenceWindowSecs: 60,
+    // R23 P3b（SA-07）：默认档=均衡，等同接线前的行为（窗口系数 ×1）。
+    ownerProactivity: "balanced",
     quietHoursJson: { enabled: false },
     lastMessageAt: new Date("2026-07-12T08:58:00.000Z"),
     ...overrides
@@ -1461,4 +1466,211 @@ test("R14 observer excludes deleted (tombstone) message text from the analysis p
   assert.ok(capturedPrompt.includes("活着的讨论内容"), "live message text must reach the prompt");
   assert.ok(!capturedPrompt.includes("这条已删但仍带残留文本"), "tombstone text must be skipped");
   assert.equal(advancedTo, 5, "watermark advances to the true max seq (tombstone still counts), not the last live seq");
+});
+
+// ── R23 P3b（SA-03）：仓库动态进观察者 prompt ─────────────────────────────────────────────
+
+test("tick feeds the project's recent repo activity into the observer prompt as an objective record", async () => {
+  let capturedPrompt = "";
+  const requested: Array<{ projectId: string; limit: number }> = [];
+  const occurred = (daysAgo: number) => new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate()];
+      }
+    },
+    githubActivity: {
+      listRecentActivitiesByProject: async (id: string, limit: number) => {
+        requested.push({ projectId: id, limit });
+        return [
+          { kind: "commit", title: "修好了支付回调", occurredAt: occurred(1), state: null, authorLogin: "amy" },
+          { kind: "commit", title: "上个月的提交", occurredAt: occurred(45), state: null, authorLogin: null }
+        ] as never;
+      }
+    },
+    client: async () => ({
+      messages: {
+        async create(input: unknown) {
+          capturedPrompt = JSON.stringify(input);
+          return { content: [{ type: "text", text: JSON.stringify({ items: [] }) }] };
+        }
+      }
+    })
+  });
+
+  await createConversationObserverScheduler(deps).tick();
+
+  assert.deepEqual(requested, [{ projectId, limit: 30 }]);
+  assert.ok(capturedPrompt.includes("最近的代码仓库动态"), "the repo activity section must reach the prompt");
+  assert.ok(capturedPrompt.includes("修好了支付回调"));
+  assert.ok(!capturedPrompt.includes("上个月的提交"), "rows outside the 7-day window must be dropped");
+});
+
+test("tick analyzes normally when no github activity port is wired in", async () => {
+  let capturedPrompt = "";
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate()];
+      }
+    },
+    client: async () => ({
+      messages: {
+        async create(input: unknown) {
+          capturedPrompt = JSON.stringify(input);
+          return { content: [{ type: "text", text: JSON.stringify({ items: [] }) }] };
+        }
+      }
+    })
+  });
+
+  const result = await createConversationObserverScheduler(deps).tick();
+
+  assert.equal(result.analyzed, 1);
+  assert.ok(!capturedPrompt.includes("最近的代码仓库动态"));
+});
+
+test("tick keeps analyzing when the repo activity lookup throws", async () => {
+  const warnings: string[] = [];
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate()];
+      }
+    },
+    githubActivity: {
+      listRecentActivitiesByProject: async () => {
+        throw new Error("github table exploded");
+      }
+    },
+    logger: { warn: (event: string) => { warnings.push(event); }, error: () => {} }
+  });
+
+  const result = await createConversationObserverScheduler(deps).tick();
+
+  assert.equal(result.analyzed, 1);
+  assert.equal(result.failed, 0);
+  assert.ok(warnings.includes("conversation_observer_repo_activity_failed"));
+});
+
+// ── R23 P3b（SA-07）：「助手主动性」三档决定观察者的静默窗口 ────────────────────────────
+
+test("the observer silence window scales with the project owner's proactivity level", () => {
+  // 项目级窗口 60s：安静档要等两倍、均衡档原样、主动档减半。均衡=接线前行为，是本次改造的不变式。
+  assert.equal(observerSilenceWindowMs(candidate({ ownerProactivity: "quiet" })), 120_000);
+  assert.equal(observerSilenceWindowMs(candidate({ ownerProactivity: "balanced" })), 60_000);
+  assert.equal(observerSilenceWindowMs(candidate({ ownerProactivity: "proactive" })), 30_000);
+  // 脏数据（历史行/手改库）回落默认档，不让整个 tick 崩掉。
+  assert.equal(observerSilenceWindowMs(candidate({ ownerProactivity: "nonsense" })), 60_000);
+});
+
+test("a conversation that went quiet 45 seconds ago is only ripe for the proactive level", () => {
+  const lastMessageAt = new Date(now.getTime() - 45_000);
+  assert.equal(isObserverSilenceElapsed(candidate({ ownerProactivity: "quiet", lastMessageAt }), now), false);
+  assert.equal(isObserverSilenceElapsed(candidate({ ownerProactivity: "balanced", lastMessageAt }), now), false);
+  assert.equal(isObserverSilenceElapsed(candidate({ ownerProactivity: "proactive", lastMessageAt }), now), true);
+});
+
+test("a conversation that went quiet 90 seconds ago is ripe for every level except quiet", () => {
+  const lastMessageAt = new Date(now.getTime() - 90_000);
+  assert.equal(isObserverSilenceElapsed(candidate({ ownerProactivity: "quiet", lastMessageAt }), now), false);
+  assert.equal(isObserverSilenceElapsed(candidate({ ownerProactivity: "balanced", lastMessageAt }), now), true);
+  assert.equal(isObserverSilenceElapsed(candidate({ ownerProactivity: "proactive", lastMessageAt }), now), true);
+});
+
+test("tick defers a candidate whose precise silence window has not elapsed yet, without touching the LLM", async () => {
+  // SQL 粗筛按最宽窗口（主动档 ×0.5=30s）放行，所以 45 秒前的会话会被扫出来；均衡档的项目
+  // 这时候还没到点，worker 必须自己挡住，且不能记进 skipped_quiet_hours。
+  let llmCalls = 0;
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate({ ownerProactivity: "balanced", lastMessageAt: new Date(now.getTime() - 45_000) })];
+      }
+    },
+    client: async () => ({
+      messages: {
+        async create() {
+          llmCalls += 1;
+          return { content: [{ type: "text", text: JSON.stringify({ items: [] }) }] };
+        }
+      }
+    })
+  });
+
+  const result = await createConversationObserverScheduler(deps).tick();
+
+  assert.equal(result.scanned, 1);
+  assert.equal(result.analyzed, 0);
+  assert.equal(result.skipped_proactivity_window, 1);
+  assert.equal(result.skipped_quiet_hours, 0, "not-yet-ripe must not be miscounted as quiet hours");
+  assert.equal(llmCalls, 0, "a deferred candidate must not cost a single LLM call");
+});
+
+test("tick analyzes the same 45-second-old conversation once the owner switches to the proactive level", async () => {
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate({ ownerProactivity: "proactive", lastMessageAt: new Date(now.getTime() - 45_000) })];
+      }
+    },
+    client: async () => ({
+      messages: {
+        async create() {
+          return { content: [{ type: "text", text: JSON.stringify({ items: [] }) }] };
+        }
+      }
+    })
+  });
+
+  const result = await createConversationObserverScheduler(deps).tick();
+
+  assert.equal(result.analyzed, 1);
+  assert.equal(result.skipped_proactivity_window, 0);
+});
+
+test("tick defers a 90-second-old conversation for a quiet-level owner that a balanced owner would get analyzed", async () => {
+  const listFor = (level: string) => async () => [
+    candidate({ ownerProactivity: level, lastMessageAt: new Date(now.getTime() - 90_000) })
+  ];
+  const build = (level: string) =>
+    baseDeps({
+      actionCards: { ...baseDeps().actionCards, listObserverCandidates: listFor(level) },
+      client: async () => ({
+        messages: {
+          async create() {
+            return { content: [{ type: "text", text: JSON.stringify({ items: [] }) }] };
+          }
+        }
+      })
+    });
+
+  const quiet = await createConversationObserverScheduler(build("quiet")).tick();
+  const balanced = await createConversationObserverScheduler(build("balanced")).tick();
+
+  assert.equal(quiet.analyzed, 0);
+  assert.equal(quiet.skipped_proactivity_window, 1);
+  assert.equal(balanced.analyzed, 1);
+  assert.equal(balanced.skipped_proactivity_window, 0);
+});
+
+// 跨层一致性（同 DEFAULT_MAX_MESSAGES_PER_ANALYSIS ≤ ACTION_CARD_ANALYSIS_LIMIT_MAX 的对齐断言）：
+// SQL 粗筛的窗口系数必须不严于最宽的档位系数，否则主动档该扫的会话在 SQL 里就被滤掉了，worker
+// 这层再宽也救不回来——这种跨层常数漂移只有断言拦得住。
+test("the SQL prefilter factor stays at least as permissive as the most permissive proactivity level", () => {
+  const widest = Math.min(
+    ...(["quiet", "balanced", "proactive"] as const).map(
+      (level) => resolveProactivityPolicy(level).observerSilenceMultiplier
+    )
+  );
+  assert.ok(
+    OBSERVER_SILENCE_SCAN_FLOOR_FACTOR <= widest,
+    `SQL prefilter factor ${OBSERVER_SILENCE_SCAN_FLOOR_FACTOR} must not be stricter than the widest level factor ${widest}`
+  );
 });

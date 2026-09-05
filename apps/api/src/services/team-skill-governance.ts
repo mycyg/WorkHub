@@ -2,6 +2,7 @@ import {
   teamSkillManagementItemVmSchema,
   teamSkillManagementPageVmSchema,
   type SkillEditPatch,
+  type TeamSkillCurateNowResponse,
   type TeamSkillManagementItemVM,
   type TeamSkillManagementPageVM,
   type TeamSkillVM
@@ -19,6 +20,10 @@ import {
 import type { AuthActor } from "../middleware/auth.js";
 import { getDefaultStructuredLogger } from "../logging.js";
 import { parseOutputContract } from "../pages/output-contract.js";
+import {
+  getDefaultSkillCurationManualRunner,
+  type SkillCurationManualRunner
+} from "../workers/agent-skill-curation.js";
 import { validateSkillEditPatch } from "./skill-curation.js";
 
 // R14 批 MEM（记忆可见可治理）：团队技能治理管理面服务——列表/详情（全员可读）+ 编辑/停用（仅管理员）。
@@ -40,6 +45,9 @@ export class TeamSkillGovernanceServiceError extends Error {
 export type TeamSkillGovernanceServiceDependencies = {
   repository: Pick<TeamSkillRepository, "listForWorkspace" | "getById" | "promote" | "deprecate">;
   auditLog: Pick<AuditLogRepository, "createAuditLog">;
+  // R23 SA-06：管理员手动触发一轮「AI 自学团队技能」。未注入则用真调度器（只是三个闭包，
+  // 不在这里把调度器建出来）。
+  curation?: SkillCurationManualRunner;
   now?: () => Date;
 };
 
@@ -54,6 +62,9 @@ export type TeamSkillGovernanceService = {
     rationaleMd?: string;
   }): Promise<TeamSkillManagementItemVM>;
   deactivateSkill(input: { actor: AuthActor; id: string; reason?: string }): Promise<{ deprecated: true }>;
+  // R23 SA-06：立刻跑一轮「AI 自学团队技能」（不等今晚）。仅管理员；进行中/未启用都明确报错，
+  // 不假装成功。
+  curateNow(input: { actor: AuthActor }): Promise<TeamSkillCurateNowResponse>;
 };
 
 type AdminScope = { userId: string; workspaceId: string };
@@ -136,10 +147,18 @@ const EDIT_REASON_MESSAGE: Record<string, string> = {
   low_confidence: "编辑补丁未达置信度门槛。"
 };
 
+// R23 SA-06：手动触发被拒的两种「没启用」——分开两个码，运维一眼看出该改开关还是该配密钥。
+const CURATION_DISABLED_MESSAGE =
+  "这台部署把「AI 自学团队技能」关掉了（AGENT_RUN_SKILL_CURATION_ENABLED=false），请先在部署配置里打开。";
+const CURATION_PROVIDER_MISSING_MESSAGE =
+  "AI 自学团队技能暂时不可用：这个部署还没有配置 LLM 服务的密钥（LLM_API_KEY）。请联系管理员完成配置后再试。";
+const CURATION_IN_PROGRESS_MESSAGE = "AI 正在自学团队技能，等这一轮跑完再来。";
+
 export function createTeamSkillGovernanceService(
   deps: TeamSkillGovernanceServiceDependencies
 ): TeamSkillGovernanceService {
   const clock = deps.now ?? (() => new Date());
+  const curation = deps.curation ?? getDefaultSkillCurationManualRunner();
 
   async function writeAudit(input: Parameters<typeof deps.auditLog.createAuditLog>[0]): Promise<void> {
     try {
@@ -277,6 +296,51 @@ export function createTeamSkillGovernanceService(
         detailJson: { skill_key: row.skillKey, version: row.version, reason: effectiveReason }
       });
       return { deprecated: true };
+    },
+
+    async curateNow({ actor }) {
+      const scope = requireAdmin(actor);
+      const availability = curation.availability();
+      if (!availability.enabled) {
+        throw availability.reason === "llm_provider_not_configured"
+          ? new TeamSkillGovernanceServiceError(503, "ai_provider_not_configured", CURATION_PROVIDER_MISSING_MESSAGE)
+          : new TeamSkillGovernanceServiceError(409, "team_skill_curation_disabled", CURATION_DISABLED_MESSAGE);
+      }
+      // 防抖：只认调度器自己的 running 标志，不新建表、不另存状态。这里的「查 running → 起一轮」
+      // 之间没有 await，而 tick() 开头是同步置 running=true 的，所以两个并发请求不可能都挤进去
+      // （单线程 + 无让出点），第二个必然拿到 409。夜间定时那一轮同理会把手动触发挡在门外。
+      if (curation.runState().running) {
+        throw new TeamSkillGovernanceServiceError(409, "team_skill_curation_in_progress", CURATION_IN_PROGRESS_MESSAGE);
+      }
+      // 不等这一轮跑完再回：一轮要逐个工作区打 LLM，HTTP 请求等不起。失败只记日志——调用方
+      // 下次读技能页就能从 running/last_run_at 看到真实结果，不需要在这里编一个「成功」出来。
+      void curation.runOnce().catch((error) => {
+        getDefaultStructuredLogger().warn("team_skill_curation_manual_run_failed", {
+          workspaceId: scope.workspaceId,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      });
+      const runState = curation.runState();
+      // 审计：治理面操作要留痕（谁在什么时候手动催了一轮）。entityId 用工作区 id——这一轮覆盖的是
+      // 整个部署的技能库（沿用夜间那轮的口径：listWorkspaces 全量），不是某一条技能。
+      await writeAudit({
+        workspaceId: scope.workspaceId,
+        actorKind: "human",
+        actorUserId: scope.userId,
+        actorNickname: actor.label,
+        entityType: "team_skill",
+        entityId: scope.workspaceId,
+        action: "team_skill.curation_triggered",
+        detailJson: { trigger: "manual", triggered_at: clock().toISOString() }
+      });
+      return {
+        started: true,
+        curation: {
+          enabled: true,
+          running: runState.running,
+          last_run_at: runState.lastRunAt
+        }
+      };
     }
   };
 }

@@ -128,6 +128,9 @@ function service(overrides: Partial<TeamSkillGovernanceService> = {}): TeamSkill
     async deactivateSkill() {
       return { deprecated: true };
     },
+    async curateNow() {
+      return { started: true, curation: { enabled: true, running: true, last_run_at: null } };
+    },
     ...overrides
   };
 }
@@ -156,7 +159,7 @@ async function routeApp(runtimeSettings: Settings, svc: TeamSkillGovernanceServi
 
 const validOps = [{ op: "modify_section" as const, section: "套路", content_md: "先列大纲，再逐段填充。" }];
 
-test("all four endpoints require authentication before reaching the service", async () => {
+test("all five endpoints require authentication before reaching the service", async () => {
   const runtimeSettings = settings();
   const app = await routeApp(runtimeSettings, service({
     async listSkills() {
@@ -167,6 +170,8 @@ test("all four endpoints require authentication before reaching the service", as
   assert.equal((await app.request(`/api/team-skills/manage/${skillId}`)).status, 401);
   assert.equal((await app.request(`/api/team-skills/manage/${skillId}`, { method: "PATCH", body: "{}" })).status, 401);
   assert.equal((await app.request(`/api/team-skills/manage/${skillId}/deactivate`, { method: "POST", body: "{}" })).status, 401);
+  // R23 SA-06：手动触发一轮自学同样在认证之前就被挡下——它会真的花钱打 LLM。
+  assert.equal((await app.request("/api/team-skills/curate-now", { method: "POST" })).status, 401);
 });
 
 test("non-uuid :id resolves to 404 before touching the service", async () => {
@@ -279,4 +284,48 @@ test("POST deactivate forwards an optional reason and returns the receipt", asyn
 
   await app.request(`/api/team-skills/manage/${skillId}/deactivate`, { method: "POST", headers, body: "{}" });
   assert.deepEqual(seen, ["口径已过时", undefined]);
+});
+
+// R23 SA-06：手动触发一轮「AI 自学团队技能」。鉴权/防抖/未启用全在服务层，这里钉的是路由这一层：
+// 认证之后照直转发、成功回 202（这一轮在后台跑，不是同步跑完的 200），服务层的错误码原样透出。
+test("R23 SA-06 POST curate-now forwards the actor and answers 202 while the round runs in the background", async () => {
+  const runtimeSettings = settings();
+  const seen: string[] = [];
+  const app = await routeApp(runtimeSettings, service({
+    async curateNow(input) {
+      seen.push(input.actor.userId ?? "");
+      return { started: true, curation: { enabled: true, running: true, last_run_at: "2026-07-13T02:00:00.000Z" } };
+    }
+  }));
+  const res = await app.request("/api/team-skills/curate-now", {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+  assert.equal(res.status, 202);
+  assert.deepEqual(await res.json(), {
+    ok: true,
+    data: { started: true, curation: { enabled: true, running: true, last_run_at: "2026-07-13T02:00:00.000Z" } }
+  });
+  assert.deepEqual(seen, [userId]);
+});
+
+test("R23 SA-06 curate-now surfaces the service's refusal codes verbatim (admin gate / debounce / not enabled)", async () => {
+  const runtimeSettings = settings();
+  const headers = { Cookie: await cookie(runtimeSettings) };
+  const cases: Array<[TeamSkillGovernanceServiceError, number, string]> = [
+    [new TeamSkillGovernanceServiceError(403, "team_skill_admin_required", "仅管理员"), 403, "team_skill_admin_required"],
+    [new TeamSkillGovernanceServiceError(409, "team_skill_curation_in_progress", "正在进行"), 409, "team_skill_curation_in_progress"],
+    [new TeamSkillGovernanceServiceError(409, "team_skill_curation_disabled", "已关闭"), 409, "team_skill_curation_disabled"],
+    [new TeamSkillGovernanceServiceError(503, "ai_provider_not_configured", "没配密钥"), 503, "ai_provider_not_configured"]
+  ];
+  for (const [error, status, code] of cases) {
+    const app = await routeApp(runtimeSettings, service({
+      async curateNow() {
+        throw error;
+      }
+    }));
+    const res = await app.request("/api/team-skills/curate-now", { method: "POST", headers });
+    assert.equal(res.status, status);
+    assert.equal(((await res.json()) as { error: { code: string } }).error.code, code);
+  }
 });

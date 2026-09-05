@@ -10,6 +10,7 @@ import {
 import {
   createQueryRecorder,
   queryParamValues,
+  queryRawStrings,
   queryReferences,
   type RecordedQuery
 } from "./test-query-recorder.js";
@@ -268,4 +269,33 @@ test("R14 批 GH: stale-repo hook short-circuits on an empty project list withou
 
   assert.deepEqual(rows, []);
   assert.equal(queries.length, 0);
+});
+
+// R23 P3b（SA-03）：这条查询开始真正驱动风险日报的第四信号后，两道诚实性闸不能被后人顺手删掉——
+// 少了任何一道，用户都会收到一条我们其实没有证据的「你的仓库没动静」指控。
+test("R23 P3b: the stale-repo query never accuses a repo it has not actually synced, nor one bound today", async () => {
+  const { listStaleReposSinceThreshold } = await repositoryModule();
+  const { db, queries } = createQueryRecorder([[]]);
+
+  await listStaleReposSinceThreshold(db, { projectIds: [projectId], thresholdDays: 7, now });
+
+  // 「最后活动时间」的聚合子查询会被记成独立一条，主查询在它之后——按「谁读了 enabled」认，
+  // 别按下标认（子查询多一条少一条都会把下标挪掉）。
+  const main = queries.find((query) => queryReferences(query.where, projectGithubBindings.enabled));
+  assert.ok(main, "a disabled binding is not a signal — the main query must filter on enabled");
+  assert.match(
+    queryRawStrings(main.where).join(" "),
+    /is not null/u,
+    "a binding that never synced successfully must be excluded"
+  );
+  assert.equal(
+    queryReferences(main.where, projectGithubBindings.lastSyncedAt),
+    true,
+    "the never-synced guard must read last_synced_at"
+  );
+  assert.equal(
+    queryReferences(main.where, projectGithubBindings.createdAt),
+    true,
+    "a binding younger than the threshold cannot be N days stale"
+  );
 });

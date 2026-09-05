@@ -3474,9 +3474,21 @@ const teamSkillPageItemResponseSchema = {
   },
   additionalProperties: false
 } as const;
+// R23 SA-06：夜间自学的运行状态。enabled = 开关已开且这台部署配了 LLM 密钥（缺一样今晚都不会跑）；
+// last_run_at 只反映本进程记到的上一轮，重启后回 null——不拿审计日志里「上次学到新技能的时间」冒充。
+const teamSkillCurationStatusResponseSchema = {
+  type: "object",
+  required: ["enabled", "running", "last_run_at"],
+  properties: {
+    enabled: { type: "boolean" },
+    running: { type: "boolean" },
+    last_run_at: { ...dateTimeStringSchema, nullable: true }
+  },
+  additionalProperties: false
+} as const;
 const teamSkillsPageResponseSchema = {
   type: "object",
-  required: ["generated_at", "skills", "totals"],
+  required: ["generated_at", "skills", "totals", "curation"],
   properties: {
     generated_at: dateTimeStringSchema,
     skills: { type: "array", items: teamSkillPageItemResponseSchema },
@@ -3490,6 +3502,7 @@ const teamSkillsPageResponseSchema = {
       },
       additionalProperties: false
     },
+    curation: teamSkillCurationStatusResponseSchema,
     empty_state: { type: "string", enum: ["no_skills"] }
   },
   additionalProperties: false
@@ -8827,6 +8840,43 @@ export function getOpenApiDocument() {
             "413": conversationPayloadTooLargeResponse,
             "401": conversationAuthRequiredResponse,
             "422": conversationValidationResponse,
+            "500": conversationInternalResponse
+          }
+        }
+      },
+      "/api/team-skills/curate-now": {
+        post: {
+          tags: ["memory"],
+          summary: "Admin-only: run one round of nightly team-skill self-learning right now",
+          responses: {
+            "202": jsonDataStatusResponse(
+              {
+                type: "object",
+                required: ["started", "curation"],
+                properties: {
+                  started: { type: "boolean", const: true },
+                  curation: teamSkillCurationStatusResponseSchema
+                },
+                additionalProperties: false
+              },
+              "202",
+              "The round runs in the background; read the skills page for its outcome"
+            ).responses["202"],
+            "403": jsonErrorStatusResponse("403", "Triggering a self-learning round requires an admin", [
+              "invalid_client_token",
+              "forbidden",
+              "human_required",
+              "team_skill_admin_required"
+            ]).responses["403"],
+            "409": jsonErrorStatusResponse(
+              "409",
+              "A round is already running, or self-learning is switched off on this deployment",
+              ["team_skill_curation_in_progress", "team_skill_curation_disabled"]
+            ).responses["409"],
+            "503": jsonErrorStatusResponse("503", "This deployment has no LLM API key configured", [
+              "ai_provider_not_configured"
+            ]).responses["503"],
+            "401": conversationAuthRequiredResponse,
             "500": conversationInternalResponse
           }
         }

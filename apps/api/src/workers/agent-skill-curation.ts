@@ -554,6 +554,59 @@ export function createSkillCurationProviderAdapters(providerRegistry: Pick<Provi
 let defaultScheduler: AgentRunSkillCurationScheduler | undefined;
 let defaultDbClient: WorkHubDatabaseClient | undefined;
 
+// R23 SA-06：「今晚到底会不会跑」的唯一判定——三处共用（server.ts 启停、技能页 VM、管理员手动
+// 触发端点），避免三份各自为政的口径。开关默认已翻成 true（见 config env.ts），所以这里必须把
+// 「没配 LLM 密钥」也算作没启用：否则无 key 的自托管每夜都会对每个工作区白跑一遍 analyze 查询、
+// 再被 providerRegistry.get() 的 fail-fast 打回，只刷警告不产出。
+export type SkillCurationAvailability =
+  | { enabled: true }
+  | { enabled: false; reason: "disabled_by_setting" | "llm_provider_not_configured" };
+
+export function skillCurationAvailability(
+  deps: {
+    enabledSetting?: boolean;
+    providerRegistry?: Pick<ProviderRegistry, "isConfigured">;
+  } = {}
+): SkillCurationAvailability {
+  const enabledSetting = deps.enabledSetting ?? settings.agentRun.skillCurationEnabled;
+  if (!enabledSetting) {
+    return { enabled: false, reason: "disabled_by_setting" };
+  }
+  const providerRegistry = deps.providerRegistry ?? getDefaultProviderRegistry();
+  if (!providerRegistry.isConfigured()) {
+    return { enabled: false, reason: "llm_provider_not_configured" };
+  }
+  return { enabled: true };
+}
+
+// 只「看一眼」本进程调度器的运行状态，绝不顺手把默认调度器建出来——技能页每次渲染都会读它，
+// 而建单例会连带拉起 DB client / provider registry / 预设技能读盘。没建过 = 本进程没跑过：
+// running=false、lastRunAt=null 是诚实答案（时间戳只活在进程内存里，重启后归 null，不拿审计
+// 日志里「上次学到新技能的时间」冒充「上次跑过的时间」）。
+export function peekSkillCurationRunState(): { running: boolean; lastRunAt: string | null } {
+  if (!defaultScheduler) {
+    return { running: false, lastRunAt: null };
+  }
+  const stats = defaultScheduler.stats();
+  return { running: stats.running, lastRunAt: stats.last_tick_at ?? null };
+}
+
+// R23 SA-06：管理员手动触发一轮自学要用到的最小接口（服务层只认这三件事，测试可整体替身）。
+export type SkillCurationManualRunner = {
+  availability: () => SkillCurationAvailability;
+  runState: () => { running: boolean; lastRunAt: string | null };
+  // 调用即同步进入 tick（tick 开头同步置 running=true），调用方据此实现「进行中 → 409」防抖。
+  runOnce: () => Promise<SkillCurationTickResult>;
+};
+
+export function getDefaultSkillCurationManualRunner(): SkillCurationManualRunner {
+  return {
+    availability: () => skillCurationAvailability(),
+    runState: () => peekSkillCurationRunState(),
+    runOnce: () => getDefaultAgentRunSkillCurationScheduler().tick()
+  };
+}
+
 export function getDefaultAgentRunSkillCurationScheduler(): AgentRunSkillCurationScheduler {
   if (defaultScheduler) {
     return defaultScheduler;

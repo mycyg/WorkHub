@@ -1,12 +1,20 @@
 import { settings as runtimeSettings } from "@workhub/config";
 import type { NotificationSeverity } from "@workhub/contracts";
 import {
+  createAiSettingsRepository,
   getSharedDatabaseClient,
   listDdlChaseCandidates,
   type DdlChaseCandidateRow
 } from "@workhub/db";
 
 import { getDefaultStructuredLogger, type StructuredLogger } from "../logging.js";
+import {
+  createAiSettingsProactivityLoader,
+  createProactivityProfileReader,
+  type ProactivityDdlStage,
+  type ProactivityPolicy,
+  type ProactivityProfileLoader
+} from "./proactivity-policy.js";
 import {
   getDefaultProactiveIntentService,
   isWithinProactiveQuietHours,
@@ -48,7 +56,8 @@ const OVERDUE_REMINDER_INTERVAL_MS = 24 * HOUR_MS;
 
 const DEFAULT_MAX_PER_TICK = 200;
 
-export type DdlStage = "t3d" | "t1d" | "overdue" | "escalate" | "needs_owner";
+// 阶梯枚举与 proactivity-policy 的 ProactivityDdlStage 是同一个联合（单一真相点，见那里的注释）。
+export type DdlStage = ProactivityDdlStage;
 
 export type DdlChaseRunResult = {
   scanned: number;
@@ -62,6 +71,8 @@ export type DdlChaseRunResult = {
   skipped_no_target: number;
   // 无责任人但尚未逾期（还不到找人时机）/ 该 tick 无当前阶梯——不产 intent。
   skipped_no_stage: number;
+  // R23 P3b（SA-07）：目标用户把「助手主动性」调成了安静档，这一阶梯（还有 3 天 / 还有 1 天）不发。
+  skipped_quiet_profile: number;
   started_at: string;
   finished_at: string;
 };
@@ -73,6 +84,9 @@ export type DdlChaseServiceDeps = {
   // R15 批 D2：t1d/overdue 两档是否改走 Cuu 会话通道（PROACTIVE_CUU_DELIVERY_ENABLED，默认 true）。
   // 缺省 false（不注入时回到批 D 的全通知行为）。
   cuuDeliveryEnabled?: boolean;
+  // R23 P3b（SA-07）：读目标用户的「助手主动性」档位。可选——不注入时全员按默认档（均衡）处理，
+  // 即接线前的既有行为。
+  loadProactivity?: ProactivityProfileLoader;
   now?: () => Date;
   maxPerTick?: number;
   logger?: Pick<StructuredLogger, "info" | "warn">;
@@ -172,10 +186,14 @@ function stageCopy(stage: DdlStage, candidate: DdlChaseCandidateRow): StageCopy 
   }
 }
 
-// R15 批 D2（Cuu 主动开口）：t1d/overdue 两档走会话通道时，Cuu 在个人空间主区说的那句人话（零 LLM
-// 模板，措辞后续可接 LLM）。只有这两档有会话文案——其余阶梯（t3d/escalate/找人）留在通知侧。
-function stageConversationText(stage: "t1d" | "overdue", candidate: DdlChaseCandidateRow): string {
+// R15 批 D2（Cuu 主动开口）：走会话通道时 Cuu 在个人空间主区说的那句人话（零 LLM 模板，措辞后续可
+// 接 LLM）。escalate/找人不在此列——那两段是发给项目负责人的问责通知，不适合做成 Cuu 的闲聊式开口。
+// R23 P3b（SA-07）：t3d 也有了文案——主动档下「还有三天」也允许 Cuu 直接来说一声（均衡/安静档不用它）。
+function stageConversationText(stage: "t3d" | "t1d" | "overdue", candidate: DdlChaseCandidateRow): string {
   const name = displayTitle(candidate);
+  if (stage === "t3d") {
+    return `提前说一声：「${name}」还有三天到期，要不要我先帮你看看进度？`;
+  }
   if (stage === "t1d") {
     return `提醒一下：「${name}」明天就到期了，需要我帮你看看进度吗？`;
   }
@@ -280,6 +298,41 @@ export function planDdlIntent(
   };
 }
 
+// R23 P3b（SA-07）：把「助手主动性」档位套在已经算好的 intent 上——纯函数，不碰 DB。
+// 返回 null = 这一阶梯在当前档位下不发；否则返回（可能改过通道的）intent。
+//   * 阶梯闸：安静档只留 overdue/escalate/needs_owner（见 proactivity-policy 里的取舍注释）。
+//   * 通道闸：ddlConversationStages 决定该阶梯走会话还是通知。安静档为空集 → 一律降回通知；
+//     主动档多含 t3d → 提前三天 Cuu 就直接来说一句。needs_owner 的 action_card 通道不受本闸影响
+//     （它发给项目负责人，是决策卡不是 Cuu 开口）。
+export function applyProactivityToDdlIntent(
+  intent: ProactiveIntentInput,
+  candidate: DdlChaseCandidateRow,
+  policy: ProactivityPolicy,
+  options: PlanDdlIntentOptions = {}
+): ProactiveIntentInput | null {
+  const stage = intent.stage as DdlStage;
+  if (!policy.allowedDdlStages.has(stage)) {
+    return null;
+  }
+  if (stage === "needs_owner") {
+    return intent;
+  }
+  const wantsConversation =
+    (options.cuuDeliveryEnabled ?? false)
+    && policy.ddlConversationStages.has(stage)
+    && (stage === "t3d" || stage === "t1d" || stage === "overdue");
+  if (wantsConversation) {
+    return {
+      ...intent,
+      channel: "conversation_message" as const,
+      conversationText: stageConversationText(stage, candidate)
+    };
+  }
+  // 降回通知通道：显式剥掉会话字段，别留个孤儿 conversationText 让闸门误判。
+  const { channel: _channel, conversationText: _conversationText, ...rest } = intent;
+  return rest;
+}
+
 export function createDdlChaseService(deps: DdlChaseServiceDeps): { runOnce(): Promise<DdlChaseRunResult> } {
   const now = deps.now ?? (() => new Date());
   const logger = deps.logger ?? getDefaultStructuredLogger();
@@ -296,7 +349,8 @@ export function createDdlChaseService(deps: DdlChaseServiceDeps): { runOnce(): P
         suppressed_muted: 0,
         skipped_quiet_hours: 0,
         skipped_no_target: 0,
-        skipped_no_stage: 0
+        skipped_no_stage: 0,
+        skipped_quiet_profile: 0
       };
 
       const candidates = await deps.listCandidates({ now: startedAt, horizonMs: T3D_MS, limit: maxPerTick });
@@ -305,6 +359,8 @@ export function createDdlChaseService(deps: DdlChaseServiceDeps): { runOnce(): P
       // 静默时段是「服务器本地时刻」的全局判定，本 tick 要么全静默要么全不静默——但仍逐条算出该产的
       // intent 以精确计「该产但静默」数（D2 取舍：静默期不投递，记日志计数，下个非静默 tick 再产）。
       const quiet = isWithinProactiveQuietHours(deps.quietHours, startedAt);
+      // R23 P3b（SA-07）：档位读取是 tick 级缓存（同一目标用户一轮只查一次档案）。
+      const proactivity = createProactivityProfileReader(deps.loadProactivity ?? (async () => undefined));
 
       for (const candidate of candidates) {
         const plan = planDdlIntent(candidate, startedAt, { cuuDeliveryEnabled: deps.cuuDeliveryEnabled ?? false });
@@ -321,8 +377,19 @@ export function createDdlChaseService(deps: DdlChaseServiceDeps): { runOnce(): P
           result.skipped_quiet_hours += 1;
           continue;
         }
+        const policy = await proactivity.get({
+          workspaceId: plan.intent.workspaceId,
+          userId: plan.intent.targetUserId
+        });
+        const intent = applyProactivityToDdlIntent(plan.intent, candidate, policy, {
+          cuuDeliveryEnabled: deps.cuuDeliveryEnabled ?? false
+        });
+        if (!intent) {
+          result.skipped_quiet_profile += 1;
+          continue;
+        }
         try {
-          const outcome = await deps.proactive.recordAndDeliver(plan.intent);
+          const outcome = await deps.proactive.recordAndDeliver(intent);
           if (outcome.status === "delivered") {
             result.delivered += 1;
           } else if (outcome.reason === "duplicate") {
@@ -356,7 +423,11 @@ export function getDefaultDdlChaseService(): ReturnType<typeof createDdlChaseSer
       listCandidates: (input) => listDdlChaseCandidates(db, input),
       proactive: getDefaultProactiveIntentService(),
       quietHours: parseProactiveQuietHours(runtimeSettings.proactive.quietHours),
-      cuuDeliveryEnabled: runtimeSettings.proactive.cuuDeliveryEnabled
+      cuuDeliveryEnabled: runtimeSettings.proactive.cuuDeliveryEnabled,
+      // R23 P3b（SA-07）：读目标用户的「助手主动性」档位（安静档少发、主动档多走会话）。
+      loadProactivity: createAiSettingsProactivityLoader((key) =>
+        createAiSettingsRepository(db).findUserProfileAccessRecord(key)
+      )
     });
   }
   return defaultDdlChaseService;

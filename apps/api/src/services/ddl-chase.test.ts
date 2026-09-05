@@ -373,3 +373,164 @@ test("runOnce during quiet hours delivers nothing even for conversation-eligible
   assert.equal(result.delivered, 0);
   assert.equal(calls.length, 0, "quiet hours must gate the conversation channel too");
 });
+
+// ── R23 P3b（SA-07）：「助手主动性」三档 ───────────────────────────────────────────────────
+//
+// 三档在 DDL 追踪上的差别有两层：发不发（阶梯闸）与走哪条路（通道闸）。下面按「同一批候选、只换档位」
+// 对比，balanced 一列必须逐字等于接线前的行为。
+
+const ddlLevels = (level: string) => async () => level;
+
+test("ddl-chase SA-07: the quiet level drops the two early reminders but never the overdue ladder", async () => {
+  const candidates = [
+    candidate({ workItemId: "a", claimedByUserId: "u1", dueAt: new Date(now.getTime() + 48 * HOUR) }), // t3d
+    candidate({ workItemId: "b", claimedByUserId: "u1", dueAt: new Date(now.getTime() + 12 * HOUR) }), // t1d
+    candidate({ workItemId: "c", claimedByUserId: "u1", dueAt: new Date(now.getTime() - 3 * HOUR) }) // overdue
+  ];
+  const { calls, proactive } = recordingProactive();
+  const result = await createDdlChaseService({
+    listCandidates: async () => candidates,
+    proactive,
+    quietHours: noQuiet,
+    loadProactivity: ddlLevels("quiet"),
+    now: () => now
+  }).runOnce();
+
+  assert.equal(result.scanned, 3);
+  assert.equal(result.skipped_quiet_profile, 2, "t3d and t1d are silenced");
+  assert.equal(result.delivered, 1);
+  // 逾期问责链路绝不静音——静掉它不是「少打扰」而是「丢事」。
+  assert.deepEqual(calls.map((c) => c.stage), ["overdue"]);
+});
+
+test("ddl-chase SA-07: the quiet level forces every reminder back onto the notification channel", async () => {
+  const { calls, proactive } = recordingProactive();
+  await createDdlChaseService({
+    listCandidates: async () => [candidate({ workItemId: "c", claimedByUserId: "u1", dueAt: new Date(now.getTime() - 3 * HOUR) })],
+    proactive,
+    quietHours: noQuiet,
+    // 部署总开关开着，但用户说了不想被打扰：Cuu 不在个人空间开口，改发通知。
+    cuuDeliveryEnabled: true,
+    loadProactivity: ddlLevels("quiet"),
+    now: () => now
+  }).runOnce();
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.channel, undefined, "no conversation channel for a quiet-level user");
+  assert.equal(calls[0]!.conversationText, undefined, "and no orphan conversation copy left behind");
+});
+
+test("ddl-chase SA-07: the balanced level reproduces the pre-wiring behaviour exactly (t1d/overdue speak, t3d notifies)", async () => {
+  const candidates = [
+    candidate({ workItemId: "a", claimedByUserId: "u1", dueAt: new Date(now.getTime() + 48 * HOUR) }),
+    candidate({ workItemId: "b", claimedByUserId: "u1", dueAt: new Date(now.getTime() + 12 * HOUR) }),
+    candidate({ workItemId: "c", claimedByUserId: "u1", dueAt: new Date(now.getTime() - 3 * HOUR) })
+  ];
+  const { calls, proactive } = recordingProactive();
+  const result = await createDdlChaseService({
+    listCandidates: async () => candidates,
+    proactive,
+    quietHours: noQuiet,
+    cuuDeliveryEnabled: true,
+    loadProactivity: ddlLevels("balanced"),
+    now: () => now
+  }).runOnce();
+
+  assert.equal(result.delivered, 3);
+  assert.equal(result.skipped_quiet_profile, 0);
+  assert.deepEqual(
+    calls.map((c) => `${c.stage}:${c.channel ?? "notification"}`),
+    ["t3d:notification", "t1d:conversation_message", "overdue:conversation_message"]
+  );
+});
+
+test("ddl-chase SA-07: the proactive level additionally lets Cuu speak up three days out", async () => {
+  const { calls, proactive } = recordingProactive();
+  const result = await createDdlChaseService({
+    listCandidates: async () => [candidate({ workItemId: "a", claimedByUserId: "u1", dueAt: new Date(now.getTime() + 48 * HOUR) })],
+    proactive,
+    quietHours: noQuiet,
+    cuuDeliveryEnabled: true,
+    loadProactivity: ddlLevels("proactive"),
+    now: () => now
+  }).runOnce();
+
+  assert.equal(result.delivered, 1);
+  assert.equal(calls[0]!.stage, "t3d");
+  assert.equal(calls[0]!.channel, "conversation_message");
+  assert.match(calls[0]!.conversationText ?? "", /还有三天/);
+  assert.match(calls[0]!.conversationText ?? "", /上线报价单/);
+});
+
+test("ddl-chase SA-07: the deployment-wide Cuu delivery switch still wins over the proactive level", async () => {
+  const { calls, proactive } = recordingProactive();
+  await createDdlChaseService({
+    listCandidates: async () => [candidate({ workItemId: "a", claimedByUserId: "u1", dueAt: new Date(now.getTime() + 48 * HOUR) })],
+    proactive,
+    quietHours: noQuiet,
+    // 部署侧关掉了 Cuu 主动开口：任何档位都不该绕过它。
+    cuuDeliveryEnabled: false,
+    loadProactivity: ddlLevels("proactive"),
+    now: () => now
+  }).runOnce();
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.channel, undefined);
+});
+
+test("ddl-chase SA-07: escalation to the project owner is never silenced by the target's quiet level", async () => {
+  const { calls, proactive } = recordingProactive();
+  const result = await createDdlChaseService({
+    listCandidates: async () => [
+      candidate({ workItemId: "d", claimedByUserId: "u1", dueAt: new Date(now.getTime() - 30 * HOUR) })
+    ],
+    proactive,
+    quietHours: noQuiet,
+    loadProactivity: ddlLevels("quiet"),
+    now: () => now
+  }).runOnce();
+
+  assert.equal(result.delivered, 1);
+  assert.equal(result.skipped_quiet_profile, 0);
+  assert.equal(calls[0]!.stage, "escalate");
+});
+
+test("ddl-chase SA-07: a missing profile behaves as balanced, and each target user is read once per tick", async () => {
+  const reads: string[] = [];
+  const candidates = [
+    candidate({ workItemId: "a", claimedByUserId: "u1", dueAt: new Date(now.getTime() + 48 * HOUR) }),
+    candidate({ workItemId: "b", claimedByUserId: "u1", dueAt: new Date(now.getTime() + 12 * HOUR) }),
+    candidate({ workItemId: "c", claimedByUserId: "u2", dueAt: new Date(now.getTime() - 3 * HOUR) })
+  ];
+  const { calls, proactive } = recordingProactive();
+  const result = await createDdlChaseService({
+    listCandidates: async () => candidates,
+    proactive,
+    quietHours: noQuiet,
+    loadProactivity: async ({ userId }) => {
+      reads.push(userId);
+      return undefined;
+    },
+    now: () => now
+  }).runOnce();
+
+  assert.equal(result.delivered, 3, "no saved profile must behave exactly as before the wiring");
+  assert.equal(calls.length, 3);
+  assert.deepEqual(reads, ["u1", "u2"], "u1 appears twice among candidates but is read once");
+});
+
+test("ddl-chase SA-07: a profile lookup that throws falls back to balanced instead of killing the tick", async () => {
+  const { calls, proactive } = recordingProactive();
+  const result = await createDdlChaseService({
+    listCandidates: async () => [candidate({ workItemId: "a", claimedByUserId: "u1", dueAt: new Date(now.getTime() + 48 * HOUR) })],
+    proactive,
+    quietHours: noQuiet,
+    loadProactivity: async () => {
+      throw new Error("profile table exploded");
+    },
+    now: () => now
+  }).runOnce();
+
+  assert.equal(result.delivered, 1);
+  assert.equal(calls[0]!.stage, "t3d");
+});
