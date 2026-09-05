@@ -18,10 +18,14 @@
 import type {
   AiGranularSettings,
   AiMode,
+  ClientDeviceResponse,
   CuuProactivity,
   DispatchPolicy,
   PatchUserAiProfileRequest,
   PatchUserProfileRequest,
+  PermissionEffect,
+  PermissionPolicyWrite,
+  PermissionScopeKind,
   SettingsPageVM,
   UserAiProfileVM,
   UserProfileVM
@@ -250,6 +254,74 @@ function permissionPolicyEffectLabel(effect: PermissionPolicyVM["effect"], zh: b
   return zh ? table[effect].zh : table[effect].en;
 }
 
+// —— R23 F-02（权限策略新增/调整）—— //
+// PUT /api/permissions 早就在（本地客户端 + 管理员门），SDK 也补了 createPermissionPolicy，但桌面
+// 设置页此前只能撤销、不能新增/调整——管理员想收紧或放宽一条规则，只能等 AI 在审批里被问到、勾选
+// 「以后同类自动通过」才能"学"出一条，没有任何直接写入口。这里补一张最小可用的表单：范围×动作模式×
+// 效果×优先级，字段与语义见 packages/permissions/src/evaluate.ts（globMatch 通配、scope 优先级
+// org<workspace<role<session、deny 达到 OVERRIDE_DENY_PRIORITY=1000 是跨 scope 熔断）。
+// scope_kind=org/workspace 时 scope_id 必须等于 actor 自己的 org_id/workspace_id（服务端
+// assertPolicyScopeWithinActorTenant 强制），但这个 VM 里目前只有 workspace_id 能拿到（见下方
+// aiProfile.workspace_id 预填）——org_id 没有现成来源，不为此新开端点/加字段（超出本工单范围），
+// 留给用户自己填、错了服务端会给可读的 403。
+
+const PERMISSION_SCOPE_KINDS: readonly PermissionScopeKind[] = ["org", "workspace", "role", "session"];
+const PERMISSION_EFFECTS: readonly PermissionEffect[] = ["allow", "deny", "ask"];
+
+function permissionScopeKindLabel(kind: PermissionScopeKind, zh: boolean): { title: string; desc: string } {
+  const table: Record<PermissionScopeKind, { titleZh: string; titleEn: string; descZh: string; descEn: string }> = {
+    org: { titleZh: "整个组织", titleEn: "Whole org", descZh: "范围 ID 需与你所在组织一致", descEn: "Scope ID must match your own org" },
+    workspace: { titleZh: "这个工作区", titleEn: "This workspace", descZh: "范围 ID 需与当前工作区一致", descEn: "Scope ID must match the current workspace" },
+    role: { titleZh: "某个角色", titleEn: "A role", descZh: "范围 ID 是角色标识", descEn: "Scope ID is a role identifier" },
+    session: { titleZh: "单次会话", titleEn: "A single session", descZh: "范围 ID 是会话标识，只在那次会话里生效", descEn: "Scope ID is a session identifier — applies only within that session" }
+  };
+  const entry = table[kind];
+  return { title: zh ? entry.titleZh : entry.titleEn, desc: zh ? entry.descZh : entry.descEn };
+}
+
+export type PermissionPolicyFormState = {
+  scopeKind: PermissionScopeKind;
+  scopeId: string;
+  actionPattern: string;
+  effect: PermissionEffect;
+  priority: string;
+  busy: boolean;
+  errorText: string | undefined;
+  // ctx.client.createPermissionPolicy 是可选方法（同 revokePermissionPolicy 的既有取舍）——旧版
+  // 客户端可能没有它，false 时表单仍渲染但提交即安静报错，不假装能用。
+  supported: boolean;
+};
+
+export function permissionPolicyFormHtml(state: PermissionPolicyFormState, zh: boolean): string {
+  const scopeChips = PERMISSION_SCOPE_KINDS.map((kind) => {
+    const copy = permissionScopeKindLabel(kind, zh);
+    return `<button type="button" class="wh-spot-reason" data-set-policy-scope-kind="${kind}" data-sel="${state.scopeKind === kind}" title="${escapeHtml(copy.desc)}">${escapeHtml(copy.title)}</button>`;
+  }).join("");
+  const scopeDesc = permissionScopeKindLabel(state.scopeKind, zh).desc;
+  const effectChips = PERMISSION_EFFECTS.map((effect) => {
+    const label = permissionPolicyEffectLabel(effect, zh);
+    return `<button type="button" class="wh-spot-reason" data-set-policy-effect="${effect}" data-sel="${state.effect === effect}">${escapeHtml(label)}</button>`;
+  }).join("");
+  const submitLabel = state.busy ? (zh ? "正在提交…" : "Submitting…") : (zh ? "创建 / 更新策略" : "Create / update policy");
+  const error = state.errorText
+    ? `<div class="wh-spot-row-sub" data-spot-policy-form-error="true" style="color:var(--ds-danger)">${escapeHtml(state.errorText)}</div>`
+    : "";
+  return `<div class="wh-spot-set-group" data-spot-policy-form-section="true">
+    <div class="wh-spot-set-label">${zh ? "新增 / 调整策略" : "Add / adjust a policy"}</div>
+    <div class="wh-spot-row-sub">${zh ? "范围" : "Scope"}</div>
+    <div class="wh-spot-reasons-row">${scopeChips}</div>
+    <div class="wh-spot-row-sub">${escapeHtml(scopeDesc)}</div>
+    <input type="text" class="wh-spot-freetext wh-spot-freetext--line" data-set-policy-scope-id value="${escapeHtml(state.scopeId)}" maxlength="64" placeholder="${escapeHtml(zh ? "范围 ID" : "Scope ID")}" ${state.busy ? "disabled" : ""} />
+    <input type="text" class="wh-spot-freetext wh-spot-freetext--line" data-set-policy-action-pattern value="${escapeHtml(state.actionPattern)}" maxlength="128" placeholder="${escapeHtml(zh ? "动作模式，例如 drive.write:*（* 通配）" : "Action pattern, e.g. drive.write:* (* wildcards)")}" ${state.busy ? "disabled" : ""} />
+    <div class="wh-spot-row-sub">${zh ? "效果" : "Effect"}</div>
+    <div class="wh-spot-reasons-row">${effectChips}</div>
+    ${state.effect === "deny" ? `<div class="wh-spot-row-sub">${zh ? "优先级达到 1000 的自动拒绝会跨范围强制熔断，压过更窄范围的自动通过——非紧急封禁不要设这么高。" : "A deny at priority 1000+ is a cross-scope kill switch that overrides narrower auto-approve rules — only set it that high for an emergency block."}</div>` : ""}
+    <input type="number" class="wh-spot-freetext wh-spot-freetext--line" data-set-policy-priority value="${escapeHtml(state.priority)}" placeholder="${escapeHtml(zh ? "优先级（默认 0）" : "Priority (default 0)")}" ${state.busy ? "disabled" : ""} />
+    <button type="button" class="wh-spot-act ds-pressable wh-spot-act--primary" data-set-policy-submit="true" ${state.busy ? "disabled" : ""}>${submitLabel}</button>
+    ${error}
+  </div>`;
+}
+
 // 撤销两段式确认的纯判定（照 side-panel.ts decideRollbackConfirmation / drive view.ts
 // decideDriveDeleteConfirmation 的同款先例）：同一条已武装的再点=真撤销；未武装或点了另一条=（重新）武装它。
 export function decidePolicyRevokeConfirmation(
@@ -268,6 +340,9 @@ export function permissionPoliciesSectionHtml(input: {
   busyId: string | undefined;
   errorText: string | undefined;
   zh: boolean;
+  // 新增/调整策略表单——同一个治理区块的姊妹功能，与列表共用同一个 admin-only 门（见下方
+  // `!input.policies` 早退）。省略时（既有调用点/既有测试）不渲表单，行为与改动前逐字节一致。
+  form?: PermissionPolicyFormState;
 }): string {
   // 非管理员：settings VM 结构性不含 permission_policies（服务端只给管理员填）——整个治理区不渲染。
   if (!input.policies) {
@@ -297,6 +372,7 @@ export function permissionPoliciesSectionHtml(input: {
   const error = input.errorText
     ? `<div class="wh-spot-row-sub" data-spot-policy-error="true" style="color:var(--ds-danger)">${escapeHtml(input.errorText)}</div>`
     : "";
+  const form = input.form ? permissionPolicyFormHtml(input.form, zh) : "";
   return `<div class="wh-spot-set-group" data-spot-policies-section="true">
     <div class="wh-spot-set-label">${zh ? "自动通过策略" : "Auto-approve policies"}</div>
     <div class="wh-spot-row-sub">${zh
@@ -304,6 +380,126 @@ export function permissionPoliciesSectionHtml(input: {
       : "Standing 'auto-approve similar' rules. Revoke one and those actions come back to you for review."
     }</div>
     ${body}
+    ${error}
+  </div>
+  ${form}`;
+}
+
+// —— R23 F-03（设备管理收尾 · 桌面镜像）—— //
+// web /settings 的「已登录设备」区块早就接了 list/current/revoke-other（apps/web/src/settings-devices.ts），
+// 但桌面——"本机"这个概念唯一真正成立的地方——反而从没渲过这份列表。这里镜像 web 的行 VM 形状
+// （id/deviceName/platform/lastSeenLabel/isCurrent/isRevoked/statusLabel/canRevoke），独立实现而不是
+// 跨 app 导入（apps/desktop-webview 不依赖 apps/web，见各自 package.json）。
+
+type DesktopDeviceRowVM = {
+  id: string;
+  deviceName: string;
+  platform: string;
+  lastSeenLabel: string;
+  isCurrent: boolean;
+  isRevoked: boolean;
+  statusLabel: string;
+  canRevoke: boolean;
+};
+
+function formatDesktopDeviceLastSeen(lastSeenAt: string | undefined, zh: boolean): string {
+  if (!lastSeenAt) {
+    return zh ? "从未连接" : "Never connected";
+  }
+  const parsed = new Date(lastSeenAt);
+  if (Number.isNaN(parsed.getTime())) {
+    return zh ? "从未连接" : "Never connected";
+  }
+  return new Intl.DateTimeFormat(zh ? "zh-CN" : "en-US", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(parsed);
+}
+
+function buildDesktopDeviceRow(device: ClientDeviceResponse, currentDeviceId: string | null, zh: boolean): DesktopDeviceRowVM {
+  const revoked = Boolean(device.revoked_at);
+  // 已撤销的设备哪怕 id 命中当前探测也不再算「本机」——同 web 端 isCurrentDevice 的既有语义。
+  const current = currentDeviceId !== null && !revoked && device.id === currentDeviceId;
+  const statusLabel = revoked ? (zh ? "已撤销" : "Revoked") : current ? (zh ? "本机" : "This device") : (zh ? "活跃" : "Active");
+  return {
+    id: device.id,
+    deviceName: device.device_name,
+    platform: device.platform,
+    lastSeenLabel: formatDesktopDeviceLastSeen(device.last_seen_at, zh),
+    isCurrent: current,
+    isRevoked: revoked,
+    statusLabel,
+    canRevoke: !revoked && !current
+  };
+}
+
+export type DesktopDevicesSectionState = {
+  devices: readonly ClientDeviceResponse[] | undefined;
+  failed: boolean;
+  currentDeviceId: string | null;
+  armedId: string | undefined;
+  busyId: string | undefined;
+  errorText: string | undefined;
+  revokeCurrentArmed: boolean;
+  revokeCurrentBusy: boolean;
+};
+
+export function devicesSectionHtml(state: DesktopDevicesSectionState, zh: boolean): string {
+  if (state.failed) {
+    return `<div class="wh-spot-set-group" data-spot-devices-section="true">
+      <div class="wh-spot-set-label">${zh ? "已登录设备" : "Signed-in devices"}</div>
+      <div class="wh-spot-row-sub">${zh ? "设备没拉到。" : "Couldn't load devices."}</div>
+      <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-set-devices-retry="true">${zh ? "重试" : "Retry"}</button>
+    </div>`;
+  }
+  if (!state.devices) {
+    // 挂载首屏 load() 用 Promise.all 等设备列表落定才第一次 renderAll()——这个分支在生产路径下不可达，
+    // 纯防御性兜底（同这份文件其它 section 的一贯写法）。
+    return "";
+  }
+  const rows = state.devices.length === 0
+    ? `<div class="wh-spot-row-sub">${zh ? "还没有已登录的设备。" : "No signed-in devices yet."}</div>`
+    : state.devices
+        .map((device) => {
+          const row = buildDesktopDeviceRow(device, state.currentDeviceId, zh);
+          let actionHtml = "";
+          if (row.isCurrent) {
+            const label = state.revokeCurrentBusy
+              ? (zh ? "正在登出…" : "Signing out…")
+              : state.revokeCurrentArmed
+                ? (zh ? "确定？再点一次" : "Sure? Click again")
+                : (zh ? "撤销本机并登出" : "Revoke & sign out");
+            actionHtml = `<button type="button" class="wh-spot-act ds-pressable ${state.revokeCurrentArmed ? "wh-spot-act--danger" : "wh-spot-act--quiet"}" data-set-revoke-current-device="true" ${state.revokeCurrentBusy ? "disabled" : ""}>${label}</button>`;
+          } else if (row.canRevoke) {
+            const armed = state.armedId === row.id;
+            const busy = state.busyId === row.id;
+            const label = busy
+              ? (zh ? "撤销中…" : "Revoking…")
+              : armed
+                ? (zh ? "确定？再点一次" : "Sure? Click again")
+                : (zh ? "撤销" : "Revoke");
+            actionHtml = `<button type="button" class="wh-spot-act ds-pressable ${armed ? "wh-spot-act--danger" : "wh-spot-act--quiet"}" data-set-revoke-device="${escapeHtml(row.id)}" ${busy ? "disabled" : ""}>${label}</button>`;
+          }
+          return `<div class="wh-spot-row" style="cursor:default">
+            <div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(row.deviceName)}</div><div class="wh-spot-row-sub">${escapeHtml(row.platform)} · ${escapeHtml(row.lastSeenLabel)} · ${escapeHtml(row.statusLabel)}</div></div>
+            ${actionHtml}
+          </div>`;
+        })
+        .join("");
+  const error = state.errorText
+    ? `<div class="wh-spot-row-sub" data-spot-devices-error="true" style="color:var(--ds-danger)">${escapeHtml(state.errorText)}</div>`
+    : "";
+  return `<div class="wh-spot-set-group" data-spot-devices-section="true">
+    <div class="wh-spot-set-label">${zh ? "已登录设备" : "Signed-in devices"}</div>
+    <div class="wh-spot-row-sub">${zh
+      ? "配对到这个账号的客户端设备。撤销不再使用的设备后，那台设备需要重新配对才能再次访问。"
+      : "Client devices paired to this account. Revoking a device you no longer use requires it to re-pair before it can access your account again."
+    }</div>
+    ${rows}
     ${error}
   </div>`;
 }
@@ -317,7 +513,8 @@ function settingsHtml(
   profile: UserProfileVM | undefined,
   profileFailed: boolean,
   profileErrorText: string | undefined,
-  policiesHtml: string
+  policiesHtml: string,
+  devicesHtml: string
 ): string {
   const lang = vm.language;
   const langChips = lang.supported_locales
@@ -342,6 +539,7 @@ function settingsHtml(
     ${profileSectionHtml(profile, profileFailed, zh)}
     ${profileErrorText ? `<div class="wh-spot-row-sub" data-spot-profile-error="true" style="color:var(--ds-danger)">${escapeHtml(profileErrorText)}</div>` : ""}
     ${policiesHtml}
+    ${devicesHtml}
     <button type="button" class="wh-spot-row" data-set-open-memory="true">
       <div class="wh-spot-row-main">
         <div class="wh-spot-row-title">${zh ? "Cuu 的记忆" : "Cuu's memory"}</div>
@@ -754,6 +952,49 @@ export function createSettingsView(): SpotlightCapabilityView {
           policyRevokeArmTimer = undefined;
         }
       };
+      // R23 F-02：新增/调整策略表单的字段态。文本字段（scope_id/action_pattern/priority）走 focusout
+      // 提交（同下面"我的资料"三个字段的既有取舍——全量 innerHTML 重渲架构下，input 事件重渲会在用户
+      // 打字时打断输入焦点），chip 类字段（scope_kind/effect）点击即改即重渲。
+      let policyFormScopeKind: PermissionScopeKind = "workspace";
+      let policyFormScopeId = "";
+      let policyFormActionPattern = "";
+      let policyFormEffect: PermissionEffect = "ask";
+      let policyFormPriority = "0";
+      let policyFormBusy = false;
+      let policyFormError: string | undefined;
+
+      // R23 F-03：已登录设备列表 + 撤销他机/本机。currentDeviceId 起始为 null（"尚未判定"与"探测到没有
+      // 本地客户端"用同一个值——桌面正常情况下探测会成功，探测失败只影响"哪一行标本机"，不影响列表本身）。
+      let devices: ClientDeviceResponse[] | undefined;
+      let devicesFailed = false;
+      let currentDeviceId: string | null = null;
+      let deviceRevokeArmedId: string | undefined;
+      let deviceRevokeBusyId: string | undefined;
+      let deviceRevokeError: string | undefined;
+      let deviceRevokeArmTimer: ReturnType<typeof setTimeout> | undefined;
+      const clearDeviceRevokeArm = () => {
+        deviceRevokeArmedId = undefined;
+        if (deviceRevokeArmTimer !== undefined) {
+          clearTimeout(deviceRevokeArmTimer);
+          deviceRevokeArmTimer = undefined;
+        }
+      };
+      // 撤销本机走另一条完全不同的收尾——它不是"撤销这条设备记录"本身，是"确定要登出这台设备"。
+      // 桌面登出（runLogoutFlow → POST /api/auth/logout）已经会按 client-token 撤销这台设备（见
+      // apps/api/src/routes/auth.ts 的 logout 处理器），所以这里点了就直接复用既有登出/重绑状态机
+      // （runDesktopLogout），不再单独调 revokeClientDevice——避免"先撤销本机→当前 client-token
+      // 立刻失效→紧接着的登出请求自己都认证不了"这种自扣脚枪。两段式确认只需要一个布尔武装态
+      // （不是按 id，本机只有一条）。
+      let revokeCurrentDeviceArmed = false;
+      let revokeCurrentDeviceBusy = false;
+      let revokeCurrentDeviceArmTimer: ReturnType<typeof setTimeout> | undefined;
+      const clearRevokeCurrentDeviceArm = () => {
+        revokeCurrentDeviceArmed = false;
+        if (revokeCurrentDeviceArmTimer !== undefined) {
+          clearTimeout(revokeCurrentDeviceArmTimer);
+          revokeCurrentDeviceArmTimer = undefined;
+        }
+      };
       // R14 批 AVATAR：头像预览走鉴权 fetch（见文件头 avatarHref 注释），拿到的 blob URL 只在
       // 本次挂载生命周期内有效——单调代次防止连续快速重渲（比如连点 AI 分区开关）时晚到的预览
       // 覆盖新一轮渲染；dispose 时连同最后一个 blob URL 一起释放，不留内存泄漏。
@@ -816,9 +1057,34 @@ export function createSettingsView(): SpotlightCapabilityView {
           armedId: policyRevokeArmedId,
           busyId: policyRevokeBusyId,
           errorText: policyRevokeError,
-          zh
+          zh,
+          // 表单跟列表用同一个 admin-only 门（vm.permission_policies 非 undefined 才渲）——非管理员
+          // 时 permissionPoliciesSectionHtml 早退返回 ""，这个 form 字段传了也不会被渲染。
+          form: {
+            scopeKind: policyFormScopeKind,
+            scopeId: policyFormScopeId,
+            actionPattern: policyFormActionPattern,
+            effect: policyFormEffect,
+            priority: policyFormPriority,
+            busy: policyFormBusy,
+            errorText: policyFormError,
+            supported: Boolean(ctx.client.createPermissionPolicy)
+          }
         });
-        ctx.body.innerHTML = settingsHtml(vm, zh, aiProfile, aiFailed, aiErrorText, profile, profileFailed, profileErrorText, policiesHtml);
+        const devicesHtml = devicesSectionHtml(
+          {
+            devices,
+            failed: devicesFailed,
+            currentDeviceId,
+            armedId: deviceRevokeArmedId,
+            busyId: deviceRevokeBusyId,
+            errorText: deviceRevokeError,
+            revokeCurrentArmed: revokeCurrentDeviceArmed,
+            revokeCurrentBusy: revokeCurrentDeviceBusy
+          },
+          zh
+        );
+        ctx.body.innerHTML = settingsHtml(vm, zh, aiProfile, aiFailed, aiErrorText, profile, profileFailed, profileErrorText, policiesHtml, devicesHtml);
         ctx.requestResize();
         hydrateAvatarPreview();
       };
@@ -845,6 +1111,26 @@ export function createSettingsView(): SpotlightCapabilityView {
         }
       };
 
+      // R23 F-03：设备列表 + 尽力探测"哪一台是本机"。桌面天然带 client-token，GET /current 正常情况下
+      // 应该总能成功；仍然 catch 折叠为 null（同 web bindSettingsDevicesPanel 的既有先例）而不是让这一
+      // 个补充探测的失败挡住整份设备列表的渲染。
+      const loadDevices = async () => {
+        try {
+          devices = await ctx.client.listClientDevices();
+          devicesFailed = false;
+        } catch {
+          if (disposed) return;
+          devices = undefined;
+          devicesFailed = true;
+        }
+        try {
+          const current = await ctx.client.currentClientDevice();
+          currentDeviceId = current.id;
+        } catch {
+          currentDeviceId = null;
+        }
+      };
+
       // rank7：装载失败渲带「重试」的错误块，点重试重跑（不再死胡同）。
       const load = async () => {
         ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉设置…" : "Loading settings…"}</div>`;
@@ -859,7 +1145,7 @@ export function createSettingsView(): SpotlightCapabilityView {
         }
         if (disposed) return;
         storageKey = vm.language.storage_key || storageKey;
-        await Promise.all([loadAiProfile(), loadProfile()]);
+        await Promise.all([loadAiProfile(), loadProfile(), loadDevices()]);
         if (disposed) return;
         renderAll();
       };
@@ -941,6 +1227,101 @@ export function createSettingsView(): SpotlightCapabilityView {
           });
       }
 
+      // R23 F-02：提交「新增/调整策略」表单（PUT /api/permissions）。服务端对等价规则会直接返回已存在
+      // 的记录（见 services/approvals.ts createPolicy 的 findEquivalentActivePolicy）——按响应里的 id
+      // 去重合并进本地 vm.permission_policies 即可，不必整表重拉 GET /api/permissions。
+      function submitPolicyForm(): void {
+        const scopeId = policyFormScopeId.trim();
+        const actionPattern = policyFormActionPattern.trim();
+        const priority = Number(policyFormPriority);
+        if (!scopeId || !actionPattern || !Number.isFinite(priority)) {
+          policyFormError = zh
+            ? "请填写范围 ID 与动作模式，优先级需为数字。"
+            : "Enter a scope ID and action pattern; priority must be a number.";
+          renderAll();
+          return;
+        }
+        // MRG-25 同款取舍：createPermissionPolicy 是可选方法，旧版客户端缺它就安静降级，不非空断言硬调。
+        const create = ctx.client.createPermissionPolicy;
+        if (!create) {
+          policyFormError = zh
+            ? "当前客户端版本不支持新增策略，请升级后再试。"
+            : "This client version can't create policies — please update.";
+          renderAll();
+          return;
+        }
+        const payload: PermissionPolicyWrite = {
+          scope_kind: policyFormScopeKind,
+          scope_id: scopeId,
+          action_pattern: actionPattern,
+          effect: policyFormEffect,
+          priority: Math.trunc(priority),
+          learned_from_session: false
+        };
+        policyFormBusy = true;
+        policyFormError = undefined;
+        renderAll();
+        void create
+          .call(ctx.client, payload)
+          .then((created) => {
+            if (disposed) return;
+            policyFormBusy = false;
+            if (vm) {
+              const nextItem: PermissionPolicyVM = {
+                id: created.id,
+                action_pattern: created.action_pattern,
+                effect: created.effect,
+                learned_from_session: created.learned_from_session,
+                created_at: created.created_at,
+                revoke_href: `/api/permissions/${encodeURIComponent(created.id)}`
+              };
+              vm = {
+                ...vm,
+                permission_policies: [...(vm.permission_policies ?? []).filter((policy) => policy.id !== nextItem.id), nextItem]
+              };
+            }
+            // 范围/效果/优先级多半跨几条规则复用，动作模式清空以方便连续新增。
+            policyFormScopeId = "";
+            policyFormActionPattern = "";
+            ctx.toast(zh ? "策略已保存" : "Policy saved", "ok");
+            renderAll();
+          })
+          .catch(() => {
+            if (disposed) return;
+            policyFormBusy = false;
+            policyFormError = zh ? "保存失败，请重试。" : "Couldn't save — try again.";
+            ctx.toast(zh ? "保存失败" : "Save failed", "error");
+            renderAll();
+          });
+      }
+
+      // R23 F-03：撤销他机（非本机）——POST /api/client-devices/:id/revoke。乐观本地替换（同 revokePolicy
+      // 的既有取舍），不整表重拉。revokeClientDevice 是必填方法（不是可选面），不需要 MRG-25 式降级判断。
+      function revokeDevice(deviceId: string): void {
+        clearDeviceRevokeArm();
+        deviceRevokeBusyId = deviceId;
+        deviceRevokeError = undefined;
+        renderAll();
+        void ctx.client
+          .revokeClientDevice(deviceId)
+          .then((revoked) => {
+            if (disposed) return;
+            deviceRevokeBusyId = undefined;
+            if (devices) {
+              devices = devices.map((device) => (device.id === deviceId ? revoked : device));
+            }
+            ctx.toast(zh ? "已撤销这台设备" : "Device revoked", "ok");
+            renderAll();
+          })
+          .catch(() => {
+            if (disposed) return;
+            deviceRevokeBusyId = undefined;
+            deviceRevokeError = zh ? "撤销失败，请重试。" : "Couldn't revoke — try again.";
+            ctx.toast(zh ? "撤销失败" : "Revoke failed", "error");
+            renderAll();
+          });
+      }
+
       // R20 SEC P1-01：登出的生产副作用（摸真 window/__TAURI__/壳层广播）。状态机本身 (runDesktopLogout) 与
       // 这些副作用解耦，单测直接注入假 effects 断言顺序/失败停位；这里只在真实桌面环境执行。
       const logoutEffects: DesktopLogoutEffects = {
@@ -977,6 +1358,16 @@ export function createSettingsView(): SpotlightCapabilityView {
       const runLogoutFlow = (opts: { force: boolean }) => {
         void runDesktopLogout(logoutEffects, logoutView, opts);
       };
+
+      // R23 F-03：撤销本机——见文件顶部状态声明处的注释：直接复用既有登出/重绑状态机（服务端 logout
+      // 处理器已经会按 client-token 撤销这台设备），不单独调 revokeClientDevice(currentDeviceId)（那会
+      // 让当前 client-token 在登出请求自己发出之前就先失效）。
+      function revokeCurrentDeviceAndSignOut(): void {
+        clearRevokeCurrentDeviceArm();
+        revokeCurrentDeviceBusy = true;
+        renderAll();
+        runLogoutFlow({ force: false });
+      }
 
       ctx.body.addEventListener("click", (event) => {
         const target = event.target;
@@ -1028,6 +1419,91 @@ export function createSettingsView(): SpotlightCapabilityView {
             renderAll();
           }, 5000);
           renderAll();
+          return;
+        }
+        // R23 F-02：新增/调整策略表单——scope_kind/effect 是 chip，点即改即重渲；scope_id 切到
+        // workspace 且尚未手填过时，顺手把 aiProfile.workspace_id 填进去做个方便默认（org 没有现成来源，
+        // 不瞎猜，见文件顶部注释）。
+        const scopeKindBtn = target.closest<HTMLElement>("[data-set-policy-scope-kind]");
+        if (scopeKindBtn?.dataset.setPolicyScopeKind) {
+          const kind = scopeKindBtn.dataset.setPolicyScopeKind as PermissionScopeKind;
+          if (kind !== policyFormScopeKind) {
+            policyFormScopeKind = kind;
+            if (kind === "workspace" && !policyFormScopeId && aiProfile) {
+              policyFormScopeId = aiProfile.workspace_id;
+            }
+            renderAll();
+          }
+          return;
+        }
+        const policyEffectBtn = target.closest<HTMLElement>("[data-set-policy-effect]");
+        if (policyEffectBtn?.dataset.setPolicyEffect) {
+          const effect = policyEffectBtn.dataset.setPolicyEffect as PermissionEffect;
+          if (effect !== policyFormEffect) {
+            policyFormEffect = effect;
+            renderAll();
+          }
+          return;
+        }
+        if (target.closest("[data-set-policy-submit]")) {
+          if (!policyFormBusy) {
+            submitPolicyForm();
+          }
+          return;
+        }
+        // R23 F-03：设备列表重试。
+        if (target.closest("[data-set-devices-retry]")) {
+          devicesFailed = false;
+          ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉设置…" : "Loading settings…"}</div>`;
+          ctx.requestResize();
+          void loadDevices().then(() => {
+            if (disposed) return;
+            renderAll();
+          });
+          return;
+        }
+        // R23 F-03：撤销他机——两段式确认，同撤销策略的先例（decidePolicyRevokeConfirmation 是纯粹的
+        // armedId/clickedId 判定，不含策略专属逻辑，这里直接复用而不重写一份等价函数）。
+        const revokeDeviceBtn = target.closest<HTMLElement>("[data-set-revoke-device]");
+        if (revokeDeviceBtn?.dataset.setRevokeDevice) {
+          const deviceId = revokeDeviceBtn.dataset.setRevokeDevice;
+          if (deviceRevokeBusyId) {
+            return;
+          }
+          const decision = decidePolicyRevokeConfirmation(deviceRevokeArmedId, deviceId);
+          if (decision.kind === "execute") {
+            revokeDevice(deviceId);
+            return;
+          }
+          clearDeviceRevokeArm();
+          deviceRevokeArmedId = deviceId;
+          deviceRevokeError = undefined;
+          deviceRevokeArmTimer = setTimeout(() => {
+            deviceRevokeArmTimer = undefined;
+            if (disposed) return;
+            deviceRevokeArmedId = undefined;
+            renderAll();
+          }, 5000);
+          renderAll();
+          return;
+        }
+        // R23 F-03：撤销本机（并登出）——两段式确认，同一个动作没有多个 id 可武装，只需一个布尔态。
+        if (target.closest("[data-set-revoke-current-device]")) {
+          if (revokeCurrentDeviceBusy) {
+            return;
+          }
+          if (!revokeCurrentDeviceArmed) {
+            revokeCurrentDeviceArmed = true;
+            renderAll();
+            revokeCurrentDeviceArmTimer = setTimeout(() => {
+              revokeCurrentDeviceArmTimer = undefined;
+              if (disposed) return;
+              revokeCurrentDeviceArmed = false;
+              renderAll();
+            }, 5000);
+            return;
+          }
+          revokeCurrentDeviceAndSignOut();
           return;
         }
         // R14 批 MEM：设置区旁挂的记忆管理面入口——独立能力视图（views/memory.ts），不是内联区块。
@@ -1188,7 +1664,26 @@ export function createSettingsView(): SpotlightCapabilityView {
       // 场景一样，都是"交互已经结束才重绘"）。focusout 会冒泡（blur 不会），所以能用同一个委托监听器。
       ctx.body.addEventListener("focusout", (event) => {
         const target = event.target;
-        if (!(target instanceof HTMLElement) || !profile) return;
+        if (!(target instanceof HTMLElement)) return;
+        // R23 F-02：新增/调整策略表单的三个自由文本字段——同"我的资料"字段一样走 focusout（不重渲，
+        // 只把值收进状态变量，submitPolicyForm 提交时才读取；不依赖 profile 是否加载成功，
+        // 独立于下面 `if (!profile) return` 之前判定）。
+        const scopeIdInput = target.closest<HTMLInputElement>("[data-set-policy-scope-id]");
+        if (scopeIdInput) {
+          policyFormScopeId = scopeIdInput.value;
+          return;
+        }
+        const actionPatternInput = target.closest<HTMLInputElement>("[data-set-policy-action-pattern]");
+        if (actionPatternInput) {
+          policyFormActionPattern = actionPatternInput.value;
+          return;
+        }
+        const priorityInput = target.closest<HTMLInputElement>("[data-set-policy-priority]");
+        if (priorityInput) {
+          policyFormPriority = priorityInput.value;
+          return;
+        }
+        if (!profile) return;
         const titleInput = target.closest<HTMLInputElement>("[data-set-profile-title]");
         if (titleInput) {
           const next = titleInput.value.trim();
@@ -1222,6 +1717,8 @@ export function createSettingsView(): SpotlightCapabilityView {
       return () => {
         disposed = true;
         clearPolicyRevokeArm();
+        clearDeviceRevokeArm();
+        clearRevokeCurrentDeviceArm();
         revokeAvatarObjectUrl();
       };
     }
