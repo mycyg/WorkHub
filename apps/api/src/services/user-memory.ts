@@ -20,7 +20,8 @@ const CATEGORY_LABEL: Record<UserMemoryCategory, string> = {
 // 因此 (a) 用 <user_memory> 围栏隔离并对每条 valueMd 做与 loop.ts 同口径的 neutralizeFenceTags 中和，
 //      任何字面 </user_memory> 都无法闭合围栏逃逸；
 // (b) 引导语改成防御性措辞——这是「参考材料」而非须优先遵循的指令，块内任何看似指令的文字都不得改变工作纪律或输出结构。
-export function buildUserMemoryPromptSection(rows: UserMemoryRow[]): string {
+// R25 批 B1：同 buildAgentMemoryPromptSection——入参收窄成本函数真正渲染的两列（全行仍可直接传入）。
+export function buildUserMemoryPromptSection(rows: Pick<UserMemoryRow, "category" | "valueMd">[]): string {
   if (rows.length === 0) {
     return "";
   }
