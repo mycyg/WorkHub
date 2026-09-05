@@ -20,6 +20,7 @@ import { commandRegistry, type CommandId, type CommandMatch } from "../command-p
 import { renderWorkHubLiquidGlassLayer, scheduleWorkHubLiquidGlassFilterRebuild } from "../liquid-glass-filter.js";
 import { noAiProviderConfiguredText } from "../ai-provider-banner-copy.js";
 import { resolveDesktopTauriInvoke } from "../desktop-window-controls.js";
+import { applyGlassAlphaOverride, readGlassAlphaSource } from "../desktop-glass-alpha.js";
 import { stashPendingWorkbenchDeepLink } from "../workbench/pending-deep-link.js";
 import { resolveCapabilityView } from "./registry.js";
 import {
@@ -299,6 +300,9 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   const controllerAbort = new AbortController();
 
   host.className = "wh-ds wh-spot-stage";
+  // R24 调试开关：玻璃白底 alpha 的运行期覆写（没置位=不写任何内联样式，走 css.ts 的默认 token）。
+  // 挂在宿主元素上而不是 :root——它同时带着 .wh-ds，内联自定义属性才压得住 .wh-ds 上的 --ds-glass-strong。
+  applyGlassAlphaOverride(host, readGlassAlphaSource(typeof window === "undefined" ? undefined : window));
   host.innerHTML = renderSpotlightShellHtml(locale);
 
   const box = host.querySelector<HTMLElement>("[data-spot-box]")!;
