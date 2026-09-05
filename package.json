@@ -10,6 +10,7 @@
     "pnpm": ">=11.0.0"
   },
   "scripts": {
+    "prepare": "lefthook install",
     "dev": "pnpm --filter @workhub/api dev",
     "build": "pnpm -r --if-present build",
     "typecheck": "pnpm -r --if-present typecheck",
@@ -57,6 +58,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
+    "lefthook": "^2.1.12",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

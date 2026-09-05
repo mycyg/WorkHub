@@ -22,6 +22,7 @@ This file lists every **direct** external dependency declared by a workspace `pa
 | [`@types/react-dom`](https://github.com/DefinitelyTyped/DefinitelyTyped) | 18.3.7 | MIT |
 | [`drizzle-kit`](https://github.com/drizzle-team/drizzle-orm) | 0.31.10 | MIT |
 | [`hono`](https://github.com/honojs/hono) | 4.13.7 | MIT |
+| [`lefthook`](https://github.com/evilmartians/lefthook) | 2.1.12 | MIT |
 | [`pg`](https://github.com/brianc/node-postgres) | 8.21.0 | MIT |
 | [`react`](https://github.com/facebook/react) | 18.3.1 | MIT |
 | [`react-dom`](https://github.com/facebook/react) | 18.3.1 | MIT |
@@ -46,3 +47,4 @@ WorkHub borrows selected engineering conventions and, in places, code from [deep
 | Agent Note decision-log system (proposed/implemented/rejected/archived lifecycle) | idea/format — no code copied | `.agents/notes/README.md` |
 | Root `AGENTS.md` conventions (repo map + must-run gates + review rules, line-budgeted) | idea/format — no code copied | `AGENTS.md` |
 | `gen-X` / `--check` regenerate-rather-than-reject pattern for this generator | adapted code — MIT header retained | this file's header comment |
+| lefthook pre-commit job layering (staged whitespace/path/audit checks + regenerate-rather-than-reject notices job) | adapted config — MIT header retained | `lefthook.yml`'s header comment |

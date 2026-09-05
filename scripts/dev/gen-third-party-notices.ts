@@ -175,6 +175,7 @@ const DSH_BORROWS = [
   { what: "Agent Note decision-log system (proposed/implemented/rejected/archived lifecycle)", kind: "idea/format — no code copied", where: "`.agents/notes/README.md`" },
   { what: "Root `AGENTS.md` conventions (repo map + must-run gates + review rules, line-budgeted)", kind: "idea/format — no code copied", where: "`AGENTS.md`" },
   { what: "`gen-X` / `--check` regenerate-rather-than-reject pattern for this generator", kind: "adapted code — MIT header retained", where: "this file's header comment" },
+  { what: "lefthook pre-commit job layering (staged whitespace/path/audit checks + regenerate-rather-than-reject notices job)", kind: "adapted config — MIT header retained", where: "`lefthook.yml`'s header comment" },
 ];
 
 /** Render one license-family table, or nothing when the bucket is empty. */

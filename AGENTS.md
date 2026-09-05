@@ -37,7 +37,8 @@ pnpm verify      # typecheck && test && lint —— CI 的 workspace job 就跑�
 
 ## 纪律
 
-- **绝不 `git add -A` / `git add .`**：工作树常有并行工作留下的残留文件；只 targeted add 自己改的（本地钩子见下）。
+- **绝不 `git add -A` / `git add .`**：工作树常有并行工作留下的残留文件；只 targeted add 自己改的。
+- **本机 `pnpm install` 会自动装好 lefthook 预提交钩子**（`lefthook.yml`）：挡白空格、`.env`/密钥形态/`reference/` 路径、跑 `audit:copy-terms`/`audit:agent-notes`/`audit:desktop-version`、暂存改了依赖清单就重生成 `THIRD_PARTY_NOTICES.md`；commit-msg 只拒空消息。只在本机跑，不影响 CI（CI 有自己独立的 `pnpm lint`）。
 - **改产线行为要同步改 PG smoke 断言**：`qa:r1-pg-smoke` / `qa:r2-pg-redis-smoke` / `pilot-stack-smoke` 断言的是真库行为；行为变了断言不跟着变，等于没人会发现真的坏没坏。
 - **新端点同批补三处**：`apps/api/src/openapi.ts`（手写 OpenAPI）+ `packages/contracts`（zod schema）+ `packages/api-client`（前端调用客户端）——三者没有自动同步，漏一处是运行时才炸的漂移。
 - **用户可见文案**走 i18n 字典（不是内联三元），禁黑话（表见 `docs/workhub/00-overview/glossary-dejargon.md`），禁 emoji（chat reaction 表情是唯一例外，见 `CONTRIBUTING.md`）。
