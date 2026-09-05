@@ -21,10 +21,7 @@
 import type { WorkHubApiClient } from "@workhub/api-client";
 import type { WorkHubLocale } from "@workhub/ui/gold-path";
 
-import {
-  desktopBootScreenFitAttribute,
-  desktopBootScreenFitPaddingPx
-} from "./desktop-boot-screen-fit.js";
+import { desktopBootPanel, renderDesktopBootPanelHtml } from "./desktop-boot-panel.js";
 import { markDesktopIdentityCreated } from "./desktop-first-run.js";
 import { writeDesktopClientToken } from "./desktop-client-token.js";
 import { isPasswordModeBootstrapError, rememberDesktopAuthModeHint } from "./desktop-login.js";
@@ -93,11 +90,14 @@ export function describeDesktopRebindError(error: unknown, locale: WorkHubLocale
 
 // 重绑/首启屏的 HTML（自带 <style>，不依赖外部 CSS 已加载——渲进 boot 首帧壳也成立，同凭据登录门）。
 // context 默认 "logged-out"（向后兼容既有调用方/既有测试对「已登出」文案的断言）。
+// R24 I（三屏视觉统一）：面板外框、表单、按钮、量高锚点全部来自 desktop-boot-panel.ts——这张屏此前是
+// 一张白底卡（rgba(255,255,255,.86) + backdrop-filter），而 backdrop-filter 在透明 + 原生 vibrancy 的
+// 主窗里是空操作，用户看到的是灰底上一张白纸，与连接屏/聚焦盒的液态玻璃断层（走查 M-09）。
 // R24 H（首启窗口裁切）：这张屏渲进主窗时，原生窗口还是聚焦盒 idle 的细搜索条尺寸（720×64）——
-// 卡片会被裁得只剩标题。卡片上的 desktopBootScreenFitAttribute 是量高锚点，主窗挂载后由
-// desktop-boot-screen-fit.ts 量它 + 外壳 padding 把窗口撑到内容大小；外壳 padding 与那边的加法共用
-// desktopBootScreenFitPaddingPx，两边漂移就会重新裁边。自带的 html/body 归零是因为这张屏会整个替换掉
-// boot 首帧壳（连同 spotlightCss 一起），不补就会吃到 UA 默认的 8px body margin（卡片偏移 + 出滚动条）。
+// 面板会被裁得只剩标题。共享面板上的 desktopBootScreenFitAttribute 是量高锚点，主窗挂载后由
+// desktop-boot-screen-fit.ts 量它 + 外壳 padding 把窗口撑到内容大小；两者共用
+// desktopBootScreenFitPaddingPx，漂移就会重新裁边。html/body 归零同样在共享面板里（这张屏会整个替换掉
+// boot 首帧壳，不补就会吃到 UA 默认的 8px body margin：面板偏移 + 出滚动条）。
 export function renderDesktopRebindScreenHtml(input: {
   locale: WorkHubLocale;
   error?: string;
@@ -118,28 +118,22 @@ export function renderDesktopRebindScreenHtml(input: {
   const nicknameLabel = zh ? "昵称" : "Nickname";
   const submitLabel = zh ? "登录" : "Sign in";
   const errorHtml = input.error
-    ? `<p data-desktop-rebind-error style="margin:0;font-size:12px;color:#E5484D" role="alert">${escapeHtml(input.error)}</p>`
-    : `<p data-desktop-rebind-error hidden style="margin:0;font-size:12px;color:#E5484D" role="alert"></p>`;
-  return `<style>
-    html,body,#root{margin:0;padding:0;background:rgba(0,0,0,0)!important}
-    .wh-desktop-rebind-shell{box-sizing:border-box;min-height:100vh;padding:${desktopBootScreenFitPaddingPx}px;display:grid;place-items:center;font-family:'M PLUS Rounded 1c','Noto Sans SC',system-ui,sans-serif;background:transparent}
-    .wh-desktop-rebind-card{box-sizing:border-box;min-width:300px;max-width:min(420px,calc(100vw - ${desktopBootScreenFitPaddingPx * 2}px));padding:28px 30px;border-radius:22px;background:rgba(255,255,255,.86);border:1px solid rgba(255,255,255,.5);box-shadow:0 26px 70px -40px rgba(20,24,45,.55);display:grid;gap:12px;backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%)}
-    .wh-desktop-rebind-card h1{margin:0;font-size:19px;font-weight:900;color:#141a2d}
-    .wh-desktop-rebind-card p.wh-desktop-rebind-sub{margin:0;font-size:13px;line-height:1.5;color:#5B616E}
-    .wh-desktop-rebind-card input{box-sizing:border-box;width:100%;padding:9px 11px;border:1px solid #E6E7EB;border-radius:9px;font-size:14px;background:#fff;color:#141a2d;outline:none}
-    .wh-desktop-rebind-card input:focus{border-color:#4F46E5;box-shadow:0 0 0 3px rgba(79,70,229,.16)}
-    .wh-desktop-rebind-card button[data-desktop-rebind]{margin-top:2px;padding:10px;border:0;border-radius:9px;background:#4F46E5;color:#fff;font-weight:800;font-size:14px;cursor:pointer}
-    .wh-desktop-rebind-card button[data-desktop-rebind]:disabled{opacity:.6;cursor:progress}
-  </style>
-  <div class="wh-ds wh-desktop-rebind-shell">
-    <form ${desktopBootScreenFitAttribute} data-desktop-rebind-form class="wh-desktop-rebind-card" novalidate>
-      <h1>${escapeHtml(title)}</h1>
-      <p class="wh-desktop-rebind-sub">${escapeHtml(subtitle)}</p>
-      <input data-desktop-rebind-nickname name="nickname" type="text" maxlength="64" autocomplete="nickname" placeholder="${escapeHtml(nicknameLabel)}" aria-label="${escapeHtml(nicknameLabel)}" />
-      <button data-desktop-rebind type="submit">${escapeHtml(submitLabel)}</button>
-      ${errorHtml}
-    </form>
-  </div>`;
+    ? `<p data-desktop-rebind-error class="${desktopBootPanel.error}" role="alert">${escapeHtml(input.error)}</p>`
+    : `<p data-desktop-rebind-error hidden class="${desktopBootPanel.error}" role="alert"></p>`;
+  return renderDesktopBootPanelHtml({
+    shellClass: "wh-desktop-rebind-shell",
+    // 提交中按钮禁用表示「正在发请求」，不是「不可用」——共享面板的默认禁用光标是 not-allowed。
+    extraCss: `.${desktopBootPanel.panel} button[data-desktop-rebind]:disabled{cursor:progress}`,
+    inner:
+      `<h1>${escapeHtml(title)}</h1>` +
+      `<p class="${desktopBootPanel.sub}">${escapeHtml(subtitle)}</p>` +
+      `<form data-desktop-rebind-form class="${desktopBootPanel.form}" novalidate>` +
+      // 昵称输入保持"只有占位符 + aria-label"的原样（不新增可见标签文案）——本轮只统一视觉语言。
+      `<input data-desktop-rebind-nickname name="nickname" type="text" maxlength="64" autocomplete="nickname" placeholder="${escapeHtml(nicknameLabel)}" aria-label="${escapeHtml(nicknameLabel)}" />` +
+      `<div class="${desktopBootPanel.actions}"><button data-desktop-rebind type="submit" class="${desktopBootPanel.primary} ds-pressable">${escapeHtml(submitLabel)}</button></div>` +
+      `${errorHtml}` +
+      `</form>`
+  });
 }
 
 // 把重绑/首启屏接到 DOM：提交 → runDesktopRebind；空昵称就地提示（不发请求）；成功后回 onSuccess

@@ -9,6 +9,7 @@ import {
   type DesktopBootScreenFitElement,
   type DesktopBootScreenFitView
 } from "./desktop-boot-screen-fit.js";
+import { desktopBootPanelClass, desktopBootPanelShellClass } from "./desktop-boot-panel.js";
 import { renderDesktopConnectScreenHtml } from "./desktop-connect-screen.js";
 import { renderDesktopCredentialGateHtml } from "./desktop-login.js";
 import { renderDesktopRebindScreenHtml } from "./desktop-rebind.js";
@@ -270,26 +271,28 @@ function rulePadding(css: string, className: string): string | undefined {
   return /(?:^|;)padding:([^;]+)/u.exec(ruleBody(css, className))?.[1];
 }
 
+// R24 I：三张屏的外壳/面板已收敛到 desktop-boot-panel.ts 的同一套类名（外壳 padding 与面板圆角因此
+// 只剩一处定义），各屏自己的类名只作为定位钩子挂在外壳上、不再带样式。
 const bootScreens: Array<{ name: string; shell: string; html: string }> = [
   {
     name: "首启/重绑昵称屏",
-    shell: "wh-desktop-rebind-shell",
+    shell: desktopBootPanelShellClass,
     html: renderDesktopRebindScreenHtml({ locale: "zh-CN", context: "first-run" })
   },
   {
     name: "密码模式凭据门",
-    shell: "wh-desktop-login-shell",
+    shell: desktopBootPanelShellClass,
     html: renderDesktopCredentialGateHtml({ locale: "zh-CN", context: "first-run" })
   },
   {
     name: "连接服务器屏",
-    shell: "wh-connect-shell",
+    shell: desktopBootPanelShellClass,
     html: renderDesktopConnectScreenHtml({ locale: "zh-CN" })
   }
 ];
 
 for (const screen of bootScreens) {
-  test(`${screen.shell} carries the boot-screen fit anchor and the shared shell padding`, () => {
+  test(`${screen.name} carries the boot-screen fit anchor and the shared shell padding`, () => {
     assert.match(
       screen.html,
       new RegExp(`<[a-z]+ ${desktopBootScreenFitAttribute}[ >]`, "u"),
@@ -311,11 +314,7 @@ function ruleRadius(css: string, className: string): string | undefined {
 }
 
 test("boot screens keep one rounded-corner language across the three of them", () => {
-  // 三张屏都是「原生窗里的一整块卡/面板」，圆角要一致——否则首启换屏时圆角会跳一下。
-  const radii = [
-    ruleRadius(bootScreens[0]?.html ?? "", "wh-desktop-rebind-card"),
-    ruleRadius(bootScreens[1]?.html ?? "", "wh-desktop-login-card"),
-    ruleRadius(bootScreens[2]?.html ?? "", "wh-connect-panel")
-  ];
+  // 三张屏都是「原生窗里的一整块面板」，圆角要一致——否则首启换屏时圆角会跳一下。
+  const radii = bootScreens.map((screen) => ruleRadius(screen.html, desktopBootPanelClass));
   assert.deepEqual(radii, ["22px", "22px", "22px"]);
 });
