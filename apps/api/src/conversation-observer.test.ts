@@ -938,6 +938,43 @@ test("a unique-violation (23505) from createOrAppendCard is treated as an idempo
   assert.deepEqual(advanced, { conversationId, analyzedToSeq: 6, at: now });
 });
 
+test("R24 S3: a unique-violation nested under drizzle-orm's `.cause` (the real production shape) is also treated as an idempotent duplicate", async () => {
+  // drizzle-orm 0.45 的 node-postgres 驱动把裸 pg DatabaseError 包进 DrizzleQueryError 的
+  // `.cause`——顶层没有 `.code`。上面那条测试用的顶层塞 code 的假错误形状，在生产里并不真实存在；
+  // 这条锁死 isUniqueViolation 接得住真实的嵌套包装（同一根因见 apps/api/src/routes/auth.ts 的
+  // desktop-bootstrap 并发 500 修复）。
+  let advanced: unknown;
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate()];
+      },
+      async createOrAppendCard() {
+        const pgDatabaseError = Object.assign(
+          new Error('duplicate key value violates unique constraint "action_card_items_pkey"'),
+          { code: "23505" }
+        );
+        throw Object.assign(new Error('Failed query: insert into "action_card_items" ...'), {
+          cause: pgDatabaseError
+        });
+      },
+      async advanceWatermark(input) {
+        advanced = input;
+        return {} as ObserverStateRow;
+      }
+    },
+    client: llmClientReturning({
+      items: [{ kind: "execute", title_md: "重写第三节", confidence: "high", suggested_assignee_nickname: "张三" }]
+    })
+  });
+  const result = await createConversationObserverScheduler(deps).tick();
+  assert.equal(result.failed, 0, "a nested-cause duplicate-key conflict on retry is not a genuine analysis failure");
+  assert.equal(result.skipped_duplicate_write, 1);
+  assert.equal(result.cards_created, 0);
+  assert.deepEqual(advanced, { conversationId, analyzedToSeq: 6, at: now });
+});
+
 test("a non-unique-violation error from createOrAppendCard still propagates as a genuine analysis failure", async () => {
   let recorded: unknown;
   const deps = baseDeps({

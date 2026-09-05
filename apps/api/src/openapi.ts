@@ -566,7 +566,9 @@ const identifyRequestBodySchema = {
   required: ["nickname"],
   properties: {
     nickname: { type: "string", minLength: 1, maxLength: 64 },
-    admin_secret: { type: "string", maxLength: 256 }
+    admin_secret: { type: "string", maxLength: 256 },
+    // R24 S3 严重#4：新建用户时优先用它，其次探测 Accept-Language，都没有才落 zh-CN；已存在用户不受影响。
+    locale: { type: "string", enum: ["zh-CN", "en-US"] }
   },
   additionalProperties: false
 } as const;
@@ -577,7 +579,9 @@ const desktopBootstrapRequestBodySchema = {
     nickname: { type: "string", minLength: 1, maxLength: 64 },
     admin_secret: { type: "string", maxLength: 256 },
     device_name: { type: "string", minLength: 1, maxLength: 128 },
-    platform: { type: "string", maxLength: 64 }
+    platform: { type: "string", maxLength: 64 },
+    // R24 S3 严重#4：同 identifyRequestBodySchema 的 locale。
+    locale: { type: "string", enum: ["zh-CN", "en-US"] }
   },
   additionalProperties: false
 } as const;
@@ -597,7 +601,9 @@ const passwordRegisterRequestBodySchema = {
   properties: {
     email: { type: "string", format: "email", maxLength: 320 },
     password: { type: "string", minLength: 8, maxLength: 1024 },
-    nickname: { type: "string", minLength: 1, maxLength: 64 }
+    nickname: { type: "string", minLength: 1, maxLength: 64 },
+    // R24 S3 严重#4：同 identifyRequestBodySchema 的 locale。
+    locale: { type: "string", enum: ["zh-CN", "en-US"] }
   },
   additionalProperties: false
 } as const;
@@ -667,7 +673,9 @@ const inviteAcceptRequestBodySchema = {
   properties: {
     token: { type: "string", minLength: 1, maxLength: 512 },
     nickname: { type: "string", minLength: 1, maxLength: 64 },
-    password: { type: "string", minLength: 8, maxLength: 1024 }
+    password: { type: "string", minLength: 8, maxLength: 1024 },
+    // R24 S3 严重#4：同 identifyRequestBodySchema 的 locale。
+    locale: { type: "string", enum: ["zh-CN", "en-US"] }
   },
   additionalProperties: false
 } as const;
