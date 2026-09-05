@@ -33,10 +33,10 @@ use workhub_client_tauri::sse_worker::{
     spawn_default_shell_sse_workers, ShellClientToken, ShellServerUrl,
 };
 use workhub_client_tauri::tray::{
-    shell_badge_count, tray_menu_action_plan_by_id_for_locale, tray_tooltip,
-    tray_tooltip_with_badge, TRAY_HIDE_MAIN_ID, TRAY_OPEN_INBOX_ID, TRAY_OPEN_SETTINGS_ID,
-    TRAY_OPEN_WORKBENCH_ID, TRAY_QUIT_ID, TRAY_RESTORE_PET_INTERACTION_ID, TRAY_SHOW_MAIN_ID,
-    TRAY_TOGGLE_PET_ID, WORKHUB_TRAY_ID,
+    shell_badge_count, tray_menu_action_plan_by_id_for_locale, tray_template_icon_rgba,
+    tray_tooltip, tray_tooltip_with_badge, TRAY_HIDE_MAIN_ID, TRAY_OPEN_INBOX_ID,
+    TRAY_OPEN_SETTINGS_ID, TRAY_OPEN_WORKBENCH_ID, TRAY_QUIT_ID, TRAY_RESTORE_PET_INTERACTION_ID,
+    TRAY_SHOW_MAIN_ID, TRAY_TEMPLATE_ICON_SIZE, TRAY_TOGGLE_PET_ID, WORKHUB_TRAY_ID,
 };
 use workhub_client_tauri::window_controls::{
     focus_main_route as focus_main_route_plan, hide_main_window as hide_main_window_plan,
@@ -1707,6 +1707,20 @@ fn install_workhub_tray(app: &tauri::App, locale: WorkHubLocale) -> Result<(), S
             }
         });
 
+    // L-02：macOS 菜单栏走**单色 template 图标**（系统按明暗自动反色），不再复用紫色的应用图标——
+    // 那张图在菜单栏里既不自适应、22pt 下两行小字也读不出来。其它平台的托盘图标本就是彩色的，
+    // 继续用应用图标。
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder
+            .icon(tauri::image::Image::new_owned(
+                tray_template_icon_rgba(TRAY_TEMPLATE_ICON_SIZE),
+                TRAY_TEMPLATE_ICON_SIZE,
+                TRAY_TEMPLATE_ICON_SIZE,
+            ))
+            .icon_as_template(true);
+    }
+    #[cfg(not(target_os = "macos"))]
     if let Some(icon) = app.default_window_icon() {
         builder = builder.icon(icon.clone());
     }
