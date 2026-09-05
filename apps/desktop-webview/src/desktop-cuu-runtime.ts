@@ -1220,7 +1220,6 @@ export async function bindDesktopShellCuuRuntime(input: {
   onSseReconnected?: (() => void) | undefined;
   now?: () => Date;
   locale?: CuuLocaleOptions["locale"];
-  retryingDelayMs?: number;
 }): Promise<DesktopShellCuuRuntime> {
   const listen = input.listen ?? resolveDesktopShellListen();
   if (!listen) {
@@ -1290,56 +1289,33 @@ export async function bindDesktopShellCuuRuntime(input: {
   const unlisten: DesktopShellUnlisten[] = [];
   // INF-08：按 stream_kind 累计 open 次数。首次 open=首连（壳层刚拉过），>1 即断线重连——触发全量对账回调。
   const sseOpenCounts = new Map<string, number>();
-  let retryingStatusTimer: ReturnType<typeof setTimeout> | undefined;
-  const clearRetryingStatusTimer = () => {
-    if (retryingStatusTimer) {
-      clearTimeout(retryingStatusTimer);
-      retryingStatusTimer = undefined;
-    }
-  };
   const pushUnlisten = await listen("push-event", (event) => {
     bridge.handlePushPayload(event.payload);
   });
   if (typeof pushUnlisten === "function") {
     unlisten.push(pushUnlisten);
   }
-  const dismissCardIfPresent = (cardId: string) => {
-    const snapshot = controller.snapshot();
-    if (
-      snapshot.active_card?.id === cardId
-      || snapshot.queue.some((card) => card.id === cardId)
-      || snapshot.badges.some((card) => card.id === cardId)
-    ) {
-      input.onDecision?.(controller.dismiss(cardId));
-    }
-  };
+  // R25-Q：这里此前还会把 sse-status（per-subscription、协议粒度的原始信号）翻成一张"offline"卡片
+  // 塞进 controller（bridge.handleSseStatusPayload），带 retryingDelayMs 防抖 + dismissCardIfPresent
+  // 复原——那正是 L-06（`r24-S5-reverify.md`）记录的"桌宠离线时自作主张放大搬家"根因：这张卡的
+  // CuuState 是"offline"，非 idle 态卡片一律走 windowModeForState 的"card"分支（520×720），会把
+  // 260×340 的小窗撑大、原生窗口跟着挪位置。现在桌宠改从 workhub-connection-changed（壳层的连接
+  // 状态"单一真相"，见 pet-surface.ts 的 connectionStatus/desktopPetConnectionStatusText）读一份
+  // 独立于 controller 卡片队列之外的持续状态，走既有的"无卡片、只有 status_text"紧凑气泡（body_only
+  // 尺寸不变），不再需要这个函数往 controller 里塞卡片——sse-status 这条订阅只保留下面的重连计数，
+  // 用于 INF-08 的全量对账触发，不再驱动任何 UI。
   const statusUnlisten = await listen("sse-status", (event) => {
     const payload = parseDesktopShellSseStatusPayload(event.payload);
-    if (payload?.state === "open") {
-      clearRetryingStatusTimer();
-      dismissCardIfPresent(`sse-status:${payload.stream_kind}:retrying`);
-      dismissCardIfPresent(`sse-status:${payload.stream_kind}:closed`);
-      // INF-08：断线重连成功 → 全量重拉对账。首连不触发（壳层启动已拉过），重连窗口里漏掉的
-      // push 事件（后端无回放）靠这次补拉收敛到服务端真实状态。
-      const openCount = (sseOpenCounts.get(payload.stream_kind) ?? 0) + 1;
-      sseOpenCounts.set(payload.stream_kind, openCount);
-      if (openCount > 1) {
-        input.onSseReconnected?.();
-      }
+    if (payload?.state !== "open") {
       return;
     }
-    if (payload?.state === "closed") {
-      clearRetryingStatusTimer();
+    // INF-08：断线重连成功 → 全量重拉对账。首连不触发（壳层启动已拉过），重连窗口里漏掉的
+    // push 事件（后端无回放）靠这次补拉收敛到服务端真实状态。
+    const openCount = (sseOpenCounts.get(payload.stream_kind) ?? 0) + 1;
+    sseOpenCounts.set(payload.stream_kind, openCount);
+    if (openCount > 1) {
+      input.onSseReconnected?.();
     }
-    if (payload?.state === "retrying" && (input.retryingDelayMs ?? 0) > 0) {
-      clearRetryingStatusTimer();
-      retryingStatusTimer = setTimeout(() => {
-        retryingStatusTimer = undefined;
-        bridge.handleSseStatusPayload(event.payload);
-      }, input.retryingDelayMs);
-      return;
-    }
-    bridge.handleSseStatusPayload(event.payload);
   });
   if (typeof statusUnlisten === "function") {
     unlisten.push(statusUnlisten);
@@ -1367,7 +1343,6 @@ export async function bindDesktopShellCuuRuntime(input: {
   return {
     subscribed: true,
     async dispose() {
-      clearRetryingStatusTimer();
       for (const stop of unlisten.splice(0)) {
         stop();
       }

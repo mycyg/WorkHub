@@ -32,7 +32,6 @@ import {
   desktopPetLocale,
   desktopPetPointerSmoothingAlpha,
   desktopPetRunRestoreStorageKey,
-  desktopPetRuntimeRetryingDelayMs,
   desktopPetSurfaceCss,
   handleDesktopPetRuntimeDecision,
   handleDesktopPetRuntimeNotice,
@@ -213,7 +212,6 @@ test("desktop pet runtime notices keep SSE retry cards transient and clear dismi
 
   // R9.7: the old assertion grepped pet-surface.ts for runtime-binding source text.
   // That was wrong because source text did not prove notice persistence or dismissed-card clearing behavior.
-  assert.equal(desktopPetRuntimeRetryingDelayMs, 900);
   assert.equal(cleared, true);
   assert.equal(kept, false);
   assert.deepEqual(calls, [

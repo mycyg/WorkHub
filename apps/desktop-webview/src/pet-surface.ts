@@ -115,7 +115,6 @@ export type DesktopPetSurfaceRuntime = {
 export type DesktopPetSurfaceClient = ReturnType<typeof createApiClient>;
 
 export const desktopPetRunRestoreStorageKey = "workhub.cuu.currentRun.v1";
-export const desktopPetRuntimeRetryingDelayMs = 900;
 
 export type DesktopPetRuntimeSetCard = (
   card: CuuCard | undefined,
@@ -1837,7 +1836,6 @@ export async function bootDesktopPetSurface(
       // 届时点击走既有的 openWorkbenchRouteFromPet / openMainRouteFromPet 兜底。
       rememberSystemNotificationPlan(plan);
     },
-    retryingDelayMs: desktopPetRuntimeRetryingDelayMs,
     // INF-08：SSE 断线重连成功即全量重拉待拍板卡——断线窗口漏掉的 push 事件（后端无回放）不再靠
     // 下一条增量才补齐。refreshVisibleAttentionCard 自带「当前卡不是 attention 卡就早退」守卫，多补无害。
     onSseReconnected: () => {
