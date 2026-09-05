@@ -141,3 +141,50 @@ test("resolveSkillRefs takes at most one skill per turn", () => {
   const refs = resolveSkillRefs("/周报模板", [skill(), skill({ skillKey: "other", name: "周报模板" })]);
   assert.equal(refs.length, 1);
 });
+
+// —— 两端之间的格式契约 —— //
+//
+// 桌面端 picker 选中一条候选后，往输入框里插的是**带尾随空格**的纯文本（view.ts 的 pickConversationRef
+// / pickSkill：`#${title} ` / `/${name} `）。这条格式是前后端唯一的接头暗号——没有结构化字段兜底，
+// 插入格式一变、或解析器的边界规则一收紧，引用就会静默失效（用户看正文以为引用了，Cuu 其实没拿到）。
+// 所以这里逐字复刻两端的插入结果来解析一遍，把格式钉死在测试里。
+
+test("the exact text the composer inserts for a picked conversation resolves back to that conversation", () => {
+  const inserted = `#${conversationA.title} `;
+  assert.deepEqual(
+    resolveConversationRefs(inserted, [conversationA, conversationC]).map((ref) => ref.id),
+    ["conv-a"]
+  );
+  // 用户在插入的引用后面接着往下写正文，引用照样成立。
+  assert.deepEqual(
+    resolveConversationRefs(`${inserted}这里的口径帮我核一下`, [conversationA]).map((ref) => ref.id),
+    ["conv-a"]
+  );
+  // 引用写在句中（先打字、再从工具条点「#会话」）也成立。
+  assert.deepEqual(
+    resolveConversationRefs(`帮我核一下 ${inserted}的口径`, [conversationA]).map((ref) => ref.id),
+    ["conv-a"]
+  );
+});
+
+test("the exact text the composer inserts for a picked skill resolves back to that skill", () => {
+  const picked = skill();
+  const inserted = `/${picked.name} `;
+  assert.deepEqual(
+    resolveSkillRefs(inserted, [picked]).map((ref) => ref.skillKey),
+    ["weekly-report"]
+  );
+  assert.deepEqual(
+    resolveSkillRefs(`${inserted}这周的进度整理一下`, [picked]).map((ref) => ref.skillKey),
+    ["weekly-report"]
+  );
+});
+
+test("a picked conversation whose title contains spaces still resolves from the inserted text", () => {
+  // picker 里选得到的标题可能带空格；插入的仍然是「#整个标题 」一段，解析靠「长标题优先 + 右边界」
+  // 而不是靠"标题里没有空格"这条不成立的假设。
+  assert.deepEqual(
+    resolveConversationRefs(`#${conversationB.title} 看一下`, [conversationA, conversationB]).map((ref) => ref.id),
+    ["conv-b"]
+  );
+});
