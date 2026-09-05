@@ -37,9 +37,10 @@ use workhub_client_tauri::tray::{
 };
 use workhub_client_tauri::window_controls::{
     focus_main_route as focus_main_route_plan, hide_main_window as hide_main_window_plan,
-    hide_pet_window as hide_pet_window_plan, show_main_window as show_main_window_plan,
-    show_pet_window as show_pet_window_plan, toggle_pet_window as toggle_pet_window_plan,
-    ShellWindowControlAction, ShellWindowControlPlan, ShellWindowControlSource,
+    hide_pet_window as hide_pet_window_plan, shell_navigate_payload,
+    show_main_window as show_main_window_plan, show_pet_window as show_pet_window_plan,
+    toggle_pet_window as toggle_pet_window_plan, ShellWindowControlAction, ShellWindowControlPlan,
+    ShellWindowControlSource, MAIN_WINDOW_LABEL,
 };
 
 use std::{
@@ -1003,14 +1004,22 @@ fn execute_window_control(
         }
     }
 
-    if plan.label == "main" {
+    if plan.label == MAIN_WINDOW_LABEL {
         if let Err(error) = configure_main_window_chrome(&window) {
             eprintln!("failed to configure main window chrome; continuing window control: {error}");
         }
-        if let Some(route) = &plan.route {
-            app.emit("navigate", route.clone())
-                .map_err(|error| format!("failed to emit main window navigation: {error}"))?;
-        }
+    }
+
+    // S3-#6：只有真正的导航目标才广播（根路径 = 「显示窗口」而非「导航」，广播它会让 webview 复位
+    // 聚焦盒、洗掉深链/托盘刚打开的能力，见 shell_navigate_payload 的根因注释）。定向发给目标窗口，
+    // 不再全局广播——桌宠/工作台窗从不消费 navigate，广播只会平白扩大事件面。
+    if let Some(payload) = shell_navigate_payload(&plan) {
+        app.emit_to(
+            payload.label.clone(),
+            event_channel_name(ShellEvent::Navigate),
+            payload,
+        )
+        .map_err(|error| format!("failed to emit main window navigation: {error}"))?;
     }
 
     Ok(plan)

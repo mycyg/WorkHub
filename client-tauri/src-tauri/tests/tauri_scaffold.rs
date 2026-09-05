@@ -347,9 +347,20 @@ fn main_window_control_logs_chrome_configuration_failures_without_blocking_navig
         raw.contains("failed to configure main window chrome; continuing window control"),
         "the fallback must leave a diagnostic for real-device follow-up"
     );
+    // S3-#6：navigate 不再是裸字符串广播,而是 shell_navigate_payload 产出的结构体定向发给目标窗口
+    // （根路径 = 「显示窗口」不再广播,否则会把深链/托盘刚打开的能力洗成 idle 条）。这条断言钉住
+    // 「chrome 兜底之后导航照常执行」这个原意,同时钉住新的发送形状。
     assert!(
-        raw.contains("app.emit(\"navigate\", route.clone())"),
+        raw.contains("if let Some(payload) = shell_navigate_payload(&plan)"),
         "route navigation still needs to run after a chrome fallback"
+    );
+    assert!(
+        !raw.contains("app.emit(\"navigate\""),
+        "navigate must carry the structured ShellNavigatePayload, not a bare route string"
+    );
+    assert!(
+        raw.contains("event_channel_name(ShellEvent::Navigate)"),
+        "the navigate channel name must come from the shared ShellEvent contract"
     );
 }
 
