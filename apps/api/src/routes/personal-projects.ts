@@ -15,17 +15,11 @@ import {
 } from "../services/projects.js";
 import { readJsonObject } from "./json-body.js";
 
-// R13 批 S3（个人空间）：故意不在 app.ts 里挂载这个路由器——04 铁律范围围栏禁碰 app.ts/openapi.ts
-// （多个并行批次同时在改这两个文件，谁都不改能避免合并冲突）。这个文件本身是完整、可测的真实现，
-// 只是运行时的 Hono 实例暂时访问不到它——集成时把下面两行接进 app.ts、并把这两个端点的 OpenAPI
-// 描述补进 openapi.ts（同一次改动里做，否则会撞 app.test.ts 的
-// "runtime API routes stay in lockstep with the OpenAPI document" 门）：
-//
-//   import { createPersonalProjectRoutes } from "./routes/personal-projects.js";
-//   app.route("/api", createPersonalProjectRoutes());
-//
-// 挂载后端点是 GET/POST /api/me/personal-projects（与既有 /api/me/ai-profile、/api/me/army 同一个
-// "/me" 前缀风格）。
+// R13 批 S3（个人空间）：GET/POST /api/me/personal-projects（与既有 /api/me/ai-profile、
+// /api/me/army 同一个 "/me" 前缀风格）。已挂载进 app.ts（`app.route("/api",
+// createPersonalProjectRoutes())`，2026-07-13）、OpenAPI 描述也已在 openapi.ts 里——
+// R23 P2（SA-05）web 端的「新建个人空间」按钮（apps/web/src/browser.ts）与 SDK 方法
+// （packages/api-client 的 listPersonalProjects/createPersonalProject）都已接上这两个端点。
 export type PersonalProjectRoutesDependencies = {
   auth?: AuthDependencySource;
   projects?: ProjectService;
