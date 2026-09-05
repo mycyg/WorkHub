@@ -123,7 +123,7 @@ block them once —
 - macOS: find WorkHub.app in Finder, **Control-click → Open**, then click "Open" again in the
   dialog; or run `xattr -dr com.apple.quarantine /Applications/WorkHub.app` in a terminal.
 - Windows: when SmartScreen says "Windows protected your PC," click "More info" → "Run anyway."
-- Linux: `sudo dpkg -i WorkHub_<version>_amd64.deb`; for the AppImage, `chmod +x` it first.
+- Linux: `sudo dpkg -i WorkHub_<version>_linux_amd64.deb`; for the AppImage, `chmod +x` it first.
 
 **Pointing the client at your server**: the client defaults to `http://127.0.0.1:8787`. If the
 server runs on a different machine, open the connection-failure card the client shows, click

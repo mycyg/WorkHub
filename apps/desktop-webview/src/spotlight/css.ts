@@ -6,10 +6,13 @@ import { liquidGlassFilterCss } from "../liquid-glass-filter.js";
 
 export const spotlightCss = [
   liquidGlassFilterCss,
-  // 透明窗：webview 背景清零，让 Rust 侧 apply_vibrancy 贴的原生材质（main.rs，R14 起为
-  // UnderWindowBackground）透出来；盒子自己的 SVG displacement + backdrop/filter 层叠在原生材质之上。
+  // 透明窗：webview 背景清零，让 Rust 侧 apply_vibrancy 贴的原生材质（main.rs 的 GlassMaterial，
+  // R24 起为 Popover）透出来；盒子自己的 SVG displacement + backdrop/filter 层叠在原生材质之上。
   "html,body,#root{margin:0;background:rgba(0,0,0,0)!important}",
   "html,body,#root{width:100%;height:100%}",
+  // R24：盒子的半透白底抽成 token，通透度一处可调。透明窗里 backdrop-filter 没内容可糊，
+  // 「能不能看见背后的窗口」全靠这两个 alpha + 原生材质；运行期覆写见 desktop-glass-alpha.ts。
+  ":root{--wh-spot-glass-top:rgba(255,255,255,.5);--wh-spot-glass-bottom:rgba(255,255,255,.39)}",
   "body{overflow:hidden}",
   // 舞台：填满（小）窗口，盒子顶部对齐；四周留白 + 顶栏可拖动整窗。
   // 盒子直接铺满透明窗(padding:0)，由自身圆角/边缘折射收边，不再留 12px 的方角玻璃"垫边"。
@@ -17,14 +20,18 @@ export const spotlightCss = [
   // 盒子=真·液态玻璃：半透白渐变 + backdrop blur（窗后有原生 vibrancy，可压低不透明度让磨砂桌面透出来），
   // 配亮玻璃描边 + 顶部内高光；柔投影交给原生 NSWindow shadow（见下方 R13 V2 注释），CSS 不再自画。
   // 和 Cuu 气泡(.wh-pet-bubble)同一套玻璃语言，只是盒子更通透（它有 vibrancy 兜底）。
-  // R14 真机反馈：肉眼看太透（背景穿透强，screencapture 截不出这个差异——vibrancy 是原生合成，截图工具本就看不到，
-  // 只有肉眼能看出真实观感）。把底色从 .52/.36 提到 .78/.6，内容在原生 vibrancy 模糊之上更立得住，不靠肉眼碰运气。
+  // R14 真机反馈「太透」，把底色从 .52/.36 提到了 .78/.6。R24 用户反馈反转：把深色终端窗放到聚焦盒
+  // 后面，盒子仍是一块实灰、完全看不见背后的窗口。当时是两档一起收紧了——材质取的是 AppKit 里最不透的
+  // UnderWindowBackground（几乎只吃桌面壁纸），白底又压到 .78。R24 的修法是两档一起放开：材质换 Popover，
+  // 白底回到 .5/.39。真机量过：背后的色块透出可辨，黑字（--ds-ink）仍有 9.8:1，远高于 AA 的 4.5:1。
+  // 截图能看到这个差异——screencapture 的区域截图拍的是窗口服务器合成后的画面（只有 -l <windowid>
+  // 单窗截图拍不到 vibrancy），对比表见 .agents/notes/implemented/2026-09-05-spotlight-glass-translucency.md。
   // R13 V2（工作台窗同款玻璃盒踩过的坑，见 r13-v2-window-craft.md）：外层 box-shadow 是矩形投影，会画到原生裁剪出的
   // 圆角外面，在真机截图上留下一截直角残影（用户描述"上面圆角正常，下面有一个直角阴影边缘"就是这个）。阴影交给原生
   // NSWindow 的 shadow（tauri.conf.json 主窗 `shadow:true`），这里只留顶部内高光（inset，天然被圆角裁得干净）。
-  ".wh-spot{position:relative;display:flex;flex-direction:column;border-radius:var(--ds-radius-xl);overflow:hidden;-webkit-app-region:no-drag;background:linear-gradient(135deg,rgba(255,255,255,.78),rgba(255,255,255,.6));border:1px solid rgba(255,255,255,.7);box-shadow:inset 0 1px 0 rgba(255,255,255,.75);backdrop-filter:blur(40px) saturate(185%);-webkit-backdrop-filter:blur(40px) saturate(185%)}",
+  ".wh-spot{position:relative;display:flex;flex-direction:column;border-radius:var(--ds-radius-xl);overflow:hidden;-webkit-app-region:no-drag;background:linear-gradient(135deg,var(--wh-spot-glass-top),var(--wh-spot-glass-bottom));border:1px solid rgba(255,255,255,.7);box-shadow:inset 0 1px 0 rgba(255,255,255,.75);backdrop-filter:blur(40px) saturate(185%);-webkit-backdrop-filter:blur(40px) saturate(185%)}",
   ".wh-spot>.wh-liquid-glass-content{display:flex;flex-direction:column;min-width:0;min-height:0}",
-  // 真毛玻璃由盒子的 ds-glass-strong 工具类(半透白底 + backdrop blur)+ 原生 vibrancy 提供；
+  // 真毛玻璃由盒子自己的半透白底渐变(--wh-spot-glass-top/bottom)+ 原生 vibrancy 提供；
   // 关掉冗余的 SVG warp/haze 折射层与 rim 描边——rim 的 1px 边叠在盒 border 上正是搜索条上那"两道横杠"，
   // 且 haze 的 44% 白幕会把已磨砂的盒子糊成奶白。内容层(wh-liquid-glass-content, z2)照常显示。
   ".wh-spot>.wh-liquid-glass-warp,.wh-spot>.wh-liquid-glass-rim{display:none}",
