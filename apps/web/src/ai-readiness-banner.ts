@@ -1,6 +1,8 @@
 import type { WorkHubLocale } from "@workhub/ui/gold-path";
 import { escapeHtml } from "@workhub/web-runtime";
 
+import { webT } from "./locales.js";
+
 // R23 P2（SA-08）：README 承诺「无 key 时顶部会出现一条 AI 服务未配置的横幅」，但那条文案此前只写
 // 进了桌面聊天输入区（apps/desktop-webview/src/workbench/chat/render.ts）——web 端只有设置页一行 pill，
 // 首页/审批/网盘等页面完全没有提示，新用户第一次提需求才会撞上后端的失败响应。
@@ -17,13 +19,9 @@ const settingsHref = "/settings";
 function copy(locale: WorkHubLocale) {
   const zh = locale === "zh-CN";
   return {
-    bannerBody: zh
-      ? "AI 引擎密钥未配置——群聊、工单、审批、网盘照常可用，但 AI 不会主动观察或应答。"
-      : "AI engine key not set — chat, work items, approvals, and drive still work; AI won't observe or respond yet.",
-    bannerCta: zh ? "去设置查看" : "View in Settings",
-    intakeNote: zh
-      ? "这个入口需要 AI 引擎——密钥未配置时提交会收到明确的失败提示，请管理员先在设置里配置。"
-      : "This entry needs the AI engine — submitting without a configured key returns a clear failure message. Ask an admin to configure it in Settings first."
+    bannerBody: webT(locale, "aiEngineKeyNotSetChat"),
+    bannerCta: webT(locale, "viewInSettings"),
+    intakeNote: webT(locale, "thisEntryNeedsTheAiEngine")
   };
 }
 

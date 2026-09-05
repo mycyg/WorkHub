@@ -9,6 +9,8 @@ import type { WorkHubLocale } from "@workhub/ui/gold-path";
 
 import type { DesktopShellConnectionState } from "./shell-events.js";
 
+import { desktopT } from "./locales.js";
+
 // state === "connected" 时返回 undefined——横幅只在"不是已连接"时才该占位，调用方据此决定要不要渲。
 export function desktopConnectionBannerText(
   state: DesktopShellConnectionState,
@@ -16,10 +18,10 @@ export function desktopConnectionBannerText(
 ): string | undefined {
   const zh = locale === "zh-CN";
   if (state === "offline") {
-    return zh ? "已离线" : "Offline";
+    return desktopT(locale, "offline");
   }
   if (state === "reconnecting") {
-    return zh ? "服务器连不上，正在重连…" : "Can't reach the server — reconnecting…";
+    return desktopT(locale, "canTReachTheServerReconnecting");
   }
   return undefined;
 }

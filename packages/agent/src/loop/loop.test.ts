@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { FENCE_TAG_NAMES } from "./loop.js";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { eventTypes } from "@workhub/contracts";
 import { toCuuState } from "@workhub/events";
-import { createBuiltInFileTools, createToolRegistry } from "@workhub/tools";
+import { createBuiltInFileTools, createToolRegistry, okToolResult } from "@workhub/tools";
 
 import type { LlmCreateResponse, LlmMessage, LlmStream, LlmStreamEvent } from "../providers/types.js";
 import { createAgentLoop, type AgentLoopClient, type AgentLoopEvent } from "./index.js";
@@ -877,8 +877,119 @@ test("AgentLoop truncates oversized tool results in the conversation context", a
   const blocks = toolResultMessage?.content as Array<{ type: string; content: string }>;
   const toolResult = blocks.find((block) => block.type === "tool_result");
   assert.ok(toolResult);
-  assert.equal(toolResult.content.length < 700, true);
-  assert.equal(toolResult.content.includes("需要完整内容请重读该文件或用 run_command 抽取"), true);
+  // B10 行为变更：有 workdir 时超预算结果先落盘，模型看到的是「截断正文 + .spill 定位提示」，
+  // 不再是旧的「重读该文件或用 run_command 抽取」话术（那条现在只留给落盘不可用的分支）。
+  assert.equal(toolResult.content.length < 1000, true);
+  assert.match(toolResult.content, /…\[已截断 19550 字符，中段省略\]/u);
+  assert.match(toolResult.content, /\[完整内容已保存到 \.spill\/0002-read_file\.txt，需要时用 read_file 读取它\]$/mu);
+  assert.match(toolResult.content, /\[The full output is saved at \.spill\/0002-read_file\.txt; use read_file to read the rest\.\]$/mu);
+  assert.equal(toolResult.content.includes("需要完整内容请重读该文件或用 run_command 抽取"), false);
+  // 落盘的是完整原文（20000 字符），trace / step.toolResults 也仍是完整原文。
+  const spilled = await readFile(path.join(workdir, ".spill", "0002-read_file.txt"), "utf8");
+  assert.equal(spilled.length, 20000);
+  assert.equal(result.steps[1]?.toolResults[0]?.content.length, 20000);
+});
+
+test("AgentLoop spill 文件在沙箱围栏内，模型可以用 read_file 把原文读回来", async () => {
+  const workdir = await tempWorkdir();
+  const tools = createToolRegistry(createBuiltInFileTools());
+  const loop = createAgentLoop();
+  const big = "y".repeat(9000);
+  const seen: unknown[] = [];
+  const client: AgentLoopClient = {
+    model: "fake-model",
+    messages: {
+      async create(params) {
+        seen.push(JSON.parse(JSON.stringify(params.messages)));
+        if (seen.length === 1) {
+          return {
+            id: "m1",
+            stopReason: "tool_use",
+            content: [{ type: "tool_use", id: "t1", name: "write_file", input: { path: "outputs/big.md", content: big } }]
+          };
+        }
+        if (seen.length === 2) {
+          return {
+            id: "m2",
+            stopReason: "tool_use",
+            content: [{ type: "tool_use", id: "t2", name: "read_file", input: { path: "outputs/big.md" } }]
+          };
+        }
+        if (seen.length === 3) {
+          // 模型照着定位提示自己去读 spill 文件——这一步验证沙箱路径围栏放行 `.spill/`。
+          return {
+            id: "m3",
+            stopReason: "tool_use",
+            content: [{ type: "tool_use", id: "t3", name: "read_file", input: { path: ".spill/0002-read_file.txt" } }]
+          };
+        }
+        return { id: "m4", stopReason: "end_turn", content: [{ type: "text", text: "done" }] };
+      }
+    }
+  };
+  const result = await loop.run({
+    runId: "40000000-0000-4000-8000-00000000000a",
+    workItemId: "50000000-0000-4000-8000-00000000000a",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "write",
+    client,
+    tools,
+    budget: { ...budget, toolResultContextChars: 4000 },
+    snapshot: () => ({ snapshotId: "60000000-0000-4000-8000-00000000000a" }),
+    requireDeliverable: false
+  });
+
+  assert.equal(result.status, "succeeded");
+  const spillRead = result.steps[2]?.toolResults[0];
+  assert.ok(spillRead);
+  assert.equal(spillRead.isError, false, `read_file .spill/ 被围栏挡住了：${spillRead.content}`);
+  assert.equal(spillRead.content.includes("y".repeat(200)), true);
+});
+
+test("AgentLoop 落盘不可用时退回纯截断话术（不撒谎、不提 .spill）", async () => {
+  // workdir 指向一个「文件」而不是目录：mkdir .spill 必然失败，走 createSpillWriter 的 catch 分支。
+  const parent = await tempWorkdir();
+  const notADir = path.join(parent, "not-a-dir");
+  await writeFile(notADir, "占位", "utf8");
+  const loop = createAgentLoop();
+  const seen: unknown[] = [];
+  const client: AgentLoopClient = {
+    model: "fake-model",
+    messages: {
+      async create(params) {
+        seen.push(JSON.parse(JSON.stringify(params.messages)));
+        if (seen.length === 1) {
+          return { id: "m1", stopReason: "tool_use", content: [{ type: "tool_use", id: "t1", name: "echo", input: {} }] };
+        }
+        return { id: "m2", stopReason: "end_turn", content: [{ type: "text", text: "done" }] };
+      }
+    }
+  };
+  const result = await loop.run({
+    runId: "40000000-0000-4000-8000-00000000000b",
+    workItemId: "50000000-0000-4000-8000-00000000000b",
+    workdir: notADir,
+    systemPrompt: "work",
+    initialUserMessage: "go",
+    client,
+    tools: {
+      toModelTools: async () => [{ name: "echo", description: "echo", input_schema: { type: "object" } }],
+      execute: async () => okToolResult("z".repeat(9000))
+    },
+    budget: { ...budget, toolResultContextChars: 500 },
+    requireDeliverable: false
+  });
+
+  assert.equal(result.status, "succeeded");
+  const second = seen[1] as Array<{ role: string; content: unknown }>;
+  const block = (second.flatMap((message) => (Array.isArray(message.content) ? message.content : [])) as Array<{
+    type?: string;
+    content?: string;
+  }>).find((item) => item.type === "tool_result");
+  assert.ok(block?.content);
+  assert.match(block.content, /…\[已截断 8550 字符，中段省略；需要完整内容请重读该文件或用 run_command 抽取\]/u);
+  assert.equal(block.content.includes(".spill/"), false);
 });
 
 test("AgentLoop retries transient provider errors with backoff and then succeeds", async () => {

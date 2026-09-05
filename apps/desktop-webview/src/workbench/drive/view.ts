@@ -18,6 +18,8 @@ import {
 } from "./render.js";
 import type { DriveSidePanelHandle } from "./side-panel.js";
 
+import { driveT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 // R20 DSK-UX（R19-23）：删除两段式确认——第一下只武装、5 秒内对同一项再点一次才真发请求（照 GitHub 解绑 /
@@ -153,7 +155,7 @@ export function mountDriveView(
     if (uploading) {
       const label = container.querySelector<HTMLElement>("[data-wb-drive-upload-label]");
       if (label) {
-        label.textContent = zh ? "上传中…" : "Uploading…";
+        label.textContent = driveT(input.locale, "uploading");
       }
     }
   }
@@ -195,14 +197,14 @@ export function mountDriveView(
         // 诚实回执：软删可恢复，告诉用户回收站能找回（同 web/Spotlight 两端）。
         actionNotice = name
           ? (zh ? `已把「${name}」移到回收站，可在回收站找回。` : `Moved "${name}" to the recycle bin — recover it there anytime.`)
-          : (zh ? "已移到回收站，可在回收站找回。" : "Moved to the recycle bin — recoverable there.");
+          : (driveT(input.locale, "movedToTheRecycleBinRecoverable"));
         void load();
       })
       .catch(() => {
         if (disposed) {
           return;
         }
-        actionError = zh ? "删除失败" : "Delete failed";
+        actionError = driveT(input.locale, "deleteFailed");
         render();
       });
   }
@@ -220,7 +222,7 @@ export function mountDriveView(
           return;
         }
         restoreBusyId = undefined;
-        actionNotice = zh ? "已找回。" : "Recovered.";
+        actionNotice = driveT(input.locale, "recovered");
         void load();
       })
       .catch(() => {
@@ -229,7 +231,7 @@ export function mountDriveView(
         }
         restoreBusyId = undefined;
         restoreErrorId = itemId;
-        restoreErrorText = zh ? "找回失败，请重试。" : "Couldn't recover — try again.";
+        restoreErrorText = driveT(input.locale, "couldnTRecoverTryAgain");
         render();
       });
   }
@@ -281,7 +283,7 @@ export function mountDriveView(
       event.preventDefault();
       const name = downloadAnchor.dataset.wbDriveDownloadName ?? "download";
       void downloadDriveResource(downloadAnchor.href, name).catch(() => {
-        actionError = input.locale === "zh-CN" ? "下载失败" : "Download failed";
+        actionError = driveT(input.locale, "downloadFailed");
         render();
       });
       return;
@@ -385,7 +387,7 @@ export function mountDriveView(
       })
       .catch(() => {
         uploading = false;
-        actionError = input.locale === "zh-CN" ? "上传失败" : "Upload failed";
+        actionError = driveT(input.locale, "uploadFailed");
         render();
       });
   });

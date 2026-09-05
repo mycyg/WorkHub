@@ -162,3 +162,49 @@ test("CORE-04 SnapshotService reuses the previous snapshot ref when workdir cont
   assert.equal(fourth.ref, third.ref);
   assert.equal((await readdir(snapshotRoot)).length, 2);
 });
+
+test("B10 excludeDirs：.spill/ 不进快照、不进内容哈希，revert 也不把它删掉", async () => {
+  const workdir = await tempDir("workhub-audit-spill-work-");
+  const snapshotRoot = await tempDir("workhub-audit-spill-snap-");
+  await mkdir(path.join(workdir, "outputs"), { recursive: true });
+  await mkdir(path.join(workdir, ".spill"), { recursive: true });
+  await writeFile(path.join(workdir, "outputs", "result.md"), "v1", "utf8");
+  await writeFile(path.join(workdir, ".spill", "0001-read_file.txt"), "huge tool result v1", "utf8");
+  const service = createSnapshotService({ snapshotRoot });
+  const workItemId = "a0000000-0000-4000-8000-0000000000d1";
+
+  const first = await service.takeSandboxFileSnapshot({ workItemId, workdir, createdByKind: "ai", excludeDirs: [".spill"] });
+  // 快照目录里没有 .spill/，outputs/ 照旧在。
+  assert.deepEqual((await readdir(first.ref)).sort(), ["outputs"]);
+  assert.equal((await readSnapshotFile({ ref: first.ref }, "outputs/result.md"))?.text, "v1");
+  assert.equal(await readSnapshotFile({ ref: first.ref }, ".spill/0001-read_file.txt"), null);
+
+  // .spill/ 内容变了：contentSha256 不变，CORE-04 去重仍复用上一份 ref、不新增整树拷贝。
+  await writeFile(path.join(workdir, ".spill", "0001-read_file.txt"), "huge tool result v2 (changed)", "utf8");
+  await writeFile(path.join(workdir, ".spill", "0002-run_command.txt"), "another", "utf8");
+  const second = await service.takeSandboxFileSnapshot({ workItemId, workdir, createdByKind: "ai", excludeDirs: [".spill"] });
+  assert.equal(second.contentSha256, first.contentSha256);
+  assert.equal(second.ref, first.ref);
+  assert.equal((await readdir(snapshotRoot)).length, 1);
+
+  // outputs/ 变了才是新内容。
+  await writeFile(path.join(workdir, "outputs", "result.md"), "v2", "utf8");
+  const third = await service.takeSandboxFileSnapshot({ workItemId, workdir, createdByKind: "ai", excludeDirs: [".spill"] });
+  assert.notEqual(third.contentSha256, first.contentSha256);
+
+  // 还原到第一份：outputs/ 回到 v1；当前的 .spill/ 原样保留——快照里没有它不等于要删它。
+  await service.revert({ snapshot: first, workdir, excludeDirs: [".spill"] });
+  assert.equal(await readFile(path.join(workdir, "outputs", "result.md"), "utf8"), "v1");
+  assert.equal(await readFile(path.join(workdir, ".spill", "0001-read_file.txt"), "utf8"), "huge tool result v2 (changed)");
+  assert.equal(await readFile(path.join(workdir, ".spill", "0002-run_command.txt"), "utf8"), "another");
+
+  // 不带 excludeDirs 时行为不变：.spill/ 照常进快照。
+  const plain = await service.takeSandboxFileSnapshot({ workItemId, workdir, createdByKind: "ai" });
+  assert.equal((await readSnapshotFile({ ref: plain.ref }, ".spill/0002-run_command.txt"))?.text, "another");
+
+  // 排除名单只认顶层目录名：带路径分隔符的条目直接拒绝，而不是静默无效。
+  await assert.rejects(
+    () => service.takeSandboxFileSnapshot({ workItemId, workdir, createdByKind: "ai", excludeDirs: ["outputs/nested"] }),
+    /top-level directory names/u
+  );
+});

@@ -1,27 +1,45 @@
 /**
  * 文案禁词门禁（借鉴 deepseek-harness 的生成目录+CI 校验思路；落地台账 COPY 系统性建议 #2）。
  *
- * 扫描用户可见的中文词典文件，命中「内部黑话/AI 味」禁词即报告。
+ * 扫描用户可见的中文文案，命中「内部黑话/AI 味」禁词即报告。
  * 自 2026-08-19 文案批（台账第七节）起为**硬门禁**：命中即 exit 1。
  * 标识符（词典 key / 事件名 / VM 枚举）不可避免命中时，在该行内加 `term-allow` 注释豁免并注明原因。
  *
+ * 覆盖范围（2026-09-05 起）：不再是手写的 5 个词典文件，而是
+ * `scripts/dev/check-ui-i18n.ts` 的 `copyTermScanTargets()`——全部词典文件（i18n*.ts /
+ * locale*.ts / locales/ 目录 / *-copy.ts）**加上**棘轮基线里仍然含硬编码文案的文件。
+ * 两个门共用同一份文件发现逻辑，故「文案搬到哪，禁词门跟到哪」，不会再出现
+ * 「文案在 A 文件、门只扫 B 文件」的错位。
  *
- * 术语单一事实源上线前，本脚本兼任「两套话」纪律的最低限度防线。
+ * 判据也从「整行含中文」升级成 AST 上的**含汉字字符串/模板字面量**：注释里的中文、
+ * 正则里的字符类、行尾中文注释都不再误伤，命中位置也精确到字面量本身。
+ *
+ * 覆盖面一次扩到 260 个文件会把大量**存量**命中一次性暴露出来，逐条改文案属于产品决策
+ * （改词就改了用户看到的字，要连测试与 golden 一起动），所以这里同样上棘轮：
+ * `copy-terms-baseline.json` 记存量，新增一律 exit 1。清一条删一条。
+ *
+ * 用法：
+ *   pnpm audit:copy-terms
+ *   tsx scripts/dev/check-copy-terms.ts --write-baseline
+ *   tsx scripts/dev/check-copy-terms.ts --files a.ts b.ts   # 只扫指定文件（pre-commit 用）
  */
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+import {
+  BASELINE_PATH as UI_I18N_BASELINE_PATH,
+  ROOT,
+  buildBaseline,
+  collectCjkLiterals,
+  copyTermScanTargets,
+  diffAgainstBaseline,
+  isLocaleOwnerFile,
+  loadBaselineFile,
+  relativizeToRoot,
+  type UiI18nViolation
+} from "./check-ui-i18n.ts";
 
-// 只扫「整本都是用户可见文案」的词典文件，避免误扫逻辑代码。
-const DICTIONARIES = [
-  "packages/ui/src/gold-path/i18n.ts",
-  "packages/ui/src/gold-path/route-components.ts",
-  "packages/ui/src/i18n.ts",
-  "apps/api/src/pages/i18n.ts",
-  "packages/cuu/src/i18n.ts"
-];
+const BASELINE_PATH = "scripts/dev/copy-terms-baseline.json";
 
 // 禁词表：内部实现词（对用户无意义）+ AI 味套话。命中即报告（带白名单注释豁免：行内含 term-allow）。
 const BANNED: Array<{ pattern: RegExp; why: string }> = [
@@ -37,38 +55,90 @@ const BANNED: Array<{ pattern: RegExp; why: string }> = [
   { pattern: /option-first|file-only/i, why: "设计文档语言泄漏" }
 ];
 
-async function main() {
-  const hits: string[] = [];
-  for (const rel of DICTIONARIES) {
-    const file = path.join(ROOT, rel);
+const BASELINE_NOTE =
+  "文案禁词存量棘轮基线（scripts/dev/check-copy-terms.ts）。键是「禁词 | 归一化文案片段」，" +
+  "值是允许出现次数；新增命中一律 exit 1。改掉一条文案就从这里删一条；`--write-baseline` 可整体重录。";
+
+async function collectHits(targets: readonly string[]): Promise<UiI18nViolation[]> {
+  const hits: UiI18nViolation[] = [];
+  for (const rel of targets) {
     let text: string;
     try {
-      text = await readFile(file, "utf8");
+      text = await readFile(path.join(ROOT, rel), "utf8");
     } catch {
       continue;
     }
     const lines = text.split("\n");
-    lines.forEach((line, index) => {
-      if (line.includes("term-allow")) return;
-      const trimmed = line.trim();
-      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) return;
-      // 只查中文字符串字面量里的内容（粗判：行内含中文）
-      if (!/[一-鿿]/.test(line)) return;
+    for (const literal of collectCjkLiterals(rel, text)) {
+      // 行内 term-allow 豁免（多行模板字面量按起始行判定，与旧行为一致）。
+      if (lines[literal.line - 1]?.includes("term-allow")) continue;
       for (const { pattern, why } of BANNED) {
-        if (pattern.test(line)) {
-          hits.push(`${rel}:${index + 1}: 命中 /${pattern.source}/ —— ${why}\n    ${line.trim().slice(0, 100)}`);
+        if (pattern.test(literal.text)) {
+          hits.push({ ...literal, text: `${pattern.source} | ${literal.text}`, kind: why });
         }
       }
-    });
+    }
   }
-  if (hits.length > 0) {
-    console.error(`文案禁词扫描：${hits.length} 处命中（硬门禁，须清理或加 term-allow 豁免）:`);
-    for (const hit of hits.slice(0, 60)) console.error(`  ${hit}`);
-    if (hits.length > 60) console.error(`  …另有 ${hits.length - 60} 处`);
+  return hits;
+}
+
+async function main() {
+  const argv = process.argv.slice(2);
+  const writeBaseline = argv.includes("--write-baseline");
+  const filesFlag = argv.indexOf("--files");
+  const explicitFiles =
+    filesFlag < 0 ? undefined : argv.slice(filesFlag + 1).filter((value) => !value.startsWith("--"));
+
+  if (writeBaseline && explicitFiles !== undefined) {
+    console.error("文案禁词扫描：--write-baseline 需要全量扫描，不能与 --files 同用");
     process.exit(1);
-  } else {
-    console.log("文案禁词扫描通过");
   }
+
+  // --files 免掉全量 glob（pre-commit 预算）：暂存文件里只有词典或基线文件才需要扫。
+  const baselineFiles = new Set(Object.keys(loadBaselineFile(BASELINE_PATH).entries));
+  const uiI18nBaselineFiles = new Set(Object.keys(loadBaselineFile(UI_I18N_BASELINE_PATH).entries));
+  const targets =
+    explicitFiles === undefined
+      ? copyTermScanTargets()
+      : [
+          ...new Set(
+            explicitFiles
+              .map((file) => relativizeToRoot(file))
+              .filter((file) => isLocaleOwnerFile(file) || baselineFiles.has(file) || uiI18nBaselineFiles.has(file))
+          )
+        ].sort();
+  if (explicitFiles === undefined && targets.length < 5) {
+    console.error(`文案禁词扫描：只发现 ${targets.length} 个文案文件，扫描范围疑似失效，拒绝通过`);
+    process.exit(1);
+  }
+  if (explicitFiles !== undefined && targets.length === 0) {
+    console.log("文案禁词扫描：本次没有需要检查的文案文件");
+    return;
+  }
+  const hits = await collectHits(targets);
+
+  if (writeBaseline) {
+    const baseline = { ...buildBaseline(hits), note: BASELINE_NOTE };
+    await writeFile(path.join(ROOT, BASELINE_PATH), `${JSON.stringify(baseline, null, 2)}\n`, "utf8");
+    console.log(`文案禁词扫描：已重录基线 ${BASELINE_PATH}（${hits.length} 处存量）`);
+    return;
+  }
+
+  const { added, stale } = diffAgainstBaseline(hits, loadBaselineFile(BASELINE_PATH), new Set(targets));
+  for (const entry of stale) {
+    console.warn(
+      `文案禁词扫描：基线条目已消失（请从 ${BASELINE_PATH} 删除）：${entry.file} × ${entry.remaining} —— ${entry.text}`
+    );
+  }
+  if (added.length > 0) {
+    console.error(`文案禁词扫描：${added.length} 处新增命中（硬门禁，须清理或加 term-allow 豁免）:`);
+    for (const hit of added.slice(0, 60)) {
+      console.error(`  ${hit.file}:${hit.line}: ${hit.kind}\n    ${hit.text.slice(0, 120)}`);
+    }
+    if (added.length > 60) console.error(`  …另有 ${added.length - 60} 处`);
+    process.exit(1);
+  }
+  console.log(`文案禁词扫描通过（${targets.length} 个文案文件，基线内 ${hits.length} 处存量待清）`);
 }
 
 main().catch((error) => {

@@ -35,6 +35,8 @@ import {
   type ProposalReviewOnlyClient
 } from "./proposals.js";
 
+import { spotlightViewsT } from "./locales.js";
+
 // 决策卡的动作 href 分两类:导航型(看改动「查看变更」GET /proposals/:id、工作项 /workitems/:id —— 该内联打开对应能力)
 // 与提交型(POST /api/... —— 走 runAction 落库)。导航型若被当提交处理,会落到 runAction 末尾的「请到对应能力处理」
 // 死 toast(对抗审查 HIGH:决策卡「查看变更」是死按钮)。纯函数,便于单测。
@@ -99,21 +101,21 @@ function toneForKind(kind: AttentionItem["kind"]): Tone {
 function tagLabel(tone: Tone, zh: boolean): string {
   switch (tone) {
     case "approval":
-      return zh ? "待审批" : "Approve";
+      return spotlightViewsT(zh, "approve");
     case "choice":
-      return zh ? "帮我拿主意" : "Pick one";
+      return spotlightViewsT(zh, "pickOne");
     case "permission":
-      return zh ? "要你授权" : "Allow?";
+      return spotlightViewsT(zh, "allow");
     case "handoff":
-      return zh ? "需处理" : "Needs action";
+      return spotlightViewsT(zh, "needsAction");
     default:
-      return zh ? "看一眼" : "Heads-up";
+      return spotlightViewsT(zh, "headsUp");
   }
 }
 
 export function attentionTagLabelForKind(kind: AttentionItem["kind"], zh: boolean): string {
   if (kind === "plan_review") {
-    return zh ? "计划审阅" : "Plan review";
+    return spotlightViewsT(zh, "planReview");
   }
   return tagLabel(toneForKind(kind), zh);
 }
@@ -146,9 +148,9 @@ function renderAction(action: AttentionItem["actions"][number]): string {
 // （GET /api/workspace/roster，翻页翻到底），与 web 选人器同一份实现。
 function delegatePicker(zh: boolean, href: string): string {
   return `<div class="wh-spot-reasons" data-att-delegate data-att-delegate-href="${escapeHtml(safeHref(href))}">
-    <p class="wh-spot-reasons-q">${zh ? "转交给谁？" : "Hand off to whom?"}</p>
-    <select class="wh-spot-delegate-select" data-att-delegate-select aria-label="${escapeHtml(zh ? "选择转交对象" : "Pick a teammate")}"><option value="">${escapeHtml(zh ? "正在加载成员…" : "Loading members…")}</option></select>
-    <div class="wh-spot-reasons-row"><button type="button" class="wh-spot-act ds-pressable" data-att-delegate-submit>${escapeHtml(zh ? "确认转交" : "Hand off")}</button></div>
+    <p class="wh-spot-reasons-q">${spotlightViewsT(zh, "handOffToWhom")}</p>
+    <select class="wh-spot-delegate-select" data-att-delegate-select aria-label="${escapeHtml(spotlightViewsT(zh, "pickATeammate"))}"><option value="">${escapeHtml(spotlightViewsT(zh, "loadingMembers"))}</option></select>
+    <div class="wh-spot-reasons-row"><button type="button" class="wh-spot-act ds-pressable" data-att-delegate-submit>${escapeHtml(spotlightViewsT(zh, "handOff"))}</button></div>
   </div>`;
 }
 
@@ -162,7 +164,7 @@ function mergeDraftEditor(item: AttentionItem, zh: boolean): string {
   if (typeof draft !== "string") {
     return "";
   }
-  return `<label class="wh-spot-card-desc">${escapeHtml(zh ? "合并草稿（可编辑，点「合并成一条」提交）" : "Merge draft (editable — submit via Merge into one)")}</label>
+  return `<label class="wh-spot-card-desc">${escapeHtml(spotlightViewsT(zh, "mergeDraftEditableSubmitViaMerge"))}</label>
     <textarea class="wh-spot-merge-draft" data-att-merge-value rows="3">${escapeHtml(draft)}</textarea>`;
 }
 
@@ -172,7 +174,7 @@ function renderCardEvidence(item: AttentionItem, zh: boolean): string {
   if (refs.length === 0) {
     return "";
   }
-  const rows = refs.slice(0, 2).map((ref) => `<p class="wh-spot-card-desc" data-att-evidence="${escapeHtml(ref.id)}">${escapeHtml(zh ? "依据：" : "Evidence: ")}${escapeHtml(ref.title)}${ref.excerpt ? ` — ${escapeHtml(ref.excerpt.slice(0, 80))}` : ""}</p>`).join("");
+  const rows = refs.slice(0, 2).map((ref) => `<p class="wh-spot-card-desc" data-att-evidence="${escapeHtml(ref.id)}">${escapeHtml(spotlightViewsT(zh, "evidence"))}${escapeHtml(ref.title)}${ref.excerpt ? ` — ${escapeHtml(ref.excerpt.slice(0, 80))}` : ""}</p>`).join("");
   const more = refs.length > 2
     ? `<p class="wh-spot-card-desc">${escapeHtml(zh ? `还有 ${refs.length - 2} 条依据，去主窗口细看` : `${refs.length - 2} more in the main window`)}</p>`
     : "";
@@ -188,23 +190,23 @@ export function renderApprovalDetailInline(detail: ApprovalDetailVM, itemId: str
     return m ? `${m[1]} ${m[2]}` : "";
   };
   const aiRows = [
-    detail.ai_reason ? `<p class="wh-spot-card-desc">${escapeHtml(zh ? "AI 理由：" : "AI reason: ")}${escapeHtml(detail.ai_reason)}</p>` : "",
-    detail.expected_benefit ? `<p class="wh-spot-card-desc">${escapeHtml(zh ? "预期收益：" : "Expected benefit: ")}${escapeHtml(detail.expected_benefit)}</p>` : "",
-    detail.risk_label ? `<p class="wh-spot-card-desc">${escapeHtml(zh ? "风险：" : "Risk: ")}${escapeHtml(detail.risk_label)}</p>` : ""
+    detail.ai_reason ? `<p class="wh-spot-card-desc">${escapeHtml(spotlightViewsT(zh, "aiReason"))}${escapeHtml(detail.ai_reason)}</p>` : "",
+    detail.expected_benefit ? `<p class="wh-spot-card-desc">${escapeHtml(spotlightViewsT(zh, "expectedBenefit"))}${escapeHtml(detail.expected_benefit)}</p>` : "",
+    detail.risk_label ? `<p class="wh-spot-card-desc">${escapeHtml(spotlightViewsT(zh, "risk"))}${escapeHtml(detail.risk_label)}</p>` : ""
   ].filter(Boolean).join("");
   const timeline = detail.timeline.length
-    ? `<p class="wh-spot-card-desc">${escapeHtml(zh ? "流程：" : "Timeline: ")}${detail.timeline.map((step) => `${escapeHtml(step.label)}${step.sla_due_at ? escapeHtml(`（${zh ? "SLA " : "SLA "}${ts(step.sla_due_at)}）`) : ""}${step.at ? ` ${escapeHtml(ts(step.at))}` : ""}`).join(" → ")}</p>`
+    ? `<p class="wh-spot-card-desc">${escapeHtml(spotlightViewsT(zh, "timeline"))}${detail.timeline.map((step) => `${escapeHtml(step.label)}${step.sla_due_at ? escapeHtml(`（${zh ? "SLA " : "SLA "}${ts(step.sla_due_at)}）`) : ""}${step.at ? ` ${escapeHtml(ts(step.at))}` : ""}`).join(" → ")}</p>`
     : "";
   const comments = detail.comments.length
     ? detail.comments.slice(-3).map((comment) => `<p class="wh-spot-card-desc" data-att-detail-comment="${escapeHtml(comment.id)}">${escapeHtml(comment.author_label)}：${escapeHtml(comment.body)}</p>`).join("")
-    : `<p class="wh-spot-card-desc">${escapeHtml(zh ? "还没有讨论。" : "No discussion yet.")}</p>`;
+    : `<p class="wh-spot-card-desc">${escapeHtml(spotlightViewsT(zh, "noDiscussionYet"))}</p>`;
   return `<div class="wh-spot-card-detail" data-att-detail="${escapeHtml(itemId)}">
     ${aiRows}
     ${timeline}
-    <p class="wh-spot-card-desc"><strong>${escapeHtml(zh ? "讨论" : "Discussion")}</strong></p>
+    <p class="wh-spot-card-desc"><strong>${escapeHtml(spotlightViewsT(zh, "discussion"))}</strong></p>
     ${comments}
-    <div class="wh-spot-reasons-row"><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-att-detail-collapse="${escapeHtml(itemId)}">${escapeHtml(zh ? "收起" : "Collapse")}</button></div>
-    <div class="wh-spot-reasons-row"><input class="wh-spot-merge-draft" data-att-detail-comment-input="${escapeHtml(itemId)}" placeholder="${escapeHtml(zh ? "写句评论…" : "Add a comment…")}" /><button type="button" class="wh-spot-act ds-pressable" data-att-detail-comment-submit="${escapeHtml(itemId)}">${escapeHtml(zh ? "发出" : "Post")}</button></div>
+    <div class="wh-spot-reasons-row"><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-att-detail-collapse="${escapeHtml(itemId)}">${escapeHtml(spotlightViewsT(zh, "collapse"))}</button></div>
+    <div class="wh-spot-reasons-row"><input class="wh-spot-merge-draft" data-att-detail-comment-input="${escapeHtml(itemId)}" placeholder="${escapeHtml(spotlightViewsT(zh, "addAComment"))}" /><button type="button" class="wh-spot-act ds-pressable" data-att-detail-comment-submit="${escapeHtml(itemId)}">${escapeHtml(spotlightViewsT(zh, "post"))}</button></div>
   </div>`;
 }
 
@@ -224,7 +226,7 @@ function renderCard(item: AttentionItem, zh: boolean): string {
       ${desc ? `<p class="wh-spot-card-desc">${escapeHtml(desc)}</p>` : ""}
       ${renderCardEvidence(item, zh)}
       ${mergeDraftEditor(item, zh)}
-      <div class="wh-spot-card-actions" data-att-actionrow>${actions.map(renderAction).join("")}${item.kind === "approval" ? `<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-att-detail-toggle="${escapeHtml(item.id)}">${escapeHtml(zh ? "详情" : "Details")}</button>` : ""}</div>
+      <div class="wh-spot-card-actions" data-att-actionrow>${actions.map(renderAction).join("")}${item.kind === "approval" ? `<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-att-detail-toggle="${escapeHtml(item.id)}">${escapeHtml(spotlightViewsT(zh, "details"))}</button>` : ""}</div>
     </div>
   </article>`;
 }
@@ -241,7 +243,7 @@ function renderSourceWarnings(vm: AttentionHomeVM, zh: boolean): string {
   return `<div class="wh-spot-list" data-spot-attention-source-warnings="${escapeHtml(String(sourceWarnings.length))}">
     ${sourceWarnings.map((warning) => `<div class="wh-spot-row" data-spot-attention-source-warning="${escapeHtml(warning.source)}">
       <div class="wh-spot-row-main">
-        <div class="wh-spot-row-title">${escapeHtml(zh ? "决策来源未完全加载" : "Decision sources are partially loaded")}</div>
+        <div class="wh-spot-row-title">${escapeHtml(spotlightViewsT(zh, "decisionSourcesArePartiallyLoaded"))}</div>
         <div class="wh-spot-row-sub">${escapeHtml(warning.message)}</div>
       </div>
     </div>`).join("")}
@@ -253,15 +255,15 @@ function renderQueue(vm: AttentionHomeVM, zh: boolean, hasSourceWarnings = false
   if (items.length === 0) {
     return `<div class="wh-spot-empty">
       <div class="wh-spot-empty-face">٩(◜◡◝)۶</div>
-      <h3 class="wh-spot-empty-title">${hasSourceWarnings ? (zh ? "当前没有已加载的待办" : "No loaded decisions") : (zh ? "全部搞定啦" : "All clear")}</h3>
-      <p class="wh-spot-empty-sub">${hasSourceWarnings ? (zh ? "部分来源暂时不可用，请稍后重试。" : "Some sources are unavailable. Retry in a moment.") : (zh ? "有要你拍板的，Cuu 会第一时间端过来" : "Cuu will bring the next call straight to you")}</p>
+      <h3 class="wh-spot-empty-title">${hasSourceWarnings ? (spotlightViewsT(zh, "noLoadedDecisions")) : (spotlightViewsT(zh, "allClear"))}</h3>
+      <p class="wh-spot-empty-sub">${hasSourceWarnings ? (spotlightViewsT(zh, "someSourcesAreUnavailableRetryIn")) : (spotlightViewsT(zh, "cuuWillBringTheNextCall"))}</p>
     </div>`;
   }
   return `<div class="wh-spot-cards ds-stagger">${items.map((item) => renderCard(item, zh)).join("")}</div>`;
 }
 
 function loadingHtml(zh: boolean): string {
-  return `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉取待拍板…" : "Loading decisions…"}</div>`;
+  return `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${spotlightViewsT(zh, "loadingDecisions")}</div>`;
 }
 
 // 内联打回理由（统一玻璃小弹层），点选即以该理由把这条打回。href 存在容器上——审批项的动作 id 是
@@ -272,7 +274,7 @@ function reasonChips(zh: boolean, href: string): string {
     ? ["方向不对，重做", "细节需要调整", "缺少依据"]
     : ["Wrong direction", "Needs tweaks", "Insufficient evidence"];
   return `<div class="wh-spot-reasons" data-att-reasons data-att-reason-href="${escapeHtml(href)}">
-    <p class="wh-spot-reasons-q">${zh ? "打回理由（点一个）" : "Reason for sending back"}</p>
+    <p class="wh-spot-reasons-q">${spotlightViewsT(zh, "reasonForSendingBack")}</p>
     <div class="wh-spot-reasons-row">${reasons
       .map((r) => `<button type="button" class="wh-spot-reason ds-pressable" data-att-reason="${escapeHtml(r)}">${escapeHtml(r)}</button>`)
       .join("")}</div>
@@ -395,10 +397,10 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
         const n = vm.queue?.length ?? 0;
         const hasSourceWarnings = (vm.source_warnings?.length ?? 0) > 0;
         if (n === 0 && hasSourceWarnings) {
-          ctx.setSubtitle(zh ? "部分待办未加载" : "partially loaded");
+          ctx.setSubtitle(spotlightViewsT(ctx.locale, "partiallyLoaded"));
           return;
         }
-        ctx.setSubtitle(n > 0 ? (zh ? `${n} 条待你拍板` : `${n} waiting on you`) : zh ? "都处理完了" : "all done");
+        ctx.setSubtitle(n > 0 ? (zh ? `${n} 条待你拍板` : `${n} waiting on you`) : spotlightViewsT(ctx.locale, "allDone"));
       };
 
       // R23 F-04：把外部入口指名的那张卡滚进视野并高亮。找不到就安静放过（队列可能已经被处理掉了），
@@ -435,7 +437,7 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
         } catch {
           if (!disposed) {
             retry = () => void refresh();
-            body.innerHTML = spotlightErrorHtml(zh, zh ? "待拍板没拉到" : "Couldn't load decisions");
+            body.innerHTML = spotlightErrorHtml(zh, spotlightViewsT(ctx.locale, "couldnTLoadDecisions"));
             ctx.requestResize();
           }
         }
@@ -445,7 +447,7 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
         const conflictHtml = attentionConflictHtmlFromError(error, zh);
         if (!conflictHtml) return false;
         body.innerHTML = conflictHtml;
-        ctx.toast(zh ? "需要先处理冲突" : "Resolve conflicts first", "info");
+        ctx.toast(spotlightViewsT(ctx.locale, "resolveConflictsFirst"), "info");
         ctx.requestResize();
         return true;
       };
@@ -475,28 +477,28 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
           } else if (action.kind === "apply") {
             const payload = actionElementApplyPayload(target);
             if (!payload.ok) {
-              ctx.toast(zh ? "冲突选项缺少必要参数" : "This conflict option is missing details", "error");
+              ctx.toast(spotlightViewsT(ctx.locale, "thisConflictOptionIsMissingDetails"), "error");
               return;
             }
             result = await client.applyMergeProposalCandidate(action.applyId, payload.payload, { locale: ctx.locale });
           } else if (action.kind === "merge") {
             const payload = actionElementMergePayload(target);
             if (!payload.ok) {
-              ctx.toast(zh ? "冲突选项缺少必要参数" : "This conflict option is missing details", "error");
+              ctx.toast(spotlightViewsT(ctx.locale, "thisConflictOptionIsMissingDetails"), "error");
               return;
             }
             result = await client.mergeProposal(action.proposalId, payload.payload, { locale: ctx.locale });
           }
           if (!result) {
-            ctx.toast(zh ? "这个冲突动作暂时不可执行" : "This conflict action is not available", "error");
+            ctx.toast(spotlightViewsT(ctx.locale, "thisConflictActionIsNotAvailable"), "error");
             return;
           }
-          ctx.toast(summaryText(result) ?? (zh ? "冲突已处理" : "Conflict resolved"), "ok");
+          ctx.toast(summaryText(result) ?? (spotlightViewsT(ctx.locale, "conflictResolved")), "ok");
           ctx.onActionSettled?.();
           await refresh();
         } catch (error) {
           if (!showConflictPanel(error)) {
-            ctx.toast(zh ? "冲突处理失败，稍后重试" : "Conflict action failed. Try again.", "error");
+            ctx.toast(spotlightViewsT(ctx.locale, "conflictActionFailedTryAgain"), "error");
           }
         } finally {
           busy = false;
@@ -513,17 +515,17 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
         const escalation = escalationActionFromHref(href);
         if (escalation?.action === "budget") {
           const res = await client.resolveBudgetDecision(escalation.escalationId, escalation.budgetActionId, { locale: ctx.locale });
-          ctx.toast(summaryText(res) ?? (zh ? "预算选择已记录" : "Budget decision recorded"), "ok");
+          ctx.toast(summaryText(res) ?? (spotlightViewsT(ctx.locale, "budgetDecisionRecorded")), "ok");
           return true;
         }
         if (escalation?.action === "resolve") {
           const payload = escalationResolvePayloadFromActionId(actionId);
           if (!payload) {
-            ctx.toast(zh ? "这个升级动作暂不可用" : "This escalation action is not available", "error");
+            ctx.toast(spotlightViewsT(ctx.locale, "thisEscalationActionIsNotAvailable"), "error");
             return false;
           }
           const res = await client.resolveEscalation(escalation.escalationId, payload, { locale: ctx.locale });
-          ctx.toast(summaryText(res) ?? (zh ? "升级已处理" : "Escalation handled"), "ok");
+          ctx.toast(summaryText(res) ?? (spotlightViewsT(ctx.locale, "escalationHandled")), "ok");
           return true;
         }
         // R23 F-04：转交（审批 /api/approvals/:id/delegate、升级 /api/escalations/:id/delegate）。
@@ -533,15 +535,15 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
           const picker = actionTarget?.closest<HTMLElement>("[data-att-delegate]");
           const toUserId = picker?.querySelector<HTMLSelectElement>("[data-att-delegate-select]")?.value ?? "";
           if (!toUserId) {
-            ctx.toast(zh ? "先选一位同事，再确认转交" : "Pick a teammate first", "error");
+            ctx.toast(spotlightViewsT(ctx.locale, "pickATeammateFirst"), "error");
             return false;
           }
           const delegated = await submitDelegateAction(client, href, toUserId, { locale: ctx.locale });
           ctx.toast(
             delegateResultSummaryText(delegated)
               ?? (delegateTargetFromHref(href)?.kind === "escalation"
-                ? (zh ? "已转交，这件事改由对方拿主意" : "Handed off — this decision now waits on them")
-                : (zh ? "已转交，这条审批会路由给对方" : "Approval handed off — it now routes to them")),
+                ? (spotlightViewsT(ctx.locale, "handedOffThisDecisionNowWaits"))
+                : (spotlightViewsT(ctx.locale, "approvalHandedOffItNowRoutes"))),
             "ok"
           );
           return true;
@@ -551,7 +553,7 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
           ?.querySelector<HTMLTextAreaElement>("[data-att-merge-value]")?.value;
         const memoryConflict = await resolveAttentionMemoryConflictAction(client, href, mergeDraft);
         if (memoryConflict) {
-          ctx.toast(summaryText(memoryConflict) ?? (zh ? "偏好冲突已处理" : "Memory conflict handled"), "ok");
+          ctx.toast(summaryText(memoryConflict) ?? (spotlightViewsT(ctx.locale, "memoryConflictHandled")), "ok");
           return true;
         }
         const approvalId = approvalRespondIdFromHref(href);
@@ -562,18 +564,18 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
               ...(reasonMd ? { reason_md: reasonMd } : {}),
               remember: "once"
             });
-            ctx.toast(summaryText(res) ?? (zh ? "已打回" : "Sent back"), "ok");
+            ctx.toast(summaryText(res) ?? (spotlightViewsT(ctx.locale, "sentBack")), "ok");
             return true;
           }
           const res = await client.respondApproval(approvalId, { decision: "allow", remember: "once" });
-          ctx.toast(summaryText(res) ?? (zh ? "已通过" : "Approved"), "ok");
+          ctx.toast(summaryText(res) ?? (spotlightViewsT(ctx.locale, "approved")), "ok");
           return true;
         }
         // B-R9.6 UX 审计（skip-plan 假接线）：plan_review 卡「先不拆，单个 AI 跑」。
         const skipPlanProposalId = skipPlanProposalIdFromHref(href);
         if (skipPlanProposalId) {
           const skipped = await client.skipTaskPlanProposal(skipPlanProposalId, { locale: ctx.locale });
-          ctx.toast(skipped.attention.summary_text || (zh ? "已改为单个 AI 直接执行" : "Switched to a single AI run"), "ok");
+          ctx.toast(skipped.attention.summary_text || (spotlightViewsT(ctx.locale, "switchedToASingleAiRun")), "ok");
           return true;
         }
         const proposal = proposalActionFromHref(href);
@@ -584,25 +586,25 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
               ...(reasonMd ? { reason_md: reasonMd } : {}),
               remember: "once"
             }, { locale: ctx.locale });
-            ctx.toast(summaryText(res) ?? (zh ? "已打回改改" : "Changes requested"), "ok");
+            ctx.toast(summaryText(res) ?? (spotlightViewsT(ctx.locale, "changesRequested")), "ok");
             return true;
           }
           const review = await reviewAttentionProposalWithoutMerge(client, proposal.proposalId, { locale: ctx.locale });
-          ctx.toast(summaryText(review) ?? (zh ? "已确认通过，下一步可合入交付物" : "Approved. You can merge the deliverable next."), "ok");
+          ctx.toast(summaryText(review) ?? (spotlightViewsT(ctx.locale, "approvedYouCanMergeTheDeliverable")), "ok");
           return true;
         }
         if (proposal?.action === "merge") {
           const payload = actionTarget ? actionElementMergePayload(actionTarget) : { ok: true as const };
           if (!payload.ok) {
-            ctx.toast(zh ? "这个计划动作缺少必要参数" : "This plan action is missing details", "error");
+            ctx.toast(spotlightViewsT(ctx.locale, "thisPlanActionIsMissingDetails"), "error");
             return false;
           }
           const merge = await client.mergeProposal(proposal.proposalId, payload.payload, { locale: ctx.locale });
-          ctx.toast(summaryText(merge) ?? (zh ? "已合并" : "Merged"), "ok");
+          ctx.toast(summaryText(merge) ?? (spotlightViewsT(ctx.locale, "merged")), "ok");
           return true;
         }
         // 其它种类（澄清继续/升级派人等）：S1 暂引导到对应能力处理，不在审批片里强接。
-        ctx.toast(zh ? "这类请到对应能力处理" : "Handle this in its own capability", "info");
+        ctx.toast(spotlightViewsT(ctx.locale, "handleThisInItsOwnCapability"), "info");
         return false;
       };
 
@@ -627,7 +629,7 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
       const submit = async (href: string, actionId: string | undefined, reasonMd: string | undefined, btn: HTMLButtonElement | null = null) => {
         if (busy) return;
         busy = true;
-        const restore = markBusy(btn, actionId === "deny" ? (zh ? "打回中…" : "Sending back…") : (zh ? "处理中…" : "Working…"));
+        const restore = markBusy(btn, actionId === "deny" ? (spotlightViewsT(ctx.locale, "sendingBack")) : (spotlightViewsT(ctx.locale, "working")));
         try {
           const ok = await runAction(href, actionId, reasonMd, btn ?? undefined);
           if (ok) {
@@ -637,7 +639,7 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
         } catch (error) {
           if (!disposed) {
             if (!showConflictPanel(error)) {
-              ctx.toast(zh ? "操作失败（可能有冲突或已处理过），稍后重试" : "Action failed (conflict or already handled) — retry", "error");
+              ctx.toast(spotlightViewsT(ctx.locale, "actionFailedConflictOrAlreadyHandled"), "error");
             }
           }
         } finally {
@@ -662,18 +664,18 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
             return;
           }
           if (members.length === 0) {
-            select.replaceChildren(statusOption(zh ? "这个工作区还没有其他成员" : "No other members in this workspace"));
+            select.replaceChildren(statusOption(spotlightViewsT(ctx.locale, "noOtherMembersInThisWorkspace")));
             return;
           }
           select.replaceChildren(...members.map((member) => {
             const option = doc.createElement("option");
             option.value = member.user_id;
-            option.textContent = `${member.nickname}${member.is_admin ? (zh ? "（管理员）" : " (admin)") : ""}`;
+            option.textContent = `${member.nickname}${member.is_admin ? (spotlightViewsT(ctx.locale, "admin")) : ""}`;
             return option;
           }));
         } catch {
           if (!disposed && select.isConnected) {
-            select.replaceChildren(statusOption(zh ? "成员没加载出来，收起再展开重试" : "Couldn't load members — reopen to retry"));
+            select.replaceChildren(statusOption(spotlightViewsT(ctx.locale, "couldnTLoadMembersReopenTo")));
           }
         }
       };
@@ -721,7 +723,7 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
           for (const other of body.querySelectorAll<HTMLElement>("[data-att-detail]")) {
             other.remove();
           }
-          const restore = markBusy(detailToggle, zh ? "加载中…" : "Loading…");
+          const restore = markBusy(detailToggle, spotlightViewsT(ctx.locale, "loading"));
           void (async () => {
             try {
               const center = approvalDetailCache ?? await client.pages.approvals({ locale: ctx.locale });
@@ -732,7 +734,7 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
               }
               const detail = center.items_detail?.[itemId];
               if (!detail) {
-                ctx.toast(zh ? "这条的详情暂时拉不到" : "Details are unavailable for this item", "info");
+                ctx.toast(spotlightViewsT(ctx.locale, "detailsAreUnavailableForThisItem"), "info");
                 return;
               }
               // R8：挂到 .wh-spot-card-main（内容列）而非 article 本体——后者是 flex 行，
@@ -741,7 +743,7 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
               ctx.requestResize();
             } catch {
               if (!disposed) {
-                ctx.toast(zh ? "详情没拉到，稍后重试" : "Couldn't load details. Try again.", "error");
+                ctx.toast(spotlightViewsT(ctx.locale, "couldnTLoadDetailsTryAgain"), "error");
               }
             } finally {
               restore();
@@ -755,10 +757,10 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
           const input = body.querySelector<HTMLInputElement>(`[data-att-detail-comment-input="${itemId}"]`);
           const text = input?.value.trim();
           if (!text) {
-            ctx.toast(zh ? "先写点内容再发" : "Write something first", "info");
+            ctx.toast(spotlightViewsT(ctx.locale, "writeSomethingFirst"), "info");
             return;
           }
-          const restore = markBusy(detailCommentSubmit, zh ? "发送中…" : "Posting…");
+          const restore = markBusy(detailCommentSubmit, spotlightViewsT(ctx.locale, "posting"));
           void (async () => {
             try {
               await client.postApprovalComment(itemId, { body: text });
@@ -770,12 +772,12 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
               }
               approvalDetailCache = undefined;
               const detailEl = body.querySelector<HTMLElement>(`[data-att-detail="${itemId}"]`);
-              detailEl?.insertAdjacentHTML("beforeend", `<p class="wh-spot-card-desc">${escapeHtml(zh ? "我：" : "Me: ")}${escapeHtml(text)}</p>`);
-              ctx.toast(zh ? "评论已发出" : "Comment posted", "ok");
+              detailEl?.insertAdjacentHTML("beforeend", `<p class="wh-spot-card-desc">${escapeHtml(spotlightViewsT(ctx.locale, "me"))}${escapeHtml(text)}</p>`);
+              ctx.toast(spotlightViewsT(ctx.locale, "commentPosted"), "ok");
               ctx.requestResize();
             } catch {
               if (!disposed) {
-                ctx.toast(zh ? "评论没发出去，稍后重试" : "Comment failed. Try again.", "error");
+                ctx.toast(spotlightViewsT(ctx.locale, "commentFailedTryAgain"), "error");
               }
             } finally {
               restore();

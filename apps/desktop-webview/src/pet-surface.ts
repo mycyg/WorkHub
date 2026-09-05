@@ -100,6 +100,8 @@ import {
   primeDesktopConnectionState
 } from "./shell-events.js";
 
+import { desktopT } from "./locales.js";
+
 export type DesktopSurface = "main" | "pet";
 
 export type DesktopPetSurfaceRender = {
@@ -874,15 +876,11 @@ export function createDesktopPetLoggedOutCard(
 ): CuuCard {
   const zh = locale === "zh-CN";
   const state: CuuState = "offline";
-  const title = context === "first-run" ? (zh ? "欢迎使用 WorkHub" : "Welcome to WorkHub") : zh ? "已登出" : "Signed out";
+  const title = context === "first-run" ? (desktopT(locale, "welcomeToWorkhub")) : desktopT(locale, "signedOut");
   const message =
     context === "first-run"
-      ? zh
-        ? "这台设备第一次连接，去主窗口登录后 Cuu 才能开始帮你。"
-        : "This device hasn't connected before — sign in from the main window before Cuu can help."
-      : zh
-        ? "这台设备已经登出，去主窗口重新登录后 Cuu 才能继续帮你。"
-        : "This device signed out — sign back in from the main window before Cuu can help again.";
+      ? desktopT(locale, "thisDeviceHasnTConnectedBefore")
+      : desktopT(locale, "thisDeviceSignedOutSignBack");
   return {
     id: context === "first-run" ? "pet-first-run" : "pet-logged-out",
     kind: "offline",
@@ -915,7 +913,7 @@ export function desktopPetConnectionStatusText(
   const unreachable = zh ? `连不上服务器 ${payload.server_url}` : `Can't reach the server ${payload.server_url}`;
   const status =
     payload.state === "offline"
-      ? zh ? "已离线" : "Offline"
+      ? desktopT(locale, "offline")
       : zh ? `重连中（第 ${payload.attempt} 次）` : `Reconnecting (attempt ${payload.attempt})`;
   return `${unreachable} · ${status}`;
 }

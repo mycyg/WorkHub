@@ -1,5 +1,7 @@
 import { normalizeWorkHubLocale, type WorkHubLocale } from "./gold-path/i18n.js";
 
+import { uiCopyT } from "./locales.js";
+
 export type RouteStateKind = "loading" | "empty" | "error" | "forbidden" | "notFound";
 
 export type R4WebRouteKey =
@@ -224,7 +226,7 @@ export function renderRouteStateCard(input: RouteStateCardInput) {
   // L（错误态诚实层级）：错误卡顶部 pill 曾直接渲工程 trace 串(status=/code=)，用户读到一串黑话。
   // 顶部 pill 改渲路由(与其它态一致)，把 trace 降到正文之后的弱化 footer——工程师仍可取证，用户不被黑话劝退。
   const meta = input.state === "forbidden"
-    ? input.ownerLabel ?? (locale === "zh-CN" ? "需要负责人授权" : "Needs owner approval")
+    ? input.ownerLabel ?? (uiCopyT(locale, "needsOwnerApproval"))
     : input.route ?? route.route;
   const errorFooter = input.state === "error"
     ? `<p class="wh-route-state-trace" data-route-state-trace="true">${escapeHtml(input.traceId ?? "trace_id=r4-web-route-state")}</p>`

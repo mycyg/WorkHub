@@ -22,6 +22,7 @@ import {
   mergeAttempts,
   mergeProposals,
   keyResults,
+  mcpServers,
   memoryConflicts,
   objectiveWorkItemLinks,
   objectives,
@@ -51,7 +52,8 @@ import {
 // CORE-12：补收此前漏注册的 5 张既有表（user_credentials/sessions/user_invites/workspace_memberships/
 // budget_reservations），graph 涨到 80——漂移测试从此对这 5 张表同样生效。
 // R24-P 阶段 1：新增 plugins 一张表（迁移 0072，插件清单与治理），graph 涨到 81。
-const F02_TABLE_COUNT = 81;
+// R26 M0：新增 mcp_servers 一张表（迁移 0073，MCP 客户端接入·阶段 0 治理），graph 涨到 82。
+const F02_TABLE_COUNT = 82;
 
 type WorkHubTable = (typeof workHubTables)[keyof typeof workHubTables];
 
@@ -691,7 +693,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0072 plugins", () => {
+test("migration journal ends with 0073 mcp_servers", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -707,25 +709,28 @@ test("migration journal ends with 0072 plugins", () => {
       when: finalEntry.when
     },
     {
-      // R24-P 阶段 1：0072(plugins,when=1783929004000)接在 0071(event_outbox_failed,
-      // when=1783929003000)之后,journal 收于 0072,when 严格递增。
-      idx: 72,
+      // R26 M0：0073(mcp_servers,when=1783929005000)接在 0072(plugins,when=1783929004000)之后,
+      // journal 收于 0073,when 严格递增。
+      idx: 73,
       version: "7",
-      tag: "0072_plugins",
+      tag: "0073_mcp_servers",
       breakpoints: true,
-      when: 1783929004000
+      when: 1783929005000
     }
   );
-  // when 严格递增——0069 → 0070 → 0071 → 0072 的时间戳必须依次增大。
+  // when 严格递增——0069 → 0070 → 0071 → 0072 → 0073 的时间戳必须依次增大。
   const entry0069 = journal.entries.find((entry) => entry.tag === "0069_event_outbox");
   const entry0070 = journal.entries.find((entry) => entry.tag === "0070_proactive_intent_delivering");
   const entry0071 = journal.entries.find((entry) => entry.tag === "0071_event_outbox_failed");
-  assert.ok(entry0069 && entry0070 && entry0071 && finalEntry);
+  const entry0072 = journal.entries.find((entry) => entry.tag === "0072_plugins");
+  assert.ok(entry0069 && entry0070 && entry0071 && entry0072 && finalEntry);
   assert.equal(entry0070.idx, 70);
   assert.equal(entry0071.idx, 71);
+  assert.equal(entry0072.idx, 72);
   assert.ok(entry0070.when > entry0069.when);
   assert.ok(entry0071.when > entry0070.when);
-  assert.ok(finalEntry.when > entry0071.when);
+  assert.ok(entry0072.when > entry0071.when);
+  assert.ok(finalEntry.when > entry0072.when);
 });
 
 // R24-P 阶段 1：插件清单表。这条钉死三件事——(a) 迁移 replay 安全（CREATE TABLE/INDEX 全 IF NOT EXISTS、
@@ -768,6 +773,80 @@ test("R24-P migration 0072 creates the plugins table replay-safe with a local-pa
   assert.equal(columns.includes("workspace_id"), true, "plugins must be workspace-scoped");
   assert.equal(columns.includes("compat_report"), true, "plugins must persist the static compatibility report");
   assert.equal(columns.includes("load_report"), true, "plugins must persist the host load report");
+});
+
+// R26 M0（MCP 客户端接入·阶段 0）：MCP 服务器清单表。这条钉死五件事——(a) 迁移 replay 安全
+// （CREATE TABLE/INDEX 全 IF NOT EXISTS、无 CONCURRENTLY）；(b) transport 是**单值** CHECK（只允许
+// stdio：HTTP 引入出网目的地治理与密钥落库两件全新的事，放开必须走新迁移，改动点显式可查，同
+// plugins_source_kind_ck 的先例）；(c) trust_level 是指挥者拍板合并进阶段 0 的管理员断言列，
+// 只允许 read_only/external_effect 两档，默认 external_effect；(d) 阶段 1 的 url/auth_header_*
+// 四列现在就建（nullable）但被 transport CHECK 锁死成「建了不能用」；(e) drizzle schema 与迁移同步。
+test("R26 M0 migration 0073 creates the mcp_servers table replay-safe with a stdio-only transport", () => {
+  const migrationUrl = new URL("../migrations/0073_mcp_servers.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0073_mcp_servers.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "mcp_servers"/u, "0073 must create the table replay-safe");
+  assert.match(
+    migration,
+    /CONSTRAINT "mcp_servers_transport_ck" CHECK \("transport" IN \('stdio'\)\)/u,
+    "0073 must restrict transport to stdio only in phase 0"
+  );
+  assert.match(
+    migration,
+    /CONSTRAINT "mcp_servers_status_ck" CHECK \("status" IN \('connected','connect_failed','disabled'\)\)/u
+  );
+  assert.match(
+    migration,
+    /CONSTRAINT "mcp_servers_trust_level_ck" CHECK \("trust_level" IN \('read_only','external_effect'\)\)/u,
+    "0073 must restrict trust_level to the admin-assertion ceiling's two values"
+  );
+  assert.match(
+    migration,
+    /CONSTRAINT "mcp_servers_timeout_ck" CHECK \("tool_call_timeout_ms" BETWEEN 1000 AND 300000\)/u
+  );
+  assert.match(
+    migration,
+    /CREATE UNIQUE INDEX IF NOT EXISTS "mcp_servers_workspace_name_uq"/u,
+    "server_name must be unique per workspace — it constructs the model-visible tool namespace"
+  );
+  assert.match(migration, /CREATE INDEX IF NOT EXISTS "mcp_servers_workspace_enabled_idx"/u);
+  // 阶段 1 的占位列现在就建（避免再来一次 ALTER TABLE ADD COLUMN），但全部 nullable、无默认值——
+  // 建了不能用，用不用由 transport CHECK 结构性把关。
+  for (const reservedColumn of ["url", "auth_header_ct", "auth_header_iv", "auth_header_tag"]) {
+    assert.match(migration, new RegExp(`"${reservedColumn}"\\s+(?:text|bytea)`, "u"), `missing reserved phase-1 column ${reservedColumn}`);
+  }
+  assert.doesNotMatch(
+    migration,
+    /"api_key"|"secret_value"|"password"|"credential"/iu,
+    "0073 must not carry a literal-secret column; secrets are referenced via secret_refs_json pointers"
+  );
+  assert.doesNotMatch(migration, /DROP TABLE|DROP COLUMN|ALTER COLUMN/u, "0073 must be additive only");
+  assert.doesNotMatch(migration, /CONCURRENTLY/iu, "0073 must not use CONCURRENTLY (single-tx replay)");
+  assert.doesNotMatch(migration, /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u, "migration must not contain emoji glyphs");
+
+  // Drizzle schema 与迁移同步：四个 CHECK 的枚举逐项对齐。
+  const table = requiredTable("mcpServers");
+  assert.equal(getTableName(table), "mcp_servers");
+  const checkText = checkSqlText(table);
+  assert.equal(checkText.includes("'stdio'"), true, "mcp_servers transport CHECK must allow stdio");
+  for (const status of ["'connected'", "'connect_failed'", "'disabled'"]) {
+    assert.equal(checkText.includes(status), true, `mcp_servers status CHECK must include ${status}`);
+  }
+  for (const level of ["'read_only'", "'external_effect'"]) {
+    assert.equal(checkText.includes(level), true, `mcp_servers trust_level CHECK must include ${level}`);
+  }
+  // 工作区围栏：MCP 服务器是工作区级治理对象，跨租户不可见。
+  const columns = getTableConfig(table).columns.map((column) => column.name);
+  assert.equal(columns.includes("workspace_id"), true, "mcp_servers must be workspace-scoped");
+  assert.equal(columns.includes("server_name"), true, "mcp_servers must carry the tool-name namespace key");
+  assert.equal(columns.includes("precheck_report"), true, "mcp_servers must persist the static precheck report");
+  assert.equal(columns.includes("secret_refs_json"), true, "mcp_servers must persist the secret pointer map");
+  assert.equal(columns.includes("trust_level"), true, "mcp_servers must carry the admin-assertion ceiling");
+
+  // trust_level 默认 external_effect：新增服务器不假设它安全，必须管理员主动降级。
+  assert.equal(mcpServers.trustLevel.default, "external_effect");
+  // transport 默认且唯一允许的值是 stdio。
+  assert.equal(mcpServers.transport.default, "stdio");
 });
 
 // R21 加固：0070/0071 都是「CHECK 枚举翻转」迁移——DROP IF EXISTS + ADD 成对（replay 安全），且新枚举

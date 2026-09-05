@@ -16,6 +16,8 @@ import type { ProjectTimelinePageVM, TimelineWorkItemVM, WorkItemStatus } from "
 
 import { workbenchIcons } from "../icons.js";
 
+import { kanbanT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 export type KanbanColumn = "todo" | "doing" | "review" | "done";
@@ -175,51 +177,39 @@ export function resolveKanbanDrop(input: {
         return { kind: "dispatch" };
       }
       return bounce(
-        zh
-          ? "这件还在澄清阶段（需求还没聊清楚）。先在项目主区对话里把它澄清成「待开工」，才能派给 AI 开工。"
-          : "This item is still being clarified. Finish clarifying it in the project chat until it's Ready, then start the AI on it."
+        kanbanT(input.locale, "thisItemIsStillBeingClarified")
       );
     }
     // 评审中 → 进行中 = 退回重做，走提议「要求修改」，不是拖拽。
     if (fromColumn === "review") {
       return bounce(
-        zh
-          ? "评审中的项要退回重做，请在右栏「提议」面板点「要求修改」并写明原因，不能直接拖回进行中。"
-          : "To send a reviewing item back for rework, use “Request changes” on its proposal — dragging won't do it."
+        kanbanT(input.locale, "toSendAReviewingItemBack")
       );
     }
     // 已完成 → 进行中。
-    return bounce(zh ? "已完成的项不能拖回进行中。" : "Completed items can't be dragged back to In progress.");
+    return bounce(kanbanT(input.locale, "completedItemsCanTBeDragged"));
   }
 
   if (toColumn === "review") {
     return bounce(
-      zh
-        ? "评审是 AI 跑完自动进入的——AI 完成后会把成果提交评审并开出提议，不用手动拖到这里。"
-        : "Review is entered automatically when the AI finishes and opens a proposal — you can't drag an item into review."
+      kanbanT(input.locale, "reviewIsEnteredAutomaticallyWhenThe")
     );
   }
 
   if (toColumn === "done") {
     if (fromColumn === "review") {
       return bounce(
-        zh
-          ? "评审中的项要在右栏「提议」面板批准合并，通过后才算完成——不能直接拖到已完成。"
-          : "Items in review are completed by approving their proposal in the side panel — you can't drag them straight to Done."
+        kanbanT(input.locale, "itemsInReviewAreCompletedBy")
       );
     }
     return bounce(
-      zh
-        ? "工作项要先开工、提交评审、评审通过合并后才算完成，不能直接标记完成。"
-        : "Work items reach Done only after being worked, reviewed, and merged — not by dragging."
+      kanbanT(input.locale, "workItemsReachDoneOnlyAfter")
     );
   }
 
   // toColumn === "todo"（往回拖到待认领）。
   return bounce(
-    zh
-      ? "已经开工/评审/完成的项不能拖回待认领。要退回重做，请在右栏「提议」面板点「要求修改」。"
-      : "Items already in progress/review/done can't be dragged back. To send work back, use “Request changes” on its proposal."
+    kanbanT(input.locale, "itemsAlreadyInProgressReviewDone")
   );
 }
 
@@ -229,17 +219,17 @@ function renderCardHtml(item: TimelineWorkItemVM, column: KanbanColumn, zh: bool
     ? item.overdue
       ? `<span class="wh-wb-kb-due wh-wb-kb-due--over"><span class="wh-wb-kb-overdot"></span>${escapeHtml(
           formatMonthDay(due)
-        )} ${zh ? "逾期" : "overdue"}</span>`
+        )} ${kanbanT(zh, "overdue")}</span>`
       : `<span class="wh-wb-kb-due">${escapeHtml(formatMonthDay(due))}</span>`
-    : `<span class="wh-wb-kb-due wh-wb-kb-due--none">${zh ? "未定期" : "No date"}</span>`;
+    : `<span class="wh-wb-kb-due wh-wb-kb-due--none">${kanbanT(zh, "noDate")}</span>`;
   const assignee = item.assignee
     ? `<span class="wh-wb-kb-owner" title="${escapeHtml(item.assignee.label)}"><span class="wh-wb-kb-av">${escapeHtml(
         assigneeInitial(item.assignee.label)
       )}</span></span>`
-    : `<span class="wh-wb-kb-owner wh-wb-kb-owner--none">${zh ? "未指派" : "Unassigned"}</span>`;
+    : `<span class="wh-wb-kb-owner wh-wb-kb-owner--none">${kanbanT(zh, "unassigned")}</span>`;
   const blocks =
     item.blocks_count > 0
-      ? `<span class="wh-wb-kb-blocks" title="${zh ? "阻塞后续工作项" : "Blocks downstream work"}">${
+      ? `<span class="wh-wb-kb-blocks" title="${kanbanT(zh, "blocksDownstreamWork")}">${
           zh ? `阻塞 ${item.blocks_count} 项` : `blocks ${item.blocks_count}`
         }</span>`
       : "";
@@ -248,7 +238,7 @@ function renderCardHtml(item: TimelineWorkItemVM, column: KanbanColumn, zh: bool
   return `<div class="wh-wb-kb-card${item.overdue ? " wh-wb-kb-card--over" : ""}" data-wb-kb-card data-wb-kb-id="${escapeHtml(
     item.id
   )}" data-wb-kb-status="${escapeHtml(item.status)}" data-wb-kb-from="${column}"${busy ? "" : ' draggable="true"'} role="button" tabindex="0" title="${
-    zh ? "点击查看这件在时间线上的位置" : "Open this item on the timeline"
+    kanbanT(zh, "openThisItemOnTheTimeline")
   }">
     <div class="wh-wb-kb-card-top">
       <span class="wh-wb-kb-card-title">${escapeHtml(item.title)}</span>
@@ -268,7 +258,7 @@ function renderColumnHtml(spec: ColumnSpec, items: TimelineWorkItemVM[], zh: boo
   const cards = sorted.map((item) => renderCardHtml(item, spec.key, zh, busy)).join("");
   const body =
     cards ||
-    `<div class="wh-wb-kb-col-empty">${zh ? "这一列还没有工作项" : "No items in this column"}</div>`;
+    `<div class="wh-wb-kb-col-empty">${kanbanT(zh, "noItemsInThisColumn")}</div>`;
   return `<section class="wh-wb-kb-col">
     <div class="wh-wb-kb-col-head">
       <span class="wh-wb-kb-dot" style="background:${spec.dot}"></span>
@@ -281,15 +271,15 @@ function renderColumnHtml(spec: ColumnSpec, items: TimelineWorkItemVM[], zh: boo
 
 export function renderKanbanLoadingHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  return `<div class="wh-wb-kb-state"><span class="wh-wb-spinner"></span>${zh ? "正在加载任务看板…" : "Loading board…"}</div>`;
+  return `<div class="wh-wb-kb-state"><span class="wh-wb-spinner"></span>${kanbanT(locale, "loadingBoard")}</div>`;
 }
 
 export function renderKanbanErrorHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
   return `<div class="wh-wb-kb-state wh-wb-kb-state--error">${
-    zh ? "没能加载任务看板，稍后重试" : "Couldn't load the board — retry"
+    kanbanT(locale, "couldnTLoadTheBoardRetry")
   }<div style="margin-top:12px"><button type="button" class="wh-wb-tl-btn" data-wb-kb-retry>${
-    zh ? "重试" : "Retry"
+    kanbanT(locale, "retry")
   }</button></div></div>`;
 }
 
@@ -298,9 +288,9 @@ function renderFilterBarHtml(vm: ProjectTimelinePageVM, ui: KanbanUiState, zh: b
   const options = kanbanAssigneeOptions(vm.items);
   const hasUnassigned = vm.items.some((item) => !item.assignee);
   const optionHtml = [
-    `<option value=""${!ui.assigneeUserId ? " selected" : ""}>${zh ? "全部负责人" : "All assignees"}</option>`,
+    `<option value=""${!ui.assigneeUserId ? " selected" : ""}>${kanbanT(zh, "allAssignees")}</option>`,
     hasUnassigned
-      ? `<option value="${KANBAN_UNASSIGNED_FILTER}"${ui.assigneeUserId === KANBAN_UNASSIGNED_FILTER ? " selected" : ""}>${zh ? "未指派" : "Unassigned"}</option>`
+      ? `<option value="${KANBAN_UNASSIGNED_FILTER}"${ui.assigneeUserId === KANBAN_UNASSIGNED_FILTER ? " selected" : ""}>${kanbanT(zh, "unassigned")}</option>`
       : "",
     ...options.map(
       (opt) =>
@@ -308,13 +298,13 @@ function renderFilterBarHtml(vm: ProjectTimelinePageVM, ui: KanbanUiState, zh: b
     )
   ].join("");
   const clear = isKanbanFilterActive(ui)
-    ? `<button type="button" class="wh-wb-kb-filter-clear" data-wb-kb-filter-clear>${zh ? "清除筛选" : "Clear"}</button>`
+    ? `<button type="button" class="wh-wb-kb-filter-clear" data-wb-kb-filter-clear>${kanbanT(zh, "clear")}</button>`
     : "";
   return `<div class="wh-wb-kb-filters" data-wb-kb-filters>
-    <select class="wh-wb-kb-select" data-wb-kb-filter-assignee aria-label="${zh ? "按负责人筛选" : "Filter by assignee"}">${optionHtml}</select>
+    <select class="wh-wb-kb-select" data-wb-kb-filter-assignee aria-label="${kanbanT(zh, "filterByAssignee")}">${optionHtml}</select>
     <input type="search" class="wh-wb-kb-search" data-wb-kb-filter-keyword value="${escapeHtml(ui.keyword ?? "")}" placeholder="${
-      zh ? "搜索标题 / 编号" : "Search title / code"
-    }" aria-label="${zh ? "按关键词筛选" : "Filter by keyword"}" />
+      kanbanT(zh, "searchTitleCode")
+    }" aria-label="${kanbanT(zh, "filterByKeyword")}" />
     ${clear}
   </div>`;
 }
@@ -354,9 +344,7 @@ export function renderKanbanHtml(input: {
   const header = `<div class="wh-wb-kb-top">
     <span class="wh-wb-kb-total">${totalHtml}</span>
     <span class="wh-wb-kb-hint">${
-      zh
-        ? "拖「待开工」卡到「进行中」即派 AI 开工；其它移动会说明该去哪儿办"
-        : "Drag a Ready card into In progress to start the AI; other moves explain where to go"
+      kanbanT(input.locale, "dragAReadyCardIntoIn")
     }</span>
   </div>`;
 
@@ -364,11 +352,9 @@ export function renderKanbanHtml(input: {
   if (vm.items.length === 0) {
     return `<div class="wh-wb-kb">${header}${notice}<div class="wh-wb-kb-empty">
       <span class="wh-wb-kb-empty-icon">${workbenchIcons.kanban}</span>
-      <h3 class="wh-wb-kb-empty-title">${zh ? "还没有任务" : "No tasks yet"}</h3>
+      <h3 class="wh-wb-kb-empty-title">${kanbanT(input.locale, "noTasksYet")}</h3>
       <p class="wh-wb-kb-empty-sub">${
-        zh
-          ? "在项目主区对话里把要做的事讲清楚，澄清完成后就会作为工作项出现在这里的「待认领」列。"
-          : "Describe the work in the project chat — once it's clarified it shows up here as a work item in To do."
+        kanbanT(input.locale, "describeTheWorkInTheProject")
       }</p>
     </div></div>`;
   }
@@ -378,8 +364,8 @@ export function renderKanbanHtml(input: {
   // 过滤后一条不剩（但项目本身有任务）——给「无匹配 / 清除筛选」提示，而不是四个空列让人以为没数据。
   if (filterActive && filtered.length === 0) {
     return `<div class="wh-wb-kb">${header}${filterBar}${notice}<div class="wh-wb-kb-empty">
-      <h3 class="wh-wb-kb-empty-title">${zh ? "没有匹配的任务" : "No matching tasks"}</h3>
-      <p class="wh-wb-kb-empty-sub">${zh ? "换个负责人或关键词，或清除筛选。" : "Try another assignee or keyword, or clear the filter."}</p>
+      <h3 class="wh-wb-kb-empty-title">${kanbanT(input.locale, "noMatchingTasks")}</h3>
+      <p class="wh-wb-kb-empty-sub">${kanbanT(input.locale, "tryAnotherAssigneeOrKeywordOr")}</p>
     </div></div>`;
   }
 

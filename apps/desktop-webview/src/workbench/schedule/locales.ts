@@ -1,0 +1,131 @@
+// apps/desktop-webview/src/workbench/schedule 的用户可见文案单一来源。
+//
+// 形状照 deepseek-harness 的 per-package `locales.ts`（MIT, Copyright (c) 2026 DeepSeek）：
+// **中文对象是 key 集的事实源**，英文对象用 `satisfies Record<keyof typeof zh, string>` 做
+// 编译期对齐——少一个键或多一个键都编译不过，不需要额外的门禁脚本来盯对称性。
+//
+// 这些字符串原本以 `zh ? "中文" : "English"` 内联在渲染代码里；搬进来时一个字都没改。
+// 门禁见 scripts/dev/check-ui-i18n.ts（含汉字的字面量只许住在词典文件里）。
+
+import { normalizeWorkHubLocale, type WorkHubLocale } from "@workhub/contracts";
+
+const zh = {
+  aReasonIsRequiredToReject: "驳回需要填写理由。",
+  approve: "批准",
+  approvedYouCanMaterializeItTo: "已批准，可物化到时间线。",
+  backToDrafts: "返回草案列表",
+  cancel: "取消",
+  confirmReject: "确认驳回",
+  couldnTApproveTryAgain: "批准失败，稍后重试。",
+  couldnTDraftTryAgainLater: "起草失败，稍后重试。",
+  couldnTLoadTheScheduleRetry: "没能加载日程，稍后重试",
+  couldnTMaterializeTryAgain: "物化失败，稍后重试。",
+  couldnTRejectTryAgain: "驳回失败，稍后重试。",
+  currentMilestones: "当前里程碑：",
+  cuuDraftsMilestonesAndWorkItems: "Cuu 会据此拟里程碑与工作项草案，落库后交你审批。",
+  draftCreatedReadyForYourReview: "草案已生成，待你审批。",
+  draftWithCuu: "用 Cuu 起草",
+  drafting: "生成中…",
+  eGShipADemoableInvite: "例如：两周内做出可演示的邀请码注册流程，覆盖埋点与基础测试。",
+  intent: "规划意图",
+  loadingSchedule: "正在加载日程…",
+  materializeToTimeline: "物化到时间线",
+  materializing: "物化中…",
+  milestones: "里程碑",
+  month: "月",
+  nextMonth: "下个月",
+  nextWeek: "下一周",
+  noApprovedPlanAndNoMilestones: "还没有已批准的项目计划，也还没有里程碑。",
+  noIntent: "（无意图描述）",
+  noPlanAndNoMilestonesYet: "还没有项目计划，也还没有里程碑。点上方「用 Cuu 起草计划」让 Cuu 拟一份。",
+  noPlanDraftsYetUseDraft: "还没有计划草案。点上方「用 Cuu 起草计划」让 Cuu 拟一份。",
+  openThisDraft: "查看这份草案的详情",
+  openThisItemOnTheTimeline: "点击查看这件在时间线上的位置",
+  openThisWeek: "点击查看这周",
+  overdue: "逾期",
+  planningIntentGoalDeadlineConstraints: "规划意图（目标 / 期限 / 约束）",
+  pleaseDescribeThePlanningIntentFirst: "请先填写规划意图。",
+  previousMonth: "上个月",
+  previousWeek: "上一周",
+  rationale: "计划说明",
+  reached: "已达成",
+  reasonForRejectionFedIntoThe: "写明驳回理由（会带给下一次重拟）",
+  reject: "驳回",
+  rejectedTheReasonFeedsTheNext: "已驳回，理由会带入下一次重拟。",
+  rejecting: "驳回中…",
+  retry: "重试",
+  reviewNote: "审阅意见",
+  tbd: "未定期",
+  today: "今天",
+  unassigned: "未指派",
+  undated: "未定期",
+  viewMode: "视图切换",
+  week: "周",
+  workItems: "工作项",
+  working: "处理中…",
+} as const;
+
+const en = {
+  aReasonIsRequiredToReject: "A reason is required to reject.",
+  approve: "Approve",
+  approvedYouCanMaterializeItTo: "Approved — you can materialize it to the timeline.",
+  backToDrafts: "Back to drafts",
+  cancel: "Cancel",
+  confirmReject: "Confirm reject",
+  couldnTApproveTryAgain: "Couldn't approve — try again.",
+  couldnTDraftTryAgainLater: "Couldn't draft — try again later.",
+  couldnTLoadTheScheduleRetry: "Couldn't load the schedule — retry",
+  couldnTMaterializeTryAgain: "Couldn't materialize — try again.",
+  couldnTRejectTryAgain: "Couldn't reject — try again.",
+  currentMilestones: "Current milestones:",
+  cuuDraftsMilestonesAndWorkItems: "Cuu drafts milestones and work items from this, saved for your review.",
+  draftCreatedReadyForYourReview: "Draft created — ready for your review.",
+  draftWithCuu: "Draft with Cuu",
+  drafting: "Drafting…",
+  eGShipADemoableInvite: "e.g. Ship a demoable invite-code signup flow within two weeks, with analytics and basic tests.",
+  intent: "Intent",
+  loadingSchedule: "Loading schedule…",
+  materializeToTimeline: "Materialize to timeline",
+  materializing: "Materializing…",
+  milestones: "Milestones",
+  month: "Month",
+  nextMonth: "Next month",
+  nextWeek: "Next week",
+  noApprovedPlanAndNoMilestones: "No approved plan and no milestones yet.",
+  noIntent: "(no intent)",
+  noPlanAndNoMilestonesYet: "No plan and no milestones yet. Use “Draft a plan with Cuu” above to have Cuu propose one.",
+  noPlanDraftsYetUseDraft: "No plan drafts yet. Use “Draft a plan with Cuu” above to have Cuu propose one.",
+  openThisDraft: "Open this draft",
+  openThisItemOnTheTimeline: "Open this item on the timeline",
+  openThisWeek: "Open this week",
+  overdue: "Overdue",
+  planningIntentGoalDeadlineConstraints: "Planning intent (goal / deadline / constraints)",
+  pleaseDescribeThePlanningIntentFirst: "Please describe the planning intent first.",
+  previousMonth: "Previous month",
+  previousWeek: "Previous week",
+  rationale: "Rationale",
+  reached: "Reached",
+  reasonForRejectionFedIntoThe: "Reason for rejection (fed into the next redraft)",
+  reject: "Reject",
+  rejectedTheReasonFeedsTheNext: "Rejected — the reason feeds the next redraft.",
+  rejecting: "Rejecting…",
+  retry: "Retry",
+  reviewNote: "Review note",
+  tbd: "TBD",
+  today: "Today",
+  unassigned: "Unassigned",
+  undated: "Undated",
+  viewMode: "View mode",
+  week: "Week",
+  workItems: "Work items",
+  working: "Working…",
+} as const satisfies Record<keyof typeof zh, string>;
+
+export type ScheduleCopyKey = keyof typeof zh;
+
+// 第一参数收 `boolean` 是过渡口子：这一层的渲染函数历史上大量以 `zh: boolean` 传语言，
+// 把这些签名一起改成 `locale` 是另一件事，不该和「文案搬家」混在一批里。
+export function scheduleT(locale: WorkHubLocale | boolean, key: ScheduleCopyKey): string {
+  const isZh = typeof locale === "boolean" ? locale : normalizeWorkHubLocale(locale) === "zh-CN";
+  return (isZh ? zh : en)[key];
+}

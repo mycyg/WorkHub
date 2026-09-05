@@ -1,5 +1,7 @@
 import type { WorkHubLocale } from "@workhub/ui/gold-path";
 
+import { webT } from "./locales.js";
+
 // R23 P4（R20 P2A 端点上界面）：项目归档 / 删除两个破坏性动作的纯文案与判定层。
 // POST /api/projects/:id/{archive,delete} 后端早已齐备（project-ops.ts，管理员/项目所有者门），
 // 此前 web 只有一枚「已归档」徽标、没有任何动作入口。DOM 交互（两段式确认、状态回显）在
@@ -15,9 +17,9 @@ export function projectLifecycleConfirmLabel(
 ): string {
   const zh = locale === "zh-CN";
   if (action === "archive") {
-    return zh ? "确认归档？再点一次" : "Archive — click again";
+    return webT(locale, "archiveClickAgain");
   }
-  return zh ? "确认删除？再点一次" : "Delete — click again";
+  return webT(locale, "deleteClickAgain");
 }
 
 export function projectLifecycleSuccessMessage(
@@ -49,17 +51,13 @@ export function humanizeProjectLifecycleError(
     ? (error as { code?: unknown }).code
     : undefined;
   if (code === "project_not_found") {
-    return zh
-      ? "没有找到这个项目，可能刚刚已经被别人归档或删除了。"
-      : "That project wasn't found — someone may have just archived or deleted it.";
+    return webT(locale, "thatProjectWasnTFoundSomeone");
   }
   if (code === "project_forbidden" || code === "forbidden") {
-    return zh
-      ? "只有管理员或项目负责人能做这件事。"
-      : "Only admins or the project owner can do that.";
+    return webT(locale, "onlyAdminsOrTheProjectOwner");
   }
   if (action === "archive") {
-    return zh ? "归档失败，稍后重试。" : "Couldn't archive it — try again later.";
+    return webT(locale, "couldnTArchiveItTryAgain");
   }
-  return zh ? "删除失败，稍后重试。" : "Couldn't delete it — try again later.";
+  return webT(locale, "couldnTDeleteItTryAgain");
 }

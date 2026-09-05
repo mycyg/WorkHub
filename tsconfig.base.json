@@ -24,6 +24,8 @@
       "@workhub/tools": ["packages/tools/src/index.ts"],
       "@workhub/plugin-host": ["packages/plugin-host/src/index.ts"],
       "@workhub/plugin-host/host": ["packages/plugin-host/src/host.ts"],
+      "@workhub/mcp-client": ["packages/mcp-client/src/index.ts"],
+      "@workhub/mcp-client/qa-fixtures": ["packages/mcp-client/qa/fixtures/echo-server-tools.ts"],
       "@workhub/db": ["packages/db/src/index.ts"],
       "@workhub/db/schema": ["packages/db/src/schema/index.ts"],
       "@workhub/events": ["packages/events/src/index.ts"],

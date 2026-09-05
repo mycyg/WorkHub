@@ -11,6 +11,8 @@ import type { DeliverableChange, ProposalDetailVM } from "@workhub/contracts";
 import { publicProposalDisplayTitle, publicProposalSummaryText } from "@workhub/ui/proposal";
 import { conflictsFromMergeError, escapeHtml } from "@workhub/web-runtime";
 
+import { proposalT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 // 通过/打回/合入网络往返失败后的面板内联温和话术分类（06 §5.4）——纯数据，交给 render 拼成 notice 块。
@@ -96,7 +98,7 @@ function proposalSummaryText(markdown: string, zh: boolean): string {
   const locale = zh ? "zh-CN" : "en-US";
   return (
     publicProposalSummaryText(markdown, locale, 320) ||
-    (zh ? "先看总结和改动，再决定是否采纳。" : "Review the summary and changes before deciding.")
+    (proposalT(zh, "reviewTheSummaryAndChangesBefore"))
   );
 }
 
@@ -107,7 +109,7 @@ function proposalSummaryText(markdown: string, zh: boolean): string {
 function reasonComposerHtml(zh: boolean): string {
   const presets = zh ? ["方向不对", "细节要调整", "缺少依据"] : ["Wrong direction", "Needs tweaks", "Insufficient evidence"];
   return `<div class="wh-wb-prop-reasons" data-wb-prop-reasons>
-    <p class="wh-wb-prop-reasons-q">${zh ? "打回说明" : "Feedback for changes"}</p>
+    <p class="wh-wb-prop-reasons-q">${proposalT(zh, "feedbackForChanges")}</p>
     <div class="wh-wb-prop-reasons-row">${presets
       .map(
         (preset) =>
@@ -115,18 +117,18 @@ function reasonComposerHtml(zh: boolean): string {
       )
       .join("")}</div>
     <textarea class="wh-wb-prop-reason-text" data-wb-prop-reason-text rows="3" placeholder="${
-      zh ? "具体写哪里需要改，Cuu 会带着这段反馈继续修。" : "Describe what needs to change; Cuu will revise with this feedback."
+      proposalT(zh, "describeWhatNeedsToChangeCuu")
     }"></textarea>
     <p class="wh-wb-prop-reason-error" data-wb-prop-reason-error></p>
     <div class="wh-wb-prop-reason-actions">
-      <button type="button" class="wh-wb-prop-act wh-wb-prop-act--danger" data-wb-prop-submit-deny>${zh ? "发送打回说明" : "Send feedback"}</button>
+      <button type="button" class="wh-wb-prop-act wh-wb-prop-act--danger" data-wb-prop-submit-deny>${proposalT(zh, "sendFeedback")}</button>
     </div>
   </div>`;
 }
 
 function noticeHtml(notice: ProposalActionNotice, zh: boolean): string {
   const retry = notice.retry
-    ? `<button type="button" class="wh-wb-prop-act wh-wb-prop-act--ghost" data-wb-prop-retry="${escapeHtml(notice.retry)}">${zh ? "重试" : "Try again"}</button>`
+    ? `<button type="button" class="wh-wb-prop-act wh-wb-prop-act--ghost" data-wb-prop-retry="${escapeHtml(notice.retry)}">${proposalT(zh, "tryAgain")}</button>`
     : "";
   return `<div class="wh-wb-prop-notice wh-wb-prop-notice--${notice.tone}" data-wb-prop-notice><span>${escapeHtml(notice.text)}</span>${retry}</div>`;
 }
@@ -136,20 +138,20 @@ function noticeHtml(notice: ProposalActionNotice, zh: boolean): string {
 function actionsHtml(vm: ProposalDetailVM, ui: ProposalDetailUiState, zh: boolean): string {
   const busy = ui.busy;
   if (vm.status === "opened") {
-    const approveLabel = busy === "approve" ? (zh ? "确认中…" : "Approving…") : zh ? "确认通过" : "Mark approved";
-    const denyLabel = busy === "deny" ? (zh ? "打回中…" : "Sending back…") : zh ? "打回修改" : "Request changes";
+    const approveLabel = busy === "approve" ? (proposalT(zh, "approving")) : proposalT(zh, "markApproved");
+    const denyLabel = busy === "deny" ? (proposalT(zh, "sendingBack")) : proposalT(zh, "requestChanges");
     return `<div class="wh-wb-prop-actions" data-wb-prop-actions>
-      <p class="wh-wb-prop-note">${zh ? "确认通过后再合入交付物，可用快照回滚。" : "Approve first, then merge; the snapshot can roll back."}</p>
+      <p class="wh-wb-prop-note">${proposalT(zh, "approveFirstThenMergeTheSnapshot")}</p>
       <button type="button" class="wh-wb-prop-act wh-wb-prop-act--primary" data-wb-prop-approve${busy ? " disabled" : ""}>${escapeHtml(approveLabel)}</button>
       <button type="button" class="wh-wb-prop-act wh-wb-prop-act--danger" data-wb-prop-deny${busy ? " disabled" : ""}>${escapeHtml(denyLabel)}</button>
     </div>`;
   }
   if (vm.status === "reviewed" && vm.review_actions.merge) {
     const mergeLabel = busy === "merge"
-      ? (zh ? "合入中…" : "Merging…")
-      : vm.review_actions.merge.label || (zh ? "合入交付物" : "Merge deliverable");
+      ? (proposalT(zh, "merging"))
+      : vm.review_actions.merge.label || (proposalT(zh, "mergeDeliverable"));
     return `<div class="wh-wb-prop-actions" data-wb-prop-actions>
-      <p class="wh-wb-prop-note">${zh ? "已确认通过，只差合入交付物。" : "Approved; only the deliverable merge remains."}</p>
+      <p class="wh-wb-prop-note">${proposalT(zh, "approvedOnlyTheDeliverableMergeRemains")}</p>
       <button type="button" class="wh-wb-prop-act wh-wb-prop-act--primary" data-wb-prop-merge${busy ? " disabled" : ""}>${escapeHtml(mergeLabel)}</button>
     </div>`;
   }
@@ -171,14 +173,14 @@ function renderDetailHtml(vm: ProposalDetailVM, ui: ProposalDetailUiState, local
   const showReason = ui.reasonOpen && vm.status === "opened";
   const tail = showReason ? reasonComposerHtml(zh) : actionsHtml(vm, ui, zh);
   return `<div class="wh-wb-prop">
-    <button type="button" class="wh-wb-prop-back" data-wb-prop-back>${zh ? "‹ 返回军团面板" : "‹ Back to army panel"}</button>
+    <button type="button" class="wh-wb-prop-back" data-wb-prop-back>${proposalT(locale, "backToArmyPanel")}</button>
     <div class="wh-wb-prop-head">
       <span class="wh-wb-prop-risk wh-wb-prop-risk--${riskTone(m.risk.level)}">${escapeHtml(m.risk.human_label)}</span>
-      <span class="wh-wb-prop-change-path">${m.changes.length} ${zh ? "处改动" : "changes"}</span>
+      <span class="wh-wb-prop-change-path">${m.changes.length} ${proposalT(locale, "changes")}</span>
     </div>
     <h3 class="wh-wb-prop-title">${escapeHtml(displayTitle)}</h3>
     <div class="wh-wb-prop-summary">
-      <div class="wh-wb-prop-change-head"><span class="wh-wb-prop-chip">${zh ? "总结" : "Summary"}</span></div>
+      <div class="wh-wb-prop-change-head"><span class="wh-wb-prop-chip">${proposalT(locale, "summary")}</span></div>
       <div class="wh-wb-prop-change-sum">${escapeHtml(summary)}</div>
     </div>
     ${checks}
@@ -190,15 +192,15 @@ function renderDetailHtml(vm: ProposalDetailVM, ui: ProposalDetailUiState, local
 
 export function renderProposalLoadingHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  return `<div class="wh-wb-prop-loading"><span class="wh-wb-spinner"></span>${zh ? "正在拉提议详情…" : "Loading the proposal…"}</div>`;
+  return `<div class="wh-wb-prop-loading"><span class="wh-wb-spinner"></span>${proposalT(locale, "loadingTheProposal")}</div>`;
 }
 
 export function renderProposalErrorHtml(message: string, locale: Locale): string {
   const zh = locale === "zh-CN";
   return `<div class="wh-wb-prop-error">
-    <button type="button" class="wh-wb-prop-back" data-wb-prop-back>${zh ? "‹ 返回军团面板" : "‹ Back to army panel"}</button>
-    <p class="wh-wb-prop-error-msg">${escapeHtml(message || (zh ? "提议详情没拉到" : "Couldn't load the proposal"))}</p>
-    <button type="button" class="wh-wb-prop-act wh-wb-prop-act--ghost" data-wb-prop-reload>${zh ? "重试" : "Try again"}</button>
+    <button type="button" class="wh-wb-prop-back" data-wb-prop-back>${proposalT(locale, "backToArmyPanel")}</button>
+    <p class="wh-wb-prop-error-msg">${escapeHtml(message || (proposalT(locale, "couldnTLoadTheProposal")))}</p>
+    <button type="button" class="wh-wb-prop-act wh-wb-prop-act--ghost" data-wb-prop-reload>${proposalT(locale, "tryAgain")}</button>
   </div>`;
 }
 
@@ -227,32 +229,26 @@ export function classifyProposalActionError(
   if (action === "merge" && conflictsFromMergeError(error).length > 0) {
     return {
       tone: "conflict",
-      text: zh
-        ? "这份变更和别人的改动冲突了，得先在审批工作台里逐个处理冲突再合入。"
-        : "This change conflicts with someone else's edits — resolve them in the approvals workspace before merging."
+      text: proposalT(locale, "thisChangeConflictsWithSomeoneElse")
     };
   }
   if (error instanceof WorkHubApiError) {
     if (error.status === 403) {
       return {
         tone: "permission",
-        text: zh
-          ? "这份提议不归你审（可能不是你的工作区，或已交给别人）。"
-          : "This proposal isn't yours to review — it may be in another workspace, or handed to someone else."
+        text: proposalT(locale, "thisProposalIsnTYoursTo")
       };
     }
     if (error.status === 409) {
       return {
         tone: "conflict",
-        text: zh
-          ? "这份提议的状态已经变了（可能别人刚处理过），刷新后再看。"
-          : "This proposal's status already changed (someone may have just handled it) — reload to see the latest."
+        text: proposalT(locale, "thisProposalSStatusAlreadyChanged")
       };
     }
   }
   return {
     tone: "network",
-    text: zh ? "没提交成功，稍后重试。" : "That didn't go through — try again in a moment.",
+    text: proposalT(locale, "thatDidnTGoThroughTry"),
     retry: action
   };
 }

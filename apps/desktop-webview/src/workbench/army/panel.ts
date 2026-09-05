@@ -25,6 +25,8 @@ import {
   type ArmyPanelViewState
 } from "./render.js";
 
+import { armyT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 export type ArmyContextPanelApiClient = Pick<WorkHubApiClient, "request" | "getAgentRun" | "abortAgentRun">;
@@ -61,7 +63,7 @@ function errorMessage(error: unknown, locale: Locale): string {
   if (error instanceof Error && error.message) {
     return error.message;
   }
-  return locale === "zh-CN" ? "没拉到，请重试" : "Couldn't load — try again";
+  return armyT(locale, "couldnTLoadTryAgain");
 }
 
 export function mountArmyContextPanel(
@@ -112,7 +114,7 @@ export function mountArmyContextPanel(
   }
 
   function backgroundErrorMessage(): string {
-    return input.locale === "zh-CN" ? "后台任务没拉到" : "Couldn't load background tasks";
+    return armyT(input.locale, "couldnTLoadBackgroundTasks");
   }
 
   // R17 G3(#8)：拉后台任务区数据（懒加载 + 手动/被动刷新重拉）。best-effort：失败落 error 态（诚实标注），

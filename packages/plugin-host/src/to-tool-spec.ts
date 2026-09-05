@@ -12,7 +12,7 @@
  * 2. 不设 `promptSnippet`/`promptGuidelines`：插件文案会进系统提示词，属于提示词注入面，
  *    要排在提示词 golden 之后。模型仍能通过 `toModelTools`（tool description 通道）看到并调用它。
  */
-import type { AnyToolSpec, ToolExecutionContext, ToolResult } from "@workhub/tools";
+import { sanitizeModelFacingText, type AnyToolSpec, type ToolExecutionContext, type ToolResult } from "@workhub/tools";
 import { z } from "zod";
 
 import type { PluginToolDescriptor } from "./protocol.js";
@@ -26,8 +26,10 @@ export const PLUGIN_TEXT_MAX_CHARS = 4000;
  * 一段第三方字符串不会把请求体搞坏或撑爆预算。
  */
 export function sanitizePluginText(value: string, maxChars = PLUGIN_TEXT_MAX_CHARS) {
-  const stripped = value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/gu, " ");
-  return stripped.length > maxChars ? `${stripped.slice(0, maxChars)}\u2026` : stripped;
+  // 委托给 packages/tools 的共享实现（R26 M1b）：tail 截断 + 控制字符清理，
+  // 不开 neutralizeFenceTags——插件描述符文案不进围栏，行为必须与旧版逐字相同
+  // （gen:expected 之后 git status 必须无变化，见该函数原先的行为注释）。
+  return sanitizeModelFacingText(value, { maxChars, truncation: "tail" });
 }
 
 /**

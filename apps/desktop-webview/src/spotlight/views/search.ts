@@ -36,6 +36,8 @@ import { meetingRecordStatusLabel as meetingStatusLabel, workItemStatusLabel } f
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 import { driveResourceApiBase, driveResourceHref, fetchDriveResource } from "./drive.js";
 
+import { spotlightViewsT } from "./locales.js";
+
 export const SEARCH_DEBOUNCE_MS = 300;
 
 // ── 纯函数：请求构造 / 文案 / 渲染 —— 与 DOM 接线分离，逐条可单测。 ──────────────────────────
@@ -48,13 +50,13 @@ export function buildSearchRequestPath(q: string, limit: number = SEARCH_LIMIT_D
 export function searchScopeLabel(scope: SearchScope, zh: boolean): string {
   switch (scope) {
     case "conversations":
-      return zh ? "会话" : "Chat";
+      return spotlightViewsT(zh, "chat");
     case "drive":
-      return zh ? "网盘" : "Drive";
+      return spotlightViewsT(zh, "drive");
     case "work_items":
-      return zh ? "工单" : "Tasks";
+      return spotlightViewsT(zh, "tasks");
     case "meetings":
-      return zh ? "会议" : "Meetings";
+      return spotlightViewsT(zh, "meetings");
     default:
       return scope;
   }
@@ -63,19 +65,19 @@ export function searchScopeLabel(scope: SearchScope, zh: boolean): string {
 export function matchedInLabel(matchedIn: SearchMatchedIn, zh: boolean): string {
   switch (matchedIn) {
     case "name":
-      return zh ? "文件名" : "Filename";
+      return spotlightViewsT(zh, "filename");
     case "body":
-      return zh ? "正文" : "Content";
+      return spotlightViewsT(zh, "content");
     case "title":
-      return zh ? "标题" : "Title";
+      return spotlightViewsT(zh, "title");
     case "description":
-      return zh ? "描述" : "Description";
+      return spotlightViewsT(zh, "description");
     case "text":
-      return zh ? "正文" : "Message";
+      return spotlightViewsT(zh, "message");
     case "minutes":
-      return zh ? "纪要" : "Minutes";
+      return spotlightViewsT(zh, "minutes");
     default:
-      return zh ? "内容" : "Content";
+      return spotlightViewsT(zh, "content2");
   }
 }
 
@@ -108,12 +110,10 @@ export function highlightSnippet(snippet: string, query: string): string {
 // 返回 undefined 表示这个长度应该真的去搜。
 export function searchQueryHintMessage(trimmedLength: number, zh: boolean): string | undefined {
   if (trimmedLength === 0) {
-    return zh
-      ? "输入关键词，搜遍会话·网盘·工单·会议"
-      : "Type to search across chat, drive, tasks, and meetings";
+    return spotlightViewsT(zh, "typeToSearchAcrossChatDrive");
   }
   if (trimmedLength < SEARCH_QUERY_MIN_LENGTH) {
-    return zh ? "再多打一个字才能搜（至少 2 个字）" : "Type at least 2 characters to search";
+    return spotlightViewsT(zh, "typeAtLeast2CharactersTo");
   }
   if (trimmedLength > SEARCH_QUERY_MAX_LENGTH) {
     return zh
@@ -124,7 +124,7 @@ export function searchQueryHintMessage(trimmedLength: number, zh: boolean): stri
 }
 
 function searchLoadingHtml(zh: boolean): string {
-  return `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在搜索…" : "Searching…"}</div>`;
+  return `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${spotlightViewsT(zh, "searching2")}</div>`;
 }
 
 export function searchHintHtml(zh: boolean, message: string): string {
@@ -135,7 +135,7 @@ function conversationSenderLabel(result: ConversationSearchResult, zh: boolean):
   if (result.sender_label) {
     return result.sender_label;
   }
-  return result.sender_type === "agent" ? "Cuu" : zh ? "系统" : "System";
+  return result.sender_type === "agent" ? "Cuu" : spotlightViewsT(zh, "system");
 }
 
 function conversationRowHtml(r: ConversationSearchResult, zh: boolean, query: string): string {
@@ -159,7 +159,7 @@ function driveRowHtml(r: DriveSearchResult, zh: boolean, query: string): string 
 }
 
 function workItemRowHtml(r: WorkItemSearchResult, zh: boolean, query: string): string {
-  const title = r.title ?? (zh ? "（未命名工单）" : "(Untitled)");
+  const title = r.title ?? (spotlightViewsT(zh, "untitled"));
   const matchLabel = matchedInLabel(r.matched_in, zh);
   return `<button type="button" role="option" tabindex="-1" class="wh-spot-row" data-search-row="true" data-search-kind="workitem" data-search-work-item-id="${escapeHtml(r.work_item_id)}">
     <div class="wh-spot-row-main">
@@ -202,8 +202,8 @@ function searchGroupHtml(group: SearchGroup, zh: boolean, query: string): string
   const count = group.results.length;
   const heading = count ? `${escapeHtml(label)}（${count}${group.has_more ? "+" : ""}）` : escapeHtml(label);
   const body = count
-    ? `<div class="wh-spot-list">${rows}</div>${group.has_more ? `<p class="wh-spot-card-desc">${escapeHtml(zh ? "还有更多，换更精确的词" : "More results — try a more specific term")}</p>` : ""}`
-    : `<p class="wh-spot-row-sub">${escapeHtml(zh ? "无匹配" : "No matches")}</p>`;
+    ? `<div class="wh-spot-list">${rows}</div>${group.has_more ? `<p class="wh-spot-card-desc">${escapeHtml(spotlightViewsT(zh, "moreResultsTryAMoreSpecific"))}</p>` : ""}`
+    : `<p class="wh-spot-row-sub">${escapeHtml(spotlightViewsT(zh, "noMatches"))}</p>`;
   return `<section class="wh-spot-search-group" data-search-group="${escapeHtml(group.scope)}">
     <p class="wh-spot-reasons-q">${heading}</p>
     ${body}
@@ -225,7 +225,7 @@ export function searchResultsHtml(vm: SearchResultsVm, zh: boolean): string {
 }
 
 export function searchShellHtml(zh: boolean): string {
-  const placeholder = zh ? "搜会话、网盘、工单、会议…" : "Search chat, drive, tasks, meetings…";
+  const placeholder = spotlightViewsT(zh, "searchChatDriveTasksMeetings");
   return `<div class="wh-spot-know">
     <div class="wh-spot-know-bar">
       <input class="wh-spot-freetext wh-spot-freetext--line" type="search" role="searchbox" data-search-input placeholder="${escapeHtml(placeholder)}" aria-label="${escapeHtml(placeholder)}" />
@@ -340,7 +340,7 @@ export function createSearchView(): SpotlightCapabilityView {
       let fetchGen = 0;
       let retry: (() => void) | undefined;
 
-      ctx.setSubtitle(zh ? "跨会话·网盘·工单·会议" : "Across chat, drive, tasks, meetings");
+      ctx.setSubtitle(spotlightViewsT(ctx.locale, "acrossChatDriveTasksMeetings"));
 
       const renderResult = (html: string) => {
         const slot = ctx.body.querySelector<HTMLElement>("[data-search-result]");
@@ -374,7 +374,7 @@ export function createSearchView(): SpotlightCapabilityView {
             return;
           }
           retry = () => void runSearch(q);
-          renderResult(spotlightErrorHtml(zh, zh ? "搜索失败" : "Search failed"));
+          renderResult(spotlightErrorHtml(zh, spotlightViewsT(ctx.locale, "searchFailed2")));
         }
       };
 
@@ -400,7 +400,7 @@ export function createSearchView(): SpotlightCapabilityView {
       const openInWorkbench = async (action: Extract<SearchOpenAction, { kind: "conversation" }>) => {
         const invoke = resolveDesktopTauriInvoke();
         if (!invoke) {
-          ctx.toast(zh ? "工作台只在桌面客户端里可用" : "The workbench only opens in the desktop app", "info");
+          ctx.toast(spotlightViewsT(ctx.locale, "theWorkbenchOnlyOpensInThe"), "info");
           return;
         }
         // 冷启动竞态兜底：invoke 之前同步写 stash（见 workbench/pending-deep-link.ts 顶部注释）。
@@ -412,9 +412,9 @@ export function createSearchView(): SpotlightCapabilityView {
         });
         try {
           await invoke("open_workbench", { projectId: action.projectId });
-          ctx.toast(zh ? "已在工作台打开该会话" : "Opened the conversation in the workbench", "ok");
+          ctx.toast(spotlightViewsT(ctx.locale, "openedTheConversationInTheWorkbench"), "ok");
         } catch {
-          ctx.toast(zh ? "没打开工作台窗口，稍后重试" : "Couldn't open the workbench — try again", "error");
+          ctx.toast(spotlightViewsT(ctx.locale, "couldnTOpenTheWorkbenchTry"), "error");
         }
       };
 

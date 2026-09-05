@@ -17,6 +17,8 @@ import { bindDesktopAgentRunReplayRevert } from "../../desktop-agent-run-replay.
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 import { agentRunStatusLabel, agentStepPhaseLabel, agentStepPublicSummary, snapshotKindLabel } from "../labels.js";
 
+import { spotlightViewsT } from "./locales.js";
+
 type BgRun = AttentionHomeVM["background_runs"][number];
 
 // R20 R19-30：详情页打开时若这个 run 还在跑，每隔这么久用 GET /api/agent-runs/{id}/trace?after= 的游标
@@ -47,7 +49,7 @@ function stateLabel(state: BgRun["state"], zh: boolean): string {
 
 export function runListHtml(runs: BgRun[], zh: boolean): string {
   if (!runs.length) {
-    return `<div class="wh-spot-empty"><div class="wh-spot-empty-face">(=・ω・=)</div><h3 class="wh-spot-empty-title">${zh ? "暂时没有在跑的 AI" : "No active runs"}</h3><p class="wh-spot-empty-sub">${zh ? "新建任务后，Cuu 跑起来就会出现在这里" : "Create a task and runs show up here"}</p></div>`;
+    return `<div class="wh-spot-empty"><div class="wh-spot-empty-face">(=・ω・=)</div><h3 class="wh-spot-empty-title">${spotlightViewsT(zh, "noActiveRuns")}</h3><p class="wh-spot-empty-sub">${spotlightViewsT(zh, "createATaskAndRunsShow")}</p></div>`;
   }
   return `<div class="wh-spot-list ds-stagger">${runs
     .map(
@@ -66,12 +68,12 @@ function traceHtml(vm: AgentRunLiveVM, zh: boolean, waiting = false): string {
   // L14：列表里这条运行标着「等你拍板」(waiting_for_user，仅 attention 列表态有,详情 VM 的 status 枚举不含它)。
   // 用户点进来就是想处置,trace 详情却只有返回+时间线、无处可点 → 给一颗「去拍板」直达决策收件箱。
   const decideBtn = waiting
-    ? `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-run-open-decision style="align-self:flex-start">${zh ? "去拍板" : "Open decision"}</button>`
+    ? `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-run-open-decision style="align-self:flex-start">${spotlightViewsT(zh, "openDecision")}</button>`
     : "";
   const header = `<div class="wh-spot-metrics">
-    <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "状态" : "Status"}</span><span class="wh-spot-metric-v">${escapeHtml(agentRunStatusLabel(vm.status, zh))}</span></div>
-    <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "步数" : "Steps"}</span><span class="wh-spot-metric-v">${u.steps_used}</span></div>
-    <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "花费" : "Cost"}</span><span class="wh-spot-metric-v">¥${escapeHtml(String(u.estimated_cost_cny))}</span></div>
+    <div class="wh-spot-metric"><span class="wh-spot-metric-k">${spotlightViewsT(zh, "status")}</span><span class="wh-spot-metric-v">${escapeHtml(agentRunStatusLabel(vm.status, zh))}</span></div>
+    <div class="wh-spot-metric"><span class="wh-spot-metric-k">${spotlightViewsT(zh, "steps")}</span><span class="wh-spot-metric-v">${u.steps_used}</span></div>
+    <div class="wh-spot-metric"><span class="wh-spot-metric-k">${spotlightViewsT(zh, "cost2")}</span><span class="wh-spot-metric-v">¥${escapeHtml(String(u.estimated_cost_cny))}</span></div>
   </div>`;
   const steps = vm.trace ?? [];
   const timeline = steps.length
@@ -81,8 +83,8 @@ function traceHtml(vm: AgentRunLiveVM, zh: boolean, waiting = false): string {
             `<div class="wh-spot-trace-step"><div class="wh-spot-trace-phase">${escapeHtml(agentStepPhaseLabel(s.phase, zh))}</div><div class="wh-spot-trace-out">${escapeHtml(agentStepPublicSummary(s, zh))}</div></div>`
         )
         .join("")}</div>`
-    : `<p class="wh-spot-bubble-note" style="color:var(--ds-ink-muted)">${zh ? "还没有步骤" : "No steps yet"}</p>`;
-  return `<div class="wh-spot-dash ds-anim-fade-in"><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-run-back style="align-self:flex-start">${zh ? "← 返回运行列表" : "← Back to runs"}</button>${header}${decideBtn}${timeline}</div>`;
+    : `<p class="wh-spot-bubble-note" style="color:var(--ds-ink-muted)">${spotlightViewsT(zh, "noStepsYet")}</p>`;
+  return `<div class="wh-spot-dash ds-anim-fade-in"><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-run-back style="align-self:flex-start">${spotlightViewsT(zh, "backToRuns")}</button>${header}${decideBtn}${timeline}</div>`;
 }
 
 // F-06：改动快照区——每个未回滚快照给一颗「撤销此次改动」按钮（POST /api/agent-runs/:id/revert，
@@ -103,18 +105,18 @@ export function snapshotsSectionHtml(replay: ReplayTraceVM | undefined, runId: s
         .join(" · ");
       let action: string;
       if (reverted) {
-        action = `<span class="wh-spot-row-metalabel" data-replay-snapshot-reverted="true">${escapeHtml(zh ? "已回滚" : "Reverted")}</span>`;
+        action = `<span class="wh-spot-row-metalabel" data-replay-snapshot-reverted="true">${escapeHtml(spotlightViewsT(zh, "reverted"))}</span>`;
       } else if (canRevert) {
-        action = `<button type="button" class="wh-spot-act wh-spot-act--danger ds-pressable" data-replay-revert-snapshot="${escapeHtml(snap.id)}" data-replay-revert-run="${escapeHtml(runId)}" data-revert-label-idle="${escapeHtml(zh ? "撤销此次改动" : "Undo these changes")}" data-revert-label-arm="${escapeHtml(zh ? "确认撤销？再点一次" : "Undo? Click again")}" data-revert-label-reverting="${escapeHtml(zh ? "撤销中…" : "Undoing…")}" data-revert-label-reverted="${escapeHtml(zh ? "已回滚" : "Reverted")}" data-revert-label-retry="${escapeHtml(zh ? "撤销失败，点此重试" : "Undo failed — retry")}">${escapeHtml(zh ? "撤销此次改动" : "Undo these changes")}</button>`;
+        action = `<button type="button" class="wh-spot-act wh-spot-act--danger ds-pressable" data-replay-revert-snapshot="${escapeHtml(snap.id)}" data-replay-revert-run="${escapeHtml(runId)}" data-revert-label-idle="${escapeHtml(spotlightViewsT(zh, "undoTheseChanges"))}" data-revert-label-arm="${escapeHtml(spotlightViewsT(zh, "undoClickAgain"))}" data-revert-label-reverting="${escapeHtml(spotlightViewsT(zh, "undoing"))}" data-revert-label-reverted="${escapeHtml(spotlightViewsT(zh, "reverted"))}" data-revert-label-retry="${escapeHtml(spotlightViewsT(zh, "undoFailedRetry"))}">${escapeHtml(spotlightViewsT(zh, "undoTheseChanges"))}</button>`;
       } else {
-        action = `<span class="wh-spot-row-metalabel">${escapeHtml(zh ? "本机暂不支持撤销" : "Undo unavailable")}</span>`;
+        action = `<span class="wh-spot-row-metalabel">${escapeHtml(spotlightViewsT(zh, "undoUnavailable"))}</span>`;
       }
       return `<div class="wh-spot-row" data-replay-snapshot="${escapeHtml(snap.id)}" data-replay-snapshot-kind="${escapeHtml(snap.kind)}" style="cursor:default"><div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(snap.ref)}</div><div class="wh-spot-row-sub">${escapeHtml(meta)}</div></div>${action}</div>`;
     })
     .join("");
   return `<div style="margin-top:16px;display:flex;flex-direction:column;gap:8px">
-    <div class="wh-spot-row-title">${escapeHtml(zh ? "改动快照" : "Change snapshots")}</div>
-    <p class="wh-spot-row-sub">${escapeHtml(zh ? "撤销会把文件还原到这份快照，并覆盖之后的改动。" : "Undoing restores files to that snapshot and overwrites later changes.")}</p>
+    <div class="wh-spot-row-title">${escapeHtml(spotlightViewsT(zh, "changeSnapshots"))}</div>
+    <p class="wh-spot-row-sub">${escapeHtml(spotlightViewsT(zh, "undoingRestoresFilesToThatSnapshot"))}</p>
     ${rows}
   </div>`;
 }
@@ -162,8 +164,8 @@ export function createReplayView(): SpotlightCapabilityView {
         stopPolling();
         teardownRevertBinding();
         const gen = ++loadGen;
-        ctx.setSubtitle(zh ? "AI 运行" : "AI runs");
-        ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉运行…" : "Loading runs…"}</div>`;
+        ctx.setSubtitle(spotlightViewsT(ctx.locale, "aiRuns"));
+        ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${spotlightViewsT(ctx.locale, "loadingRuns")}</div>`;
         ctx.requestResize();
         try {
           const vm = await ctx.client.pages.attention({ locale: ctx.locale });
@@ -177,7 +179,7 @@ export function createReplayView(): SpotlightCapabilityView {
         } catch {
           if (disposed || gen !== loadGen) return;
           retry = () => void showList();
-          ctx.body.innerHTML = spotlightErrorHtml(zh, zh ? "运行没拉到" : "Couldn't load runs");
+          ctx.body.innerHTML = spotlightErrorHtml(zh, spotlightViewsT(ctx.locale, "couldnTLoadRuns"));
         }
         ctx.requestResize();
       };
@@ -266,7 +268,7 @@ export function createReplayView(): SpotlightCapabilityView {
         teardownRevertBinding();
         const gen = ++loadGen;
         currentRunId = runId;
-        ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉时间线…" : "Loading trace…"}</div>`;
+        ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${spotlightViewsT(ctx.locale, "loadingTrace")}</div>`;
         ctx.requestResize();
         try {
           const vmPromise = ctx.client.getAgentRun(runId);
@@ -278,7 +280,7 @@ export function createReplayView(): SpotlightCapabilityView {
             : Promise.resolve(undefined);
           const vm = await vmPromise;
           if (disposed || gen !== loadGen) return;
-          ctx.setSubtitle(zh ? "运行时间线" : "Run trace");
+          ctx.setSubtitle(spotlightViewsT(ctx.locale, "runTrace"));
           const waiting = runState === "waiting_for_user";
           const replay = await replayPromise;
           if (disposed || gen !== loadGen) return;
@@ -291,7 +293,7 @@ export function createReplayView(): SpotlightCapabilityView {
           if (disposed || gen !== loadGen) return;
           // L14 回归修复：retry 必须带上 runState，否则重试成功后「去拍板」按钮(仅 waiting_for_user 显示)会丢失。
           retry = () => void showTrace(runId, runState);
-          ctx.body.innerHTML = spotlightErrorHtml(zh, zh ? "时间线没拉到" : "Couldn't load trace");
+          ctx.body.innerHTML = spotlightErrorHtml(zh, spotlightViewsT(ctx.locale, "couldnTLoadTrace"));
         }
         ctx.requestResize();
       };

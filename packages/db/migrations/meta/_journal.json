@@ -512,6 +512,13 @@
       "when": 1783929004000,
       "tag": "0072_plugins",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1783929005000,
+      "tag": "0073_mcp_servers",
+      "breakpoints": true
     }
   ]
 }

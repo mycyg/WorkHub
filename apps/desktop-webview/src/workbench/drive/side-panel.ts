@@ -17,6 +17,8 @@ import {
 } from "./api.js";
 import { renderDriveSidePanelHtml, type DriveSidePanelState } from "./render.js";
 
+import { driveT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 export type DriveSidePanelApiClient = DriveVersionsApiClient;
@@ -135,7 +137,7 @@ export function mountDriveSidePanel(
         state = {
           mode: "preview_error",
           itemName: target.itemName,
-          error: error instanceof Error ? error.message : input.locale === "zh-CN" ? "预览失败" : "Preview failed"
+          error: error instanceof Error ? error.message : driveT(input.locale, "previewFailed")
         };
         publish();
       });
@@ -161,7 +163,7 @@ export function mountDriveSidePanel(
         state = {
           mode: "versions_error",
           itemName: target.itemName,
-          error: error instanceof Error ? error.message : input.locale === "zh-CN" ? "版本历史没拉到" : "Couldn't load version history"
+          error: error instanceof Error ? error.message : driveT(input.locale, "couldnTLoadVersionHistory")
         };
         publish();
       });
@@ -222,7 +224,7 @@ export function mountDriveSidePanel(
           rollback: {
             versionId,
             busy: false,
-            error: error instanceof Error ? error.message : input.locale === "zh-CN" ? "找回失败，请重试" : "Recovery failed — retry"
+            error: error instanceof Error ? error.message : driveT(input.locale, "recoveryFailedRetry")
           }
         };
         publish();

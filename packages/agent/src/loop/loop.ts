@@ -14,6 +14,14 @@ import {
 } from "../deliverables/index.js";
 import type { LlmMessage, LlmStreamEvent } from "../providers/types.js";
 import { checkLoopBudget, controlFromAssistant, createInitialUsage, DoomLoopDetector, isTruncatedToolBatch } from "./control.js";
+import {
+  applyToolResultPruning,
+  createSpillWriter,
+  decidePruningSufficient,
+  DEFAULT_TOOL_RESULT_CONTEXT_CHARS,
+  projectWireContext,
+  truncateForContext
+} from "./context-pruning.js";
 import { buildDoomLoopReminder, DOOM_LOOP_ESCALATION_REASON } from "./doom-loop-reminder.js";
 import { nextRetryDecision } from "../providers/retry.js";
 import { buildStructuredHandoff } from "./handoff.js";
@@ -341,18 +349,6 @@ function publicReasonFromFinalText(finalText: string) {
     .map(cleanMarkdownSummaryLine)
     .filter((line) => line && !isLowInformationSummaryLine(line));
   return (candidates[0] ?? "交付物已生成").slice(0, 256);
-}
-
-function truncateForContext(content: string, maxChars: number) {
-  if (content.length <= maxChars) {
-    return content;
-  }
-  const headChars = Math.floor(maxChars * 0.75);
-  const tailChars = Math.floor(maxChars * 0.15);
-  const omitted = content.length - headChars - tailChars;
-  // findings[#高]：trace 并不保存被截断的完整内容，旧文案「完整内容见 trace」是误导。
-  // 改为给模型一条真实可行的恢复路径：要完整内容就重读该文件或用 run_command 抽取。
-  return `${content.slice(0, headChars)}\n…[已截断 ${omitted} 字符，中段省略；需要完整内容请重读该文件或用 run_command 抽取]\n${content.slice(content.length - tailChars)}`;
 }
 
 /**
@@ -1215,11 +1211,59 @@ export class AgentLoop {
     const doomLoop = new DoomLoopDetector(input.budget.doomLoopWindow ?? 3);
     const requireDeliverable = input.requireDeliverable ?? true;
     const maxCompactions = input.budget.maxCompactions ?? 2;
-    const toolResultContextChars = input.budget.toolResultContextChars ?? 8000;
+    const toolResultContextChars = input.budget.toolResultContextChars ?? DEFAULT_TOOL_RESULT_CONTEXT_CHARS;
+    // B10 第二段：超大工具结果落盘到 <workdir>/.spill/，模型看截断文本 + 定位提示，需要时自己 read_file。
+    // 没有 workdir（单测/无沙箱）时恒返回 undefined，退回纯截断话术。
+    const spill = createSpillWriter({
+      ...(input.workdir ? { workdir: input.workdir } : {}),
+      ...(input.budget.spillMaxTotalBytes !== undefined ? { maxTotalBytes: input.budget.spillMaxTotalBytes } : {})
+    });
     let nextCompactionAtTokens = 0;
     // 补丁2：滚动结构化摘要状态（跨压缩滚动）。抽取为 tryGenerateStructuredSummary 共用实现（仿 finalizeL3 单一真相），
     // loop.ts 与 loop2 configBuilder 各持一份 state。
     const summaryState: StructuredSummaryState = { lastSummarizedStepIndex: 0 };
+
+    // B10 第一段（免费剪枝）：压缩触发时先把历史里超预算的老工具结果剪成 head + 标记 + tail，
+    // 重算上下文压力；够了就**不发摘要请求**（摘要走独立计费的 context_compact 路由，是真金白银）。
+    // 只在 context_window 触发上做：max_tokens 是「模型这次输出太长」，它的自愈依赖摘要 + 尾部裁剪
+    // （后续那条提示明说「基于摘要中的进度继续」），剪枝解决不了那个问题。
+    // 判不够时剪枝结果**照样保留**——那只是让随后的摘要更便宜，不改变任何配对结构。
+    const tryPruneInsteadOfCompact = async (stepNo: number) => {
+      const pruned = applyToolResultPruning(projectWireContext(messages), {
+        ...(input.budget.pruneToolResultChars !== undefined ? { maxChars: input.budget.pruneToolResultChars } : {}),
+        ...(input.budget.pruneRetainRatio !== undefined ? { retainRatio: input.budget.pruneRetainRatio } : {})
+      });
+      const decision = decidePruningSufficient({
+        prunedChars: pruned.prunedChars,
+        contextChars: pruned.contextChars,
+        ...(input.budget.contextWindowTokens !== undefined ? { contextWindowTokens: input.budget.contextWindowTokens } : {}),
+        ...(input.budget.compactThreshold !== undefined ? { compactThreshold: input.budget.compactThreshold } : {})
+      });
+      if (!decision.sufficient) {
+        return false;
+      }
+      // 压缩次数**不计**：这一次没花钱，计进去只会白白饿死后面真正需要的摘要压缩。
+      // 但压缩线要照常前推，否则下一步会立刻再判一次「该压缩了」。
+      const window = input.budget.contextWindowTokens ?? 0;
+      nextCompactionAtTokens = usage.totalTokens + Math.max(1, Math.floor(window * (input.budget.compactThreshold ?? 0.8)));
+      await input.emit?.({
+        type: eventTypes.agentRunCompacting,
+        previewText: `上下文已剪枝（剪掉 ${pruned.prunedResults} 条工具结果的中段，省下 ${pruned.prunedChars} 字符，未发摘要请求）`,
+        data: {
+          run_id: input.runId,
+          step_no: stepNo,
+          trigger: "context_window",
+          compactions: usage.compactions ?? 0,
+          // 摘要来源第三态：本次靠剪枝解决，没有发摘要请求（因此没有 context_compact 计费）。
+          summary_kind: "pruned",
+          pruned_results: pruned.prunedResults,
+          pruned_chars: pruned.prunedChars,
+          // 剪后估出的上下文规模：两套引擎必须算出同一个数（投影口径对齐的证据）。
+          context_chars: pruned.contextChars
+        }
+      });
+      return true;
+    };
 
     const compactNow = async (trigger: "context_window" | "max_tokens", stepNo: number) => {
       usage.compactions = (usage.compactions ?? 0) + 1;
@@ -1284,7 +1328,14 @@ export class AgentLoop {
             handoff
           });
         }
-        await compactNow("context_window", usage.stepsUsed + 1);
+        // B10 第一段：先试免费剪枝，够了就不发那次摘要请求。
+        // 剪枝排在「压缩次数耗尽」判定**之后**而不是之前：loop2 的耗尽判定发生在
+        // shouldStopAfterTurn（那里拿不到即将发出的历史），两套引擎必须逐字同步，
+        // 这条顺序是同步的代价。剪枝让摘要变少，本来就会让耗尽这条路更难走到。
+        const prunedEnough = await tryPruneInsteadOfCompact(usage.stepsUsed + 1);
+        if (!prunedEnough) {
+          await compactNow("context_window", usage.stepsUsed + 1);
+        }
       }
       if (budgetDecision?.signal === "escalate") {
         const handoff = buildStructuredHandoff({
@@ -1455,14 +1506,24 @@ export class AgentLoop {
       });
 
       if (toolResults.length > 0) {
-        messages.push({
-          role: "user",
-          content: toolResults.map((result, index) => ({
+        // B10 第二段：超预算的结果先落盘再截断——step.toolResults / trace 里始终是完整原文，
+        // 只有写回对话的这一份被截断，末尾附上 .spill 定位提示让模型能自己把原文读回来。
+        const wireToolResults: unknown[] = [];
+        for (let index = 0; index < toolResults.length; index += 1) {
+          const result = toolResults[index]!;
+          const spillPath = result.content.length > toolResultContextChars
+            ? await spill({ stepNo, toolName: toolCalls[index]?.name ?? "tool", content: result.content })
+            : undefined;
+          wireToolResults.push({
             type: "tool_result",
             tool_use_id: toolCalls[index]?.id,
-            content: truncateForContext(result.content, toolResultContextChars),
+            content: truncateForContext(result.content, toolResultContextChars, spillPath ? { spillPath } : {}),
             is_error: result.isError
-          }))
+          });
+        }
+        messages.push({
+          role: "user",
+          content: wireToolResults
         });
         // B6：前两档提醒作为一条独立的 user 消息跟在 tool_result 之后（Anthropic 会把连续的同角色
         // 回合并成一个回合，因此不破坏 tool_use/tool_result 配对）。只在「这一步还要继续」的工具路径上

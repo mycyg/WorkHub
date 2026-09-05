@@ -1,4 +1,5 @@
 import path from "node:path";
+import { SPILL_DIR_NAME } from "@workhub/agent";
 
 import { createSnapshotService } from "@workhub/audit";
 import type { Settings } from "@workhub/config";
@@ -47,7 +48,9 @@ export function createAgentRunSnapshotHook(options: AgentRunSnapshotHookOptions)
       workItemId: input.workItemId ?? options.run.work_item_id,
       workdir: input.workdir,
       kind: "pre_step",
-      createdByKind: "ai"
+      createdByKind: "ai",
+      // B10 落盘的 .spill/ 是模型自救用的中间产物：不进快照、不进内容哈希（否则 CORE-04 去重失效）。
+      excludeDirs: [SPILL_DIR_NAME]
     });
     const snapshotInput = {
       id: snapshot.id,

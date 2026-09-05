@@ -7,9 +7,9 @@
 
 import type { WorkHubLocale } from "@workhub/ui/gold-path";
 
+import { desktopT } from "./locales.js";
+
 export function noAiProviderConfiguredText(locale: WorkHubLocale): string {
   const zh = locale === "zh-CN";
-  return zh
-    ? "AI 服务未配置，Cuu 不会回应——需要在服务端配置模型密钥（见部署文档 DEPLOY.md）"
-    : "The AI service isn't configured, so Cuu won't reply — a model key needs to be set up on the server (see DEPLOY.md).";
+  return desktopT(locale, "theAiServiceIsnTConfigured");
 }

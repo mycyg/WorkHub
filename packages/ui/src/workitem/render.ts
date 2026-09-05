@@ -22,6 +22,8 @@ import {
 } from "../i18n.js";
 import { safeHref } from "../safe-href.js";
 
+import { workitemT } from "./locales.js";
+
 export type WorkItemRenderSurface = "web" | "desktop";
 
 export type WorkItemRenderedPage = {
@@ -155,7 +157,7 @@ function renderAgentTeam(team: WorkItemAgentTeamVM, options?: UiRenderOptions) {
     </div>`;
   }).join("");
   const capped = team.runs_capped
-    ? `<p class="wh-subtle" data-r9-agent-team-runs-capped-note="true">${escapeHtml(locale === "zh-CN" ? "仅显示前 100 个子运行。" : "Showing the first 100 child runs.")}</p>`
+    ? `<p class="wh-subtle" data-r9-agent-team-runs-capped-note="true">${escapeHtml(workitemT(locale, "showingTheFirst100ChildRuns"))}</p>`
     : "";
   return `<div class="wh-agent-team" data-r9-agent-team-panel="true" data-r9-agent-team-plan-id="${escapeHtml(team.plan_id)}">
     <div class="wh-agent-head">
@@ -163,7 +165,7 @@ function renderAgentTeam(team: WorkItemAgentTeamVM, options?: UiRenderOptions) {
       <span class="wh-pill">${escapeHtml(uiFormatCny(team.cost_used_cny))}</span>
     </div>
     ${team.cost_budget_cny ? `<div class="wh-agent-meter" aria-label="${escapeHtml(`${burnPct}%`)}"><span style="${escapeHtml(burnWidth)}"></span></div>` : ""}
-    ${rows || `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "暂无子运行。" : "No child runs yet.")}</p>`}
+    ${rows || `<p class="wh-subtle">${escapeHtml(workitemT(locale, "noChildRunsYet"))}</p>`}
     ${capped}
   </div>`;
 }

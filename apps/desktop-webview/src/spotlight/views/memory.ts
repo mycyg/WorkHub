@@ -31,6 +31,8 @@ import { escapeHtml } from "@workhub/web-runtime";
 
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 
+import { spotlightViewsT } from "./locales.js";
+
 const MEMORIES_PATH = "/api/me/memories";
 const TEAM_SKILLS_PATH = "/api/team-skills/manage";
 // 两段式确认的武装窗口：第一次点只「武装」，这段时间内再点同一项才真正执行，否则自动复原
@@ -75,7 +77,7 @@ export function teamSkillStatusLabel(status: TeamSkillStatus, zh: boolean): stri
 // 出处三级降级（03-mem-design §2.3）：服务端已经拼好人话 label（run join → proposal key 反解 →
 // 诚实缺省），前端只在缺省时兜底「早期记录，出处不明」，不编造、不留空白。
 export function memoryProvenanceLine(item: UserMemoryManagementItemVM, zh: boolean): string {
-  return item.provenance?.label ?? (zh ? "早期记录，出处不明" : "An early record — the source is unknown");
+  return item.provenance?.label ?? (spotlightViewsT(zh, "anEarlyRecordTheSourceIs"));
 }
 
 // edited_at 非空时叠加一行——这是「学到什么」之外的另一件事（后来被人改过），不与出处合并成一句话。
@@ -149,7 +151,7 @@ function friendlyErrorMessage(error: unknown, zh: boolean, table: Record<string,
       return zh ? entry[0] : entry[1];
     }
   }
-  return zh ? "操作失败，请重试。" : "Something went wrong — try again.";
+  return spotlightViewsT(zh, "somethingWentWrongTryAgain");
 }
 
 export function memoryErrorMessage(error: unknown, zh: boolean): string {
@@ -164,10 +166,10 @@ export function skillErrorMessage(error: unknown, zh: boolean): string {
 
 export function memoryTabsHtml(active: MemoryTab, zh: boolean): string {
   const tabs: { id: MemoryTab; label: string }[] = [
-    { id: "profile", label: zh ? "关于我" : "About me" },
-    { id: "skills", label: zh ? "团队技能" : "Team skills" }
+    { id: "profile", label: spotlightViewsT(zh, "aboutMe") },
+    { id: "skills", label: spotlightViewsT(zh, "teamSkills2") }
   ];
-  return `<div class="wh-spot-reasons-row" role="tablist" aria-label="${escapeHtml(zh ? "记忆分区" : "Memory sections")}">${tabs
+  return `<div class="wh-spot-reasons-row" role="tablist" aria-label="${escapeHtml(spotlightViewsT(zh, "memorySections"))}">${tabs
     .map(
       (t) =>
         `<button type="button" class="wh-spot-reason ds-pressable" role="tab" aria-selected="${t.id === active}" data-mem-tab="${t.id}" data-sel="${t.id === active}">${escapeHtml(t.label)}</button>`
@@ -191,8 +193,8 @@ export function memoryListHtml(vm: UserMemoryManagementPageVM, zh: boolean): str
   if (!vm.memories.length) {
     return `<div class="wh-spot-empty">
       <div class="wh-spot-empty-face">(=^･ω･^=)</div>
-      <h3 class="wh-spot-empty-title">${zh ? "Cuu 还没记住什么" : "Cuu hasn't learned anything yet"}</h3>
-      <p class="wh-spot-empty-sub">${zh ? "随着你们一起工作，Cuu 会慢慢记住你的偏好。" : "As you work together, Cuu will start remembering your preferences."}</p>
+      <h3 class="wh-spot-empty-title">${spotlightViewsT(zh, "cuuHasnTLearnedAnythingYet")}</h3>
+      <p class="wh-spot-empty-sub">${spotlightViewsT(zh, "asYouWorkTogetherCuuWill")}</p>
     </div>`;
   }
   return `<div class="wh-spot-dash">
@@ -217,20 +219,20 @@ export function memoryDetailHtml(
     ? `<textarea class="wh-spot-freetext" data-mem-edit-text rows="6" maxlength="2000">${escapeHtml(item.value_md)}</textarea>
       ${opts.editError ? `<p class="wh-spot-row-sub" style="color:var(--ds-danger)">${escapeHtml(opts.editError)}</p>` : ""}
       <div class="wh-spot-card-actions">
-        <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-mem-save${busyAttr}>${opts.busy ? (zh ? "保存中…" : "Saving…") : zh ? "保存" : "Save"}</button>
-        <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-mem-cancel-edit${busyAttr}>${zh ? "取消" : "Cancel"}</button>
+        <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-mem-save${busyAttr}>${opts.busy ? (spotlightViewsT(zh, "saving")) : spotlightViewsT(zh, "save")}</button>
+        <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-mem-cancel-edit${busyAttr}>${spotlightViewsT(zh, "cancel")}</button>
       </div>`
     : `<p class="wh-spot-card-desc">${escapeHtml(item.value_md)}</p>
       <div class="wh-spot-card-actions">
-        <button type="button" class="wh-spot-act ds-pressable" data-mem-edit${busyAttr}>${zh ? "编辑" : "Edit"}</button>
+        <button type="button" class="wh-spot-act ds-pressable" data-mem-edit${busyAttr}>${spotlightViewsT(zh, "edit")}</button>
         <button type="button" class="wh-spot-act ${opts.armedDelete ? "wh-spot-act--danger" : "wh-spot-act--quiet"} ds-pressable" data-mem-delete="${escapeHtml(item.id)}"${busyAttr}>${
-          opts.busy ? (zh ? "删除中…" : "Deleting…") : opts.armedDelete ? (zh ? "确定？再点一次删除" : "Sure? Click again") : zh ? "删除" : "Delete"
+          opts.busy ? (spotlightViewsT(zh, "deleting")) : opts.armedDelete ? (spotlightViewsT(zh, "sureClickAgain")) : spotlightViewsT(zh, "delete")
         }</button>
       </div>
-      ${opts.armedDelete ? `<p class="wh-spot-bubble-note">${zh ? "确定删除？Cuu 将忘记这条。" : "Delete this? Cuu will forget it."}</p>` : ""}`;
+      ${opts.armedDelete ? `<p class="wh-spot-bubble-note">${spotlightViewsT(zh, "deleteThisCuuWillForgetIt")}</p>` : ""}`;
 
   return `<div class="wh-spot-dash ds-anim-fade-in">
-    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-mem-back style="align-self:flex-start">${zh ? "← 返回" : "← Back"}</button>
+    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-mem-back style="align-self:flex-start">${spotlightViewsT(zh, "back")}</button>
     <div>
       <span class="wh-spot-row-tag">${escapeHtml(categoryLabel(item.category, zh))}</span>
       ${meta}
@@ -255,13 +257,13 @@ export function teamSkillListHtml(vm: TeamSkillManagementPageVM, zh: boolean, is
   if (!vm.skills.length) {
     return `<div class="wh-spot-empty">
       <div class="wh-spot-empty-face">(=･ｪ･=)</div>
-      <h3 class="wh-spot-empty-title">${zh ? "还没有团队技能" : "No team skills yet"}</h3>
-      <p class="wh-spot-empty-sub">${zh ? "Cuu 完成任务多了，会慢慢总结出团队的做事套路。" : "As Cuu finishes more work, it will distill your team's playbook here."}</p>
+      <h3 class="wh-spot-empty-title">${spotlightViewsT(zh, "noTeamSkillsYet")}</h3>
+      <p class="wh-spot-empty-sub">${spotlightViewsT(zh, "asCuuFinishesMoreWorkIt")}</p>
     </div>`;
   }
   const adminNote = isAdmin
     ? ""
-    : `<p class="wh-spot-row-sub">${zh ? "只有管理员可以编辑或停用。" : "Only admins can edit or deactivate."}</p>`;
+    : `<p class="wh-spot-row-sub">${spotlightViewsT(zh, "onlyAdminsCanEditOrDeactivate")}</p>`;
   return `<div class="wh-spot-dash">${adminNote}<div class="wh-spot-list ds-stagger">${vm.skills.map((s) => teamSkillRowHtml(s, zh)).join("")}</div></div>`;
 }
 
@@ -272,16 +274,12 @@ function skillMetricsHtml(item: TeamSkillManagementItemVM, zh: boolean): string 
       ? `从 v${item.provenance.refined_from_version} 精修 · ${item.provenance.op_count} 处改动`
       : `Refined from v${item.provenance.refined_from_version} · ${item.provenance.op_count} change(s)`
     : item.created_by_kind === "human"
-      ? zh
-        ? "人工创建"
-        : "Authored by a human"
-      : zh
-        ? "AI 蒸馏生成"
-        : "Distilled by AI";
+      ? spotlightViewsT(zh, "authoredByAHuman")
+      : spotlightViewsT(zh, "distilledByAi");
   return `<div class="wh-spot-metrics">
-    <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "版本" : "Version"}</span><span class="wh-spot-metric-v">v${item.version}</span></div>
-    <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "样本数" : "Samples"}</span><span class="wh-spot-metric-v">${item.sample_count}</span></div>
-    <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "置信度" : "Confidence"}</span><span class="wh-spot-metric-v">${confidence}</span></div>
+    <div class="wh-spot-metric"><span class="wh-spot-metric-k">${spotlightViewsT(zh, "version")}</span><span class="wh-spot-metric-v">v${item.version}</span></div>
+    <div class="wh-spot-metric"><span class="wh-spot-metric-k">${spotlightViewsT(zh, "samples")}</span><span class="wh-spot-metric-v">${item.sample_count}</span></div>
+    <div class="wh-spot-metric"><span class="wh-spot-metric-k">${spotlightViewsT(zh, "confidence")}</span><span class="wh-spot-metric-v">${confidence}</span></div>
   </div>
   <p class="wh-spot-row-sub">${escapeHtml(provenanceLine)}</p>`;
 }
@@ -332,10 +330,10 @@ export function teamSkillDetailHtml(
   const deprecatedNote =
     item.status === "deprecated"
       ? `<p class="wh-spot-bubble-note">${escapeHtml(
-          item.deprecated_reason ? (zh ? `已停用：${item.deprecated_reason}` : `Deactivated: ${item.deprecated_reason}`) : zh ? "已停用" : "Deactivated"
+          item.deprecated_reason ? (zh ? `已停用：${item.deprecated_reason}` : `Deactivated: ${item.deprecated_reason}`) : spotlightViewsT(zh, "deactivated")
         )}</p>`
       : "";
-  const backBtn = `<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-skill-back style="align-self:flex-start">${zh ? "← 返回" : "← Back"}</button>`;
+  const backBtn = `<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-skill-back style="align-self:flex-start">${spotlightViewsT(zh, "back")}</button>`;
   const busyAttr = opts.busy ? " disabled" : "";
 
   if (opts.editing) {
@@ -347,25 +345,25 @@ export function teamSkillDetailHtml(
             `<button type="button" class="wh-spot-reason ds-pressable" data-skill-section-chip="${escapeHtml(s.title)}" data-sel="${!isNew && opts.selectedSection === s.title}">${escapeHtml(s.title)}</button>`
         )
         .join("") +
-      `<button type="button" class="wh-spot-reason ds-pressable" data-skill-section-new data-sel="${isNew}">${zh ? "+ 新段落" : "+ New section"}</button>`;
+      `<button type="button" class="wh-spot-reason ds-pressable" data-skill-section-new data-sel="${isNew}">${spotlightViewsT(zh, "newSection")}</button>`;
     const activeSectionBody = !isNew ? opts.sections.find((s) => s.title === opts.selectedSection)?.body ?? "" : "";
     const titleField = isNew
-      ? `<input type="text" class="wh-spot-freetext wh-spot-freetext--line" data-skill-new-section-title maxlength="80" placeholder="${escapeHtml(zh ? "新段落标题，例如：边界情况" : "New section title, e.g. Edge cases")}" />`
+      ? `<input type="text" class="wh-spot-freetext wh-spot-freetext--line" data-skill-new-section-title maxlength="80" placeholder="${escapeHtml(spotlightViewsT(zh, "newSectionTitleEGEdge"))}" />`
       : "";
     return `<div class="wh-spot-dash ds-anim-fade-in">
       ${backBtn}
       <div><h3 class="wh-spot-card-title">${escapeHtml(item.name)}</h3></div>
       <div class="wh-spot-set-group">
-        <div class="wh-spot-set-label">${zh ? "选一段来改" : "Pick a section to edit"}</div>
+        <div class="wh-spot-set-label">${spotlightViewsT(zh, "pickASectionToEdit")}</div>
         <div class="wh-spot-reasons-row">${chips}</div>
       </div>
       ${titleField}
-      <textarea class="wh-spot-freetext" data-skill-edit-text rows="6" maxlength="4000" placeholder="${escapeHtml(zh ? "段落内容" : "Section content")}">${escapeHtml(activeSectionBody)}</textarea>
-      <input type="text" class="wh-spot-freetext wh-spot-freetext--line" data-skill-rationale maxlength="500" placeholder="${escapeHtml(zh ? "可选：为什么这样改" : "Optional: why you're making this change")}" />
+      <textarea class="wh-spot-freetext" data-skill-edit-text rows="6" maxlength="4000" placeholder="${escapeHtml(spotlightViewsT(zh, "sectionContent"))}">${escapeHtml(activeSectionBody)}</textarea>
+      <input type="text" class="wh-spot-freetext wh-spot-freetext--line" data-skill-rationale maxlength="500" placeholder="${escapeHtml(spotlightViewsT(zh, "optionalWhyYouReMakingThis"))}" />
       ${opts.editError ? `<p class="wh-spot-row-sub" style="color:var(--ds-danger)">${escapeHtml(opts.editError)}</p>` : ""}
       <div class="wh-spot-card-actions">
-        <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-skill-save${busyAttr}>${opts.busy ? (zh ? "保存中…" : "Saving…") : zh ? "保存" : "Save"}</button>
-        <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-skill-cancel-edit${busyAttr}>${zh ? "取消" : "Cancel"}</button>
+        <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-skill-save${busyAttr}>${opts.busy ? (spotlightViewsT(zh, "saving")) : spotlightViewsT(zh, "save")}</button>
+        <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-skill-cancel-edit${busyAttr}>${spotlightViewsT(zh, "cancel")}</button>
       </div>
     </div>`;
   }
@@ -373,15 +371,15 @@ export function teamSkillDetailHtml(
   const actions =
     opts.isAdmin && item.status === "active"
       ? `<div class="wh-spot-card-actions">
-        <button type="button" class="wh-spot-act ds-pressable" data-skill-edit${busyAttr}>${zh ? "编辑" : "Edit"}</button>
+        <button type="button" class="wh-spot-act ds-pressable" data-skill-edit${busyAttr}>${spotlightViewsT(zh, "edit")}</button>
         <button type="button" class="wh-spot-act ${opts.armedDeactivate ? "wh-spot-act--danger" : "wh-spot-act--quiet"} ds-pressable" data-skill-deactivate="${escapeHtml(item.id)}"${busyAttr}>${
-          opts.busy ? (zh ? "处理中…" : "Working…") : opts.armedDeactivate ? (zh ? "确定？再点一次停用" : "Sure? Click again") : zh ? "停用" : "Deactivate"
+          opts.busy ? (spotlightViewsT(zh, "working")) : opts.armedDeactivate ? (spotlightViewsT(zh, "sureClickAgain2")) : spotlightViewsT(zh, "deactivate")
         }</button>
       </div>
       ${
         opts.armedDeactivate
-          ? `<input type="text" class="wh-spot-freetext wh-spot-freetext--line" data-skill-deactivate-reason maxlength="500" placeholder="${escapeHtml(zh ? "可选：说明停用原因" : "Optional: reason for deactivating")}" />
-      <p class="wh-spot-bubble-note">${zh ? "停用后这个技能不再被 AI 使用，历史版本仍会保留。" : "Once deactivated, AI stops using this skill — past versions stay in history."}</p>`
+          ? `<input type="text" class="wh-spot-freetext wh-spot-freetext--line" data-skill-deactivate-reason maxlength="500" placeholder="${escapeHtml(spotlightViewsT(zh, "optionalReasonForDeactivating"))}" />
+      <p class="wh-spot-bubble-note">${spotlightViewsT(zh, "onceDeactivatedAiStopsUsingThis")}</p>`
           : ""
       }`
       : "";
@@ -448,7 +446,7 @@ export function createMemoryView(): SpotlightCapabilityView {
       };
 
       const setSubtitleForTab = () => {
-        ctx.setSubtitle(tab === "profile" ? (zh ? "关于我" : "About me") : zh ? "团队技能" : "Team skills");
+        ctx.setSubtitle(tab === "profile" ? (spotlightViewsT(ctx.locale, "aboutMe")) : spotlightViewsT(ctx.locale, "teamSkills2"));
       };
 
       const wrapWithTabs = (innerHtml: string) => `<div class="wh-spot-dash">${memoryTabsHtml(tab, zh)}${innerHtml}</div>`;
@@ -494,7 +492,7 @@ export function createMemoryView(): SpotlightCapabilityView {
         memoryEditing = false;
         memoryEditError = undefined;
         clearArmedDelete();
-        body.innerHTML = wrapWithTabs(`<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉记忆…" : "Loading memories…"}</div>`);
+        body.innerHTML = wrapWithTabs(`<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${spotlightViewsT(ctx.locale, "loadingMemories")}</div>`);
         ctx.requestResize();
         try {
           const data = await client.request<UserMemoryManagementPageVM>(MEMORIES_PATH);
@@ -504,7 +502,7 @@ export function createMemoryView(): SpotlightCapabilityView {
         } catch {
           if (disposed || gen !== loadGen) return;
           retry = () => void loadMemories();
-          body.innerHTML = wrapWithTabs(spotlightErrorHtml(zh, zh ? "记忆没拉到" : "Couldn't load memories"));
+          body.innerHTML = wrapWithTabs(spotlightErrorHtml(zh, spotlightViewsT(ctx.locale, "couldnTLoadMemories")));
           ctx.requestResize();
         }
       };
@@ -516,7 +514,7 @@ export function createMemoryView(): SpotlightCapabilityView {
         skillEditing = false;
         skillEditError = undefined;
         clearArmedDeactivate();
-        body.innerHTML = wrapWithTabs(`<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉团队技能…" : "Loading team skills…"}</div>`);
+        body.innerHTML = wrapWithTabs(`<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${spotlightViewsT(ctx.locale, "loadingTeamSkills")}</div>`);
         ctx.requestResize();
         try {
           const data = await client.request<TeamSkillManagementPageVM>(TEAM_SKILLS_PATH);
@@ -526,7 +524,7 @@ export function createMemoryView(): SpotlightCapabilityView {
         } catch {
           if (disposed || gen !== loadGen) return;
           retry = () => void loadSkills();
-          body.innerHTML = wrapWithTabs(spotlightErrorHtml(zh, zh ? "团队技能没拉到" : "Couldn't load team skills"));
+          body.innerHTML = wrapWithTabs(spotlightErrorHtml(zh, spotlightViewsT(ctx.locale, "couldnTLoadTeamSkills")));
           ctx.requestResize();
         }
       };
@@ -534,7 +532,7 @@ export function createMemoryView(): SpotlightCapabilityView {
       const saveMemoryEdit = async (item: UserMemoryManagementItemVM, valueMd: string) => {
         const trimmed = valueMd.trim();
         if (!trimmed) {
-          memoryEditError = zh ? "记忆内容不能为空。" : "Content can't be empty.";
+          memoryEditError = spotlightViewsT(ctx.locale, "contentCanTBeEmpty");
           renderProfile();
           return;
         }
@@ -552,7 +550,7 @@ export function createMemoryView(): SpotlightCapabilityView {
           selectedMemory = updated;
           memoryEditing = false;
           memoriesVm = undefined; // 失效缓存列表——返回列表时重新拉，拿到新鲜的 totals/内容
-          ctx.toast(zh ? "已保存" : "Saved", "ok");
+          ctx.toast(spotlightViewsT(ctx.locale, "saved"), "ok");
           ctx.onActionSettled?.();
           renderProfile();
         } catch (error) {
@@ -570,7 +568,7 @@ export function createMemoryView(): SpotlightCapabilityView {
           await client.request<{ deleted: true }>(`${MEMORIES_PATH}/${encodeURIComponent(id)}`, { method: "DELETE" });
           if (disposed) return;
           busy = false;
-          ctx.toast(zh ? "已删除，Cuu 将忘记这条" : "Deleted — Cuu will forget it", "ok");
+          ctx.toast(spotlightViewsT(ctx.locale, "deletedCuuWillForgetIt"), "ok");
           ctx.onActionSettled?.();
           void loadMemories();
         } catch (error) {
@@ -592,19 +590,19 @@ export function createMemoryView(): SpotlightCapabilityView {
           const titleEl = body.querySelector<HTMLInputElement>("[data-skill-new-section-title]");
           const title = titleEl?.value.trim() ?? "";
           if (!title) {
-            skillEditError = zh ? "请填写新段落的标题。" : "Enter a title for the new section.";
+            skillEditError = spotlightViewsT(ctx.locale, "enterATitleForTheNew");
             renderSkills();
             return;
           }
           if (!contentMd) {
-            skillEditError = zh ? "请填写段落内容。" : "Enter the section content.";
+            skillEditError = spotlightViewsT(ctx.locale, "enterTheSectionContent");
             renderSkills();
             return;
           }
           op = { op: "add_section", section: title, content_md: contentMd };
         } else {
           if (!contentMd) {
-            skillEditError = zh ? "内容不能为空。" : "Content can't be empty.";
+            skillEditError = spotlightViewsT(ctx.locale, "contentCanTBeEmpty2");
             renderSkills();
             return;
           }
@@ -631,7 +629,7 @@ export function createMemoryView(): SpotlightCapabilityView {
           skillEditing = false;
           skillSelectedSection = undefined;
           skillsVm = undefined; // 失效缓存——promote() 会生成新行+把旧行标 deprecated，返回列表时重新拉
-          ctx.toast(zh ? "已保存新版本" : "Saved a new version", "ok");
+          ctx.toast(spotlightViewsT(ctx.locale, "savedANewVersion"), "ok");
           ctx.onActionSettled?.();
           renderSkills();
         } catch (error) {
@@ -652,7 +650,7 @@ export function createMemoryView(): SpotlightCapabilityView {
           });
           if (disposed) return;
           busy = false;
-          ctx.toast(zh ? "已停用" : "Deactivated", "ok");
+          ctx.toast(spotlightViewsT(ctx.locale, "deactivated"), "ok");
           ctx.onActionSettled?.();
           void loadSkills();
         } catch (error) {

@@ -201,6 +201,8 @@ import {
 } from "./turn-task-buffer.js";
 import { pruneExpiredTypingUsers, upsertTypingUser, type TypingState } from "./typing-state.js";
 
+import { chatT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 // composer 三个 picker 要读的两个只读页端点，写成刚好够用的结构化形状（不是整个 PageClient）——
@@ -2336,12 +2338,8 @@ export function mountChatView(
           draft: draftValue,
           error:
             status === 400
-              ? zh
-                ? "这句备注没保存成功，改短一点再试"
-                : "Couldn't save that note — try shortening it"
-              : zh
-                ? "没保存成功，再试一次"
-                : "Couldn't save — try again"
+              ? chatT(input.locale, "couldnTSaveThatNoteTry")
+              : chatT(input.locale, "couldnTSaveTryAgain")
         };
         renderScroll();
       }
@@ -2420,7 +2418,7 @@ export function mountChatView(
     const text = (ta?.value ?? editDraft).trim();
     const original = messages.find((entry) => entry.id === messageId);
     if (!text) {
-      editError = input.locale === "zh-CN" ? "内容不能为空" : "The message can't be empty.";
+      editError = chatT(input.locale, "theMessageCanTBeEmpty");
       renderScroll();
       return;
     }
@@ -2452,12 +2450,8 @@ export function mountChatView(
         // 409 = 编辑窗过期 / 目标已删除——温和话术，保持编辑框开着让用户能复制自己的文字再取消。
         editError =
           status === 409
-            ? input.locale === "zh-CN"
-              ? "这条消息发出超过 15 分钟了，改不了啦。你可以复制内容重新发一条。"
-              : "This message is more than 15 minutes old and can no longer be edited. You can copy the text and send a new one."
-            : input.locale === "zh-CN"
-              ? "没改成功，再试一次。"
-              : "Couldn't save the edit — try again.";
+            ? chatT(input.locale, "thisMessageIsMoreThan15")
+            : chatT(input.locale, "couldnTSaveTheEditTry");
         void code;
         renderScroll();
       });
@@ -2513,11 +2507,9 @@ export function mountChatView(
       message.sender_type === "cuu"
         ? "Cuu"
         : message.sender_type === "system"
-          ? input.locale === "zh-CN"
-            ? "系统"
-            : "System"
+          ? chatT(input.locale, "system")
           : (message.sender_user_id ? membersMap.get(message.sender_user_id)?.nickname : undefined) ??
-            (input.locale === "zh-CN" ? "未知成员" : "Unknown member");
+            (chatT(input.locale, "unknownMember"));
     replyingTo = { messageId, label };
     renderComposerChrome();
     textareaEl()?.focus();
@@ -3609,9 +3601,7 @@ export function mountChatView(
         proposalId,
         error instanceof Error && error.message
           ? error.message
-          : input.locale === "zh-CN"
-            ? "批准失败，稍后重试"
-            : "Couldn't approve — try again"
+          : chatT(input.locale, "couldnTApproveTryAgain")
       );
       renderScroll();
     }

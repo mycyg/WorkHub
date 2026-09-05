@@ -37,7 +37,7 @@ import {
   type PluginLoadReport,
   type PluginToolDescriptor
 } from "@workhub/plugin-host";
-import { errorToolResult, okToolResult, type AnyToolSpec, type ToolResult } from "@workhub/tools";
+import { errorToolResult, okToolResult, sanitizeModelFacingText, type AnyToolSpec, type ToolResult } from "@workhub/tools";
 
 import { getDefaultStructuredLogger } from "../logging.js";
 import { getDefaultAuditStores } from "./audit-stores.js";
@@ -130,6 +130,13 @@ function resolveHostEntryPath(): string {
     return path.join(repoRootFromHere(), "packages", "plugin-host", "src", "host.ts");
   }
 }
+
+/**
+ * 插件抛出的错误信息进工具结果前的上限。与 `packages/plugin-host/src/translate.ts` 的
+ * `PLUGIN_RESULT_MAX_CHARS` 同口径：错误路径和成功路径面对的是同一个模型、同一道围栏，
+ * 一个字面 `</outputs>` 或一条几十 MB 的 message 在两条路上的危害完全一样。
+ */
+const PLUGIN_ERROR_MESSAGE_MAX_CHARS = 32 * 1024;
 
 function summarize(value: unknown) {
   let text: string;
@@ -564,7 +571,14 @@ export function createPluginHostClient(options: PluginHostClientOptions = {}): P
         args,
         summary: summarize(message)
       });
-      return errorToolResult(`插件工具 ${descriptor.toolName} 没能完成：${message}`);
+      // 插件 execute() 抛出的 message 跨过 RPC 边界原样到这里：成功路径已在宿主子进程里过
+      // sanitizeModelFacingText（M1b），错误路径同样要中和围栏标签并封顶，否则插件能借一条
+      // 异常提前闭合 <outputs> 围栏或把一次调用撑成超长上下文。
+      const safeMessage = sanitizeModelFacingText(message, {
+        maxChars: PLUGIN_ERROR_MESSAGE_MAX_CHARS,
+        neutralizeFenceTags: true
+      });
+      return errorToolResult(`插件工具 ${descriptor.toolName} 没能完成：${safeMessage}`);
     }
   }
 

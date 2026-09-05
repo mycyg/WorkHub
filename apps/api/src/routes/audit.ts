@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { SPILL_DIR_NAME } from "@workhub/agent";
 import { HTTPException } from "hono/http-exception";
 
 import { revertFileSnapshot, type SnapshotRef } from "@workhub/audit";
@@ -147,7 +148,9 @@ export function createAuditRoutes(deps: AuditRoutesDependencies = {}) {
     try {
       await revertFileSnapshot({
         snapshot: snapshotRef,
-        workdir
+        workdir,
+        // 快照里从来没有 .spill/（B10 落盘的中间产物）：还原时原样保留当前的，不因快照没有就删掉。
+        excludeDirs: [SPILL_DIR_NAME]
       });
     } catch (error) {
       throw new HTTPException(409, {

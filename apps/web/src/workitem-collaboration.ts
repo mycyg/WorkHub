@@ -1,6 +1,8 @@
 import type { WorkHubLocale } from "@workhub/ui/gold-path";
 import { WORK_ITEM_COMMENT_MAX_CHARS } from "@workhub/contracts";
 
+import { webT } from "./locales.js";
+
 // R23 P4（R20 P2A 端点上界面）：工作项「认领 / 指派 / 留言」三个动作的纯判定与文案层——
 // POST /api/workitems/:id/{claim,assign,comments} 后端早已齐备，此前两端一个入口都没有。
 // 与 settings-devices.ts 同一分工：值得单测的判定/人话化留在这里（无 DOM 依赖），
@@ -21,44 +23,42 @@ export function humanizeWorkItemCollaborationError(
     ? (error as { code?: unknown }).code
     : undefined;
   if (code === "not_found") {
-    return zh ? "没有找到这个事项，可能已经被删除了。" : "That item wasn't found — it may have been removed.";
+    return webT(locale, "thatItemWasnTFoundIt");
   }
   if (code === "forbidden") {
     if (action === "claim") {
-      return zh ? "你现在还不能认领这个事项。" : "You can't claim this item right now.";
+      return webT(locale, "youCanTClaimThisItem");
     }
     if (action === "assign") {
-      return zh ? "你没有权限指派这个事项。" : "You don't have permission to assign this item.";
+      return webT(locale, "youDonTHavePermissionTo6");
     }
-    return zh ? "你没有权限在这个事项下留言。" : "You don't have permission to comment on this item.";
+    return webT(locale, "youDonTHavePermissionTo7");
   }
   if (code === "work_item_not_claimable") {
-    return zh
-      ? "这个事项已经被别人认领，或者已经不在可认领的状态了。"
-      : "Someone else already claimed this item, or it's no longer claimable.";
+    return webT(locale, "someoneElseAlreadyClaimedThisItem");
   }
   if (code === "assignee_not_active") {
-    return zh ? "选中的同事账号已停用，换一位再试。" : "That teammate's account is disabled — pick someone else.";
+    return webT(locale, "thatTeammateSAccountIsDisabled");
   }
   if (code === "assignee_not_member") {
-    return zh ? "选中的同事不在这个工作区里。" : "That teammate isn't a member of this workspace.";
+    return webT(locale, "thatTeammateIsnTAMember");
   }
   if (code === "work_item_workspace_missing") {
-    return zh ? "这个事项还没有归属工作区，暂时不能改归属。" : "This item has no workspace yet, so ownership can't change.";
+    return webT(locale, "thisItemHasNoWorkspaceYet");
   }
   if (code === "assign_user_directory_unavailable") {
-    return zh ? "成员名单暂时读不到，事项没有被指派。" : "The member directory is unavailable — nothing was assigned.";
+    return webT(locale, "theMemberDirectoryIsUnavailableNothing");
   }
   if (code === "validation_error") {
-    return zh ? "内容不符合要求，检查后再提交一次。" : "That input wasn't accepted — check it and submit again.";
+    return webT(locale, "thatInputWasnTAcceptedCheck");
   }
   if (action === "claim") {
-    return zh ? "认领失败，稍后重试。" : "Couldn't claim it — try again later.";
+    return webT(locale, "couldnTClaimItTryAgain");
   }
   if (action === "assign") {
-    return zh ? "指派失败，稍后重试。" : "Couldn't assign it — try again later.";
+    return webT(locale, "couldnTAssignItTryAgain");
   }
-  return zh ? "留言没发出去，稍后重试。" : "Couldn't post the comment — try again later.";
+  return webT(locale, "couldnTPostTheCommentTry");
 }
 
 export type CommentBodyCheck =
@@ -71,7 +71,7 @@ export function checkWorkItemCommentBody(raw: string, locale: WorkHubLocale): Co
   const zh = locale === "zh-CN";
   const body = raw.trim();
   if (!body) {
-    return { ok: false, message: zh ? "先写点内容再发布。" : "Write something before posting." };
+    return { ok: false, message: webT(locale, "writeSomethingBeforePosting") };
   }
   if (body.length > WORK_ITEM_COMMENT_MAX_CHARS) {
     return {
@@ -89,7 +89,7 @@ export function checkAssigneeSelection(userId: string, locale: WorkHubLocale): C
   const zh = locale === "zh-CN";
   const trimmed = userId.trim();
   if (!trimmed) {
-    return { ok: false, message: zh ? "先选一位同事再确认指派。" : "Pick a teammate before assigning." };
+    return { ok: false, message: webT(locale, "pickATeammateBeforeAssigning") };
   }
   return { ok: true, body: trimmed };
 }

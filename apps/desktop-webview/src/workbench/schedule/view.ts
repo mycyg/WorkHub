@@ -31,6 +31,8 @@ import {
 } from "./render.js";
 import type { ProjectTimelinePageVM } from "@workhub/contracts";
 
+import { scheduleT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 export type ScheduleViewApiClient = ScheduleApiClient;
@@ -198,7 +200,7 @@ export function mountScheduleView(
     const textarea = container.querySelector<HTMLTextAreaElement>("[data-wb-sc-plan-compose-intent]");
     const intent = (textarea?.value ?? "").trim();
     if (!intent) {
-      plan = { ...plan, error: zh ? "请先填写规划意图。" : "Please describe the planning intent first." };
+      plan = { ...plan, error: scheduleT(input.locale, "pleaseDescribeThePlanningIntentFirst") };
       render();
       return;
     }
@@ -219,7 +221,7 @@ export function mountScheduleView(
           mode: "detail",
           selectedDraftId: created.id,
           intentDraft: "",
-          notice: zh ? "草案已生成，待你审批。" : "Draft created — ready for your review.",
+          notice: scheduleT(input.locale, "draftCreatedReadyForYourReview"),
           error: undefined
         };
         render();
@@ -229,7 +231,7 @@ export function mountScheduleView(
           return;
         }
         // 503（LLM 未配置）/409（需人细化）等，服务端 message 已是人话，直接透传。
-        plan = { ...plan, busy: false, error: apiErrorText(error, zh ? "起草失败，稍后重试。" : "Couldn't draft — try again later.") };
+        plan = { ...plan, busy: false, error: apiErrorText(error, scheduleT(input.locale, "couldnTDraftTryAgainLater")) };
         render();
       });
   }
@@ -260,14 +262,14 @@ export function mountScheduleView(
         if (disposed) {
           return;
         }
-        plan = { ...plan, busy: false, notice: zh ? "已批准，可物化到时间线。" : "Approved — you can materialize it to the timeline." };
+        plan = { ...plan, busy: false, notice: scheduleT(input.locale, "approvedYouCanMaterializeItTo") };
         render();
       })
       .catch((error: unknown) => {
         if (disposed) {
           return;
         }
-        plan = { ...plan, busy: false, error: apiErrorText(error, zh ? "批准失败，稍后重试。" : "Couldn't approve — try again.") };
+        plan = { ...plan, busy: false, error: apiErrorText(error, scheduleT(input.locale, "couldnTApproveTryAgain")) };
         render();
       });
   }
@@ -289,7 +291,7 @@ export function mountScheduleView(
     const textarea = container.querySelector<HTMLTextAreaElement>("[data-wb-sc-plan-reject-reason]");
     const reason = (textarea?.value ?? "").trim();
     if (!reason) {
-      plan = { ...plan, error: zh ? "驳回需要填写理由。" : "A reason is required to reject." };
+      plan = { ...plan, error: scheduleT(input.locale, "aReasonIsRequiredToReject") };
       render();
       return;
     }
@@ -305,14 +307,14 @@ export function mountScheduleView(
         if (disposed) {
           return;
         }
-        plan = { ...plan, busy: false, rejecting: false, rejectDraft: "", notice: zh ? "已驳回，理由会带入下一次重拟。" : "Rejected — the reason feeds the next redraft." };
+        plan = { ...plan, busy: false, rejecting: false, rejectDraft: "", notice: scheduleT(input.locale, "rejectedTheReasonFeedsTheNext") };
         render();
       })
       .catch((error: unknown) => {
         if (disposed) {
           return;
         }
-        plan = { ...plan, busy: false, error: apiErrorText(error, zh ? "驳回失败，稍后重试。" : "Couldn't reject — try again.") };
+        plan = { ...plan, busy: false, error: apiErrorText(error, scheduleT(input.locale, "couldnTRejectTryAgain")) };
         render();
       });
   }
@@ -356,7 +358,7 @@ export function mountScheduleView(
         if (disposed) {
           return;
         }
-        plan = { ...plan, busy: false, error: apiErrorText(error, zh ? "物化失败，稍后重试。" : "Couldn't materialize — try again.") };
+        plan = { ...plan, busy: false, error: apiErrorText(error, scheduleT(input.locale, "couldnTMaterializeTryAgain")) };
         render();
       });
   }
