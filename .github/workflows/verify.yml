@@ -42,6 +42,8 @@ jobs:
     timeout-minutes: 20
     env:
       WORKHUB_QA_CHROME_EXTRA_ARGS: "--no-sandbox --disable-dev-shm-usage"
+      # 失败时把每一步等待的标签打到 stderr（否则 CDP 错误只有 websocket 栈，看不出死在哪一步）。
+      WORKHUB_QA_TRACE: "1"
     steps:
       - uses: actions/checkout@v4
       - name: Install CJK fonts for deterministic zh-CN text metrics

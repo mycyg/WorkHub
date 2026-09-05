@@ -2504,6 +2504,19 @@ async function setViewport(cdp: CdpClient, viewport: Viewport) {
   });
 }
 
+// 页面整页导航（接受邀请后 location.assign("/")、语言切换 reload、Vite 整页重载）期间，正在飞的
+// Runtime.evaluate 会被浏览器以这几种错误丢弃。它们不是断言失败，是「这一拍没读到」，等下一拍再读。
+const NAVIGATION_INTERRUPTED_EVALUATE = /Inspected target navigated or closed|Execution context was destroyed|Cannot find context with specified id/u;
+
+// WORKHUB_QA_TRACE=1 时把每一步等待的标签打到 stderr（CI 上失败时才看得出死在哪一步）。
+const traceEnabled = process.env.WORKHUB_QA_TRACE === "1";
+const traceStartedAt = Date.now();
+function trace(label: string) {
+  if (traceEnabled) {
+    process.stderr.write(`[r4 +${((Date.now() - traceStartedAt) / 1000).toFixed(1)}s] ${label}\n`);
+  }
+}
+
 async function waitFor<T>(
   cdp: CdpClient,
   label: string,
@@ -2511,10 +2524,20 @@ async function waitFor<T>(
   predicate: (value: T) => boolean,
   timeoutMs = 15_000
 ) {
+  trace(`wait: ${label}`);
   const deadline = Date.now() + timeoutMs;
   let lastValue: T | undefined;
   while (Date.now() < deadline) {
-    lastValue = await cdp.evaluate<T>(expression);
+    try {
+      lastValue = await cdp.evaluate<T>(expression);
+    } catch (error) {
+      if (error instanceof Error && NAVIGATION_INTERRUPTED_EVALUATE.test(error.message)) {
+        trace(`wait: ${label} — evaluate interrupted by navigation, retrying`);
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        continue;
+      }
+      throw new Error(`${label}: ${error instanceof Error ? error.message : String(error)}`);
+    }
     if (predicate(lastValue)) {
       return lastValue;
     }
