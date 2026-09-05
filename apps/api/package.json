@@ -20,6 +20,7 @@
     "qa:r1-pg-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/r1-pg-agent-run-smoke.ts",
     "qa:r1-pg-plugin-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/r1-pg-plugin-governance-smoke.ts",
     "qa:plugin-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/plugin-smoke.ts",
+    "qa:mcp-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/mcp-smoke.ts",
     "qa:r2-pg-redis-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/r2-pg-redis-smoke.ts",
     "qa:cuu-r3-launcher-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/cuu-r3-launcher-to-run-smoke.ts",
     "qa:cuu-r3-dev-server-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/cuu-r3-dev-server-launcher-smoke.ts",

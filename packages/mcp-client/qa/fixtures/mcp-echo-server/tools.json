@@ -1,0 +1,24 @@
+{
+  "tools": [
+    {
+      "name": "echo",
+      "description": "Echo a phrase back.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": { "text": { "type": "string", "description": "The phrase to echo." } },
+        "required": ["text"]
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "write_note",
+      "description": "Append a line to the shared note file.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "line": { "type": "string" } },
+        "required": ["line"]
+      }
+    }
+  ]
+}
