@@ -206,3 +206,19 @@ test("R4.10 product shell can render only the active route component panel", () 
   assert.equal(shell.html.toLowerCase().includes("kanban"), false);
   assert.match(shell.css, /\.wh-r4-route\{display:grid;gap:16px/u);
 });
+
+test("R23 P2 (SA-08) the shell always mounts a hidden AI-readiness banner slot for browser.ts to hydrate", () => {
+  const shell = renderWebProductShell(renderedSurface("en-US"), {
+    appName: "WorkHub",
+    surfaceLabel: "Web R4",
+    currentRoute: "/",
+    locale: "en-US",
+    linkMode: "path"
+  });
+
+  // SSR never knows whether the LLM key is configured (that's a client-side hydrated fact from
+  // GET /api/health) — the mount point must exist and start hidden + empty on every page, not just
+  // ones that happen to carry AI-related data.
+  assert.match(shell.html, /<div class="wh-product-ai-banner" data-wh-ai-banner hidden role="status" aria-live="polite"><\/div>/u);
+  assert.match(shell.css, /\.wh-product-ai-banner\[hidden\]\{display:none\}/u);
+});
