@@ -5483,7 +5483,7 @@ dependencies = [
 
 [[package]]
 name = "workhub-client-tauri"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "futures-util",
  "objc2-app-kit 0.3.2",
