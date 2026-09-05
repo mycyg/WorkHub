@@ -1,8 +1,10 @@
 // WorkHub 桌面 · 群聊/协同会话共用视图——imperative 挂载/事件绑定层（照 shell.ts/rail.ts 的分工：纯渲染在
 // render.ts，这里只负责拉数据、绑 DOM 事件、维护会话内的瞬态状态）。批 2 范围：文本+file_card 发送、
 // @ 成员/文件 picker（真实）、SSE 接线（断线指数退避重连+重连后 afterSeq 补缺口）、typing 节流。
-// # 会话引用 / / 技能唤起的假「即将上线」picker 已在 G-desktop 止血批 1 撤线（renderPicker() 打这两个
-// 触发符时就地清空挂载点，不再渲染任何东西）——解析器 trigger-parser.ts 还在，真要接的时候见那里注释。
+// R23 F-07 起 # 会话引用 / / 技能唤起也是真的：三个触发符共用同一套 picker 交互（候选取数 → 本地过滤 →
+// 键盘/点击选中 → commitComposerInsertion 插入可读纯文本），服务端按插入的名字解析回真实会话/技能并把
+// 材料喂进这一轮 Cuu 回应。chip 语义为什么是纯文本而不是结构化引用字段，见
+// .agents/notes/implemented/2026-09-05-chat-conversation-and-skill-references.md。
 // R12（final-turns-wiring）起：input.conversationKind === 'collab' 时，发一条文本消息之后会自动请求
 // 一轮 Cuu 回应（POST /conversations/:id/turns），流式 delta 拼进临时气泡，落定后换成真消息——
 // 逻辑全部下沉进 turn.ts 的纯函数（shouldRequestConversationTurn/appendTurnDelta/
