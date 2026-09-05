@@ -12,10 +12,12 @@ import {
 import {
   createActionCardRepository,
   createAiDecisionRepository,
+  createAuditLogRepository,
   createWorkspaceMembershipRepository,
   createUserRepository,
   getSharedDatabaseClient,
   type ActionCardRepository,
+  type AuditLogRepository,
   type EscalationServiceRow as DbEscalationServiceRow,
   type UserRepository,
   type WorkspaceMembershipRepository
@@ -24,6 +26,7 @@ import {
 import { localizedBudgetActionLabel, localizedBudgetUsageScopeLabel } from "../budget-labels.js";
 import { getDefaultStructuredLogger } from "../logging.js";
 import type { AuthActor } from "../middleware/auth.js";
+import { createNotificationService, type NotificationService } from "./notifications.js";
 import { getDefaultAgentRunQueue, type AgentRunQueue } from "../workers/agent-runner.js";
 import { getDefaultTaskDispatcher, type TaskDispatcher } from "./task-dispatcher.js";
 import { getDefaultWorkItemService, WorkItemServiceError, type WorkItemService } from "./work-items.js";
@@ -84,12 +87,21 @@ type EscalationServiceDependencies = {
   repository?: EscalationRepository;
   users?: Pick<UserRepository, "findActiveById"> | false;
   memberships?: Pick<WorkspaceMembershipRepository, "findActiveForUserWorkspace"> | false;
-  workItems?: Pick<WorkItemService, "canReadWorkItems" | "assertCanMutateWorkItem"> | false;
+  // R23 F-04：canMutateWorkItems 是 Partial——旧夹具（只实现读判定 + assert）照常编译，缺它时按
+  // 「拿不准就不发转交动作」降级，不会凭空发一个点了 403 的按钮。
+  workItems?: (
+    Pick<WorkItemService, "canReadWorkItems" | "assertCanMutateWorkItem">
+    & Partial<Pick<WorkItemService, "canMutateWorkItems">>
+  ) | false;
   taskDispatcher?: Pick<TaskDispatcher, "dispatch"> | false;
   // B-R9.0-2：非计划升级「让它重试」要真重新入队 agent run。false 仅供纯读测试用。
   runQueue?: Pick<AgentRunQueue, "enqueue"> | false;
   // R12 A2/A3：观察者 decide 类升级 resolve 后回写行动卡条目状态。false 仅供纯读测试用。
   actionCards?: Pick<ActionCardRepository, "transitionItemStatus"> | false;
+  // R23 F-04：转交要留痕 + 通知接手人（照审批转交的做法）。两者都是尽力而为的提交后动作：
+  // 写失败只告警，不回滚已经落库的转交。false 供纯读/纯逻辑测试拔掉。
+  auditLogs?: Pick<AuditLogRepository, "createAuditLog"> | false;
+  notifications?: Pick<NotificationService, "createNotification"> | false;
   now?: () => Date;
 };
 
@@ -202,6 +214,29 @@ function ensureWorkspace(row: EscalationServiceRow, actor: AuthActor) {
   if (!workspaceMatches(row, actor)) {
     throw new EscalationServiceError(403, "forbidden", "你没有权限处理这条升级。");
   }
+}
+
+// R23 F-04（升级转交端到端）：升级卡此前只发 resolve / 预算动作，POST /api/escalations/:id/delegate
+// 与 SDK delegateEscalation 全是零调用的「后端有、前端进不去」。这里补上动作，形状照审批转交
+// （packages/permissions/src/approval-routing.ts 的 delegate 动作）：POST + /delegate href，to_user_id
+// 由前端选人器带上。**只对有权改这个工单的人发**（见 listAttentionPage 的 canMutateWorkItems）——
+// 无权者点下去必 403，那就是个死按钮。
+function escalationDelegateAction(
+  row: Pick<EscalationServiceRow, "id" | "suggestedLeadUserId">,
+  locale: WorkHubLocale
+): AttentionItem["actions"][number] {
+  const zh = locale === "zh-CN";
+  // 已经有牵头人（AI 建议的或上一次转交定的）时说「改派」，否则说「转交」——同一个动作，两种处境。
+  const label = row.suggestedLeadUserId
+    ? (zh ? "改派他人" : "Reassign")
+    : (zh ? "转交他人" : "Hand off");
+  return {
+    id: "escalation_delegate",
+    label,
+    style: "secondary",
+    method: "POST",
+    href: `/api/escalations/${row.id}/delegate`
+  };
 }
 
 function escalationActions(id: string, locale: WorkHubLocale): AttentionItem["actions"] {
@@ -322,7 +357,11 @@ function budgetActions(row: EscalationServiceRow, locale: WorkHubLocale): Attent
   }];
 }
 
-function buildBudgetAttentionItem(row: EscalationServiceRow, locale: WorkHubLocale): AttentionItem {
+function buildBudgetAttentionItem(
+  row: EscalationServiceRow,
+  locale: WorkHubLocale,
+  options: EscalationAttentionItemOptions = {}
+): AttentionItem {
   const zh = locale === "zh-CN";
   const notice = budgetNoticeFromHandoff(row);
   const baseReason = compactText(notice?.message ?? row.reasonMd);
@@ -341,7 +380,9 @@ function buildBudgetAttentionItem(row: EscalationServiceRow, locale: WorkHubLoca
     title: zh ? `《${row.title}》预算需要处理` : `"${row.title}" needs a budget decision`,
     summary_text: reason,
     reason_text: reason,
-    actions: budgetActions(row, locale),
+    actions: options.canDelegate
+      ? [...budgetActions(row, locale), escalationDelegateAction(row, locale)]
+      : budgetActions(row, locale),
     cuu_state: "asking_approval",
     created_at: row.createdAt.toISOString()
   };
@@ -398,9 +439,17 @@ function formatBudgetCny(value: string) {
   return `¥${fixed}`;
 }
 
-export function buildEscalationAttentionItem(row: EscalationServiceRow, locale: WorkHubLocale): AttentionItem {
+// R23 F-04：卡片是否带「转交他人」由调用方按 actor 的写权限决定（默认不带——纯渲染用例/旧夹具
+// 不会凭空多出一个点了 403 的按钮）。
+export type EscalationAttentionItemOptions = { canDelegate?: boolean };
+
+export function buildEscalationAttentionItem(
+  row: EscalationServiceRow,
+  locale: WorkHubLocale,
+  options: EscalationAttentionItemOptions = {}
+): AttentionItem {
   if (row.trigger === "budget_exhausted" || row.handoffJson["attention_kind"] === "budget") {
-    return buildBudgetAttentionItem(row, locale);
+    return buildBudgetAttentionItem(row, locale, options);
   }
   const zh = locale === "zh-CN";
   const title = zh ? `《${row.title}》卡住了` : `"${row.title}" needs a decision`;
@@ -418,7 +467,9 @@ export function buildEscalationAttentionItem(row: EscalationServiceRow, locale: 
     title,
     summary_text: reason,
     reason_text: reason,
-    actions: escalationActions(row.id, locale),
+    actions: options.canDelegate
+      ? [...escalationActions(row.id, locale), escalationDelegateAction(row, locale)]
+      : escalationActions(row.id, locale),
     cuu_state: "worried",
     created_at: row.createdAt.toISOString()
   };
@@ -438,6 +489,25 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
       return undefined;
     }
     return deps.runQueue ?? getDefaultAgentRunQueue();
+  }
+
+  // R23 F-04：审计/通知同款懒解析——只有真发生一次转交时才构造（它们挂着真 DB / 推送总线）。
+  function resolveAuditLogs(): Pick<AuditLogRepository, "createAuditLog"> | undefined {
+    if (deps.auditLogs === false) {
+      return undefined;
+    }
+    if (deps.auditLogs) {
+      return deps.auditLogs;
+    }
+    defaultDbClient ??= getSharedDatabaseClient();
+    return createAuditLogRepository(defaultDbClient.db);
+  }
+
+  function resolveNotifications(): Pick<NotificationService, "createNotification"> | undefined {
+    if (deps.notifications === false) {
+      return undefined;
+    }
+    return deps.notifications ?? createNotificationService();
   }
 
   // R12 A2/A3：同款懒解析——只有观察者 decide 类升级 resolve 时才需要回写行动卡条目。
@@ -469,8 +539,21 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
       readableRows = scanRows.filter((row) => readable.has(row.workItemId));
     }
     const pageRows = readableRows.slice(0, ESCALATION_ATTENTION_PAGE_LIMIT);
+    // R23 F-04：转交是写动作——只给能改这个工单的人发按钮（判定与 delegate 端点的 ensureMutableEscalation
+    // 同源，见 canMutateWorkItems）。一次批量查询判完整页，不是逐行 assert。
+    let mutableWorkItemIds = new Set<string>();
+    if (workItems?.canMutateWorkItems && pageRows.length > 0) {
+      mutableWorkItemIds = await workItems.canMutateWorkItems({
+        workItemIds: [...new Set(pageRows.map((row) => row.workItemId))],
+        actor: input.actor
+      });
+    }
+    const actorUserId = input.actor.userId ?? input.actor.id;
     return {
-      items: pageRows.map((row) => buildEscalationAttentionItem(row, input.locale)),
+      items: pageRows.map((row) => buildEscalationAttentionItem(row, input.locale, {
+        // 被转交到本人名下的升级，本人当然也能再转交出去（与 ensureMutableEscalation 的放行口径一致）。
+        canDelegate: mutableWorkItemIds.has(row.workItemId) || row.suggestedLeadUserId === actorUserId
+      })),
       page_info: {
         limit: ESCALATION_ATTENTION_PAGE_LIMIT,
         returned: pageRows.length,
@@ -500,6 +583,16 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
     ensureWorkspace(row, actor);
     if (!workItems) {
       return;
+    }
+    // R23 F-04：被点名牵头的人（suggested_lead_user_id——AI 建议的负责人，或上一次转交定下的接手人）
+    // 也能处理这条升级，哪怕他不是工单的提交人/认领人/协作者。否则「转交」是空转：接手人收到通知、
+    // 看得见卡片，但每个动作都 403。仍要求他能读这个工单（工作区栅栏已在 ensureWorkspace 里）。
+    const actorUserId = actor.userId ?? actor.id;
+    if (row.suggestedLeadUserId && row.suggestedLeadUserId === actorUserId) {
+      const readable = await workItems.canReadWorkItems({ workItemIds: [row.workItemId], actor });
+      if (readable.has(row.workItemId)) {
+        return;
+      }
     }
     try {
       await workItems.assertCanMutateWorkItem({ workItemId: row.workItemId, actor });
@@ -704,6 +797,7 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
           throw new EscalationServiceError(404, "delegate_target_not_found", "找不到要转派的成员。");
         }
       }
+      const previousLeadUserId = existing.suggestedLeadUserId;
       const row = await repository.delegateEscalation({
         escalationId: id,
         toUserId: payload.to_user_id,
@@ -712,6 +806,54 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
       });
       if (!row) {
         throw new EscalationServiceError(409, "escalation_race", "这条升级已经被处理过了。");
+      }
+      // R23 F-04：提交后两件尽力而为的事，照审批转交（services/approvals.ts 的 delegate）做——
+      // ① 留痕：谁把哪条升级从谁转给了谁；② 通知接手人，否则对方离线就永远不知道这事归他了。
+      // 任一失败只告警：转交本身已经落库，不该因为副作用把用户挡在 500 上。
+      const auditLogs = resolveAuditLogs();
+      if (auditLogs) {
+        try {
+          await auditLogs.createAuditLog({
+            actorKind: actor.kind === "ai" || actor.kind === "system" ? actor.kind : "human",
+            actorNickname: actor.label,
+            entityType: "escalation_event",
+            entityId: row.id,
+            action: "escalation.delegated",
+            ...(actor.orgId ? { orgId: actor.orgId } : {}),
+            ...(actor.workspaceId ? { workspaceId: actor.workspaceId } : {}),
+            ...(actor.userId ? { actorUserId: actor.userId } : {}),
+            detailJson: {
+              escalation_id: row.id,
+              work_item_id: row.workItemId,
+              from_user_id: previousLeadUserId,
+              to_user_id: payload.to_user_id,
+              delegated_by_user_id: actor.userId ?? actor.id
+            }
+          });
+        } catch (error) {
+          getDefaultStructuredLogger().warn("escalation_delegate_audit_failed", { id, error });
+        }
+      }
+      const notifications = resolveNotifications();
+      if (notifications) {
+        try {
+          const zh = locale !== "en-US";
+          await notifications.createNotification({
+            userId: payload.to_user_id,
+            // 复用升级类通知（通知中心已认得这个类型的分组与文案），不新造一个前端不认识的枚举值。
+            type: "workitem.escalated",
+            severity: "high",
+            title: zh ? `转交给你处理：${row.title}` : `Handed to you: ${row.title}`,
+            body: zh
+              ? `${actor.label ?? "同事"}把这件卡住的事转给你拿主意。`
+              : `${actor.label ?? "A teammate"} handed this stuck item to you for a call.`,
+            targetUrl: `/workitems/${row.workItemId}`,
+            workItemId: row.workItemId,
+            dedupeKey: `escalation_delegated:${row.id}:${payload.to_user_id}`
+          });
+        } catch (error) {
+          getDefaultStructuredLogger().warn("escalation_delegate_notify_failed", { id, error });
+        }
       }
       return {
         escalation: {
