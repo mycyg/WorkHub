@@ -10,6 +10,9 @@ pub enum ShellEvent {
     TrayAction,
     SystemNotification,
     SingleInstance,
+    /// S5：壳层服务器地址已变更（`set_server_url`）。三窗订阅它自行 reload，照 `workhub-logged-out`
+    /// 那条既有广播的模式来——不新造协议。
+    ServerChanged,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,6 +37,7 @@ pub fn event_channel_name(event: ShellEvent) -> &'static str {
         ShellEvent::TrayAction => "tray-action",
         ShellEvent::SystemNotification => "system-notification",
         ShellEvent::SingleInstance => "single-instance",
+        ShellEvent::ServerChanged => "workhub-server-changed",
     }
 }
 
@@ -53,6 +57,12 @@ mod tests {
         assert_eq!(
             event_channel_name(ShellEvent::SingleInstance),
             "single-instance"
+        );
+        // 三窗（browser.ts / workbench/boot.ts / pet-surface.ts）按这个字面量订阅换服务器广播；
+        // 改名等于让另外两个窗口悄悄停在旧服务器上。
+        assert_eq!(
+            event_channel_name(ShellEvent::ServerChanged),
+            "workhub-server-changed"
         );
     }
 }

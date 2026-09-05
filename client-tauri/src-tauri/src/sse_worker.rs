@@ -85,18 +85,111 @@ impl ShellClientToken {
     }
 }
 
-/// pump 期间比对代际后的裁决：代际变了→当前连接身份已过期，中止；没变→虚假唤醒/无关通知，继续 pump。纯函数便于单测。
+/// 共享给 SSE worker 的运行时服务器地址 + **端点代际**。
+///
+/// S5（S1 报告 E-06）：壳层过去把 `server_url` 在 `.setup()` 里按值捕获一次（`spawn_default_shell_sse_workers`
+/// 收的是 `WorkHubShellConfig` 值），订阅 URL 因此在启动那一刻就烘死了。用户在 webview 里把地址改成自托管
+/// 服务器后，壳层的 SSE——托盘角标、系统通知、Cuu 上线状态的**唯一**数据源——仍然死打 `127.0.0.1:8787`。
+/// 改为运行时单一真相：`set_server_url` 命令写这里，worker 每次(重)连前重读并重拼订阅 URL。
+///
+/// 端点代际与 `ShellClientToken` 的身份代际同款、同理由：只把新地址放进槽里不足以让**活跃**连接掉头，
+/// 旧服务器的 `/stream/me` 会一直灌到 TCP 偶然断——用户已经切到新服务器了，还在收旧服务器的通知。故
+/// `set` 递增代际 + `notify_waiters()`，pump 循环按代际比对立即中止旧连接。
+pub struct ShellServerUrl {
+    slot: Mutex<ServerUrlSlot>,
+    notify: Arc<tokio::sync::Notify>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct ServerUrlSlot {
+    url: String,
+    generation: u64,
+}
+
+/// 服务器地址快照（地址 + 端点代际）。pump 开流时取一次，期间靠代际比对判断连的服务器是否已被换掉。
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ServerUrlSnapshot {
+    pub url: String,
+    pub generation: u64,
+}
+
+impl Default for ShellServerUrl {
+    /// 兜底值 = 本机默认地址。`.manage()` 发生在 `.setup()` 之前（那时配置还没读），启动时再由 setup
+    /// 用配置文件/环境变量里的真值 `set` 一次；命令因此永远能拿到已托管的 state。
+    fn default() -> Self {
+        Self::new(WorkHubShellConfig::lan_default().server_url)
+    }
+}
+
+impl ShellServerUrl {
+    pub fn new(url: impl Into<String>) -> Self {
+        Self {
+            slot: Mutex::new(ServerUrlSlot {
+                url: url.into(),
+                generation: 0,
+            }),
+            notify: Arc::new(tokio::sync::Notify::new()),
+        }
+    }
+
+    /// 写入新服务器地址：递增端点代际并唤醒等待者。返回写入后的代际，便于诊断/测试。
+    /// 与 `ShellClientToken::set` 同样先在锁内提交代际、出锁后再通知——通知只是唤醒提示，代际才是真相。
+    pub fn set(&self, url: impl Into<String>) -> u64 {
+        let generation = {
+            let mut slot = self
+                .slot
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            slot.url = url.into();
+            slot.generation = slot.generation.wrapping_add(1);
+            slot.generation
+        };
+        self.notify.notify_waiters();
+        generation
+    }
+
+    pub fn snapshot(&self) -> ServerUrlSnapshot {
+        let slot = self
+            .slot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        ServerUrlSnapshot {
+            url: slot.url.clone(),
+            generation: slot.generation,
+        }
+    }
+
+    /// 地址变更通知句柄（`Arc<Notify>`）。worker 克隆它，pump/退避里 `select!` 监听。
+    pub fn change_notifier(&self) -> Arc<tokio::sync::Notify> {
+        Arc::clone(&self.notify)
+    }
+}
+
+/// 一条 SSE 连接开流时钉住的运行时代际对：**身份**（设备令牌）+ **端点**（服务器地址）。任一变化都意味着
+/// 这条连接连的是过时的身份或过时的服务器，必须中止重建——两者的后果同样严重（前者=旧账号继续收事件，
+/// 后者=已切走的旧服务器继续推通知）。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct StreamGenerations {
+    token: u64,
+    server: u64,
+}
+
+/// pump 期间比对代际后的裁决：代际变了→当前连接的身份或服务器已过期，中止；没变→虚假唤醒/无关通知，
+/// 继续 pump。纯函数便于单测。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TokenPumpDecision {
+enum StreamPumpDecision {
     Continue,
     Superseded,
 }
 
-fn decide_token_pump(open_generation: u64, current_generation: u64) -> TokenPumpDecision {
-    if current_generation == open_generation {
-        TokenPumpDecision::Continue
+fn decide_stream_pump(
+    open: StreamGenerations,
+    current: StreamGenerations,
+) -> StreamPumpDecision {
+    if current == open {
+        StreamPumpDecision::Continue
     } else {
-        TokenPumpDecision::Superseded
+        StreamPumpDecision::Superseded
     }
 }
 
@@ -143,6 +236,50 @@ fn read_token_snapshot(app: &tauri::AppHandle) -> ClientTokenSnapshot {
 fn token_change_notifier(app: &tauri::AppHandle) -> Option<Arc<tokio::sync::Notify>> {
     app.try_state::<ShellClientToken>()
         .map(|state| state.change_notifier())
+}
+
+/// 运行时服务器地址快照。`None` = 拿不到 state（降级/无 App 的测试路径）——调用方退回计划里烘焙的
+/// 启动地址，行为与 S5 之前一致。
+fn read_server_snapshot(app: &tauri::AppHandle) -> Option<ServerUrlSnapshot> {
+    app.try_state::<ShellServerUrl>()
+        .map(|state| state.snapshot())
+}
+
+fn server_change_notifier(app: &tauri::AppHandle) -> Option<Arc<tokio::sync::Notify>> {
+    app.try_state::<ShellServerUrl>()
+        .map(|state| state.change_notifier())
+}
+
+fn read_stream_generations(app: &tauri::AppHandle) -> StreamGenerations {
+    StreamGenerations {
+        token: read_token_snapshot(app).generation,
+        server: read_server_snapshot(app)
+            .map(|snapshot| snapshot.generation)
+            .unwrap_or_default(),
+    }
+}
+
+/// 把 `Option<Arc<Notify>>` 变成一个可以放进 `select!` 的 future：没有句柄就永远挂起，让同一段
+/// `select!` 在「令牌/地址两个通知句柄有无」的四种组合下都能写成一份代码。
+async fn notified_or_pending(notify: Option<Arc<tokio::sync::Notify>>) {
+    match notify {
+        Some(notify) => notify.notified().await,
+        None => std::future::pending::<()>().await,
+    }
+}
+
+/// 等「设备令牌或服务器地址变更」或退避到期，返回是否被变更唤醒（用于复位退避计数）。
+///
+/// 两个通知都用 `notify_waiters()`（不预存许可），故"读快照"与"注册等待者"之间有极小竞态窗口——正确性
+/// 来自每拍重读快照 + 代际比对，`sleep` 只负责保证等待有界，通知只是让常见路径快一点醒。
+async fn wait_for_runtime_change(app: &tauri::AppHandle, delay: Duration) -> bool {
+    let token_notify = token_change_notifier(app);
+    let server_notify = server_change_notifier(app);
+    tokio::select! {
+        _ = sleep(delay) => false,
+        _ = notified_or_pending(token_notify) => true,
+        _ = notified_or_pending(server_notify) => true,
+    }
 }
 
 pub fn spawn_default_shell_sse_workers(
@@ -208,6 +345,17 @@ async fn run_sse_subscription(
         // 每次(重)连前重读共享令牌快照：启动时通常没有，webview bootstrap 后写入→下一拍重连即带上→200。
         // 携带代际：pump 期间靠它判断身份是否已被顶替（退出/换号）。
         let snapshot = read_token_snapshot(&app);
+        // S5：同样每拍重读**运行时服务器地址**并重拼订阅 URL——`set_server_url` 换地址后下一拍就连新
+        // 服务器，不必重启应用。`subscription.url` 只是启动快照，作为拿不到 state 时的兜底。
+        let server = read_server_snapshot(&app);
+        let url = match &server {
+            Some(server) => crate::http::join_daemon_url(&server.url, &subscription.path),
+            None => subscription.url.clone(),
+        };
+        let generations = StreamGenerations {
+            token: snapshot.generation,
+            server: server.map(|server| server.generation).unwrap_or_default(),
+        };
         match decide_sse_connect(snapshot.token.as_deref(), has_baked_auth) {
             SseConnectAction::Suspend => {
                 // SEC P0-02：无运行时令牌且订阅头无烘焙鉴权——私有 `/stream/me` 裸连必 401。改为挂起等令牌到达
@@ -219,21 +367,12 @@ async fn run_sse_subscription(
                     ShellSseConnectionState::Retrying,
                     Some("waiting for a client token".to_string()),
                 );
-                match token_change_notifier(&app) {
-                    // 令牌写入用 notify_waiters()（不预存许可，见 `ShellClientToken::set`）：上面读快照与这里
-                    // 注册等待者之间到达的写入会被丢弃，裸 `notified().await` 就永久卡死。对齐下方退避分支的
-                    // 模式——`select!` 同时等通知与一个基准退避的兜底 sleep，醒来后 continue 重新探测令牌
-                    // 快照；正确性来自"每拍重读快照 + 代际比对"（见文件顶部注释），通知/sleep 都只是唤醒提示。
-                    // select 竞态窗口本身难以单测钉死，靠兜底轮询保证有界等待。
-                    Some(notify) => {
-                        tokio::select! {
-                            _ = notify.notified() => {}
-                            _ = sleep(reconnect_backoff(reconnect_delay_ms, 0)) => {}
-                        }
-                    }
-                    // 拿不到通知句柄（降级）：退回按基准退避轮询，不至于永久卡死。
-                    None => sleep(reconnect_backoff(reconnect_delay_ms, 0)).await,
-                }
+                // 令牌/地址写入都用 notify_waiters()（不预存许可，见 `ShellClientToken::set`）：读快照与
+                // 注册等待者之间到达的写入会被丢弃，裸 `notified().await` 就永久卡死。故 `wait_for_runtime_change`
+                // 里 `select!` 同时等两个通知与一个基准退避的兜底 sleep，醒来后 continue 重新探测快照；
+                // 正确性来自"每拍重读快照 + 代际比对"（见文件顶部注释），通知/sleep 都只是唤醒提示。
+                // select 竞态窗口本身难以单测钉死，靠兜底轮询保证有界等待。
+                wait_for_runtime_change(&app, reconnect_backoff(reconnect_delay_ms, 0)).await;
                 consecutive_failures = 0;
                 continue;
             }
@@ -244,7 +383,7 @@ async fn run_sse_subscription(
                     ShellSseConnectionState::Connecting,
                     None,
                 );
-                match open_sse_response(&client, &subscription, token.as_deref()).await {
+                match open_sse_response(&client, &subscription, &url, token.as_deref()).await {
                     Ok(response) => {
                         emit_sse_status(&app, &subscription, ShellSseConnectionState::Open, None);
                         // 成功打开连接 → 退避复位（连上之后即便流随后中断，也按基准快速重连）。
@@ -254,18 +393,22 @@ async fn run_sse_subscription(
                             &subscription,
                             response,
                             &notification_deduper,
-                            snapshot.generation,
+                            generations,
                         )
                         .await
                         {
                             Ok(PumpOutcome::Superseded) => {
-                                // SEC P0-02：令牌代际变更(退出/换号)→主动中止了旧身份连接。立即以最新快照重连
-                                // （新令牌→新身份；已清空→上面的 Suspend 分支挂起），不进退避、不当失败计数。
+                                // SEC P0-02 / S5：身份代际（退出/换号）或端点代际（换服务器）变更 → 主动中止了
+                                // 这条过时连接。立即以最新快照重连（新令牌→新身份、新地址→新服务器；令牌已清空
+                                // →上面的 Suspend 分支挂起），不进退避、不当失败计数。
                                 emit_sse_status(
                                     &app,
                                     &subscription,
                                     ShellSseConnectionState::Retrying,
-                                    Some("client token changed; reconnecting".to_string()),
+                                    Some(
+                                        "client token or server address changed; reconnecting"
+                                            .to_string(),
+                                    ),
                                 );
                                 continue;
                             }
@@ -293,16 +436,11 @@ async fn run_sse_subscription(
         }
 
         // RUST-1：退避等待期间监听令牌变更——webview bootstrap 写入新令牌后立刻醒来重连并复位退避，
-        // 不再「令牌已就绪却干等满一个退避周期(最长 ~60s)」。克隆 Arc<Notify> 拿到 owned 句柄，避免跨 await 借用 State。
+        // 不再「令牌已就绪却干等满一个退避周期(最长 ~60s)」。S5 起地址变更同样唤醒：换到一台能连的服务器
+        // 之后，不该还因为旧服务器攒下的失败计数干等一分钟。
         let delay = reconnect_backoff(reconnect_delay_ms, consecutive_failures);
-        match token_change_notifier(&app) {
-            Some(notify) => {
-                tokio::select! {
-                    _ = sleep(delay) => {}
-                    _ = notify.notified() => { consecutive_failures = 0; }
-                }
-            }
-            None => sleep(delay).await,
+        if wait_for_runtime_change(&app, delay).await {
+            consecutive_failures = 0;
         }
     }
 }
@@ -317,13 +455,16 @@ fn reconnect_backoff(base_ms: u64, consecutive_failures: u32) -> Duration {
     Duration::from_millis(base_ms.saturating_mul(factor).min(MAX_DELAY_MS))
 }
 
+/// `url` 是**本拍**按运行时服务器地址重拼的（见 `run_sse_subscription`），不是 `subscription.url`
+/// 那个启动快照——换服务器后必须连新地址。订阅只提供路径与烘焙头。
 async fn open_sse_response(
     client: &reqwest::Client,
     subscription: &ShellSseSubscription,
+    url: &str,
     token: Option<&str>,
 ) -> Result<reqwest::Response, String> {
     let mut request = client
-        .get(&subscription.url)
+        .get(url)
         .header(reqwest::header::ACCEPT, "text/event-stream");
     for header in &subscription.headers {
         request = request.header(&header.name, &header.value);
@@ -353,7 +494,7 @@ async fn pump_sse_response(
     subscription: &ShellSseSubscription,
     response: reqwest::Response,
     notification_deduper: &Arc<Mutex<ShellSystemNotificationDeduper>>,
-    open_generation: u64,
+    open_generations: StreamGenerations,
 ) -> Result<PumpOutcome, String> {
     let mut buffer = ShellSseFrameBuffer::default();
     // Buffer raw bytes, not decoded strings: a single TCP chunk can split a
@@ -366,25 +507,36 @@ async fn pump_sse_response(
     let mut stream = response.bytes_stream();
 
     // SEC P0-02：pump 不再只干等 `stream.next()`。旧账号的 `/stream/me` 会一直灌到 TCP 偶然断——退出/换号
-    // 后必须"立刻"感知身份变更并中止本连接。故 `select!` 同时监听：响应块读取 vs 令牌变更通知。每轮循环顶
-    // 先按代际比对（`decide_token_pump`）——代际变了即中止（Superseded），把连接让给最新身份。代际是唯一真相
-    // （通知只是唤醒 idle pump 的提示），故即便通知有极小竞态窗口漏掉，下一块/下一拍的代际比对仍能兜住。
-    match token_change_notifier(app) {
-        Some(notify) => {
-            let notified = notify.notified();
-            tokio::pin!(notified);
+    // 后必须"立刻"感知身份变更并中止本连接。S5 把同一条纪律扩到服务器地址：换服务器后旧服务器的流同样
+    // 必须立刻断，否则用户已经切走了还在收旧服务器的通知。故 `select!` 同时监听：响应块读取 vs 令牌变更
+    // vs 地址变更。每轮循环顶先按代际对比对（`decide_stream_pump`）——任一代际变了即中止（Superseded），
+    // 把连接让给最新的身份/服务器。代际是唯一真相（通知只是唤醒 idle pump 的提示），故即便通知有极小竞态
+    // 窗口漏掉，下一块/下一拍的代际比对仍能兜住。
+    //
+    // 两个 `notified` future 都在循环**外**创建并 pin 住、醒来后才重新武装：`Notify::notified()` 在首次
+    // poll 时才登记等待者，若每轮新建，处理完一块到重新进 select 之间到达的通知就会丢——idle 流会因此
+    // 迟迟不掉头，那正是 SEC P0-02 修掉的毛病。
+    match (token_change_notifier(app), server_change_notifier(app)) {
+        (Some(token_notify), Some(server_notify)) => {
+            let token_changed = token_notify.notified();
+            let server_changed = server_notify.notified();
+            tokio::pin!(token_changed, server_changed);
             loop {
-                if decide_token_pump(open_generation, read_token_snapshot(app).generation)
-                    == TokenPumpDecision::Superseded
+                if decide_stream_pump(open_generations, read_stream_generations(app))
+                    == StreamPumpDecision::Superseded
                 {
                     return Ok(PumpOutcome::Superseded);
                 }
                 tokio::select! {
                     biased;
-                    _ = &mut notified => {
+                    _ = &mut token_changed => {
                         // 令牌变更（写入/清空）唤醒了本连接——重新武装通知，回到循环顶由代际比对裁决
                         // （变更→中止；虚假唤醒→继续）。
-                        notified.set(notify.notified());
+                        token_changed.set(token_notify.notified());
+                    }
+                    _ = &mut server_changed => {
+                        // 服务器地址变更唤醒了本连接——同上，重新武装后交给代际比对裁决。
+                        server_changed.set(server_notify.notified());
                     }
                     maybe_chunk = stream.next() => {
                         let Some(chunk) = maybe_chunk else {
@@ -403,11 +555,11 @@ async fn pump_sse_response(
             }
         }
         // 拿不到通知句柄（降级/测试）：退回纯 chunk 循环，但每块仍比对代际——活跃流照样能中止，只是 idle 流
-        // 要等下一块才感知（生产路径恒能拿到句柄，走上面的 select! 分支）。
-        None => {
+        // 要等下一块才感知（生产路径两个 state 都在 `.manage()` 里，恒走上面的 select! 分支）。
+        _ => {
             while let Some(chunk) = stream.next().await {
-                if decide_token_pump(open_generation, read_token_snapshot(app).generation)
-                    == TokenPumpDecision::Superseded
+                if decide_stream_pump(open_generations, read_stream_generations(app))
+                    == StreamPumpDecision::Superseded
                 {
                     return Ok(PumpOutcome::Superseded);
                 }
@@ -595,13 +747,99 @@ mod tests {
         );
     }
 
-    // pump 的 select! 分支裁决：代际相等=虚假唤醒/无关通知→继续；代际不同（清空或换号）→中止当前连接。
+    // pump 的 select! 分支裁决：两个代际都没变=虚假唤醒/无关通知→继续；任一变了（退出/换号/换服务器）
+    // →中止当前连接。
     #[test]
-    fn token_pump_decision_aborts_only_when_the_generation_changed() {
-        assert_eq!(decide_token_pump(1, 1), TokenPumpDecision::Continue);
-        // 清空(1→2)与换号(1→3 等)都令代际不同 → 立即中止旧身份连接。
-        assert_eq!(decide_token_pump(1, 2), TokenPumpDecision::Superseded);
-        assert_eq!(decide_token_pump(5, 9), TokenPumpDecision::Superseded);
+    fn stream_pump_decision_aborts_when_either_identity_or_endpoint_changed() {
+        let open = StreamGenerations {
+            token: 1,
+            server: 1,
+        };
+        assert_eq!(decide_stream_pump(open, open), StreamPumpDecision::Continue);
+        // 清空/换号：身份代际变 → 立即中止旧身份连接。
+        assert_eq!(
+            decide_stream_pump(
+                open,
+                StreamGenerations {
+                    token: 2,
+                    server: 1
+                }
+            ),
+            StreamPumpDecision::Superseded
+        );
+        // S5 换服务器：端点代际变 → 立即中止连着旧服务器的连接（否则旧服务器继续推通知）。
+        assert_eq!(
+            decide_stream_pump(
+                open,
+                StreamGenerations {
+                    token: 1,
+                    server: 2
+                }
+            ),
+            StreamPumpDecision::Superseded
+        );
+        // 换服务器顺带清令牌（set_server_url 的既定行为）→ 两个代际同时变，仍是一次中止。
+        assert_eq!(
+            decide_stream_pump(
+                open,
+                StreamGenerations {
+                    token: 2,
+                    server: 2
+                }
+            ),
+            StreamPumpDecision::Superseded
+        );
+    }
+
+    // S5：换地址必须递增端点代际（这是活跃连接掉头的唯一真相），且快照读回的就是刚写进去的地址。
+    #[test]
+    fn setting_a_server_url_bumps_the_endpoint_generation() {
+        let state = ShellServerUrl::new("http://127.0.0.1:8787");
+        assert_eq!(
+            state.snapshot(),
+            ServerUrlSnapshot {
+                url: "http://127.0.0.1:8787".to_string(),
+                generation: 0
+            }
+        );
+
+        assert_eq!(state.set("http://192.168.1.10:8787"), 1);
+        assert_eq!(
+            state.snapshot(),
+            ServerUrlSnapshot {
+                url: "http://192.168.1.10:8787".to_string(),
+                generation: 1
+            }
+        );
+
+        // 换到另一台：代际继续递增，旧连接据此中止。
+        assert_eq!(state.set("https://workhub.example.com"), 2);
+        assert_eq!(state.snapshot().url, "https://workhub.example.com");
+
+        // 写回同一个地址也递增——「用户显式重连一次」应当真的重建连接，而不是因为字符串相等被静默吞掉。
+        assert_eq!(state.set("https://workhub.example.com"), 3);
+    }
+
+    // 兜底值必须是本机默认地址：`.manage()` 早于 `.setup()`，命令在配置读进来之前也得拿到一个能用的值。
+    #[test]
+    fn the_default_server_url_state_is_the_lan_default() {
+        assert_eq!(
+            ShellServerUrl::default().snapshot(),
+            ServerUrlSnapshot {
+                url: WorkHubShellConfig::lan_default().server_url,
+                generation: 0
+            }
+        );
+    }
+
+    // 换服务器后订阅 URL 必须按新地址重拼（worker 每拍重读运行时地址做这件事）——路径与烘焙头不变。
+    #[test]
+    fn subscription_paths_rebind_to_the_runtime_server_url() {
+        let subscription = subscription_with_headers(vec![]);
+        assert_eq!(
+            crate::http::join_daemon_url("https://workhub.example.com", &subscription.path),
+            "https://workhub.example.com/api/push/stream/me"
+        );
     }
 
     // 重连动作裁决：有令牌→带令牌连；无令牌但订阅头已烘焙 config 令牌→用烘焙头连；两者皆无→挂起等令牌
