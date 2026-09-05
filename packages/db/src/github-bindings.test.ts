@@ -279,21 +279,23 @@ test("R23 P3b: the stale-repo query never accuses a repo it has not actually syn
 
   await listStaleReposSinceThreshold(db, { projectIds: [projectId], thresholdDays: 7, now });
 
-  const where = queryRawStrings(queries[0]?.where).join(" ");
-  assert.match(where, /is not null/u, "a binding that never synced successfully must be excluded");
+  // 「最后活动时间」的聚合子查询会被记成独立一条，主查询在它之后——按「谁读了 enabled」认，
+  // 别按下标认（子查询多一条少一条都会把下标挪掉）。
+  const main = queries.find((query) => queryReferences(query.where, projectGithubBindings.enabled));
+  assert.ok(main, "a disabled binding is not a signal — the main query must filter on enabled");
+  assert.match(
+    queryRawStrings(main.where).join(" "),
+    /is not null/u,
+    "a binding that never synced successfully must be excluded"
+  );
   assert.equal(
-    queryReferences(queries[0]?.where, projectGithubBindings.lastSyncedAt),
+    queryReferences(main.where, projectGithubBindings.lastSyncedAt),
     true,
     "the never-synced guard must read last_synced_at"
   );
   assert.equal(
-    queryReferences(queries[0]?.where, projectGithubBindings.createdAt),
+    queryReferences(main.where, projectGithubBindings.createdAt),
     true,
     "a binding younger than the threshold cannot be N days stale"
-  );
-  assert.equal(
-    queryReferences(queries[0]?.where, projectGithubBindings.enabled),
-    true,
-    "a disabled binding is not a signal"
   );
 });
