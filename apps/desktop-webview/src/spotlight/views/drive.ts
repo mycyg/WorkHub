@@ -13,6 +13,7 @@ import {
   readDesktopClientToken,
   writeDesktopClientToken
 } from "../../desktop-client-token.js";
+import { resolveDesktopRequestLocale } from "../../desktop-locale-source.js";
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 
 const FOLDER_ICON =
@@ -81,6 +82,10 @@ export function driveResourceHeaders(): Headers {
 async function refreshDriveResourceToken(apiBaseUrl: string): Promise<boolean> {
   clearDriveResourceToken();
   try {
+    // R24 S4（桌面端接线）：这条自愈路径没有一个 boot 时已解析好的 locale 变量可转发（深处独立函数，
+    // 够不到 browser.ts/workbench boot.ts 那份），故用 resolveDesktopRequestLocale 就地从存储/系统
+    // 语言解一份——只有该昵称真正首次建号时服务端才会用它（见 apps/api/src/routes/auth.ts 的
+    // resolveNewUserLocale），复用既有账号（本自愈路径的常态）不受影响。
     const response = await fetch(`${apiBaseUrl}/api/auth/desktop-bootstrap`, {
       method: "POST",
       credentials: "include",
@@ -88,7 +93,8 @@ async function refreshDriveResourceToken(apiBaseUrl: string): Promise<boolean> {
       body: JSON.stringify({
         nickname: "WorkHub Desktop",
         device_name: "WorkHub Desktop",
-        platform: "desktop"
+        platform: "desktop",
+        locale: resolveDesktopRequestLocale({ storage: driveResourceStorage() })
       })
     });
     const body = await response.json() as { client_token?: unknown };
