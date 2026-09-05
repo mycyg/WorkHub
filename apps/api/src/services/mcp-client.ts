@@ -384,8 +384,12 @@ export function createMcpClient(options: McpClientOptions = {}): McpClient {
     if (options.connectionResults === false) {
       return;
     }
-    const repository = options.connectionResults ?? getDefaultMcpServerRepository();
     try {
+      // 仓储的解析放在 try **里面**（M5 修）：`getDefaultMcpServerRepository()` 会现建一个共享
+      // PG 客户端，它自己也可能抛（连接串没配、驱动初始化失败）。放在 try 外面时那一抛会顺着
+      // `connect()` 的 try 上去，把一次本来握好手、列好工具的连接判成 `connect_failed`——
+      // 正是紧接着这段代码要防的那件事。
+      const repository = options.connectionResults ?? getDefaultMcpServerRepository();
       await repository.updateConnectionResult({
         workspaceId: connection.config.workspaceId,
         id: connection.config.id,
@@ -658,8 +662,11 @@ export function createMcpClient(options: McpClientOptions = {}): McpClient {
     if (options.auditLogs === false) {
       return;
     }
-    const auditLogs = options.auditLogs ?? getDefaultAuditStores().auditLogs;
     try {
+      // 同 `writeConnectionResult`：审计仓储的解析也放在 try 里面（M5 修）。放在外面时
+      // `getDefaultAuditStores()` 一抛就顺着 `callTool()` 的 try 上去，把一次**已经成功执行完**
+      // 的工具调用变成一个错误结果——与紧接着那段注释承诺的 fail-open 正好相反。
+      const auditLogs = options.auditLogs ?? getDefaultAuditStores().auditLogs;
       await auditLogs.createAuditLog({
         // MCP 工具是 AI 在一次执行里调起来的，归 "ai"（与插件工具、快照审计同口径）；
         // 没有执行上下文（管理员手工试跑）才记 "system"。发起人仍然记 actorUserId。
@@ -873,21 +880,42 @@ export function createMcpClient(options: McpClientOptions = {}): McpClient {
 
 let defaultClient: McpClient | undefined;
 let defaultServerSource: McpServerSource | undefined;
+let defaultConnectionResults: Pick<McpServerRepository, "updateConnectionResult"> | undefined;
+
+/**
+ * `useMcpServerSource()` 收得下的仓储。读侧（`listEnabledForWorkspace`）是必须的；
+ * 写侧（`updateConnectionResult`）能给就给——见下面那段「读写必须落在同一份仓储上」。
+ */
+export type McpServerSourceRepository = Pick<McpServerRepository, "listEnabledForWorkspace"> &
+  Partial<Pick<McpServerRepository, "updateConnectionResult">>;
 
 /**
  * 让默认客户端从 `mcp_servers` 表读清单。**只在 `server.ts` 真起进程时调**（M4 的接线点）——
  * 不接线的场景（全部既有单测、离线工具）一台服务器都不连，一次 PG 查询都不会发生。
  * 与 `usePluginRegistryPathSource()` 同一条先例。
+ *
+ * **读写必须落在同一份仓储上**（M5 修）：显式传进来一份仓储时，连接结果的回写也走它。
+ * 原先只接了读侧，写侧无条件走 `getDefaultMcpServerRepository()`（共享 PG 连接池），于是任何
+ * 非默认调用方都会得到一个分裂的清单——从自己那份仓储读行，却把 `status`/`tool_count`/
+ * `tools_json`/`last_error` 写进另一个库，自己那份行的状态永远停在写入时的旧值。
+ * 产线调用点 `server.ts` 是**不带参数**调的（两侧都退回共享库），所以这条修复对产线零行为变化。
  */
-export function useMcpServerSource(repository?: Pick<McpServerRepository, "listEnabledForWorkspace">) {
+export function useMcpServerSource(repository?: McpServerSourceRepository) {
   defaultServerSource = createRepositoryMcpServerSource(repository ? { repository } : {});
+  defaultConnectionResults =
+    repository && typeof repository.updateConnectionResult === "function"
+      ? (repository as Pick<McpServerRepository, "updateConnectionResult">)
+      : undefined;
   // 已经建过单例就重建：接线发生在启动早期，此时不会有在飞调用。
   defaultClient = undefined;
 }
 
 /** 进程内单例：一个 API 进程只养一套 MCP 子进程。 */
 export function getDefaultMcpClient(): McpClient {
-  defaultClient ??= createMcpClient(defaultServerSource ? { serverSource: defaultServerSource } : {});
+  defaultClient ??= createMcpClient({
+    ...(defaultServerSource ? { serverSource: defaultServerSource } : {}),
+    ...(defaultConnectionResults ? { connectionResults: defaultConnectionResults } : {})
+  });
   return defaultClient;
 }
 
