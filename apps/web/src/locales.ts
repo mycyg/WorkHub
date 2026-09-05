@@ -17,7 +17,7 @@ const zh = {
   add: "加入",
   admin: "（管理员）",
   aiAssistant: "AI 助手",
-  aiEngineKeyNotSetChat: "AI 引擎密钥未配置——群聊、工单、审批、网盘照常可用，但 AI 不会主动观察或应答。",
+  aiEngineKeyNotSetChat: "AI 引擎密钥未配置——群聊、任务、审批、网盘照常可用，但 AI 不会主动观察或应答。",
   archiveClickAgain: "确认归档？再点一次",
   archived: "已归档",
   archiving: "正在归档…",

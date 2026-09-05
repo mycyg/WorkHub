@@ -87,7 +87,7 @@ import { approvalQueuePageInfoText, goldPathT, normalizeWorkHubLocale, type Work
 import type { GoldPathRenderedPage } from "./render.js";
 
 import { goldPathCopyT } from "./locales.js";
-import { routeCopy, type RouteCopyKey } from "./route-components-copy.js";
+import { auditActionLabels, auditEntityTypeLabels, routeCopy, type RouteCopyKey } from "./route-components-copy.js";
 
 // "agents"/"skills"/"projects"/"project-home"/"memory" 是 live-only 路由（不在 gold-path 静态 surface 渲染里），故单独并入而非走 Extract。
 export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "conversation" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "search" | "settings"> | "agents" | "skills" | "projects" | "project-home" | "project-timeline" | "memory";
@@ -1478,22 +1478,6 @@ function traceRows(vm: WorkItemDetailVM, locale: WorkHubLocale) {
 // audit-repository 有测试覆盖），但 web 端从没拉过这份数据、更没渲染过——用户看不到一个工作项跨多次
 // AI 执行/快照/审批的完整审计轨迹。这里只出静态占位卡（时间线本体是客户端异步拉取，见
 // apps/web/src/browser.ts 的 bindWorkItemAuditTimelinePanel），行渲染抽成纯函数以便单测覆盖。
-const auditActionLabels: Record<string, [string, string]> = {
-  "work_item.created": ["创建任务", "Task created"],
-  "work_item.updated": ["更新工作项", "Work item updated"],
-  "snapshot.created": ["生成文件快照", "File snapshot created"],
-  "snapshot.reverted": ["回滚文件快照", "File snapshot reverted"],
-  "proposal.opened": ["生成变更申请", "Proposal opened"],
-  "proposal.merged": ["采纳变更申请", "Change adopted"],
-  "proposal.rejected": ["驳回变更申请", "Proposal rejected"],
-  "approval.approved": ["审批通过", "Approval granted"],
-  "approval.rejected": ["审批打回", "Approval rejected"],
-  // R23 P4：R20 P2A 的四个写动作此前只落审计、没有任何界面读它们，标签一并补上。
-  "work_item.assigned": ["指派事项", "Item assigned"],
-  "work_item.claimed": ["认领事项", "Item claimed"],
-  "project.archived": ["归档项目", "Project archived"],
-  "project.deleted": ["删除项目", "Project deleted"]
-};
 
 function auditActionLabel(action: string, zh: boolean): string {
   const hit = auditActionLabels[action];
@@ -1547,15 +1531,6 @@ export function renderWorkItemAuditTimelineRows(logs: AuditLogFact[], locale: Wo
 
 // R23 P4（R20 P2A 端点上界面）：工作区审计流（GET /api/workspace/audit，仅管理员）的对象列——
 // entity_type 是库里的机器串（work_item / project / proposal…），直接吐给管理员看没意义，先查表再兜底分词。
-const auditEntityTypeLabels: Record<string, [string, string]> = {
-  work_item: ["事项", "Work item"],
-  project: ["项目", "Project"],
-  proposal: ["变更申请", "Proposal"],
-  approval: ["审批", "Approval"],
-  snapshot: ["还原点", "Restore point"],
-  workspace_member: ["工作区成员", "Workspace member"],
-  drive_item: ["网盘文件", "Drive file"]
-};
 
 function auditEntityLabel(entity: AuditLogFact["entity"], zh: boolean): string {
   const hit = auditEntityTypeLabels[entity.entity_type];

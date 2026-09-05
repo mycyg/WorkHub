@@ -1224,7 +1224,7 @@ test("R20 R19-27 renderWorkItemAuditTimelineRows localizes action/actor labels, 
     undone_at: "2026-07-10T09:05:00.000Z"
   };
   const enRows = renderWorkItemAuditTimelineRows([aiEntry], "en-US");
-  assert.equal(enRows.includes("File snapshot reverted"), true);
+  assert.equal(enRows.includes("Files restored"), true);
   assert.equal(enRows.includes("AI (undone)"), true);
 
   // Unknown/future action strings must not leak the raw machine token — they fall back to a
@@ -4287,7 +4287,7 @@ test("R5.7 health route component renders banded project cards with product-rout
   assert.equal(member.primaryHrefs.some((href) => href.startsWith("/api/")), false);
 
   assert.equal(admin.html.includes('data-r5-7-health-viewer-scope="admin"'), true);
-  assert.equal(admin.html.includes("进行中事项: 7"), true);
+  assert.equal(admin.html.includes("进行中任务: 7"), true);
   assert.equal(admin.html.includes('data-r5-7-health-bands-only="true"'), false);
   assert.equal(admin.html.includes("项目健康"), true);
   assertNoMainWindowBoundaryLeak(member.html);
@@ -5047,7 +5047,7 @@ test("R23 P4: renderWorkspaceAuditRows localizes action/actor/object columns and
   assert.equal(rows.includes('data-r23-workspace-audit-entry-entity="93000000-0000-4000-8000-000000000001"'), true);
   // R20 P2A 的四个写动作此前没有任何界面读它们，标签一并补齐，不能裸吐 "project.archived"。
   assert.equal(rows.includes("归档项目"), true);
-  assert.equal(rows.includes("指派事项"), true);
+  assert.equal(rows.includes("指派任务"), true);
   // A2-36：审计行只说改的是什么类型的东西，不再拼内部 id 前 8 位（完整值仍在 data-* 上）。
   assert.equal(rows.includes("项目 93000000"), false);
   assert.equal(rows.includes("项目"), true);
@@ -5059,7 +5059,7 @@ test("R23 P4: renderWorkspaceAuditRows localizes action/actor/object columns and
   assert.equal(all.split("data-r23-workspace-audit-entry=").length - 1, 25);
 
   const en = renderWorkspaceAuditRows([entry("a3", "work_item.claimed")], "en-US");
-  assert.equal(en.includes("Item claimed"), true);
+  assert.equal(en.includes("Task claimed"), true);
   assert.equal(en.includes("Project 93000000"), false);
   assert.equal(en.includes("Project"), true);
 });

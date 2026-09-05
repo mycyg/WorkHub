@@ -83,6 +83,11 @@ const zh = {
   mergeSuggestionNotFound: "没有找到这个合并建议，请刷新后重试。",
   proposalWrongTask: "这份变更申请不属于这个任务，请刷新后重试。",
   mergedResultEmpty: "（合并后的内容为空）",
+  delegateTargetCannotView: "这位成员看不到这个任务，没法转交。",
+  escalationStatusChanged: "这个任务的状态已经变了，请刷新后再处理。",
+  fieldPatchNeedsFieldReview: "这份字段建议还需要逐字段复核，不能直接写回任务字段。",
+  fieldPatchTaskMismatch: "这份字段建议指向的任务和当前变更申请对不上。",
+  scopeCodeImpact: "需要留下还原点、通过测试并走审批。",
 
   // 任务计划（task-plans）
   planStructureCheck: "每个子任务都写了验收标准，任务之间没有互相等待的死循环，预算加起来正好 100%。",
@@ -177,6 +182,11 @@ const en = {
   mergeSuggestionNotFound: "That merge suggestion wasn't found — refresh and try again.",
   proposalWrongTask: "This change request doesn't belong to this task. Refresh and try again.",
   mergedResultEmpty: "(The merged result is empty.)",
+  delegateTargetCannotView: "That member can't see this task, so it can't be handed off to them.",
+  escalationStatusChanged: "This task's status has changed. Refresh and try again.",
+  fieldPatchNeedsFieldReview: "This field suggestion still needs a field-by-field review before it can be written back.",
+  fieldPatchTaskMismatch: "This field suggestion points at a different task from this change request.",
+  scopeCodeImpact: "Needs a restore point, passing tests and an approval.",
 
   planStructureCheck: "Every subtask has acceptance criteria, none of them wait on each other in a loop, and the budget adds up to 100%.",
 

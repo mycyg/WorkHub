@@ -351,7 +351,7 @@ export const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "knowledge.scopeLandingCta": "去项目列表",
     "search.kicker": "全局搜索",
     "search.title": "搜索",
-    "search.summary": "跨会话、网盘、工单、会议搜索。",
+    "search.summary": "跨会话、网盘、任务、会议搜索。",
     "search.placeholder": "搜索关键词…",
     "search.label": "搜索全部",
     "search.submit": "搜索",
@@ -466,8 +466,8 @@ export const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "health.empty": "还没有可见的项目。",
     "health.bandsOnly": "你看到的是分级视图，具体数值仅管理员可见。",
     "health.openProject": "打开项目",
-    "health.signal.open_work_items": "进行中事项",
-    "health.signal.overdue_work_items": "逾期事项",
+    "health.signal.open_work_items": "进行中任务",
+    "health.signal.overdue_work_items": "逾期任务",
     "health.signal.pending_approvals": "待审批",
     "health.signal.failed_runs": "失败运行",
     "health.signal.pending_insights": "待确认洞察",
@@ -931,4 +931,32 @@ export const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "plan.shareShort": "Budget shares add up to {total}% — {delta}% short. Fix them before approving.",
     "plan.shareOver": "Budget shares add up to {total}% — {delta}% over. Fix them before approving."
   }
+};
+
+// 审计动作 / 审计对象类型的人话标签（[中文, English]）。库里的机器串直接吐给用户没意义，先查表。
+export const auditActionLabels: Record<string, [string, string]> = {
+  "work_item.created": ["创建任务", "Task created"],
+  "work_item.updated": ["更新任务", "Task updated"],
+  "snapshot.created": ["保存还原点", "Restore point saved"],
+  "snapshot.reverted": ["还原了文件", "Files restored"],
+  "proposal.opened": ["生成变更申请", "Proposal opened"],
+  "proposal.merged": ["采纳变更申请", "Change adopted"],
+  "proposal.rejected": ["驳回变更申请", "Proposal rejected"],
+  "approval.approved": ["审批通过", "Approval granted"],
+  "approval.rejected": ["审批打回", "Approval rejected"],
+  // R23 P4：R20 P2A 的四个写动作此前只落审计、没有任何界面读它们，标签一并补上。
+  "work_item.assigned": ["指派任务", "Task assigned"],
+  "work_item.claimed": ["认领任务", "Task claimed"],
+  "project.archived": ["归档项目", "Project archived"],
+  "project.deleted": ["删除项目", "Project deleted"]
+};
+
+export const auditEntityTypeLabels: Record<string, [string, string]> = {
+  work_item: ["任务", "Task"],
+  project: ["项目", "Project"],
+  proposal: ["变更申请", "Proposal"],
+  approval: ["审批", "Approval"],
+  snapshot: ["还原点", "Restore point"],
+  workspace_member: ["工作区成员", "Workspace member"],
+  drive_item: ["网盘文件", "Drive file"]
 };

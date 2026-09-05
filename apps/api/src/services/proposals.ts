@@ -1049,14 +1049,14 @@ function structuredFieldPatchWritebackForApply(
     throw new ProposalServiceError(
       409,
       "structured_field_patch_not_executable",
-      "这个结构化字段建议还需要字段级复核，不能直接写回事项字段。"
+      serviceT("zh-CN", "fieldPatchNeedsFieldReview")
     );
   }
   if (dryRun.patch.target_entity_type !== "work_item" || dryRun.patch.target_entity_id !== context.workItemId) {
     throw new ProposalServiceError(
       409,
       "structured_field_patch_target_mismatch",
-      "这个结构化字段建议的目标事项和当前变更申请不一致。"
+      serviceT("zh-CN", "fieldPatchTaskMismatch")
     );
   }
   return {

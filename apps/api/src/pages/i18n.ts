@@ -58,7 +58,7 @@ export type PageCopyKey =
 
 const pageCopy: Record<WorkHubLocale, Record<PageCopyKey, string>> = {
   "zh-CN": {
-    "attention.running": "AI 正在处理这个事项。",
+    "attention.running": "AI 正在处理这个任务。",
     "attention.queued": "AI 已排队等待开始。",
     "cost.scope.me": "我的今日 AI 预算",
     "cost.scope.team": "团队今日 AI 预算",

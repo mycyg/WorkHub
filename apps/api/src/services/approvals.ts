@@ -1178,7 +1178,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
             orgId: actor.orgId,
             workspaceId: actor.workspaceId
           })) {
-            throw new ApprovalServiceError(422, "delegate_target_cannot_view", "这位成员看不到这个事项，没法转交。");
+            throw new ApprovalServiceError(422, "delegate_target_cannot_view", serviceT("zh-CN", "delegateTargetCannotView"));
           }
         }
       }

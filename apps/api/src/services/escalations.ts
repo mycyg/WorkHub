@@ -26,7 +26,7 @@ import {
 import { localizedBudgetActionLabel, localizedBudgetUsageScopeLabel } from "../budget-labels.js";
 import { getDefaultStructuredLogger } from "../logging.js";
 import type { AuthActor } from "../middleware/auth.js";
-import { serviceTf } from "./locales.js";
+import { serviceT, serviceTf } from "./locales.js";
 import { createNotificationService, type NotificationService } from "./notifications.js";
 import { getDefaultAgentRunQueue, type AgentRunQueue } from "../workers/agent-runner.js";
 import { getDefaultTaskDispatcher, type TaskDispatcher } from "./task-dispatcher.js";
@@ -634,7 +634,7 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
         });
       } catch (error) {
         if ((error as { message?: string }).message === "escalation_status_transition_conflict") {
-          throw new EscalationServiceError(409, "escalation_status_conflict", "当前事项状态已经变化，请刷新后再处理。");
+          throw new EscalationServiceError(409, "escalation_status_conflict", serviceT("zh-CN", "escalationStatusChanged"));
         }
         throw error;
       }

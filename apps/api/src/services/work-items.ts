@@ -301,7 +301,7 @@ const workItemCopy: Record<WorkHubLocale, Record<WorkItemCopyKey, string>> = {
     "question.scope.data.impact": "会保留字段级证据和回滚点。",
     "question.scope.code.label": "小型代码/模板",
     "question.scope.code.description": "适合低风险代码片段、模板或配置改动。",
-    "question.scope.code.impact": "需要通过快照、测试和审批。",
+    "question.scope.code.impact": serviceT("zh-CN", "scopeCodeImpact"),
     "question.scope.ai.label": "让 AI 判断",
     "question.scope.ai.description": "我会按证据和风险选择最稳的交付路径。",
     "question.scope.ai.impact": "不用打字，点选就行。",

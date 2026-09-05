@@ -177,7 +177,7 @@ const copy = {
   "proposal.subrecordKeepCurrent": { "zh-CN": "保留当前项", "en-US": "Keep current item" },
   "proposal.taskPlanScopeTitle": { "zh-CN": "先选目标计划", "en-US": "Choose target plan first" },
   "proposal.taskPlanScopeBody": {
-    "zh-CN": "这个事项有多个计划，写入任务项前请先选择目标计划。",
+    "zh-CN": "这个任务有多个计划，写入任务项前请先选择目标计划。",
     "en-US": "This work item has multiple plans; choose the target before writing task items."
   },
   "proposal.taskPlanScopeRecommended": { "zh-CN": "建议", "en-US": "Recommended" },
