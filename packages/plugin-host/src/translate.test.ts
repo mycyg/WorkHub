@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   describePluginTool,
   pluginToolId,
+  readsAsReadOnly,
   PLUGIN_RESULT_MAX_CHARS,
   renderToolContent,
   toJsonSchema,
@@ -36,6 +37,20 @@ test("描述符直通 dsh 的 JSON Schema（不经 Zod）", () => {
     properties: { text: { type: "string" } },
     required: ["text"]
   });
+});
+
+test("只读自述严格认 readOnlyHint === true，其它一律当没声明", () => {
+  // dsh 的 defineTool 按白名单归一化，作者多写的键会被丢掉——这个信号只可能来自
+  // ctx.tools.register() 收到的定义对象本身（见 translate.ts 的字段注释）。
+  assert.equal(readsAsReadOnly(definition()), false);
+  assert.equal(readsAsReadOnly(definition({ readOnlyHint: true })), true);
+  assert.equal(readsAsReadOnly(definition({ readOnlyHint: "true" })), false);
+  assert.equal(readsAsReadOnly(definition({ readOnlyHint: 1 })), false);
+  assert.equal(readsAsReadOnly(definition({ readOnlyHint: () => true })), false);
+  assert.equal(readsAsReadOnly(definition({ readOnlyHint: false })), false);
+  // 线协议上永远是个布尔，不是「有时缺席」。
+  assert.equal(describePluginTool("p", definition()).selfReportedReadOnly, false);
+  assert.equal(describePluginTool("p", definition({ readOnlyHint: true })).selfReportedReadOnly, true);
 });
 
 test("描述缺失时给一句能定位到插件的兜底，而不是空串", () => {

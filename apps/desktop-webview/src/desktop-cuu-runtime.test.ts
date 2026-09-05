@@ -1289,10 +1289,10 @@ test("desktop Cuu launcher shows an analysis card while the AI reads materials",
   assert.equal(card.kind, "trace");
   assert.equal(card.state, "thinking");
   assert.match(card.title, /正在分析材料/u);
-  assert.match(card.message, /只展示反问结果/u);
+  assert.match(card.message, /找出需要跟你确认的关键点/u);
   assert.deepEqual(card.actions, []);
-  assert.match(card.sections?.[0]?.lines.join("\n") ?? "", /读取项目网盘|调用澄清模型/u);
-  assert.match(card.sections?.[1]?.lines.join("\n") ?? "", /只显示工具调用和当前状态/u);
+  assert.match(card.sections?.[0]?.lines.join("\n") ?? "", /读项目网盘里的文件|正在想该问你什么/u);
+  assert.match(card.sections?.[1]?.lines.join("\n") ?? "", /你的需求原文不会显示在这里/u);
   assert.doesNotMatch(card.sections?.[1]?.lines.join("\n") ?? "", /隐藏思考|隐藏推理/u);
 });
 
@@ -2981,7 +2981,7 @@ test("submitDesktopCuuAction starts an agent run directly for an existing spec_r
   } as never;
   await assert.rejects(
     () => submitDesktopCuuAction({ client: noStartClient, action: action!, locale: "zh-CN" }),
-    /缺少启动 AI 执行的客户端能力/u
+    /还不能从这里启动 AI/u
   );
 });
 

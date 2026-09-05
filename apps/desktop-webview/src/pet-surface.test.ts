@@ -1251,7 +1251,7 @@ test("pet surface removes duplicate proposal summaries and keeps the proposal ac
   assert.match(surface.html, /href="\/proposals\/proposal-1"/u);
   assert.match(surface.html, />查看变更申请<\/a>/u);
   assert.match(surface.html, /data-pet-section-id="next_step"/u);
-  assert.match(surface.html, /点「查看变更申请」会打开变更详情，里面有总结、改动和确认按钮/u);
+  assert.match(surface.html, /打开变更申请，看完总结和改动再决定/u);
   assert.equal((surface.html.match(/变更摘要 本次 AgentRun/g) ?? []).length, 1);
   assert.ok(
     surface.html.indexOf('data-pet-section-id="next_step"') < surface.html.indexOf('data-cuu-action-id="open_proposal"'),

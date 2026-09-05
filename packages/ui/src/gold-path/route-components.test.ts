@@ -2974,6 +2974,7 @@ test("R24-P settings plugins list is admin-gated and read-only: members never se
             version: "0.1.0",
             enabled: true,
             status: "installed",
+            trust_level: "read_only",
             tool_count: 2,
             compat_verdict: "ok"
           },
@@ -2982,6 +2983,7 @@ test("R24-P settings plugins list is admin-gated and read-only: members never se
             name: "dsh-plugin-finance-data",
             enabled: true,
             status: "load_failed",
+            trust_level: "external_effect",
             tool_count: 0,
             compat_verdict: "warn"
           },
@@ -2990,6 +2992,16 @@ test("R24-P settings plugins list is admin-gated and read-only: members never se
             name: "dsh-plugin-old",
             enabled: false,
             status: "disabled",
+            trust_level: "external_effect",
+            tool_count: 0,
+            compat_verdict: "ok"
+          },
+          {
+            id: "55555555-5555-4555-8555-555555555555",
+            name: "dsh-plugin-flaky",
+            enabled: true,
+            status: "crashed",
+            trust_level: "external_effect",
             tool_count: 0,
             compat_verdict: "ok"
           }
@@ -2998,13 +3010,20 @@ test("R24-P settings plugins list is admin-gated and read-only: members never se
     },
     { locale: "zh-CN" }
   );
-  assert.equal(withPlugins.html.includes('data-r24-settings-plugins="3"'), true);
+  assert.equal(withPlugins.html.includes('data-r24-settings-plugins="4"'), true);
   assert.equal(withPlugins.html.includes("dsh-plugin-echo 0.1.0"), true);
   assert.equal(withPlugins.html.includes("已启用 · 2 个工具"), true);
   // 装不上的那条如实说「装不上」，不混成「已停用」——两件事的下一步动作完全不同。
   assert.equal(withPlugins.html.includes("装不上"), true);
   assert.equal(withPlugins.html.includes("已停用"), true);
   assert.equal(withPlugins.html.includes("安装前体检有提醒"), true);
+  // 反复弄崩宿主被单独停下的那条也有自己的说法，不会被读成「还好好跑着」。
+  assert.equal(withPlugins.html.includes('data-r24-settings-plugin-status="crashed"'), true);
+  assert.equal(withPlugins.html.includes("反复出错已被停下"), true);
+  // 信任级别两档各说各的：被断言只读的那条与按最高风险跑的那些不该看起来一样。
+  assert.equal(withPlugins.html.includes('data-r24-settings-plugin-trust="read_only"'), true);
+  assert.equal(withPlugins.html.includes("被断言为只读"), true);
+  assert.equal(withPlugins.html.includes("按最高风险运行"), true);
   // 网页只读：这一区不该出现任何安装/启停/移除的动作按钮。
   assert.equal(withPlugins.html.includes('data-action-id="install_plugin"'), false);
   assert.equal(withPlugins.html.includes('data-action-id="disable_plugin"'), false);

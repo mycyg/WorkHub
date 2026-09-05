@@ -10,7 +10,13 @@
  *    那是任何沙箱之外的任意代码执行（DB 的 source_kind CHECK 也钉死了这条）。
  * 3. **先体检再登记**。静态体检不执行插件任何代码（读 package.json）；拒装的三类各有自己的
  *    错误码，两端 UI 据此出人话，而不是把一段英文诊断直接甩给用户。
- * 4. **每个动作都落审计**。plugin.installed / plugin.enabled / plugin.disabled / plugin.removed。
+ * 4. **每个动作都落审计**。plugin.installed / plugin.enabled / plugin.disabled / plugin.removed /
+ *    plugin.trust_changed。
+ *
+ * R26 X（阶段 2）加的一件事：**信任级别**。管理员对一个插件的断言 = 它的风险上限，
+ * 与插件工具的自述取 AND 决定每个工具的副作用档（真值表在
+ * `packages/plugin-host/src/to-tool-spec.ts`）。它是一次人做出的授权决定，所以落表、落审计、
+ * 可回滚——不是算在应用层的一个瞬时判断。
  *
  * 登记之后立刻**试加载**（让宿主按新清单重新握手，读它的 list_tools 报告）。装不上不是异常——
  * 记 `status='load_failed'` 并把原因留在 load_report 里，这条记录照样在列表上，用户看得到原因、
@@ -21,6 +27,7 @@ import {
   type PluginCompatReport,
   type PluginListVM,
   type PluginLoadReportVM,
+  type PluginTrustLevel,
   type PluginVM
 } from "@workhub/contracts";
 import { hostBundledDshToolsVersion, type PluginLoadReport } from "@workhub/plugin-host";
@@ -78,8 +85,9 @@ export type PluginServiceDependencies = {
 
 export type PluginService = {
   list(input: { actor: AuthActor }): Promise<PluginListVM>;
-  install(input: { actor: AuthActor; sourcePath: string }): Promise<PluginVM>;
+  install(input: { actor: AuthActor; sourcePath: string; trustLevel?: PluginTrustLevel }): Promise<PluginVM>;
   setEnabled(input: { actor: AuthActor; id: string; enabled: boolean }): Promise<PluginVM>;
+  setTrustLevel(input: { actor: AuthActor; id: string; trustLevel: PluginTrustLevel }): Promise<PluginVM>;
   remove(input: { actor: AuthActor; id: string }): Promise<{ removed: true }>;
 };
 
@@ -128,6 +136,7 @@ export function toPluginVm(row: PluginRow): PluginVM {
       source_path: row.sourcePath,
       enabled: row.enabled,
       status: row.status,
+      trust_level: row.trustLevel,
       tool_count: row.toolCount,
       compat_report: row.compatReport as unknown as PluginCompatReport,
       ...(loadReport ? { load_report: loadReport } : {}),
@@ -148,7 +157,7 @@ export function createPluginService(deps: PluginServiceDependencies): PluginServ
   async function writeAudit(input: {
     scope: AdminScope;
     row: PluginRow;
-    action: "plugin.installed" | "plugin.enabled" | "plugin.disabled" | "plugin.removed";
+    action: "plugin.installed" | "plugin.enabled" | "plugin.disabled" | "plugin.removed" | "plugin.trust_changed";
     detail?: Record<string, unknown>;
   }) {
     try {
@@ -166,6 +175,7 @@ export function createPluginService(deps: PluginServiceDependencies): PluginServ
           source_kind: "local_path",
           source_path: input.row.sourcePath,
           status: input.row.status,
+          trust_level: input.row.trustLevel,
           tool_count: input.row.toolCount,
           at: now().toISOString(),
           ...input.detail
@@ -255,7 +265,7 @@ export function createPluginService(deps: PluginServiceDependencies): PluginServ
       };
     },
 
-    async install({ actor, sourcePath }) {
+    async install({ actor, sourcePath, trustLevel }) {
       const scope = requireAdmin(actor);
       const inspection = await inspect(sourcePath);
       if (inspection.report.verdict === "blocked") {
@@ -281,6 +291,8 @@ export function createPluginService(deps: PluginServiceDependencies): PluginServ
         sourcePath: inspection.sourcePath,
         status: "installed",
         enabled: true,
+        // 不传就是最保守的那一档：装的时候没表态 = 没授权。
+        trustLevel: trustLevel ?? "external_effect",
         compatReport: inspection.report as unknown as Record<string, unknown>,
         toolCount: 0,
         installedBy: scope.userId,
@@ -321,6 +333,33 @@ export function createPluginService(deps: PluginServiceDependencies): PluginServ
         await reloadQuietly(scope.workspaceId);
       }
       await writeAudit({ scope, row: settled, action: enabled ? "plugin.enabled" : "plugin.disabled" });
+      return toPluginVm(settled);
+    },
+
+    async setTrustLevel({ actor, id, trustLevel }) {
+      const scope = requireAdmin(actor);
+      const row = await requireRow(scope.workspaceId, id);
+      if (row.trustLevel === trustLevel) {
+        // 幂等：已经是这一档就直接回执，不记一条「什么都没变」的授权审计。
+        return toPluginVm(row);
+      }
+      const updated = await deps.repository.setTrustLevel({
+        workspaceId: scope.workspaceId,
+        id,
+        trustLevel,
+        now: now()
+      });
+      // 更新落空只可能是这一行在两步之间被并发移除了：重查一次，由 requireRow 出同一条 404，
+      // 而不是在这里另写一份一模一样的文案。
+      const settled = updated ?? (await requireRow(scope.workspaceId, id));
+      // 不热重载：子进程加载的还是同一批目录，分级是主进程这一侧的参数，下一次
+      // `toolSpecs()` 就按新档算。为一次授权改动掐断在飞的插件调用没有道理。
+      await writeAudit({
+        scope,
+        row: settled,
+        action: "plugin.trust_changed",
+        detail: { previous_trust_level: row.trustLevel }
+      });
       return toPluginVm(settled);
     },
 

@@ -5,6 +5,7 @@ import {
   MINIMUM_LOCALE_OWNER_SOURCES,
   MINIMUM_SOURCES,
   buildBaseline,
+  collectCopyLiterals,
   copyTermScanTargets,
   diffAgainstBaseline,
   discoverProductSources,
@@ -162,4 +163,29 @@ test("禁词门的扫描目标覆盖词典与基线里仍含文案的文件", ()
   assert.ok(targets.includes("packages/cuu/src/i18n.ts"));
   assert.ok(targets.length > 20, `禁词门目标只有 ${targets.length} 个，疑似发现逻辑失效`);
   assert.deepEqual(targets, [...targets].sort());
+});
+
+test("collectCopyLiterals 收纯英文文案，但放过 key / 类型 / import 这些标识符位置", () => {
+  const source = [
+    'import { cuuT } from "./i18n.js";',
+    'export type Key = "budget.scope.curation";',
+    "const en = {",
+    '  "budget.scope.curation": "Curation budget",',
+    "  runTrace: `Run trace`",
+    "};",
+    'const path = table["budget.scope.curation"];'
+  ].join("\n");
+  assert.deepEqual(
+    collectCopyLiterals("packages/cuu/src/i18n.ts", source).map((literal) => literal.text),
+    ["Curation budget", "Run trace"]
+  );
+});
+
+test("collectCopyLiterals 与 findCjkCopyLiterals 的分工：前者不看汉字，后者只看汉字", () => {
+  const source = 'const a = "Run trace";\nconst b = "运行时间线";\n';
+  assert.deepEqual(
+    collectCopyLiterals("packages/ui/src/i18n.ts", source).map((literal) => literal.text),
+    ["Run trace", "运行时间线"]
+  );
+  assert.deepEqual(findCjkCopyLiterals("apps/web/src/routes.ts", source).map((literal) => literal.text), ["运行时间线"]);
 });

@@ -2143,10 +2143,10 @@ test("renderModePopoverHtml states the server-issued model/key line and never im
 
 test("renderModePopoverHtml includes the granular-breakdown note as plain text, not a fake button", () => {
   const html = renderModePopoverHtml({ mode: 3, locale: "zh-CN" });
-  assert.match(html, /按能力细分/u);
+  assert.match(html, /按事项细分/u);
   // No data-* hook and no <button> wrapper — this line isn't wired to anything real yet, so it must
   // not look clickable (04 §4 rule 3: don't render an affordance with no real destination).
-  assert.doesNotMatch(html, /<button[^>]*按能力细分/u);
+  assert.doesNotMatch(html, /<button[^>]*按事项细分/u);
 });
 
 test("renderModeObserveOnlyHintHtml warns that Cuu will not reply, before the user hits the 409", () => {
@@ -2496,7 +2496,7 @@ test("renderComposerHtml renders a 'replying to' banner with a cancel control wh
   assert.doesNotMatch(without, /wh-wb-chat-reply-banner/u);
 });
 
-// —— R14 批 RISK：风险巡检 digest（risk_digest system_event）—— //
+// —— R14 批 RISK：风险汇总 digest（risk_digest system_event）—— //
 
 function riskDigestMessage(overrides: Partial<Record<string, unknown>> = {}): ConversationMessageVM {
   return baseMessage({
@@ -2520,7 +2520,7 @@ function riskDigestMessage(overrides: Partial<Record<string, unknown>> = {}): Co
 test("renderMessageHtml renders a risk_digest system_event as a collapsed card with the one-line PM summary by default", () => {
   const html = renderMessageHtml(riskDigestMessage(), ctxWith([]));
   assert.match(html, /wh-wb-risk-digest/u);
-  assert.match(html, /今日风险巡检/u);
+  assert.match(html, /今日风险汇总/u);
   assert.match(html, /2 项工单停滞、1 项临期未动工/u);
   assert.match(html, /data-wb-chat-expand-message="m-risk-1"/u);
   assert.doesNotMatch(html, /data-wb-chat-collapse-message/u);
@@ -2536,7 +2536,7 @@ test("renderMessageHtml expands a risk_digest into per-signal sections once its 
     ctx
   );
   assert.match(html, /wh-wb-risk-digest-list/u);
-  assert.match(html, /工单停滞 · 2 项/u);
+  assert.match(html, /任务停滞 · 2 项/u);
   assert.match(html, /临期未动工 · 1 项/u);
   assert.match(html, /项目成本异常放量/u);
   assert.match(html, /data-wb-chat-collapse-message="m-risk-1"/u);
@@ -2554,7 +2554,7 @@ test("renderMessageHtml expands a risk_digest with a single triggered signal wit
     }),
     ctx
   );
-  assert.match(html, /工单停滞 · 1 项/u);
+  assert.match(html, /任务停滞 · 1 项/u);
   assert.doesNotMatch(html, /临期未动工/u);
   assert.doesNotMatch(html, /成本异常放量/u);
 });

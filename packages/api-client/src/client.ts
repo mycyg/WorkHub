@@ -938,6 +938,11 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    setPluginTrustLevel: (id, payload) =>
+      request(`/api/plugins/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload)
+      }),
     enablePlugin: (id) => request(`/api/plugins/${encodeURIComponent(id)}/enable`, { method: "POST" }),
     disablePlugin: (id) => request(`/api/plugins/${encodeURIComponent(id)}/disable`, { method: "POST" }),
     removePlugin: (id) => request(`/api/plugins/${encodeURIComponent(id)}`, { method: "DELETE" }),

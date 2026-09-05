@@ -6,8 +6,9 @@
  * 副作用工具的快照门、human-reserved 拦截与审批；这里只负责
  *   懒启动 / 握手 / 超时 / 崩溃隔离 / 按需重启（有上限）/ 优雅关闭 / 每次调用落审计。
  *
- * 崩溃隔离的口径（报告 6.4）：子进程挂了 → 在飞调用返回**工具错误**而不是抛异常，
- * 这次 run 照常往下走；重启超过上限就把整个插件面标为不可用，后续 run 直接没有插件工具。
+ * 崩溃隔离的口径（报告 6.4 + R26 X）：子进程挂了 → 在飞调用返回**工具错误**而不是抛异常，
+ * 这次 run 照常往下走；反复崩溃则熔断。熔断**按插件**（R26 X）——一个坏插件只关自己，
+ * 同工作区的其它插件照常上线；只有归因不到某一个插件的崩溃才落回整个插件面的熔断。
  *
  * R24-P 阶段 1 加的两件事：
  * 1. **插件清单来自 DB**（`plugins` 表里该工作区启用的行），`WORKHUB_PLUGIN_PATHS` 降级为
@@ -28,8 +29,11 @@ import {
   createFrameDecoder,
   encodeFrame,
   parsePluginPaths,
+  pluginToolMinScope,
+  resolvePluginToolSideEffect,
   toPluginToolSpecs,
   PLUGIN_HOST_PROTOCOL_VERSION,
+  type PluginTrustLevel,
   type CallToolResult,
   type ListToolsResult,
   type PluginHostRequest,
@@ -37,7 +41,13 @@ import {
   type PluginLoadReport,
   type PluginToolDescriptor
 } from "@workhub/plugin-host";
-import { errorToolResult, okToolResult, sanitizeModelFacingText, type AnyToolSpec, type ToolResult } from "@workhub/tools";
+import {
+  errorToolResult,
+  okToolResult,
+  sanitizeModelFacingText,
+  type AnyToolSpec,
+  type ToolResult
+} from "@workhub/tools";
 
 import { getDefaultStructuredLogger } from "../logging.js";
 import { getDefaultAuditStores } from "./audit-stores.js";
@@ -58,6 +68,12 @@ export const PLUGIN_HOST_RESTART_LIMIT = 3;
 export const PLUGIN_HOST_MAX_LIVE_PROCESSES = 4;
 /** 审计 detail 里参数/结果摘要的长度上限——审计表不是日志表。 */
 const AUDIT_SUMMARY_MAX_CHARS = 400;
+/**
+ * 插件抛出的错误信息进工具结果前的上限。与 `packages/plugin-host/src/translate.ts` 的
+ * `PLUGIN_RESULT_MAX_CHARS` 同口径：错误路径和成功路径面对的是同一个模型、同一道围栏，
+ * 一个字面 `</outputs>` 或一条几十 MB 的 message 在两条路上的危害完全一样。
+ */
+const PLUGIN_ERROR_MESSAGE_MAX_CHARS = 32 * 1024;
 
 export type PluginHostSpawn = (input: {
   command: string;
@@ -66,17 +82,42 @@ export type PluginHostSpawn = (input: {
   cwd: string;
 }) => ChildProcessWithoutNullStreams;
 
+/** 清单里的一条：一个插件目录 + 管理员对它的信任断言。 */
+export type PluginRegistryEntry = { path: string; trustLevel: PluginTrustLevel };
+
+/** 清单来源允许给的形状。裸路径 = 没人表过态 = `external_effect`。 */
+export type PluginRegistryInput = readonly (string | PluginRegistryEntry)[];
+
 /**
- * 「这个工作区该加载哪些插件目录」。默认只有 `WORKHUB_PLUGIN_PATHS`；
+ * 「这个工作区该加载哪些插件目录、各自被断言成什么」。默认只有 `WORKHUB_PLUGIN_PATHS`；
  * `usePluginRegistryPathSource()` 之后是「引导路径 ∪ DB 里启用的行」。
+ *
+ * 允许直接给字符串是为了调用方省事：**裸路径一律按 `external_effect`**——
+ * 环境变量里的引导路径没有任何人对它表过态，按最高风险跑。
  */
-export type PluginPathSource = (workspaceId: string | undefined) => Promise<string[]> | string[];
+export type PluginPathSource = (
+  workspaceId: string | undefined
+) => Promise<PluginRegistryInput> | PluginRegistryInput;
+
+/**
+ * 熔断落库口：一个插件被单独熔断时把它写回 `plugins` 表（status='crashed'）。
+ * 与 `pluginPathSource` 同款纪律——**不接线就一次 PG 都不碰**，进程内的隔离照样生效。
+ */
+export type PluginCrashSink = (input: {
+  workspaceId: string;
+  sourcePath: string;
+  pluginId?: string;
+  reason: string;
+  at: Date;
+}) => Promise<void> | void;
 
 export type PluginHostClientOptions = {
   /** 引导用的插件本地路径清单。不传则读 `WORKHUB_PLUGIN_PATHS`。 */
   pluginPaths?: string[];
   /** 按工作区解析插件路径（DB 清单）；不传则只用上面的引导路径。 */
   pluginPathSource?: PluginPathSource;
+  /** 单插件熔断落库口；不传则只在进程内隔离（不碰 PG）。 */
+  pluginCrashSink?: PluginCrashSink;
   /** 宿主入口（`packages/plugin-host/src/host.ts`）。不传则从包导出解析。 */
   hostEntryPath?: string;
   /** 子进程工作目录，默认仓库根。 */
@@ -131,13 +172,6 @@ function resolveHostEntryPath(): string {
   }
 }
 
-/**
- * 插件抛出的错误信息进工具结果前的上限。与 `packages/plugin-host/src/translate.ts` 的
- * `PLUGIN_RESULT_MAX_CHARS` 同口径：错误路径和成功路径面对的是同一个模型、同一道围栏，
- * 一个字面 `</outputs>` 或一条几十 MB 的 message 在两条路上的危害完全一样。
- */
-const PLUGIN_ERROR_MESSAGE_MAX_CHARS = 32 * 1024;
-
 function summarize(value: unknown) {
   let text: string;
   if (typeof value === "string") {
@@ -152,18 +186,24 @@ function summarize(value: unknown) {
   return text.length > AUDIT_SUMMARY_MAX_CHARS ? `${text.slice(0, AUDIT_SUMMARY_MAX_CHARS)}…` : text;
 }
 
-/** 合并两个来源并去重，保持先后顺序（引导路径在前，便于开发时覆盖同名插件的加载次序）。 */
-function dedupePaths(...groups: string[][]): string[] {
+/**
+ * 合并两个来源并去重，保持先后顺序（引导路径在前，便于开发时覆盖同名插件的加载次序）。
+ * 同一个目录出现两次时**先到的那一条赢**，包括它的信任级别——引导路径在前，所以
+ * 「同一个目录既在环境变量里又在表里」时按环境变量那条的 `external_effect` 算，
+ * 取两者中更保守的那一个不需要额外判断（引导路径永远是最保守的那一档）。
+ */
+function dedupeEntries(...groups: PluginRegistryInput[]): PluginRegistryEntry[] {
   const seen = new Set<string>();
-  const merged: string[] = [];
+  const merged: PluginRegistryEntry[] = [];
   for (const group of groups) {
     for (const entry of group) {
-      const trimmed = entry.trim();
-      if (trimmed.length === 0 || seen.has(trimmed)) {
+      const normalized: PluginRegistryEntry =
+        typeof entry === "string" ? { path: entry.trim(), trustLevel: "external_effect" } : { ...entry, path: entry.path.trim() };
+      if (normalized.path.length === 0 || seen.has(normalized.path)) {
         continue;
       }
-      seen.add(trimmed);
-      merged.push(trimmed);
+      seen.add(normalized.path);
+      merged.push(normalized);
     }
   }
   return merged;
@@ -180,11 +220,14 @@ export function createRegistryPluginPathSource(deps: {
 }): PluginPathSource {
   return async (workspaceId) => {
     if (!workspaceId) {
-      return deps.bootstrapPaths;
+      return dedupeEntries(deps.bootstrapPaths);
     }
     const repository = deps.repository ?? getDefaultPluginRepository();
     const rows = await repository.listEnabledForWorkspace(workspaceId);
-    return dedupePaths(deps.bootstrapPaths, rows.map((row) => row.sourcePath));
+    return dedupeEntries(
+      deps.bootstrapPaths,
+      rows.map((row) => ({ path: row.sourcePath, trustLevel: row.trustLevel }))
+    );
   };
 }
 
@@ -200,8 +243,10 @@ export type PluginHostClient = {
   reload: (workspaceId?: string) => Promise<PluginLoadReport[]>;
   /** 来自 `WORKHUB_PLUGIN_PATHS` 的引导路径条数（这些不在清单表里，但确实会被加载）。 */
   bootstrapPathCount: () => number;
-  /** 当前是否可用（崩溃超限后为 false）。 */
+  /** 当前是否可用（整插件面熔断后为 false；单个插件被熔断不影响这一条）。 */
   available: () => boolean;
+  /** 被单独熔断的插件目录——设置页/日志用，也是单测唯一需要的观测口。 */
+  quarantinedPaths: () => string[];
   /** 优雅关闭：关 stdin 让子进程自退，超时再 SIGTERM。 */
   close: () => Promise<void>;
 };
@@ -232,12 +277,24 @@ export function createPluginHostClient(options: PluginHostClientOptions = {}): P
   }
   const pathSource = options.pluginPathSource;
 
-  /** 崩溃超限是**整个插件面**的熔断（报告 6.4），不是某个工作区的——不区分是谁把它烧掉的。 */
+  /**
+   * **归因不到某一个插件**时才落到这一层：整个插件面的熔断（报告 6.4 的原口径）。
+   * 能归因的崩溃走下面按插件的 `quarantine`，一个坏插件不再连累同工作区的其它插件。
+   */
   let disabledReason: string | undefined;
   let closed = false;
 
+  /**
+   * 被单独熔断的插件（键是它的目录绝对路径）。
+   *
+   * 为什么按路径而不是按包名：`plugins` 表的唯一索引就是 `(workspace_id, source_path)`，
+   * 两个不同目录完全可以是同一个包名的两个版本；路径是这一层唯一能对回一行记录的键。
+   * 包名（`pluginId`）只用来说人话与写日志。
+   */
+  const quarantine = new Map<string, { pluginId?: string; reason: string; at: Date }>();
+
   type HostProcess = {
-    paths: string[];
+    entries: PluginRegistryEntry[];
     lastUsedAt: number;
     ensureStarted: () => Promise<ListToolsResult>;
     call: (toolId: string, input: unknown, timeoutMs: number) => Promise<CallToolResult>;
@@ -245,14 +302,20 @@ export function createPluginHostClient(options: PluginHostClientOptions = {}): P
   };
 
   /** 一个宿主子进程的全部状态。按工作区各建一个，互不共享 pending/重启计数。 */
-  function createHostProcess(paths: string[]): HostProcess {
+  function createHostProcess(entries: PluginRegistryEntry[], workspaceId: string | undefined): HostProcess {
+    const paths = entries.map((entry) => entry.path);
     let child: ChildProcessWithoutNullStreams | undefined;
     let starting: Promise<ListToolsResult> | undefined;
     let listed: ListToolsResult | undefined;
     let processClosed = false;
     let nextRequestId = 1;
     const pending = new Map<number, Pending>();
-    const restartTimestamps: number[] = [];
+    /** 在飞的 `call_tool` 各属于哪个插件目录——崩溃归因就靠这一份。 */
+    const inFlightPaths = new Map<number, string>();
+    /** 归因不到插件的崩溃时间戳（整插件面熔断的计数）。 */
+    const unattributedRestarts: number[] = [];
+    /** 按插件目录的崩溃时间戳。 */
+    const restartsByPath = new Map<string, number[]>();
 
     function failAllPending(message: string) {
       for (const [, entry] of pending) {
@@ -260,23 +323,103 @@ export function createPluginHostClient(options: PluginHostClientOptions = {}): P
         entry.reject(new Error(message));
       }
       pending.clear();
+      inFlightPaths.clear();
+    }
+
+    /** 这条工具 id 属于哪个插件目录。握手报告给出 pluginId ↔ path，描述符给出 toolId ↔ pluginId。 */
+    function pathOfTool(toolId: string): string | undefined {
+      const descriptor = listed?.tools.find((tool) => tool.toolId === toolId);
+      if (!descriptor) {
+        return undefined;
+      }
+      return listed?.plugins.find((report) => report.pluginId === descriptor.pluginId)?.path;
+    }
+
+    function pluginIdOfPath(path: string): string | undefined {
+      return listed?.plugins.find((report) => report.path === path)?.pluginId;
+    }
+
+    /** 窗口内计数并回答「超了没有」。共用一份滑动窗口逻辑，两个计数器口径必须一致。 */
+    function recordRestart(timestamps: number[], at: number) {
+      timestamps.push(at);
+      while (timestamps.length > 0 && at - timestamps[0]! > PLUGIN_HOST_RESTART_WINDOW_MS) {
+        timestamps.shift();
+      }
+      return timestamps.length > PLUGIN_HOST_RESTART_LIMIT;
+    }
+
+    /**
+     * 把这次崩溃归因到某一个插件目录。两条判据，都不猜：
+     *  1. 崩的时候只有一个插件的调用在飞——那就是它；
+     *  2. 这个宿主本来就只装了一个插件——除了它没有别的可能。
+     * 其余（多个插件的调用同时在飞、或者根本没有在飞调用比如握手期崩溃）**不归因**，
+     * 落回整个插件面的熔断。宁可保守，也不要把锅扣在一个无辜插件头上。
+     */
+    function attributeCrash(): string | undefined {
+      const suspects = new Set(inFlightPaths.values());
+      if (suspects.size === 1) {
+        return [...suspects][0];
+      }
+      if (suspects.size === 0 && paths.length === 1) {
+        return paths[0];
+      }
+      return undefined;
     }
 
     function onExit(code: number | null, signal: NodeJS.Signals | null) {
+      const suspect = processClosed || closed ? undefined : attributeCrash();
+      const suspectPluginId = suspect ? pluginIdOfPath(suspect) : undefined;
       child = undefined;
       starting = undefined;
+      const wasListed = listed;
       listed = undefined;
       failAllPending("插件宿主已退出，这次调用没完成。");
       if (processClosed || closed) {
         return;
       }
       const at = Date.now();
-      restartTimestamps.push(at);
-      while (restartTimestamps.length > 0 && at - restartTimestamps[0]! > PLUGIN_HOST_RESTART_WINDOW_MS) {
-        restartTimestamps.shift();
+      if (suspect) {
+        const timestamps = restartsByPath.get(suspect) ?? [];
+        restartsByPath.set(suspect, timestamps);
+        const over = recordRestart(timestamps, at);
+        logger.warn("plugin_host_exited", {
+          code,
+          signal,
+          plugin_path: suspect,
+          ...(suspectPluginId ? { plugin_id: suspectPluginId } : {}),
+          restarts_in_window: timestamps.length
+        });
+        if (over) {
+          // 运维诊断，不是界面文案：它落进 plugins.load_report.error 与结构化日志，
+          // 两端界面对 status='crashed' 渲的是各自 locales.ts 里的那句话（同宿主自报的英文错误）。
+          const reason = `plugin crashed the plugin host more than ${PLUGIN_HOST_RESTART_LIMIT} times within ${PLUGIN_HOST_RESTART_WINDOW_MS / 60_000} minutes`;
+          quarantine.set(suspect, {
+            ...(suspectPluginId ? { pluginId: suspectPluginId } : {}),
+            reason,
+            at: now()
+          });
+          logger.warn("plugin_quarantined", {
+            plugin_path: suspect,
+            ...(suspectPluginId ? { plugin_id: suspectPluginId } : {}),
+            reason
+          });
+          void reportCrash({
+            workspaceId,
+            sourcePath: suspect,
+            ...(suspectPluginId ? { pluginId: suspectPluginId } : {}),
+            reason
+          });
+        }
+        return;
       }
-      logger.warn("plugin_host_exited", { code, signal, restarts_in_window: restartTimestamps.length });
-      if (restartTimestamps.length > PLUGIN_HOST_RESTART_LIMIT) {
+      const over = recordRestart(unattributedRestarts, at);
+      logger.warn("plugin_host_exited", {
+        code,
+        signal,
+        restarts_in_window: unattributedRestarts.length,
+        plugin_count: wasListed?.plugins.length ?? paths.length
+      });
+      if (over) {
         disabledReason = `插件宿主在 ${PLUGIN_HOST_RESTART_WINDOW_MS / 60_000} 分钟内重启超过 ${PLUGIN_HOST_RESTART_LIMIT} 次`;
         logger.warn("plugin_host_disabled", { reason: disabledReason });
       }
@@ -291,16 +434,24 @@ export function createPluginHostClient(options: PluginHostClientOptions = {}): P
         }
         const timer = setTimeout(() => {
           pending.delete(request.id);
+          inFlightPaths.delete(request.id);
           reject(new Error(`插件调用超时（${timeoutMs}ms）。`));
         }, timeoutMs);
         timer.unref?.();
         pending.set(request.id, { resolve, reject, timer });
+        if (request.method === "call_tool") {
+          const owner = pathOfTool(request.params.toolId);
+          if (owner) {
+            inFlightPaths.set(request.id, owner);
+          }
+        }
         live.stdin.write(encodeFrame(request), (error) => {
           if (error) {
             const entry = pending.get(request.id);
             if (entry) {
               clearTimeout(entry.timer);
               pending.delete(request.id);
+              inFlightPaths.delete(request.id);
               entry.reject(error);
             }
           }
@@ -338,6 +489,7 @@ export function createPluginHostClient(options: PluginHostClientOptions = {}): P
             }
             clearTimeout(entry.timer);
             pending.delete(response.id);
+            inFlightPaths.delete(response.id);
             if (response.ok) {
               entry.resolve(response.result);
             } else {
@@ -389,7 +541,7 @@ export function createPluginHostClient(options: PluginHostClientOptions = {}): P
     }
 
     return {
-      paths,
+      entries,
       lastUsedAt: Date.now(),
       ensureStarted,
       async call(toolId, input, timeoutMs) {
@@ -431,16 +583,49 @@ export function createPluginHostClient(options: PluginHostClientOptions = {}): P
     return workspaceId ?? "";
   }
 
-  async function resolvePaths(workspaceId: string | undefined): Promise<string[]> {
+  /** 熔断掉的插件从清单里摘掉——它已经把宿主弄崩过，再带上只会一次次重演。 */
+  function withoutQuarantined(entries: PluginRegistryEntry[]): PluginRegistryEntry[] {
+    if (quarantine.size === 0) {
+      return entries;
+    }
+    return entries.filter((entry) => !quarantine.has(entry.path));
+  }
+
+  async function resolveEntries(workspaceId: string | undefined): Promise<PluginRegistryEntry[]> {
     if (!pathSource) {
-      return bootstrapPaths;
+      return withoutQuarantined(dedupeEntries(bootstrapPaths));
     }
     try {
-      return dedupePaths(await pathSource(workspaceId));
+      return withoutQuarantined(dedupeEntries(await pathSource(workspaceId)));
     } catch (error) {
       // 清单读不出来（PG 抖动）不该让 run 失去全部插件工具之外还炸掉——退回引导路径。
       logger.warn("plugin_registry_unavailable", { error });
-      return bootstrapPaths;
+      return withoutQuarantined(dedupeEntries(bootstrapPaths));
+    }
+  }
+
+  /** 熔断落库：接了 sink 才写，没接就只在进程内隔离（同 pluginPathSource 的「不接线不碰 PG」纪律）。 */
+  async function reportCrash(input: {
+    workspaceId: string | undefined;
+    sourcePath: string;
+    pluginId?: string;
+    reason: string;
+  }) {
+    const sink = options.pluginCrashSink;
+    if (!sink || !input.workspaceId) {
+      return;
+    }
+    try {
+      await sink({
+        workspaceId: input.workspaceId,
+        sourcePath: input.sourcePath,
+        ...(input.pluginId ? { pluginId: input.pluginId } : {}),
+        reason: input.reason,
+        at: now()
+      });
+    } catch (error) {
+      // 落库失败不该把「已经生效的进程内隔离」变成失败——但必须留日志，否则设置页会一直说它好着。
+      logger.warn("plugin_crash_status_write_failed", { plugin_path: input.sourcePath, error });
     }
   }
 
@@ -464,14 +649,20 @@ export function createPluginHostClient(options: PluginHostClientOptions = {}): P
     }
   }
 
-  /** 拿到该工作区当前该用的宿主；清单变了（装了新插件/停用了一个）就换一个新进程。 */
-  async function hostFor(workspaceId: string | undefined): Promise<{ host: HostProcess; paths: string[] } | undefined> {
+  /**
+   * 拿到该工作区当前该用的宿主；**目录清单**变了（装了新插件/停用了一个/某个被熔断了）就换一个新进程。
+   * 只改信任级别不换进程：信任是主进程这一侧的分级参数，子进程加载的是同一批目录，
+   * 为它重启一次会白白掐断在飞调用（`toolSpecs()` 每次都按最新 entries 重算分级）。
+   */
+  async function hostFor(
+    workspaceId: string | undefined
+  ): Promise<{ host: HostProcess; entries: PluginRegistryEntry[] } | undefined> {
     if (closed || disabledReason) {
       return undefined;
     }
-    const paths = await resolvePaths(workspaceId);
-    if (paths.length === 0) {
-      // 这个工作区一个插件都没装：不 spawn 任何子进程，也顺手把可能还开着的旧宿主收掉。
+    const entries = await resolveEntries(workspaceId);
+    if (entries.length === 0) {
+      // 这个工作区一个插件都没装（或者装的都被熔断了）：不 spawn 任何子进程，也顺手把旧宿主收掉。
       const stale = hosts.get(scopeKeyOf(workspaceId));
       if (stale) {
         hosts.delete(scopeKeyOf(workspaceId));
@@ -481,18 +672,24 @@ export function createPluginHostClient(options: PluginHostClientOptions = {}): P
     }
     const key = scopeKeyOf(workspaceId);
     const existing = hosts.get(key);
-    if (existing && existing.paths.length === paths.length && existing.paths.every((entry, index) => entry === paths[index])) {
+    if (
+      existing &&
+      existing.entries.length === entries.length &&
+      existing.entries.every((entry, index) => entry.path === entries[index]?.path)
+    ) {
       existing.lastUsedAt = Date.now();
-      return { host: existing, paths };
+      // 信任级别可能变了，回给调用方的是最新的那一份。
+      existing.entries = entries;
+      return { host: existing, entries };
     }
     if (existing) {
       hosts.delete(key);
       await existing.close();
     }
-    const created = createHostProcess(paths);
+    const created = createHostProcess(entries, workspaceId);
     hosts.set(key, created);
     await evictIfNeeded();
-    return { host: created, paths };
+    return { host: created, entries };
   }
 
   async function writeAudit(input: {
@@ -502,6 +699,7 @@ export function createPluginHostClient(options: PluginHostClientOptions = {}): P
     durationMs: number;
     args: unknown;
     summary: string;
+    trustLevel: PluginTrustLevel;
   }) {
     if (options.auditLogs === false) {
       return;
@@ -526,7 +724,16 @@ export function createPluginHostClient(options: PluginHostClientOptions = {}): P
           duration_ms: input.durationMs,
           args_summary: summarize(input.args),
           result_summary: input.summary,
-          capability: `plugin:${input.descriptor.pluginId}:external_effect`,
+          // 与这次调用真正生效的分级同源（`to-tool-spec.ts` 的 pluginToolMinScope），
+          // 不是一个写死的字符串——审计里的 capability 必须就是当时那一档。
+          capability: pluginToolMinScope(
+            input.descriptor.pluginId,
+            resolvePluginToolSideEffect({
+              trustLevel: input.trustLevel,
+              selfReportedReadOnly: input.descriptor.selfReportedReadOnly
+            })
+          ),
+          trust_level: input.trustLevel,
           called_at: now().toISOString(),
           ...(input.audit.runId ? { agent_run_id: input.audit.runId } : {}),
           ...(input.audit.workItemId ? { work_item_id: input.audit.workItemId } : {})
@@ -542,7 +749,8 @@ export function createPluginHostClient(options: PluginHostClientOptions = {}): P
   async function callTool(
     descriptor: PluginToolDescriptor,
     args: Record<string, unknown>,
-    audit: PluginToolCallAudit
+    audit: PluginToolCallAudit,
+    trustLevel: PluginTrustLevel
   ): Promise<ToolResult> {
     const startedAt = Date.now();
     const timeoutMs = descriptor.timeoutMs ? Math.min(descriptor.timeoutMs, callTimeoutMs) : callTimeoutMs;
@@ -558,18 +766,21 @@ export function createPluginHostClient(options: PluginHostClientOptions = {}): P
         ok: true,
         durationMs: result.durationMs,
         args,
-        summary: summarize(result.content)
+        summary: summarize(result.content),
+        trustLevel
       });
       return okToolResult(result.content, { data: result.data });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      // 审计留**原始**信息：它给人看、给排障用，中和过的文本反而丢掉了现场。
       await writeAudit({
         descriptor,
         audit,
         ok: false,
         durationMs: Date.now() - startedAt,
         args,
-        summary: summarize(message)
+        summary: summarize(message),
+        trustLevel
       });
       // 插件 execute() 抛出的 message 跨过 RPC 边界原样到这里：成功路径已在宿主子进程里过
       // sanitizeModelFacingText（M1b），错误路径同样要中和围栏标签并封顶，否则插件能借一条
@@ -582,28 +793,53 @@ export function createPluginHostClient(options: PluginHostClientOptions = {}): P
     }
   }
 
-  async function listFor(workspaceId: string | undefined): Promise<ListToolsResult | undefined> {
+  async function listFor(
+    workspaceId: string | undefined
+  ): Promise<{ result: ListToolsResult; entries: PluginRegistryEntry[] } | undefined> {
     const resolved = await hostFor(workspaceId);
     if (!resolved) {
       return undefined;
     }
-    return resolved.host.ensureStarted();
+    return { result: await resolved.host.ensureStarted(), entries: resolved.entries };
+  }
+
+  /**
+   * 描述符 → 这个插件被断言成什么。链路是 `toolId → pluginId`（描述符自带）
+   * → `path`（握手报告里的 pluginId ↔ path）→ `trustLevel`（清单条目）。
+   * 任何一环对不上都退回 `external_effect`——查不出授权就是没有授权。
+   */
+  function trustLevelLookup(result: ListToolsResult, entries: PluginRegistryEntry[]) {
+    const trustByPath = new Map(entries.map((entry) => [entry.path, entry.trustLevel]));
+    const pathByPluginId = new Map(result.plugins.map((report) => [report.pluginId, report.path]));
+    return (descriptor: PluginToolDescriptor): PluginTrustLevel => {
+      const path = pathByPluginId.get(descriptor.pluginId);
+      return (path ? trustByPath.get(path) : undefined) ?? "external_effect";
+    };
   }
 
   return {
     async toolSpecs(audit: PluginToolCallAudit = {}) {
       try {
-        const result = await listFor(audit.workspaceId);
-        if (!result) {
+        const listing = await listFor(audit.workspaceId);
+        if (!listing) {
           return [];
         }
-        return toPluginToolSpecs(result.tools, ({ descriptor, args, ctx }) =>
-          callTool(descriptor, args, {
-            ...audit,
-            ...(ctx.actorId ? { actorId: ctx.actorId } : {}),
-            ...(ctx.runId ? { runId: ctx.runId } : {}),
-            ...(ctx.workItemId ? { workItemId: ctx.workItemId } : {})
-          })
+        const trustOf = trustLevelLookup(listing.result, listing.entries);
+        return toPluginToolSpecs(
+          listing.result.tools,
+          ({ descriptor, args, ctx }) =>
+            callTool(
+              descriptor,
+              args,
+              {
+                ...audit,
+                ...(ctx.actorId ? { actorId: ctx.actorId } : {}),
+                ...(ctx.runId ? { runId: ctx.runId } : {}),
+                ...(ctx.workItemId ? { workItemId: ctx.workItemId } : {})
+              },
+              trustOf(descriptor)
+            ),
+          trustOf
         );
       } catch (error) {
         // 宿主起不来不该让 run 起不来——这次 run 就是没有插件工具。
@@ -613,7 +849,7 @@ export function createPluginHostClient(options: PluginHostClientOptions = {}): P
     },
     async loadReports(workspaceId) {
       try {
-        return (await listFor(workspaceId))?.plugins ?? [];
+        return (await listFor(workspaceId))?.result.plugins ?? [];
       } catch {
         return [];
       }
@@ -625,10 +861,15 @@ export function createPluginHostClient(options: PluginHostClientOptions = {}): P
         hosts.delete(key);
         await live.close();
       }
-      // 熔断过的插件面在管理员显式动过清单之后重新给一次机会——不然「装了个坏插件把宿主烧了」
-      // 之后，即使把它停用了也永远起不来，只能重启整个 API。
+      // 熔断过的插件在管理员显式动过清单之后重新给一次机会——不然「装了个坏插件把宿主烧了」
+      // 之后，即使把它停用了也永远起不来，只能重启整个 API。整插件面的熔断与按插件的隔离
+      // 一起解除：管理员刚刚亲手改过清单，这一轮该按新清单如实重试一次，结果如实回报。
       disabledReason = undefined;
+      quarantine.clear();
       return this.loadReports(workspaceId);
+    },
+    quarantinedPaths() {
+      return [...quarantine.keys()];
     },
     bootstrapPathCount() {
       return bootstrapPaths.length;
@@ -647,13 +888,14 @@ export function createPluginHostClient(options: PluginHostClientOptions = {}): P
 
 let defaultClient: PluginHostClient | undefined;
 let defaultPathSource: PluginPathSource | undefined;
+let defaultCrashSink: PluginCrashSink | undefined;
 
 /**
  * 让默认宿主客户端从 `plugins` 表读清单。**只在 `server.ts` 真起进程时调**——
  * 单测/离线工具不接线就只认 `WORKHUB_PLUGIN_PATHS`，一次 PG 查询都不会发生。
  */
 export function usePluginRegistryPathSource(
-  repository?: Pick<PluginRepository, "listEnabledForWorkspace">
+  repository?: Pick<PluginRepository, "listEnabledForWorkspace" | "markCrashed">
 ) {
   const bootstrapPaths = (() => {
     try {
@@ -666,13 +908,32 @@ export function usePluginRegistryPathSource(
     bootstrapPaths,
     ...(repository ? { repository } : {})
   });
+  // 熔断落库跟清单来源同一次接线：读清单的部署才有表可写。
+  defaultCrashSink = async (input) => {
+    const store = repository ?? getDefaultPluginRepository();
+    await store.markCrashed({
+      workspaceId: input.workspaceId,
+      sourcePath: input.sourcePath,
+      loadReport: {
+        ok: false,
+        tool_count: 0,
+        prompt_section_count: 0,
+        error: input.reason,
+        loaded_at: input.at.toISOString()
+      },
+      now: input.at
+    });
+  };
   // 已经建过单例就重建：接线发生在启动早期，此时不会有在飞调用。
   defaultClient = undefined;
 }
 
 /** 进程内单例：一个 API 进程只养一套插件宿主子进程（按工作区分）。 */
 export function getDefaultPluginHostClient() {
-  defaultClient ??= createPluginHostClient(defaultPathSource ? { pluginPathSource: defaultPathSource } : {});
+  defaultClient ??= createPluginHostClient({
+    ...(defaultPathSource ? { pluginPathSource: defaultPathSource } : {}),
+    ...(defaultCrashSink ? { pluginCrashSink: defaultCrashSink } : {})
+  });
   return defaultClient;
 }
 

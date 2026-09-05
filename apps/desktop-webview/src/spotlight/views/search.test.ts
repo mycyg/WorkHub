@@ -113,7 +113,7 @@ test("buildSearchRequestPath threads a custom limit through", () => {
 test("searchScopeLabel gives human labels for all four scopes, zh + en", () => {
   assert.equal(searchScopeLabel("conversations", true), "会话");
   assert.equal(searchScopeLabel("drive", true), "网盘");
-  assert.equal(searchScopeLabel("work_items", true), "工单");
+  assert.equal(searchScopeLabel("work_items", true), "任务");
   assert.equal(searchScopeLabel("meetings", true), "会议");
   assert.equal(searchScopeLabel("conversations", false), "Chat");
   assert.equal(searchScopeLabel("drive", false), "Drive");
@@ -133,7 +133,7 @@ test("matchedInLabel covers every matched_in value from the contract", () => {
 test("meetingStatusLabel translates known statuses and passes unknown ones through honestly", () => {
   assert.equal(meetingStatusLabel("processing", true), "处理中");
   assert.equal(meetingStatusLabel("ready", false), "Ready");
-  assert.equal(meetingStatusLabel("some_future_status", true), "some_future_status");
+  assert.equal(meetingStatusLabel("some_future_status", true), "未知状态");
 });
 
 test("highlightSnippet escapes HTML first, then wraps matches (case-insensitive) in <mark>", () => {
@@ -165,7 +165,7 @@ test("searchQueryHintMessage: boundary cases around the 2-64 char contract windo
 });
 
 test("searchHintHtml escapes and renders a plain muted line, no emoji", () => {
-  const html = searchHintHtml(true, "输入关键词，搜遍会话·网盘·工单·会议");
+  const html = searchHintHtml(true, "输入关键词，搜遍会话·网盘·任务·会议");
   assert.match(html, /data-search-hint="true"/u);
   assert.match(html, /输入关键词/u);
   assert.doesNotMatch(html, /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u);
@@ -188,7 +188,7 @@ test("searchResultsHtml renders all four scope groups in fixed order with human 
   assert.ok(conv >= 0 && drive > conv && wi > drive && meet > wi, "groups render in SEARCH_SCOPE_ORDER");
   assert.match(html, /会话（1）/u);
   assert.match(html, /网盘（1\+）/u); // has_more appends a "+"
-  assert.match(html, /工单（1）/u);
+  assert.match(html, /任务（1）/u);
   assert.match(html, /会议<\/p>/u); // zero-result group: no count suffix
   assert.match(html, /无匹配/u);
   assert.match(html, /还有更多，换更精确的词/u);
@@ -241,7 +241,7 @@ test("searchResultsHtml renders a null work-item title as an honest placeholder,
     ]
   });
   const html = searchResultsHtml(vm, true);
-  assert.match(html, /（未命名工单）/u);
+  assert.match(html, /（未命名任务）/u);
   assert.doesNotMatch(html, />null</u);
 });
 

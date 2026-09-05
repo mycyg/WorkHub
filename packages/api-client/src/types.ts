@@ -103,6 +103,7 @@ import type {
   PatchUserMemoryRequest,
   PatchTeamSkillRequest,
   PluginListVM,
+  PluginTrustLevel,
   PluginVM,
   // R23 SA-06：管理员手动催一轮「AI 自学团队技能」的回执契约。
   TeamSkillCurateNowResponse,
@@ -585,7 +586,8 @@ export type WorkHubApiClient = {
   // 可选方法：桌面客户端可能连到还没有这批端点的旧服务端，调用方按 `if (!client.listPlugins)` 降级，
   // 不做非空断言硬调（MRG-25 的既有取舍）。
   listPlugins?: () => Promise<PluginListVM>;
-  installPlugin?: (payload: { source_path: string }) => Promise<PluginVM>;
+  installPlugin?: (payload: { source_path: string; trust_level?: PluginTrustLevel }) => Promise<PluginVM>;
+  setPluginTrustLevel?: (id: string, payload: { trust_level: PluginTrustLevel }) => Promise<PluginVM>;
   enablePlugin?: (id: string) => Promise<PluginVM>;
   disablePlugin?: (id: string) => Promise<PluginVM>;
   removePlugin?: (id: string) => Promise<{ removed: true }>;

@@ -135,7 +135,8 @@ test("S3 desktop project-home shows a +more hint when the true count exceeds the
   const html = projectHomeDetailHtml(vm({ summary: { open_work_item_count: 50 } }), false);
   // Old assertion was wrong: this detail view is already the project, so "open the project"
   // pointed users to a nonexistent next step instead of stating the cap/visibility boundary.
-  assert.ok(html.includes("+49 more open items are not shown here (list cap or visibility filter)."), "truncation hint (50 total - 1 shown)");
+  assert.ok(html.includes("49 more open items"), "truncation hint (50 total - 1 shown)");
+  assert.ok(!html.includes("list cap"), "no implementation reasoning in the hint");
   assert.ok(!html.includes("open the project to review all"), "does not promise a missing open-project action");
   assert.ok(!html.includes("you cannot view"), "does not guess this is a permission problem");
 });
@@ -148,7 +149,7 @@ test("DF-1 desktop project-home open count uses the全量 total + shows 你可�
   assert.ok(!html.includes("进行中 3 ·"), "head does not headline the viewable count");
   // hidden = total(8) - shown(1) = 7, but the route cannot know whether this is permissions or list truncation.
   // 旧断言错因：详情页已经是项目主页，提示“进入项目查看全部”指向了不存在的下一步。
-  assert.ok(html.includes("还有 7 条进行中工作未在此处显示（可能是列表截断或权限过滤）。"), "more-note computed off the total");
+  assert.ok(html.includes("还有 7 条进行中的工作没有显示在这里。"), "more-note computed off the total");
   assert.ok(!html.includes("进入项目查看全部"), "does not point to a missing project-entry action");
   assert.ok(!html.includes("暂无权限查看"), "does not guess this is a permission problem");
 });
@@ -219,7 +220,7 @@ test("R9.7 desktop dashboard generic empty states avoid dispatch copy", () => {
   assert.match(enProjectList, /Create a task/u);
   assert.match(zhProjectHome, /点「新任务」创建/u);
   assert.match(enProjectHome, /Use New task/u);
-  assert.match(zhKnowledge, /新建任务后/u);
+  assert.match(zhKnowledge, /建一个任务/u);
   assert.match(enKnowledge, /Create a task/u);
   assert.match(enProjectList, /New task \/ Ask AI/u);
 
@@ -449,9 +450,9 @@ test("R9.7 desktop agent army capped list never shows zero hidden squads", () =>
   const html = agentArmyDashboardView(cappedVm, false);
   const zhHtml = agentArmyDashboardView(cappedVm, true);
 
-  assert.match(html, /More squads are not shown here/u);
-  assert.match(zhHtml, /还有更多小队未在这里显示/u);
-  assert.doesNotMatch(html, /\+0 more squads/u);
+  assert.match(html, /more squads/iu);
+  assert.match(zhHtml, /还有更多小队没有显示在这里/u);
+  assert.doesNotMatch(html, /0 more squads/u);
   assert.doesNotMatch(zhHtml, /还有 0 个小队/u);
 });
 

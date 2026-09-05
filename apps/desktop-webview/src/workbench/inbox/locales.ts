@@ -16,7 +16,7 @@ const zh = {
   everythingWaitingOnYourCallIn: "所有要你拍板的，都汇到这里",
   noneApprovedTheyMayAlreadyBe: "没有审批通过（可能都已被处理）",
   nothingUnderThisFilter: "当前筛选下没有待办。",
-  openThisInItsCapabilityIn: "这项去主窗口对应能力查看",
+  openThisInItsCapabilityIn: "这项要在主窗口里打开",
   thisOneDidnTGoThrough: "批量通过时这条没成功，单独再试一次。",
   working: "处理中…",
 } as const;
@@ -28,7 +28,7 @@ const en = {
   everythingWaitingOnYourCallIn: "Everything waiting on your call, in one place",
   noneApprovedTheyMayAlreadyBe: "None approved (they may already be handled)",
   nothingUnderThisFilter: "Nothing under this filter.",
-  openThisInItsCapabilityIn: "Open this in its capability in the main window",
+  openThisInItsCapabilityIn: "Open this from the main window",
   thisOneDidnTGoThrough: "This one didn't go through in the batch — try it individually.",
   working: "Working…",
 } as const satisfies Record<keyof typeof zh, string>;

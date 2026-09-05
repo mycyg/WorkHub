@@ -22,7 +22,7 @@ import type { ChatRenderMembers } from "../chat/render.js";
 import { formatMessageTime } from "../chat/timeline.js";
 import { workbenchIcons } from "../icons.js";
 
-import { armyT } from "./locales.js";
+import { armyT, type ArmyCopyKey } from "./locales.js";
 
 type Locale = "zh-CN" | "en-US";
 
@@ -377,34 +377,52 @@ function backgroundIntervalLabel(intervalMs: number, zh: boolean): string {
 // 定时任务名 → 人话(与 pulse-scheduler.ts 注册的 name 一一对应)。未映射的名字诚实回退原串，不编造。
 // M-10（R24 S3 走查）：pulse-scheduler.ts 后来又注册了 clarification-chase/proactive-intent-recovery
 // 两个任务，这张表没跟上——情境面板里就混进了两条没翻译的内部调度器 id，终端用户看不懂。补齐。
-const BACKGROUND_TASK_LABEL: Record<string, [string, string]> = {
-  "approval-sla": ["审批超时巡检", "Approval SLA sweep"],
-  "notification-reminder": ["通知提醒阶梯", "Notification reminders"],
-  "approval-digest": ["待拍板汇总卡", "Approval digest"],
-  "ddl-chase": ["追截止日期", "Deadline chase"],
-  "care-scan": ["主动关怀扫描", "Care scan"],
+// 定时任务的内部注册名 → 词典键。后端注册名是实现标识（approval-sla / care-scan …），
+// 用户看到的必须是人话，未登记的一律落到「其它定时任务」——绝不把生 id 渲染出去。
+export const BACKGROUND_TASK_LABEL_KEY: Record<string, ArmyCopyKey> = {
+  "approval-sla": "taskApprovalSla",
+  "notification-reminder": "taskNotificationReminder",
+  "approval-digest": "taskApprovalDigest",
+  "ddl-chase": "taskDdlChase",
+  "care-scan": "taskCareScan",
   // CHAT-8：扫描长期无人回答的澄清会话，给提交人推一条提醒。
-  "clarification-chase": ["澄清待办提醒", "Clarification nudges"],
+  "clarification-chase": "taskClarificationChase",
   // R20 REL-2：主动提醒投递前若进程崩溃，扫描并补投那些卡住的记录（纯内部容错，无新用户价值主张，
   // 但仍要给个人话名字，不能漏译成生 id）。
-  "proactive-intent-recovery": ["主动提醒补投", "Proactive nudge retry"]
+  "proactive-intent-recovery": "taskProactiveIntentRecovery"
 };
 
 function backgroundTaskLabel(name: string, zh: boolean): string {
-  const entry = BACKGROUND_TASK_LABEL[name];
-  return entry ? (zh ? entry[0] : entry[1]) : name;
+  return armyT(zh, BACKGROUND_TASK_LABEL_KEY[name] ?? "taskOther");
 }
 
-// 主动性 kind → 人话(与 proactive-intents.ts 的 ProactiveIntentKind 对应)。
-const PROACTIVE_KIND_LABEL: Record<string, [string, string]> = {
-  ddl_chase: ["追截止日期", "Deadline chase"],
-  find_owner: ["找负责人", "Find owner"],
-  care: ["主动关怀", "Care"]
+// 主动提醒 kind → 词典键（与 proactive-intents.ts 的 ProactiveIntentKind 对应）。
+export const PROACTIVE_KIND_LABEL_KEY: Record<string, ArmyCopyKey> = {
+  ddl_chase: "nudgeDdlChase",
+  find_owner: "nudgeFindOwner",
+  care: "nudgeCare"
 };
 
 function proactiveKindLabel(kind: string, zh: boolean): string {
-  const entry = PROACTIVE_KIND_LABEL[kind];
-  return entry ? (zh ? entry[0] : entry[1]) : kind;
+  return armyT(zh, PROACTIVE_KIND_LABEL_KEY[kind] ?? "nudgeOther");
+}
+
+// 主动提醒的 stage → 词典键。stage 是后端的分级标识（t3d / high_load …），
+// 未登记的不渲染——宁可少一段限定语，也不给用户看裸 id。
+export const PROACTIVE_STAGE_LABEL_KEY: Record<string, ArmyCopyKey> = {
+  t3d: "stageT3d",
+  t1d: "stageT1d",
+  overdue: "stageOverdue",
+  escalate: "stageEscalate",
+  needs_owner: "stageNeedsOwner",
+  high_load: "stageHighLoad",
+  late_night: "stageLateNight",
+  frustration: "stageFrustration"
+};
+
+function proactiveStageLabel(stage: string | null, zh: boolean): string {
+  const key = stage ? PROACTIVE_STAGE_LABEL_KEY[stage] : undefined;
+  return key ? armyT(zh, key) : "";
 }
 
 function proactiveStatusLabel(status: "delivered" | "suppressed", zh: boolean): string {
@@ -449,7 +467,8 @@ function renderArmyBackgroundProactiveHtml(proactive: ArmyBackgroundPageVM["proa
   const rows = proactive.items
     .map((item) => {
       const statusClass = item.status === "suppressed" ? " wh-wb-army-bg-status--muted" : "";
-      const stage = item.stage ? ` · ${escapeHtml(item.stage)}` : "";
+      const stageLabel = proactiveStageLabel(item.stage, zh);
+      const stage = stageLabel ? ` · ${escapeHtml(stageLabel)}` : "";
       return `<div class="wh-wb-army-bg-row">
         <div class="wh-wb-army-bg-main">
           <span class="wh-wb-army-bg-name">${escapeHtml(proactiveKindLabel(item.kind, zh))}${stage}</span>

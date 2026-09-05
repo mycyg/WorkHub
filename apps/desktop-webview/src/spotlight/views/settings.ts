@@ -111,7 +111,7 @@ function aiModeCopy(level: AiMode, zh: boolean): { title: string; desc: string }
 
 function dispatchPolicyCopy(policy: DispatchPolicy, zh: boolean): { title: string; desc: string } {
   const table: Record<DispatchPolicy, { titleZh: string; titleEn: string; descZh: string; descEn: string }> = {
-    auto: { titleZh: "自动接单", titleEn: "Auto-accept", descZh: "指派即建工作副本，agent 立即开工，Cuu 只是告知一声", descEn: "Accepts immediately — your agent starts right away; Cuu just lets you know" },
+    auto: { titleZh: "自动接单", titleEn: "Auto-accept", descZh: "派过来就立刻开工，Cuu 只告知一声", descEn: "Starts as soon as it's assigned — Cuu just tells you" },
     ask: { titleZh: "先问我", titleEn: "Ask me first", descZh: "指派后先问你，确认了才开工", descEn: "Asks first — work starts only after you confirm" },
     manual: { titleZh: "只挂单", titleEn: "Queue only", descZh: "进任务列表，你手动启动", descEn: "Goes to your task list — you start it manually" }
   };
@@ -135,8 +135,8 @@ const GRANULAR_KEYS: readonly GranularKey[] = ["create_work_item", "dispatch_run
 function granularLabel(key: GranularKey, zh: boolean): string {
   const table: Record<GranularKey, { zh: string; en: string }> = {
     create_work_item: { zh: "建任务", en: "Create tasks" },
-    dispatch_run: { zh: "派 run", en: "Dispatch runs" },
-    mutate_drive: { zh: "动网盘", en: "Touch drive" },
+    dispatch_run: { zh: "派活给 AI", en: "Start AI runs" },
+    mutate_drive: { zh: "改网盘文件", en: "Modify drive files" },
     send_notification: { zh: "发通知", en: "Send notifications" }
   };
   return zh ? table[key].zh : table[key].en;
@@ -293,10 +293,10 @@ const PERMISSION_EFFECTS: readonly PermissionEffect[] = ["allow", "deny", "ask"]
 
 function permissionScopeKindLabel(kind: PermissionScopeKind, zh: boolean): { title: string; desc: string } {
   const table: Record<PermissionScopeKind, { titleZh: string; titleEn: string; descZh: string; descEn: string }> = {
-    org: { titleZh: "整个组织", titleEn: "Whole org", descZh: "范围 ID 需与你所在组织一致", descEn: "Scope ID must match your own org" },
-    workspace: { titleZh: "这个工作区", titleEn: "This workspace", descZh: "范围 ID 需与当前工作区一致", descEn: "Scope ID must match the current workspace" },
-    role: { titleZh: "某个角色", titleEn: "A role", descZh: "范围 ID 是角色标识", descEn: "Scope ID is a role identifier" },
-    session: { titleZh: "单次会话", titleEn: "A single session", descZh: "范围 ID 是会话标识，只在那次会话里生效", descEn: "Scope ID is a session identifier — applies only within that session" }
+    org: { titleZh: "整个组织", titleEn: "Whole org", descZh: "标识要填你所在组织的", descEn: "Enter your own org's identifier" },
+    workspace: { titleZh: "这个工作区", titleEn: "This workspace", descZh: "标识要填当前工作区的", descEn: "Enter the current workspace's identifier" },
+    role: { titleZh: "某个角色", titleEn: "A role", descZh: "填角色的标识", descEn: "Enter a role identifier" },
+    session: { titleZh: "单次会话", titleEn: "A single session", descZh: "填会话的标识，只在那次会话里生效", descEn: "Enter a session identifier — it applies only within that session" }
   };
   const entry = table[kind];
   return { title: zh ? entry.titleZh : entry.titleEn, desc: zh ? entry.descZh : entry.descEn };
@@ -558,8 +558,8 @@ export function pluginCompatLines(report: PluginCompatReport | undefined, zh: bo
     } else if (check.id === "dsh_tools_peer") {
       const versions = report.peer_dsh_tools_range && report.host_dsh_tools_version
         ? zh
-          ? `（它要 ${report.peer_dsh_tools_range}，我们捆的是 ${report.host_dsh_tools_version}）`
-          : ` (wants ${report.peer_dsh_tools_range}, we bundle ${report.host_dsh_tools_version})`
+          ? `（它需要 ${report.peer_dsh_tools_range}，当前自带的是 ${report.host_dsh_tools_version}）`
+          : ` (needs ${report.peer_dsh_tools_range}; this build ships ${report.host_dsh_tools_version})`
         : "";
       lines.push(
         zh
@@ -605,9 +605,17 @@ function pluginStatusLine(plugin: PluginVM, zh: boolean): string {
       ? `装不上${reason ? `：${reason}` : ""}`
       : `Won't load${reason ? `: ${reason}` : ""}`;
   }
+  if (plugin.status === "crashed") {
+    return spotlightViewsT(zh, "pluginStoppedAfterRepeatedFailures");
+  }
   return zh
     ? `已启用 · ${plugin.tool_count} 个工具`
     : `Enabled · ${plugin.tool_count} tool${plugin.tool_count === 1 ? "" : "s"}`;
+}
+
+/** 信任级别这一行：它是这个插件的**风险上限**，所以说的是上限，不是「它安全」。 */
+export function pluginTrustLine(plugin: PluginVM, zh: boolean): string {
+  return spotlightViewsT(zh, plugin.trust_level === "read_only" ? "pluginTrustReadOnly" : "pluginTrustExternalEffect");
 }
 
 export type DesktopPluginInstallOutcome =
@@ -661,13 +669,23 @@ export function pluginsSectionHtml(state: DesktopPluginsSectionState, zh: boolea
                 : (spotlightViewsT(zh, "remove"));
             const compat = pluginCompatLines(plugin.compat_report, zh);
             const title = plugin.version ? `${plugin.name} ${plugin.version}` : plugin.name;
-            return `<div class="wh-spot-row" style="cursor:default" data-spot-plugin="${escapeHtml(plugin.id)}">
+            const trustArmed = state.armedKey === `trust:${plugin.id}`;
+            const trustLabel = busy
+              ? (spotlightViewsT(zh, "working"))
+              : trustArmed
+                ? (spotlightViewsT(zh, "sureClickAgain5"))
+                : plugin.trust_level === "read_only"
+                  ? (spotlightViewsT(zh, "takeBackReadOnlyTrust"))
+                  : (spotlightViewsT(zh, "trustAsReadOnly"));
+            return `<div class="wh-spot-row" style="cursor:default" data-spot-plugin="${escapeHtml(plugin.id)}" data-spot-plugin-trust="${escapeHtml(plugin.trust_level)}">
               <div class="wh-spot-row-main">
                 <div class="wh-spot-row-title">${escapeHtml(title)}</div>
                 <div class="wh-spot-row-sub">${escapeHtml(pluginStatusLine(plugin, zh))}</div>
+                <div class="wh-spot-row-sub">${escapeHtml(pluginTrustLine(plugin, zh))}</div>
                 <div class="wh-spot-row-sub">${escapeHtml(plugin.source_path)}</div>
                 ${compat.map((line) => `<div class="wh-spot-row-sub">${escapeHtml(line)}</div>`).join("")}
               </div>
+              <button type="button" class="wh-spot-act ds-pressable ${trustArmed ? "wh-spot-act--danger" : "wh-spot-act--quiet"}" data-set-plugin-trust="${escapeHtml(plugin.id)}" ${busy ? "disabled" : ""}>${trustLabel}</button>
               <button type="button" class="wh-spot-act ds-pressable ${toggleArmed ? "wh-spot-act--danger" : "wh-spot-act--quiet"}" data-set-plugin-toggle="${escapeHtml(plugin.id)}" ${busy ? "disabled" : ""}>${toggleLabel}</button>
               <button type="button" class="wh-spot-act ds-pressable ${removeArmed ? "wh-spot-act--danger" : "wh-spot-act--quiet"}" data-set-plugin-remove="${escapeHtml(plugin.id)}" ${busy ? "disabled" : ""}>${removeLabel}</button>
             </div>`;
@@ -713,8 +731,8 @@ export function pluginsSectionHtml(state: DesktopPluginsSectionState, zh: boolea
     : "";
   const bootstrapNote = state.bootstrapPathCount > 0
     ? zh
-      ? `另有 ${state.bootstrapPathCount} 个插件目录来自服务端的环境变量，不在这份清单里，也不能在这里启停。`
-      : `${state.bootstrapPathCount} more plugin director${state.bootstrapPathCount === 1 ? "y is" : "ies are"} configured through the server's environment; they aren't listed here and can't be toggled here.`
+      ? `另有 ${state.bootstrapPathCount} 个插件由服务器直接加载，不在这份清单里，也不能在这里启停。`
+      : `${state.bootstrapPathCount} more plugin${state.bootstrapPathCount === 1 ? " is" : "s are"} loaded by the server itself — not listed here and not switchable from here.`
     : "";
   const installForm = state.supported
     ? `<div class="wh-spot-row" style="cursor:default">
@@ -736,6 +754,7 @@ export function pluginsSectionHtml(state: DesktopPluginsSectionState, zh: boolea
     <div class="wh-spot-set-label">${spotlightViewsT(zh, "plugins")}</div>
     <div class="wh-spot-row-sub">${spotlightViewsT(zh, "compatibleWithDeepseekHarnessToolPlugins")
     }</div>
+    <div class="wh-spot-row-sub">${spotlightViewsT(zh, "pluginTrustSectionNote")}</div>
     ${hostNote ? `<div class="wh-spot-row-sub">${escapeHtml(hostNote)}</div>` : ""}
     ${rows}
     ${bootstrapNote ? `<div class="wh-spot-row-sub">${escapeHtml(bootstrapNote)}</div>` : ""}
@@ -1694,6 +1713,27 @@ export function createSettingsView(): SpotlightCapabilityView {
         );
       }
 
+      /**
+       * 改信任级别。**只有「往下放宽」需要两段式确认**——那一步是在撤掉一道人工门；
+       * 往回收紧是把门装回去，没有理由再拦一次。
+       */
+      function setPluginTrust(plugin: PluginVM): void {
+        const call = ctx.client.setPluginTrustLevel;
+        if (!call) {
+          pluginErrorText = spotlightViewsT(ctx.locale, "thisServerVersionHasNoPlugin2");
+          renderAll();
+          return;
+        }
+        const next = plugin.trust_level === "read_only" ? "external_effect" : "read_only";
+        runPluginAction(
+          plugin.id,
+          () => call.call(ctx.client, plugin.id, { trust_level: next }),
+          (result) => replacePluginRow(result as PluginVM),
+          spotlightViewsT(ctx.locale, next === "read_only" ? "pluginTrustReadOnly" : "pluginTrustExternalEffect"),
+          spotlightViewsT(ctx.locale, "couldnTChangeIt")
+        );
+      }
+
       function removePlugin(plugin: PluginVM): void {
         const call = ctx.client.removePlugin;
         if (!call) {
@@ -1958,6 +1998,36 @@ export function createSettingsView(): SpotlightCapabilityView {
           if (!pluginInstallBusy) {
             submitPluginInstall();
           }
+          return;
+        }
+        // 信任级别：放宽（→ 只读断言）要两段式确认，收紧（→ 最高风险）立即生效。
+        const trustBtn = target.closest<HTMLElement>("[data-set-plugin-trust]");
+        if (trustBtn?.dataset.setPluginTrust) {
+          const id = trustBtn.dataset.setPluginTrust;
+          const plugin = (plugins ?? []).find((entry) => entry.id === id);
+          if (!plugin || pluginBusyId) {
+            return;
+          }
+          if (plugin.trust_level === "read_only") {
+            clearPluginArm();
+            setPluginTrust(plugin);
+            return;
+          }
+          const decision = decidePolicyRevokeConfirmation(pluginArmedKey, `trust:${id}`);
+          if (decision.kind === "execute") {
+            setPluginTrust(plugin);
+            return;
+          }
+          clearPluginArm();
+          pluginArmedKey = `trust:${id}`;
+          pluginErrorText = undefined;
+          pluginArmTimer = setTimeout(() => {
+            pluginArmTimer = undefined;
+            if (disposed) return;
+            pluginArmedKey = undefined;
+            renderAll();
+          }, 5000);
+          renderAll();
           return;
         }
         // 启停/移除都是两段式确认（复用 decidePolicyRevokeConfirmation 这个纯 armed/clicked 判定）。

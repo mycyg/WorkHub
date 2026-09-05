@@ -74,7 +74,7 @@ test("workbench view shows an honest unavailable state when there is no Tauri br
   delete (globalThis as { __TAURI__?: unknown }).__TAURI__;
   const body = new FakeBody();
   createWorkbenchOpenView("workbench").mount(baseCtx(body));
-  assert.match(body.innerHTML, /只在桌面客户端里可用/u);
+  assert.match(body.innerHTML, /只能在 WorkHub 桌面应用里打开/u);
   assert.doesNotMatch(body.innerHTML, /已打开/u);
 });
 

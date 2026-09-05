@@ -645,7 +645,7 @@ export function mountProjectSettingsView(
       if (!Number.isInteger(stall) || stall < stallBounds.min || stall > stallBounds.max) {
         showInlineError(
           zh
-            ? `工单停滞天数阈值要在 ${stallBounds.min} 到 ${stallBounds.max} 天之间。`
+            ? `「多少天没进展算停滞」要填 ${stallBounds.min} 到 ${stallBounds.max} 天。`
             : `The stall threshold must be ${stallBounds.min}-${stallBounds.max} days.`
         );
         return;
@@ -653,7 +653,7 @@ export function mountProjectSettingsView(
       if (!Number.isInteger(deadline) || deadline < deadlineBounds.min || deadline > deadlineBounds.max) {
         showInlineError(
           zh
-            ? `deadline 前瞻天数要在 ${deadlineBounds.min} 到 ${deadlineBounds.max} 天之间。`
+            ? `「提前多少天开始提醒」要填 ${deadlineBounds.min} 到 ${deadlineBounds.max} 天。`
             : `The deadline lookahead must be ${deadlineBounds.min}-${deadlineBounds.max} days.`
         );
         return;

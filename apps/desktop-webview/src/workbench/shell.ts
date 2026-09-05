@@ -128,7 +128,7 @@ export function renderWorkbenchShellHtml(locale: Locale, chrome: WorkbenchShellC
           <button type="button" class="wh-wb-winbtn" data-wb-minimize aria-label="${workbenchT(locale, "minimize")}">${workbenchIcons.minimize}</button>
           <button type="button" class="wh-wb-winbtn wh-wb-winbtn--close" data-wb-close aria-label="${workbenchT(locale, "close")}">${workbenchIcons.close}</button>
         </div>`;
-  // G-desktop 止血批 5：顶栏「打开聚焦盒」入口——不是窗口帧控件（不像 min/close 那样在原生红绿灯
+  // G-desktop 止血批 5：顶栏「打开快捷入口」按钮——不是窗口帧控件（不像 min/close 那样在原生红绿灯
   // 接管时该消失），所以放在 titlebarControlsHtml 判断之外、始终渲染。真实接线见 mountWorkbenchShell
   // 的点击处理：invoke("show_main_window")，main.rs 已注册的既有 command（托盘/深链/单实例冷启动都在
   // 用同一个），不是新造的协议。
@@ -1899,7 +1899,7 @@ export function mountWorkbenchShell(
     // 销毁窗口——和主窗/桌宠窗一致，避免下次 open_workbench 还要重新起窗口。
     void windowBridge?.hide?.();
   });
-  // G-desktop 止血批 5：顶栏「打开聚焦盒」——唤起 main 窗口（苹果聚焦盒 UI 就长在那个窗口上，工作台
+  // G-desktop 止血批 5：顶栏「打开快捷入口」——唤起 main 窗口（苹果聚焦盒 UI 就长在那个窗口上，工作台
   // 自己不重造一份）。show_main_window 是 main.rs 已注册的既有 command（托盘菜单/单实例冷启动/深链都
   // 复用同一个 ShellWindowControlAction::ShowAndFocus 计划——show + focus 主窗），这里直接 invoke，
   // 不新增 Rust 侧 command。resolveDesktopTauriInvoke 无 Tauri 时返回 undefined，按钮点了静默无效果

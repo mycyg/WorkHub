@@ -163,7 +163,7 @@ test("showForProposal loads the detail and publishes it into the side-panel slot
     panel.showForProposal({ proposalId: "prop-1" });
     // 同步先发 loading 帧。
     assert.equal(store.getState().sidePanelContent?.ownerId, "proposal");
-    assert.match(store.getState().sidePanelContent?.html ?? "", /正在拉提议详情/u);
+    assert.match(store.getState().sidePanelContent?.html ?? "", /正在加载变更申请详情/u);
     await tick();
     assert.deepEqual(calls.pages, ["prop-1"]);
     const html = store.getState().sidePanelContent?.html ?? "";

@@ -519,6 +519,13 @@
       "when": 1783929005000,
       "tag": "0073_mcp_servers",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1783929006000,
+      "tag": "0074_plugin_trust_level",
+      "breakpoints": true
     }
   ]
 }

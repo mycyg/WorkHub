@@ -106,16 +106,16 @@ export function humanizeTimelineError(error: unknown, locale: Locale): string {
         en: "That dependency would form a cycle (A waits on B, B loops back to A)."
       },
       dependency_cross_project: {
-        zh: "依赖只能建立在同一个项目内的工作项之间。",
-        en: "Dependencies can only link work items within the same project."
+        zh: "依赖只能建立在同一个项目内的任务之间。",
+        en: "Dependencies can only link tasks within the same project."
       },
       dependency_self_dependency: {
-        zh: "一个工作项不能依赖它自己。",
-        en: "A work item can't depend on itself."
+        zh: "一个任务不能依赖它自己。",
+        en: "A task can't depend on itself."
       },
       milestone_scope_mismatch: {
-        zh: "里程碑必须和工作项属于同一个项目。",
-        en: "The milestone must belong to the same project as the work item."
+        zh: "里程碑必须和任务属于同一个项目。",
+        en: "The milestone must belong to the same project as the task."
       }
     };
     const mapped = byCode[error.code];

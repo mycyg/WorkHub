@@ -4,7 +4,7 @@
 //   1) isPasswordModeBootstrapError：据 desktop-bootstrap 的 404 判定「当前是密码模式，要凭据登录」；
 //   2) resolveDesktopFirstRunGate(WithLock)：首启无 token 时判定该渲哪张登录门——不再靠盲打
 //      desktop-bootstrap 探测（那在昵称模式会有真实副作用：建一个用固定昵称的设备/账号，见 E-03）；
-//   3) renderDesktopCredentialGateHtml：凭据门，三个页签——登录 / 注册 / 我有邀请令牌，密码只走
+//   3) renderDesktopCredentialGateHtml：凭据门，三个页签——登录 / 注册 / 我有邀请码，密码只走
 //      <input type=password>，绝不进 URL；
 //   4) runDesktopCredentialLogin / runDesktopCredentialRegister / runDesktopInviteAccept：凭据 →
 //      设备令牌 exchange（复用后端既有能力，前端不造鉴权）；
@@ -405,7 +405,7 @@ export async function runDesktopCredentialRegister(input: {
   return { client_token: exchange.client_token, created };
 }
 
-// 接受邀请 → 设备令牌 exchange（R24 S4，「我有邀请令牌」页签）：POST /api/auth/invites/accept 没有
+// 接受邀请 → 设备令牌 exchange（R24 S4，「我有邀请码」页签）：POST /api/auth/invites/accept 没有
 // 具名 client 方法（同 apps/web/src/browser.ts submitInviteAccept 的既有取舍，走裸 client.request——
 // 不为单个批次特性扩大 WorkHubApiClient 的具名方法面），响应形状与 register/login 一致（IdentityResponse，
 // 已登记进 api-client 的 RAW_JSON_RESPONSE_PATHS）。created 同样恒为 true，同 register 分支的理由。
@@ -516,7 +516,7 @@ export type DesktopCredentialGateContext = "first-run" | "logged-out";
 // 外壳 padding 把窗口撑到内容大小（切页签让面板变高矮时 MutationObserver 会重量）。外壳 padding 与那边
 // 的加法共用 desktopBootScreenFitPaddingPx；html/body 归零同样在共享面板里（这张屏整个替换掉 boot 首帧
 // 壳，连同 spotlightCss 的 margin 归零一起，不补就会吃到 UA 默认的 8px body margin）。
-// 结构：三个页签共享一张面板——登录（邮箱+密码，既有）/ 注册（邮箱+昵称+密码）/ 我有邀请令牌
+// 结构：三个页签共享一张面板——登录（邮箱+密码，既有）/ 注册（邮箱+昵称+密码）/ 我有邀请码
 // （令牌+昵称+密码）；密码全部只走 <input type=password>，绝不进 URL。默认页签固定是「登录」，
 // 不随 context 变——不给「首启该默认哪个页签」加判断分支，交给用户自己点。
 export function renderDesktopCredentialGateHtml(input: {
@@ -716,7 +716,7 @@ export function bindDesktopCredentialGate(
       });
   });
 
-  // —— 我有邀请令牌页签 —— //
+  // —— 我有邀请码页签 —— //
   const inviteForm = rootEl.querySelector<HTMLFormElement>("[data-desktop-invite-form]");
   const inviteTokenEl = rootEl.querySelector<HTMLInputElement>("[data-desktop-invite-token]");
   const inviteNicknameEl = rootEl.querySelector<HTMLInputElement>("[data-desktop-invite-nickname]");

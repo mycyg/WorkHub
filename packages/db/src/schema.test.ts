@@ -693,7 +693,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0073 mcp_servers", () => {
+test("migration journal ends with 0074 plugin_trust_level", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -709,28 +709,68 @@ test("migration journal ends with 0073 mcp_servers", () => {
       when: finalEntry.when
     },
     {
-      // R26 M0：0073(mcp_servers,when=1783929005000)接在 0072(plugins,when=1783929004000)之后,
-      // journal 收于 0073,when 严格递增。
-      idx: 73,
+      // R26 X：0074(plugin_trust_level,when=1783929006000)接在 0073(mcp_servers,when=1783929005000)
+      // 之后，journal 收于 0074，when 严格递增。
+      idx: 74,
       version: "7",
-      tag: "0073_mcp_servers",
+      tag: "0074_plugin_trust_level",
       breakpoints: true,
-      when: 1783929005000
+      when: 1783929006000
     }
   );
-  // when 严格递增——0069 → 0070 → 0071 → 0072 → 0073 的时间戳必须依次增大。
+  // when 严格递增——0069 → 0070 → 0071 → 0072 → 0073 → 0074 的时间戳必须依次增大。
   const entry0069 = journal.entries.find((entry) => entry.tag === "0069_event_outbox");
   const entry0070 = journal.entries.find((entry) => entry.tag === "0070_proactive_intent_delivering");
   const entry0071 = journal.entries.find((entry) => entry.tag === "0071_event_outbox_failed");
   const entry0072 = journal.entries.find((entry) => entry.tag === "0072_plugins");
-  assert.ok(entry0069 && entry0070 && entry0071 && entry0072 && finalEntry);
+  const entry0073 = journal.entries.find((entry) => entry.tag === "0073_mcp_servers");
+  assert.ok(entry0069 && entry0070 && entry0071 && entry0072 && entry0073 && finalEntry);
   assert.equal(entry0070.idx, 70);
   assert.equal(entry0071.idx, 71);
   assert.equal(entry0072.idx, 72);
+  assert.equal(entry0073.idx, 73);
   assert.ok(entry0070.when > entry0069.when);
   assert.ok(entry0071.when > entry0070.when);
   assert.ok(entry0072.when > entry0071.when);
-  assert.ok(finalEntry.when > entry0072.when);
+  assert.ok(entry0073.when > entry0072.when);
+  assert.ok(finalEntry.when > entry0073.when);
+});
+
+/**
+ * R26 X：插件的信任级别（管理员断言的风险上限）与按插件熔断的 `crashed` 状态。
+ * 钉三件事——(a) 迁移 replay 安全（ADD COLUMN IF NOT EXISTS + DROP/ADD CONSTRAINT 成对）；
+ * (b) trust_level 是**两值** CHECK，默认最保守的一档；(c) drizzle schema 与迁移同步。
+ */
+test("R26-X migration 0074 adds a replay-safe trust_level with a conservative default", () => {
+  const migrationUrl = new URL("../migrations/0074_plugin_trust_level.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0074_plugin_trust_level.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  assert.match(
+    migration,
+    /ALTER TABLE "plugins" ADD COLUMN IF NOT EXISTS "trust_level" varchar\(24\) NOT NULL DEFAULT 'external_effect'/u,
+    "既有行必须落到最保守的一档，不是 read_only"
+  );
+  for (const constraint of ["plugins_trust_level_ck", "plugins_status_ck"]) {
+    assert.match(
+      migration,
+      new RegExp(`ALTER TABLE "plugins" DROP CONSTRAINT IF EXISTS "${constraint}"`, "u"),
+      `${constraint} 必须成对 DROP IF EXISTS + ADD，否则整链重跑会炸`
+    );
+  }
+  assert.match(migration, /CHECK \("trust_level" IN \('read_only','external_effect'\)\)/u);
+  assert.match(migration, /CHECK \("status" IN \('installed','load_failed','disabled','crashed'\)\)/u);
+  // 熔断掉的插件不该再进宿主装配的热路径——部分索引跟着走。
+  assert.match(migration, /"status" <> 'disabled' AND "status" <> 'crashed'/u);
+  assert.equal(/CONCURRENTLY/u.test(migration), false, "迁移里不许有 CONCURRENTLY（事务里跑不了）");
+
+  const table = getTableConfig(requiredTable("plugins"));
+  const trustLevel = table.columns.find((column) => column.name === "trust_level");
+  assert.ok(trustLevel, "drizzle schema 少了 trust_level 列");
+  assert.equal(trustLevel.notNull, true);
+  assert.equal(trustLevel.default, "external_effect");
+  const checkText = checkSqlText(requiredTable("plugins"));
+  assert.equal(checkText.includes("'read_only'"), true, "drizzle 的 trust_level CHECK 必须与迁移同步");
+  assert.equal(checkText.includes("'crashed'"), true, "drizzle 的 status CHECK 必须与迁移同步");
 });
 
 // R24-P 阶段 1：插件清单表。这条钉死三件事——(a) 迁移 replay 安全（CREATE TABLE/INDEX 全 IF NOT EXISTS、

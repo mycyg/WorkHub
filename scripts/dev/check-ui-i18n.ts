@@ -177,6 +177,75 @@ export function collectCjkLiterals(file: string, sourceText: string): UiI18nViol
 }
 
 /**
+ * 该字面量是不是「标识符位置」——对象/属性的键、类型里的字面量、import/export 的模块名。
+ * 这些串是代码结构，不是给人读的文案；英文禁词扫描必须放过它们，否则词典的 key
+ * （`"agentRun.doneTitle"`、`"budget.scope.curation"`）会被当成用户可见文案报出来。
+ */
+function isIdentifierPositionLiteral(node: ts.Node): boolean {
+  const parent = node.parent;
+  if (!parent) return false;
+  if (ts.isPropertyAssignment(parent) && parent.name === node) return true;
+  if (ts.isPropertySignature(parent) && parent.name === node) return true;
+  if (ts.isEnumMember(parent) && parent.name === node) return true;
+  if (ts.isMethodDeclaration(parent) && parent.name === node) return true;
+  if (ts.isLiteralTypeNode(parent)) return true;
+  if (ts.isImportDeclaration(parent) || ts.isExportDeclaration(parent)) return true;
+  if (ts.isImportTypeNode(parent)) return true;
+  if (ts.isElementAccessExpression(parent) && parent.argumentExpression === node) return true;
+  return false;
+}
+
+/**
+ * 收集一个文件里全部**可能是文案**的字符串字面量——不要求含汉字。
+ * 纯英文文案（`"Run trace"`、`"Curation budget"`）在词典里同样要过禁词表，而
+ * collectCjkLiterals 的汉字前置过滤会把它们整片放过（本轮审查的缺口二）。
+ *
+ * 只在词典文件（i18n*.ts / locale*.ts / locales/** / *-copy.ts）上用：那些文件里
+ * 除了 key 与 import 之外全是文案，误报面很小；普通产品文件里满是选择器、路径、
+ * data-* 属性名，不适合这套判据。
+ *
+ * @param file 仓库相对路径，只用于诊断输出。
+ * @param sourceText TypeScript 源码。
+ * @returns 按源码顺序排列的字面量（已剔除标识符位置的串）。
+ */
+export function collectCopyLiterals(file: string, sourceText: string): UiI18nViolation[] {
+  const source = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const found = new Map<number, UiI18nViolation>();
+
+  const report = (node: ts.Node, text: string, kind: string): void => {
+    if (!text.trim()) return;
+    if (isIdentifierPositionLiteral(node)) return;
+    const start = node.getStart(source);
+    if (found.has(start)) return;
+    const position = source.getLineAndCharacterOfPosition(start);
+    found.set(start, {
+      file,
+      line: position.line + 1,
+      column: position.character + 1,
+      text: normalizeSnippet(text),
+      kind
+    });
+  };
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isStringLiteral(node)) {
+      report(node, node.text, "字符串字面量");
+    } else if (ts.isNoSubstitutionTemplateLiteral(node)) {
+      report(node, node.text, "模板字面量");
+    } else if (ts.isTemplateExpression(node)) {
+      report(
+        node,
+        [node.head.text, ...node.templateSpans.map((span) => span.literal.text)].join(""),
+        "带插值的模板字面量"
+      );
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return [...found.values()].sort((left, right) => left.line - right.line || left.column - right.column);
+}
+
+/**
  * 扫一个文件里写死的用户可见文案。
  * @param file 仓库相对路径，只用于诊断输出。
  * @param sourceText TypeScript 源码。

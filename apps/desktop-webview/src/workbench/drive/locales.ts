@@ -9,12 +9,21 @@
 
 import { normalizeWorkHubLocale, type WorkHubLocale } from "@workhub/contracts";
 
+import {
+  loadFailedEn,
+  loadFailedRetryEn,
+  loadFailedRetryZh,
+  loadFailedZh,
+  loadingEn,
+  loadingZh
+} from "../../load-state-copy.js";
+
 const zh = {
   aiDeliverable: "AI 交付",
   backToFiles: "← 返回文件",
   clickAFileToPreviewIt: "点文件查看预览，或打开版本历史。",
-  couldnTLoadTheDriveRetry: "网盘没拉到，稍后重试",
-  couldnTLoadVersionHistory: "版本历史没拉到",
+  couldnTLoadTheDriveRetry: loadFailedRetryZh("网盘"),
+  couldnTLoadVersionHistory: loadFailedZh("版本历史"),
   couldnTRecoverTryAgain: "找回失败，请重试。",
   current: "当前版本",
   deleteFailed: "删除失败",
@@ -28,8 +37,8 @@ const zh = {
   items: "项",
   largeFileShowingTheFirstPart: "内容较长，仅显示前一部分。",
   loadingPreview: "正在预览…",
-  loadingTheDrive: "正在拉网盘…",
-  loadingVersions: "正在拉版本…",
+  loadingTheDrive: loadingZh("网盘"),
+  loadingVersions: loadingZh("版本"),
   moveToTrash: "移到回收站",
   movedToTheRecycleBinRecoverable: "已移到回收站，可在回收站找回。",
   noFilesHereYet: "这里还没有文件",
@@ -59,8 +68,8 @@ const en = {
   aiDeliverable: "AI deliverable",
   backToFiles: "← Back to files",
   clickAFileToPreviewIt: "Click a file to preview it, or open its version history.",
-  couldnTLoadTheDriveRetry: "Couldn't load the drive — retry",
-  couldnTLoadVersionHistory: "Couldn't load version history",
+  couldnTLoadTheDriveRetry: loadFailedRetryEn("the drive"),
+  couldnTLoadVersionHistory: loadFailedEn("version history"),
   couldnTRecoverTryAgain: "Couldn't recover — try again.",
   current: "Current",
   deleteFailed: "Delete failed",
@@ -74,8 +83,8 @@ const en = {
   items: "items",
   largeFileShowingTheFirstPart: "Large file — showing the first part.",
   loadingPreview: "Loading preview…",
-  loadingTheDrive: "Loading the drive…",
-  loadingVersions: "Loading versions…",
+  loadingTheDrive: loadingEn("the drive"),
+  loadingVersions: loadingEn("versions"),
   moveToTrash: "Move to trash",
   movedToTheRecycleBinRecoverable: "Moved to the recycle bin — recoverable there.",
   noFilesHereYet: "No files here yet",

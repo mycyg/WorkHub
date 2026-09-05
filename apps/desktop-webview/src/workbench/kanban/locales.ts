@@ -11,11 +11,11 @@ import { normalizeWorkHubLocale, type WorkHubLocale } from "@workhub/contracts";
 
 const zh = {
   allAssignees: "全部负责人",
-  blocksDownstreamWork: "阻塞后续工作项",
+  blocksDownstreamWork: "阻塞后续任务",
   clear: "清除筛选",
   completedItemsCanTBeDragged: "已完成的项不能拖回进行中。",
   couldnTLoadTheBoardRetry: "没能加载任务看板，稍后重试",
-  describeTheWorkInTheProject: "在项目主区对话里把要做的事讲清楚，澄清完成后就会作为工作项出现在这里的「待认领」列。",
+  describeTheWorkInTheProject: "在项目主区对话里把要做的事讲清楚，澄清完成后就会作为任务出现在这里的「待认领」列。",
   dragAReadyCardIntoIn: "拖「待开工」卡到「进行中」即派 AI 开工；其它移动会说明该去哪儿办",
   filterByAssignee: "按负责人筛选",
   filterByKeyword: "按关键词筛选",
@@ -23,7 +23,7 @@ const zh = {
   itemsInReviewAreCompletedBy: "评审中的项要在右栏「提议」面板批准合并，通过后才算完成——不能直接拖到已完成。",
   loadingBoard: "正在加载任务看板…",
   noDate: "未定期",
-  noItemsInThisColumn: "这一列还没有工作项",
+  noItemsInThisColumn: "这一列还没有任务",
   noMatchingTasks: "没有匹配的任务",
   noTasksYet: "还没有任务",
   openThisItemOnTheTimeline: "点击查看这件在时间线上的位置",
@@ -36,8 +36,8 @@ const zh = {
   toSendAReviewingItemBack: "评审中的项要退回重做，请在右栏「提议」面板点「要求修改」并写明原因，不能直接拖回进行中。",
   tryAnotherAssigneeOrKeywordOr: "换个负责人或关键词，或清除筛选。",
   unassigned: "未指派",
-  workItemsReachDoneOnlyAfter: "工作项要先开工、提交评审、评审通过合并后才算完成，不能直接标记完成。",
-  youDonTHavePermissionTo: "你没有权限在这件工作项上启动 AI。",
+  workItemsReachDoneOnlyAfter: "任务要先开工、提交评审、评审通过合并后才算完成，不能直接标记完成。",
+  youDonTHavePermissionTo: "你没有权限在这件任务上启动 AI。",
 } as const;
 
 const en = {
@@ -46,7 +46,7 @@ const en = {
   clear: "Clear",
   completedItemsCanTBeDragged: "Completed items can't be dragged back to In progress.",
   couldnTLoadTheBoardRetry: "Couldn't load the board — retry",
-  describeTheWorkInTheProject: "Describe the work in the project chat — once it's clarified it shows up here as a work item in To do.",
+  describeTheWorkInTheProject: "Describe the work in the project chat — once it's clarified it shows up here as a task in To do.",
   dragAReadyCardIntoIn: "Drag a Ready card into In progress to start the AI; other moves explain where to go",
   filterByAssignee: "Filter by assignee",
   filterByKeyword: "Filter by keyword",
@@ -54,7 +54,7 @@ const en = {
   itemsInReviewAreCompletedBy: "Items in review are completed by approving their proposal in the side panel — you can't drag them straight to Done.",
   loadingBoard: "Loading board…",
   noDate: "No date",
-  noItemsInThisColumn: "No items in this column",
+  noItemsInThisColumn: "No tasks in this column",
   noMatchingTasks: "No matching tasks",
   noTasksYet: "No tasks yet",
   openThisItemOnTheTimeline: "Open this item on the timeline",
@@ -67,8 +67,8 @@ const en = {
   toSendAReviewingItemBack: "To send a reviewing item back for rework, use “Request changes” on its proposal — dragging won't do it.",
   tryAnotherAssigneeOrKeywordOr: "Try another assignee or keyword, or clear the filter.",
   unassigned: "Unassigned",
-  workItemsReachDoneOnlyAfter: "Work items reach Done only after being worked, reviewed, and merged — not by dragging.",
-  youDonTHavePermissionTo: "You don't have permission to start the AI on this item.",
+  workItemsReachDoneOnlyAfter: "Tasks reach Done only after being worked, reviewed, and merged — not by dragging.",
+  youDonTHavePermissionTo: "You don't have permission to start the AI on this task.",
 } as const satisfies Record<keyof typeof zh, string>;
 
 export type KanbanCopyKey = keyof typeof zh;

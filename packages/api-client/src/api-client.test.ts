@@ -1176,8 +1176,9 @@ test("R24-P 阶段 1：api client 覆盖插件治理五个端点（清单/安装
   });
 
   await client.listPlugins!();
-  // 安装体只有 source_path——只认这台服务器上的绝对目录，没有第二种源可以传。
+  // 安装体只有 source_path 与可选的信任级别——源只认这台服务器上的绝对目录，没有第二种可以传。
   await client.installPlugin!({ source_path: "/srv/plugins/dsh-plugin-echo" });
+  await client.setPluginTrustLevel!("plugin-1", { trust_level: "read_only" });
   await client.enablePlugin!("plugin-1");
   await client.disablePlugin!("plugin-1");
   await client.removePlugin!("plugin-1");
@@ -1185,6 +1186,7 @@ test("R24-P 阶段 1：api client 覆盖插件治理五个端点（清单/安装
   assert.deepEqual(calls, [
     { url: "/api/plugins", method: "GET", body: undefined },
     { url: "/api/plugins", method: "POST", body: JSON.stringify({ source_path: "/srv/plugins/dsh-plugin-echo" }) },
+    { url: "/api/plugins/plugin-1", method: "PATCH", body: JSON.stringify({ trust_level: "read_only" }) },
     { url: "/api/plugins/plugin-1/enable", method: "POST", body: undefined },
     { url: "/api/plugins/plugin-1/disable", method: "POST", body: undefined },
     { url: "/api/plugins/plugin-1", method: "DELETE", body: undefined }

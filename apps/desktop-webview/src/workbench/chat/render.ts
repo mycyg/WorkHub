@@ -985,7 +985,7 @@ function renderRiskDigestCardHtml(
   const sections: string[] = [];
   if (digest.stalledCount > 0) {
     sections.push(
-      `<li class="wh-wb-risk-digest-item">${zh ? `工单停滞 · ${digest.stalledCount} 项` : `Stalled work items · ${digest.stalledCount}`}</li>`
+      `<li class="wh-wb-risk-digest-item">${zh ? `任务停滞 · ${digest.stalledCount} 项` : `Stalled tasks · ${digest.stalledCount}`}</li>`
     );
   }
   if (digest.deadlineCount > 0) {
@@ -1395,7 +1395,7 @@ type ToolActivityNote = Extract<ConversationMessageVM, { kind: "tool_note" }>;
 const TOOL_ACTIVITY_LABEL: Record<string, { zh: string; en: string; key: string }> = {
   drive_search: { zh: "检索网盘", en: "Searched drive", key: "search" },
   send_file_card: { zh: "发送文件", en: "Sent a file", key: "file" },
-  create_work_item: { zh: "建工单", en: "Created a task", key: "task" }
+  create_work_item: { zh: "建任务", en: "Created a task", key: "task" }
 };
 
 function toolActivityDescriptor(tool: string, zh: boolean): { label: string; key: string } {

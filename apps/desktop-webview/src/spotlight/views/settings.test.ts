@@ -274,7 +274,9 @@ test("M-06: settings explains an unconfigured AI assistant with an actionable li
   await tick();
 
   assert.match(notConfigured.innerHTML, /data-spot-ai-not-configured="true"/u);
-  assert.match(notConfigured.innerHTML, /LLM_API_KEY/u, "names the concrete env var an admin needs to set");
+  // 部署细节（环境变量名 / .env 路径）属于部署文档，旁边的「查看部署说明」按钮才是它的位置。
+  assert.doesNotMatch(notConfigured.innerHTML, /LLM_API_KEY|\.env/u, "deployment details belong in the docs, not in product copy");
+  assert.match(notConfigured.innerHTML, /请让管理员在服务器上配置模型密钥/u, "tells the user who can fix it");
   assert.match(notConfigured.innerHTML, /data-set-ai-deploy-docs="true"/u, "gives a link to the deployment docs");
 
   const configured = new FakeBody();
@@ -1362,11 +1364,11 @@ test("permissionPolicyFormHtml marks the selected scope-kind/effect chips, and o
   const askHtml = permissionPolicyFormHtml(policyFormState({ effect: "ask" }), true);
   assert.match(askHtml, /data-set-policy-scope-kind="workspace" data-sel="true"/u);
   assert.match(askHtml, /data-set-policy-effect="ask" data-sel="true"/u);
-  assert.doesNotMatch(askHtml, /跨范围强制熔断/u);
+  assert.doesNotMatch(askHtml, /一票否决/u);
 
   const denyHtml = permissionPolicyFormHtml(policyFormState({ effect: "deny" }), true);
   assert.match(denyHtml, /data-set-policy-effect="deny" data-sel="true"/u);
-  assert.match(denyHtml, /跨范围强制熔断/u, "the OVERRIDE_DENY_PRIORITY warning must only show for a deny rule");
+  assert.match(denyHtml, /一票否决/u, "the OVERRIDE_DENY_PRIORITY warning must only show for a deny rule");
 });
 
 test("permissionPolicyFormHtml disables inputs and shows a submitting label while busy, and surfaces errorText", () => {
@@ -1492,7 +1494,7 @@ test("R23 F-02: submitting the new-policy form with empty fields shows a validat
     await tick();
 
     assert.equal(createCalls, 0, "blank scope_id/action_pattern must never reach the server");
-    assert.match(body.innerHTML, /请填写范围 ID 与动作模式/u);
+    assert.match(body.innerHTML, /请填写组织 \/ 工作区 \/ 角色 \/ 会话的标识与动作模式/u);
   });
 });
 
@@ -1557,7 +1559,7 @@ function devicesState(over: Partial<DesktopDevicesSectionState> = {}): DesktopDe
 test("devicesSectionHtml renders a failed state with a retry button", () => {
   const html = devicesSectionHtml(devicesState({ failed: true, devices: undefined }), true);
   assert.match(html, /data-set-devices-retry="true"/u);
-  assert.match(html, /设备没拉到/u);
+  assert.match(html, /设备没加载出来/u);
 });
 
 test("devicesSectionHtml shows an empty-state note when there are no devices", () => {
@@ -1938,6 +1940,7 @@ function pluginVm(over: Partial<PluginVM> = {}): PluginVM {
     source_path: "/srv/plugins/dsh-plugin-echo",
     enabled: true,
     status: "installed",
+    trust_level: "external_effect",
     tool_count: 2,
     compat_report: { verdict: "ok", checks: [{ id: "manifest", level: "pass" }], checked_at: "2026-09-05T09:00:00.000Z" },
     created_at: "2026-09-05T09:00:00.000Z",
@@ -1979,6 +1982,33 @@ test("pluginsSectionHtml lists name/version/status/tool count/path with enable-d
   assert.match(html, /data-set-plugin-install="true"/u);
 });
 
+test("pluginsSectionHtml 说清这个插件被断言成什么，并给管理员一个改它的入口", () => {
+  const highest = pluginsSectionHtml(pluginsState(), true);
+  // 默认那一档：说的是上限（每次调用都要人确认），按钮请你把它断言成只读。
+  assert.match(highest, /data-spot-plugin-trust="external_effect"/u);
+  assert.match(highest, /按最高风险运行 · 每次调用都要人确认/u);
+  assert.match(highest, /data-set-plugin-trust="80000000-0000-4000-8000-000000000001"/u);
+  assert.match(highest, /断言为只读/u);
+
+  const readOnly = pluginsSectionHtml(
+    pluginsState({ plugins: [pluginVm({ trust_level: "read_only" } as unknown as Partial<PluginVM>)] }),
+    true
+  );
+  assert.match(readOnly, /data-spot-plugin-trust="read_only"/u);
+  // 只读断言只对**自述只读**的工具生效，这句话必须在界面上说出来，否则会被读成「整个插件都安全了」。
+  assert.match(readOnly, /已断言为只读 · 自述只读的工具不再逐次转人/u);
+  assert.match(readOnly, /收回只读断言/u);
+});
+
+test("pluginsSectionHtml 对反复弄崩宿主而被停下的插件另有说法，不混成「还好好跑着」", () => {
+  const html = pluginsSectionHtml(
+    pluginsState({ plugins: [pluginVm({ status: "crashed", tool_count: 0 } as unknown as Partial<PluginVM>)] }),
+    true
+  );
+  assert.match(html, /反复出错已被停下 · 修好后可重新启用/u);
+  assert.doesNotMatch(html, /已启用 · 0 个工具/u);
+});
+
 test("pluginsSectionHtml says 'won't load' with the host's reason — not the same thing as 'disabled'", () => {
   const html = pluginsSectionHtml(
     pluginsState({
@@ -2006,6 +2036,13 @@ test("pluginsSectionHtml arms exactly one control at a time — enable-disable a
   const armed = pluginsSectionHtml(pluginsState({ armedKey: "remove:80000000-0000-4000-8000-000000000001" }), true);
   assert.equal((armed.match(/确定？再点一次移除/gu) ?? []).length, 1);
   assert.doesNotMatch(armed, /确定？再点一次<\/button>/u);
+  // 信任级别的武装态也自成一格，不会顺手把启停/移除也武装上。
+  const trustArmed = pluginsSectionHtml(
+    pluginsState({ armedKey: "trust:80000000-0000-4000-8000-000000000001" }),
+    true
+  );
+  assert.equal((trustArmed.match(/确定？再点一次断言只读/gu) ?? []).length, 1);
+  assert.doesNotMatch(trustArmed, /确定？再点一次移除/u);
 });
 
 test("pluginsSectionHtml turns the compatibility report into plain language, not an English diagnostic", () => {
@@ -2029,14 +2066,14 @@ test("pluginsSectionHtml turns the compatibility report into plain language, not
     true
   );
   assert.match(html, /它对着另一个版本的插件工具库发布/u);
-  assert.match(html, /它要 \^0\.2\.0，我们捆的是 0\.1\.0-rc\.8/u);
+  assert.match(html, /它需要 \^0\.2\.0，当前自带的是 0\.1\.0-rc\.8/u);
   // pass 的检查不占一行——没问题的事不值得说（manifest 那条是 pass，它的诊断句不该出现）。
   assert.doesNotMatch(html, /这个目录里没有可读的 package\.json/u);
 });
 
 test("pluginsSectionHtml says how many plugin directories still come from the server's environment", () => {
   const html = pluginsSectionHtml(pluginsState({ bootstrapPathCount: 2 }), true);
-  assert.match(html, /另有 2 个插件目录来自服务端的环境变量/u);
+  assert.match(html, /另有 2 个插件由服务器直接加载/u);
 });
 
 test("pluginsSectionHtml degrades to an explanation (not a dead button) against a server without the endpoints", () => {

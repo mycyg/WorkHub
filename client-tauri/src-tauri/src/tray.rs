@@ -146,7 +146,7 @@ pub fn shell_badge_count(raw: i64) -> Option<i64> {
 fn tray_label(locale: WorkHubLocale, kind: TrayMenuActionKind) -> &'static str {
     match (locale, kind) {
         (WorkHubLocale::ZhCn, TrayMenuActionKind::ShowMain) => "打开 WorkHub",
-        (WorkHubLocale::ZhCn, TrayMenuActionKind::HideMain) => "隐藏主窗",
+        (WorkHubLocale::ZhCn, TrayMenuActionKind::HideMain) => "隐藏主窗口",
         (WorkHubLocale::ZhCn, TrayMenuActionKind::TogglePet) => "显示/隐藏 Cuu",
         (WorkHubLocale::ZhCn, TrayMenuActionKind::RestorePetInteraction) => "恢复 Cuu 交互",
         (WorkHubLocale::ZhCn, TrayMenuActionKind::OpenInbox) => "打开收件箱",

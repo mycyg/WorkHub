@@ -41,16 +41,16 @@ test("renderWorkbenchShellHtml defaults to the self-drawn window controls when n
   assert.doesNotMatch(html, /wh-wb-titlebar--native/u);
 });
 
-// G-desktop 止血批 5：顶栏「打开聚焦盒」入口不是窗口帧控件（不像 min/close 那样在原生红绿灯接管时该
+// G-desktop 止血批 5：顶栏「打开快捷入口」按钮不是窗口帧控件（不像 min/close 那样在原生红绿灯接管时该
 // 消失）——两种 chrome 下都必须渲染。
 test("renderWorkbenchShellHtml always renders the 'open Spotlight' entry, both with and without native window chrome", () => {
   const selfDrawn = renderWorkbenchShellHtml("zh-CN", { nativeWindowChrome: false });
   assert.match(selfDrawn, /data-wb-open-spotlight/u);
-  assert.match(selfDrawn, /打开聚焦盒/u);
+  assert.match(selfDrawn, /打开快捷入口/u);
 
   const native = renderWorkbenchShellHtml("en-US", { nativeWindowChrome: true });
   assert.match(native, /data-wb-open-spotlight/u);
-  assert.match(native, /Open Spotlight/u);
+  assert.match(native, /Open quick launcher/u);
 });
 
 test("renderEmptyStateHtml offers a real 'new project' CTA only when there are no projects yet", () => {

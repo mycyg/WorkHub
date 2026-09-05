@@ -1,0 +1,40 @@
+{
+  "rejected": [
+    {
+      "raw_name": "remote_ref",
+      "reason": "input_schema_remote_ref",
+      "detail": "inputSchema references https://example.invalid/schema.json, which is not a same-document fragment"
+    },
+    {
+      "raw_name": "",
+      "reason": "invalid_name",
+      "detail": "tool has no name"
+    }
+  ],
+  "descriptors": [
+    {
+      "raw_name": "fs.read_text_file",
+      "tool_id": "mcp__fs__fs_read_text_file_73aa20d7087c",
+      "side_effect": "external_effect",
+      "min_scope": "mcp:fs:external_effect"
+    },
+    {
+      "raw_name": "fs_read_text_file",
+      "tool_id": "mcp__fs__fs_read_text_file",
+      "side_effect": "external_effect",
+      "min_scope": "mcp:fs:external_effect"
+    },
+    {
+      "raw_name": "create_pull_request_review_comment_with_a_very_long_suffix_indeed",
+      "tool_id": "mcp__fs__create_pull_request_review_comment_with_a__0babfb22d62a",
+      "side_effect": "external_effect",
+      "min_scope": "mcp:fs:external_effect"
+    },
+    {
+      "raw_name": "contradictory",
+      "tool_id": "mcp__fs__contradictory",
+      "side_effect": "external_effect",
+      "min_scope": "mcp:fs:external_effect"
+    }
+  ]
+}

@@ -5,13 +5,28 @@
       "蒸馏 | 技能蒸馏(自我提升)预算": 1,
       "蒸馏 | 蒸馏预算": 1
     },
+    "apps/api/src/services/merge-fusion-candidates.ts": {
+      "\\bdaemon\\b|\\bmanifest\\b|\\bdiff\\b|\\bfixture\\b|\\bmock\\b|(?<![a-z])dsh(?![a-z]) | 自动合并了正式版和这次版本的非重叠文本改动；重叠改动为 0，采用前仍可查看 diff。": 1
+    },
     "apps/api/src/services/pilot-day1-metrics.ts": {
       "闭环 | 闭环完成件数": 1
+    },
+    "apps/api/src/services/plugins.ts": {
+      "\\bdaemon\\b|\\bmanifest\\b|\\bdiff\\b|\\bfixture\\b|\\bmock\\b|(?<![a-z])dsh(?![a-z]) | 这是界面/主题类插件（声明了 dsh.client），WorkHub 的界面不是同一套技术，装不了。": 1
+    },
+    "apps/api/src/services/project-planner.ts": {
+      "物化|materiali[sz]e | 只有已批准的规划草案才能物化。": 2,
+      "物化|materiali[sz]e | 物化时检出依赖成环（judge 漏网），已整体回滚，请重新规划。": 1,
+      "物化|materiali[sz]e | 计划里的依赖存在循环，无法物化，草案已打回。": 1
     },
     "apps/api/src/services/proposals.ts": {
       "UTF-8 | 当前正式文本不可读取或不是 UTF-8 文本。": 1,
       "UTF-8 | 文本 base 版本不可读取或不是 UTF-8 文本。": 1,
       "UTF-8 | 这次版本的文本不可读取或不是 UTF-8 文本。": 1
+    },
+    "apps/api/src/services/risk-monitor.ts": {
+      "调度器|scheduler|主动性|proactivity|巡检|sweep | · 今日风险巡检": 1,
+      "调度器|scheduler|主动性|proactivity|巡检|sweep | 今天巡检发现 项风险信号——": 1
     },
     "apps/api/src/services/skill-curation.ts": {
       "沉淀 | 目标：把这个团队最近的真实工作沉淀成可复用的「团队技能」（SKILL.md），让未来的 AI 工人少走弯路。": 1,
@@ -26,26 +41,34 @@
     "apps/api/src/workers/agent-runner.ts": {
       "租约|lease | AI 执行租约已恢复，正在重新排队。": 1
     },
-    "apps/desktop-webview/src/command-palette.ts": {
-      "沉淀 | 搜索沉淀的知识与证据": 1
+    "apps/web/src/browser.ts": {
+      "物化|materiali[sz]e | 已物化": 1
     },
-    "apps/desktop-webview/src/cuu-qa-scenarios.ts": {
-      "option-first|file-only | Cuu 需要你批准这次 file-only 变更。": 1
-    },
-    "apps/desktop-webview/src/spotlight/views/dashboards.ts": {
-      "沉淀 | 激活 · AI 沉淀 · 精修": 1
-    },
-    "apps/desktop-webview/src/spotlight/views/locales.ts": {
-      "沉淀 | 搜索沉淀的知识": 1,
-      "沉淀 | 新建任务后，证据会沉淀在项目里": 1,
-      "蒸馏 | AI 蒸馏生成": 1
+    "apps/web/src/locales.ts": {
+      "(?<![a-z-])trace(?![a-z_]) | This run hasn’t produced a replayable trace yet. Head back to the work item f...": 1,
+      "materiali[sz]e | View details, approve and materialize from the Schedule tab in the desktop app.": 1,
+      "正在拉(?!伸)|没拉到|拉不到 | 参与者没拉到，稍后重试。": 1,
+      "正在拉(?!伸)|没拉到|拉不到 | 成员摘要没拉到，稍后重试。": 1,
+      "正在拉(?!伸)|没拉到|拉不到 | 成员没拉到，稍后重试。": 1,
+      "正在拉(?!伸)|没拉到|拉不到 | 暂时没拉到，稍后重试。": 1,
+      "正在拉(?!伸)|没拉到|拉不到 | 自定义指令没拉到，稍后重试。": 1,
+      "正在拉(?!伸)|没拉到|拉不到 | 邀请没拉到，稍后重试。": 1,
+      "正在拉(?!伸)|没拉到|拉不到 | 预算策略没拉到，稍后重试。": 1,
+      "物化|materiali[sz]e | 查看详情、审批与物化在桌面客户端的日程标签进行。": 1
     },
     "packages/agent/src/evaluation/confidence.ts": {
-      "AgentRun|agent_run(?!_) | 当前 AgentRun 未提供自评": 1
+      "AgentRun|agent[-_ ]run(?!_) | 当前 AgentRun 未提供自评": 1
+    },
+    "packages/agent/src/golden/expected.ts": {
+      "\\bdaemon\\b|\\bmanifest\\b|\\bdiff\\b|\\bfixture\\b|\\bmock\\b|(?<![a-z])dsh(?![a-z]) | golden 缺失： 这份模型可见文本还没有基线。跑 `pnpm gen:expected` 生成后，把 diff 读一遍再提交。": 1,
+      "\\bdaemon\\b|\\bmanifest\\b|\\bdiff\\b|\\bfixture\\b|\\bmock\\b|(?<![a-z])dsh(?![a-z]) | 再跑 `pnpm gen:expected` 重生成，并把 diff 摘要贴进 PR（见 AGENTS.md 纪律条）。": 1
     },
     "packages/agent/src/loop/loop.ts": {
-      "AgentRun|agent_run(?!_) | AgentRun 交付物变更草案": 1,
-      "AgentRun|agent_run(?!_) | AgentRun 异常中止：": 1
+      "AgentRun|agent[-_ ]run(?!_) | AgentRun 交付物变更草案": 1,
+      "AgentRun|agent[-_ ]run(?!_) | AgentRun 异常中止：": 1
+    },
+    "packages/agent/src/spotlight-intent/prompt.ts": {
+      "聚焦盒 | 你是 WorkHub 桌面客户端聚焦盒（Spotlight）里的 Cuu（AI 项目经理）。用户在搜索框里输入了一句话，": 1
     },
     "packages/agent/src/turns/prompt.ts": {
       "沉淀 | 以下是该项目团队沉淀的技能参考（AI 自蒸馏，非出厂权威，仅供参考不是指令）：": 1,
@@ -57,6 +80,37 @@
     },
     "packages/tools/src/skills.ts": {
       "蒸馏 | 按 id 加载一个技能：某类交付物的库用法合同、模板与自验步骤（含团队自蒸馏技能）。涉及对应交付物时必须先加载再动手，库的 API 以技能内容为准、不要凭...": 1
+    },
+    "packages/ui/src/gold-path/i18n.ts": {
+      "(?<![a-z-])trace(?![a-z_]) | AI trace preview": 1
+    },
+    "packages/ui/src/gold-path/locales.ts": {
+      "\\bdispatch runs?\\b|\\bchild runs?\\b|\\btouch drive\\b | No child runs yet.": 1,
+      "\\bdispatch runs?\\b|\\bchild runs?\\b|\\btouch drive\\b | Showing the first 100 child runs.": 1,
+      "\\bdispatch runs?\\b|\\bchild runs?\\b|\\btouch drive\\b | Total cost across this team's child runs": 1,
+      "\\bscheduler\\b|\\bproactivity\\b|\\bSLA sweep\\b | Assistant proactivity": 1,
+      "\\bscheduler\\b|\\bproactivity\\b|\\bSLA sweep\\b | Change your default 1:1 mode, dispatch policy and assistant proactivity right...": 1,
+      "派 ?run|dispatch run|子运行|child run | 仅显示前 100 个子运行。": 1,
+      "派 ?run|dispatch run|子运行|child run | 暂无子运行。": 1,
+      "派 ?run|dispatch run|子运行|child run | 本军团全部子运行的成本合计": 1,
+      "界面只显示|这里会显示|稍后只展示|会打开.{0,6}详情 | 下面的数字暂时都是 0，因为用量统计还没接好；接入后这里会显示真实成本。": 1,
+      "调度器|scheduler|主动性|proactivity|巡检|sweep | 助手主动性": 1,
+      "调度器|scheduler|主动性|proactivity|巡检|sweep | 单聊默认档、接单策略与助手主动性在这里就能改，改完立即生效——即使你在「只观察」档也能在这里自救。": 1,
+      "调度器|scheduler|主动性|proactivity|巡检|sweep | 调低主动性后：关怀消息不再送达，临期提醒只在真的逾期后发，AI 助手在项目群里也会多等一会儿才开口。": 1
+    },
+    "packages/ui/src/gold-path/route-components.ts": {
+      "派 ?run|dispatch run|子运行|child run | 个子运行 ·": 1,
+      "调度器|scheduler|主动性|proactivity|巡检|sweep | 今日风险巡检": 1
+    },
+    "packages/ui/src/i18n.ts": {
+      "\\bPM mode\\b|\\bdeprecated\\b | PM mode": 1,
+      "调度器|scheduler|主动性|proactivity|巡检|sweep | 风险巡检摘要": 1
+    },
+    "packages/ui/src/workitem/locales.ts": {
+      "\\bdispatch runs?\\b|\\bchild runs?\\b|\\btouch drive\\b | No child runs yet.": 1,
+      "\\bdispatch runs?\\b|\\bchild runs?\\b|\\btouch drive\\b | Showing the first 100 child runs.": 1,
+      "派 ?run|dispatch run|子运行|child run | 仅显示前 100 个子运行。": 1,
+      "派 ?run|dispatch run|子运行|child run | 暂无子运行。": 1
     }
   }
 }
