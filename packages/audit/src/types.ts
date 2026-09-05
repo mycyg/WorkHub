@@ -50,11 +50,23 @@ export type SnapshotTakeInput = {
    * 复制一份，最坏 ~3GB/run）。新快照仍得新 id（审计行一行一 id），只是 ref 指向既有目录。
    */
   reuseIfUnchanged?: { contentSha256: string; ref: string };
+  /**
+   * 快照范围之外的工作目录顶层目录名（按名字精确匹配，不做 glob、不递归）。既不拷进快照，也不进
+   * contentSha256——否则这些目录一变，CORE-04「内容未变就复用 ref」的去重就失效。
+   * 用于 agent run 的 `.spill/`（B10 落盘的超大工具结果原文）：那是模型自救用的中间产物，不是需要回滚的
+   * 工作区状态。含路径分隔符或 `.`/`..` 的条目直接拒绝，不静默忽略。
+   */
+  excludeDirs?: string[];
 };
 
 export type RevertSnapshotInput = {
   snapshot: SnapshotRef;
   workdir: string;
+  /**
+   * 与 SnapshotTakeInput.excludeDirs 同一份名单。还原是整树原子换入，快照里本来就没有这些目录；
+   * 换入后把当前工作目录里的同名目录原样搬回——不因为快照里没有就把它们删掉。
+   */
+  excludeDirs?: string[];
 };
 
 export type ManifestFacts = {

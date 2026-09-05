@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, mkdir, writeFile, utimes, stat, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, mkdir, writeFile, utimes, stat, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import type { AgentLoopClient } from "@workhub/agent/loop";
+import { SPILL_DIR_NAME } from "@workhub/agent/loop";
 import { Hono } from "hono";
 import { generateSignedCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
@@ -4387,6 +4388,43 @@ test("agent run snapshot hook fails closed when post-snapshot audit fails", asyn
   );
   assert.equal(snapshots.rows.length, 1);
   assert.equal(snapshots.rows[0]?.id, snapshotId);
+});
+
+test("agent run snapshot hook keeps .spill/ out of the pre_step snapshot", async () => {
+  // B10 落盘的 .spill/ 是模型自救用的中间产物：不进快照、不进内容哈希，快照目录里只有真正的工作区状态。
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-snapshot-spill-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-snapshot-spill-root-"));
+  await mkdir(path.join(workdir, "outputs"), { recursive: true });
+  await mkdir(path.join(workdir, SPILL_DIR_NAME), { recursive: true });
+  await writeFile(path.join(workdir, "outputs", "result.md"), "v1", "utf8");
+  await writeFile(path.join(workdir, SPILL_DIR_NAME, "0001-read_file.txt"), "x".repeat(4096), "utf8");
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const hook = createAgentRunSnapshotHook({
+    run: agentRunRecord(),
+    settings: runtimeSettings,
+    snapshotRoot,
+    snapshots,
+    auditLogs,
+    now: () => now,
+    id: () => snapshotId
+  });
+
+  const result = await hook({
+    toolId: "write_file",
+    sideEffect: "sandbox_file",
+    input: { path: "outputs/result.md" },
+    workdir,
+    runId: "40000000-0000-4000-8000-000000000099",
+    workItemId
+  });
+
+  assert.equal(result.snapshotId, snapshotId);
+  const ref = snapshots.rows[0]?.ref;
+  assert.ok(ref, "快照行必须带 ref");
+  assert.deepEqual((await readdir(ref)).sort(), ["outputs"]);
+  assert.equal(await readFile(path.join(ref, "outputs", "result.md"), "utf8"), "v1");
 });
 
 test("agent run replay merge timeline only includes proposals opened by that run", async () => {

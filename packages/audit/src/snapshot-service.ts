@@ -43,6 +43,8 @@ export class SnapshotService {
     workItemId: string;
     branchId?: string;
     createdByKind: "ai" | "human" | "system";
+    /** 见 SnapshotTakeInput.excludeDirs（agent run 传 [.spill]）。 */
+    excludeDirs?: string[];
   }): SnapshotHook {
     return async (ctx) => {
       const snapshot = await this.takeSandboxFileSnapshot({
@@ -50,7 +52,8 @@ export class SnapshotService {
         ...(input.branchId ? { branchId: input.branchId } : {}),
         workdir: ctx.workdir,
         kind: "pre_step",
-        createdByKind: input.createdByKind
+        createdByKind: input.createdByKind,
+        ...(input.excludeDirs ? { excludeDirs: input.excludeDirs } : {})
       });
       return { snapshotId: snapshot.id };
     };
