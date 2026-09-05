@@ -819,6 +819,8 @@ test("api client exposes the team skill governance endpoints (list/patch/deactiv
   });
   await client.deactivateTeamSkillManage!("skill-1");
   await client.deactivateTeamSkillManage!("skill-1", { reason: "已过时" });
+  // R23 SA-06：管理员手动催一轮自学——无请求体（这一轮覆盖整个部署的技能库，没有可选参数）。
+  await client.curateTeamSkillsNow!();
 
   assert.deepEqual(calls, [
     { url: "/api/team-skills/manage", method: "GET", body: undefined },
@@ -832,7 +834,8 @@ test("api client exposes the team skill governance endpoints (list/patch/deactiv
       })
     },
     { url: "/api/team-skills/manage/skill-1/deactivate", method: "POST", body: JSON.stringify({}) },
-    { url: "/api/team-skills/manage/skill-1/deactivate", method: "POST", body: JSON.stringify({ reason: "已过时" }) }
+    { url: "/api/team-skills/manage/skill-1/deactivate", method: "POST", body: JSON.stringify({ reason: "已过时" }) },
+    { url: "/api/team-skills/curate-now", method: "POST", body: undefined }
   ]);
 });
 

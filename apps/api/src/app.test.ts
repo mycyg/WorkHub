@@ -2760,7 +2760,9 @@ test("secondary page OpenAPI routes document query parameters and page VM envelo
     // only covered pre-army user/team/workitem buckets and would let the OpenAPI contract drift.
     ["/api/pages/cost", ["generated_at", "currency", "total_cost_cny", "token_in", "token_out", "trend", "by_user", "by_team", "by_workitem", "by_task_plan", "by_objective", "model_breakdown", "budget", "notices", "top_exhaustion_risks"]],
     ["/api/pages/agents", ["generated_at", "kpis", "plans", "recent_escalations", "page_info"]],
-    ["/api/pages/skills", ["generated_at", "skills", "totals"]],
+    // R23 SA-06：curation 是必填——技能页必须回答「这台部署到底有没有人在攒技能」，可选字段会让
+    // 前端回到「没有就当没开」的猜测，那正是这一批要修掉的毛病。
+    ["/api/pages/skills", ["generated_at", "skills", "totals", "curation"]],
     ["/api/pages/settings", ["generated_at", "locale", "runtime", "llm_runtime", "budgets", "language", "device"]]
   ] as const) {
     const schema = jsonResponseSchema(body.paths, path, "get", "200");

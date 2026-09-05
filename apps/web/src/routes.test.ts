@@ -703,7 +703,7 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
       },
       async skills(options?: { locale?: string }) {
         localeCall("skills", options);
-        return overrides.skills ?? { generated_at: "2026-06-16T00:00:00.000Z", skills: [], totals: { active: 0, ai_authored: 0, refined: 0 }, empty_state: "no_skills" as const };
+        return overrides.skills ?? { generated_at: "2026-06-16T00:00:00.000Z", skills: [], totals: { active: 0, ai_authored: 0, refined: 0 }, curation: { enabled: true, running: false, last_run_at: null }, empty_state: "no_skills" as const };
       },
       async settings(options?: { locale?: string }) {
         localeCall("settings", options);
@@ -1923,7 +1923,7 @@ test("xreview batch C: stat chips carry surface-specific labels (no recycled hom
 
   // Skills page must NOT recycle the home inbox labels Focus/Queue/Background for skill totals.
   const { client: skillsClient } = fakeRouteClient(surface, {
-    skills: { generated_at: "2026-06-16T00:00:00.000Z", skills: [], totals: { active: 5, refined: 2, ai_authored: 3 } }
+    skills: { generated_at: "2026-06-16T00:00:00.000Z", skills: [], totals: { active: 5, refined: 2, ai_authored: 3 }, curation: { enabled: true, running: false, last_run_at: null } }
   });
   const skills = await loadWebRoute(skillsClient, resolveWebRoute("/dashboard/skills")!, "en-US");
   assert.equal(skills.status, "ready");
@@ -2742,4 +2742,31 @@ test("R15 web-mirror session expiry during a conversation load bubbles for re-au
     loadWebRoute(client, match, "zh-CN"),
     (error: unknown) => error instanceof WorkHubApiError && error.code === "not_identified"
   );
+});
+
+// R23 SA-06：技能页的「立即自学一轮」是管理员专属入口，管理员标记走登录态（shellUser）而不是页面 VM。
+// 这条钉的是那条通路真的接上了——UI 层的三态渲染另有 route-components 的测试覆盖。
+test("R23 SA-06 the manual self-learning button only reaches admins on the skills route", async () => {
+  const surface = goldPathSurfaceVm();
+  const skills = {
+    generated_at: "2026-09-05T00:00:00.000Z",
+    skills: [],
+    totals: { active: 0, ai_authored: 0, refined: 0 },
+    curation: { enabled: true, running: false, last_run_at: "2026-09-04T18:30:00.000Z" },
+    empty_state: "no_skills" as const
+  };
+  const match = resolveWebRoute("/dashboard/skills");
+  assert.ok(match);
+
+  const { client: memberClient } = fakeRouteClient(surface, { skills });
+  const memberResult = await loadWebRoute(memberClient, match, "zh-CN", { nickname: "member", isAdmin: false });
+  assert.equal(memberResult.status, "ready");
+  assert.equal(memberResult.html.includes("data-r23-skills-curate-now"), false);
+  // 但自学状态本身对所有人可见——「这台部署有没有人在攒技能」不是管理员机密。
+  assert.equal(memberResult.html.includes('data-r23-skills-curation="idle"'), true);
+
+  const { client: adminClient } = fakeRouteClient(surface, { skills });
+  const adminResult = await loadWebRoute(adminClient, match, "zh-CN", { nickname: "admin", isAdmin: true });
+  assert.equal(adminResult.html.includes("data-r23-skills-curate-now"), true);
+  assert.equal(adminResult.html.includes('data-r23-skills-curation-last-run="2026-09-04T18:30:00.000Z"'), true);
 });
