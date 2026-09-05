@@ -86,6 +86,7 @@ export const commandRegistry: DesktopCommand[] = [
     id: "workitem",
     label: { "zh-CN": "任务", en: "Tasks" },
     hint: { "zh-CN": "进行中的任务与交付物", en: "Tasks and deliverables" },
+    // keywords 是搜索词不是展示文案：旧叫法（工作项 / work item）刻意保留，用户按记忆里的词也搜得到。
     keywords: ["工作项", "任务", "事项", "work item", "issue", "ticket", "task"],
     icon: ic('<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/>'),
     action: { kind: "open-window", target: "workitem" }
@@ -94,6 +95,7 @@ export const commandRegistry: DesktopCommand[] = [
     id: "agents",
     label: { "zh-CN": "Cuu 的小队", en: "Cuu's squads" },
     hint: { "zh-CN": "分工方案、子任务和卡点", en: "Plans, subtasks, blockers" },
+    // 同上：「军团 / army」是旧叫法，只留在搜索词里，不出现在任何展示位。
     keywords: ["军团", "小队", "分工", "计划", "agents", "agent army", "army", "squad", "task plan"],
     icon: ic('<circle cx="7" cy="8" r="2.5"/><circle cx="17" cy="8" r="2.5"/><circle cx="12" cy="16" r="2.5"/><path d="M9 9.5l2 4M15 9.5l-2 4M9.5 16h5"/>'),
     action: { kind: "open-window", target: "agents" }

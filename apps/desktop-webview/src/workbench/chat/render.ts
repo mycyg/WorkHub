@@ -985,7 +985,7 @@ function renderRiskDigestCardHtml(
   const sections: string[] = [];
   if (digest.stalledCount > 0) {
     sections.push(
-      `<li class="wh-wb-risk-digest-item">${zh ? `工单停滞 · ${digest.stalledCount} 项` : `Stalled work items · ${digest.stalledCount}`}</li>`
+      `<li class="wh-wb-risk-digest-item">${zh ? `任务停滞 · ${digest.stalledCount} 项` : `Stalled tasks · ${digest.stalledCount}`}</li>`
     );
   }
   if (digest.deadlineCount > 0) {

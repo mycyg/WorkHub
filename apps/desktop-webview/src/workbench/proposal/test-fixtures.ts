@@ -39,7 +39,7 @@ export function proposalVm(over: Partial<ProposalDetailVM> = {}): ProposalDetail
       ],
       evidence_refs: [],
       risk: { level: "medium", human_label: "中风险 · 可回滚", reversible: true },
-      rollback: { available: true, description: "留有快照，可回滚。" },
+      rollback: { available: true, description: "保留了改动前的版本，可还原。" },
       review: { reason_required_on_reject: true }
     },
     evidence_refs: [],

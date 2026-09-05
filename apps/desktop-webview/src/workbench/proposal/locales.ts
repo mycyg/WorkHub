@@ -18,7 +18,7 @@ import {
 
 const zh = {
   addAShortReasonFirst: "先写一句打回说明。",
-  approveFirstThenMergeTheSnapshot: "确认通过后再合入交付物，可用快照回滚。",
+  approveFirstThenMergeTheSnapshot: "确认通过后再合入交付物，随时能还原到改之前。",
   approvedOnlyTheDeliverableMergeRemains: "已确认通过，只差合入交付物。",
   approving: "确认中…",
   backToArmyPanel: "‹ 返回小队面板",
@@ -44,7 +44,7 @@ const zh = {
 
 const en = {
   addAShortReasonFirst: "Add a short reason first.",
-  approveFirstThenMergeTheSnapshot: "Approve first, then merge; the snapshot can roll back.",
+  approveFirstThenMergeTheSnapshot: "Approve first, then merge — you can always restore the version from before.",
   approvedOnlyTheDeliverableMergeRemains: "Approved; only the deliverable merge remains.",
   approving: "Approving…",
   backToArmyPanel: "‹ Back to the squad panel",

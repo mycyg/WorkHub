@@ -300,7 +300,7 @@ function renderPlanListBody(drafts: SchedulePlanDraft[], zh: boolean): string {
         <div class="wh-wb-sc-plan-draft-main">
           <div class="wh-wb-sc-plan-draft-title">${escapeHtml(title)}</div>
           <div class="wh-wb-sc-plan-draft-meta">${escapeHtml(planShortDate(draft.updated_at, zh))} · ${escapeHtml(
-            zh ? `${draft.milestones.length} 里程碑 · ${draft.items.length} 工作项` : `${draft.milestones.length} milestones · ${draft.items.length} items`
+            zh ? `${draft.milestones.length} 个里程碑 · ${draft.items.length} 个任务` : `${draft.milestones.length} milestones · ${draft.items.length} items`
           )}</div>
         </div>
         <span class="wh-wb-sc-plan-chip wh-wb-sc-plan-chip--${planDraftStatusTone(draft.status)}">${escapeHtml(planDraftStatusLabel(draft.status, zh))}</span>

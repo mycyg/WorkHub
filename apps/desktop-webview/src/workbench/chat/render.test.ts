@@ -2536,7 +2536,7 @@ test("renderMessageHtml expands a risk_digest into per-signal sections once its 
     ctx
   );
   assert.match(html, /wh-wb-risk-digest-list/u);
-  assert.match(html, /工单停滞 · 2 项/u);
+  assert.match(html, /任务停滞 · 2 项/u);
   assert.match(html, /临期未动工 · 1 项/u);
   assert.match(html, /项目成本异常放量/u);
   assert.match(html, /data-wb-chat-collapse-message="m-risk-1"/u);
@@ -2554,7 +2554,7 @@ test("renderMessageHtml expands a risk_digest with a single triggered signal wit
     }),
     ctx
   );
-  assert.match(html, /工单停滞 · 1 项/u);
+  assert.match(html, /任务停滞 · 1 项/u);
   assert.doesNotMatch(html, /临期未动工/u);
   assert.doesNotMatch(html, /成本异常放量/u);
 });

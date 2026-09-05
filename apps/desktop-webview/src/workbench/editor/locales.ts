@@ -10,7 +10,7 @@
 import { normalizeWorkHubLocale, type WorkHubLocale } from "@workhub/contracts";
 
 const zh = {
-  approveFirstThenMergeTheSnapshot: "确认通过后再合入交付物，可用快照回滚。",
+  approveFirstThenMergeTheSnapshot: "确认通过后再合入交付物，随时能还原到改之前。",
   approvedOnlyTheDeliverableMergeRemains: "已确认通过，只差合入交付物。",
   approving: "确认中…",
   close: "关闭",
@@ -28,7 +28,7 @@ const zh = {
   requestChanges: "打回修改",
   thatDidnTGoThroughTry: "没提交成功，稍后重试。",
   thisChangeHasNoBodyTo: "这条变更没有可展示的正文。",
-  thisChangeHasNoLineComparable: "这条变更没有可逐行对照的文本内容。采纳后可到工作项或网盘查看正式版。",
+  thisChangeHasNoLineComparable: "这条变更没有可逐行对照的文本内容。采纳后可到任务或网盘查看正式版。",
   thisChangeIsLargeTheLine: "这份变更较大，逐行对照已被截断，仅供参考。",
   thisProposalIsnTYoursTo: "这份提议不归你审（可能不是你的工作区，或已交给别人）。",
   thisProposalSStatusAlreadyChanged: "这份提议的状态已经变了，刷新后再看。",
@@ -36,7 +36,7 @@ const zh = {
 } as const;
 
 const en = {
-  approveFirstThenMergeTheSnapshot: "Approve first, then merge; the snapshot can roll back.",
+  approveFirstThenMergeTheSnapshot: "Approve first, then merge — you can always restore the version from before.",
   approvedOnlyTheDeliverableMergeRemains: "Approved; only the deliverable merge remains.",
   approving: "Approving…",
   close: "Close",
