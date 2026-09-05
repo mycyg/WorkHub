@@ -53,7 +53,7 @@
       },
       {
         "label": "workbench",
-        "title": "WorkHub 工作台",
+        "title": "WorkHub",
         "url": "/workbench.html",
         "create": false,
         "width": 1280,

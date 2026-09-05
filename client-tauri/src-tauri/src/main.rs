@@ -1,5 +1,5 @@
 use workhub_client_tauri::config::{
-    load_shell_config_from_json_and_env, normalize_shell_server_url,
+    load_shell_config_from_json_env_and_system, normalize_shell_server_url,
     shell_config_json_with_server_url, WorkHubShellConfig, WORKHUB_SERVER_URL_ENV,
 };
 use workhub_client_tauri::deep_link::{
@@ -7,8 +7,8 @@ use workhub_client_tauri::deep_link::{
 };
 use workhub_client_tauri::events::{event_channel_name, ShellEvent};
 use workhub_client_tauri::locale::{
-    normalize_optional_workhub_locale, normalize_workhub_locale, WorkHubLocale,
-    DEFAULT_WORKHUB_LOCALE,
+    detect_system_workhub_locale, normalize_optional_workhub_locale, normalize_workhub_locale,
+    parse_macos_preferred_languages, WorkHubLocale, DEFAULT_WORKHUB_LOCALE,
 };
 use workhub_client_tauri::notify::{
     deep_link_plan_for_notification_click, ShellSystemNotificationPlan,
@@ -42,6 +42,7 @@ use workhub_client_tauri::window_controls::{
     toggle_pet_window as toggle_pet_window_plan, ShellWindowControlAction, ShellWindowControlPlan,
     ShellWindowControlSource, MAIN_WINDOW_LABEL,
 };
+use workhub_client_tauri::windows::workbench_window_title;
 
 use std::{
     fs,
@@ -716,6 +717,12 @@ fn apply_shell_locale(app: &tauri::AppHandle, locale: WorkHubLocale) -> Result<(
         tray.set_tooltip(Some(tray_tooltip(locale)))
             .map_err(|error| format!("failed to update tray tooltip locale: {error}"))?;
     }
+    // 工作台窗已开着时标题跟着切（没建过就不用管，建窗时会按当时的 locale 设）。best-effort。
+    if let Some(workbench) = app.get_webview_window("workbench") {
+        if let Err(error) = workbench.set_title(workbench_window_title(locale)) {
+            eprintln!("failed to update workbench window title locale: {error}");
+        }
+    }
     Ok(())
 }
 
@@ -1237,7 +1244,9 @@ fn create_workbench_window_if_missing(
         workbench_config.label.clone(),
         WebviewUrl::App("workbench.html".into()),
     )
-    .title(workbench_config.title.clone())
+    // S3 严重 #4：声明层的 title 是语言中立的产品名（tauri.conf.json 在读系统语言之前就被消费），
+    // 给人看的标题在这里按壳层语言设；切语言时 apply_shell_locale 会再刷一次。
+    .title(workbench_window_title(current_workhub_locale(app)))
     .inner_size(workbench_config.width, workbench_config.height)
     .resizable(workbench_config.resizable)
     .maximizable(workbench_config.maximizable)
@@ -1985,8 +1994,48 @@ fn load_workhub_shell_config(app: &tauri::AppHandle) -> Result<WorkHubShellConfi
             None
         };
 
-    load_shell_config_from_json_and_env(raw.as_deref(), |name| std::env::var(name).ok())
-        .map_err(|error| format!("failed to load shell config {}: {error:?}", path.display()))
+    load_shell_config_from_json_env_and_system(
+        raw.as_deref(),
+        |name| std::env::var(name).ok(),
+        system_workhub_locale(),
+    )
+    .map_err(|error| format!("failed to load shell config {}: {error:?}", path.display()))
+}
+
+// S3 严重 #4：壳层语言的第一来源是**系统语言**（此前写死中文）。纯逻辑在 locale.rs
+// (detect_system_workhub_locale / parse_macos_preferred_languages)，这里只负责把两个来源取回来。
+fn system_workhub_locale() -> Option<WorkHubLocale> {
+    detect_system_workhub_locale(&macos_preferred_languages(), |name| {
+        std::env::var(name).ok()
+    })
+}
+
+// macOS 的 `.app` 被双击启动时**继承不到 shell 的 LANG/LC_ALL**，AppleLanguages 才是 GUI 应用能问到
+// 的唯一系统语言来源。用现成的 `defaults` 命令读（不引新 crate；两次调用各带 1 次进程创建，只在启动
+// 时跑一次）。任何失败都静默回空列表，由 detect_system_workhub_locale 继续问环境变量、最后保留默认。
+#[cfg(target_os = "macos")]
+fn macos_preferred_languages() -> Vec<String> {
+    for key in ["AppleLanguages", "AppleLocale"] {
+        let Ok(output) = std::process::Command::new("defaults")
+            .args(["read", "-g", key])
+            .output()
+        else {
+            continue;
+        };
+        if !output.status.success() {
+            continue;
+        }
+        let parsed = parse_macos_preferred_languages(&String::from_utf8_lossy(&output.stdout));
+        if !parsed.is_empty() {
+            return parsed;
+        }
+    }
+    Vec::new()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn macos_preferred_languages() -> Vec<String> {
+    Vec::new()
 }
 
 // findings[#132/H15] + R13 批 V2：main/workbench 都是 create:false 复用同一个窗口实例（托盘/深链/

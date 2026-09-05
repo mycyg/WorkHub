@@ -172,6 +172,26 @@ pub fn load_shell_config_from_json_and_env<F>(
 where
     F: Fn(&str) -> Option<String>,
 {
+    load_shell_config_from_json_env_and_system(raw_json, env_value, None)
+}
+
+/// 启动配置的完整解析。语言的优先级（从低到高）：
+/// 1. `DEFAULT_WORKHUB_LOCALE`（谁都问不出来时的兜底）；
+/// 2. **系统语言**（`system_locale`,由 main.rs 用 `detect_system_workhub_locale` 探测）；
+/// 3. `workhub-shell-config.json` 里的 `locale`；
+/// 4. `WORKHUB_LOCALE` 环境变量。
+///
+/// S3 严重 #4 修的就是第 2 层此前压根不存在——壳层的语言写死中文,英文系统上托盘菜单/窗口标题全中文。
+/// 显式配置（3/4）永远压过系统语言：用户手改过就不该被系统设置反悔。webview 侧切语言走
+/// `set_shell_locale` 命令,那是运行时覆盖,不经过这里。
+pub fn load_shell_config_from_json_env_and_system<F>(
+    raw_json: Option<&str>,
+    env_value: F,
+    system_locale: Option<WorkHubLocale>,
+) -> Result<WorkHubShellConfig, WorkHubShellConfigLoadError>
+where
+    F: Fn(&str) -> Option<String>,
+{
     let from_file = match raw_json {
         Some(raw) if !raw.trim().is_empty() => serde_json::from_str::<WorkHubShellConfigFile>(raw)
             .map_err(|error| WorkHubShellConfigLoadError::InvalidJson(error.to_string()))?,
@@ -179,6 +199,9 @@ where
     };
 
     let mut config = WorkHubShellConfig::lan_default();
+    if let Some(locale) = system_locale {
+        config.locale = locale;
+    }
     if let Some(server_url) = clean_optional(from_file.server_url) {
         config.server_url = server_url;
     }
@@ -296,6 +319,44 @@ mod tests {
         .unwrap();
 
         assert_eq!(config.client_token, Some("workhub-token".to_string()));
+    }
+
+    // S3 严重 #4：没有任何显式配置时，壳层语言必须跟随系统，而不是写死中文。
+    #[test]
+    fn system_locale_replaces_the_hard_coded_chinese_default() {
+        let english =
+            load_shell_config_from_json_env_and_system(None, |_| None, Some(WorkHubLocale::EnUs))
+                .unwrap();
+        assert_eq!(english.locale, WorkHubLocale::EnUs);
+
+        let chinese =
+            load_shell_config_from_json_env_and_system(None, |_| None, Some(WorkHubLocale::ZhCn))
+                .unwrap();
+        assert_eq!(chinese.locale, WorkHubLocale::ZhCn);
+
+        // 探测不出系统语言时保留既有默认，不改变行为。
+        let unknown = load_shell_config_from_json_env_and_system(None, |_| None, None).unwrap();
+        assert_eq!(unknown.locale, WorkHubLocale::default());
+    }
+
+    // 显式配置永远压过系统语言：用户手改过（文件或环境变量）就不该被系统设置反悔。
+    #[test]
+    fn explicit_locale_configuration_outranks_the_system_language() {
+        let from_file = load_shell_config_from_json_env_and_system(
+            Some(r#"{"locale":"zh-CN"}"#),
+            |_| None,
+            Some(WorkHubLocale::EnUs),
+        )
+        .unwrap();
+        assert_eq!(from_file.locale, WorkHubLocale::ZhCn);
+
+        let from_env = load_shell_config_from_json_env_and_system(
+            Some(r#"{"locale":"zh-CN"}"#),
+            |name| (name == WORKHUB_LOCALE_ENV).then(|| "en-US".to_string()),
+            Some(WorkHubLocale::ZhCn),
+        )
+        .unwrap();
+        assert_eq!(from_env.locale, WorkHubLocale::EnUs);
     }
 
     #[test]
