@@ -85,6 +85,25 @@ export function createMeetingRoutes(deps: MeetingRoutesDependencies = {}) {
     }
   });
 
+  // SA-02：重新生成纪要。路径只有两段（:meetingId/analyze），与上面 projects/... 三段起步的
+  // 几条不会撞车。同步等分析跑完再回页面——用户点了就该看见结果，而不是一个「已提交」的空承诺。
+  routes.post("/:meetingId/analyze", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
+    try {
+      const data = await meetingPages.reanalyzeMeeting({
+        actor: c.var.actor,
+        meetingId: requireUuidParam(c.req.param("meetingId"), "会议"),
+        locale
+      });
+      return c.json(pageEnvelope(data, locale));
+    } catch (error) {
+      if (error instanceof MeetingPageServiceError) {
+        return meetingErrorResponse(c, error);
+      }
+      throw error;
+    }
+  });
+
   routes.post("/projects/:projectId/insights/:insightId/draft", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
     try {

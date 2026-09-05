@@ -474,6 +474,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   await client.createMeetingInsightDraft("project-1", "insight-1");
   await client.dismissMeetingInsight("project-1", "insight-1");
   await client.createMeetingDraftProposal("work-1");
+  await client.reanalyzeMeeting("meeting-1");
   await client.costUsage();
   await client.costPolicies();
   await client.updateCostPolicy("user", "pcost-user-day-v0", { max_tokens: 250000 });
@@ -526,6 +527,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     "POST /api/meetings/projects/project-1/insights/insight-1/draft",
     "POST /api/meetings/projects/project-1/insights/insight-1/dismiss",
     "POST /api/meetings/workitems/work-1/proposal-draft",
+    "POST /api/meetings/meeting-1/analyze",
     "GET /api/cost/usage",
     "GET /api/cost/policies",
     "PUT /api/cost/policies/user/pcost-user-day-v0",
@@ -573,6 +575,7 @@ test("api client carries locale on typed page VM requests", async () => {
   await client.createMeetingInsightDraft("project 1", "insight 1", { locale: "zh-CN" });
   await client.dismissMeetingInsight("project 1", "insight 1", { locale: "en-US" });
   await client.createMeetingDraftProposal("work 1", { locale: "zh-CN" });
+  await client.reanalyzeMeeting("meeting 1", { locale: "en-US" });
   await client.resolveEscalation("esc 1", { action: "retry" }, { locale: "en-US" });
   await client.resolveBudgetDecision("esc 1", "finish_current_output", { locale: "en-US" });
   await client.delegateEscalation("esc 1", { to_user_id: "user 1" }, { locale: "en-US" });
@@ -605,6 +608,7 @@ test("api client carries locale on typed page VM requests", async () => {
     "/api/meetings/projects/project%201/insights/insight%201/draft?locale=zh-CN",
     "/api/meetings/projects/project%201/insights/insight%201/dismiss?locale=en-US",
     "/api/meetings/workitems/work%201/proposal-draft?locale=zh-CN",
+    "/api/meetings/meeting%201/analyze?locale=en-US",
     "/api/escalations/esc%201/resolve?locale=en-US",
     "/api/escalations/esc%201/budget-actions/finish_current_output?locale=en-US",
     "/api/escalations/esc%201/delegate?locale=en-US",

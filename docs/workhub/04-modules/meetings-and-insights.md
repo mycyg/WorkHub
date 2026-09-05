@@ -17,6 +17,8 @@ owner: workflow
 > - **所有术语/状态标签**以 [`../00-overview/glossary-dejargon.md`](../00-overview/glossary-dejargon.md) 为权威；本篇用户面文案一律走人话（零 snake_case、零 git 黑话）。
 >
 > **扎根**：会议链是现有「需求管理大师」**已跑通**的能力，WorkHub **保留并 AI-native 化**。核心代码锚点贯穿全文：`app/routers/meetings.py`、`app/services/meeting_agent.py`、`app/routers/voice.py`、`web/src/pages/ProjectMeetings.tsx`、`client-tauri/web-src/src/routes/ProjectMeetings.tsx`。
+>
+> **⚠️ 读之前先看 [§5.5 TypeScript 实现现状](#55-typescript-实现现状2026-09-05sa-02-落地后)**：本篇大部分内容描述的是被迁移的 Python 实现与目标形态。WorkHub 这边现在真正跑通的是「粘转写文本 → AI 纪要 + AI 洞察 → 人确认生成草稿」，**没有**录音上传与 ASR。
 
 ---
 
@@ -391,6 +393,83 @@ WorkItem(draft) → 进澄清主轴（M-WORKITEM）→ publish meeting.insight_c
 ```
 
 > **AI 降级（现状已有，WorkHub 保留并接成升级口径）**：`analyze_meeting` 在**无 LLM key 或调用异常**时走 `_fallback`（`meeting_agent.py:52/137`）——关键词粗判 `kind`，纪要直接放转写片段，`confidence_reason` 明写「本地 fallback 根据关键词判断，建议人工确认」。这是「AI 受阻不静默失败、转人确认」的天然样板，呼应 PRD §8.2 三触发器之「不合格→请人」。WorkHub 把这种「AI 没把握」统一用 glossary §3.3 三档语气呈现（此处=「我不太确定，想请你拍板」）。
+
+---
+
+## 5.5 TypeScript 实现现状（2026-09-05，SA-02 落地后）
+
+> 上面 §5 描述的是被迁移的「需求管理大师」Python 实现。这一节写 **WorkHub 现在真正跑的东西**，
+> 用于回答「点了导入之后到底发生了什么」。
+
+### 5.5.1 真实链路
+
+```
+[导入会议转写] POST /api/meetings/projects/:projectId/import
+   │ meetings.ts importTranscript → meeting_records(status=transcribed)
+   │ 源文件语义 = 转写文本本身（audio_* 列存的是记录源文件，不必有音频）
+   ▼
+[排队分析] 两条触发路径，认领是同一把闸
+   ├─ 导入成功后立刻排一次（services/meeting-pages.ts，不 await）
+   └─ 后台巡检 workers/meeting-analysis.ts 每轮扫 status=transcribed
+   │   以及认领后卡死超时的 processing（进程崩在分析中途的孤儿）
+   ▼
+[分析] services/meeting-analysis.ts
+   │ ① provider 未配置 → 直接返回，**绝不动会议状态**（页面负责说明）
+   │ ② 认领：条件 UPDATE status transcribed→processing，认领不到即已有人在跑
+   │ ③ 预算软闸：decideRunBudget 读团队用量快照，不足则把认领放回 transcribed
+   │ ④ 一次 LLM 调用（disableThinking，结构化 JSON 输出）
+   │ ⑤ 解析：{minutes_md, insights[{kind,title,description,confidence_reason}]}
+   ▼
+[落库] meetings.ts saveMeetingAnalysis（一个事务）
+   │ 清掉上一轮还没被人处理的 pending 洞察（confirmed/dismissed 是人的决定，不动）
+   │ 插 meeting_insights(status=pending) + 写 minutes_md + status=ready + 审计
+   ▼
+[通知] createOrUpdateNotification(meeting.insight.pending)
+   │ dedupeKey = meeting_insight:<insightId>，与读路径
+   │ services/schedule-notify-pages.ts 的补通知共用同一把 key，不会重复出卡
+   ▼
+[洞察确认] 人点「生成草稿」/「忽略」（这两条端点早已存在并可用）
+   POST /api/meetings/projects/:projectId/insights/:insightId/draft|dismiss
+   │ insightToDraft：建 work_item(status=ai_clarifying, source_meeting_id 回链)
+   │ + 一条 intent chat_message（带转写/纪要摘录）+ 洞察置 confirmed
+   ▼
+[变更提议] POST /api/meetings/workitems/:workItemId/proposal-draft
+```
+
+### 5.5.2 会议状态（`meeting_records.status`，无新增迁移）
+
+| 取值 | 用户标签 | 含义 |
+|---|---|---|
+| `transcribed` | 转写已导入 | 转写在库，纪要还没生成；也是分析可认领态 |
+| `processing` | 处理中 | 分析已被认领、正在跑 |
+| `ready` | 已生成 | 纪要与洞察都已落库 |
+| `failed` | 处理失败 | 分析失败，等人点「重新生成纪要」 |
+
+> `transcribed` 此前被服务端折叠进 `processing`（`meetingStatus()`），于是「AI 正在分析」和
+> 「AI 从没被叫起来」在页面上长得一模一样。SA-02 把它放出来，页面才说得清话。
+
+### 5.5.3 AI 未配置时的诚实呈现（不是降级伪造）
+
+现状**不做**上面 §5 里 Python 版的 `_fallback` 关键词伪纪要。理由：关键词拼出来的「纪要」
+仍然是一条会进搜索、会进证据链的记录，读的人无从分辨它是不是 AI 读懂了这场会。改成直说：
+
+- 会议页 VM 带 `ai_analysis_configured`（`packages/contracts/src/pages.ts`）；
+- 为 false 时页面顶部出提示条「这个部署还没有配置 AI：导入的会议只会保存转写，纪要和洞察不会自动生成。」，
+  纪要区写「AI 还没有配置，这场会议只保存了转写。」，并且**不下发**「重新生成纪要」按钮；
+- 会议状态停在「转写已导入」，绝不会被写成「处理中」或「处理失败」。
+
+### 5.5.4 重新生成纪要
+
+`POST /api/meetings/:meetingId/analyze`（项目管理者）。强制认领，`ready`/`failed` 都能重跑，
+同步等分析跑完再回一份新的会议页。分析中（`processing`）时不下发这个按钮，避免一次误点重复烧模型。
+错误码：`meeting_analysis_unavailable`(503，未配置)、`meeting_analysis_budget_exhausted`(409)、
+`meeting_analysis_failed`(409)、`meeting_forbidden`(403)、`meeting_not_found`(404)。
+
+### 5.5.5 还没做的
+
+- 音频与 ASR：现在只有「粘转写文本」这一条入口，没有录音上传、没有分片、没有 ASR。
+- SSE：分析完成没有事件推送，页面靠下一次打开或手动刷新看到结果（§6 的演进点仍然待做）。
+- 桌面端没有会议视图。
 
 ---
 

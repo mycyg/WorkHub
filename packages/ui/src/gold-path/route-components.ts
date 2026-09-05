@@ -418,6 +418,10 @@ type RouteCopyKey =
   | "meeting.openProposal"
   | "meeting.reason"
   | "meeting.approvalSafe"
+  | "meeting.reanalyze"
+  | "meeting.aiNotConfigured"
+  | "meeting.minutesQueued"
+  | "meeting.minutesNotConfigured"
   | "meeting.empty"
   | "meeting.status.ready"
   | "meeting.status.transcribed"
@@ -697,6 +701,10 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "meeting.openProposal": "查看变更申请",
     "meeting.reason": "AI 推荐理由",
     "meeting.approvalSafe": "审批安全：确认前不会修改正式资料。",
+    "meeting.reanalyze": "重新生成纪要",
+    "meeting.aiNotConfigured": "这个部署还没有配置 AI：导入的会议只会保存转写，纪要和洞察不会自动生成。",
+    "meeting.minutesQueued": "纪要还在生成，稍后回来查看。",
+    "meeting.minutesNotConfigured": "AI 还没有配置，这场会议只保存了转写。",
     "meeting.empty": "这个项目还没有会议洞察。",
     "meeting.status.ready": "已生成",
     "meeting.status.transcribed": "转写已导入",
@@ -979,6 +987,10 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "meeting.openProposal": "Open change request",
     "meeting.reason": "AI rationale",
     "meeting.approvalSafe": "Approval-safe: official project state will not change until you confirm.",
+    "meeting.reanalyze": "Regenerate minutes",
+    "meeting.aiNotConfigured": "This deployment has no AI configured: imported meetings keep their transcript only — minutes and insights are not generated.",
+    "meeting.minutesQueued": "Minutes are still being generated — check back shortly.",
+    "meeting.minutesNotConfigured": "AI is not configured, so this meeting only has its transcript.",
     "meeting.empty": "This project does not have meeting insights yet.",
     "meeting.status.ready": "Ready",
     "meeting.status.transcribed": "Transcript imported",
@@ -3425,9 +3437,19 @@ function renderDriveRouteComponent(
 
 // L27：转写/纪要为空时不能再共用「这个项目还没有会议洞察」——那是讲洞察、不是讲转写，且会议只是还在
 // 处理(processing)/处理失败(failed)时这句是错的。按会议状态给出贴合的占位，让用户分得清「还在生成 / 生成失败 / 真的没有」。
-function meetingContentFallback(kind: "transcript" | "minutes", status: string | undefined, locale: WorkHubLocale): string {
+function meetingContentFallback(
+  kind: "transcript" | "minutes",
+  status: string | undefined,
+  locale: WorkHubLocale,
+  aiConfigured = true
+): string {
   const zh = locale === "zh-CN";
   const noun = kind === "transcript" ? (zh ? "转写" : "Transcript") : (zh ? "纪要" : "Minutes");
+  // SA-02：转写已入库、纪要还没生成，是两种完全不同的处境——AI 压根没配（等下去也不会有），
+  // 和 AI 已排队（等一会就有）。此前两者都掉进「这次会议还没有纪要内容」，用户无从分辨。
+  if (kind === "minutes" && status === "transcribed") {
+    return routeT(locale, aiConfigured ? "meeting.minutesQueued" : "meeting.minutesNotConfigured");
+  }
   if (status === "processing") {
     return zh ? `${noun}还在准备中，稍后回来查看。` : `${noun} is still being prepared — check back shortly.`;
   }
@@ -3476,8 +3498,16 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
     : (selectedMeeting
       ? `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "这场会议还没有洞察。" : "No insights from this meeting yet.")}</p>`
       : "");
-  const transcript = selectedMeeting?.transcript_text?.trim() || meetingContentFallback("transcript", selectedMeeting?.status, locale);
-  const minutes = selectedMeeting?.minutes_md?.trim() || meetingContentFallback("minutes", selectedMeeting?.status, locale);
+  const transcript = selectedMeeting?.transcript_text?.trim() || meetingContentFallback("transcript", selectedMeeting?.status, locale, vm.ai_analysis_configured);
+  const minutes = selectedMeeting?.minutes_md?.trim() || meetingContentFallback("minutes", selectedMeeting?.status, locale, vm.ai_analysis_configured);
+  const reanalyzeAction = selectedMeeting?.actions?.reanalyze;
+  const reanalyzeButton = reanalyzeAction
+    ? `<div class="wh-r4-route-actions"><a class="wh-btn" href="${escapeHtml(safeHref(reanalyzeAction.href))}" data-action-id="${escapeHtml(reanalyzeAction.id)}" data-method="${escapeHtml(reanalyzeAction.method)}" data-r23-meeting-reanalyze="${escapeHtml(selectedMeeting?.id ?? "")}">${escapeHtml(reanalyzeAction.label ?? routeT(locale, "meeting.reanalyze"))}</a></div>`
+    : "";
+  // AI 未配置时页面直说，而不是让人对着「还没有纪要」猜是不是坏了。
+  const aiNotConfiguredBanner = vm.ai_analysis_configured
+    ? ""
+    : `<p class="wh-subtle" data-r23-meeting-ai-unconfigured="true">${escapeHtml(routeT(locale, "meeting.aiNotConfigured"))}</p>`;
   const insightRows = selectedMeeting?.insights.length
     ? selectedMeeting.insights.map((insight) => {
       const createDraftAction = insight.actions?.create_draft;
@@ -3513,12 +3543,15 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
     }).join("")
     : `<article class="wh-card wh-r4-route-card"><p>${escapeHtml(routeT(locale, "meeting.empty"))}</p></article>`;
   const primaryHrefs = [
-    ...vm.meetings.flatMap((meeting) => meeting.insights.flatMap((insight) => [
-      insight.actions?.create_draft?.href,
-      insight.actions?.dismiss?.href,
-      insight.draft_href,
-      insight.proposal_href
-    ]))
+    ...vm.meetings.flatMap((meeting) => [
+      meeting.actions?.reanalyze?.href,
+      ...meeting.insights.flatMap((insight) => [
+        insight.actions?.create_draft?.href,
+        insight.actions?.dismiss?.href,
+        insight.draft_href,
+        insight.proposal_href
+      ])
+    ])
   ].filter((value): value is string => Boolean(value));
 
   return createWebRouteComponent({
@@ -3541,6 +3574,7 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
         </div>
         <span class="wh-r4-route-count" title="${escapeHtml(locale === "zh-CN" ? "待确认洞察" : "Insights pending review")}">${escapeHtml(`${vm.summary.pending_insight_count} ${locale === "zh-CN" ? "条待确认" : "pending"}`)}</span>
       </header>
+      ${aiNotConfiguredBanner}
       ${vm.can_manage && vm.project ? `<details class="wh-card wh-r4-route-card" data-r10-meeting-import="true">
         <summary>${escapeHtml(locale === "zh-CN" ? "＋ 导入会议转写" : "＋ Import meeting transcript")}</summary>
         <p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "把会议纪要或转写文本粘进来，团队就能围绕它确认洞察、生成任务。" : "Paste minutes or a transcript; the team can then confirm insights and spin up tasks from it.")}</p>
@@ -3569,6 +3603,7 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
         <section class="wh-card wh-r4-route-card" data-r5-meeting-minutes="true">
           <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "meeting.minutes"))}</h3>
           <pre class="wh-r5-meeting-text">${escapeHtml(minutes)}</pre>
+          ${reanalyzeButton}
         </section>
       </div>` : `<div class="wh-r4-route-grid"><article class="wh-card wh-r4-route-card" data-r5-meeting-empty="true"><h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "meeting.empty"))}</h3><p class="wh-subtle">${escapeHtml(vm.can_manage ? (locale === "zh-CN" ? "会议录音或转写接入后，Cuu 会自动整理出纪要和待办洞察，并显示在这里。" : "Once a meeting recording or transcript is brought in, Cuu drafts the minutes and action insights here.") : (locale === "zh-CN" ? "团队的会议接入后，这里会出现转写、纪要和洞察。" : "Once a team meeting is brought in, its transcript, minutes and insights show up here."))}</p></article></div>`}
     </section>`

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { allocateProjectCode } from "../sequences.js";
@@ -51,6 +51,30 @@ export type MeetingInsightContextRows = {
   insight: MeetingInsightRow | null;
 };
 
+// SA-02（会议分析链路）：会议 + 它所属项目——分析服务要用项目的 workspace_id 走预算闸、
+// 用项目名喂提示词，所以两行一起取，避免服务层再回一次库。
+export type MeetingAnalysisCandidateRow = {
+  project: MeetingProjectRow;
+  meeting: MeetingRecordRow;
+};
+
+export type MeetingAnalysisInsightInput = {
+  kind: "new_requirement" | "requirement_change" | "normal_note";
+  title: string;
+  description: string;
+  confidenceReason: string;
+};
+
+// meeting_records.status 的四个取值（不加迁移，沿用既有 varchar 列）：
+//   transcribed —— 转写已入库，AI 纪要还没生成（导入落库的初始态，也是分析可认领态）
+//   processing  —— 分析已被认领、正在跑（认领即写，充当无锁表的幂等闸）
+//   ready       —— 纪要 + 洞察已落库
+//   failed      —— 分析失败，等人点「重新生成纪要」
+export const MEETING_STATUS_TRANSCRIBED = "transcribed";
+export const MEETING_STATUS_ANALYZING = "processing";
+export const MEETING_STATUS_READY = "ready";
+export const MEETING_STATUS_FAILED = "failed";
+
 export type MeetingRepositoryActor = {
   actorKind: "human" | "ai" | "system" | string;
   actorUserId: string;
@@ -87,6 +111,40 @@ export type MeetingRepository = {
     projectId: string;
     insightId: string;
   }) => Promise<MeetingInsightContextRows>;
+  // ── SA-02 会议分析链路（全部 OPTIONAL：假仓库/旧调用方可不实现）────────────────────
+  // 待分析队列：转写已入库还没分析的，加上认领后卡死超过租约视界的（进程崩在 LLM 调用中途，
+  // 状态永远停在 processing）。不引入独立 job 表——状态列本身就是队列。
+  listMeetingsForAnalysis?: (input: {
+    limit?: number;
+    staleBefore: Date;
+  }) => Promise<MeetingAnalysisCandidateRow[]>;
+  findMeetingContext?: (input: { meetingId: string }) => Promise<{
+    project: MeetingProjectRow | null;
+    meeting: MeetingRecordRow | null;
+  }>;
+  // 幂等闸：条件 UPDATE（status ∈ 可认领集合）→ processing，RETURNING 有行才算认领成功。
+  // 并发两个 tick / worker 与手动重跑同时进来时，PG 行锁保证只有一个拿到行，另一个得 null。
+  // force=true 是「重新生成纪要」用的：无视当前状态强行认领（ready 也能重跑）。
+  claimMeetingForAnalysis?: (input: {
+    meetingId: string;
+    at: Date;
+    staleBefore: Date;
+    force?: boolean;
+  }) => Promise<MeetingAnalysisCandidateRow | null>;
+  // 认领后决定不跑（预算不足）时把状态放回 transcribed，别让它在 processing 里挂到租约到期。
+  releaseMeetingAnalysisClaim?: (input: { meetingId: string; at: Date }) => Promise<void>;
+  saveMeetingAnalysis?: (input: {
+    meetingId: string;
+    minutesMd: string;
+    insights: MeetingAnalysisInsightInput[];
+    at: Date;
+    actorUserId?: string | null;
+  }) => Promise<{ insightIds: string[] } | null>;
+  markMeetingAnalysisFailed?: (input: {
+    meetingId: string;
+    reason: string;
+    at: Date;
+  }) => Promise<void>;
   insightToDraft: (input: MeetingRepositoryActor & {
     projectId: string;
     insightId: string;
@@ -286,6 +344,195 @@ export function createMeetingRepository(db: WorkHubDb): MeetingRepository {
         insightStatusCounts: insightStatusRows.map((row) => ({ status: row.status, count: Number(row.value ?? 0) })),
         meetingCount: Number(meetingCountRows[0]?.value ?? 0)
       };
+    },
+
+    // ── SA-02 会议分析链路 ──────────────────────────────────────────────────────────
+    async listMeetingsForAnalysis(input) {
+      const limit = Math.max(1, Math.min(input.limit ?? 10, 100));
+      const rows = await db
+        .select({ meeting: meetingRecords, project: projects })
+        .from(meetingRecords)
+        .innerJoin(projects, eq(meetingRecords.projectId, projects.id))
+        .where(and(
+          eq(projects.archived, false),
+          isNull(projects.deletedAt),
+          or(
+            eq(meetingRecords.status, MEETING_STATUS_TRANSCRIBED),
+            // 卡死回收：认领后 updated_at 就没再动过，超过租约视界即视为进程已死，允许重新认领。
+            and(
+              eq(meetingRecords.status, MEETING_STATUS_ANALYZING),
+              lt(meetingRecords.updatedAt, input.staleBefore)
+            )
+          )
+        ))
+        // 先到先分析：同一批里最早导入的先出队，避免新会议一直插队饿死旧的。
+        .orderBy(meetingRecords.createdAt)
+        .limit(limit);
+      return rows.map((row) => ({ project: row.project, meeting: row.meeting }));
+    },
+
+    async findMeetingContext(input) {
+      const rows = await db
+        .select({ meeting: meetingRecords, project: projects })
+        .from(meetingRecords)
+        .innerJoin(projects, eq(meetingRecords.projectId, projects.id))
+        .where(eq(meetingRecords.id, input.meetingId))
+        .limit(1);
+      const row = rows[0];
+      return { project: row?.project ?? null, meeting: row?.meeting ?? null };
+    },
+
+    async claimMeetingForAnalysis(input) {
+      // 条件 UPDATE 即认领：WHERE 里带上「可认领状态」守卫，RETURNING 空即代表被别人抢先了。
+      const claimable = input.force
+        ? undefined
+        : or(
+          eq(meetingRecords.status, MEETING_STATUS_TRANSCRIBED),
+          and(
+            eq(meetingRecords.status, MEETING_STATUS_ANALYZING),
+            lt(meetingRecords.updatedAt, input.staleBefore)
+          )
+        );
+      const updated = await db
+        .update(meetingRecords)
+        .set({ status: MEETING_STATUS_ANALYZING, updatedAt: input.at })
+        .where(claimable
+          ? and(eq(meetingRecords.id, input.meetingId), claimable)
+          : eq(meetingRecords.id, input.meetingId))
+        .returning();
+      const meeting = updated[0] as MeetingRecordRow | undefined;
+      if (!meeting) {
+        return null;
+      }
+      const projectRows = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.id, meeting.projectId))
+        .limit(1);
+      const project = projectRows[0];
+      if (!project) {
+        return null;
+      }
+      return { project, meeting };
+    },
+
+    async releaseMeetingAnalysisClaim(input) {
+      await db
+        .update(meetingRecords)
+        .set({ status: MEETING_STATUS_TRANSCRIBED, updatedAt: input.at })
+        .where(and(
+          eq(meetingRecords.id, input.meetingId),
+          eq(meetingRecords.status, MEETING_STATUS_ANALYZING)
+        ));
+    },
+
+    async saveMeetingAnalysis(input) {
+      let result: { insightIds: string[] } | null = null;
+      await db.transaction(async (tx) => {
+        const meetingRows = await tx
+          .select()
+          .from(meetingRecords)
+          .where(eq(meetingRecords.id, input.meetingId))
+          .for("update")
+          .limit(1);
+        const meeting = meetingRows[0];
+        if (!meeting) {
+          return;
+        }
+        const projectRows = await tx
+          .select()
+          .from(projects)
+          .where(eq(projects.id, meeting.projectId))
+          .limit(1);
+        const project = projectRows[0];
+        if (!project) {
+          return;
+        }
+        // 重跑（「重新生成纪要」）时先清掉上一轮还没被人处理的洞察，否则页面会同一件事出两张卡。
+        // 只删 pending 且没生成过草稿的：confirmed/dismissed 是人做过的决定，绝不覆盖。
+        await tx
+          .delete(meetingInsights)
+          .where(and(
+            eq(meetingInsights.meetingId, input.meetingId),
+            eq(meetingInsights.status, "pending"),
+            isNull(meetingInsights.createdWorkItemId)
+          ));
+        const insightIds: string[] = [];
+        for (const insight of input.insights) {
+          const insightId = randomUUID();
+          insightIds.push(insightId);
+          await tx.insert(meetingInsights).values({
+            id: insightId,
+            meetingId: input.meetingId,
+            kind: insight.kind,
+            title: insight.title.slice(0, 256),
+            description: insight.description,
+            confidenceReason: insight.confidenceReason,
+            status: "pending",
+            createdAt: input.at,
+            updatedAt: input.at
+          });
+        }
+        await tx
+          .update(meetingRecords)
+          .set({
+            minutesMd: input.minutesMd,
+            status: MEETING_STATUS_READY,
+            updatedAt: input.at
+          })
+          .where(eq(meetingRecords.id, input.meetingId));
+        await tx.insert(auditLogs).values({
+          id: randomUUID(),
+          orgId: null,
+          workspaceId: project.workspaceId,
+          actorKind: "ai",
+          actorUserId: input.actorUserId ?? null,
+          entityType: "meeting_record",
+          entityId: input.meetingId,
+          action: "meeting.analysis.completed",
+          detailJson: {
+            minutes_bytes: Buffer.byteLength(input.minutesMd, "utf8"),
+            insight_count: insightIds.length,
+            insight_kinds: input.insights.map((insight) => insight.kind)
+          },
+          createdAt: input.at
+        });
+        result = { insightIds };
+      });
+      return result;
+    },
+
+    async markMeetingAnalysisFailed(input) {
+      const updated = await db
+        .update(meetingRecords)
+        .set({ status: MEETING_STATUS_FAILED, updatedAt: input.at })
+        .where(eq(meetingRecords.id, input.meetingId))
+        .returning();
+      const meeting = updated[0];
+      if (!meeting) {
+        return;
+      }
+      const projectRows = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.id, meeting.projectId))
+        .limit(1);
+      const project = projectRows[0];
+      if (!project) {
+        return;
+      }
+      await db.insert(auditLogs).values({
+        id: randomUUID(),
+        orgId: null,
+        workspaceId: project.workspaceId,
+        actorKind: "ai",
+        actorUserId: null,
+        entityType: "meeting_record",
+        entityId: input.meetingId,
+        action: "meeting.analysis.failed",
+        detailJson: { reason: input.reason },
+        createdAt: input.at
+      });
     },
 
     async findInsightContext(input) {

@@ -95,6 +95,7 @@ function meetingVm(): MeetingPageVM {
       dismissed_insight_count: 0
     },
     can_manage: true,
+    ai_analysis_configured: true,
     selected_meeting_id: "95000000-0000-4000-8000-000000000002",
     meetings: [
       {
@@ -146,7 +147,15 @@ function meetingVm(): MeetingPageVM {
               }
             }
           }
-        ]
+        ],
+        actions: {
+          reanalyze: {
+            id: "meeting_reanalyze",
+            label: "Regenerate minutes",
+            method: "POST",
+            href: "/api/meetings/95000000-0000-4000-8000-000000000002/analyze"
+          }
+        }
       }
     ]
   };

@@ -25,6 +25,10 @@ import { canManageProjectMeeting, canViewProjectMeetings, canViewWorkItemRecord 
 import type { AuthActor } from "../middleware/auth.js";
 import { parseOutputContract } from "../pages/output-contract.js";
 import {
+  getDefaultMeetingAnalysisService,
+  type MeetingAnalysisService
+} from "./meeting-analysis.js";
+import {
   getDefaultProposalService,
   ProposalServiceError,
   type ProposalActor,
@@ -53,6 +57,12 @@ export type MeetingPageService = {
     title: string;
     transcriptText: string;
   }) => Promise<MeetingPageVM>;
+  // SA-02：重新生成纪要——AI 未配置时补跑、分析失败后重试、纪要不满意时重来的唯一人工入口。
+  reanalyzeMeeting: (input: {
+    actor: AuthActor;
+    locale?: WorkHubLocale;
+    meetingId: string;
+  }) => Promise<MeetingPageVM>;
   draftToProposal: (input: {
     actor: AuthActor;
     locale?: WorkHubLocale;
@@ -62,6 +72,9 @@ export type MeetingPageService = {
 
 export type MeetingPageServiceDependencies = {
   repo: MeetingRepository;
+  // SA-02 会议分析。生产由 getDefaultMeetingPageService 注入；不注入时页面按「AI 已配置」渲染、
+  // 导入不排队分析、重新生成纪要直接回 409——服务层不去够全局单例，单测才不会被迫连库。
+  analysis?: Pick<MeetingAnalysisService, "analyzeMeeting" | "isConfigured">;
   proposals?: Pick<ProposalService, "createFromManifest" | "get">;
   workItems?: Pick<WorkItemService, "detailPage" | "assertCanMutateArtifacts">;
   workItemAccess?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord"> & Partial<Pick<WorkItemDataRepository, "findWorkItemAccessRecords">>;
@@ -77,7 +90,8 @@ export type MeetingMutationInput = {
 
 export class MeetingPageServiceError extends Error {
   constructor(
-    public readonly status: 403 | 404 | 409,
+    // 503 = AI 未配置（与 project-planner 的 project_plan_llm_unavailable 同档语义）。
+    public readonly status: 403 | 404 | 409 | 503,
     message: string,
     public readonly code = "meeting_error"
   ) {
@@ -105,8 +119,13 @@ function compactText(value: string | null | undefined, max = 260) {
   return text.length > max ? `${text.slice(0, max - 3)}...` : text;
 }
 
-function meetingStatus(status: string): "processing" | "ready" | "failed" {
-  return status === "ready" || status === "failed" ? status : "processing";
+// SA-02：`transcribed` 不再被折叠进 `processing`。折叠之后「AI 正在分析」和「AI 从没被叫起来」
+// 在页面上长得一模一样，用户只能对着「处理中」干等一个永远不会来的纪要。
+function meetingStatus(status: string): "processing" | "transcribed" | "ready" | "failed" {
+  if (status === "ready" || status === "failed" || status === "transcribed") {
+    return status;
+  }
+  return "processing";
 }
 
 function insightKind(kind: string): "new_requirement" | "requirement_change" | "normal_note" {
@@ -233,7 +252,8 @@ function buildMeetingPage(
   locale: WorkHubLocale,
   now: Date,
   selectedMeetingId?: string,
-  linkableWorkItemIds?: ReadonlySet<string>
+  linkableWorkItemIds?: ReadonlySet<string>,
+  aiAnalysisConfigured = true
 ): MeetingPageVM {
   const canView = rows.project ? canViewProjectMeetings(rows.project, actor) : false;
   if (!rows.project || !canView) {
@@ -247,6 +267,7 @@ function buildMeetingPage(
         dismissed_insight_count: 0
       },
       can_manage: false,
+      ai_analysis_configured: aiAnalysisConfigured,
       meetings: [],
       empty_state: "no_project"
     }, "meeting.page");
@@ -299,7 +320,19 @@ function buildMeetingPage(
       ...(meeting.jobId ? { job_id: meeting.jobId } : {}),
       created_at: meeting.createdAt.toISOString(),
       updated_at: meeting.updatedAt.toISOString(),
-      insights
+      insights,
+      // 重新生成纪要：项目管理者 + AI 已配置才下发。分析正在跑（processing）时不下发——
+      // 免得一次误点又烧一遍模型；卡死的分析由后台巡检自行回收重跑。
+      actions: (canManage && aiAnalysisConfigured && meetingStatus(meeting.status) !== "processing")
+        ? {
+          reanalyze: {
+            id: "meeting_reanalyze",
+            label: locale === "zh-CN" ? "重新生成纪要" : "Regenerate minutes",
+            method: "POST" as const,
+            href: `/api/meetings/${meeting.id}/analyze`
+          }
+        }
+        : {}
     };
   });
   const flatInsights = meetings.flatMap((meeting) => meeting.insights);
@@ -329,6 +362,7 @@ function buildMeetingPage(
     // findings[#low-F40]：can_manage 是项目级权限(admin/owner)，不该因「项目暂无会议」让 meetings.some()→false。
     // 直接问项目级 canManageProjectMeeting(空 uploadedByUserId)——admin/owner 判定不看该字段；非 owner 非 admin 仍 false。
     can_manage: canManageProjectMeeting(rows.project!, { uploadedByUserId: "" }, actor),
+    ai_analysis_configured: aiAnalysisConfigured,
     selected_meeting_id: meetings.find((meeting) => meeting.id === selectedMeetingId)?.id ?? meetings[0]?.id,
     meetings,
     ...(meetings.length === 0 ? { empty_state: "no_meetings" } : {})
@@ -336,6 +370,7 @@ function buildMeetingPage(
 }
 
 export function createMeetingPageService(deps: MeetingPageServiceDependencies): MeetingPageService {
+  const aiAnalysisConfigured = () => deps.analysis?.isConfigured() ?? true;
   const proposalService = () => deps.proposals ?? getDefaultProposalService();
   const workItemService = () => deps.workItems ?? getDefaultWorkItemService();
   const workItemAccess = () => deps.workItemAccess;
@@ -458,7 +493,7 @@ export function createMeetingPageService(deps: MeetingPageServiceDependencies): 
       actor: input.actor,
       workItemIds: linkableWorkItemIdsFromRows(rows)
     });
-    return buildMeetingPage(rows, input.actor, input.locale ?? "zh-CN", deps.now?.() ?? new Date(), undefined, linkableWorkItemIds);
+    return buildMeetingPage(rows, input.actor, input.locale ?? "zh-CN", deps.now?.() ?? new Date(), undefined, linkableWorkItemIds, aiAnalysisConfigured());
   }
 
   function mutationError(error: unknown): never {
@@ -597,7 +632,7 @@ export function createMeetingPageService(deps: MeetingPageServiceDependencies): 
         actor: input.actor,
         workItemIds: linkableWorkItemIdsFromRows(rows)
       });
-      return buildMeetingPage(rows, input.actor, input.locale ?? "zh-CN", deps.now?.() ?? new Date(), input.meetingId, linkableWorkItemIds);
+      return buildMeetingPage(rows, input.actor, input.locale ?? "zh-CN", deps.now?.() ?? new Date(), input.meetingId, linkableWorkItemIds, aiAnalysisConfigured());
     },
     async importTranscript(input) {
       const actorUserId = ensureHumanActor(input.actor);
@@ -629,10 +664,71 @@ export function createMeetingPageService(deps: MeetingPageServiceDependencies): 
         if (!imported) {
           throw new MeetingPageServiceError(404, "没有找到这个项目会议。", "meeting_not_found");
         }
+        // SA-02：转写落库后立刻排一次分析，不让用户干等后台巡检的下一轮。刻意不 await——
+        // 一次 LLM 调用要几十秒，导入这个请求不该被它拖住。认领是条件 UPDATE，与后台巡检
+        // 同时进来也只会有一个真正跑起来；这里失败了巡检下一轮还会捡起来重试。
+        if (deps.analysis) {
+          void deps.analysis.analyzeMeeting({
+            meetingId: imported.id,
+            ...(input.locale ? { locale: input.locale } : {})
+          }).catch(() => undefined);
+        }
         return pageAfterMutation(input);
       } catch (error) {
         mutationError(error);
       }
+    },
+    async reanalyzeMeeting(input) {
+      ensureHumanActor(input.actor);
+      const analysis = deps.analysis;
+      const context = await deps.repo.findMeetingContext?.({ meetingId: input.meetingId });
+      if (!context?.project || !context.meeting) {
+        throw new MeetingPageServiceError(404, "没有找到这场会议。", "meeting_not_found");
+      }
+      if (!canViewProjectMeetings(context.project, input.actor)) {
+        throw new MeetingPageServiceError(403, "你没有权限查看这个项目会议。", "meeting_forbidden");
+      }
+      if (!canManageProjectMeeting(context.project, context.meeting, input.actor)) {
+        throw new MeetingPageServiceError(403, "你没有权限重新生成这场会议的纪要。", "meeting_forbidden");
+      }
+      if (!analysis) {
+        throw new MeetingPageServiceError(409, "当前部署不支持重新生成会议纪要。", "meeting_analysis_unsupported");
+      }
+      if (!analysis.isConfigured()) {
+        throw new MeetingPageServiceError(
+          503,
+          "AI 还没有配置，这场会议只保存了转写。配置好之后再回来重新生成纪要。",
+          "meeting_analysis_unavailable"
+        );
+      }
+      const pageInput = {
+        actor: input.actor,
+        projectId: context.project.id,
+        ...(input.locale ? { locale: input.locale } : {})
+      };
+      const result = await analysis.analyzeMeeting({
+        meetingId: input.meetingId,
+        force: true,
+        ...(input.locale ? { locale: input.locale } : {})
+      });
+      if (result.outcome === "skipped_budget") {
+        throw new MeetingPageServiceError(
+          409,
+          "这个团队这段时间的 AI 用量已经到顶，暂时不能重新生成纪要。",
+          "meeting_analysis_budget_exhausted"
+        );
+      }
+      if (result.outcome === "skipped_not_claimable") {
+        throw new MeetingPageServiceError(404, "没有找到这场会议。", "meeting_not_found");
+      }
+      if (result.outcome === "failed") {
+        throw new MeetingPageServiceError(
+          409,
+          "AI 这次没能整理出纪要，转写没有改动，可以稍后再试一次。",
+          "meeting_analysis_failed"
+        );
+      }
+      return pageAfterMutation(pageInput);
     },
     async insightToDraft(input) {
       const actorUserId = ensureHumanActor(input.actor);
@@ -767,7 +863,8 @@ export function getDefaultMeetingPageService() {
     defaultMeetingPageDbClient = getSharedDatabaseClient();
     defaultMeetingPageService = createMeetingPageService({
       repo: createMeetingRepository(defaultMeetingPageDbClient.db),
-      workItemAccess: createWorkItemRepository(defaultMeetingPageDbClient.db)
+      workItemAccess: createWorkItemRepository(defaultMeetingPageDbClient.db),
+      analysis: getDefaultMeetingAnalysisService()
     });
   }
   return defaultMeetingPageService;

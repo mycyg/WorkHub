@@ -742,6 +742,10 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       request(withPageLocale(`/api/meetings/workitems/${encodeURIComponent(workItemId)}/proposal-draft`, options), {
         method: "POST"
       }),
+    reanalyzeMeeting: (meetingId, options) =>
+      request(withPageLocale(`/api/meetings/${encodeURIComponent(meetingId)}/analyze`, options), {
+        method: "POST"
+      }),
     costUsage: () => request("/api/cost/usage"),
     costPolicies: () => request("/api/cost/policies"),
     updateCostPolicy: (scope, id, payload) =>

@@ -78,6 +78,7 @@ import {
   mergeProposalCandidateApplyIdFromHref,
   meetingDraftProposalFromHref,
   meetingInsightActionFromHref,
+  meetingReanalyzeFromHref,
   notificationActionFromHref,
   persistBrowserLocale,
   proposalActionFromHref,
@@ -1566,6 +1567,27 @@ function bindGoldPathNavigation(
           }
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
+      // SA-02 重新生成纪要：一次 LLM 调用要几十秒，用上面导入转写同款「忙碌闸 + 进行中提示」，
+      // 免得用户在没有任何反馈的十几秒里连点，把同一场会议重复送去分析。
+      const meetingReanalyze = meetingReanalyzeFromHref(href);
+      if (meetingReanalyze) {
+        const busyKey = actionId ?? "meeting_reanalyze";
+        if (!beginBusyAction(busyKey)) {
+          return;
+        }
+        showRouteNotice(shellRoot, actionInProgressNotice(locale, busyKey), undefined, 0);
+        try {
+          const result = await client.reanalyzeMeeting(meetingReanalyze.meetingId, { locale });
+          await renderCurrentRoute(client, locale);
+          const refreshed = shellRoot.querySelector<HTMLElement>("[data-r5-meetings-route]") ?? shellRoot;
+          showRouteNotice(refreshed, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        } finally {
+          endBusyAction(busyKey);
         }
         return;
       }
