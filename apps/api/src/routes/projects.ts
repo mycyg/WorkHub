@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 
-import { bootstrapProjectRequestSchema } from "@workhub/contracts";
+import { bootstrapProjectRequestSchema, normalizeWorkHubLocale } from "@workhub/contracts";
 
 import {
   createCurrentUserMiddleware,
@@ -31,6 +31,15 @@ export type ProjectRoutesDependencies = {
   projectOps?: ProjectOpsService;
   objectives?: Pick<ObjectiveService, "listObjectives">;
 };
+
+// R24-K（S5-N-06）：建项目时决定内置「主区」会话该叫什么。顺序：显式 `?locale=`（前端明确表态）
+// > 用户的 preferred_locale（服务端存着的设置，桌面端建项目不带 locale 参数，靠的就是这一层）
+// > Accept-Language。都问不出来时 normalizeWorkHubLocale 回默认中文。
+function resolveProjectLocale(c: { req: { query: (name: string) => string | undefined; header: (name: string) => string | undefined }; var: { currentUser?: { preferredLocale?: string | null } } }) {
+  return normalizeWorkHubLocale(
+    c.req.query("locale") ?? c.var.currentUser?.preferredLocale ?? c.req.header("Accept-Language")
+  );
+}
 
 // 路由 uuid 形参先校验：非 uuid 串原本直达服务层的 uuid 列 → PG 22P02 → 误报 500；
 // 非法即抛与「合法但不存在」同样的 404（ProjectServiceError，经 app.onError 收口）。
@@ -67,7 +76,11 @@ export function createProjectRoutes(deps: ProjectRoutesDependencies = {}) {
   routes.post("/bootstrap", createCurrentUserMiddleware(authSource), async (c) => {
     const payload = bootstrapProjectRequestSchema.parse(await readJsonObject(c));
     try {
-      const data = await projects.bootstrapProject({ payload, actor: c.var.actor });
+      const data = await projects.bootstrapProject({
+        payload,
+        actor: c.var.actor,
+        locale: resolveProjectLocale(c)
+      });
       return c.json({ ok: true, data }, data.created ? 201 : 200);
     } catch (error) {
       handleProjectError(error);

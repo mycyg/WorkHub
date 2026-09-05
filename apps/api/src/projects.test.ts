@@ -20,7 +20,12 @@ import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/a
 import { httpErrorCodeFor } from "./http-error-codes.js";
 import { malformedJsonMessage } from "./routes/json-body.js";
 import { createProjectRoutes } from "./routes/projects.js";
-import { createProjectService, ProjectServiceError, type ProjectService } from "./services/projects.js";
+import {
+  createProjectService,
+  mainConversationTitleForLocale,
+  ProjectServiceError,
+  type ProjectService
+} from "./services/projects.js";
 
 const now = new Date("2026-06-13T00:00:00.000Z");
 const userId = "62000000-0000-4000-8000-000000000001";
@@ -506,4 +511,130 @@ test("project bootstrap maps archived/deleted slug occupancy to a recoverable co
       && error.status === 409
       && error.code === "project_slug_occupied"
   );
+});
+
+// R24-K（S5-N-06）：英文界面下工作台侧栏那一行「主区」是整窗唯一的中文——服务端建项目时把内置会话
+// 标题写死了。主区不可改名（conversation-rename 对 kind='main' 一律 403），所以这就是个纯展示常量，
+// 按建项目那一刻的语言给出。
+test("the built-in main conversation is named in the creator's language", async () => {
+  const titles: Array<string | undefined> = [];
+  const repository: ProjectRepository = {
+    async bootstrapPilotProject(input) {
+      titles.push(input.mainConversationTitle);
+      return {
+        created: true,
+        project: {
+          id: "62000000-0000-4000-8000-000000000021",
+          workspaceId: input.workspaceId,
+          name: input.name,
+          slug: input.slug,
+          description: input.description ?? null,
+          ownerNickname: input.ownerNickname,
+          ownerUserId: input.ownerUserId
+        } as Awaited<ReturnType<ProjectRepository["bootstrapPilotProject"]>>["project"]
+      };
+    },
+    async listForWorkspace() {
+      return [];
+    },
+    async bootstrapPersonalProject(input) {
+      titles.push(input.mainConversationTitle);
+      return {
+        created: true,
+        project: {
+          id: "62000000-0000-4000-8000-000000000022",
+          workspaceId: input.workspaceId,
+          name: input.name,
+          slug: input.slug,
+          description: null,
+          ownerNickname: input.ownerNickname,
+          ownerUserId: input.ownerUserId,
+          isPersonal: true
+        } as Awaited<ReturnType<ProjectRepository["bootstrapPersonalProject"]>>["project"]
+      };
+    },
+    async listPersonalForUser() {
+      return [];
+    },
+    async updateInstructions() {
+      throw new Error("not needed for this test");
+    },
+    async archiveProject() {
+      throw new Error("not needed for this test");
+    },
+    async softDeleteProject() {
+      throw new Error("not needed for this test");
+    }
+  };
+  const service = createProjectService(repository, { settings: settings(), now: () => now });
+  const actor = {
+    kind: "human" as const,
+    id: userId,
+    label: "day0-host",
+    userId,
+    isAdmin: true,
+    orgId: "00000000-0000-4000-8000-000000000001",
+    workspaceId: "00000000-0000-4000-8000-000000000002"
+  };
+
+  await service.bootstrapProject({ actor, payload: { name: "English project" }, locale: "en-US" });
+  await service.bootstrapProject({ actor, payload: { name: "中文项目" }, locale: "zh-CN" });
+  // 不传 locale 的既有调用方保持中文，不会因为这次改动悄悄换语言。
+  await service.bootstrapProject({ actor, payload: { name: "默认项目" } });
+  // 个人空间走同一条命名。
+  await service.createPersonalProject({ actor, payload: {}, locale: "en-US" });
+
+  assert.deepEqual(titles, ["Main", "主区", "主区", "Main"]);
+  assert.equal(mainConversationTitleForLocale("en-US"), "Main");
+  assert.equal(mainConversationTitleForLocale("zh-CN"), "主区");
+  assert.equal(mainConversationTitleForLocale(undefined), "主区");
+});
+
+// 桌面端建项目不带 locale 参数，靠的是建号时存下的 preferred_locale；显式 `?locale=` 仍最优先。
+test("project bootstrap resolves its locale from the query first and the stored user preference next", async () => {
+  const runtimeSettings = settings();
+  const seen: Array<string | undefined> = [];
+  const projects: ProjectService = {
+    async bootstrapProject(input) {
+      seen.push(input.locale);
+      return {
+        project: {
+          id: "62000000-0000-4000-8000-000000000010",
+          workspace_id: input.actor.workspaceId,
+          name: input.payload.name ?? "Day 0 Pilot Project",
+          slug: input.payload.slug ?? "day0-pilot",
+          owner_nickname: input.actor.label,
+          owner_user_id: input.actor.userId ?? null
+        },
+        created: true,
+        context_ready: true
+      };
+    },
+    async listProjects() {
+      return { generated_at: now.toISOString(), projects: [] };
+    },
+    async createPersonalProject() {
+      throw new Error("should not be called");
+    },
+    async listPersonalProjects() {
+      throw new Error("should not be called");
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/projects", createProjectRoutes({ auth: authDeps(runtimeSettings), projects }));
+  const headers = { Cookie: await cookie(runtimeSettings) };
+
+  await app.request("/api/projects/bootstrap?locale=en-US", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ name: "One" })
+  });
+  // 无 query：落到夹具用户的 preferred_locale（zh-CN），Accept-Language 说英文也压不过它。
+  await app.request("/api/projects/bootstrap", {
+    method: "POST",
+    headers: { ...headers, "Accept-Language": "en-US,en;q=0.9" },
+    body: JSON.stringify({ name: "Two" })
+  });
+
+  assert.deepEqual(seen, ["en-US", "zh-CN"]);
 });
