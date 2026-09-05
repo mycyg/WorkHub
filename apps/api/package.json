@@ -39,6 +39,7 @@
     "@workhub/cuu": "workspace:*",
     "@workhub/db": "workspace:*",
     "@workhub/events": "workspace:*",
+    "@workhub/mcp-client": "workspace:*",
     "@workhub/permissions": "workspace:*",
     "@workhub/plugin-host": "workspace:*",
     "@workhub/tools": "workspace:*",
