@@ -2,6 +2,8 @@ import { WorkHubApiError } from "@workhub/api-client/client";
 import type { IdentifyRequest, IdentityResponse } from "@workhub/api-client";
 import type { WorkHubLocale } from "@workhub/ui/gold-path";
 
+import { webT } from "./locales.js";
+
 // R23 P2（SA-04）：生产环境强制 AUTH_MODE!='nickname' 时，POST /api/auth/identify 直接 404
 // （apps/api/src/routes/auth.ts 的 passwordModeEnabled 门在解析请求体之前就先检查）——web 端唯一的
 // 引导屏（packages/ui/src/onboarding.ts 的 renderOnboardingScreen）却只有「昵称 + 管理员口令」字段，
@@ -45,24 +47,22 @@ export function describeAuthScreenError(error: unknown, locale: WorkHubLocale, c
   const zh = locale === "zh-CN";
   if (error instanceof WorkHubApiError) {
     if (context === "login" && error.status === 401) {
-      return zh ? "邮箱或密码不正确，请重试。" : "Email or password is incorrect. Please try again.";
+      return webT(locale, "emailOrPasswordIsIncorrectPlease");
     }
     if (error.status === 429) {
-      return zh ? "尝试过于频繁，请稍后再试。" : "Too many attempts. Please wait a moment and retry.";
+      return webT(locale, "tooManyAttemptsPleaseWaitA");
     }
     if (context === "register" && error.status === 409) {
-      return zh ? "该邮箱已注册，请改用登录。" : "That email is already registered — sign in instead.";
+      return webT(locale, "thatEmailIsAlreadyRegisteredSign");
     }
     if (error.status === 400 || error.status === 422) {
       return context === "register"
-        ? (zh
-          ? "请检查邮箱、昵称和密码是否有效（密码至少 8 位）。"
-          : "Check that email, nickname, and password are valid (password needs at least 8 characters).")
-        : (zh ? "请填写有效的邮箱和密码。" : "Enter a valid email and password.");
+        ? (webT(locale, "checkThatEmailNicknameAndPassword"))
+        : (webT(locale, "enterAValidEmailAndPassword"));
     }
     if (error.status === 404) {
       // 罕见竞态：探测时是密码模式，提交时后端刚好切回了 nickname 模式（部署配置变更 + 重启）。
-      return zh ? "当前后端未启用这种登录方式，请刷新页面重试。" : "This sign-in method isn't enabled on this backend — refresh and try again.";
+      return webT(locale, "thisSignInMethodIsnT");
     }
   }
   return zh

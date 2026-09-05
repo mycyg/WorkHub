@@ -30,6 +30,8 @@ import {
   type EditorViewState
 } from "./render.js";
 
+import { editorT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 // #12 合并冲突逐条解决要用到 applyMergeProposalCandidate（apply 候选合入方案）——additive 扩客户端切面，
@@ -267,9 +269,7 @@ export function mountEditorView(
           message:
             error instanceof Error && error.message
               ? error.message
-              : input.locale === "zh-CN"
-                ? "变更没打开，稍后重试"
-                : "Couldn't open the change — retry"
+              : editorT(input.locale, "couldnTOpenTheChangeRetry")
         };
         render();
       });
@@ -350,9 +350,7 @@ export function mountEditorView(
           message:
             error instanceof Error && error.message
               ? error.message
-              : input.locale === "zh-CN"
-                ? "这个文件没打开，稍后重试"
-                : "Couldn't open this file — retry"
+              : editorT(input.locale, "couldnTOpenThisFileRetry")
         };
         render();
       });
@@ -579,11 +577,11 @@ function actionErrorText(error: unknown, locale: Locale): string {
   const zh = locale === "zh-CN";
   if (error instanceof WorkHubApiError) {
     if (error.status === 403) {
-      return zh ? "这份提议不归你审（可能不是你的工作区，或已交给别人）。" : "This proposal isn't yours to review.";
+      return editorT(locale, "thisProposalIsnTYoursTo");
     }
     if (error.status === 409) {
-      return zh ? "这份提议的状态已经变了，刷新后再看。" : "This proposal's status already changed — reload to see the latest.";
+      return editorT(locale, "thisProposalSStatusAlreadyChanged");
     }
   }
-  return zh ? "没提交成功，稍后重试。" : "That didn't go through — try again in a moment.";
+  return editorT(locale, "thatDidnTGoThroughTry");
 }

@@ -165,6 +165,8 @@ import {
   WORKSPACE_AUDIT_PAGE_SIZE
 } from "./workspace-audit.js";
 
+import { webT } from "./locales.js";
+
 const root = document.getElementById("root");
 const liveLastEventIdStorageKey = "workhub.live.lastEventId";
 type BrowserApiClient = ReturnType<typeof createApiClient>;
@@ -2439,7 +2441,7 @@ function bindTeamSkillsCurationPanel(
   }
   const notice = container.querySelector<HTMLElement>("[data-r23-skills-curate-notice]");
   const zh = locale === "zh-CN";
-  const confirmLabel = button.dataset.r23SkillsCurateConfirmLabel ?? (zh ? "确认开始？再点一次" : "Start now? Click again");
+  const confirmLabel = button.dataset.r23SkillsCurateConfirmLabel ?? (webT(locale, "startNowClickAgain"));
   const say = (text: string, tone: "started" | "error") => {
     if (!notice) {
       return;
@@ -2462,14 +2464,14 @@ function bindTeamSkillsCurationPanel(
                 return;
               }
               // 已开跑就不该再点第二次——按钮留在禁用态，页面刷新后由服务端的 running 状态接管。
-              say(zh ? "已开始自学，跑完刷新这一页就能看到结果。" : "Started. Refresh this page once it finishes to see what changed.", "started");
+              say(webT(locale, "startedRefreshThisPageOnceIt"), "started");
             })
             .catch(() => {
               if (signal.aborted) {
                 return;
               }
               button.disabled = false;
-              say(zh ? "没能开始，请稍后再试。" : "Could not start. Try again in a moment.", "error");
+              say(webT(locale, "couldNotStartTryAgainIn"), "error");
             });
         }
       });
@@ -2607,7 +2609,7 @@ function bindNotificationMutePanel(
     if (retryButton) {
       retryButton.hidden = true;
     }
-    setStatus(zh ? "正在读取当前设置…" : "Loading current settings…", "saving");
+    setStatus(webT(locale, "loadingCurrentSettings"), "saving");
     try {
       const prefs = await client.getNotificationPreferences();
       if (signal.aborted) {
@@ -2629,7 +2631,7 @@ function bindNotificationMutePanel(
       if (signal.aborted) {
         return;
       }
-      setStatus(zh ? "没能读取当前设置。为避免覆盖你已有的静音，开关已暂时锁定。" : "Couldn't load current settings — toggles stay locked so we don't overwrite what you saved.", "error");
+      setStatus(webT(locale, "couldnTLoadCurrentSettingsToggles"), "error");
       if (retryButton) {
         retryButton.hidden = false;
       }
@@ -2646,7 +2648,7 @@ function bindNotificationMutePanel(
       .filter((checkbox) => checkbox.checked)
       .map((checkbox) => checkbox.getAttribute("data-r5-notification-mute-type") ?? "")
       .filter((type) => type.length > 0);
-    setStatus(zh ? "保存中…" : "Saving…", "saving");
+    setStatus(webT(locale, "saving"), "saving");
     try {
       await client.setNotificationPreferences(
         muted,
@@ -2655,12 +2657,12 @@ function bindNotificationMutePanel(
       if (signal.aborted) {
         return;
       }
-      setStatus(zh ? "已保存" : "Saved", "saved");
+      setStatus(webT(locale, "saved"), "saved");
     } catch {
       if (signal.aborted) {
         return;
       }
-      setStatus(zh ? "保存失败，请重试" : "Save failed, please retry", "error");
+      setStatus(webT(locale, "saveFailedPleaseRetry"), "error");
     }
   };
   const save = (includeCare: boolean) => {
@@ -2743,9 +2745,7 @@ function bindProjectHomePlansPanel(
       const drafts = Array.isArray(data.drafts) ? data.drafts : [];
       if (drafts.length === 0) {
         body.innerHTML = `<p class="wh-subtle" data-r17-project-home-plans-empty="true">${escapeHtml(
-          zh
-            ? "暂无规划草案。让 AI 起草项目计划在桌面客户端进行。"
-            : "No plan drafts yet. Drafting a project plan with AI happens in the desktop app."
+          webT(locale, "noPlanDraftsYetDraftingA")
         )}</p>`;
         return;
       }
@@ -2764,9 +2764,7 @@ function bindProjectHomePlansPanel(
           )}</span>
         </div>
         <p class="wh-subtle">${escapeHtml(
-          zh
-            ? "查看详情、审批与物化在桌面客户端的日程标签进行。"
-            : "View details, approve and materialize from the Schedule tab in the desktop app."
+          webT(locale, "viewDetailsApproveAndMaterializeFrom")
         )}</p>`;
     } catch (error) {
       if (signal.aborted) {
@@ -2777,13 +2775,13 @@ function bindProjectHomePlansPanel(
       //   * 其它（5xx/网络）：渲警示条 + 重试，不当空态糊弄。
       if (error instanceof WorkHubApiError && error.status === 403) {
         body.innerHTML = `<p class="wh-subtle" data-r17-project-home-plans-forbidden="true">${escapeHtml(
-          zh ? "你没有查看规划草案的权限。" : "You don't have permission to view plan drafts."
+          webT(locale, "youDonTHavePermissionTo")
         )}</p>`;
         return;
       }
       body.innerHTML = `<p class="wh-subtle" data-r17-project-home-plans-error="true">${escapeHtml(
-        zh ? "规划草案加载失败，稍后重试。" : "Couldn't load plan drafts — retry later."
-      )}</p><button type="button" class="wh-btn" data-r17-project-home-plans-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+        webT(locale, "couldnTLoadPlanDraftsRetry")
+      )}</p><button type="button" class="wh-btn" data-r17-project-home-plans-retry="true">${escapeHtml(webT(locale, "retry"))}</button>`;
       body.querySelector<HTMLButtonElement>("[data-r17-project-home-plans-retry]")
         ?.addEventListener("click", () => void load(), { signal });
     }
@@ -2827,13 +2825,13 @@ function bindWorkItemAuditTimelinePanel(
       }
       if (error instanceof WorkHubApiError && error.status === 403) {
         body.innerHTML = `<p class="wh-subtle" data-r20-workitem-audit-timeline-forbidden="true">${escapeHtml(
-          zh ? "你没有查看这个事项审计记录的权限。" : "You don't have permission to view this work item's audit history."
+          webT(locale, "youDonTHavePermissionTo2")
         )}</p>`;
         return;
       }
       body.innerHTML = `<p class="wh-subtle" data-r20-workitem-audit-timeline-error="true">${escapeHtml(
-        zh ? "审计时间线加载失败，稍后重试。" : "Couldn't load the audit timeline — retry later."
-      )}</p><button type="button" class="wh-btn" data-r20-workitem-audit-timeline-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+        webT(locale, "couldnTLoadTheAuditTimeline")
+      )}</p><button type="button" class="wh-btn" data-r20-workitem-audit-timeline-retry="true">${escapeHtml(webT(locale, "retry"))}</button>`;
       body.querySelector<HTMLButtonElement>("[data-r20-workitem-audit-timeline-retry]")
         ?.addEventListener("click", () => void load(), { signal });
     }
@@ -2874,7 +2872,7 @@ function bindWorkItemAssignmentPanel(
   const claimButton = section.querySelector<HTMLButtonElement>("[data-r23-workitem-claim]");
   claimButton?.addEventListener("click", () => {
     claimButton.disabled = true;
-    setStatus(zh ? "正在认领…" : "Claiming…", "saving");
+    setStatus(webT(locale, "claiming"), "saving");
     void (async () => {
       try {
         await client.claimWorkItem(workItemId);
@@ -2906,7 +2904,7 @@ function bindWorkItemAssignmentPanel(
           return;
         }
         assignSelect.innerHTML = members
-          .map((member) => `<option value="${escapeHtml(member.user_id)}">${escapeHtml(member.nickname)}${member.is_admin ? (zh ? "（管理员）" : " (admin)") : ""}</option>`)
+          .map((member) => `<option value="${escapeHtml(member.user_id)}">${escapeHtml(member.nickname)}${member.is_admin ? (webT(locale, "admin")) : ""}</option>`)
           .join("");
       })
       .catch(() => {
@@ -2914,7 +2912,7 @@ function bindWorkItemAssignmentPanel(
           return;
         }
         assignDetails.dataset["r23AssignLoaded"] = "false";
-        assignSelect.innerHTML = `<option value="">${escapeHtml(zh ? "成员没加载出来，收起再展开重试" : "Couldn't load members — reopen to retry")}</option>`;
+        assignSelect.innerHTML = `<option value="">${escapeHtml(webT(locale, "couldnTLoadMembersReopenTo"))}</option>`;
       });
   }, { signal });
 
@@ -2928,7 +2926,7 @@ function bindWorkItemAssignmentPanel(
     }
     const role = roleSelect?.value === "lead" ? "lead" : "collaborator";
     assignSubmit.disabled = true;
-    setStatus(zh ? "正在指派…" : "Assigning…", "saving");
+    setStatus(webT(locale, "assigning"), "saving");
     void (async () => {
       try {
         await client.assignWorkItem(workItemId, { assignee_user_id: selection.body, role });
@@ -3007,7 +3005,7 @@ function bindWorkItemCommentsPanel(
       }
       body.innerHTML = `<p class="wh-subtle" data-r23-workitem-comments-error="true">${escapeHtml(
         humanizeWorkItemCollaborationError(error, "comment", locale)
-      )}</p><button type="button" class="wh-btn" data-r23-workitem-comments-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+      )}</p><button type="button" class="wh-btn" data-r23-workitem-comments-retry="true">${escapeHtml(webT(locale, "retry"))}</button>`;
       body.querySelector<HTMLButtonElement>("[data-r23-workitem-comments-retry]")
         ?.addEventListener("click", () => void load(), { signal });
     }
@@ -3024,7 +3022,7 @@ function bindWorkItemCommentsPanel(
       return;
     }
     submit.disabled = true;
-    setStatus(zh ? "正在发布…" : "Posting…", "saving");
+    setStatus(webT(locale, "posting"), "saving");
     void (async () => {
       try {
         await client.createWorkItemComment(workItemId, { body: checked.body });
@@ -3082,8 +3080,8 @@ function bindProjectLifecyclePanel(
   const run = async (action: ProjectLifecycleAction, button: HTMLButtonElement) => {
     button.disabled = true;
     setStatus(action === "archive"
-      ? (zh ? "正在归档…" : "Archiving…")
-      : (zh ? "正在删除…" : "Deleting…"), "saving");
+      ? (webT(locale, "archiving"))
+      : (webT(locale, "deleting")), "saving");
     try {
       const done = action === "archive"
         ? await client.archiveProject(projectId)
@@ -3169,7 +3167,7 @@ function bindSettingsWorkspaceAuditPanel(
     if (moreButton) {
       moreButton.disabled = true;
     }
-    setStatus(zh ? "正在加载…" : "Loading…", "loading");
+    setStatus(webT(locale, "loading"), "loading");
     try {
       const page = await client.listWorkspaceAudit({ limit: WORKSPACE_AUDIT_PAGE_SIZE, offset });
       if (signal.aborted) {
@@ -3202,7 +3200,7 @@ function bindSettingsWorkspaceAuditPanel(
         const forbidden = error instanceof WorkHubApiError && error.status === 403;
         body.innerHTML = forbidden
           ? `<p class="wh-subtle" data-r23-settings-workspace-audit-forbidden="true">${escapeHtml(message)}</p>`
-          : `<p class="wh-subtle" data-r23-settings-workspace-audit-error="true">${escapeHtml(message)}</p><button type="button" class="wh-btn" data-r23-settings-workspace-audit-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+          : `<p class="wh-subtle" data-r23-settings-workspace-audit-error="true">${escapeHtml(message)}</p><button type="button" class="wh-btn" data-r23-settings-workspace-audit-retry="true">${escapeHtml(webT(locale, "retry"))}</button>`;
         body.querySelector<HTMLButtonElement>("[data-r23-settings-workspace-audit-retry]")
           ?.addEventListener("click", () => void load(false), { signal });
         if (moreButton) {
@@ -3247,24 +3245,24 @@ function bindProjectHomeInstructionsPanel(
 
   const renderForbidden = () => {
     body.innerHTML = `<p class="wh-subtle" data-r17-project-home-instructions-forbidden="true">${escapeHtml(
-      zh ? "需要项目管理权限才能查看和修改自定义指令。" : "You need project management permission to view or change custom instructions."
+      webT(locale, "youNeedProjectManagementPermissionTo")
     )}</p>`;
   };
   const renderError = () => {
     body.innerHTML = `<p class="wh-subtle" data-r17-project-home-instructions-error="true">${escapeHtml(
-      zh ? "自定义指令没拉到，稍后重试。" : "Couldn't load custom instructions — retry later."
-    )}</p><button type="button" class="wh-btn" data-r17-project-home-instructions-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+      webT(locale, "couldnTLoadCustomInstructionsRetry")
+    )}</p><button type="button" class="wh-btn" data-r17-project-home-instructions-retry="true">${escapeHtml(webT(locale, "retry"))}</button>`;
     body.querySelector<HTMLButtonElement>("[data-r17-project-home-instructions-retry]")
       ?.addEventListener("click", () => void hydrate(), { signal });
   };
 
   const renderEditor = () => {
     body.innerHTML = `<textarea class="wh-r17-instructions-area" style="width:100%;box-sizing:border-box;resize:vertical" data-r17-project-home-instructions-textarea rows="6" maxlength="${PROJECT_INSTRUCTIONS_MAX_CHARS + 200}" placeholder="${escapeHtml(
-      zh ? "例如：所有输出用简体中文，避免技术黑话。" : "e.g. Reply in plain English, no jargon."
+      webT(locale, "eGReplyInPlainEnglish")
     )}"></textarea>
       <div class="wh-r4-route-meta">
         <span class="wh-subtle" data-r17-project-home-instructions-status hidden></span>
-        <span class="wh-subtle">${escapeHtml(zh ? "失焦自动保存，留空则不注入项目级指令。" : "Saves on blur; leave blank to skip project-level instructions.")}</span>
+        <span class="wh-subtle">${escapeHtml(webT(locale, "savesOnBlurLeaveBlankTo"))}</span>
       </div>`;
     const textarea = body.querySelector<HTMLTextAreaElement>("[data-r17-project-home-instructions-textarea]");
     const status = body.querySelector<HTMLElement>("[data-r17-project-home-instructions-status]");
@@ -3282,7 +3280,7 @@ function bindProjectHomeInstructionsPanel(
     };
     let saveChain: Promise<void> = Promise.resolve();
     const doSave = async (trimmed: string) => {
-      setStatus(zh ? "保存中…" : "Saving…", "saving");
+      setStatus(webT(locale, "saving"), "saving");
       try {
         const next = await client.request<InstructionsSlice>(path, {
           method: "PATCH",
@@ -3292,7 +3290,7 @@ function bindProjectHomeInstructionsPanel(
           return;
         }
         confirmed = next.instructions_md;
-        setStatus(zh ? "已保存" : "Saved", "saved");
+        setStatus(webT(locale, "saved"), "saved");
       } catch (error) {
         if (signal.aborted) {
           return;
@@ -3310,7 +3308,7 @@ function bindProjectHomeInstructionsPanel(
           return;
         }
         // 网络等：保留用户输入，只给错误提示（不回滚 textarea）。
-        setStatus(zh ? "没保存成功，你写的内容还在——改一下、失焦即可重试。" : "Couldn't save — what you typed is still here. Edit and blur to retry.", "error");
+        setStatus(webT(locale, "couldnTSaveWhatYouTyped"), "error");
       }
     };
     textarea.addEventListener(
@@ -3334,7 +3332,7 @@ function bindProjectHomeInstructionsPanel(
   };
 
   const hydrate = async () => {
-    body.innerHTML = `<p class="wh-subtle">${escapeHtml(zh ? "正在加载自定义指令…" : "Loading custom instructions…")}</p>`;
+    body.innerHTML = `<p class="wh-subtle">${escapeHtml(webT(locale, "loadingCustomInstructions"))}</p>`;
     try {
       const vm = await client.request<InstructionsSlice>(path);
       if (signal.aborted) {
@@ -3454,24 +3452,24 @@ function bindProjectHomeMembersPanel(
       }
       if (!pills.length) {
         body.innerHTML = `<p class="wh-subtle" data-r18-project-home-members-error="true">${escapeHtml(
-          zh ? "成员摘要没拉到，稍后重试。" : "Couldn't load the member summary — retry later."
-        )}</p><button type="button" class="wh-btn" data-r18-project-home-members-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+          webT(locale, "couldnTLoadTheMemberSummary")
+        )}</p><button type="button" class="wh-btn" data-r18-project-home-members-retry="true">${escapeHtml(webT(locale, "retry"))}</button>`;
         body.querySelector<HTMLButtonElement>("[data-r18-project-home-members-retry]")
           ?.addEventListener("click", () => void hydrate(), { signal });
         return;
       }
       const link = mainId
-        ? `<a class="wh-r4-route-kicker" href="/conversations/${encodeURIComponent(mainId)}" data-r18-project-home-members-mirror="true">${escapeHtml(zh ? "查看主区会话镜像 →" : "Open the main-channel conversation mirror →")}</a>`
+        ? `<a class="wh-r4-route-kicker" href="/conversations/${encodeURIComponent(mainId)}" data-r18-project-home-members-mirror="true">${escapeHtml(webT(locale, "openTheMainChannelConversationMirror"))}</a>`
         : "";
       body.innerHTML = `<div class="wh-r4-route-meta">${pills.join("")}</div>
-        <p class="wh-subtle">${escapeHtml(zh ? "主区会话对工作区全员可见；协同会话与成员的完整管理在桌面工作台。" : "The main channel is visible to the whole workspace; full member and collab management lives in the desktop workbench.")}</p>
+        <p class="wh-subtle">${escapeHtml(webT(locale, "theMainChannelIsVisibleTo"))}</p>
         ${link}`;
     } catch {
       if (signal.aborted) {
         return;
       }
       body.innerHTML = `<p class="wh-subtle" data-r18-project-home-members-error="true">${escapeHtml(
-        zh ? "成员摘要没拉到，稍后重试。" : "Couldn't load the member summary — retry later."
+        webT(locale, "couldnTLoadTheMemberSummary")
       )}</p>`;
     }
   };
@@ -3597,11 +3595,11 @@ function bindProjectHomeObjectivesPanel(
           return;
         }
         if (!workItemId) {
-          setLinkStatus(row, zh ? "先选一个工作项。" : "Pick a work item first.", "error");
+          setLinkStatus(row, webT(locale, "pickAWorkItemFirst"), "error");
           return;
         }
         linkButton.disabled = true;
-        setLinkStatus(row, zh ? "挂链中…" : "Linking…", "saving");
+        setLinkStatus(row, webT(locale, "linking"), "saving");
         void client
           .linkObjective(objectiveId, { work_item_id: workItemId })
           .then(() => {
@@ -3609,7 +3607,7 @@ function bindProjectHomeObjectivesPanel(
               return;
             }
             detailCache.delete(objectiveId);
-            setLinkStatus(row, zh ? "已挂链" : "Linked", "saved");
+            setLinkStatus(row, webT(locale, "linked"), "saved");
             void load();
           })
           .catch((error: unknown) => {
@@ -3619,7 +3617,7 @@ function bindProjectHomeObjectivesPanel(
             linkButton.disabled = false;
             setLinkStatus(
               row,
-              error instanceof WorkHubApiError ? error.message : (zh ? "挂链失败，请重试" : "Link failed — please retry"),
+              error instanceof WorkHubApiError ? error.message : (webT(locale, "linkFailedPleaseRetry")),
               "error"
             );
           });
@@ -3639,12 +3637,12 @@ function bindProjectHomeObjectivesPanel(
         const expanded = detailToggle.getAttribute("aria-expanded") === "true";
         if (expanded) {
           detailToggle.setAttribute("aria-expanded", "false");
-          detailToggle.textContent = zh ? "详情" : "Details";
+          detailToggle.textContent = webT(locale, "details");
           detailBody.hidden = true;
           return;
         }
         detailToggle.setAttribute("aria-expanded", "true");
-        detailToggle.textContent = zh ? "收起" : "Collapse";
+        detailToggle.textContent = webT(locale, "collapse");
         detailBody.hidden = false;
         const cached = detailCache.get(objectiveId);
         if (cached) {
@@ -3679,14 +3677,14 @@ function bindProjectHomeObjectivesPanel(
       event.preventDefault();
       const title = titleInput.value.trim();
       if (!title) {
-        setCreateStatus(zh ? "请先填写目标标题。" : "Enter an objective title first.", "error");
+        setCreateStatus(webT(locale, "enterAnObjectiveTitleFirst"), "error");
         titleInput.focus();
         return;
       }
       const description = descriptionInput.value.trim();
       const keyResults = parseKeyResultLines(krInput.value);
       submitButton.disabled = true;
-      setCreateStatus(zh ? "创建中…" : "Creating…", "saving");
+      setCreateStatus(webT(locale, "creating"), "saving");
       void client
         .createObjective({
           title,
@@ -3698,7 +3696,7 @@ function bindProjectHomeObjectivesPanel(
             return;
           }
           submitButton.disabled = false;
-          setCreateStatus(zh ? "已创建" : "Created", "saved");
+          setCreateStatus(webT(locale, "created"), "saved");
           titleInput.value = "";
           descriptionInput.value = "";
           krInput.value = "";
@@ -3710,7 +3708,7 @@ function bindProjectHomeObjectivesPanel(
           }
           submitButton.disabled = false;
           setCreateStatus(
-            error instanceof WorkHubApiError ? error.message : (zh ? "创建失败，请重试" : "Create failed — please retry"),
+            error instanceof WorkHubApiError ? error.message : (webT(locale, "createFailedPleaseRetry")),
             "error"
           );
         });
@@ -3778,16 +3776,16 @@ function bindConversationParticipantsPanel(
         return zh ? pair[0] : pair[1];
       }
     }
-    return zh ? "操作失败，请稍后重试。" : "Action failed, please try again.";
+    return webT(locale, "actionFailedPleaseTryAgain");
   };
 
   const renderLoading = () => {
-    body.innerHTML = `<p class="wh-subtle">${escapeHtml(zh ? "正在加载参与者…" : "Loading participants…")}</p>`;
+    body.innerHTML = `<p class="wh-subtle">${escapeHtml(webT(locale, "loadingParticipants"))}</p>`;
   };
   const renderError = () => {
     body.innerHTML = `<p class="wh-subtle" data-r18-conversation-participants-error="true">${escapeHtml(
-      zh ? "参与者没拉到，稍后重试。" : "Couldn't load participants — retry later."
-    )}</p><button type="button" class="wh-btn" data-r18-conversation-participants-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+      webT(locale, "couldnTLoadParticipantsRetryLater")
+    )}</p><button type="button" class="wh-btn" data-r18-conversation-participants-retry="true">${escapeHtml(webT(locale, "retry"))}</button>`;
     body.querySelector<HTMLButtonElement>("[data-r18-conversation-participants-retry]")
       ?.addEventListener("click", () => void hydrate(), { signal });
   };
@@ -3795,17 +3793,15 @@ function bindConversationParticipantsPanel(
   const applyVm = (vm: MirrorParticipantsVM) => {
     if (vm.scope === "workspace") {
       body.innerHTML = `<p class="wh-subtle" data-r18-conversation-participants-scope="workspace">${escapeHtml(
-        zh
-          ? "这是主区会话，工作区全体成员都能看到，没有单独的参与者名单可管理。"
-          : "This is the main channel — visible to the whole workspace; there is no per-conversation roster to manage."
+        webT(locale, "thisIsTheMainChannelVisible")
       )}</p>`;
       return;
     }
     if (vm.is_dm) {
       const names = vm.participants.map((p) => p.nickname).join(zh ? "、" : ", ");
-      body.innerHTML = `<p data-r18-conversation-participants-scope="dm"><strong>${escapeHtml(zh ? "私聊（双人）" : "Direct message (2 people)")}</strong></p>
+      body.innerHTML = `<p data-r18-conversation-participants-scope="dm"><strong>${escapeHtml(webT(locale, "directMessage2People"))}</strong></p>
         <p class="wh-subtle">${escapeHtml(names)}</p>
-        <p class="wh-subtle">${escapeHtml(zh ? "私聊固定两个人，不能加人或移出。" : "A DM is fixed at two people — members can't be added or removed.")}</p>`;
+        <p class="wh-subtle">${escapeHtml(webT(locale, "aDmIsFixedAtTwo"))}</p>`;
       return;
     }
     renderGroup(vm);
@@ -3817,15 +3813,15 @@ function bindConversationParticipantsPanel(
     const rowsHtml = vm.participants
       .map((p) => {
         const isSelf = p.user_id === selfUserId;
-        const roleLabel = p.role === "owner" ? (zh ? "群主" : "Owner") : (zh ? "成员" : "Member");
+        const roleLabel = p.role === "owner" ? (webT(locale, "owner")) : (webT(locale, "member"));
         let actionHtml = "";
         if (isSelf) {
-          actionHtml = `<button type="button" class="wh-btn" data-r18-participant-leave="true">${escapeHtml(zh ? "退出" : "Leave")}</button>`;
+          actionHtml = `<button type="button" class="wh-btn" data-r18-participant-leave="true">${escapeHtml(webT(locale, "leave"))}</button>`;
         } else if (isOwner) {
-          actionHtml = `<button type="button" class="wh-btn" data-r18-participant-remove="${escapeHtml(p.user_id)}">${escapeHtml(zh ? "移出" : "Remove")}</button>`;
+          actionHtml = `<button type="button" class="wh-btn" data-r18-participant-remove="${escapeHtml(p.user_id)}">${escapeHtml(webT(locale, "remove"))}</button>`;
         }
         return `<div class="wh-r4-route-row" data-r18-participant="${escapeHtml(p.user_id)}" data-r18-participant-role="${escapeHtml(p.role)}">
-          <div><strong>${escapeHtml(p.nickname)}</strong> <span class="wh-pill">${escapeHtml(roleLabel)}</span>${isSelf ? ` <span class="wh-pill">${escapeHtml(zh ? "你" : "You")}</span>` : ""}</div>
+          <div><strong>${escapeHtml(p.nickname)}</strong> <span class="wh-pill">${escapeHtml(roleLabel)}</span>${isSelf ? ` <span class="wh-pill">${escapeHtml(webT(locale, "you"))}</span>` : ""}</div>
           ${actionHtml}
         </div>`;
       })
@@ -3834,18 +3830,18 @@ function bindConversationParticipantsPanel(
     const addable = roster.filter((u) => !currentIds.has(u.id));
     const addHtml = addable.length
       ? `<form class="wh-r4-route-row" data-r18-participant-add-form="true">
-          <select data-r18-participant-add-select="true" aria-label="${escapeHtml(zh ? "选择要加入的成员" : "Choose a member to add")}">
+          <select data-r18-participant-add-select="true" aria-label="${escapeHtml(webT(locale, "chooseAMemberToAdd"))}">
             ${addable.map((u) => `<option value="${escapeHtml(u.id)}">${escapeHtml(u.nickname)}</option>`).join("")}
           </select>
-          <button type="submit" class="wh-btn wh-btn-primary" data-r18-participant-add-submit="true">${escapeHtml(zh ? "加入" : "Add")}</button>
+          <button type="submit" class="wh-btn wh-btn-primary" data-r18-participant-add-submit="true">${escapeHtml(webT(locale, "add"))}</button>
         </form>`
       : `<p class="wh-subtle" data-r18-participant-add-empty="true">${escapeHtml(
-          zh ? "工作区里其余成员都已在群内。" : "Everyone else in the workspace is already in this group."
+          webT(locale, "everyoneElseInTheWorkspaceIs")
         )}</p>`;
     body.innerHTML = `<div class="wh-r4-route-table" data-r18-conversation-participants-scope="group" data-r18-participant-count="${escapeHtml(String(vm.participants.length))}">${rowsHtml}</div>
       <p class="wh-subtle" data-r18-participant-status hidden></p>
       <div class="wh-r18-participant-add">${addHtml}</div>
-      <button type="button" class="wh-btn" data-r18-participant-refresh="true">${escapeHtml(zh ? "刷新参与者" : "Refresh participants")}</button>`;
+      <button type="button" class="wh-btn" data-r18-participant-refresh="true">${escapeHtml(webT(locale, "refreshParticipants"))}</button>`;
 
     const status = body.querySelector<HTMLElement>("[data-r18-participant-status]");
     const setStatus = (text: string, tone: "saving" | "error") => {
@@ -3860,7 +3856,7 @@ function bindConversationParticipantsPanel(
     // P2-08：退出/移出是破坏性动作——请求期间禁用触发按钮（防重复提交），失败复位。
     const doRemove = async (targetId: string, button: HTMLButtonElement) => {
       button.disabled = true;
-      setStatus(zh ? "处理中…" : "Working…", "saving");
+      setStatus(webT(locale, "working"), "saving");
       try {
         const res = await client.request<MirrorRemoveResult>(`${participantsPath}/${encodeURIComponent(targetId)}`, {
           method: "DELETE"
@@ -3870,8 +3866,8 @@ function bindConversationParticipantsPanel(
         }
         if (res.self_left) {
           // 自己退群后就不再是参与者，重拉会 404——不重拉，直接给「已退出」收尾说明。
-          body.innerHTML = `<p data-r18-conversation-participants-left="true"><strong>${escapeHtml(zh ? "你已退出该会话。" : "You've left this conversation.")}</strong></p>
-            <p class="wh-subtle">${escapeHtml(zh ? "刷新页面后你将无法再看到它。" : "You won't be able to see it after refreshing.")}</p>`;
+          body.innerHTML = `<p data-r18-conversation-participants-left="true"><strong>${escapeHtml(webT(locale, "youVeLeftThisConversation"))}</strong></p>
+            <p class="wh-subtle">${escapeHtml(webT(locale, "youWonTBeAbleTo"))}</p>`;
           return;
         }
         void reload();
@@ -3889,7 +3885,7 @@ function bindConversationParticipantsPanel(
     leaveBtn?.addEventListener(
       "click",
       () => armConfirmButton(leaveBtn, {
-        confirmLabel: zh ? "确认退出？再点一次" : "Leave — click again",
+        confirmLabel: webT(locale, "leaveClickAgain"),
         onConfirm: () => void doRemove(selfUserId, leaveBtn)
       }),
       { signal }
@@ -3899,7 +3895,7 @@ function bindConversationParticipantsPanel(
       btn.addEventListener(
         "click",
         () => armConfirmButton(btn, {
-          confirmLabel: zh ? "确认移出？再点一次" : "Remove — click again",
+          confirmLabel: webT(locale, "removeClickAgain"),
           onConfirm: () => void doRemove(targetId, btn)
         }),
         { signal }
@@ -3914,11 +3910,11 @@ function bindConversationParticipantsPanel(
         const select = body.querySelector<HTMLSelectElement>("[data-r18-participant-add-select]");
         const userId = select?.value ?? "";
         if (!userId) {
-          setStatus(zh ? "请先选择要加入的成员。" : "Pick a member to add first.", "error");
+          setStatus(webT(locale, "pickAMemberToAddFirst"), "error");
           return;
         }
         void (async () => {
-          setStatus(zh ? "处理中…" : "Working…", "saving");
+          setStatus(webT(locale, "working"), "saving");
           try {
             const res = await client.request<MirrorAddResult>(participantsPath, {
               method: "POST",
@@ -4058,11 +4054,11 @@ function bindSettingsBudgetPolicyPanel(
   };
 
   const onWarningLabel = (value: string) =>
-    value === "notify" ? (zh ? "提醒" : "Notify") : value === "downgrade_model" ? (zh ? "降级模型" : "Downgrade model") : value;
+    value === "notify" ? (webT(locale, "notify")) : value === "downgrade_model" ? (webT(locale, "downgradeModel")) : value;
   const onExhaustedLabel = (value: string) =>
-    value === "block_new_run" ? (zh ? "阻止新任务" : "Block new runs") : value === "handoff_current_run" ? (zh ? "移交当前任务" : "Hand off current run") : value;
+    value === "block_new_run" ? (webT(locale, "blockNewRuns")) : value === "handoff_current_run" ? (webT(locale, "handOffCurrentRun")) : value;
   const modelRouteHintLabel = (value: string) =>
-    value === "cheapest_safe" ? (zh ? "最省钱" : "Cheapest safe") : value === "balanced" ? (zh ? "均衡" : "Balanced") : value === "premium" ? (zh ? "高档位" : "Premium") : value;
+    value === "cheapest_safe" ? (webT(locale, "cheapestSafe")) : value === "balanced" ? (webT(locale, "balanced")) : value === "premium" ? (webT(locale, "premium")) : value;
 
   const renderPolicyRow = (policy: SettingsBudgetPolicySlice): string => {
     const onWarningOptions = ["notify", "downgrade_model"]
@@ -4076,24 +4072,24 @@ function bindSettingsBudgetPolicyPanel(
       .join("");
     const modelRouteHintPlaceholder = policy.model_route_hint
       ? ""
-      : `<option value="" selected disabled>${escapeHtml(zh ? "未设置" : "Not set")}</option>`;
+      : `<option value="" selected disabled>${escapeHtml(webT(locale, "notSet"))}</option>`;
     return `<div class="wh-r4-route-row" data-r20-budget-policy="${escapeHtml(policy.id)}" data-r20-budget-policy-scope="${escapeHtml(policy.scope_kind)}">
       <div>
         <strong>${escapeHtml(`${policy.scope_kind} · ${policy.id}`)}</strong>
         <div class="wh-r4-route-meta">
           <span class="wh-pill">${escapeHtml(policy.period)}</span>
           <span class="wh-pill" data-r20-budget-policy-version="${escapeHtml(String(policy.version))}">v${escapeHtml(String(policy.version))}</span>
-          <label><input type="checkbox" data-r20-budget-policy-enabled="true"${policy.enabled ? " checked" : ""} /> ${escapeHtml(zh ? "启用" : "Enabled")}</label>
+          <label><input type="checkbox" data-r20-budget-policy-enabled="true"${policy.enabled ? " checked" : ""} /> ${escapeHtml(webT(locale, "enabled"))}</label>
         </div>
       </div>
       <div class="wh-r4-route-meta">
-        <label>${escapeHtml(zh ? "Token 上限" : "Max tokens")} <input class="wh-pill" type="number" min="1" step="1" data-r20-budget-policy-max-tokens="true" value="${escapeHtml(String(policy.max_tokens))}" /></label>
-        <label>${escapeHtml(zh ? "费用上限（元）" : "Max cost (CNY)")} <input class="wh-pill" type="text" inputmode="decimal" data-r20-budget-policy-max-cost-cny="true" value="${escapeHtml(policy.max_cost_cny)}" /></label>
-        <label>${escapeHtml(zh ? "提醒阈值" : "Warning ratio")} <input class="wh-pill" type="number" min="0" max="1" step="0.01" data-r20-budget-policy-warning-ratio="true" value="${escapeHtml(String(policy.warning_ratio))}" /></label>
-        <label>${escapeHtml(zh ? "严重阈值" : "Critical ratio")} <input class="wh-pill" type="number" min="0" max="1" step="0.01" data-r20-budget-policy-critical-ratio="true" value="${escapeHtml(String(policy.critical_ratio))}" /></label>
-        <label>${escapeHtml(zh ? "达到提醒阈值时" : "On warning")} <select class="wh-pill" data-r20-budget-policy-on-warning="true">${onWarningOptions}</select></label>
-        <label>${escapeHtml(zh ? "用尽预算时" : "On exhausted")} <select class="wh-pill" data-r20-budget-policy-on-exhausted="true">${onExhaustedOptions}</select></label>
-        <label>${escapeHtml(zh ? "模型档位提示" : "Model route hint")} <select class="wh-pill" data-r20-budget-policy-model-route-hint="true">${modelRouteHintPlaceholder}${modelRouteHintOptions}</select></label>
+        <label>${escapeHtml(webT(locale, "maxTokens"))} <input class="wh-pill" type="number" min="1" step="1" data-r20-budget-policy-max-tokens="true" value="${escapeHtml(String(policy.max_tokens))}" /></label>
+        <label>${escapeHtml(webT(locale, "maxCostCny"))} <input class="wh-pill" type="text" inputmode="decimal" data-r20-budget-policy-max-cost-cny="true" value="${escapeHtml(policy.max_cost_cny)}" /></label>
+        <label>${escapeHtml(webT(locale, "warningRatio"))} <input class="wh-pill" type="number" min="0" max="1" step="0.01" data-r20-budget-policy-warning-ratio="true" value="${escapeHtml(String(policy.warning_ratio))}" /></label>
+        <label>${escapeHtml(webT(locale, "criticalRatio"))} <input class="wh-pill" type="number" min="0" max="1" step="0.01" data-r20-budget-policy-critical-ratio="true" value="${escapeHtml(String(policy.critical_ratio))}" /></label>
+        <label>${escapeHtml(webT(locale, "onWarning"))} <select class="wh-pill" data-r20-budget-policy-on-warning="true">${onWarningOptions}</select></label>
+        <label>${escapeHtml(webT(locale, "onExhausted"))} <select class="wh-pill" data-r20-budget-policy-on-exhausted="true">${onExhaustedOptions}</select></label>
+        <label>${escapeHtml(webT(locale, "modelRouteHint"))} <select class="wh-pill" data-r20-budget-policy-model-route-hint="true">${modelRouteHintPlaceholder}${modelRouteHintOptions}</select></label>
       </div>
       <p class="wh-subtle" data-r20-budget-policy-status hidden></p>
     </div>`;
@@ -4170,7 +4166,7 @@ function bindSettingsBudgetPolicyPanel(
     ];
     let saveChain: Promise<void> = Promise.resolve();
     const doSave = async (patch: Record<string, unknown>, field: (typeof fields)[number]) => {
-      setRowStatus(zh ? "保存中…" : "Saving…", "saving");
+      setRowStatus(webT(locale, "saving"), "saving");
       try {
         // patch 只带这一次改的单个字段（key 名与 BudgetPolicyUpdate 的 snake_case 字段逐一对应，见
         // 上面 fields 表的 patchKey），构造成 Record 而非直接用 BudgetPolicyUpdate 字面量类型是为了
@@ -4194,7 +4190,7 @@ function bindSettingsBudgetPolicyPanel(
           versionElement.textContent = `v${lastSaved.version}`;
           versionElement.setAttribute("data-r20-budget-policy-version", String(lastSaved.version));
         }
-        setRowStatus(zh ? "已保存" : "Saved", "saved");
+        setRowStatus(webT(locale, "saved"), "saved");
       } catch (error) {
         if (signal.aborted) {
           return;
@@ -4203,7 +4199,7 @@ function bindSettingsBudgetPolicyPanel(
           field.write(field.element, lastSaved);
         }
         setRowStatus(
-          error instanceof WorkHubApiError ? error.message : (zh ? "保存失败，请重试" : "Save failed, please retry"),
+          error instanceof WorkHubApiError ? error.message : (webT(locale, "saveFailedPleaseRetry")),
           "error"
         );
       }
@@ -4227,7 +4223,7 @@ function bindSettingsBudgetPolicyPanel(
   };
 
   const load = async () => {
-    body.innerHTML = `<p class="wh-subtle">${escapeHtml(zh ? "正在加载预算策略…" : "Loading budget policies…")}</p>`;
+    body.innerHTML = `<p class="wh-subtle">${escapeHtml(webT(locale, "loadingBudgetPolicies"))}</p>`;
     try {
       const policies = await getCostPolicies();
       if (signal.aborted) {
@@ -4238,7 +4234,7 @@ function bindSettingsBudgetPolicyPanel(
       }
       if (policies.length === 0) {
         body.innerHTML = `<p class="wh-subtle" data-r20-settings-budget-policies-empty="true">${escapeHtml(
-          zh ? "还没有配置任何预算策略。" : "No budget policies configured yet."
+          webT(locale, "noBudgetPoliciesConfiguredYet")
         )}</p>`;
         return;
       }
@@ -4255,13 +4251,13 @@ function bindSettingsBudgetPolicyPanel(
       }
       if (error instanceof WorkHubApiError && error.status === 403) {
         body.innerHTML = `<p class="wh-subtle" data-r20-settings-budget-policies-forbidden="true">${escapeHtml(
-          zh ? "你没有查看/编辑 AI 预算策略的权限。" : "You don't have permission to view or edit AI budget policies."
+          webT(locale, "youDonTHavePermissionTo3")
         )}</p>`;
         return;
       }
       body.innerHTML = `<p class="wh-subtle" data-r20-settings-budget-policies-error="true">${escapeHtml(
-        zh ? "预算策略没拉到，稍后重试。" : "Couldn't load budget policies — retry later."
-      )}</p><button type="button" class="wh-btn" data-r20-settings-budget-policies-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+        webT(locale, "couldnTLoadBudgetPoliciesRetry")
+      )}</p><button type="button" class="wh-btn" data-r20-settings-budget-policies-retry="true">${escapeHtml(webT(locale, "retry"))}</button>`;
       body.querySelector<HTMLButtonElement>("[data-r20-settings-budget-policies-retry]")
         ?.addEventListener("click", () => void load(), { signal });
     }
@@ -4299,7 +4295,7 @@ function bindSettingsMembersPanel(
         return zh ? pair[0] : pair[1];
       }
     }
-    return zh ? "操作失败，请稍后重试。" : "Action failed, please try again.";
+    return webT(locale, "actionFailedPleaseTryAgain");
   };
 
   bindSettingsMembersRoster(container, client, zh, signal, ROLE_LABELS, humanizeMember);
@@ -4323,8 +4319,8 @@ function bindSettingsMembersRoster(
 
   const renderError = () => {
     body.innerHTML = `<p class="wh-subtle" data-r18-settings-members-error="true">${escapeHtml(
-      zh ? "成员没拉到，稍后重试。" : "Couldn't load members — retry later."
-    )}</p><button type="button" class="wh-btn" data-r18-settings-members-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+      webT(zh, "couldnTLoadMembersRetryLater")
+    )}</p><button type="button" class="wh-btn" data-r18-settings-members-retry="true">${escapeHtml(webT(zh, "retry"))}</button>`;
     body.querySelector<HTMLButtonElement>("[data-r18-settings-members-retry]")
       ?.addEventListener("click", () => void hydrate(), { signal });
   };
@@ -4336,7 +4332,7 @@ function bindSettingsMembersRoster(
         const joined = formatDayStamp(member.joined_at);
         if (member.is_self) {
           return `<div class="wh-r4-route-row" data-r18-settings-member="${escapeHtml(member.user_id)}" data-r18-settings-member-self="true">
-            <div><strong>${escapeHtml(member.nickname)}</strong> <span class="wh-pill">${escapeHtml(zh ? "你" : "You")}</span></div>
+            <div><strong>${escapeHtml(member.nickname)}</strong> <span class="wh-pill">${escapeHtml(webT(zh, "you"))}</span></div>
             <div class="wh-r4-route-meta"><span class="wh-pill">${escapeHtml(roleLabel)}</span><span class="wh-pill">${escapeHtml(zh ? `加入于 ${joined}` : `Joined ${joined}`)}</span></div>
           </div>`;
         }
@@ -4346,9 +4342,9 @@ function bindSettingsMembersRoster(
         return `<div class="wh-r4-route-row" data-r18-settings-member="${escapeHtml(member.user_id)}" data-r18-settings-member-role="${escapeHtml(member.role)}">
           <div><strong>${escapeHtml(member.nickname)}</strong><div class="wh-r4-route-meta"><span class="wh-pill">${escapeHtml(zh ? `加入于 ${joined}` : `Joined ${joined}`)}</span></div></div>
           <div class="wh-r4-route-meta">
-            <select data-r18-settings-member-role-select="${escapeHtml(member.user_id)}" data-r18-settings-member-role-current="${escapeHtml(member.role)}" aria-label="${escapeHtml(zh ? "角色" : "Role")}">${options}</select>
-            <button type="button" class="wh-btn" data-r18-settings-member-role-confirm="${escapeHtml(member.user_id)}" hidden>${escapeHtml(zh ? "确认改角色" : "Confirm role")}</button>
-            <button type="button" class="wh-btn" data-r18-settings-member-remove="${escapeHtml(member.user_id)}">${escapeHtml(zh ? "移出" : "Remove")}</button>
+            <select data-r18-settings-member-role-select="${escapeHtml(member.user_id)}" data-r18-settings-member-role-current="${escapeHtml(member.role)}" aria-label="${escapeHtml(webT(zh, "role"))}">${options}</select>
+            <button type="button" class="wh-btn" data-r18-settings-member-role-confirm="${escapeHtml(member.user_id)}" hidden>${escapeHtml(webT(zh, "confirmRole"))}</button>
+            <button type="button" class="wh-btn" data-r18-settings-member-remove="${escapeHtml(member.user_id)}">${escapeHtml(webT(zh, "remove"))}</button>
           </div>
         </div>`;
       })
@@ -4393,11 +4389,11 @@ function bindSettingsMembersRoster(
         "click",
         () => {
           armConfirmButton(btn, {
-            confirmLabel: zh ? "确认移出？再点一次" : "Remove — click again",
+            confirmLabel: webT(zh, "removeClickAgain"),
             onConfirm: () => {
               void (async () => {
                 setRowDisabled(targetId, true);
-                setStatus(zh ? "处理中…" : "Working…", "saving");
+                setStatus(webT(zh, "working"), "saving");
                 try {
                   await client.request(`/api/workspace/members/${encodeURIComponent(targetId)}`, { method: "DELETE" });
                   if (signal.aborted) {
@@ -4461,7 +4457,7 @@ function bindSettingsMembersRoster(
           }
           void (async () => {
             setRowDisabled(targetId, true);
-            setStatus(zh ? "处理中…" : "Working…", "saving");
+            setStatus(webT(zh, "working"), "saving");
             try {
               await client.request(`/api/workspace/members/${encodeURIComponent(targetId)}`, {
                 method: "PATCH",
@@ -4527,9 +4523,9 @@ function bindSettingsInvites(container: HTMLElement, client: BrowserApiClient, z
     }
     tokenBox.hidden = false;
     // 令牌盒自带状态行——复制反馈不依赖 body 内那条随 render 重建的状态行（否则重拉清单后引用即失效）。
-    tokenBox.innerHTML = `<p><strong>${escapeHtml(zh ? "邀请令牌（只显示这一次，请立即复制转交）：" : "Invite token (shown once — copy and hand it off now):")}</strong></p>
+    tokenBox.innerHTML = `<p><strong>${escapeHtml(webT(zh, "inviteTokenShownOnceCopyAnd"))}</strong></p>
       <code class="wh-r18-invite-token" data-r18-settings-invite-token-value style="word-break:break-all">${escapeHtml(invite.token)}</code>
-      <div class="wh-r4-route-meta"><button type="button" class="wh-btn" data-r18-settings-invite-copy="true">${escapeHtml(zh ? "复制令牌" : "Copy token")}</button></div>
+      <div class="wh-r4-route-meta"><button type="button" class="wh-btn" data-r18-settings-invite-copy="true">${escapeHtml(webT(zh, "copyToken"))}</button></div>
       <p class="wh-subtle">${escapeHtml(zh ? `发给 ${invite.email}，${formatDayStamp(invite.expires_at)} 前有效。` : `Send to ${invite.email}; valid until ${formatDayStamp(invite.expires_at)}.`)}</p>
       <p class="wh-subtle" data-r18-settings-invite-token-status hidden></p>`;
     const tokenStatus = tokenBox.querySelector<HTMLElement>("[data-r18-settings-invite-token-status]");
@@ -4543,8 +4539,8 @@ function bindSettingsInvites(container: HTMLElement, client: BrowserApiClient, z
       "click",
       () => {
         void navigator.clipboard?.writeText(invite.token).then(
-          () => setTokenStatus(zh ? "已复制令牌。" : "Token copied."),
-          () => setTokenStatus(zh ? "复制失败，请手动选中复制。" : "Copy failed — select and copy manually.")
+          () => setTokenStatus(webT(zh, "tokenCopied")),
+          () => setTokenStatus(webT(zh, "copyFailedSelectAndCopyManually"))
         );
       },
       { signal }
@@ -4554,15 +4550,13 @@ function bindSettingsInvites(container: HTMLElement, client: BrowserApiClient, z
   const renderDisabled = () => {
     clearToken();
     body.innerHTML = `<p class="wh-subtle" data-r18-settings-invites-disabled="true">${escapeHtml(
-      zh
-        ? "邀请功能需要密码登录模式（当前工作区为昵称模式，无需邀请即可加入）。"
-        : "Invites require password login mode (this workspace uses nickname mode, where anyone can join without an invite)."
+      webT(zh, "invitesRequirePasswordLoginModeThis")
     )}</p>`;
   };
   const renderError = () => {
     body.innerHTML = `<p class="wh-subtle" data-r18-settings-invites-error="true">${escapeHtml(
-      zh ? "邀请没拉到，稍后重试。" : "Couldn't load invites — retry later."
-    )}</p><button type="button" class="wh-btn" data-r18-settings-invites-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+      webT(zh, "couldnTLoadInvitesRetryLater")
+    )}</p><button type="button" class="wh-btn" data-r18-settings-invites-retry="true">${escapeHtml(webT(zh, "retry"))}</button>`;
     body.querySelector<HTMLButtonElement>("[data-r18-settings-invites-retry]")
       ?.addEventListener("click", () => void hydrate(), { signal });
   };
@@ -4573,17 +4567,17 @@ function bindSettingsInvites(container: HTMLElement, client: BrowserApiClient, z
           .map(
             (invite) => `<div class="wh-r4-route-row" data-r18-settings-invite="${escapeHtml(invite.invite_id)}">
               <div><strong>${escapeHtml(invite.email)}</strong></div>
-              <div class="wh-r4-route-meta"><span class="wh-pill">${escapeHtml(zh ? `${formatDayStamp(invite.expires_at)} 过期` : `expires ${formatDayStamp(invite.expires_at)}`)}</span><button type="button" class="wh-btn" data-r18-settings-invite-revoke="${escapeHtml(invite.invite_id)}">${escapeHtml(zh ? "撤销" : "Revoke")}</button></div>
+              <div class="wh-r4-route-meta"><span class="wh-pill">${escapeHtml(zh ? `${formatDayStamp(invite.expires_at)} 过期` : `expires ${formatDayStamp(invite.expires_at)}`)}</span><button type="button" class="wh-btn" data-r18-settings-invite-revoke="${escapeHtml(invite.invite_id)}">${escapeHtml(webT(zh, "revoke"))}</button></div>
             </div>`
           )
           .join("")}</div>`
-      : `<p class="wh-subtle" data-r18-settings-invites-empty="true">${escapeHtml(zh ? "还没有未过期的邀请。" : "No pending invites yet.")}</p>`;
+      : `<p class="wh-subtle" data-r18-settings-invites-empty="true">${escapeHtml(webT(zh, "noPendingInvitesYet"))}</p>`;
     body.innerHTML = `<form class="wh-r4-route-row" data-r18-settings-invite-form="true">
-        <input type="email" name="email" required maxlength="320" placeholder="${escapeHtml(zh ? "对方邮箱" : "Invitee email")}" aria-label="${escapeHtml(zh ? "邀请邮箱" : "Invite email")}" autocomplete="off" data-r18-settings-invite-email="true" />
-        <button type="submit" class="wh-btn wh-btn-primary" data-r18-settings-invite-submit="true">${escapeHtml(zh ? "邀请" : "Invite")}</button>
+        <input type="email" name="email" required maxlength="320" placeholder="${escapeHtml(webT(zh, "inviteeEmail"))}" aria-label="${escapeHtml(webT(zh, "inviteEmail"))}" autocomplete="off" data-r18-settings-invite-email="true" />
+        <button type="submit" class="wh-btn wh-btn-primary" data-r18-settings-invite-submit="true">${escapeHtml(webT(zh, "invite"))}</button>
       </form>
       <p class="wh-subtle" data-r18-settings-invite-status hidden></p>
-      <h4 role="heading" aria-level="3">${escapeHtml(zh ? "未过期邀请" : "Pending invites")}</h4>
+      <h4 role="heading" aria-level="3">${escapeHtml(webT(zh, "pendingInvites"))}</h4>
       ${listHtml}`;
 
     const status = body.querySelector<HTMLElement>("[data-r18-settings-invite-status]");
@@ -4603,11 +4597,11 @@ function bindSettingsInvites(container: HTMLElement, client: BrowserApiClient, z
         const input = body.querySelector<HTMLInputElement>("[data-r18-settings-invite-email]");
         const email = input?.value.trim() ?? "";
         if (!email) {
-          setStatus(zh ? "请填写对方邮箱。" : "Enter an email first.", "error");
+          setStatus(webT(zh, "enterAnEmailFirst"), "error");
           return;
         }
         void (async () => {
-          setStatus(zh ? "生成中…" : "Creating…", "saving");
+          setStatus(webT(zh, "creating2"), "saving");
           try {
             const created = await client.request<SettingsInviteCreateResult>("/api/auth/invites", {
               method: "POST",
@@ -4626,14 +4620,14 @@ function bindSettingsInvites(container: HTMLElement, client: BrowserApiClient, z
               return;
             }
             if (error instanceof WorkHubApiError && error.status === 422) {
-              setStatus(zh ? "邮箱格式不对，检查后重试。" : "That email looks invalid — check and retry.", "error");
+              setStatus(webT(zh, "thatEmailLooksInvalidCheckAnd"), "error");
               return;
             }
             if (error instanceof WorkHubApiError && error.status === 404) {
-              setStatus(zh ? "邀请功能未启用（需密码登录模式）。" : "Invites aren't enabled (password mode required).", "error");
+              setStatus(webT(zh, "invitesArenTEnabledPasswordMode"), "error");
               return;
             }
-            setStatus(zh ? "邀请没生成，请稍后重试。" : "Couldn't create the invite — try again later.", "error");
+            setStatus(webT(zh, "couldnTCreateTheInviteTry"), "error");
           }
         })();
       },
@@ -4649,7 +4643,7 @@ function bindSettingsInvites(container: HTMLElement, client: BrowserApiClient, z
         () => {
           void (async () => {
             btn.disabled = true;
-            setStatus(zh ? "撤销中…" : "Revoking…", "saving");
+            setStatus(webT(zh, "revoking"), "saving");
             try {
               await client.request(`/api/auth/invites/${encodeURIComponent(inviteId)}`, { method: "DELETE" });
               if (signal.aborted) {
@@ -4666,7 +4660,7 @@ function bindSettingsInvites(container: HTMLElement, client: BrowserApiClient, z
                 void hydrate();
                 return;
               }
-              setStatus(zh ? "撤销失败，请稍后重试。" : "Couldn't revoke — try again later.", "error");
+              setStatus(webT(zh, "couldnTRevokeTryAgainLater"), "error");
             }
           })();
         },
@@ -4768,7 +4762,7 @@ function bindSearchRoutePanel(
   const appendEmptyGroupNote = (list: HTMLElement) => {
     const empty = document.createElement("p");
     empty.className = "wh-subtle";
-    empty.textContent = zh ? "此范围没有匹配。" : "No matches in this scope.";
+    empty.textContent = webT(locale, "noMatchesInThisScope");
     list.append(empty);
   };
 
@@ -4790,7 +4784,7 @@ function bindSearchRoutePanel(
     snippet.textContent = item.snippet;
     const meta = document.createElement("p");
     meta.className = "wh-subtle";
-    const senderLabel = item.sender_label ?? (zh ? "AI 助手" : "AI assistant");
+    const senderLabel = item.sender_label ?? (webT(locale, "aiAssistant"));
     meta.textContent = `${senderLabel} · ${formatSearchTimestamp(item.created_at)}`;
     main.append(title, snippet, meta);
     link.append(main);
@@ -4859,7 +4853,7 @@ function bindSearchRoutePanel(
       if (more) {
         more.hidden = !group.has_more;
         if (group.has_more) {
-          more.textContent = zh ? "还有更多结果——换更精确的关键词缩小范围。" : "More results available — try a more specific keyword.";
+          more.textContent = webT(locale, "moreResultsAvailableTryAMore");
         }
       }
     }
@@ -4874,7 +4868,7 @@ function bindSearchRoutePanel(
     if (resultsRoot) {
       resultsRoot.hidden = false;
     }
-    setStatus(zh ? "正在搜索…" : "Searching…", false);
+    setStatus(webT(locale, "searching"), false);
     if (retryButton) {
       retryButton.hidden = true;
     }
@@ -4888,7 +4882,7 @@ function bindSearchRoutePanel(
       if (signal.aborted) {
         return;
       }
-      setStatus(zh ? "搜索失败，请重试。" : "Search failed. Please retry.", false);
+      setStatus(webT(locale, "searchFailedPleaseRetry"), false);
       if (retryButton) {
         retryButton.hidden = false;
       }
@@ -4954,7 +4948,7 @@ function bindSettingsAiProfilePanel(
     if (retryButton) {
       retryButton.hidden = true;
     }
-    setStatus(zh ? "正在读取当前设置…" : "Loading current settings…", "saving");
+    setStatus(webT(locale, "loadingCurrentSettings"), "saving");
     try {
       const profile = await client.request<AiProfileSlice>(profilePath);
       if (signal.aborted) {
@@ -4977,9 +4971,7 @@ function bindSettingsAiProfilePanel(
         return;
       }
       setStatus(
-        zh
-          ? "没能读取当前 AI 设置。为避免误存，下拉框已暂时锁定。"
-          : "Couldn't load your current AI settings — the selectors stay locked so nothing is saved by mistake.",
+        webT(locale, "couldnTLoadYourCurrentAi"),
         "error"
       );
       if (retryButton) {
@@ -4993,7 +4985,7 @@ function bindSettingsAiProfilePanel(
   // 保存按到达顺序串行（同静音面板的 saveChain 取舍——乱序完成会用旧值盖新值）。
   let saveChain: Promise<void> = Promise.resolve();
   const doSave = async (patch: Record<string, unknown>, rollback: () => void) => {
-    setStatus(zh ? "保存中…" : "Saving…", "saving");
+    setStatus(webT(locale, "saving"), "saving");
     try {
       const profile = await client.request<AiProfileSlice>(profilePath, {
         method: "PATCH",
@@ -5010,13 +5002,13 @@ function bindSettingsAiProfilePanel(
       modeSelect.value = String(profile.default_mode);
       dispatchSelect.value = profile.dispatch_policy;
       proactivitySelect.value = profile.cuu_proactivity;
-      setStatus(zh ? "已保存" : "Saved", "saved");
+      setStatus(webT(locale, "saved"), "saved");
     } catch {
       if (signal.aborted) {
         return;
       }
       rollback();
-      setStatus(zh ? "保存失败，请重试" : "Save failed, please retry", "error");
+      setStatus(webT(locale, "saveFailedPleaseRetry"), "error");
     }
   };
   const enqueueSave = (patch: Record<string, unknown>, rollback: () => void) => {
@@ -5127,7 +5119,7 @@ function bindSettingsMyProfilePanel(
     if (retryButton) {
       retryButton.hidden = true;
     }
-    setStatus(zh ? "正在读取当前资料…" : "Loading current profile…", "saving");
+    setStatus(webT(locale, "loadingCurrentProfile"), "saving");
     try {
       const profile = await client.request<ProfileSlice>(profilePath);
       if (signal.aborted) {
@@ -5144,9 +5136,7 @@ function bindSettingsMyProfilePanel(
         return;
       }
       setStatus(
-        zh
-          ? "没能读取当前资料。为避免误存，输入框已暂时锁定。"
-          : "Couldn't load your profile — the inputs stay locked so nothing is saved by mistake.",
+        webT(locale, "couldnTLoadYourProfileThe"),
         "error"
       );
       if (retryButton) {
@@ -5159,7 +5149,7 @@ function bindSettingsMyProfilePanel(
 
   let saveChain: Promise<void> = Promise.resolve();
   const doSave = async (patch: Record<string, unknown>, rollback: () => void) => {
-    setStatus(zh ? "保存中…" : "Saving…", "saving");
+    setStatus(webT(locale, "saving"), "saving");
     try {
       const profile = await client.request<ProfileSlice>(profilePath, {
         method: "PATCH",
@@ -5170,13 +5160,13 @@ function bindSettingsMyProfilePanel(
       }
       lastSaved = { title: profile.title, bio_md: profile.bio_md, skill_tags: [...profile.skill_tags] };
       applySlice(lastSaved);
-      setStatus(zh ? "已保存" : "Saved", "saved");
+      setStatus(webT(locale, "saved"), "saved");
     } catch {
       if (signal.aborted) {
         return;
       }
       rollback();
-      setStatus(zh ? "保存失败，请重试" : "Save failed, please retry", "error");
+      setStatus(webT(locale, "saveFailedPleaseRetry"), "error");
     }
   };
   const enqueueSave = (patch: Record<string, unknown>, rollback: () => void) => {
@@ -5268,25 +5258,23 @@ function bindSettingsDevicesPanel(
 
   const revokeCurrentRowHtml = `<div class="wh-r4-route-row" data-r20-settings-devices-revoke-current-row="true">
       <div>
-        <strong>${escapeHtml(zh ? "撤销本机并登出" : "Revoke this device and sign out")}</strong>
-        <p>${escapeHtml(zh
-          ? "撤销这台设备的本地登录凭证（若有），并退出登录回到登录页。"
-          : "Revokes this device's local sign-in credential (if any) and signs you out back to the login screen."
+        <strong>${escapeHtml(webT(locale, "revokeThisDeviceAndSignOut"))}</strong>
+        <p>${escapeHtml(webT(locale, "revokesThisDeviceSLocalSign")
         )}</p>
       </div>
-      <button type="button" class="wh-btn wh-btn-danger" data-r20-settings-devices-revoke-current="true">${escapeHtml(zh ? "撤销本机" : "Revoke this device")}</button>
+      <button type="button" class="wh-btn wh-btn-danger" data-r20-settings-devices-revoke-current="true">${escapeHtml(webT(locale, "revokeThisDevice"))}</button>
     </div>`;
 
   const render = (devices: ClientDeviceResponse[], currentDeviceId: string | null) => {
     const rowsHtml = !devices.length
       ? `<p class="wh-subtle" data-r20-settings-devices-empty="true">${escapeHtml(
-          zh ? "还没有已登录的设备。" : "No signed-in devices yet."
+          webT(locale, "noSignedInDevicesYet")
         )}</p>`
       : `<div class="wh-r4-route-table" data-r20-settings-devices-count="${escapeHtml(String(devices.length))}">${devices
           .map((raw) => {
             const row = buildSettingsDeviceRow(raw, currentDeviceId, locale);
             const revokeBtn = row.canRevoke
-              ? `<button type="button" class="wh-btn" data-r20-settings-device-revoke="${escapeHtml(row.id)}">${escapeHtml(zh ? "撤销" : "Revoke")}</button>`
+              ? `<button type="button" class="wh-btn" data-r20-settings-device-revoke="${escapeHtml(row.id)}">${escapeHtml(webT(locale, "revoke"))}</button>`
               : "";
             return `<div class="wh-r4-route-row" data-r20-settings-device="${escapeHtml(row.id)}" data-r20-settings-device-current="${escapeHtml(String(row.isCurrent))}" data-r20-settings-device-revoked="${escapeHtml(String(row.isRevoked))}">
                 <div>
@@ -5314,7 +5302,7 @@ function bindSettingsDevicesPanel(
     // 撤销失败必须可见——不静默吞错（工单纪律）：按钮复位可再点，状态行给人话化错误。
     const doRevoke = async (deviceId: string, button: HTMLButtonElement) => {
       button.disabled = true;
-      setStatus(zh ? "正在撤销…" : "Revoking…", "saving");
+      setStatus(webT(locale, "revoking2"), "saving");
       try {
         await client.revokeClientDevice(deviceId);
         if (signal.aborted) {
@@ -5335,7 +5323,7 @@ function bindSettingsDevicesPanel(
       btn.addEventListener(
         "click",
         () => armConfirmButton(btn, {
-          confirmLabel: zh ? "确认撤销？再点一次" : "Revoke — click again",
+          confirmLabel: webT(locale, "revokeClickAgain"),
           onConfirm: () => void doRevoke(deviceId, btn)
         }),
         { signal }
@@ -5347,7 +5335,7 @@ function bindSettingsDevicesPanel(
     // 可见、可重试，不假装已经登出。
     const doRevokeCurrentAndSignOut = async (button: HTMLButtonElement) => {
       button.disabled = true;
-      setStatus(zh ? "正在撤销本机…" : "Revoking this device…", "saving");
+      setStatus(webT(locale, "revokingThisDevice"), "saving");
       try {
         await client.revokeCurrentClientDevice();
       } catch (error) {
@@ -5364,7 +5352,7 @@ function bindSettingsDevicesPanel(
       if (signal.aborted) {
         return;
       }
-      setStatus(zh ? "正在登出…" : "Signing out…", "saving");
+      setStatus(webT(locale, "signingOut"), "saving");
       try {
         await client.logout();
       } catch (error) {
@@ -5377,7 +5365,7 @@ function bindSettingsDevicesPanel(
           && (error.status === 401 || error.code === "not_identified");
         if (!sessionAlreadyGone) {
           button.disabled = false;
-          setStatus(zh ? "登出失败，请重试。" : "Sign-out failed — please try again.", "error");
+          setStatus(webT(locale, "signOutFailedPleaseTryAgain"), "error");
           showRouteNotice(container, logoutFailedNotice(locale));
           return;
         }
@@ -5390,7 +5378,7 @@ function bindSettingsDevicesPanel(
       revokeCurrentBtn.addEventListener(
         "click",
         () => armConfirmButton(revokeCurrentBtn, {
-          confirmLabel: zh ? "确认撤销并登出？再点一次" : "Revoke & sign out — click again",
+          confirmLabel: webT(locale, "revokeSignOutClickAgain"),
           onConfirm: () => void doRevokeCurrentAndSignOut(revokeCurrentBtn)
         }),
         { signal }
@@ -5419,8 +5407,8 @@ function bindSettingsDevicesPanel(
         return;
       }
       body.innerHTML = `<p class="wh-subtle" data-r20-settings-devices-error="true">${escapeHtml(
-        zh ? "没能读取已登录设备。" : "Couldn't load signed-in devices."
-      )}</p><button type="button" class="wh-btn" data-r20-settings-devices-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+        webT(locale, "couldnTLoadSignedInDevices")
+      )}</p><button type="button" class="wh-btn" data-r20-settings-devices-retry="true">${escapeHtml(webT(locale, "retry"))}</button>`;
       body.querySelector<HTMLButtonElement>("[data-r20-settings-devices-retry]")
         ?.addEventListener("click", () => void load(), { signal });
     }
@@ -5506,7 +5494,7 @@ function bindSettingsAvatarPanel(
       }
       const activeUserId = userId;
       void openAvatarCropModal(file, zh, async (blob) => {
-        setStatus(zh ? "正在上传…" : "Uploading…", "saving");
+        setStatus(webT(locale, "uploading"), "saving");
         try {
           await client.request(`/api/me/avatar`, {
             method: "PUT",
@@ -5516,13 +5504,13 @@ function bindSettingsAvatarPanel(
           if (signal.aborted) {
             return;
           }
-          setStatus(zh ? "头像已更新" : "Avatar updated", "saved");
+          setStatus(webT(locale, "avatarUpdated"), "saved");
           showAvatarUrl(`/api/users/${encodeURIComponent(activeUserId)}/avatar?v=${Date.now()}`);
         } catch {
           if (signal.aborted) {
             return;
           }
-          setStatus(zh ? "上传失败，请重试" : "Upload failed — please try again", "error");
+          setStatus(webT(locale, "uploadFailedPleaseTryAgain"), "error");
         }
       });
     },
@@ -5535,7 +5523,7 @@ function bindSettingsAvatarPanel(
       if (!userId) {
         return;
       }
-      setStatus(zh ? "正在移除…" : "Removing…", "saving");
+      setStatus(webT(locale, "removing"), "saving");
       void client
         .request(`/api/me/avatar`, { method: "DELETE" })
         .then(() => {
@@ -5545,13 +5533,13 @@ function bindSettingsAvatarPanel(
           img.hidden = true;
           removeBtn.hidden = true;
           removeBtn.disabled = true;
-          setStatus(zh ? "已移除头像" : "Avatar removed", "saved");
+          setStatus(webT(locale, "avatarRemoved"), "saved");
         })
         .catch(() => {
           if (signal.aborted) {
             return;
           }
-          setStatus(zh ? "移除失败，请重试" : "Failed to remove — please try again", "error");
+          setStatus(webT(locale, "failedToRemovePleaseTryAgain"), "error");
         });
     },
     { signal }
@@ -5622,19 +5610,19 @@ function bindProposalFeedbackNotePanel(
       if (!verdict) {
         // 主路径已经用原生 disabled 属性挡住这次点击（未判定时按钮不可点）——这里是防御性兜底，
         // 覆盖 disabled 状态被绕过（比如测试直接调用 click()）的情况。
-        setStatus(zh ? "请先选择「有用」或「没用」" : "Pick Useful or Not useful first", "error");
+        setStatus(webT(locale, "pickUsefulOrNotUsefulFirst"), "error");
         return;
       }
       const note = textarea.value.trim();
       saveButton.disabled = true;
-      setStatus(zh ? "保存中…" : "Saving…", "saving");
+      setStatus(webT(locale, "saving"), "saving");
       void putProposalFeedback(proposalId, note ? { verdict, note } : { verdict })
         .then(() => {
           if (signal.aborted) {
             return;
           }
           saveButton.disabled = false;
-          setStatus(zh ? "已保存" : "Saved", "saved");
+          setStatus(webT(locale, "saved"), "saved");
         })
         .catch((error: unknown) => {
           if (signal.aborted) {
@@ -5642,7 +5630,7 @@ function bindProposalFeedbackNotePanel(
           }
           saveButton.disabled = false;
           setStatus(
-            error instanceof WorkHubApiError ? error.message : (zh ? "保存失败，请重试" : "Save failed, please retry"),
+            error instanceof WorkHubApiError ? error.message : (webT(locale, "saveFailedPleaseRetry")),
             "error"
           );
         });
@@ -5733,7 +5721,7 @@ function bindMemoryProfileItems(
       () => {
         const valueMd = valueInput.value.trim();
         if (!valueMd) {
-          setStatus(zh ? "内容不能为空" : "Content can't be empty", "error");
+          setStatus(webT(zh, "contentCanTBeEmpty"), "error");
           return;
         }
         const patchUserMemory = client.patchUserMemory;
@@ -5741,7 +5729,7 @@ function bindMemoryProfileItems(
           return;
         }
         const expectedUpdatedAt = item.getAttribute("data-r14-mem-updated-at") ?? "";
-        setStatus(zh ? "保存中…" : "Saving…", "saving");
+        setStatus(webT(zh, "saving"), "saving");
         saveBtn.disabled = true;
         void patchUserMemory(id, { value_md: valueMd, expected_updated_at: expectedUpdatedAt })
           .then(async () => {
@@ -5757,13 +5745,13 @@ function bindMemoryProfileItems(
             saveBtn.disabled = false;
             if (error instanceof WorkHubApiError && error.status === 409) {
               setStatus(
-                zh ? "这条记忆已被更新，请刷新后重试" : "This memory changed elsewhere — reload and try again",
+                webT(zh, "thisMemoryChangedElsewhereReloadAnd"),
                 "error"
               );
               return;
             }
             setStatus(
-              error instanceof WorkHubApiError ? error.message : (zh ? "保存失败，请重试" : "Save failed, please retry"),
+              error instanceof WorkHubApiError ? error.message : (webT(zh, "saveFailedPleaseRetry")),
               "error"
             );
           });
@@ -5776,7 +5764,7 @@ function bindMemoryProfileItems(
       () => {
         armMemoryConfirmButton(
           deleteBtn,
-          zh ? "确定删除？再点一次" : "Really delete? Click again",
+          webT(zh, "reallyDeleteClickAgain"),
           () => {
             const deleteUserMemory = client.deleteUserMemory;
             if (!deleteUserMemory) {
@@ -5796,7 +5784,7 @@ function bindMemoryProfileItems(
                 }
                 deleteBtn.disabled = false;
                 setStatus(
-                  error instanceof WorkHubApiError ? error.message : (zh ? "删除失败，请重试" : "Delete failed, please retry"),
+                  error instanceof WorkHubApiError ? error.message : (webT(zh, "deleteFailedPleaseRetry")),
                   "error"
                 );
               });
@@ -5905,7 +5893,7 @@ function bindMemorySkillItems(
             ops.push({ op, section, ...(op === "remove_section" ? {} : { content_md: content }) });
           }
           if (ops.length === 0 || !skillId || !Number.isInteger(baseVersion) || baseVersion <= 0) {
-            setEditStatus(zh ? "至少填一处修改（段落标题必填）" : "Fill in at least one edit (section title required)", "error");
+            setEditStatus(webT(zh, "fillInAtLeastOneEdit"), "error");
             return;
           }
           const patchTeamSkillManage = client.patchTeamSkillManage;
@@ -5913,7 +5901,7 @@ function bindMemorySkillItems(
             return;
           }
           const rationale = editForm.querySelector<HTMLTextAreaElement>("[data-r14-skill-rationale]")?.value.trim();
-          setEditStatus(zh ? "保存中…" : "Saving…", "saving");
+          setEditStatus(webT(zh, "saving"), "saving");
           submitBtn.disabled = true;
           void patchTeamSkillManage(skillId, {
             ops,
@@ -5933,13 +5921,13 @@ function bindMemorySkillItems(
               submitBtn.disabled = false;
               if (error instanceof WorkHubApiError && error.status === 409) {
                 setEditStatus(
-                  zh ? "这个技能已被更新，请刷新后重试" : "This skill changed elsewhere — reload and try again",
+                  webT(zh, "thisSkillChangedElsewhereReloadAnd"),
                   "error"
                 );
                 return;
               }
               setEditStatus(
-                error instanceof WorkHubApiError ? error.message : (zh ? "保存失败，请重试" : "Save failed, please retry"),
+                error instanceof WorkHubApiError ? error.message : (webT(zh, "saveFailedPleaseRetry")),
                 "error"
               );
             });
@@ -5954,7 +5942,7 @@ function bindMemorySkillItems(
         () => {
           armMemoryConfirmButton(
             deactivateBtn,
-            zh ? "确定停用？再点一次" : "Really deactivate? Click again",
+            webT(zh, "reallyDeactivateClickAgain"),
             () => {
               const skillId = deactivateBtn.getAttribute("data-r14-skill-id") ?? "";
               const reason = deactivateForm?.querySelector<HTMLInputElement>("[data-r14-skill-deactivate-reason]")?.value.trim();
@@ -5979,7 +5967,7 @@ function bindMemorySkillItems(
                     statusLine.hidden = false;
                     statusLine.textContent = error instanceof WorkHubApiError
                       ? error.message
-                      : (zh ? "停用失败，请重试" : "Deactivate failed, please retry");
+                      : (webT(zh, "deactivateFailedPleaseRetry"));
                   }
                 });
             },
@@ -6512,13 +6500,13 @@ function inviteAcceptErrorText(error: unknown, locale: WorkHubLocale): string {
   const zh = locale !== "en-US";
   if (error instanceof WorkHubApiError) {
     if (error.status === 404) {
-      return zh ? "邀请无效或已过期，请向管理员索取新的邀请。" : "This invite is invalid or expired — ask your admin for a new one.";
+      return webT(zh, "thisInviteIsInvalidOrExpired");
     }
     if (error.status === 409) {
-      return zh ? "该邮箱已注册，请直接登录。" : "That email is already registered — sign in instead.";
+      return webT(zh, "thatEmailIsAlreadyRegisteredSign2");
     }
     if (error.status === 400) {
-      return error.message || (zh ? "密码太弱或信息有误，请检查后重试。" : "The password is too weak or a field is invalid — check and retry.");
+      return error.message || (webT(zh, "thePasswordIsTooWeakOr"));
     }
     // MRG-26：只透传 4xx 的服务端 message（参数/状态类文案是写给人看的）；5xx 的 message 常含内部
     // 细节，不应糊到用户脸上——一律落通用「稍后重试」。
@@ -6526,7 +6514,7 @@ function inviteAcceptErrorText(error: unknown, locale: WorkHubLocale): string {
       return error.message;
     }
   }
-  return zh ? "接受邀请失败，请稍后重试。" : "Couldn't accept the invite — try again later.";
+  return webT(zh, "couldnTAcceptTheInviteTry");
 }
 
 async function renderCurrentRouteOrOnboard(client: BrowserApiClient, locale: WorkHubLocale, options: { silent?: boolean } = {}) {

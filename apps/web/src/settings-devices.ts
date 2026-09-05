@@ -1,6 +1,8 @@
 import type { ClientDeviceResponse } from "@workhub/contracts";
 import type { WorkHubLocale } from "@workhub/ui/gold-path";
 
+import { webT } from "./locales.js";
+
 // R20 P2-05（设备管理 API 完整但零 UI）：/api/client-devices 四端点（register/me/current/:id revoke）
 // 此前从未被任何前端调用过——本文件是 web /settings「已登录设备」区块的纯格式化/判定层（无 DOM 依赖，
 // 可直接单测），供 apps/web/src/browser.ts 的 bindSettingsDevicesPanel 水合时调用。拆出来的原因同
@@ -26,11 +28,11 @@ export type SettingsDeviceRowViewModel = {
 export function formatDeviceLastSeen(lastSeenAt: string | undefined, locale: WorkHubLocale): string {
   const zh = locale === "zh-CN";
   if (!lastSeenAt) {
-    return zh ? "从未连接" : "Never connected";
+    return webT(locale, "neverConnected");
   }
   const parsed = new Date(lastSeenAt);
   if (Number.isNaN(parsed.getTime())) {
-    return zh ? "从未连接" : "Never connected";
+    return webT(locale, "neverConnected");
   }
   return new Intl.DateTimeFormat(locale, {
     year: "numeric",
@@ -69,10 +71,10 @@ export function buildSettingsDeviceRow(
   const revoked = isDeviceRevoked(device);
   const current = isCurrentDevice(device, currentDeviceId);
   const statusLabel = revoked
-    ? (zh ? "已撤销" : "Revoked")
+    ? (webT(locale, "revoked"))
     : current
-      ? (zh ? "本机" : "This device")
-      : (zh ? "活跃" : "Active");
+      ? (webT(locale, "thisDevice"))
+      : (webT(locale, "active2"));
   return {
     id: device.id,
     deviceName: device.device_name,
@@ -108,10 +110,10 @@ export function humanizeDeviceRevokeError(error: unknown, locale: WorkHubLocale)
     ? (error as { code?: unknown }).code
     : undefined;
   if (code === "not_found") {
-    return zh ? "没有找到这台设备，可能已经撤销过了。" : "That device wasn't found — it may already be revoked.";
+    return webT(locale, "thatDeviceWasnTFoundIt");
   }
   if (code === "forbidden") {
-    return zh ? "没有权限撤销这台设备。" : "You don't have permission to revoke that device.";
+    return webT(locale, "youDonTHavePermissionTo5");
   }
-  return zh ? "撤销失败，请稍后重试。" : "Revoke failed, please try again.";
+  return webT(locale, "revokeFailedPleaseTryAgain");
 }

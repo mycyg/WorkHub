@@ -23,6 +23,8 @@ import {
 } from "./render.js";
 import type { ProjectTimelinePageVM } from "@workhub/contracts";
 
+import { timelineT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 export type TimelineViewApiClient = TimelineApiClient;
@@ -141,7 +143,7 @@ export function mountTimelineView(
   function submitMilestoneForm(): void {
     const draft = readMilestoneDraft();
     if (!draft.title) {
-      ui = { ...ui, error: zh ? "里程碑名称不能为空。" : "Milestone name can't be empty." };
+      ui = { ...ui, error: timelineT(input.locale, "milestoneNameCanTBeEmpty") };
       render();
       return;
     }
@@ -226,7 +228,7 @@ export function mountTimelineView(
     if (deleteBtn?.dataset.wbTlMdelete) {
       const milestoneId = deleteBtn.dataset.wbTlMdelete;
       const ok = container.ownerDocument?.defaultView?.confirm(
-        zh ? "删除这个里程碑？挂在它下面的工作项会变回未挂里程碑。" : "Delete this milestone? Its work items go back to unassigned."
+        timelineT(input.locale, "deleteThisMilestoneItsWorkItems")
       );
       if (ok) {
         void runWrite(() => deleteMilestone(input.client, input.projectId, milestoneId));

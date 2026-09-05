@@ -2,6 +2,8 @@ import type { DmListVM, ProjectListVM } from "@workhub/contracts";
 import type { WorkHubLocale } from "@workhub/ui/gold-path";
 import { escapeHtml, safeHref } from "@workhub/web-runtime";
 
+import { webT } from "./locales.js";
+
 // R19-15：web 端「个人空间 / 私聊」导航入口。桌面工作台左栏有个人空间分组 + 私聊分组，web 端后端能力
 // 齐备（GET /api/me/personal-projects、GET /api/dm/list）但导航进不去。本模块是纯渲染层，供 browser.ts
 // 在项目页（/projects，既有导航项）客户端水合注入——不新增路由、不动 gold-path 的 shellPageOrder/键，
@@ -48,23 +50,19 @@ export function personalSpaceRows(projects: ProjectListVM): PersonalSpaceRow[] {
 function copy(locale: WorkHubLocale) {
   const zh = locale === "zh-CN";
   return {
-    kicker: zh ? "个人" : "Personal",
-    title: zh ? "个人空间与私聊" : "Personal spaces & direct messages",
-    summary: zh
-      ? "只属于你的空间和一对一私聊，点开即可查看只读会话镜像。"
-      : "Your own spaces and one-to-one chats — open one to view its read-only mirror.",
-    personalHead: zh ? "个人空间" : "Personal spaces",
-    dmHead: zh ? "私聊" : "Direct messages",
-    personalEmpty: zh ? "还没有个人空间。" : "No personal spaces yet.",
-    dmEmpty: zh ? "还没有私聊。" : "No direct messages yet.",
+    kicker: webT(locale, "personal"),
+    title: webT(locale, "personalSpacesDirectMessages"),
+    summary: webT(locale, "yourOwnSpacesAndOneTo"),
+    personalHead: webT(locale, "personalSpaces"),
+    dmHead: webT(locale, "directMessages"),
+    personalEmpty: webT(locale, "noPersonalSpacesYet"),
+    dmEmpty: webT(locale, "noDirectMessagesYet"),
     // 取数失败（null）与「确实为空」不同——不谎称「还没有」，只说没拉到。
-    loadFailed: zh ? "暂时没拉到，稍后重试。" : "Couldn't load — retry later.",
+    loadFailed: webT(locale, "couldnTLoadRetryLater"),
     // R23 P2（SA-05）：新建本身在 web 就能做了；仍然诚实说明完整收发消息还是桌面工作台的事（SA-01 未解）。
-    bothEmpty: zh
-      ? "你还没有个人空间或私聊。可以点上方「新建个人空间」创建一个——完整的收发消息仍在桌面工作台进行。"
-      : "You have no personal spaces or direct messages yet. Use “New personal space” above to create one — full messaging still happens on the desktop workbench.",
-    dmFallbackPeer: zh ? "私聊" : "Direct message",
-    createPersonalSpace: zh ? "新建个人空间" : "New personal space"
+    bothEmpty: webT(locale, "youHaveNoPersonalSpacesOr"),
+    dmFallbackPeer: webT(locale, "directMessage"),
+    createPersonalSpace: webT(locale, "newPersonalSpace")
   };
 }
 

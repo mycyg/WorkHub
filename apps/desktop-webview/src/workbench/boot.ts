@@ -41,6 +41,8 @@ import { consumePendingWorkbenchDeepLink } from "./pending-deep-link.js";
 import { mountWorkbenchShell, renderWorkbenchDocumentHead, type WorkbenchShellHandle } from "./shell.js";
 import { isWorkbenchWindowControlPlan, parseWorkbenchDeepLinkPlan, parseWorkbenchRoute } from "./route.js";
 
+import { workbenchT } from "./locales.js";
+
 const DESKTOP_LOGGED_OUT_FLAG = "workhub_desktop_logged_out";
 
 // DSK-06：令牌读写统一走 ../desktop-client-token.ts（明文 localStorage 的已知风险见该文件头部注释）。
@@ -317,7 +319,7 @@ async function boot(): Promise<void> {
   let locale: WorkHubLocale = browserLocale();
   setDocumentLocale(locale);
   root.innerHTML = `${renderWorkbenchDocumentHead()}<div class="wh-ds wh-wb"><div class="wh-wb-loading"><span class="wh-wb-spinner"></span>${
-    locale === "zh-CN" ? "正在打开工作台…" : "Opening the workbench…"
+    workbenchT(locale, "openingTheWorkbench")
   }</div></div>`;
 
   const client = createApiClient({

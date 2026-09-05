@@ -10,6 +10,8 @@ import { escapeHtml } from "@workhub/web-runtime";
 import { riskHintLabel } from "../labels.js";
 import type { SpotlightCapabilityView, SpotlightViewContext } from "../view-context.js";
 
+import { spotlightViewsT } from "./locales.js";
+
 type Question = SessionVM["question"];
 
 export function defaultSelectedOptionIds(question: Question): Set<string> {
@@ -46,7 +48,7 @@ function optionsHtml(question: Question, selected: Set<string>, zh: boolean): st
       // 非推荐项的风险药丸要本地化(低/中/高风险),别裸渲 contract token low/medium/high(web 同款已修);
       // 无 risk_hint 时不渲药丸(下方 tag ? 守卫)。
       const tag = recommended.has(option.id)
-        ? (zh ? "推荐" : "Recommended")
+        ? (spotlightViewsT(zh, "recommended"))
         : option.risk_hint ? riskHintLabel(option.risk_hint, zh) : "";
       return `<button type="button" class="wh-spot-opt" data-opt="${escapeHtml(option.id)}" data-sel="${isSel}" aria-pressed="${isSel}">
         <span class="wh-spot-opt-check" aria-hidden="true"></span>
@@ -64,7 +66,7 @@ function freeTextHtml(question: Question, zh: boolean): string {
   if (!question.free_text?.enabled) {
     return "";
   }
-  const ph = question.free_text.placeholder ?? (zh ? "补充点细节（可选）…" : "Add any detail (optional)…");
+  const ph = question.free_text.placeholder ?? (spotlightViewsT(zh, "addAnyDetailOptional"));
   const max = question.free_text.max_length ? ` maxlength="${question.free_text.max_length}"` : "";
   return `<textarea class="wh-spot-freetext" data-freetext placeholder="${escapeHtml(ph)}"${max}></textarea>`;
 }
@@ -72,7 +74,7 @@ function freeTextHtml(question: Question, zh: boolean): string {
 function questionHtml(vm: SessionVM, selected: Set<string>, zh: boolean): string {
   const q = vm.question;
   const isConfirm = q.input_mode === "confirm";
-  const submitLabel = isConfirm ? (zh ? "创建工作项" : "Create work item") : zh ? "继续" : "Continue";
+  const submitLabel = isConfirm ? (spotlightViewsT(zh, "createWorkItem")) : spotlightViewsT(zh, "continue");
   return `<div class="wh-spot-intake">
     ${progressHtml(q)}
     <h3 class="wh-spot-intake-title">${escapeHtml(q.title)}</h3>
@@ -80,7 +82,7 @@ function questionHtml(vm: SessionVM, selected: Set<string>, zh: boolean): string
     ${optionsHtml(q, selected, zh)}
     ${freeTextHtml(q, zh)}
     <div class="wh-spot-intake-actions">
-      <button type="button" class="wh-spot-act wh-spot-act--quiet" data-restart>${zh ? "重新开始" : "Restart"}</button>
+      <button type="button" class="wh-spot-act wh-spot-act--quiet" data-restart>${spotlightViewsT(zh, "restart")}</button>
       <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-submit>${escapeHtml(submitLabel)}</button>
     </div>
   </div>`;
@@ -92,12 +94,12 @@ export function startHtml(zh: boolean, projectLabel?: string, prefillIntent?: st
     ? `<div class="wh-spot-row-meta" data-intake-project="${escapeHtml(projectLabel)}"><span class="wh-spot-chip wh-spot-chip--info">${escapeHtml(zh ? `项目：${projectLabel}` : `Project: ${projectLabel}`)}</span></div>`
     : "";
   return `<div class="wh-spot-intake">
-    <h3 class="wh-spot-intake-title">${zh ? "你想让 AI 帮你做点什么？" : "What should the AI take on?"}</h3>
+    <h3 class="wh-spot-intake-title">${spotlightViewsT(zh, "whatShouldTheAiTakeOn")}</h3>
     ${projectPill}
-    <p class="wh-spot-intake-body">${zh ? "用一句话说清楚，Cuu 会先澄清几个关键点，再去干、回头给你过目。" : "Describe it in a line — Cuu clarifies a few points, then works and brings it back for review."}</p>
-    <textarea class="wh-spot-freetext" data-intent placeholder="${zh ? "例如：整理上周客户访谈，输出一页要点摘要…" : "e.g. Summarize last week's customer interviews into a one-pager…"}">${escapeHtml(prefillIntent ?? "")}</textarea>
+    <p class="wh-spot-intake-body">${spotlightViewsT(zh, "describeItInALineCuu")}</p>
+    <textarea class="wh-spot-freetext" data-intent placeholder="${spotlightViewsT(zh, "eGSummarizeLastWeekS")}">${escapeHtml(prefillIntent ?? "")}</textarea>
     <div class="wh-spot-intake-actions">
-      <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-start>${zh ? "开始澄清" : "Start"}</button>
+      <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-start>${spotlightViewsT(zh, "start")}</button>
     </div>
   </div>`;
 }
@@ -105,10 +107,10 @@ export function startHtml(zh: boolean, projectLabel?: string, prefillIntent?: st
 export function doneHtml(code: string, title: string, zh: boolean): string {
   return `<div class="wh-spot-empty">
     <div class="wh-spot-empty-face">(=^･ω･^=)✓</div>
-    <h3 class="wh-spot-empty-title">${zh ? "工作项已创建" : "Work item created"}</h3>
+    <h3 class="wh-spot-empty-title">${spotlightViewsT(zh, "workItemCreated")}</h3>
     <p class="wh-spot-empty-sub">${escapeHtml(code ? `${code} · ${title}` : title)}</p>
     <div class="wh-spot-intake-actions" style="justify-content:center">
-      <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-restart>${zh ? "再建一个任务" : "Create another task"}</button>
+      <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-restart>${spotlightViewsT(zh, "createAnotherTask")}</button>
     </div>
   </div>`;
 }
@@ -133,16 +135,16 @@ function classifyStartFailure(error: unknown): StartFailureKind {
 
 function startFailureToastMessage(kind: StartFailureKind, error: unknown, zh: boolean): string {
   if (kind === "no_project") {
-    return zh ? "这台服务器还没有项目，新任务需要先建一个。" : "This server has no project yet — create one to start a task.";
+    return spotlightViewsT(zh, "thisServerHasNoProjectYet");
   }
   if (kind === "ai_unavailable") {
-    return zh ? "AI 服务还没配置，暂时没法生成澄清问题。" : "The AI service isn't set up yet, so it can't ask a clarifying question.";
+    return spotlightViewsT(zh, "theAiServiceIsnTSet");
   }
   // 其它码：透传服务端原文，不再用一句「重试」抹掉原因。
   if (error instanceof WorkHubApiError && error.message) {
     return error.message;
   }
-  return zh ? "开场失败，请重试" : "Couldn't start — retry";
+  return spotlightViewsT(zh, "couldnTStartRetry");
 }
 
 // 已知死路（无项目/AI 未配置）额外给一张就地卡片 + 直达按钮——光有 toast 不够（3.2s 就没了，且toast
@@ -151,20 +153,20 @@ function startFailureCardHtml(kind: StartFailureKind, zh: boolean): string {
   if (kind === "no_project") {
     return `<div class="wh-spot-empty">
       <div class="wh-spot-empty-face">(=^･ω･^=)</div>
-      <h3 class="wh-spot-empty-title">${zh ? "先建一个项目" : "Create a project first"}</h3>
-      <p class="wh-spot-empty-sub">${zh ? "新任务要挂在某个项目下面——建好项目后回来接着说需求。" : "A task needs to belong to a project — create one, then come back to describe what you need."}</p>
+      <h3 class="wh-spot-empty-title">${spotlightViewsT(zh, "createAProjectFirst")}</h3>
+      <p class="wh-spot-empty-sub">${spotlightViewsT(zh, "aTaskNeedsToBelongTo")}</p>
       <div class="wh-spot-intake-actions" style="justify-content:center">
-        <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-goto-new-project>${zh ? "去建项目" : "Create a project"}</button>
+        <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-goto-new-project>${spotlightViewsT(zh, "createAProject")}</button>
       </div>
     </div>`;
   }
   if (kind === "ai_unavailable") {
     return `<div class="wh-spot-empty">
       <div class="wh-spot-empty-face">(=^･ω･^=)</div>
-      <h3 class="wh-spot-empty-title">${zh ? "AI 服务还没配置" : "AI isn't set up yet"}</h3>
-      <p class="wh-spot-empty-sub">${zh ? "需要管理员在服务器上配置模型密钥，AI 才能生成澄清问题。" : "An admin needs to configure a model key on the server before AI can ask clarifying questions."}</p>
+      <h3 class="wh-spot-empty-title">${spotlightViewsT(zh, "aiIsnTSetUpYet")}</h3>
+      <p class="wh-spot-empty-sub">${spotlightViewsT(zh, "anAdminNeedsToConfigureA")}</p>
       <div class="wh-spot-intake-actions" style="justify-content:center">
-        <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-goto-settings>${zh ? "查看设置" : "Open settings"}</button>
+        <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-goto-settings>${spotlightViewsT(zh, "openSettings")}</button>
       </div>
     </div>`;
   }
@@ -200,7 +202,7 @@ export function createIntakeView(): SpotlightCapabilityView {
         const prefillIntent = ctx.target?.route?.startsWith("spotlight-intent:")
           ? ctx.target.route.slice("spotlight-intent:".length)
           : undefined;
-        ctx.setSubtitle(projectLabel ? (zh ? `新任务 · ${projectLabel}` : `New task · ${projectLabel}`) : (zh ? "提需求" : "New request"));
+        ctx.setSubtitle(projectLabel ? (zh ? `新任务 · ${projectLabel}` : `New task · ${projectLabel}`) : (spotlightViewsT(ctx.locale, "newRequest")));
         body.innerHTML = startHtml(zh, projectLabel, prefillIntent);
         ctx.requestResize();
         body.querySelector<HTMLTextAreaElement>("[data-intent]")?.focus();
@@ -213,7 +215,7 @@ export function createIntakeView(): SpotlightCapabilityView {
         const active = steps.find((s) => s.state === "active");
         const total = steps.length;
         const idx = total ? steps.filter((s) => s.state === "done").length + 1 : 0;
-        ctx.setSubtitle(active ? (total ? `${active.label} · ${idx}/${total}` : active.label) : zh ? "澄清中" : "Clarifying");
+        ctx.setSubtitle(active ? (total ? `${active.label} · ${idx}/${total}` : active.label) : spotlightViewsT(ctx.locale, "clarifying"));
         body.innerHTML = questionHtml(session, selected, zh);
         ctx.requestResize();
       };
@@ -221,7 +223,7 @@ export function createIntakeView(): SpotlightCapabilityView {
       const startSession = async (intent: string) => {
         if (busy) return;
         busy = true;
-        setBusy(zh ? "正在开场…" : "Starting…");
+        setBusy(spotlightViewsT(ctx.locale, "starting"));
         try {
           // S4b：从项目主页「新任务」进来时携带 ctx.target.id → 会话绑定到该项目，不丢上下文。
           const projectId = ctx.target?.id;
@@ -241,7 +243,7 @@ export function createIntakeView(): SpotlightCapabilityView {
           if (failureCard) {
             session = null;
             selected = new Set();
-            ctx.setSubtitle(zh ? "需要先处理一步" : "One thing first");
+            ctx.setSubtitle(spotlightViewsT(ctx.locale, "oneThingFirst"));
             body.innerHTML = failureCard;
             ctx.requestResize();
           } else {
@@ -257,20 +259,20 @@ export function createIntakeView(): SpotlightCapabilityView {
         const ids = [...selected];
         // M3：非确认步必须有答案（选项或补充文本），否则别把空答案推给服务端误推进。
         if (q.input_mode !== "confirm" && ids.length === 0 && !freeText) {
-          ctx.toast(zh ? "先选一项，或补一句再继续" : "Pick an option or add a note first", "info");
+          ctx.toast(spotlightViewsT(ctx.locale, "pickAnOptionOrAddA"), "info");
           return;
         }
         busy = true;
-        setBusy(zh ? "处理中…" : "Working…");
+        setBusy(spotlightViewsT(ctx.locale, "working"));
         try {
           if (q.input_mode === "confirm") {
             const created = await client.createWorkItem({ session_id: session.session_id, selected_option_ids: ids });
             busy = false;
             session = null;
-            ctx.setSubtitle(zh ? "已创建" : "Created");
+            ctx.setSubtitle(spotlightViewsT(ctx.locale, "created"));
             body.innerHTML = doneHtml(created.workitem.code ?? "", created.workitem.title ?? "", zh);
             ctx.requestResize();
-            ctx.toast(zh ? "工作项已创建（待你过目）" : "Work item created (awaiting your review)", "ok");
+            ctx.toast(spotlightViewsT(ctx.locale, "workItemCreatedAwaitingYourReview"), "ok");
             return;
           }
           session = await client.nextQuestion(session.session_id, {
@@ -282,7 +284,7 @@ export function createIntakeView(): SpotlightCapabilityView {
           renderQuestion();
         } catch (error) {
           busy = false;
-          ctx.toast(zh ? "提交失败，请重试" : "Submit failed — retry", "error");
+          ctx.toast(spotlightViewsT(ctx.locale, "submitFailedRetry"), "error");
           renderQuestion();
         }
       };
@@ -294,7 +296,7 @@ export function createIntakeView(): SpotlightCapabilityView {
           // L18：空意图不要静默开一个无主题的会话。先要一句话说清要做什么（与 submit() 的兜底同口径）。
           const intent = body.querySelector<HTMLTextAreaElement>("[data-intent]")?.value ?? "";
           if (!intent.trim()) {
-            ctx.toast(zh ? "先用一句话说说要做什么" : "Tell me what to do in a sentence", "info");
+            ctx.toast(spotlightViewsT(ctx.locale, "tellMeWhatToDoIn"), "info");
             body.querySelector<HTMLTextAreaElement>("[data-intent]")?.focus();
             return;
           }

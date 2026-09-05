@@ -1,0 +1,14 @@
+// 文案门禁这一簇脚本的类型检查配置。
+// scripts/ 不是 workspace 包，`pnpm -r typecheck` 覆盖不到；`pnpm test:scripts` 会先跑这份。
+// 只列这三个文件而不是 include dev/**：scripts/dev/desktop-version-files.ts 有 5 处存量
+// 严格模式报错（noUncheckedIndexedAccess / exactOptionalPropertyTypes），修它属于另一件事，
+// 清掉之后可以把这里换成 "include": ["dev/**/*.ts"]。
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"],
+    "allowImportingTsExtensions": true
+  },
+  "files": ["dev/check-ui-i18n.ts", "dev/check-ui-i18n.test.ts", "dev/check-copy-terms.ts"]
+}

@@ -12,6 +12,8 @@
 import type { WorkHubApiClient } from "@workhub/api-client";
 import { WorkHubApiError } from "@workhub/api-client";
 
+import { kanbanT } from "./locales.js";
+
 // 看板复用时间线的取数薄封装——同一份 VM，同一个 request 转发口。
 export { fetchProjectTimeline } from "../timeline/api.js";
 export type { TimelineApiClient } from "../timeline/api.js";
@@ -53,9 +55,9 @@ export function humanizeKanbanError(error: unknown, locale: Locale): string {
       return zh ? mapped.zh : mapped.en;
     }
     if (error.status === 403) {
-      return zh ? "你没有权限在这件工作项上启动 AI。" : "You don't have permission to start the AI on this item.";
+      return kanbanT(locale, "youDonTHavePermissionTo");
     }
     return zh ? error.message : "Couldn't start the AI — please try again.";
   }
-  return zh ? "操作没成功，稍后再试。" : "That didn't go through — please try again.";
+  return kanbanT(locale, "thatDidnTGoThroughPlease");
 }

@@ -24,6 +24,8 @@ import {
 } from "./run-progress.js";
 import { computeUndoRemainingMinutes, formatMessageTime } from "./timeline.js";
 
+import { chatT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 // —— R14 批 CHAT：精选五键反应的 slug→emoji 字形映射（01-chat-design.md §6 的 emoji 豁免边界）——
@@ -124,9 +126,9 @@ export function renderMemberBarHtml(input: {
   // 两个按钮都只是入口，真正的名单 + 加人候选由 renderMemberManageModalHtml 渲染（挂在成员条旁，见 renderHead）。
   const manageHtml = input.manage
     ? `<button type="button" class="wh-wb-chat-members-btn" data-wb-chat-member-manage-open>${escapeHtml(
-        zh ? "成员" : "Members"
+        chatT(input.locale, "members")
       )}</button><button type="button" class="wh-wb-chat-members-btn wh-wb-chat-members-btn--add" data-wb-chat-member-add-open>${escapeHtml(
-        zh ? "加人" : "Add"
+        chatT(input.locale, "add")
       )}</button>`
     : "";
   return `<div class="wh-wb-chat-head"><div class="wh-wb-chat-avs">${avatars}${cuuAvatar}</div><span class="wh-wb-chat-head-label">${escapeHtml(
@@ -236,29 +238,21 @@ export function renderMemberManageModalHtml(input: {
     .map((row) => {
       const kind = participantRemoveKind(row, input.viewerUserId, input.viewerIsOwner);
       const roleTag =
-        row.role === "owner" ? `<span class="wh-wb-member-role">${escapeHtml(zh ? "群主" : "Owner")}</span>` : "";
+        row.role === "owner" ? `<span class="wh-wb-member-role">${escapeHtml(chatT(input.locale, "owner"))}</span>` : "";
       let control = "";
       if (kind !== "none") {
         const confirming = input.removeConfirmUserId === row.userId;
         const busy = input.removeBusyUserId === row.userId;
         if (confirming) {
           const question =
-            kind === "leave" ? (zh ? "退出这个群？" : "Leave this chat?") : zh ? "把 TA 移出？" : "Remove them?";
+            kind === "leave" ? (chatT(input.locale, "leaveThisChat")) : chatT(input.locale, "removeThem");
           const yesLabel = busy
             ? kind === "leave"
-              ? zh
-                ? "退出中…"
-                : "Leaving…"
-              : zh
-                ? "移出中…"
-                : "Removing…"
+              ? chatT(input.locale, "leaving")
+              : chatT(input.locale, "removing")
             : kind === "leave"
-              ? zh
-                ? "退出"
-                : "Leave"
-              : zh
-                ? "移出"
-                : "Remove";
+              ? chatT(input.locale, "leave")
+              : chatT(input.locale, "remove");
           control =
             `<span class="wh-wb-member-confirm"><span class="wh-wb-member-confirm-q">${escapeHtml(question)}</span>` +
             `<button type="button" class="wh-wb-member-confirm-yes" data-wb-chat-member-remove-confirm="${escapeHtml(
@@ -266,9 +260,9 @@ export function renderMemberManageModalHtml(input: {
             )}"${busy ? " disabled" : ""}>${escapeHtml(yesLabel)}</button>` +
             `<button type="button" class="wh-wb-member-confirm-no" data-wb-chat-member-remove-cancel${
               busy ? " disabled" : ""
-            }>${escapeHtml(zh ? "取消" : "Cancel")}</button></span>`;
+            }>${escapeHtml(chatT(input.locale, "cancel"))}</button></span>`;
         } else {
-          const triggerLabel = kind === "leave" ? (zh ? "退出" : "Leave") : zh ? "移出" : "Remove";
+          const triggerLabel = kind === "leave" ? (chatT(input.locale, "leave")) : chatT(input.locale, "remove");
           control = `<button type="button" class="wh-wb-member-remove" data-wb-chat-member-remove-open="${escapeHtml(
             row.userId
           )}">${escapeHtml(triggerLabel)}</button>`;
@@ -285,7 +279,7 @@ export function renderMemberManageModalHtml(input: {
       ? input.candidates
           .map((candidate) => {
             const busy = input.addBusyUserId === candidate.userId;
-            const hint = busy ? (zh ? "添加中…" : "Adding…") : zh ? "加入" : "Add";
+            const hint = busy ? (chatT(input.locale, "adding")) : chatT(input.locale, "add2");
             return `<button type="button" class="wh-wb-member-add-row" data-wb-chat-member-add="${escapeHtml(
               candidate.userId
             )}"${addDisabled ? " disabled" : ""}>${avatarTileHtml({ label: candidate.nickname, id: candidate.userId })}<span class="wh-wb-member-name">${escapeHtml(
@@ -294,7 +288,7 @@ export function renderMemberManageModalHtml(input: {
           })
           .join("")
       : `<p class="wh-wb-member-empty">${escapeHtml(
-          zh ? "工作区里的人都已经在这个群里了" : "Everyone in the workspace is already here"
+          chatT(input.locale, "everyoneInTheWorkspaceIsAlready")
         )}</p>`;
   const addErrorHtml = input.addError
     ? `<p class="wh-wb-modal-error">${escapeHtml(input.addError)}</p>`
@@ -303,16 +297,16 @@ export function renderMemberManageModalHtml(input: {
     ? `<p class="wh-wb-modal-error">${escapeHtml(input.removeError)}</p>`
     : "";
   return `<div class="wh-wb-modal-overlay" data-wb-chat-member-manage-overlay data-open="${input.open ? "true" : "false"}">
-    <div class="wh-wb-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(zh ? "群成员" : "Members")}">
-      <h3 class="wh-wb-modal-title">${escapeHtml(zh ? "群成员" : "Members")}</h3>
+    <div class="wh-wb-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(chatT(input.locale, "members2"))}">
+      <h3 class="wh-wb-modal-title">${escapeHtml(chatT(input.locale, "members2"))}</h3>
       <div class="wh-wb-member-roster">${rosterRows}</div>
       ${removeErrorHtml}
-      <p class="wh-wb-member-add-label">${escapeHtml(zh ? "加人" : "Add member")}</p>
+      <p class="wh-wb-member-add-label">${escapeHtml(chatT(input.locale, "addMember"))}</p>
       <div class="wh-wb-member-add-list">${candidateRows}</div>
       ${addErrorHtml}
       <div class="wh-wb-modal-actions">
         <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-chat-member-manage-close>${escapeHtml(
-          zh ? "关闭" : "Close"
+          chatT(input.locale, "close")
         )}</button>
       </div>
     </div>
@@ -325,9 +319,9 @@ export function renderMemberManageModalHtml(input: {
 export function renderConversationLeftHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
   return `<div class="wh-wb-chat-left-terminal"><p class="wh-wb-chat-left-terminal-title">${escapeHtml(
-    zh ? "你已退出这个群聊" : "You've left this chat"
+    chatT(locale, "youVeLeftThisChat")
   )}</p><p class="wh-wb-chat-left-terminal-note">${escapeHtml(
-    zh ? "选择左侧其它会话继续。" : "Pick another chat on the left to continue."
+    chatT(locale, "pickAnotherChatOnTheLeft")
   )}</p></div>`;
 }
 
@@ -341,9 +335,9 @@ export function renderDmHeadBarHtml(input: {
   locale: Locale;
 }): string {
   const zh = input.locale === "zh-CN";
-  const name = input.peerNickname.trim() || (zh ? "私聊" : "Direct message");
+  const name = input.peerNickname.trim() || (chatT(input.locale, "directMessage"));
   const avatar = avatarTileHtml({ label: name, id: input.peerUserId, ...(input.online ? { online: true } : {}) });
-  const statusText = input.online ? (zh ? "在线" : "Online") : zh ? "离线" : "Offline";
+  const statusText = input.online ? (chatT(input.locale, "online")) : chatT(input.locale, "offline");
   const statusClass = input.online ? "wh-wb-chat-head-status wh-wb-chat-head-status--online" : "wh-wb-chat-head-status";
   return `<div class="wh-wb-chat-head"><div class="wh-wb-chat-avs">${avatar}</div><span class="wh-wb-chat-head-label">${escapeHtml(
     name
@@ -357,13 +351,9 @@ export function renderDmHeadBarHtml(input: {
 export function renderCuuToggleHtml(input: { enabled: boolean; busy: boolean; locale: Locale }): string {
   const zh = input.locale === "zh-CN";
   const label = input.enabled
-    ? zh
-      ? "Cuu 已在场 · 点击请出"
-      : "Cuu is here · tap to remove"
-    : zh
-      ? "请 Cuu 进来"
-      : "Invite Cuu";
-  const busyLabel = zh ? "处理中…" : "Working…";
+    ? chatT(input.locale, "cuuIsHereTapToRemove")
+    : chatT(input.locale, "inviteCuu");
+  const busyLabel = chatT(input.locale, "working");
   const stateClass = input.enabled ? "wh-wb-chat-cuu-toggle wh-wb-chat-cuu-toggle--on" : "wh-wb-chat-cuu-toggle";
   return `<button type="button" class="${stateClass}" data-wb-chat-cuu-toggle${input.busy ? " disabled" : ""} aria-pressed="${input.enabled}">${escapeHtml(
     input.busy ? busyLabel : label
@@ -447,10 +437,10 @@ function senderLabel(message: ConversationMessageVM, ctx: ChatRenderContext): st
     return "Cuu";
   }
   if (message.sender_type === "system") {
-    return ctx.locale === "zh-CN" ? "系统" : "System";
+    return chatT(ctx.locale, "system");
   }
   const member = message.sender_user_id ? ctx.members.get(message.sender_user_id) : undefined;
-  return member?.nickname ?? (ctx.locale === "zh-CN" ? "未知成员" : "Unknown member");
+  return member?.nickname ?? (chatT(ctx.locale, "unknownMember"));
 }
 
 // @成员昵称 高亮——纯展示层面的便利（不是结构化引用，wisp 安全红线只管"chip 只存 id 不存内容"这条
@@ -486,17 +476,17 @@ function bestEffortNoteText(content: Record<string, unknown>, fallback: string):
 function actionCardItemStatusLabel(status: string, zh: boolean): string | undefined {
   switch (status) {
     case "running":
-      return zh ? "进行中" : "In progress";
+      return chatT(zh, "inProgress");
     case "done":
-      return zh ? "已完成" : "Done";
+      return chatT(zh, "done");
     case "undone":
-      return zh ? "已撤销" : "Undone";
+      return chatT(zh, "undone");
     case "waiting_decision":
-      return zh ? "待拍板" : "Awaiting decision";
+      return chatT(zh, "awaitingDecision");
     case "dismissed":
-      return zh ? "先不动" : "Set aside";
+      return chatT(zh, "setAside");
     case "escalated":
-      return zh ? "已升级" : "Escalated";
+      return chatT(zh, "escalated");
     default:
       return undefined;
   }
@@ -532,16 +522,10 @@ function renderActionCardRunProgressStageHtml(stage: ActionCardRunProgressStage,
 function renderActionCardRunProgressTerminalHtml(terminal: ActionCardRunProgressTerminal, zh: boolean): string {
   const text =
     terminal === "done"
-      ? zh
-        ? "已完成 · 提议在等审"
-        : "Done · proposal awaiting review"
+      ? chatT(zh, "doneProposalAwaitingReview")
       : terminal === "failed"
-        ? zh
-          ? "没干成"
-          : "Didn't land"
-        : zh
-          ? "已升级 · 等你拍板"
-          : "Escalated · awaiting your call";
+        ? chatT(zh, "didnTLand")
+        : chatT(zh, "escalatedAwaitingYourCall");
   const color = terminal === "done" ? "var(--ds-success)" : terminal === "failed" ? "var(--ds-danger)" : "var(--ds-warn)";
   return `<span class="wh-wb-chat-actioncard-item-status" style="color:${color};font-weight:700">${escapeHtml(text)}</span>`;
 }
@@ -610,7 +594,7 @@ function renderReassignPickerHtml(
     })
     .join("");
   if (!rows) {
-    return `<div class="wh-wb-chat-actioncard-reassign" style="margin-top:6px"><div class="wh-wb-chat-picker-empty">${zh ? "没有其他成员可选" : "No other members to pick"}</div></div>`;
+    return `<div class="wh-wb-chat-actioncard-reassign" style="margin-top:6px"><div class="wh-wb-chat-picker-empty">${chatT(zh, "noOtherMembersToPick")}</div></div>`;
   }
   return `<div class="wh-wb-chat-actioncard-reassign" style="margin-top:6px" role="listbox">${rows}</div>`;
 }
@@ -626,10 +610,10 @@ function renderDecideItemActionsHtml(row: ActionCardItemRow, ctx: ChatRenderCont
     // 「…中」文案，照 spotlight/views/attention.ts:491-505 的 markBusy 手感。
     const busyAction = ctx.actionCardItemBusyAction?.get(row.id);
     const disabledAttr = busyAction ? " disabled" : "";
-    const claimLabel = busyAction === "claim" ? (zh ? "认领中…" : "Claiming…") : zh ? "交给我干" : "I'll do it";
+    const claimLabel = busyAction === "claim" ? (chatT(zh, "claiming")) : chatT(zh, "iLlDoIt");
     const reassignToggleLabel =
-      busyAction === "reassign" ? (zh ? "指派中…" : "Assigning…") : zh ? "派给别人" : "Assign to someone else";
-    const deferLabel = busyAction === "defer" ? (zh ? "处理中…" : "Working…") : zh ? "先不动" : "Leave it for now";
+      busyAction === "reassign" ? (chatT(zh, "assigning")) : chatT(zh, "assignToSomeoneElse");
+    const deferLabel = busyAction === "defer" ? (chatT(zh, "working")) : chatT(zh, "leaveItForNow");
     const actions = `<div class="wh-wb-chat-actioncard-actions" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">` +
       `<button type="button" class="wh-wb-act" data-wb-chat-actioncard-decide="claim" data-wb-chat-actioncard-item="${escapeHtml(row.id)}"${disabledAttr}>${escapeHtml(claimLabel)}</button>` +
       `<button type="button" class="wh-wb-act" data-wb-chat-actioncard-reassign-toggle="${escapeHtml(row.id)}"${disabledAttr}>${escapeHtml(reassignToggleLabel)}</button>` +
@@ -643,7 +627,7 @@ function renderDecideItemActionsHtml(row: ActionCardItemRow, ctx: ChatRenderCont
     return `${actions}${picker}`;
   }
   const nickname = row.assigneeUserId ? ctx.members.get(row.assigneeUserId)?.nickname : undefined;
-  const label = nickname ?? (zh ? "负责人" : "the assignee");
+  const label = nickname ?? (chatT(zh, "theAssignee"));
   const waitingText = zh ? `等 @${label} 拍板` : `Waiting on @${label} to decide`;
   return `<div class="wh-wb-chat-actioncard-note">${escapeHtml(waitingText)}</div>`;
 }
@@ -662,7 +646,7 @@ function renderExecuteItemActionsHtml(row: ActionCardItemRow, ctx: ChatRenderCon
   }
   // G-desktop 止血批 6：撤销往返在飞时按钮立即禁用 + 文案换「撤销中…」，同 decide 三键的 markBusy 手感。
   const busy = ctx.actionCardItemBusyAction?.get(row.id) === "undo";
-  const label = busy ? (zh ? "撤销中…" : "Undoing…") : zh ? `撤销（${remaining} 分钟内）` : `Undo (within ${remaining} min)`;
+  const label = busy ? (chatT(zh, "undoing")) : zh ? `撤销（${remaining} 分钟内）` : `Undo (within ${remaining} min)`;
   return `<div class="wh-wb-chat-actioncard-actions" style="margin-top:6px"><button type="button" class="wh-wb-act wh-wb-act--danger" data-wb-chat-actioncard-undo="${escapeHtml(row.id)}"${busy ? " disabled" : ""}>${escapeHtml(label)}</button></div>`;
 }
 
@@ -706,8 +690,8 @@ function renderActionCardItemFeedbackHtml(row: ActionCardItemRow, zh: boolean): 
   const id = escapeHtml(row.id);
   return (
     `<div class="wh-wb-chat-actioncard-fb">` +
-    `<button type="button" class="${usefulCls}" data-wb-chat-actioncard-feedback="useful" data-wb-chat-actioncard-item="${id}" aria-pressed="${usefulOn}" aria-label="${zh ? "有用" : "Useful"}" title="${zh ? "有用" : "Useful"}">✓</button>` +
-    `<button type="button" class="${notUsefulCls}" data-wb-chat-actioncard-feedback="not_useful" data-wb-chat-actioncard-item="${id}" aria-pressed="${notUsefulOn}" aria-label="${zh ? "没用" : "Not useful"}" title="${zh ? "没用" : "Not useful"}">✗</button>` +
+    `<button type="button" class="${usefulCls}" data-wb-chat-actioncard-feedback="useful" data-wb-chat-actioncard-item="${id}" aria-pressed="${usefulOn}" aria-label="${chatT(zh, "useful")}" title="${chatT(zh, "useful")}">✓</button>` +
+    `<button type="button" class="${notUsefulCls}" data-wb-chat-actioncard-feedback="not_useful" data-wb-chat-actioncard-item="${id}" aria-pressed="${notUsefulOn}" aria-label="${chatT(zh, "notUseful")}" title="${chatT(zh, "notUseful")}">✗</button>` +
     `</div>`
   );
 }
@@ -788,7 +772,7 @@ function renderDeliverableCardHtml(
   const zh = ctx.locale === "zh-CN";
   const content = message.content;
   const rawTitle = content["title"];
-  const title = typeof rawTitle === "string" && rawTitle.trim() ? rawTitle : (zh ? "一份变更申请" : "a change request");
+  const title = typeof rawTitle === "string" && rawTitle.trim() ? rawTitle : (chatT(ctx.locale, "aChangeRequest"));
   const adds = typeof content["adds"] === "number" ? content["adds"] : undefined;
   const dels = typeof content["dels"] === "number" ? content["dels"] : undefined;
   const rawProposalId = content["proposal_id"];
@@ -803,15 +787,13 @@ function renderDeliverableCardHtml(
   const settled = proposalId ? ctx.settledProposalIds?.has(proposalId) : false;
   const autoMerged = event === "proposal_auto_merged";
   const statusLine = autoMerged
-    ? `<div class="wh-wb-chat-actioncard-note" style="color:var(--ds-warn);font-weight:700">${zh ? "已自动采纳 · 全托管" : "Auto-adopted · Full autonomy"}</div>`
-    : `<div class="wh-wb-chat-actioncard-note">${zh
-        ? "已生成变更申请，等待人工确认后采纳。"
-        : "Change request opened — waiting for review before it's adopted."
+    ? `<div class="wh-wb-chat-actioncard-note" style="color:var(--ds-warn);font-weight:700">${chatT(ctx.locale, "autoAdoptedFullAutonomy")}</div>`
+    : `<div class="wh-wb-chat-actioncard-note">${chatT(ctx.locale, "changeRequestOpenedWaitingForReview")
       }</div>`;
   // 档① 本地乐观覆盖标：本机刚审批过这份提议 → 追加「已处理」标（不精确到通过/打回/合并——本地只知道「动过」，
   // 精确落定态以服务端档③ 的 proposal_settled 系统消息 / 下次拉 VM 为准，不在这里瞎猜方向）。
   const settledOverlay = settled
-    ? `<div class="wh-wb-chat-actioncard-note" style="color:var(--ds-success);font-weight:700">${zh ? "已处理 · 见落定消息" : "Handled · see the settled note"}</div>`
+    ? `<div class="wh-wb-chat-actioncard-note" style="color:var(--ds-success);font-weight:700">${chatT(ctx.locale, "handledSeeTheSettledNote")}</div>`
     : "";
   // R15 批 A6（产出卡内联批准）：opened（非 auto_merged）、未落定、且宿主接了内联回调时，产出卡直接给
   // 「批准」（内联，复用右栏 reviewProposalWithoutMerge 动作）+「打回」（不内联——打回要写理由，点它打开右栏并
@@ -822,23 +804,23 @@ function renderDeliverableCardHtml(
   const actionError = proposalId ? ctx.proposalActionErrors?.get(proposalId) : undefined;
   const viewButton = proposalId
     ? `<button type="button" class="wh-wb-chat-actioncard-open" data-wb-chat-open-proposal="${escapeHtml(proposalId)}">${
-        autoMerged ? (zh ? "看已采纳的提议" : "View the adopted proposal") : zh ? "看提议" : "View proposal"
+        autoMerged ? (chatT(ctx.locale, "viewTheAdoptedProposal")) : chatT(ctx.locale, "viewProposal")
       }</button>`
     : "";
   const inlineButtons =
     proposalId && !autoMerged && !settled && inlineEnabled
       ? `<button type="button" class="wh-wb-chat-actioncard-approve" data-wb-chat-approve-proposal="${escapeHtml(proposalId)}"${
           busy ? " disabled" : ""
-        }>${busy ? (zh ? "批准中…" : "Approving…") : zh ? "批准" : "Approve"}</button><button type="button" class="wh-wb-chat-actioncard-deny" data-wb-chat-deny-proposal="${escapeHtml(proposalId)}"${
+        }>${busy ? (chatT(ctx.locale, "approving")) : chatT(ctx.locale, "approve")}</button><button type="button" class="wh-wb-chat-actioncard-deny" data-wb-chat-deny-proposal="${escapeHtml(proposalId)}"${
           busy ? " disabled" : ""
-        }>${zh ? "打回" : "Request changes"}</button>`
+        }>${chatT(ctx.locale, "requestChanges")}</button>`
       : "";
   // R16-W3：「在编辑器中查看」轻链——只在卡带 diffstat（有 diff 数据）且宿主接了编辑器回调时渲染
   // （没数据/没接就不摆假链接，04 §4 铁律 3）。点击 → 中栏打开变更编辑器（逐句 tracked changes）。
   const hasDiffData = adds !== undefined && dels !== undefined;
   const editorLink =
     proposalId && hasDiffData && ctx.proposalEditorLinkEnabled === true
-      ? `<button type="button" class="wh-wb-chat-actioncard-editorlink" data-wb-chat-open-editor="${escapeHtml(proposalId)}">${zh ? "在编辑器中查看" : "Open in editor"}</button>`
+      ? `<button type="button" class="wh-wb-chat-actioncard-editorlink" data-wb-chat-open-editor="${escapeHtml(proposalId)}">${chatT(ctx.locale, "openInEditor")}</button>`
       : "";
   const openButton = proposalId
     ? `<div class="wh-wb-chat-actioncard-actions">${inlineButtons}${viewButton}${editorLink}</div>`
@@ -873,26 +855,20 @@ function renderProposalSettledLineHtml(
   const zh = ctx.locale === "zh-CN";
   const content = message.content;
   const rawTitle = content["title"];
-  const title = typeof rawTitle === "string" && rawTitle.trim() ? rawTitle : zh ? "一份变更申请" : "a change request";
+  const title = typeof rawTitle === "string" && rawTitle.trim() ? rawTitle : chatT(ctx.locale, "aChangeRequest");
   const rawProposalId = content["proposal_id"];
   const proposalId = typeof rawProposalId === "string" && rawProposalId.trim() ? rawProposalId : undefined;
   const outcomeLabel =
-    outcome === "approved" ? (zh ? "已通过" : "Approved") : outcome === "merged" ? (zh ? "已合并" : "Merged") : zh ? "已打回" : "Sent back";
+    outcome === "approved" ? (chatT(ctx.locale, "approved")) : outcome === "merged" ? (chatT(ctx.locale, "merged")) : chatT(ctx.locale, "sentBack");
   const color = outcome === "rejected" ? "var(--ds-danger)" : "var(--ds-success)";
   const note =
     outcome === "approved"
-      ? zh
-        ? "已确认通过，下一步合入交付物。"
-        : "Approved — merging the deliverable is next."
+      ? chatT(ctx.locale, "approvedMergingTheDeliverableIsNext")
       : outcome === "merged"
-        ? zh
-          ? "变更已合入正式版本，全程留档可追溯。"
-          : "The change is now in the official version, fully auditable."
-        : zh
-          ? "已打回，理由会带给下一轮 AI 继续修。"
-          : "Sent back — the reason feeds the next AI pass.";
+        ? chatT(ctx.locale, "theChangeIsNowInThe")
+        : chatT(ctx.locale, "sentBackTheReasonFeedsThe");
   const openButton = proposalId
-    ? `<div class="wh-wb-chat-actioncard-actions"><button type="button" class="wh-wb-chat-actioncard-open" data-wb-chat-open-proposal="${escapeHtml(proposalId)}">${zh ? "看提议" : "View proposal"}</button></div>`
+    ? `<div class="wh-wb-chat-actioncard-actions"><button type="button" class="wh-wb-chat-actioncard-open" data-wb-chat-open-proposal="${escapeHtml(proposalId)}">${chatT(ctx.locale, "viewProposal")}</button></div>`
     : "";
   const timestamp = `<div class="wh-wb-chat-actioncard-note">${formatMessageTime(message.created_at, ctx.locale)}</div>`;
   return `<div class="wh-wb-chat-actioncard wh-wb-chat-actioncard--deliverable"><div class="wh-wb-chat-actioncard-h" style="color:${color}">${escapeHtml(
@@ -925,7 +901,7 @@ function renderRunSettledReportHtml(
   const zh = ctx.locale === "zh-CN";
   const content = message.content;
   const rawTitle = content["title"];
-  const title = typeof rawTitle === "string" && rawTitle.trim() ? rawTitle : zh ? "这件事" : "this task";
+  const title = typeof rawTitle === "string" && rawTitle.trim() ? rawTitle : chatT(ctx.locale, "thisTask");
   const rawReason = content["reason"];
   const reason = typeof rawReason === "string" && rawReason.trim() ? rawReason.trim() : undefined;
   const header = zh ? `${title} · 这次没干成` : `${title} · didn't land this time`;
@@ -939,9 +915,7 @@ function renderRunSettledReportHtml(
         : reason
           ? `Reason: ${reason}. I've made a note of it — take a look when you can.`
           : "Still sorting out why — I've made a note of it for you to look at when you can."
-      : zh
-        ? "我拿不准该怎么走，已经放进你的待拍板里了。"
-        : "I'm not sure how to proceed — I've put it in your queue for a decision.";
+      : chatT(ctx.locale, "iMNotSureHowTo");
   const color = outcome === "failed" ? "var(--ds-danger)" : "var(--ds-warn)";
   const timestamp = `<div class="wh-wb-chat-actioncard-note">${formatMessageTime(message.created_at, ctx.locale)}</div>`;
   return `<div class="wh-wb-chat-actioncard wh-wb-chat-actioncard--deliverable"><div class="wh-wb-chat-actioncard-h" style="color:${color}">${escapeHtml(
@@ -999,12 +973,12 @@ function renderRiskDigestCardHtml(
 ): string {
   const zh = ctx.locale === "zh-CN";
   const expanded = ctx.expandedMessageIds?.has(message.id) ?? false;
-  const header = zh ? "今日风险巡检" : "Today's risk digest";
+  const header = chatT(ctx.locale, "todaySRiskDigest");
   const timestamp = `<div class="wh-wb-chat-actioncard-note">${formatMessageTime(message.created_at, ctx.locale)}</div>`;
   const summaryLine = `<div class="wh-wb-chat-actioncard-note">${escapeHtml(digest.summary)}</div>`;
 
   if (!expanded) {
-    const toggle = `<button type="button" class="wh-wb-chat-text-toggle" data-wb-chat-expand-message="${escapeHtml(message.id)}">${zh ? "展开明细" : "Show details"}</button>`;
+    const toggle = `<button type="button" class="wh-wb-chat-text-toggle" data-wb-chat-expand-message="${escapeHtml(message.id)}">${chatT(ctx.locale, "showDetails")}</button>`;
     return `<div class="wh-wb-chat-actioncard wh-wb-risk-digest"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${summaryLine}${toggle}${timestamp}</div>`;
   }
 
@@ -1020,11 +994,11 @@ function renderRiskDigestCardHtml(
     );
   }
   if (digest.costSpike) {
-    sections.push(`<li class="wh-wb-risk-digest-item">${zh ? "项目成本异常放量" : "Project cost spike"}</li>`);
+    sections.push(`<li class="wh-wb-risk-digest-item">${chatT(ctx.locale, "projectCostSpike")}</li>`);
   }
   const sectionsHtml = sections.length > 0 ? `<ul class="wh-wb-risk-digest-list">${sections.join("")}</ul>` : "";
-  const detailNote = `<div class="wh-wb-chat-actioncard-note">${zh ? "完整清单见通知列表。" : "See the notification inbox for the full list."}</div>`;
-  const collapseToggle = `<button type="button" class="wh-wb-chat-text-toggle" data-wb-chat-collapse-message="${escapeHtml(message.id)}">${zh ? "收起" : "Show less"}</button>`;
+  const detailNote = `<div class="wh-wb-chat-actioncard-note">${chatT(ctx.locale, "seeTheNotificationInboxForThe")}</div>`;
+  const collapseToggle = `<button type="button" class="wh-wb-chat-text-toggle" data-wb-chat-collapse-message="${escapeHtml(message.id)}">${chatT(ctx.locale, "showLess")}</button>`;
   return `<div class="wh-wb-chat-actioncard wh-wb-risk-digest"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${summaryLine}${sectionsHtml}${detailNote}${collapseToggle}${timestamp}</div>`;
 }
 
@@ -1072,10 +1046,10 @@ function renderPendingDigestCardHtml(
   const timestamp = `<div class="wh-wb-chat-actioncard-note">${formatMessageTime(message.created_at, ctx.locale)}</div>`;
   // 归零态：低调一行（同系统事件单行布局），不摆一张「0 件」的空卡骚扰。
   if (digest.pendingCount === 0) {
-    const text = zh ? "待拍板已清空" : "All caught up on decisions";
+    const text = chatT(ctx.locale, "allCaughtUpOnDecisions");
     return `<div class="wh-wb-chat-sysline"><span>${escapeHtml(text)}</span><span class="wh-wb-chat-sysline-tm">${formatMessageTime(message.created_at, ctx.locale)}</span></div>`;
   }
-  const header = zh ? "待你拍板" : "Decisions waiting on you";
+  const header = chatT(ctx.locale, "decisionsWaitingOnYou");
   const countText = zh ? `待拍板 ${digest.pendingCount} 件` : `${digest.pendingCount} waiting on you`;
   const oldestText =
     digest.oldestDays > 0
@@ -1087,7 +1061,7 @@ function renderPendingDigestCardHtml(
   // 「打开收件箱」只在宿主接了 onOpenInbox 时才渲（04 §4 铁律 3：没真接线不摆假按钮）。
   const openButton =
     ctx.pendingDigestInboxEnabled === true
-      ? `<div class="wh-wb-chat-actioncard-actions"><button type="button" class="wh-wb-chat-actioncard-open" data-wb-chat-open-inbox>${zh ? "打开收件箱" : "Open inbox"}</button></div>`
+      ? `<div class="wh-wb-chat-actioncard-actions"><button type="button" class="wh-wb-chat-actioncard-open" data-wb-chat-open-inbox>${chatT(ctx.locale, "openInbox")}</button></div>`
       : "";
   return `<div class="wh-wb-chat-actioncard wh-wb-chat-actioncard--deliverable"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${summaryLine}${openButton}${timestamp}</div>`;
 }
@@ -1109,10 +1083,10 @@ function textMessageFoldedBodyHtml(
   }
   const expanded = ctx.expandedMessageIds?.has(message.id) ?? false;
   if (expanded) {
-    return `<div class="wh-wb-chat-txt">${highlightMentions(escapeHtml(text), ctx.members).replace(/\n/gu, "<br>")}</div><button type="button" class="wh-wb-chat-text-toggle" data-wb-chat-collapse-message="${escapeHtml(message.id)}">${zh ? "收起" : "Show less"}</button>`;
+    return `<div class="wh-wb-chat-txt">${highlightMentions(escapeHtml(text), ctx.members).replace(/\n/gu, "<br>")}</div><button type="button" class="wh-wb-chat-text-toggle" data-wb-chat-collapse-message="${escapeHtml(message.id)}">${chatT(ctx.locale, "showLess")}</button>`;
   }
   const preview = text.slice(0, LONG_TEXT_PREVIEW_CHARS);
-  return `<div class="wh-wb-chat-txt wh-wb-chat-txt--folded">${highlightMentions(escapeHtml(preview), ctx.members).replace(/\n/gu, "<br>")}<span class="wh-wb-chat-txt-fade"></span></div><button type="button" class="wh-wb-chat-text-toggle" data-wb-chat-expand-message="${escapeHtml(message.id)}">${zh ? "展开全文" : "Show full message"}</button>`;
+  return `<div class="wh-wb-chat-txt wh-wb-chat-txt--folded">${highlightMentions(escapeHtml(preview), ctx.members).replace(/\n/gu, "<br>")}<span class="wh-wb-chat-txt-fade"></span></div><button type="button" class="wh-wb-chat-text-toggle" data-wb-chat-expand-message="${escapeHtml(message.id)}">${chatT(ctx.locale, "showFullMessage")}</button>`;
 }
 
 // R13 批4c（Cuu 对话工具面 · 澄清反问）：is_clarifying_question 是 conversationTextContentSchema 上
@@ -1140,7 +1114,7 @@ function textMessageBodyHtml(
           )
           .join("")}</div>`
       : "";
-  const badge = `<div style="font-size:12px;font-weight:700;color:var(--ds-accent, #5b8def);margin-bottom:4px">${zh ? "Cuu 在问" : "Cuu is asking"}</div>`;
+  const badge = `<div style="font-size:12px;font-weight:700;color:var(--ds-accent, #5b8def);margin-bottom:4px">${chatT(ctx.locale, "cuuIsAsking")}</div>`;
   return `<div style="border-left:2px solid var(--ds-accent, #5b8def);padding-left:10px">${badge}${foldedHtml}${optionsHtml}</div>`;
 }
 
@@ -1156,7 +1130,7 @@ function messageBodyHtml(message: ConversationMessageVM, ctx: ChatRenderContext)
     case "action_card":
       return renderActionCardSummaryHtml(message.content, ctx);
     case "tool_note":
-      return `<div class="wh-wb-chat-note">${escapeHtml(bestEffortNoteText(message.content, ctx.locale === "zh-CN" ? "（一次工具调用）" : "(a tool call)"))}</div>`;
+      return `<div class="wh-wb-chat-note">${escapeHtml(bestEffortNoteText(message.content, chatT(ctx.locale, "aToolCall")))}</div>`;
     case "system_event":
       // system_event 走 renderSystemEventLineHtml 的独立折叠行布局，renderMessageHtml 在调用
       // messageBodyHtml 之前已经把它分流出去了，这个分支运行时不可达——留着只是为了穷举 switch。
@@ -1171,7 +1145,7 @@ function renderSystemEventLineHtml(
   message: Extract<ConversationMessageVM, { kind: "system_event" }>,
   ctx: ChatRenderContext
 ): string {
-  const fallback = ctx.locale === "zh-CN" ? "系统事件" : "System update";
+  const fallback = chatT(ctx.locale, "systemUpdate");
   const text = bestEffortNoteText(message.content, fallback);
   return `<div class="wh-wb-chat-sysline"><span>${escapeHtml(text)}</span><span class="wh-wb-chat-sysline-tm">${formatMessageTime(message.created_at, ctx.locale)}</span></div>`;
 }
@@ -1183,10 +1157,10 @@ function replySenderLabel(reply: ConversationMessageReplyPreviewVM, ctx: ChatRen
     return "Cuu";
   }
   if (reply.sender_type === "system") {
-    return ctx.locale === "zh-CN" ? "系统" : "System";
+    return chatT(ctx.locale, "system");
   }
   const member = reply.sender_user_id ? ctx.members.get(reply.sender_user_id) : undefined;
-  return member?.nickname ?? (ctx.locale === "zh-CN" ? "未知成员" : "Unknown member");
+  return member?.nickname ?? (chatT(ctx.locale, "unknownMember"));
 }
 
 function renderReplyRefHtml(reply: ConversationMessageReplyPreviewVM, ctx: ChatRenderContext): string {
@@ -1194,7 +1168,7 @@ function renderReplyRefHtml(reply: ConversationMessageReplyPreviewVM, ctx: ChatR
   const who = escapeHtml(replySenderLabel(reply, ctx));
   // 原消息事后被删（reply_to.deleted）→ 显示墓碑占位，但仍可点跳转到那条墓碑的位置（锚点还在）。
   const preview = reply.deleted
-    ? `<span class="wh-wb-chat-reply-ref-gone">${zh ? "原消息已删除" : "Original message deleted"}</span>`
+    ? `<span class="wh-wb-chat-reply-ref-gone">${chatT(ctx.locale, "originalMessageDeleted")}</span>`
     : `<span class="wh-wb-chat-reply-ref-text">${escapeHtml(reply.preview_text)}</span>`;
   return `<button type="button" class="wh-wb-chat-reply-ref" data-wb-chat-reply-jump="${escapeHtml(reply.message_id)}"><span class="wh-wb-chat-reply-ref-who">${who}</span>${preview}</button>`;
 }
@@ -1235,7 +1209,7 @@ function renderMessageToolbarHtml(message: ConversationMessageVM, ctx: ChatRende
   const parts: string[] = [];
   // 回复：所有可见消息都可引用（引用的新消息本身是 text，服务端允许引用 Cuu/system/文件消息）。
   parts.push(
-    `<button type="button" class="wh-wb-chat-tool" data-wb-chat-reply="${id}" aria-label="${zh ? "回复" : "Reply"}" title="${zh ? "回复" : "Reply"}">${workbenchIcons.reply}</button>`
+    `<button type="button" class="wh-wb-chat-tool" data-wb-chat-reply="${id}" aria-label="${chatT(ctx.locale, "reply")}" title="${chatT(ctx.locale, "reply")}">${workbenchIcons.reply}</button>`
   );
   // 五键快捷反应——emoji 字形（唯一允许出现 emoji 的地方之一）。
   for (const key of REACTION_KEYS) {
@@ -1261,25 +1235,25 @@ function renderMessageToolbarHtml(message: ConversationMessageVM, ctx: ChatRende
       .filter(Boolean)
       .join(" ");
     parts.push(
-      `<button type="button" class="${usefulCls}" data-wb-chat-feedback="useful" data-wb-chat-feedback-msg="${id}" aria-pressed="${usefulOn}" aria-label="${zh ? "有用" : "Useful"}" title="${zh ? "有用" : "Useful"}"><span class="wh-wb-chat-fb-glyph">✓</span></button>`,
-      `<button type="button" class="${notUsefulCls}" data-wb-chat-feedback="not_useful" data-wb-chat-feedback-msg="${id}" aria-pressed="${notUsefulOn}" aria-label="${zh ? "没用" : "Not useful"}" title="${zh ? "没用" : "Not useful"}"><span class="wh-wb-chat-fb-glyph">✗</span></button>`
+      `<button type="button" class="${usefulCls}" data-wb-chat-feedback="useful" data-wb-chat-feedback-msg="${id}" aria-pressed="${usefulOn}" aria-label="${chatT(ctx.locale, "useful")}" title="${chatT(ctx.locale, "useful")}"><span class="wh-wb-chat-fb-glyph">✓</span></button>`,
+      `<button type="button" class="${notUsefulCls}" data-wb-chat-feedback="not_useful" data-wb-chat-feedback-msg="${id}" aria-pressed="${notUsefulOn}" aria-label="${chatT(ctx.locale, "notUseful")}" title="${chatT(ctx.locale, "notUseful")}"><span class="wh-wb-chat-fb-glyph">✗</span></button>`
     );
   }
   // 编辑：仅本人 text 消息（服务端另有 15 分钟窗，过期由 409 兜底温和提示，见 view.ts）。
   if (isSelf && message.kind === "text") {
     parts.push(
-      `<button type="button" class="wh-wb-chat-tool" data-wb-chat-edit="${id}" aria-label="${zh ? "编辑" : "Edit"}" title="${zh ? "编辑" : "Edit"}">${workbenchIcons.edit}</button>`
+      `<button type="button" class="wh-wb-chat-tool" data-wb-chat-edit="${id}" aria-label="${chatT(ctx.locale, "edit")}" title="${chatT(ctx.locale, "edit")}">${workbenchIcons.edit}</button>`
     );
   }
   // 删除：仅本人消息（任意 kind）。
   if (isSelf) {
     parts.push(
-      `<button type="button" class="wh-wb-chat-tool wh-wb-chat-tool--danger" data-wb-chat-delete="${id}" aria-label="${zh ? "删除" : "Delete"}" title="${zh ? "删除" : "Delete"}">${workbenchIcons.trash}</button>`
+      `<button type="button" class="wh-wb-chat-tool wh-wb-chat-tool--danger" data-wb-chat-delete="${id}" aria-label="${chatT(ctx.locale, "delete")}" title="${chatT(ctx.locale, "delete")}">${workbenchIcons.trash}</button>`
     );
   }
   // 置顶/取消置顶：所有可见者皆可（服务端 assertConversationAccess）。
   const pinned = message.pinned !== undefined;
-  const pinLabel = pinned ? (zh ? "取消置顶" : "Unpin") : zh ? "置顶" : "Pin";
+  const pinLabel = pinned ? (chatT(ctx.locale, "unpin")) : chatT(ctx.locale, "pin");
   const pinCls = ["wh-wb-chat-tool", pinned ? "wh-wb-chat-tool--on" : ""].filter(Boolean).join(" ");
   parts.push(
     `<button type="button" class="${pinCls}" data-wb-chat-pin="${id}" data-wb-chat-pin-state="${pinned ? "on" : "off"}" aria-label="${escapeHtml(pinLabel)}" title="${escapeHtml(pinLabel)}">${workbenchIcons.pin}</button>`
@@ -1294,14 +1268,14 @@ function renderMessageEditBoxHtml(messageId: string, ctx: ChatRenderContext): st
   const draft = ctx.editing?.draft ?? "";
   const error = ctx.editing?.error;
   const errorHtml = error ? `<div class="wh-wb-chat-edit-error">${escapeHtml(error)}</div>` : "";
-  return `<div class="wh-wb-chat-edit"><textarea class="wh-wb-chat-edit-input" rows="1" data-wb-chat-edit-input>${escapeHtml(draft)}</textarea>${errorHtml}<div class="wh-wb-chat-edit-actions"><button type="button" class="wh-wb-act" data-wb-chat-edit-save="${escapeHtml(messageId)}">${zh ? "保存" : "Save"}</button><button type="button" class="wh-wb-act" data-wb-chat-edit-cancel>${zh ? "取消" : "Cancel"}</button></div></div>`;
+  return `<div class="wh-wb-chat-edit"><textarea class="wh-wb-chat-edit-input" rows="1" data-wb-chat-edit-input>${escapeHtml(draft)}</textarea>${errorHtml}<div class="wh-wb-chat-edit-actions"><button type="button" class="wh-wb-act" data-wb-chat-edit-save="${escapeHtml(messageId)}">${chatT(ctx.locale, "save")}</button><button type="button" class="wh-wb-act" data-wb-chat-edit-cancel>${chatT(ctx.locale, "cancel")}</button></div></div>`;
 }
 
 // —— R14 批 CHAT：删除二次确认（工具条位置的行内确认，避免误删） —— //
 
 function renderDeleteConfirmHtml(messageId: string, ctx: ChatRenderContext): string {
   const zh = ctx.locale === "zh-CN";
-  return `<div class="wh-wb-chat-del-confirm"><span>${zh ? "删除这条消息？" : "Delete this message?"}</span><button type="button" class="wh-wb-act wh-wb-act--danger" data-wb-chat-delete-confirm="${escapeHtml(messageId)}">${zh ? "删除" : "Delete"}</button><button type="button" class="wh-wb-act" data-wb-chat-delete-cancel>${zh ? "取消" : "Cancel"}</button></div>`;
+  return `<div class="wh-wb-chat-del-confirm"><span>${chatT(ctx.locale, "deleteThisMessage")}</span><button type="button" class="wh-wb-act wh-wb-act--danger" data-wb-chat-delete-confirm="${escapeHtml(messageId)}">${chatT(ctx.locale, "delete")}</button><button type="button" class="wh-wb-act" data-wb-chat-delete-cancel>${chatT(ctx.locale, "cancel")}</button></div>`;
 }
 
 // —— R14 批 FEEDBACK：持久态反馈徽标 + 备注编辑行 —— //
@@ -1326,15 +1300,15 @@ function renderMessageFeedbackNoteBoxHtml(messageId: string, ctx: ChatRenderCont
   const draft = ctx.feedbackNoteEditor?.draft ?? "";
   const error = ctx.feedbackNoteEditor?.error;
   const errorHtml = error ? `<div class="wh-wb-chat-edit-error">${escapeHtml(error)}</div>` : "";
-  const placeholder = zh ? "补一句为什么（可选）" : "Add a note (optional)";
-  return `<div class="wh-wb-chat-fb-note"><textarea class="wh-wb-chat-fb-note-input" rows="1" maxlength="${AI_FEEDBACK_NOTE_MAX_CHARS}" placeholder="${escapeHtml(placeholder)}" data-wb-chat-feedback-note-input>${escapeHtml(draft)}</textarea>${errorHtml}<div class="wh-wb-chat-fb-note-actions"><button type="button" class="wh-wb-act" data-wb-chat-feedback-note-save="${escapeHtml(messageId)}">${zh ? "保存" : "Save"}</button><button type="button" class="wh-wb-act" data-wb-chat-feedback-note-cancel>${zh ? "跳过" : "Skip"}</button></div></div>`;
+  const placeholder = chatT(ctx.locale, "addANoteOptional");
+  return `<div class="wh-wb-chat-fb-note"><textarea class="wh-wb-chat-fb-note-input" rows="1" maxlength="${AI_FEEDBACK_NOTE_MAX_CHARS}" placeholder="${escapeHtml(placeholder)}" data-wb-chat-feedback-note-input>${escapeHtml(draft)}</textarea>${errorHtml}<div class="wh-wb-chat-fb-note-actions"><button type="button" class="wh-wb-act" data-wb-chat-feedback-note-save="${escapeHtml(messageId)}">${chatT(ctx.locale, "save")}</button><button type="button" class="wh-wb-act" data-wb-chat-feedback-note-cancel>${chatT(ctx.locale, "skip")}</button></div></div>`;
 }
 
 // —— R14 批 CHAT：墓碑占位（删除后「此消息已删除」，无头像/动作区/反应） —— //
 
 function renderTombstoneRowHtml(message: ConversationMessageVM, ctx: ChatRenderContext): string {
   const zh = ctx.locale === "zh-CN";
-  const text = zh ? "此消息已删除" : "This message was deleted";
+  const text = chatT(ctx.locale, "thisMessageWasDeleted");
   return `<div class="wh-wb-chat-msg wh-wb-chat-msg--tombstone" data-wb-chat-message-id="${escapeHtml(message.id)}"><div class="wh-wb-chat-tombstone">${escapeHtml(text)}</div></div>`;
 }
 
@@ -1386,7 +1360,7 @@ function renderModelPillHtml(model: string): string {
 // （只渲真有的那几项）。澄清追问气泡有自己的选项按钮，不挂这条；只对落定的普通文字回应渲染。
 function renderCuuMetaRowHtml(message: Extract<ConversationMessageVM, { kind: "text" }>, ctx: ChatRenderContext): string {
   const zh = ctx.locale === "zh-CN";
-  const copyLabel = zh ? "复制" : "Copy";
+  const copyLabel = chatT(ctx.locale, "copy");
   const copyBtn = `<button type="button" class="wh-wb-chat-cuu-copy" data-wb-chat-copy="${escapeHtml(message.id)}" aria-label="${copyLabel}" title="${copyLabel}" style="display:inline-flex;padding:3px;border:0;background:transparent;color:var(--ds-ink-faint);border-radius:6px;cursor:pointer">${workbenchIcons.copy}</button>`;
   const stats: string[] = [];
   if (typeof message.content.elapsed_ms === "number") {
@@ -1429,7 +1403,7 @@ function toolActivityDescriptor(tool: string, zh: boolean): { label: string; key
   if (known) {
     return { label: zh ? known.zh : known.en, key: known.key };
   }
-  return { label: zh ? "工具调用" : "Tool call", key: "tool" };
+  return { label: chatT(zh, "toolCall"), key: "tool" };
 }
 
 function toolActivityToolName(note: ToolActivityNote): string {
@@ -1472,7 +1446,7 @@ export function renderToolActivityGroupHtml(notes: readonly ToolActivityNote[], 
     ? `<div class="wh-wb-chat-toolgroup-body" style="padding:2px 12px 8px 32px;font:500 12px/1.7 var(--ds-font);color:var(--ds-ink-muted)">${notes
         .map((note) => {
           const { key } = toolActivityDescriptor(toolActivityToolName(note), zh);
-          const detail = bestEffortNoteText(note.content, zh ? "（一次工具调用）" : "(a tool call)");
+          const detail = bestEffortNoteText(note.content, chatT(ctx.locale, "aToolCall"));
           return `<div class="wh-wb-chat-toolgroup-row" style="display:flex;gap:8px;padding:1px 0"><span class="wh-wb-chat-toolgroup-k" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--ds-ink-faint);flex:0 0 auto">${escapeHtml(
             key
           )}</span><span>${escapeHtml(detail)}</span></div>`;
@@ -1529,7 +1503,7 @@ export function renderMessageHtml(message: ConversationMessageVM, ctx: ChatRende
   const replyRef = message.reply_to ? renderReplyRefHtml(message.reply_to, ctx) : "";
   const editedLabel =
     message.edited_at !== undefined
-      ? `<span class="wh-wb-chat-edited">${ctx.locale === "zh-CN" ? "已编辑" : "edited"}</span>`
+      ? `<span class="wh-wb-chat-edited">${chatT(ctx.locale, "edited")}</span>`
       : "";
   const body = editing ? renderMessageEditBoxHtml(message.id, ctx) : messageBodyHtml(message, ctx);
   // R16-W1：模型归因 pill（Cuu 文字回应，content.model 存在时）+ 尾部元信息行（复制 · 耗时 · tokens）。
@@ -1570,9 +1544,9 @@ function pinPreviewText(message: ConversationMessageVM, zh: boolean): string {
     return message.content.snapshot_name;
   }
   if (message.kind === "action_card") {
-    return zh ? "一张行动卡" : "an action card";
+    return chatT(zh, "anActionCard");
   }
-  return zh ? "一条消息" : "a message";
+  return chatT(zh, "aMessage");
 }
 
 export function renderPinBarHtml(input: {
@@ -1596,7 +1570,7 @@ export function renderPinBarHtml(input: {
     .map((message) => {
       const who = escapeHtml(senderLabel(message, { locale: input.locale, members: input.members, currentUserId: undefined }));
       const preview = escapeHtml(pinPreviewText(message, zh));
-      return `<div class="wh-wb-chat-pin-row"><button type="button" class="wh-wb-chat-pin-jump" data-wb-chat-pin-jump="${escapeHtml(message.id)}"><span class="wh-wb-chat-pin-who">${who}</span><span class="wh-wb-chat-pin-text">${preview}</span></button><button type="button" class="wh-wb-chat-pin-remove" data-wb-chat-pin-remove="${escapeHtml(message.id)}" aria-label="${zh ? "取消置顶" : "Unpin"}" title="${zh ? "取消置顶" : "Unpin"}">${workbenchIcons.close}</button></div>`;
+      return `<div class="wh-wb-chat-pin-row"><button type="button" class="wh-wb-chat-pin-jump" data-wb-chat-pin-jump="${escapeHtml(message.id)}"><span class="wh-wb-chat-pin-who">${who}</span><span class="wh-wb-chat-pin-text">${preview}</span></button><button type="button" class="wh-wb-chat-pin-remove" data-wb-chat-pin-remove="${escapeHtml(message.id)}" aria-label="${chatT(input.locale, "unpin")}" title="${chatT(input.locale, "unpin")}">${workbenchIcons.close}</button></div>`;
     })
     .join("");
   return `<div class="wh-wb-chat-pinbar wh-wb-chat-pinbar--open">${head}<div class="wh-wb-chat-pin-list">${rows}</div></div>`;
@@ -1606,7 +1580,7 @@ export function renderPinBarHtml(input: {
 
 export function renderUnreadDividerHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  return `<div class="wh-wb-chat-unread-sep" data-wb-chat-unread-sep><span>${zh ? "以下是新消息" : "New messages"}</span></div>`;
+  return `<div class="wh-wb-chat-unread-sep" data-wb-chat-unread-sep><span>${chatT(locale, "newMessages")}</span></div>`;
 }
 
 // —— R14 批 CHAT：聚合式「已读 N/M」（只在自己发的最后一条消息下渲染） —— //
@@ -1621,7 +1595,7 @@ export function renderReadReceiptHtml(input: { readCount: number; total: number;
 
 export function renderJumpToUnreadHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  return `<button type="button" class="wh-wb-chat-jump-unread" data-wb-chat-jump-unread>${zh ? "跳到未读" : "Jump to unread"}${workbenchIcons.chevronRight}</button>`;
+  return `<button type="button" class="wh-wb-chat-jump-unread" data-wb-chat-jump-unread>${chatT(locale, "jumpToUnread")}${workbenchIcons.chevronRight}</button>`;
 }
 
 // —— 发送中乐观渲染（以服务端 message.created 回执为准去重，见 view.ts）—— //
@@ -1643,8 +1617,8 @@ export function renderPendingOutgoingHtml(pending: PendingOutgoingMessage, ctx: 
     : `<div class="wh-wb-chat-txt">${escapeHtml(pending.text ?? "").replace(/\n/gu, "<br>")}</div>`;
   const status =
     pending.status === "sending"
-      ? `<span class="wh-wb-chat-pending-status">${zh ? "发送中…" : "Sending…"}</span>`
-      : `<span class="wh-wb-chat-pending-status wh-wb-chat-pending-status--error">${zh ? "没发出去" : "Couldn't send"} <button type="button" class="wh-wb-chat-pending-retry" data-wb-chat-retry-pending="${escapeHtml(pending.tempId)}">${zh ? "重试" : "Retry"}</button></span>`;
+      ? `<span class="wh-wb-chat-pending-status">${chatT(ctx.locale, "sending")}</span>`
+      : `<span class="wh-wb-chat-pending-status wh-wb-chat-pending-status--error">${chatT(ctx.locale, "couldnTSend")} <button type="button" class="wh-wb-chat-pending-retry" data-wb-chat-retry-pending="${escapeHtml(pending.tempId)}">${chatT(ctx.locale, "retry")}</button></span>`;
   return `<div class="wh-wb-chat-msg wh-wb-chat-msg--self wh-wb-chat-msg--pending" data-wb-chat-pending-id="${escapeHtml(pending.tempId)}">${avatar}<div class="wh-wb-chat-bub">${body}${status}</div></div>`;
 }
 
@@ -1659,7 +1633,7 @@ export function renderPendingOutgoingHtml(pending: PendingOutgoingMessage, ctx: 
 
 export function renderCuuTurnPendingHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  const text = zh ? "Cuu 正在回复…" : "Cuu is replying…";
+  const text = chatT(locale, "cuuIsReplying");
   return `<div class="wh-wb-chat-typing" data-wb-chat-turn-pending>${escapeHtml(text)}<span class="wh-wb-chat-typing-dots"><i></i><i></i><i></i></span></div>`;
 }
 
@@ -1700,7 +1674,7 @@ export function renderTypingIndicatorHtml(labels: readonly string[], locale: Loc
 
 export function renderObserverAnalyzingHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  const text = zh ? "Cuu 正在整理刚才的讨论…" : "Cuu is pulling the discussion together…";
+  const text = chatT(locale, "cuuIsPullingTheDiscussionTogether");
   return `<div class="wh-wb-chat-typing wh-wb-chat-typing--observer">${escapeHtml(text)}<span class="wh-wb-chat-typing-dots"><i></i><i></i><i></i></span></div>`;
 }
 
@@ -1709,10 +1683,10 @@ export function renderObserverAnalyzingHtml(locale: Locale): string {
 export function renderConnectionBannerHtml(state: ConnectionBannerState, locale: Locale): string {
   const zh = locale === "zh-CN";
   if (state === "reconnect_scheduled") {
-    return `<div class="wh-wb-chat-banner">${zh ? "连接中断，正在重连…" : "Connection lost — reconnecting…"}</div>`;
+    return `<div class="wh-wb-chat-banner">${chatT(locale, "connectionLostReconnecting")}</div>`;
   }
   if (state === "connecting") {
-    return `<div class="wh-wb-chat-banner">${zh ? "正在连接…" : "Connecting…"}</div>`;
+    return `<div class="wh-wb-chat-banner">${chatT(locale, "connecting")}</div>`;
   }
   return "";
 }
@@ -1735,9 +1709,7 @@ export function renderNoAiProviderBannerHtml(locale: Locale): string {
 export function renderChatEmptyStateHtml(input: { locale: Locale; projectName: string }): string {
   const zh = input.locale === "zh-CN";
   const title = zh ? `欢迎来到「${input.projectName}」` : `Welcome to "${input.projectName}"`;
-  const body = zh
-    ? "这里是项目的主区——进展、决定、文件都在这聊。丢个文件或说句话，我是 Cuu，会盯着帮你们拎重点。"
-    : "This is the project's main chat — progress, decisions, and files all live here. Drop a file or say something to get started. I'm Cuu, and I'll keep an eye on things for you.";
+  const body = chatT(input.locale, "thisIsTheProjectSMain");
   return `<div class="wh-wb-chat-empty ds-anim-fade-in"><span class="wh-wb-chat-empty-icon wh-wb-chat-empty-icon--cuu">${workbenchIcons.cat}</span><h3 class="wh-wb-chat-empty-title">${escapeHtml(title)}</h3><p class="wh-wb-chat-empty-body">${escapeHtml(body)}</p></div>`;
 }
 
@@ -1750,21 +1722,19 @@ export function renderChatEmptyStateHtml(input: { locale: Locale; projectName: s
 // 只会一直失败的按钮不是诚实的加固。
 export function renderConversationAccessDeniedHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  const title = zh ? "你不在这个项目里" : "You're not in this project";
-  const body = zh
-    ? "这个会话对你不可见——可能链接过期，也可能你还没被拉进这个项目。找项目里的同事帮你加进来。"
-    : "This conversation isn't visible to you — the link may be stale, or you haven't been added to this project yet. Ask someone already on the project to add you.";
+  const title = chatT(locale, "youReNotInThisProject");
+  const body = chatT(locale, "thisConversationIsnTVisibleTo");
   return `<div class="wh-wb-chat-empty ds-anim-fade-in"><span class="wh-wb-chat-empty-icon">${workbenchIcons.lock}</span><h3 class="wh-wb-chat-empty-title">${escapeHtml(title)}</h3><p class="wh-wb-chat-empty-body">${escapeHtml(body)}</p></div>`;
 }
 
 export function renderHistoryLoadErrorHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  return `<div class="wh-wb-chat-error">${zh ? "没加载出聊天记录，稍后重试" : "Couldn't load the chat history — retry"}<div style="margin-top:13px"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-chat-retry-history>${zh ? "重试" : "Retry"}</button></div></div>`;
+  return `<div class="wh-wb-chat-error">${chatT(locale, "couldnTLoadTheChatHistory")}<div style="margin-top:13px"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-chat-retry-history>${chatT(locale, "retry")}</button></div></div>`;
 }
 
 export function renderHistoryLoadingHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  return `<div class="wh-wb-wb-loading wh-wb-loading"><span class="wh-wb-spinner"></span>${zh ? "正在加载聊天记录…" : "Loading chat history…"}</div>`;
+  return `<div class="wh-wb-wb-loading wh-wb-loading"><span class="wh-wb-spinner"></span>${chatT(locale, "loadingChatHistory")}</div>`;
 }
 
 // R12 批8：「滚到顶加载更早」的占位——批 8 补了 beforeSeq，替换掉批 2 的
@@ -1792,12 +1762,12 @@ export function renderLoadEarlierHtml(state: LoadEarlierState, locale: Locale): 
     return `<div class="wh-wb-chat-load-earlier"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-chat-load-earlier>${escapeHtml(label)}</button></div>`;
   }
   if (state.kind === "server-loading") {
-    return `<div class="wh-wb-chat-load-earlier wh-wb-chat-load-earlier--loading"><span class="wh-wb-spinner"></span>${zh ? "正在加载更早的消息…" : "Loading earlier messages…"}</div>`;
+    return `<div class="wh-wb-chat-load-earlier wh-wb-chat-load-earlier--loading"><span class="wh-wb-spinner"></span>${chatT(locale, "loadingEarlierMessages")}</div>`;
   }
   if (state.kind === "server-error") {
-    return `<div class="wh-wb-chat-load-earlier wh-wb-chat-load-earlier--error">${zh ? "没加载出更早的消息" : "Couldn't load earlier messages"}<button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-chat-load-earlier>${zh ? "重试" : "Retry"}</button></div>`;
+    return `<div class="wh-wb-chat-load-earlier wh-wb-chat-load-earlier--error">${chatT(locale, "couldnTLoadEarlierMessages")}<button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-chat-load-earlier>${chatT(locale, "retry")}</button></div>`;
   }
-  return `<div class="wh-wb-chat-load-earlier"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-chat-load-earlier>${zh ? "加载更早的消息" : "Load earlier messages"}</button></div>`;
+  return `<div class="wh-wb-chat-load-earlier"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-chat-load-earlier>${chatT(locale, "loadEarlierMessages")}</button></div>`;
 }
 
 // —— composer —— //
@@ -1831,27 +1801,23 @@ export function renderComposerHtml(input: {
   const replyBannerHtml = input.replyingToLabel
     ? `<div class="wh-wb-chat-reply-banner">${workbenchIcons.reply}<span class="wh-wb-chat-reply-banner-label">${escapeHtml(
         zh ? `正在回复 ${input.replyingToLabel}` : `Replying to ${input.replyingToLabel}`
-      )}</span><button type="button" class="wh-wb-chat-reply-banner-cancel" data-wb-chat-cancel-reply aria-label="${zh ? "取消回复" : "Cancel reply"}">${workbenchIcons.close}</button></div>`
+      )}</span><button type="button" class="wh-wb-chat-reply-banner-cancel" data-wb-chat-cancel-reply aria-label="${chatT(input.locale, "cancelReply")}">${workbenchIcons.close}</button></div>`
     : "";
   const attachmentsHtml = input.attachments.length
     ? `<div class="wh-wb-chat-attachments">${input.attachments
         .map(
           (attachment) =>
-            `<span class="wh-wb-chat-attachment-chip">${workbenchIcons.folder}<span>${escapeHtml(attachment.name)}</span><button type="button" data-wb-chat-remove-attachment="${escapeHtml(attachment.driveItemId)}" aria-label="${zh ? "移除" : "Remove"}">${workbenchIcons.close}</button></span>`
+            `<span class="wh-wb-chat-attachment-chip">${workbenchIcons.folder}<span>${escapeHtml(attachment.name)}</span><button type="button" data-wb-chat-remove-attachment="${escapeHtml(attachment.driveItemId)}" aria-label="${chatT(input.locale, "remove2")}">${workbenchIcons.close}</button></span>`
         )
         .join("")}</div>`
     : "";
   const errorHtml = input.sendError
-    ? `<div class="wh-wb-chat-send-error">${escapeHtml(input.sendError)}<button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-chat-retry-send>${zh ? "重试" : "Retry"}</button></div>`
+    ? `<div class="wh-wb-chat-send-error">${escapeHtml(input.sendError)}<button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-chat-retry-send>${chatT(input.locale, "retry")}</button></div>`
     : "";
   const canSend = !input.sending && !turnActive && (input.draftText.trim().length > 0 || input.attachments.length > 0);
   const placeholder = turnActive
-    ? zh
-      ? "Cuu 回完这条就好…"
-      : "Just a moment — Cuu is replying to the last one…"
-    : zh
-      ? "发消息给项目组和 Cuu…(@ 网盘文件/成员，# 会话，/ 技能)"
-      : "Message the team and Cuu… (@ file/member, # conversation, / skill)";
+    ? chatT(input.locale, "justAMomentCuuIsReplying")
+    : chatT(input.locale, "messageTheTeamAndCuuFile");
   const modeChip = input.modeChipHtml ?? "";
   // data-wb-chat-picker-slot：@/#// picker 的挂载点，特意留空——view.ts 单独更新这一个子节点的
   // innerHTML（每次按键都可能要开关/刷新 picker），绝不重建整个 composer（那会打断 textarea 的
@@ -1864,7 +1830,7 @@ export function renderComposerHtml(input: {
   // 材料喂进这一轮回应，见 render 的两个 picker 函数与 view.ts 的取数）。G-desktop 止血批 1 当时把
   // 这两个 chip 撤掉是对的（那时它们点开只有一句「即将上线」，属于 04 §4 铁律 3 禁止的假 affordance），
   // 现在功能真的接上了才把入口放回来，同时撤掉那批留下的 --soon 样式与占位 picker 函数。
-  return `<div class="wh-wb-chat-composer">${errorHtml}${replyBannerHtml}${attachmentsHtml}<div class="wh-wb-chat-cbox"><textarea class="wh-wb-chat-input" rows="1" placeholder="${escapeHtml(placeholder)}" data-wb-chat-input${input.sending ? " disabled" : ""}>${escapeHtml(input.draftText)}</textarea><div class="wh-wb-chat-ctools"><button type="button" class="wh-wb-chat-ctag" data-wb-chat-tool-trigger="@"><b>@</b> ${zh ? "文件·成员" : "file · member"}</button><button type="button" class="wh-wb-chat-ctag" data-wb-chat-tool-trigger="#"><b>#</b> ${zh ? "会话" : "conversation"}</button><button type="button" class="wh-wb-chat-ctag" data-wb-chat-tool-trigger="/"><b>/</b> ${zh ? "技能" : "skill"}</button>${modeChip}<button type="button" class="wh-wb-chat-send" data-wb-chat-send${canSend ? "" : " disabled"} aria-label="${zh ? "发送" : "Send"}">${workbenchIcons.send}</button></div><div data-wb-chat-mode-pop-slot></div><div data-wb-chat-picker-slot></div></div></div>`;
+  return `<div class="wh-wb-chat-composer">${errorHtml}${replyBannerHtml}${attachmentsHtml}<div class="wh-wb-chat-cbox"><textarea class="wh-wb-chat-input" rows="1" placeholder="${escapeHtml(placeholder)}" data-wb-chat-input${input.sending ? " disabled" : ""}>${escapeHtml(input.draftText)}</textarea><div class="wh-wb-chat-ctools"><button type="button" class="wh-wb-chat-ctag" data-wb-chat-tool-trigger="@"><b>@</b> ${chatT(input.locale, "fileMember")}</button><button type="button" class="wh-wb-chat-ctag" data-wb-chat-tool-trigger="#"><b>#</b> ${chatT(input.locale, "conversation")}</button><button type="button" class="wh-wb-chat-ctag" data-wb-chat-tool-trigger="/"><b>/</b> ${chatT(input.locale, "skill")}</button>${modeChip}<button type="button" class="wh-wb-chat-send" data-wb-chat-send${canSend ? "" : " disabled"} aria-label="${chatT(input.locale, "send")}">${workbenchIcons.send}</button></div><div data-wb-chat-mode-pop-slot></div><div data-wb-chat-picker-slot></div></div></div>`;
 }
 
 // —— R12（模式五档）：仅协同会话（conversationKind === 'collab'）composer 出现——2026-07-12 纠偏后
@@ -1931,13 +1897,13 @@ export function renderModeChipHtml(mode: AiMode | undefined, locale: Locale): st
   const label = known ? (zh ? AI_MODE_CHIP_LABEL[mode]!.zh : AI_MODE_CHIP_LABEL[mode]!.en) : undefined;
   const warn = mode === 5;
   const cls = ["wh-wb-mode-chip", warn ? "wh-wb-mode-chip--warn" : ""].filter(Boolean).join(" ");
-  const prefix = zh ? "我的模式" : "My mode";
+  const prefix = chatT(locale, "myMode");
   // 半角冒号、无空格——照原型 .power chip 的原文「我的模式:分级自动」（prototype/index.html:599），
   // 不是全角「：」。
   const separator = zh ? ":" : ": ";
   const body = label
     ? `${escapeHtml(prefix)}${separator}<span class="wh-wb-mode-chip-lv">${escapeHtml(label)}</span>`
-    : `<span class="wh-wb-mode-chip-lv">${escapeHtml(zh ? "模式" : "Mode")}</span>`;
+    : `<span class="wh-wb-mode-chip-lv">${escapeHtml(chatT(locale, "mode"))}</span>`;
   return `<button type="button" class="${cls}" data-wb-chat-mode-toggle aria-haspopup="true">${body}</button>`;
 }
 
@@ -1954,10 +1920,8 @@ export function renderModePopoverHtml(input: {
   highlightedIndex?: number;
 }): string {
   const zh = input.locale === "zh-CN";
-  const title = zh ? "我的 AI 模式 · 与 Cuu 单聊" : "My AI mode · 1:1 with Cuu";
-  const sub = zh
-    ? "只影响你的协同会话；主区观察者由项目治理管。按 1-5 快切"
-    : "Only affects your 1:1 conversations — the main-chat observer is governed at the project level. Press 1-5 to switch.";
+  const title = chatT(input.locale, "myAiMode11With");
+  const sub = chatT(input.locale, "onlyAffectsYour11Conversations");
   const rows = AI_MODE_LEVELS.map((level, index) => {
     const opt = AI_MODE_OPTION[level];
     const isOn = input.mode === level;
@@ -1973,12 +1937,10 @@ export function renderModePopoverHtml(input: {
     const highlightAttr = isHighlighted ? ' style="outline:2px solid rgba(10,132,255,.55);outline-offset:-2px"' : "";
     return `<div class="${cls}" data-wb-chat-mode-option="${level}" role="radio" aria-checked="${isOn}" tabindex="-1"${highlightAttr}><span class="wh-wb-mode-lvl-r"></span><span class="wh-wb-mode-lvl-body"><span class="wh-wb-mode-lvl-title">${escapeHtml(titleText)}</span><span class="wh-wb-mode-lvl-desc">${escapeHtml(descText)}</span></span><span class="wh-wb-mode-lvl-num">${level}</span></div>`;
   }).join("");
-  const gran = zh
-    ? "按能力细分：建任务 / 派 run / 动网盘 / 发通知…"
-    : "Break down by capability: create task / dispatch run / touch drive / send notification…";
-  const srvLead = zh ? "模型与密钥由" : "Model & keys are ";
-  const srvStrong = zh ? "服务端下发" : "issued by the server";
-  const srvTail = zh ? "，桌面不保存任何 API key。" : " — the desktop app never stores an API key.";
+  const gran = chatT(input.locale, "breakDownByCapabilityCreateTask");
+  const srvLead = chatT(input.locale, "modelKeysAre");
+  const srvStrong = chatT(input.locale, "issuedByTheServer");
+  const srvTail = chatT(input.locale, "theDesktopAppNeverStoresAn");
   return `<div class="wh-wb-mode-pop" data-wb-chat-mode-pop role="menu"><div class="wh-wb-mode-pop-title">${escapeHtml(title)}</div><div class="wh-wb-mode-pop-sub">${escapeHtml(sub)}</div>${rows}<div class="wh-wb-mode-gran">${escapeHtml(gran)}</div><div class="wh-wb-mode-srv">${workbenchIcons.lock}<span>${escapeHtml(srvLead)}<b>${escapeHtml(srvStrong)}</b>${escapeHtml(srvTail)}</span></div></div>`;
 }
 
@@ -1987,7 +1949,7 @@ export function renderModePopoverHtml(input: {
 // mapConversationTurnError）是事后补救，这条是事先预告，两者互补，不重复渲染。
 export function renderModeObserveOnlyHintHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  const text = zh ? "当前是只观察档，Cuu 不会回话" : "You're in observe-only mode — Cuu won't reply";
+  const text = chatT(locale, "youReInObserveOnlyMode");
   return `<div class="wh-wb-mode-hint">${escapeHtml(text)}</div>`;
 }
 
@@ -1995,7 +1957,7 @@ export function renderModeObserveOnlyHintHtml(locale: Locale): string {
 // 当前的失败码只有访问权限/模型档位不可用这类跟"切个人模式档"关系不大的错误，没有专属文案表可维护；
 // 照 turn.ts 的 fallback 文案同一个取舍：不暴露内部错误码，只给一句诚实的重试建议）。
 export function modePatchFailedText(locale: Locale): string {
-  return locale === "zh-CN" ? "模式没保存成功，再试一次。" : "Couldn't save the mode change — try again.";
+  return chatT(locale, "couldnTSaveTheModeChange");
 }
 
 export function renderModeErrorHintHtml(message: string): string {
@@ -2047,14 +2009,14 @@ export function renderMentionPickerHtml(input: {
     })
     .join("");
   const memberSection = memberRows
-    ? `<div class="wh-wb-chat-picker-section-title">${zh ? "成员" : "Members"}</div>${memberRows}`
+    ? `<div class="wh-wb-chat-picker-section-title">${chatT(input.locale, "members")}</div>${memberRows}`
     : "";
   const fileSection = input.filesLoading
-    ? `<div class="wh-wb-chat-picker-section-title">${zh ? "网盘文件" : "Drive files"}</div><div class="wh-wb-chat-picker-loading">${zh ? "搜索中…" : "Searching…"}</div>`
+    ? `<div class="wh-wb-chat-picker-section-title">${chatT(input.locale, "driveFiles")}</div><div class="wh-wb-chat-picker-loading">${chatT(input.locale, "searching")}</div>`
     : fileRows
-      ? `<div class="wh-wb-chat-picker-section-title">${zh ? "网盘文件" : "Drive files"}</div>${fileRows}`
+      ? `<div class="wh-wb-chat-picker-section-title">${chatT(input.locale, "driveFiles")}</div>${fileRows}`
       : "";
-  const empty = !memberSection && !fileSection ? `<div class="wh-wb-chat-picker-empty">${zh ? "没有匹配结果" : "No matches"}</div>` : "";
+  const empty = !memberSection && !fileSection ? `<div class="wh-wb-chat-picker-empty">${chatT(input.locale, "noMatches")}</div>` : "";
   return `<div class="wh-wb-chat-picker" data-wb-chat-picker="mention" role="listbox">${memberSection}${fileSection}${empty}</div>`;
 }
 
@@ -2078,9 +2040,9 @@ export function renderConversationRefPickerHtml(input: {
   highlightedIndex?: number;
 }): string {
   const zh = input.locale === "zh-CN";
-  const title = zh ? "会话" : "Conversations";
+  const title = chatT(input.locale, "conversations");
   if (input.loading) {
-    return `<div class="wh-wb-chat-picker" data-wb-chat-picker="conversation_ref" role="listbox"><div class="wh-wb-chat-picker-section-title">${escapeHtml(title)}</div><div class="wh-wb-chat-picker-loading">${zh ? "加载中…" : "Loading…"}</div></div>`;
+    return `<div class="wh-wb-chat-picker" data-wb-chat-picker="conversation_ref" role="listbox"><div class="wh-wb-chat-picker-section-title">${escapeHtml(title)}</div><div class="wh-wb-chat-picker-loading">${chatT(input.locale, "loading")}</div></div>`;
   }
   const rows = input.conversations
     .map((conversation, index) => {
@@ -2091,7 +2053,7 @@ export function renderConversationRefPickerHtml(input: {
     .join("");
   const body = rows
     ? `<div class="wh-wb-chat-picker-section-title">${escapeHtml(title)}</div>${rows}`
-    : `<div class="wh-wb-chat-picker-empty">${zh ? "这个项目里没有可引用的会话" : "No conversations to reference in this project"}</div>`;
+    : `<div class="wh-wb-chat-picker-empty">${chatT(input.locale, "noConversationsToReferenceInThis")}</div>`;
   return `<div class="wh-wb-chat-picker" data-wb-chat-picker="conversation_ref" role="listbox">${body}</div>`;
 }
 
@@ -2102,9 +2064,9 @@ export function renderSkillPickerHtml(input: {
   highlightedIndex?: number;
 }): string {
   const zh = input.locale === "zh-CN";
-  const title = zh ? "团队技能" : "Team skills";
+  const title = chatT(input.locale, "teamSkills");
   if (input.loading) {
-    return `<div class="wh-wb-chat-picker" data-wb-chat-picker="skill_ref" role="listbox"><div class="wh-wb-chat-picker-section-title">${escapeHtml(title)}</div><div class="wh-wb-chat-picker-loading">${zh ? "加载中…" : "Loading…"}</div></div>`;
+    return `<div class="wh-wb-chat-picker" data-wb-chat-picker="skill_ref" role="listbox"><div class="wh-wb-chat-picker-section-title">${escapeHtml(title)}</div><div class="wh-wb-chat-picker-loading">${chatT(input.locale, "loading")}</div></div>`;
   }
   const rows = input.skills
     .map((skill, index) => {
@@ -2119,6 +2081,6 @@ export function renderSkillPickerHtml(input: {
     .join("");
   const body = rows
     ? `<div class="wh-wb-chat-picker-section-title">${escapeHtml(title)}</div>${rows}`
-    : `<div class="wh-wb-chat-picker-empty">${zh ? "这个团队还没有攒下可唤起的技能" : "This team has no skills to invoke yet"}</div>`;
+    : `<div class="wh-wb-chat-picker-empty">${chatT(input.locale, "thisTeamHasNoSkillsTo")}</div>`;
   return `<div class="wh-wb-chat-picker" data-wb-chat-picker="skill_ref" role="listbox">${body}</div>`;
 }

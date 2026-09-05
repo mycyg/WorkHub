@@ -8,6 +8,8 @@ import { escapeHtml } from "@workhub/web-runtime";
 
 import { workbenchIcons } from "../icons.js";
 
+import { filesT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 export type FilesSubTab = "changed" | "all";
@@ -79,16 +81,16 @@ function changedRowHtml(row: FilesChangedRow, zh: boolean): string {
 
 function changedHtml(changed: FilesChangedState, zh: boolean): string {
   if (changed.status === "loading") {
-    return `<div class="wh-wb-files-loading"><span class="wh-wb-spinner"></span>${zh ? "正在拉变动文件…" : "Loading changed files…"}</div>`;
+    return `<div class="wh-wb-files-loading"><span class="wh-wb-spinner"></span>${filesT(zh, "loadingChangedFiles")}</div>`;
   }
   if (changed.status === "error") {
-    return `<div class="wh-wb-files-empty">${escapeHtml(changed.message)}<div style="margin-top:10px"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-files-retry-changed>${zh ? "重试" : "Try again"}</button></div></div>`;
+    return `<div class="wh-wb-files-empty">${escapeHtml(changed.message)}<div style="margin-top:10px"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-files-retry-changed>${filesT(zh, "tryAgain")}</button></div></div>`;
   }
   if (changed.rows.length === 0) {
-    return `<div class="wh-wb-files-empty">${zh ? "这个会话还没有开着的变更提议。" : "No open change proposals in this conversation yet."}</div>`;
+    return `<div class="wh-wb-files-empty">${filesT(zh, "noOpenChangeProposalsInThis")}</div>`;
   }
   return `<div class="wh-wb-files-list">${changed.rows.map((row) => changedRowHtml(row, zh)).join("")}</div>
-    <p class="wh-wb-files-note">${zh ? "变动 = 提议 manifest 的变更集（待审 / 已合），点文件看逐句对照。" : "Changed = proposal manifest change set; open a file for the line-by-line diff."}</p>`;
+    <p class="wh-wb-files-note">${filesT(zh, "changedProposalManifestChangeSetOpen")}</p>`;
 }
 
 function driveRowHtml(item: DriveItemVM, zh: boolean): string {
@@ -99,7 +101,7 @@ function driveRowHtml(item: DriveItemVM, zh: boolean): string {
       <span class="wh-wb-files-name">${escapeHtml(item.name)}</span>
     </div>`;
   }
-  return `<button type="button" class="wh-wb-files-row" style="padding-left:${8 + indent}px" data-wb-files-open-drive data-wb-files-item="${escapeHtml(item.id)}" data-wb-files-name="${escapeHtml(item.name)}" title="${zh ? "预览" : "Preview"}">
+  return `<button type="button" class="wh-wb-files-row" style="padding-left:${8 + indent}px" data-wb-files-open-drive data-wb-files-item="${escapeHtml(item.id)}" data-wb-files-name="${escapeHtml(item.name)}" title="${filesT(zh, "preview")}">
     <span class="wh-wb-files-icon">${workbenchIcons.file}</span>
     <span class="wh-wb-files-name">${escapeHtml(item.name)}</span>
   </button>`;
@@ -107,13 +109,13 @@ function driveRowHtml(item: DriveItemVM, zh: boolean): string {
 
 function allHtml(all: FilesAllState, zh: boolean): string {
   if (all.status === "idle" || all.status === "loading") {
-    return `<div class="wh-wb-files-loading"><span class="wh-wb-spinner"></span>${zh ? "正在拉网盘…" : "Loading drive…"}</div>`;
+    return `<div class="wh-wb-files-loading"><span class="wh-wb-spinner"></span>${filesT(zh, "loadingDrive")}</div>`;
   }
   if (all.status === "error") {
-    return `<div class="wh-wb-files-empty">${escapeHtml(all.message)}<div style="margin-top:10px"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-files-retry-all>${zh ? "重试" : "Try again"}</button></div></div>`;
+    return `<div class="wh-wb-files-empty">${escapeHtml(all.message)}<div style="margin-top:10px"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-files-retry-all>${filesT(zh, "tryAgain")}</button></div></div>`;
   }
   if (all.items.length === 0) {
-    return `<div class="wh-wb-files-empty">${zh ? "这个项目的网盘还是空的。" : "This project's drive is empty."}</div>`;
+    return `<div class="wh-wb-files-empty">${filesT(zh, "thisProjectSDriveIsEmpty")}</div>`;
   }
   return `<div class="wh-wb-files-list">${all.items.map((item) => driveRowHtml(item, zh)).join("")}</div>`;
 }
@@ -123,8 +125,8 @@ export function renderFilesSidePanelHtml(state: FilesSidePanelState, locale: Loc
   const changedCount = state.changed.status === "ready" ? state.changed.rows.length : undefined;
   const countBadge = changedCount !== undefined && changedCount > 0 ? `<span class="wh-wb-files-cnt">${changedCount}</span>` : "";
   const subTabs = `<div class="wh-wb-files-tabs" role="tablist">
-    <button type="button" class="wh-wb-files-tab${state.sub === "changed" ? " is-active" : ""}" data-wb-files-sub="changed" aria-selected="${state.sub === "changed"}">${zh ? "变动文件" : "Changed"} ${countBadge}</button>
-    <button type="button" class="wh-wb-files-tab${state.sub === "all" ? " is-active" : ""}" data-wb-files-sub="all" aria-selected="${state.sub === "all"}">${zh ? "所有文件" : "All files"}</button>
+    <button type="button" class="wh-wb-files-tab${state.sub === "changed" ? " is-active" : ""}" data-wb-files-sub="changed" aria-selected="${state.sub === "changed"}">${filesT(locale, "changed")} ${countBadge}</button>
+    <button type="button" class="wh-wb-files-tab${state.sub === "all" ? " is-active" : ""}" data-wb-files-sub="all" aria-selected="${state.sub === "all"}">${filesT(locale, "allFiles")}</button>
   </div>`;
   const body = state.sub === "changed" ? changedHtml(state.changed, zh) : allHtml(state.all, zh);
   return `<div class="wh-wb-files">${subTabs}<div class="wh-wb-files-body">${body}</div></div>`;

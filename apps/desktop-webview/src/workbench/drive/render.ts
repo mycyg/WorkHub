@@ -12,6 +12,8 @@ import { driveResourceHref, fmtSize } from "../../spotlight/views/drive.js";
 import { workbenchIcons } from "../icons.js";
 import type { DriveVersionEntry, DriveVersionHistory } from "./api.js";
 
+import { driveT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 function formatVersionTimestamp(iso: string, locale: Locale): string {
@@ -41,10 +43,10 @@ export function renderDriveBarHtml(input: {
   if (input.recycleActive) {
     return `<div class="wh-wb-drive-bar">
       <div class="wh-wb-drive-path">
-        <button type="button" class="wh-wb-drive-crumb-link" data-wb-drive-recycle-back>${zh ? "← 返回文件" : "← Back to files"}</button>
+        <button type="button" class="wh-wb-drive-crumb-link" data-wb-drive-recycle-back>${driveT(input.locale, "backToFiles")}</button>
         <span class="wh-wb-drive-crumb-sep">/</span>
-        <b>${zh ? "回收站" : "Recycle bin"}</b>
-        <span class="wh-wb-drive-note">${zh ? "删除的文件先进这里，可以随时找回" : "Deleted files land here — recover them anytime"}</span>
+        <b>${driveT(input.locale, "recycleBin")}</b>
+        <span class="wh-wb-drive-note">${driveT(input.locale, "deletedFilesLandHereRecoverThem")}</span>
       </div>
       <div class="wh-wb-drive-bar-spacer"></div>
     </div>`;
@@ -60,7 +62,7 @@ export function renderDriveBarHtml(input: {
     })
     .join('<span class="wh-wb-drive-crumb-sep">/</span>');
   const uploadBtn = input.canUpload
-    ? `<label class="wh-wb-btn wh-wb-btn--primary wh-wb-drive-upload-label"><span data-wb-drive-upload-label>${zh ? "上传文件" : "Upload"}</span><input class="wh-wb-drive-upload-input" type="file" data-wb-drive-upload-picker /></label>`
+    ? `<label class="wh-wb-btn wh-wb-btn--primary wh-wb-drive-upload-label"><span data-wb-drive-upload-label>${driveT(input.locale, "upload")}</span><input class="wh-wb-drive-upload-input" type="file" data-wb-drive-upload-picker /></label>`
     : "";
   // 回收站入口只在真有已删项时出现（否则不给一个点进去空空如也的入口）。
   const deletedCount = input.deletedCount ?? 0;
@@ -69,7 +71,7 @@ export function renderDriveBarHtml(input: {
     : "";
   return `<div class="wh-wb-drive-bar">
     <div class="wh-wb-drive-path">${crumbs}<span class="wh-wb-drive-note">${
-      zh ? "全部文件自动留版本 · 可回滚" : "Every file keeps versions automatically — always recoverable"
+      driveT(input.locale, "everyFileKeepsVersionsAutomaticallyAlways")
     }</span></div>
     <div class="wh-wb-drive-bar-spacer"></div>
     ${recycleBtn}
@@ -79,12 +81,12 @@ export function renderDriveBarHtml(input: {
 
 function driveRowMeta(item: DriveItemVM, zh: boolean): string {
   if (item.kind === "folder") {
-    return `${item.children_count} ${zh ? "项" : "items"}`;
+    return `${item.children_count} ${driveT(zh, "items")}`;
   }
   const size = fmtSize(item.current_version?.size_bytes);
   const updated = new Date(item.updated_at);
   const when = Number.isNaN(updated.getTime()) ? "" : formatVersionTimestamp(item.updated_at, zh ? "zh-CN" : "en-US");
-  const tag = item.accepted_deliverable ? ` · ${zh ? "AI 交付" : "AI deliverable"}` : "";
+  const tag = item.accepted_deliverable ? ` · ${driveT(zh, "aiDeliverable")}` : "";
   return [size, when].filter(Boolean).join(" · ") + tag;
 }
 
@@ -105,14 +107,14 @@ function driveRowHtml(
     // (受限交付物可能没有那两个链接,但版本历史本身是元信息,读权限同网盘本身,见服务层 listVersions)。
     if (item.current_version_id) {
       actions.push(
-        `<button type="button" class="wh-wb-act" data-wb-drive-open-versions="${escapeHtml(item.id)}" data-wb-drive-open-versions-name="${escapeHtml(item.name)}">${workbenchIcons.history}${zh ? "版本" : "History"}</button>`
+        `<button type="button" class="wh-wb-act" data-wb-drive-open-versions="${escapeHtml(item.id)}" data-wb-drive-open-versions-name="${escapeHtml(item.name)}">${workbenchIcons.history}${driveT(zh, "history")}</button>`
       );
     }
     if (item.download_href) {
       // 桌面 webview 不与 API 同源——相对路径必须先重写到 api base（driveResourceHref，
       // 与 spotlight/views/drive.ts 同一套鉴权 fetch 走同一份改写逻辑，不重复实现）。
       const href = driveResourceHref(item.download_href, apiBaseUrl);
-      actions.push(`<a class="wh-wb-act" href="${escapeHtml(href)}" data-wb-drive-download="${escapeHtml(item.id)}" data-wb-drive-download-name="${escapeHtml(item.name)}">${zh ? "下载" : "Download"}</a>`);
+      actions.push(`<a class="wh-wb-act" href="${escapeHtml(href)}" data-wb-drive-download="${escapeHtml(item.id)}" data-wb-drive-download-name="${escapeHtml(item.name)}">${driveT(zh, "download")}</a>`);
     }
   }
   if (canManage && item.delete_href) {
@@ -122,7 +124,7 @@ function driveRowHtml(
     const armed = deleteArmedItemId === item.id;
     actions.push(
       `<button type="button" class="wh-wb-act${armed ? " wh-wb-act--danger wh-wb-drive-delete-btn--armed" : ""}" data-wb-drive-delete="${escapeHtml(item.id)}" data-wb-drive-delete-version="${escapeHtml(item.current_version_id ?? "")}">${
-        armed ? (zh ? "确定？再点一次" : "Sure? Click again") : (zh ? "移到回收站" : "Move to trash")
+        armed ? (driveT(zh, "sureClickAgain")) : (driveT(zh, "moveToTrash"))
       }</button>`
     );
   }
@@ -130,7 +132,7 @@ function driveRowHtml(
   // 照 kanban 卡片（kanban/render.ts:250 role=button tabindex=0 + view.ts:288 回车/空格）的既有先例。
   // 行内的版本/下载/删除是真 button/a，自带原生键盘激活，不与行的 keydown 冲突（view.ts 只在焦点落在
   // 行本身时才把回车/空格当「打开」）。
-  const rowTitle = item.kind === "folder" ? (zh ? "打开文件夹" : "Open folder") : (zh ? "预览文件" : "Preview file");
+  const rowTitle = item.kind === "folder" ? (driveT(zh, "openFolder")) : (driveT(zh, "previewFile"));
   return `<div class="wh-wb-drive-row" ${openAttr} role="button" tabindex="0" title="${escapeHtml(rowTitle)}">
     <span class="wh-wb-drive-row-icon">${icon}</span>
     <div class="wh-wb-drive-row-main"><div class="wh-wb-drive-row-name">${escapeHtml(item.name)}</div><div class="wh-wb-drive-row-meta">${driveRowMeta(item, zh)}</div></div>
@@ -148,7 +150,7 @@ export function renderDriveListHtml(input: {
 }): string {
   const zh = input.locale === "zh-CN";
   if (input.items.length === 0) {
-    return `<p class="wh-wb-drive-empty">${zh ? "这里还没有文件" : "No files here yet"}</p>`;
+    return `<p class="wh-wb-drive-empty">${driveT(input.locale, "noFilesHereYet")}</p>`;
   }
   const folders = input.items.filter((item) => item.kind === "folder");
   const files = input.items.filter((item) => item.kind === "file");
@@ -169,7 +171,7 @@ export function renderDriveRecycleHtml(input: {
 }): string {
   const zh = input.locale === "zh-CN";
   if (input.items.length === 0) {
-    return `<div class="wh-wb-drive-list"><p class="wh-wb-drive-empty">${zh ? "回收站是空的" : "The recycle bin is empty"}</p></div>`;
+    return `<div class="wh-wb-drive-list"><p class="wh-wb-drive-empty">${driveT(input.locale, "theRecycleBinIsEmpty")}</p></div>`;
   }
   const rows = input.items
     .map((item) => {
@@ -177,7 +179,7 @@ export function renderDriveRecycleHtml(input: {
       const busy = input.restoreBusyId === item.id;
       const restoreBtn = item.restore_href
         ? `<button type="button" class="wh-wb-act" data-wb-drive-restore="${escapeHtml(item.id)}" ${busy ? "disabled" : ""}>${
-            busy ? (zh ? "找回中…" : "Recovering…") : (zh ? "找回" : "Recover")
+            busy ? (driveT(input.locale, "recovering")) : (driveT(input.locale, "recover"))
           }</button>`
         : item.restore_blocked_reason
           // C1（R21 审查）：restore_blocked_reason 是服务端中文人话，en 界面套用与 web 端一致的映射兜底，
@@ -189,7 +191,7 @@ export function renderDriveRecycleHtml(input: {
         : "";
       return `<div class="wh-wb-drive-row wh-wb-drive-row--deleted">
         <span class="wh-wb-drive-row-icon">${icon}</span>
-        <div class="wh-wb-drive-row-main"><div class="wh-wb-drive-row-name">${escapeHtml(item.name)}</div><div class="wh-wb-drive-row-meta">${zh ? "已删除" : "deleted"}</div>${rowError}</div>
+        <div class="wh-wb-drive-row-main"><div class="wh-wb-drive-row-name">${escapeHtml(item.name)}</div><div class="wh-wb-drive-row-meta">${driveT(input.locale, "deleted")}</div>${rowError}</div>
         <div class="wh-wb-drive-row-actions">${restoreBtn}</div>
       </div>`;
     })
@@ -199,13 +201,13 @@ export function renderDriveRecycleHtml(input: {
 
 export function renderDriveLoadingHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  return `<div class="wh-wb-loading"><span class="wh-wb-spinner"></span>${zh ? "正在拉网盘…" : "Loading the drive…"}</div>`;
+  return `<div class="wh-wb-loading"><span class="wh-wb-spinner"></span>${driveT(locale, "loadingTheDrive")}</div>`;
 }
 
 export function renderDriveErrorHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  return `<div class="wh-wb-error">${zh ? "网盘没拉到，稍后重试" : "Couldn't load the drive — retry"}
-    <div style="margin-top:13px"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-drive-retry>${zh ? "重试" : "Retry"}</button></div>
+  return `<div class="wh-wb-error">${driveT(locale, "couldnTLoadTheDriveRetry")}
+    <div style="margin-top:13px"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-drive-retry>${driveT(locale, "retry")}</button></div>
   </div>`;
 }
 
@@ -251,26 +253,24 @@ function versionRowHtml(
   const when = formatVersionTimestamp(version.created_at, zh ? "zh-CN" : "en-US");
   const meta = `${when} · ${escapeHtml(version.created_by_label)} · ${fmtSize(version.size_bytes)}`;
   const badge = version.current
-    ? `<span class="wh-wb-drive-version-current">${zh ? "当前版本" : "Current"}</span>`
+    ? `<span class="wh-wb-drive-version-current">${driveT(zh, "current")}</span>`
     : "";
   const isBusy = rollback?.versionId === version.id && rollback.busy;
   const isArmed = !isBusy && armedVersionId === version.id;
   const restoreBtn = version.restore_href
     ? `<button type="button" class="wh-wb-btn wh-wb-btn--ghost wh-wb-drive-restore-btn${isArmed ? " wh-wb-drive-restore-btn--armed" : ""}" data-wb-drive-restore-version="${escapeHtml(version.id)}" ${isBusy ? "disabled" : ""}>${
         isBusy
-          ? (zh ? "找回中…" : "Recovering…")
+          ? (driveT(zh, "recovering"))
           : isArmed
-            ? (zh ? "确定？再点一次找回" : "Sure? Click again to recover")
-            : (zh ? "找回这个版本" : "Recover this version")
+            ? (driveT(zh, "sureClickAgainToRecover"))
+            : (driveT(zh, "recoverThisVersion"))
       }</button>`
     : "";
   // 回滚是覆盖性动作——武装态下把真实服务端语义摆出来再让用户点第二下：会新建一个当前版本
   // （内容复制自这一版），不会抹掉现有的版本历史（照 side-panel.ts rollbackDriveItemVersion 的
   // 真实实现：project_drive_versions 追加新行，旧行原样保留）。
   const armedHint = isArmed
-    ? `<p class="wh-wb-drive-version-confirm-pending">${zh
-        ? "会把这一版的内容存成一个新的当前版本，原来的版本历史都还在。5 秒内再点一次确认，否则自动取消。"
-        : "This creates a new current version from this content — the rest of the history stays. Click again within 5 seconds to confirm, or it cancels automatically."
+    ? `<p class="wh-wb-drive-version-confirm-pending">${driveT(zh, "thisCreatesANewCurrentVersion")
       }</p>`
     : "";
   const rowError = rollback?.versionId === version.id && rollback.error
@@ -289,24 +289,24 @@ export function renderDriveSidePanelHtml(state: DriveSidePanelState, locale: Loc
   const zh = locale === "zh-CN";
   switch (state.mode) {
     case "idle":
-      return `<p class="wh-wb-drive-side-idle">${zh ? "点文件查看预览，或打开版本历史。" : "Click a file to preview it, or open its version history."}</p>`;
+      return `<p class="wh-wb-drive-side-idle">${driveT(locale, "clickAFileToPreviewIt")}</p>`;
     case "preview_loading":
-      return `${sidePanelHeaderHtml(workbenchIcons.file, zh ? "预览" : "Preview", state.itemName)}<div class="wh-wb-loading"><span class="wh-wb-spinner"></span>${zh ? "正在预览…" : "Loading preview…"}</div>`;
+      return `${sidePanelHeaderHtml(workbenchIcons.file, driveT(locale, "preview"), state.itemName)}<div class="wh-wb-loading"><span class="wh-wb-spinner"></span>${driveT(locale, "loadingPreview")}</div>`;
     case "preview_error":
-      return `${sidePanelHeaderHtml(workbenchIcons.file, zh ? "预览" : "Preview", state.itemName)}<p class="wh-wb-drive-side-error">${escapeHtml(state.error)}</p>`;
+      return `${sidePanelHeaderHtml(workbenchIcons.file, driveT(locale, "preview"), state.itemName)}<p class="wh-wb-drive-side-error">${escapeHtml(state.error)}</p>`;
     case "preview_text":
-      return `${sidePanelHeaderHtml(workbenchIcons.file, zh ? "预览" : "Preview", state.itemName)}
+      return `${sidePanelHeaderHtml(workbenchIcons.file, driveT(locale, "preview"), state.itemName)}
         <pre class="wh-wb-drive-preview-text">${escapeHtml(state.text)}</pre>
-        ${state.truncated ? `<p class="wh-wb-drive-side-note">${zh ? "内容较长，仅显示前一部分。" : "Large file — showing the first part."}</p>` : ""}
-        ${state.downloadHref ? `<a class="wh-wb-btn wh-wb-btn--ghost" href="${escapeHtml(state.downloadHref)}" data-wb-drive-side-download="true">${zh ? "下载完整文件" : "Download full file"}</a>` : ""}`;
+        ${state.truncated ? `<p class="wh-wb-drive-side-note">${driveT(locale, "largeFileShowingTheFirstPart")}</p>` : ""}
+        ${state.downloadHref ? `<a class="wh-wb-btn wh-wb-btn--ghost" href="${escapeHtml(state.downloadHref)}" data-wb-drive-side-download="true">${driveT(locale, "downloadFullFile")}</a>` : ""}`;
     case "preview_unsupported":
-      return `${sidePanelHeaderHtml(workbenchIcons.file, zh ? "预览" : "Preview", state.itemName)}
-        <p class="wh-wb-drive-side-note">${zh ? "这类文件暂不支持在线预览，请下载查看。" : "This file type can't be previewed here — download it instead."}</p>
-        ${state.downloadHref ? `<a class="wh-wb-btn wh-wb-btn--ghost" href="${escapeHtml(state.downloadHref)}" data-wb-drive-side-download="true">${zh ? "下载" : "Download"}</a>` : ""}`;
+      return `${sidePanelHeaderHtml(workbenchIcons.file, driveT(locale, "preview"), state.itemName)}
+        <p class="wh-wb-drive-side-note">${driveT(locale, "thisFileTypeCanTBe")}</p>
+        ${state.downloadHref ? `<a class="wh-wb-btn wh-wb-btn--ghost" href="${escapeHtml(state.downloadHref)}" data-wb-drive-side-download="true">${driveT(locale, "download")}</a>` : ""}`;
     case "versions_loading":
-      return `${sidePanelHeaderHtml(workbenchIcons.history, zh ? "版本历史" : "Version history", state.itemName)}<div class="wh-wb-loading"><span class="wh-wb-spinner"></span>${zh ? "正在拉版本…" : "Loading versions…"}</div>`;
+      return `${sidePanelHeaderHtml(workbenchIcons.history, driveT(locale, "versionHistory"), state.itemName)}<div class="wh-wb-loading"><span class="wh-wb-spinner"></span>${driveT(locale, "loadingVersions")}</div>`;
     case "versions_error":
-      return `${sidePanelHeaderHtml(workbenchIcons.history, zh ? "版本历史" : "Version history", state.itemName)}<p class="wh-wb-drive-side-error">${escapeHtml(state.error)}</p>`;
+      return `${sidePanelHeaderHtml(workbenchIcons.history, driveT(locale, "versionHistory"), state.itemName)}<p class="wh-wb-drive-side-error">${escapeHtml(state.error)}</p>`;
     case "versions_ready": {
       const confirmation = state.justRolledBackVersionNo !== undefined
         ? `<p class="wh-wb-drive-version-confirm">${workbenchIcons.check}${
@@ -316,7 +316,7 @@ export function renderDriveSidePanelHtml(state: DriveSidePanelState, locale: Loc
           }</p>`
         : "";
       const rows = state.history.versions.map((version) => versionRowHtml(version, zh, state.rollback, state.armedVersionId)).join("");
-      return `${sidePanelHeaderHtml(workbenchIcons.history, zh ? "版本历史" : "Version history", state.itemName)}${confirmation}<div class="wh-wb-drive-version-list">${rows}</div>`;
+      return `${sidePanelHeaderHtml(workbenchIcons.history, driveT(locale, "versionHistory"), state.itemName)}${confirmation}<div class="wh-wb-drive-version-list">${rows}</div>`;
     }
     default:
       return "";

@@ -22,6 +22,8 @@ import type { ChatRenderMembers } from "../chat/render.js";
 import { formatMessageTime } from "../chat/timeline.js";
 import { workbenchIcons } from "../icons.js";
 
+import { armyT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 type ArmyRunCardLike = ArmyRunCardVM | ArmyOverviewRunCardVM;
@@ -65,12 +67,12 @@ export type ArmyPanelViewState =
 
 function executionHintLabel(hint: string, zh: boolean): string {
   if (hint === "server") {
-    return zh ? "云端" : "Cloud";
+    return armyT(zh, "cloud");
   }
   if (hint === "local") {
-    return zh ? "本机" : "Local";
+    return armyT(zh, "local");
   }
-  return zh ? "云端或本机" : "Cloud or local";
+  return armyT(zh, "cloudOrLocal");
 }
 
 // 00 §9/契约不变量：succeeded/cancelled 都是"已经不再动了"的终态，视觉上归一为中性(done)；
@@ -96,7 +98,7 @@ function armyRunStatusVariant(status: string): "run" | "wait" | "done" | "fail" 
 function armyRunStatusBadgeHtml(status: string, zh: boolean): string {
   const variant = armyRunStatusVariant(status);
   const text = status === "escalated"
-    ? (zh ? "等你拍板" : "Waiting on you")
+    ? (armyT(zh, "waitingOnYou"))
     : agentRunStatusLabel(status, zh);
   return `<span class="wh-wb-army-rc-status wh-wb-army-rc-status--${variant}">${escapeHtml(text)}</span>`;
 }
@@ -109,33 +111,27 @@ function armyRunStatusBadgeHtml(status: string, zh: boolean): string {
 //   * 其它终态无内联动作。
 function armyRunCardActionsHtml(run: ArmyRunCardLike, zh: boolean): string {
   if (run.status === "escalated") {
-    return `<button type="button" class="wh-wb-army-rc-act wh-wb-army-rc-act--danger" data-wb-army-handle-escalation>${zh ? "去处理" : "Handle"}</button>`;
+    return `<button type="button" class="wh-wb-army-rc-act wh-wb-army-rc-act--danger" data-wb-army-handle-escalation>${armyT(zh, "handle")}</button>`;
   }
   if (run.status === "queued" || run.status === "running") {
-    return `<button type="button" class="wh-wb-army-rc-act" data-wb-army-abort-run="${escapeHtml(run.id)}">${zh ? "取消" : "Cancel"}</button>`;
+    return `<button type="button" class="wh-wb-army-rc-act" data-wb-army-abort-run="${escapeHtml(run.id)}">${armyT(zh, "cancel")}</button>`;
   }
   return "";
 }
 
 function armySourceLabelHtml(run: { source_conversation_id: string | null; source_action_card_item_id: string | null }, zh: boolean): string {
   const text = run.source_action_card_item_id
-    ? zh
-      ? "来自本会话行动卡"
-      : "From an action card in this conversation"
+    ? armyT(zh, "fromAnActionCardInThis")
     : run.source_conversation_id
-      ? zh
-        ? "来自本会话对话"
-        : "From this conversation"
-      : zh
-        ? "系统派发"
-        : "System-dispatched";
+      ? armyT(zh, "fromThisConversation")
+      : armyT(zh, "systemDispatched");
   return `<span class="wh-wb-army-rc-source">${escapeHtml(text)}</span>`;
 }
 
 function armyRunCostLabel(costCny: string | null, zh: boolean): string {
   // costCny === null 是"这次执行还没有任何计费记录"，和确认花了 0 元不是一回事（见契约顶部注释）——
   // 两种情况都老实标注，不拿 null 硬凑成 "¥0"。
-  return costCny === null ? (zh ? "还没有花费" : "No cost yet") : `¥${escapeHtml(costCny)}`;
+  return costCny === null ? (armyT(zh, "noCostYet")) : `¥${escapeHtml(costCny)}`;
 }
 
 // R17 G3(#19/#20/#21)：卡片的三种交互形态——
@@ -161,7 +157,7 @@ export function renderArmyRunCardHtml(
       ? `<span class="wh-wb-army-rc-project">${escapeHtml(run.project_name)}</span>`
       : "";
   const assigneeLine = opts.assigneeNickname
-    ? `<span class="wh-wb-army-rc-assignee">${zh ? "执行身份：" : "Acting as "}${escapeHtml(opts.assigneeNickname)}</span>`
+    ? `<span class="wh-wb-army-rc-assignee">${armyT(locale, "actingAs")}${escapeHtml(opts.assigneeNickname)}</span>`
     : "";
   const stepLine = run.recent_step
     ? `<div class="wh-wb-army-rc-step">${escapeHtml(
@@ -219,9 +215,9 @@ function armyOutputStatusLabel(status: string, zh: boolean): string {
 // （data-wb-army-open-proposal 抛给 panel.ts → shell → proposalPanel.showForProposal）。此前那条「深链：…
 // （跳转后续批次开放）」死文本已随本批接线删除（04 §4 铁律 3 反过来：现在有真接线了，就该是能点的行）。
 function renderArmyOutputsSectionHtml(outputs: ArmyOutputsVM, zh: boolean): string {
-  const header = `<div class="wh-wb-army-sec-h">${zh ? "输出" : "Outputs"}<span class="wh-wb-army-sec-n">${outputs.items.length}</span></div>`;
+  const header = `<div class="wh-wb-army-sec-h">${armyT(zh, "outputs")}<span class="wh-wb-army-sec-n">${outputs.items.length}</span></div>`;
   if (outputs.items.length === 0) {
-    return `${header}<p class="wh-wb-army-empty-note">${zh ? "这个会话还没有输出。" : "No outputs from this conversation yet."}</p>`;
+    return `${header}<p class="wh-wb-army-empty-note">${armyT(zh, "noOutputsFromThisConversationYet")}</p>`;
   }
   const rows = outputs.items
     .map(
@@ -236,7 +232,7 @@ function renderArmyOutputsSectionHtml(outputs: ArmyOutputsVM, zh: boolean): stri
     )
     .join("");
   const cappedNote = outputs.capped
-    ? `<p class="wh-wb-army-capped-note">${zh ? "还有更多输出没有在这里显示。" : "There are more outputs than shown here."}</p>`
+    ? `<p class="wh-wb-army-capped-note">${armyT(zh, "thereAreMoreOutputsThanShown")}</p>`
     : "";
   return `${header}${rows}${cappedNote}`;
 }
@@ -276,7 +272,7 @@ function armyChangeTypeLabel(changeType: string, zh: boolean): string {
 
 function armyChangedFileNameLabel(file: ArmyChangedFileVM, zh: boolean): string {
   if (!file.path) {
-    return zh ? "（未知文件）" : "(unknown file)";
+    return armyT(zh, "unknownFile");
   }
   const segments = file.path.split("/");
   return segments[segments.length - 1] || file.path;
@@ -286,7 +282,7 @@ function armyChangedFileNameLabel(file: ArmyChangedFileVM, zh: boolean): string 
 // "+0 -0"——那会被读成"这条改动没有实质内容"，是一句谎言。
 function armyChangedFileDiffLabel(file: ArmyChangedFileVM, zh: boolean): string {
   if (file.adds === undefined && file.dels === undefined) {
-    return zh ? "改动详情不可用" : "Change details unavailable";
+    return armyT(zh, "changeDetailsUnavailable");
   }
   return `+${file.adds ?? 0} -${file.dels ?? 0}`;
 }
@@ -297,9 +293,9 @@ function armyChangedFileDiffLabel(file: ArmyChangedFileVM, zh: boolean): string 
 // .wh-wb-army-out-* 类(没有为这批新增 CSS，见批次汇报)。
 function renderArmyChangedFilesSectionHtml(outputs: ArmyOutputsVM, zh: boolean): string {
   const files = collectArmyChangedFiles(outputs);
-  const header = `<div class="wh-wb-army-sec-h">${zh ? "变动文件" : "Changed files"}<span class="wh-wb-army-sec-n">${files.length}</span></div>`;
+  const header = `<div class="wh-wb-army-sec-h">${armyT(zh, "changedFiles")}<span class="wh-wb-army-sec-n">${files.length}</span></div>`;
   if (files.length === 0) {
-    return `${header}<p class="wh-wb-army-empty-note">${zh ? "这个会话的产出还没有可展示的变动文件。" : "No changed files from this conversation's outputs yet."}</p>`;
+    return `${header}<p class="wh-wb-army-empty-note">${armyT(zh, "noChangedFilesFromThisConversation")}</p>`;
   }
   const rows = files
     .map(
@@ -312,7 +308,7 @@ function renderArmyChangedFilesSectionHtml(outputs: ArmyOutputsVM, zh: boolean):
           </span>
           <span class="wh-wb-army-out-chev">${workbenchIcons.chevronRight}</span>
         </summary>
-        <p class="wh-wb-army-out-href">${escapeHtml(file.path ?? (zh ? "这条改动没有具体文件路径。" : "This change has no specific file path."))}</p>
+        <p class="wh-wb-army-out-href">${escapeHtml(file.path ?? (armyT(zh, "thisChangeHasNoSpecificFile")))}</p>
       </details>`
     )
     .join("");
@@ -321,7 +317,7 @@ function renderArmyChangedFilesSectionHtml(outputs: ArmyOutputsVM, zh: boolean):
   // "截断"),比对用户完全隐藏这件事更负责任。
   const possiblyTruncated = outputs.items.some((item) => (item.changed_files?.length ?? 0) >= 20);
   const truncationNote = possiblyTruncated
-    ? `<p class="wh-wb-army-capped-note">${zh ? "部分提议的改动较多，可能还有更多改动没有逐条统计。" : "Some proposals have many changes — there may be more not individually counted here."}</p>`
+    ? `<p class="wh-wb-army-capped-note">${armyT(zh, "someProposalsHaveManyChangesThere")}</p>`
     : "";
   return `${header}${rows}${truncationNote}`;
 }
@@ -333,9 +329,9 @@ function renderArmyRunsSectionHtml(
   opts: { loadingMore: boolean; loadMoreError?: string | undefined; showProject: boolean; scopeLabel: string; loadMoreDataAttr: string }
 ): string {
   const zh = locale === "zh-CN";
-  const header = `<div class="wh-wb-army-sec-h">${zh ? "军团" : "Army"}<span class="wh-wb-army-sec-n">${opts.scopeLabel}</span></div>`;
+  const header = `<div class="wh-wb-army-sec-h">${armyT(locale, "army")}<span class="wh-wb-army-sec-n">${opts.scopeLabel}</span></div>`;
   if (runsPage.runs.length === 0) {
-    return `${header}<p class="wh-wb-army-empty-note">${zh ? "这里还没有军团在跑。" : "No army runs here yet."}</p>`;
+    return `${header}<p class="wh-wb-army-empty-note">${armyT(locale, "noArmyRunsHereYet")}</p>`;
   }
   const cards = runsPage.runs
     .map((run) =>
@@ -348,7 +344,7 @@ function renderArmyRunsSectionHtml(
     .join("");
   const loadMore = runsPage.next_cursor
     ? `<button type="button" class="wh-wb-army-loadmore" ${opts.loadMoreDataAttr} ${opts.loadingMore ? "disabled" : ""}>${
-        opts.loadingMore ? (zh ? "加载中…" : "Loading…") : zh ? "加载更多" : "Load more"
+        opts.loadingMore ? (armyT(locale, "loading")) : armyT(locale, "loadMore")
       }</button>`
     : "";
   const loadMoreErr = opts.loadMoreError
@@ -364,7 +360,7 @@ function renderArmyRunsSectionHtml(
 
 function backgroundIntervalLabel(intervalMs: number, zh: boolean): string {
   if (intervalMs <= 0) {
-    return zh ? "手动触发" : "Manual";
+    return armyT(zh, "manual");
   }
   const seconds = Math.round(intervalMs / 1000);
   if (seconds < 60) {
@@ -412,23 +408,23 @@ function proactiveKindLabel(kind: string, zh: boolean): string {
 }
 
 function proactiveStatusLabel(status: "delivered" | "suppressed", zh: boolean): string {
-  return status === "delivered" ? (zh ? "已送达" : "Delivered") : zh ? "已克制" : "Held back";
+  return status === "delivered" ? (armyT(zh, "delivered")) : armyT(zh, "heldBack");
 }
 
 function renderArmyBackgroundSchedulerHtml(scheduler: ArmyBackgroundPageVM["scheduler"], locale: Locale): string {
   const zh = locale === "zh-CN";
-  const header = `<div class="wh-wb-army-sec-h">${zh ? "定时任务" : "Scheduled tasks"}<span class="wh-wb-army-sec-n">${scheduler.tasks.length}</span></div>`;
+  const header = `<div class="wh-wb-army-sec-h">${armyT(locale, "scheduledTasks")}<span class="wh-wb-army-sec-n">${scheduler.tasks.length}</span></div>`;
   if (!scheduler.enabled) {
-    return `${header}<p class="wh-wb-army-empty-note">${zh ? "后台调度器当前未启用。" : "The background scheduler is currently disabled."}</p>`;
+    return `${header}<p class="wh-wb-army-empty-note">${armyT(locale, "theBackgroundSchedulerIsCurrentlyDisabled")}</p>`;
   }
   if (scheduler.tasks.length === 0) {
-    return `${header}<p class="wh-wb-army-empty-note">${zh ? "还没有登记任何定时任务。" : "No scheduled tasks registered yet."}</p>`;
+    return `${header}<p class="wh-wb-army-empty-note">${armyT(locale, "noScheduledTasksRegisteredYet")}</p>`;
   }
   const rows = scheduler.tasks
     .map((task) => {
       const lastTick = task.last_tick_at
         ? (zh ? `上次 ${formatMessageTime(task.last_tick_at, locale)}` : `last ${formatMessageTime(task.last_tick_at, locale)}`)
-        : (zh ? "还没跑过" : "never run");
+        : (armyT(locale, "neverRun"));
       const counts = zh
         ? `跑了 ${task.tick_count} 次${task.error_count > 0 ? ` · ${task.error_count} 次出错` : ""}`
         : `${task.tick_count} ticks${task.error_count > 0 ? ` · ${task.error_count} errors` : ""}`;
@@ -446,9 +442,9 @@ function renderArmyBackgroundSchedulerHtml(scheduler: ArmyBackgroundPageVM["sche
 
 function renderArmyBackgroundProactiveHtml(proactive: ArmyBackgroundPageVM["proactive"], locale: Locale): string {
   const zh = locale === "zh-CN";
-  const header = `<div class="wh-wb-army-sec-h">${zh ? "主动性动态" : "Proactivity"}<span class="wh-wb-army-sec-n">${proactive.items.length}</span></div>`;
+  const header = `<div class="wh-wb-army-sec-h">${armyT(locale, "proactivity")}<span class="wh-wb-army-sec-n">${proactive.items.length}</span></div>`;
   if (proactive.items.length === 0) {
-    return `${header}<p class="wh-wb-army-empty-note">${zh ? "最近没有主动性动态。" : "No recent proactivity."}</p>`;
+    return `${header}<p class="wh-wb-army-empty-note">${armyT(locale, "noRecentProactivity")}</p>`;
   }
   const rows = proactive.items
     .map((item) => {
@@ -464,7 +460,7 @@ function renderArmyBackgroundProactiveHtml(proactive: ArmyBackgroundPageVM["proa
     })
     .join("");
   const cappedNote = proactive.capped
-    ? `<p class="wh-wb-army-capped-note">${zh ? "还有更多主动性动态没有在这里显示。" : "There is more proactivity than shown here."}</p>`
+    ? `<p class="wh-wb-army-capped-note">${armyT(locale, "thereIsMoreProactivityThanShown")}</p>`
     : "";
   return `${header}<div class="wh-wb-army-bg-list">${rows}</div>${cappedNote}`;
 }
@@ -472,9 +468,9 @@ function renderArmyBackgroundProactiveHtml(proactive: ArmyBackgroundPageVM["proa
 // 后台任务区外壳——懒加载态。loading/error 诚实标注(不拿空态冒充)；ready 时渲染两块。
 export function renderArmyBackgroundSectionHtml(background: ArmyBackgroundViewState | undefined, locale: Locale): string {
   const zh = locale === "zh-CN";
-  const header = `<div class="wh-wb-army-sec-h">${zh ? "后台任务" : "Background tasks"}</div>`;
+  const header = `<div class="wh-wb-army-sec-h">${armyT(locale, "backgroundTasks")}</div>`;
   if (!background || background.status === "loading") {
-    return `${header}<p class="wh-wb-army-empty-note">${zh ? "正在拉后台任务…" : "Loading background tasks…"}</p>`;
+    return `${header}<p class="wh-wb-army-empty-note">${armyT(locale, "loadingBackgroundTasks")}</p>`;
   }
   if (background.status === "error") {
     return `${header}<p class="wh-wb-army-loadmore-error">${escapeHtml(background.message)}</p>`;
@@ -484,12 +480,12 @@ export function renderArmyBackgroundSectionHtml(background: ArmyBackgroundViewSt
 
 export function renderArmyPanelLoadingHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  return `<div class="wh-wb-army-loading"><span class="wh-wb-spinner"></span>${zh ? "正在拉军团面板…" : "Loading the army panel…"}</div>`;
+  return `<div class="wh-wb-army-loading"><span class="wh-wb-spinner"></span>${armyT(locale, "loadingTheArmyPanel")}</div>`;
 }
 
 export function renderArmyPanelErrorHtml(message: string, locale: Locale): string {
   const zh = locale === "zh-CN";
-  return `<div class="wh-wb-army-error">${escapeHtml(message || (zh ? "军团面板没拉到" : "Couldn't load the army panel"))}</div>`;
+  return `<div class="wh-wb-army-error">${escapeHtml(message || (armyT(locale, "couldnTLoadTheArmyPanel")))}</div>`;
 }
 
 function renderArmyPanelListHtml(
@@ -516,17 +512,17 @@ function renderArmyPanelListHtml(
 function renderArmyReplaySectionHtml(trace: ArmyRunTraceState, locale: Locale): string {
   const zh = locale === "zh-CN";
   if (trace.status === "idle") {
-    return `<button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-army-open-replay>${zh ? "看回放" : "View replay"}</button>`;
+    return `<button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-army-open-replay>${armyT(locale, "viewReplay")}</button>`;
   }
   if (trace.status === "loading") {
-    return `<div class="wh-wb-army-replay-loading"><span class="wh-wb-spinner"></span>${zh ? "正在拉时间线…" : "Loading the timeline…"}</div>`;
+    return `<div class="wh-wb-army-replay-loading"><span class="wh-wb-spinner"></span>${armyT(locale, "loadingTheTimeline")}</div>`;
   }
   if (trace.status === "error") {
-    return `<p class="wh-wb-army-replay-error">${escapeHtml(trace.message)}</p><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-army-open-replay>${zh ? "重试" : "Retry"}</button>`;
+    return `<p class="wh-wb-army-replay-error">${escapeHtml(trace.message)}</p><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-army-open-replay>${armyT(locale, "retry")}</button>`;
   }
   const steps = trace.data.trace;
   if (!steps.length) {
-    return `<p class="wh-wb-army-empty-note">${zh ? "还没有步骤记录。" : "No steps recorded yet."}</p>`;
+    return `<p class="wh-wb-army-empty-note">${armyT(locale, "noStepsRecordedYet")}</p>`;
   }
   const items = steps
     .map(
@@ -536,7 +532,7 @@ function renderArmyReplaySectionHtml(trace: ArmyRunTraceState, locale: Locale): 
       </div>`
     )
     .join("");
-  return `<div class="wh-wb-army-sec-h" style="padding-left:0">${zh ? "时间线" : "Timeline"}</div><div class="wh-wb-army-timeline">${items}</div>`;
+  return `<div class="wh-wb-army-sec-h" style="padding-left:0">${armyT(locale, "timeline")}</div><div class="wh-wb-army-timeline">${items}</div>`;
 }
 
 // R17 G3(#19/#20)：run 详情的动作区——escalated 给「去处理」(→ 决策收件箱)；queued/running 给带确认的
@@ -544,7 +540,7 @@ function renderArmyReplaySectionHtml(trace: ArmyRunTraceState, locale: Locale): 
 function renderArmyRunActionsHtml(run: ArmyRunCardVM, abort: ArmyRunAbortState, zh: boolean): string {
   if (run.status === "escalated") {
     return `<div class="wh-wb-army-rd-actions">
-      <button type="button" class="wh-wb-btn wh-wb-btn--danger" data-wb-army-handle-escalation>${zh ? "去处理" : "Handle"}</button>
+      <button type="button" class="wh-wb-btn wh-wb-btn--danger" data-wb-army-handle-escalation>${armyT(zh, "handle")}</button>
     </div>`;
   }
   if (run.status !== "queued" && run.status !== "running") {
@@ -552,27 +548,27 @@ function renderArmyRunActionsHtml(run: ArmyRunCardVM, abort: ArmyRunAbortState, 
   }
   if (abort.status === "confirming") {
     return `<div class="wh-wb-army-rd-actions wh-wb-army-abort-confirm">
-      <p class="wh-wb-army-abort-note">${zh ? "确定取消这次执行？取消后它会立即停下。" : "Cancel this run? It will stop immediately."}</p>
+      <p class="wh-wb-army-abort-note">${armyT(zh, "cancelThisRunItWillStop")}</p>
       <div class="wh-wb-army-abort-btns">
-        <button type="button" class="wh-wb-btn wh-wb-btn--danger" data-wb-army-abort-confirm>${zh ? "确定取消" : "Cancel run"}</button>
-        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-army-abort-dismiss>${zh ? "返回" : "Back"}</button>
+        <button type="button" class="wh-wb-btn wh-wb-btn--danger" data-wb-army-abort-confirm>${armyT(zh, "cancelRun")}</button>
+        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-army-abort-dismiss>${armyT(zh, "back")}</button>
       </div>
     </div>`;
   }
   if (abort.status === "aborting") {
-    return `<div class="wh-wb-army-rd-actions"><div class="wh-wb-army-replay-loading"><span class="wh-wb-spinner"></span>${zh ? "正在取消…" : "Cancelling…"}</div></div>`;
+    return `<div class="wh-wb-army-rd-actions"><div class="wh-wb-army-replay-loading"><span class="wh-wb-spinner"></span>${armyT(zh, "cancelling")}</div></div>`;
   }
   if (abort.status === "error") {
     return `<div class="wh-wb-army-rd-actions">
       <p class="wh-wb-army-abort-error">${escapeHtml(abort.message)}</p>
       <div class="wh-wb-army-abort-btns">
-        <button type="button" class="wh-wb-btn wh-wb-btn--danger" data-wb-army-abort-confirm>${zh ? "重试取消" : "Retry"}</button>
-        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-army-abort-dismiss>${zh ? "返回" : "Back"}</button>
+        <button type="button" class="wh-wb-btn wh-wb-btn--danger" data-wb-army-abort-confirm>${armyT(zh, "retry2")}</button>
+        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-army-abort-dismiss>${armyT(zh, "back")}</button>
       </div>
     </div>`;
   }
   return `<div class="wh-wb-army-rd-actions">
-    <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-army-abort-open>${zh ? "取消这次执行" : "Cancel this run"}</button>
+    <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-army-abort-open>${armyT(zh, "cancelThisRun")}</button>
   </div>`;
 }
 
@@ -581,7 +577,7 @@ function renderArmyRunDetailHtml(state: Extract<ArmyPanelViewState, { mode: "det
   const { run, trace, abort } = state;
   const chips = [
     // R17 G3(#20)：escalated 详情头也用「等你拍板」口径，与卡片徽标一致，不再裸显「已升级」。
-    run.status === "escalated" ? (zh ? "等你拍板" : "Waiting on you") : agentRunStatusLabel(run.status, zh),
+    run.status === "escalated" ? (armyT(locale, "waitingOnYou")) : agentRunStatusLabel(run.status, zh),
     executionHintLabel(run.execution_hint, zh),
     armyRunCostLabel(run.cost_cny, zh)
   ];
@@ -596,9 +592,9 @@ function renderArmyRunDetailHtml(state: Extract<ArmyPanelViewState, { mode: "det
           )
         )}</div>
       </div>`
-    : `<p class="wh-wb-army-empty-note">${zh ? "还没有步骤记录。" : "No step recorded yet."}</p>`;
+    : `<p class="wh-wb-army-empty-note">${armyT(locale, "noStepRecordedYet")}</p>`;
   return `<div class="wh-wb-army-detail">
-    <button type="button" class="wh-wb-army-back" data-wb-army-back>${zh ? "‹ 返回" : "‹ Back"}</button>
+    <button type="button" class="wh-wb-army-back" data-wb-army-back>${armyT(locale, "back2")}</button>
     <div class="wh-wb-army-rd-name">${escapeHtml(run.cat_codename)}</div>
     <div class="wh-wb-army-rd-goal">${escapeHtml(run.goal_summary)}</div>
     <div class="wh-wb-army-rd-meta">${chipsHtml}</div>
@@ -612,7 +608,7 @@ function renderArmyRunDetailHtml(state: Extract<ArmyPanelViewState, { mode: "det
 // shell.ts 的 renderSide 在 store.sidePanelContent 为空时也用这同一句话，避免两处各写一份文案。
 export function renderArmySidePanelIdleHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  return `<p class="wh-wb-army-empty-note">${zh ? "选一个会话查看输出与军团。" : "Pick a conversation to see its outputs and army."}</p>`;
+  return `<p class="wh-wb-army-empty-note">${armyT(locale, "pickAConversationToSeeIts")}</p>`;
 }
 
 export function renderArmyPanelHtml(
@@ -677,7 +673,7 @@ export function armyDataAgeLabel(generatedAtIso: string, nowMs: number, zh: bool
   }
   const diffMin = Math.max(0, Math.floor((nowMs - genMs) / 60000));
   if (diffMin < 1) {
-    return zh ? "数据刚刚加载" : "Loaded just now";
+    return armyT(zh, "loadedJustNow");
   }
   if (diffMin < 60) {
     return zh ? `数据加载于 ${diffMin} 分钟前` : `Loaded ${diffMin}m ago`;
@@ -688,17 +684,17 @@ export function armyDataAgeLabel(generatedAtIso: string, nowMs: number, zh: bool
 
 export function renderArmyOverviewLoadingHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  return `<div class="wh-wb-army-loading"><span class="wh-wb-spinner"></span>${zh ? "正在拉军团总览…" : "Loading the army overview…"}</div>`;
+  return `<div class="wh-wb-army-loading"><span class="wh-wb-spinner"></span>${armyT(locale, "loadingTheArmyOverview")}</div>`;
 }
 
 export function renderArmyOverviewErrorHtml(message: string, locale: Locale): string {
   const zh = locale === "zh-CN";
-  return `<div class="wh-wb-army-error">${escapeHtml(message || (zh ? "军团总览没拉到" : "Couldn't load the army overview"))}<div style="margin-top:13px"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-army-ov-retry>${zh ? "重试" : "Retry"}</button></div></div>`;
+  return `<div class="wh-wb-army-error">${escapeHtml(message || (armyT(locale, "couldnTLoadTheArmyOverview")))}<div style="margin-top:13px"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-army-ov-retry>${armyT(locale, "retry")}</button></div></div>`;
 }
 
 export function renderArmyOverviewEmptyHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  return `<div class="wh-wb-army-ov-empty">${zh ? "你名下所有项目现在都没有军团在跑。" : "No army runs across any of your projects right now."}</div>`;
+  return `<div class="wh-wb-army-ov-empty">${armyT(locale, "noArmyRunsAcrossAnyOf")}</div>`;
 }
 
 export function renderArmyOverviewHtml(state: ArmyOverviewViewState, locale: Locale): string {
@@ -729,7 +725,7 @@ export function renderArmyOverviewHtml(state: ArmyOverviewViewState, locale: Loc
     .join("");
   const loadMore = vm.runs.next_cursor
     ? `<button type="button" class="wh-wb-army-loadmore" data-wb-army-ov-load-more ${state.loadingMore ? "disabled" : ""}>${
-        state.loadingMore ? (zh ? "加载中…" : "Loading…") : zh ? "加载更多" : "Load more"
+        state.loadingMore ? (armyT(locale, "loading")) : armyT(locale, "loadMore")
       }</button>`
     : "";
   const loadMoreErr = state.loadMoreError

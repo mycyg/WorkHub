@@ -27,6 +27,8 @@ import { writeDesktopClientToken } from "./desktop-client-token.js";
 import { isPasswordModeBootstrapError, rememberDesktopAuthModeHint } from "./desktop-login.js";
 import { resolveDesktopDeviceName } from "./desktop-window-controls.js";
 
+import { desktopT } from "./locales.js";
+
 // 与 browser.ts / desktop-login.ts 同一套登出标记键 + 令牌收口（DSK-06，desktop-client-token.ts）——
 // 拿到新令牌后落键、清登出标记。
 const DESKTOP_LOGGED_OUT_FLAG = "workhub_desktop_logged_out";
@@ -87,9 +89,7 @@ export async function runDesktopRebind(input: {
 // 把服务端/网络错误翻成用户可读、可重试的一句话（同 describeDesktopLoginError 的取舍，不泄露内部细节）。
 export function describeDesktopRebindError(error: unknown, locale: WorkHubLocale): string {
   void error;
-  return locale === "zh-CN"
-    ? "登录失败，请检查后端连接后重试。"
-    : "Sign-in failed — check the backend connection and retry.";
+  return desktopT(locale, "signInFailedCheckTheBackend");
 }
 
 // 重绑/首启屏的 HTML（自带 <style>，不依赖外部 CSS 已加载——渲进 boot 首帧壳也成立，同凭据登录门）。
@@ -110,17 +110,13 @@ export function renderDesktopRebindScreenHtml(input: {
   const zh = input.locale === "zh-CN";
   const context = input.context ?? "logged-out";
   const title =
-    context === "first-run" ? (zh ? "欢迎使用 WorkHub" : "Welcome to WorkHub") : zh ? "已登出" : "Signed out";
+    context === "first-run" ? (desktopT(input.locale, "welcomeToWorkhub")) : desktopT(input.locale, "signedOut");
   const subtitle =
     context === "first-run"
-      ? zh
-        ? "这台设备第一次连接这台服务器，输入昵称就能开始。"
-        : "This device hasn't connected to this server before — enter a nickname to get started."
-      : zh
-        ? "输入昵称重新绑定这台设备。"
-        : "Enter a nickname to re-bind this device.";
-  const nicknameLabel = zh ? "昵称" : "Nickname";
-  const submitLabel = zh ? "登录" : "Sign in";
+      ? desktopT(input.locale, "thisDeviceHasnTConnectedTo2")
+      : desktopT(input.locale, "enterANicknameToReBind");
+  const nicknameLabel = desktopT(input.locale, "nickname");
+  const submitLabel = desktopT(input.locale, "signIn");
   const errorHtml = input.error
     ? `<p data-desktop-rebind-error class="${desktopBootPanel.error}" role="alert">${escapeHtml(input.error)}</p>`
     : `<p data-desktop-rebind-error hidden class="${desktopBootPanel.error}" role="alert"></p>`;
@@ -179,7 +175,7 @@ export function bindDesktopRebindScreen(
     event.preventDefault();
     const nickname = nicknameEl?.value.trim() ?? "";
     if (!nickname) {
-      showError(zh ? "请先填写昵称。" : "Please enter a nickname first.");
+      showError(desktopT(input.locale, "pleaseEnterANicknameFirst"));
       return;
     }
     if (submitEl) {

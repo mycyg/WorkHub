@@ -14,6 +14,8 @@ import { escapeHtml } from "@workhub/web-runtime";
 import { fetchArmyOverview } from "./api.js";
 import { armyDataAgeLabel, mergeArmyRunPages, renderArmyOverviewHtml, type ArmyOverviewViewState } from "./render.js";
 
+import { armyT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 export type ArmyOverviewApiClient = Pick<WorkHubApiClient, "request">;
@@ -35,7 +37,7 @@ function errorMessage(error: unknown, locale: Locale): string {
   if (error instanceof Error && error.message) {
     return error.message;
   }
-  return locale === "zh-CN" ? "没拉到，请重试" : "Couldn't load — try again";
+  return armyT(locale, "couldnTLoadTryAgain");
 }
 
 export function mountArmyOverviewView(
@@ -58,9 +60,9 @@ export function mountArmyOverviewView(
     const ageHtml = ageLabel ? `<span class="wh-wb-army-ov-age">${escapeHtml(ageLabel)}</span>` : "";
     container.innerHTML = `<div class="wh-wb-army-overview">
       <div class="wh-wb-army-ov-bar">
-        <div class="wh-wb-army-ov-title">${zh ? "军团总览" : "Army overview"}</div>
+        <div class="wh-wb-army-ov-title">${armyT(input.locale, "armyOverview")}</div>
         ${ageHtml}
-        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-army-ov-refresh ${refreshing ? "disabled" : ""}>${zh ? "刷新" : "Refresh"}</button>
+        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-army-ov-refresh ${refreshing ? "disabled" : ""}>${armyT(input.locale, "refresh")}</button>
       </div>
       <div class="wh-wb-army-ov-body">${renderArmyOverviewHtml(state, input.locale)}</div>
     </div>`;

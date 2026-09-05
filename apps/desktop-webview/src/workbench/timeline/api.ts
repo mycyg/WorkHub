@@ -8,6 +8,8 @@ import type { WorkHubApiClient } from "@workhub/api-client";
 import { WorkHubApiError } from "@workhub/api-client";
 import type { ProjectMilestoneVM, ProjectTimelinePageVM } from "@workhub/contracts";
 
+import { timelineT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 export type TimelineApiClient = Pick<WorkHubApiClient, "request">;
@@ -121,10 +123,10 @@ export function humanizeTimelineError(error: unknown, locale: Locale): string {
       return zh ? mapped.zh : mapped.en;
     }
     if (error.status === 403) {
-      return zh ? "你没有权限做这个改动。" : "You don't have permission for this change.";
+      return timelineT(locale, "youDonTHavePermissionFor");
     }
     // 服务端 message 已是中文人话——zh 直接用；en 没有专门映射时给一句通用英文（不把中文塞给英文界面）。
     return zh ? error.message : "Couldn't save that change — please try again.";
   }
-  return zh ? "操作没成功，稍后再试。" : "That didn't go through — please try again.";
+  return timelineT(locale, "thatDidnTGoThroughPlease");
 }

@@ -8,6 +8,8 @@ import type { WorkHubLocale } from "@workhub/ui/gold-path";
 
 import type { CommandId } from "../command-palette.js";
 
+import { spotlightT } from "./locales.js";
+
 export type SpotlightApiClient = ReturnType<typeof createApiClient>;
 
 // 打开某能力时可携带的目标实体（深链/跨能力跳转用）：id 为要直接展开的实体（工作项/提议/项目）id；
@@ -55,5 +57,5 @@ export type SpotlightCapabilityViewFactory = () => SpotlightCapabilityView;
 // rank7：错误态必须给出可恢复路径。统一玻璃错误块 + 一个「重试」按钮（data-spot-retry），
 // 各 view 把上次失败的加载器存进一个 retry 闭包，点重试即重跑。message 为内部固定文案，不含用户输入。
 export function spotlightErrorHtml(zh: boolean, message: string): string {
-  return `<div class="wh-spot-error">${message}<div style="margin-top:13px"><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-spot-retry>${zh ? "重试" : "Retry"}</button></div></div>`;
+  return `<div class="wh-spot-error">${message}<div style="margin-top:13px"><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-spot-retry>${spotlightT(zh, "retry")}</button></div></div>`;
 }

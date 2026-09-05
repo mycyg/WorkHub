@@ -11,6 +11,8 @@ import { escapeHtml, safeHref } from "@workhub/web-runtime";
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightTarget, type SpotlightViewContext } from "../view-context.js";
 import { agentStepPhaseLabel, agentStepPublicSummary, workItemPriorityLabel, workItemStatusLabel } from "../labels.js";
 
+import { spotlightViewsT } from "./locales.js";
+
 function taskPlanHtml(vm: WorkItemDetailVM, zh: boolean): string {
   const plan = vm.task_plan;
   if (!plan) {
@@ -22,14 +24,14 @@ function taskPlanHtml(vm: WorkItemDetailVM, zh: boolean): string {
     <div class="wh-spot-trace-out">${escapeHtml(item.title)}</div>
   </div>`).join("");
   const capped = plan.items_capped
-    ? `<div class="wh-spot-change-path" data-spot-task-plan-capped="true">${zh ? "仅显示前 50 个子任务" : "Showing first 50 subtasks"}</div>`
+    ? `<div class="wh-spot-change-path" data-spot-task-plan-capped="true">${spotlightViewsT(zh, "showingFirst50Subtasks")}</div>`
     : "";
   return `<div class="wh-spot-change" data-spot-task-plan="true" data-spot-task-plan-status="${escapeHtml(plan.status)}">
     <div class="wh-spot-change-head">
-      <span class="wh-spot-chip wh-spot-chip--info">${zh ? "任务计划" : "Task plan"}</span>
+      <span class="wh-spot-chip wh-spot-chip--info">${spotlightViewsT(zh, "taskPlan2")}</span>
       <span class="wh-spot-change-path">${escapeHtml(taskPlanStatusLabel(locale, plan.status))}</span>
     </div>
-    <div class="wh-spot-trace">${rows || `<div class="wh-spot-change-path">${zh ? "暂无子任务" : "No subtasks yet"}</div>`}</div>
+    <div class="wh-spot-trace">${rows || `<div class="wh-spot-change-path">${spotlightViewsT(zh, "noSubtasksYet")}</div>`}</div>
     ${capped}
   </div>`;
 }
@@ -53,7 +55,7 @@ function agentTeamTitle(team: WorkItemAgentTeamVM, zh: boolean) {
 
 function agentTeamItemStatusLabel(status: WorkItemAgentTeamVM["items"][number]["status"], zh: boolean) {
   if (status === "needs_human") {
-    return zh ? "等你决定" : "Needs decision";
+    return spotlightViewsT(zh, "needsDecision");
   }
   return taskPlanItemStatusLabel(zh ? "zh-CN" : "en-US", status);
 }
@@ -90,14 +92,14 @@ function agentTeamHtml(vm: WorkItemDetailVM, zh: boolean): string {
     </div>`;
   }).join("");
   const capped = team.runs_capped
-    ? `<div class="wh-spot-change-path" data-spot-agent-team-capped="true">${zh ? "仅显示前 100 个子运行" : "Showing first 100 child runs"}</div>`
+    ? `<div class="wh-spot-change-path" data-spot-agent-team-capped="true">${spotlightViewsT(zh, "showingFirst100ChildRuns")}</div>`
     : "";
   return `<div class="wh-spot-change" data-spot-agent-team="true" data-spot-agent-team-status="${escapeHtml(team.status)}">
     <div class="wh-spot-change-head">
       <span class="wh-spot-chip wh-spot-chip--info">${escapeHtml(agentTeamTitle(team, zh))}</span>
       <span class="wh-spot-change-path">${escapeHtml(uiFormatCny(team.cost_used_cny))}</span>
     </div>
-    <div class="wh-spot-trace">${rows || `<div class="wh-spot-change-path">${zh ? "暂无子运行" : "No child runs yet"}</div>`}</div>
+    <div class="wh-spot-trace">${rows || `<div class="wh-spot-change-path">${spotlightViewsT(zh, "noChildRunsYet")}</div>`}</div>
     ${capped}
   </div>`;
 }
@@ -112,7 +114,7 @@ export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
     (vm.agent_trace_preview?.length ?? 0) === 0;
   // #11：从网盘评论/会议洞察生成的工作项带 create_proposal_draft 动作 → 桌面也给「生成变更草稿」入口。
   const createDraft = vm.actions.create_proposal_draft
-    ? `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-wi-create-proposal="${escapeHtml(w.id)}">${zh ? "生成变更草稿" : "Create proposal draft"}</button>`
+    ? `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-wi-create-proposal="${escapeHtml(w.id)}">${spotlightViewsT(zh, "createProposalDraft")}</button>`
     : "";
   const trace = vm.agent_trace_preview ?? [];
   const traceHtml = trace.length
@@ -122,7 +124,7 @@ export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
         .join("")}</div>`
     : "";
   const proposal = vm.latest_proposal
-    ? `<div class="wh-spot-change"><div class="wh-spot-change-head"><span class="wh-spot-chip wh-spot-chip--info">${zh ? "最新改动" : "Latest change"}</span></div><div class="wh-spot-change-sum">${escapeHtml(publicProposalDisplayTitle(vm.latest_proposal.title, zh ? "zh-CN" : "en-US"))}</div></div>`
+    ? `<div class="wh-spot-change"><div class="wh-spot-change-head"><span class="wh-spot-chip wh-spot-chip--info">${spotlightViewsT(zh, "latestChange")}</span></div><div class="wh-spot-change-sum">${escapeHtml(publicProposalDisplayTitle(vm.latest_proposal.title, zh ? "zh-CN" : "en-US"))}</div></div>`
     : "";
   // B-R9.6 UX 审计（H1 卡位）：同 web——军团活跃/终态渲军团压缩版，否则渲计划快照，不双渲。
   const teamStatuses = new Set(["approved", "dispatching", "paused", "done"]);
@@ -130,27 +132,27 @@ export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
   const taskPlan = showTeam ? "" : taskPlanHtml(vm, zh);
   const agentTeam = showTeam ? agentTeamHtml(vm, zh) : "";
   return `<div class="wh-spot-dash ds-anim-fade-in">
-    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-wi-back style="align-self:flex-start">${zh ? "← 返回" : "← Back"}</button>
+    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-wi-back style="align-self:flex-start">${spotlightViewsT(zh, "back")}</button>
     <div>
       <div class="wh-spot-card-head"><span class="wh-spot-chip wh-spot-chip--approval">${escapeHtml(workItemStatusLabel(w.status, zh))}</span><span class="wh-spot-change-path">${escapeHtml(w.code)}</span></div>
       <h3 class="wh-spot-card-title" style="margin-top:10px">${escapeHtml(w.title ?? w.code)}</h3>
     </div>
     <div class="wh-spot-metrics">
-      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "优先级" : "Priority"}</span><span class="wh-spot-metric-v" style="font-size:14px">${escapeHtml(workItemPriorityLabel(w.priority, zh))}</span></div>
-      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "验收项" : "Acceptance"}</span><span class="wh-spot-metric-v">${vm.acceptance.length}</span></div>
-      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "交付物" : "Deliverables"}</span><span class="wh-spot-metric-v">${vm.accepted_deliverables.length}</span></div>
+      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${spotlightViewsT(zh, "priority")}</span><span class="wh-spot-metric-v" style="font-size:14px">${escapeHtml(workItemPriorityLabel(w.priority, zh))}</span></div>
+      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${spotlightViewsT(zh, "acceptance")}</span><span class="wh-spot-metric-v">${vm.acceptance.length}</span></div>
+      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${spotlightViewsT(zh, "deliverables2")}</span><span class="wh-spot-metric-v">${vm.accepted_deliverables.length}</span></div>
     </div>
     ${agentTeam}
     ${taskPlan}
     ${proposal}
     ${traceHtml}
-    ${createDraft || canDraftTaskPlan ? `<div class="wh-spot-card-actions">${createDraft}${canDraftTaskPlan ? `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-wi-task-plan="${escapeHtml(w.id)}">${zh ? "生成任务计划" : "Draft task plan"}</button>` : ""}</div>` : ""}
+    ${createDraft || canDraftTaskPlan ? `<div class="wh-spot-card-actions">${createDraft}${canDraftTaskPlan ? `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-wi-task-plan="${escapeHtml(w.id)}">${spotlightViewsT(zh, "draftTaskPlan")}</button>` : ""}</div>` : ""}
   </div>`;
 }
 
 export function workItemListHtml(items: Array<{ id: string; title: string }>, zh: boolean): string {
   if (!items.length) {
-    return `<div class="wh-spot-empty"><div class="wh-spot-empty-face">(=･ｪ･=)</div><h3 class="wh-spot-empty-title">${zh ? "暂无进行中的工作项" : "No active work items"}</h3><p class="wh-spot-empty-sub">${zh ? "新建一个任务，或从 项目 / 审批 进入具体工作项" : "Create a task, or open one from Projects / Approvals"}</p></div>`;
+    return `<div class="wh-spot-empty"><div class="wh-spot-empty-face">(=･ｪ･=)</div><h3 class="wh-spot-empty-title">${spotlightViewsT(zh, "noActiveWorkItems")}</h3><p class="wh-spot-empty-sub">${spotlightViewsT(zh, "createATaskOrOpenOne")}</p></div>`;
   }
   return `<div class="wh-spot-list ds-stagger">${items
     .map((it) => `<button type="button" class="wh-spot-row" data-wi-open="${escapeHtml(it.id)}" style="cursor:pointer;width:100%;text-align:left"><div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(it.title)}</div></div></button>`)
@@ -174,8 +176,8 @@ export function createWorkItemView(): SpotlightCapabilityView {
 
       const showList = async () => {
         const gen = ++loadGen;
-        ctx.setSubtitle(zh ? "进行中的工作" : "Active work");
-        body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉工作项…" : "Loading…"}</div>`;
+        ctx.setSubtitle(spotlightViewsT(ctx.locale, "activeWork"));
+        body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${spotlightViewsT(ctx.locale, "loading3")}</div>`;
         ctx.requestResize();
         try {
           const vm = await client.pages.attention({ locale: ctx.locale });
@@ -193,7 +195,7 @@ export function createWorkItemView(): SpotlightCapabilityView {
         } catch {
           if (!disposed && gen === loadGen) {
             retry = () => void showList();
-            body.innerHTML = spotlightErrorHtml(zh, zh ? "工作项没拉到" : "Couldn't load");
+            body.innerHTML = spotlightErrorHtml(zh, spotlightViewsT(ctx.locale, "couldnTLoad2"));
           }
         }
         ctx.requestResize();
@@ -203,7 +205,7 @@ export function createWorkItemView(): SpotlightCapabilityView {
 
       const showDetail = async (id: string) => {
         const gen = ++loadGen;
-        body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉详情…" : "Loading…"}</div>`;
+        body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${spotlightViewsT(ctx.locale, "loading4")}</div>`;
         ctx.requestResize();
         try {
           const vm = await client.pages.workItem(id, { locale: ctx.locale });
@@ -214,7 +216,7 @@ export function createWorkItemView(): SpotlightCapabilityView {
         } catch {
           if (!disposed && gen === loadGen) {
             retry = () => void showDetail(id);
-            body.innerHTML = spotlightErrorHtml(zh, zh ? "详情没拉到" : "Couldn't load");
+            body.innerHTML = spotlightErrorHtml(zh, spotlightViewsT(ctx.locale, "couldnTLoad3"));
           }
         }
         ctx.requestResize();
@@ -245,7 +247,7 @@ export function createWorkItemView(): SpotlightCapabilityView {
           if (actionTarget) {
             ctx.open(actionTarget.view, actionTarget.target);
           } else {
-            ctx.toast(zh ? "这个入口暂时打不开" : "This action is not available here", "error");
+            ctx.toast(spotlightViewsT(ctx.locale, "thisActionIsNotAvailableHere"), "error");
           }
           return;
         }
@@ -263,14 +265,14 @@ export function createWorkItemView(): SpotlightCapabilityView {
         if (draft?.dataset.wiCreateProposal && !busy) {
           busy = true;
           const id = draft.dataset.wiCreateProposal;
-          draft.textContent = zh ? "生成中…" : "Creating…";
+          draft.textContent = spotlightViewsT(ctx.locale, "creating2");
           // 会议洞察 → createMeetingDraftProposal；网盘评论(及其它) → createDriveDraftProposal，与 web 同分流。
           const call = currentDetail?.source_context?.source_type === "meeting_insight"
             ? client.createMeetingDraftProposal(id, { locale: ctx.locale })
             : client.createDriveDraftProposal(id, { locale: ctx.locale });
           void call
-            .then(() => ctx.toast(zh ? "已生成变更草稿" : "Proposal draft created", "ok"))
-            .catch(() => ctx.toast(zh ? "生成失败，稍后重试" : "Couldn't create draft — retry", "error"))
+            .then(() => ctx.toast(spotlightViewsT(ctx.locale, "proposalDraftCreated"), "ok"))
+            .catch(() => ctx.toast(spotlightViewsT(ctx.locale, "couldnTCreateDraftRetry"), "error"))
             .finally(() => {
               busy = false;
               void showDetail(id);
@@ -281,16 +283,16 @@ export function createWorkItemView(): SpotlightCapabilityView {
         if (taskPlan?.dataset.wiTaskPlan && !busy) {
           busy = true;
           const id = taskPlan.dataset.wiTaskPlan;
-          taskPlan.textContent = zh ? "生成计划中…" : "Drafting plan…";
+          taskPlan.textContent = spotlightViewsT(ctx.locale, "draftingPlan");
           let openedProposal = false;
           void client
             .createTaskPlan(id, {}, { locale: ctx.locale })
             .then((result) => {
-              ctx.toast(zh ? "任务计划已生成，请先审阅" : "Task plan drafted. Review it first.", "ok");
+              ctx.toast(spotlightViewsT(ctx.locale, "taskPlanDraftedReviewItFirst"), "ok");
               ctx.open("proposals", { id: result.proposal_id, route: result.proposal_href });
               openedProposal = true;
             })
-            .catch(() => ctx.toast(zh ? "生成计划失败，稍后重试" : "Couldn't draft plan — retry", "error"))
+            .catch(() => ctx.toast(spotlightViewsT(ctx.locale, "couldnTDraftPlanRetry"), "error"))
             .finally(() => {
               busy = false;
               if (!openedProposal) {

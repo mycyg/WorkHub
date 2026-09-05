@@ -19,6 +19,8 @@ import {
   type FilesSubTab
 } from "./render.js";
 
+import { filesT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 const FILES_OWNER_ID = "files";
@@ -40,7 +42,7 @@ function errorMessage(error: unknown, locale: Locale): string {
   if (error instanceof Error && error.message) {
     return error.message;
   }
-  return locale === "zh-CN" ? "没拉到，请重试" : "Couldn't load — try again";
+  return filesT(locale, "couldnTLoadTryAgain");
 }
 
 export function mountFilesSidePanel(

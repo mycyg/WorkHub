@@ -18,6 +18,8 @@ import { escapeHtml } from "@workhub/web-runtime";
 
 import { workbenchIcons } from "../icons.js";
 
+import { chatT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 const DISPATCH_ASK_NOTIFICATION_TYPE = "action_card_item.dispatch_ask";
@@ -49,11 +51,11 @@ export function renderDispatchAskCatchupBannerHtml(notification: Notification | 
     return "";
   }
   const zh = locale === "zh-CN";
-  const title = zh ? "有个活在等你拍板" : "Something's waiting on your call";
+  const title = chatT(locale, "somethingSWaitingOnYourCall");
   const body = notification.body?.trim();
   return `<button type="button" class="wh-wb-chat-catchup" data-wb-chat-catchup-open data-wb-chat-catchup-notification="${escapeHtml(notification.id)}">
     ${workbenchIcons.army}
     <span class="wh-wb-chat-catchup-text"><b>${escapeHtml(title)}</b>${body ? `<span class="wh-wb-chat-catchup-body">${escapeHtml(body)}</span>` : ""}</span>
-    <span class="wh-wb-chat-catchup-cta">${zh ? "去看看" : "Take a look"}</span>
+    <span class="wh-wb-chat-catchup-cta">${chatT(locale, "takeALook")}</span>
   </button>`;
 }

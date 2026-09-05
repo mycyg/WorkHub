@@ -15,6 +15,8 @@ import type {
 
 import { workbenchIcons } from "../icons.js";
 
+import { timelineT } from "./locales.js";
+
 type Locale = "zh-CN" | "en-US";
 
 // 时间线内联表单/忙态的本地 UI 状态——由 view.ts 持有，render 只读。
@@ -200,7 +202,7 @@ function renderTodayMarkerHtml(vm: ProjectTimelinePageVM, window: WindowModel, z
     return "";
   }
   const left = pct(stamp, window);
-  return `<span class="wh-wb-tl-today" style="left:${left.toFixed(3)}%" title="${zh ? "今天" : "Today"}"></span>`;
+  return `<span class="wh-wb-tl-today" style="left:${left.toFixed(3)}%" title="${timelineT(zh, "today")}"></span>`;
 }
 
 // 依赖芯片 + 加依赖选择器。code 从全图 items 解析（跨里程碑/跨组也能拿到）。
@@ -214,9 +216,9 @@ function renderRowDepsHtml(
   const chips = item.depends_on
     .map((depId) => {
       const code = codeById.get(depId) ?? depId.slice(0, 8);
-      return `<span class="wh-wb-tl-dep">${zh ? "依赖" : "needs"} ${escapeHtml(code)}<button type="button" class="wh-wb-tl-dep-x" data-wb-tl-dep-remove="${escapeHtml(
+      return `<span class="wh-wb-tl-dep">${timelineT(zh, "needs")} ${escapeHtml(code)}<button type="button" class="wh-wb-tl-dep-x" data-wb-tl-dep-remove="${escapeHtml(
         item.id
-      )}" data-wb-tl-dep-on="${escapeHtml(depId)}" title="${zh ? "解除依赖" : "Remove dependency"}"${ui.busy ? " disabled" : ""}>${workbenchIcons.close}</button></span>`;
+      )}" data-wb-tl-dep-on="${escapeHtml(depId)}" title="${timelineT(zh, "removeDependency")}"${ui.busy ? " disabled" : ""}>${workbenchIcons.close}</button></span>`;
     })
     .join("");
   const already = new Set(item.depends_on);
@@ -226,8 +228,8 @@ function renderRowDepsHtml(
     .join("");
   const picker = options
     ? `<select class="wh-wb-tl-dep-add" data-wb-tl-dep-add="${escapeHtml(item.id)}"${ui.busy ? " disabled" : ""} aria-label="${
-        zh ? "加依赖" : "Add dependency"
-      }"><option value="">${zh ? "+ 依赖" : "+ needs"}</option>${options}</select>`
+        timelineT(zh, "addDependency")
+      }"><option value="">${timelineT(zh, "needs2")}</option>${options}</select>`
     : "";
   if (!chips && !picker) {
     return "";
@@ -242,7 +244,7 @@ function renderMilestoneSelectHtml(
   zh: boolean
 ): string {
   const options = [
-    `<option value="">${zh ? "未挂里程碑" : "No milestone"}</option>`,
+    `<option value="">${timelineT(zh, "noMilestone")}</option>`,
     ...milestones.map(
       (milestone) =>
         `<option value="${escapeHtml(milestone.id)}"${milestone.id === item.milestone_id ? " selected" : ""}>${escapeHtml(
@@ -251,7 +253,7 @@ function renderMilestoneSelectHtml(
     )
   ].join("");
   return `<select class="wh-wb-tl-attach" data-wb-tl-attach="${escapeHtml(item.id)}"${ui.busy ? " disabled" : ""} aria-label="${
-    zh ? "挂到里程碑" : "Attach to milestone"
+    timelineT(zh, "attachToMilestone")
   }">${options}</select>`;
 }
 
@@ -267,7 +269,7 @@ function renderRowHtml(
   const placed = placeItem(item, window);
   const blocks =
     item.blocks_count > 0
-      ? `<span class="wh-wb-tl-blocks" title="${zh ? "阻塞后续工作项" : "Blocks downstream work"}">${
+      ? `<span class="wh-wb-tl-blocks" title="${timelineT(zh, "blocksDownstreamWork")}">${
           zh ? `阻塞 ${item.blocks_count} 项` : `blocks ${item.blocks_count}`
         }</span>`
       : "";
@@ -275,10 +277,10 @@ function renderRowHtml(
     ? `<span class="wh-wb-tl-gbar wh-wb-tl-gbar--${placed.tone}${placed.placeholder ? " wh-wb-tl-gbar--ghost" : ""}" style="left:${placed.leftPct.toFixed(
         3
       )}%;width:${placed.widthPct.toFixed(3)}%"></span>`
-    : `<span class="wh-wb-tl-unscheduled">${zh ? "未排期" : "Unscheduled"}</span>`;
+    : `<span class="wh-wb-tl-unscheduled">${timelineT(zh, "unscheduled")}</span>`;
   const assignee = item.assignee
     ? `<span class="wh-wb-tl-assignee">${escapeHtml(item.assignee.label)}</span>`
-    : `<span class="wh-wb-tl-assignee wh-wb-tl-assignee--none">${zh ? "未指派" : "Unassigned"}</span>`;
+    : `<span class="wh-wb-tl-assignee wh-wb-tl-assignee--none">${timelineT(zh, "unassigned")}</span>`;
   return `<div class="wh-wb-tl-row" data-wb-tl-row="${escapeHtml(item.id)}">
     <div class="wh-wb-tl-rowmeta">
       <div class="wh-wb-tl-rowtitle"><span class="wh-wb-tl-code">${escapeHtml(
@@ -313,15 +315,15 @@ function renderMilestoneFormHtml(ui: TimelineUiState, zh: boolean): string {
   return `<form class="wh-wb-tl-mform" data-wb-tl-mform>
     <input class="wh-wb-tl-mform-title" data-wb-tl-mform-title type="text" value="${escapeHtml(
       ui.draftTitle
-    )}" placeholder="${zh ? "里程碑名称" : "Milestone name"}" maxlength="256"${ui.busy ? " disabled" : ""} />
+    )}" placeholder="${timelineT(zh, "milestoneName")}" maxlength="256"${ui.busy ? " disabled" : ""} />
     <input class="wh-wb-tl-mform-due" data-wb-tl-mform-due type="date" value="${escapeHtml(ui.draftDue)}"${
       ui.busy ? " disabled" : ""
-    } aria-label="${zh ? "截止日期" : "Due date"}" />
+    } aria-label="${timelineT(zh, "dueDate")}" />
     <button type="submit" class="wh-wb-tl-btn wh-wb-tl-btn--primary" data-wb-tl-mform-save${ui.busy ? " disabled" : ""}>${
-      isEdit ? (zh ? "保存" : "Save") : zh ? "新建" : "Create"
+      isEdit ? (timelineT(zh, "save")) : timelineT(zh, "create")
     }</button>
     <button type="button" class="wh-wb-tl-btn" data-wb-tl-mform-cancel${ui.busy ? " disabled" : ""}>${
-      zh ? "取消" : "Cancel"
+      timelineT(zh, "cancel")
     }</button>
   </form>`;
 }
@@ -337,10 +339,10 @@ function renderMilestoneHeadHtml(
   const due = parseDate(milestone.due_at);
   const dueLabel = due
     ? `<span class="wh-wb-tl-mdue">${escapeHtml(formatMonthDay(due))}</span>`
-    : `<span class="wh-wb-tl-mdue wh-wb-tl-mdue--none">${zh ? "未定期" : "No date"}</span>`;
+    : `<span class="wh-wb-tl-mdue wh-wb-tl-mdue--none">${timelineT(zh, "noDate")}</span>`;
   const doneTag =
     milestone.status === "done"
-      ? `<span class="wh-wb-tl-mdone">${zh ? "已达成" : "Reached"}</span>`
+      ? `<span class="wh-wb-tl-mdone">${timelineT(zh, "reached")}</span>`
       : "";
   return `<div class="wh-wb-tl-mhead${milestone.status === "done" ? " is-done" : ""}">
     <span class="wh-wb-tl-mflag">${workbenchIcons.pin}</span>
@@ -349,15 +351,15 @@ function renderMilestoneHeadHtml(
     <span class="wh-wb-tl-mspacer"></span>
     <button type="button" class="wh-wb-tl-icbtn" data-wb-tl-mtoggle="${escapeHtml(milestone.id)}" data-wb-tl-mstatus="${
       milestone.status
-    }" title="${milestone.status === "done" ? (zh ? "重开里程碑" : "Reopen") : zh ? "标记达成" : "Mark reached"}"${
+    }" title="${milestone.status === "done" ? (timelineT(zh, "reopen")) : timelineT(zh, "markReached")}"${
     ui.busy ? " disabled" : ""
   }>${workbenchIcons.check}</button>
     <button type="button" class="wh-wb-tl-icbtn" data-wb-tl-medit="${escapeHtml(milestone.id)}" title="${
-    zh ? "编辑里程碑" : "Edit milestone"
+    timelineT(zh, "editMilestone")
   }"${ui.busy ? " disabled" : ""}>${workbenchIcons.edit}</button>
     <button type="button" class="wh-wb-tl-icbtn wh-wb-tl-icbtn--danger" data-wb-tl-mdelete="${escapeHtml(
       milestone.id
-    )}" title="${zh ? "删除里程碑" : "Delete milestone"}"${ui.busy ? " disabled" : ""}>${workbenchIcons.trash}</button>
+    )}" title="${timelineT(zh, "deleteMilestone")}"${ui.busy ? " disabled" : ""}>${workbenchIcons.trash}</button>
   </div>`;
 }
 
@@ -371,13 +373,13 @@ function renderCriticalHtml(vm: ProjectTimelinePageVM, codeById: Map<string, str
       const code = codeById.get(ref.work_item_id) ?? ref.work_item_id.slice(0, 8);
       return `<button type="button" class="wh-wb-tl-crit-chip" data-wb-tl-focus-item="${escapeHtml(
         ref.work_item_id
-      )}" title="${zh ? "定位到这一行" : "Jump to this row"}">${escapeHtml(code)} · ${
+      )}" title="${timelineT(zh, "jumpToThisRow")}">${escapeHtml(code)} · ${
         zh ? `卡着 ${ref.blocks_count} 项` : `blocks ${ref.blocks_count}`
       }</button>`;
     })
     .join("");
   return `<div class="wh-wb-tl-crit">
-    <div class="wh-wb-tl-crit-head">${zh ? "这些逾期项卡着别人" : "These overdue items block others"}</div>
+    <div class="wh-wb-tl-crit-head">${timelineT(zh, "theseOverdueItemsBlockOthers")}</div>
     <div class="wh-wb-tl-crit-body">${chips}</div>
   </div>`;
 }
@@ -394,7 +396,7 @@ function renderGroupHtml(
   const rows = items
     .map((item) => renderRowHtml(item, window, vm, codeById, ui, zh, renderOkrTile(item, zh)))
     .join("");
-  const body = rows || `<div class="wh-wb-tl-group-empty">${zh ? "这个里程碑下还没有工作项" : "No work items under this milestone"}</div>`;
+  const body = rows || `<div class="wh-wb-tl-group-empty">${timelineT(zh, "noWorkItemsUnderThisMilestone")}</div>`;
   return `<section class="wh-wb-tl-group">${head}<div class="wh-wb-tl-group-body">${body}</div></section>`;
 }
 
@@ -407,15 +409,15 @@ function scheduleKey(item: TimelineWorkItemVM): number {
 
 export function renderTimelineLoadingHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
-  return `<div class="wh-wb-tl-state"><span class="wh-wb-spinner"></span>${zh ? "正在加载时间线…" : "Loading timeline…"}</div>`;
+  return `<div class="wh-wb-tl-state"><span class="wh-wb-spinner"></span>${timelineT(locale, "loadingTimeline")}</div>`;
 }
 
 export function renderTimelineErrorHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
   return `<div class="wh-wb-tl-state wh-wb-tl-state--error">${
-    zh ? "没能加载时间线，稍后重试" : "Couldn't load the timeline — retry"
+    timelineT(locale, "couldnTLoadTheTimelineRetry")
   }<div style="margin-top:12px"><button type="button" class="wh-wb-tl-btn" data-wb-tl-retry>${
-    zh ? "重试" : "Retry"
+    timelineT(locale, "retry")
   }</button></div></div>`;
 }
 
@@ -433,9 +435,9 @@ export function renderTimelineHtml(input: {
     ? renderMilestoneFormHtml(ui, zh)
     : `<button type="button" class="wh-wb-tl-btn wh-wb-tl-btn--primary" data-wb-tl-new-milestone${
         ui.busy ? " disabled" : ""
-      }>${workbenchIcons.plus}<span>${zh ? "新建里程碑" : "New milestone"}</span></button>`;
+      }>${workbenchIcons.plus}<span>${timelineT(input.locale, "newMilestone")}</span></button>`;
   const header = `<div class="wh-wb-tl-bar">
-    <div class="wh-wb-tl-bar-title">${zh ? "时间线" : "Timeline"}</div>
+    <div class="wh-wb-tl-bar-title">${timelineT(input.locale, "timeline")}</div>
     <span class="wh-wb-tl-bar-spacer"></span>
     ${barActions}
   </div>`;
@@ -447,16 +449,12 @@ export function renderTimelineHtml(input: {
   if (vm.milestones.length === 0 && (vm.empty_state === "no_work_items" || vm.items.length === 0)) {
     return `<div class="wh-wb-tl">${header}${errorBanner}<div class="wh-wb-tl-empty">
       <span class="wh-wb-tl-empty-icon">${workbenchIcons.timeline}</span>
-      <h3 class="wh-wb-tl-empty-title">${zh ? "还没有时间线" : "No timeline yet"}</h3>
+      <h3 class="wh-wb-tl-empty-title">${timelineT(input.locale, "noTimelineYet")}</h3>
       <p class="wh-wb-tl-empty-sub">${
-        zh
-          ? "先建几个里程碑，再把工作项挂上去、连出依赖，就能看到排期条和关键路径。"
-          : "Create a few milestones, then attach work items and link dependencies to see the schedule and critical path."
+        timelineT(input.locale, "createAFewMilestonesThenAttach")
       }</p>
       <p class="wh-wb-tl-empty-note">${
-        zh
-          ? "想让 Cuu 起草整份计划？切到左侧「日程」标签，点「用 Cuu 起草计划」。"
-          : "Want Cuu to draft the whole plan? Switch to the \u201cSchedule\u201d tab and use \u201cDraft a plan with Cuu\u201d."
+        timelineT(input.locale, "wantCuuToDraftTheWhole")
       }</p>
     </div></div>`;
   }
@@ -466,9 +464,7 @@ export function renderTimelineHtml(input: {
   const axisHtml = window ? renderAxisHtml(window) : "";
   const noDatesHint = !window
     ? `<div class="wh-wb-tl-nodates">${
-        zh
-          ? "还没有工作项带开始/截止日期——填上日期后这里会画出排期条。"
-          : "No work items have start/due dates yet — add dates to draw the schedule bars."
+        timelineT(input.locale, "noWorkItemsHaveStartDue")
       }</div>`
     : "";
 
@@ -516,7 +512,7 @@ function renderGroups(
     unassigned.length > 0
       ? renderGroupHtml(
           `<div class="wh-wb-tl-mhead wh-wb-tl-mhead--loose"><span class="wh-wb-tl-mtitle">${
-            zh ? "未挂里程碑" : "No milestone"
+            timelineT(zh, "noMilestone")
           }</span></div>`,
           sortRows(unassigned),
           win,

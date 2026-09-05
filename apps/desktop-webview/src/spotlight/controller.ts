@@ -35,6 +35,8 @@ import {
 } from "./state.js";
 import type { SpotlightApiClient, SpotlightTarget, SpotlightViewContext } from "./view-context.js";
 
+import { spotlightT } from "./locales.js";
+
 // reducedMotion：系统「减弱动态效果」开着时置真，壳层据此跳过生长补间直接落到目标（见
 // desktop-window-controls.ts 的 resizeDesktopMainWindow）。浏览器开发态的 no-op 实现可忽略它。
 export type SpotlightResizeFn = (width: number, height: number, reducedMotion?: boolean) => void;
@@ -118,14 +120,14 @@ export function handleSpotlightCapabilityEscape(body: SpotlightInternalBackHost,
 // 它能在盒子隐藏时把它唤回来。
 export function renderSpotlightShellHtml(locale: WorkHubLocale): string {
   const zh = locale === "zh-CN";
-  const placeholder = zh ? "想做点什么？新任务 / 审批 / 网盘 / 项目…" : "What do you need? new task / approve / drive…";
+  const placeholder = spotlightT(locale, "whatDoYouNeedNewTask");
   return `
     <div class="wh-spot ds-anim-spring-in" data-spot-box data-mode="launcher">
       ${renderWorkHubLiquidGlassLayer("spotlight")}
       <span class="wh-liquid-glass-rim" aria-hidden="true"></span>
       <div class="wh-liquid-glass-content">
         <div class="wh-spot-top">
-          <button type="button" class="wh-spot-back" data-spot-back aria-label="${zh ? "返回" : "Back"}">${BACK_ICON}</button>
+          <button type="button" class="wh-spot-back" data-spot-back aria-label="${spotlightT(locale, "back")}">${BACK_ICON}</button>
           <div class="wh-spot-field-wrap">
             <span class="wh-spot-field-icon">${SEARCH_ICON}</span>
             <input class="wh-spot-field" type="search" data-spot-input role="combobox" aria-expanded="true" aria-controls="wh-spot-listbox" aria-autocomplete="list" placeholder="${escapeHtml(placeholder)}" aria-label="${escapeHtml(placeholder)}" />
@@ -134,12 +136,12 @@ export function renderSpotlightShellHtml(locale: WorkHubLocale): string {
             <span class="wh-spot-title" data-spot-title></span>
             <span class="wh-spot-subtitle" data-spot-subtitle></span>
           </div>
-          <kbd class="wh-spot-kbd" title="${zh ? "随时按这个组合键唤起（隐藏后也一样）" : "Press this anytime to bring the box back — even while hidden"}">⌥Space</kbd>
+          <kbd class="wh-spot-kbd" title="${spotlightT(locale, "pressThisAnytimeToBringThe")}">⌥Space</kbd>
           <button type="button" aria-hidden="true" tabindex="-1" class="wh-spot-drag-sheet" data-spot-drag-sheet></button>
         </div>
         <div class="wh-spot-ask-banner" data-spot-ask-banner hidden role="status" aria-live="polite">
           <span class="wh-spot-ask-banner-text" data-spot-ask-banner-text></span>
-          <button type="button" class="wh-spot-ask-banner-undo ds-pressable" data-spot-ask-banner-undo>${zh ? "撤回" : "Undo"}</button>
+          <button type="button" class="wh-spot-ask-banner-undo ds-pressable" data-spot-ask-banner-undo>${spotlightT(locale, "undo")}</button>
         </div>
         <div class="wh-spot-ai-banner" data-spot-ai-banner hidden role="status"></div>
         <div class="wh-spot-connection-banner" data-spot-connection-banner hidden role="status" aria-live="polite"></div>
@@ -164,7 +166,7 @@ function renderAskCuuBlock(askCuu: AskCuuUiState, query: string, locale: WorkHub
   }
   if (askCuu.phase === "error") {
     return `<div class="wh-spot-error">${escapeHtml(askCuu.message)}
-      <div style="margin-top:13px"><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-spot-ask-cuu-retry>${zh ? "重试" : "Retry"}</button></div>
+      <div style="margin-top:13px"><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-spot-ask-cuu-retry>${spotlightT(locale, "retry")}</button></div>
     </div>`;
   }
   if (askCuu.phase === "presenting") {
@@ -172,8 +174,8 @@ function renderAskCuuBlock(askCuu: AskCuuUiState, query: string, locale: WorkHub
     if (presentation.kind === "answer") {
       return `<div class="wh-spot-ask-cuu-answer">
         <p class="wh-spot-ask-cuu-answer-text">${renderAskCuuAnswerHtml(presentation.answerMd)}</p>
-        <p class="wh-spot-ask-cuu-disclaimer">${zh ? "这不是会话，不会保存" : "Not a conversation — nothing is saved"}</p>
-        <div class="wh-spot-intake-actions" style="justify-content:flex-end"><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-spot-ask-cuu-dismiss>${zh ? "知道了" : "Got it"}</button></div>
+        <p class="wh-spot-ask-cuu-disclaimer">${spotlightT(locale, "notAConversationNothingIsSaved")}</p>
+        <div class="wh-spot-intake-actions" style="justify-content:flex-end"><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-spot-ask-cuu-dismiss>${spotlightT(locale, "gotIt")}</button></div>
       </div>`;
     }
     // confirm_open_page / confirm_new_project / confirm_create_task：低把握或本就该多问一句的动作，
@@ -181,8 +183,8 @@ function renderAskCuuBlock(askCuu: AskCuuUiState, query: string, locale: WorkHub
     return `<div class="wh-spot-ask-cuu-confirm">
       <p class="wh-spot-ask-cuu-understood">${escapeHtml(presentation.understoodText)}</p>
       <div class="wh-spot-intake-actions">
-        <button type="button" class="wh-spot-act wh-spot-act--quiet" data-spot-ask-cuu-cancel>${zh ? "取消" : "Cancel"}</button>
-        <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-spot-ask-cuu-confirm>${zh ? "确认" : "Confirm"}</button>
+        <button type="button" class="wh-spot-act wh-spot-act--quiet" data-spot-ask-cuu-cancel>${spotlightT(locale, "cancel")}</button>
+        <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-spot-ask-cuu-confirm>${spotlightT(locale, "confirm")}</button>
       </div>
     </div>`;
   }
@@ -194,10 +196,10 @@ function renderAskCuuBlock(askCuu: AskCuuUiState, query: string, locale: WorkHub
     <button type="button" class="wh-spot-ask-cuu-row ds-pressable" data-spot-ask-cuu>
       <span class="wh-spot-ask-cuu-icon" aria-hidden="true">${ASK_CUU_ICON}</span>
       <span class="wh-spot-ask-cuu-text">
-        <span class="wh-spot-ask-cuu-label">${zh ? "问问 Cuu" : "Ask Cuu"}</span>
+        <span class="wh-spot-ask-cuu-label">${spotlightT(locale, "askCuu")}</span>
         <span class="wh-spot-ask-cuu-hint">${zh ? `“${escapeHtml(trimmed)}”` : `"${escapeHtml(trimmed)}"`}</span>
       </span>
-      <kbd class="wh-spot-ask-cuu-kbd">${zh ? "回车" : "Enter"}</kbd>
+      <kbd class="wh-spot-ask-cuu-kbd">${spotlightT(locale, "enter")}</kbd>
     </button>
   </div>`;
 }
@@ -223,18 +225,16 @@ export function renderLauncherGrid(
     // 普通用户审查 R2：搜索框邀请自然语言，整句需求却落「没有匹配」死路——给「当新任务交给 Cuu」出口。
     // M-05（R24 S3 走查）："capability"是开发者黑话，且原文案自相矛盾（说"没有匹配"又紧接着给两个
     // 可执行入口）——改成人话，直接指向下面已经给出的出口，不留没头没脑的一句判决。
-    return `<div class="wh-spot-grid"><div class="wh-spot-empty-grid">${zh ? "没找到对应的功能，你可以直接问问 Cuu" : "Nothing matched — you can ask Cuu directly"}
+    return `<div class="wh-spot-grid"><div class="wh-spot-empty-grid">${spotlightT(locale, "nothingMatchedYouCanAskCuu")}
       ${renderAskCuuBlock(askCuu, query, locale)}
-      <div class="wh-spot-intake-actions"><button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-spot-fallback-intake>${zh ? "把这句话当新任务交给 Cuu" : "Hand this to Cuu as a new task"}</button></div>
+      <div class="wh-spot-intake-actions"><button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-spot-fallback-intake>${spotlightT(locale, "handThisToCuuAsA")}</button></div>
     </div></div>`;
   }
   // 空查询时给一无所知的新用户一句温和的引导：先亮身份(WorkHub·Cuu)，再说怎么用 + Esc 关闭提示
   // （搜索框无 header，保持聚焦盒观感；全局唤起热键已在右上角标出）。
   const hello = showHello
     ? `<div class="wh-spot-hello ds-anim-fade-in">${
-        zh
-          ? "WorkHub · 把活交给 Cuu，你来拍板<br>输入关键词，或选一个开始；Esc 关闭"
-          : "WorkHub · hand work to Cuu, you decide<br>Type or pick one to start; Esc to close"
+        spotlightT(locale, "workhubHandWorkToCuuYou")
       }</div>`
     : "";
   const loc = zh ? "zh-CN" : "en";
@@ -242,7 +242,7 @@ export function renderLauncherGrid(
     .map(({ command }, index) => {
       const badge = badges[command.id];
       // L7：角标(如待处理审批数)给无障碍标签,屏幕阅读器能播报「N 待处理」而非只读一个孤立数字。
-      const badgeHtml = typeof badge === "number" && badge > 0 ? `<span class="wh-spot-cap-badge" aria-label="${badge} ${zh ? "待处理" : "pending"}">${badge}</span>` : "";
+      const badgeHtml = typeof badge === "number" && badge > 0 ? `<span class="wh-spot-cap-badge" aria-label="${badge} ${spotlightT(locale, "pending")}">${badge}</span>` : "";
       const active = index === 0;
       // rank5：组合框/列表框 ARIA——每张能力卡是 option、可读 aria-selected；输入框(combobox)
       // 用 aria-activedescendant 指向当前项，箭头键移动时屏幕阅读器能播报，无需移动 DOM 焦点。
@@ -257,7 +257,7 @@ export function renderLauncherGrid(
     })
     .join("");
   // M7：错落入场只在初始/空查询的 launcher 播一次；边打字边过滤时不要每个按键都重放 stagger（读起来发抖）。
-  return `${hello}<div class="wh-spot-grid${showHello ? " ds-stagger" : ""}" id="wh-spot-listbox" role="listbox" aria-label="${zh ? "能力列表" : "Capabilities"}">${cards}</div>`;
+  return `${hello}<div class="wh-spot-grid${showHello ? " ds-stagger" : ""}" id="wh-spot-listbox" role="listbox" aria-label="${spotlightT(locale, "capabilities")}">${cards}</div>`;
 }
 
 export type SpotlightFirstRunCardState = { kind: "idle" } | { kind: "creating" } | { kind: "error"; message: string };
@@ -268,12 +268,10 @@ export type SpotlightFirstRunCardState = { kind: "idle" } | { kind: "creating" }
 export function renderFirstRunCardHtml(locale: WorkHubLocale, state: SpotlightFirstRunCardState): string {
   const zh = locale === "zh-CN";
   const busy = state.kind === "creating";
-  const title = zh ? "建你的第一个项目" : "Create your first project";
-  const sub = zh
-    ? "项目是团队协作和 Cuu 干活的地方——建好就直接带你进去。"
-    : "A project is where your team and Cuu get to work — we'll open it as soon as it's ready.";
-  const namePlaceholder = zh ? "项目名称，例如：市场部日常" : "Project name, e.g. Marketing ops";
-  const submitLabel = busy ? (zh ? "创建中…" : "Creating…") : zh ? "创建并打开" : "Create and open";
+  const title = spotlightT(locale, "createYourFirstProject");
+  const sub = spotlightT(locale, "aProjectIsWhereYourTeam");
+  const namePlaceholder = spotlightT(locale, "projectNameEGMarketingOps");
+  const submitLabel = busy ? (spotlightT(locale, "creating")) : spotlightT(locale, "createAndOpen");
   const errorHtml =
     state.kind === "error"
       ? `<p data-spot-first-run-error style="margin:0;font-size:12px;color:#E5484D" role="alert">${escapeHtml(state.message)}</p>`
@@ -721,9 +719,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
         if (seq !== askCuuRequestSeq) {
           return;
         }
-        const message = zh
-          ? "Cuu 没能理解这句话，请再试一次或换个说法。"
-          : "Cuu couldn't work that out — try again or rephrase.";
+        const message = spotlightT(locale, "cuuCouldnTWorkThatOut");
         askCuuState = askCuuReducer(askCuuState, { type: "failed", message });
         refreshAskCuuArea();
       });
@@ -1042,7 +1038,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     const nameEl = body.querySelector<HTMLInputElement>("[data-spot-first-run-name]");
     const name = nameEl?.value.trim() ?? "";
     if (!name) {
-      firstRunState = { kind: "error", message: zh ? "请先填写项目名称。" : "Please enter a project name first." };
+      firstRunState = { kind: "error", message: spotlightT(locale, "pleaseEnterAProjectNameFirst") };
       renderLauncherBody();
       return;
     }
@@ -1059,9 +1055,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
         void Promise.resolve(invoke("open_workbench", { projectId })).catch(() => undefined);
       } else {
         showToast(
-          zh
-            ? "项目已创建，这个预览环境打不开工作台窗口。"
-            : "Project created — this preview can't open the workbench window.",
+          spotlightT(locale, "projectCreatedThisPreviewCanT"),
           "info"
         );
       }
@@ -1070,7 +1064,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       firstRunState = {
         kind: "error",
         message:
-          error instanceof Error ? error.message : zh ? "创建失败，请重试。" : "Couldn't create the project — retry."
+          error instanceof Error ? error.message : spotlightT(locale, "couldnTCreateTheProjectRetry")
       };
       renderLauncherBody();
     }
@@ -1219,7 +1213,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
           event.preventDefault();
           escapeArmedUntil = Date.now() + 2000;
           // R6（桌面交互）：此前武装态零反馈——用户按了 Esc 什么都没发生，以为坏了。
-          showToast(zh ? "再按一次 Esc 放弃未提交的内容" : "Press Esc again to discard your input", "info");
+          showToast(spotlightT(locale, "pressEscAgainToDiscardYour"), "info");
           return;
         }
         escapeArmedUntil = 0;
