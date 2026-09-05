@@ -14,15 +14,15 @@ import {
 test("humanizeWorkItemCollaborationError maps server codes per action and never leaks raw messages", () => {
   assert.equal(
     humanizeWorkItemCollaborationError({ code: "forbidden" }, "claim", "zh-CN"),
-    "你现在还不能认领这个事项。"
+    "你现在还不能认领这个任务。"
   );
   assert.equal(
     humanizeWorkItemCollaborationError({ code: "forbidden" }, "assign", "zh-CN"),
-    "你没有权限指派这个事项。"
+    "你没有权限指派这个任务。"
   );
   assert.equal(
     humanizeWorkItemCollaborationError({ code: "forbidden" }, "comment", "zh-CN"),
-    "你没有权限在这个事项下留言。"
+    "你没有权限在这个任务下留言。"
   );
 
   // 认领的并发落空（CAS 409）要说清「已经被别人拿走了」，不能只说「失败」。

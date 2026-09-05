@@ -1305,3 +1305,61 @@ test("R13 P4 /api/pages/cost degrades assignee rows and ai-auto-merge KPI silent
   assert.deepEqual(body.data.by_assignee, []);
   assert.equal(body.data.ai_auto_merge, undefined);
 });
+
+// 成本页「按任务分账」：管理员看到的是任务编号 · 标题，不是内部 uuid，也不是缺映射时的中性词；
+// 取数失败静默降级到中性词，不把整页搞挂。
+test("成本页按任务分账用任务编号，取数失败回落中性词而不是 uuid", async () => {
+  const runtimeSettings = settings();
+  const workItemId = "95000000-0000-4000-8000-000000000804";
+  const ledgerStore = createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId });
+  await ledgerStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-pro",
+    task: "worker",
+    runId: "95000000-0000-4000-8000-000000000803",
+    workItemId,
+    userId,
+    workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+    inputTokens: 1000,
+    outputTokens: 500,
+    costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
+    createdAt: ledgerNow
+  }));
+  const readerCalls: { workspaceId: string; workItemIds: string[] }[] = [];
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    policyStore: createMemoryBudgetPolicyStore(),
+    ledgerStore,
+    workItemLabelReader: async (input) => {
+      readerCalls.push(input);
+      return new Map([[workItemId, "PROJ-001 · 区域发布复盘包"]]);
+    }
+  }));
+  const adminResponse = await app.request("/api/pages/cost", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-admin") }
+  });
+  assert.equal(adminResponse.status, 200);
+  const adminBody = await adminResponse.json() as { ok: true; data: { by_workitem: { code: string }[] } };
+  assert.deepEqual(readerCalls, [{ workspaceId: runtimeSettings.auth.defaultWorkspaceId, workItemIds: [workItemId] }]);
+  assert.equal(adminBody.data.by_workitem[0]?.code, "PROJ-001 · 区域发布复盘包");
+  assert.equal(adminBody.data.by_workitem[0]?.code.includes(workItemId), false);
+
+  // 取数失败：整页照常 200，该行回落中性词，仍然不是 uuid。
+  const failingApp = withErrors(new Hono<AuthEnv>());
+  failingApp.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    policyStore: createMemoryBudgetPolicyStore(),
+    ledgerStore,
+    workItemLabelReader: async () => {
+      throw new Error("labels unavailable");
+    }
+  }));
+  const degraded = await failingApp.request("/api/pages/cost", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-admin") }
+  });
+  assert.equal(degraded.status, 200);
+  const degradedBody = await degraded.json() as { ok: true; data: { by_workitem: { code: string }[] } };
+  assert.equal(degradedBody.data.by_workitem[0]?.code, "未命名任务");
+  assert.equal(degradedBody.data.by_workitem[0]?.code.includes(workItemId), false);
+});

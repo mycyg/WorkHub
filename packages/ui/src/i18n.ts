@@ -38,7 +38,7 @@ const copy = {
   "generic.tokens": { "zh-CN": "token", "en-US": "tokens" },
   "generic.model": { "zh-CN": "模型", "en-US": "Model" },
   "generic.rollback": { "zh-CN": "回滚", "en-US": "Rollback" },
-  "generic.snapshot": { "zh-CN": "快照", "en-US": "Snapshot" },
+  "generic.snapshot": { "zh-CN": "还原点", "en-US": "Restore point" },
   "generic.open": { "zh-CN": "打开", "en-US": "Open" },
   "generic.openSource": { "zh-CN": "打开来源", "en-US": "Open source" },
   "generic.continueViewing": { "zh-CN": "继续查看", "en-US": "Keep reviewing" },
@@ -79,9 +79,9 @@ const copy = {
   "proposal.railCarrying": { "zh-CN": "带着交付物", "en-US": "Carrying a deliverable" },
   "proposal.railRejected": { "zh-CN": "已打回", "en-US": "Sent back" },
   "proposal.terminalMerged": { "zh-CN": "这份改动已采纳进正式版。无需再操作。", "en-US": "This change was adopted into the official version. Nothing more to do." },
-  "proposal.terminalRejected": { "zh-CN": "这份改动已打回，打回理由已回灌给 AI，它会带着反馈继续改。", "en-US": "This change was sent back; the reason was fed to the AI, which will revise with your feedback." },
-  "proposal.rollbackAvailable": { "zh-CN": "留有回滚快照（需人工恢复）", "en-US": "Rollback snapshot kept (manual restore)" },
-  "proposal.rollbackUnavailable": { "zh-CN": "无回滚快照", "en-US": "No rollback snapshot" },
+  "proposal.terminalRejected": { "zh-CN": "这份改动已打回，AI 会照着你的理由继续改。", "en-US": "Sent back. AI will revise using your reason." },
+  "proposal.rollbackAvailable": { "zh-CN": "留有还原点（可人工恢复）", "en-US": "Restore point kept (manual restore)" },
+  "proposal.rollbackUnavailable": { "zh-CN": "没有还原点", "en-US": "No restore point" },
   "proposal.changeSummary": { "zh-CN": "这次改了什么", "en-US": "What changed" },
   "proposal.checkResults": { "zh-CN": "检查结果", "en-US": "Check results" },
   "proposal.comments": { "zh-CN": "负责人意见", "en-US": "Owner comments" },
@@ -95,15 +95,13 @@ const copy = {
   "proposal.conflictAcceptIncoming": { "zh-CN": "采纳这次版本", "en-US": "Use this version" },
   "proposal.conflictAiFusion": { "zh-CN": "AI 融合建议", "en-US": "AI fusion draft" },
   "proposal.conflictApplyAiFusion": { "zh-CN": "采用 AI 融合稿", "en-US": "Use AI fusion draft" },
-  "proposal.conflictExisting": { "zh-CN": "正式版", "en-US": "Current" },
-  "proposal.conflictIncoming": { "zh-CN": "这次版本", "en-US": "This version" },
   "proposal.conflictTarget": { "zh-CN": "对象", "en-US": "Target" },
   "proposal.conflictWorkbenchTitle": { "zh-CN": "批量冲突检查", "en-US": "Bulk conflict review" },
   "proposal.conflictWorkbenchBody": {
     "zh-CN": "默认先处理最需要你拿主意的一项；展开后可以查看全部冲突，并对相同情况批量处理。",
     "en-US": "Start with the highest-signal decision; expand to review every conflict and the safe bulk choices."
   },
-  "proposal.conflictWorkbenchDefault": { "zh-CN": "默认仍是一件事优先", "en-US": "One thing first by default" },
+  "proposal.conflictWorkbenchDefault": { "zh-CN": "先处理最要紧的一件", "en-US": "Start with the most urgent one" },
   "proposal.conflictWorkbenchRecommended": { "zh-CN": "建议", "en-US": "Recommended" },
   "proposal.conflictWorkbenchBulkKeep": { "zh-CN": "全部保留正式版", "en-US": "Keep all current" },
   "proposal.conflictWorkbenchBulkIncoming": { "zh-CN": "全部采纳这次版本", "en-US": "Use all incoming" },
@@ -129,15 +127,15 @@ const copy = {
   "proposal.patchHunks": { "zh-CN": "改动处", "en-US": "Changes" },
   "proposal.patchLines": { "zh-CN": "行数", "en-US": "Lines" },
   "proposal.patchFoldedLines": { "zh-CN": "已折叠行", "en-US": "Folded lines" },
-  "proposal.patchFoldedHunks": { "zh-CN": "已折叠段落", "en-US": "Folded hunks" },
+  "proposal.patchFoldedHunks": { "zh-CN": "已折叠段落", "en-US": "Collapsed sections" },
   "proposal.diff3Title": { "zh-CN": "文本合并检查", "en-US": "Text merge check" },
   "proposal.diff3Auto": { "zh-CN": "已自动合并", "en-US": "Auto-merged" },
   "proposal.diff3Review": { "zh-CN": "需逐项确认", "en-US": "Needs line review" },
-  "proposal.diff3Current": { "zh-CN": "正式版改动段", "en-US": "Current hunks" },
-  "proposal.diff3Incoming": { "zh-CN": "这次版本改动段", "en-US": "Incoming hunks" },
+  "proposal.diff3Current": { "zh-CN": "正式版改动段", "en-US": "Changes in the current version" },
+  "proposal.diff3Incoming": { "zh-CN": "这次版本改动段", "en-US": "Changes in this version" },
   "proposal.diff3Conflict": { "zh-CN": "重叠段", "en-US": "Overlaps" },
   "proposal.diff3Ranges": { "zh-CN": "影响行", "en-US": "Affected lines" },
-  "proposal.overlapReviewHunk": { "zh-CN": "重叠段", "en-US": "Overlap hunk" },
+  "proposal.overlapReviewHunk": { "zh-CN": "重叠段", "en-US": "Overlapping section" },
   "proposal.overlapReviewKeepCurrent": { "zh-CN": "保留正式版", "en-US": "Keep current" },
   "proposal.overlapReviewAcceptIncoming": { "zh-CN": "采纳这次版本", "en-US": "Use this version" },
   "proposal.overlapReviewAiFusion": { "zh-CN": "采用 AI 融合稿", "en-US": "Use AI fusion draft" },
@@ -179,7 +177,7 @@ const copy = {
   "proposal.subrecordKeepCurrent": { "zh-CN": "保留当前项", "en-US": "Keep current item" },
   "proposal.taskPlanScopeTitle": { "zh-CN": "先选目标计划", "en-US": "Choose target plan first" },
   "proposal.taskPlanScopeBody": {
-    "zh-CN": "这个事项有多个计划，写入任务项前请先选择目标计划。",
+    "zh-CN": "这个任务有多个计划，写入任务项前请先选择目标计划。",
     "en-US": "This work item has multiple plans; choose the target before writing task items."
   },
   "proposal.taskPlanScopeRecommended": { "zh-CN": "建议", "en-US": "Recommended" },
@@ -216,8 +214,8 @@ const copy = {
     "en-US": "AI has organized this run. You can review the replay and deliverables."
   },
   "agent.runningBody": {
-    "zh-CN": "这里只显示关键节点，完整过程在回放里。",
-    "en-US": "AI will surface only key moments here; the full process stays in replay."
+    "zh-CN": "关键节点在这里，完整过程去回放看。",
+    "en-US": "Key moments here; open the replay for the full run."
   },
   "agent.handoffDone": { "zh-CN": "已完成", "en-US": "Done" },
   "agent.handoffRemaining": { "zh-CN": "还剩", "en-US": "Remaining" },
@@ -231,7 +229,7 @@ const workItemStatusLabels = {
   spec_ready: { "zh-CN": "规格已就绪", "en-US": "Spec ready" },
   ai_working: { "zh-CN": "AI 正在处理", "en-US": "AI working" },
   escalated: { "zh-CN": "需要负责人介入", "en-US": "Needs owner" },
-  pm_mode: { "zh-CN": "PM 模式处理中", "en-US": "PM mode" },
+  pm_mode: { "zh-CN": "AI 项目经理接手中", "en-US": "AI project manager took over" },
   in_review: { "zh-CN": "等待确认", "en-US": "In review" },
   merged: { "zh-CN": "已采纳", "en-US": "Adopted" },
   done: { "zh-CN": "已完成", "en-US": "Done" },
@@ -283,7 +281,7 @@ const agentStepPhaseLabels = {
 const deliverableTargetLabels = {
   structured_record: { "zh-CN": "结构化记录", "en-US": "Structured record" },
   text_doc: { "zh-CN": "文档", "en-US": "Text document" },
-  binary_doc: { "zh-CN": "二进制文档", "en-US": "Binary document" },
+  binary_doc: { "zh-CN": "其他文件", "en-US": "Other file" },
   spreadsheet: { "zh-CN": "表格", "en-US": "Spreadsheet" },
   slide_deck: { "zh-CN": "演示文稿", "en-US": "Slide deck" },
   image: { "zh-CN": "图片", "en-US": "Image" },
@@ -343,6 +341,18 @@ const changeTypeLabels: Record<string, Copy> = {
   generated: { "zh-CN": "生成", "en-US": "Generated" }
 };
 
+// A2-47：合并处理方式。结构化字段详情此前把 accept_incoming / field_merge 这类内部枚举原样渲成药丸。
+const mergeDecisionLabels: Record<string, Copy> = {
+  keep_current: { "zh-CN": "保留正式版", "en-US": "Keep the current version" },
+  accept_incoming: { "zh-CN": "采纳这次版本", "en-US": "Use this version" },
+  ai_fusion: { "zh-CN": "采用 AI 融合稿", "en-US": "Use the AI merged draft" },
+  field_merge: { "zh-CN": "按字段合并", "en-US": "Field-by-field merge" },
+  text_merge: { "zh-CN": "按段落合并", "en-US": "Section-by-section merge" },
+  manual: { "zh-CN": "逐段手选", "en-US": "Chosen line by line" },
+  fast_path: { "zh-CN": "直接写入", "en-US": "Written directly" },
+  same_value: { "zh-CN": "和现在一致", "en-US": "Already the same" }
+};
+
 const previewKindLabels: Record<string, Copy> = {
   text: { "zh-CN": "文本预览", "en-US": "Text preview" },
   image: { "zh-CN": "图片预览", "en-US": "Image preview" },
@@ -350,6 +360,31 @@ const previewKindLabels: Record<string, Copy> = {
   office_preview: { "zh-CN": "Office 预览", "en-US": "Office preview" },
   download: { "zh-CN": "下载", "en-US": "Download" }
 };
+
+// A2-95：枚举兜底词。缺映射时用该维度的中性词，绝不把内部枚举摊平（"Foo Bar"）渲给用户。
+const fallbackLabels = {
+  status: { "zh-CN": "其他状态", "en-US": "Other status" },
+  role: { "zh-CN": "其他角色", "en-US": "Other role" },
+  kind: { "zh-CN": "其他类型", "en-US": "Other type" },
+  source: { "zh-CN": "其他来源", "en-US": "Other source" },
+  notification: { "zh-CN": "其他通知", "en-US": "Other notification" }
+} satisfies Record<string, Copy>;
+
+type LabelDimension = keyof typeof fallbackLabels;
+
+// 缺映射登记簿：渲染路径不再抛错（一条脏枚举不该把整页搞炸），但把它记下来，
+// 由 i18n.test.ts 断言渲染完标准枚举集后这里必须是空的——缺映射在测试里红，不在界面上红。
+const unmappedLabelValues = new Set<string>();
+
+/** 测试用：读取本进程内出现过的「缺人话映射」枚举值（`维度:值`）。 */
+export function uiUnmappedLabelValues(): readonly string[] {
+  return [...unmappedLabelValues].sort();
+}
+
+/** 测试用：清空缺映射登记簿。 */
+export function uiResetUnmappedLabelValues() {
+  unmappedLabelValues.clear();
+}
 
 export type UiCopyKey = keyof typeof copy;
 
@@ -501,39 +536,47 @@ export function notificationTypeLabel(type: string, zh: boolean): string {
   if (ns) {
     return zh ? ns[0] : ns[1];
   }
-  // uiHumanize 只 `_`→空格；点分命名空间还要把 `.` 也摊平后首字母大写，别渲成 "Foo.bar baz"。
-  return type
-    .replace(/[._]/gu, " ")
-    .replace(/\b\w/gu, (char) => char.toUpperCase())
-    .trim();
+  // A2-95：未知通知类型不再把点分枚举摊平直出，回落到中性词并登记缺映射。
+  unmappedLabelValues.add(`notification:${type}`);
+  return fallbackLabels.notification[zh ? "zh-CN" : "en-US"];
 }
 
-function labelFromMap(locale: WorkHubLocale, value: string, map: Record<string, Copy>) {
-  return map[value]?.[locale] ?? uiHumanize(value);
+function labelFromMap(
+  locale: WorkHubLocale,
+  value: string,
+  map: Record<string, Copy>,
+  dimension: LabelDimension
+) {
+  const hit = map[value]?.[locale];
+  if (hit) {
+    return hit;
+  }
+  unmappedLabelValues.add(`${dimension}:${String(value ?? "")}`);
+  return fallbackLabels[dimension][locale];
 }
 
 export function workItemStatusLabel(locale: WorkHubLocale, status: WorkItemStatus | string) {
-  return labelFromMap(locale, status, workItemStatusLabels);
+  return labelFromMap(locale, status, workItemStatusLabels, "status");
 }
 
 export function taskPlanStatusLabel(locale: WorkHubLocale, status: TaskPlanStatus | string) {
-  return labelFromMap(locale, status, taskPlanStatusLabels);
+  return labelFromMap(locale, status, taskPlanStatusLabels, "status");
 }
 
 export function taskPlanItemRoleLabel(locale: WorkHubLocale, role: TaskPlanItemRole | string) {
-  return labelFromMap(locale, role, taskPlanItemRoleLabels);
+  return labelFromMap(locale, role, taskPlanItemRoleLabels, "role");
 }
 
 export function taskPlanItemStatusLabel(locale: WorkHubLocale, status: TaskPlanItemStatus | string) {
-  return labelFromMap(locale, status, taskPlanItemStatusLabels);
+  return labelFromMap(locale, status, taskPlanItemStatusLabels, "status");
 }
 
 export function agentRunStatusLabel(locale: WorkHubLocale, status: AgentRunStatus | string) {
-  return labelFromMap(locale, status, agentRunStatusLabels);
+  return labelFromMap(locale, status, agentRunStatusLabels, "status");
 }
 
 export function agentStepPhaseLabel(locale: WorkHubLocale, phase: AgentStepPhase | string) {
-  return labelFromMap(locale, phase, agentStepPhaseLabels);
+  return labelFromMap(locale, phase, agentStepPhaseLabels, "kind");
 }
 
 export function agentStepPublicSummary(
@@ -555,29 +598,33 @@ export function agentStepPublicSummary(
 }
 
 export function deliverableTargetLabel(locale: WorkHubLocale, kind: DeliverableTargetKind | string) {
-  return labelFromMap(locale, kind, deliverableTargetLabels);
+  return labelFromMap(locale, kind, deliverableTargetLabels, "kind");
 }
 
 export function evidenceSourceLabel(locale: WorkHubLocale, source: EvidenceSourceType | string) {
-  return labelFromMap(locale, source, evidenceSourceLabels);
+  return labelFromMap(locale, source, evidenceSourceLabels, "source");
 }
 
 export function changeTypeLabel(locale: WorkHubLocale, type: string) {
-  return labelFromMap(locale, type, changeTypeLabels);
+  return labelFromMap(locale, type, changeTypeLabels, "kind");
 }
 
 export function checkStatusLabel(locale: WorkHubLocale, status: string) {
-  return labelFromMap(locale, status, checkStatusLabels);
+  return labelFromMap(locale, status, checkStatusLabels, "status");
 }
 
 export function budgetStatusLabel(locale: WorkHubLocale, status: string) {
-  return labelFromMap(locale, status, budgetStatusLabels);
+  return labelFromMap(locale, status, budgetStatusLabels, "status");
 }
 
 export function proposalStatusLabel(locale: WorkHubLocale, status: string) {
-  return labelFromMap(locale, status, proposalStatusLabels);
+  return labelFromMap(locale, status, proposalStatusLabels, "status");
 }
 
 export function previewKindLabel(locale: WorkHubLocale, kind: string) {
-  return labelFromMap(locale, kind, previewKindLabels);
+  return labelFromMap(locale, kind, previewKindLabels, "kind");
+}
+
+export function mergeDecisionLabel(locale: WorkHubLocale, decision: string) {
+  return labelFromMap(locale, decision, mergeDecisionLabels, "kind");
 }

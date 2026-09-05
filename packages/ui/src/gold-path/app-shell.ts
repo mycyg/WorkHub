@@ -5,7 +5,8 @@ type PageKey = GoldPathRenderedPage["key"];
 
 export type GoldPathAppShellOptions = {
   appName: string;
-  surfaceLabel: string;
+  /** 开发期外壳的运行标记。产品页面不传——不传就不渲这一块（值曾是内部轮次代号）。 */
+  surfaceLabel?: string;
   currentRoute?: string;
   apiBaseLabel?: string;
   notice?: string;
@@ -204,7 +205,7 @@ export function renderGoldPathAppShell(
       <header class="wh-app-topbar">
         <div class="wh-app-brand"><span class="wh-app-mark" aria-hidden="true"></span><span>${escapeHtml(options.appName)}</span></div>
         <div class="wh-app-top-actions">
-          <div class="wh-app-runtime"><span class="wh-app-dot" aria-hidden="true"></span><span>${escapeHtml(options.surfaceLabel)}</span><span>${escapeHtml(options.apiBaseLabel ?? goldPathT(locale, "shell.typedApi"))}</span></div>
+          ${options.surfaceLabel ? `<div class="wh-app-runtime"><span class="wh-app-dot" aria-hidden="true"></span><span>${escapeHtml(options.surfaceLabel)}</span><span>${escapeHtml(options.apiBaseLabel ?? goldPathT(locale, "shell.typedApi"))}</span></div>` : ""}
           ${renderLocaleToggle(locale)}
         </div>
       </header>

@@ -11,6 +11,7 @@ import {
 } from "@workhub/contracts";
 import { usageRecordId } from "@workhub/cost";
 
+import { serviceT, serviceTf } from "./locales.js";
 import type { ProposalActor } from "./proposals.js";
 
 const CROSS_AGENT_JUDGE_MAX_TOKENS = 1_400;
@@ -281,10 +282,12 @@ export function judgePrompt(input: CrossAgentJudgeInput, perspective?: typeof HI
   ].filter((value): value is string => typeof value === "string").join("\n");
 }
 
+// A2-82：署名此前是硬编码英文短语 "WorkHub AI review"，在中文审批时间线上直接露出。
+// 产品对外的说法是「AI 复核」（glossary §11）。
 function reviewActor(): ProposalActor {
   return {
     actor_kind: "ai",
-    label: "WorkHub AI review"
+    label: "AI 复核"
   };
 }
 
@@ -335,47 +338,40 @@ function escalationReasonLabel(reason: CrossAgentArbitrationResult["escalationRe
   }
 }
 
+// A2-94：这一层只对**模型自己写的** reasons/summary_md 兜底——提示词已经要求用中文产品语言
+// （见 buildJudgePrompt 的 "Write every string in reasons and summary_md in Chinese"），但模型仍可能
+// 回抄提示词里的 JSON 枚举名或英文标签。服务端自己产出的串已在源头写成中文，不再靠这里洗。
+// 每条规则都有对应测试（cross-agent-judge.test.ts「兜底洗词层」），没有来源的规则一律删掉。
 function publicReviewCopy(value: string) {
   return value
-    .replace(/R9\.4\s+cross-agent judge arbitration/gi, "AI 复核")
-    .replace(/cross-agent judge/gi, "AI 复核")
-    .replace(/judge_not_independent/g, "复核来源不独立")
-    .replace(/judge_invalid_response/g, "复核结果不可读")
-    .replace(/judge_unavailable/g, "AI 复核暂不可用")
-    .replace(/judge_escalated/g, "建议人工确认")
-    .replace(/low_confidence/g, "把握不足")
-    .replace(/multi_vote_escalated/g, "高风险复核需人工确认")
-    .replace(/multi_vote_split/g, "高风险复核未形成一致结论")
-    .replace(/\baccept_one\b/g, "采用其中一份输出")
-    .replace(/\bmerge\b/g, "合并")
-    .replace(/\breplan\b/g, "重新规划")
-    .replace(/\bescalate\b/g, "需要人工确认")
     .replace(/Raw judge decision:/gi, "原始复核结论：")
+    .replace(/Selected candidate:/gi, `${serviceT("zh-CN", "judgeAdopted").replace("{name}", "").trim()}`)
+    .replace(/Escalation reason:/gi, "需要人工处理：")
     .replace(/\bDecision:/gi, "结论：")
     .replace(/\bConfidence:/gi, "把握程度：")
-    .replace(/Selected candidate:/gi, "采用输出：")
-    .replace(/Escalation reason:/gi, "需要人工处理：")
-    .replace(/high-risk 2-of-3 adversarial vote/gi, "高风险复核")
+    .replace(/\baccept_one\b/g, "采用其中一份输出")
+    .replace(/\breplan\b/g, "重新规划")
+    .replace(/\bescalate\b/g, "需要人工确认")
+    .replace(/\bmerge\b/g, "合并")
     .replace(/\blow confidence\b/gi, "把握不足")
     .replace(/\bconfidence\b/gi, "把握程度")
-    .replace(/worker client\/context/gi, "可审计来源")
-    .replace(/client\/context/gi, "来源")
-    .replace(/missing 可审计来源 reference/gi, "缺少可审计来源")
-    .replace(/\bcontext\b/gi, "来源")
-    .replace(/missing 来源 provenance/gi, "缺少可审计来源")
-    .replace(/failed closed/gi, "已停止自动处理")
     .replace(/\bjudge\b/gi, "AI 复核");
 }
 
 function reviewReason(input: {
   result: Omit<CrossAgentArbitrationResult, "proposalReview">;
   rawDecision?: CrossAgentJudgeDecision;
+  candidateTitles?: ReadonlyMap<string, string>;
 }) {
   const lines = [
     "AI 复核结果",
     `结论：${decisionLabel(input.result.decision)}`,
     `把握程度：${assuranceLabel(input.result.confidence)}`,
-    input.result.selectedCandidateId ? `采用输出：${publicReviewCopy(input.result.selectedCandidateId)}` : undefined,
+    input.result.selectedCandidateId
+      ? serviceTf("zh-CN", "judgeAdopted", {
+        name: input.candidateTitles?.get(input.result.selectedCandidateId) ?? serviceT("zh-CN", "judgeAdoptedFallback")
+      })
+      : undefined,
     input.result.escalationReason ? `需要人工处理：${escalationReasonLabel(input.result.escalationReason)}` : undefined,
     "",
     "依据：",
@@ -386,13 +382,18 @@ function reviewReason(input: {
   return lines.join("\n");
 }
 
-function withProposalReview(input: Omit<CrossAgentArbitrationResult, "proposalReview">, rawDecision?: CrossAgentJudgeDecision): CrossAgentArbitrationResult {
+function withProposalReview(
+  input: Omit<CrossAgentArbitrationResult, "proposalReview">,
+  rawDecision?: CrossAgentJudgeDecision,
+  candidateTitles?: ReadonlyMap<string, string>
+): CrossAgentArbitrationResult {
   const approve = input.confidence !== "low" && (input.decision === "accept_one" || input.decision === "merge");
   const proposalReview = {
     decision: approve ? "approve" as const : "request_changes" as const,
     reasonMd: reviewReason({
       result: input,
-      ...(rawDecision ? { rawDecision } : {})
+      ...(rawDecision ? { rawDecision } : {}),
+      ...(candidateTitles ? { candidateTitles } : {})
     })
   };
   return {
@@ -415,12 +416,16 @@ function failClosed(input: {
   });
 }
 
-function normalizeJudgeResult(raw: RawJudgeResult, candidateIds: Set<string>): CrossAgentArbitrationResult {
+function normalizeJudgeResult(
+  raw: RawJudgeResult,
+  candidateIds: Set<string>,
+  candidateTitles?: ReadonlyMap<string, string>
+): CrossAgentArbitrationResult {
   if (raw.confidence === "low") {
     return withProposalReview({
       decision: "escalate",
       confidence: "low",
-      reasons: ["low confidence arbitration requires human review", ...raw.reasons],
+      reasons: [serviceT("zh-CN", "judgeLowConfidence"), ...raw.reasons],
       summaryMd: raw.summary_md,
       escalationReason: "low_confidence"
     }, raw.decision);
@@ -429,8 +434,8 @@ function normalizeJudgeResult(raw: RawJudgeResult, candidateIds: Set<string>): C
     if (!raw.selected_candidate_id || !candidateIds.has(raw.selected_candidate_id)) {
       return failClosed({
         reason: "judge_invalid_response",
-        reasons: ["judge selected a missing candidate"],
-        summaryMd: "The cross-agent judge returned accept_one without a valid selected candidate."
+        reasons: [serviceT("zh-CN", "judgeSelectedMissing")],
+        summaryMd: serviceT("zh-CN", "judgeSelectedMissingSummary")
       });
     }
     return withProposalReview({
@@ -439,14 +444,14 @@ function normalizeJudgeResult(raw: RawJudgeResult, candidateIds: Set<string>): C
       reasons: raw.reasons,
       summaryMd: raw.summary_md,
       selectedCandidateId: raw.selected_candidate_id
-    });
+    }, undefined, candidateTitles);
   }
   if (raw.decision === "merge") {
     if (!raw.merged_content_md?.trim()) {
       return failClosed({
         reason: "judge_invalid_response",
-        reasons: ["judge requested merge without merged content"],
-        summaryMd: "The cross-agent judge returned merge without merged content."
+        reasons: [serviceT("zh-CN", "judgeMergeNoContent")],
+        summaryMd: serviceT("zh-CN", "judgeMergeNoContentSummary")
       });
     }
     return withProposalReview({
@@ -559,10 +564,10 @@ function aggregateHighRiskVotes(calls: readonly JudgeCall[]): CrossAgentArbitrat
       decision: "escalate",
       confidence: lowestConfidence(votes.map((vote) => vote.confidence)),
       reasons: [
-        "high-risk 2-of-3 adversarial vote escalated because at least one perspective requested human review",
+        serviceT("zh-CN", "judgeHighRiskEscalated"),
         ...votes.flatMap((vote) => vote.reasons.map((reason) => `${vote.perspective}: ${reason}`))
       ],
-      summaryMd: `High-risk 2-of-3 adversarial vote escalated.\n${multiVoteSummary(votes)}`,
+      summaryMd: `${serviceT("zh-CN", "judgeHighRiskEscalatedSummary")}\n${multiVoteSummary(votes)}`,
       escalationReason: "multi_vote_escalated",
       usage,
       votes
@@ -583,10 +588,10 @@ function aggregateHighRiskVotes(calls: readonly JudgeCall[]): CrossAgentArbitrat
       decision: "escalate",
       confidence: lowestConfidence(votes.map((vote) => vote.confidence)),
       reasons: [
-        "high-risk 2-of-3 adversarial vote did not reach a concrete majority",
+        serviceT("zh-CN", "judgeHighRiskSplit"),
         ...votes.flatMap((vote) => vote.reasons.map((reason) => `${vote.perspective}: ${reason}`))
       ],
-      summaryMd: `High-risk 2-of-3 adversarial vote split without a safe majority.\n${multiVoteSummary(votes)}`,
+      summaryMd: `${serviceT("zh-CN", "judgeHighRiskSplitSummary")}\n${multiVoteSummary(votes)}`,
       escalationReason: "multi_vote_split",
       usage,
       votes
@@ -598,10 +603,10 @@ function aggregateHighRiskVotes(calls: readonly JudgeCall[]): CrossAgentArbitrat
     decision: representative.decision,
     confidence: lowestConfidence(majority.map((vote) => vote.confidence)),
     reasons: [
-      `high-risk 2-of-3 adversarial vote reached majority for ${representative.decision}`,
+      serviceTf("zh-CN", "judgeHighRiskMajority", { decision: decisionLabel(representative.decision) }),
       ...majority.flatMap((vote) => vote.reasons.map((reason) => `${vote.perspective}: ${reason}`))
     ],
-    summaryMd: `High-risk 2-of-3 adversarial vote reached majority.\n${multiVoteSummary(votes)}`,
+    summaryMd: `${serviceT("zh-CN", "judgeHighRiskMajoritySummary")}\n${multiVoteSummary(votes)}`,
     usage,
     votes,
     ...(representative.selectedCandidateId ? { selectedCandidateId: representative.selectedCandidateId } : {}),
@@ -629,7 +634,11 @@ async function runJudgeCall(input: CrossAgentJudgeInput, client: ReturnType<Prov
     const raw = rawJudgeSchema.parse(parseJsonObject(textFromContent(response.content)));
     return {
       result: {
-        ...normalizeJudgeResult(raw, new Set(input.candidates.map((candidate) => candidate.id))),
+        ...normalizeJudgeResult(
+          raw,
+          new Set(input.candidates.map((candidate) => candidate.id)),
+          new Map(input.candidates.map((candidate) => [candidate.id, candidate.title]))
+        ),
         usage
       },
       usage
@@ -642,8 +651,8 @@ async function runJudgeCall(input: CrossAgentJudgeInput, client: ReturnType<Prov
       result: {
         ...failClosed({
           reason: "judge_invalid_response",
-          reasons: [error instanceof Error ? error.message : String(error)],
-          summaryMd: "Cross-agent judge returned an invalid or unreadable response."
+          reasons: [serviceT("zh-CN", "judgeUnreadable")],
+          summaryMd: serviceT("zh-CN", "judgeUnreadableSummary")
         }),
         ...(usage.calls > 0 ? { usage } : {})
       },
@@ -659,8 +668,8 @@ export function createCrossAgentJudge(options: CrossAgentJudgeOptions): CrossAge
       if (input.candidates.length < 2) {
         const result = failClosed({
           reason: "invalid_input",
-          reasons: ["cross-agent arbitration needs at least two child outputs"],
-          summaryMd: "Cross-agent judge was asked to arbitrate fewer than two outputs."
+          reasons: [serviceT("zh-CN", "judgeTooFewCandidates")],
+          summaryMd: serviceT("zh-CN", "judgeTooFewCandidatesSummary")
         });
         await persistProposalReview(input, result);
         return result;
@@ -668,8 +677,8 @@ export function createCrossAgentJudge(options: CrossAgentJudgeOptions): CrossAge
       if (input.candidates.length > MAX_CANDIDATES) {
         const result = failClosed({
           reason: "invalid_input",
-          reasons: [`cross-agent arbitration accepts at most ${MAX_CANDIDATES} child outputs per call`],
-          summaryMd: "Cross-agent judge failed closed instead of silently ignoring extra child outputs."
+          reasons: [serviceTf("zh-CN", "judgeTooManyCandidates", { max: MAX_CANDIDATES })],
+          summaryMd: serviceTf("zh-CN", "judgeTooManyCandidatesSummary", { max: MAX_CANDIDATES })
         });
         await persistProposalReview(input, result);
         return result;
@@ -677,8 +686,8 @@ export function createCrossAgentJudge(options: CrossAgentJudgeOptions): CrossAge
       if (!hasAuditableProducerRefs(input)) {
         const result = failClosed({
           reason: "judge_not_independent",
-          reasons: ["judge_not_independent: missing worker client/context reference, so independence cannot be audited"],
-          summaryMd: "Cross-agent judge failed closed because a worker output was missing client/context provenance."
+          reasons: [serviceT("zh-CN", "judgeMissingProvenance")],
+          summaryMd: serviceT("zh-CN", "judgeMissingProvenanceSummary")
         });
         await persistProposalReview(input, result);
         return result;
@@ -686,8 +695,8 @@ export function createCrossAgentJudge(options: CrossAgentJudgeOptions): CrossAge
       if (!hasIndependentJudge(input)) {
         const result = failClosed({
           reason: "judge_not_independent",
-          reasons: ["judge_not_independent: judge client/context matches a worker or was not declared"],
-          summaryMd: "Cross-agent judge failed closed because the review client/context was not independent."
+          reasons: [serviceT("zh-CN", "judgeNotIndependent")],
+          summaryMd: serviceT("zh-CN", "judgeNotIndependentSummary")
         });
         await persistProposalReview(input, result);
         return result;
@@ -695,8 +704,8 @@ export function createCrossAgentJudge(options: CrossAgentJudgeOptions): CrossAge
       if (!options.providerRegistry.isConfigured()) {
         const result = failClosed({
           reason: "judge_unavailable",
-          reasons: ["LLM provider registry is not configured"],
-          summaryMd: "Cross-agent judge could not run because LLM review is unavailable."
+          reasons: [serviceT("zh-CN", "judgeProviderMissing")],
+          summaryMd: serviceT("zh-CN", "judgeProviderMissingSummary")
         });
         await persistProposalReview(input, result);
         return result;

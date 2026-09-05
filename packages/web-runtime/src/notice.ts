@@ -1,6 +1,7 @@
 import { goldPathT, type WorkHubLocale } from "@workhub/ui/gold-path";
 
 import { escapeHtml } from "./html.js";
+import { noticeT, noticeTf } from "./notice-copy.js";
 
 export type RouteNoticeKind =
   | "action_success"
@@ -96,22 +97,16 @@ export function actionMessage(error: unknown, locale: WorkHubLocale) {
   if (error instanceof Error) {
     // 普通用户审查：断网时浏览器原文「Failed to fetch」直接端给中文用户——换成可操作的人话。
     if (/failed to fetch|networkerror|load failed/iu.test(error.message)) {
-      return locale === "en-US"
-        ? "Could not reach the server — check your connection and try again."
-        : "连不上服务器——请检查网络后重试。";
+      return noticeT(locale, "offline");
     }
     // 普通用户审查 R3 high：会话过期的服务端原串 "not identified" 是天书——换成可操作的人话。
     const errorCode = (error as { code?: unknown }).code;
     if (errorCode === "not_identified" || error.message === "not identified") {
-      return locale === "en-US"
-        ? "Your session expired — refresh the page to sign in again."
-        : "登录已过期——刷新页面重新登录后再试。";
+      return noticeT(locale, "sessionExpired");
     }
     // R3：客户端超时错误串是中文硬编码（api-client 无 locale）——按错误码在这里双语化。
     if (errorCode === "request_timeout") {
-      return locale === "en-US"
-        ? "The request timed out — check your connection and try again."
-        : "请求超时了——检查网络后再试一次。";
+      return noticeT(locale, "requestTimeout");
     }
     // 普通用户审查 R3 high：服务端错误串大量只有中文——en 界面读到整句中文。系统性兜底：
     // en 会话下 message 含 CJK 时给通用英文+错误码（服务端逐串双语化是长尾，客户端先保体验）。
@@ -124,16 +119,16 @@ export function actionMessage(error: unknown, locale: WorkHubLocale) {
       }
       const code = (error as { code?: unknown }).code;
       return typeof code === "string" && code
-        ? `The request was rejected (${code.replace(/_/gu, " ")}). Refresh and try again.`
-        : "The request was rejected. Refresh and try again.";
+        ? noticeTf(locale, "requestRejectedWithCode", { code: code.replace(/_/gu, " ") })
+        : noticeT(locale, "requestRejected");
     }
     // R8（错误面 high）：镜像分支——全局兜底（422 契约不符/500/404/JSON 解析失败）的 message 只有英文，
     // 中文界面用户读到整句英文原文。zh 会话下 message 为纯 ASCII 时同样走通用中文兜底+错误码。
     if (locale !== "en-US" && !/[\u4e00-\u9fff]/u.test(error.message) && /[A-Za-z]/u.test(error.message)) {
       const code = (error as { code?: unknown }).code;
       return typeof code === "string" && code
-        ? `请求没有通过（${code.replace(/_/gu, " ")}）。刷新后再试一次。`
-        : "请求没有通过。刷新后再试一次。";
+        ? noticeTf(locale, "requestRejectedWithCode", { code: code.replace(/_/gu, " ") })
+        : noticeT(locale, "requestRejected");
     }
     return error.message;
   }
@@ -166,15 +161,11 @@ export function actionSuccessNotice(locale: WorkHubLocale, body: string, actionI
 }
 
 export function taskPlanDraftedNoticeBody(locale: WorkHubLocale): string {
-  return locale === "en-US"
-    ? "Task plan drafted. Review the plan before work starts."
-    : "任务计划已生成，请先审阅再开始执行。";
+  return noticeT(locale, "taskPlanDrafted");
 }
 
 export function startAgentRunQueuedNoticeBody(locale: WorkHubLocale): string {
-  return locale === "en-US"
-    ? "AI started. WorkHub will refresh this task and surface Proposal or Replay when available."
-    : "AI 已开始处理，WorkHub 会刷新任务，并在有 Proposal 或 Replay 时提醒你。";
+  return noticeT(locale, "agentRunQueued");
 }
 
 export function actionErrorNotice(locale: WorkHubLocale, error: unknown, actionId?: string): RouteNoticeVM {
@@ -275,9 +266,7 @@ export function intakeOptionRequiredNotice(locale: WorkHubLocale, actionId?: str
     locale,
     title: goldPathT(locale, "runtime.notice.intakeOptionRequiredTitle"),
     body: confirmStep
-      ? (locale === "en-US"
-        ? "Pick a direction before creating — nothing is created until you do."
-        : "先选一个方向再创建——没选时不会创建。")
+      ? noticeT(locale, "pickDirectionFirst")
       : goldPathT(locale, "runtime.notice.intakeOptionRequiredBody"),
     actionId
   };
@@ -368,7 +357,7 @@ export function reviewReasonButtons(locale: WorkHubLocale) {
     goldPathT(locale, "runtime.reason.scope")
   ];
   // R5（键盘可达）：理由卡此前没有脱身出口——键盘用户被迫三选一。补「取消」钮（Esc 同效，见 browser 键盘处理）。
-  const cancelLabel = locale === "en-US" ? "Cancel" : "取消";
+  const cancelLabel = noticeT(locale, "cancel");
   return `<div class="wh-app-action-row">${reasons
     .map((reason) => `<button type="button" data-review-reason="${escapeHtml(reason)}">${escapeHtml(reason)}</button>`)
     .join("")}<button type="button" data-review-reason-cancel="true">${escapeHtml(cancelLabel)}</button></div>`;

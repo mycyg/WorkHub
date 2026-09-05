@@ -62,6 +62,7 @@ import {
   type MergeFusionCandidateGenerator
 } from "./merge-fusion-candidates.js";
 import { containsGitConflictMarkers } from "./git-conflict-markers.js";
+import { serviceT, serviceTf, type ServiceCopyKey } from "./locales.js";
 import {
   materializeTextHunkOverrides,
   TextHunkMaterializationError,
@@ -611,7 +612,17 @@ function safeStorageSegment(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]/gu, "_").slice(0, 128) || "unknown";
 }
 
-function filenameForAiFusionCandidate(context: MergeProposalCandidateApplicationContext) {
+// 用户可见的文件名段：保留原文（含中文），只挡路径分隔符、控制字符与保留符号。
+// 与 safeStorageSegment 分开：后者用于内部 id 目录段，必须是纯 ASCII。
+function safeVisibleFilenameSegment(value: string) {
+  return value
+    .replace(/[\u0000-\u001f\u007f/\\:*?"<>|]/gu, "")
+    .replace(/\s+/gu, "-")
+    .replace(/^[.-]+|[.-]+$/gu, "")
+    .slice(0, 80);
+}
+
+export function filenameForAiFusionCandidate(context: MergeProposalCandidateApplicationContext) {
   const targetPath = context.conflict.target_path ? normalizeManifestPath(context.conflict.target_path) : "";
   if (targetPath) {
     const basename = path.posix.basename(targetPath);
@@ -619,33 +630,51 @@ function filenameForAiFusionCandidate(context: MergeProposalCandidateApplication
       return basename;
     }
   }
-  return `${safeStorageSegment(context.conflict.change_id)}.ai-fusion.md`;
+  // A2-88：兜底文件名此前带内部 change_id 与 "ai-fusion" 这个内部方案代号。改用变更申请标题
+  // （用户自己看得懂的名字）；标题不可用时退回一个中性文件名，不把内部 id 写进网盘。
+  const fromTitle = safeVisibleFilenameSegment(context.proposalTitle);
+  return fromTitle ? `${fromTitle}.md` : "merged-result.md";
 }
 
-function aiFusionCandidateMarkdown(context: MergeProposalCandidateApplicationContext) {
-  const candidate = context.candidate;
-  const mergedValue = JSON.stringify(candidate?.merged_value ?? {}, null, 2);
+// 合并后的字段值渲成人能读的 Markdown：数组按条列，对象/标量按一行写。
+function mergedFieldMarkdown(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => {
+      if (item && typeof item === "object") {
+        const record = item as Record<string, unknown>;
+        const title = record["title"] ?? record["name"] ?? record["text"] ?? record["summary_md"];
+        return `- ${typeof title === "string" && title.trim() ? title.trim() : JSON.stringify(item)}`;
+      }
+      return `- ${String(item)}`;
+    });
+  }
+  if (value && typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([key, item]) => `- ${structuredFieldTitle(key)}：${typeof item === "string" ? item : JSON.stringify(item)}`);
+  }
+  return [String(value ?? "")];
+}
+
+// A2-88：这份文件会落进项目网盘，是用户会打开的交付物——只写合并后的内容本身。
+// 变更申请 id、合并建议 id、冲突 key、选中的方案、AI 自己的融合理由，全部留在变更申请页与回放里，
+// 不进文件正文（「交付物是自包含的最终态」「不把 agent 的推理写进交付物」）。
+export function aiFusionCandidateMarkdown(context: MergeProposalCandidateApplicationContext) {
+  const mergedValue = context.candidate?.merged_value;
+  const directText = textFromAiFusionMergedValue(mergedValue);
+  const body = directText
+    ? [directText.trim()]
+    : Object.entries(structuredMergedValueFieldRecord(mergedValue)).flatMap(([field, value]) => [
+      `## ${structuredFieldTitle(field)}`,
+      "",
+      ...mergedFieldMarkdown(value),
+      ""
+    ]);
   return [
-    "# AI 融合正式稿",
+    `# ${context.proposalTitle}`,
     "",
-    `- 变更申请：${context.proposalTitle}`,
-    `- Proposal ID：${context.proposalId}`,
-    `- Merge Proposal ID：${context.mergeProposalId}`,
-    `- 冲突目标：${context.conflictKey}`,
-    `- 选择方案：${context.chosenOptionKey}`,
-    `- 候选来源：${candidate?.source ?? "unknown"}`,
-    "",
-    "## 融合理由",
-    "",
-    candidate?.rationale_md ?? "未提供融合理由。",
-    "",
-    "## 融合内容",
-    "",
-    "```json",
-    mergedValue,
-    "```",
+    ...(body.length > 0 ? body : [serviceT("zh-CN", "mergedResultEmpty")]),
     ""
-  ].join("\n");
+  ].join("\n").replace(/\n{3,}/gu, "\n\n");
 }
 
 function effectiveAiFusionTargetKind(context: MergeProposalCandidateApplicationContext) {
@@ -739,14 +768,14 @@ function applyStructuredFieldOverridesToDryRun(
       throw new ProposalServiceError(
         409,
         "structured_field_patch_override_duplicate",
-        `字段 ${override.field} 的编辑出现了重复选择。`
+        serviceTf("zh-CN", "fieldDuplicateChoice", { field: structuredFieldTitle(override.field) })
       );
     }
     if (!originalFields.has(override.field)) {
       throw new ProposalServiceError(
         409,
         "structured_field_patch_override_unknown",
-        `字段 ${override.field} 不在这次结构化字段建议中。`
+        serviceTf("zh-CN", "fieldNotInSuggestion", { field: structuredFieldTitle(override.field) })
       );
     }
     overridesByField.set(override.field, override);
@@ -850,7 +879,7 @@ function itemOverridesForField(input: {
       throw new ProposalServiceError(
         409,
         "structured_item_override_duplicate",
-        `子记录 ${override.field}/${override.item_id} 的编辑出现了重复选择。`
+        serviceTf("zh-CN", "fieldItemDuplicateChoice", { field: structuredFieldTitle(override.field) })
       );
     }
     seen.add(key);
@@ -859,14 +888,14 @@ function itemOverridesForField(input: {
       throw new ProposalServiceError(
         409,
         "structured_item_override_unknown_field",
-        `字段 ${override.field} 不在这次结构化字段建议中。`
+        serviceTf("zh-CN", "fieldNotInSuggestion", { field: structuredFieldTitle(override.field) })
       );
     }
     if (!Array.isArray(operation.value)) {
       throw new ProposalServiceError(
         409,
         "structured_item_override_not_array",
-        `字段 ${override.field} 不是可逐项编辑的子记录数组。`
+        serviceTf("zh-CN", "fieldNotItemized", { field: structuredFieldTitle(override.field) })
       );
     }
     const source = itemOverrideSourceItems(operation);
@@ -874,7 +903,7 @@ function itemOverridesForField(input: {
       throw new ProposalServiceError(
         409,
         "structured_item_override_unknown_item",
-        `子记录 ${override.field}/${override.item_id} 不在这次结构化字段建议中。`
+        serviceTf("zh-CN", "fieldItemNotInSuggestion", { field: structuredFieldTitle(override.field) })
       );
     }
     byField.set(override.field, [...(byField.get(override.field) ?? []), override]);
@@ -978,8 +1007,24 @@ function assertStructuredFieldPatchDryRunForApply(context: MergeProposalCandidat
   throw new ProposalServiceError(
     409,
     "structured_field_patch_dry_run_failed",
-    "这个结构化字段建议没有通过字段补丁 dry-run，不能直接写回。"
+    serviceT("zh-CN", "fieldPatchPrecheckFailed")
   );
+}
+
+// A2-79：错误消息里此前直接用 snake_case 字段名称呼字段。这里给一份与前端
+// packages/ui/src/structured-field-labels.ts 同批的人话标签；未收录的字段回落到中性的「这一项」，
+// 不把内部字段名端给用户。
+const structuredFieldTitleKeys: Record<string, ServiceCopyKey> = {
+  title: "fieldTitle",
+  summary_md: "fieldSummary",
+  priority: "fieldPriority",
+  due_at: "fieldDueAt",
+  acceptance_items: "fieldAcceptanceItems",
+  task_items: "fieldTaskItems"
+};
+
+function structuredFieldTitle(field: string) {
+  return serviceT("zh-CN", structuredFieldTitleKeys[field] ?? "fieldFallback");
 }
 
 function structuredFieldPatchWritebackForApply(
@@ -1004,14 +1049,14 @@ function structuredFieldPatchWritebackForApply(
     throw new ProposalServiceError(
       409,
       "structured_field_patch_not_executable",
-      "这个结构化字段建议还需要字段级复核，不能直接写回事项字段。"
+      serviceT("zh-CN", "fieldPatchNeedsFieldReview")
     );
   }
   if (dryRun.patch.target_entity_type !== "work_item" || dryRun.patch.target_entity_id !== context.workItemId) {
     throw new ProposalServiceError(
       409,
       "structured_field_patch_target_mismatch",
-      "这个结构化字段建议的目标事项和当前变更申请不一致。"
+      serviceT("zh-CN", "fieldPatchTaskMismatch")
     );
   }
   return {
@@ -1107,7 +1152,7 @@ async function fullTextContextForHunkMaterialization(input: {
     throw new ProposalServiceError(
       409,
       "text_hunk_current_missing",
-      "当前正式文本不可读取或不是 UTF-8 文本。"
+      serviceT("zh-CN", "textCurrentUnreadable")
     );
   }
   const expectedCurrentSha = normalizeShaRef(input.context.conflict.existing_sha256_after);
@@ -1132,7 +1177,7 @@ async function fullTextContextForHunkMaterialization(input: {
     throw new ProposalServiceError(
       409,
       "text_hunk_base_missing",
-      "缺少文本三方合并的 base 版本，不能逐段写回。"
+      serviceT("zh-CN", "textBaseMissing")
     );
   }
   const base = await readFullUtf8TextFile(baseFile.storagePath);
@@ -1140,7 +1185,7 @@ async function fullTextContextForHunkMaterialization(input: {
     throw new ProposalServiceError(
       409,
       "text_hunk_base_missing",
-      "文本 base 版本不可读取或不是 UTF-8 文本。"
+      serviceT("zh-CN", "textBaseUnreadable")
     );
   }
   const expectedBaseSha = normalizeShaRef(input.context.conflict.incoming_sha256_before);
@@ -1148,7 +1193,7 @@ async function fullTextContextForHunkMaterialization(input: {
     throw new ProposalServiceError(
       409,
       "text_hunk_stale_base",
-      "文本 base 版本和合并建议不一致，需要重新生成。"
+      serviceT("zh-CN", "textBaseStale")
     );
   }
 
@@ -1165,7 +1210,7 @@ async function fullTextContextForHunkMaterialization(input: {
     throw new ProposalServiceError(
       409,
       "text_hunk_incoming_missing",
-      "这次版本的文本不可读取或不是 UTF-8 文本。"
+      serviceT("zh-CN", "textIncomingUnreadable")
     );
   }
   const expectedIncomingSha = normalizeShaRef(change.target_ref.sha256_after);
@@ -1829,7 +1874,7 @@ export function createInMemoryProposalService(options: {
       throw new ProposalServiceError(
         404,
         "not_found",
-        `没有找到这个合并建议：${input.mergeProposalId}`
+        serviceT("zh-CN", "mergeSuggestionNotFound")
       );
     },
 
@@ -1837,7 +1882,7 @@ export function createInMemoryProposalService(options: {
       throw new ProposalServiceError(
         404,
         "not_found",
-        `没有找到这个合并建议：${input.mergeProposalId}`
+        serviceT("zh-CN", "mergeSuggestionNotFound")
       );
     }
   };
@@ -1997,7 +2042,7 @@ export function createDbProposalService(repository: ProposalRepository, options:
           throw new ProposalServiceError(422, error.code, "变更申请里有多处改动指向同一个对象，请合并后重试。");
         }
         if (error instanceof ProposalRepositoryBranchWorkItemMismatchError) {
-          throw new ProposalServiceError(422, error.code, "变更申请分支不属于这个事项，请刷新后重试。");
+          throw new ProposalServiceError(422, error.code, serviceT("zh-CN", "proposalWrongTask"));
         }
         throw error;
       }

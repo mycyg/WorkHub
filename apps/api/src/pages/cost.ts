@@ -31,6 +31,8 @@ type CostPageInput = {
   taskPlanMeta?: Map<string, { label: string; status: string; maxCostCny?: number; workItemId?: string }>;
   // UX-M10：目标标题（按目标维度不渲裸 UUID）。
   objectiveTitles?: Map<string, string>;
+  // A2-64：任务的业务编号/标题（按任务维度不渲裸 UUID）。缺省时行显示中性的「未命名任务」。
+  workItemLabels?: Map<string, string>;
   // R13 批 P4：按执行者（assignee）分账的行，仅管理员传入（与 by_user/by_team/by_workitem 同门槛）；
   // 取数失败/非管理员时不传，页面对应区块不渲染。
   assigneeCostRows?: AssigneeCostInputRow[];
@@ -165,6 +167,14 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
   const byObjective = aggregateByObjective(uniqueEntries);
   const modelBreakdown = aggregateByModel(uniqueEntries);
   const laborSplit = buildLaborSplit(uniqueEntries);
+  // A2-63：按人分账的行标签要用昵称。同一次取数里的 assigneeCostRows 已经带了昵称（路由层 join 出来的），
+  // 这里复用它建一张 id→昵称表，不为了一个标签再加一条查询。
+  const nicknameById = new Map<string, string>();
+  for (const row of input.assigneeCostRows ?? []) {
+    if (row.actorUserId && row.nickname) {
+      nicknameById.set(row.actorUserId, row.nickname);
+    }
+  }
   const inactiveBudgetRows = [summary.me, ...(summary.team ? [summary.team] : [])].filter((usage) => usage.enabled === false);
   const budgetRows = uniqueBudgetRows([...summary.scopes, ...inactiveBudgetRows]);
 
@@ -180,7 +190,9 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
     trend: aggregateTrend(uniqueEntries),
     by_user: input.isAdmin ? byUser.map((item) => ({
       user_id: item.id,
-      label: item.id === input.userId ? pageT(locale, "cost.label.currentUser") : item.id,
+      label: item.id === input.userId
+        ? pageT(locale, "cost.label.currentUser")
+        : nicknameById.get(item.id) ?? pageT(locale, "cost.label.removedMember"),
       cost_cny: formatCny(item.cost),
       tokens: item.tokens
     })) : [],
@@ -194,7 +206,7 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
     })) : [],
     by_workitem: input.isAdmin ? byWorkitem.map((item) => ({
       workitem_id: item.id,
-      code: item.id,
+      code: input.workItemLabels?.get(item.id) ?? pageT(locale, "cost.label.untitledWorkItem"),
       cost_cny: formatCny(item.cost),
       turns: item.turns
     })) : [],

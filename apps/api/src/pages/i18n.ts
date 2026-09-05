@@ -1,6 +1,6 @@
 import type { WorkHubLocale } from "@workhub/contracts";
 
-type PageCopyKey =
+export type PageCopyKey =
   | "attention.running"
   | "attention.queued"
   | "cost.scope.me"
@@ -38,11 +38,27 @@ type PageCopyKey =
   | "replay.scope.userRun"
   | "replay.notice.warning"
   | "replay.notice.exhausted"
-  | "replay.action.openCost";
+  | "replay.action.openCost"
+  | "cost.label.removedMember"
+  | "cost.label.untitledWorkItem"
+  | "audit.workItemCreated"
+  | "audit.workItemUpdated"
+  | "audit.workItemAssigned"
+  | "audit.workItemClaimed"
+  | "audit.snapshotCreated"
+  | "audit.snapshotReverted"
+  | "audit.proposalOpened"
+  | "audit.proposalMerged"
+  | "audit.proposalRejected"
+  | "audit.approvalApproved"
+  | "audit.approvalRejected"
+  | "audit.projectArchived"
+  | "audit.projectDeleted"
+  | "audit.genericChange";
 
 const pageCopy: Record<WorkHubLocale, Record<PageCopyKey, string>> = {
   "zh-CN": {
-    "attention.running": "AI 正在处理这个事项。",
+    "attention.running": "AI 正在处理这个任务。",
     "attention.queued": "AI 已排队等待开始。",
     "cost.scope.me": "我的今日 AI 预算",
     "cost.scope.team": "团队今日 AI 预算",
@@ -79,7 +95,23 @@ const pageCopy: Record<WorkHubLocale, Record<PageCopyKey, string>> = {
     "replay.scope.userRun": "我的当前 AI 执行预算",
     "replay.notice.warning": "本次 AI 预算快用完了。",
     "replay.notice.exhausted": "本次 AI 预算已经用完。",
-    "replay.action.openCost": "查看预算"
+    "replay.action.openCost": "查看预算",
+    "cost.label.removedMember": "已停用成员",
+    "cost.label.untitledWorkItem": "未命名任务",
+    "audit.workItemCreated": "创建了任务",
+    "audit.workItemUpdated": "更新了任务",
+    "audit.workItemAssigned": "指派了任务",
+    "audit.workItemClaimed": "认领了任务",
+    "audit.snapshotCreated": "保存了还原点",
+    "audit.snapshotReverted": "还原了文件",
+    "audit.proposalOpened": "提出了这次改动",
+    "audit.proposalMerged": "采纳了这次改动",
+    "audit.proposalRejected": "打回了这次改动",
+    "audit.approvalApproved": "通过了审批",
+    "audit.approvalRejected": "打回了审批",
+    "audit.projectArchived": "归档了项目",
+    "audit.projectDeleted": "删除了项目",
+    "audit.genericChange": "记录了一次改动"
   },
   "en-US": {
     "attention.running": "AI is working on this item.",
@@ -119,7 +151,23 @@ const pageCopy: Record<WorkHubLocale, Record<PageCopyKey, string>> = {
     "replay.scope.userRun": "My current AI run budget",
     "replay.notice.warning": "This AI run is close to its budget.",
     "replay.notice.exhausted": "This AI run has used its budget.",
-    "replay.action.openCost": "View budget"
+    "replay.action.openCost": "View budget",
+    "cost.label.removedMember": "Removed member",
+    "cost.label.untitledWorkItem": "Untitled task",
+    "audit.workItemCreated": "Created the task",
+    "audit.workItemUpdated": "Updated the task",
+    "audit.workItemAssigned": "Assigned the task",
+    "audit.workItemClaimed": "Claimed the task",
+    "audit.snapshotCreated": "Saved a restore point",
+    "audit.snapshotReverted": "Restored the files",
+    "audit.proposalOpened": "Proposed this change",
+    "audit.proposalMerged": "Adopted this change",
+    "audit.proposalRejected": "Sent this change back",
+    "audit.approvalApproved": "Approved the request",
+    "audit.approvalRejected": "Sent the request back",
+    "audit.projectArchived": "Archived the project",
+    "audit.projectDeleted": "Deleted the project",
+    "audit.genericChange": "Recorded a change"
   }
 };
 

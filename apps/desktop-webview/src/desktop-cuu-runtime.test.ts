@@ -11,7 +11,6 @@ import {
   cardFromDesktopCuuRuntimeError,
   createDesktopCuuAnalysisCard,
   createDesktopCuuAgentLauncherCard,
-  createDesktopCuuDemoScript,
   createDesktopShellScriptedListener,
   decideDesktopCuuAbortConfirmation,
   DesktopCuuFetchEventSource,
@@ -642,84 +641,6 @@ test("desktop Cuu runtime resolves Tauri and mock listeners without subscribing 
   });
 
   assert.equal(runtime.subscribed, false);
-});
-
-test("desktop Cuu demo script curates Gold Path events into shell push payloads", () => {
-  const approvalAttention: AttentionItem = {
-    id: "10000000-0000-4000-8000-000000000011",
-    kind: "approval",
-    priority: "high",
-    source_ref: { entity_type: "approval_request", entity_id: "10000000-0000-4000-8000-000000000012" },
-    title: "Cuu 等你审批",
-    summary_text: "点选后继续。",
-    actions: [],
-    cuu_state: "asking_approval",
-    created_at: "2026-06-05T01:00:00.000Z"
-  };
-  const events = [
-    workHubEvent({
-      event_id: "10000000-0000-4000-8000-000000000021",
-      type: eventTypes.notificationCreated,
-      topic: "user:me"
-    }),
-    workHubEvent({
-      event_id: "10000000-0000-4000-8000-000000000022",
-      type: eventTypes.permissionAsk,
-      topic: "session:session-1",
-      session_id: "session-1",
-      preview_text: "先点一个澄清选项。"
-    }),
-    workHubEvent({
-      event_id: "10000000-0000-4000-8000-000000000023",
-      type: eventTypes.agentRunStarted,
-      topic: "run:run-1",
-      preview_text: "Cuu 开始整理。"
-    }),
-    workHubEvent({
-      event_id: "10000000-0000-4000-8000-000000000024",
-      type: eventTypes.budgetWarning,
-      topic: "user:me",
-      preview_text: "预算快到线了。"
-    }),
-    workHubEvent({
-      event_id: "10000000-0000-4000-8000-000000000025",
-      type: eventTypes.proposalOpened,
-      topic: "workitem:workitem-1",
-      proposal_id: "proposal-1",
-      preview_text: "变更申请已准备好。"
-    }),
-    workHubEvent({
-      event_id: "10000000-0000-4000-8000-000000000026",
-      type: eventTypes.permissionAsk,
-      topic: "user:me",
-      proposal_id: "proposal-1",
-      attention: approvalAttention,
-      preview_text: "请审批。"
-    }),
-    workHubEvent({
-      event_id: "10000000-0000-4000-8000-000000000027",
-      type: eventTypes.proposalMerged,
-      topic: "workitem:workitem-1",
-      preview_text: "已采纳。"
-    })
-  ];
-
-  const script = createDesktopCuuDemoScript({ events }, {
-    initialDelayMs: 10,
-    intervalMs: 5,
-    includeOfflineStatus: true
-  });
-  const firstPayload = script[0]?.payload as DesktopShellPushPayload;
-  const approvalPayload = script[4]?.payload as DesktopShellPushPayload;
-
-  assert.equal(script.length, 7);
-  assert.equal(script[0]?.delayMs, 10);
-  assert.equal(script[1]?.delayMs, 15);
-  assert.equal(firstPayload.event, eventTypes.permissionAsk);
-  assert.equal(firstPayload.stream_path, "/api/push/stream/session/session-1");
-  assert.equal(JSON.parse(firstPayload.data).preview_text, "先点一个澄清选项。");
-  assert.equal(approvalPayload.stream_path, "/api/push/stream/me");
-  assert.equal(script.at(-1)?.eventName, "sse-status");
 });
 
 test("scripted desktop shell listener dispatches scheduled push and status events", () => {

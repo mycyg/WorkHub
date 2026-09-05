@@ -94,7 +94,9 @@ test("approval center renderer does not leak raw approval facts", () => {
   assert.equal(approvals.html.includes("<strong>Tool approval</strong>"), true);
   // UI-02：本地时区渲染，期望值由格式化助手算出（时区无关）。
   assert.equal(approvals.html.includes(`Pending · SLA ${formatLocalTimestamp("2026-07-05T00:00:00.000Z")}`), true);
-  assert.equal(approvals.html.includes(">Routed</span>"), true);
+  // A2-23：路由是分派实现词，用户面说「已指派审批人」。
+  assert.equal(approvals.html.includes(">Approver assigned</span>"), true);
+  assert.equal(approvals.html.includes(">Routed</span>"), false);
 });
 
 test("gold path renderer localizes work item and proposal check statuses", () => {

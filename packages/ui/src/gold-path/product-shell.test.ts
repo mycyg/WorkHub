@@ -84,7 +84,9 @@ test("R4 product shell localizes fixed product chrome", () => {
   assert.equal(shell.html.includes('data-r4-product-masthead="true" aria-label="任务详情"'), true);
   assert.equal(shell.html.includes("<h1>任务详情</h1>"), false);
   assert.equal(shell.html.includes("当前焦点"), true);
-  assert.equal(shell.html.includes("实时数据"), true);
+  // A2-07：右栏不再常驻「数据源 / 实时数据 / 数据以后台为准」——那是开发期「不是假数据」的自证，对用户零信息。
+  assert.equal(shell.html.includes("实时数据"), false);
+  assert.equal(shell.html.includes("数据源"), false);
   assert.equal(shell.html.includes("网页版"), true);
   assert.equal(shell.html.includes('data-r4-product-route-key="workitem"'), true);
   assert.equal(shell.html.includes('aria-pressed="true" title="中文"'), true);

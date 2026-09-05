@@ -320,6 +320,12 @@ export type WorkItemClaimHandoverRepository = {
 };
 
 export type WorkItemDataRepository = WorkItemRepository & WorkItemClaimHandoverRepository & {
+  // 成本页「按任务分账」的人话标签（编号 · 标题）：按工作区围栏批量取，一次查询；缺映射由页面层回落中性词，
+  // 内部 id 永远不端给用户。
+  listWorkItemLabelsByIds: (input: {
+    workspaceId: string;
+    workItemIds: string[];
+  }) => Promise<Array<{ id: string; code: string; title: string | null }>>;
   // R15 批 D4（找人交互卡 · claim/reassign 的落地写）：把一个【当前无认领人】的非终态、未软删事项认领
   // 给指定用户。CAS 守卫 claimed_by_user_id IS NULL——已被别人认领/已改期认领则 0 行返回 null（调用方
   // 报 409，不覆盖既有认领人）。claimed_by_nickname 用 users 表标量子查询同写，保持展示字段一致；
@@ -591,6 +597,16 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
   }
 
   return {
+    async listWorkItemLabelsByIds({ workspaceId, workItemIds }) {
+      if (workItemIds.length === 0) {
+        return [];
+      }
+      return db
+        .select({ id: workItems.id, code: workItems.code, title: workItems.title })
+        .from(workItems)
+        .where(and(eq(workItems.workspaceId, workspaceId), inArray(workItems.id, workItemIds)));
+    },
+
     async findWorkItemForHumanReservedGuard(workItemId) {
       const rows = await db
         .select(humanReservedGuardColumns)

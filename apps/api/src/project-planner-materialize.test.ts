@@ -123,7 +123,9 @@ test("E3c materialize rolls back and rejects when a cycle slips past the judge",
   // 草案被打回 rejected，带原因。
   const draft = harness.store.get(draftId)!;
   assert.equal(draft.status, "rejected");
-  assert.match(draft.reviewReasonMd ?? "", /成环/u);
+  // A2-68：打回原因写业务口径的人话，不出现「物化 / 成环 / judge 漏网」这些内部词。
+  assert.match(draft.reviewReasonMd ?? "", /互相依赖成了死循环/u);
+  assert.doesNotMatch(draft.reviewReasonMd ?? "", /物化|成环|judge/iu);
 });
 
 test("E3c materialize is idempotent: an already-materialized draft returns its stored result", async () => {

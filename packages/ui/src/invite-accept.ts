@@ -11,7 +11,7 @@ export type InviteAcceptScreenInput = {
   errorText?: string | undefined;
 };
 
-type InviteAcceptCopyKey =
+export type InviteAcceptCopyKey =
   | "kicker"
   | "title"
   | "summary"
@@ -26,38 +26,7 @@ type InviteAcceptCopyKey =
   | "submit"
   | "note";
 
-const inviteAcceptCopy: Record<WorkHubLocale, Record<InviteAcceptCopyKey, string>> = {
-  "zh-CN": {
-    kicker: "WorkHub 邀请",
-    title: "接受邀请，加入团队",
-    summary: "用管理员转交给你的邀请令牌建立账号。加入后每个项目都有群聊、网盘和 AI 项目经理协作。",
-    tokenLabel: "邀请令牌",
-    tokenPlaceholder: "粘贴管理员给你的令牌",
-    nicknameLabel: "你的昵称",
-    nicknamePlaceholder: "例如：小拓",
-    passwordLabel: "设置密码",
-    passwordPlaceholder: "至少 8 位",
-    passwordHint: "密码只用于你以后登录，服务端只存哈希。",
-    localeLabel: "界面语言",
-    submit: "加入 WorkHub",
-    note: "邀请令牌只对本次有效，接受后即失效。"
-  },
-  "en-US": {
-    kicker: "WorkHub invite",
-    title: "Accept your invite and join the team",
-    summary: "Use the invite token your admin handed you to create an account. Every project gets a group chat, a drive and an AI project manager.",
-    tokenLabel: "Invite token",
-    tokenPlaceholder: "Paste the token from your admin",
-    nicknameLabel: "Your nickname",
-    nicknamePlaceholder: "e.g. Alex",
-    passwordLabel: "Set a password",
-    passwordPlaceholder: "At least 8 characters",
-    passwordHint: "Your password is only for signing in later; the server stores only a hash.",
-    localeLabel: "Interface language",
-    submit: "Join WorkHub",
-    note: "The invite token is single-use and expires once accepted."
-  }
-};
+import { inviteAcceptCopy } from "./invite-accept-copy.js";
 
 function t(locale: WorkHubLocale, key: InviteAcceptCopyKey) {
   return inviteAcceptCopy[locale][key];

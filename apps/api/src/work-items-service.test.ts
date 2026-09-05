@@ -672,7 +672,7 @@ test("persistent intake requires mutation access before regenerating an existing
     (error) =>
       error instanceof WorkItemServiceError
       && error.status === 403
-      && error.message === "你没有权限修改这个事项。"
+      && error.message === "你没有权限修改这个任务。"
   );
   assert.equal(generatorCalls, 0);
   assert.equal(chatWrites, 0);
@@ -1734,7 +1734,7 @@ test("session clarification answer uses generic mutation access, not artifact-sp
     (error) =>
       error instanceof WorkItemServiceError
       && error.status === 403
-      && error.message === "你没有权限修改这个事项。"
+      && error.message === "你没有权限修改这个任务。"
   );
   assert.equal(answerWritten, false);
 });
@@ -1905,7 +1905,7 @@ test("evidence binding uses generic mutation access, not artifact-specific acces
     (error) =>
       error instanceof WorkItemServiceError
       && error.status === 403
-      && error.message === "你没有权限修改这个事项。"
+      && error.message === "你没有权限修改这个任务。"
   );
   assert.equal(evidenceBound, false);
 });

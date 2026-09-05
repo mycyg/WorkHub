@@ -299,7 +299,8 @@ test("replay renderer exposes structured field operation targets and writeback a
   assert.equal(zh.html.includes("原始值: 旧标题"), true);
   assert.equal(zh.html.includes("写入: 新标题"), true);
   assert.equal(zh.html.includes("写入: 2 项: 原始任务项, 新增风险项"), true);
-  assert.equal(zh.html.includes("策略: fast_path"), true);
+  assert.equal(zh.html.includes("处理方式: 直接写入"), true);
+  assert.equal(zh.html.includes("fast_path"), false);
   // 合并时间线：冲突定位读成「冲突位置: <key>」而非把内部 key 当标题裸渲；冲突数药丸带单位(单复数正确)。
   assert.equal(zh.html.includes("冲突位置: work_item:task_items"), true);
   assert.equal(zh.html.includes("1 处冲突"), true);
@@ -314,9 +315,11 @@ test("replay renderer exposes structured field operation targets and writeback a
   assert.equal(en.html.includes("Changes: 1"), true);
   assert.equal(en.html.includes("Lines: 2"), true);
   assert.equal(en.html.includes("Text merge check"), true);
-  assert.equal(en.html.includes("Overlap hunk 1"), true);
+  assert.equal(en.html.includes("Overlapping section 1"), true);
   assert.equal(en.html.includes("Affected lines: line 3"), true);
-  assert.equal(en.html.includes("Hunk decision replay"), true);
+  assert.equal(en.html.includes("Section-by-section choices"), true);
+  // 可见文案里不再有 hunk；data-* 标记属性（data-overlap-hunk-*）是机器钩子，不受此约束。
+  assert.equal(/>[^<]*hunk/iu.test(en.html), false);
   assert.equal(en.html.includes("Lines 8-11"), true);
   assert.equal(en.html.includes("Accepted this version"), true);
   assert.equal(en.html.includes("Bulk action replay"), true);
@@ -325,17 +328,21 @@ test("replay renderer exposes structured field operation targets and writeback a
   assert.equal(en.html.includes("Base: 旧标题"), true);
   assert.equal(en.html.includes("After: 新标题"), true);
   assert.equal(en.html.includes("After: 2 items: 原始任务项, 新增风险项"), true);
-  assert.equal(en.html.includes("Decision: fast_path"), true);
+  assert.equal(en.html.includes("Choice: Written directly"), true);
+  assert.equal(en.html.includes("fast_path"), false);
 
   // L23：web 回放给一条返回所属工作项的可见链接；桌面 Spotlight 用自己的面包屑返回，不渲染裸锚点。
   assert.equal(zh.html.includes(`data-replay-back-work-item="${workItemId}"`), true);
   assert.equal(zh.html.includes("返回任务"), true);
   assert.equal(zh.html.includes(`/workitems/${workItemId}`), true);
   assert.equal(en.html.includes("data-replay-back-work-item"), false);
-  // L24：摘要卡用本地化的「Token 用量」而非裸 "Token"；校验码带人类标签 + 截断，不再糊整串 64 位哈希。
+  // L24：摘要卡用本地化的「Token 用量」而非裸 "Token"。
   assert.equal(zh.html.includes("Token 用量"), true);
-  assert.equal(zh.html.includes("结果校验码"), true);
-  assert.equal(zh.html.includes(`<p class="wh-replay-audit-code">${"c".repeat(64)}</p>`), false);
+  // A2-49：结果指纹不再有任何可见文案，只留 data 属性供取证。
+  assert.equal(zh.html.includes("结果校验码"), false);
+  assert.equal(en.html.includes("Result checksum"), false);
+  assert.equal(zh.html.includes(`data-replay-text-hunk-output-sha256="${"c".repeat(64)}"`), true);
+  assert.equal(zh.html.includes(`>${"c".repeat(64)}<`), false);
 });
 
 // ── R20 DSK-UX（R19-3）：撤销改动按钮 ──────────────────────────────────────────────────────
@@ -360,8 +367,8 @@ test("replay renderer offers an undo-changes action on each un-reverted snapshot
 
   // 快照列表本身 + 本地化标题/桌面提示。
   assert.equal(rendered.html.includes('data-replay-snapshot-list="true"'), true);
-  assert.equal(rendered.html.includes("改动快照"), true);
-  assert.equal(rendered.html.includes("需在桌面客户端执行"), true);
+  assert.equal(rendered.html.includes("改动还原点"), true);
+  assert.equal(rendered.html.includes("要在桌面客户端做"), true);
   // 每颗按钮 = revert 动作 + 本地客户端门控（data-requires-desktop，对齐 R19-5 撤销策略）。
   assert.equal(rendered.html.includes('data-action-id="revert_agent_run"'), true);
   assert.equal(rendered.html.includes('data-requires-desktop="true"'), true);
@@ -374,7 +381,7 @@ test("replay renderer offers an undo-changes action on each un-reverted snapshot
   assert.equal(rendered.html.includes('data-revert-label-arm="确认撤销？再点一次"'), true);
 
   const en = renderAgentRunReplay(vm, "desktop", { locale: "en-US" });
-  assert.equal(en.html.includes("Change snapshots"), true);
+  assert.equal(en.html.includes("Restore points"), true);
   assert.equal(en.html.includes("Undo these changes"), true);
   assert.equal(en.html.includes('data-requires-desktop="true"'), true);
 });

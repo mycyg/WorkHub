@@ -37,6 +37,7 @@ import {
   buildRepoActivityLines,
   REPO_ACTIVITY_FETCH_LIMIT
 } from "./github-activity-context.js";
+import { serviceT } from "./locales.js";
 import { getDefaultProviderRegistry } from "./provider-registry.js";
 
 type JsonObject = Record<string, unknown>;
@@ -54,7 +55,9 @@ export class ProjectPlannerServiceError extends Error {
   constructor(
     public readonly status: number,
     public readonly code: string,
-    message: string
+    message: string,
+    /** 技术细节（解析器原文等）：只进日志与排查，不进用户可见的 message。 */
+    public readonly detail?: string
   ) {
     super(message);
     this.name = "ProjectPlannerServiceError";
@@ -358,9 +361,9 @@ function invalidResponse(locale: WorkHubLocale, reason: string) {
   return new ProjectPlannerServiceError(
     502,
     "project_plan_llm_invalid_response",
-    locale === "en-US"
-      ? `AI returned an invalid project plan: ${reason}`
-      : `AI 返回的项目计划格式无效：${reason}`
+    // A2-69：解析器原始 reason 用户既读不懂也无从处理——留在 detail 里给排查，不进 message。
+    serviceT(locale, "planUnusable"),
+    reason
   );
 }
 
@@ -762,7 +765,7 @@ export function createProjectPlannerService(deps: ProjectPlannerServiceDependenc
         return { draft: draftVm(draft), result: resultFromRow(draft) };
       }
       if (draft.status !== "approved") {
-        throw new ProjectPlannerServiceError(409, "project_plan_not_approved", "只有已批准的规划草案才能物化。");
+        throw new ProjectPlannerServiceError(409, "project_plan_not_approved", serviceT("zh-CN", "planNotApproved"));
       }
       const reviewerId = actor.userId ?? actor.id;
       const payload = parseStoredPayload(draft.payloadJson);
@@ -808,11 +811,11 @@ export function createProjectPlannerService(deps: ProjectPlannerServiceDependenc
           draftId,
           workspaceId: draft.workspaceId,
           reviewedByUserId: reviewerId,
-          reasonMd: "物化时检出依赖成环（judge 漏网），已整体回滚，请重新规划。",
+          reasonMd: serviceT("zh-CN", "planCycleRejected"),
           expectedStatus: "approved",
           now: now()
         });
-        throw new ProjectPlannerServiceError(409, "project_plan_cycle_detected", "计划里的依赖存在循环，无法物化，草案已打回。");
+        throw new ProjectPlannerServiceError(409, "project_plan_cycle_detected", serviceT("zh-CN", "planCycleError"));
       }
 
       const submitterUserId = draft.createdByUserId;
@@ -830,7 +833,7 @@ export function createProjectPlannerService(deps: ProjectPlannerServiceDependenc
         throw new ProjectPlannerServiceError(404, "project_plan_draft_not_found", "没有找到这个规划草案。");
       }
       if (outcome.outcome === "not_approved") {
-        throw new ProjectPlannerServiceError(409, "project_plan_not_approved", "只有已批准的规划草案才能物化。");
+        throw new ProjectPlannerServiceError(409, "project_plan_not_approved", serviceT("zh-CN", "planNotApproved"));
       }
       return { draft: draftVm(outcome.draft), result: outcome.result };
     }

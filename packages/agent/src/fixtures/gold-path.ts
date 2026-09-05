@@ -674,7 +674,7 @@ const manifestFacts: ManifestFacts = {
     {
       source_type: "audit_log",
       source_id: p05GoldPathIds.auditProposal,
-      title: "Proposal 打开已进入审计"
+      title: "这次变更申请已记入审计"
     }
   ]
 };
@@ -751,9 +751,9 @@ const approvalAttention: AttentionItem = {
     entity_type: "approval_request",
     entity_id: p05GoldPathIds.approval
   },
-  title: "Cuu 等你审批客户周报模板",
+  title: "Cuu 等你审批《客户周报模板》",
   summary_text: "2 个交付物、3 条证据、可回滚；点同意后才会进入正式交付。",
-  reason_text: "打回必须写原因，Cuu 会把原因放进下一轮修改上下文。",
+  reason_text: "打回时请写明原因，Cuu 会带着它继续改。",
   evidence_refs: evidenceRefs,
   actions: [
     {
@@ -923,18 +923,18 @@ const workItemDetail: WorkItemDetailVM = {
   approval_decisions: [],
   acceptance: [
     {
-      id: "option-first",
-      title: "澄清以点选为主",
+      id: "scope-confirmed",
+      title: "复盘口径已确认",
       status: "met"
     },
     {
-      id: "non-code-pr",
-      title: "交付物变更必须逐条可审",
+      id: "changes-reviewable",
+      title: "每处改动都能单独查看",
       status: "met"
     },
     {
-      id: "replay-cost",
-      title: "回放页脚必须显示成本明细",
+      id: "cost-visible",
+      title: "这次花了多少一目了然",
       status: "met"
     }
   ],

@@ -253,7 +253,7 @@ export function resolveSandboxBackend(input: {
 export function sandboxUnavailableMessage(platform: string): string {
   return [
     `[sandbox: ${SANDBOX_UNAVAILABLE}] 当前平台（${platform}）没有可用的命令沙箱后端，命令已被拒绝执行——`,
-    "这是默认拒绝的安全策略，不是命令写错，换写法没有用。请改用不需要执行命令的做法，或把它列为 blocker。",
+    "这是默认拒绝的安全策略，不是命令写错，换写法没有用。请改用不需要执行命令的做法，或在总结里用一句人话说明这一步做不了、需要谁来处理。", // ui-i18n-allow：模型可见的沙箱拒绝说明，不是界面文案
     `No command sandbox backend is available on this platform (${platform}), so the command was refused. `,
     "This is a fail-closed policy rather than a malformed command."
   ].join("");
@@ -319,7 +319,7 @@ export function detectSeatbeltRunnerFailure(input: { stderr: string; exitCode: n
 export function seatbeltRunnerFailureMessage(reason: string): string {
   return [
     `[sandbox: ${SANDBOX_UNAVAILABLE}] 命令沙箱包裹器启动失败，命令没有执行：${reason}。`,
-    "这是沙箱本身的故障，不是命令写错；请把它列为 blocker，交给部署方排查。",
+    "这是执行环境本身的故障，不是命令写错；请在总结里用一句人话说明这一步做不了，需要部署方排查。", // ui-i18n-allow：模型可见的沙箱拒绝说明，不是界面文案
     `The command sandbox wrapper failed to start, so the command never ran: ${reason}. `,
     "This is a sandbox fault rather than a malformed command."
   ].join("");

@@ -26,7 +26,7 @@ import type { AuditLogRow, MergeAttemptRow, MergeProposalRow, SnapshotRow } from
 import { parseOutputContract } from "./output-contract.js";
 
 import type { AgentRunQueueRecord } from "../workers/agent-runner.js";
-import { pageT } from "./i18n.js";
+import { pageT, type PageCopyKey } from "./i18n.js";
 
 function stableUuid(input: string) {
   const hex = createHash("sha256").update(input).digest("hex");
@@ -244,7 +244,27 @@ export function buildReplayManifestFacts(input: {
   });
 }
 
-export function buildReplayEvidenceRefs(auditLogs: AuditLogFact[]): EvidenceRef[] {
+// A2-65：证据标题此前是「内部动作枚举 + 英文 audit」（如 proposal.merge audit），中文用户读到一串
+// 点分英文，且不随界面语言变化。按动作查表出人话标题；没收录的动作退回中性的「记录了一次改动」，
+// 绝不把枚举原样端给用户。
+const auditActionTitleKeys: Record<string, PageCopyKey> = {
+  "work_item.created": "audit.workItemCreated",
+  "work_item.updated": "audit.workItemUpdated",
+  "work_item.assigned": "audit.workItemAssigned",
+  "work_item.claimed": "audit.workItemClaimed",
+  "snapshot.created": "audit.snapshotCreated",
+  "snapshot.reverted": "audit.snapshotReverted",
+  "proposal.opened": "audit.proposalOpened",
+  "proposal.merged": "audit.proposalMerged",
+  "proposal.merge": "audit.proposalMerged",
+  "proposal.rejected": "audit.proposalRejected",
+  "approval.approved": "audit.approvalApproved",
+  "approval.rejected": "audit.approvalRejected",
+  "project.archived": "audit.projectArchived",
+  "project.deleted": "audit.projectDeleted"
+};
+
+export function buildReplayEvidenceRefs(auditLogs: AuditLogFact[], locale: WorkHubLocale = "zh-CN"): EvidenceRef[] {
   // M23：已撤销（回滚）的审计行不再作为「生效」证据列出——否则回放/manifest 会把已被还原的变更当真。
   return auditLogs
     .filter((log) => !log.undone_at)
@@ -252,7 +272,7 @@ export function buildReplayEvidenceRefs(auditLogs: AuditLogFact[]): EvidenceRef[
       id: log.id,
       source_type: "audit_log",
       source_id: log.id,
-      title: `${log.action} audit`,
+      title: pageT(locale, auditActionTitleKeys[log.action] ?? "audit.genericChange"),
       href: `/api/workitems/${log.entity.entity_id}/audit`
     }));
 }
@@ -504,7 +524,7 @@ export function buildReplayTracePage(input: {
   return parseOutputContract(replayTraceVmSchema, {
     run: toAgentRunVm(input.run, locale),
     steps: input.run.trace.map((step) => toAgentStepVm(input.run.run_id, step)),
-    evidence_refs: buildReplayEvidenceRefs(auditLogs),
+    evidence_refs: buildReplayEvidenceRefs(auditLogs, locale),
     snapshots,
     audit_logs: auditLogs,
     accepted_deliverables: input.acceptedDeliverables ?? [],

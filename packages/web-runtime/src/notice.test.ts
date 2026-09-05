@@ -57,8 +57,11 @@ test("R9.7 start-run notices avoid raw run identifiers", () => {
   const zh = startAgentRunQueuedNoticeBody("zh-CN");
   const en = startAgentRunQueuedNoticeBody("en-US");
 
-  assert.equal(zh, "AI 已开始处理，WorkHub 会刷新任务，并在有 Proposal 或 Replay 时提醒你。");
-  assert.equal(en, "AI started. WorkHub will refresh this task and surface Proposal or Replay when available.");
+  assert.equal(zh, "AI 已开始处理。做出改动或有回放时会提醒你。");
+  assert.equal(en, "AI started. You'll be notified when there's a change to review or a replay to watch.");
+  // A2-84：不把 Proposal / Replay 这类内部实体名写进提示。
+  assert.equal(zh.includes("Proposal"), false);
+  assert.equal(zh.includes("Replay"), false);
   assert.equal(zh.includes(rawRunId), false);
   assert.equal(en.includes(rawRunId), false);
 });
