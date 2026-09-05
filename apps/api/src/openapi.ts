@@ -8842,102 +8842,6 @@ export function getOpenApiDocument() {
           }
         }
       },
-      "/api/plugins": {
-        get: {
-          tags: ["settings"],
-          summary: "Admin-only: installed plugins, the host's bundled dsh-tools version, and how many paths still come from the environment",
-          responses: {
-            "200": jsonDataResponse(pluginListJsonSchema, "Every plugin registered in this workspace").responses["200"],
-            "403": pluginAdminForbiddenResponse.responses["403"],
-            "401": conversationAuthRequiredResponse,
-            "500": conversationInternalResponse
-          }
-        },
-        post: {
-          tags: ["settings"],
-          summary: "Admin-only: install a plugin from a local directory (static health check, then register, then try to load)",
-          ...jsonRequestBody(installPluginRequestJsonSchema),
-          responses: {
-            "201": jsonDataStatusResponse(
-              pluginVmJsonSchema,
-              "201",
-              "Registered; status says whether the host could actually load it"
-            ).responses["201"],
-            "400": jsonErrorStatusResponse("400", "The request body was not a JSON object", [
-              "malformed_json",
-              "json_object_required"
-            ]).responses["400"],
-            "403": pluginAdminForbiddenResponse.responses["403"],
-            "409": jsonErrorStatusResponse("409", "That directory is already installed in this workspace", [
-              "plugin_already_installed"
-            ]).responses["409"],
-            "422": jsonErrorStatusResponse(
-              "422",
-              "The static health check refused it: unreadable manifest, a browser-side UI/theme plugin, or install-time scripts",
-              [
-                "validation_error",
-                "plugin_manifest_unreadable",
-                "plugin_client_surface_unsupported",
-                "plugin_install_scripts_refused",
-                "plugin_incompatible"
-              ]
-            ).responses["422"],
-            "413": conversationPayloadTooLargeResponse,
-            "401": conversationAuthRequiredResponse,
-            "500": conversationInternalResponse
-          }
-        }
-      },
-      "/api/plugins/{id}/enable": {
-        post: {
-          tags: ["settings"],
-          summary: "Admin-only: enable a plugin and try to load it again (the host hot-reloads)",
-          parameters: [pathUuidParameter("id")],
-          responses: {
-            "200": jsonDataResponse(pluginVmJsonSchema, "The plugin after the reload attempt").responses["200"],
-            "403": pluginAdminForbiddenResponse.responses["403"],
-            "404": pluginNotFoundResponse.responses["404"],
-            "401": conversationAuthRequiredResponse,
-            "500": conversationInternalResponse
-          }
-        }
-      },
-      "/api/plugins/{id}/disable": {
-        post: {
-          tags: ["settings"],
-          summary: "Admin-only: disable a plugin — its tools stop appearing in any run",
-          parameters: [pathUuidParameter("id")],
-          responses: {
-            "200": jsonDataResponse(pluginVmJsonSchema, "The plugin, now disabled").responses["200"],
-            "403": pluginAdminForbiddenResponse.responses["403"],
-            "404": pluginNotFoundResponse.responses["404"],
-            "401": conversationAuthRequiredResponse,
-            "500": conversationInternalResponse
-          }
-        }
-      },
-      "/api/plugins/{id}": {
-        delete: {
-          tags: ["settings"],
-          summary: "Admin-only: remove a plugin from the registry (the directory on disk is left alone)",
-          parameters: [pathUuidParameter("id")],
-          responses: {
-            "200": jsonDataResponse(
-              {
-                type: "object",
-                required: ["removed"],
-                properties: { removed: { type: "boolean", const: true } },
-                additionalProperties: false
-              },
-              "The plugin no longer contributes tools to any run"
-            ).responses["200"],
-            "403": pluginAdminForbiddenResponse.responses["403"],
-            "404": pluginNotFoundResponse.responses["404"],
-            "401": conversationAuthRequiredResponse,
-            "500": conversationInternalResponse
-          }
-        }
-      },
       "/api/mcp-servers": {
         get: {
           tags: ["settings"],
@@ -9056,6 +8960,102 @@ export function getOpenApiDocument() {
             "204": conversationNoContentResponse,
             "403": mcpAdminForbiddenResponse.responses["403"],
             "404": mcpServerNotFoundResponse.responses["404"],
+            "401": conversationAuthRequiredResponse,
+            "500": conversationInternalResponse
+          }
+        }
+      },
+      "/api/plugins": {
+        get: {
+          tags: ["settings"],
+          summary: "Admin-only: installed plugins, the host's bundled dsh-tools version, and how many paths still come from the environment",
+          responses: {
+            "200": jsonDataResponse(pluginListJsonSchema, "Every plugin registered in this workspace").responses["200"],
+            "403": pluginAdminForbiddenResponse.responses["403"],
+            "401": conversationAuthRequiredResponse,
+            "500": conversationInternalResponse
+          }
+        },
+        post: {
+          tags: ["settings"],
+          summary: "Admin-only: install a plugin from a local directory (static health check, then register, then try to load)",
+          ...jsonRequestBody(installPluginRequestJsonSchema),
+          responses: {
+            "201": jsonDataStatusResponse(
+              pluginVmJsonSchema,
+              "201",
+              "Registered; status says whether the host could actually load it"
+            ).responses["201"],
+            "400": jsonErrorStatusResponse("400", "The request body was not a JSON object", [
+              "malformed_json",
+              "json_object_required"
+            ]).responses["400"],
+            "403": pluginAdminForbiddenResponse.responses["403"],
+            "409": jsonErrorStatusResponse("409", "That directory is already installed in this workspace", [
+              "plugin_already_installed"
+            ]).responses["409"],
+            "422": jsonErrorStatusResponse(
+              "422",
+              "The static health check refused it: unreadable manifest, a browser-side UI/theme plugin, or install-time scripts",
+              [
+                "validation_error",
+                "plugin_manifest_unreadable",
+                "plugin_client_surface_unsupported",
+                "plugin_install_scripts_refused",
+                "plugin_incompatible"
+              ]
+            ).responses["422"],
+            "413": conversationPayloadTooLargeResponse,
+            "401": conversationAuthRequiredResponse,
+            "500": conversationInternalResponse
+          }
+        }
+      },
+      "/api/plugins/{id}/enable": {
+        post: {
+          tags: ["settings"],
+          summary: "Admin-only: enable a plugin and try to load it again (the host hot-reloads)",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse(pluginVmJsonSchema, "The plugin after the reload attempt").responses["200"],
+            "403": pluginAdminForbiddenResponse.responses["403"],
+            "404": pluginNotFoundResponse.responses["404"],
+            "401": conversationAuthRequiredResponse,
+            "500": conversationInternalResponse
+          }
+        }
+      },
+      "/api/plugins/{id}/disable": {
+        post: {
+          tags: ["settings"],
+          summary: "Admin-only: disable a plugin — its tools stop appearing in any run",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse(pluginVmJsonSchema, "The plugin, now disabled").responses["200"],
+            "403": pluginAdminForbiddenResponse.responses["403"],
+            "404": pluginNotFoundResponse.responses["404"],
+            "401": conversationAuthRequiredResponse,
+            "500": conversationInternalResponse
+          }
+        }
+      },
+      "/api/plugins/{id}": {
+        delete: {
+          tags: ["settings"],
+          summary: "Admin-only: remove a plugin from the registry (the directory on disk is left alone)",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse(
+              {
+                type: "object",
+                required: ["removed"],
+                properties: { removed: { type: "boolean", const: true } },
+                additionalProperties: false
+              },
+              "The plugin no longer contributes tools to any run"
+            ).responses["200"],
+            "403": pluginAdminForbiddenResponse.responses["403"],
+            "404": pluginNotFoundResponse.responses["404"],
             "401": conversationAuthRequiredResponse,
             "500": conversationInternalResponse
           }
