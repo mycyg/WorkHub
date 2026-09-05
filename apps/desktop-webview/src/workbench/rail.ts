@@ -921,8 +921,18 @@ export function mountWorkbenchRail(
     }
     const state = input.store.getState();
     const zh = input.locale === "zh-CN";
+    // R25-Q：连接状态单一真相——不再只要 vm 加载成功就硬编码"已连接"，读 store.connectionState
+    // （boot.ts 拉 get_connection_state 初值 + 订阅 workhub-connection-changed 写入）。undefined
+    // （应用刚起、还没收到任何判定的极短窗口）沿用"已连接"这个兜底：vm 能加载成功本身就是连通性的
+    // 证据，好过在这极短空窗期里显示一个更消极的猜测。
+    const connectionWord =
+      state.connectionState?.state === "offline"
+        ? zh ? "离线" : "Offline"
+        : state.connectionState?.state === "reconnecting"
+          ? zh ? "重连中" : "Reconnecting"
+          : zh ? "已连接" : "connected";
     const viewerLabel = state.vm
-      ? `${state.vm.workspace_members.items[0]?.nickname ?? ""}${zh ? " · 已连接" : " · connected"}`
+      ? `${state.vm.workspace_members.items[0]?.nickname ?? ""} · ${connectionWord}`
       : undefined;
     const activeConversationIdField =
       state.activeConversationId !== undefined ? { activeConversationId: state.activeConversationId } : {};

@@ -4,6 +4,7 @@
 
 import type { DmListItemVM, ProjectListItemVM, WorkbenchPageVM } from "@workhub/contracts";
 
+import type { DesktopShellConnectionChangedPayload } from "../shell-events.js";
 import type { OpenConversationTab } from "./conversation-tabs/model.js";
 
 export type WorkbenchLoadState = "idle" | "loading" | "ready" | "error";
@@ -112,6 +113,12 @@ export type WorkbenchStoreState = {
   // R13 批 S3：新建个人空间模态开关——与团队项目模态分开的独立状态（拍板：个人空间创建只填
   // 名字，不需要选工作区/邀请成员那一整套团队项目的步骤，复用同一个模态语义上会混淆两件事）。
   newPersonalSpaceModalOpen: boolean;
+  // R25-Q：壳层连接状态"单一真相"——rail.ts 顶部的"已连接/重连中/离线"状态词只读这个字段，不再
+  // 只要 vm 加载成功就硬编码"已连接"。boot.ts 在 shell 挂载后拉一次 get_connection_state 初值并
+  // 订阅 workhub-connection-changed 写进来（见该文件 bindWorkbenchConnectionChangedListener）。
+  // undefined = 还没收到任何判定（应用刚起的极短窗口）——rail.ts 对此的兜底是"已连接"：vm 能加载
+  // 成功本身就是连通性的证据，好过在这极短的空窗期里显示一个更消极的猜测。
+  connectionState: DesktopShellConnectionChangedPayload | undefined;
 };
 
 export type WorkbenchStoreListener = (state: WorkbenchStoreState) => void;
@@ -147,7 +154,8 @@ export function initialWorkbenchStoreState(): WorkbenchStoreState {
     sideContextMode: "proposals",
     editorTarget: undefined,
     newProjectModalOpen: false,
-    newPersonalSpaceModalOpen: false
+    newPersonalSpaceModalOpen: false,
+    connectionState: undefined
   };
 }
 

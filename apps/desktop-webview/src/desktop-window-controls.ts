@@ -105,3 +105,22 @@ export async function resolveDesktopDeviceName(
     return undefined;
   }
 }
+
+// R25-Q：连接状态"单一真相"（workhub-connection-changed）boot 时的初值拉取——三窗（主窗/工作台/
+// 桌宠）各自在挂载时调一次，不然要等 Rust SSE worker 下一次状态迁移才会收到第一条广播，期间窗口
+// 没有任何连接状态可显示。浏览器 dev 态没有 __TAURI__ → undefined，由调用方保留"未知"（不渲连接
+// 横幅/卡片）。返回原始 unknown——同 takeDesktopPendingDeepLink 的既有取舍，校验交给调用方
+// （shell-events.ts 的 parseDesktopShellConnectionChangedPayload），这个模块本身不引入其它文件的类型依赖。
+export async function readDesktopConnectionState(
+  scope: DesktopWindowControlsScope = globalThis as DesktopWindowControlsScope
+): Promise<unknown> {
+  const invoke = resolveDesktopTauriInvoke(scope);
+  if (typeof invoke !== "function") {
+    return undefined;
+  }
+  try {
+    return await Promise.resolve(invoke("get_connection_state", undefined));
+  } catch {
+    return undefined;
+  }
+}

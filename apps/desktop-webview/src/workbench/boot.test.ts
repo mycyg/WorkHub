@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   applyPendingWorkbenchDeepLink,
   applyReplayedShellDeepLink,
+  bindWorkbenchConnectionChangedListener,
   bindWorkbenchDeepLinkListener,
   bindWorkbenchLoggedInListener,
   bindWorkbenchLoggedOutListener,
@@ -294,4 +295,83 @@ test("bindWorkbenchLoggedInListener subscribes to the workhub-logged-in event an
   handler?.({ payload: undefined });
 
   assert.deepEqual(calls, [1]);
+});
+
+// R25-Q：主窗现在也可能收到"工作台自己发起的"这次广播（反过来同理）——payload 带 source，
+// 回调必须把它原样透传给调用方，调用方（boot.ts 底部）据此决定要不要跳过 reload。
+test("bindWorkbenchLoggedInListener forwards the payload's source field to the callback", () => {
+  const sources: (string | undefined)[] = [];
+  let handler: ((event: { payload: unknown }) => void) | undefined;
+  const scope = {
+    __TAURI__: {
+      event: {
+        listen: (_eventName: string, cb: (event: { payload: unknown }) => void) => {
+          handler = cb;
+          return () => {};
+        }
+      }
+    }
+  };
+
+  bindWorkbenchLoggedInListener((source) => sources.push(source), scope);
+  handler?.({ payload: { source: "main" } });
+  handler?.({ payload: { source: "workbench" } });
+  handler?.({ payload: undefined });
+
+  assert.deepEqual(sources, ["main", "workbench", undefined]);
+});
+
+// R25-Q：连接状态"单一真相"——工作台头部状态词只从 workhub-connection-changed 取值，这里钉死
+// 订阅桥本身的降级/转发行为，与上面 workhub-logged-out/workhub-logged-in 两条既有测试同一套纪律。
+test("bindWorkbenchConnectionChangedListener no-ops without a Tauri listen bridge instead of throwing", () => {
+  const payloads: unknown[] = [];
+  assert.doesNotThrow(() => bindWorkbenchConnectionChangedListener((payload) => payloads.push(payload), {}));
+  assert.deepEqual(payloads, []);
+});
+
+test("bindWorkbenchConnectionChangedListener subscribes and forwards a parsed payload to the callback", () => {
+  const payloads: unknown[] = [];
+  let handler: ((event: { payload: unknown }) => void) | undefined;
+  const scope = {
+    __TAURI__: {
+      event: {
+        listen: (eventName: string, cb: (event: { payload: unknown }) => void) => {
+          assert.equal(eventName, "workhub-connection-changed");
+          handler = cb;
+          return () => {};
+        }
+      }
+    }
+  };
+
+  bindWorkbenchConnectionChangedListener((payload) => payloads.push(payload), scope);
+  assert.ok(handler);
+  handler?.({
+    payload: { state: "reconnecting", server_url: "http://127.0.0.1:8787", since_ms: 1_000, attempt: 2 }
+  });
+
+  assert.deepEqual(payloads, [
+    { state: "reconnecting", server_url: "http://127.0.0.1:8787", since_ms: 1_000, attempt: 2 }
+  ]);
+});
+
+test("bindWorkbenchConnectionChangedListener drops a malformed payload without calling the callback", () => {
+  const payloads: unknown[] = [];
+  let handler: ((event: { payload: unknown }) => void) | undefined;
+  const scope = {
+    __TAURI__: {
+      event: {
+        listen: (_eventName: string, cb: (event: { payload: unknown }) => void) => {
+          handler = cb;
+          return () => {};
+        }
+      }
+    }
+  };
+
+  bindWorkbenchConnectionChangedListener((payload) => payloads.push(payload), scope);
+  handler?.({ payload: { state: "not-a-real-state", server_url: "http://127.0.0.1:8787", since_ms: 1_000, attempt: 0 } });
+  handler?.({ payload: undefined });
+
+  assert.deepEqual(payloads, []);
 });

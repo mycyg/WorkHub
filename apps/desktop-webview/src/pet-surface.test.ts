@@ -27,12 +27,12 @@ import {
   createDesktopPetLoggedOutCard,
   defaultDesktopPetPointerSnapshot,
   desktopPetAliveIdlePolicy,
+  desktopPetConnectionStatusText,
   desktopPetDelegateMainRoute,
   desktopPetInitialIdleAction,
   desktopPetLocale,
   desktopPetPointerSmoothingAlpha,
   desktopPetRunRestoreStorageKey,
-  desktopPetRuntimeRetryingDelayMs,
   desktopPetSurfaceCss,
   handleDesktopPetRuntimeDecision,
   handleDesktopPetRuntimeNotice,
@@ -213,7 +213,6 @@ test("desktop pet runtime notices keep SSE retry cards transient and clear dismi
 
   // R9.7: the old assertion grepped pet-surface.ts for runtime-binding source text.
   // That was wrong because source text did not prove notice persistence or dismissed-card clearing behavior.
-  assert.equal(desktopPetRuntimeRetryingDelayMs, 900);
   assert.equal(cleared, true);
   assert.equal(kept, false);
   assert.deepEqual(calls, [
@@ -2459,6 +2458,43 @@ test("createDesktopPetLoggedOutCard renders a welcoming first-run card when aske
   assert.equal(defaulted.id, "pet-logged-out");
 });
 
+// R25-Q（L-06 根治）：连接状态"单一真相"驱动的桌宠提示文案——不产 CuuCard（不触发 windowModeForState
+// 的"card"分支，见函数顶注），只是一行诚实文本：点名连不上的地址 + 重连计次/已离线。
+test("desktopPetConnectionStatusText is undefined when connected or when there is no judgement yet", () => {
+  assert.equal(desktopPetConnectionStatusText(undefined, "zh-CN"), undefined);
+  assert.equal(
+    desktopPetConnectionStatusText(
+      { state: "connected", server_url: "http://127.0.0.1:8787", since_ms: 0, attempt: 0 },
+      "zh-CN"
+    ),
+    undefined
+  );
+});
+
+test("desktopPetConnectionStatusText names the unreachable server and the reconnect attempt count", () => {
+  const payload = { state: "reconnecting" as const, server_url: "http://127.0.0.1:8787", since_ms: 0, attempt: 2 };
+  assert.equal(
+    desktopPetConnectionStatusText(payload, "zh-CN"),
+    "连不上服务器 http://127.0.0.1:8787 · 重连中（第 2 次）"
+  );
+  assert.equal(
+    desktopPetConnectionStatusText(payload, "en-US"),
+    "Can't reach the server http://127.0.0.1:8787 · Reconnecting (attempt 2)"
+  );
+});
+
+test("desktopPetConnectionStatusText says offline (not a retry count) once the connection is given up on", () => {
+  const payload = { state: "offline" as const, server_url: "https://workhub.example.com", since_ms: 0, attempt: 3 };
+  assert.equal(
+    desktopPetConnectionStatusText(payload, "zh-CN"),
+    "连不上服务器 https://workhub.example.com · 已离线"
+  );
+  assert.equal(
+    desktopPetConnectionStatusText(payload, "en-US"),
+    "Can't reach the server https://workhub.example.com · Offline"
+  );
+});
+
 // G-desktop 止血批 3：桌宠窗和工作台窗共用同一条 workhub-logged-out 广播（见
 // desktop-cuu-runtime.ts 的 DesktopShellEventName 顶部注释）——主窗登出时已经开着的桌宠窗不会跟着
 // reload，之前完全没有 handler，会拿着刚被清空的 client token 静默连环 401。这条测试钉死：桌宠窗收到
@@ -2525,6 +2561,51 @@ test("pet surface reloads (via the injected reload effect) when it receives the 
         await runtime.dispose();
       }
       assert.ok(stopped.includes("workhub-logged-in"));
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+  }
+});
+
+// R25-Q（L-06 根治）：连接状态"单一真相"——桌宠收到 workhub-connection-changed 后渲一行诚实提示
+// （不是一张卡片），保持 260×340 body_only 不变（同 renderDesktopPetSurface 的 compactStatusOnly
+// 既有测试锁死的窗口尺寸——见"pet surface renders only the Live2D cat runtime..."用例里
+// data-pet-window-mode="body_only" 那条断言），恢复后（state: "connected"）提示消失。dispose 时
+// 这个新监听也一并解绑。
+test("pet surface shows a connection-status line (not a card, not a resize) on workhub-connection-changed, and clears it on recovery", async () => {
+  const target = globalThis as typeof globalThis & { __WORKHUB_CUU_QA_LOCALE__?: unknown };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "zh-CN";
+  try {
+    await withFakePetDom(async (root) => {
+      const handlers = new Map<string, (event: { payload: unknown }) => void>();
+      const stopped: string[] = [];
+      const listen: DesktopShellListen = (eventName, handler) => {
+        handlers.set(eventName, handler);
+        return () => stopped.push(eventName);
+      };
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient([]),
+        listen
+      });
+      try {
+        handlers.get("workhub-connection-changed")?.({
+          payload: { state: "reconnecting", server_url: "http://127.0.0.1:8787", since_ms: 1_000, attempt: 2 }
+        });
+        await waitForFakePetCardMode();
+        assert.match(root.innerHTML, /data-pet-window-mode="body_only"/u);
+        assert.match(root.innerHTML, /连不上服务器 http:\/\/127\.0\.0\.1:8787/u);
+        assert.match(root.innerHTML, /重连中（第 2 次）/u);
+
+        handlers.get("workhub-connection-changed")?.({
+          payload: { state: "connected", server_url: "http://127.0.0.1:8787", since_ms: 2_000, attempt: 0 }
+        });
+        await waitForFakePetCardMode();
+        assert.doesNotMatch(root.innerHTML, /连不上服务器/u);
+      } finally {
+        await runtime.dispose();
+      }
+      assert.ok(stopped.includes("workhub-connection-changed"));
     });
   } finally {
     target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;

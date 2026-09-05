@@ -212,11 +212,14 @@ test("desktop Cuu runtime listens to Rust push-event and sse-status channels", a
       attention
     })
   });
+  // R25-Q：sse-status 不再往 controller 里塞任何卡片（那条路径连同它驱动的桌宠"offline"离线卡
+  // 一起改由 workhub-connection-changed 承接，见 bindDesktopShellCuuRuntime 顶部注释）——这里注入一条
+  // "open" 只是证明订阅本身还活着（channel 仍在 stopped 断言里），不该产生任何决策。
   handlers.get("sse-status")?.({
     payload: {
       stream_kind: "global",
       stream_path: "/api/push/stream",
-      state: "closed"
+      state: "open"
     }
   });
   handlers.get("system-notification")?.({
@@ -247,8 +250,8 @@ test("desktop Cuu runtime listens to Rust push-event and sse-status channels", a
   assert.match(notices[0]?.html ?? "", /data-method="POST"/u);
   assert.equal(notices.length, 1);
   assert.equal(decisions[0]?.outcome, "show");
-  assert.equal(decisions[1]?.outcome, "queue");
-  assert.equal(decisions[1]?.card?.state, "offline");
+  // R25-Q：只有 push-event 产出的那一张卡——sse-status 的 "open" 不再触发第二个 decision。
+  assert.equal(decisions.length, 1);
   assert.deepEqual(systemNotificationRoutes, ["/approvals?approvalId=approval-runtime"]);
 
   await runtime.dispose();
@@ -521,6 +524,11 @@ test("desktop Cuu runtime ignores a malformed workbench-interrupt payload instea
   await runtime.dispose();
 });
 
+// R25-Q：此前这个用例用 sse-status 的 closed/retrying 两态各产一张"offline"卡来证明 locale getter
+// 是活的——那条产卡路径已经整个搬去 workhub-connection-changed（见 bindDesktopShellCuuRuntime 顶部
+// 注释），改用同样走 bridge/emitCard 的 dispatch_ask 推送通知（`buildDesktopDispatchAskCuuCard` 同样
+// 读 `input.locale`），两条不同 id 的通知之间切换 liveLocale，断言点没变：locale 是在"卡片真正构建
+// 那一刻"读取的，不是 bind 时冻结的。
 test("desktop Cuu runtime forwards a live locale getter to shell-pushed cards", async () => {
   const handlers = new Map<string, (event: DesktopShellEventEnvelope) => void>();
   const decisions: CuuControllerDecision[] = [];
@@ -532,7 +540,6 @@ test("desktop Cuu runtime forwards a live locale getter to shell-pushed cards", 
   let liveLocale: "zh-CN" | "en-US" = "zh-CN";
   await bindDesktopShellCuuRuntime({
     listen,
-    now: () => new Date("2026-06-05T01:00:00.000Z"),
     notify: () => {},
     onDecision: (decision) => decisions.push(decision),
     // Mirrors pet-surface.ts threading a live locale getter so the bridge
@@ -542,83 +549,37 @@ test("desktop Cuu runtime forwards a live locale getter to shell-pushed cards", 
     }
   });
 
-  // First SSE-closed card (distinct id per state) renders in the boot locale.
-  handlers.get("sse-status")?.({
-    payload: { stream_kind: "global", stream_path: "/api/push/stream", state: "closed" }
+  // First dispatch_ask card renders in the boot locale. Asserting against `decisions` (fired on
+  // every controller.enqueue(), regardless of show/queue outcome) rather than `notices` (only
+  // fired on show/replace) — the second card below queues behind the first still-active one, so
+  // it would never reach `notify()`, but the card the bridge *built* is still what this test cares
+  // about.
+  handlers.get("push-event")?.({
+    payload: shellPayload(eventTypes.notificationCreated, {
+      id: "notification-live-locale-1",
+      type: "action_card_item.dispatch_ask",
+      severity: "normal",
+      title: "有个活想派给你",
+      body: "把选题报告初稿重写第三节",
+      created_at: "2026-07-12T09:00:00.000Z"
+    })
   });
-  assert.equal(decisions[0]?.card?.title, "WorkHub 连接断开了");
+  assert.equal(decisions[0]?.card?.title, "有个活儿想派给我");
 
-  // User switches language; a newly arriving SSE-retrying card must localize live.
+  // User switches language; a newly arriving card (different notification id, so it is not
+  // deduped against the first one) must localize live.
   liveLocale = "en-US";
-  handlers.get("sse-status")?.({
-    payload: { stream_kind: "global", stream_path: "/api/push/stream", state: "retrying" }
+  handlers.get("push-event")?.({
+    payload: shellPayload(eventTypes.notificationCreated, {
+      id: "notification-live-locale-2",
+      type: "action_card_item.dispatch_ask",
+      severity: "normal",
+      title: "有个活想派给你",
+      body: "把选题报告初稿重写第三节",
+      created_at: "2026-07-12T09:01:00.000Z"
+    })
   });
-  assert.equal(decisions[1]?.card?.title, "Connection is unstable");
-});
-
-test("desktop Cuu runtime clears the offline status card when the SSE stream reopens", async () => {
-  const handlers = new Map<string, (event: DesktopShellEventEnvelope) => void>();
-  const controller = createCuuController();
-  const decisions: CuuControllerDecision[] = [];
-  const listen: DesktopShellListen = (eventName, handler) => {
-    handlers.set(eventName, handler);
-    return () => {};
-  };
-
-  const runtime = await bindDesktopShellCuuRuntime({
-    listen,
-    controller,
-    notify: () => {},
-    onDecision: (decision) => decisions.push(decision)
-  });
-
-  handlers.get("sse-status")?.({
-    payload: { stream_kind: "global", stream_path: "/api/push/stream", state: "retrying" }
-  });
-  assert.equal(controller.snapshot().active_card?.id, "sse-status:global:retrying");
-
-  handlers.get("sse-status")?.({
-    payload: { stream_kind: "global", stream_path: "/api/push/stream", state: "open" }
-  });
-
-  assert.equal(controller.snapshot().active_card, undefined);
-  assert.equal(decisions.at(-1)?.outcome, "idle");
-  assert.equal(decisions.at(-1)?.reason, "dismissed_current");
-
-  await runtime.dispose();
-});
-
-test("desktop Cuu runtime suppresses transient retrying status when the stream quickly reopens", async () => {
-  const handlers = new Map<string, (event: DesktopShellEventEnvelope) => void>();
-  const controller = createCuuController();
-  const decisions: CuuControllerDecision[] = [];
-  const listen: DesktopShellListen = (eventName, handler) => {
-    handlers.set(eventName, handler);
-    return () => {};
-  };
-
-  const runtime = await bindDesktopShellCuuRuntime({
-    listen,
-    controller,
-    notify: () => {},
-    onDecision: (decision) => decisions.push(decision),
-    retryingDelayMs: 25
-  });
-
-  handlers.get("sse-status")?.({
-    payload: { stream_kind: "global", stream_path: "/api/push/stream", state: "retrying" }
-  });
-  assert.equal(controller.snapshot().active_card, undefined);
-
-  handlers.get("sse-status")?.({
-    payload: { stream_kind: "global", stream_path: "/api/push/stream", state: "open" }
-  });
-  await new Promise((resolve) => setTimeout(resolve, 35));
-
-  assert.equal(controller.snapshot().active_card, undefined);
-  assert.equal(decisions.find((decision) => decision.card?.id === "sse-status:global:retrying"), undefined);
-
-  await runtime.dispose();
+  assert.equal(decisions[1]?.card?.title, "A task might come my way");
 });
 
 test("desktop Cuu runtime respects do-not-disturb controller decisions", async () => {
