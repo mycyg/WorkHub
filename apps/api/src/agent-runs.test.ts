@@ -16,6 +16,7 @@ import {
   allowedWorkItemTransitions,
   eventTypes,
   type AcceptedDeliverableVM,
+  type AgentRunReminderFacts,
   type WorkHubEvent,
   type WorkItemStatus
 } from "@workhub/contracts";
@@ -43,6 +44,7 @@ import type {
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
 import { createAgentRunRoutes, type ProposalReplayAuditReader } from "./routes/agent-runs.js";
+import { buildReplayTracePage, toAgentRunLiveVm } from "./pages/replay.js";
 import { createDbAgentRunPersistence } from "./services/agent-run-persistence.js";
 import { createAgentRunConfidenceRecorder } from "./services/agent-run-confidence.js";
 import { createAgentRunSnapshotHook } from "./services/agent-run-snapshots.js";
@@ -51,6 +53,7 @@ import { createHumanReservedGuard } from "./services/human-reserved-guard.js";
 import { createInMemoryProposalService } from "./services/proposals.js";
 import { WorkItemServiceError, type WorkItemService } from "./services/work-items.js";
 import {
+  AGENT_RUN_REMINDER_CAP,
   AgentRunnerError,
   canUseToolForTaskPlanRole,
   createInMemoryAgentRunQueue,
@@ -8105,4 +8108,320 @@ test("INF-10: the snapshot hook leaves no orphan snapshot row when the atomic wr
   );
   assert.equal(snapshots.rows.length, 0, "a failed atomic write leaves no orphan snapshot row");
   assert.equal(auditLogs.rows.length, 0);
+});
+
+// R26 批 B6b（重复动作提醒的持久化与观测面）。
+//
+// B6 让「先劝再断」的前两档发出 agent_run.reminded，两端时间线也已经会渲这一行；但那条事件只活在
+// SSE 流里——运行记录不留、库里不落，于是回放页（读的是库）永远看不到，换个 worker 接手也不知道
+// 已经劝过几次。这一组用例钉住补上的那一跳：事件 → 运行记录 → 落盘 → 读回 → 两个 VM。
+//
+// 脚本化 client 连着三步发同一个工具调用（工具名 + 入参完全一致 → 指纹相同），第三步跨过第一档
+// 阈值（默认窗口 3）触发 tier 1；第四步改口收尾，运行正常成功。
+function repeatedToolAgentClient(): AgentLoopClient {
+  let calls = 0;
+  return {
+    model: "deepseek-v4-flash",
+    messages: {
+      async create() {
+        calls += 1;
+        if (calls <= 3) {
+          return {
+            id: `msg-repeat-${calls}`,
+            stopReason: "tool_use",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            content: [
+              {
+                type: "tool_use",
+                // 指纹只看工具名与入参（见 control.ts 的 fingerprintAssistantBlocks），id 逐次不同不影响判定。
+                id: `tool-repeat-${calls}`,
+                name: "read_file",
+                input: { path: "notes.md" }
+              }
+            ]
+          };
+        }
+        return {
+          id: "msg-repeat-done",
+          stopReason: "end_turn",
+          usage: { inputTokens: 1, outputTokens: 1 },
+          content: [{ type: "text", text: "已改用别的做法并完成。" }]
+        };
+      }
+    }
+  };
+}
+
+const b6bTier1Reminder: AgentRunReminderFacts = {
+  step_no: 3,
+  tier: 1,
+  repeats: 3,
+  shape: "identical",
+  tool_id: "read_file"
+};
+
+test("R26-B6b 连续三步同一工具：提醒进运行记录与两个 VM，且不占步号", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const publishedEvents: { type: string; data: Record<string, unknown> }[] = [];
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000e2",
+    persistence,
+    client: () => repeatedToolAgentClient(),
+    requireDeliverable: false,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    tools: () => ({
+      toModelTools: () => [],
+      async execute() {
+        return { ok: true, isError: false, content: "notes.md 的内容与上次一样。" };
+      }
+    }),
+    eventBus: {
+      async publish(_topic, type, data) {
+        publishedEvents.push({
+          type,
+          data: (data as WorkHubEvent<Record<string, unknown>>).data as Record<string, unknown>
+        });
+      }
+    }
+  });
+
+  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "Repeat-reminded run" });
+  const settled = await queue.runNext();
+
+  assert.equal(settled?.status, "succeeded");
+
+  // (a) 事件确实发了一条、且只发一条（第一档跨过阈值那一步发一次，第 4 步链路已断）。
+  const reminded = publishedEvents.filter((event) => event.type === eventTypes.agentRunReminded);
+  assert.equal(reminded.length, 1);
+  assert.equal(reminded[0]?.data["tier"], 1);
+  assert.equal(reminded[0]?.data["step_no"], 3);
+
+  // (b) 事件被累进了运行记录，run_id/work_item_id 这些事件专属字段由 readAgentRunReminderFacts 剥掉。
+  assert.deepEqual(settled?.reminders, [b6bTier1Reminder]);
+
+  // (c) 提醒不是模型的一步：步号与 trace 行数一字未变。第 3 步照旧只有 tool_call + tool_result 两行，
+  //     步数用量仍是 4（三次重复 + 一次收尾），终态行落在 stepsUsed + 1。
+  assert.equal(settled?.usage.steps_used, 4);
+  assert.equal(settled?.trace.filter((step) => step.step_no === 3).length, 2);
+  assert.deepEqual(
+    settled?.trace.filter((step) => step.step_no === 3).map((step) => step.phase),
+    ["tool_call", "tool_result"]
+  );
+  assert.deepEqual([...new Set(settled?.trace.map((step) => step.step_no))], [1, 2, 3, 4, 5]);
+
+  // (d) 实时页与回放页两个 VM 都带上这一行（渲染由 packages/ui / 桌面端按 locale 组词，见 B6）。
+  assert.deepEqual(toAgentRunLiveVm(settled!).reminders, [b6bTier1Reminder]);
+  assert.deepEqual(buildReplayTracePage({ run: settled! }).reminders, [b6bTier1Reminder]);
+
+  // (e) worker 崩溃恢复：换一个 queue（内存 runs 全空）从持久化读回，提醒仍在，VM 照样有这一行。
+  const restarted = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000e3",
+    persistence,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+  const recovered = await restarted.get(queued.run_id);
+  assert.deepEqual(recovered?.reminders, [b6bTier1Reminder]);
+  assert.deepEqual(toAgentRunLiveVm(recovered!).reminders, [b6bTier1Reminder]);
+});
+
+// 没被劝过的运行不许多出这个键：缺席与空数组同义，additive optional 的既有取舍——存量客户端读旧响应零回归。
+test("R26-B6b 没触发提醒的运行，记录与两个 VM 都不出现 reminders 键", async () => {
+  const runtimeSettings = settings();
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000e4",
+    client: () => singleToolThenDoneAgentClient(),
+    requireDeliverable: false,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false,
+    tools: () => ({
+      toModelTools: () => [],
+      async execute() {
+        return { ok: true, isError: false, content: "done" };
+      }
+    })
+  });
+
+  await queue.enqueue({ workItemId, actorId: userId, title: "Quiet run" });
+  const settled = await queue.runNext();
+
+  assert.equal(settled?.status, "succeeded");
+  assert.equal("reminders" in settled!, false);
+  assert.equal("reminders" in toAgentRunLiveVm(settled!), false);
+  assert.equal("reminders" in buildReplayTracePage({ run: settled! }), false);
+});
+
+// B6b 落盘往返：运行记录的 reminders ↔ agent_runs.reminders_json。走的是真 DB 适配层
+// （createDbAgentRunPersistence 的 toPersistenceRun / toQueueRun），不是内存假仓储的 structuredClone——
+// 后者只能证明对象可复制，证明不了提醒真的经过了那一列。
+function b6bRunRecord(overrides: Partial<AgentRunQueueRecord> = {}): AgentRunQueueRecord {
+  return {
+    run_id: "40000000-0000-4000-8000-0000000000e5",
+    work_item_id: workItemId,
+    actor_id: userId,
+    mode: "worker",
+    status: "running",
+    title: "Reminder round-trip",
+    budget: { max_steps: 15, total_timeout_s: 300, max_tokens: 120000, max_cost_cny: "5" },
+    budget_decision: {
+      decision_id: "pcost-round-trip",
+      allowed: true,
+      model_route: { provider: "deepseek", model: "deepseek-v4-flash", reason: "default" }
+    },
+    usage: { steps_used: 3, token_in: 3, token_out: 3, estimated_cost_cny: "0" },
+    trace: [],
+    created_at: now.toISOString(),
+    updated_at: now.toISOString(),
+    ...overrides
+  };
+}
+
+function b6bPersistenceWithRow() {
+  let stored: Record<string, unknown> | undefined;
+  const repository = {
+    async createRun(run: Parameters<AgentRunRepository["createRun"]>[0]) {
+      stored = {
+        id: run.runId,
+        orgId: null,
+        workspaceId: null,
+        workItemId: run.workItemId,
+        parentRunId: null,
+        taskPlanId: null,
+        taskPlanItemId: null,
+        taskPlanItemEpoch: null,
+        objectiveId: null,
+        agentRole: null,
+        objectiveMd: null,
+        mode: run.mode,
+        actor: "human",
+        actorUserId: run.actorUserId,
+        title: run.title,
+        status: run.status,
+        model: run.model,
+        turnsUsed: run.usage.stepsUsed,
+        maxTurns: run.budget.maxSteps,
+        totalTimeoutS: run.budget.totalTimeoutS,
+        maxTokens: run.budget.maxTokens,
+        maxCostCny: run.budget.maxCostCny,
+        seconds: 0,
+        tokenIn: run.usage.tokenIn,
+        tokenOut: run.usage.tokenOut,
+        costEstimate: run.usage.estimatedCostCny,
+        budgetDecisionJson: run.budgetDecisionJson,
+        outcomeReason: null,
+        handoffMd: null,
+        handoffJson: null,
+        // 缺席即库里的 null——「这次运行没被劝过」。
+        remindersJson: run.remindersJson ?? null,
+        workdirRef: null,
+        claimedBy: null,
+        claimedAt: null,
+        heartbeatAt: null,
+        leaseExpiresAt: null,
+        executionHint: "server",
+        sourceConversationId: null,
+        sourceActionCardItemId: null,
+        recoverAttempts: 0,
+        startedAt: null,
+        finishedAt: null,
+        createdAt: run.createdAt,
+        updatedAt: run.updatedAt
+      };
+      return stored as Awaited<ReturnType<AgentRunRepository["createRun"]>>;
+    },
+    async findById() {
+      return stored
+        ? { run: stored, steps: [] } as unknown as Awaited<ReturnType<AgentRunRepository["findById"]>>
+        : null;
+    },
+    async createRunIfWorkItemIdle() { throw new Error("not used"); },
+    async updateRun() { throw new Error("not used"); },
+    async cancelActiveRun() { throw new Error("not used"); },
+    async replaceTrace() { throw new Error("not used"); },
+    async setWorkdir() { throw new Error("not used"); },
+    async listActive() { return []; },
+    async claimQueued() { throw new Error("not used"); },
+    async claimNextQueued() { throw new Error("not used"); },
+    async heartbeatClaim() { throw new Error("not used"); },
+    async requeueExpiredClaims() { throw new Error("not used"); },
+    async restoreDeadLetterClaim() { throw new Error("not used"); },
+    async listUnsettledTaskPlanRuns() { throw new Error("not used"); }
+  } as unknown as AgentRunRepository;
+  return {
+    persistence: createDbAgentRunPersistence(repository),
+    row: () => stored,
+    seedReminders(value: unknown) {
+      if (stored) {
+        stored.remindersJson = value;
+      }
+    }
+  };
+}
+
+test("R26-B6b 提醒经 reminders_json 往返：写进列、读回记录、空的一律缺席", async () => {
+  const withReminders = b6bPersistenceWithRow();
+  await withReminders.persistence.createRun(b6bRunRecord({ reminders: [b6bTier1Reminder] }));
+  assert.deepEqual(withReminders.row()?.["remindersJson"], [b6bTier1Reminder]);
+  assert.deepEqual((await withReminders.persistence.get(b6bRunRecord().run_id))?.reminders, [b6bTier1Reminder]);
+
+  // 没被劝过：列写 null，读回不出现这个键（缺席与空数组同义）。
+  const quiet = b6bPersistenceWithRow();
+  await quiet.persistence.createRun(b6bRunRecord());
+  assert.equal(quiet.row()?.["remindersJson"], null);
+  assert.equal("reminders" in (await quiet.persistence.get(b6bRunRecord().run_id))!, false);
+
+  // 空数组不落列：写 [] 只会让「这一列有没有内容」多出一个没有语义差别的第三态。
+  const empty = b6bPersistenceWithRow();
+  await empty.persistence.createRun(b6bRunRecord({ reminders: [] }));
+  assert.equal(empty.row()?.["remindersJson"], null);
+  assert.equal("reminders" in (await empty.persistence.get(b6bRunRecord().run_id))!, false);
+});
+
+test("R26-B6b 库里的脏提醒逐条丢弃，非数组整列忽略，条数封顶", async () => {
+  const dirty = b6bPersistenceWithRow();
+  await dirty.persistence.createRun(b6bRunRecord());
+
+  // 逐条宽容读取：解析不出来的那条整条丢掉，剩下的照常渲——宁可少一行，也不把半截数据编成一句话。
+  dirty.seedReminders([
+    b6bTier1Reminder,
+    { step_no: 5, tier: 3, repeats: 8, shape: "identical" },
+    { step_no: 5, tier: 2, repeats: 5, shape: "spiral" },
+    "not-an-object",
+    { step_no: 5, tier: 2, repeats: 5, shape: "identical", tool_id: "read_file", run_id: workItemId }
+  ]);
+  assert.deepEqual((await dirty.persistence.get(b6bRunRecord().run_id))?.reminders, [
+    b6bTier1Reminder,
+    // 事件专属字段 run_id 由 readAgentRunReminderFacts 自动剥掉。
+    { step_no: 5, tier: 2, repeats: 5, shape: "identical", tool_id: "read_file" }
+  ]);
+
+  // 整列不是数组（历史脏数据/手改）：不猜、不半读，整列当缺席。
+  dirty.seedReminders({ step_no: 3 });
+  assert.equal("reminders" in (await dirty.persistence.get(b6bRunRecord().run_id))!, false);
+
+  // 封顶：正常最多两条，上限只是防御——别让一列 jsonb 撑爆整页时间线。到顶后留最早的那些。
+  dirty.seedReminders(
+    Array.from({ length: AGENT_RUN_REMINDER_CAP + 5 }, (_, index) => ({
+      step_no: index + 1,
+      tier: 1,
+      repeats: 3,
+      shape: "identical"
+    }))
+  );
+  const capped = (await dirty.persistence.get(b6bRunRecord().run_id))?.reminders;
+  assert.equal(capped?.length, AGENT_RUN_REMINDER_CAP);
+  assert.equal(capped?.at(-1)?.step_no, AGENT_RUN_REMINDER_CAP);
 });
