@@ -1,4 +1,11 @@
-import { settingsPageVmSchema, workHubLocaleStorageKey, workHubLocales, type SettingsPageVM, type WorkHubLocale } from "@workhub/contracts";
+import {
+  settingsPageVmSchema,
+  workHubLocaleStorageKey,
+  workHubLocales,
+  type PluginSummaryVM,
+  type SettingsPageVM,
+  type WorkHubLocale
+} from "@workhub/contracts";
 import type { Settings } from "@workhub/config";
 
 import { parseOutputContract } from "./output-contract.js";
@@ -17,6 +24,10 @@ type SettingsPageInput = {
     learned_from_session: boolean;
     created_at: string;
   }>;
+  // R24-P 阶段 1：已安装插件的只读摘要（仅管理员——调用方负责这道门，与 permissionPolicies 同口径）。
+  // 这里刻意收窄成 PluginSummaryVM 而不是 PluginVM：source_path 是这台服务器上的绝对路径，
+  // 网页只读列表不需要它。
+  plugins?: PluginSummaryVM[];
   generatedAt?: Date;
 };
 
@@ -43,6 +54,7 @@ export function buildSettingsPage(input: SettingsPageInput): SettingsPageVM {
           }))
       }
       : {}),
+    ...(input.plugins ? { plugins: input.plugins } : {}),
     runtime: {
       app_env: input.settings.appEnv,
       runtime_status: input.readiness.ready && brokerConfigured && databaseConfigured ? "ready" : "attention_needed",

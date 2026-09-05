@@ -2956,6 +2956,62 @@ test("R4.11 Settings route component uses a typed Settings Page VM without leaki
   assertNoMainWindowBoundaryLeak(settings.html);
 });
 
+test("R24-P settings plugins list is admin-gated and read-only: members never see the section at all", () => {
+  const base = settingsVm("zh-CN");
+  const withoutPlugins = renderWebRouteComponent({ key: "settings", settings: base }, { locale: "zh-CN" });
+  // 非管理员：服务端结构性不填 vm.plugins（不是空数组——空数组会被读成「一个都没装」），整区不渲。
+  assert.equal(withoutPlugins.html.includes("data-r24-settings-plugins"), false);
+
+  const withPlugins = renderWebRouteComponent(
+    {
+      key: "settings",
+      settings: {
+        ...base,
+        plugins: [
+          {
+            id: "22222222-2222-4222-8222-222222222222",
+            name: "dsh-plugin-echo",
+            version: "0.1.0",
+            enabled: true,
+            status: "installed",
+            tool_count: 2,
+            compat_verdict: "ok"
+          },
+          {
+            id: "33333333-3333-4333-8333-333333333333",
+            name: "dsh-plugin-finance-data",
+            enabled: true,
+            status: "load_failed",
+            tool_count: 0,
+            compat_verdict: "warn"
+          },
+          {
+            id: "44444444-4444-4444-8444-444444444444",
+            name: "dsh-plugin-old",
+            enabled: false,
+            status: "disabled",
+            tool_count: 0,
+            compat_verdict: "ok"
+          }
+        ]
+      }
+    },
+    { locale: "zh-CN" }
+  );
+  assert.equal(withPlugins.html.includes('data-r24-settings-plugins="3"'), true);
+  assert.equal(withPlugins.html.includes("dsh-plugin-echo 0.1.0"), true);
+  assert.equal(withPlugins.html.includes("已启用 · 2 个工具"), true);
+  // 装不上的那条如实说「装不上」，不混成「已停用」——两件事的下一步动作完全不同。
+  assert.equal(withPlugins.html.includes("装不上"), true);
+  assert.equal(withPlugins.html.includes("已停用"), true);
+  assert.equal(withPlugins.html.includes("安装前体检有提醒"), true);
+  // 网页只读：这一区不该出现任何安装/启停/移除的动作按钮。
+  assert.equal(withPlugins.html.includes('data-action-id="install_plugin"'), false);
+  assert.equal(withPlugins.html.includes('data-action-id="disable_plugin"'), false);
+  // 本机绝对路径不进网页 VM，自然也不该出现在 HTML 里。
+  assert.equal(withPlugins.html.includes("/srv/plugins"), false);
+});
+
 test("R18-H1 settings members section is admin-gated: SSR skeleton only when isAdmin", () => {
   const vm = surfaceVm();
   const settingsVm = vm.page_vms.settings;

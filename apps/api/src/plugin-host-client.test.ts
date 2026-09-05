@@ -11,7 +11,11 @@ import {
 } from "@workhub/plugin-host";
 import type { AuditLogRepository, AuditLogRow, CreateAuditLogInput } from "@workhub/db";
 
-import { createPluginHostClient, type PluginHostSpawn } from "./services/plugin-host-client.js";
+import {
+  createPluginHostClient,
+  createRegistryPluginPathSource,
+  type PluginHostSpawn
+} from "./services/plugin-host-client.js";
 
 const DESCRIPTOR = {
   pluginId: "dsh-plugin-echo",
@@ -412,4 +416,167 @@ test("配置写成 npm 包名时降级为「没配插件」，不让 API 起不�
       process.env.WORKHUB_PLUGIN_PATHS = previous;
     }
   }
+});
+
+// —— R24-P 阶段 1：清单来自 DB，env 只是引导来源 —— //
+
+function pluginRow(sourcePath: string, overrides: Record<string, unknown> = {}) {
+  return {
+    id: `id-${sourcePath}`,
+    workspaceId: "ws-1",
+    name: sourcePath,
+    version: null,
+    sourceKind: "local_path" as const,
+    sourcePath,
+    enabled: true,
+    status: "installed" as const,
+    compatReport: {},
+    loadReport: null,
+    toolCount: 1,
+    installedBy: null,
+    createdAt: new Date("2026-09-05T09:00:00.000Z"),
+    updatedAt: new Date("2026-09-05T09:00:00.000Z"),
+    ...overrides
+  };
+}
+
+test("宿主加载的是「引导路径 ∪ 该工作区启用的清单行」，重复目录只算一次", async () => {
+  const { spawns, spawnProcess } = happyHost();
+  const listed: string[] = [];
+  const host = createPluginHostClient({
+    pluginPaths: ["/dev/echo"],
+    auditLogs: false,
+    spawnProcess,
+    pluginPathSource: async (workspaceId) => {
+      listed.push(workspaceId ?? "<none>");
+      // 第二行跟引导路径是同一个目录——不能因此让宿主把同一个插件加载两遍。
+      return ["/dev/echo", "/srv/plugins/a", "/dev/echo", "/srv/plugins/b"];
+    }
+  });
+  await keepingEventLoopAlive(async () => {
+    await host.toolSpecs({ workspaceId: "ws-1" });
+  });
+  assert.deepEqual(listed, ["ws-1"], "清单按工作区解析，不是全局一份");
+  assert.equal(spawns.length, 1);
+  assert.equal(spawns[0]?.env["WORKHUB_PLUGIN_PATHS"], "/dev/echo,/srv/plugins/a,/srv/plugins/b");
+  await host.close();
+});
+
+test("清单里一个都没有时不起子进程（也不会因为接了 DB 来源就白起一个空宿主）", async () => {
+  let spawned = 0;
+  const host = createPluginHostClient({
+    pluginPaths: [],
+    auditLogs: false,
+    spawnProcess: (() => {
+      spawned += 1;
+      throw new Error("不该 spawn");
+    }) as unknown as PluginHostSpawn,
+    pluginPathSource: () => []
+  });
+  assert.deepEqual(await host.toolSpecs({ workspaceId: "ws-1" }), []);
+  assert.equal(spawned, 0);
+  await host.close();
+});
+
+test("停用一个插件后 reload 换一个新宿主，按新清单重新握手", async () => {
+  const { spawns, spawnProcess } = happyHost();
+  let paths = ["/srv/plugins/a", "/srv/plugins/b"];
+  const host = createPluginHostClient({
+    pluginPaths: [],
+    auditLogs: false,
+    spawnProcess,
+    pluginPathSource: () => paths
+  });
+  await keepingEventLoopAlive(async () => {
+    await host.toolSpecs({ workspaceId: "ws-1" });
+    // 不改清单时不该反复重启宿主。
+    await host.toolSpecs({ workspaceId: "ws-1" });
+    assert.equal(spawns.length, 1);
+    paths = ["/srv/plugins/a"];
+    const reports = await host.reload("ws-1");
+    assert.equal(reports.length, 1, "重载后如实回报这一轮的加载结果");
+    assert.equal(spawns.length, 2);
+    assert.equal(spawns[1]?.env["WORKHUB_PLUGIN_PATHS"], "/srv/plugins/a");
+  });
+  await host.close();
+});
+
+test("两个工作区各用各的宿主——A 装的插件不会出现在 B 的 run 里", async () => {
+  const { spawns, spawnProcess } = happyHost();
+  const host = createPluginHostClient({
+    pluginPaths: [],
+    auditLogs: false,
+    spawnProcess,
+    pluginPathSource: (workspaceId) => (workspaceId === "ws-1" ? ["/srv/a"] : ["/srv/b"])
+  });
+  await keepingEventLoopAlive(async () => {
+    await host.toolSpecs({ workspaceId: "ws-1" });
+    await host.toolSpecs({ workspaceId: "ws-2" });
+    // 再回到 ws-1 不该重启——两个工作区各有各的进程，不是一个进程来回换清单。
+    await host.toolSpecs({ workspaceId: "ws-1" });
+  });
+  assert.equal(spawns.length, 2);
+  assert.deepEqual(
+    spawns.map((entry) => entry.env["WORKHUB_PLUGIN_PATHS"]),
+    ["/srv/a", "/srv/b"]
+  );
+  await host.close();
+});
+
+test("活跃宿主数超上限时关掉最久未用的那个", async () => {
+  const { spawns, children, spawnProcess } = happyHost();
+  const host = createPluginHostClient({
+    pluginPaths: [],
+    auditLogs: false,
+    spawnProcess,
+    maxLiveProcesses: 2,
+    pluginPathSource: (workspaceId) => [`/srv/${workspaceId}`]
+  });
+  await keepingEventLoopAlive(async () => {
+    await host.toolSpecs({ workspaceId: "ws-1" });
+    await host.toolSpecs({ workspaceId: "ws-2" });
+    await host.toolSpecs({ workspaceId: "ws-3" });
+  });
+  assert.equal(spawns.length, 3);
+  assert.equal(children[0]?.stdin.writable, false, "最久未用的 ws-1 宿主被关掉");
+  assert.equal(children[2]?.stdin.writable, true);
+  await host.close();
+});
+
+test("DB 清单读不出来时退回引导路径，而不是让这次 run 直接没有插件工具", async () => {
+  const { spawns, spawnProcess } = happyHost();
+  const host = createPluginHostClient({
+    pluginPaths: ["/dev/echo"],
+    auditLogs: false,
+    spawnProcess,
+    pluginPathSource: () => {
+      throw new Error("connection terminated unexpectedly");
+    }
+  });
+  await keepingEventLoopAlive(async () => {
+    const specs = await host.toolSpecs({ workspaceId: "ws-1" });
+    assert.equal(specs.length, 1);
+  });
+  assert.equal(spawns[0]?.env["WORKHUB_PLUGIN_PATHS"], "/dev/echo");
+  await host.close();
+});
+
+test("引导路径条数是可读的——设置页据此说清「还有几个来自环境变量」", () => {
+  const host = createPluginHostClient({ pluginPaths: ["/a", "/b"], auditLogs: false });
+  assert.equal(host.bootstrapPathCount(), 2);
+});
+
+test("createRegistryPluginPathSource 合并引导路径与启用行，没有工作区上下文时只给引导路径", async () => {
+  const source = createRegistryPluginPathSource({
+    bootstrapPaths: ["/dev/echo"],
+    repository: {
+      async listEnabledForWorkspace(workspaceId) {
+        assert.equal(workspaceId, "ws-1");
+        return [pluginRow("/srv/plugins/a"), pluginRow("/dev/echo")] as never;
+      }
+    }
+  });
+  assert.deepEqual(await source("ws-1"), ["/dev/echo", "/srv/plugins/a"]);
+  // 没有工作区上下文（离线工具/无租户的调用）不去查 DB——查不出「谁的插件」。
+  assert.deepEqual(await source(undefined), ["/dev/echo"]);
 });

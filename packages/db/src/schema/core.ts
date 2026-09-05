@@ -12,6 +12,8 @@ import type {
   DispatchPolicy,
   ExecutionHint,
   GithubActivityKind,
+  PluginSourceKind,
+  PluginStatus,
   RiskLevel,
   TaskPlanItemRole,
   TaskPlanItemStatus,
@@ -2471,6 +2473,43 @@ export const proactiveIntents = pgTable(
   ]
 );
 
+// R24-P 阶段 1（见 0072 迁移）：插件清单。阶段 0 的「装了哪些插件」只活在一个 env 变量里；这张表把它
+// 变成可查询、可治理的记录（启停 / 安装前静态体检 / 试加载结果 / 安装人）。source_kind 是单值 CHECK：
+// 只允许本地目录——npm/git/tarball 会在安装期跑包自己的 prepare/postinstall，那是沙箱之外的任意代码执行。
+export const plugins = pgTable(
+  "plugins",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    // 插件自报的包名（package.json 的 name）；读不出时退化成目录名。
+    name: text("name").notNull(),
+    version: text("version"),
+    sourceKind: varchar("source_kind", { length: 32 }).$type<PluginSourceKind>().notNull().default("local_path"),
+    sourcePath: text("source_path").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    status: varchar("status", { length: 24 }).$type<PluginStatus>().notNull().default("installed"),
+    // 安装前的静态体检结论（读 package.json，不执行插件任何代码）。
+    compatReport: jsonb("compat_report").$type<JsonObject>().notNull(),
+    // 宿主试加载结果；加载失败时 status='load_failed'，原因留在这里而不是只在日志里一闪而过。
+    loadReport: jsonb("load_report").$type<JsonObject>(),
+    toolCount: integer("tool_count").notNull().default(0),
+    installedBy: uuid("installed_by").references(() => users.id, { onDelete: "set null" }),
+    ...timestamps()
+  },
+  (table): PgTableExtraConfigValue[] => [
+    check("plugins_source_kind_ck", sql`${table.sourceKind} in ('local_path')`),
+    check("plugins_status_ck", sql`${table.status} in ('installed', 'load_failed', 'disabled')`),
+    check("plugins_tool_count_ck", sql`${table.toolCount} >= 0`),
+    // 同一工作区同一目录只能装一次——重复安装是 409「已经装过了」，不是两条各自启停的记录。
+    uniqueIndex("plugins_workspace_source_path_uq").on(table.workspaceId, table.sourcePath),
+    index("plugins_workspace_created_idx").on(table.workspaceId, table.createdAt),
+    // 宿主装配热路径：只挑启用且未被停用的行；部分索引不给停用行付索引成本。
+    index("plugins_workspace_enabled_idx")
+      .on(table.workspaceId)
+      .where(sql`${table.enabled} = true and ${table.status} <> 'disabled'`)
+  ]
+);
+
 export const workHubTables = {
   users,
   // CORE-12：补收此前漏注册的 5 张表——session/凭据/邀请/成员/预算预留都在活跃 graph 里，
@@ -2554,7 +2593,9 @@ export const workHubTables = {
   auditLogs,
   projectGithubBindings,
   projectGithubActivities,
-  proactiveIntents
+  proactiveIntents,
+  // R24-P 阶段 1：插件清单（见 0072 迁移）。
+  plugins
 } as const;
 
 export type WorkHubTableName = keyof typeof workHubTables;

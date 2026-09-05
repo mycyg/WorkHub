@@ -102,6 +102,8 @@ import type {
   TeamSkillManagementItemVM,
   PatchUserMemoryRequest,
   PatchTeamSkillRequest,
+  PluginListVM,
+  PluginVM,
   // R23 SA-06：管理员手动催一轮「AI 自学团队技能」的回执契约。
   TeamSkillCurateNowResponse,
   // R14 批 FEEDBACK（web-feedback-ui）：提议详情页「有用/没用」反馈的 PUT 请求体契约。
@@ -577,6 +579,16 @@ export type WorkHubApiClient = {
   // R23 SA-06：立刻跑一轮「AI 自学团队技能」，不等今晚。仅管理员（403）；已经在跑或开关关着 409、
   // 没配 LLM 密钥 503。回执只承诺「已开跑」，跑完的结果去技能页的 curation 区块看。
   curateTeamSkillsNow: () => Promise<TeamSkillCurateNowResponse>;
+  // R24-P 阶段 1：插件治理（全部仅管理员，非管理员 403）。安装只认这台服务器上的**绝对目录**——
+  // npm 包名 / git url / tarball 会在安装期跑包自己的 prepare/postinstall（沙箱之外的任意代码执行），
+  // 所以 InstallPluginRequest 只有 source_path 一个字段，且服务端 strict 校验。
+  // 可选方法：桌面客户端可能连到还没有这批端点的旧服务端，调用方按 `if (!client.listPlugins)` 降级，
+  // 不做非空断言硬调（MRG-25 的既有取舍）。
+  listPlugins?: () => Promise<PluginListVM>;
+  installPlugin?: (payload: { source_path: string }) => Promise<PluginVM>;
+  enablePlugin?: (id: string) => Promise<PluginVM>;
+  disablePlugin?: (id: string) => Promise<PluginVM>;
+  removePlugin?: (id: string) => Promise<{ removed: true }>;
   pages: PageClient;
   streams: PushStreamClient;
   streamUrl: (path: string) => string;

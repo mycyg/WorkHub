@@ -541,7 +541,13 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["post", "/api/me/personal-projects"],
     ["get", "/api/drive/projects/{projectId}/items/{itemId}/versions"],
     ["post", "/api/drive/projects/{projectId}/items/{itemId}/versions/{versionId}/restore"],
-    ["post", "/api/meetings/{meetingId}/analyze"]
+    ["post", "/api/meetings/{meetingId}/analyze"],
+    // R24-P 阶段 1：插件治理（清单/安装/启停/移除，仅管理员）。
+    ["get", "/api/plugins"],
+    ["post", "/api/plugins"],
+    ["post", "/api/plugins/{id}/enable"],
+    ["post", "/api/plugins/{id}/disable"],
+    ["delete", "/api/plugins/{id}"]
   ] as const;
   for (const [method, route] of expectedRoutes) {
     assert.ok(body.paths[route]?.[method], `${method.toUpperCase()} ${route} missing from OpenAPI document`);

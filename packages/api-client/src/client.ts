@@ -931,6 +931,16 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       }),
     // R23 SA-06：管理员手动催一轮夜间自学（无请求体——这一轮覆盖整个部署的技能库，没有可选参数）。
     curateTeamSkillsNow: () => request("/api/team-skills/curate-now", { method: "POST" }),
+    // R24-P 阶段 1：插件治理（仅管理员）。安装体是 { source_path }——只认本机绝对目录。
+    listPlugins: () => request("/api/plugins"),
+    installPlugin: (payload) =>
+      request("/api/plugins", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    enablePlugin: (id) => request(`/api/plugins/${encodeURIComponent(id)}/enable`, { method: "POST" }),
+    disablePlugin: (id) => request(`/api/plugins/${encodeURIComponent(id)}/disable`, { method: "POST" }),
+    removePlugin: (id) => request(`/api/plugins/${encodeURIComponent(id)}`, { method: "DELETE" }),
     pages: {
       attention: (options) => request(withPageLocale("/api/pages/attention", options)),
       approvals: (options) => request(withApprovalPageOptions("/api/pages/approvals", options)),

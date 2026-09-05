@@ -50,7 +50,8 @@ import {
 // R15 批 E1：新增 project_milestones + work_item_dependencies 两张表（迁移 0064），graph 涨到 74。
 // CORE-12：补收此前漏注册的 5 张既有表（user_credentials/sessions/user_invites/workspace_memberships/
 // budget_reservations），graph 涨到 80——漂移测试从此对这 5 张表同样生效。
-const F02_TABLE_COUNT = 80;
+// R24-P 阶段 1：新增 plugins 一张表（迁移 0072，插件清单与治理），graph 涨到 81。
+const F02_TABLE_COUNT = 81;
 
 type WorkHubTable = (typeof workHubTables)[keyof typeof workHubTables];
 
@@ -690,7 +691,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0071 event outbox failed", () => {
+test("migration journal ends with 0072 plugins", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -706,22 +707,67 @@ test("migration journal ends with 0071 event outbox failed", () => {
       when: finalEntry.when
     },
     {
-      // R21 加固：0070(proactive_intent_delivering,when=1783929002000)/0071(event_outbox_failed,
-      // when=1783929003000)接在 0069(event_outbox,when=1783929001000)之后,journal 收于 0071,when 严格递增。
-      idx: 71,
+      // R24-P 阶段 1：0072(plugins,when=1783929004000)接在 0071(event_outbox_failed,
+      // when=1783929003000)之后,journal 收于 0072,when 严格递增。
+      idx: 72,
       version: "7",
-      tag: "0071_event_outbox_failed",
+      tag: "0072_plugins",
       breakpoints: true,
-      when: 1783929003000
+      when: 1783929004000
     }
   );
-  // when 严格递增——0069 → 0070 → 0071 的时间戳必须依次增大。
+  // when 严格递增——0069 → 0070 → 0071 → 0072 的时间戳必须依次增大。
   const entry0069 = journal.entries.find((entry) => entry.tag === "0069_event_outbox");
   const entry0070 = journal.entries.find((entry) => entry.tag === "0070_proactive_intent_delivering");
-  assert.ok(entry0069 && entry0070 && finalEntry);
+  const entry0071 = journal.entries.find((entry) => entry.tag === "0071_event_outbox_failed");
+  assert.ok(entry0069 && entry0070 && entry0071 && finalEntry);
   assert.equal(entry0070.idx, 70);
+  assert.equal(entry0071.idx, 71);
   assert.ok(entry0070.when > entry0069.when);
-  assert.ok(finalEntry.when > entry0070.when);
+  assert.ok(entry0071.when > entry0070.when);
+  assert.ok(finalEntry.when > entry0071.when);
+});
+
+// R24-P 阶段 1：插件清单表。这条钉死三件事——(a) 迁移 replay 安全（CREATE TABLE/INDEX 全 IF NOT EXISTS、
+// 无 CONCURRENTLY）；(b) source_kind 是**单值** CHECK（只允许本地目录：npm/git/tarball 会在安装期跑包自己的
+// prepare/postinstall，是沙箱之外的任意代码执行，所以结构性禁止而不是靠应用层记得校验）；
+// (c) drizzle schema 与迁移同步。
+test("R24-P migration 0072 creates the plugins table replay-safe with a local-path-only source kind", () => {
+  const migrationUrl = new URL("../migrations/0072_plugins.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0072_plugins.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "plugins"/u, "0072 must create the table replay-safe");
+  assert.match(
+    migration,
+    /CONSTRAINT "plugins_source_kind_ck" CHECK \("source_kind" IN \('local_path'\)\)/u,
+    "0072 must restrict source_kind to local_path only"
+  );
+  assert.match(
+    migration,
+    /CONSTRAINT "plugins_status_ck" CHECK \("status" IN \('installed','load_failed','disabled'\)\)/u
+  );
+  assert.match(
+    migration,
+    /CREATE UNIQUE INDEX IF NOT EXISTS "plugins_workspace_source_path_uq"/u,
+    "one workspace may install the same directory only once"
+  );
+  assert.match(migration, /CREATE INDEX IF NOT EXISTS "plugins_workspace_enabled_idx"/u);
+  assert.doesNotMatch(migration, /DROP TABLE|DROP COLUMN|ALTER COLUMN/u, "0072 must be additive only");
+  assert.doesNotMatch(migration, /CONCURRENTLY/iu, "0072 must not use CONCURRENTLY (single-tx replay)");
+  assert.doesNotMatch(migration, /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u, "migration must not contain emoji glyphs");
+
+  // Drizzle schema 与迁移同步：两个 CHECK 的枚举逐项对齐。
+  const table = requiredTable("plugins");
+  const checkText = checkSqlText(table);
+  assert.equal(checkText.includes("'local_path'"), true, "plugins source_kind CHECK must allow local_path");
+  for (const status of ["'installed'", "'load_failed'", "'disabled'"]) {
+    assert.equal(checkText.includes(status), true, `plugins status CHECK must include ${status}`);
+  }
+  // 工作区围栏：插件是工作区级治理对象，跨租户不可见。
+  const columns = getTableConfig(table).columns.map((column) => column.name);
+  assert.equal(columns.includes("workspace_id"), true, "plugins must be workspace-scoped");
+  assert.equal(columns.includes("compat_report"), true, "plugins must persist the static compatibility report");
+  assert.equal(columns.includes("load_report"), true, "plugins must persist the host load report");
 });
 
 // R21 加固：0070/0071 都是「CHECK 枚举翻转」迁移——DROP IF EXISTS + ADD 成对（replay 安全），且新枚举

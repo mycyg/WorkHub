@@ -1163,6 +1163,34 @@ test("api client exposes the team skill governance endpoints (list/patch/deactiv
   ]);
 });
 
+test("R24-P 阶段 1：api client 覆盖插件治理五个端点（清单/安装/启停/移除）", async () => {
+  const calls: Array<{ url: string; method: string; body: string | undefined }> = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET", body: typeof init?.body === "string" ? init.body : undefined });
+      return new Response(JSON.stringify({ ok: true, data: { id: "ok" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  await client.listPlugins!();
+  // 安装体只有 source_path——只认这台服务器上的绝对目录，没有第二种源可以传。
+  await client.installPlugin!({ source_path: "/srv/plugins/dsh-plugin-echo" });
+  await client.enablePlugin!("plugin-1");
+  await client.disablePlugin!("plugin-1");
+  await client.removePlugin!("plugin-1");
+
+  assert.deepEqual(calls, [
+    { url: "/api/plugins", method: "GET", body: undefined },
+    { url: "/api/plugins", method: "POST", body: JSON.stringify({ source_path: "/srv/plugins/dsh-plugin-echo" }) },
+    { url: "/api/plugins/plugin-1/enable", method: "POST", body: undefined },
+    { url: "/api/plugins/plugin-1/disable", method: "POST", body: undefined },
+    { url: "/api/plugins/plugin-1", method: "DELETE", body: undefined }
+  ]);
+});
+
 test("R14 batch FEEDBACK: api client PUTs/DELETEs proposal feedback against the single shared endpoint", async () => {
   const calls: Array<{ url: string; method: string; body: string | undefined }> = [];
   const client = createApiClient({

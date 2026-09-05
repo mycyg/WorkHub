@@ -26,6 +26,8 @@ import type {
   PermissionEffect,
   PermissionPolicyWrite,
   PermissionScopeKind,
+  PluginCompatReport,
+  PluginVM,
   SettingsPageVM,
   UserAiProfileVM,
   UserProfileVM
@@ -527,6 +529,244 @@ export function devicesSectionHtml(state: DesktopDevicesSectionState, zh: boolea
   </div>`;
 }
 
+// —— R24-P 阶段 1：插件（桌面端是这块的主场） —— //
+// 为什么安装入口只在桌面端：安装要给一台机器上的**目录绝对路径**——那是「跑着 API 的这台机器」，
+// 在网页里让人凭空写一个服务器路径既说不清也验不了。网页设置页只渲只读清单（见
+// packages/ui/src/gold-path/route-components.ts 的 renderSettingsPluginsSection）。
+//
+// 管理员门与「自动通过策略」同款：服务端只给管理员填 settings VM 的 plugins 字段，
+// 这里据 `vm.plugins !== undefined` 决定整区渲不渲——不自己猜身份、也不靠一个 403 的错误闪一下。
+
+/** 体检结论里每条非 pass 的检查，翻成一句人话。pass 的不说——没问题的事不值得占一行。 */
+export function pluginCompatLines(report: PluginCompatReport | undefined, zh: boolean): string[] {
+  if (!report) {
+    return [];
+  }
+  const lines: string[] = [];
+  for (const check of report.checks) {
+    if (check.level === "pass") {
+      continue;
+    }
+    if (check.id === "manifest") {
+      lines.push(zh ? "这个目录里没有可读的 package.json。" : "No readable package.json in that directory.");
+    } else if (check.id === "client_surface") {
+      lines.push(
+        zh
+          ? "这是界面/主题类插件，WorkHub 的界面不是同一套技术，装不了。"
+          : "This is a UI/theme plugin; WorkHub's interface is a different technology, so it can't run here."
+      );
+    } else if (check.id === "install_scripts") {
+      lines.push(
+        zh
+          ? "它带安装期脚本，会在安装时执行任意代码。"
+          : "It ships install-time scripts, which would execute arbitrary code while installing."
+      );
+    } else if (check.id === "dsh_tools_peer") {
+      const versions = report.peer_dsh_tools_range && report.host_dsh_tools_version
+        ? zh
+          ? `（它要 ${report.peer_dsh_tools_range}，我们捆的是 ${report.host_dsh_tools_version}）`
+          : ` (wants ${report.peer_dsh_tools_range}, we bundle ${report.host_dsh_tools_version})`
+        : "";
+      lines.push(
+        zh
+          ? `它对着另一个版本的插件工具库发布${versions}，可能装不上。`
+          : `It targets a different plugin toolkit version${versions}, so it may fail to load.`
+      );
+    } else if (check.id === "bundle_manifest") {
+      lines.push(
+        zh
+          ? "它没有按 dsh 的惯例声明打包清单，不一定是个能装的插件。"
+          : "It declares no dsh bundle manifest, so it may not be a packaged plugin at all."
+      );
+    }
+  }
+  return lines;
+}
+
+/** 安装被拒时的人话。服务端消息本身已经是中文，这里按错误码出双语，不把服务端文案当界面文案用。 */
+export function pluginInstallErrorText(code: string | undefined, zh: boolean): string {
+  switch (code) {
+    case "plugin_manifest_unreadable":
+      return zh
+        ? "这个目录里没有可读的 package.json，装不进来。请把路径指到插件目录本身。"
+        : "No readable package.json there. Point the path at the plugin directory itself.";
+    case "plugin_client_surface_unsupported":
+      return zh
+        ? "这是界面/主题类插件，WorkHub 的界面不是同一套技术，装不了。"
+        : "This is a UI/theme plugin; WorkHub's interface is a different technology, so it can't be installed.";
+    case "plugin_install_scripts_refused":
+      return zh
+        ? "它带安装期脚本，会在安装时执行任意代码，我们不装。"
+        : "It ships install-time scripts that would run arbitrary code while installing, so we don't install it.";
+    case "plugin_already_installed":
+      return zh ? "这个目录已经装过了。" : "That directory is already installed.";
+    case "plugin_admin_required":
+      return zh ? "只有管理员可以管理插件。" : "Only an admin can manage plugins.";
+    case "validation_error":
+      return zh
+        ? "路径得是这台服务器上的一个绝对目录路径。"
+        : "The path must be an absolute directory on the server machine.";
+    default:
+      return zh ? "没装成，请再试一次。" : "Install failed — try again.";
+  }
+}
+
+function pluginStatusLine(plugin: PluginVM, zh: boolean): string {
+  if (!plugin.enabled || plugin.status === "disabled") {
+    return zh ? "已停用" : "Disabled";
+  }
+  if (plugin.status === "load_failed") {
+    const reason = plugin.load_report?.error;
+    return zh
+      ? `装不上${reason ? `：${reason}` : ""}`
+      : `Won't load${reason ? `: ${reason}` : ""}`;
+  }
+  return zh
+    ? `已启用 · ${plugin.tool_count} 个工具`
+    : `Enabled · ${plugin.tool_count} tool${plugin.tool_count === 1 ? "" : "s"}`;
+}
+
+export type DesktopPluginInstallOutcome =
+  | { kind: "installed"; plugin: PluginVM }
+  | { kind: "refused"; code: string | undefined };
+
+export type DesktopPluginsSectionState = {
+  /** 管理员门：settings VM 的 plugins 字段存在才渲整区（服务端只给管理员填）。 */
+  visible: boolean;
+  plugins: readonly PluginVM[] | undefined;
+  failed: boolean;
+  hostDshToolsVersion: string | undefined;
+  /** 还有几条插件路径来自环境变量（不在清单里，但确实会被加载）——不说清楚会显得清单在撒谎。 */
+  bootstrapPathCount: number;
+  /** 两段式确认的武装态。键是 `toggle:<id>` / `remove:<id>`，两个动作互不串。 */
+  armedKey: string | undefined;
+  busyId: string | undefined;
+  errorText: string | undefined;
+  installPath: string;
+  installBusy: boolean;
+  installOutcome: DesktopPluginInstallOutcome | undefined;
+  /** 旧服务端没有这批端点时（api-client 上是可选方法）安静降级，不给一个点了没反应的按钮。 */
+  supported: boolean;
+};
+
+export function pluginsSectionHtml(state: DesktopPluginsSectionState, zh: boolean): string {
+  if (!state.visible) {
+    return "";
+  }
+  const rows = state.failed
+    ? `<div class="wh-spot-row" style="cursor:default"><div class="wh-spot-row-main"><div class="wh-spot-row-sub">${zh ? "插件清单没拉到。" : "Couldn't load the plugin list."}</div></div><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-set-plugins-retry="true">${zh ? "重试" : "Retry"}</button></div>`
+    : !state.plugins || state.plugins.length === 0
+      ? `<div class="wh-spot-row-sub">${zh ? "还没有装任何插件。" : "No plugins installed yet."}</div>`
+      : state.plugins
+          .map((plugin) => {
+            const busy = state.busyId === plugin.id;
+            const enabled = plugin.enabled && plugin.status !== "disabled";
+            const toggleArmed = state.armedKey === `toggle:${plugin.id}`;
+            const removeArmed = state.armedKey === `remove:${plugin.id}`;
+            const toggleLabel = busy
+              ? (zh ? "处理中…" : "Working…")
+              : toggleArmed
+                ? (zh ? "确定？再点一次" : "Sure? Click again")
+                : enabled
+                  ? (zh ? "停用" : "Disable")
+                  : (zh ? "启用" : "Enable");
+            const removeLabel = busy
+              ? (zh ? "处理中…" : "Working…")
+              : removeArmed
+                ? (zh ? "确定？再点一次移除" : "Sure? Click again")
+                : (zh ? "移除" : "Remove");
+            const compat = pluginCompatLines(plugin.compat_report, zh);
+            const title = plugin.version ? `${plugin.name} ${plugin.version}` : plugin.name;
+            return `<div class="wh-spot-row" style="cursor:default" data-spot-plugin="${escapeHtml(plugin.id)}">
+              <div class="wh-spot-row-main">
+                <div class="wh-spot-row-title">${escapeHtml(title)}</div>
+                <div class="wh-spot-row-sub">${escapeHtml(pluginStatusLine(plugin, zh))}</div>
+                <div class="wh-spot-row-sub">${escapeHtml(plugin.source_path)}</div>
+                ${compat.map((line) => `<div class="wh-spot-row-sub">${escapeHtml(line)}</div>`).join("")}
+              </div>
+              <button type="button" class="wh-spot-act ds-pressable ${toggleArmed ? "wh-spot-act--danger" : "wh-spot-act--quiet"}" data-set-plugin-toggle="${escapeHtml(plugin.id)}" ${busy ? "disabled" : ""}>${toggleLabel}</button>
+              <button type="button" class="wh-spot-act ds-pressable ${removeArmed ? "wh-spot-act--danger" : "wh-spot-act--quiet"}" data-set-plugin-remove="${escapeHtml(plugin.id)}" ${busy ? "disabled" : ""}>${removeLabel}</button>
+            </div>`;
+          })
+          .join("");
+
+  const outcome = (() => {
+    if (!state.installOutcome) {
+      return "";
+    }
+    if (state.installOutcome.kind === "refused") {
+      return `<div class="wh-spot-row" style="cursor:default" data-spot-plugin-outcome="refused">
+        <div class="wh-spot-row-main">
+          <div class="wh-spot-row-title">${zh ? "没有安装" : "Not installed"}</div>
+          <div class="wh-spot-row-sub">${escapeHtml(pluginInstallErrorText(state.installOutcome.code, zh))}</div>
+        </div>
+      </div>`;
+    }
+    const plugin = state.installOutcome.plugin;
+    const notes = pluginCompatLines(plugin.compat_report, zh);
+    const loaded = plugin.status === "installed";
+    return `<div class="wh-spot-row" style="cursor:default" data-spot-plugin-outcome="${loaded ? "installed" : "load_failed"}">
+      <div class="wh-spot-row-main">
+        <div class="wh-spot-row-title">${escapeHtml(plugin.version ? `${plugin.name} ${plugin.version}` : plugin.name)}</div>
+        <div class="wh-spot-row-sub">${escapeHtml(
+          loaded
+            ? zh
+              ? `装好了，上线 ${plugin.tool_count} 个工具。`
+              : `Installed — ${plugin.tool_count} tool${plugin.tool_count === 1 ? "" : "s"} are live.`
+            : zh
+              ? `登记好了，但没能加载${plugin.load_report?.error ? `：${plugin.load_report.error}` : ""}`
+              : `Registered, but it did not load${plugin.load_report?.error ? `: ${plugin.load_report.error}` : ""}`
+        )}</div>
+        ${notes.map((line) => `<div class="wh-spot-row-sub">${escapeHtml(line)}</div>`).join("")}
+      </div>
+    </div>`;
+  })();
+
+  const hostNote = state.hostDshToolsVersion
+    ? zh
+      ? `插件工具库版本 ${state.hostDshToolsVersion}。`
+      : `Plugin toolkit ${state.hostDshToolsVersion}.`
+    : "";
+  const bootstrapNote = state.bootstrapPathCount > 0
+    ? zh
+      ? `另有 ${state.bootstrapPathCount} 个插件目录来自服务端的环境变量，不在这份清单里，也不能在这里启停。`
+      : `${state.bootstrapPathCount} more plugin director${state.bootstrapPathCount === 1 ? "y is" : "ies are"} configured through the server's environment; they aren't listed here and can't be toggled here.`
+    : "";
+  const installForm = state.supported
+    ? `<div class="wh-spot-row" style="cursor:default">
+        <div class="wh-spot-row-main">
+          <div class="wh-spot-row-title">${zh ? "从本机目录安装" : "Install from a local directory"}</div>
+          <div class="wh-spot-row-sub">${zh
+            ? "填服务器上那个插件目录的绝对路径。安装前会先读它的 package.json 做体检，不会执行插件代码。"
+            : "Enter the absolute path of the plugin directory on the server. We read its package.json first; no plugin code runs during the check."
+          }</div>
+          <input type="text" class="wh-spot-freetext wh-spot-freetext--line" data-set-plugin-install-path value="${escapeHtml(state.installPath)}" maxlength="1000" placeholder="/srv/plugins/dsh-plugin-echo" ${state.installBusy ? "disabled" : ""} />
+        </div>
+        <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-set-plugin-install="true" ${state.installBusy ? "disabled" : ""}>${state.installBusy ? (zh ? "安装中…" : "Installing…") : zh ? "安装" : "Install"}</button>
+      </div>`
+    : `<div class="wh-spot-row-sub">${zh
+        ? "当前服务端版本还没有插件管理接口，升级后可用。"
+        : "This server version has no plugin management endpoints yet — update it to use them."
+      }</div>`;
+  const error = state.errorText
+    ? `<div class="wh-spot-row-sub" data-spot-plugin-error="true" style="color:var(--ds-danger)">${escapeHtml(state.errorText)}</div>`
+    : "";
+
+  return `<div class="wh-spot-set-group" data-spot-plugins-section="true">
+    <div class="wh-spot-set-label">${zh ? "插件" : "Plugins"}</div>
+    <div class="wh-spot-row-sub">${zh
+      ? "兼容 DeepSeek Harness 的工具类插件：它们给 Cuu 添工具。界面/主题类插件走的是另一套技术，装不了。"
+      : "Compatible with DeepSeek Harness tool plugins — they give Cuu extra tools. UI and theme plugins use a different technology and can't be installed."
+    }</div>
+    ${hostNote ? `<div class="wh-spot-row-sub">${escapeHtml(hostNote)}</div>` : ""}
+    ${rows}
+    ${bootstrapNote ? `<div class="wh-spot-row-sub">${escapeHtml(bootstrapNote)}</div>` : ""}
+    ${installForm}
+    ${outcome}
+    ${error}
+  </div>`;
+}
+
 // R24 S5（N-02/E-02 补齐）：全仓此前唯一能填服务器地址的地方是首启失败时才可能浮出的连接屏——
 // 已经登录之后想换一台服务器（或只是想看看自己连的是哪台），设置页里完全没有入口。这里补一行
 // 只读现状 + 一个「更换服务器」按钮，点了直接在设置视图内就地渲连接服务器屏（复用
@@ -567,7 +807,8 @@ function settingsHtml(
   profileErrorText: string | undefined,
   policiesHtml: string,
   devicesHtml: string,
-  serverHtml: string
+  serverHtml: string,
+  pluginsHtml: string
 ): string {
   const lang = vm.language;
   const langChips = lang.supported_locales
@@ -593,6 +834,7 @@ function settingsHtml(
     ${profileSectionHtml(profile, profileFailed, zh)}
     ${profileErrorText ? `<div class="wh-spot-row-sub" data-spot-profile-error="true" style="color:var(--ds-danger)">${escapeHtml(profileErrorText)}</div>` : ""}
     ${policiesHtml}
+    ${pluginsHtml}
     ${serverHtml}
     ${devicesHtml}
     <button type="button" class="wh-spot-row" data-set-open-memory="true">
@@ -1023,6 +1265,28 @@ export function createSettingsView(): SpotlightCapabilityView {
       let policyFormBusy = false;
       let policyFormError: string | undefined;
 
+      // R24-P 阶段 1：插件治理（管理员门走 vm.plugins !== undefined，同 permission_policies 的先例）。
+      // 清单本身走 GET /api/plugins（要 source_path / compat_report / load_report 这些管理面才需要的字段，
+      // settings VM 里的只读摘要不带）。
+      let plugins: PluginVM[] | undefined;
+      let pluginsFailed = false;
+      let pluginHostVersion: string | undefined;
+      let pluginBootstrapPathCount = 0;
+      let pluginArmedKey: string | undefined;
+      let pluginBusyId: string | undefined;
+      let pluginErrorText: string | undefined;
+      let pluginInstallPath = "";
+      let pluginInstallBusy = false;
+      let pluginInstallOutcome: DesktopPluginInstallOutcome | undefined;
+      let pluginArmTimer: ReturnType<typeof setTimeout> | undefined;
+      const clearPluginArm = () => {
+        pluginArmedKey = undefined;
+        if (pluginArmTimer !== undefined) {
+          clearTimeout(pluginArmTimer);
+          pluginArmTimer = undefined;
+        }
+      };
+
       // R23 F-03：已登录设备列表 + 撤销他机/本机。currentDeviceId 起始为 null（"尚未判定"与"探测到没有
       // 本地客户端"用同一个值——桌面正常情况下探测会成功，探测失败只影响"哪一行标本机"，不影响列表本身）。
       let devices: ClientDeviceResponse[] | undefined;
@@ -1145,7 +1409,25 @@ export function createSettingsView(): SpotlightCapabilityView {
           zh
         );
         const serverHtml = serverSectionHtml({ apiBase: driveResourceApiBase(), health: serverHealth }, zh);
-        ctx.body.innerHTML = settingsHtml(vm, zh, aiProfile, aiFailed, aiErrorText, profile, profileFailed, profileErrorText, policiesHtml, devicesHtml, serverHtml);
+        const pluginsHtml = pluginsSectionHtml(
+          {
+            // 管理员门：非管理员的 settings VM 结构性不含 plugins，整区不渲（同 permission_policies）。
+            visible: vm.plugins !== undefined,
+            plugins,
+            failed: pluginsFailed,
+            hostDshToolsVersion: pluginHostVersion,
+            bootstrapPathCount: pluginBootstrapPathCount,
+            armedKey: pluginArmedKey,
+            busyId: pluginBusyId,
+            errorText: pluginErrorText,
+            installPath: pluginInstallPath,
+            installBusy: pluginInstallBusy,
+            installOutcome: pluginInstallOutcome,
+            supported: Boolean(ctx.client.installPlugin)
+          },
+          zh
+        );
+        ctx.body.innerHTML = settingsHtml(vm, zh, aiProfile, aiFailed, aiErrorText, profile, profileFailed, profileErrorText, policiesHtml, devicesHtml, serverHtml, pluginsHtml);
         ctx.requestResize();
         hydrateAvatarPreview();
       };
@@ -1192,6 +1474,28 @@ export function createSettingsView(): SpotlightCapabilityView {
         }
       };
 
+      // R24-P 阶段 1：插件清单。旧服务端没有这批端点（api-client 上是可选方法）时安静降级成
+      // 「不支持」而不是「拉取失败」——两者的下一步动作不同（升级服务端 vs 重试）。
+      const loadPlugins = async () => {
+        const list = ctx.client.listPlugins;
+        if (!list) {
+          plugins = undefined;
+          pluginsFailed = false;
+          return;
+        }
+        try {
+          const result = await list.call(ctx.client);
+          plugins = [...result.plugins];
+          pluginHostVersion = result.host_dsh_tools_version;
+          pluginBootstrapPathCount = result.bootstrap_path_count;
+          pluginsFailed = false;
+        } catch {
+          if (disposed) return;
+          plugins = undefined;
+          pluginsFailed = true;
+        }
+      };
+
       // R24 S5（N-02/E-02 补齐）：服务器名/版本纯粹是锦上添花——拉不到（老服务端缺字段/一次性网络
       // 抖动）就静默留 undefined，serverSectionHtml 照样渲地址本身，不因为这个次要信息挡住整页设置。
       const loadServerHealth = async () => {
@@ -1217,7 +1521,14 @@ export function createSettingsView(): SpotlightCapabilityView {
         }
         if (disposed) return;
         storageKey = vm.language.storage_key || storageKey;
-        await Promise.all([loadAiProfile(), loadProfile(), loadDevices(), loadServerHealth()]);
+        await Promise.all([
+          loadAiProfile(),
+          loadProfile(),
+          loadDevices(),
+          loadServerHealth(),
+          // 非管理员的 VM 里没有 plugins 字段——那就连列表都不去拉（省一次注定 403 的请求）。
+          vm.plugins !== undefined ? loadPlugins() : Promise.resolve()
+        ]);
         if (disposed) return;
         renderAll();
       };
@@ -1363,6 +1674,137 @@ export function createSettingsView(): SpotlightCapabilityView {
             policyFormBusy = false;
             policyFormError = zh ? "保存失败，请重试。" : "Couldn't save — try again.";
             ctx.toast(zh ? "保存失败" : "Save failed", "error");
+            renderAll();
+          });
+      }
+
+      // —— R24-P 阶段 1：插件动作 —— //
+      // 三个写动作共用一条收尾：成功就用服务端回执替换本地那一行（服务端是唯一事实源，
+      // 启停之后的 status 可能是 load_failed，本地猜不出来），失败给行内错误 + toast，不吞。
+      function replacePluginRow(next: PluginVM): void {
+        plugins = (plugins ?? []).map((plugin) => (plugin.id === next.id ? next : plugin));
+      }
+
+      function runPluginAction(
+        id: string,
+        run: () => Promise<PluginVM | { removed: true }>,
+        onDone: (result: PluginVM | { removed: true }) => void,
+        okToast: string,
+        failToast: string
+      ): void {
+        clearPluginArm();
+        pluginBusyId = id;
+        pluginErrorText = undefined;
+        renderAll();
+        void run()
+          .then((result) => {
+            if (disposed) return;
+            pluginBusyId = undefined;
+            onDone(result);
+            ctx.toast(okToast, "ok");
+            renderAll();
+          })
+          .catch(() => {
+            if (disposed) return;
+            pluginBusyId = undefined;
+            pluginErrorText = zh ? "没成功，请重试。" : "That didn't work — try again.";
+            ctx.toast(failToast, "error");
+            renderAll();
+          });
+      }
+
+      function togglePlugin(plugin: PluginVM): void {
+        const enabled = plugin.enabled && plugin.status !== "disabled";
+        const call = enabled ? ctx.client.disablePlugin : ctx.client.enablePlugin;
+        if (!call) {
+          pluginErrorText = zh
+            ? "当前服务端版本还没有插件管理接口，升级后可用。"
+            : "This server version has no plugin management endpoints yet — update it.";
+          renderAll();
+          return;
+        }
+        runPluginAction(
+          plugin.id,
+          () => call.call(ctx.client, plugin.id),
+          (result) => replacePluginRow(result as PluginVM),
+          enabled ? (zh ? "已停用" : "Disabled") : (zh ? "已启用" : "Enabled"),
+          zh ? "没改成" : "Couldn't change it"
+        );
+      }
+
+      function removePlugin(plugin: PluginVM): void {
+        const call = ctx.client.removePlugin;
+        if (!call) {
+          pluginErrorText = zh
+            ? "当前服务端版本还没有插件管理接口，升级后可用。"
+            : "This server version has no plugin management endpoints yet — update it.";
+          renderAll();
+          return;
+        }
+        runPluginAction(
+          plugin.id,
+          () => call.call(ctx.client, plugin.id),
+          () => {
+            plugins = (plugins ?? []).filter((entry) => entry.id !== plugin.id);
+            if (pluginInstallOutcome?.kind === "installed" && pluginInstallOutcome.plugin.id === plugin.id) {
+              // 刚装完就移除：那张结果卡说的已经不成立了，收掉，不留一条骗人的「装好了」。
+              pluginInstallOutcome = undefined;
+            }
+          },
+          zh ? "已移除" : "Removed",
+          zh ? "没移除成" : "Couldn't remove it"
+        );
+      }
+
+      // 安装：服务端先做**不执行插件代码**的静态体检。被拒时按错误码出人话（服务端消息是中文，
+      // 界面文案两种语言都要有，所以这里按 code 出而不是直接渲服务端 message）。
+      function submitPluginInstall(): void {
+        const sourcePath = pluginInstallPath.trim();
+        const install = ctx.client.installPlugin;
+        if (!install) {
+          pluginErrorText = zh
+            ? "当前服务端版本还没有插件管理接口，升级后可用。"
+            : "This server version has no plugin management endpoints yet — update it.";
+          renderAll();
+          return;
+        }
+        if (!sourcePath) {
+          pluginErrorText = zh
+            ? "填一下插件目录的绝对路径。"
+            : "Enter the plugin directory's absolute path.";
+          renderAll();
+          return;
+        }
+        pluginInstallBusy = true;
+        pluginErrorText = undefined;
+        pluginInstallOutcome = undefined;
+        renderAll();
+        void install
+          .call(ctx.client, { source_path: sourcePath })
+          .then((installed) => {
+            if (disposed) return;
+            pluginInstallBusy = false;
+            pluginInstallPath = "";
+            plugins = [...(plugins ?? []).filter((entry) => entry.id !== installed.id), installed];
+            pluginInstallOutcome = { kind: "installed", plugin: installed };
+            ctx.toast(
+              installed.status === "installed"
+                ? (zh ? "插件装好了" : "Plugin installed")
+                : (zh ? "登记了，但没能加载" : "Registered, but it did not load"),
+              installed.status === "installed" ? "ok" : "info"
+            );
+            renderAll();
+          })
+          .catch((error: unknown) => {
+            if (disposed) return;
+            pluginInstallBusy = false;
+            // WorkHubApiError 的公开字段是 code——duck-type 读，不 import 运行时类
+            // （同 apps/web/src/settings-devices.ts humanizeDeviceRevokeError 的既有先例）。
+            const code = error && typeof error === "object" && "code" in error
+              ? String((error as { code?: unknown }).code)
+              : undefined;
+            pluginInstallOutcome = { kind: "refused", code };
+            ctx.toast(zh ? "没有安装" : "Not installed", "error");
             renderAll();
           });
       }
@@ -1545,6 +1987,71 @@ export function createSettingsView(): SpotlightCapabilityView {
           if (!policyFormBusy) {
             submitPolicyForm();
           }
+          return;
+        }
+        // —— R24-P 阶段 1：插件区的四个动作 —— //
+        if (target.closest("[data-set-plugins-retry]")) {
+          pluginsFailed = false;
+          void loadPlugins().then(() => {
+            if (disposed) return;
+            renderAll();
+          });
+          return;
+        }
+        if (target.closest("[data-set-plugin-install]")) {
+          if (!pluginInstallBusy) {
+            submitPluginInstall();
+          }
+          return;
+        }
+        // 启停/移除都是两段式确认（复用 decidePolicyRevokeConfirmation 这个纯 armed/clicked 判定）。
+        // 武装键带动作前缀，两个按钮不会互相解除对方的武装。
+        const toggleBtn = target.closest<HTMLElement>("[data-set-plugin-toggle]");
+        if (toggleBtn?.dataset.setPluginToggle) {
+          const id = toggleBtn.dataset.setPluginToggle;
+          const plugin = (plugins ?? []).find((entry) => entry.id === id);
+          if (!plugin || pluginBusyId) {
+            return;
+          }
+          const decision = decidePolicyRevokeConfirmation(pluginArmedKey, `toggle:${id}`);
+          if (decision.kind === "execute") {
+            togglePlugin(plugin);
+            return;
+          }
+          clearPluginArm();
+          pluginArmedKey = `toggle:${id}`;
+          pluginErrorText = undefined;
+          pluginArmTimer = setTimeout(() => {
+            pluginArmTimer = undefined;
+            if (disposed) return;
+            pluginArmedKey = undefined;
+            renderAll();
+          }, 5000);
+          renderAll();
+          return;
+        }
+        const removeBtn = target.closest<HTMLElement>("[data-set-plugin-remove]");
+        if (removeBtn?.dataset.setPluginRemove) {
+          const id = removeBtn.dataset.setPluginRemove;
+          const plugin = (plugins ?? []).find((entry) => entry.id === id);
+          if (!plugin || pluginBusyId) {
+            return;
+          }
+          const decision = decidePolicyRevokeConfirmation(pluginArmedKey, `remove:${id}`);
+          if (decision.kind === "execute") {
+            removePlugin(plugin);
+            return;
+          }
+          clearPluginArm();
+          pluginArmedKey = `remove:${id}`;
+          pluginErrorText = undefined;
+          pluginArmTimer = setTimeout(() => {
+            pluginArmTimer = undefined;
+            if (disposed) return;
+            pluginArmedKey = undefined;
+            renderAll();
+          }, 5000);
+          renderAll();
           return;
         }
         // R23 F-03：设备列表重试。
@@ -1818,6 +2325,12 @@ export function createSettingsView(): SpotlightCapabilityView {
           policyFormPriority = priorityInput.value;
           return;
         }
+        // R24-P 阶段 1：插件安装路径——同款 focusout 收值（不重渲，submitPluginInstall 提交时才读）。
+        const pluginPathInput = target.closest<HTMLInputElement>("[data-set-plugin-install-path]");
+        if (pluginPathInput) {
+          pluginInstallPath = pluginPathInput.value;
+          return;
+        }
         if (!profile) return;
         const titleInput = target.closest<HTMLInputElement>("[data-set-profile-title]");
         if (titleInput) {
@@ -1851,6 +2364,7 @@ export function createSettingsView(): SpotlightCapabilityView {
 
       return () => {
         disposed = true;
+        clearPluginArm();
         clearPolicyRevokeArm();
         clearDeviceRevokeArm();
         clearRevokeCurrentDeviceArm();

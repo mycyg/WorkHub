@@ -505,6 +505,13 @@
       "when": 1783929003000,
       "tag": "0071_event_outbox_failed",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1783929004000,
+      "tag": "0072_plugins",
+      "breakpoints": true
     }
   ]
 }
