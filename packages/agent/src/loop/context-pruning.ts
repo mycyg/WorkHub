@@ -91,7 +91,7 @@ const TAIL_RATIO = 0.15;
  */
 export function spillLocatorHint(spillPath: string): string {
   return [
-    `[完整内容已保存到 ${spillPath}，需要时用 read_file 读取它]`,
+    `[完整内容已保存到 ${spillPath}，需要时用 read_file 读取它]`, // ui-i18n-allow：模型可见的剪枝/落盘标记，不是界面文案
     `[The full output is saved at ${spillPath}; use read_file to read the rest.]`
   ].join("\n");
 }
@@ -101,7 +101,7 @@ function isSpillLocatorHint(text: string): boolean {
   const lines = text.split("\n");
   return (
     lines.length === 2 &&
-    lines[0]!.startsWith("[完整内容已保存到 ") &&
+    lines[0]!.startsWith("[完整内容已保存到 ") && // ui-i18n-allow：模型可见的剪枝/落盘标记，不是界面文案
     lines[1]!.startsWith("[The full output is saved at ")
   );
 }
@@ -147,14 +147,14 @@ export function truncateForContext(content: string, maxChars: number, options: {
     return headTail(
       content,
       maxChars,
-      (omitted) => `…[已截断 ${omitted} 字符，中段省略；需要完整内容请重读该文件或用 run_command 抽取]`
+      (omitted) => `…[已截断 ${omitted} 字符，中段省略；需要完整内容请重读该文件或用 run_command 抽取]` // ui-i18n-allow：模型可见的剪枝/落盘标记，不是界面文案
     );
   }
-  return `${headTail(content, maxChars, (omitted) => `…[已截断 ${omitted} 字符，中段省略]`)}\n${spillLocatorHint(spillPath)}`;
+  return `${headTail(content, maxChars, (omitted) => `…[已截断 ${omitted} 字符，中段省略]`)}\n${spillLocatorHint(spillPath)}`; // ui-i18n-allow：模型可见的剪枝/落盘标记，不是界面文案
 }
 
 /** 剪枝标记的固定前缀，同时用于「这条已经剪过了」的判定。 */
-export const PRUNE_MARKER_PREFIX = "…[中段已剪枝：";
+export const PRUNE_MARKER_PREFIX = "…[中段已剪枝："; // ui-i18n-allow：模型可见的剪枝/落盘标记，不是界面文案
 
 /**
  * 第一段：剪枝标记。中英各一句，两句都要说清三件事——**被剪了**、**不是原始输出缺失**、
@@ -163,12 +163,12 @@ export const PRUNE_MARKER_PREFIX = "…[中段已剪枝：";
 export function pruneMarker(omitted: number, hasSpillLocator: boolean): string {
   if (hasSpillLocator) {
     return [
-      `…[中段已剪枝：为节省上下文省略 ${omitted} 个字符；这是运行环境删的，不是原始输出缺失。完整内容在本条末尾给出的文件里。]`,
+      `…[中段已剪枝：为节省上下文省略 ${omitted} 个字符；这是运行环境删的，不是原始输出缺失。完整内容在本条末尾给出的文件里。]`, // ui-i18n-allow：模型可见的剪枝/落盘标记，不是界面文案
       `…[middle pruned: ${omitted} characters were removed here to save context, not missing from the original output. The full text is in the file named at the end of this result.]`
     ].join("\n");
   }
   return [
-    `…[中段已剪枝：为节省上下文省略 ${omitted} 个字符；这是运行环境删的，不是原始输出缺失。需要完整内容请重新执行产生它的那一步。]`,
+    `…[中段已剪枝：为节省上下文省略 ${omitted} 个字符；这是运行环境删的，不是原始输出缺失。需要完整内容请重新执行产生它的那一步。]`, // ui-i18n-allow：模型可见的剪枝/落盘标记，不是界面文案
     `…[middle pruned: ${omitted} characters were removed here to save context, not missing from the original output. Re-run the step that produced it to get the full text.]`
   ].join("\n");
 }
