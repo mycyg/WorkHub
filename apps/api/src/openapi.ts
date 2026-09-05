@@ -4526,6 +4526,23 @@ const agentRunUsageResponseSchema = {
   },
   additionalProperties: false
 } as const;
+// R26 批 B6 观测面：一次「重复动作提醒」的结构化事实（contracts 的 agentRunReminderFactsSchema）。
+// 只有事实、没有句子——中英文由前端按 payload 组装，所以这里也不该出现任何可读文案字段。
+// 同一形状同时是 SSE 事件 agent_run.reminded 的 data 主体（该事件不在 openapi 里描述：
+// /api/push/stream/* 一律只声明 text/event-stream 字符串，从不逐类枚举事件形状）。
+const agentRunReminderResponseSchema = {
+  type: "object",
+  required: ["step_no", "tier", "repeats", "shape"],
+  properties: {
+    step_no: { type: "integer", minimum: 1 },
+    tier: { type: "integer", enum: [1, 2] },
+    repeats: { type: "integer", minimum: 1 },
+    shape: { type: "string", enum: ["identical", "alternating"] },
+    tool_id: { type: "string", minLength: 1 },
+    tool_ids: { type: "array", minItems: 2, items: { type: "string", minLength: 1 } }
+  },
+  additionalProperties: false
+} as const;
 const agentRunLiveResponseSchema = {
   type: "object",
   required: [
@@ -4551,6 +4568,7 @@ const agentRunLiveResponseSchema = {
     budget_decision: agentRunBudgetDecisionResponseSchema,
     usage: agentRunUsageResponseSchema,
     trace: { type: "array", items: agentStepResponseSchema },
+    reminders: { type: "array", items: agentRunReminderResponseSchema },
     handoff: structuredHandoffResponseSchema,
     stream_href: { type: "string", minLength: 1 },
     replay_href: { type: "string", minLength: 1 }
@@ -4579,6 +4597,7 @@ const replayTraceResponseSchema = {
   properties: {
     run: agentRunResponseSchema,
     steps: { type: "array", items: agentStepResponseSchema },
+    reminders: { type: "array", items: agentRunReminderResponseSchema },
     evidence_refs: { type: "array", items: evidenceRefSchema },
     snapshots: { type: "array", items: snapshotResponseSchema },
     audit_logs: { type: "array", items: { type: "object", additionalProperties: true } },

@@ -232,6 +232,11 @@ const EVENT_DATA_KEYS = [
 	"attempt",
 	"retry_reason",
 	"delay_ms",
+	// B6 观测面: agent_run.reminded facts (tier/repeats/shape/tool ids are deterministic per engine).
+	"tier",
+	"repeats",
+	"shape",
+	"tool_ids",
 ] as const;
 
 function projectEvents(events: EmittedEvent[]): Record<string, unknown>[] {
@@ -680,6 +685,67 @@ test("equivalence: B6 repeat-tool reminder — nudge at 3 and 5, escalate at 8, 
 	assert.match(detailed ?? "", /连续 5 步重复同一个动作/);
 	assert.match(detailed ?? "", /重复的工具：echo/);
 	assert.match(detailed ?? "", /echo\(\{"message":"same"\}\)/);
+});
+
+test("equivalence: B6 观测面 — 两套引擎在同一步发同一形状的 agent_run.reminded，tier 3 只发 escalated", async () => {
+	// runBoth 已逐条比过完整事件序列（projectEvents 现在也带上 tier/repeats/shape/tool_ids），这里再把
+	// 「谁在第几步、发了什么」摊开断言一遍：一条重复链路只该有两条 reminded（第 3、5 步），第 8 步升级
+	// 走 agent_run.escalated，不再补发第三条 reminded。
+	const { legacyH, loop2H } = await runBoth(() => ({
+		responses: Array.from({ length: 8 }, (_, index) =>
+			toolResponse(`m${index + 1}`, [{ id: `call-${index + 1}`, name: "echo", input: { message: "same" } }]),
+		),
+		toolSpecs: [ECHO_TOOL],
+	}));
+
+	const reminded = (harness: Harness) =>
+		harness.emittedEvents.filter((event) => event.type === "agent_run.reminded").map((event) => event.data);
+	const expected = [
+		{ run_id: "run-eqv", step_no: 3, tier: 1, repeats: 3, shape: "identical", tool_id: "echo" },
+		{ run_id: "run-eqv", step_no: 5, tier: 2, repeats: 5, shape: "identical", tool_id: "echo" },
+	];
+	assert.deepEqual(reminded(legacyH), expected);
+	assert.deepEqual(reminded(loop2H), expected);
+	// 单工具重复不带 tool_ids（同一事实不存两份）。
+	assert.equal(reminded(loop2H).every((data) => !("tool_ids" in data)), true);
+	// 第三档不重复发：升级只有 agent_run.escalated 一条。
+	assert.equal(legacyH.escalatedEvents, 1);
+	assert.equal(loop2H.escalatedEvents, 1);
+
+	// reminded 紧跟在该步的 agent_run.step(control) 之后——两套引擎的时间线插入位置相同。
+	for (const harness of [legacyH, loop2H]) {
+		const types = harness.emittedEvents.map((event) => event.type);
+		for (const index of types.flatMap((type, i) => (type === "agent_run.reminded" ? [i] : []))) {
+			assert.equal(types[index - 1], "agent_run.step");
+			assert.equal(harness.emittedEvents[index - 1]?.data["control"], "continue");
+		}
+	}
+});
+
+test("equivalence: B6 观测面 — 交替重复（A-B-A-B）两侧都报 shape=alternating 并带上两个工具名", async () => {
+	// 交替形态需要 4 步才判定，第一档阈值 3 因此被越过 → 首条 reminded 直接是 tier 1、repeats 4。
+	const alternating = () =>
+		Array.from({ length: 6 }, (_, index) =>
+			index % 2 === 0
+				? toolResponse(`m${index + 1}`, [{ id: `call-${index + 1}`, name: "echo", input: { message: "a" } }])
+				: toolResponse(`m${index + 1}`, [{ id: `call-${index + 1}`, name: "boom", input: {} }]),
+		);
+	const { loop2H, legacyH } = await runBoth(() => ({
+		responses: alternating(),
+		toolSpecs: [ECHO_TOOL, FAIL_TOOL],
+		execute: (toolId: string) => okToolResult(`ran ${toolId}`),
+	}));
+
+	const first = loop2H.emittedEvents.find((event) => event.type === "agent_run.reminded")?.data;
+	assert.equal(first?.["shape"], "alternating");
+	assert.equal(first?.["tier"], 1);
+	assert.equal(first?.["repeats"], 4);
+	assert.deepEqual(first?.["tool_ids"], ["echo", "boom"]);
+	assert.equal(first?.["tool_id"], "echo");
+	assert.deepEqual(
+		legacyH.emittedEvents.filter((event) => event.type === "agent_run.reminded").map((event) => event.data),
+		loop2H.emittedEvents.filter((event) => event.type === "agent_run.reminded").map((event) => event.data),
+	);
 });
 
 test("equivalence: B6 nudges never outrun the step budget — steps run out first, both engines", async () => {

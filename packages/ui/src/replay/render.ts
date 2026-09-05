@@ -1,3 +1,4 @@
+import { readAgentRunReminderFacts } from "@workhub/contracts";
 import type {
   CuuState,
   ReplayMergeCandidateVM,
@@ -6,7 +7,7 @@ import type {
   WorkHubLocale
 } from "@workhub/contracts";
 
-import { agentRunStatusLabel, agentStepPhaseLabel, agentStepPublicSummary, formatLocalTimestamp, uiCount, uiLocale, uiT, type UiRenderOptions } from "../i18n.js";
+import { agentRunReminderLine, agentRunReminderPhaseLabel, agentRunStatusLabel, agentStepPhaseLabel, agentStepPublicSummary, formatLocalTimestamp, uiCount, uiLocale, uiT, type UiRenderOptions } from "../i18n.js";
 import { overlapHunkReviewCss, renderOverlapHunkReview } from "../overlap-hunk-review.js";
 import { renderRichPatchViewer, richPatchViewerCss } from "../rich-patch-viewer.js";
 import {
@@ -48,6 +49,8 @@ export const replayCss = [
   ".wh-btn-danger[data-replay-revert-armed=\"true\"]{background:#ffe3df;color:#8f2f27;border-color:#e7a49c}.wh-btn-danger[aria-disabled=\"true\"]{opacity:.6;pointer-events:none}",
   richPatchViewerCss,
   ".wh-row .wh-patch{margin-top:10px}",
+  // B6：提醒行不是模型的一步——左侧琥珀竖条区分，第二档再深一档提示「下一次就转交人」。
+  ".wh-row[data-replay-reminder-tier]{border-left:3px solid var(--amber);padding-left:10px}.wh-row[data-replay-reminder-tier=\"2\"]{border-left-color:#b4622a}",
   overlapHunkReviewCss,
   ".wh-row .wh-diff3{margin-top:10px}",
   ".wh-replay-audit{border:1px solid #dbe5ff;border-radius:12px;background:#f7f9ff;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-replay-audit-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-replay-audit-list{display:grid;gap:6px}.wh-replay-audit-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e5eaff;padding-top:6px}.wh-replay-audit-row:first-child{border-top:0;padding-top:0}.wh-replay-audit-code{font-family:\"Cascadia Mono\",\"SFMono-Regular\",monospace;font-size:12px;color:#45506b;overflow-wrap:anywhere}",
@@ -343,9 +346,31 @@ export function renderAgentRunReplay(
   const rootClass = surface === "desktop" ? "wh-desktop" : "wh-web";
   const run = vm.run as ReplayTraceVM["run"] & { id?: string; work_item_id?: string };
   const runId = run.id ?? "";
+  // R26 批 B6 观测面：每一步之后补上「这一步之后 Cuu 被劝过什么」。提醒不是模型的一步（是运行环境
+  // 往对话里追加的一句话），因此不占步号、也不冒充步骤行——单独一行，标 data-replay-reminder-tier。
+  const reminderRows = (stepNo: number) =>
+    (vm.reminders ?? [])
+      .map((entry) => readAgentRunReminderFacts(entry))
+      .filter((facts): facts is NonNullable<typeof facts> => Boolean(facts) && facts?.step_no === stepNo)
+      .map(
+        (facts) =>
+          `<div class="wh-row" data-replay-reminder-tier="${facts.tier}"><div><strong>${escapeHtml(agentRunReminderPhaseLabel(locale))}</strong><p class="wh-subtle">${escapeHtml(agentRunReminderLine(locale, facts))}</p></div></div>`
+      )
+      .join("");
+  const renderedStepNos = new Set(vm.steps.map((step) => step.step_no));
+  const orphanReminderStepNos = [
+    ...new Set(
+      (vm.reminders ?? [])
+        .map((entry) => readAgentRunReminderFacts(entry))
+        .filter((facts): facts is NonNullable<typeof facts> => Boolean(facts) && !renderedStepNos.has(facts?.step_no ?? -1))
+        .map((facts) => facts.step_no)
+    )
+  ].sort((a, b) => a - b);
   const steps = vm.steps
-    .map((step) => `<div class="wh-row"><div><strong>${escapeHtml(agentStepPhaseLabel(locale, step.phase))}</strong><p class="wh-subtle">${escapeHtml(agentStepPublicSummary(locale, step))}</p></div><span class="wh-pill">#${escapeHtml(String(step.step_no))}</span></div>`)
-    .join("");
+    .map((step) => `<div class="wh-row"><div><strong>${escapeHtml(agentStepPhaseLabel(locale, step.phase))}</strong><p class="wh-subtle">${escapeHtml(agentStepPublicSummary(locale, step))}</p></div><span class="wh-pill">#${escapeHtml(String(step.step_no))}</span></div>${reminderRows(step.step_no)}`)
+    .join("")
+    // 对不上任何步骤行的提醒（步骤被裁剪 / 数据不齐）补在末尾，绝不因为对不上就悄悄丢掉。
+    + orphanReminderStepNos.map(reminderRows).join("");
   const deliverables = renderDeliverables(vm, locale);
   const mergeTimeline = renderMergeTimeline(vm, locale);
   const auditDetails = renderStructuredFieldAuditDetails({

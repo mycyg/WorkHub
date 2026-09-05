@@ -1,6 +1,8 @@
-import type { AgentRunLiveVM, AgentStep, CuuState } from "@workhub/contracts";
+import { readAgentRunReminderFacts, type AgentRunLiveVM, type AgentStep, type CuuState, type WorkHubLocale } from "@workhub/contracts";
 
 import {
+  agentRunReminderLine,
+  agentRunReminderPhaseLabel,
   agentRunStatusLabel,
   agentStepPhaseLabel,
   agentStepPublicSummary,
@@ -38,6 +40,8 @@ export const agentRunCss = [
   ".wh-card{border:1px solid var(--line);background:var(--paper);border-radius:8px;padding:15px}.wh-row{display:flex;justify-content:space-between;gap:14px;border-top:1px solid var(--line);padding:12px 0}.wh-row:first-child{border-top:0}",
   ".wh-pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:var(--soft);padding:5px 9px;font-size:12px;color:var(--muted)}.wh-pill-run{background:#eaf6f4;color:var(--teal)}.wh-pill-done{background:#eaf8f0;color:var(--green)}.wh-pill-warn{background:#fff6e8;color:var(--amber)}.wh-pill-danger{background:#fff1ef;color:var(--danger)}",
   ".wh-trace{display:grid;gap:10px}.wh-step{display:grid;grid-template-columns:26px minmax(0,1fr);gap:10px;align-items:start}.wh-dot{width:24px;height:24px;border-radius:999px;background:#edf1ff;color:var(--blue);display:grid;place-items:center;font-size:12px;font-weight:750}.wh-step[data-phase=tool_result] .wh-dot{background:#eaf8f0;color:var(--green)}.wh-step[data-phase=final] .wh-dot{background:#fff6e8;color:var(--amber)}",
+  // B6：提醒行不是模型的一步——琥珀点区分于蓝色步骤点，第二档再压深一档提示「下一次就转交人」。
+  ".wh-step[data-phase=reminded] .wh-dot{background:#fff6e8;color:var(--amber)}.wh-step[data-phase=reminded][data-reminder-tier=\"2\"] .wh-dot{background:#fdece2;color:#b4622a}",
   ".wh-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.wh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;border:1px solid var(--line);padding:9px 12px;color:var(--ink);text-decoration:none;background:#fff;font-weight:700}.wh-btn-primary{background:var(--blue);border-color:var(--blue);color:#fff}.wh-btn-danger{background:#fff4f3;color:#a94137;border-color:#f3c5c0}",
   ".wh-desktop .wh-run-frame{max-width:920px;grid-template-columns:minmax(0,1fr) 240px}.wh-desktop .wh-run{background:linear-gradient(135deg,#edf6ff,#f8fbff)}@media (max-width:860px){.wh-run-frame{grid-template-columns:1fr}.wh-run-rail{position:static}.wh-title{font-size:24px}}"
 ].join("");
@@ -74,17 +78,65 @@ function statusClass(status: AgentRunLiveVM["status"]) {
   return "wh-pill wh-pill-warn";
 }
 
-function renderTrace(steps: AgentStep[], options?: UiRenderOptions) {
+function renderTrace(steps: AgentStep[], reminders: ReadonlyArray<unknown> | undefined, options?: UiRenderOptions) {
   const locale = uiLocale(options);
+  const trailing = trailingRunReminderRows(steps, reminders, locale);
   if (steps.length === 0) {
-    return `<p class="wh-subtle">${escapeHtml(uiT(locale, "agent.emptyTrace"))}</p>`;
+    // 一步都还没跑完就先被劝过是不可能的（提醒挂在某一步之后），但提醒真的先到时也不能丢——
+    // 有提醒行就渲提醒，没有才落到空态。
+    return trailing
+      ? `<div class="wh-trace">${trailing}</div>`
+      : `<p class="wh-subtle">${escapeHtml(uiT(locale, "agent.emptyTrace"))}</p>`;
   }
   return `<div class="wh-trace">${steps
     .map(
       (step) =>
-        `<div class="wh-step" data-phase="${escapeHtml(step.phase)}"><span class="wh-dot">${step.step_no}</span><div><strong>${escapeHtml(agentStepPhaseLabel(locale, step.phase))}</strong><p class="wh-subtle">${escapeHtml(agentStepPublicSummary(locale, step))}</p>${step.snapshot_id ? `<span class="wh-pill">${escapeHtml(uiT(locale, "generic.snapshot"))}</span>` : ""}</div></div>`
+        `<div class="wh-step" data-phase="${escapeHtml(step.phase)}"><span class="wh-dot">${step.step_no}</span><div><strong>${escapeHtml(agentStepPhaseLabel(locale, step.phase))}</strong><p class="wh-subtle">${escapeHtml(agentStepPublicSummary(locale, step))}</p>${step.snapshot_id ? `<span class="wh-pill">${escapeHtml(uiT(locale, "generic.snapshot"))}</span>` : ""}</div></div>${renderRunReminderRows(reminders, step.step_no, locale)}`
     )
-    .join("")}</div>`;
+    .join("")}${trailing}</div>`;
+}
+
+// R26 批 B6 观测面：把「重复动作被劝了几次、劝的是什么」插进步骤时间线。
+//
+// 提醒不是模型的一步（它是运行环境往对话里追加的一句话），所以不占 step_no，也不冒充 AgentStep——
+// 单独一行、单独的 data-phase="reminded"，排在它所属那一步之后。缺字段/脏数据由
+// readAgentRunReminderFacts 挡掉（返回 undefined 即整行不渲），绝不把半截事实编成一句话。
+export function renderRunReminderRows(
+  reminders: ReadonlyArray<unknown> | undefined,
+  stepNo: number,
+  locale: WorkHubLocale
+) {
+  if (!reminders?.length) {
+    return "";
+  }
+  return reminders
+    .map((entry) => readAgentRunReminderFacts(entry))
+    .filter((facts): facts is NonNullable<typeof facts> => Boolean(facts) && facts?.step_no === stepNo)
+    .map(
+      (facts) =>
+        `<div class="wh-step" data-phase="reminded" data-reminder-tier="${facts.tier}"><span class="wh-dot">!</span><div><strong>${escapeHtml(agentRunReminderPhaseLabel(locale))}</strong><p class="wh-subtle">${escapeHtml(agentRunReminderLine(locale, facts))}</p></div></div>`
+    )
+    .join("");
+}
+
+/**
+ * 对不上任何已渲染步骤的提醒行（时间线被截断、或提醒先于该步的 trace 行到达）。
+ * 直接丢掉等于「劝过但界面上看不见」，正是这批要修的；统一按步序补在时间线末尾。
+ */
+function trailingRunReminderRows(
+  steps: ReadonlyArray<AgentStep>,
+  reminders: ReadonlyArray<unknown> | undefined,
+  locale: WorkHubLocale
+) {
+  if (!reminders?.length) {
+    return "";
+  }
+  const rendered = new Set(steps.map((step) => step.step_no));
+  const orphans = reminders
+    .map((entry) => readAgentRunReminderFacts(entry))
+    .filter((facts): facts is NonNullable<typeof facts> => Boolean(facts) && !rendered.has(facts?.step_no ?? -1))
+    .sort((a, b) => a.step_no - b.step_no);
+  return orphans.map((facts) => renderRunReminderRows([facts], facts.step_no, locale)).join("");
 }
 
 function renderHandoff(vm: AgentRunLiveVM, options?: UiRenderOptions) {
@@ -122,7 +174,7 @@ export function renderAgentRunLive(
       <article class="wh-card"><strong>${escapeHtml(uiT(locale, "generic.steps"))}</strong><p class="wh-subtle">${escapeHtml(uiCount(locale, vm.trace.length, "条", "step"))}</p></article>
     </div>
     <h2>${escapeHtml(uiT(locale, "agent.liveTitle"))}</h2>
-    <article class="wh-card">${renderTrace(vm.trace, { locale })}</article>
+    <article class="wh-card">${renderTrace(vm.trace, vm.reminders, { locale })}</article>
     <h2>${escapeHtml(uiT(locale, "agent.handoff"))}</h2>
     <article class="wh-card">${renderHandoff(vm, { locale })}</article>
     <div class="wh-actions">

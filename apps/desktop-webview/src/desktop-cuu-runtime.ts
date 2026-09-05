@@ -1808,6 +1808,9 @@ const desktopCuuRunStreamEventNames = [
   eventTypes.agentRunStep,
   eventTypes.stepToolResult,
   eventTypes.agentRunCompacting,
+  // R26 批 B6 观测面：重复动作提醒（前两档）。EventSource 按事件名订阅，漏登记这一条 = 事件被静默
+  // 丢弃、run 卡与回放时间线都收不到「Cuu 被劝了」的信号（同 live-stream-targets 的既有教训）。
+  eventTypes.agentRunReminded,
   eventTypes.agentRunFailed,
   eventTypes.agentRunEscalated
 ] as const;

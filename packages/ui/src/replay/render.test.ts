@@ -646,3 +646,47 @@ test("bindReplayRevertActions ignores buttons missing the snapshot or run id", (
   orphan.click();
   assert.equal(calls.length, 0);
 });
+
+// R26 批 B6 观测面：回放页也要看得见「重复动作被劝过几次、劝的是什么」。
+test("B6: 回放时间线在被劝的那一步之后补一条人话提醒行（中英各一句）", () => {
+  const base = replayWithStructuredFields();
+  const stepNo = base.steps[0]?.step_no ?? 1;
+  const vm: ReplayTraceVM = {
+    ...base,
+    reminders: [{ step_no: stepNo, tier: 2, repeats: 5, shape: "identical", tool_id: "read_project_file" }]
+  };
+
+  const zh = renderAgentRunReplay(vm, "web");
+  assert.equal(zh.html.includes("第二次提醒：Cuu 连续 5 步做了同一件事"), true);
+  assert.equal(zh.html.includes("「read project file」"), true);
+  assert.equal(zh.html.includes("read_project_file"), false, "原始工具 id 不该渲给用户");
+  assert.equal(zh.html.includes('data-replay-reminder-tier="2"'), true);
+  // 步数统计只数模型的步，提醒行不冒充一步。
+  assert.equal(zh.stepCount, vm.steps.length);
+
+  const en = renderAgentRunReplay(vm, "desktop", { locale: "en-US" });
+  assert.equal(en.html.includes("Second reminder: Cuu repeated the same action for 5 steps"), true);
+});
+
+test("B6: 回放页脏提醒整行不渲，对不上步骤的提醒补在末尾", () => {
+  const base = replayWithStructuredFields();
+  const vm: ReplayTraceVM = {
+    ...base,
+    reminders: [
+      { step_no: 4242, tier: 1, repeats: 3, shape: "alternating", tool_id: "echo", tool_ids: ["echo", "run_command"] },
+      { step_no: 1, repeats: 3, shape: "identical" },
+      null
+    ] as ReplayTraceVM["reminders"]
+  };
+
+  const rendered = renderAgentRunReplay(vm, "web");
+  assert.equal(rendered.html.includes("第一次提醒：Cuu 连续 3 步在两个动作之间来回切换"), true);
+  assert.equal(rendered.html.includes("「echo」、「run command」"), true);
+  assert.equal(rendered.html.match(/data-replay-reminder-tier=/gu)?.length, 1, "只有合法的那一条被渲出来");
+});
+
+test("B6: 没有提醒的回放渲染完全不变（additive optional，存量响应零回归）", () => {
+  const vm = replayWithStructuredFields();
+  assert.equal(renderAgentRunReplay(vm, "web").html, renderAgentRunReplay({ ...vm, reminders: [] }, "web").html);
+  assert.equal(renderAgentRunReplay(vm, "web").html.includes("data-replay-reminder-tier"), false);
+});
