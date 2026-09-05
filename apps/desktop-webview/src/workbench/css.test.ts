@@ -103,3 +103,48 @@ test("reduced-motion users get the mode chip and level-row transitions shortened
     /prefers-reduced-motion:reduce\)\{\.wh-wb-mode-chip,\.wh-wb-mode-lvl\{transition-duration:\.01ms!important;animation-duration:\.01ms!important\}\}/u
   );
 });
+
+// —— R24-D（工作台聊天头部视觉打磨：tab 条 / 成员条 / 空态） —— //
+
+test("an open-conversation tab shows exactly one active affordance: the 2px accent underline, no filled pill or outline", () => {
+  // 改版前是「玻璃底色 + inset 下划线 + 两个没复位的默认按钮外观」三件套同时上身，读起来像三个组件
+  // 拼在一起（用户截图实锤）。激活态只保留下划线这一件。
+  assert.match(workbenchCss, /\.wh-wb-sess-tab\.is-active::after\{[^}]*height:2px[^}]*background:var\(--ds-accent\)\}/u);
+  assert.doesNotMatch(workbenchCss, /\.wh-wb-sess-tab\.is-active\{[^}]*background/u);
+  assert.doesNotMatch(workbenchCss, /\.wh-wb-sess-tab\.is-active\{[^}]*box-shadow/u);
+});
+
+test("both tab buttons reset the browser's default button chrome — the tab container is the only layer with a background", () => {
+  assert.match(workbenchCss, /\.wh-wb-sess-open\{[^}]*border:0;background:transparent/u);
+  assert.match(workbenchCss, /\.wh-wb-sess-close\{[^}]*border:0;background:transparent/u);
+});
+
+test("the tab close button lives inside the tab and only appears on hover / active / keyboard focus", () => {
+  assert.match(workbenchCss, /\.wh-wb-sess-close\{[^}]*opacity:0;pointer-events:none/u);
+  assert.match(
+    workbenchCss,
+    /\.wh-wb-sess-tab:hover \.wh-wb-sess-close,\.wh-wb-sess-tab\.is-active \.wh-wb-sess-close,\.wh-wb-sess-close:focus-visible\{opacity:1;pointer-events:auto\}/u
+  );
+  // 键盘可达：两个按钮都要有可见的聚焦环。
+  assert.match(workbenchCss, /\.wh-wb-sess-open:focus-visible,\.wh-wb-sess-close:focus-visible\{outline:2px solid var\(--ds-accent\)/u);
+});
+
+test("the tab strip's own left inset lines the first tab's icon up with the member row and the chat body (20px)", () => {
+  // 条 12px + tab 8px = 20px，与 .wh-wb-chat-head / .wh-wb-chat-scroll 的 20px 左内边距对齐成一条竖线。
+  assert.match(workbenchCss, /\.wh-wb-sess-strip\{[^}]*padding:6px 12px 0/u);
+  assert.match(workbenchCss, /\.wh-wb-sess-open\{[^}]*padding:0 2px 0 8px/u);
+  assert.match(workbenchCss, /\.wh-wb-chat-head\{[^}]*padding:10px 20px/u);
+});
+
+test("the chat head hairline spans the whole chat column, and disappears entirely when the head is empty", () => {
+  // 线画在外壳上（.wh-wb-chat-head 只有内容那么宽，线会在成员条中途断掉）；退群后 head 为空则不留孤线。
+  assert.match(workbenchCss, /\[data-wb-chat-head\]:not\(:empty\)\{border-bottom:1px solid var\(--ds-glass-border\)\}/u);
+  assert.doesNotMatch(workbenchCss, /\.wh-wb-chat-head\{[^}]*border-bottom/u);
+});
+
+test("the chat empty state is a compact group centred in the chat area, not measured against the whole window", () => {
+  assert.doesNotMatch(workbenchCss, /\.wh-wb-chat-empty\{[^}]*vh/u);
+  assert.match(workbenchCss, /\.wh-wb-chat-empty\{[^}]*min-height:100%[^}]*justify-content:center/u);
+  assert.match(workbenchCss, /\.wh-wb-chat-empty-title\{[^}]*font:700 20px/u);
+  assert.match(workbenchCss, /\.wh-wb-chat-empty-body\{[^}]*max-width:56ch[^}]*font:500 14px/u);
+});

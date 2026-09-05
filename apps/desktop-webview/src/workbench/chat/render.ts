@@ -79,7 +79,9 @@ function escapeRegExp(value: string): string {
 // 没有在线态概念）。
 export function avatarTileHtml(input: { label: string; id: string; variant?: "cuu" | undefined; online?: boolean }): string {
   if (input.variant === "cuu") {
-    return `<span class="wh-wb-chat-avatar wh-wb-chat-avatar--cuu">${workbenchIcons.cat}</span>`;
+    // R24-D：Cuu 的 tile 带上可读名字（title/aria-label）——成员条的文案不再拼「+ Cuu」三个字（那是这枚
+    // tile 已经说过的话），信息不能只剩一个没名字的猫头，鼠标停一下 / 读屏都要能问出她是谁。
+    return `<span class="wh-wb-chat-avatar wh-wb-chat-avatar--cuu" role="img" aria-label="Cuu" title="Cuu">${workbenchIcons.cat}</span>`;
   }
   const trimmed = input.label.trim();
   const initial = trimmed ? trimmed[0]!.toUpperCase() : "?";
@@ -115,7 +117,9 @@ export function renderMemberBarHtml(input: {
     .join("");
   const cuuAvatar = avatarTileHtml({ label: "Cuu", id: "cuu", variant: "cuu" });
   const count = input.members.length;
-  const label = zh ? `${count} 位成员 + Cuu · 全员群聊` : `${count} member${count === 1 ? "" : "s"} + Cuu · everyone`;
+  // R24-D：文案里不再拼「+ Cuu」——她的头像 tile 就排在这组头像的末尾（带 title/aria-label «Cuu»），
+  // 同一件事说两遍只会让这一行更挤。计数依旧只数真人成员。
+  const label = zh ? `${count} 位成员 · 全员群聊` : `${count} member${count === 1 ? "" : "s"} · everyone`;
   // R17 批 G1：「成员」打开成员管理面板（看名单 / 退出 / 移出），「加人」打开同一面板（加人区已内联在面板里）。
   // 两个按钮都只是入口，真正的名单 + 加人候选由 renderMemberManageModalHtml 渲染（挂在成员条旁，见 renderHead）。
   const manageHtml = input.manage
@@ -1734,7 +1738,7 @@ export function renderChatEmptyStateHtml(input: { locale: Locale; projectName: s
   const body = zh
     ? "这里是项目的主区——进展、决定、文件都在这聊。丢个文件或说句话，我是 Cuu，会盯着帮你们拎重点。"
     : "This is the project's main chat — progress, decisions, and files all live here. Drop a file or say something to get started. I'm Cuu, and I'll keep an eye on things for you.";
-  return `<div class="wh-wb-chat-empty ds-anim-fade-in"><span class="wh-wb-chat-empty-icon">${workbenchIcons.cat}</span><h3 class="wh-wb-chat-empty-title">${escapeHtml(title)}</h3><p class="wh-wb-chat-empty-body">${escapeHtml(body)}</p></div>`;
+  return `<div class="wh-wb-chat-empty ds-anim-fade-in"><span class="wh-wb-chat-empty-icon wh-wb-chat-empty-icon--cuu">${workbenchIcons.cat}</span><h3 class="wh-wb-chat-empty-title">${escapeHtml(title)}</h3><p class="wh-wb-chat-empty-body">${escapeHtml(body)}</p></div>`;
 }
 
 // R12 批8：无权限深链空态（00 §9「无权限项目」行的后半句：深链到无权会话→温和的「你不在这个项目里」

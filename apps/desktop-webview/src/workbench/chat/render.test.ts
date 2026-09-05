@@ -100,12 +100,15 @@ function baseMessage(overrides: Partial<ConversationMessageVM> = {}): Conversati
 
 // —— member bar —— //
 
-test("renderMemberBarHtml shows a member count plus Cuu, no fabricated online indicator", () => {
+// R24-D：文案不再拼「+ Cuu」——她由头像组末尾那枚带 aria-label «Cuu» 的 tile 表示（同一件事不说两遍）。
+test("renderMemberBarHtml shows a member count and Cuu's own avatar tile, no fabricated online indicator", () => {
   const html = renderMemberBarHtml({
     members: [member({ user_id: "u1", nickname: "张三" }), member({ user_id: "u2", nickname: "阿曼" })],
     locale: "zh-CN"
   });
-  assert.match(html, /2 位成员 \+ Cuu/u);
+  assert.match(html, /2 位成员 · 全员群聊/u);
+  assert.doesNotMatch(html, /\+ Cuu/u);
+  assert.match(html, /wh-wb-chat-avatar--cuu[^>]*aria-label="Cuu"/u);
   // No fake presence claim — batch 2 does not derive real online status.
   assert.doesNotMatch(html, /在线/u);
 });
@@ -178,7 +181,7 @@ test("renderMemberBarHtml renders the manage entries only when manage is enabled
   assert.match(managed, /data-wb-chat-member-add-open/u);
   assert.match(managed, /加人/u);
   // 既有头像/计数标签不受 manage 影响。
-  assert.match(managed, /1 位成员 \+ Cuu/u);
+  assert.match(managed, /1 位成员 · 全员群聊/u);
 });
 
 test("memberManageCandidates excludes members already in the participant set and Cuu", () => {

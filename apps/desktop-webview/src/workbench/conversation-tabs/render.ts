@@ -48,9 +48,12 @@ export function renderConversationTabsHtml(input: {
   locale: Locale;
 }): string {
   const zh = input.locale === "zh-CN";
-  const closeLabel = zh ? "关闭" : "Close";
   const tabsHtml = input.tabs
     .map((tab) => {
+      // R24-D：关闭按钮平时是隐形的（CSS 只在 hover/激活/键盘聚焦时显出来，见 css.ts 的 .wh-wb-sess-close），
+      // 所以它的无障碍名字必须自带会话名——读屏里一串「关闭 关闭 关闭」等于没说。
+      // 会话名是用户输入，进属性前照样要转义（同下面 .wh-wb-sess-name 的 escapeHtml）。
+      const closeLabel = escapeHtml(zh ? `关闭「${tab.title}」` : `Close "${tab.title}"`);
       const active = tab.conversationId === input.activeConversationId;
       const online = tab.kind === "dm" ? dmPeerOnline(tab, input.dmList, input.currentUserId, input.onlineUserIds) : false;
       const unread =
