@@ -10,6 +10,7 @@ import {
 } from "@workhub/ui/gold-path";
 import { renderProposalConflictCards } from "@workhub/ui/proposal";
 import { renderOnboardingScreen, renderInviteAcceptScreen } from "@workhub/ui";
+import { renderAiReadinessBannerHtml, renderIntakeAiReadinessNoteHtml } from "./ai-readiness-banner.js";
 import { openAvatarCropModal } from "./avatar-crop-modal.js";
 import { armConfirmButton } from "./confirm-button.js";
 import {
@@ -2288,6 +2289,7 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindProjectHomeInstructionsPanel(root, result, client, locale, signal);
   bindProjectHomeMembersPanel(root, result, client, locale, signal);
   bindMyConversationsPanel(root, result, client, locale, signal);
+  bindAiReadinessNotices(root, result, client, locale, signal);
   bindProjectHomeObjectivesPanel(root, result, client, locale, signal);
   bindConversationParticipantsPanel(root, result, client, locale, signal);
   bindSearchRoutePanel(root, result, client, locale, signal);
@@ -2330,6 +2332,53 @@ function bindAvatarTiles(container: HTMLElement, signal: AbortSignal) {
       img.hidden = true;
     };
     img.src = `/api/users/${encodeURIComponent(userId)}/avatar`;
+  });
+}
+
+// R23 P2（SA-08）：README 承诺的「AI 服务未配置」顶部横幅——此前只存在于桌面聊天输入区，web 端一个
+// 提示都没有，新用户第一次提需求才撞见后端失败响应。取数源是 GET /api/health 的
+// ai_provider_configured（部署级事实，只随 LLM_API_KEY + 容器重启变化，不随路由/会话变化），
+// 缓存这次页面会话里的第一次探活结果——不必每次导航都重新打一次这个请求。取数失败按「已配置」
+// 处理（不显示横幅）：宁可这次刷新暂时看不到提示，也不能因为一次网络抖动就吓唬本来配置正常的用户。
+let cachedAiProviderConfigured: Promise<boolean> | undefined;
+
+function aiProviderConfiguredCached(client: BrowserApiClient): Promise<boolean> {
+  cachedAiProviderConfigured ??= client.health().then(
+    (health) => health.ai_provider_configured,
+    () => true
+  );
+  return cachedAiProviderConfigured;
+}
+
+// 挂在每次就绪路由渲染后、不按路由 key 过滤（同 bindAvatarTiles 的先例）——壳层横幅挂载点
+// [data-wh-ai-banner] 在每次导航时都随整段 shell HTML 重新渲成 SSR 的 hidden 空态（product-shell.ts
+// 不知道这件事，也不应该知道——见该文件顶部注释），所以这里每次都要重新水合，而不是只做一次。
+// intake 路由额外在起点面板内插一条更具体的说明（提交会失败，不只是「有条横幅」）。
+function bindAiReadinessNotices(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  const banner = container.querySelector<HTMLElement>("[data-wh-ai-banner]");
+  const intakeRoute = result.match.key === "intake"
+    ? container.querySelector<HTMLElement>('[data-r4-route-component="intake"]')
+    : null;
+  if (!banner && !intakeRoute) {
+    return;
+  }
+  void aiProviderConfiguredCached(client).then((configured) => {
+    if (signal.aborted || configured) {
+      return;
+    }
+    if (banner) {
+      banner.innerHTML = renderAiReadinessBannerHtml(locale);
+      banner.hidden = false;
+    }
+    if (intakeRoute && !intakeRoute.querySelector("[data-r23-intake-ai-note]")) {
+      intakeRoute.insertAdjacentHTML("afterbegin", renderIntakeAiReadinessNoteHtml(locale));
+    }
   });
 }
 

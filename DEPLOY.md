@@ -54,8 +54,9 @@ docker compose --env-file .env.pilot -f docker-compose.pilot.yml logs -f workhub
 - 主区静默观察者（拎活）与回话判定器（该不该主动搭话）**都不会启动**——服务端只打一行
   `conversation_observer_disabled` / `conversation_reply_judge_disabled` 日志，不会反复重试打空转的 LLM 请求。
 - 风险巡检（工单停滞/临期/成本异常）与 GitHub 轮询走确定性规则，**不依赖 LLM，照常运行**，与是否配置 key 无关。
-- Web/桌面 composer 顶部会出现一条“AI 服务未配置”的横幅（读 `GET /api/health` 的 `ai_provider_configured`
-  字段）。**这条横幅只是提示，不拦发送**——如果这时候用户仍然直接找 Cuu 说话（1:1 协同会话或 @Cuu），
+- Web 端任意页面顶部、桌面聊天输入区顶部都会出现一条”AI 服务未配置”的横幅（读 `GET /api/health` 的
+  `ai_provider_configured` 字段——与设置页显示的密钥状态同一来源）。**这条横幅只是提示，不拦发送**——
+  如果这时候用户仍然直接找 Cuu 说话（1:1 协同会话或 @Cuu），
   会同步收到一条明确的失败响应（“这一轮 Cuu 没接上，请再试一次”，HTTP 500），而不是卡死、超时或没反应。
   这是已知的、可接受的降级行为：错误是即时且可见的，不是静默假死。
 
