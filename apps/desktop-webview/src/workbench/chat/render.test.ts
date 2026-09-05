@@ -2496,7 +2496,7 @@ test("renderComposerHtml renders a 'replying to' banner with a cancel control wh
   assert.doesNotMatch(without, /wh-wb-chat-reply-banner/u);
 });
 
-// —— R14 批 RISK：风险巡检 digest（risk_digest system_event）—— //
+// —— R14 批 RISK：风险汇总 digest（risk_digest system_event）—— //
 
 function riskDigestMessage(overrides: Partial<Record<string, unknown>> = {}): ConversationMessageVM {
   return baseMessage({
@@ -2520,7 +2520,7 @@ function riskDigestMessage(overrides: Partial<Record<string, unknown>> = {}): Co
 test("renderMessageHtml renders a risk_digest system_event as a collapsed card with the one-line PM summary by default", () => {
   const html = renderMessageHtml(riskDigestMessage(), ctxWith([]));
   assert.match(html, /wh-wb-risk-digest/u);
-  assert.match(html, /今日风险巡检/u);
+  assert.match(html, /今日风险汇总/u);
   assert.match(html, /2 项工单停滞、1 项临期未动工/u);
   assert.match(html, /data-wb-chat-expand-message="m-risk-1"/u);
   assert.doesNotMatch(html, /data-wb-chat-collapse-message/u);

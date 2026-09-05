@@ -121,7 +121,7 @@ test("granular chips show honest allowed/blocked state text (unset means allowed
     governance: governanceVm({ granular_settings: { mutate_drive: false } }),
     editable: true
   });
-  assert.match(html, /data-wb-pset-granular="mutate_drive">动网盘 · 已禁止/u);
+  assert.match(html, /data-wb-pset-granular="mutate_drive">改网盘文件 · 已禁止/u);
   assert.match(html, /data-wb-pset-granular="create_work_item">建任务 · 允许/u);
 });
 
@@ -289,7 +289,7 @@ test("GH: en-US copy is used end to end when locale is en-US", () => {
   assert.match(html, /No GitHub repository linked yet\./u);
   assert.match(html, /Link a GitHub repository/u);
 });
-// —— R14 批 RISK：风险巡检阈值分区 —— //
+// —— R14 批 RISK：风险汇总阈值分区 —— //
 
 test("the editable risk monitor section wires the enable switch and all four threshold inputs to real data hooks", () => {
   const html = renderProjectSettingsHtml({
@@ -306,7 +306,7 @@ test("the editable risk monitor section wires the enable switch and all four thr
     }),
     editable: true
   });
-  assert.match(html, /风险巡检/u);
+  assert.match(html, /风险汇总/u);
   assert.match(html, /data-on="true"[^>]*data-wb-risk-enabled/u);
   assert.match(html, /value="7" data-wb-risk-stall-input/u);
   assert.match(html, /value="3" data-wb-risk-deadline-input/u);

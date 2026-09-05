@@ -139,7 +139,7 @@ const zh = {
   thisMessageWasDeleted: "此消息已删除",
   thisTask: "这件事",
   thisTeamHasNoSkillsTo: "这个团队还没有攒下可唤起的技能",
-  todaySRiskDigest: "今日风险巡检",
+  todaySRiskDigest: "今日风险汇总",
   toolCall: "工具调用",
   undoing: "撤销中…",
   undone: "已撤销",

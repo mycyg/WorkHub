@@ -17,7 +17,7 @@ import {
 } from "../../load-state-copy.js";
 
 const zh = {
-  aDailyPmStylePatrolStalled: "PM 视角每日巡检——工单停滞、临期未动工、项目成本异常放量，一天一次合并汇报",
+  aDailyPmStylePatrolStalled: "像项目经理一样每天看一遍——任务停滞、临期未动工、项目成本异常放量，一天一次合并汇报",
   afterTheChatGoesQuietCuu: "群聊安静一段时间后，Cuu 自动把讨论里的活拎出来（行动卡）",
   aiGovernanceAffectsThisProjectS: "这些设置只影响 Cuu 在这个项目里的行为；你和 Cuu 单聊的模式在 设置 · AI 里调。",
   allowed: "允许",
@@ -76,7 +76,7 @@ const zh = {
   quietHours: "安静时段",
   repositoryOwnerRepo: "仓库（owner/repo）",
   retry: "重试",
-  riskMonitor: "风险巡检",
+  riskMonitor: "风险汇总",
   s: "秒",
   save: "保存",
   saveThresholds: "保存阈值",
@@ -102,7 +102,7 @@ const zh = {
 } as const;
 
 const en = {
-  aDailyPmStylePatrolStalled: "A daily PM-style patrol — stalled work, looming deadlines, cost spikes, merged into one digest a day",
+  aDailyPmStylePatrolStalled: "A daily project-manager-style pass — stalled tasks, looming deadlines, cost spikes, merged into one digest a day",
   afterTheChatGoesQuietCuu: "After the chat goes quiet, Cuu pulls actionable work out of the discussion (action cards)",
   aiGovernanceAffectsThisProjectS: "These settings only affect how Cuu behaves in this project. Your 1:1 mode with Cuu is under Settings · AI.",
   allowed: "allowed",

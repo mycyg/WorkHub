@@ -674,7 +674,7 @@ test("R14 GH: a non-owner viewer never issues a write request no matter what wri
   });
 });
 
-// —— R14 批 RISK：风险巡检阈值分区读写接线 —— //
+// —— R14 批 RISK：风险汇总阈值分区读写接线 —— //
 
 test("toggling the risk-monitor enable switch PATCHes the full risk_monitor object (not just { enabled }), preserving the existing thresholds", async () => {
   await withFakeDomGlobals(async () => {
