@@ -391,6 +391,7 @@ const expectedLiveRouteSmokeSteps = 82;
 // SSE 刷新」的 2 次变 3 次，多的一次来自第 08 步打回成功后的重渲 → 2+1=3。conflicts 由 proposal 路由 loader
 // 同批取（每次路由渲染各一次），1:1 跟随 → 同为 3。这是一次确定性的动作后重渲，不是 N+1 回归。
 const expectedProposalLoaderCalls = 3;
+const expectedIdentifyProbes = 2;
 const expectedProposalConflictsCalls = 3;
 const qaProjectId = "10000000-0000-4000-8000-000000001600";
 const qaCreatedProjectId = "10000000-0000-4000-8000-000000001691";
@@ -1390,7 +1391,10 @@ function teamSkillsPage(): TeamSkillsPageVM {
       active: 2,
       ai_authored: 1,
       refined: 1
-    }
+    },
+    // R23 SA-06：技能页 VM 的 curation 是必填字段（契约层有意不做可选，见 Agent Note skill-curation-on-by-default）；
+    // mock 与产线同形，CI 的路由冒烟才会真正走到「已开启、空闲」这条渲染分支。
+    curation: { enabled: true, running: false, last_run_at: null }
   };
 }
 
@@ -2029,7 +2033,14 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
     if (request.method === "POST" && url.pathname === "/api/auth/identify") {
       requestRecord.body = await requestBody(request);
       const body = JSON.parse(requestRecord.body || "{}") as { nickname?: string };
-      identifiedNickname = body.nickname?.trim() || "R4 Live Reviewer";
+      // R23 P2（SA-04）：web 首屏用「空昵称 identify」探测认证模式——真实服务端对空昵称是 zod 422
+      // （nickname 模式）或 404（密码模式），都不会建用户。mock 必须同形：空昵称回 422，否则探针会被
+      // 当成一次真实报到，identify 计数与登录态全部失真。
+      if (!body.nickname?.trim()) {
+        sendJson(response, 422, { ok: false, error: { code: "validation_error", message: "昵称不能为空" } });
+        return;
+      }
+      identifiedNickname = body.nickname.trim();
       sendJson(response, 200, { ...identity(currentLocale, identifiedNickname), created: true });
       return;
     }
@@ -3948,7 +3959,10 @@ function requestProof(requests: ApiRequestRecord[]) {
       notificationMarkAllRead: count("/api/notifications/read-all", "POST"),
       notificationDismiss: countMatch(/^\/api\/notifications\/[^/]+\/dismiss$/u, "POST"),
       notificationComplete: countMatch(/^\/api\/notifications\/[^/]+\/complete$/u, "POST"),
-      identify: count("/api/auth/identify", "POST"),
+      // R23 P2（SA-04）：identify 分两类——真实报到（带昵称）与认证模式探针（空昵称，422 无副作用）。
+      // 门禁只对真实报到要求恰好 2 次；探针次数另计，见 expectedIdentifyProbes。
+      identify: requests.filter((request) => request.method === "POST" && request.pathname === "/api/auth/identify" && typeof request.body === "string" && !/"nickname"\s*:\s*""/.test(request.body)).length,
+      identifyProbes: requests.filter((request) => request.method === "POST" && request.pathname === "/api/auth/identify" && typeof request.body === "string" && /"nickname"\s*:\s*""/.test(request.body)).length,
       logout: count("/api/auth/logout", "POST"),
       health: count("/api/pages/health"),
       agents: count("/api/pages/agents"),
@@ -4618,6 +4632,10 @@ async function main() {
         proof.identifySecondUser &&
         proof.logout &&
         proof.counts.identify === 2 &&
+        // R23 P2（SA-04）：web 首屏用空昵称 identify 探测认证模式（mock 同真实服务端回 422、零副作用），
+        // 探测结果按页面会话缓存——本冒烟里引导屏出现在两次独立整页加载（00 桌面 / 00a 移动端），
+        // 登出后回到引导屏复用同页缓存不再探测 → 恰好 2 次。多于 2 说明缓存失效或多探了，少于 2 说明探针没跑。
+        proof.counts.identifyProbes === expectedIdentifyProbes &&
         proof.counts.logout === 1 &&
         steps.some((step) =>
           step.id === "00-onboarding-zh-desktop" &&
@@ -5537,7 +5555,7 @@ async function main() {
     if (!Object.values(gates).every(Boolean)) {
       throw new Error(`${smokeTitle} failed: ${JSON.stringify(gates)}`);
     }
-    console.log(JSON.stringify({ ok: true, output_dir: report.output_dir, steps: steps.length }, null, 2));
+    console.log(JSON.stringify({ ok: true, output_dir: report.output_dir, steps: steps.length, identify_probes: proof.counts.identifyProbes }, null, 2));
   } finally {
     chrome?.cdp.close();
     await stopChrome(chrome?.child);

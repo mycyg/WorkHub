@@ -4421,7 +4421,12 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
 //   * 已开启、当前空闲——附上次跑完的时间；本进程启动后还没跑过就照实说，不假装从没自学过。
 // 管理员多一个「立即自学一轮」按钮（两段式确认，水合在 apps/web/src/browser.ts）。
 function renderTeamSkillsCurationSection(vm: TeamSkillsPageVM, locale: WorkHubLocale, isAdmin: boolean): string {
-  const curation = vm.curation;
+  // 契约上 curation 必填；但渲染层面对「还没升级到这版契约的服务端 / 旧夹具」时不能整页炸成错误卡——
+  // 没有这段信息就不渲这一节（诚实缺省），而不是猜一个「未开启」。
+  const curation = (vm as Partial<TeamSkillsPageVM>).curation;
+  if (!curation) {
+    return "";
+  }
   const statusText = !curation.enabled
     ? routeT(locale, "skills.curationOffSetting")
     : curation.running
