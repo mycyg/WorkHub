@@ -27,6 +27,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
+      # 插件宿主端到端冒烟（不需要 PG / 不需要模型 key）：起一个 tsx 子进程装 echo 夹具，证明插件工具被 Cuu 调到、结果进轨迹、调用落审计。
+      - run: pnpm qa:plugin-smoke
 
   web-live-route-smoke:
     runs-on: ubuntu-latest
