@@ -1105,7 +1105,9 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
     return renderWebRouteComponent({ key: "search", q: surface.q }, { locale });
   }
   if (surface.key === "skills") {
-    return renderWebRouteComponent({ key: "skills", skills: surface.skills }, { locale });
+    // R23 SA-06：isAdmin 决定「立即自学一轮」按钮要不要渲——与团队技能治理 tab 同一条通路（登录态，
+    // 非页面 VM）。服务端仍独立判定，前端只是不给非管理员送一次注定 403 的点击。
+    return renderWebRouteComponent({ key: "skills", skills: surface.skills, isAdmin }, { locale });
   }
   if (surface.key === "memory") {
     // isAdmin 决定团队技能 tab 的编辑/停用按钮要不要渲——从 shellUser（登录态，SSR 阶段已知）取，

@@ -508,6 +508,16 @@ type RouteCopyKey =
   | "skills.version"
   | "skills.readiness"
   | "skills.refinedFrom"
+  | "skills.curationTitle"
+  | "skills.curationOffSetting"
+  | "skills.curationRunning"
+  | "skills.curationIdle"
+  | "skills.curationLastRun"
+  | "skills.curationNeverRun"
+  | "skills.curateNow"
+  | "skills.curateNowConfirm"
+  | "skills.curateNowStarted"
+  | "skills.curateNowFailed"
   | "projects.kicker"
   | "projects.title"
   | "projects.summary"
@@ -810,6 +820,16 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "skills.version": "版本",
     "skills.readiness": "成熟度",
     "skills.refinedFrom": "精修自 v",
+    "skills.curationTitle": "AI 自学",
+    "skills.curationOffSetting": "这台服务器没有开启 AI 自学，技能库不会自己增长。",
+    "skills.curationRunning": "AI 正在自学，稍后回来看看。",
+    "skills.curationIdle": "已开启：任务队列闲下来时，AI 会从做完的工作里总结新技能。",
+    "skills.curationLastRun": "上次自学",
+    "skills.curationNeverRun": "服务器这次启动后还没自学过。",
+    "skills.curateNow": "立即自学一轮",
+    "skills.curateNowConfirm": "确认开始？再点一次",
+    "skills.curateNowStarted": "已开始自学，跑完刷新这一页就能看到结果。",
+    "skills.curateNowFailed": "没能开始，请稍后再试。",
     "settings.runtime": "运行时",
     "settings.llm": "AI 运行配置",
     "settings.language": "语言",
@@ -1090,6 +1110,16 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "skills.version": "Version",
     "skills.readiness": "Readiness",
     "skills.refinedFrom": "refined from v",
+    "skills.curationTitle": "AI self-learning",
+    "skills.curationOffSetting": "AI self-learning is off on this server, so the skill library will not grow on its own.",
+    "skills.curationRunning": "The AI is learning right now — check back shortly.",
+    "skills.curationIdle": "On: whenever the task queue goes idle, the AI sums up new skills from finished work.",
+    "skills.curationLastRun": "Last learned",
+    "skills.curationNeverRun": "Nothing learned yet since this server started.",
+    "skills.curateNow": "Learn a round now",
+    "skills.curateNowConfirm": "Start now? Click again",
+    "skills.curateNowStarted": "Started. Refresh this page once it finishes to see what changed.",
+    "skills.curateNowFailed": "Could not start. Try again in a moment.",
     "settings.runtime": "Runtime",
     "settings.llm": "AI runtime config",
     "settings.language": "Language",
@@ -4178,7 +4208,38 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
   });
 }
 
-function renderTeamSkillsRouteComponent(vm: TeamSkillsPageVM, locale: WorkHubLocale): WebRouteComponent {
+// R23 SA-06：技能页的「AI 自学」状态区块。此前这一页只列已有技能，从不回答「这台部署到底有没有人
+// 在攒技能」——而夜间自学 worker 长期默认关着，页面上却一句话都不说，用户只会以为 AI 没本事。
+// 三种状态各说各的实话，绝不含糊成一句「运行中」：
+//   * 未启用（开关关了 / 没配 LLM 密钥，服务端已合并成一个 enabled=false）；
+//   * 正在跑；
+//   * 已开启、当前空闲——附上次跑完的时间；本进程启动后还没跑过就照实说，不假装从没自学过。
+// 管理员多一个「立即自学一轮」按钮（两段式确认，水合在 apps/web/src/browser.ts）。
+function renderTeamSkillsCurationSection(vm: TeamSkillsPageVM, locale: WorkHubLocale, isAdmin: boolean): string {
+  const curation = vm.curation;
+  const statusText = !curation.enabled
+    ? routeT(locale, "skills.curationOffSetting")
+    : curation.running
+      ? routeT(locale, "skills.curationRunning")
+      : routeT(locale, "skills.curationIdle");
+  const lastRun = curation.last_run_at
+    ? `<span class="wh-pill" data-r23-skills-curation-last-run="${escapeHtml(curation.last_run_at)}">${escapeHtml(`${routeT(locale, "skills.curationLastRun")} ${formatLocalTimestamp(curation.last_run_at)}`)}</span>`
+    : `<span class="wh-subtle" data-r23-skills-curation-never="true">${escapeHtml(routeT(locale, "skills.curationNeverRun"))}</span>`;
+  // 按钮只在「管理员 + 已启用 + 当前没在跑」时出现——渲一个必然被服务端 403/409 打回的按钮就是假入口。
+  // 服务端仍然独立判定（不信前端），这里只是不给用户送一次注定失败的点击。
+  const action = isAdmin && curation.enabled && !curation.running
+    ? `<button type="button" class="wh-btn" data-r23-skills-curate-now="true" data-r23-skills-curate-confirm-label="${escapeHtml(routeT(locale, "skills.curateNowConfirm"))}">${escapeHtml(routeT(locale, "skills.curateNow"))}</button>`
+    : "";
+  return `<section class="wh-card wh-r4-route-card" data-r23-skills-curation="${escapeHtml(curation.enabled ? (curation.running ? "running" : "idle") : "disabled")}">
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "skills.curationTitle"))}</h3>
+          <p class="wh-subtle" data-r23-skills-curation-status="true">${escapeHtml(statusText)}</p>
+          <div class="wh-r4-route-meta">${lastRun}</div>
+          ${action}
+          <p class="wh-subtle" data-r23-skills-curate-notice="true" hidden></p>
+        </section>`;
+}
+
+function renderTeamSkillsRouteComponent(vm: TeamSkillsPageVM, locale: WorkHubLocale, isAdmin = false): WebRouteComponent {
   const cards = vm.skills.length
     ? vm.skills.map((skill) => {
         const badges = [
@@ -4221,6 +4282,7 @@ function renderTeamSkillsRouteComponent(vm: TeamSkillsPageVM, locale: WorkHubLoc
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(vm.totals.active))}</span>
       </header>
+      ${renderTeamSkillsCurationSection(vm, locale, isAdmin)}
       <div class="wh-r4-route-grid">${cards}</div>
     </section>`
   });
@@ -5850,7 +5912,7 @@ export type WebRouteComponentInput =
   | { key: "agents"; agents: AgentArmyDashboardVM }
   | { key: "knowledge"; evidence: EvidenceBubble; sourceRef?: string | undefined; scopeLanding?: boolean | undefined; projects?: ProjectListVM | undefined }
   | { key: "search"; q?: string | undefined }
-  | { key: "skills"; skills: TeamSkillsPageVM }
+  | { key: "skills"; skills: TeamSkillsPageVM; isAdmin?: boolean | undefined }
   | { key: "settings"; settings: SettingsPageVM; isAdmin?: boolean | undefined }
   | { key: "memory"; memory: { userMemories: UserMemoryManagementPageVM; teamSkills: TeamSkillManagementPageVM; tab: "profile" | "skills"; isAdmin: boolean } };
 
@@ -5902,7 +5964,7 @@ export function renderWebRouteComponent(
     case "search":
       return renderSearchRouteComponent(input.q, locale);
     case "skills":
-      return renderTeamSkillsRouteComponent(input.skills, locale);
+      return renderTeamSkillsRouteComponent(input.skills, locale, input.isAdmin ?? false);
     case "settings":
       return renderSettingsRouteComponent(input.settings, locale, input.isAdmin ?? false);
     case "memory":

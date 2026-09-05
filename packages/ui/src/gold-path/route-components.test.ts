@@ -3873,7 +3873,8 @@ test("R8 Team skills route component renders active skills, K2 provenance, and t
         provenance: { refined_from_version: 2, op_count: 1, rationale_md: "补边界情况" }
       }
     ],
-    totals: { active: 1, ai_authored: 1, refined: 1 }
+    totals: { active: 1, ai_authored: 1, refined: 1 },
+    curation: { enabled: true, running: false, last_run_at: "2026-06-16T02:00:00.000Z" }
   };
   const en = renderWebRouteComponent({ key: "skills", skills: skillsVm }, { locale: "en-US" });
   const zh = renderWebRouteComponent({ key: "skills", skills: skillsVm }, { locale: "zh-CN" });
@@ -3899,6 +3900,7 @@ test("R8 Team skills route component shows an empty state when there are no skil
     generated_at: "2026-06-16T00:00:00.000Z",
     skills: [],
     totals: { active: 0, ai_authored: 0, refined: 0 },
+    curation: { enabled: true, running: false, last_run_at: null },
     empty_state: "no_skills" as const
   };
   const en = renderWebRouteComponent({ key: "skills", skills: emptyVm }, { locale: "en-US" });
@@ -3922,7 +3924,8 @@ test("R9.7 Team skills route hides confidence jargon in skill score badges", () 
         updated_at: "2026-06-16T00:00:00.000Z"
       }
     ],
-    totals: { active: 1, ai_authored: 1, refined: 0 }
+    totals: { active: 1, ai_authored: 1, refined: 0 },
+    curation: { enabled: true, running: false, last_run_at: null }
   };
 
   const en = renderWebRouteComponent({ key: "skills", skills: skillsVm }, { locale: "en-US" });
@@ -3930,6 +3933,68 @@ test("R9.7 Team skills route hides confidence jargon in skill score badges", () 
 
   assert.doesNotMatch(en.html, /confidence/iu);
   assert.doesNotMatch(zh.html, /置信/u);
+});
+
+// R23 SA-06：技能页此前从不回答「这台部署到底有没有人在攒技能」——夜间自学 worker 长期默认关着，
+// 页面却一句话都不说。三档状态必须各说各的实话，且「立即自学一轮」只对管理员出现。
+const r23SkillsVm = (curation: { enabled: boolean; running: boolean; last_run_at: string | null }) => ({
+  generated_at: "2026-09-05T00:00:00.000Z",
+  skills: [],
+  totals: { active: 0, ai_authored: 0, refined: 0 },
+  curation,
+  empty_state: "no_skills" as const
+});
+
+test("R23 SA-06 team skills route tells the truth about self-learning in all three states", () => {
+  const disabled = renderWebRouteComponent(
+    { key: "skills", skills: r23SkillsVm({ enabled: false, running: false, last_run_at: null }), isAdmin: true },
+    { locale: "zh-CN" }
+  );
+  assert.match(disabled.html, /data-r23-skills-curation="disabled"/u);
+  assert.ok(disabled.html.includes("没有开启 AI 自学"));
+  // 未启用时不渲按钮——服务端必然 409，渲出来就是假入口。
+  assert.doesNotMatch(disabled.html, /data-r23-skills-curate-now/u);
+
+  const running = renderWebRouteComponent(
+    { key: "skills", skills: r23SkillsVm({ enabled: true, running: true, last_run_at: null }), isAdmin: true },
+    { locale: "zh-CN" }
+  );
+  assert.match(running.html, /data-r23-skills-curation="running"/u);
+  // 正在跑时同样不渲按钮（防抖在服务端也有一道 409，这里只是不送注定失败的点击）。
+  assert.doesNotMatch(running.html, /data-r23-skills-curate-now/u);
+
+  const idle = renderWebRouteComponent(
+    { key: "skills", skills: r23SkillsVm({ enabled: true, running: false, last_run_at: "2026-09-04T18:30:00.000Z" }), isAdmin: true },
+    { locale: "zh-CN" }
+  );
+  assert.match(idle.html, /data-r23-skills-curation="idle"/u);
+  assert.match(idle.html, /data-r23-skills-curation-last-run="2026-09-04T18:30:00\.000Z"/u);
+  assert.match(idle.html, /data-r23-skills-curate-now/u);
+
+  // last_run_at 为空时照实说「这次启动后还没自学过」，不显示空白也不假装从没开过。
+  const neverRan = renderWebRouteComponent(
+    { key: "skills", skills: r23SkillsVm({ enabled: true, running: false, last_run_at: null }), isAdmin: true },
+    { locale: "zh-CN" }
+  );
+  assert.match(neverRan.html, /data-r23-skills-curation-never="true"/u);
+  assert.doesNotMatch(neverRan.html, /data-r23-skills-curation-last-run/u);
+});
+
+test("R23 SA-06 the manual self-learning button is admin-only and never leaks internal jargon", () => {
+  const vm = r23SkillsVm({ enabled: true, running: false, last_run_at: null });
+  const member = renderWebRouteComponent({ key: "skills", skills: vm }, { locale: "zh-CN" });
+  assert.doesNotMatch(member.html, /data-r23-skills-curate-now/u);
+  // 非管理员仍然看得到「AI 自学开着」这件事——只是没有触发按钮。
+  assert.match(member.html, /data-r23-skills-curation="idle"/u);
+
+  const admin = renderWebRouteComponent({ key: "skills", skills: vm, isAdmin: true }, { locale: "en-US" });
+  assert.match(admin.html, /data-r23-skills-curate-now/u);
+  assert.ok(admin.html.includes("Learn a round now"));
+  // 禁词只对**可见文案**成立——data-r23-skills-curation 是标记属性（测试钩子），不是给用户读的。
+  for (const html of [member.html, admin.html]) {
+    const visibleText = html.replace(/<[^>]*>/gu, " ");
+    assert.doesNotMatch(visibleText, /蒸馏|curation|curate|distill/iu);
+  }
 });
 
 test("R14 批 MEM: memory route renders the profile tab with category badge, provenance, and edited-by line", () => {

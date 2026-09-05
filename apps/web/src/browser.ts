@@ -2272,6 +2272,7 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindConversationParticipantsPanel(root, result, client, locale, signal);
   bindSearchRoutePanel(root, result, client, locale, signal);
   bindSettingsAiProfilePanel(root, result, client, locale, signal);
+  bindTeamSkillsCurationPanel(root, result, client, locale, signal);
   bindSettingsBudgetPolicyPanel(root, result, client, locale, signal);
   bindSettingsMembersPanel(root, result, client, locale, signal);
   bindSettingsMyProfilePanel(root, result, client, locale, signal);
@@ -2281,6 +2282,67 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindMemoryPanel(root, result, client, locale, signal);
   bindProposalFeedbackNotePanel(root, result, client, locale, signal);
   bindLiveRouteStreams(result, client, locale);
+}
+
+// R23 SA-06：技能页「立即自学一轮」的水合。按钮只在 SSR 判定「管理员 + 已启用 + 当前没在跑」时才渲，
+// 所以这里找不到按钮就静默返回（非管理员、未启用、正在跑三种情况都走这条路，不报错、不占位）。
+// 两段式确认沿用 apps/web/src/confirm-button.ts（第一次点换确认文案，5 秒自动复原）——手动催一轮会
+// 真的花钱打 LLM，不该是零确认的单击。
+// fail-soft：这一页的主体（技能列表）由 SSR 出，这里的请求成败都不影响它——失败只在按钮下方留一句
+// 人话，不清空页面、不弹错误壳。
+function bindTeamSkillsCurationPanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "skills") {
+    return;
+  }
+  const button = container.querySelector<HTMLButtonElement>("[data-r23-skills-curate-now]");
+  if (!button) {
+    return;
+  }
+  const notice = container.querySelector<HTMLElement>("[data-r23-skills-curate-notice]");
+  const zh = locale === "zh-CN";
+  const confirmLabel = button.dataset.r23SkillsCurateConfirmLabel ?? (zh ? "确认开始？再点一次" : "Start now? Click again");
+  const say = (text: string, tone: "started" | "error") => {
+    if (!notice) {
+      return;
+    }
+    notice.hidden = false;
+    notice.textContent = text;
+    notice.setAttribute("data-r23-skills-curate-notice", tone);
+  };
+  button.addEventListener(
+    "click",
+    () => {
+      armConfirmButton(button, {
+        confirmLabel,
+        onConfirm: () => {
+          button.disabled = true;
+          void client
+            .curateTeamSkillsNow()
+            .then(() => {
+              if (signal.aborted) {
+                return;
+              }
+              // 已开跑就不该再点第二次——按钮留在禁用态，页面刷新后由服务端的 running 状态接管。
+              say(zh ? "已开始自学，跑完刷新这一页就能看到结果。" : "Started. Refresh this page once it finishes to see what changed.", "started");
+            })
+            .catch(() => {
+              if (signal.aborted) {
+                return;
+              }
+              button.disabled = false;
+              say(zh ? "没能开始，请稍后再试。" : "Could not start. Try again in a moment.", "error");
+            });
+        }
+      });
+    },
+    { signal }
+  );
 }
 
 // R14 批 CHAT（web-avatars，2026-07-14 用户点名新增）：把 route-components.ts 里用
