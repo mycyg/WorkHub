@@ -213,6 +213,9 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
     async login() {
       throw new Error("not needed");
     },
+    async register() {
+      throw new Error("not needed");
+    },
     async bootstrapDesktop() {
       throw new Error("not needed");
     },
@@ -503,6 +506,12 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
       throw new Error("not needed");
     },
     async listProjects() {
+      throw new Error("not needed");
+    },
+    async listPersonalProjects() {
+      throw new Error("not needed");
+    },
+    async createPersonalProject() {
       throw new Error("not needed");
     },
     async replayAgentRun() {

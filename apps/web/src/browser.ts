@@ -48,6 +48,7 @@ import {
   browserLocale,
   bootstrapProjectActionFromHref,
   createNamedProjectActionFromHref,
+  createPersonalSpaceActionFromHref,
   clearActiveRouteDirty as sharedClearActiveRouteDirty,
   clearLiveDirtyMetrics as sharedClearLiveDirtyMetrics,
   conflictsFromMergeError,
@@ -1260,6 +1261,25 @@ function bindGoldPathNavigation(
             const body = created.created
               ? (locale === "en-US" ? `Created project: ${created.project.name}.` : `已创建项目：${created.project.name}。`)
               : (locale === "en-US" ? `Opened existing project: ${created.project.name}.` : `已打开同名的现有项目：${created.project.name}。`);
+            showRouteNotice(root, actionSuccessNotice(locale, body, actionId));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
+      // R23 P2（SA-05）：/projects 页「新建个人空间」按钮——服务端自动命名（无字段可采集，见
+      // action-payload.ts 的 createPersonalSpaceActionFromHref 注释），成功后停留在原地刷新整页
+      // （renderCurrentRoute），新空间随 bindMyConversationsPanel 的水合重新取数一起出现在列表里；
+      // 不像团队项目那样跳进新建资源的主页——个人空间创建是「清单里多一行」，不是「开始一个新项目」。
+      if (createPersonalSpaceActionFromHref(href) && actionTarget.dataset.r19CreatePersonalSpace === "true") {
+        try {
+          const created = await client.createPersonalProject({});
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            const body = locale === "en-US"
+              ? `Created personal space: ${created.project.name}.`
+              : `已创建个人空间：${created.project.name}。`;
             showRouteNotice(root, actionSuccessNotice(locale, body, actionId));
           }
         } catch (error) {
@@ -2768,7 +2788,7 @@ function bindMyConversationsPanel(
         (value) => value,
         (): DmListVM | null => null
       ),
-      client.request<ProjectListVM>("/api/me/personal-projects").then(
+      client.listPersonalProjects().then(
         (value) => value,
         (): ProjectListVM | null => null
       )

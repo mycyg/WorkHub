@@ -107,6 +107,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async login() {
       throw new Error("not needed");
     },
+    async register() {
+      throw new Error("not needed");
+    },
     async bootstrapDesktop() {
       throw new Error("not needed");
     },
@@ -379,6 +382,12 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
       throw new Error("not needed");
     },
     async listProjects() {
+      throw new Error("not needed");
+    },
+    async listPersonalProjects() {
+      throw new Error("not needed");
+    },
+    async createPersonalProject() {
       throw new Error("not needed");
     },
     async replayAgentRun() {
