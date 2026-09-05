@@ -880,7 +880,11 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
     }
     const text = change.machine_summary?.generated_content_md;
     if (!text) {
-      throw new ProposalServiceError(415, "proposal_change_preview_unsupported", "这条变更没有可在线预览的文本。采纳后可到工作项或网盘查看正式版。");
+      throw new ProposalServiceError(
+        415,
+        "proposal_change_preview_unsupported",
+        serviceT("zh-CN", "changePreviewUnsupported")
+      );
     }
     const filename = change.target_ref.path?.split("/").filter(Boolean).pop() ?? change.target_ref.entity_type;
     const maxPreviewChars = 200000;
@@ -915,7 +919,7 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
       throw new ProposalServiceError(
         415,
         "proposal_change_diff_unsupported",
-        "这条变更没有可比对的文本内容。采纳后可到工作项或网盘查看正式版。"
+        serviceT("zh-CN", "changeDiffUnsupported")
       );
     }
     // 解析 base 全文：created 变更 base 天然为空不用读；其它类型从快照读，读不到/DB 未就绪时 fail-open

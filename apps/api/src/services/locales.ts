@@ -140,7 +140,9 @@ const zh = {
   agentRunNotStartableStatus: "当前任务状态不能启动 AI，请刷新后再试。",
   approvalWithoutTaskContext: "无任务上下文的审批只能路由给自己。",
   approvalsCappedMore: "待审批的任务比这里显示的更多——去审批页看完整清单。",
-  planDispatchAuditableFlow: "后续执行会继续进入可审计的任务流。"
+  planDispatchAuditableFlow: "后续执行会继续进入可审计的任务流。",
+  changePreviewUnsupported: "这条变更没有可在线预览的文本。采纳后可到任务或网盘查看正式版。",
+  changeDiffUnsupported: "这条变更没有可比对的文本内容。采纳后可到任务或网盘查看正式版。"
 } as const;
 
 const en = {
@@ -259,7 +261,9 @@ const en = {
   agentRunNotStartableStatus: "This task's current status can't start AI. Refresh and try again.",
   approvalWithoutTaskContext: "An approval with no task context can only be routed to you.",
   approvalsCappedMore: "There are more pending approvals than shown here — open Approvals for the full list.",
-  planDispatchAuditableFlow: "Execution will continue in the auditable task flow."
+  planDispatchAuditableFlow: "Execution will continue in the auditable task flow.",
+  changePreviewUnsupported: "There is no text in this change to preview. Once accepted, the official version is on the task or in the drive.",
+  changeDiffUnsupported: "There is no text in this change to compare. Once accepted, the official version is on the task or in the drive."
 } as const satisfies Record<keyof typeof zh, string>;
 
 export type ServiceCopyKey = keyof typeof zh;
