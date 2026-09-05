@@ -108,3 +108,40 @@ const snapshotKindMap: Record<string, [string, string]> = {
 export function snapshotKindLabel(kind: string, zh: boolean): string {
   return pick(snapshotKindMap, kind, zh);
 }
+
+// F-09：会议记录状态（contracts MeetingRecordVM.status：processing/ready/failed）——与 web packages/ui
+// route-components.ts meetingRecordStatusLabel 同枚举，桌面侧措辞与 search.ts 的会议搜索结果状态词
+// （原地定义、现改从这里派生）保持内部一致，优先于跨端逐字对齐（同一枚举值在本客户端只应有一种说法）。
+const meetingRecordStatusMap: Record<string, [string, string]> = {
+  // 集成补：会议分析链路（SA-02）放出了 transcribed（AI 未配置/未分析时只保存了转写），与 web「转写已导入」同口径。
+  transcribed: ["转写已导入", "Transcript imported"],
+  processing: ["处理中", "Processing"],
+  ready: ["已就绪", "Ready"],
+  failed: ["失败", "Failed"]
+};
+
+// 会议洞察种类（contracts MeetingInsightVM.kind）：与 web meetingInsightKindLabel 同口径。
+const meetingInsightKindMap: Record<string, [string, string]> = {
+  new_requirement: ["新需求", "New requirement"],
+  requirement_change: ["需求变更", "Requirement change"],
+  normal_note: ["普通记录", "Note"]
+};
+
+// 会议洞察状态（contracts MeetingInsightVM.status）：与记录状态是两个不相交的枚举取值域，分开建表。
+const meetingInsightStatusMap: Record<string, [string, string]> = {
+  pending: ["待确认", "Pending"],
+  confirmed: ["已确认", "Confirmed"],
+  dismissed: ["已忽略", "Dismissed"]
+};
+
+export function meetingRecordStatusLabel(status: string, zh: boolean): string {
+  return pick(meetingRecordStatusMap, status, zh);
+}
+
+export function meetingInsightKindLabel(kind: string, zh: boolean): string {
+  return pick(meetingInsightKindMap, kind, zh);
+}
+
+export function meetingInsightStatusLabel(status: string, zh: boolean): string {
+  return pick(meetingInsightStatusMap, status, zh);
+}

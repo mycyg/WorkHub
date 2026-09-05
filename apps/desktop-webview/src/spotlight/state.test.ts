@@ -81,6 +81,10 @@ test("capabilityForShellRoute maps tray/deep-link/pet routes to capabilities", (
   assert.equal(capabilityForShellRoute("/r/REQ-42"), "workitem");
   assert.equal(capabilityForShellRoute("/files"), "drive");
   assert.equal(capabilityForShellRoute("/files/folder-1"), "drive");
+  // F-09：会议详情深链（web 同款 /meetings?project_id=&m= 形态）——两种查询组合都要落到 meetings。
+  assert.equal(capabilityForShellRoute("/meetings"), "meetings");
+  assert.equal(capabilityForShellRoute("/meetings?project_id=p1"), "meetings");
+  assert.equal(capabilityForShellRoute("/meetings?project_id=p1&m=m1"), "meetings");
   // 回主页或无匹配 → undefined（控制器据此回 launcher）。
   assert.equal(capabilityForShellRoute("/"), undefined);
   assert.equal(capabilityForShellRoute("/unknown-thing"), undefined);
@@ -98,6 +102,12 @@ test("entityIdFromShellRoute extracts the target entity id for deep-links (rank1
   assert.equal(entityIdFromShellRoute("/r/REQ-42"), "REQ-42");
   // 无路径 id 时回退查询参数（如网盘 project_id）。
   assert.equal(entityIdFromShellRoute("/drive?project_id=p1"), "p1");
+  // F-09：/meetings 没有路径 id 段，取查询参数——project_id 排在 m 前面，抽出的是项目 id
+  // （target.id 承接项目、target.route 原样带着 m=，会议 id 由 views/meetings.ts 自己再解析一次）。
+  assert.equal(entityIdFromShellRoute("/meetings?project_id=p1&m=m1"), "p1");
+  // 只带 m、没有 project_id 时回退到 m（如搜索结果行只知道会议 id 的极端情况——目前不会发生，
+  // 但查询参数回退链条本就该对任意组合诚实）。
+  assert.equal(entityIdFromShellRoute("/meetings?m=m1"), "m1");
   // 列表路由 / 无 id / 回主页 → undefined。
   assert.equal(entityIdFromShellRoute("/workitems"), undefined);
   assert.equal(entityIdFromShellRoute("/inbox"), undefined);
