@@ -46,14 +46,16 @@ use workhub_client_tauri::windows::workbench_window_title;
 
 use std::{
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Mutex,
     time::{Duration, Instant},
 };
 
-// DSK-12：仅 write_cuu_qa_dom_report_to_path（debug-only QA 命令）用到 Path。
-#[cfg(debug_assertions)]
-use std::path::Path;
+/// L-07：壳层数据文件名。两份都从 Application Support **根目录**搬进应用专属目录，
+/// 见 `shell_data_path` / `migrate_legacy_shell_data`。
+const PET_WINDOW_STATE_FILE: &str = "pet-window-state.json";
+const SHELL_CONFIG_FILE: &str = "workhub-shell-config.json";
+const SHELL_DATA_FILES: &[&str] = &[PET_WINDOW_STATE_FILE, SHELL_CONFIG_FILE];
 
 use tauri::{
     menu::{Menu, MenuBuilder, MenuItemBuilder},
@@ -1928,9 +1930,7 @@ fn handle_single_instance_launch(
 }
 
 fn pet_window_state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .resolve("pet-window-state.json", BaseDirectory::Config)
-        .map_err(|error| format!("failed to resolve pet window state path: {error}"))
+    shell_data_path(app, PET_WINDOW_STATE_FILE)
 }
 
 fn load_pet_window_saved_placement(
@@ -1978,9 +1978,89 @@ fn current_monitor_name(window: &tauri::WebviewWindow) -> Option<String> {
 }
 
 fn shell_config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    shell_data_path(app, SHELL_CONFIG_FILE)
+}
+
+/// L-07：壳层自己的数据文件都放**应用专属目录**（macOS 的
+/// `~/Library/Application Support/com.mycyg.workhub/`），而不是 `BaseDirectory::Config` 解析到的
+/// Application Support **根目录**——之前 `pet-window-state.json` / `workhub-shell-config.json` 就是
+/// 直接躺在根目录里，跟别的 app 的数据混在一起，卸载时也没人知道该删哪几个文件。
+fn shell_data_path(app: &tauri::AppHandle, file_name: &str) -> Result<PathBuf, String> {
     app.path()
-        .resolve("workhub-shell-config.json", BaseDirectory::Config)
-        .map_err(|error| format!("failed to resolve shell config path: {error}"))
+        .resolve(file_name, BaseDirectory::AppConfig)
+        .map_err(|error| format!("failed to resolve shell data path {file_name}: {error}"))
+}
+
+/// 旧位置（Application Support 根目录）。只在一次性迁移里用到。
+fn legacy_shell_data_path(app: &tauri::AppHandle, file_name: &str) -> Result<PathBuf, String> {
+    app.path()
+        .resolve(file_name, BaseDirectory::Config)
+        .map_err(|error| format!("failed to resolve legacy shell data path {file_name}: {error}"))
+}
+
+/// 把一个旧位置的数据文件搬进应用专属目录。返回是否真的搬了。
+///
+/// 三条守卫：旧文件不存在 → 什么都不做；新位置已有文件 → 保留新的（新位置才是真相，旧的留在原地
+/// 由用户自行清理，绝不覆盖）；跨卷 rename 失败 → 退回「复制 + 删除」。纯路径函数，可用临时目录单测。
+fn migrate_shell_data_file(legacy: &Path, current: &Path) -> Result<bool, String> {
+    if !legacy.exists() || current.exists() {
+        return Ok(false);
+    }
+    if let Some(parent) = current.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "failed to create shell data directory {}: {error}",
+                parent.display()
+            )
+        })?;
+    }
+    if fs::rename(legacy, current).is_ok() {
+        return Ok(true);
+    }
+    fs::copy(legacy, current).map_err(|error| {
+        format!(
+            "failed to copy {} to {}: {error}",
+            legacy.display(),
+            current.display()
+        )
+    })?;
+    fs::remove_file(legacy).map_err(|error| {
+        format!(
+            "failed to remove the migrated legacy file {}: {error}",
+            legacy.display()
+        )
+    })?;
+    Ok(true)
+}
+
+/// 启动时跑一次：把 L-07 的两份旧数据文件搬进应用专属目录。任何失败都只记日志——迁移失败最坏
+/// 结果是「桌宠位置/服务器地址回到默认」，绝不能因此让应用起不来。
+fn migrate_legacy_shell_data(app: &tauri::AppHandle) {
+    for file_name in SHELL_DATA_FILES {
+        let paths = legacy_shell_data_path(app, file_name)
+            .and_then(|legacy| shell_data_path(app, file_name).map(|current| (legacy, current)));
+        match paths {
+            Ok((legacy, current)) => {
+                if legacy == current {
+                    continue;
+                }
+                match migrate_shell_data_file(&legacy, &current) {
+                    Ok(true) => eprintln!(
+                        "WorkHub: moved {} into the app data directory ({})",
+                        legacy.display(),
+                        current.display()
+                    ),
+                    Ok(false) => {}
+                    Err(error) => eprintln!(
+                        "WorkHub: could not move {file_name} into the app data directory; continuing with defaults: {error}"
+                    ),
+                }
+            }
+            Err(error) => {
+                eprintln!("WorkHub: could not resolve {file_name} for migration: {error}")
+            }
+        }
+    }
 }
 
 fn load_workhub_shell_config(app: &tauri::AppHandle) -> Result<WorkHubShellConfig, String> {
@@ -2125,6 +2205,9 @@ fn main() {
             }
         })
         .setup(|app| {
+            // L-07：先把旧位置（Application Support 根目录）的数据文件搬进应用专属目录，再读配置——
+            // 否则这次启动会读不到用户此前设过的服务器地址/桌宠位置。失败只记日志。
+            migrate_legacy_shell_data(app.handle());
             let shell_config = load_workhub_shell_config(app.handle())?;
             if let Ok(mut locale) = app.state::<Mutex<WorkHubLocale>>().lock() {
                 *locale = shell_config.locale;
@@ -2251,6 +2334,67 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
     use workhub_client_tauri::single_instance::single_instance_plan_from_args;
+
+    // L-07：一次性数据迁移（Application Support 根目录 → 应用专属目录）。用真实临时目录跑，
+    // 因为这条逻辑的全部风险都在文件系统语义上（已存在就不覆盖、搬完删旧、缺目录先建）。
+    fn migration_sandbox(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "workhub-shell-data-migration-{name}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("sandbox should be creatable");
+        dir
+    }
+
+    #[test]
+    fn migrates_a_legacy_shell_data_file_into_the_app_data_directory() {
+        let sandbox = migration_sandbox("moves");
+        let legacy = sandbox.join(SHELL_CONFIG_FILE);
+        // 应用专属目录还不存在——迁移要负责把它建出来。
+        let current = sandbox.join("com.mycyg.workhub").join(SHELL_CONFIG_FILE);
+        fs::write(&legacy, r#"{"server_url":"http://192.168.1.10:8787"}"#).unwrap();
+
+        assert_eq!(migrate_shell_data_file(&legacy, &current), Ok(true));
+        assert!(
+            !legacy.exists(),
+            "旧文件搬完就该消失，否则下次启动还会看到它"
+        );
+        assert_eq!(
+            fs::read_to_string(&current).unwrap(),
+            r#"{"server_url":"http://192.168.1.10:8787"}"#
+        );
+
+        // 幂等：再跑一次什么都不做。
+        assert_eq!(migrate_shell_data_file(&legacy, &current), Ok(false));
+
+        let _ = fs::remove_dir_all(&sandbox);
+    }
+
+    #[test]
+    fn migration_never_overwrites_an_existing_app_data_file_and_skips_missing_legacy_ones() {
+        let sandbox = migration_sandbox("keeps");
+        let legacy = sandbox.join(PET_WINDOW_STATE_FILE);
+        let current = sandbox
+            .join("com.mycyg.workhub")
+            .join(PET_WINDOW_STATE_FILE);
+        fs::create_dir_all(current.parent().unwrap()).unwrap();
+        fs::write(&legacy, "legacy").unwrap();
+        fs::write(&current, "current").unwrap();
+
+        // 新位置才是真相：绝不用旧文件覆盖它。
+        assert_eq!(migrate_shell_data_file(&legacy, &current), Ok(false));
+        assert_eq!(fs::read_to_string(&current).unwrap(), "current");
+        assert!(legacy.exists());
+
+        // 旧文件根本不存在（全新安装）→ 无操作。
+        let absent = sandbox.join("never-written.json");
+        let target = sandbox.join("com.mycyg.workhub").join("never-written.json");
+        assert_eq!(migrate_shell_data_file(&absent, &target), Ok(false));
+        assert!(!target.exists());
+
+        let _ = fs::remove_dir_all(&sandbox);
+    }
 
     // P1-04:纯内存假实现,记录调用顺序/次数,脱离真实 tauri::AppHandle 复现"第二实例带 workbench 深链、
     // workbench 窗尚未创建"场景,并验证 apply_deep_link_plan 是否先建窗再控制窗口。
