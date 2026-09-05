@@ -1078,7 +1078,7 @@ export function mountWorkbenchShell(
         conversationId: dm.conversation.id,
         conversationKind: "collab",
         ...(dmFocusSeq !== undefined ? { focusSeq: dmFocusSeq } : {}),
-        // DM 头显示对方昵称 + 在线点（而非「N 位成员 + Cuu」的群聊条）。
+        // DM 头显示对方昵称 + 在线点（而非「N 位成员 · 全员群聊」+ Cuu 头像的群聊条）。
         isDm: true,
         // DM 默认 cuu_enabled=false（B5 拍板）——chat 视图据此不自动请 Cuu 回话（不特判 DM，纯由
         // cuu_enabled 驱动，见 view.ts 的 isCollabConversation）。

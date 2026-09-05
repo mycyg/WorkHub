@@ -589,7 +589,7 @@ export function mountChatView(
     // turn 通道（自动请回应/模式 chip/流式气泡）全部放行；团队项目的 main 不受影响。缺省 false。
     projectIsPersonal?: boolean;
     // R15 批 B（人对人私聊）：这是一条 DM（对方一个真人，kind 仍是 collab）——会话头改渲「对方昵称 + 在线
-    // 点」而不是「N 位成员 + Cuu · 全员群聊」。缺省 false（普通协同/主区照旧渲成员条）。
+    // 点」而不是「N 位成员 · 全员群聊」那条群聊成员条。缺省 false（普通协同/主区照旧渲成员条）。
     isDm?: boolean;
     // R15 批 B：会话级 Cuu 硬开关（G1）——false 时不自动请 Cuu 回话（isCollabConversation 收紧，见下）。
     // DM 默认 false（B5 拍板），普通协同/主区缺省当 true（既有行为不变，不特判 DM——纯由 cuu_enabled 驱动）。
