@@ -172,13 +172,6 @@ function resolveHostEntryPath(): string {
   }
 }
 
-/**
- * 插件抛出的错误信息进工具结果前的上限。与 `packages/plugin-host/src/translate.ts` 的
- * `PLUGIN_RESULT_MAX_CHARS` 同口径：错误路径和成功路径面对的是同一个模型、同一道围栏，
- * 一个字面 `</outputs>` 或一条几十 MB 的 message 在两条路上的危害完全一样。
- */
-const PLUGIN_ERROR_MESSAGE_MAX_CHARS = 32 * 1024;
-
 function summarize(value: unknown) {
   let text: string;
   if (typeof value === "string") {
