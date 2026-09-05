@@ -269,3 +269,30 @@ test("R14 批 GH: stale-repo hook short-circuits on an empty project list withou
   assert.deepEqual(rows, []);
   assert.equal(queries.length, 0);
 });
+
+// R23 P3b（SA-03）：这条查询开始真正驱动风险日报的第四信号后，两道诚实性闸不能被后人顺手删掉——
+// 少了任何一道，用户都会收到一条我们其实没有证据的「你的仓库没动静」指控。
+test("R23 P3b: the stale-repo query never accuses a repo it has not actually synced, nor one bound today", async () => {
+  const { listStaleReposSinceThreshold } = await repositoryModule();
+  const { db, queries } = createQueryRecorder([[]]);
+
+  await listStaleReposSinceThreshold(db, { projectIds: [projectId], thresholdDays: 7, now });
+
+  const where = queryRawStrings(queries[0]?.where).join(" ");
+  assert.match(where, /is not null/u, "a binding that never synced successfully must be excluded");
+  assert.equal(
+    queryReferences(queries[0]?.where, projectGithubBindings.lastSyncedAt),
+    true,
+    "the never-synced guard must read last_synced_at"
+  );
+  assert.equal(
+    queryReferences(queries[0]?.where, projectGithubBindings.createdAt),
+    true,
+    "a binding younger than the threshold cannot be N days stale"
+  );
+  assert.equal(
+    queryReferences(queries[0]?.where, projectGithubBindings.enabled),
+    true,
+    "a disabled binding is not a signal"
+  );
+});

@@ -3004,6 +3004,13 @@ test("R13-P3 settings route renders the AI assistant block: locked selects for h
   // Both selects render disabled until the client hydrates the real current values.
   assert.match(settings.html, /data-r13-settings-ai-mode-select[^>]*disabled/u);
   assert.match(settings.html, /data-r13-settings-ai-dispatch-select[^>]*disabled/u);
+  // R23 P3b（SA-07）：助手主动性三档在 web 也放出来了（同一套水合竞态纪律：SSR 先 disabled）。
+  assert.match(settings.html, /data-r13-settings-ai-proactivity-select[^>]*disabled/u);
+  for (const level of ["quiet", "balanced", "proactive"]) {
+    assert.ok(settings.html.includes(`value="${level}"`), `proactivity option ${level} must be rendered`);
+  }
+  // 这一项不该再把用户往桌面端赶。
+  assert.ok(!/助手主动性[^<]*<\/strong><span class="wh-pill">需要桌面客户端/u.test(settings.html));
   // All five modes and all three dispatch policies are real options.
   for (const value of ["1", "2", "3", "4", "5"]) {
     assert.equal(settings.html.includes(`<option value="${value}">`), true);

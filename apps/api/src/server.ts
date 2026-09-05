@@ -4,7 +4,10 @@ import app, { attachWebStatic, logger } from "./app.js";
 import { settings } from "@workhub/config";
 import { getDefaultProviderRegistry } from "./services/provider-registry.js";
 import { getDefaultAgentRunRecoveryScheduler } from "./workers/agent-run-recovery.js";
-import { getDefaultAgentRunSkillCurationScheduler } from "./workers/agent-skill-curation.js";
+import {
+  getDefaultAgentRunSkillCurationScheduler,
+  skillCurationAvailability
+} from "./workers/agent-skill-curation.js";
 import { getDefaultConversationObserverScheduler } from "./workers/conversation-observer.js";
 import { getDefaultConversationReplyJudgeScheduler } from "./workers/conversation-reply-judge.js";
 import { getDefaultSessionSweepScheduler } from "./workers/session-sweep.js";
@@ -37,11 +40,19 @@ if (settings.webDistDir) {
 const recoveryScheduler = getDefaultAgentRunRecoveryScheduler();
 recoveryScheduler.start();
 
-// 团队技能闲时自蒸馏（默认关闭：AGENT_RUN_SKILL_CURATION_ENABLED=true 才启）。
-const skillCurationScheduler = settings.agentRun.skillCurationEnabled
+// 团队技能闲时自蒸馏。R23 SA-06 起默认开启（AGENT_RUN_SKILL_CURATION_ENABLED 默认 true），
+// 但没配 LLM 密钥时不启动——与观察者/回话判定器同款 isConfigured 守卫：无 key 时每夜只会白跑
+// analyze 查询再被 provider 的 fail-fast 打回，刷警告不产出。启动后仍受「队列空闲才跑」+ 当日
+// curation 花费闸双闸约束。要整体关掉：AGENT_RUN_SKILL_CURATION_ENABLED=false。
+const skillCurationAvailable = skillCurationAvailability();
+const skillCurationScheduler = skillCurationAvailable.enabled
   ? getDefaultAgentRunSkillCurationScheduler()
   : undefined;
-skillCurationScheduler?.start();
+if (skillCurationScheduler) {
+  skillCurationScheduler.start();
+} else if (!skillCurationAvailable.enabled) {
+  logger.info("skill_curation_disabled", { reason: skillCurationAvailable.reason });
+}
 
 // R2 auth epic：会话清扫——仅密码/混合模式启动（nickname 模式不签发会话，无需清扫）。
 const sessionSweepScheduler =

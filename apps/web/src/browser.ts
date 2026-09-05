@@ -4226,14 +4226,18 @@ function bindSettingsAiProfilePanel(
   }
   const modeSelect = panel.querySelector<HTMLSelectElement>("[data-r13-settings-ai-mode-select]");
   const dispatchSelect = panel.querySelector<HTMLSelectElement>("[data-r13-settings-ai-dispatch-select]");
-  if (!modeSelect || !dispatchSelect) {
+  // R23 P3b（SA-07）：助手主动性三档。此前 web 这一项标着「需要桌面客户端」——但 PATCH
+  // /me/ai-profile 本来就收 cuu_proactivity，纯粹是没接线；档位现在真被 care-scan / ddl-chase /
+  // conversation-observer 读取了，web 也就没有理由继续把用户往桌面端赶。
+  const proactivitySelect = panel.querySelector<HTMLSelectElement>("[data-r13-settings-ai-proactivity-select]");
+  if (!modeSelect || !dispatchSelect || !proactivitySelect) {
     return;
   }
   const status = panel.querySelector<HTMLElement>("[data-r13-settings-ai-status]");
   const retryButton = panel.querySelector<HTMLButtonElement>("[data-r13-settings-ai-retry]");
   const zh = locale === "zh-CN";
   // GET/PATCH 都走 client.request 的类型安全转发口（drive_preview 同款先例），只声明用得到的字段。
-  type AiProfileSlice = { default_mode: number; dispatch_policy: string };
+  type AiProfileSlice = { default_mode: number; dispatch_policy: string; cuu_proactivity: string };
   const profilePath = "/api/me/ai-profile";
   let lastSaved: AiProfileSlice | undefined;
 
@@ -4248,6 +4252,7 @@ function bindSettingsAiProfilePanel(
   const setEnabled = (enabled: boolean) => {
     modeSelect.disabled = !enabled;
     dispatchSelect.disabled = !enabled;
+    proactivitySelect.disabled = !enabled;
   };
 
   const hydrate = async () => {
@@ -4261,9 +4266,14 @@ function bindSettingsAiProfilePanel(
       if (signal.aborted) {
         return;
       }
-      lastSaved = { default_mode: profile.default_mode, dispatch_policy: profile.dispatch_policy };
+      lastSaved = {
+        default_mode: profile.default_mode,
+        dispatch_policy: profile.dispatch_policy,
+        cuu_proactivity: profile.cuu_proactivity
+      };
       modeSelect.value = String(profile.default_mode);
       dispatchSelect.value = profile.dispatch_policy;
+      proactivitySelect.value = profile.cuu_proactivity;
       setEnabled(true);
       if (status) {
         status.hidden = true;
@@ -4298,9 +4308,14 @@ function bindSettingsAiProfilePanel(
       if (signal.aborted) {
         return;
       }
-      lastSaved = { default_mode: profile.default_mode, dispatch_policy: profile.dispatch_policy };
+      lastSaved = {
+        default_mode: profile.default_mode,
+        dispatch_policy: profile.dispatch_policy,
+        cuu_proactivity: profile.cuu_proactivity
+      };
       modeSelect.value = String(profile.default_mode);
       dispatchSelect.value = profile.dispatch_policy;
+      proactivitySelect.value = profile.cuu_proactivity;
       setStatus(zh ? "已保存" : "Saved", "saved");
     } catch {
       if (signal.aborted) {
@@ -4340,6 +4355,21 @@ function bindSettingsAiProfilePanel(
       void enqueueSave({ dispatch_policy: nextPolicy }, () => {
         if (lastSaved) {
           dispatchSelect.value = lastSaved.dispatch_policy;
+        }
+      });
+    },
+    { signal }
+  );
+  proactivitySelect.addEventListener(
+    "change",
+    () => {
+      const nextLevel = proactivitySelect.value;
+      if (!["quiet", "balanced", "proactive"].includes(nextLevel) || nextLevel === lastSaved?.cuu_proactivity) {
+        return;
+      }
+      void enqueueSave({ cuu_proactivity: nextLevel }, () => {
+        if (lastSaved) {
+          proactivitySelect.value = lastSaved.cuu_proactivity;
         }
       });
     },

@@ -2374,6 +2374,8 @@ test("R13-P3 settings route ships the AI assistant self-rescue block", async () 
   // Selects arrive disabled — browser.ts hydrates the real current values before unlocking them.
   assert.equal(/data-r13-settings-ai-mode-select[^>]*disabled/u.test(result.html), true);
   assert.equal(/data-r13-settings-ai-dispatch-select[^>]*disabled/u.test(result.html), true);
+  // R23 P3b（SA-07）：助手主动性三档（web 端此前是「需要桌面客户端」的死控件）。
+  assert.equal(/data-r13-settings-ai-proactivity-select[^>]*disabled/u.test(result.html), true);
   assert.equal(result.html.includes("data-r13-settings-ai-retry"), true);
   assert.equal(result.html.includes('data-action-id="open_desktop_ai_settings"'), true);
 });

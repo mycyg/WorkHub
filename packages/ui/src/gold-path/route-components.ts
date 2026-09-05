@@ -5595,11 +5595,18 @@ function renderSettingsAiAssistantCard(locale: WorkHubLocale, desktopHref: strin
     ["ask", "先问我（确认后开工）", "Ask me first (starts after I confirm)"],
     ["manual", "只挂单（我手动启动）", "Queue only (I start it manually)"]
   ];
+  // R23 P3b（SA-07）：助手主动性三档。措辞与桌面端设置页逐字对齐（apps/desktop-webview/src/
+  // spotlight/views/settings.ts 的 proactivityCopy），免得同一个档位在两端叫法不一样。
+  const proactivityOptions: Array<[string, string, string]> = [
+    ["quiet", "安静 · 很少主动开口", "Quiet · rarely speaks up first"],
+    ["balanced", "均衡 · 看情况开口（默认）", "Balanced · speaks up when it matters (default)"],
+    ["proactive", "主动 · 更常主动汇报", "Proactive · reports progress more often"]
+  ];
   const renderOptions = (options: Array<[string, string, string]>) =>
     options.map(([value, zhLabel, enLabel]) => `<option value="${escapeHtml(value)}">${escapeHtml(zh ? zhLabel : enLabel)}</option>`).join("");
   return `<section class="wh-card wh-r4-route-card" data-r13-settings-ai-panel="true">
           <h3 role="heading" aria-level="2">${escapeHtml(zh ? "AI 助手" : "AI assistant")}</h3>
-          <p class="wh-subtle">${escapeHtml(zh ? "单聊默认档与接单策略在这里就能改，改完立即生效——即使你在「只观察」档也能在这里自救。" : "Change your default 1:1 mode and dispatch policy right here — it takes effect immediately, even if you're stuck in observe-only mode.")}</p>
+          <p class="wh-subtle">${escapeHtml(zh ? "单聊默认档、接单策略与助手主动性在这里就能改，改完立即生效——即使你在「只观察」档也能在这里自救。" : "Change your default 1:1 mode, dispatch policy and assistant proactivity right here — it takes effect immediately, even if you're stuck in observe-only mode.")}</p>
           <p class="wh-subtle" data-r13-settings-ai-status="loading" hidden></p>
           <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "默认模式（单聊五档）" : "Default mode (1:1, five levels)")}</strong>
             <select class="wh-pill" data-r13-settings-ai-mode-select aria-label="${escapeHtml(zh ? "默认模式" : "Default mode")}" disabled>${renderOptions(modeOptions)}</select>
@@ -5607,8 +5614,12 @@ function renderSettingsAiAssistantCard(locale: WorkHubLocale, desktopHref: strin
           <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "接单策略" : "Dispatch policy")}</strong>
             <select class="wh-pill" data-r13-settings-ai-dispatch-select aria-label="${escapeHtml(zh ? "接单策略" : "Dispatch policy")}" disabled>${renderOptions(dispatchOptions)}</select>
           </div>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "助手主动性" : "Assistant proactivity")}</strong>
+            <select class="wh-pill" data-r13-settings-ai-proactivity-select aria-label="${escapeHtml(zh ? "助手主动性" : "Assistant proactivity")}" disabled>${renderOptions(proactivityOptions)}</select>
+          </div>
+          <p class="wh-subtle">${escapeHtml(zh ? "调低主动性后：关怀消息不再送达，临期提醒只在真的逾期后发，AI 助手在项目群里也会多等一会儿才开口。" : "Turn it down and: care messages stop, deadline nudges wait until something is actually overdue, and the assistant waits longer before speaking up in a project chat.")}</p>
           <button type="button" class="wh-btn" data-r13-settings-ai-retry hidden>${escapeHtml(zh ? "重试读取" : "Retry loading")}</button>
-          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "细粒度开关 · 助手主动性 · 模型档位 · 项目治理" : "Granular switches, assistant proactivity, model tier, project governance")}</strong><span class="wh-pill">${escapeHtml(zh ? "需要桌面客户端" : "Desktop app required")}</span></div>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "细粒度开关 · 模型档位 · 项目治理" : "Granular switches, model tier, project governance")}</strong><span class="wh-pill">${escapeHtml(zh ? "需要桌面客户端" : "Desktop app required")}</span></div>
           <a class="wh-btn" href="${escapeHtml(safeHref(desktopHref))}" data-action-id="open_desktop_ai_settings" data-method="GET" data-requires-desktop="true">${escapeHtml(zh ? "其余 AI 项在桌面客户端调整" : "Adjust the rest in the desktop app")}</a>
         </section>`;
 }

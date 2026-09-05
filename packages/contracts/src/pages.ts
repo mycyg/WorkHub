@@ -91,6 +91,27 @@ export const teamSkillVmSchema = z.object({
 });
 export type TeamSkillVM = z.infer<typeof teamSkillVmSchema>;
 
+// R23 SA-06：AI 夜间自学团队技能的运行状态——技能页据此显示「上次自学时间 / 未启用 / 正在进行」。
+// enabled=开关已开 **且** 这台部署配了 LLM 密钥（缺一样今晚都不会跑，那就诚实说「未启用」，
+// 不要显示成「已开启，等今晚」）；running=此刻正在跑；last_run_at=本进程记到的上一轮开跑完成时间，
+// 记不到就是 null——刻意不拿审计日志里「上次学到新技能的时间」冒充「上次自学时间」（没学到东西
+// 的那些轮次同样是跑过的）。
+export const teamSkillCurationStatusVmSchema = z.object({
+  enabled: z.boolean(),
+  running: z.boolean(),
+  last_run_at: isoDateTimeSchema.nullable()
+});
+export type TeamSkillCurationStatusVM = z.infer<typeof teamSkillCurationStatusVmSchema>;
+
+// R23 SA-06：管理员手动触发一轮自学的回执（POST /api/team-skills/curate-now）。
+// started 恒为 true（拒绝的情况走 403/409/503 错误码，不会走到这里），curation 是触发之后的最新状态，
+// 前端可直接拿它替换页面上的 curation 区块。
+export const teamSkillCurateNowResponseSchema = z.object({
+  started: z.literal(true),
+  curation: teamSkillCurationStatusVmSchema
+});
+export type TeamSkillCurateNowResponse = z.infer<typeof teamSkillCurateNowResponseSchema>;
+
 export const teamSkillsPageVmSchema = z.object({
   generated_at: isoDateTimeSchema,
   skills: z.array(teamSkillVmSchema),
@@ -99,6 +120,7 @@ export const teamSkillsPageVmSchema = z.object({
     ai_authored: z.number().int().nonnegative(),
     refined: z.number().int().nonnegative()
   }),
+  curation: teamSkillCurationStatusVmSchema,
   empty_state: z.enum(["no_skills"]).optional()
 });
 export type TeamSkillsPageVM = z.infer<typeof teamSkillsPageVmSchema>;

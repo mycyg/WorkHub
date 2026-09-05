@@ -11,6 +11,7 @@ import {
   projectAiGovernance,
   projectConversations,
   projects,
+  userAiProfiles,
   users,
   workspaceMemberships
 } from "../schema/index.js";
@@ -38,6 +39,13 @@ export type ActionCardConversationMessageRow = typeof conversationMessages.$infe
 const OBSERVER_CANDIDATE_HARD_CAP = 100;
 const CARD_ITEMS_READ_CAP = 100;
 const DEFAULT_SILENCE_WINDOW_SECS = 60;
+// R23 P3b（SA-07）：候选扫描的静默窗口下限系数。项目级 silence_window_secs 是「均衡档」的窗口；
+// 项目负责人把「助手主动性」调到主动档时窗口要收紧到一半，所以 SQL 这层必须放到最宽的可能值
+// （= 主动档的 0.5 倍）才不会把该扫的会话在 SQL 里就滤掉。真正的逐候选判定（按负责人档位算出的
+// 精确窗口）在 worker 里做——策略是纯函数，放在能单测的那一层，SQL 只当粗筛。
+// 导出供跨层一致性断言：worker 侧最宽的档位系数必须 >= 这个值，否则主动档该扫的会话在 SQL 里就没了
+// （同 ACTION_CARD_ANALYSIS_LIMIT_MAX 的做法——跨层常数漂移只能靠断言钉死）。
+export const OBSERVER_SILENCE_SCAN_FLOOR_FACTOR = 0.5;
 
 class NamedActionCardRepositoryError extends Error {
   constructor(message: string) {
@@ -73,6 +81,10 @@ export type ObserverCandidateRow = {
   activeCardId: string | null;
   consecutiveFailures: number;
   silenceWindowSecs: number;
+  // R23 P3b（SA-07）：项目负责人的「助手主动性」档位（缺档案/无负责人时为 'balanced'）。主区会话是
+  // 项目级的、没有单一"被打扰的人"，故取项目负责人的档位当这条会话的开口节奏——worker 据此把
+  // silenceWindowSecs 乘以档位系数，算出这次真正该等多久。
+  ownerProactivity: string;
   // 原样透出 project_ai_governance.quiet_hours_json；调用方（worker）自行按 aiQuietHoursSchema 校验/降级，
   // 仓库层不对安静时段做时区语义判断（那是纯函数关注点，不属于 SQL 查询层）。
   quietHoursJson: Record<string, unknown>;
@@ -93,7 +105,7 @@ export function createActionCardRepository(db: WorkHubDb) {
 
   const silenceElapsedCondition = (now: Date) => sql`(
     extract(epoch from (${now}::timestamptz - ${lastMessageAtSelection})) >=
-    coalesce(${projectAiGovernance.silenceWindowSecs}, ${DEFAULT_SILENCE_WINDOW_SECS})
+    coalesce(${projectAiGovernance.silenceWindowSecs}, ${DEFAULT_SILENCE_WINDOW_SECS}) * ${OBSERVER_SILENCE_SCAN_FLOOR_FACTOR}
   )`;
 
   return {
@@ -123,6 +135,7 @@ export function createActionCardRepository(db: WorkHubDb) {
           activeCardId: conversationObserverState.activeCardId,
           consecutiveFailures: sql<number>`coalesce(${conversationObserverState.consecutiveFailures}, 0)`.mapWith(Number),
           silenceWindowSecs: sql<number>`coalesce(${projectAiGovernance.silenceWindowSecs}, ${DEFAULT_SILENCE_WINDOW_SECS})`.mapWith(Number),
+          ownerProactivity: sql<string>`coalesce(${userAiProfiles.cuuProactivity}, 'balanced')`,
           quietHoursJson: sql<Record<string, unknown>>`coalesce(${projectAiGovernance.quietHoursJson}, '{"enabled":false}'::jsonb)`,
           lastMessageAt: lastMessageAtSelection
         })
@@ -135,6 +148,15 @@ export function createActionCardRepository(db: WorkHubDb) {
           )
         )
         .leftJoin(projectAiGovernance, eq(projectAiGovernance.projectId, projectConversations.projectId))
+        // 项目负责人的 AI 档案（user_ai_profiles 以 (workspace_id, user_id) 唯一，两列都钉死 →
+        // 至多一行，不会让候选行翻倍）。无负责人 / 没保存过设置时留 NULL，上面 coalesce 成默认档。
+        .leftJoin(
+          userAiProfiles,
+          and(
+            eq(userAiProfiles.workspaceId, projects.workspaceId),
+            eq(userAiProfiles.userId, projects.ownerUserId)
+          )
+        )
         .leftJoin(
           conversationObserverState,
           eq(conversationObserverState.conversationId, projectConversations.id)

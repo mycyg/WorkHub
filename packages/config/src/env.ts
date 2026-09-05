@@ -62,6 +62,11 @@ export const envSchema = z.object({
   // 与 COOKIE_SECRET 刻意分离——两者威胁模型/轮换节奏不同（会话伪造 vs 解密所有项目 PAT）。
   // 默认空串=功能未配置：绑定端点 fail-closed 503（绝不明文落库），轮询 worker 空转，见 07-gh-design §1.1。
   GITHUB_TOKEN_ENC_KEY: z.string().default(""),
+  // R23 P3b（SA-03）：风险巡检的第四条信号「绑定仓库长期没有新提交」的天数阈值。绑了仓库且超过这个
+  // 天数没有任何 commit/PR/issue 活动，就在当日风险日报里点名该仓库。项目级阈值另有 risk_monitor
+  // 设置（停滞/临期/成本三条），这一条刻意走部署级 env——GitHub 活动稀疏度是团队工作节奏问题，
+  // 逐项目调没有意义，且不想为一个数字再扩 project_ai_governance 的契约面。
+  GITHUB_STALE_DAYS: z.coerce.number().int().min(1).max(90).default(7),
   CORS_ALLOW_ORIGINS: z.string().default("*"),
   TOUCH_DEVICE_ON_AUTH: booleanString.default(true),
   DEFAULT_ORG_ID: z.string().uuid().default(authDefaults.defaultOrgId),
@@ -113,7 +118,13 @@ export const envSchema = z.object({
   // 才把无约束 nodeCommandRunner 接进 agent 循环（白名单解释器但不隔离，可访问宿主路径）。
   // 多租户/生产环境应保持 false，并由部署方注入真正隔离的 commandRunner。
   AGENT_RUN_ALLOW_UNSANDBOXED_COMMANDS: booleanString.default(false),
-  AGENT_RUN_SKILL_CURATION_ENABLED: booleanString.default(false),
+  // R23 SA-06：默认 true——此前默认 false 让「AI 从真实工作里攒技能」这条产品承诺在所有默认部署上
+  // 是断的（用户的差评被收集了却从没有人消费）。敢默认开的前提是 worker 自身两道兜底：
+  // ① LLM provider 未配置时根本不启动（server.ts 的 isConfigured 门），即便被手动触发，
+  //    providerRegistry.get() 也在建 transport 之前 fail-fast，绝不拿空 key 打上游；
+  // ② 启动后仍受「队列空闲才跑」+ curation 当日花费闸（BUDGET_DEFAULT_CURATION_DAILY_COST_CNY）
+  //    双闸约束，超额即整轮跳过。要关掉：AGENT_RUN_SKILL_CURATION_ENABLED=false。
+  AGENT_RUN_SKILL_CURATION_ENABLED: booleanString.default(true),
   AGENT_RUN_SKILL_CURATION_INTERVAL_MS: z.coerce.number().int().min(0).default(86400000),
   AGENT_RUN_PROJECT_HYDRATE_ENABLED: booleanString.default(true),
   AGENT_RUN_PROJECT_HYDRATE_MAX_FILES: z.coerce.number().int().positive().default(200),
@@ -209,6 +220,8 @@ export type Settings = {
   github: {
     // AES-256-GCM 主密钥（base64）。空串=未配置，GH 集成端点 fail-closed 503，绝不明文落库。
     tokenEncKey: string;
+    // R23 P3b（SA-03）：仓库「多少天没有新动静」算长期没提交（风险日报第四条信号）。
+    staleDays: number;
   };
   llm: {
     defaultProvider: string;
@@ -322,7 +335,8 @@ export function loadSettings(env: EnvInput = process.env): Settings {
       sessionIdleTtlMs: parsed.SESSION_IDLE_TTL_HOURS * 60 * 60 * 1000
     },
     github: {
-      tokenEncKey: parsed.GITHUB_TOKEN_ENC_KEY
+      tokenEncKey: parsed.GITHUB_TOKEN_ENC_KEY,
+      staleDays: parsed.GITHUB_STALE_DAYS
     },
     llm: {
       defaultProvider: parsed.LLM_PROVIDER_DEFAULT,

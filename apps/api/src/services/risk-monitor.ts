@@ -1,3 +1,4 @@
+import { settings } from "@workhub/config";
 import {
   DEFAULT_RISK_MONITOR_SETTINGS,
   riskMonitorSettingsSchema
@@ -9,6 +10,7 @@ import {
   listDailyCostByProjects,
   listOpenWorkItemAges,
   listProjectsPendingDigest,
+  listStaleReposSinceThreshold,
   EARLY_STAGE_WORK_ITEM_STATUSES,
   type NotificationRepository,
   type RiskMonitorDailyCostRow,
@@ -30,6 +32,8 @@ import { getDefaultStructuredLogger, type StructuredLogger } from "../logging.js
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_PROJECTS_PER_TICK = 50;
 const DEFAULT_WORK_ITEM_CAP_PER_BATCH = 500;
+// R23 P3b（SA-03）：仓库停更阈值的兜底默认（真值来自 GITHUB_STALE_DAYS，见 workers/risk-monitor.ts）。
+const DEFAULT_GITHUB_STALE_DAYS = 7;
 // 每个信号桶展示条目数上限——超出显示「及其余 N 项」而非无限枚举（§3.3）。
 const DISPLAY_CAP = 5;
 
@@ -48,13 +52,16 @@ export type RiskMonitorRunResult = {
 export type RiskDigestSignal =
   | { kind: "stalled"; items: Array<{ code: string; title: string; daysIdle: number }>; totalCount: number }
   | { kind: "deadline"; items: Array<{ code: string; title: string; daysUntilDue: number }>; totalCount: number }
-  | { kind: "cost_spike"; todayCostCny: string; baselineAvgCny: string | null; ratioPct: number | null };
+  | { kind: "cost_spike"; todayCostCny: string; baselineAvgCny: string | null; ratioPct: number | null }
+  // R23 P3b（SA-03）：第四信号——项目绑了代码仓库但长期没有新提交。daysIdle=null 表示这个仓库自绑定
+  // 以来一条活动都没同步到（冷绑定），文案与「N 天没动静」分开说，不假装算得出天数。
+  | { kind: "github_stale"; repoFullName: string; daysIdle: number | null };
 
 export type RiskDigest = {
   notificationTitle: string;
   notificationBody: string;
   chatSummary: string;
-  chatCounts: { stalled: number; deadline: number; costSpike: boolean };
+  chatCounts: { stalled: number; deadline: number; costSpike: boolean; githubStale: boolean };
 };
 
 function formatCny(value: number): string {
@@ -81,6 +88,9 @@ export function buildRiskDigest(input: {
   );
   const costSpike = input.signals.find(
     (signal): signal is Extract<RiskDigestSignal, { kind: "cost_spike" }> => signal.kind === "cost_spike"
+  );
+  const githubStale = input.signals.find(
+    (signal): signal is Extract<RiskDigestSignal, { kind: "github_stale" }> => signal.kind === "github_stale"
   );
 
   const bodyParagraphs: string[] = [];
@@ -127,6 +137,16 @@ export function buildRiskDigest(input: {
     totalSignalCount += 1;
   }
 
+  if (githubStale) {
+    bodyParagraphs.push(
+      githubStale.daysIdle === null
+        ? `代码仓库：${githubStale.repoFullName} 绑定后还没有同步到任何提交记录。`
+        : `代码仓库：${githubStale.repoFullName} 已经 ${githubStale.daysIdle} 天没有新提交。`
+    );
+    summaryParts.push("代码仓库长期没有新提交");
+    totalSignalCount += 1;
+  }
+
   return {
     notificationTitle: `${input.projectName} · 今日风险巡检`,
     notificationBody: bodyParagraphs.join("\n"),
@@ -134,7 +154,8 @@ export function buildRiskDigest(input: {
     chatCounts: {
       stalled: stalled?.totalCount ?? 0,
       deadline: deadline?.totalCount ?? 0,
-      costSpike: Boolean(costSpike)
+      costSpike: Boolean(costSpike),
+      githubStale: Boolean(githubStale)
     }
   };
 }
@@ -258,6 +279,13 @@ export type RiskMonitorRepositoryDeps = {
   listProjectsPendingDigest: (input: { utcDate: string; limit: number }) => Promise<RiskMonitorProjectCandidateRow[]>;
   listOpenWorkItemAges: (input: { projectIds: string[]; capPerBatch: number }) => Promise<RiskMonitorOpenWorkItemRow[]>;
   listDailyCostByProjects: (input: { projectIds: string[]; sinceBucket: string }) => Promise<RiskMonitorDailyCostRow[]>;
+  // R23 P3b（SA-03）：绑了仓库但长期没有新提交的项目。可选——不注入时第四信号整条不参与判定
+  // （既有调用方/测试无需改造；GitHub 集成未启用的自托管实例也天然不产这条）。
+  listStaleRepos?: (input: {
+    projectIds: string[];
+    thresholdDays: number;
+    now: Date;
+  }) => Promise<Array<{ projectId: string; repoFullName: string; lastActivityAt: Date | null }>>;
 };
 
 export type RiskMonitorPostSystemMessageInput = {
@@ -276,6 +304,8 @@ export type RiskMonitorServiceDeps = {
   logger?: Pick<StructuredLogger, "warn">;
   maxProjectsPerTick?: number;
   workItemCapPerBatch?: number;
+  // R23 P3b（SA-03）：仓库「多少天没动静」算长期没提交（部署级 env GITHUB_STALE_DAYS，默认 7）。
+  githubStaleDays?: number;
 };
 
 export type RiskMonitorService = {
@@ -287,6 +317,7 @@ export function createRiskMonitorService(deps: RiskMonitorServiceDeps): RiskMoni
   const logger = deps.logger ?? getDefaultStructuredLogger();
   const maxProjectsPerTick = deps.maxProjectsPerTick ?? DEFAULT_MAX_PROJECTS_PER_TICK;
   const workItemCapPerBatch = deps.workItemCapPerBatch ?? DEFAULT_WORK_ITEM_CAP_PER_BATCH;
+  const githubStaleDays = deps.githubStaleDays ?? DEFAULT_GITHUB_STALE_DAYS;
 
   return {
     async runOnce() {
@@ -313,12 +344,24 @@ export function createRiskMonitorService(deps: RiskMonitorServiceDeps): RiskMoni
 
       const projectIds = candidates.map((candidate) => candidate.projectId);
       const sinceBucket = new Date(startedAt.getTime() - 7 * ONE_DAY_MS).toISOString().slice(0, 10);
-      const [workItemRows, costRows] = await Promise.all([
+      const [workItemRows, costRows, staleRepoRows] = await Promise.all([
         deps.repository.listOpenWorkItemAges({ projectIds, capPerBatch: workItemCapPerBatch }),
-        deps.repository.listDailyCostByProjects({ projectIds, sinceBucket })
+        deps.repository.listDailyCostByProjects({ projectIds, sinceBucket }),
+        // 第四信号取数与另两条并行、同样一次批量查（禁 N+1）。仓库层查询不可用/抛错时整条信号退场，
+        // 不连累另外三条——GitHub 是可选集成，它坏了不该让整份风险日报发不出去。
+        deps.repository.listStaleRepos
+          ? deps.repository
+              .listStaleRepos({ projectIds, thresholdDays: githubStaleDays, now: startedAt })
+              .catch((error) => {
+                logger.warn?.("risk_monitor_stale_repo_query_failed", { error });
+                return [] as Array<{ projectId: string; repoFullName: string; lastActivityAt: Date | null }>;
+              })
+          : Promise.resolve([] as Array<{ projectId: string; repoFullName: string; lastActivityAt: Date | null }>)
       ]);
       const workItemsByProject = groupByProjectId(workItemRows);
       const costByProject = groupByProjectId(costRows);
+      // 一项目一绑定（project_github_bindings 以 project_id 为键），故取首行即可。
+      const staleRepoByProject = new Map(staleRepoRows.map((row) => [row.projectId, row]));
 
       for (const candidate of candidates) {
         try {
@@ -339,7 +382,17 @@ export function createRiskMonitorService(deps: RiskMonitorServiceDeps): RiskMoni
             utcDate,
             settings
           );
-          const signals = [stalled, deadline, costSpike].filter(
+          const staleRepo = staleRepoByProject.get(candidate.projectId);
+          const githubStale: RiskDigestSignal | undefined = staleRepo
+            ? {
+              kind: "github_stale",
+              repoFullName: staleRepo.repoFullName,
+              daysIdle: staleRepo.lastActivityAt
+                ? Math.floor((startedAt.getTime() - staleRepo.lastActivityAt.getTime()) / ONE_DAY_MS)
+                : null
+            }
+            : undefined;
+          const signals = [stalled, deadline, costSpike, githubStale].filter(
             (signal): signal is RiskDigestSignal => signal !== undefined
           );
 
@@ -393,6 +446,7 @@ export function createRiskMonitorService(deps: RiskMonitorServiceDeps): RiskMoni
                 stalled_count: digest.chatCounts.stalled,
                 deadline_count: digest.chatCounts.deadline,
                 cost_spike: digest.chatCounts.costSpike,
+                github_stale: digest.chatCounts.githubStale,
                 target_url: `/projects/${candidate.projectId}`
               },
               at: startedAt
@@ -425,9 +479,11 @@ export function getDefaultRiskMonitorService(): RiskMonitorService {
       repository: {
         listProjectsPendingDigest: (input) => listProjectsPendingDigest(db, input),
         listOpenWorkItemAges: (input) => listOpenWorkItemAges(db, input),
-        listDailyCostByProjects: (input) => listDailyCostByProjects(db, input)
+        listDailyCostByProjects: (input) => listDailyCostByProjects(db, input),
+        listStaleRepos: (input) => listStaleReposSinceThreshold(db, input)
       },
       notifications,
+      githubStaleDays: settings.github.staleDays,
       postSystemMessage: (input) => actionCards.postSystemMessage(input)
     });
   }

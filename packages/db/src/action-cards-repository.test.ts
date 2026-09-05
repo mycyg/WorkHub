@@ -8,6 +8,7 @@ import {
   ActionCardRepositoryInputError,
   ActionCardSequenceAllocationError,
   createActionCardRepository,
+  OBSERVER_SILENCE_SCAN_FLOOR_FACTOR,
   type ActionCardItemRow,
   type ActionCardRow,
   type ObserverStateRow
@@ -20,12 +21,14 @@ import {
   projectAiGovernance,
   projectConversations,
   projects,
+  userAiProfiles,
   users,
   workspaceMemberships
 } from "./schema/index.js";
 import {
   createQueryRecorder,
   queryParamValues,
+  queryRawStrings,
   queryReferences,
   type RecordedQuery
 } from "./test-query-recorder.js";
@@ -113,6 +116,7 @@ test("listObserverCandidates is tenant/active-project scoped, joins governance a
         activeCardId: null,
         consecutiveFailures: 0,
         silenceWindowSecs: 60,
+        ownerProactivity: "balanced",
         quietHoursJson: { enabled: false },
         lastMessageAt: new Date("2026-07-12T08:58:00.000Z")
       }
@@ -132,11 +136,30 @@ test("listObserverCandidates is tenant/active-project scoped, joins governance a
     projects.archived,
     projects.deletedAt,
     projectAiGovernance.projectId,
-    conversationObserverState.conversationId
+    conversationObserverState.conversationId,
+    // R23 P3b（SA-07）：项目负责人的「助手主动性」档案——两列都钉死，至多一行，不会让候选行翻倍。
+    userAiProfiles.workspaceId,
+    userAiProfiles.userId
   ]) {
     assert.equal(referencesAny(query, column), true, `missing predicate for ${String(column)}`);
   }
-  assert.equal(query?.joins.length, 3);
+  assert.equal(query?.joins.length, 4);
+});
+
+// R23 P3b（SA-07）：候选扫描的静默窗口只做粗筛——按最宽可能窗口（主动档的 0.5 倍）放行，精确的
+// 逐候选判定在 worker（apps/api/src/workers/conversation-observer.ts 的 isObserverSilenceElapsed）。
+// 这里钉死「SQL 这层确实放宽了」，否则主动档该扫的会话会在 SQL 里就被滤掉，worker 再宽也没用。
+test("listObserverCandidates widens its silence prefilter to the most permissive proactivity level", async () => {
+  const { db, queries } = createQueryRecorder([[]]);
+
+  await createActionCardRepository(db).listObserverCandidates({ now, limit: 10 });
+
+  // sql 模板里的裸数字不进 Param 树，所以这里钉 SQL 形状：静默条件确实乘上了一个系数。
+  // 系数取值本身由跨层断言守住（见 apps/api/src/conversation-observer.test.ts 里
+  // OBSERVER_SILENCE_SCAN_FLOOR_FACTOR 与 worker 档位系数的对齐断言）。
+  const fragments = queryRawStrings(queries[0]?.where).join("");
+  assert.match(fragments, /coalesce\(, \) \* /u, "the silence prefilter must multiply the project window by a factor");
+  assert.ok(OBSERVER_SILENCE_SCAN_FLOOR_FACTOR < 1, "the prefilter factor must widen, never narrow, the scan");
 });
 
 // R13 批 G1（小群）：设计稿前置发现——observer 已经天然排除 collab（含 cuu_enabled=true 的小群）,
