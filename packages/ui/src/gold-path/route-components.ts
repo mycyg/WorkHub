@@ -58,6 +58,7 @@ import {
   createReplayReactRouteComponent,
   createSettingsReactRouteComponent,
   reactRouteComponentMarkerAttrs,
+  type SettingsRouteComponentProps,
   type WebReactRouteComponentAdapter
 } from "./route-react-components.js";
 import {
@@ -5252,6 +5253,35 @@ function renderSettingsMcpSection(vm: SettingsPageVM, locale: WorkHubLocale): st
       </section>`;
 }
 
+/**
+ * R26 A2-45：「系统诊断」两张卡（服务状态 / AI 运行配置）**仅管理员渲染**。
+ *
+ * 这里的每一行都是这台部署的运行事实——并发处理能力、消息通道、数据存储、用哪个模型、密钥配没配。
+ * 普通成员既无从判断也无处调整，看见的只有焦虑；而「看得见但点不动」正是审查里反复出现的假入口。
+ * 与成员/预算策略/工作区审计三区同一道门：不是把它 hidden 掉，而是整段**不进 HTML**。
+ */
+function renderSettingsDiagnosticsSection(props: SettingsRouteComponentProps, locale: WorkHubLocale): string {
+  return `      <p class="wh-r4-route-kicker" data-r10-settings-diagnostics="true">${escapeHtml(goldPathCopyT(locale, "systemDiagnosticsForAdminsReadOnly"))}</p>
+      <div class="wh-r4-route-grid">
+        <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-settings-runtime="true">
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "settings.runtime"))}</h3>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.runtimeStatus"))}</strong><span class="wh-pill">${escapeHtml(runtimeStatusLabel(props.runtimeStatus, locale))}</span></div>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.worker"))}</strong><span class="wh-pill">${escapeHtml(String(props.workerCount))}</span></div>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.broker"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.brokerConfigured, locale))}</span></div>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.database"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.databaseConfigured, locale))}</span></div>
+        </section>
+        <section class="wh-card wh-r4-route-card" data-r4-settings-llm="true">
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "settings.llm"))}</h3>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.provider"))}</strong><span class="wh-pill">${escapeHtml(props.defaultProvider)}</span></div>
+          <div role="listitem" class="wh-r4-route-row"><div><strong>${escapeHtml(routeT(locale, "settings.model"))}</strong><p>${escapeHtml(props.defaultModel)}</p></div><span class="wh-pill">${escapeHtml(String(props.providerCount))}</span></div>
+          <div role="listitem" class="wh-r4-route-row" title="${escapeHtml(goldPathCopyT(locale, "serverSideKeyForTheAi"))}"><strong>${escapeHtml(routeT(locale, "settings.apiKey"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.apiKeyConfigured, locale))}</span></div>
+          ${!props.apiKeyConfigured ? `<p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "aiEngineKeyNotSetAi"))}</p>` : ""}
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.baseUrl"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.baseUrlConfigured, locale))}</span></div>
+          <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "keysLiveOnlyInServerEnv"))}</p>
+        </section>
+      </div>`;
+}
+
 function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale, isAdmin = false): WebRouteComponent {
   const membersSection = isAdmin ? renderSettingsMembersSection(locale) : "";
   const budgetPolicySection = isAdmin ? renderSettingsBudgetPolicySection(locale) : "";
@@ -5259,6 +5289,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale,
   const reactComponent = createSettingsReactRouteComponent(vm, locale);
   const reactAttrs = dataAttrs(reactRouteComponentMarkerAttrs(reactComponent));
   const props = reactComponent.props;
+  const diagnosticsSection = isAdmin ? renderSettingsDiagnosticsSection(props, locale) : "";
   return createWebRouteComponent({
     key: "settings",
     css: webRouteComponentCss,
@@ -5318,25 +5349,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale,
       ${membersSection}
       ${budgetPolicySection}
       ${workspaceAuditSection}
-      <p class="wh-r4-route-kicker" data-r10-settings-diagnostics="true">${escapeHtml(goldPathCopyT(locale, "systemDiagnosticsForAdminsReadOnly"))}</p>
-      <div class="wh-r4-route-grid">
-        <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-settings-runtime="true">
-          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "settings.runtime"))}</h3>
-          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.runtimeStatus"))}</strong><span class="wh-pill">${escapeHtml(runtimeStatusLabel(props.runtimeStatus, locale))}</span></div>
-          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.worker"))}</strong><span class="wh-pill">${escapeHtml(String(props.workerCount))}</span></div>
-          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.broker"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.brokerConfigured, locale))}</span></div>
-          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.database"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.databaseConfigured, locale))}</span></div>
-        </section>
-        <section class="wh-card wh-r4-route-card" data-r4-settings-llm="true">
-          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "settings.llm"))}</h3>
-          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.provider"))}</strong><span class="wh-pill">${escapeHtml(props.defaultProvider)}</span></div>
-          <div role="listitem" class="wh-r4-route-row"><div><strong>${escapeHtml(routeT(locale, "settings.model"))}</strong><p>${escapeHtml(props.defaultModel)}</p></div><span class="wh-pill">${escapeHtml(String(props.providerCount))}</span></div>
-          <div role="listitem" class="wh-r4-route-row" title="${escapeHtml(goldPathCopyT(locale, "serverSideKeyForTheAi"))}"><strong>${escapeHtml(routeT(locale, "settings.apiKey"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.apiKeyConfigured, locale))}</span></div>
-          ${!props.apiKeyConfigured ? `<p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "aiEngineKeyNotSetAi"))}</p>` : ""}
-          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.baseUrl"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.baseUrlConfigured, locale))}</span></div>
-          <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "keysLiveOnlyInServerEnv"))}</p>
-        </section>
-      </div>
+      ${diagnosticsSection}
 
     </section>`
   });

@@ -2928,9 +2928,17 @@ test("R19-6 Cost route component caps by-workitem/by-team rows and trend days wi
 
 test("R4.11 Settings route component uses a typed Settings Page VM without leaking secrets or pet settings", () => {
   const vm = surfaceVm();
-  const settings = renderWebRouteComponents(vm, { locale: "en-US" }).settings;
-
-  assert.ok(settings);
+  const memberSettings = renderWebRouteComponents(vm, { locale: "en-US" }).settings;
+  assert.ok(memberSettings);
+  const settingsPageVm = vm.page_vms.settings;
+  assert.ok(settingsPageVm);
+  // A2-45：系统诊断两张卡只在管理员那一侧渲，所以下面这些断言走管理员渲染；成员那一侧的
+  // 结构性缺席由紧接着的那条测试单独钉。
+  const settings = renderWebRouteComponent(
+    { key: "settings", settings: settingsPageVm, isAdmin: true },
+    { locale: "en-US" }
+  );
+  assert.deepEqual(memberSettings.primaryHrefs, settings.primaryHrefs);
   assert.equal(settings.html.includes('data-r4-route-component="settings"'), true);
   assert.equal(settings.html.includes('data-r4-route-component-source="page-vm"'), true);
   assert.equal(settings.html.includes('data-r4-settings-runtime-status="ready"'), true);
@@ -2957,6 +2965,28 @@ test("R4.11 Settings route component uses a typed Settings Page VM without leaki
   assert.equal(settings.html.includes("legacy-cuu-pack"), false);
   assert.deepEqual(settings.primaryHrefs, [vm.page_vms.settings?.device.restore_href]);
   assertNoMainWindowBoundaryLeak(settings.html);
+});
+
+test("R26 A2-45 settings system diagnostics render for admins only — members get no section at all", () => {
+  const base = settingsVm("zh-CN");
+  const member = renderWebRouteComponent({ key: "settings", settings: base }, { locale: "zh-CN" });
+  // 结构性缺席，不是 hidden：这几行是部署的运行事实，普通成员既判断不了也调不动，
+  // 「看得见但点不动」正是审查里反复出现的假入口。
+  assert.equal(member.html.includes("data-r10-settings-diagnostics"), false);
+  assert.equal(member.html.includes("data-r4-settings-runtime="), false);
+  assert.equal(member.html.includes("data-r4-settings-llm"), false);
+  assert.equal(member.html.includes("deepseek-v4-flash"), false);
+  // 语言与桌面两张卡是每个人的个人设置，照渲。
+  assert.equal(member.html.includes('data-r4-settings-language="true"'), true);
+  assert.equal(member.html.includes('data-r4-settings-device="true"'), true);
+  // 外壳上的运行状态标记不在诊断区里，成员那一侧仍然给——它是路由自检用的，不是渲给人看的一行。
+  assert.equal(member.html.includes('data-r4-settings-runtime-status="ready"'), true);
+
+  const admin = renderWebRouteComponent({ key: "settings", settings: base, isAdmin: true }, { locale: "zh-CN" });
+  assert.equal(admin.html.includes('data-r10-settings-diagnostics="true"'), true);
+  assert.equal(admin.html.includes('data-r4-settings-runtime="true"'), true);
+  assert.equal(admin.html.includes('data-r4-settings-llm="true"'), true);
+  assert.equal(admin.html.includes("系统诊断（仅管理员）"), true);
 });
 
 test("R26 M8 settings MCP server list is admin-gated and read-only: members never see the section at all", () => {
