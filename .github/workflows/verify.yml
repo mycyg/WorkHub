@@ -131,6 +131,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm qa:r1-pg-smoke
+      # R24-P 阶段 1 的插件治理链（迁移 0072 / 清单 / 启停 / 移除 / 工具注册表 / 审计）。
+      # 复用上一步同一个容器与同一份 env——插件清单只来自 plugins 表，不设 WORKHUB_PLUGIN_PATHS。
+      - run: pnpm qa:r1-pg-plugin-smoke
 
   r2-pg-redis-smoke:
     runs-on: ubuntu-latest

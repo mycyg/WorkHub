@@ -39,6 +39,7 @@
     "audit:target-paths": "tsx scripts/dev/check-target-paths.ts",
     "audit:migrations": "tsx scripts/dev/check-migrations.ts",
     "qa:r1-pg-smoke": "pnpm --filter @workhub/api qa:r1-pg-smoke",
+    "qa:r1-pg-plugin-smoke": "pnpm --filter @workhub/api qa:r1-pg-plugin-smoke",
     "qa:plugin-smoke": "pnpm --filter @workhub/api qa:plugin-smoke",
     "qa:r5-10-dry": "pnpm --filter @workhub/api qa:r5-10-dry",
     "qa:r5-10-real": "pnpm --filter @workhub/api qa:r5-10-real",
