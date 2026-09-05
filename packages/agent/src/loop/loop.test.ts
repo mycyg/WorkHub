@@ -231,34 +231,155 @@ test("AgentLoop public success reason falls back instead of exposing Chinese sel
   assert.equal(result.manifest?.title, "交付物已生成");
 });
 
-test("AgentLoop escalates repeated identical tool calls as a doom loop", async () => {
+// ── B6「先劝再断」：重复动作先劝两次，第三档才升级 ───────────────────────────────────
+//
+// 这是**行为变更，不是修 bug**：加档位之前「撞 3 次即 escalated」（一条运行当场结束、一个人被
+// 叫醒）；现在连续 3 步只追加一条温和提醒、5 步追加详细提醒，连续 8 步才走原来的升级路径。
+// 下面的用例描述的是新行为本身，不是「正确性」——见 .agents/notes/implemented 的同名档案。
+
+/** 记录每次模型调用当时的对话快照（loop.ts 复用同一个 messages 数组，必须深拷贝才留得住）。 */
+function recordingClient(responses: LlmCreateResponse[]) {
+  const requests: LlmMessage[][] = [];
+  const client: AgentLoopClient = {
+    model: "fake-model",
+    messages: {
+      async create(params) {
+        requests.push(JSON.parse(JSON.stringify(params.messages)) as LlmMessage[]);
+        const response = responses.shift();
+        if (!response) {
+          throw new Error("No fake response queued");
+        }
+        return response;
+      }
+    }
+  };
+  return { client, requests };
+}
+
+/** 一次调用里被注入的运行环境提醒（B6 追加的 user 消息，正文以 [自动提醒] 起头）。 */
+function reminders(messages: LlmMessage[]): string[] {
+  return messages
+    .filter((message) => message.role === "user" && typeof message.content === "string")
+    .map((message) => message.content as string)
+    .filter((content) => content.startsWith("[自动提醒]"));
+}
+
+function repeatedToolResponse(index: number, path: string): LlmCreateResponse {
+  return {
+    id: `m${index}`,
+    stopReason: "tool_use",
+    content: [{ type: "tool_use", id: `tool-${index}`, name: "read_file", input: { path } }]
+  };
+}
+
+test("AgentLoop nudges a repeated tool call twice before escalating it as a doom loop", async () => {
   const workdir = await tempWorkdir();
   const tools = createToolRegistry(createBuiltInFileTools());
   const loop = createAgentLoop();
-  const repeated = {
-    type: "tool_use",
-    id: "tool-1",
-    name: "read_file",
-    input: { path: "missing.md" }
-  };
+  const { client, requests } = recordingClient(
+    Array.from({ length: 8 }, (_, index) => repeatedToolResponse(index + 1, "missing.md"))
+  );
   const result = await loop.run({
     runId: "40000000-0000-4000-8000-000000000002",
     workItemId: "50000000-0000-4000-8000-000000000002",
     workdir,
     systemPrompt: "work",
     initialUserMessage: "read",
-    client: fakeClient([
-      { id: "m1", stopReason: "tool_use", content: [repeated] },
-      { id: "m2", stopReason: "tool_use", content: [{ ...repeated, id: "tool-2" }] },
-      { id: "m3", stopReason: "tool_use", content: [{ ...repeated, id: "tool-3" }] }
-    ]),
+    client,
     tools,
-    budget
+    budget: { ...budget, maxSteps: 10 }
+  });
+
+  // 第 8 步才升级（此前 7 步照跑）。
+  assert.equal(result.status, "escalated");
+  assert.equal(result.reason, "doom_loop");
+  assert.equal(result.handoff?.budgetHit, "doom_loop");
+  assert.equal(result.usage.stepsUsed, 8);
+  assert.equal(requests.length, 8);
+
+  // 第 3 步之后注入第一档；第 4 步不再重复打扰（还在同一档）。
+  assert.deepEqual(reminders(requests[2] ?? []), [], "第 3 次调用时还没劝过");
+  const firstNudge = reminders(requests[3] ?? []);
+  assert.equal(firstNudge.length, 1);
+  assert.match(firstNudge[0] ?? "", /连续 3 步重复同一个动作/);
+  assert.equal(reminders(requests[4] ?? []).length, 1, "第 4 步落在同一档，不重复劝");
+
+  // 第 5 步之后注入第二档：报工具名、连续步数、规范化参数预览。
+  const bothNudges = reminders(requests[5] ?? []);
+  assert.equal(bothNudges.length, 2);
+  assert.match(bothNudges[1] ?? "", /连续 5 步重复同一个动作/);
+  assert.match(bothNudges[1] ?? "", /重复的工具：read_file/);
+  assert.match(bothNudges[1] ?? "", /read_file\(\{"path":"missing\.md"\}\)/);
+  // 第 6、7 步仍在第二档，提醒总数不变。
+  assert.equal(reminders(requests[7] ?? []).length, 2);
+
+  // 提醒紧跟在同一步的 tool_result 之后，且不破坏 tool_use/tool_result 配对。
+  const last = requests[7] ?? [];
+  const nudgeAt = last.findIndex((message) => typeof message.content === "string" && message.content.startsWith("[自动提醒]"));
+  const before = last[nudgeAt - 1];
+  assert.ok(Array.isArray(before?.content) && (before.content as { type?: string }[])[0]?.type === "tool_result");
+});
+
+test("AgentLoop alternating two actions also gets nudged before the doom-loop escalation", async () => {
+  const workdir = await tempWorkdir();
+  const tools = createToolRegistry(createBuiltInFileTools());
+  const loop = createAgentLoop();
+  const { client, requests } = recordingClient(
+    Array.from({ length: 8 }, (_, index) => repeatedToolResponse(index + 1, index % 2 === 0 ? "a.md" : "b.md"))
+  );
+  const result = await loop.run({
+    runId: "40000000-0000-4000-8000-000000000006",
+    workItemId: "50000000-0000-4000-8000-000000000006",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "read",
+    client,
+    tools,
+    budget: { ...budget, maxSteps: 10 }
   });
 
   assert.equal(result.status, "escalated");
   assert.equal(result.reason, "doom_loop");
-  assert.equal(result.handoff?.budgetHit, "doom_loop");
+  assert.equal(result.usage.stepsUsed, 8);
+  // 周期 2 交替最早在第 4 步才成形，因此第一档落在第 4 步之后。
+  assert.deepEqual(reminders(requests[3] ?? []), [], "第 4 次调用时交替还没被判定");
+  const firstNudge = reminders(requests[4] ?? []);
+  assert.equal(firstNudge.length, 1);
+  assert.match(firstNudge[0] ?? "", /连续 4 步在两个动作之间来回切换/);
+  const bothNudges = reminders(requests[5] ?? []);
+  assert.equal(bothNudges.length, 2);
+  assert.match(bothNudges[1] ?? "", /来回切换的工具：read_file/);
+  // 两个动作按「上一步、这一步」的先后顺序列出：第 5 步是 a.md，它前一步是 b.md。
+  assert.match(bothNudges[1] ?? "", /read_file\(\{"path":"b\.md"\}\)\nread_file\(\{"path":"a\.md"\}\)/);
+});
+
+test("AgentLoop step budget still wins when the doom-loop nudges outrun it", async () => {
+  // B6 多烧的步数不能让预算路径失灵：步数先耗尽时仍按「步数预算已耗尽」收尾，
+  // 而不是被劝导拖到 doom_loop 或者干脆跑不完。
+  const workdir = await tempWorkdir();
+  const tools = createToolRegistry(createBuiltInFileTools());
+  const loop = createAgentLoop();
+  const { client, requests } = recordingClient(
+    Array.from({ length: 4 }, (_, index) => repeatedToolResponse(index + 1, "missing.md"))
+  );
+  const result = await loop.run({
+    runId: "40000000-0000-4000-8000-000000000007",
+    workItemId: "50000000-0000-4000-8000-000000000007",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "read",
+    client,
+    tools,
+    budget: { ...budget, maxSteps: 4 }
+  });
+
+  assert.equal(result.status, "escalated");
+  assert.equal(result.reason, "步数预算已耗尽");
+  assert.equal(result.handoff?.budgetHit, "steps");
+  assert.equal(result.usage.stepsUsed, 4);
+  assert.equal(requests.length, 4, "预算耗尽后不再多发一次模型调用");
+  // 劝到第一档就撞上步数上限：只劝过一次，且没有升级成 doom_loop。
+  assert.equal(reminders(requests[3] ?? []).length, 1);
 });
 
 test("AgentLoop prefers streaming clients and emits formal trace events", async () => {
