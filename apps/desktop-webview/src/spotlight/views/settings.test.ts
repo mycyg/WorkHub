@@ -2,7 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { HealthResponse } from "@workhub/api-client";
-import type { ClientDeviceResponse, PluginVM, SettingsPageVM, UserAiProfileVM, UserProfileVM } from "@workhub/contracts";
+import type {
+  ClientDeviceResponse,
+  McpServerActionResult,
+  McpServerVM,
+  PluginVM,
+  SettingsPageVM,
+  UserAiProfileVM,
+  UserProfileVM
+} from "@workhub/contracts";
 
 import {
   createSettingsView,
@@ -2279,5 +2287,572 @@ test("a non-admin settings view never fetches the plugin list at all", async () 
     await tick();
     assert.equal(listed, 0, "省一次注定 403 的请求");
     assert.doesNotMatch(body.innerHTML, /data-spot-plugins-section/u);
+  });
+});
+
+// —— R26 M7：MCP 服务器分区（接线面。纯渲染面在 settings-mcp.test.ts） —— //
+
+const MCP_ID = "90000000-0000-4000-8000-000000000001";
+
+function mcpServerVm(over: Record<string, unknown> = {}): McpServerVM {
+  return {
+    id: MCP_ID,
+    server_name: "gh",
+    transport: "stdio",
+    command: "/usr/local/bin/mcp-server-github",
+    args: [],
+    env: {},
+    secret_refs: {},
+    tool_call_timeout_ms: 60000,
+    enabled: true,
+    status: "connected",
+    trust_level: "external_effect",
+    precheck_report: { verdict: "ok", checks: [], checked_at: "2026-09-06T00:00:00.000Z" },
+    tool_count: 2,
+    tools: ["create_issue", "list_issues"],
+    created_at: "2026-09-06T00:00:00.000Z",
+    updated_at: "2026-09-06T00:00:00.000Z",
+    ...over
+  } as unknown as McpServerVM;
+}
+
+function mcpActionResult(server: McpServerVM, over: Record<string, unknown> = {}): McpServerActionResult {
+  return {
+    server,
+    connection: { live: true, tool_count: server.tool_count },
+    risk_tokens: [],
+    ...over
+  } as unknown as McpServerActionResult;
+}
+
+/** 管理员的 settings VM（服务端只给管理员填 plugins；MCP 区借同一个信号）。 */
+function adminSettingsVm(): SettingsPageVM {
+  return { ...settingsVm(), plugins: [] } as unknown as SettingsPageVM;
+}
+
+function mcpListVm(servers: McpServerVM[], over: Record<string, unknown> = {}) {
+  return {
+    servers,
+    connections: Object.fromEntries(
+      servers.map((server) => [
+        server.id,
+        {
+          live: true,
+          tool_count: server.tool_count,
+          tool_ids: (server.tools ?? []).map((tool) => `mcp__${server.server_name}__${tool}`)
+        }
+      ])
+    ),
+    secret_ref_env_prefix: "WORKHUB_MCP_SECRET_",
+    available_secret_refs: ["WORKHUB_MCP_SECRET_GITHUB_TOKEN"],
+    ...over
+  } as unknown as never;
+}
+
+function mcpCtx(body: FakeBody, client: Record<string, unknown>): SpotlightViewContext {
+  return baseCtx(body, {
+    client: {
+      pages: { async settings() { return adminSettingsVm(); } },
+      async request<T>(path: string) {
+        if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+        return aiProfileVm() as unknown as T;
+      },
+      async listPlugins() {
+        return { plugins: [], bootstrap_path_count: 0 } as unknown as never;
+      },
+      ...client
+    } as unknown as SpotlightViewContext["client"]
+  });
+}
+
+test("a non-admin settings view never fetches the MCP server list either", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    let listed = 0;
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return settingsVm(); } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          },
+          async listMcpServers() {
+            listed += 1;
+            return mcpListVm([]);
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+    assert.equal(listed, 0, "省一次注定 403 的请求");
+    assert.doesNotMatch(body.innerHTML, /data-spot-mcp-section/u);
+  });
+});
+
+test("the settings view lists MCP servers for an admin and renders every action", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    await createSettingsView().mount(
+      mcpCtx(body, { async listMcpServers() { return mcpListVm([mcpServerVm()]); } })
+    );
+    await tick();
+    await tick();
+    assert.match(body.innerHTML, /data-spot-mcp-section="true"/u);
+    assert.match(body.innerHTML, new RegExp(`data-spot-mcp-server="${MCP_ID}"`, "u"));
+    assert.match(body.innerHTML, /已连接 · 2 个工具/u);
+    assert.match(body.innerHTML, new RegExp(`data-set-mcp-test="${MCP_ID}"`, "u"));
+  });
+});
+
+test("adding an MCP server sends exactly the fields that were filled and renders the outcome", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const added: unknown[] = [];
+    await createSettingsView().mount(
+      mcpCtx(body, {
+        async listMcpServers() { return mcpListVm([]); },
+        async addMcpServer(payload: unknown) {
+          added.push(payload);
+          return mcpActionResult(mcpServerVm({ server_name: "finance" }), { risk_tokens: ["finance"] });
+        }
+      })
+    );
+    await tick();
+    await tick();
+    assert.match(body.innerHTML, /还没有接入 MCP 服务器/u);
+
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-name]"]), {}, "finance"));
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-command]"]), {}, "/usr/local/bin/mcp-fin"));
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-args]"]), {}, "--stdio\n--verbose"));
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-env]"]), {}, "LOG_LEVEL=debug"));
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-cwd]"]), {}, "/srv/fin"));
+    body.click(new FakeElement(new Set(["[data-set-mcp-add]"])));
+    await tick();
+    await tick();
+
+    assert.deepEqual(added, [
+      {
+        server_name: "finance",
+        command: "/usr/local/bin/mcp-fin",
+        trust_level: "external_effect",
+        tool_call_timeout_ms: 60000,
+        args: ["--stdio", "--verbose"],
+        env: { LOG_LEVEL: "debug" },
+        cwd: "/srv/fin"
+      }
+    ]);
+    assert.match(body.innerHTML, /data-spot-mcp-outcome="connected"/u);
+    // 名字里的高风险词按回执回显具体命中的那个词，不是一句泛泛的警告。
+    assert.match(body.innerHTML, /名字里命中的高风险词：finance/u);
+    assert.match(body.innerHTML, new RegExp(`data-set-mcp-toggle="${MCP_ID}"`, "u"));
+  });
+});
+
+test("typing a server name previews the tool-name prefix before anything is submitted", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    await createSettingsView().mount(
+      mcpCtx(body, {
+        async listMcpServers() { return mcpListVm([]); },
+        async addMcpServer() { return mcpActionResult(mcpServerVm()); }
+      })
+    );
+    await tick();
+    await tick();
+    assert.doesNotMatch(body.innerHTML, /data-spot-mcp-name-preview/u);
+
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-name]"]), {}, "gh"));
+    assert.match(body.innerHTML, /data-spot-mcp-name-preview="true"/u);
+    assert.match(body.innerHTML, /mcp__gh__/u);
+  });
+});
+
+test("a refused add explains the refusal by code and adds no row", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    await createSettingsView().mount(
+      mcpCtx(body, {
+        async listMcpServers() { return mcpListVm([]); },
+        async addMcpServer() {
+          throw Object.assign(new Error("refused"), { status: 422, code: "mcp_remote_exec_refused" });
+        }
+      })
+    );
+    await tick();
+    await tick();
+
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-name]"]), {}, "gh"));
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-command]"]), {}, "npx"));
+    body.click(new FakeElement(new Set(["[data-set-mcp-add]"])));
+    await tick();
+    await tick();
+
+    assert.match(body.innerHTML, /data-spot-mcp-outcome="refused"/u);
+    assert.match(body.innerHTML, /先在这台机器上把它装好/u);
+    assert.doesNotMatch(body.innerHTML, /data-set-mcp-toggle=/u);
+  });
+});
+
+test("a name that is already taken comes back as a 409 the form explains, not a generic failure", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    await createSettingsView().mount(
+      mcpCtx(body, {
+        async listMcpServers() { return mcpListVm([mcpServerVm()]); },
+        async addMcpServer() {
+          throw Object.assign(new Error("taken"), { status: 409, code: "mcp_server_name_taken" });
+        }
+      })
+    );
+    await tick();
+    await tick();
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-name]"]), {}, "gh"));
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-command]"]), {}, "/usr/local/bin/x"));
+    body.click(new FakeElement(new Set(["[data-set-mcp-add]"])));
+    await tick();
+    await tick();
+    assert.match(body.innerHTML, /已经被另一台服务器用了/u);
+  });
+});
+
+test("the add form refuses locally on the three shapes the server would only answer with a 422", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    let calls = 0;
+    await createSettingsView().mount(
+      mcpCtx(body, {
+        async listMcpServers() { return mcpListVm([]); },
+        async addMcpServer() {
+          calls += 1;
+          return mcpActionResult(mcpServerVm());
+        }
+      })
+    );
+    await tick();
+    await tick();
+
+    // ① 名字/命令为空。
+    body.click(new FakeElement(new Set(["[data-set-mcp-add]"])));
+    await tick();
+    assert.match(body.innerHTML, /先把服务器名和启动命令填上/u);
+
+    // ② 环境变量读不了的那一行被点名。
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-name]"]), {}, "gh"));
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-command]"]), {}, "/usr/local/bin/x"));
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-env]"]), {}, "GITHUB_TOKEN"));
+    body.click(new FakeElement(new Set(["[data-set-mcp-add]"])));
+    await tick();
+    assert.match(body.innerHTML, /GITHUB_TOKEN/u);
+    assert.match(body.innerHTML, /一行写一条 KEY=VALUE/u);
+
+    // ③ 超时越界。
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-env]"]), {}, ""));
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-timeout-new]"]), {}, "10"));
+    body.click(new FakeElement(new Set(["[data-set-mcp-add]"])));
+    await tick();
+    assert.match(body.innerHTML, /1000 到 300000/u);
+
+    assert.equal(calls, 0, "三种一定被拒的填法，一次请求都不发");
+  });
+});
+
+test("a secret reference is picked by variable name and travels as a pointer, never as a value", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const added: unknown[] = [];
+    await createSettingsView().mount(
+      mcpCtx(body, {
+        async listMcpServers() { return mcpListVm([]); },
+        async addMcpServer(payload: unknown) {
+          added.push(payload);
+          return mcpActionResult(mcpServerVm());
+        }
+      })
+    );
+    await tick();
+    await tick();
+    // 下拉里只有名字——服务端从来不把值交给这一层。
+    assert.match(body.innerHTML, /WORKHUB_MCP_SECRET_GITHUB_TOKEN/u);
+
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-secret-child]"]), {}, "GITHUB_TOKEN"));
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-secret-var]"]), {}, "WORKHUB_MCP_SECRET_GITHUB_TOKEN"));
+    body.click(new FakeElement(new Set(["[data-set-mcp-secret-add]"])));
+    assert.match(body.innerHTML, /data-spot-mcp-secret-ref="GITHUB_TOKEN"/u);
+
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-name]"]), {}, "gh"));
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-command]"]), {}, "/usr/local/bin/x"));
+    body.click(new FakeElement(new Set(["[data-set-mcp-add]"])));
+    await tick();
+    await tick();
+
+    assert.deepEqual((added[0] as { secret_refs?: unknown }).secret_refs, {
+      GITHUB_TOKEN: "WORKHUB_MCP_SECRET_GITHUB_TOKEN"
+    });
+  });
+});
+
+test("half a secret reference is refused before it can become a server that starts without its credential", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    await createSettingsView().mount(
+      mcpCtx(body, {
+        async listMcpServers() { return mcpListVm([]); },
+        async addMcpServer() { return mcpActionResult(mcpServerVm()); }
+      })
+    );
+    await tick();
+    await tick();
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-secret-child]"]), {}, "GITHUB_TOKEN"));
+    body.click(new FakeElement(new Set(["[data-set-mcp-secret-add]"])));
+    assert.match(body.innerHTML, /两边都要填/u);
+    assert.doesNotMatch(body.innerHTML, /data-spot-mcp-secret-ref=/u);
+  });
+});
+
+test("disabling an MCP server takes two clicks and replaces the row with the server's answer", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const disabled: string[] = [];
+    const reEnabled: string[] = [];
+    await createSettingsView().mount(
+      mcpCtx(body, {
+        async listMcpServers() { return mcpListVm([mcpServerVm()]); },
+        async disableMcpServer(id: string) {
+          disabled.push(id);
+          // 停用的服务器整体没有连接快照（不是 live:false 那种「连过但没活着」）。
+          return { server: mcpServerVm({ enabled: false, status: "disabled", tool_count: 0 }), risk_tokens: [] } as unknown as never;
+        },
+        async enableMcpServer(id: string) {
+          reEnabled.push(id);
+          // 启用之后的真实结果只会由连接监督写回；这一次它连不上，回执里也就没有连接快照。
+          return {
+            server: mcpServerVm({ status: "connect_failed", tool_count: 0, tools: [], last_error: "spawn ENOENT" }),
+            risk_tokens: []
+          } as unknown as never;
+        }
+      })
+    );
+    await tick();
+    await tick();
+
+    const toggle = new FakeElement(new Set(["[data-set-mcp-toggle]"]), { setMcpToggle: MCP_ID });
+    body.click(toggle);
+    assert.equal(disabled.length, 0, "第一下只武装，不真的停用");
+    assert.match(body.innerHTML, /确定？再点一次/u);
+
+    body.click(toggle);
+    await tick();
+    await tick();
+    assert.deepEqual(disabled, [MCP_ID]);
+    assert.match(body.innerHTML, /data-spot-mcp-status="disabled"/u);
+    assert.doesNotMatch(body.innerHTML, /已连接/u);
+
+    // 停用把连接快照一并丢掉：再启用时如果服务端说「连不上」，那一行不能拿停用前的旧快照
+    // 复活出一句「已连接 · 2 个工具」。
+    const enabled = new FakeElement(new Set(["[data-set-mcp-toggle]"]), { setMcpToggle: MCP_ID });
+    body.click(enabled);
+    body.click(enabled);
+    await tick();
+    await tick();
+    assert.deepEqual(reEnabled, [MCP_ID]);
+    assert.match(body.innerHTML, /data-spot-mcp-status="connect_failed"/u);
+    assert.doesNotMatch(body.innerHTML, /2 个工具/u);
+    assert.doesNotMatch(body.innerHTML, /mcp__gh__create_issue/u, "工具预览不能从停用前的旧快照里复活");
+  });
+});
+
+test("testing a connection is a single click, and a 200 that says can't connect is not reported as a broken request", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const reloaded: string[] = [];
+    const errors: string[] = [];
+    await createSettingsView().mount(
+      baseCtx(body, {
+        toast(text: string, tone?: "error" | "ok" | "info") {
+          if (tone === "error") errors.push(text);
+        },
+        client: {
+          pages: { async settings() { return adminSettingsVm(); } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          },
+          async listPlugins() { return { plugins: [], bootstrap_path_count: 0 } as unknown as never; },
+          async listMcpServers() { return mcpListVm([mcpServerVm()]); },
+          async reloadMcpServer(id: string) {
+            reloaded.push(id);
+            return {
+              server: mcpServerVm({ status: "connect_failed", tool_count: 0, tools: [], last_error: "spawn ENOENT" }),
+              connection: { live: false, tool_count: 0, last_error: "spawn ENOENT" },
+              risk_tokens: []
+            } as unknown as never;
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+
+    body.click(new FakeElement(new Set(["[data-set-mcp-test]"]), { setMcpTest: MCP_ID }));
+    await tick();
+    await tick();
+    assert.deepEqual(reloaded, [MCP_ID], "测试连接不改配置，一下就走");
+    assert.match(body.innerHTML, /data-spot-mcp-status="connect_failed"/u);
+    assert.match(body.innerHTML, /连不上这台服务器/u);
+    assert.match(body.innerHTML, /spawn ENOENT/u);
+    assert.deepEqual(errors, [], "连不上是一条结论，不是一次失败的请求");
+  });
+});
+
+test("loosening the trust level takes two clicks; tightening it back takes one", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const patches: Array<{ id: string; payload: unknown }> = [];
+    let current = mcpServerVm();
+    await createSettingsView().mount(
+      mcpCtx(body, {
+        async listMcpServers() { return mcpListVm([current]); },
+        async updateMcpServer(id: string, payload: { trust_level?: string }) {
+          patches.push({ id, payload });
+          current = mcpServerVm({ trust_level: payload.trust_level });
+          return mcpActionResult(current);
+        }
+      })
+    );
+    await tick();
+    await tick();
+
+    // external_effect → read_only 是在撤掉一道人工门：两段式。
+    const trust = new FakeElement(new Set(["[data-set-mcp-trust]"]), { setMcpTrust: MCP_ID });
+    body.click(trust);
+    assert.equal(patches.length, 0);
+    body.click(trust);
+    await tick();
+    await tick();
+    assert.deepEqual(patches, [{ id: MCP_ID, payload: { trust_level: "read_only" } }]);
+    assert.match(body.innerHTML, /data-spot-mcp-trust="read_only"/u);
+
+    // read_only → external_effect 是把门装回去：不再拦一次。
+    body.click(new FakeElement(new Set(["[data-set-mcp-trust]"]), { setMcpTrust: MCP_ID }));
+    await tick();
+    await tick();
+    assert.equal(patches.length, 2);
+    assert.deepEqual(patches[1], { id: MCP_ID, payload: { trust_level: "external_effect" } });
+  });
+});
+
+test("leaving the timeout field saves it; an out-of-range value is refused without a request", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const patches: unknown[] = [];
+    await createSettingsView().mount(
+      mcpCtx(body, {
+        async listMcpServers() { return mcpListVm([mcpServerVm()]); },
+        async updateMcpServer(id: string, payload: unknown) {
+          patches.push(payload);
+          return mcpActionResult(mcpServerVm({ tool_call_timeout_ms: 90000 }));
+        }
+      })
+    );
+    await tick();
+    await tick();
+
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-timeout]"]), { setMcpTimeout: MCP_ID }, "90000"));
+    await tick();
+    await tick();
+    assert.deepEqual(patches, [{ tool_call_timeout_ms: 90000 }]);
+
+    // 同一个值再离开一次不该再发一次空转的 PATCH。
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-timeout]"]), { setMcpTimeout: MCP_ID }, "90000"));
+    await tick();
+    assert.equal(patches.length, 1);
+
+    body.focusOutOn(new FakeElement(new Set(["[data-set-mcp-timeout]"]), { setMcpTimeout: MCP_ID }, "10"));
+    await tick();
+    assert.equal(patches.length, 1, "越界的值不发请求");
+    assert.match(body.innerHTML, /1000 到 300000/u);
+  });
+});
+
+test("removing an MCP server takes two clicks and drops the row", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const removed: string[] = [];
+    await createSettingsView().mount(
+      mcpCtx(body, {
+        async listMcpServers() { return mcpListVm([mcpServerVm()]); },
+        async removeMcpServer(id: string) {
+          removed.push(id);
+        }
+      })
+    );
+    await tick();
+    await tick();
+
+    const remove = new FakeElement(new Set(["[data-set-mcp-remove]"]), { setMcpRemove: MCP_ID });
+    body.click(remove);
+    assert.equal(removed.length, 0, "第一下只武装");
+    body.click(remove);
+    await tick();
+    await tick();
+    assert.deepEqual(removed, [MCP_ID]);
+    assert.doesNotMatch(body.innerHTML, /data-set-mcp-remove=/u);
+    assert.match(body.innerHTML, /还没有接入 MCP 服务器/u);
+  });
+});
+
+test("a failed list offers a retry that really refetches", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    let attempts = 0;
+    await createSettingsView().mount(
+      mcpCtx(body, {
+        async listMcpServers() {
+          attempts += 1;
+          if (attempts === 1) throw new Error("network");
+          return mcpListVm([mcpServerVm()]);
+        }
+      })
+    );
+    await tick();
+    await tick();
+    assert.match(body.innerHTML, /data-set-mcp-retry="true"/u);
+
+    body.click(new FakeElement(new Set(["[data-set-mcp-retry]"])));
+    await tick();
+    await tick();
+    assert.equal(attempts, 2);
+    assert.match(body.innerHTML, new RegExp(`data-spot-mcp-server="${MCP_ID}"`, "u"));
+  });
+});
+
+test("against a backend without the MCP endpoints the section explains instead of offering a dead button", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    await createSettingsView().mount(mcpCtx(body, {}));
+    await tick();
+    await tick();
+    assert.match(body.innerHTML, /data-spot-mcp-section="true"/u);
+    assert.doesNotMatch(body.innerHTML, /data-set-mcp-add="true"/u);
+    assert.match(body.innerHTML, /还没有 MCP 服务器管理接口/u);
+  });
+});
+
+test("the plugin section carries the same warning that words in a name are graded before any trust level", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    await createSettingsView().mount(
+      mcpCtx(body, {
+        async listPlugins() { return { plugins: [], bootstrap_path_count: 0 } as unknown as never; },
+        async listMcpServers() { return mcpListVm([]); },
+        async addMcpServer() { return mcpActionResult(mcpServerVm()); }
+      })
+    );
+    await tick();
+    await tick();
+    assert.match(body.innerHTML, /这类名字的插件/u);
+    assert.match(body.innerHTML, /这类名字的服务器/u);
   });
 });

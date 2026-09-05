@@ -16,11 +16,16 @@
 // （不是阻断式弹窗，同 workbench chat/view.ts selectMode 的既有取舍）。
 
 import type {
+  AddMcpServerRequest,
   AiGranularSettings,
   AiMode,
   ClientDeviceResponse,
   CuuProactivity,
   DispatchPolicy,
+  McpServerActionResult,
+  McpServerConnectionVM,
+  McpServerTrustLevel,
+  McpServerVM,
   PatchUserAiProfileRequest,
   PatchUserProfileRequest,
   PermissionEffect,
@@ -58,6 +63,16 @@ import {
 import { scheduleWorkHubLiquidGlassFilterRebuild } from "../../liquid-glass-filter.js";
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 import { driveResourceApiBase, fetchDriveResource } from "./drive.js";
+import {
+  emptyMcpFormState,
+  mcpAddErrorText,
+  mcpServersSectionHtml,
+  parseMcpArgs,
+  parseMcpEnv,
+  parseMcpTimeoutMs,
+  type DesktopMcpAddOutcome,
+  type DesktopMcpFormState
+} from "./settings-mcp.js";
 
 import { spotlightViewsT } from "./locales.js";
 
@@ -613,7 +628,15 @@ function pluginStatusLine(plugin: PluginVM, zh: boolean): string {
     : `Enabled · ${plugin.tool_count} tool${plugin.tool_count === 1 ? "" : "s"}`;
 }
 
-/** 信任级别这一行：它是这个插件的**风险上限**，所以说的是上限，不是「它安全」。 */
+/**
+ * 信任级别这一行：它是这个插件的**风险上限**，所以说的是上限，不是「它安全」。
+ *
+ * R26 M7 补：**词表分类先于风险分级**。插件工具 id 是 `plugin__<插件名>__<工具名>`，
+ * `classifyHumanReservedToolCall` 对整个 id 分词，所以一个叫 `finance` / `publish` 的插件，
+ * 它的每个工具都会被归到高风险类、每次调用都转人——与这里设的信任级别无关。这是设计属性，
+ * 但不写出来，用户只会以为只读断言按错了。分区里的 `pluginNameRiskNote` 就是这句话，
+ * 与 MCP 分区的 `mcpNameRiskNote` 是同一条纪律的两面。
+ */
 export function pluginTrustLine(plugin: PluginVM, zh: boolean): string {
   return spotlightViewsT(zh, plugin.trust_level === "read_only" ? "pluginTrustReadOnly" : "pluginTrustExternalEffect");
 }
@@ -755,6 +778,7 @@ export function pluginsSectionHtml(state: DesktopPluginsSectionState, zh: boolea
     <div class="wh-spot-row-sub">${spotlightViewsT(zh, "compatibleWithDeepseekHarnessToolPlugins")
     }</div>
     <div class="wh-spot-row-sub">${spotlightViewsT(zh, "pluginTrustSectionNote")}</div>
+    <div class="wh-spot-row-sub wh-spot-row-sub--wrap">${spotlightViewsT(zh, "pluginNameRiskNote")}</div>
     ${hostNote ? `<div class="wh-spot-row-sub">${escapeHtml(hostNote)}</div>` : ""}
     ${rows}
     ${bootstrapNote ? `<div class="wh-spot-row-sub">${escapeHtml(bootstrapNote)}</div>` : ""}
@@ -805,7 +829,8 @@ function settingsHtml(
   policiesHtml: string,
   devicesHtml: string,
   serverHtml: string,
-  pluginsHtml: string
+  pluginsHtml: string,
+  mcpHtml: string
 ): string {
   const lang = vm.language;
   const langChips = lang.supported_locales
@@ -832,6 +857,7 @@ function settingsHtml(
     ${profileErrorText ? `<div class="wh-spot-row-sub" data-spot-profile-error="true" style="color:var(--ds-danger)">${escapeHtml(profileErrorText)}</div>` : ""}
     ${policiesHtml}
     ${pluginsHtml}
+    ${mcpHtml}
     ${serverHtml}
     ${devicesHtml}
     <button type="button" class="wh-spot-row" data-set-open-memory="true">
@@ -1209,6 +1235,33 @@ async function invokeShellClearClientToken(): Promise<void> {
   await invoke("set_client_token", { token: "" });
 }
 
+/**
+ * R26 M7：MCP 添加表单里「离开字段就收值」的字段表。
+ *
+ * 为什么是 focusout 而不是 input：这一层是全量 innerHTML 重绘，逐字符重绘会在用户打字时打断焦点
+ * （同「我的资料」三个字段与插件安装路径的既有取舍）。收值本身不重绘；只有服务器名要重绘一次，
+ * 因为它下面挂着实时的工具名预览——不重绘那行预览就永远说的是上一个名字。
+ */
+const MCP_FORM_TEXT_FIELDS: ReadonlyArray<{
+  selector: string;
+  assign: (form: DesktopMcpFormState, value: string) => DesktopMcpFormState;
+  rerender: boolean;
+}> = [
+  { selector: "[data-set-mcp-name]", assign: (form, value) => ({ ...form, serverName: value }), rerender: true },
+  { selector: "[data-set-mcp-display]", assign: (form, value) => ({ ...form, displayName: value }), rerender: false },
+  { selector: "[data-set-mcp-command]", assign: (form, value) => ({ ...form, command: value }), rerender: false },
+  { selector: "[data-set-mcp-args]", assign: (form, value) => ({ ...form, argsText: value }), rerender: false },
+  { selector: "[data-set-mcp-env]", assign: (form, value) => ({ ...form, envText: value }), rerender: false },
+  { selector: "[data-set-mcp-cwd]", assign: (form, value) => ({ ...form, cwd: value }), rerender: false },
+  { selector: "[data-set-mcp-timeout-new]", assign: (form, value) => ({ ...form, timeoutText: value }), rerender: false },
+  {
+    selector: "[data-set-mcp-secret-child]",
+    assign: (form, value) => ({ ...form, secretRefChildKey: value }),
+    rerender: false
+  },
+  { selector: "[data-set-mcp-secret-var]", assign: (form, value) => ({ ...form, secretRefEnvVar: value }), rerender: false }
+];
+
 export function createSettingsView(): SpotlightCapabilityView {
   return {
     id: "settings",
@@ -1271,6 +1324,33 @@ export function createSettingsView(): SpotlightCapabilityView {
         if (pluginArmTimer !== undefined) {
           clearTimeout(pluginArmTimer);
           pluginArmTimer = undefined;
+        }
+      };
+
+      // R26 M7：MCP 服务器治理。
+      //
+      // 管理员门借 `vm.plugins !== undefined`：服务端只给管理员填那个字段，而 /api/mcp-servers 整条
+      // 端点也是管理员门（403 `mcp_admin_required`）——两者是同一个身份判定的两个出口，借它就不必
+      // 自己猜身份、也不必靠一个注定 403 的请求闪一下。settings VM 目前**没有** mcp_servers 字段
+      // （那是工包 M8 的网页只读行要加的），等它落地后这里可以换成同款的 `vm.mcp_servers !== undefined`。
+      let mcpServers: McpServerVM[] | undefined;
+      let mcpConnections: Record<string, McpServerConnectionVM> = {};
+      let mcpSecretRefEnvPrefix = "";
+      let mcpAvailableSecretRefs: string[] = [];
+      // 高风险词只在**动作回执**上（清单端点不带），所以是一次次攒下来的：没做过动作的行没有这一句。
+      let mcpRiskTokens: Record<string, readonly string[]> = {};
+      let mcpFailed = false;
+      let mcpArmedKey: string | undefined;
+      let mcpBusyId: string | undefined;
+      let mcpErrorText: string | undefined;
+      let mcpForm: DesktopMcpFormState = emptyMcpFormState();
+      let mcpAddOutcome: DesktopMcpAddOutcome | undefined;
+      let mcpArmTimer: ReturnType<typeof setTimeout> | undefined;
+      const clearMcpArm = () => {
+        mcpArmedKey = undefined;
+        if (mcpArmTimer !== undefined) {
+          clearTimeout(mcpArmTimer);
+          mcpArmTimer = undefined;
         }
       };
 
@@ -1414,7 +1494,25 @@ export function createSettingsView(): SpotlightCapabilityView {
           },
           zh
         );
-        ctx.body.innerHTML = settingsHtml(vm, zh, aiProfile, aiFailed, aiErrorText, profile, profileFailed, profileErrorText, policiesHtml, devicesHtml, serverHtml, pluginsHtml);
+        const mcpHtml = mcpServersSectionHtml(
+          {
+            visible: vm.plugins !== undefined,
+            servers: mcpServers,
+            connections: mcpConnections,
+            secretRefEnvPrefix: mcpSecretRefEnvPrefix,
+            availableSecretRefs: mcpAvailableSecretRefs,
+            riskTokens: mcpRiskTokens,
+            failed: mcpFailed,
+            armedKey: mcpArmedKey,
+            busyId: mcpBusyId,
+            errorText: mcpErrorText,
+            form: mcpForm,
+            addOutcome: mcpAddOutcome,
+            supported: Boolean(ctx.client.addMcpServer)
+          },
+          zh
+        );
+        ctx.body.innerHTML = settingsHtml(vm, zh, aiProfile, aiFailed, aiErrorText, profile, profileFailed, profileErrorText, policiesHtml, devicesHtml, serverHtml, pluginsHtml, mcpHtml);
         ctx.requestResize();
         hydrateAvatarPreview();
       };
@@ -1483,6 +1581,29 @@ export function createSettingsView(): SpotlightCapabilityView {
         }
       };
 
+      // R26 M7：MCP 服务器清单。同插件清单的取舍——旧服务端没有这批端点（api-client 上是可选方法）
+      // 时安静降级成「不支持」而不是「加载失败」，两者的下一步动作不同（升级服务端 vs 重试）。
+      const loadMcpServers = async () => {
+        const list = ctx.client.listMcpServers;
+        if (!list) {
+          mcpServers = undefined;
+          mcpFailed = false;
+          return;
+        }
+        try {
+          const result = await list.call(ctx.client);
+          mcpServers = [...result.servers];
+          mcpConnections = { ...result.connections };
+          mcpSecretRefEnvPrefix = result.secret_ref_env_prefix;
+          mcpAvailableSecretRefs = [...result.available_secret_refs];
+          mcpFailed = false;
+        } catch {
+          if (disposed) return;
+          mcpServers = undefined;
+          mcpFailed = true;
+        }
+      };
+
       // R24 S5（N-02/E-02 补齐）：服务器名/版本纯粹是锦上添花——拉不到（老服务端缺字段/一次性网络
       // 抖动）就静默留 undefined，serverSectionHtml 照样渲地址本身，不因为这个次要信息挡住整页设置。
       const loadServerHealth = async () => {
@@ -1514,7 +1635,9 @@ export function createSettingsView(): SpotlightCapabilityView {
           loadDevices(),
           loadServerHealth(),
           // 非管理员的 VM 里没有 plugins 字段——那就连列表都不去拉（省一次注定 403 的请求）。
-          vm.plugins !== undefined ? loadPlugins() : Promise.resolve()
+          vm.plugins !== undefined ? loadPlugins() : Promise.resolve(),
+          // MCP 清单端点同样是管理员门，借同一个信号（见上面 mcpServers 那组状态的注释）。
+          vm.plugins !== undefined ? loadMcpServers() : Promise.resolve()
         ]);
         if (disposed) return;
         renderAll();
@@ -1805,6 +1928,299 @@ export function createSettingsView(): SpotlightCapabilityView {
           });
       }
 
+      // —— R26 M7：MCP 服务器动作 —— //
+      // 五个写动作（启用/停用/测试连接/改配置/移除）里前四个回执形状相同（`{server, connection?,
+      // risk_tokens}`），所以共用一条收尾：**服务端是唯一事实源**——启停之后的 status 可能是
+      // connect_failed（M0 的仓储层刻意不冒充一个还没发生的验证结果），本地猜不出来，一律用回执替换。
+      function applyMcpActionResult(result: McpServerActionResult): void {
+        mcpServers = (mcpServers ?? []).map((server) => (server.id === result.server.id ? result.server : server));
+        const next = { ...mcpConnections };
+        if (result.connection) {
+          next[result.server.id] = result.connection;
+        } else {
+          // 停用的服务器整体没有连接快照——留着上一份会让「已停用」旁边还挂着「3 个工具活着」。
+          delete next[result.server.id];
+        }
+        mcpConnections = next;
+        mcpRiskTokens = { ...mcpRiskTokens, [result.server.id]: result.risk_tokens };
+      }
+
+      function runMcpAction(
+        id: string,
+        run: () => Promise<McpServerActionResult | void>,
+        onDone: (result: McpServerActionResult | void) => void,
+        okToast: string,
+        failToast: string
+      ): void {
+        clearMcpArm();
+        mcpBusyId = id;
+        mcpErrorText = undefined;
+        renderAll();
+        void run()
+          .then((result) => {
+            if (disposed) return;
+            mcpBusyId = undefined;
+            onDone(result);
+            ctx.toast(okToast, "ok");
+            renderAll();
+          })
+          .catch((error: unknown) => {
+            if (disposed) return;
+            mcpBusyId = undefined;
+            mcpErrorText = mcpErrorTextFor(error);
+            ctx.toast(failToast, "error");
+            renderAll();
+          });
+      }
+
+      // WorkHubApiError 的公开字段是 code——duck-type 读，不 import 运行时类（同
+      // submitPluginInstall 与 apps/web/src/settings-devices.ts 的既有先例）。
+      function mcpErrorCodeOf(error: unknown): string | undefined {
+        return error && typeof error === "object" && "code" in error
+          ? String((error as { code?: unknown }).code)
+          : undefined;
+      }
+
+      function mcpErrorTextFor(error: unknown): string {
+        const code = mcpErrorCodeOf(error);
+        return code ? mcpAddErrorText(code, ctx.locale === "zh-CN") : spotlightViewsT(ctx.locale, "thatDidnTWorkTryAgain");
+      }
+
+      function toggleMcpServer(server: McpServerVM): void {
+        const enabled = server.enabled && server.status !== "disabled";
+        const call = enabled ? ctx.client.disableMcpServer : ctx.client.enableMcpServer;
+        if (!call) {
+          mcpErrorText = spotlightViewsT(ctx.locale, "mcpUnsupported");
+          renderAll();
+          return;
+        }
+        runMcpAction(
+          server.id,
+          () => call.call(ctx.client, server.id),
+          (result) => applyMcpActionResult(result as McpServerActionResult),
+          spotlightViewsT(ctx.locale, enabled ? "disabled" : "enabled"),
+          spotlightViewsT(ctx.locale, "couldnTChangeIt")
+        );
+      }
+
+      /**
+       * 测试连接。**单段确认**：它不改任何配置，只是问一句「现在连得上吗」。
+       * 连不上时端点仍然回 200——结论在回执的 status / last_error 里（见 M3 Note 第 2 节），
+       * 所以这条成功路径也可能渲出一行「连不上」，那不是这次请求失败了。
+       */
+      function testMcpConnection(server: McpServerVM): void {
+        const call = ctx.client.reloadMcpServer;
+        if (!call) {
+          mcpErrorText = spotlightViewsT(ctx.locale, "mcpUnsupported");
+          renderAll();
+          return;
+        }
+        runMcpAction(
+          server.id,
+          () => call.call(ctx.client, server.id),
+          (result) => applyMcpActionResult(result as McpServerActionResult),
+          spotlightViewsT(ctx.locale, "mcpTested"),
+          spotlightViewsT(ctx.locale, "mcpCouldnTTest")
+        );
+      }
+
+      /**
+       * 改信任级别。**只有「往下放宽」需要两段式确认**——那一步是在撤掉一道人工门；
+       * 往回收紧是把门装回去，没有理由再拦一次（同插件那侧的既有取舍）。
+       */
+      function setMcpTrust(server: McpServerVM): void {
+        const call = ctx.client.updateMcpServer;
+        if (!call) {
+          mcpErrorText = spotlightViewsT(ctx.locale, "mcpUnsupported");
+          renderAll();
+          return;
+        }
+        const next: McpServerTrustLevel = server.trust_level === "read_only" ? "external_effect" : "read_only";
+        runMcpAction(
+          server.id,
+          () => call.call(ctx.client, server.id, { trust_level: next }),
+          (result) => applyMcpActionResult(result as McpServerActionResult),
+          spotlightViewsT(ctx.locale, next === "read_only" ? "mcpTrustReadOnly" : "mcpTrustExternalEffect"),
+          spotlightViewsT(ctx.locale, "couldnTChangeIt")
+        );
+      }
+
+      /** 改单次调用超时。值没变就什么都不做——一次空 PATCH 是 422，不该由「点了别处」触发。 */
+      function setMcpTimeout(server: McpServerVM, raw: string): void {
+        const call = ctx.client.updateMcpServer;
+        if (!call) {
+          mcpErrorText = spotlightViewsT(ctx.locale, "mcpUnsupported");
+          renderAll();
+          return;
+        }
+        const parsed = parseMcpTimeoutMs(raw);
+        if (parsed === undefined) {
+          mcpErrorText = spotlightViewsT(ctx.locale, "mcpTimeoutInvalid");
+          renderAll();
+          return;
+        }
+        if (parsed === server.tool_call_timeout_ms) {
+          return;
+        }
+        runMcpAction(
+          server.id,
+          () => call.call(ctx.client, server.id, { tool_call_timeout_ms: parsed }),
+          (result) => applyMcpActionResult(result as McpServerActionResult),
+          spotlightViewsT(ctx.locale, "mcpTimeoutSaved"),
+          spotlightViewsT(ctx.locale, "couldnTChangeIt")
+        );
+      }
+
+      function removeMcpServer(server: McpServerVM): void {
+        const call = ctx.client.removeMcpServer;
+        if (!call) {
+          mcpErrorText = spotlightViewsT(ctx.locale, "mcpUnsupported");
+          renderAll();
+          return;
+        }
+        runMcpAction(
+          server.id,
+          () => call.call(ctx.client, server.id),
+          () => {
+            mcpServers = (mcpServers ?? []).filter((entry) => entry.id !== server.id);
+            const next = { ...mcpConnections };
+            delete next[server.id];
+            mcpConnections = next;
+            if (mcpAddOutcome?.kind === "added" && mcpAddOutcome.server.id === server.id) {
+              // 刚接完就移除：那张结果卡说的已经不成立了，收掉，不留一条骗人的「接好了」。
+              mcpAddOutcome = undefined;
+            }
+          },
+          spotlightViewsT(ctx.locale, "removed"),
+          spotlightViewsT(ctx.locale, "couldnTRemoveIt")
+        );
+      }
+
+      /**
+       * 接一台服务器。表单先在本地拦三种一定会被 422 的填法（名字/命令为空、环境变量行读不了、
+       * 超时越界），其余交给服务端的启动前检查——**它不执行任何服务器代码**，只做字符串判定、
+       * PATH 查找和一次 access()。被拒时按稳定错误码出人话（不解析服务端的英文诊断）。
+       */
+      function submitMcpAdd(): void {
+        const add = ctx.client.addMcpServer;
+        if (!add) {
+          mcpForm = { ...mcpForm, errorText: spotlightViewsT(ctx.locale, "mcpUnsupported") };
+          renderAll();
+          return;
+        }
+        const serverName = mcpForm.serverName.trim();
+        const command = mcpForm.command.trim();
+        if (!serverName || !command) {
+          mcpForm = { ...mcpForm, errorText: spotlightViewsT(ctx.locale, "mcpFillNameAndCommand") };
+          renderAll();
+          return;
+        }
+        const env = parseMcpEnv(mcpForm.envText);
+        if (!env.ok) {
+          mcpForm = {
+            ...mcpForm,
+            errorText: spotlightViewsT(ctx.locale, "mcpEnvLineInvalid").replace("{line}", env.badLine)
+          };
+          renderAll();
+          return;
+        }
+        const timeout = parseMcpTimeoutMs(mcpForm.timeoutText);
+        if (timeout === undefined) {
+          mcpForm = { ...mcpForm, errorText: spotlightViewsT(ctx.locale, "mcpTimeoutInvalid") };
+          renderAll();
+          return;
+        }
+        const args = parseMcpArgs(mcpForm.argsText);
+        const displayName = mcpForm.displayName.trim();
+        const cwd = mcpForm.cwd.trim();
+        // 请求体是 `.strict()`：多一个字段就是 422，空值一律**不带**这个键而不是发一个空串。
+        const payload: AddMcpServerRequest = {
+          server_name: serverName,
+          command,
+          trust_level: mcpForm.trustLevel,
+          tool_call_timeout_ms: timeout,
+          ...(displayName ? { display_name: displayName } : {}),
+          ...(args.length > 0 ? { args } : {}),
+          ...(Object.keys(env.env).length > 0 ? { env: env.env } : {}),
+          ...(Object.keys(mcpForm.secretRefs).length > 0 ? { secret_refs: { ...mcpForm.secretRefs } } : {}),
+          ...(cwd ? { cwd } : {})
+        };
+        mcpForm = { ...mcpForm, busy: true, errorText: undefined };
+        mcpAddOutcome = undefined;
+        mcpErrorText = undefined;
+        renderAll();
+        void add
+          .call(ctx.client, payload)
+          .then((result) => {
+            if (disposed) return;
+            mcpServers = [...(mcpServers ?? []).filter((entry) => entry.id !== result.server.id), result.server];
+            if (result.connection) {
+              mcpConnections = { ...mcpConnections, [result.server.id]: result.connection };
+            }
+            mcpRiskTokens = { ...mcpRiskTokens, [result.server.id]: result.risk_tokens };
+            mcpAddOutcome = {
+              kind: "added",
+              server: result.server,
+              connection: result.connection,
+              riskTokens: result.risk_tokens
+            };
+            // 接好了就把表单清空——留着上一台的命令，下一次「添加」很容易变成一次误提交。
+            mcpForm = emptyMcpFormState();
+            ctx.toast(
+              spotlightViewsT(ctx.locale, result.server.status === "connected" ? "mcpAdded" : "mcpAddedButNotConnected"),
+              result.server.status === "connected" ? "ok" : "info"
+            );
+            renderAll();
+          })
+          .catch((error: unknown) => {
+            if (disposed) return;
+            mcpForm = { ...mcpForm, busy: false };
+            mcpAddOutcome = { kind: "refused", code: mcpErrorCodeOf(error) };
+            ctx.toast(spotlightViewsT(ctx.locale, "mcpNotAdded"), "error");
+            renderAll();
+          });
+      }
+
+      /** 加一条引用式密钥。两边都只是**名字**——值在服务端上，这一层结构性拿不到。 */
+      function addMcpSecretRef(): void {
+        const childKey = mcpForm.secretRefChildKey.trim();
+        const envVar = mcpForm.secretRefEnvVar.trim();
+        if (!childKey || !envVar) {
+          mcpForm = { ...mcpForm, errorText: spotlightViewsT(ctx.locale, "mcpSecretRefIncomplete") };
+          renderAll();
+          return;
+        }
+        mcpForm = {
+          ...mcpForm,
+          secretRefs: { ...mcpForm.secretRefs, [childKey]: envVar },
+          secretRefChildKey: "",
+          errorText: undefined
+        };
+        renderAll();
+      }
+
+      // 两段式确认的共用武装动作：武装 5 秒后自动解除（同插件/策略/设备三处的既有节奏）。
+      function armMcp(key: string): void {
+        clearMcpArm();
+        mcpArmedKey = key;
+        mcpErrorText = undefined;
+        mcpArmTimer = setTimeout(() => {
+          mcpArmTimer = undefined;
+          if (disposed) return;
+          mcpArmedKey = undefined;
+          renderAll();
+        }, 5000);
+        renderAll();
+      }
+
+      /** 从一个 `data-set-mcp-*` 按钮的 id 找回那一行；忙着的时候一概不接新动作。 */
+      function mcpServerFor(id: string | undefined): McpServerVM | undefined {
+        if (!id || mcpBusyId) {
+          return undefined;
+        }
+        return (mcpServers ?? []).find((server) => server.id === id);
+      }
+
       // R23 F-03：撤销他机（非本机）——POST /api/client-devices/:id/revoke。乐观本地替换（同 revokePolicy
       // 的既有取舍），不整表重拉。revokeClientDevice 是必填方法（不是可选面），不需要 MRG-25 式降级判断。
       function revokeDevice(deviceId: string): void {
@@ -2078,6 +2494,101 @@ export function createSettingsView(): SpotlightCapabilityView {
             renderAll();
           }, 5000);
           renderAll();
+          return;
+        }
+        // —— R26 M7：MCP 服务器区的动作 —— //
+        if (target.closest("[data-set-mcp-retry]")) {
+          mcpFailed = false;
+          void loadMcpServers().then(() => {
+            if (disposed) return;
+            renderAll();
+          });
+          return;
+        }
+        if (target.closest("[data-set-mcp-add]")) {
+          if (!mcpForm.busy) {
+            submitMcpAdd();
+          }
+          return;
+        }
+        if (target.closest("[data-set-mcp-secret-add]")) {
+          if (!mcpForm.busy) {
+            addMcpSecretRef();
+          }
+          return;
+        }
+        const mcpSecretDrop = target.closest<HTMLElement>("[data-set-mcp-secret-drop]");
+        if (mcpSecretDrop?.dataset.setMcpSecretDrop) {
+          const key = mcpSecretDrop.dataset.setMcpSecretDrop;
+          const secretRefs = { ...mcpForm.secretRefs };
+          delete secretRefs[key];
+          mcpForm = { ...mcpForm, secretRefs, errorText: undefined };
+          renderAll();
+          return;
+        }
+        const mcpFormTrust = target.closest<HTMLElement>("[data-set-mcp-form-trust]");
+        if (mcpFormTrust?.dataset.setMcpFormTrust) {
+          mcpForm = { ...mcpForm, trustLevel: mcpFormTrust.dataset.setMcpFormTrust as McpServerTrustLevel };
+          renderAll();
+          return;
+        }
+        // 测试连接不改任何配置，单段即走。
+        const mcpTestBtn = target.closest<HTMLElement>("[data-set-mcp-test]");
+        if (mcpTestBtn?.dataset.setMcpTest) {
+          const server = mcpServerFor(mcpTestBtn.dataset.setMcpTest);
+          if (server) {
+            clearMcpArm();
+            testMcpConnection(server);
+          }
+          return;
+        }
+        // 信任级别：放宽（→ 只读断言）要两段式确认，收紧（→ 最高风险）立即生效。
+        const mcpTrustBtn = target.closest<HTMLElement>("[data-set-mcp-trust]");
+        if (mcpTrustBtn?.dataset.setMcpTrust) {
+          const id = mcpTrustBtn.dataset.setMcpTrust;
+          const server = mcpServerFor(id);
+          if (!server) {
+            return;
+          }
+          if (server.trust_level === "read_only") {
+            clearMcpArm();
+            setMcpTrust(server);
+            return;
+          }
+          if (decidePolicyRevokeConfirmation(mcpArmedKey, `trust:${id}`).kind === "execute") {
+            setMcpTrust(server);
+            return;
+          }
+          armMcp(`trust:${id}`);
+          return;
+        }
+        // 启停/移除都是两段式确认（复用 decidePolicyRevokeConfirmation 这个纯 armed/clicked 判定）。
+        const mcpToggleBtn = target.closest<HTMLElement>("[data-set-mcp-toggle]");
+        if (mcpToggleBtn?.dataset.setMcpToggle) {
+          const id = mcpToggleBtn.dataset.setMcpToggle;
+          const server = mcpServerFor(id);
+          if (!server) {
+            return;
+          }
+          if (decidePolicyRevokeConfirmation(mcpArmedKey, `toggle:${id}`).kind === "execute") {
+            toggleMcpServer(server);
+            return;
+          }
+          armMcp(`toggle:${id}`);
+          return;
+        }
+        const mcpRemoveBtn = target.closest<HTMLElement>("[data-set-mcp-remove]");
+        if (mcpRemoveBtn?.dataset.setMcpRemove) {
+          const id = mcpRemoveBtn.dataset.setMcpRemove;
+          const server = mcpServerFor(id);
+          if (!server) {
+            return;
+          }
+          if (decidePolicyRevokeConfirmation(mcpArmedKey, `remove:${id}`).kind === "execute") {
+            removeMcpServer(server);
+            return;
+          }
+          armMcp(`remove:${id}`);
           return;
         }
         // R23 F-03：设备列表重试。
@@ -2355,6 +2866,28 @@ export function createSettingsView(): SpotlightCapabilityView {
         const pluginPathInput = target.closest<HTMLInputElement>("[data-set-plugin-install-path]");
         if (pluginPathInput) {
           pluginInstallPath = pluginPathInput.value;
+          return;
+        }
+        // R26 M7：MCP 添加表单的自由文本字段——同款 focusout 收值（不重渲，submitMcpAdd 提交时才读）。
+        // 密钥引用的下拉也走 focusout：点「加一条」时浏览器先派 focusout 再派 click（同上面插件路径
+        // 那条依赖的顺序），所以按钮读到的一定是刚选中的那个值。
+        for (const field of MCP_FORM_TEXT_FIELDS) {
+          const input = target.closest<HTMLInputElement>(field.selector);
+          if (input) {
+            mcpForm = field.assign(mcpForm, input.value);
+            if (field.rerender) {
+              renderAll();
+            }
+            return;
+          }
+        }
+        // 每行的调用超时：离开字段即保存（值没变就什么都不做，见 setMcpTimeout）。
+        const mcpTimeoutInput = target.closest<HTMLInputElement>("[data-set-mcp-timeout]");
+        if (mcpTimeoutInput?.dataset.setMcpTimeout) {
+          const server = mcpServerFor(mcpTimeoutInput.dataset.setMcpTimeout);
+          if (server) {
+            setMcpTimeout(server, mcpTimeoutInput.value);
+          }
           return;
         }
         if (!profile) return;
