@@ -50,6 +50,27 @@ export type UpdateMcpServerConnectionResultInput = {
   now?: Date;
 };
 
+/**
+ * R26 M3（治理端点）新增：改一台已登记服务器的配置。
+ *
+ * 刻意**不含** `serverName` 与 `command`：改名会让模型可见工具名整体换一批（等于换了一台服务器，
+ * 而历史审计里的调用记录还挂在旧名下）；改命令等于把这条记录指向另一个可执行文件——两者都该走
+ * 「移除再添加」，好让静态体检重新完整跑一遍。也不含 `enabled`/`status`：那两列归 `setEnabled` 与
+ * `updateConnectionResult`，一个入口一件事。
+ *
+ * 每个字段都是「传了才改」（`undefined` = 不动这一列），因为 `env` 与 `secretRefs` 是整份替换语义，
+ * 分不清「没传」与「传了空对象」会把一次只改超时的 PATCH 变成一次把环境变量清空的事故。
+ */
+export type UpdateMcpServerSettingsInput = {
+  workspaceId: string;
+  id: string;
+  trustLevel?: McpServerRow["trustLevel"];
+  toolCallTimeoutMs?: number;
+  env?: Record<string, string>;
+  secretRefs?: Record<string, string>;
+  now?: Date;
+};
+
 export type McpServerRepository = {
   /** 列表：一个工作区里的全部 MCP 服务器，最早登记的在前（列表顺序稳定，不随启停/重连跳动）。 */
   listForWorkspace: (workspaceId: string) => Promise<McpServerRow[]>;
@@ -64,6 +85,8 @@ export type McpServerRepository = {
   create: (input: CreateMcpServerInput) => Promise<McpServerRow>;
   /** 试连接/重连完成后回填 status/tool_count/tools_json/last_error。 */
   updateConnectionResult: (input: UpdateMcpServerConnectionResultInput) => Promise<McpServerRow | null>;
+  /** 治理面改配置：信任级别 / 单次调用超时 / 非密环境变量 / 引用式密钥。传了才改。 */
+  updateSettings: (input: UpdateMcpServerSettingsInput) => Promise<McpServerRow | null>;
   /**
    * 启停。enabled=false 时 status 强制翻 'disabled'（一台停用的服务器不该继续声称自己连着）。
    * 重新启用时 status 落回 'connect_failed'——MCP 没有 plugins 那个中性的 'installed' 态，
@@ -151,6 +174,22 @@ export function createMcpServerRepository(db: WorkHubDb): McpServerRepository {
           toolCount: input.toolCount,
           toolsJson: input.tools ?? null,
           lastError: input.lastError ?? null,
+          updatedAt: input.now ?? new Date()
+        })
+        .where(and(eq(mcpServers.workspaceId, input.workspaceId), eq(mcpServers.id, input.id)))
+        .returning();
+      return rows[0] ?? null;
+    },
+    async updateSettings(input) {
+      const rows = await db
+        .update(mcpServers)
+        .set({
+          // 只有真的传了才进 SET 子句——`undefined` 在 drizzle 的 set() 里就是「不动这一列」，
+          // 这里显式写出来是为了让「没传 ≠ 清空」这条语义在读代码时一眼可见。
+          ...(input.trustLevel === undefined ? {} : { trustLevel: input.trustLevel }),
+          ...(input.toolCallTimeoutMs === undefined ? {} : { toolCallTimeoutMs: input.toolCallTimeoutMs }),
+          ...(input.env === undefined ? {} : { envJson: input.env }),
+          ...(input.secretRefs === undefined ? {} : { secretRefsJson: input.secretRefs }),
           updatedAt: input.now ?? new Date()
         })
         .where(and(eq(mcpServers.workspaceId, input.workspaceId), eq(mcpServers.id, input.id)))

@@ -189,3 +189,45 @@ test("remove is workspace-fenced and reports whether a row was actually deleted"
   assert.ok(queryReferences(remove?.where, mcpServers.workspaceId));
   assert.equal(remove?.returningCalled, true);
 });
+
+// —— R26 M3（治理端点）：改配置 —— //
+
+test("updateSettings only writes the columns the caller actually passed", async () => {
+  const { db, queries } = createQueryRecorder([[serverRow({ trustLevel: "read_only" })]]);
+  const row = await createMcpServerRepository(db).updateSettings({
+    workspaceId,
+    id: "22222222-2222-4222-8222-222222222222",
+    trustLevel: "read_only",
+    now: at
+  });
+  assert.equal(row?.trustLevel, "read_only");
+  const update = queries.find((query) => query.operation === "update");
+  const setValue = update?.setValue as Record<string, unknown>;
+  assert.equal(setValue["trustLevel"], "read_only");
+  // 一次只改信任级别的 PATCH 绝不能顺手把环境变量与密钥引用清空——`env`/`secretRefs` 是整份替换语义，
+  // 分不清「没传」与「传了空对象」就会把一次改超时变成一次事故。
+  assert.equal("envJson" in setValue, false, "an untouched env must not appear in the SET clause");
+  assert.equal("secretRefsJson" in setValue, false, "untouched secret references must not appear in the SET clause");
+  assert.ok(queryReferences(update?.where, mcpServers.workspaceId), "settings edits must be workspace-fenced");
+  assert.ok(queryParamValues(update?.where).includes(workspaceId));
+});
+
+test("updateSettings can replace env and secret references wholesale, including with an empty map", async () => {
+  const { db, queries } = createQueryRecorder([[serverRow({ envJson: {}, secretRefsJson: {} })]]);
+  await createMcpServerRepository(db).updateSettings({
+    workspaceId,
+    id: "22222222-2222-4222-8222-222222222222",
+    env: {},
+    secretRefs: {},
+    toolCallTimeoutMs: 30000,
+    now: at
+  });
+  const setValue = queries.find((query) => query.operation === "update")?.setValue as Record<string, unknown>;
+  // 传了空对象就是「清空」——与「没传」是两件事，两者都要能表达。
+  assert.deepEqual(setValue["envJson"], {});
+  assert.deepEqual(setValue["secretRefsJson"], {});
+  assert.equal(setValue["toolCallTimeoutMs"], 30000);
+  // 启停与连接结果各有自己的入口，改配置这条路不碰它们。
+  assert.equal("enabled" in setValue, false);
+  assert.equal("status" in setValue, false);
+});
