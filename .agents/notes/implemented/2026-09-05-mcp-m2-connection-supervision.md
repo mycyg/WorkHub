@@ -97,6 +97,11 @@ MCP 的 stdio 面就是换行分隔的 JSON-RPC 2.0。仓库里已经有一套�
 **空闲回收不是失败**：只关子进程，DB 里的状态不动，内存里的工具清单留着（`status()` 仍如实报
 `connected` + 工具数 + `live: false`），下次用到重新握手。
 
+**清单刷新是次要路径，失败不往上抛。** `ensureConnected()` 同时是「调一个工具之前」的必经之路：
+`list_changed` 之后的那次刷新若失败（服务器回一条 JSON-RPC error），留着上一份清单继续用并记
+`mcp_tools_refresh_failed`。让一次刷新失败把一次本来能成的调用变成错误，是拿次要路径的故障去伤
+主路径。
+
 **审计** `mcp.tool.called`，形状对齐 `plugin.tool.called`：`actorKind` 有执行上下文时记 `ai`、
 没有时记 `system`；`entityType: "mcp_tool_invocation"`，`entityId: "<服务器名>:<原始工具名>"`；
 detail 带 `server_name` / `tool_name`（原始名）/ `tool_id`（公开名）/ `ok` / `duration_ms` /
@@ -149,7 +154,7 @@ detail 带 `server_name` / `tool_name`（原始名）/ `tool_id`（公开名）/
 ## Consequences
 
 - **协议面是自维护的技术债**，替换点唯一（`packages/mcp-client/src/stdio/session.ts`）。
-  换成官方 SDK 时，`apps/api` 侧的监督逻辑与全部 29 条监督测试都不用动——两层的边界就是为此划的。
+  换成官方 SDK 时，`apps/api` 侧的监督逻辑与全部 30 条监督测试都不用动——两层的边界就是为此划的。
 - **协议版本清单是 `MCP_SUPPORTED_PROTOCOL_VERSIONS`（`2025-06-18` / `2025-03-26` / `2024-11-05`）。**
   一台跑更新协议版本的服务器现在会被拒绝连接并报 `protocol_version_unsupported`；这是有意的
   fail-closed。放宽要改那一个常量并过一条 Note。
