@@ -22,6 +22,7 @@ import type {
 
 import { getDefaultProviderRegistry } from "./provider-registry.js";
 import { checkEntryLlmBudget, entryLlmBudgetExceededMessage } from "./entry-llm-budget.js";
+import { serviceT } from "./locales.js";
 import { createMetaPlanner, type MetaPlanner, type MetaPlannerDraftItem } from "./meta-planner.js";
 import { getDefaultObjectiveService, type ObjectiveService } from "./objectives.js";
 import {
@@ -203,7 +204,7 @@ function taskPlanManifest(input: {
         id: "structure",
         label: "结构校验",
         status: "passed",
-        detail: "每个子任务都有验收标准，依赖无环，预算份额合计 100。"
+        detail: serviceT("zh-CN", "planStructureCheck")
       },
       {
         id: "review",

@@ -26,6 +26,7 @@ import {
 import { localizedBudgetActionLabel, localizedBudgetUsageScopeLabel } from "../budget-labels.js";
 import { getDefaultStructuredLogger } from "../logging.js";
 import type { AuthActor } from "../middleware/auth.js";
+import { serviceTf } from "./locales.js";
 import { createNotificationService, type NotificationService } from "./notifications.js";
 import { getDefaultAgentRunQueue, type AgentRunQueue } from "../workers/agent-runner.js";
 import { getDefaultTaskDispatcher, type TaskDispatcher } from "./task-dispatcher.js";
@@ -411,12 +412,17 @@ function budgetUsageReason(
   const periodLabel = period && !localizedScope.periodIncluded ? budgetPeriodLabel(locale, period) : "";
   const label = [scopeLabel, periodLabel].filter(Boolean).join(locale === "zh-CN" ? "（" : " ");
   const suffix = scopeLabel && periodLabel && locale === "zh-CN" ? "）" : "";
+  const usedPct = maxTokens > 0 ? Math.round((totalTokens / maxTokens) * 100) : 0;
+  const line = serviceTf(locale, "budgetUsageLine", {
+    pct: usedPct,
+    used: formatBudgetCny(usedCost),
+    max: formatBudgetCny(maxCost),
+    left: formatBudgetCny(remainingCost)
+  });
   if (locale === "en-US") {
-    const prefix = label ? `${label}: ` : "";
-    return `${prefix}used ${totalTokens}/${maxTokens} tokens, cost ${formatBudgetCny(usedCost)}/${formatBudgetCny(maxCost)}, remaining ${remainingTokens} tokens / ${formatBudgetCny(remainingCost)}.`;
+    return label ? `${label}: ${line}` : line;
   }
-  const prefix = scopeLabel ? `${label}${suffix}：` : "";
-  return `${prefix}已用 ${totalTokens}/${maxTokens} 令牌，费用 ${formatBudgetCny(usedCost)}/${formatBudgetCny(maxCost)}，剩余 ${remainingTokens} 令牌 / ${formatBudgetCny(remainingCost)}。`;
+  return scopeLabel ? `${label}${suffix}：${line}` : line;
 }
 
 function budgetPeriodLabel(locale: WorkHubLocale, period: "run" | "day" | "month") {

@@ -221,8 +221,11 @@ test("R9.7 budget exhaustion rows render as budget decision cards", () => {
   assert.equal(item.source_ref.entity_type, "budget_notice");
   assert.equal(item.title, "《竞品价格调研》预算需要处理");
   assert.equal(item.summary_text.includes("目标预算"), true);
-  assert.equal(item.reason_text?.includes("1001/1000 令牌"), true);
-  assert.equal(item.reason_text?.includes("¥51/¥50"), true);
+  // A2-81：预算卡说钱与百分比，不说 token 数——「令牌」在本产品里已被邀请码占用（一词二义）。
+  assert.equal(item.reason_text?.includes("已用掉 100% 的预算"), true);
+  assert.equal(item.reason_text?.includes("¥51 / ¥50"), true);
+  assert.equal(item.reason_text?.includes("令牌"), false);
+  assert.equal(item.reason_text?.includes("token"), false);
   // R9.7 review: the old assertion made every budget option POST to resolve the card, but
   // `add_budget` does not itself update a budget policy. Only applied terminal choices may resolve.
   assert.deepEqual(item.actions.map((action) => [action.id, action.label, action.method, action.href]), [

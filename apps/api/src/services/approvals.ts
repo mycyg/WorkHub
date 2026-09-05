@@ -60,6 +60,7 @@ import {
   createNotificationService,
   type NotificationService
 } from "./notifications.js";
+import { serviceT } from "./locales.js";
 import { getDefaultProposalService, type ProposalService, type StoredProposal } from "./proposals.js";
 
 // @mentions：从评论正文里抽出 @<昵称> token。昵称字符集与 users.nickname 一致（Unicode 字母/数字/下划线，
@@ -929,11 +930,38 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       } catch (error) {
         getDefaultStructuredLogger().warn("approvals_decided_list_failed", { error });
       }
+      // A2-80：别人处理的条目此前署名是用户 id 前 8 位。逐个查昵称（最近 20 条，取数失败静默降级）；
+      // 查不到就说「其他成员」，绝不把 id 当人名渲给用户。
+      const decidedByNicknames = new Map<string, string>();
+      const otherDeciderIds = [...new Set(
+        decidedRows
+          .map((row) => row.decidedByUserId)
+          .filter((id): id is string => Boolean(id) && id !== user.id)
+      )];
+      if (otherDeciderIds.length > 0 && deps.users) {
+        const usersRepo = deps.users;
+        await Promise.all(otherDeciderIds.map(async (id) => {
+          try {
+            const found = await usersRepo.findActiveById(id);
+            if (found?.nickname) {
+              decidedByNicknames.set(id, found.nickname);
+            }
+          } catch (error) {
+            getDefaultStructuredLogger().warn("approvals_decided_nickname_failed", { error });
+          }
+        }));
+      }
       const decided = decidedRows.map((row) => ({
         id: row.id,
         title: toApprovalAttentionItem(toRecord(row)).title,
         decision: row.status,
-        ...(row.decidedByUserId ? { decided_by_label: row.decidedByUserId === user.id ? "我" : row.decidedByUserId.slice(0, 8) } : {}),
+        ...(row.decidedByUserId
+          ? {
+            decided_by_label: row.decidedByUserId === user.id
+              ? "我"
+              : decidedByNicknames.get(row.decidedByUserId) ?? serviceT("zh-CN", "anotherMember")
+          }
+          : {}),
         ...(row.decisionReasonMd ? { reason_md: row.decisionReasonMd.slice(0, 300) } : {}),
         decided_at: row.updatedAt.toISOString()
       }));

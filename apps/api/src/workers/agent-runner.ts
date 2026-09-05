@@ -90,6 +90,7 @@ import { getDefaultPushBus, type PushBus } from "../broker/index.js";
 import { getDefaultStructuredLogger } from "../logging.js";
 import { getDefaultCostLedgerStore } from "../services/cost-ledger-store.js";
 import { getDefaultBudgetPolicyStore } from "../services/cost-policy-store.js";
+import { serviceT } from "../services/locales.js";
 import { getDefaultProviderRegistry } from "../services/provider-registry.js";
 import { createSnapshotService } from "@workhub/audit";
 import { createAgentRunSnapshotHook } from "../services/agent-run-snapshots.js";
@@ -1142,8 +1143,8 @@ export function createInMemoryAgentRunQueue(options: {
         agentRunId: run.run_id,
         trigger: "doom_loop",
         reasonMd: run.task_plan_id && run.task_plan_item_id
-          ? "子任务心跳超时且多次恢复失败，已停止自动重试，请在决策收件箱选择重试、转人工或取消。"
-          : "AI 执行心跳超时且多次恢复失败，已停止自动重试，请在决策收件箱选择重试、转人工或取消。",
+          ? serviceT("zh-CN", "subtaskStuck")
+          : serviceT("zh-CN", "runStuck"),
         handoffJson: {
           source: "agent_run_recovery",
           ...(run.task_plan_id ? { task_plan_id: run.task_plan_id } : {}),
@@ -1513,7 +1514,7 @@ export function createInMemoryAgentRunQueue(options: {
         proposalId: proposal.id,
         actor: aiActor,
         decision: "approve",
-        reasonMd: "全托管模式（第 5 档）：AI 复核通过，按你的授权自动采纳。"
+        reasonMd: serviceT("zh-CN", "fullAutonomyAdopted")
       });
       await proposalSink.merge({ proposalId: proposal.id, actor: aiActor });
       return true;
@@ -2309,17 +2310,17 @@ export function createInMemoryAgentRunQueue(options: {
                 scopes: reserveScopes
               });
             } catch (error) {
-              await failUnstartedRun(run, "AI 预算预留服务暂时不可用，本次未启动。");
+              await failUnstartedRun(run, serviceT("zh-CN", "budgetUncheckable"));
               getDefaultStructuredLogger().warn("agent_run_budget_reserve_failed", { runId: run.run_id, error });
               throw new AgentRunnerError(
                 503,
                 "budget_reservation_failed",
-                "AI 预算预留服务暂时不可用，请稍后重试。",
+                serviceT("zh-CN", "budgetUncheckable"),
                 { run_id: run.run_id }
               );
             }
             if (!reserved.ok) {
-              await failUnstartedRun(run, "AI 预算已被并发在飞执行占满，本次未启动。");
+              await failUnstartedRun(run, serviceT("zh-CN", "budgetFullyReserved"));
               const reservationDecision = budgetDecisionFromReservationDenial(decision, reserved.limitingScope);
               await emitBudgetNotice(input, reservationDecision);
               throw new AgentRunnerError(402, "budget_exhausted", reservationDecision.notice?.message ?? "AI 预算已经用完，先暂停新的自动执行。", {
@@ -2454,7 +2455,7 @@ export function createInMemoryAgentRunQueue(options: {
           await emitRunStatusEvent(run, {
             kind: "requeued",
             status: "queued",
-            previewText: "AI 执行租约已恢复，正在重新排队。",
+            previewText: serviceT("zh-CN", "runRecoveredRequeued"),
             cuuState: "thinking"
           });
         } else if (run.status === "failed") {
