@@ -10,6 +10,7 @@ import {
 import {
   createQueryRecorder,
   queryParamValues,
+  queryRawStrings,
   queryReferences,
   type RecordedQuery
 } from "./test-query-recorder.js";
