@@ -4,3 +4,4 @@ export * from "./seatbelt.js";
 export * from "./registry.js";
 export * from "./file-tools.js";
 export * from "./skills.js";
+export * from "./model-facing-text.js";
