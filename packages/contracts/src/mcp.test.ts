@@ -2,13 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  addMcpServerRequestSchema,
   mcpPrecheckCheckIdSchema,
   mcpPrecheckReportSchema,
+  mcpServerActionResultSchema,
+  mcpServerListVmSchema,
   mcpServerStatusSchema,
   mcpServerSummaryVmSchema,
   mcpServerTrustLevelSchema,
   mcpServerVmSchema,
-  mcpTransportSchema
+  mcpTransportSchema,
+  updateMcpServerRequestSchema
 } from "./index.js";
 
 // R26 M0（MCP 客户端接入·阶段 0）：治理契约。这些断言钉的是治理红线，不是字段拼写。
@@ -154,6 +158,107 @@ test("the web-facing summary row never carries command, args, env, secret_refs o
       trust_level: "external_effect",
       tool_count: 2,
       precheck_verdict: "sure-why-not"
+    }).success,
+    false
+  );
+});
+
+// —— R26 M3（治理服务与端点）：请求与响应契约 —— //
+
+test("M3 add request is strict — an unknown field is a 422, never a silently dropped setting", () => {
+  const accepted = addMcpServerRequestSchema.parse({
+    server_name: "gh",
+    command: "/usr/local/bin/mcp-server-github",
+    args: ["--stdio"],
+    secret_refs: { GITHUB_TOKEN: "WORKHUB_MCP_SECRET_GITHUB" }
+  });
+  assert.equal(accepted.server_name, "gh");
+  // transport / url / status 全是服务端事实，不是调用方能提的——多一个字段就拒。
+  for (const smuggled of [
+    { transport: "http" },
+    { url: "https://example.invalid/mcp" },
+    { status: "connected" },
+    { tool_count: 99 }
+  ]) {
+    assert.equal(
+      addMcpServerRequestSchema.safeParse({
+        server_name: "gh",
+        command: "/usr/local/bin/mcp-server-github",
+        ...smuggled
+      }).success,
+      false,
+      `${JSON.stringify(smuggled)} must not be accepted`
+    );
+  }
+});
+
+test("M3 add request keeps the name shape check in the health report, not in the schema", () => {
+  // 形状不合的名字要走到体检那一条 `server_name` 检查上去，才能拿到 mcp_server_name_invalid
+  // 这个**专属**的码；在契约层挡掉只会得到一个通用 validation_error，UI 说不出为什么。
+  assert.equal(addMcpServerRequestSchema.safeParse({ server_name: "gh search", command: "x" }).success, true);
+  assert.equal(addMcpServerRequestSchema.safeParse({ server_name: "a".repeat(33), command: "x" }).success, true);
+  // 但空名字与超长串仍然在契约层就拒——那不是「名字不合规」，那是请求本身不成立。
+  assert.equal(addMcpServerRequestSchema.safeParse({ server_name: "", command: "x" }).success, false);
+  assert.equal(addMcpServerRequestSchema.safeParse({ server_name: "a".repeat(201), command: "x" }).success, false);
+});
+
+test("M3 update request refuses to rename a server or repoint its command", () => {
+  assert.equal(updateMcpServerRequestSchema.parse({ trust_level: "read_only" }).trust_level, "read_only");
+  // 改名 = 模型可见工具名整体换一批（历史审计还挂在旧名下）；改命令 = 指向另一个可执行文件。
+  // 两者都要走「移除再添加」，好让体检与审计重新跑一遍完整流程。
+  for (const refused of [{ server_name: "gh2" }, { command: "/usr/bin/other" }, { enabled: false }]) {
+    assert.equal(updateMcpServerRequestSchema.safeParse(refused).success, false, JSON.stringify(refused));
+  }
+});
+
+test("M3 empty update is refused — a silent 200 would read as 'saved'", () => {
+  assert.equal(updateMcpServerRequestSchema.safeParse({}).success, false);
+});
+
+test("M3 update keeps the same timeout bounds as the column check", () => {
+  assert.equal(updateMcpServerRequestSchema.safeParse({ tool_call_timeout_ms: 999 }).success, false);
+  assert.equal(updateMcpServerRequestSchema.safeParse({ tool_call_timeout_ms: 300001 }).success, false);
+  assert.equal(updateMcpServerRequestSchema.parse({ tool_call_timeout_ms: 1000 }).tool_call_timeout_ms, 1000);
+});
+
+test("M3 action result keeps 'this row says' and 'this process sees' as two separate facts", () => {
+  const result = mcpServerActionResultSchema.parse({
+    server: serverVm(),
+    // 空闲回收把子进程收掉之后 live=false 而 status 仍是 connected——这不是矛盾，
+    // 下一次用到它会重新握手。两件事挤进一个字段，设置页就只能说错话。
+    connection: { live: false, tool_count: 2, tool_ids: ["mcp__gh__create_pull_request"] },
+    risk_tokens: []
+  });
+  assert.equal(result.server.status, "connected");
+  assert.equal(result.connection?.live, false);
+  // 停用的服务器本进程不给它连，故连接事实可以整体缺席（不是 live:false 那种「连过但没活着」）。
+  assert.equal(mcpServerActionResultSchema.parse({ server: serverVm(), risk_tokens: [] }).connection, undefined);
+});
+
+test("M3 action result carries the server name's high-risk words so the form can say it up front", () => {
+  const result = mcpServerActionResultSchema.parse({
+    server: serverVm({ server_name: "finance" }),
+    risk_tokens: ["finance"]
+  });
+  // 一台叫 finance 的服务器，它的每个工具都会被归到财务类，每次调用都停下来转人。
+  assert.deepEqual(result.risk_tokens, ["finance"]);
+});
+
+test("M3 list response exposes secret reference names only — never their values", () => {
+  const list = mcpServerListVmSchema.parse({
+    servers: [serverVm()],
+    connections: { "22222222-2222-4222-8222-222222222222": { live: true, tool_count: 2 } },
+    secret_ref_env_prefix: "WORKHUB_MCP_SECRET_",
+    available_secret_refs: ["WORKHUB_MCP_SECRET_GITHUB"]
+  });
+  assert.deepEqual(list.available_secret_refs, ["WORKHUB_MCP_SECRET_GITHUB"]);
+  // 值的位置在契约里根本不存在：这一列是「服务端有哪些变量名可以引用」，不是变量的内容。
+  assert.equal(
+    mcpServerListVmSchema.safeParse({
+      servers: [],
+      connections: {},
+      secret_ref_env_prefix: "WORKHUB_MCP_SECRET_",
+      available_secret_refs: [{ name: "WORKHUB_MCP_SECRET_GITHUB", value: "ghp_live" }]
     }).success,
     false
   );

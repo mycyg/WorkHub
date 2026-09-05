@@ -128,3 +128,108 @@ export const mcpServerSummaryVmSchema = z.object({
   precheck_verdict: mcpPrecheckReportSchema.shape.verdict
 });
 export type McpServerSummaryVM = z.infer<typeof mcpServerSummaryVmSchema>;
+
+// —— R26 M3（治理服务与端点）：请求与响应契约 —— //
+//
+// 形状照 `./plugin.js` 的 `installPluginRequestSchema` / `pluginListVmSchema`：请求体一律 `.strict()`
+// （多传字段直接 422，不静默忽略——治理面上「我以为我设置了」比「报错」危险得多），响应一律有自己的
+// VM 而不是把 DB 行直接序列化。
+
+/**
+ * 添加一台服务器。
+ *
+ * `server_name` 这里刻意**只限长不限形**（上限放到 200）：名字的形状判定归静态体检那一条
+ * `server_name` 检查，它会给出 `mcp_server_name_invalid` / `mcp_server_name_taken` 两个**不同**的
+ * 稳定码，两端 UI 据此出人话。若在契约层就用 `^[A-Za-z0-9_-]{1,32}$` 挡掉，用户收到的会是一个
+ * 通用的 `validation_error`，UI 只能说「格式不对」，说不出「名字会进工具名，所以只收这些字符」。
+ */
+export const addMcpServerRequestSchema = z
+  .object({
+    server_name: z.string().min(1).max(200),
+    display_name: z.string().min(1).max(200).optional(),
+    // 裸名或本机绝对路径。相对路径由体检拒绝（相对谁？API 进程的 cwd 是部署细节）。
+    command: z.string().min(1).max(1000),
+    args: z.array(z.string().max(4000)).max(64).optional(),
+    // 只收非密键；命中凭据形状黑名单的键由体检拒绝（`mcp_env_credential_shaped`）。
+    env: z.record(z.string().min(1).max(200), z.string().max(4000)).optional(),
+    // {子进程 env 名: 服务端 env 名}——存指针不是值。
+    secret_refs: z.record(z.string().min(1).max(200), z.string().min(1).max(200)).optional(),
+    cwd: z.string().min(1).max(1000).optional(),
+    tool_call_timeout_ms: z.number().int().min(1000).max(300000).optional(),
+    // 不传按 DB 默认 'external_effect'：新增服务器不假设它安全，必须管理员主动降级。
+    trust_level: mcpServerTrustLevelSchema.optional(),
+    enabled: z.boolean().optional()
+  })
+  .strict();
+export type AddMcpServerRequest = z.infer<typeof addMcpServerRequestSchema>;
+
+/**
+ * 改一台已登记服务器的配置。
+ *
+ * 刻意**不含** `server_name` 与 `command`：改名会让模型可见工具名整体换一批（等于换了一台服务器，
+ * 而历史审计里的调用记录还挂在旧名下）；改命令等于把这条记录指向另一个可执行文件，两者都该走
+ * 「移除再添加」，好让静态体检与审计重新跑一遍完整流程。
+ *
+ * 至少要带一个字段：空 PATCH 是调用方写错了，静默回一个「什么都没改」的 200 会让人以为改成功了。
+ */
+export const updateMcpServerRequestSchema = z
+  .object({
+    trust_level: mcpServerTrustLevelSchema.optional(),
+    tool_call_timeout_ms: z.number().int().min(1000).max(300000).optional(),
+    env: z.record(z.string().min(1).max(200), z.string().max(4000)).optional(),
+    secret_refs: z.record(z.string().min(1).max(200), z.string().min(1).max(200)).optional()
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, { message: "at least one field must be provided" });
+export type UpdateMcpServerRequest = z.infer<typeof updateMcpServerRequestSchema>;
+
+/**
+ * 本进程当下看到的连接事实——与行上的状态刻意分开两个字段。
+ *
+ * 行上的 `status`/`tool_count`/`last_error` 是**上一次连接尝试的结论**（重启 API 之后仍然读得到）；
+ * 这里的 `live` 是「此刻还有没有活着的子进程」。空闲回收把子进程收掉之后 `live=false` 而
+ * `status` 仍是 `connected`，这不是矛盾：下一次用到它会重新握手。把两件事挤进一个字段，
+ * 设置页就只能在「刚回收过」和「连不上」之间二选一地说错话。
+ */
+export const mcpServerConnectionVmSchema = z.object({
+  live: z.boolean(),
+  tool_count: z.number().int().nonnegative(),
+  /** 模型可见的公开工具名（`mcp__<服务器名>__<工具名>`）。行上存的是服务器自报的原始名。 */
+  tool_ids: z.array(z.string().max(64)).optional(),
+  /** 重连预算耗尽的原因；有值表示在下一次「测试连接」之前不再重试这一台。 */
+  blocked_reason: z.string().max(2000).optional(),
+  last_error: z.string().max(2000).optional()
+});
+export type McpServerConnectionVM = z.infer<typeof mcpServerConnectionVmSchema>;
+
+/**
+ * 一次治理动作的回执。五个写动作（添加/启用/停用/修改/测试连接）共用同一个形状——
+ * 它们对调用方的意义是同一件事：「这条记录现在长这样，连接现在是这个样子」。
+ */
+export const mcpServerActionResultSchema = z.object({
+  server: mcpServerVmSchema,
+  // 停用的服务器没有连接快照（本进程不给它连），故可缺席。
+  connection: mcpServerConnectionVmSchema.optional(),
+  /**
+   * 服务器名里会让它的**每一个**工具都被判成高风险、每次调用都停下来转人的词。
+   * 这是设计属性而非故障（管理员给服务器起名等于给它打风险标签），但必须在添加时就说明白，
+   * 否则一台叫 `publish` 的服务器会让所有工具无差别升级，用户只会以为坏了。
+   */
+  risk_tokens: z.array(z.string().max(64))
+});
+export type McpServerActionResult = z.infer<typeof mcpServerActionResultSchema>;
+
+/** 清单响应。管理员/桌面端专用（端点整体是管理员门）。 */
+export const mcpServerListVmSchema = z.object({
+  servers: z.array(mcpServerVmSchema),
+  /** 每条记录对应的连接事实，按 `id` 索引；停用/尚未连过的服务器不在这张表里。 */
+  connections: z.record(z.string(), mcpServerConnectionVmSchema),
+  /** 引用式密钥必须指向的服务端变量前缀——添加表单据此提示该怎么起变量名。 */
+  secret_ref_env_prefix: z.string().min(1).max(80),
+  /**
+   * 这台服务器上当前存在的引用式密钥变量名。**只有名字，没有值**——添加表单据此避免填一个
+   * 还没配的引用（体检会为此出一条 warn，但那时表单已经填完了）。
+   */
+  available_secret_refs: z.array(z.string().max(200))
+});
+export type McpServerListVM = z.infer<typeof mcpServerListVmSchema>;
