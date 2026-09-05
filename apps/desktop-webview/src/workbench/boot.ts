@@ -30,6 +30,7 @@ import {
   createDesktopServerChoiceEffects
 } from "../desktop-connect-screen.js";
 import { resolveDesktopTauriInvoke, takeDesktopPendingDeepLink } from "../desktop-window-controls.js";
+import { scheduleWorkHubLiquidGlassFilterRebuild } from "../liquid-glass-filter.js";
 import { consumePendingWorkbenchDeepLink } from "./pending-deep-link.js";
 import { mountWorkbenchShell, renderWorkbenchDocumentHead, type WorkbenchShellHandle } from "./shell.js";
 import { isWorkbenchWindowControlPlan, parseWorkbenchDeepLinkPlan, parseWorkbenchRoute } from "./route.js";
@@ -306,7 +307,9 @@ async function boot(): Promise<void> {
         storage: window.localStorage,
         invoke: resolveDesktopTauriInvoke()
       }),
-      reload: () => window.location.reload()
+      reload: () => window.location.reload(),
+      // 连接屏用的是主窗那套液态玻璃层，滤镜要在挂载后重建一次，否则工作台窗里这一屏渲不出玻璃。
+      scheduleRebuild: () => scheduleWorkHubLiquidGlassFilterRebuild(document)
     });
     return;
   }

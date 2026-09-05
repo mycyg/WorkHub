@@ -17,7 +17,7 @@ import {
 } from "./desktop-login.js";
 
 // 这个 workspace 的测试运行器没有真实 DOM（node --import tsx --test）——只测纯渲染字符串 + 纯编排逻辑，
-// bindDesktopCredentialGate 的 DOM 接线不在此单测（同 desktop-offline-card 只测 renderXHtml 的取舍）。
+// bindDesktopCredentialGate 的 DOM 接线不在此单测（同 desktop-rebind 只测 renderXHtml 的取舍）。
 
 function fakeReadWriteStorage(initial: Record<string, string> = {}) {
   const values = new Map(Object.entries(initial));
