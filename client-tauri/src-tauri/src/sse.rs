@@ -80,7 +80,8 @@ pub enum ShellConnectionState {
 /// - `server_url`：当前壳层连的服务器地址（三窗文案里都要点名"连不上服务器 <地址>"，不能只说"连不上"）；
 /// - `since_ms`：进入当前 `state` 的 unix 毫秒时间戳——只在 `state` 本身变化时更新，同一状态里 `attempt`
 ///   涨（重连计次）不会推迟它；
-/// - `attempt`：连续失败的重连尝试次数。`state == connected` 时恒为 0；`offline` 之后不再继续累计
+/// - `attempt`：连续失败的重连尝试次数。`state == connected` 时恒为 0；`reconnecting` 时至少为 1
+///   （第一次 Retrying 在失败计数递增之前发出，「第 0 次」不是人话）；`offline` 之后不再继续累计
 ///   （复用跨过 `CONNECTION_OFFLINE_AFTER_ATTEMPTS` 那一刻定住的值——离线文案不展示计次，见
 ///   `next_shell_connection_payload`）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -159,7 +160,11 @@ pub fn next_shell_connection_payload(
         ShellConnectionState::Offline if previous.state == ShellConnectionState::Offline => {
             previous.attempt
         }
-        ShellConnectionState::Offline | ShellConnectionState::Reconnecting => consecutive_failures,
+        // 第一次 Retrying 在失败计数递增之前发出（sse_worker 的 pump-Err 分支），原样透传会渲成
+        // 「重连中（第 0 次）」——重连中至少是第 1 次；offline 时计数早已 >= 阈值，max 不改变它。
+        ShellConnectionState::Offline | ShellConnectionState::Reconnecting => {
+            consecutive_failures.max(1)
+        }
     };
     if state == previous.state && attempt == previous.attempt && server_url == previous.server_url {
         return None;
@@ -673,6 +678,37 @@ mod tests {
         assert_eq!(next.attempt, 0);
         assert_eq!(next.since_ms, 5_000);
         assert_eq!(next.server_url, "http://127.0.0.1:8787");
+    }
+
+    #[test]
+    fn connection_transition_reports_the_first_retry_as_attempt_one_not_zero() {
+        // 第一次 Retrying 在 consecutive_failures 递增之前发出（sse_worker 的 pump-Err 分支），此前原样
+        // 透传成 attempt=0，桌宠渲成「重连中（第 0 次）」。重连中至少是第 1 次。
+        let previous = ShellConnectionChangedPayload {
+            state: ShellConnectionState::Connected,
+            server_url: "http://127.0.0.1:8787".to_string(),
+            since_ms: 1_000,
+            attempt: 0,
+        };
+        let next = next_shell_connection_payload(
+            &previous,
+            ShellSseConnectionState::Retrying,
+            0,
+            "http://127.0.0.1:8787",
+            2_000,
+        )
+        .expect("connected -> retrying is a transition");
+        assert_eq!(next.state, ShellConnectionState::Reconnecting);
+        assert_eq!(next.attempt, 1);
+        // 计数真正涨到 1 时不重复广播（attempt 已经是 1）。
+        assert!(next_shell_connection_payload(
+            &next,
+            ShellSseConnectionState::Retrying,
+            1,
+            "http://127.0.0.1:8787",
+            3_000,
+        )
+        .is_none());
     }
 
     #[test]
