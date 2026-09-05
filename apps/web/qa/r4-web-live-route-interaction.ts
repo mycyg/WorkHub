@@ -386,6 +386,12 @@ const smokeTitle = process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_TITLE"] ?? "R4.5 Web 
 const reportFilename = process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_REPORT_NAME"] ?? "live-route-interaction-report.json";
 // R9.6：Agent Army dashboard 加入 typed Page VM route，desktop/mobile 各一条 live route 步骤。
 const expectedLiveRouteSmokeSteps = 82;
+// UI-03（审查台账-2026-08-19 §14.7）：提议打回此前成功后不刷新，用户看不出打回是否生效；现改为与审批打回
+// 同口径——review 成功即 renderCurrentRoute（browser.ts）。proposal loader 因此从「06a 首次进入 + 第 10 步
+// SSE 刷新」的 2 次变 3 次，多的一次来自第 08 步打回成功后的重渲 → 2+1=3。conflicts 由 proposal 路由 loader
+// 同批取（每次路由渲染各一次），1:1 跟随 → 同为 3。这是一次确定性的动作后重渲，不是 N+1 回归。
+const expectedProposalLoaderCalls = 3;
+const expectedProposalConflictsCalls = 3;
 const qaProjectId = "10000000-0000-4000-8000-000000001600";
 const qaCreatedProjectId = "10000000-0000-4000-8000-000000001691";
 const qaCreatedProjectName = "R4 Live Launch Notes";
@@ -4713,7 +4719,7 @@ async function main() {
         ) &&
         proof.counts.mergeApply === 4,
       r4_13_conflict_api_source_truth:
-        proof.counts.proposalConflicts === 2 &&
+        proof.counts.proposalConflicts === expectedProposalConflictsCalls &&
         steps.some((step) => step.id === "06a-proposal-advanced-review-en-desktop" && step.audit.routeData.proposalConflictCount === "2") &&
         steps.some((step) => step.id === "11-proposal-en-mobile-scrolled-notice-route-component" && step.audit.routeData.proposalConflictCount === "2" && !step.audit.horizontalOverflow),
       r4_13_structured_editor_visual_no_overflow:
@@ -5107,12 +5113,12 @@ async function main() {
           step.audit.routeData.proposalLineEditorSearchValue === "scope" &&
           step.audit.routeData.proposalCustomFieldValue === "R4.19 guarded custom title"
         ) &&
-        proof.counts.proposal === 2 &&
-        proof.counts.proposalConflicts === 2,
+        proof.counts.proposal === expectedProposalLoaderCalls &&
+        proof.counts.proposalConflicts === expectedProposalConflictsCalls,
       r4_19_no_new_fixture_chrome:
         proof.counts.goldPath === 0 &&
-        proof.counts.proposal === 2 &&
-        proof.counts.proposalConflicts === 2 &&
+        proof.counts.proposal === expectedProposalLoaderCalls &&
+        proof.counts.proposalConflicts === expectedProposalConflictsCalls &&
         steps.every((step) => !step.audit.weeklyFixtureLeak),
       r4_20_app_level_sse_runtime:
         steps.some((step) =>
@@ -5226,8 +5232,8 @@ async function main() {
           step.audit.reactRuntimeControlledValue === "R4.19 guarded custom title" &&
           step.audit.routeData.proposalCustomFieldValue === "R4.19 guarded custom title"
         ) &&
-        proof.counts.proposal === 2 &&
-        proof.counts.proposalConflicts === 2,
+        proof.counts.proposal === expectedProposalLoaderCalls &&
+        proof.counts.proposalConflicts === expectedProposalConflictsCalls,
       r4_22_single_dispatcher_regression:
         steps.some((step) =>
           step.id === "06e-proposal-custom-field-empty-fail-closed-en-desktop" &&
@@ -5367,8 +5373,10 @@ async function main() {
         proof.counts.createWorkItem === 1 &&
         proof.counts.knowledgeSearch === 2 &&
         proof.counts.evidenceBinding === 1 &&
-        proof.counts.proposal === 2 &&
-        proof.counts.proposalConflicts === 2 &&
+        // UI-03：提议打回成功后重渲（与审批打回同口径）——proposal/conflicts loader 各多一次，见文件头
+        // expectedProposalLoaderCalls 的推导（2+1=3）。
+        proof.counts.proposal === expectedProposalLoaderCalls &&
+        proof.counts.proposalConflicts === expectedProposalConflictsCalls &&
         proof.counts.approvalRespond === 2 &&
         proof.counts.proposalReview === 2 &&
         proof.counts.proposalMerge === 1 &&
