@@ -136,6 +136,23 @@ function toolKeyUnion(tools: unknown[] | undefined): string[] {
   return [...keys].sort();
 }
 
+/**
+ * 落盘视图：`system` 拆成行数组再落 JSON。
+ *
+ * 为什么不直接落原始字符串：系统提示词是一整条含 \n 的长字符串，落进 JSON 就是**一行** 3000+ 字符，
+ * 而 assertGolden 的 firstDiff 是按行报差异的——真出现回归时，评审看到的是一整行的前后对照，
+ * 等于没有 diff。拆成行之后，改一句话就只有那一行变，diff 一眼能读。
+ *
+ * 这个变换是**无损**的（`join("\n")` 原样还原），所以逐字节比对的强度没有被削弱：
+ * 少一个空格、多一个换行，都会变成行数组里一处可见的差异。
+ */
+function forGolden(request: CapturedRequest) {
+  return {
+    system_lines: request.system === undefined ? undefined : request.system.split("\n"),
+    tools: request.tools
+  };
+}
+
 /** 只保留真正喂进模型的三件套，丢掉引擎各自附带的私有字段。 */
 function modelFacingTools(tools: unknown[] | undefined): unknown[] {
   return (tools ?? []).map((tool) => {
@@ -157,12 +174,12 @@ test("golden：两套引擎发给模型的 system + 工具 schema（各一份，
   assertGolden({
     dir: EXPECTED_DIR,
     name: "agent-run-request.loop.expected.json",
-    actual: toGoldenJson(legacyRequest)
+    actual: toGoldenJson(forGolden(legacyRequest))
   });
   assertGolden({
     dir: EXPECTED_DIR,
     name: "agent-run-request.loop2.expected.json",
-    actual: toGoldenJson(loop2Request)
+    actual: toGoldenJson(forGolden(loop2Request))
   });
 
   // 1) 系统提示词：模型可见文本，不允许有任何引擎差异。
