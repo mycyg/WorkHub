@@ -153,6 +153,9 @@ export function truncateForContext(content: string, maxChars: number, options: {
   return `${headTail(content, maxChars, (omitted) => `…[已截断 ${omitted} 字符，中段省略]`)}\n${spillLocatorHint(spillPath)}`;
 }
 
+/** 剪枝标记的固定前缀，同时用于「这条已经剪过了」的判定。 */
+export const PRUNE_MARKER_PREFIX = "…[中段已剪枝：";
+
 /**
  * 第一段：剪枝标记。中英各一句，两句都要说清三件事——**被剪了**、**不是原始输出缺失**、
  * **原文在哪**。有 spill 定位提示时指向本条末尾的文件，否则只能诚实地说「重跑那一步」。
@@ -176,7 +179,9 @@ export function pruneMarker(omitted: number, hasSpillLocator: boolean): string {
  */
 export function pruneToolResultText(content: string, maxChars: number): string {
   const { body, hint } = splitSpillHint(content);
-  if (body.length <= maxChars) {
+  // 幂等靠标记识别，不靠长度：剪完的文本是「头 + 双语标记 + 尾」，标记本身有几百字符，
+  // 结果长度天然会略微超出预算——按长度判会没完没了地一轮轮再剪。
+  if (body.length <= maxChars || body.includes(PRUNE_MARKER_PREFIX)) {
     return content;
   }
   const pruned = headTail(body, maxChars, (omitted) => pruneMarker(omitted, hint.length > 0));

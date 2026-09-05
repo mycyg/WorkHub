@@ -1,0 +1,31 @@
+{
+  "defaults": {
+    "pruneToolResultChars": 2000,
+    "retainRatio": 0.16
+  },
+  "toolResultCharsBefore": [
+    10549,
+    15,
+    10549,
+    10549
+  ],
+  "toolResultCharsAfter": [
+    2028,
+    15,
+    2028,
+    10549
+  ],
+  "prunedResults": 2,
+  "prunedChars": 17042,
+  "contextChars": 14762,
+  "decisionWideWindow": {
+    "estimatedContextTokens": 7381,
+    "thresholdTokens": 16000,
+    "sufficient": true
+  },
+  "decisionTightWindow": {
+    "estimatedContextTokens": 7381,
+    "thresholdTokens": 1600,
+    "sufficient": false
+  }
+}
