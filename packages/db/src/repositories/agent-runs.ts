@@ -69,6 +69,9 @@ export type AgentRunForPersistence = {
   outcomeReason?: string;
   handoffMd?: string;
   handoffJson?: Record<string, unknown>;
+  // R26 批 B6b：重复动作提醒（agent_run.reminded 的事实部分）。缺席 = 这次运行没被劝过；
+  // 调用方只在非空时带上，因此 undefined 在 UPDATE 里天然被 drizzle 跳过，不会把已存的一列清成 null。
+  remindersJson?: Record<string, unknown>[];
   workdirRef?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -202,6 +205,7 @@ function runInsertValues(run: AgentRunForPersistence): typeof agentRuns.$inferIn
     outcomeReason: run.outcomeReason,
     handoffMd: run.handoffMd,
     handoffJson: run.handoffJson,
+    remindersJson: run.remindersJson,
     workdirRef: run.workdirRef,
     startedAt: runningStartedAt(run),
     finishedAt: terminalFinishedAt(run),
@@ -232,6 +236,7 @@ function runUpdateValues(run: AgentRunForPersistence): Partial<typeof agentRuns.
     outcomeReason: run.outcomeReason,
     handoffMd: run.handoffMd,
     handoffJson: run.handoffJson,
+    remindersJson: run.remindersJson,
     workdirRef: run.workdirRef,
     updatedAt: run.updatedAt
   };

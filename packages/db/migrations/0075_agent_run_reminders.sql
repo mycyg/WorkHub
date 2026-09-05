@@ -1,0 +1,14 @@
+-- R26 批 B6b（重复动作提醒的持久化）：agent_runs 加 reminders_json。
+--
+-- 修的裂缝：B6 已经让「先劝再断」的前两档发出 agent_run.reminded 事件、两端时间线也已经会渲这一行，
+-- 但那条事件只存在于 SSE 流里——运行记录不留、库里不落。于是回放页（读的是库）永远看不到提醒，
+-- worker 重启/换人接手后连正在跑的这次运行都不知道自己被劝过几次。
+--
+-- 存法与同表的 handoff_json / budget_decision_json 一致：一列 jsonb，装一个数组，每个元素是
+-- contracts 的 agentRunReminderFactsSchema（step_no/tier/repeats/shape/tool_id?/tool_ids?）。
+-- 提醒**不**落 agent_steps：它不是模型的一步，占了步号会让「跑了几步」这个数字开始撒谎
+-- （B6 的落地档案里已把这条记成否决项）。
+--
+-- 可空、无默认值：null = 这次运行没被劝过，与空数组同义，读回时一律退回「缺席」。既有行不用回填。
+-- 全 additive：ADD COLUMN IF NOT EXISTS，migration-audit replay 整链重跑安全（同 0070/0071/0074 约定）。
+ALTER TABLE "agent_runs" ADD COLUMN IF NOT EXISTS "reminders_json" jsonb;

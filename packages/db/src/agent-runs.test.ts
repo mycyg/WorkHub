@@ -48,6 +48,7 @@ function runRow(id: string, taskPlanItemId: string): AgentRunRow {
     outcomeReason: null,
     handoffMd: null,
     handoffJson: null,
+    remindersJson: null,
     workdirRef: null,
     claimedBy: null,
     claimedAt: null,
@@ -185,4 +186,54 @@ test("INF-05: non-terminal or unfenced updateRun writes keep the old predicates"
   await repository.updateRun({ ...base, status: "failed" });
   const unfencedQuery = queries.at(-1);
   assert.deepEqual(queryParamValues(unfencedQuery?.where), [runId]);
+});
+
+// R26 批 B6b（重复动作提醒的持久化）：agent_runs.reminders_json 的写入侧。钉两件事——
+// (a) 调用方带了 remindersJson 时，INSERT / UPDATE 都真的把它写进这一列（漏掉就等于提醒只活在内存里，
+//     worker 一换人、回放页一打开就什么都看不到）；
+// (b) 调用方没带时，UPDATE 的 set 里**不出现**这个键——drizzle 跳过 undefined，已存的提醒不会被
+//     一次无关的进度写清成 null。
+test("R26-B6b agent run repository writes reminders_json on insert and update, and leaves it alone when absent", async () => {
+  const runId = "40000000-0000-4000-8000-0000000000e1";
+  const reminders = [
+    { step_no: 3, tier: 1, repeats: 3, shape: "identical", tool_id: "read_file" }
+  ];
+  const base = {
+    runId,
+    workspaceId,
+    workItemId,
+    actorUserId,
+    mode: "worker" as const,
+    status: "running" as const,
+    title: "Repeat-reminded run",
+    model: "deepseek-v4-flash",
+    budget: { maxSteps: 15, totalTimeoutS: 300, maxTokens: 120000, maxCostCny: "5" },
+    budgetDecisionJson: {},
+    usage: { stepsUsed: 3, tokenIn: 3, tokenOut: 3, estimatedCostCny: "0" },
+    createdAt: now,
+    updatedAt: now
+  };
+  const row = runRow(runId, "81000000-0000-4000-8000-0000000000e1");
+  const { db, queries } = createQueryRecorder([[row], [row], [row]]);
+  const repository = createAgentRunRepository(db);
+
+  await repository.createRun({ ...base, remindersJson: reminders });
+  const insert = queries.at(-1);
+  assert.equal(insert?.operation, "insert");
+  assert.equal(insert?.targetTable, agentRuns);
+  assert.deepEqual((insert?.valuesValue as Record<string, unknown>).remindersJson, reminders);
+
+  await repository.updateRun({ ...base, remindersJson: reminders });
+  const update = queries.at(-1);
+  assert.equal(update?.operation, "update");
+  assert.deepEqual((update?.setValue as Record<string, unknown>).remindersJson, reminders);
+
+  await repository.updateRun(base);
+  const untouched = queries.at(-1);
+  assert.equal(
+    "remindersJson" in (untouched?.setValue as Record<string, unknown>)
+      && (untouched?.setValue as Record<string, unknown>).remindersJson !== undefined,
+    false,
+    "没带提醒的进度写不许把已存的 reminders_json 清空"
+  );
 });
