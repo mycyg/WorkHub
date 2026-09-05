@@ -17,6 +17,7 @@
     "qa:s1-day3-preflight": "tsx --tsconfig ../../tsconfig.base.json src/qa/s1-day3-expansion-preflight.ts",
     "qa:s1-day3-observation": "tsx --tsconfig ../../tsconfig.base.json src/qa/s1-day3-observation-audit.ts",
     "qa:r1-pg-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/r1-pg-agent-run-smoke.ts",
+    "qa:plugin-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/plugin-smoke.ts",
     "qa:r2-pg-redis-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/r2-pg-redis-smoke.ts",
     "qa:cuu-r3-launcher-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/cuu-r3-launcher-to-run-smoke.ts",
     "qa:cuu-r3-dev-server-smoke": "tsx --tsconfig ../../tsconfig.base.json src/qa/cuu-r3-dev-server-launcher-smoke.ts",
