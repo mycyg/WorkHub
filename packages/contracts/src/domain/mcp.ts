@@ -52,6 +52,8 @@ export const mcpPrecheckCheckIdSchema = z.enum([
   "env_credential_shaped",
   // env_json 试图覆盖白名单基座键（PATH/HOME/LANG/LC_ALL/TZ/TMPDIR）→ block
   "env_overrides_base",
+  // 引用的服务端变量名不在 WORKHUB_MCP_SECRET_ 前缀下 → block（否则引用式密钥就是绕过 env 白名单读任意变量的原语）
+  "secret_ref_scope",
   // 引用的服务端变量（secret_refs_json 的值）当前不存在 → warn（管理员可能先配后重启）
   "secret_refs_present"
 ]);

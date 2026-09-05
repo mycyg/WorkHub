@@ -80,6 +80,7 @@ test("an unknown precheck check id is refused (the id set is a shared contract, 
     "args_shape",
     "env_credential_shaped",
     "env_overrides_base",
+    "secret_ref_scope",
     "secret_refs_present"
   ]) {
     assert.equal(mcpPrecheckCheckIdSchema.parse(id), id);
