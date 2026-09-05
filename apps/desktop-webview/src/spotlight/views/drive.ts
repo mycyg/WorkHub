@@ -294,8 +294,10 @@ export function driveHtml(vm: DrivePageVM, projectChips: string, zh: boolean, ap
 }
 
 export function driveNoProjectsEmptyHtml(zh: boolean): string {
+  // L-01（R24 S3 走查）：曾是一个 emoji 文件夹——换成本文件已有的 FOLDER_ICON（同一套线性描边
+  // 语汇，SVG stroke=currentColor 继承 .wh-spot-empty-face 的强调色），不是新造视觉语言。
   return `<div class="wh-spot-empty">
-    <div class="wh-spot-empty-face">📁</div>
+    <div class="wh-spot-empty-face">${FOLDER_ICON}</div>
     <h3 class="wh-spot-empty-title">${zh ? "还没有项目" : "No projects"}</h3>
     <p class="wh-spot-empty-sub">${zh ? "先交给 Cuu 一个任务，它会自动建立项目和网盘。" : "Create a task and Cuu will create the project and drive."}</p>
     <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-drive-open-intake="true">${zh ? "＋ 新任务 / 交给 AI" : "＋ New task / Ask AI"}</button>
