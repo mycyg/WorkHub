@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq, notInArray } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { plugins } from "../schema/index.js";
@@ -20,6 +20,8 @@ export type CreatePluginInput = {
   version?: string;
   sourcePath: string;
   status: PluginRow["status"];
+  /** 管理员断言的风险上限；不传落到最保守的 external_effect（与 DB 默认值同口径）。 */
+  trustLevel?: PluginRow["trustLevel"];
   enabled?: boolean;
   compatReport: Record<string, unknown>;
   loadReport?: Record<string, unknown>;
@@ -40,7 +42,10 @@ export type UpdatePluginLoadResultInput = {
 export type PluginRepository = {
   /** 列表：一个工作区里的全部插件，最早装的在前（列表顺序稳定，不随启停跳动）。 */
   listForWorkspace: (workspaceId: string) => Promise<PluginRow[]>;
-  /** 宿主装配用：启用且未被停用的行——加载失败的仍然带上（下次重启可能就好了，是否重试由应用层定）。 */
+  /**
+   * 宿主装配用：启用、未被停用、也没被熔断的行——加载失败的仍然带上（下次重启可能就好了，
+   * 是否重试由应用层定）。熔断（crashed）的不带：它已经把宿主弄崩过，再带上只会一次次重演。
+   */
   listEnabledForWorkspace: (workspaceId: string) => Promise<PluginRow[]>;
   findById: (workspaceId: string, id: string) => Promise<PluginRow | null>;
   findBySourcePath: (workspaceId: string, sourcePath: string) => Promise<PluginRow | null>;
@@ -52,6 +57,24 @@ export type PluginRepository = {
    * 真实状态由随后的试加载再修正（失败会被 updateLoadResult 翻成 'load_failed'）。
    */
   setEnabled: (input: { workspaceId: string; id: string; enabled: boolean; now?: Date }) => Promise<PluginRow | null>;
+  /** 改信任级别。只动这一列——它是一次独立的授权决定，不该顺带把状态/工具数一起写。 */
+  setTrustLevel: (input: {
+    workspaceId: string;
+    id: string;
+    trustLevel: PluginRow["trustLevel"];
+    now?: Date;
+  }) => Promise<PluginRow | null>;
+  /**
+   * 熔断：这个插件把宿主进程反复弄崩了，单独隔离它（同工作区其它插件照常）。
+   * 按 source_path 定位而不是 id——熔断发生在宿主客户端里，那一层只认路径（它就是唯一索引的键）。
+   * 返回被熔断的那一行；没有对应记录（引导路径来的插件不在表里）时返回 null。
+   */
+  markCrashed: (input: {
+    workspaceId: string;
+    sourcePath: string;
+    loadReport: Record<string, unknown>;
+    now?: Date;
+  }) => Promise<PluginRow | null>;
   /** 移除：硬删。插件不是业务数据，留墓碑没有意义；做过什么在 audit_logs 里。 */
   remove: (workspaceId: string, id: string) => Promise<boolean>;
 };
@@ -70,7 +93,11 @@ export function createPluginRepository(db: WorkHubDb): PluginRepository {
         .select()
         .from(plugins)
         .where(
-          and(eq(plugins.workspaceId, workspaceId), eq(plugins.enabled, true), ne(plugins.status, "disabled"))
+          and(
+            eq(plugins.workspaceId, workspaceId),
+            eq(plugins.enabled, true),
+            notInArray(plugins.status, ["disabled", "crashed"])
+          )
         )
         .orderBy(asc(plugins.createdAt), asc(plugins.id));
     },
@@ -103,6 +130,7 @@ export function createPluginRepository(db: WorkHubDb): PluginRepository {
           sourcePath: input.sourcePath,
           enabled: input.enabled ?? true,
           status: input.status,
+          trustLevel: input.trustLevel ?? "external_effect",
           compatReport: input.compatReport,
           loadReport: input.loadReport ?? null,
           toolCount: input.toolCount ?? 0,
@@ -139,6 +167,27 @@ export function createPluginRepository(db: WorkHubDb): PluginRepository {
           updatedAt: input.now ?? new Date()
         })
         .where(and(eq(plugins.workspaceId, input.workspaceId), eq(plugins.id, input.id)))
+        .returning();
+      return rows[0] ?? null;
+    },
+    async setTrustLevel(input) {
+      const rows = await db
+        .update(plugins)
+        .set({ trustLevel: input.trustLevel, updatedAt: input.now ?? new Date() })
+        .where(and(eq(plugins.workspaceId, input.workspaceId), eq(plugins.id, input.id)))
+        .returning();
+      return rows[0] ?? null;
+    },
+    async markCrashed(input) {
+      const rows = await db
+        .update(plugins)
+        .set({
+          status: "crashed",
+          toolCount: 0,
+          loadReport: input.loadReport,
+          updatedAt: input.now ?? new Date()
+        })
+        .where(and(eq(plugins.workspaceId, input.workspaceId), eq(plugins.sourcePath, input.sourcePath)))
         .returning();
       return rows[0] ?? null;
     },

@@ -11,8 +11,14 @@
  * 会先把 `process.stdout.write` 劫持到 stderr（见 host.ts），只有 RPC writer 用原始句柄。
  */
 
-/** 线协议版本。两端不一致时握手直接失败，不做「尽力兼容」。 */
-export const PLUGIN_HOST_PROTOCOL_VERSION = 1;
+/**
+ * 线协议版本。两端不一致时握手直接失败，不做「尽力兼容」。
+ *
+ * 2（R26 X）：`PluginToolDescriptor` 增 `selfReportedReadOnly`。做成必填 + 版本号推进，
+ * 而不是「可选字段，缺了当 false」：缺了当 false 会让一台过期宿主把整个部署静默降级成
+ * 「每次插件调用都转人」，看起来像功能坏了却没有任何解释；握手直接失败至少说得清是什么。
+ */
+export const PLUGIN_HOST_PROTOCOL_VERSION = 2;
 
 /** 插件工具在线上的描述符——函数过不了 JSON，只能传结构。 */
 export type PluginToolDescriptor = {
@@ -26,6 +32,17 @@ export type PluginToolDescriptor = {
   description: string;
   /** dsh 侧已经转好的 JSON Schema（dsh 工具没有 Zod，走 ToolSpec.jsonSchema 旁路）。 */
   jsonSchema: Record<string, unknown>;
+  /**
+   * 工具**自述**是否只读。真值表见 `to-tool-spec.ts`：它只在管理员把这个插件断言成
+   * `read_only` 时才有意义，且只能**降**风险——插件永远不能靠自述抬权限。
+   *
+   * 判据是 `translate.ts` 的 `readsAsReadOnly()`：dsh `defineTool` 在
+   * `@deepseek-ai/dsh-tools@0.1.0-rc.8` 上**没有**只读自述字段（它按白名单归一化，
+   * 作者写的额外键会被丢掉），所以这个信号来自 `ctx.tools.register()` 收到的定义对象上的
+   * `readOnlyHint === true`——那是宿主自己的 service 面，作者要显式声明就得
+   * `register({ ...defineTool({...}), readOnlyHint: true })`。没写就是 false（最高风险）。
+   */
+  selfReportedReadOnly: boolean;
   /** 插件声明的单次调用超时（毫秒）；缺省由客户端兜底。 */
   timeoutMs?: number;
 };

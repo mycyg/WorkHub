@@ -24,7 +24,32 @@ export type DshToolDefinition = {
   output?: { schema?: unknown; render?: (args: unknown, value: unknown) => unknown };
   timeoutMs?: number;
   execute: (args: unknown, exec: unknown) => unknown;
+  /**
+   * 只读自述。**dsh 自己没有这个字段**：`@deepseek-ai/dsh-tools@0.1.0-rc.8` 的
+   * `defineTool` 按白名单重建定义对象（name / description / parameters / output /
+   * timeoutMs / execute / finalizeContent / isConcurrencySafe / presentCall / presentResult），
+   * 作者多写的键在归一化时被丢掉，所以 dsh 这条路上没有任何「我只读」的声明面。
+   *
+   * 于是这个信号走宿主自己的 `ctx.tools.register()` 面：作者显式写
+   * `register({ ...defineTool({...}), readOnlyHint: true })` 才算数。名字借 MCP 的
+   * `annotations.readOnlyHint`——同一个概念在插件与 MCP 两条第三方工具通道上用同一个词。
+   *
+   * 类型是 `unknown` 而不是 `boolean?`：它来自第三方对象，我们不假设它是布尔。
+   */
+  readOnlyHint?: unknown;
 };
+
+/**
+ * 工具自述是否只读。**严格 `=== true`**：一个真值字符串、一个函数、一个 `"false"` 都不算——
+ * 这条判据的作用是把风险往下降，模糊匹配等于替插件作者做了他没做过的声明。
+ *
+ * 刻意**不**拿 dsh 的 `isConcurrencySafe` 当只读信号：它的契约是「可以和兄弟调用并行」
+ * （dsh-tools 类型注释原话是 opted-in executions must not mutate parent-owned state），
+ * 一个往日志追加一行的工具完全可以并行安全却不只读。拿它当只读用是在编一条作者没做过的断言。
+ */
+export function readsAsReadOnly(definition: DshToolDefinition): boolean {
+  return definition.readOnlyHint === true;
+}
 
 /** 插件工具的 id 前缀。与内置工具（read_file/write_file/load_skill…）名字空间彻底隔开。 */
 export const PLUGIN_TOOL_ID_PREFIX = "plugin__";
@@ -72,6 +97,7 @@ export function describePluginTool(pluginId: string, definition: DshToolDefiniti
       ? definition.description
       : `Tool '${toolName}' contributed by plugin '${pluginId}'.`,
     jsonSchema: toJsonSchema(definition.parameters),
+    selfReportedReadOnly: readsAsReadOnly(definition),
     ...(typeof definition.timeoutMs === "number" && Number.isFinite(definition.timeoutMs) && definition.timeoutMs > 0
       ? { timeoutMs: definition.timeoutMs }
       : {})
