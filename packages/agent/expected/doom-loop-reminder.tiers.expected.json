@@ -1,0 +1,108 @@
+{
+  "defaultTiers": [
+    3,
+    5,
+    8
+  ],
+  "argumentsPreviewChars": 500,
+  "identical": [
+    {
+      "step": 1,
+      "tier": null,
+      "repeats": null,
+      "shape": null
+    },
+    {
+      "step": 2,
+      "tier": null,
+      "repeats": null,
+      "shape": null
+    },
+    {
+      "step": 3,
+      "tier": 1,
+      "repeats": 3,
+      "shape": "identical"
+    },
+    {
+      "step": 4,
+      "tier": null,
+      "repeats": null,
+      "shape": null
+    },
+    {
+      "step": 5,
+      "tier": 2,
+      "repeats": 5,
+      "shape": "identical"
+    },
+    {
+      "step": 6,
+      "tier": null,
+      "repeats": null,
+      "shape": null
+    },
+    {
+      "step": 7,
+      "tier": null,
+      "repeats": null,
+      "shape": null
+    },
+    {
+      "step": 8,
+      "tier": 3,
+      "repeats": 8,
+      "shape": "identical"
+    }
+  ],
+  "alternating": [
+    {
+      "step": 1,
+      "tier": null,
+      "repeats": null,
+      "shape": null
+    },
+    {
+      "step": 2,
+      "tier": null,
+      "repeats": null,
+      "shape": null
+    },
+    {
+      "step": 3,
+      "tier": null,
+      "repeats": null,
+      "shape": null
+    },
+    {
+      "step": 4,
+      "tier": 1,
+      "repeats": 4,
+      "shape": "alternating"
+    },
+    {
+      "step": 5,
+      "tier": 2,
+      "repeats": 5,
+      "shape": "alternating"
+    },
+    {
+      "step": 6,
+      "tier": null,
+      "repeats": null,
+      "shape": null
+    },
+    {
+      "step": 7,
+      "tier": null,
+      "repeats": null,
+      "shape": null
+    },
+    {
+      "step": 8,
+      "tier": 3,
+      "repeats": 8,
+      "shape": "alternating"
+    }
+  ]
+}

@@ -42,7 +42,7 @@ import { errorToolResult, okToolResult, type ToolExecutionContext, type ToolResu
 
 import { createAgentLoop } from "../loop/index.js";
 import type { AgentLoopBudget, AgentLoopInput, AgentLoopResult } from "../loop/types.js";
-import type { LlmCreateParams, LlmCreateResponse } from "../providers/types.js";
+import type { LlmCreateParams, LlmCreateResponse, LlmMessage } from "../providers/types.js";
 import { assertLoopCoreEquivalent, loopCoreDiffs, runAgentLoop2 } from "./config-builder.js";
 
 // --- scenario harness ------------------------------------------------------
@@ -86,6 +86,13 @@ type Harness = {
 	input: AgentLoopInput;
 	calls: CapturedCall[];
 	requests: LlmCreateParams[];
+	/**
+	 * Per-call DEEP COPY of the wire messages. `requests` cannot serve this for the legacy engine:
+	 * loop.ts passes its single live `messages` array to every call, so every captured params object
+	 * points at the same (final) array. A snapshot per call is what lets a test compare the two
+	 * engines' full model-visible transcripts turn by turn.
+	 */
+	requestMessages: LlmMessage[][];
 	compactionEvents: number;
 	escalatedEvents: number;
 	/** Every WorkHub event emitted, in order (P3a event-sequence equivalence). */
@@ -107,6 +114,7 @@ const DEFAULT_BUDGET: AgentLoopBudget = {
 function makeHarness(scenario: Scenario): Harness {
 	const calls: CapturedCall[] = [];
 	const requests: LlmCreateParams[] = [];
+	const requestMessages: LlmMessage[][] = [];
 	const emittedEvents: EmittedEvent[] = [];
 	const recorderLog: RecorderEntry[] = [];
 	const compactionRequests: LlmCreateParams[] = [];
@@ -116,6 +124,7 @@ function makeHarness(scenario: Scenario): Harness {
 		input: undefined as never,
 		calls,
 		requests,
+		requestMessages,
 		compactionEvents: 0,
 		escalatedEvents: 0,
 		emittedEvents,
@@ -135,6 +144,7 @@ function makeHarness(scenario: Scenario): Harness {
 			messages: {
 				create: async (params: LlmCreateParams) => {
 					requests.push(params);
+					requestMessages.push(JSON.parse(JSON.stringify(params.messages)) as LlmMessage[]);
 					const next = queue.shift();
 					if (!next) throw new Error("scenario: no scripted response left");
 					// A scripted failure: throw without recording usage (a real failed request records
@@ -615,4 +625,73 @@ test("equivalence: non-retryable provider error (400) — both engines fail imme
 	assert.deepEqual(loop2H.recorderLog, legacyH.recorderLog, "recorder call sequence diverged");
 	assert.deepEqual(loop2H.calls, legacyH.calls, "usage-record accounting diverged (must be empty on both)");
 	assert.deepEqual(loop2H.calls, [], "a failed request records no usage");
+});
+
+// --- (B6) repeat-tool reminder tiers ---------------------------------------
+
+/** The reminder messages B6 injects (a user message whose whole body is a string). */
+function reminderBodies(messages: LlmMessage[]): string[] {
+	return messages
+		.filter((message) => message.role === "user" && typeof message.content === "string")
+		.map((message) => message.content as string)
+		.filter((content) => content.startsWith("[自动提醒]"));
+}
+
+test("equivalence: B6 repeat-tool reminder — nudge at 3 and 5, escalate at 8, same wire text on both", async () => {
+	// Behaviour change (not a bug fix): before B6 the third identical step escalated outright.
+	const repeated = () =>
+		Array.from({ length: 8 }, (_, index) =>
+			toolResponse(`m${index + 1}`, [{ id: `call-${index + 1}`, name: "echo", input: { message: "same" } }]),
+		);
+	const { legacy, loop2, legacyH, loop2H } = await runBoth(() => ({
+		responses: repeated(),
+		toolSpecs: [ECHO_TOOL],
+	}));
+
+	// Eight steps ran; only the eighth escalated.
+	assert.equal(legacy.status, "escalated");
+	assert.equal(loop2.status, "escalated");
+	assert.equal(legacy.reason, "doom_loop");
+	assert.equal(loop2.reason, "doom_loop");
+	assert.equal(legacy.usage.stepsUsed, 8);
+	assert.equal(loop2.usage.stepsUsed, 8);
+	assert.equal(legacyH.requests.length, 8);
+	assert.equal(loop2H.requests.length, 8);
+
+	// The FULL model-visible transcript is identical turn by turn — same reminder text, same user
+	// role, same position after that turn's tool_result (loop.ts appends it; loop2 steers it in).
+	assert.deepEqual(loop2H.requestMessages, legacyH.requestMessages, "wire transcript diverged");
+
+	// Tier 1 lands after step 3, tier 2 after step 5, and steps 4/6/7 do not re-nudge.
+	const nudgesPerTurn = loop2H.requestMessages.map((messages) => reminderBodies(messages).length);
+	assert.deepEqual(nudgesPerTurn, [0, 0, 0, 1, 1, 2, 2, 2]);
+	const [gentle, detailed] = reminderBodies(loop2H.requestMessages[7] ?? []);
+	assert.match(gentle ?? "", /连续 3 步重复同一个动作/);
+	assert.match(detailed ?? "", /连续 5 步重复同一个动作/);
+	assert.match(detailed ?? "", /重复的工具：echo/);
+	assert.match(detailed ?? "", /echo\(\{"message":"same"\}\)/);
+});
+
+test("equivalence: B6 nudges never outrun the step budget — steps run out first, both engines", async () => {
+	// The extra steps a nudge buys must not break the budget path: with maxSteps below the
+	// escalation tier the run still ends on "步数预算已耗尽" (budgetHit "steps"), not doom_loop.
+	const { legacy, loop2, legacyH, loop2H } = await runBoth(() => ({
+		responses: Array.from({ length: 4 }, (_, index) =>
+			toolResponse(`m${index + 1}`, [{ id: `call-${index + 1}`, name: "echo", input: { message: "same" } }]),
+		),
+		toolSpecs: [ECHO_TOOL],
+		budget: { maxSteps: 4 },
+	}));
+
+	assert.equal(legacy.status, "escalated");
+	assert.equal(loop2.status, "escalated");
+	assert.equal(legacy.reason, "步数预算已耗尽");
+	assert.equal(loop2.reason, "步数预算已耗尽");
+	assert.equal(legacy.handoff?.budgetHit, "steps");
+	assert.equal(loop2.handoff?.budgetHit, "steps");
+	assert.equal(legacyH.requests.length, 4, "no extra provider call after the budget is spent");
+	assert.equal(loop2H.requests.length, 4);
+	// Exactly one nudge got in before the budget ended the run.
+	assert.equal(reminderBodies(loop2H.requestMessages[3] ?? []).length, 1);
+	assert.deepEqual(loop2H.requestMessages, legacyH.requestMessages, "wire transcript diverged");
 });
