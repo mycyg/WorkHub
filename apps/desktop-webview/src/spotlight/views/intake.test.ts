@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { WorkHubApiError } from "@workhub/api-client";
+
+import type { SpotlightViewContext } from "../view-context.js";
 import { createIntakeView, defaultSelectedOptionIds, doneHtml, startHtml } from "./intake.js";
 
 class FakeElement {
@@ -198,4 +201,132 @@ test("R9.7 desktop intake created toast avoids dispatch copy", async () => {
   } finally {
     globals.HTMLElement = previousHTMLElement;
   }
+});
+
+// —— 阻断 #3 / M-11（R24 S3 走查）：createSession 失败此前一律吞掉服务端原因、劝用户"重试"（永远不会
+// 成功）。按错误码给可行动的下一步；未知码把服务端原文透传出来。 ——
+
+// run 通常是 async——必须 await 它再复原，否则 finally 在 await tick() 之前就跑完，把 HTMLElement
+// 补丁提前撤了（同 workbench-open.test.ts 顶部注释踩过的同一个坑：body.click() 时
+// instanceof HTMLElement 炸 TypeError）。
+async function withFakeHtmlElement<T>(run: () => Promise<T> | T): Promise<T> {
+  const globals = globalThis as unknown as { HTMLElement?: unknown };
+  const previous = globals.HTMLElement;
+  globals.HTMLElement = FakeElement;
+  try {
+    return await run();
+  } finally {
+    globals.HTMLElement = previous;
+  }
+}
+
+function mountIntakeWithClient(
+  body: FakeBody,
+  createSession: () => Promise<never>,
+  overrides: Partial<SpotlightViewContext> = {}
+): { toasts: Array<{ message: string; tone: "ok" | "error" | "info" | undefined }>; opened: Array<{ id: string }> } {
+  const toasts: Array<{ message: string; tone: "ok" | "error" | "info" | undefined }> = [];
+  const opened: Array<{ id: string }> = [];
+  const ctx: SpotlightViewContext = {
+    body: body as unknown as HTMLElement,
+    locale: "zh-CN",
+    client: { createSession } as never,
+    back() {},
+    open(id) {
+      opened.push({ id });
+    },
+    setSubtitle() {},
+    toast(message, tone) {
+      toasts.push({ message, tone });
+    },
+    requestResize() {},
+    refocusBody() {},
+    signal: new AbortController().signal,
+    ...overrides
+  };
+  createIntakeView().mount(ctx);
+  return { toasts, opened };
+}
+
+test("M-11: an empty intent never calls createSession, and prompts inline instead", async () => {
+  await withFakeHtmlElement(() => {
+    const body = new FakeBody();
+    body.intent.value = "   "; // whitespace-only counts as empty
+    let called = false;
+    const { toasts } = mountIntakeWithClient(body, async () => {
+      called = true;
+      throw new Error("must not be called");
+    });
+
+    body.click("[data-start]");
+
+    assert.equal(called, false, "createSession must not fire for an empty/whitespace-only intent");
+    assert.ok(
+      toasts.some((t) => /先用一句话说说要做什么/u.test(t.message)),
+      "shows an inline prompt asking for the required text"
+    );
+  });
+});
+
+test("阻断 #3: project_not_found gives a direct path to create a project instead of a dead 'retry'", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    body.intent.value = "整理客户访谈";
+    const { toasts, opened } = mountIntakeWithClient(body, async () => {
+      throw new WorkHubApiError(404, "project_not_found", "还没有可用项目，无法创建任务。");
+    });
+
+    body.click("[data-start]");
+    await tick();
+
+    const errorToast = toasts.find((t) => t.tone === "error");
+    assert.ok(errorToast, "an error toast was shown");
+    assert.doesNotMatch(errorToast.message, /Couldn't start|开场失败/u, "must not fall back to the generic dead-end retry copy");
+    assert.match(body.innerHTML, /data-goto-new-project/u, "renders a direct path to create a project");
+
+    body.click("[data-goto-new-project]");
+    assert.deepEqual(opened, [{ id: "new_project" }]);
+  });
+});
+
+test("阻断 #3: clarification_llm_unavailable (and other 503s) point at settings instead of a dead 'retry'", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    body.intent.value = "整理客户访谈";
+    const { toasts, opened } = mountIntakeWithClient(body, async () => {
+      throw new WorkHubApiError(503, "clarification_llm_unavailable", "AI material analysis is not configured.");
+    });
+
+    body.click("[data-start]");
+    await tick();
+
+    const errorToast = toasts.find((t) => t.tone === "error");
+    assert.ok(errorToast, "an error toast was shown");
+    assert.doesNotMatch(errorToast.message, /Couldn't start|开场失败/u);
+    assert.match(body.innerHTML, /data-goto-settings/u, "renders a direct path to settings");
+
+    body.click("[data-goto-settings]");
+    assert.deepEqual(opened, [{ id: "settings" }]);
+  });
+});
+
+test("阻断 #3: an unrecognized error code passes the server's own message through instead of a generic toast", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    body.intent.value = "整理客户访谈";
+    const { toasts } = mountIntakeWithClient(body, async () => {
+      throw new WorkHubApiError(422, "some_future_validation_error", "这句话里的项目引用格式不对。");
+    });
+
+    body.click("[data-start]");
+    await tick();
+
+    const errorToast = toasts.find((t) => t.tone === "error");
+    assert.ok(errorToast, "an error toast was shown");
+    assert.equal(errorToast.message, "这句话里的项目引用格式不对。", "the server's own reason is surfaced verbatim");
+    // Unknown codes fall back to the ordinary start form (not the dedicated no-project/no-AI card)
+    // so the user can just edit their text and try again.
+    assert.match(body.innerHTML, /data-intent/u);
+    assert.doesNotMatch(body.innerHTML, /data-goto-new-project|data-goto-settings/u);
+  });
 });

@@ -3,6 +3,7 @@
 // input_mode=confirm 时一键 createWorkItem（spec_ready，不自动派活，与 web 同口径：先给人过目）。
 // 复用 client.createSession/nextQuestion/createWorkItem + 真实 payload（{selected_option_ids, free_text} / {session_id, selected_option_ids}）。
 
+import { WorkHubApiError } from "@workhub/api-client";
 import type { SessionVM } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
@@ -112,6 +113,64 @@ export function doneHtml(code: string, title: string, zh: boolean): string {
   </div>`;
 }
 
+// 阻断 #3（R24 S3 走查）：createSession 失败此前一律吞掉服务端原因、弹一句「重试也没用」的假重试
+// toast。按错误码分流：没有项目/AI 未配置这两条已知死路直接给可行动的下一步（去建项目/去看设置），
+// 其它码把服务端原文透传给用户（总比一句通用文案强，即便原文暂时还是硬编码中文——见
+// views/memory.ts friendlyErrorMessage 同款「暂无双语表就诚实兜底」的取舍）。
+type StartFailureKind = "no_project" | "ai_unavailable" | "other";
+
+function classifyStartFailure(error: unknown): StartFailureKind {
+  if (error instanceof WorkHubApiError) {
+    if (error.code === "project_not_found") {
+      return "no_project";
+    }
+    if (error.code === "clarification_llm_unavailable" || error.status === 503) {
+      return "ai_unavailable";
+    }
+  }
+  return "other";
+}
+
+function startFailureToastMessage(kind: StartFailureKind, error: unknown, zh: boolean): string {
+  if (kind === "no_project") {
+    return zh ? "这台服务器还没有项目，新任务需要先建一个。" : "This server has no project yet — create one to start a task.";
+  }
+  if (kind === "ai_unavailable") {
+    return zh ? "AI 服务还没配置，暂时没法生成澄清问题。" : "The AI service isn't set up yet, so it can't ask a clarifying question.";
+  }
+  // 其它码：透传服务端原文，不再用一句「重试」抹掉原因。
+  if (error instanceof WorkHubApiError && error.message) {
+    return error.message;
+  }
+  return zh ? "开场失败，请重试" : "Couldn't start — retry";
+}
+
+// 已知死路（无项目/AI 未配置）额外给一张就地卡片 + 直达按钮——光有 toast 不够（3.2s 就没了，且toast
+// 内没有可点的动作），用户得能一键走到能解决问题的地方，而不是回到同一个必然失败的起始表单里死循环。
+function startFailureCardHtml(kind: StartFailureKind, zh: boolean): string {
+  if (kind === "no_project") {
+    return `<div class="wh-spot-empty">
+      <div class="wh-spot-empty-face">(=^･ω･^=)</div>
+      <h3 class="wh-spot-empty-title">${zh ? "先建一个项目" : "Create a project first"}</h3>
+      <p class="wh-spot-empty-sub">${zh ? "新任务要挂在某个项目下面——建好项目后回来接着说需求。" : "A task needs to belong to a project — create one, then come back to describe what you need."}</p>
+      <div class="wh-spot-intake-actions" style="justify-content:center">
+        <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-goto-new-project>${zh ? "去建项目" : "Create a project"}</button>
+      </div>
+    </div>`;
+  }
+  if (kind === "ai_unavailable") {
+    return `<div class="wh-spot-empty">
+      <div class="wh-spot-empty-face">(=^･ω･^=)</div>
+      <h3 class="wh-spot-empty-title">${zh ? "AI 服务还没配置" : "AI isn't set up yet"}</h3>
+      <p class="wh-spot-empty-sub">${zh ? "需要管理员在服务器上配置模型密钥，AI 才能生成澄清问题。" : "An admin needs to configure a model key on the server before AI can ask clarifying questions."}</p>
+      <div class="wh-spot-intake-actions" style="justify-content:center">
+        <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-goto-settings>${zh ? "查看设置" : "Open settings"}</button>
+      </div>
+    </div>`;
+  }
+  return "";
+}
+
 export function createIntakeView(): SpotlightCapabilityView {
   return {
     id: "intake",
@@ -176,8 +235,18 @@ export function createIntakeView(): SpotlightCapabilityView {
           renderQuestion();
         } catch (error) {
           busy = false;
-          ctx.toast(zh ? "开场失败，请重试" : "Couldn't start — retry", "error");
-          renderStart();
+          const kind = classifyStartFailure(error);
+          ctx.toast(startFailureToastMessage(kind, error, zh), "error");
+          const failureCard = startFailureCardHtml(kind, zh);
+          if (failureCard) {
+            session = null;
+            selected = new Set();
+            ctx.setSubtitle(zh ? "需要先处理一步" : "One thing first");
+            body.innerHTML = failureCard;
+            ctx.requestResize();
+          } else {
+            renderStart();
+          }
         }
       };
 
@@ -238,6 +307,14 @@ export function createIntakeView(): SpotlightCapabilityView {
         }
         if (target.closest("[data-submit]")) {
           void submit();
+          return;
+        }
+        if (target.closest("[data-goto-new-project]")) {
+          ctx.open("new_project");
+          return;
+        }
+        if (target.closest("[data-goto-settings]")) {
+          ctx.open("settings");
           return;
         }
         const opt = target.closest<HTMLElement>("[data-opt]");
