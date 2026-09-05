@@ -4553,3 +4553,75 @@ test("R15 web-mirror conversation component renders system_event risk digest and
   assert.equal(html.includes("**跟进**"), false);
   assert.equal(html.includes("<button"), false);
 });
+
+// ── R23 F-04（升级转交端到端）─────────────────────────────────────────────────────
+// 此前 web 通用卡直接把 /delegate 动作剥掉（rank1 的临时办法：没有选人 UI，渲出来就是个死按钮），
+// 于是服务端即便发了这个动作，web 也永远看不见。现在改成：动作行不渲它，动作行下面挂一份选人器。
+test("R23 F-04 Home decision card swaps a delegate action for the teammate picker, keeping the rest of the actions", () => {
+  const vm = surfaceVm();
+  const primary = vm.page_vms.attention.primary;
+  assert.ok(primary);
+  const escalationId = "94000000-0000-4000-8000-000000000f04";
+  const withDelegate = {
+    ...vm.page_vms.attention,
+    primary: {
+      ...primary,
+      actions: [
+        { id: "escalation_pm_mode", label: "我来定方向", style: "primary" as const, method: "POST" as const, href: `/api/escalations/${escalationId}/resolve` },
+        { id: "escalation_delegate", label: "转交他人", style: "secondary" as const, method: "POST" as const, href: `/api/escalations/${escalationId}/delegate` }
+      ]
+    }
+  };
+
+  const zh = renderWebRouteComponent({ key: "home", attention: withDelegate }, { locale: "zh-CN" });
+
+  // 转交不再是动作行里的一个按钮——点它没有「转交给谁」可填。
+  assert.equal(zh.html.includes('data-action-id="escalation_delegate"'), false);
+  // 取而代之：一份带目标 href 的选人器，href 就是服务端发的那条真端点。
+  assert.equal(zh.html.includes('data-wh-delegate="true"'), true);
+  assert.equal(zh.html.includes(`data-wh-delegate-href="/api/escalations/${escalationId}/delegate"`), true);
+  assert.equal(zh.html.includes("data-wh-delegate-select"), true);
+  assert.equal(zh.html.includes("data-wh-delegate-submit"), true);
+  assert.equal(zh.html.includes("转交给同事"), true);
+  // 同卡的其他动作一个都没少。
+  assert.equal(zh.html.includes('data-action-id="escalation_pm_mode"'), true);
+
+  const en = renderWebRouteComponent({ key: "home", attention: withDelegate }, { locale: "en-US" });
+  assert.equal(en.html.includes("Hand off to a teammate"), true);
+  assert.equal(en.html.includes("转交给同事"), false);
+  assertNoMainWindowBoundaryLeak(zh.html);
+  assertNoMainWindowBoundaryLeak(en.html);
+});
+
+test("R23 F-04 Approvals workbench keeps its shared picker with no href (browser derives it from the selected row)", () => {
+  const vm = surfaceVm();
+
+  const zh = renderWebRouteComponent({ key: "approvals", approvals: vm.page_vms.approvals }, { locale: "zh-CN" });
+
+  // 审批工作台的动作面板是整页共享的一份选人器——不绑死某条审批的 href。
+  assert.equal(zh.html.includes('data-wh-delegate="true"'), true);
+  assert.equal(zh.html.includes("data-wh-delegate-href"), false);
+  assert.equal(zh.html.includes("data-wh-delegate-submit"), true);
+  assertNoMainWindowBoundaryLeak(zh.html);
+});
+
+test("R23 F-04 A card with only a delegate action still renders the picker, not an empty shell", () => {
+  const vm = surfaceVm();
+  const primary = vm.page_vms.attention.primary;
+  assert.ok(primary);
+  const approvalId = "94000000-0000-4000-8000-000000000f05";
+  const delegateOnly = {
+    ...vm.page_vms.attention,
+    primary: {
+      ...primary,
+      actions: [
+        { id: "approval_delegate", label: "转交他人", style: "secondary" as const, method: "POST" as const, href: `/api/approvals/${approvalId}/delegate` }
+      ]
+    }
+  };
+
+  const zh = renderWebRouteComponent({ key: "home", attention: delegateOnly }, { locale: "zh-CN" });
+
+  assert.equal(zh.html.includes(`data-wh-delegate-href="/api/approvals/${approvalId}/delegate"`), true);
+  assert.equal(zh.html.includes('data-action-id="approval_delegate"'), false);
+});
