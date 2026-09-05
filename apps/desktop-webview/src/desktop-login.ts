@@ -23,9 +23,10 @@ import { writeDesktopClientToken } from "./desktop-client-token.js";
 // 与 browser.ts / workbench/boot.ts 同一套登出标记键 + 令牌收口（DSK-06，desktop-client-token.ts）——
 // 写令牌前清登出标记，落新键。
 const DESKTOP_LOGGED_OUT_FLAG = "workhub_desktop_logged_out";
-// 探得的认证模式提示：首启 bootstrap 成功=nickname、404=password（见 isPasswordModeBootstrapError）。
-// 仅用于登出后选对再登录门（密码模式渲凭据表单）——登出态绝不自动昵称 rebind，故不能靠再探一次
-// bootstrap（昵称模式会有建设备副作用）。只是提示：真正鉴权仍以服务端为准，模式若变登录会报错让用户重试。
+// 探得的认证模式提示：来源两条——resolveDesktopFirstRunGate 探 health.auth_mode（首启，无副作用）、
+// isPasswordModeBootstrapError 探 desktop-bootstrap 的 404（提交后才会命中，见该函数顶注）。
+// 用于登出后/下次首启选对登录门——登出态绝不自动昵称 rebind，故不能靠再探一次 bootstrap（那在昵称
+// 模式会有建设备副作用）。只是提示：真正鉴权仍以服务端为准，模式若变登录会报错让用户重试。
 const AUTH_MODE_HINT_KEY = "workhub_auth_mode";
 export type DesktopAuthModeHint = "password" | "nickname";
 
