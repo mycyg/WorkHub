@@ -26,6 +26,8 @@ import {
   type NaturalSize
 } from "@workhub/ui";
 
+import { webT } from "./locales.js";
+
 const AVATAR_CROP_VIEWPORT_SIZE = 240;
 
 // 故意不用 HTMLElementTagNameMap 泛型——只声明这个模态真正用到的最小成员集合，让测试的假 DOM
@@ -159,12 +161,12 @@ export function openAvatarCropModal(
         const modal = deps.createElement("div");
         modal.setAttribute("role", "dialog");
         modal.setAttribute("aria-modal", "true");
-        modal.setAttribute("aria-label", zh ? "裁剪头像" : "Crop avatar");
+        modal.setAttribute("aria-label", webT(zh, "cropAvatar"));
         modal.style.cssText =
           "background:#fff;border-radius:16px;padding:20px;display:grid;gap:14px;max-width:calc(100vw - 32px)";
 
         const title = deps.createElement("h3");
-        title.textContent = zh ? "裁剪头像" : "Crop avatar";
+        title.textContent = webT(zh, "cropAvatar");
         title.style.cssText = "margin:0;font-size:16px";
 
         const viewport = deps.createElement("div");
@@ -185,12 +187,10 @@ export function openAvatarCropModal(
         zoomSlider.max = String(maxScale);
         zoomSlider.step = String((maxScale - minScale) / 200 || 0.001);
         zoomSlider.value = String(state.scale);
-        zoomSlider.setAttribute("aria-label", zh ? "缩放" : "Zoom");
+        zoomSlider.setAttribute("aria-label", webT(zh, "zoom"));
 
         const hint = deps.createElement("p");
-        hint.textContent = zh
-          ? "拖动图片调整位置，用滑杆缩放，取景框内的区域会被保存为头像。"
-          : "Drag to reposition, use the slider to zoom — the area inside the frame becomes your avatar.";
+        hint.textContent = webT(zh, "dragToRepositionUseTheSlider");
         hint.style.cssText = "margin:0;font-size:12px;color:#666";
 
         const actions = deps.createElement("div");
@@ -198,11 +198,11 @@ export function openAvatarCropModal(
         const cancelBtn = deps.createElement("button");
         cancelBtn.type = "button";
         cancelBtn.className = "wh-btn";
-        cancelBtn.textContent = zh ? "取消" : "Cancel";
+        cancelBtn.textContent = webT(zh, "cancel");
         const confirmBtn = deps.createElement("button");
         confirmBtn.type = "button";
         confirmBtn.className = "wh-btn";
-        confirmBtn.textContent = zh ? "确认" : "Confirm";
+        confirmBtn.textContent = webT(zh, "confirm");
 
         viewport.appendChild(previewEl);
         actions.appendChild(cancelBtn);

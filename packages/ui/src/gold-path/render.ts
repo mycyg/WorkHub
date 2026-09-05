@@ -20,6 +20,8 @@ import {
   renderStructuredFieldOperationDetails
 } from "../structured-field-details.js";
 
+import { goldPathCopyT } from "./locales.js";
+
 export type GoldPathRenderSurface = "web" | "desktop";
 export type GoldPathRenderOptions = {
   locale?: WorkHubLocale | undefined;
@@ -88,18 +90,18 @@ function approvalFactActionLabel(actionPattern: string, locale: WorkHubLocale) {
   const zh = locale === "zh-CN";
   const normalized = actionPattern.toLowerCase();
   if (normalized.startsWith("tool.")) {
-    return zh ? "工具审批" : "Tool approval";
+    return goldPathCopyT(locale, "toolApproval");
   }
   if (normalized.includes("permission") || normalized.includes("policy")) {
-    return zh ? "权限审批" : "Permission approval";
+    return goldPathCopyT(locale, "permissionApproval");
   }
   if (normalized.includes("budget") || normalized.includes("cost")) {
-    return zh ? "预算审批" : "Budget approval";
+    return goldPathCopyT(locale, "budgetApproval");
   }
   if (normalized.includes("proposal") || normalized.includes("deliverable") || normalized.includes("document")) {
-    return zh ? "变更审批" : "Change approval";
+    return goldPathCopyT(locale, "changeApproval");
   }
-  return zh ? "审批请求" : "Approval request";
+  return goldPathCopyT(locale, "approvalRequest");
 }
 
 function approvalFactStatusLabel(status: string, locale: WorkHubLocale) {
@@ -112,14 +114,14 @@ function approvalFactStatusLabel(status: string, locale: WorkHubLocale) {
     pending: ["待处理", "Pending"]
   };
   const label = labels[status];
-  return label ? (zh ? label[0] : label[1]) : (zh ? "状态待确认" : "Status pending review");
+  return label ? (zh ? label[0] : label[1]) : (goldPathCopyT(locale, "statusPendingReview"));
 }
 
 function approvalFactRouteLabel(routedToUserId: string | undefined, locale: WorkHubLocale) {
   if (!routedToUserId) {
     return t(locale, "approvals.unrouted");
   }
-  return locale === "zh-CN" ? "已路由" : "Routed";
+  return goldPathCopyT(locale, "routed");
 }
 
 // UI-02：统一本地时区渲染（formatLocalTimestamp），不再直切 ISO 串 UTC 直出。
@@ -687,7 +689,7 @@ function renderCost(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, local
   // K5 对齐:把「干活 vs 自进化（夜间技能蒸馏）」分账显性化（与 web cost labor_split 一致）。仅有账目时显示。
   const laborSplit = cost.labor_split;
   const laborCard = laborSplit
-    ? `<article class="wh-card" data-r8-cost-labor-split="true" data-r8-cost-self-improvement-ratio="${escapeHtml(String(laborSplit.self_improvement_ratio))}"><strong>${escapeHtml(zh ? "干活 vs 自进化" : "Work vs self-improvement")}</strong><p class="wh-subtle">${escapeHtml(`${zh ? "干活" : "Production"} ${uiFormatCny(laborSplit.production_cost_cny, locale)} · ${zh ? "自进化" : "Self-improvement"} ${uiFormatCny(laborSplit.self_improvement_cost_cny, locale)}（${Math.round(laborSplit.self_improvement_ratio * 100)}%）`)}</p></article>`
+    ? `<article class="wh-card" data-r8-cost-labor-split="true" data-r8-cost-self-improvement-ratio="${escapeHtml(String(laborSplit.self_improvement_ratio))}"><strong>${escapeHtml(goldPathCopyT(locale, "workVsSelfImprovement"))}</strong><p class="wh-subtle">${escapeHtml(`${goldPathCopyT(locale, "production")} ${uiFormatCny(laborSplit.production_cost_cny, locale)} · ${goldPathCopyT(locale, "selfImprovement")} ${uiFormatCny(laborSplit.self_improvement_cost_cny, locale)}（${Math.round(laborSplit.self_improvement_ratio * 100)}%）`)}</p></article>`
     : "";
   const statusText = nearestRisk
     ? budgetStatusLabel(locale, nearestRisk.status)
@@ -716,7 +718,7 @@ function renderKnowledge(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, 
   const evidence = vm.page_vms.evidence;
   const refs = evidence.evidence_refs ?? [];
   const actions = evidence.actions ?? [];
-  const title = locale === "zh-CN" ? "证据检索" : "Evidence search";
+  const title = goldPathCopyT(locale, "evidenceSearch");
   const summary = evidence.summary_text;
   const rows = refs.length
     ? refs.slice(0, 5).map((ref) => `<div class="wh-row">
@@ -726,11 +728,11 @@ function renderKnowledge(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, 
       </div>
       <span class="wh-pill">${escapeHtml(ref.source_type)}</span>
     </div>`).join("")
-    : `<p class="wh-subtle">${escapeHtml(evidence.missing_evidence_note ?? (locale === "zh-CN" ? "没有找到可靠证据。" : "No reliable evidence found."))}</p>`;
+    : `<p class="wh-subtle">${escapeHtml(evidence.missing_evidence_note ?? (goldPathCopyT(locale, "noReliableEvidenceFound")))}</p>`;
   const actionButtons = actions
     .map((action) => action.href ? `<a class="wh-btn" href="${href(action.href)}">${escapeHtml(action.label)}</a>` : "")
     .join("");
-  const main = `<span class="wh-kicker">${escapeHtml(locale === "zh-CN" ? "知识库" : "Knowledge")}</span>
+  const main = `<span class="wh-kicker">${escapeHtml(goldPathCopyT(locale, "knowledge"))}</span>
     <h1 class="wh-title">${escapeHtml(title)}</h1>
     <p class="wh-subtle">${escapeHtml(summary)}</p>
     <div class="wh-list">${rows}</div>

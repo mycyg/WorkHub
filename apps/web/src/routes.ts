@@ -49,6 +49,8 @@ import {
   type RouteStateKind
 } from "@workhub/ui";
 
+import { webT } from "./locales.js";
+
 export type WebRouteLoadStatus = "idle" | "loading" | "ready" | "empty" | "error" | "forbidden" | "notFound";
 
 export type WebRouteMatch = {
@@ -854,7 +856,7 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
         String(surface.project.summary.total_open_work_item_count ?? surface.project.summary.open_work_item_count)
       ),
       metric(locale, "files", String(surface.project.drive.file_count)),
-      metric(locale, "status", surface.project.project.status === "archived" ? (zh ? "已归档" : "Archived") : (zh ? "活跃中" : "Active"))
+      metric(locale, "status", surface.project.project.status === "archived" ? (webT(locale, "archived")) : (webT(locale, "active")))
     ];
   }
   if (surface.key === "project-timeline") {
@@ -871,23 +873,23 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
       // runtime 指示当前接入起点：绑定项目时显示项目名(截断，避免长 CJK 名撑爆 chip)，否则「试点/Pilot」。
       const intakeRuntime = surface.project
         ? (surface.project.name.length > 16 ? `${surface.project.name.slice(0, 15)}…` : surface.project.name)
-        : (locale === "zh-CN" ? "试点" : "Pilot");
+        : (webT(locale, "pilot"));
       return [
         metric(locale, "options", "0"),
-        metric(locale, "queue", locale === "zh-CN" ? "待开始" : "Start"),
+        metric(locale, "queue", webT(locale, "start")),
         metric(locale, "runtime", intakeRuntime)
       ];
     }
     // 普通用户审查：原样渲 input_mode 枚举（long_text）与 session UUID 是黑话泄漏——换人话。
     const stageLabel = surface.session.question.input_mode === "confirm"
-      ? (locale === "zh-CN" ? "待确认" : "Confirm")
-      : (locale === "zh-CN" ? "问答中" : "Q&A");
+      ? (webT(locale, "confirm2"))
+      : (webT(locale, "qA"));
     return [
       ...(surface.session.question.options.length > 0
         ? [metric(locale, "options", String(surface.session.question.options.length))]
         : []),
       metric(locale, "queue", stageLabel),
-      metric(locale, "runtime", locale === "zh-CN" ? "需求澄清" : "Clarifying")
+      metric(locale, "runtime", webT(locale, "clarifying"))
     ];
   }
   if (surface.key === "approvals") {
@@ -917,7 +919,7 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
     // 只读镜像 masthead：本页拉到的消息条数 + 「只读镜像」状态（诚实标注：这是镜像，不是全量）。
     return [
       metric(locale, "messages", String(surface.messages.length)),
-      metric(locale, "runtime", locale === "zh-CN" ? "只读镜像" : "Read-only")
+      metric(locale, "runtime", webT(locale, "readOnly"))
     ];
   }
   if (surface.key === "drive") {
@@ -982,16 +984,16 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
   if (surface.key === "knowledge") {
     return [
       metric(locale, "refs", String(surface.evidence.evidence_refs.length)),
-      metric(locale, "evidence", surface.evidence.missing_evidence_note ? (locale === "zh-CN" ? "缺失" : "Missing") : (locale === "zh-CN" ? "已找到" : "Found")),
-      metric(locale, "runtime", locale === "zh-CN" ? "实时数据" : "Live data")
+      metric(locale, "evidence", surface.evidence.missing_evidence_note ? (webT(locale, "missing")) : (webT(locale, "found"))),
+      metric(locale, "runtime", webT(locale, "liveData"))
     ];
   }
   if (surface.key === "search") {
     // 服务端只知道 URL 里的 q（结果由客户端拉取），masthead 如实只报「当前搜索词」+「实时数据」，
     // 不编造结果计数（那要等客户端 fetch 完才知道）。
     return [
-      metric(locale, "query", surface.q && surface.q.length > 0 ? surface.q : (locale === "zh-CN" ? "未输入" : "Not set")),
-      metric(locale, "runtime", locale === "zh-CN" ? "实时数据" : "Live data")
+      metric(locale, "query", surface.q && surface.q.length > 0 ? surface.q : (webT(locale, "notSet2"))),
+      metric(locale, "runtime", webT(locale, "liveData"))
     ];
   }
   if (surface.key === "skills") {
@@ -1554,11 +1556,9 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
       return {
         status: "empty" as const,
         actionHref: `/workitems/${replay.run.work_item_id}`,
-        actionLabel: locale === "zh-CN" ? "回到事项" : "Back to the work item",
-        titleOverride: locale === "zh-CN" ? "这次执行还没有可回放的步骤" : "No replayable steps yet",
-        bodyOverride: locale === "zh-CN"
-          ? "这次执行还没有产生可回放的轨迹。回到事项查看它的最新状态。"
-          : "This run hasn’t produced a replayable trace yet. Head back to the work item for its latest status."
+        actionLabel: webT(locale, "backToTheWorkItem"),
+        titleOverride: webT(locale, "noReplayableStepsYet"),
+        bodyOverride: webT(locale, "thisRunHasnTProducedA")
       } satisfies TailoredEmptyRouteState;
     }
     return { key: "replay", replay } satisfies WebRouteSurface;
@@ -1628,7 +1628,7 @@ function forbiddenOwnerLabel(error: unknown, locale: WorkHubLocale) {
   if (error instanceof Error && error.message) {
     return error.message;
   }
-  return locale === "zh-CN" ? "需要负责人授权" : "Needs owner approval";
+  return webT(locale, "needsOwnerApproval");
 }
 
 // 详情路由的空/未找到态回链：项目主页这类从列表点进来的页面，回链应回到来源列表(/projects)
@@ -1672,7 +1672,7 @@ function routeStateCopyOverride(
 // 回 "/"(总览)时返回 undefined,沿用该状态默认文案。
 function routeStateBackLabel(match: WebRouteMatch, locale: WorkHubLocale): string | undefined {
   if (routeStateBackHref(match) === "/projects") {
-    return locale === "zh-CN" ? "去项目" : "Go to projects";
+    return webT(locale, "goToProjects");
   }
   return undefined;
 }
@@ -1831,7 +1831,7 @@ export async function loadWebRoute(
     // 并给一个诚实的动作文案(默认的「申请访问」其实什么也不申请)。only error 仍留在原地给「重试」。
     const escapable = status === "empty" || status === "notFound" || status === "forbidden";
     const backLabel = status === "forbidden"
-      ? (routeStateBackLabel(match, locale) ?? (locale === "zh-CN" ? "去我能访问的地方" : "Go somewhere you can access"))
+      ? (routeStateBackLabel(match, locale) ?? (webT(locale, "goSomewhereYouCanAccess")))
       : (status === "empty" || status === "notFound")
         ? routeStateBackLabel(match, locale)
         : undefined;

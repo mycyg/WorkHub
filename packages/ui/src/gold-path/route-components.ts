@@ -86,6 +86,8 @@ import {
 import { approvalQueuePageInfoText, goldPathT, normalizeWorkHubLocale, type WorkHubLocale } from "./i18n.js";
 import type { GoldPathRenderedPage } from "./render.js";
 
+import { goldPathCopyT } from "./locales.js";
+
 // "agents"/"skills"/"projects"/"project-home"/"memory" 是 live-only 路由（不在 gold-path 静态 surface 渲染里），故单独并入而非走 Extract。
 export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "conversation" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "search" | "settings"> | "agents" | "skills" | "projects" | "project-home" | "project-timeline" | "memory";
 
@@ -1311,10 +1313,10 @@ function isDelegateActionHref(href: string): boolean {
 function renderDelegatePicker(locale: WorkHubLocale, href?: string) {
   const zh = locale === "zh-CN";
   return `<details class="wh-r4-approval-field" data-wh-delegate="true"${href ? ` data-wh-delegate-href="${escapeHtml(safeHref(href))}"` : ""}>
-              <summary>${escapeHtml(zh ? "转交给同事" : "Hand off to a teammate")}</summary>
-              <p class="wh-subtle">${escapeHtml(zh ? "请假、轮值或这事不归你管时，把它交给合适的人。" : "On leave, on rotation, or not your call — hand this to the right person.")}</p>
-              <select class="wh-pill" data-wh-delegate-select="true" aria-label="${escapeHtml(zh ? "选择转交对象" : "Pick a teammate")}"><option value="">${escapeHtml(zh ? "展开后加载成员…" : "Members load on open…")}</option></select>
-              <div class="wh-r4-route-actions"><button type="button" class="wh-btn" data-wh-delegate-submit="true">${escapeHtml(zh ? "确认转交" : "Delegate")}</button></div>
+              <summary>${escapeHtml(goldPathCopyT(locale, "handOffToATeammate"))}</summary>
+              <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "onLeaveOnRotationOrNot"))}</p>
+              <select class="wh-pill" data-wh-delegate-select="true" aria-label="${escapeHtml(goldPathCopyT(locale, "pickATeammate"))}"><option value="">${escapeHtml(goldPathCopyT(locale, "membersLoadOnOpen"))}</option></select>
+              <div class="wh-r4-route-actions"><button type="button" class="wh-btn" data-wh-delegate-submit="true">${escapeHtml(goldPathCopyT(locale, "delegate"))}</button></div>
             </details>`;
 }
 
@@ -1365,7 +1367,7 @@ function renderAttentionRows(items: AttentionItem[], emptyCopy: string, zh: bool
   const overflowNote = items.length > 4
     ? `<p class="wh-subtle" data-r9-attention-overflow="${escapeHtml(String(items.length - 4))}">${escapeHtml(zh
       ? `还有 ${items.length - 4} 件排在后面，处理完上面的会自动顶上来。`
-      : `${items.length - 4} more waiting — they surface as you clear the ones above.`)} <a href="/approvals">${escapeHtml(zh ? "去审批中心看全部" : "See the full queue in Approvals")}</a></p>`
+      : `${items.length - 4} more waiting — they surface as you clear the ones above.`)} <a href="/approvals">${escapeHtml(goldPathCopyT(zh, "seeTheFullQueueInApprovals"))}</a></p>`
     : "";
   return items
     .slice(0, 4)
@@ -1387,25 +1389,25 @@ function approvalRouteLabel(routedToUserId: string | undefined, locale: WorkHubL
   if (!routedToUserId) {
     return goldPathT(locale, "approvals.unrouted");
   }
-  return locale === "zh-CN" ? "已路由" : "Routed";
+  return goldPathCopyT(locale, "routed");
 }
 
 function approvalActionLabel(actionPattern: string, locale: WorkHubLocale) {
   const zh = locale === "zh-CN";
   const normalized = actionPattern.toLowerCase();
   if (normalized.startsWith("tool.")) {
-    return zh ? "工具审批" : "Tool approval";
+    return goldPathCopyT(locale, "toolApproval");
   }
   if (normalized.includes("permission") || normalized.includes("policy")) {
-    return zh ? "权限审批" : "Permission approval";
+    return goldPathCopyT(locale, "permissionApproval");
   }
   if (normalized.includes("budget") || normalized.includes("cost")) {
-    return zh ? "预算审批" : "Budget approval";
+    return goldPathCopyT(locale, "budgetApproval");
   }
   if (normalized.includes("proposal") || normalized.includes("deliverable") || normalized.includes("document")) {
-    return zh ? "变更审批" : "Change approval";
+    return goldPathCopyT(locale, "changeApproval");
   }
-  return zh ? "审批请求" : "Approval request";
+  return goldPathCopyT(locale, "approvalRequest");
 }
 
 function homePriorityPill(priority: string, zh: boolean): string {
@@ -1572,7 +1574,7 @@ function renderHomeRouteComponent(
   const worklog = vm.worklog;
   const projectList = projects?.projects ?? [];
   const topProject = projectList[0];
-  const projectCountLabel = projects ? String(projectList.length) : (zh ? "项目" : "Projects");
+  const projectCountLabel = projects ? String(projectList.length) : (goldPathCopyT(locale, "projects"));
   const projectRows = projectList.length
     ? projectList.slice(0, 4).map((project) => `<div role="listitem" class="wh-r4-route-row" data-r8-home-project="${escapeHtml(project.id)}" data-r8-home-project-open-items="${escapeHtml(String(project.open_work_item_count))}">
         <div>
@@ -1587,26 +1589,26 @@ function renderHomeRouteComponent(
         <a class="wh-btn" href="/projects/${escapeHtml(encodeURIComponent(project.id))}" data-r8-home-open-project="${escapeHtml(project.id)}">${escapeHtml(routeT(locale, "projects.open"))}</a>
       </div>`).join("") + (projectList.length > 4
       ? `<p class="wh-subtle" data-r9-home-projects-overflow="${escapeHtml(String(projectList.length - 4))}">${escapeHtml(zh
-        ? `还有 ${projectList.length - 4} 个项目未显示，` : `${projectList.length - 4} more projects not shown — `)}<a href="/projects">${escapeHtml(zh ? "查看全部项目" : "see all projects")}</a></p>`
+        ? `还有 ${projectList.length - 4} 个项目未显示，` : `${projectList.length - 4} more projects not shown — `)}<a href="/projects">${escapeHtml(goldPathCopyT(locale, "seeAllProjects"))}</a></p>`
       : "")
     : projects === undefined
       // P1-07：加载失败 ≠ 空。projects===undefined 是取数失败——桌内给失败说明（指向上方重试条），
       // 绝不渲「还没有项目」的空态文案把失败谎报成「你没有项目」。
-      ? `<p class="wh-subtle" data-r20-home-projects-desk-failed="true">${escapeHtml(zh ? "项目清单没能加载，用上方的「重试加载项目」再试一次。" : "The project list didn't load — use “Retry loading projects” above.")}</p>`
-      : `<p class="wh-subtle" data-r8-home-projects-empty="true">${escapeHtml(zh ? "还没有项目。先新建或打开一个项目，任务、文件和版本都会收在同一个工作区里。" : "No projects yet. Create or open a project first; tasks, files, and versions will live in that workspace.")}</p>`;
+      ? `<p class="wh-subtle" data-r20-home-projects-desk-failed="true">${escapeHtml(goldPathCopyT(locale, "theProjectListDidnTLoad"))}</p>`
+      : `<p class="wh-subtle" data-r8-home-projects-empty="true">${escapeHtml(goldPathCopyT(locale, "noProjectsYetCreateOrOpen"))}</p>`;
   const projectDriveHref = topProject ? `/drive?project_id=${encodeURIComponent(topProject.id)}` : "/projects";
   const projectIntakeHref = topProject ? `/intake?project_id=${encodeURIComponent(topProject.id)}` : "/intake";
   const projectDesk = `<section class="wh-card wh-r4-route-card wh-r4-route-card--accent wh-r8-home-project-desk" data-r8-home-project-desk="true" data-r8-home-project-count="${escapeHtml(String(projectList.length))}" data-r8-home-projects-loaded="${escapeHtml(String(Boolean(projects)))}">
       <div class="wh-r4-route-meta">
-        <span class="wh-r4-route-kicker">${escapeHtml(zh ? "项目与网盘" : "Projects and drive")}</span>
-        <span class="wh-pill">${escapeHtml(projects ? (zh ? `项目 ${projectList.length}` : `${projectList.length} projects`) : (zh ? "项目清单未加载" : "Project list unavailable"))}</span>
+        <span class="wh-r4-route-kicker">${escapeHtml(goldPathCopyT(locale, "projectsAndDrive"))}</span>
+        <span class="wh-pill">${escapeHtml(projects ? (zh ? `项目 ${projectList.length}` : `${projectList.length} projects`) : (goldPathCopyT(locale, "projectListUnavailable")))}</span>
       </div>
-      <h3 role="heading" aria-level="2">${escapeHtml(zh ? "先进入项目，再处理任务和文件" : "Start from a project, then work through tasks and files")}</h3>
-      <p>${escapeHtml(zh ? "每个项目像一个仓库：进行中的任务、最近文件、版本历史和网盘入口都围绕它组织。" : "Each project behaves like a repo: open work, recent files, version history, and the drive stay organized around it.")}</p>
+      <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "startFromAProjectThenWork"))}</h3>
+      <p>${escapeHtml(goldPathCopyT(locale, "eachProjectBehavesLikeARepo"))}</p>
       <div class="wh-r4-route-actions">
-        <a class="wh-btn wh-btn-primary" href="/projects" data-r8-home-projects-cta="true">${escapeHtml(zh ? "打开项目" : "Open projects")}</a>
-        <a class="wh-btn" href="${escapeHtml(safeHref(projectDriveHref))}" data-r8-home-drive-cta="true">${escapeHtml(topProject ? (zh ? `打开「${topProject.name}」网盘` : `Open ${topProject.name} drive`) : (zh ? "打开网盘" : "Open drive"))}</a>
-        <a class="wh-btn" href="${escapeHtml(safeHref(projectIntakeHref))}" data-r4-home-intake-cta="true" data-r8-home-new-work-cta="true">${escapeHtml(topProject ? (zh ? `在「${topProject.name}」新建任务` : `New task in ${topProject.name}`) : (zh ? "新建任务" : "New task"))}</a>
+        <a class="wh-btn wh-btn-primary" href="/projects" data-r8-home-projects-cta="true">${escapeHtml(goldPathCopyT(locale, "openProjects"))}</a>
+        <a class="wh-btn" href="${escapeHtml(safeHref(projectDriveHref))}" data-r8-home-drive-cta="true">${escapeHtml(topProject ? (zh ? `打开「${topProject.name}」网盘` : `Open ${topProject.name} drive`) : (goldPathCopyT(locale, "openDrive")))}</a>
+        <a class="wh-btn" href="${escapeHtml(safeHref(projectIntakeHref))}" data-r4-home-intake-cta="true" data-r8-home-new-work-cta="true">${escapeHtml(topProject ? (zh ? `在「${topProject.name}」新建任务` : `New task in ${topProject.name}`) : (goldPathCopyT(locale, "newTask")))}</a>
       </div>
       <div class="wh-r4-route-timeline" role="list">${projectRows}</div>
     </section>`;
@@ -1614,12 +1616,12 @@ function renderHomeRouteComponent(
   // R8：今日「自进化」——只在确有新增/精修时显示，避免零活动时刷存在感。
   const selfEvolved = (worklog?.skills_promoted_today ?? 0) + (worklog?.skills_refined_today ?? 0);
   const selfEvolveLine = worklog && selfEvolved > 0
-    ? `<span class="wh-r4-home-banner-evolve" data-r4-home-self-evolve="true" data-r4-home-skills-promoted="${escapeHtml(String(worklog.skills_promoted_today))}" data-r4-home-skills-refined="${escapeHtml(String(worklog.skills_refined_today))}">${escapeHtml(zh ? "还顺手自我精进：技能 +" : "Also leveled up: skills +")}${escapeHtml(String(worklog.skills_promoted_today))}${escapeHtml(zh ? " · 精修 " : " · refined ")}${escapeHtml(String(worklog.skills_refined_today))}</span>`
+    ? `<span class="wh-r4-home-banner-evolve" data-r4-home-self-evolve="true" data-r4-home-skills-promoted="${escapeHtml(String(worklog.skills_promoted_today))}" data-r4-home-skills-refined="${escapeHtml(String(worklog.skills_refined_today))}">${escapeHtml(goldPathCopyT(locale, "alsoLeveledUpSkills"))}${escapeHtml(String(worklog.skills_promoted_today))}${escapeHtml(goldPathCopyT(locale, "refined"))}${escapeHtml(String(worklog.skills_refined_today))}</span>`
     : "";
   // M1：战绩主行只在今天真有完成量时才显示，否则零活跃新用户首屏会读到「今天我替你扛了 0 件·自主率 0%·约省 0 小时」
   // 这种自夸 0 的尴尬文案（与自进化行的 selfEvolved>0 门同口径）。自进化行独立成立。
   const worklogMainLine = worklog && worklog.accepted_today > 0
-    ? `<span>${escapeHtml(zh ? "今天我搞定了" : "AI handled today:")} <b>${escapeHtml(String(worklog.accepted_today))}</b> ${escapeHtml(zh ? "件 · 自主率" : "done · autonomy")} <b title="${escapeHtml(zh ? "今日 AI 复核通过率" : "Today's AI review pass rate")}" data-r9-home-autonomy-note="true">${escapeHtml(String(worklog.autonomy_rate))}%</b> · ${escapeHtml(zh ? "约省" : "saved ≈")} <b>${escapeHtml(String(worklog.saved_hours_estimate))}</b> ${escapeHtml(zh ? "小时" : "h")}${zh ? ` <span class="wh-r4-home-kao">٩(◜◡◝)۶</span>` : ""}</span>`
+    ? `<span>${escapeHtml(goldPathCopyT(locale, "aiHandledToday"))} <b>${escapeHtml(String(worklog.accepted_today))}</b> ${escapeHtml(goldPathCopyT(locale, "doneAutonomy"))} <b title="${escapeHtml(goldPathCopyT(locale, "todaySAiReviewPassRate"))}" data-r9-home-autonomy-note="true">${escapeHtml(String(worklog.autonomy_rate))}%</b> · ${escapeHtml(goldPathCopyT(locale, "saved"))} <b>${escapeHtml(String(worklog.saved_hours_estimate))}</b> ${escapeHtml(goldPathCopyT(locale, "h"))}${zh ? ` <span class="wh-r4-home-kao">٩(◜◡◝)۶</span>` : ""}</span>`
     : "";
   const worklogBanner = (worklogMainLine || selfEvolveLine)
     ? `<div class="wh-r4-home-banner" data-r4-home-worklog="true">
@@ -1630,7 +1632,7 @@ function renderHomeRouteComponent(
     : "";
   const sourceWarningBanner = sourceWarnings.length
     ? `<section class="wh-card wh-r4-route-card wh-r4-home-source-warning" data-r4-home-source-warning="true" data-r4-home-source-warning-count="${escapeHtml(String(sourceWarnings.length))}">
-        <span class="wh-r4-route-kicker">${escapeHtml(zh ? "数据未完整加载" : "Some data did not load")}</span>
+        <span class="wh-r4-route-kicker">${escapeHtml(goldPathCopyT(locale, "someDataDidNotLoad"))}</span>
         <div class="wh-r4-route-timeline" role="list">
           ${sourceWarnings.map((warning) => `<p class="wh-subtle" data-r4-home-source-warning-source="${escapeHtml(warning.source)}">${escapeHtml(warning.message)}</p>`).join("")}
         </div>
@@ -1642,10 +1644,10 @@ function renderHomeRouteComponent(
   // 「项目清单稍后同步」那种像还在加载的软话，也别和「加载成功但 0 个项目」的空态混为一谈。
   const projectsFailedBanner = projects === undefined
     ? `<section class="wh-card wh-r4-route-card wh-r4-home-source-warning" data-r20-home-projects-failed="true" role="alert">
-        <span class="wh-r4-route-kicker">${escapeHtml(zh ? "项目清单加载失败" : "Project list failed to load")}</span>
-        <p class="wh-subtle">${escapeHtml(zh ? "只有项目区受影响，其余决策与运行照常。" : "Only the projects area is affected; decisions and runs are unaffected.")}</p>
+        <span class="wh-r4-route-kicker">${escapeHtml(goldPathCopyT(locale, "projectListFailedToLoad"))}</span>
+        <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "onlyTheProjectsAreaIsAffected"))}</p>
         <div class="wh-r4-route-actions">
-          <button type="button" class="wh-btn" data-r20-home-projects-retry="true">${escapeHtml(zh ? "重试加载项目" : "Retry loading projects")}</button>
+          <button type="button" class="wh-btn" data-r20-home-projects-retry="true">${escapeHtml(goldPathCopyT(locale, "retryLoadingProjects"))}</button>
         </div>
       </section>`
     : "";
@@ -1657,7 +1659,7 @@ function renderHomeRouteComponent(
   const chips = `<div class="wh-r4-home-chips">
       <span class="wh-r4-home-chip wh-r4-home-chip--accent"><b>${escapeHtml(String(decideCount))}</b>${escapeHtml(goldPathT(locale, "home.decisionTitle"))}</span>
       <span class="wh-r4-home-chip"><b>${escapeHtml(String(workingCount))}</b>${escapeHtml(goldPathT(locale, "home.aiWorkingTitle"))}</span>
-      <span class="wh-r4-home-chip ${riskCount === 0 ? "wh-r4-home-chip--ok" : "wh-r4-prio--danger"}"><b>${escapeHtml(String(riskCount))}</b>${escapeHtml(riskCount === 0 ? (zh ? "风险 ✓ 安心" : "Risk ✓") : (zh ? "风险待看" : "Risk"))}</span>
+      <span class="wh-r4-home-chip ${riskCount === 0 ? "wh-r4-home-chip--ok" : "wh-r4-prio--danger"}"><b>${escapeHtml(String(riskCount))}</b>${escapeHtml(riskCount === 0 ? (goldPathCopyT(locale, "risk")) : (goldPathCopyT(locale, "risk2")))}</span>
     </div>`;
 
   // B-R9.6 §3.7：sync_conflict 主卡的「合并成一条（可编辑）」——merge 动作带 request_json.value_md
@@ -1666,8 +1668,8 @@ function renderHomeRouteComponent(
     ? primary.actions.find((action) => action.id === "merge_both")?.request_json?.["value_md"]
     : undefined;
   const mergeEditor = typeof primaryMergeDraft === "string"
-    ? `<label class="wh-subtle" data-r9-sync-merge-label="true">${escapeHtml(zh ? "合并草稿（可编辑，点「合并成一条」提交）" : "Merge draft (editable — submit via Merge into one)")}</label>
-       <textarea class="wh-r4-approval-comment-input" data-r9-sync-merge-value="true" rows="3" aria-label="${escapeHtml(locale === "zh-CN" ? "两边合并后的内容草稿" : "Merged draft combining both sides")}">${escapeHtml(primaryMergeDraft)}</textarea>`
+    ? `<label class="wh-subtle" data-r9-sync-merge-label="true">${escapeHtml(goldPathCopyT(locale, "mergeDraftEditableSubmitViaMerge"))}</label>
+       <textarea class="wh-r4-approval-comment-input" data-r9-sync-merge-value="true" rows="3" aria-label="${escapeHtml(goldPathCopyT(locale, "mergedDraftCombiningBothSides"))}">${escapeHtml(primaryMergeDraft)}</textarea>`
     : "";
   const decisionCard = primary
     ? `<section class="wh-card wh-r4-route-card wh-r4-decision" data-r4-home-decision="true">
@@ -1686,7 +1688,7 @@ function renderHomeRouteComponent(
         <p>${escapeHtml(goldPathT(locale, "home.emptySummary"))}</p>
         <div class="wh-r4-route-actions">
           <a class="wh-btn wh-btn-primary" href="/intake" data-wh-route="/intake" data-r4-home-intake-cta="true">${escapeHtml(goldPathT(locale, "home.emptyCta"))}</a>
-          <a class="wh-btn" href="/projects" data-wh-route="/projects" data-r4-home-projects-cta="true">${escapeHtml(zh ? "浏览项目" : "Browse projects")}</a>
+          <a class="wh-btn" href="/projects" data-wh-route="/projects" data-r4-home-projects-cta="true">${escapeHtml(goldPathCopyT(locale, "browseProjects"))}</a>
         </div>
       </section>`;
 
@@ -1705,7 +1707,7 @@ function renderHomeRouteComponent(
   // R5（规模化）：多军团并跑时 background_runs 远超 4 条——诚实提示剩余数并给指挥台出路，不再静默截断。
   const runOverflowNote = vm.background_runs.length > 4
     ? `<p class="wh-subtle" data-r9-home-runs-overflow="${escapeHtml(String(vm.background_runs.length - 4))}">${escapeHtml(zh
-      ? `还有 ${vm.background_runs.length - 4} 个运行未显示，` : `${vm.background_runs.length - 4} more runs not shown — `)}<a href="/dashboard/agents">${escapeHtml(zh ? "去指挥台查看全部" : "see all in the command center")}</a></p>`
+      ? `还有 ${vm.background_runs.length - 4} 个运行未显示，` : `${vm.background_runs.length - 4} more runs not shown — `)}<a href="/dashboard/agents">${escapeHtml(goldPathCopyT(locale, "seeAllInTheCommandCenter"))}</a></p>`
     : "";
   // 普通用户审查（首页布局）：每天拍板的人不该先滚过两张常青说明卡——决策区提到项目桌之上。
   const decisionGrid = `<div class="wh-r4-route-grid">
@@ -1755,9 +1757,9 @@ function renderHomeRouteComponent(
       ${worklogBanner}
       <header class="wh-r4-route-head">
         <div>
-          <span class="wh-r4-route-kicker">${escapeHtml(zh ? "项目工作台" : "Project workspace")}</span>
-          <h1>${escapeHtml(zh ? "项目、网盘和待办" : "Projects, drive, and attention")}</h1>
-          <p>${escapeHtml(zh ? "先从项目进入：任务、文件、版本和 AI 待办都会回到同一个项目脉络里。" : "Start from the project: tasks, files, versions, and AI attention all resolve back into one project context.")}</p>
+          <span class="wh-r4-route-kicker">${escapeHtml(goldPathCopyT(locale, "projectWorkspace"))}</span>
+          <h1>${escapeHtml(goldPathCopyT(locale, "projectsDriveAndAttention"))}</h1>
+          <p>${escapeHtml(goldPathCopyT(locale, "startFromTheProjectTasksFiles"))}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(projectCountLabel)}</span>
       </header>
@@ -1768,10 +1770,10 @@ function renderHomeRouteComponent(
       <div class="wh-r4-route-grid">
         ${projectDesk}
         <section class="wh-card wh-r4-route-card" data-r8-home-drive-principle="true">
-          <span class="wh-r4-route-kicker">${escapeHtml(zh ? "文件同步" : "File sync")}</span>
-          <h3 role="heading" aria-level="2">${escapeHtml(zh ? "网盘跟着项目走" : "The drive follows the project")}</h3>
-          <p>${escapeHtml(zh ? "上传、版本、交付物恢复和评论草稿都在项目网盘里完成，避免把文件散在全局入口。" : "Uploads, versions, deliverable restore, and comment drafts all stay inside each project drive instead of a loose global bucket.")}</p>
-          <a class="wh-r4-route-kicker" href="${escapeHtml(safeHref(projectDriveHref))}" data-r8-home-drive-principle-link="true">${escapeHtml(zh ? "查看项目网盘 →" : "View project drive →")}</a>
+          <span class="wh-r4-route-kicker">${escapeHtml(goldPathCopyT(locale, "fileSync"))}</span>
+          <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "theDriveFollowsTheProject"))}</h3>
+          <p>${escapeHtml(goldPathCopyT(locale, "uploadsVersionsDeliverableRestoreAndComment"))}</p>
+          <a class="wh-r4-route-kicker" href="${escapeHtml(safeHref(projectDriveHref))}" data-r8-home-drive-principle-link="true">${escapeHtml(goldPathCopyT(locale, "viewProjectDrive"))}</a>
         </section>
       </div>
       ${secondaryGrid}
@@ -1806,19 +1808,19 @@ function renderIntakeStartRouteComponent(
   // 普通用户审查：界面写「试点项目」、实际建出英文「Pilot Project」对不上号——按 locale 送本地化名
   // （slug 保持稳定，二次进入仍复用同一项目）。
   const bootstrapPayload = {
-    name: zh ? "试点项目" : "Pilot Project",
+    name: goldPathCopyT(locale, "pilotProject"),
     slug: "pilot-project",
-    description: zh ? "从 WorkHub 新任务入口创建的试点项目。" : "Pilot project context created from the WorkHub intake entry."
+    description: goldPathCopyT(locale, "pilotProjectContextCreatedFromThe")
   };
   // 带项目上下文(从项目主页「新任务」进来)：展示真实项目名、绑定到该项目、跳过「试点项目」bootstrap。
-  const projectName = project ? project.name : (zh ? "试点项目" : "Pilot project");
+  const projectName = project ? project.name : (goldPathCopyT(locale, "pilotProject2"));
   // 文案随是否绑定项目切换——绑定时不再说「准备试点项目」(那条 bootstrap 路径已被跳过)，避免与真实项目名自相矛盾。
-  const kicker = project ? (zh ? "项目工作入口" : "Project work entry") : routeT(locale, "intake.startKicker");
+  const kicker = project ? (goldPathCopyT(locale, "projectWorkEntry")) : routeT(locale, "intake.startKicker");
   const title = project ? (zh ? `在「${project.name}」里新建任务` : `Start work in ${project.name}`) : routeT(locale, "intake.startTitle");
   const body = project
-    ? (zh ? "新任务会直接绑定到这个项目，先给你几个选项把任务问清楚；不会改动已确认的交付物。" : "This task binds directly to this project, then asks a few options to pin down the work. It won't touch accepted deliverables.")
+    ? (goldPathCopyT(locale, "thisTaskBindsDirectlyToThis"))
     : routeT(locale, "intake.startBody");
-  const projectCardHeading = project ? (zh ? "项目上下文" : "Project context") : routeT(locale, "intake.startProject");
+  const projectCardHeading = project ? (goldPathCopyT(locale, "projectContext")) : routeT(locale, "intake.startProject");
   // start 动作：有项目则带 data-s4b-project-id（browser 据此 createSession 直绑该项目、不 bootstrap）；
   // 无项目则保留原 bootstrap 负载（新建/复用「试点项目」）。两路都走 start_intake 调度。
   // INT-01（评估结论）：主操作保持 <a href="/api/..."> 而非 <button>——classifyGoldPathHref 分发、
@@ -1830,7 +1832,7 @@ function renderIntakeStartRouteComponent(
     : `<a class="wh-btn wh-btn-primary" href="/api/projects/bootstrap" role="button" data-action-id="start_intake" data-method="POST" data-s1-day0-start-intake="true" data-request-json="${jsonAttr(bootstrapPayload)}">${escapeHtml(routeT(locale, "intake.startAction"))}</a>`;
   // 来自的项目无法访问(已删/无权限/旧链接)时不静默切换：给一条明确提示，再退化为通用起点。
   const unavailableNotice = projectUnavailable
-    ? `<p class="wh-subtle" data-s4b-project-unavailable="true">${escapeHtml(zh ? "你来自的项目暂时不可用（可能已删除或无访问权限），已切换到通用工作起点。" : "The project you came from is unavailable (deleted or no access); switched to a generic work start.")}</p>`
+    ? `<p class="wh-subtle" data-s4b-project-unavailable="true">${escapeHtml(goldPathCopyT(locale, "theProjectYouCameFromIs"))}</p>`
     : "";
   return createWebRouteComponent({
     key: "intake",
@@ -1846,7 +1848,7 @@ function renderIntakeStartRouteComponent(
           <h1>${escapeHtml(title)}</h1>
           <p>${escapeHtml(body)}</p>
         </div>
-        <span class="wh-r4-route-count" data-r8-intake-badge="true">${escapeHtml(zh ? "新任务" : "New")}</span>
+        <span class="wh-r4-route-count" data-r8-intake-badge="true">${escapeHtml(goldPathCopyT(locale, "new"))}</span>
       </header>
       ${unavailableNotice}
       <div class="wh-r4-route-grid">
@@ -1854,30 +1856,30 @@ function renderIntakeStartRouteComponent(
           <h3 role="heading" aria-level="2">${escapeHtml(projectCardHeading)}</h3>
           ${!project && (projects?.projects ?? []).length
     ? `<label class="wh-r4-route-stack" data-s4c-intake-project-picker="true">
-            <strong>${escapeHtml(zh ? "任务放进哪个项目" : "Which project does this task belong to")}</strong>
-            <select class="wh-pill" data-s4c-intake-project-select="true" aria-label="${escapeHtml(zh ? "选择任务所属项目" : "Pick the project for this task")}">
+            <strong>${escapeHtml(goldPathCopyT(locale, "whichProjectDoesThisTaskBelong"))}</strong>
+            <select class="wh-pill" data-s4c-intake-project-select="true" aria-label="${escapeHtml(goldPathCopyT(locale, "pickTheProjectForThisTask"))}">
               ${(projects?.projects ?? []).slice(0, 50).map((entry, index) => `<option value="${escapeHtml(entry.id)}"${index === 0 ? " selected" : ""}>${escapeHtml(entry.name)}</option>`).join("")}
-              <option value="">${escapeHtml(zh ? "＋ 新建试点项目" : "+ New pilot project")}</option>
+              <option value="">${escapeHtml(goldPathCopyT(locale, "newPilotProject"))}</option>
             </select>
-            <p class="wh-subtle">${escapeHtml(zh ? "按最近活跃排序；不选项目会新建/复用「试点项目」。" : "Sorted by recent activity; leaving it unset creates/reuses the pilot project.")}</p>
+            <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "sortedByRecentActivityLeavingIt"))}</p>
           </label>`
     : `<div class="wh-r4-route-meta">
             <span class="wh-pill" data-s4b-intake-project-name="${escapeHtml(projectName)}">${escapeHtml(projectName)}</span>
-            <span class="wh-pill">${escapeHtml(zh ? "实时数据" : "Live data")}</span>
+            <span class="wh-pill">${escapeHtml(goldPathCopyT(locale, "liveData"))}</span>
           </div>`}
           <p>${escapeHtml(routeT(locale, "intake.startNext"))}</p>
           <label class="wh-r4-route-stack">
             <strong>${escapeHtml(routeT(locale, "intake.startIntent"))}</strong>
             <textarea class="wh-r4-intake-free-text" data-s1-day1-intent-input="true" maxlength="280" aria-label="${escapeHtml(routeT(locale, "intake.startIntent"))}" placeholder="${escapeHtml(routeT(locale, "intake.startIntentPlaceholder"))}"></textarea>
-            <p class="wh-subtle" data-r9-intake-intent-limit="true">${escapeHtml(locale === "zh-CN" ? "最多 280 字——先说重点，细节 AI 会追问。" : "Up to 280 characters — lead with the point; AI will ask for details.")}</p>
+            <p class="wh-subtle" data-r9-intake-intent-limit="true">${escapeHtml(goldPathCopyT(locale, "upTo280CharactersLeadWith"))}</p>
           </label>
         </section>
         <aside class="wh-r4-route-stack">
           <section class="wh-card wh-r4-route-card" data-s1-day0-intake-evidence="true">
             <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "intake.progress"))}</h3>
             <div class="wh-r4-route-timeline" role="list">
-              <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(projectCardHeading)}</strong><span class="wh-pill">${escapeHtml(zh ? "已就绪" : "Ready")}</span></div>
-              <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "intake.summary"))}</strong><span class="wh-pill">${escapeHtml(zh ? "待进行" : "Next")}</span></div>
+              <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(projectCardHeading)}</strong><span class="wh-pill">${escapeHtml(goldPathCopyT(locale, "ready"))}</span></div>
+              <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "intake.summary"))}</strong><span class="wh-pill">${escapeHtml(goldPathCopyT(locale, "next"))}</span></div>
             </div>
             <p>${escapeHtml(routeT(locale, "intake.startEvidence"))}</p>
           </section>
@@ -1983,16 +1985,12 @@ function renderIntakeRouteComponent(vm: SessionVM, locale: WorkHubLocale): WebRo
 // R6（信任）：weak/missing 裸标签不可行动——解释「弱在哪、该怎么办」（生产端带 confidence_reason 时优先用它）。
 function approvalEvidenceConfidenceExplain(hint: string, zh: boolean): string {
   if (hint === "weak") {
-    return zh
-      ? "证据较弱：来源少或与结论关联不强，建议自行核对后再拍板。"
-      : "Weak evidence: few sources or loosely tied to the conclusion — verify before deciding.";
+    return goldPathCopyT(zh, "weakEvidenceFewSourcesOrLoosely");
   }
   if (hint === "missing") {
-    return zh
-      ? "缺证据：AI 没有给出可核对的依据，建议打回并要求补充证据。"
-      : "No evidence: the AI provided nothing verifiable — consider sending it back for sources.";
+    return goldPathCopyT(zh, "noEvidenceTheAiProvidedNothing");
   }
-  return zh ? "证据充分：有可核对的依据支撑这个结论。" : "Evidence found: verifiable sources support this conclusion.";
+  return goldPathCopyT(zh, "evidenceFoundVerifiableSourcesSupportThis");
 }
 
 function approvalEvidenceConfidenceLabel(hint: string, zh: boolean): string {
@@ -2065,7 +2063,7 @@ function renderApprovalDetailPanel(
     ? `<section data-r4-approval-checks="true"><h4 role="heading" aria-level="3">${escapeHtml(goldPathT(locale, "approvals.checksTitle"))}</h4><div class="wh-r4-route-timeline" role="list">${detail.checks.map((check) => renderCheck(check, locale)).join("")}</div></section>`
     : "";
   const aiSection = (detail?.ai_reason || detail?.expected_benefit || detail?.risk_label || detail?.ai_review_md)
-    ? `<section data-r4-approval-ai="true"><h4 role="heading" aria-level="3">${escapeHtml(goldPathT(locale, "approvals.aiTitle"))}</h4>${detail?.ai_reason ? `<p>${escapeHtml(detail.ai_reason)}</p>` : ""}${detail?.expected_benefit ? `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.benefitTitle"))}: ${escapeHtml(detail.expected_benefit)}</p>` : ""}${detail?.risk_label ? `<span class="wh-pill wh-r4-prio wh-r4-prio--warn">${escapeHtml(detail.risk_label)}</span>` : ""}${detail?.ai_review_md ? `<div data-r9-approval-ai-review="true"><h4 role="heading" aria-level="3">${escapeHtml(locale === "zh-CN" ? "AI 复核结论" : "AI review verdict")}</h4><p class="wh-subtle" style="white-space:pre-line">${escapeHtml(detail.ai_review_md)}</p></div>` : ""}</section>`
+    ? `<section data-r4-approval-ai="true"><h4 role="heading" aria-level="3">${escapeHtml(goldPathT(locale, "approvals.aiTitle"))}</h4>${detail?.ai_reason ? `<p>${escapeHtml(detail.ai_reason)}</p>` : ""}${detail?.expected_benefit ? `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.benefitTitle"))}: ${escapeHtml(detail.expected_benefit)}</p>` : ""}${detail?.risk_label ? `<span class="wh-pill wh-r4-prio wh-r4-prio--warn">${escapeHtml(detail.risk_label)}</span>` : ""}${detail?.ai_review_md ? `<div data-r9-approval-ai-review="true"><h4 role="heading" aria-level="3">${escapeHtml(goldPathCopyT(locale, "aiReviewVerdict"))}</h4><p class="wh-subtle" style="white-space:pre-line">${escapeHtml(detail.ai_review_md)}</p></div>` : ""}</section>`
     : "";
   const conflictsSection = detail?.conflicts.length
     ? `<section data-r4-approval-conflicts="true"><h4 role="heading" aria-level="3">${escapeHtml(goldPathT(locale, "approvals.conflictsTitle"))}</h4>${detail.conflicts.map((conflict) => `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-approval-conflict="true"><strong>${escapeHtml(conflict.description)}</strong>${conflict.impact ? `<p class="wh-subtle">${escapeHtml(conflict.impact)}</p>` : ""}${conflict.suggestion ? `<p>${escapeHtml(conflict.suggestion)}</p>` : ""}</div>`).join("")}</section>`
@@ -2074,7 +2072,7 @@ function renderApprovalDetailPanel(
     ? `<section data-r4-approval-timeline="true"><h4 role="heading" aria-level="3">${escapeHtml(goldPathT(locale, "approvals.timelineTitle"))}</h4><div class="wh-r4-route-timeline" role="list">${detail.timeline.map((step) => {
         // L#W2-18：把合成的时间戳/每步 SLA 真正显示出来（之前只算不渲染）。
         const sub = [step.actor_label, formatApprovalTimestamp(step.at)].filter(Boolean).join(" · ");
-        return `<div role="listitem" class="wh-r4-route-row" data-r4-approval-timeline-step="${escapeHtml(step.kind)}" data-status="${escapeHtml(step.status)}"><div><strong>${escapeHtml(step.label)}</strong>${sub ? `<p class="wh-subtle">${escapeHtml(sub)}</p>` : ""}</div><div class="wh-r4-route-meta">${step.sla_due_at ? `<span class="wh-pill" data-r4-approval-step-sla="true">${escapeHtml(zh ? "处理期限 " : "Due ")}${escapeHtml(formatApprovalTimestamp(step.sla_due_at))}</span>` : ""}<span class="wh-pill">${escapeHtml(approvalStepStatusLabel(step.status, zh))}</span></div></div>`;
+        return `<div role="listitem" class="wh-r4-route-row" data-r4-approval-timeline-step="${escapeHtml(step.kind)}" data-status="${escapeHtml(step.status)}"><div><strong>${escapeHtml(step.label)}</strong>${sub ? `<p class="wh-subtle">${escapeHtml(sub)}</p>` : ""}</div><div class="wh-r4-route-meta">${step.sla_due_at ? `<span class="wh-pill" data-r4-approval-step-sla="true">${escapeHtml(goldPathCopyT(locale, "due"))}${escapeHtml(formatApprovalTimestamp(step.sla_due_at))}</span>` : ""}<span class="wh-pill">${escapeHtml(approvalStepStatusLabel(step.status, zh))}</span></div></div>`;
       }).join("")}</div></section>`
     : "";
   const comments = detail?.comments ?? [];
@@ -2098,7 +2096,7 @@ function renderApprovalDetailPanel(
       ${evidence}
       ${timelineSection}
       ${commentsSection}
-      ${item.work_item_id ? `<a class="wh-btn" href="/workitems/${escapeHtml(item.work_item_id)}" data-r4-approval-workitem-link="${escapeHtml(item.work_item_id)}">${escapeHtml(zh ? "查看任务" : "View task")}</a>` : ""}
+      ${item.work_item_id ? `<a class="wh-btn" href="/workitems/${escapeHtml(item.work_item_id)}" data-r4-approval-workitem-link="${escapeHtml(item.work_item_id)}">${escapeHtml(goldPathCopyT(locale, "viewTask"))}</a>` : ""}
     </article>`;
 }
 
@@ -2148,7 +2146,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
       </header>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-approval-empty-card="true">
-          <p>${escapeHtml(zh ? "有需要你拍板的，Cuu 会第一时间端到这里；先安心忙别的吧 (=^･ω･^=)" : "When something needs your call, Cuu will bring it here first — carry on for now.")}</p>
+          <p>${escapeHtml(goldPathCopyT(locale, "whenSomethingNeedsYourCallCuu"))}</p>
         </section>
         <section class="wh-card wh-r4-route-card">
           <h3 role="heading" aria-level="2">${escapeHtml(goldPathT(locale, "approvals.ruleTitle"))}</h3>
@@ -2166,7 +2164,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
     ? ` data-r4-approval-page-info="true" data-r4-approval-page-limit="${escapeHtml(String(vm.page_info.limit))}" data-r4-approval-page-offset="${escapeHtml(String(vm.page_info.offset ?? 0))}" data-r4-approval-page-returned="${escapeHtml(String(vm.page_info.returned))}" data-r4-approval-page-has-more="${escapeHtml(String(vm.page_info.has_more))}"`
     : "";
   const nextPageAction = nextPageHref
-    ? `<div class="wh-r4-route-actions"><a class="wh-btn" href="${escapeHtml(safeHref(nextPageHref))}" data-r4-approval-load-more="true" data-r4-approval-next-page-href="${escapeHtml(safeHref(nextPageHref))}">${escapeHtml(zh ? "查看更多审批" : "Load more approvals")}</a></div>`
+    ? `<div class="wh-r4-route-actions"><a class="wh-btn" href="${escapeHtml(safeHref(nextPageHref))}" data-r4-approval-load-more="true" data-r4-approval-next-page-href="${escapeHtml(safeHref(nextPageHref))}">${escapeHtml(goldPathCopyT(locale, "loadMoreApprovals"))}</a></div>`
     : "";
   // E4：删掉右栏那张独立「截止时间」卡——它绑定到 primary(首项)且服务端烘焙,客户端切换审批项时
   // 只换了详情面板与按钮 href,这张卡不更新 → 选了 B 仍显 A 的 SLA(和正确的每行 SLA 药丸打架)。
@@ -2180,11 +2178,11 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
       // R13（读屏）：行内嵌 checkbox 时容器不能是 role=button（禁止嵌套可交互）——
       // 改用 aria-current 表达「当前选中行」，tabindex+Enter/Space 行为保留。
       return `<article class="wh-card wh-r4-route-card wh-r4-approval-list-item" tabindex="0" aria-current="${escapeHtml(String(item.id === primary?.id))}" data-r4-approval-item="${escapeHtml(item.id)}" data-r12-approval-checkable="true" data-r4-approval-selected="${escapeHtml(String(item.id === primary?.id))}" data-r10-approval-title="${escapeHtml(item.title)}" data-r10-approval-reason="${escapeHtml(item.reason_text ?? "")}"${respondHref ? ` data-r4-approval-respond-href="${escapeHtml(safeHref(respondHref))}"` : ""}>
-      <div class="wh-r4-route-meta">${respondHref ? `<input type="checkbox" data-r12-approval-check="${escapeHtml(item.id)}" aria-label="${escapeHtml(zh ? "选择这条参与批量通过" : "Select for batch approve")}" />` : ""}<span class="wh-pill" data-tone="${escapeHtml(item.priority)}">${escapeHtml(attentionPriorityLabel(item.priority, zh))}</span><span class="wh-pill">${escapeHtml(attentionKindLabel(item.kind, zh))}</span>${item.project_name ? `<span class="wh-pill" data-r12-attention-project="true">${escapeHtml(item.project_name)}</span>` : ""}</div>
+      <div class="wh-r4-route-meta">${respondHref ? `<input type="checkbox" data-r12-approval-check="${escapeHtml(item.id)}" aria-label="${escapeHtml(goldPathCopyT(locale, "selectForBatchApprove"))}" />` : ""}<span class="wh-pill" data-tone="${escapeHtml(item.priority)}">${escapeHtml(attentionPriorityLabel(item.priority, zh))}</span><span class="wh-pill">${escapeHtml(attentionKindLabel(item.kind, zh))}</span>${item.project_name ? `<span class="wh-pill" data-r12-attention-project="true">${escapeHtml(item.project_name)}</span>` : ""}</div>
       <h3 role="heading" aria-level="2">${escapeHtml(item.title)}</h3>
       <p>${escapeHtml(item.summary_text)}</p>
-      ${itemRequest?.sla_due_at ? `<span class="wh-pill" data-r4-approval-sla="${escapeHtml(item.id)}">${escapeHtml(locale === "zh-CN" ? "处理期限 " : "Due ")}${escapeHtml(formatApprovalTimestamp(itemRequest.sla_due_at))}</span>` : ""}
-      ${item.work_item_id ? `<a class="wh-btn" href="/workitems/${escapeHtml(item.work_item_id)}" data-r4-approval-item-link="${escapeHtml(item.id)}">${escapeHtml(zh ? "去处理" : "Open")}</a>` : ""}
+      ${itemRequest?.sla_due_at ? `<span class="wh-pill" data-r4-approval-sla="${escapeHtml(item.id)}">${escapeHtml(goldPathCopyT(locale, "due"))}${escapeHtml(formatApprovalTimestamp(itemRequest.sla_due_at))}</span>` : ""}
+      ${item.work_item_id ? `<a class="wh-btn" href="/workitems/${escapeHtml(item.work_item_id)}" data-r4-approval-item-link="${escapeHtml(item.id)}">${escapeHtml(goldPathCopyT(locale, "open"))}</a>` : ""}
     </article>`;
     })
     .join("");
@@ -2202,12 +2200,12 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
     .map((item) => {
       const routedAvatar = item.routed_to_user_id ? personAvatarTileHtml({ userId: item.routed_to_user_id, label: "" }) : "";
       const delegatedChip = item.delegated_to_user_id
-        ? `${personAvatarTileHtml({ userId: item.delegated_to_user_id, label: "" })}<span class="wh-pill" data-r14-approval-delegated="true">${escapeHtml(zh ? "已委派" : "Delegated")}</span>`
+        ? `${personAvatarTileHtml({ userId: item.delegated_to_user_id, label: "" })}<span class="wh-pill" data-r14-approval-delegated="true">${escapeHtml(goldPathCopyT(locale, "delegated"))}</span>`
         : "";
       return `<div role="listitem" class="wh-r4-route-row" data-r4-approval-request="${escapeHtml(item.id)}">
       <div>
         <strong>${escapeHtml(approvalActionLabel(item.action_pattern, locale))}</strong>
-        <p>${escapeHtml(approvalRequestStatusLabel(item.status, locale === "zh-CN"))}${item.sla_due_at ? ` · ${locale === "zh-CN" ? "处理期限" : "due"} ${escapeHtml(formatApprovalTimestamp(item.sla_due_at))}` : ""}</p>
+        <p>${escapeHtml(approvalRequestStatusLabel(item.status, locale === "zh-CN"))}${item.sla_due_at ? ` · ${goldPathCopyT(locale, "due2")} ${escapeHtml(formatApprovalTimestamp(item.sla_due_at))}` : ""}</p>
       </div>
       <div class="wh-r4-route-meta">
         ${routedAvatar}<span class="wh-pill" data-r4-approval-routed="${escapeHtml(String(Boolean(item.routed_to_user_id)))}">${escapeHtml(approvalRouteLabel(item.routed_to_user_id, locale))}</span>
@@ -2252,8 +2250,8 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
         <aside class="wh-r4-route-stack wh-r4-approval-actions" data-r4-approval-action-panel="true">
           <section class="wh-card wh-r4-route-card">
             <h3 role="heading" aria-level="2">${escapeHtml(goldPathT(locale, "approvals.myActions"))}</h3>
-            <button type="button" class="wh-btn" data-r12-approval-batch-approve="true" hidden>${escapeHtml(zh ? "批量通过所选" : "Approve selected")}</button>
-            <p class="wh-subtle" data-r12-approval-kbd-hint="true">${escapeHtml(zh ? "键盘：A=通过当前 · X=打回当前" : "Keys: A=approve · X=send back")}</p>
+            <button type="button" class="wh-btn" data-r12-approval-batch-approve="true" hidden>${escapeHtml(goldPathCopyT(locale, "approveSelected"))}</button>
+            <p class="wh-subtle" data-r12-approval-kbd-hint="true">${escapeHtml(goldPathCopyT(locale, "keysAApproveXSendBack"))}</p>
             ${primary ? renderActions(primary.actions) : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.noSelection"))}</p>`}
             ${primary ? `<label class="wh-r4-approval-field"><span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "approvals.reasonLabel"))}</span><textarea class="wh-r4-approval-reason" data-r4-approval-reason rows="2" aria-label="${escapeHtml(goldPathT(locale, "approvals.reasonLabel"))}" placeholder="${escapeHtml(goldPathT(locale, "approvals.reasonPlaceholder"))}"></textarea></label>
             <label class="wh-r4-approval-remember"><input type="checkbox" data-r4-approval-remember /> <span>${escapeHtml(goldPathT(locale, "approvals.rememberLabel"))}</span></label>
@@ -2316,13 +2314,13 @@ function evidenceRows(refs: EvidenceRef[], locale: WorkHubLocale, marker: string
 function emptyTraceCopy(status: string, locale: WorkHubLocale): string {
   const zh = locale === "zh-CN";
   if (status === "done" || status === "merged") {
-    return zh ? "这条任务已结束，没有记录到 AI 执行步骤。" : "This work item is finished; no AI execution steps were recorded.";
+    return goldPathCopyT(locale, "thisWorkItemIsFinishedNo");
   }
   if (status === "cancelled") {
-    return zh ? "这条任务已取消，没有执行步骤。" : "This work item was cancelled; there are no execution steps.";
+    return goldPathCopyT(locale, "thisWorkItemWasCancelledThere");
   }
   if (status === "escalated") {
-    return zh ? "需要负责人介入，暂无 AI 执行步骤。" : "Needs the owner to step in; no AI steps yet.";
+    return goldPathCopyT(locale, "needsTheOwnerToStepIn");
   }
   return uiT(locale, "workitem.emptyTrace");
 }
@@ -2330,13 +2328,13 @@ function emptyTraceCopy(status: string, locale: WorkHubLocale): string {
 function emptyDeliverableCopy(status: string, locale: WorkHubLocale): string {
   const zh = locale === "zh-CN";
   if (status === "done" || status === "merged") {
-    return zh ? "这条任务已结束，没有待审批的交付物。" : "This work item is finished; nothing is awaiting approval.";
+    return goldPathCopyT(locale, "thisWorkItemIsFinishedNothing");
   }
   if (status === "cancelled") {
-    return zh ? "这条任务已取消，没有交付物。" : "This work item was cancelled; there is no deliverable.";
+    return goldPathCopyT(locale, "thisWorkItemWasCancelledThere2");
   }
   if (status === "escalated") {
-    return zh ? "需要负责人介入，暂无可供审批的交付物。" : "Needs the owner to step in; no deliverable to approve yet.";
+    return goldPathCopyT(locale, "needsTheOwnerToStepIn2");
   }
   return uiT(locale, "workitem.willReadEvidence");
 }
@@ -2394,7 +2392,7 @@ function auditActorLabel(actor: AuditActor, zh: boolean): string {
   if (actor.actor_nickname) {
     return actor.actor_nickname;
   }
-  return zh ? "系统" : "System";
+  return goldPathCopyT(zh, "system");
 }
 
 const AUDIT_TIMELINE_VISIBLE_COUNT = 8;
@@ -2404,7 +2402,7 @@ const AUDIT_TIMELINE_VISIBLE_COUNT = 8;
 export function renderWorkItemAuditTimelineRows(logs: AuditLogFact[], locale: WorkHubLocale): string {
   const zh = locale === "zh-CN";
   if (logs.length === 0) {
-    return `<p class="wh-subtle" data-r20-workitem-audit-timeline-empty="true">${escapeHtml(zh ? "暂无审计记录。" : "No audit history yet.")}</p>`;
+    return `<p class="wh-subtle" data-r20-workitem-audit-timeline-empty="true">${escapeHtml(goldPathCopyT(locale, "noAuditHistoryYet"))}</p>`;
   }
   const visible = logs.slice(0, AUDIT_TIMELINE_VISIBLE_COUNT);
   const overflowCount = logs.length - AUDIT_TIMELINE_VISIBLE_COUNT;
@@ -2420,7 +2418,7 @@ export function renderWorkItemAuditTimelineRows(logs: AuditLogFact[], locale: Wo
     .map((entry) => `<div role="listitem" class="wh-r4-route-row" data-r20-workitem-audit-entry="${escapeHtml(entry.id)}" data-r20-workitem-audit-entry-action="${escapeHtml(entry.action)}">
       <div>
         <strong>${escapeHtml(auditActionLabel(entry.action, zh))}</strong>
-        <p>${escapeHtml(auditActorLabel(entry.actor, zh))}${entry.undone_at ? escapeHtml(zh ? "（已撤销）" : " (undone)") : ""}</p>
+        <p>${escapeHtml(auditActorLabel(entry.actor, zh))}${entry.undone_at ? escapeHtml(goldPathCopyT(locale, "undone")) : ""}</p>
       </div>
       <span class="wh-pill">${escapeHtml(formatApprovalTimestamp(entry.created_at))}</span>
     </div>`)
@@ -2452,13 +2450,13 @@ function auditEntityLabel(entity: AuditLogFact["entity"], zh: boolean): string {
 export function renderWorkspaceAuditRows(logs: AuditLogFact[], locale: WorkHubLocale): string {
   const zh = locale === "zh-CN";
   if (logs.length === 0) {
-    return `<p class="wh-subtle" data-r23-workspace-audit-empty="true">${escapeHtml(zh ? "这个工作区还没有审计记录。" : "No audit entries in this workspace yet.")}</p>`;
+    return `<p class="wh-subtle" data-r23-workspace-audit-empty="true">${escapeHtml(goldPathCopyT(locale, "noAuditEntriesInThisWorkspace"))}</p>`;
   }
   return logs
     .map((entry) => `<div role="listitem" class="wh-r4-route-row" data-r23-workspace-audit-entry="${escapeHtml(entry.id)}" data-r23-workspace-audit-entry-action="${escapeHtml(entry.action)}" data-r23-workspace-audit-entry-entity="${escapeHtml(entry.entity.entity_id)}">
       <div>
         <strong>${escapeHtml(auditActionLabel(entry.action, zh))}</strong>
-        <p>${escapeHtml(`${auditActorLabel(entry.actor, zh)} · ${auditEntityLabel(entry.entity, zh)}`)}${entry.undone_at ? escapeHtml(zh ? "（已撤销）" : " (undone)") : ""}</p>
+        <p>${escapeHtml(`${auditActorLabel(entry.actor, zh)} · ${auditEntityLabel(entry.entity, zh)}`)}${entry.undone_at ? escapeHtml(goldPathCopyT(locale, "undone")) : ""}</p>
       </div>
       <span class="wh-pill">${escapeHtml(formatApprovalTimestamp(entry.created_at))}</span>
     </div>`)
@@ -2477,7 +2475,7 @@ export function renderWorkItemCommentRows(
 ): string {
   const zh = locale === "zh-CN";
   if (comments.length === 0) {
-    return `<p class="wh-subtle" data-r23-workitem-comments-empty="true">${escapeHtml(zh ? "还没有人在这个事项下留言。" : "No comments on this item yet.")}</p>`;
+    return `<p class="wh-subtle" data-r23-workitem-comments-empty="true">${escapeHtml(goldPathCopyT(locale, "noCommentsOnThisItemYet"))}</p>`;
   }
   const expanded = options.expanded === true;
   const hiddenCount = expanded ? 0 : Math.max(0, comments.length - WORK_ITEM_COMMENT_VISIBLE_COUNT);
@@ -2500,7 +2498,7 @@ export function renderWorkItemCommentRows(
 }
 
 function workItemAuditTimelineLoadingHtml(locale: WorkHubLocale): string {
-  return `<p class="wh-subtle" data-r20-workitem-audit-timeline-loading="true">${escapeHtml(locale === "zh-CN" ? "正在加载审计记录…" : "Loading audit history…")}</p>`;
+  return `<p class="wh-subtle" data-r20-workitem-audit-timeline-loading="true">${escapeHtml(goldPathCopyT(locale, "loadingAuditHistory"))}</p>`;
 }
 
 function workItemActions(vm: WorkItemDetailVM, locale: WorkHubLocale): ActionSpec[] {
@@ -2544,13 +2542,13 @@ function workItemActions(vm: WorkItemDetailVM, locale: WorkHubLocale): ActionSpe
 
 function taskPlanDependencyLabel(plan: TaskPlanVM, item: TaskPlanVM["items"][number], locale: WorkHubLocale) {
   if (item.depends_on.length === 0) {
-    return locale === "zh-CN" ? "无依赖" : "No dependencies";
+    return goldPathCopyT(locale, "noDependencies");
   }
   const sequenceById = new Map(plan.items.map((candidate, index) => [candidate.id, index + 1]));
   return item.depends_on
     .map((id) => {
       const seq = sequenceById.get(id);
-      return seq ? `#${seq}` : (locale === "zh-CN" ? "未知" : "Unknown");
+      return seq ? `#${seq}` : (goldPathCopyT(locale, "unknown"));
     })
     .join(", ");
 }
@@ -2582,8 +2580,8 @@ function renderTaskPlanPanel(
   const reviewHref = latestProposal?.proposal_id ? `/proposals/${latestProposal.proposal_id}` : undefined;
   const reviewBanner = waitingForApproval
     ? `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-task-plan-awaiting-approval="true">
-        <strong>${escapeHtml(locale === "zh-CN" ? "计划等你批准" : "Plan awaiting approval")}</strong>
-        ${reviewHref ? `<a class="wh-pill" href="${escapeHtml(safeHref(reviewHref))}">${escapeHtml(locale === "zh-CN" ? "去审批" : "Review")}</a>` : ""}
+        <strong>${escapeHtml(goldPathCopyT(locale, "planAwaitingApproval"))}</strong>
+        ${reviewHref ? `<a class="wh-pill" href="${escapeHtml(safeHref(reviewHref))}">${escapeHtml(goldPathCopyT(locale, "review"))}</a>` : ""}
       </div>`
     : "";
   const rows = plan.items.length
@@ -2603,12 +2601,12 @@ function renderTaskPlanPanel(
           </div>
         </div>`;
       }).join("")
-    : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "暂无子任务。" : "No subtasks yet.")}</p>`;
+    : `<p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "noSubtasksYet"))}</p>`;
   const capped = plan.items_capped
-    ? `<p class="wh-subtle" data-r9-task-plan-items-capped-note="true">${escapeHtml(locale === "zh-CN" ? "仅显示前 50 个子任务。" : "Showing the first 50 subtasks.")}</p>`
+    ? `<p class="wh-subtle" data-r9-task-plan-items-capped-note="true">${escapeHtml(goldPathCopyT(locale, "showingTheFirst50Subtasks"))}</p>`
     : "";
   return `<section class="wh-card wh-r4-route-card" data-r9-task-plan-panel="true" data-r9-task-plan-status="${escapeHtml(plan.status)}" data-r9-task-plan-items-capped="${escapeHtml(String(plan.items_capped))}">
-    <h3 role="heading" aria-level="2">${escapeHtml(locale === "zh-CN" ? "任务计划" : "Task plan")}</h3>
+    <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "taskPlan"))}</h3>
     <div class="wh-r4-route-meta">
       <span class="wh-pill">${escapeHtml(taskPlanStatusLabel(locale, plan.status))}</span>
       <span class="wh-pill">${escapeHtml(uiCount(locale, plan.items.length, "个子任务", "subtask"))}</span>
@@ -2659,7 +2657,7 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
   const rows = team.items.length
     ? team.items.map((item) => {
         const traceLink = !item.action && item.replay_href
-          ? `<a class="wh-pill" href="${escapeHtml(safeHref(item.replay_href))}" data-r9-agent-team-trace="${escapeHtml(item.task_plan_item_id)}">${escapeHtml(locale === "zh-CN" ? "看轨迹" : "View replay")}</a>`
+          ? `<a class="wh-pill" href="${escapeHtml(safeHref(item.replay_href))}" data-r9-agent-team-trace="${escapeHtml(item.task_plan_item_id)}">${escapeHtml(goldPathCopyT(locale, "viewReplay"))}</a>`
           : "";
         const waiting = item.waiting_for_seq.length
           ? `<p>${escapeHtml(locale === "zh-CN" ? `等待 ${item.waiting_for_seq.map((seq) => `#${seq}`).join(", ")} 完成` : `Waiting for ${item.waiting_for_seq.map((seq) => `#${seq}`).join(", ")}`)}</p>`
@@ -2685,9 +2683,9 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
           </div>
         </div>`;
       }).join("")
-    : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "暂无子运行。" : "No child runs yet.")}</p>`;
+    : `<p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "noChildRunsYet"))}</p>`;
   const capped = team.runs_capped
-    ? `<p class="wh-subtle" data-r9-agent-team-runs-capped-note="true">${escapeHtml(locale === "zh-CN" ? "仅显示前 100 个子运行。" : "Showing the first 100 child runs.")}</p>`
+    ? `<p class="wh-subtle" data-r9-agent-team-runs-capped-note="true">${escapeHtml(goldPathCopyT(locale, "showingTheFirst100ChildRuns"))}</p>`
     : "";
   // UX-M13（规格 §1.2）：有子任务等人拍板时面板顶部黄条——「N 个子任务需要你拍板 → 去决策」，
   // 处理完（needs_human 清零）黄条自然消失。
@@ -2695,7 +2693,7 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
   const decisionBanner = needsHumanCount > 0
     ? `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-agent-team-banner="needs_human" data-r9-task-plan-awaiting-approval="true">
         <strong>${escapeHtml(locale === "zh-CN" ? `${needsHumanCount} 个子任务需要你拍板` : `${needsHumanCount} subtask${needsHumanCount === 1 ? "" : "s"} need${needsHumanCount === 1 ? "s" : ""} your decision`)}</strong>
-        <a class="wh-pill" href="/attention">${escapeHtml(locale === "zh-CN" ? "去决策" : "Decide")}</a>
+        <a class="wh-pill" href="/attention">${escapeHtml(goldPathCopyT(locale, "decide"))}</a>
       </div>`
     : "";
   // UX-M2（规格 §3.1 尾行）：终态复盘摘要一行——成功/失败/跳过/花费。复盘专页尚不存在，
@@ -2714,20 +2712,20 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
   // B-R9.6 §3.1：头行「暂停派发/恢复派发」次级按钮——VM 给控制才渲，终态军团无按钮。
   const dispatchControl = team.dispatch_control
     ? `<a class="wh-btn" href="${escapeHtml(safeHref(team.dispatch_control.href))}" data-method="${escapeHtml(team.dispatch_control.method)}" data-action-id="${escapeHtml(`${team.dispatch_control.kind}_dispatch`)}" data-r9-agent-team-dispatch-control="${escapeHtml(team.dispatch_control.kind)}" title="${escapeHtml(team.dispatch_control.kind === "pause"
-      ? (locale === "zh-CN" ? "只停新派发；在跑的子任务会跑完，不会被打断。" : "Stops new dispatches only; running subtasks finish unharmed.")
-      : (locale === "zh-CN" ? "就绪的子任务会立即继续派出。" : "Ready subtasks resume dispatching immediately."))}">${escapeHtml(team.dispatch_control.label)}</a><span class="wh-subtle" data-r9-agent-team-dispatch-hint="true">${escapeHtml(team.dispatch_control.kind === "pause"
-      ? (locale === "zh-CN" ? "只停新派发，在跑的会跑完" : "Stops new dispatches; running ones finish")
-      : (locale === "zh-CN" ? "就绪子任务立即继续" : "Ready subtasks resume"))}</span>`
+      ? (goldPathCopyT(locale, "stopsNewDispatchesOnlyRunningSubtasks"))
+      : (goldPathCopyT(locale, "readySubtasksResumeDispatchingImmediately")))}">${escapeHtml(team.dispatch_control.label)}</a><span class="wh-subtle" data-r9-agent-team-dispatch-hint="true">${escapeHtml(team.dispatch_control.kind === "pause"
+      ? (goldPathCopyT(locale, "stopsNewDispatchesRunningOnesFinish"))
+      : (goldPathCopyT(locale, "readySubtasksResume")))}</span>`
     : "";
   return `<section class="wh-card wh-r4-route-card" data-r9-agent-team-panel="true" data-r9-agent-team-plan-id="${escapeHtml(team.plan_id)}" data-r9-agent-team-status="${escapeHtml(team.status)}">
     <div class="wh-r4-route-card-head">
       <h3 role="heading" aria-level="2">${escapeHtml(agentTeamTitle(team, locale))}</h3>
       ${dispatchControl}
     </div>
-    <p class="wh-subtle" data-r9-agent-team-role-legend="true">${escapeHtml(locale === "zh-CN" ? "角色：调研=找依据 · 产出=写东西 · 复核=检查 · 整合=拼装收尾" : "Roles: research=gather · produce=write · review=check · integrate=assemble")}</p>
+    <p class="wh-subtle" data-r9-agent-team-role-legend="true">${escapeHtml(goldPathCopyT(locale, "rolesResearchGatherProduceWriteReview"))}</p>
     ${decisionBanner}
     <div class="wh-r4-route-meta">
-      <span class="wh-pill" title="${escapeHtml(locale === "zh-CN" ? "本军团全部子运行的成本合计" : "Total cost across this team's child runs")}">${escapeHtml(uiFormatCny(team.cost_used_cny, locale))}</span>
+      <span class="wh-pill" title="${escapeHtml(goldPathCopyT(locale, "totalCostAcrossThisTeamS"))}">${escapeHtml(uiFormatCny(team.cost_used_cny, locale))}</span>
       ${team.cost_budget_cny ? `<span class="wh-pill">${escapeHtml(`${burnPct}%`)}</span>` : ""}
     </div>
     ${team.cost_budget_cny ? `<div class="wh-r4-route-meter" data-r9-agent-team-burn="${escapeHtml(burnTone)}" aria-label="${escapeHtml(`${burnPct}%`)}"><span style="${escapeHtml(burnStyle)}"></span></div>` : ""}
@@ -2753,7 +2751,7 @@ function workItemActionHint(status: string, zh: boolean): string {
     cancelled: ["这条已取消。", "This one was cancelled."]
   };
   const entry = map[status];
-  return entry ? (zh ? entry[0] : entry[1]) : (zh ? "暂时没有需要你操作的动作。" : "Nothing needs your action right now.");
+  return entry ? (zh ? entry[0] : entry[1]) : (goldPathCopyT(zh, "nothingNeedsYourActionRightNow"));
 }
 
 function renderWorkItemSourceContext(vm: WorkItemDetailVM, locale: WorkHubLocale) {
@@ -2819,16 +2817,16 @@ function renderWorkItemAssignmentCard(vm: WorkItemDetailVM, locale: WorkHubLocal
   const claimedNickname = vm.workitem.claimed_by_nickname ?? "";
   const currentLine = vm.workitem.claimed_by_user_id
     ? `<div role="listitem" class="wh-r4-route-row" data-r23-workitem-assignment-current="${escapeHtml(vm.workitem.claimed_by_user_id)}">
-        <div><strong>${escapeHtml(zh ? "现在谁在跟" : "Who's on it")}</strong><p>${escapeHtml(claimedNickname || (zh ? "已认领" : "Claimed"))}</p></div>
+        <div><strong>${escapeHtml(goldPathCopyT(locale, "whoSOnIt"))}</strong><p>${escapeHtml(claimedNickname || (goldPathCopyT(locale, "claimed")))}</p></div>
         ${personAvatarTileHtml({ userId: vm.workitem.claimed_by_user_id, label: claimedNickname })}
       </div>`
-    : `<p class="wh-subtle" data-r23-workitem-assignment-unclaimed="true">${escapeHtml(zh ? "还没有人认领这个事项。" : "Nobody has picked this item up yet.")}</p>`;
+    : `<p class="wh-subtle" data-r23-workitem-assignment-unclaimed="true">${escapeHtml(goldPathCopyT(locale, "nobodyHasPickedThisItemUp"))}</p>`;
   // 指派名单：POST /api/workitems/:id/assign 写的是 work_item_assignments，不是认领人——不把它渲出来，
   // 指派成功后这张卡会毫无变化。服务端已按 lead 优先排好序；名字缺席（账号被硬删）时只说角色，不吐裸 id。
   const assigneeRows = (vm.assignees ?? [])
     .map((assignee) => {
-      const roleLabel = assignee.role === "lead" ? (zh ? "主责" : "Lead") : (zh ? "协作" : "Collaborator");
-      const name = assignee.nickname ?? (zh ? "已停用的成员" : "Removed member");
+      const roleLabel = assignee.role === "lead" ? (goldPathCopyT(locale, "lead")) : (goldPathCopyT(locale, "collaborator"));
+      const name = assignee.nickname ?? (goldPathCopyT(locale, "removedMember"));
       return `<div role="listitem" class="wh-r4-route-row" data-r23-workitem-assignee="${escapeHtml(assignee.user_id)}" data-r23-workitem-assignee-role="${escapeHtml(assignee.role)}">
         <div><strong>${escapeHtml(name)}</strong><p>${escapeHtml(roleLabel)}</p></div>
         ${assignee.nickname ? personAvatarTileHtml({ userId: assignee.user_id, label: assignee.nickname }) : ""}
@@ -2836,28 +2834,28 @@ function renderWorkItemAssignmentCard(vm: WorkItemDetailVM, locale: WorkHubLocal
     })
     .join("");
   const assigneeBlock = assigneeRows
-    ? `<p class="wh-subtle" data-r23-workitem-assignees="true">${escapeHtml(zh ? "已指派给：" : "Assigned to:")}</p><div class="wh-r4-route-table">${assigneeRows}</div>`
+    ? `<p class="wh-subtle" data-r23-workitem-assignees="true">${escapeHtml(goldPathCopyT(locale, "assignedTo"))}</p><div class="wh-r4-route-table">${assigneeRows}</div>`
     : "";
   const claimButton = vm.can_claim === true
-    ? `<button type="button" class="wh-btn wh-btn-primary" data-r23-workitem-claim="true">${escapeHtml(zh ? "我来认领" : "Claim it")}</button>`
+    ? `<button type="button" class="wh-btn wh-btn-primary" data-r23-workitem-claim="true">${escapeHtml(goldPathCopyT(locale, "claimIt"))}</button>`
     : "";
   const assignBlock = vm.can_assign === true
     ? `<details class="wh-r4-approval-field" data-r23-workitem-assign="true">
-        <summary>${escapeHtml(zh ? "指派给…" : "Assign to…")}</summary>
-        <p class="wh-subtle">${escapeHtml(zh ? "把这个事项交给工作区里的某位同事，并标明是主责还是协作。" : "Hand this item to a teammate in this workspace, as lead or collaborator.")}</p>
-        <select class="wh-pill" data-r23-workitem-assign-select="true" aria-label="${escapeHtml(zh ? "选择被指派人" : "Pick an assignee")}"><option value="">${escapeHtml(zh ? "展开后加载成员…" : "Members load on open…")}</option></select>
-        <select class="wh-pill" data-r23-workitem-assign-role="true" aria-label="${escapeHtml(zh ? "选择角色" : "Pick a role")}">
-          <option value="collaborator">${escapeHtml(zh ? "协作" : "Collaborator")}</option>
-          <option value="lead">${escapeHtml(zh ? "主责" : "Lead")}</option>
+        <summary>${escapeHtml(goldPathCopyT(locale, "assignTo"))}</summary>
+        <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "handThisItemToATeammate"))}</p>
+        <select class="wh-pill" data-r23-workitem-assign-select="true" aria-label="${escapeHtml(goldPathCopyT(locale, "pickAnAssignee"))}"><option value="">${escapeHtml(goldPathCopyT(locale, "membersLoadOnOpen"))}</option></select>
+        <select class="wh-pill" data-r23-workitem-assign-role="true" aria-label="${escapeHtml(goldPathCopyT(locale, "pickARole"))}">
+          <option value="collaborator">${escapeHtml(goldPathCopyT(locale, "collaborator"))}</option>
+          <option value="lead">${escapeHtml(goldPathCopyT(locale, "lead"))}</option>
         </select>
-        <div class="wh-r4-route-actions"><button type="button" class="wh-btn" data-r23-workitem-assign-submit="true">${escapeHtml(zh ? "确认指派" : "Assign")}</button></div>
+        <div class="wh-r4-route-actions"><button type="button" class="wh-btn" data-r23-workitem-assign-submit="true">${escapeHtml(goldPathCopyT(locale, "assign"))}</button></div>
       </details>`
     : "";
   const noActionNote = !claimButton && !assignBlock
-    ? `<p class="wh-subtle" data-r23-workitem-assignment-readonly="true">${escapeHtml(zh ? "你只能查看这个事项的归属，改动归属需要管理员、提交人或主责。" : "You can see who owns this item; changing that is for admins, the submitter, or the current lead.")}</p>`
+    ? `<p class="wh-subtle" data-r23-workitem-assignment-readonly="true">${escapeHtml(goldPathCopyT(locale, "youCanSeeWhoOwnsThis"))}</p>`
     : "";
   return `<section class="wh-card wh-r4-route-card" data-r23-workitem-assignment="true" data-r23-workitem-assignment-workitem="${escapeHtml(vm.workitem.id)}">
-        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "负责人与协作" : "Owner & collaborators")}</h3>
+        <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "ownerCollaborators"))}</h3>
         <div class="wh-r4-route-table">${currentLine}</div>
         ${assigneeBlock}
         ${claimButton ? `<div class="wh-r4-route-actions">${claimButton}</div>` : ""}
@@ -2873,13 +2871,13 @@ function renderWorkItemAssignmentCard(vm: WorkItemDetailVM, locale: WorkHubLocal
 function renderWorkItemCommentsCard(vm: WorkItemDetailVM, locale: WorkHubLocale): string {
   const zh = locale === "zh-CN";
   return `<section class="wh-card wh-r4-route-card" data-r23-workitem-comments="true" data-r23-workitem-comments-workitem="${escapeHtml(vm.workitem.id)}">
-        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "讨论" : "Discussion")}</h3>
-        <p class="wh-subtle">${escapeHtml(zh ? "能看到这个事项的同事都能在这里留言，留言会连同署名一起留档。" : "Anyone who can see this item can comment here; comments are kept with your name on them.")}</p>
-        <div class="wh-r4-route-timeline" role="list" data-r23-workitem-comments-body="true"><p class="wh-subtle" data-r23-workitem-comments-loading="true">${escapeHtml(zh ? "正在加载讨论…" : "Loading discussion…")}</p></div>
+        <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "discussion"))}</h3>
+        <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "anyoneWhoCanSeeThisItem"))}</p>
+        <div class="wh-r4-route-timeline" role="list" data-r23-workitem-comments-body="true"><p class="wh-subtle" data-r23-workitem-comments-loading="true">${escapeHtml(goldPathCopyT(locale, "loadingDiscussion"))}</p></div>
         <form data-r23-workitem-comment-form="true">
-          <textarea class="wh-pill" style="width:100%;box-sizing:border-box;resize:vertical" rows="3" maxlength="${WORK_ITEM_COMMENT_MAX_CHARS}" data-r23-workitem-comment-input="true" aria-label="${escapeHtml(zh ? "写一条留言" : "Write a comment")}" placeholder="${escapeHtml(zh ? "写一条留言…" : "Write a comment…")}"></textarea>
+          <textarea class="wh-pill" style="width:100%;box-sizing:border-box;resize:vertical" rows="3" maxlength="${WORK_ITEM_COMMENT_MAX_CHARS}" data-r23-workitem-comment-input="true" aria-label="${escapeHtml(goldPathCopyT(locale, "writeAComment"))}" placeholder="${escapeHtml(goldPathCopyT(locale, "writeAComment2"))}"></textarea>
           <p class="wh-subtle" data-r23-workitem-comment-status="true" hidden></p>
-          <div class="wh-r4-route-actions"><button type="submit" class="wh-btn" data-r23-workitem-comment-submit="true">${escapeHtml(zh ? "发布留言" : "Post comment")}</button></div>
+          <div class="wh-r4-route-actions"><button type="submit" class="wh-btn" data-r23-workitem-comment-submit="true">${escapeHtml(goldPathCopyT(locale, "postComment"))}</button></div>
         </form>
       </section>`;
 }
@@ -2907,7 +2905,7 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
   // 「这活现在是谁在认领」。PM 点名「工单详情的负责人」要带头像，这里把文字与头像一起新增
   // （不是给已有文字加图，是把这块本来就有数据却从没显示的信息补上），只在有人认领时出现。
   const claimedByPill = vm.workitem.claimed_by_user_id
-    ? `${personAvatarTileHtml({ userId: vm.workitem.claimed_by_user_id, label: vm.workitem.claimed_by_nickname ?? "" })}<span class="wh-pill" data-r14-workitem-claimed-by="true">${escapeHtml(`${locale === "zh-CN" ? "负责人" : "Assignee"} · ${vm.workitem.claimed_by_nickname ?? "?"}`)}</span>`
+    ? `${personAvatarTileHtml({ userId: vm.workitem.claimed_by_user_id, label: vm.workitem.claimed_by_nickname ?? "" })}<span class="wh-pill" data-r14-workitem-claimed-by="true">${escapeHtml(`${goldPathCopyT(locale, "assignee")} · ${vm.workitem.claimed_by_nickname ?? "?"}`)}</span>`
     : "";
 
   return createWebRouteComponent({
@@ -2936,11 +2934,11 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
             ${claimedByPill}
             <span class="wh-pill">${escapeHtml(attentionPriorityLabel(vm.workitem.priority, locale === "zh-CN"))}</span>
             <span class="wh-pill">${escapeHtml(localizedEnumLabel(vm.workitem.mode, locale === "zh-CN", { worker: "执行", pm: "项目管理" }, { worker: "Worker", pm: "PM" }))}</span>
-            ${vm.confidence ? `<span class="wh-pill wh-r4-prio ${vm.confidence.verdict === "escalate" ? "wh-r4-prio--warn" : ""}" data-r9-workitem-confidence="${escapeHtml(vm.confidence.verdict)}" data-r13-workitem-confidence-auto-merged="${escapeHtml(String(vm.confidence.verdict === "auto_merge" && hasAiAutoMergedDeliverable))}" title="${escapeHtml(locale === "zh-CN" ? "AI 对最近一次输出的把握程度" : "How confident AI is about its latest output")}">${escapeHtml(locale === "zh-CN"
+            ${vm.confidence ? `<span class="wh-pill wh-r4-prio ${vm.confidence.verdict === "escalate" ? "wh-r4-prio--warn" : ""}" data-r9-workitem-confidence="${escapeHtml(vm.confidence.verdict)}" data-r13-workitem-confidence-auto-merged="${escapeHtml(String(vm.confidence.verdict === "auto_merge" && hasAiAutoMergedDeliverable))}" title="${escapeHtml(goldPathCopyT(locale, "howConfidentAiIsAboutIts"))}">${escapeHtml(locale === "zh-CN"
     ? `${vm.confidence.score >= 0.85 ? "我比较有把握" : vm.confidence.score >= 0.6 ? "建议你扫一眼" : "我拿不准，你来定"}${vm.confidence.verdict === "auto_merge" && hasAiAutoMergedDeliverable ? " · 已自动采纳" : ""}`
     : `${vm.confidence.score >= 0.85 ? "I'm fairly confident" : vm.confidence.score >= 0.6 ? "Worth a quick look" : "I'm not sure — your call"}${vm.confidence.verdict === "auto_merge" && hasAiAutoMergedDeliverable ? " · Auto-adopted" : ""}`)}</span>` : ""}
           </div>
-          ${vm.confidence ? `<p class="wh-subtle" data-r9-workitem-confidence-note="true">${escapeHtml(locale === "zh-CN" ? "AI 对最近一次输出的把握程度。" : "How confident AI is about its latest output.")}</p>` : ""}
+          ${vm.confidence ? `<p class="wh-subtle" data-r9-workitem-confidence-note="true">${escapeHtml(goldPathCopyT(locale, "howConfidentAiIsAboutIts2"))}</p>` : ""}
           ${(() => {
     // L25：上下文卡正文别和头部 summary 重复(都源自 raw_description 时)；两者都空也别渲一个空 <p>。
     const body = vm.workitem.planning_note ?? vm.workitem.raw_description ?? "";
@@ -2948,7 +2946,7 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
   })()}
           ${renderWorkItemSourceContext(vm, locale)}
           ${(vm.approval_decisions ?? []).length ? `<div data-r9-workitem-approval-decisions="${escapeHtml(String((vm.approval_decisions ?? []).length))}">
-            <p class="wh-subtle"><strong>${escapeHtml(locale === "zh-CN" ? "审批记录" : "Approval history")}</strong></p>
+            <p class="wh-subtle"><strong>${escapeHtml(goldPathCopyT(locale, "approvalHistory"))}</strong></p>
             ${(vm.approval_decisions ?? []).map((decision) => `<p class="wh-subtle" data-r9-workitem-approval-decision="${escapeHtml(decision.id)}">${escapeHtml(`${approvalDecisionLabel(decision.decision, locale === "zh-CN")} · ${formatApprovalTimestamp(decision.decided_at)}`)}${decision.reason_md ? escapeHtml(` · ${decision.reason_md.slice(0, 120)}`) : ""}</p>`).join("")}
           </div>` : ""}
           ${actions.length
@@ -2958,15 +2956,15 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
         <section class="wh-card wh-r4-route-card" data-r4-workitem-deliverables="true">
           <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "workitem.deliverables"))}</h3>
           <div class="wh-r4-route-timeline" role="list">${deliverableRows}</div>
-          ${vm.accepted_deliverables.length ? `<h4 role="heading" aria-level="3">${escapeHtml(locale === "zh-CN" ? "已采纳的交付物" : "Accepted deliverables")}</h4>
+          ${vm.accepted_deliverables.length ? `<h4 role="heading" aria-level="3">${escapeHtml(goldPathCopyT(locale, "acceptedDeliverables"))}</h4>
           <div class="wh-r4-route-timeline" role="list">${vm.accepted_deliverables.slice(0, 6).map((accepted) => `<div role="listitem" class="wh-r4-route-row" data-r9-workitem-accepted-deliverable="${escapeHtml(accepted.change_id)}" data-r13-workitem-accepted-reviewer-kind="${escapeHtml(accepted.reviewer_kind ?? "")}">
             <div>
               <strong>${escapeHtml(accepted.filename ?? accepted.target_path ?? accepted.target_key)}</strong>
-              ${accepted.reviewer_kind === "ai" ? `<p class="wh-subtle" data-r13-workitem-accepted-auto-merge-notice="true">${escapeHtml(locale === "zh-CN" ? "已由 AI 自动合并，无人工复核。" : "Automatically merged by AI — no human review.")}</p>` : ""}
+              ${accepted.reviewer_kind === "ai" ? `<p class="wh-subtle" data-r13-workitem-accepted-auto-merge-notice="true">${escapeHtml(goldPathCopyT(locale, "automaticallyMergedByAiNoHuman"))}</p>` : ""}
             </div>
             <div class="wh-r4-route-meta">
-              ${accepted.drive_href ? `<a class="wh-pill" href="${escapeHtml(safeHref(accepted.drive_href))}" data-r9-accepted-drive-link="true">${escapeHtml(locale === "zh-CN" ? "在网盘中查看" : "Open in drive")}</a>` : ""}
-              ${accepted.download_href ? `<a class="wh-pill" href="${escapeHtml(safeHref(accepted.download_href))}" data-action-id="drive_download" data-native-resource-link="true" target="_blank" rel="noreferrer">${escapeHtml(locale === "zh-CN" ? "下载" : "Download")}</a>` : ""}
+              ${accepted.drive_href ? `<a class="wh-pill" href="${escapeHtml(safeHref(accepted.drive_href))}" data-r9-accepted-drive-link="true">${escapeHtml(goldPathCopyT(locale, "openInDrive"))}</a>` : ""}
+              ${accepted.download_href ? `<a class="wh-pill" href="${escapeHtml(safeHref(accepted.download_href))}" data-action-id="drive_download" data-native-resource-link="true" target="_blank" rel="noreferrer">${escapeHtml(goldPathCopyT(locale, "download"))}</a>` : ""}
             </div>
           </div>`).join("")}</div>${vm.accepted_deliverables.length > 6 ? `<p class="wh-subtle" data-r11-accepted-overflow="${escapeHtml(String(vm.accepted_deliverables.length - 6))}">${escapeHtml(locale === "zh-CN" ? `还有 ${vm.accepted_deliverables.length - 6} 条已采纳交付物，去网盘查看全部。` : `${vm.accepted_deliverables.length - 6} more accepted deliverables — see all in the drive.`)}</p>` : ""}` : ""}
         </section>
@@ -2991,7 +2989,7 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
         <div class="wh-r4-route-timeline" role="list">${evidenceRows(vm.evidence_refs, locale, "r4-workitem-evidence-ref")}</div>
       </section>
       <section class="wh-card wh-r4-route-card" data-r20-workitem-audit-timeline="true" data-r20-workitem-audit-timeline-workitem="${escapeHtml(vm.workitem.id)}">
-        <h3 role="heading" aria-level="2">${escapeHtml(locale === "zh-CN" ? "跨 run 审计时间线" : "Cross-run audit timeline")}</h3>
+        <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "crossRunAuditTimeline"))}</h3>
         <div class="wh-r4-route-timeline" role="list" data-r20-workitem-audit-timeline-body="true">${workItemAuditTimelineLoadingHtml(locale)}</div>
       </section>
     </section>`
@@ -3073,7 +3071,7 @@ function renderTaskPlanItemsPanel(vm: ProposalDetailVM, locale: WorkHubLocale): 
     return `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-plan-item="${escapeHtml(item.id)}" data-r9-plan-item-role="${escapeHtml(item.role)}">
       <div>
         <strong>#${index + 1} ${escapeHtml(item.title)}</strong>
-        <p style="white-space:pre-line">${escapeHtml(zh ? "验收：" : "Acceptance: ")}${escapeHtml(stripMarkdown(item.acceptance_md))}</p>
+        <p style="white-space:pre-line">${escapeHtml(goldPathCopyT(locale, "acceptance"))}${escapeHtml(stripMarkdown(item.acceptance_md))}</p>
       </div>
       <div class="wh-r4-route-meta">
         <span class="wh-pill">${escapeHtml(taskPlanItemRoleBadge(item.role, locale))}</span>
@@ -3085,12 +3083,12 @@ function renderTaskPlanItemsPanel(vm: ProposalDetailVM, locale: WorkHubLocale): 
   // §3.2 防呆（读侧红字）：份额和 ≠100% 时如实标红——「批准并派发」的硬门在合入事务里。
   const totalShare = ordered.reduce((sum, item) => sum + item.budget_share_pct, 0);
   const shareNote = totalShare === 100
-    ? `<p class="wh-subtle" data-r9-plan-share-total="100">${escapeHtml(zh ? "预算份额合计 100%。" : "Budget shares add up to 100%.")}</p>`
+    ? `<p class="wh-subtle" data-r9-plan-share-total="100">${escapeHtml(goldPathCopyT(locale, "budgetSharesAddUpTo100"))}</p>`
     : `<p class="wh-pill-danger" data-r9-plan-share-total="${escapeHtml(String(totalShare))}" data-r9-plan-share-invalid="true">${escapeHtml(zh
       ? `预算份额加起来是 ${totalShare}%，${totalShare < 100 ? `还差 ${100 - totalShare}%` : `超出 ${totalShare - 100}%`}，修正后才能批准并派发。`
       : `Budget shares add up to ${totalShare}%, ${totalShare < 100 ? `${100 - totalShare}% short` : `${totalShare - 100}% over`} — fix them before approving and dispatching.`)}</p>`;
   return `<section class="wh-card wh-r4-route-card" data-r9-plan-items="true" data-r9-plan-item-count="${escapeHtml(String(ordered.length))}">
-      <h3 role="heading" aria-level="2">${escapeHtml(zh ? "子任务清单" : "Subtasks")}</h3>
+      <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "subtasks"))}</h3>
       <div class="wh-r4-route-timeline" role="list">${rows}</div>
       ${shareNote}
     </section>`;
@@ -3116,24 +3114,24 @@ function renderProposalFeedbackHtml(
     return `<a class="wh-r14-proposal-feedback-tile${on ? " wh-r14-proposal-feedback-tile--on" : ""}" href="${escapeHtml(safeHref(action.href))}" data-action-id="${escapeHtml(action.id)}" data-method="${escapeHtml(action.method)}"${requestJson} data-r14-proposal-feedback-tile="${verdict}" role="button" aria-pressed="${on ? "true" : "false"}"><span class="wh-r14-proposal-feedback-glyph" aria-hidden="true">${glyph}</span><span>${escapeHtml(action.label)}</span></a>`;
   };
   const clearHref = feedback.clear?.href ?? feedback.mark_useful.href;
-  const clearLabel = feedback.clear?.label ?? (zh ? "撤销反馈" : "Clear feedback");
+  const clearLabel = feedback.clear?.label ?? (goldPathCopyT(locale, "clearFeedback"));
   const clearId = feedback.clear?.id ?? "clear_feedback";
   const clearMethod = feedback.clear?.method ?? "DELETE";
   const clearHidden = feedback.my_verdict === null ? " hidden" : "";
   const noteValue = feedback.my_note ?? "";
   const noteDisabled = feedback.my_verdict === null ? " disabled" : "";
   return `<section class="wh-card wh-r4-route-card wh-r14-proposal-feedback" data-r14-proposal-feedback="true" data-r14-proposal-feedback-verdict="${escapeHtml(feedback.my_verdict ?? "")}">
-      <h3 role="heading" aria-level="2">${escapeHtml(zh ? "这条提议对你有帮助吗" : "Was this proposal helpful?")}</h3>
-      <div class="wh-r14-proposal-feedback-tiles" role="group" aria-label="${escapeHtml(zh ? "反馈" : "Feedback")}">
+      <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "wasThisProposalHelpful"))}</h3>
+      <div class="wh-r14-proposal-feedback-tiles" role="group" aria-label="${escapeHtml(goldPathCopyT(locale, "feedback"))}">
         ${tile(feedback.mark_useful, "useful", "✓", feedback.my_verdict === "useful")}
         ${tile(feedback.mark_not_useful, "not_useful", "✗", feedback.my_verdict === "not_useful")}
         <a class="wh-r14-proposal-feedback-clear" href="${escapeHtml(safeHref(clearHref))}" data-action-id="${escapeHtml(clearId)}" data-method="${escapeHtml(clearMethod)}" data-r14-proposal-feedback-clear="true" role="button"${clearHidden}>${escapeHtml(clearLabel)}</a>
       </div>
       <div class="wh-r14-proposal-feedback-note" data-r14-proposal-feedback-note-panel="true">
-        <label class="wh-subtle" for="wh-r14-proposal-feedback-note-input">${escapeHtml(zh ? "备注（可选，最多 200 字）" : "Note (optional, up to 200 characters)")}</label>
-        <textarea id="wh-r14-proposal-feedback-note-input" class="wh-r14-proposal-feedback-note-input" data-r14-proposal-feedback-note-input maxlength="200" placeholder="${escapeHtml(zh ? "说说这次提议哪里做得好或不好…" : "What worked or didn't about this proposal…")}">${escapeHtml(noteValue)}</textarea>
+        <label class="wh-subtle" for="wh-r14-proposal-feedback-note-input">${escapeHtml(goldPathCopyT(locale, "noteOptionalUpTo200Characters"))}</label>
+        <textarea id="wh-r14-proposal-feedback-note-input" class="wh-r14-proposal-feedback-note-input" data-r14-proposal-feedback-note-input maxlength="200" placeholder="${escapeHtml(goldPathCopyT(locale, "whatWorkedOrDidnTAbout"))}">${escapeHtml(noteValue)}</textarea>
         <div class="wh-r14-proposal-feedback-note-actions">
-          <button type="button" class="wh-btn" data-r14-proposal-feedback-note-save${noteDisabled}>${escapeHtml(zh ? "保存备注" : "Save note")}</button>
+          <button type="button" class="wh-btn" data-r14-proposal-feedback-note-save${noteDisabled}>${escapeHtml(goldPathCopyT(locale, "saveNote"))}</button>
           <span class="wh-subtle" data-r14-proposal-feedback-note-status hidden></span>
         </div>
       </div>
@@ -3181,7 +3179,7 @@ function renderProposalRouteComponent(
       </div>
       <span class="wh-pill">${escapeHtml(formatApprovalTimestamp(comment.created_at))}</span>
     </div>`).join("")
-    : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "暂无评论" : "No comments yet")}</p>`;
+    : `<p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "noCommentsYet"))}</p>`;
   const reactMutationEditorHost = hasFieldEditor
     ? `<div class="wh-field-editor wh-field-editor--react" data-r4-proposal-react-mutation-editor-host="structured-field-scalar" data-r4-proposal-react-mutation-editor-mounted="false" data-r4-proposal-react-mutation-editor-fallback-hidden="false"></div>`
     : "";
@@ -3205,7 +3203,7 @@ function renderProposalRouteComponent(
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(vm.manifest.changes.some((change) =>
             change.target_kind === "structured_record" && change.target_ref.entity_type === "task_plan")
-            ? (locale === "zh-CN" ? "任务计划提议" : "Task plan proposal")
+            ? (goldPathCopyT(locale, "taskPlanProposal"))
             : uiT(locale, "proposal.kicker"))}</span>
           <h1>${escapeHtml(vm.title)}</h1>
           <p>${escapeHtml(summary)}${summaryNote}</p>
@@ -3230,8 +3228,8 @@ function renderProposalRouteComponent(
       </div>
       ${renderTaskPlanItemsPanel(vm, locale)}
       ${conflictsCheckFailed ? `<section class="wh-card wh-r4-route-card" data-r10-proposal-conflicts-check-failed="true">
-        <h3 role="heading" aria-level="2">${escapeHtml(locale === "zh-CN" ? "冲突检查暂时失败" : "Conflict check unavailable")}</h3>
-        <p>${escapeHtml(locale === "zh-CN" ? "刚才没能确认这份变更是否和别人撞车——页面上看不到冲突不代表没有冲突。请刷新重试，确认后再做决定。" : "We couldn't verify whether this change conflicts with others — seeing no conflicts here does not mean there are none. Refresh to retry before you decide.")}</p>
+        <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "conflictCheckUnavailable"))}</h3>
+        <p>${escapeHtml(goldPathCopyT(locale, "weCouldnTVerifyWhetherThis"))}</p>
       </section>` : ""}
       <section class="wh-card wh-r4-route-card" data-r4-proposal-changes="true">
         <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "proposal.files"))}</h3>
@@ -3312,12 +3310,10 @@ function driveVersionRestoreHtml(
   }
   const zh = locale === "zh-CN";
   return `<details class="wh-r4-drive-version-restore" data-r14-drive-version-restore="true">
-      <summary class="wh-btn">${escapeHtml(zh ? "找回这个版本" : "Recover this version")}</summary>
+      <summary class="wh-btn">${escapeHtml(goldPathCopyT(locale, "recoverThisVersion"))}</summary>
       <div class="wh-r4-route-actions">
-        <p class="wh-subtle">${escapeHtml(zh
-          ? "找回后，当前版本会换回这一版的内容——现在的当前版本不会被删除，仍留在版本历史里。"
-          : "Recovering this switches the current version back to this content — the version you are on now is not deleted, it stays in the history.")}</p>
-        <a class="wh-btn wh-btn-primary" href="${escapeHtml(safeHref(version.restore_href))}" data-action-id="drive_restore" data-method="POST">${escapeHtml(zh ? "确定找回" : "Confirm recovery")}</a>
+        <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "recoveringThisSwitchesTheCurrentVersion"))}</p>
+        <a class="wh-btn wh-btn-primary" href="${escapeHtml(safeHref(version.restore_href))}" data-action-id="drive_restore" data-method="POST">${escapeHtml(goldPathCopyT(locale, "confirmRecovery"))}</a>
       </div>
     </details>`;
 }
@@ -3358,7 +3354,7 @@ function renderDriveRouteComponent(
   locale: WorkHubLocale,
   projects?: ProjectListVM | undefined
 ): WebRouteComponent {
-  const projectTitle = vm.project?.name ?? (locale === "zh-CN" ? "项目网盘" : "Project drive");
+  const projectTitle = vm.project?.name ?? (goldPathCopyT(locale, "projectDrive"));
   // 网盘是 GitHub 式核心:头部带「← 所有项目」回链 + 当前项目名 + 紧凑项目切换器。
   // 纯增量——既有 data-r4-*/data-r5-* 标记一律保留;无项目/≤1 项目时只渲当前项目名,不出切换器。
   const projectList = projects?.projects ?? [];
@@ -3382,8 +3378,8 @@ function renderDriveRouteComponent(
   const driveSearchForm = currentProjectId
     ? `<form class="wh-r4-route-meta" method="get" action="/drive" role="search" data-r9-drive-search-form="true">
         <input type="hidden" name="project_id" value="${escapeHtml(currentProjectId)}" />
-        <input class="wh-pill" type="search" name="q" maxlength="120" placeholder="${escapeHtml(locale === "zh-CN" ? "按文件名搜索…" : "Search files by name…")}" aria-label="${escapeHtml(locale === "zh-CN" ? "搜索文件" : "Search files")}" />
-        <button class="wh-btn" type="submit">${escapeHtml(locale === "zh-CN" ? "搜索" : "Search")}</button>
+        <input class="wh-pill" type="search" name="q" maxlength="120" placeholder="${escapeHtml(goldPathCopyT(locale, "searchFilesByName"))}" aria-label="${escapeHtml(goldPathCopyT(locale, "searchFiles"))}" />
+        <button class="wh-btn" type="submit">${escapeHtml(goldPathCopyT(locale, "search"))}</button>
       </form>`
     : "";
   const driveProjectNav = `<nav class="wh-r4-route-meta" data-r8-drive-project-nav="true" data-r8-drive-current-project="${escapeHtml(currentProjectId)}" data-r8-drive-project-count="${escapeHtml(String(projectList.length))}">
@@ -3418,7 +3414,7 @@ function renderDriveRouteComponent(
   const uploadFolders = vm.items.filter((item) => item.kind === "folder");
   const selectedUploadParentId = selectedItem?.kind === "folder" ? selectedItem.id : selectedItem?.parent_id ?? "";
   const uploadParentSelect = uploadFolders.length
-    ? `<select class="wh-pill" data-drive-upload-parent-select="true" aria-label="${escapeHtml(locale === "zh-CN" ? "上传到文件夹" : "Upload to folder")}"><option value="">${escapeHtml(locale === "zh-CN" ? "网盘根目录" : "Drive root")}</option>${uploadFolders.map((folder) => {
+    ? `<select class="wh-pill" data-drive-upload-parent-select="true" aria-label="${escapeHtml(goldPathCopyT(locale, "uploadToFolder"))}"><option value="">${escapeHtml(goldPathCopyT(locale, "driveRoot"))}</option>${uploadFolders.map((folder) => {
       const selected = folder.id === selectedUploadParentId ? " selected" : "";
       return `<option value="${escapeHtml(folder.id)}"${selected}>${escapeHtml(folder.name)}</option>`;
     }).join("")}</select>`
@@ -3487,7 +3483,7 @@ function renderDriveRouteComponent(
   // 没给 restore_href”（比如没有关联已采纳交付物的手动上传旧版本）时才出现，如实告知这部分暂时只能
   // 在桌面客户端里找回，而不是笼统地说“网页做不到”。
   const versionsDesktopNotice = selectedFileVersions.some((version) => !version.current && !version.restore_href)
-    ? `<p class="wh-subtle" data-r13-drive-versions-desktop-notice="true">${escapeHtml(locale === "zh-CN" ? "这里的更早版本找回需要桌面客户端。" : "Recovering these older versions requires the desktop client.")}</p>`
+    ? `<p class="wh-subtle" data-r13-drive-versions-desktop-notice="true">${escapeHtml(goldPathCopyT(locale, "recoveringTheseOlderVersionsRequiresThe"))}</p>`
     : "";
   const acceptedRows = vm.accepted_deliverables.length
     ? vm.accepted_deliverables.slice(0, 6).map((accepted) => `<article class="wh-card wh-r4-route-card" data-r4-drive-accepted-deliverable="${escapeHtml(accepted.id)}">
@@ -3498,8 +3494,8 @@ function renderDriveRouteComponent(
       <h3 role="heading" aria-level="2">${escapeHtml(accepted.filename ?? accepted.target_path ?? accepted.target_key)}</h3>
       <p>${escapeHtml(accepted.target_path ?? accepted.target_key)}</p>
       <div class="wh-r4-route-meta">
-        ${accepted.work_item_id ? `<a class="wh-pill" href="/workitems/${escapeHtml(accepted.work_item_id)}" data-r9-drive-accepted-workitem="${escapeHtml(accepted.work_item_id)}">${escapeHtml(locale === "zh-CN" ? "来源任务" : "Source task")}</a>` : ""}
-        ${accepted.proposal_id ? `<a class="wh-pill" href="/proposals/${escapeHtml(accepted.proposal_id)}" data-r9-drive-accepted-proposal="${escapeHtml(accepted.proposal_id)}">${escapeHtml(locale === "zh-CN" ? "看变更申请" : "View change request")}</a>` : ""}
+        ${accepted.work_item_id ? `<a class="wh-pill" href="/workitems/${escapeHtml(accepted.work_item_id)}" data-r9-drive-accepted-workitem="${escapeHtml(accepted.work_item_id)}">${escapeHtml(goldPathCopyT(locale, "sourceTask"))}</a>` : ""}
+        ${accepted.proposal_id ? `<a class="wh-pill" href="/proposals/${escapeHtml(accepted.proposal_id)}" data-r9-drive-accepted-proposal="${escapeHtml(accepted.proposal_id)}">${escapeHtml(goldPathCopyT(locale, "viewChangeRequest"))}</a>` : ""}
       </div>
       ${driveActionLinks(accepted, locale)}
     </article>`).join("") + (vm.accepted_deliverables.length > 6
@@ -3519,13 +3515,13 @@ function renderDriveRouteComponent(
         ${comment.proposal_href ? `<a class="wh-pill" href="${escapeHtml(safeHref(comment.proposal_href))}" data-r5-drive-proposal-link="true" data-r5-drive-proposal-id="${escapeHtml(comment.proposal_id ?? "")}" data-r5-drive-proposal-status="${escapeHtml(comment.proposal_status ?? "")}">${escapeHtml(routeT(locale, "drive.openProposal"))}</a>` : ""}
       </div>
     </div>`).join("")
-    : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "还没有评论。写一条，之后可以让 AI 按它改文件。" : "No comments yet. Leave one — AI can act on it later.")}</p>`;
+    : `<p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "noCommentsYetLeaveOneAi"))}</p>`;
   // UX-U3（评论闭环缺口）：产品到处承诺「评论生成草稿」，但从没有写评论的入口。补 composer：
   // 发一条评论（pending_llm）→ 列表里出现 →「生成草稿」按既有链路让 AI 接手。
   const commentComposer = currentProjectId
     ? `<form class="wh-r4-approval-comment-form" data-r9-drive-comment-form="${escapeHtml(currentProjectId)}">
-        <textarea class="wh-r4-approval-comment-input" data-r9-drive-comment-input rows="2" maxlength="4000" aria-label="${escapeHtml(locale === "zh-CN" ? "网盘文件评论" : "Comment on project files")}" placeholder="${escapeHtml(locale === "zh-CN" ? "对这个项目的文件说点什么，比如「第二节数据要更新」…" : "Say something about these files, e.g. update the data in section 2…")}"></textarea>
-        <button type="submit" class="wh-btn" data-r9-drive-comment-submit="true">${escapeHtml(locale === "zh-CN" ? "发评论" : "Comment")}</button>
+        <textarea class="wh-r4-approval-comment-input" data-r9-drive-comment-input rows="2" maxlength="4000" aria-label="${escapeHtml(goldPathCopyT(locale, "commentOnProjectFiles"))}" placeholder="${escapeHtml(goldPathCopyT(locale, "saySomethingAboutTheseFilesE"))}"></textarea>
+        <button type="submit" class="wh-btn" data-r9-drive-comment-submit="true">${escapeHtml(goldPathCopyT(locale, "comment"))}</button>
       </form>`
     : "";
   const recycleRows = vm.deleted_items.length
@@ -3596,7 +3592,7 @@ function renderDriveRouteComponent(
           ${requestedMissingNotice}
           ${driveManageActions ? `<div class="wh-r4-route-actions" data-r5-drive-manage-actions="true">${driveManageActions}</div>` : ""}
         </div>
-        <span class="wh-r4-route-count" title="${escapeHtml(locale === "zh-CN" ? "文件总数" : "Total files")}">${escapeHtml(`${vm.summary.file_count} ${locale === "zh-CN" ? "个文件" : "files"}`)}</span>
+        <span class="wh-r4-route-count" title="${escapeHtml(goldPathCopyT(locale, "totalFiles"))}">${escapeHtml(`${vm.summary.file_count} ${goldPathCopyT(locale, "files")}`)}</span>
       </header>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-drive-files="true" data-r4-drive-folder-count="${escapeHtml(String(driveFolderCount))}" data-r4-drive-listed-file-count="${escapeHtml(String(driveListedFileCount))}">
@@ -3644,7 +3640,7 @@ function meetingContentFallback(
   aiConfigured = true
 ): string {
   const zh = locale === "zh-CN";
-  const noun = kind === "transcript" ? (zh ? "转写" : "Transcript") : (zh ? "纪要" : "Minutes");
+  const noun = kind === "transcript" ? (goldPathCopyT(locale, "transcript")) : (goldPathCopyT(locale, "minutes"));
   // SA-02：转写已入库、纪要还没生成，是两种完全不同的处境——AI 压根没配（等下去也不会有），
   // 和 AI 已排队（等一会就有）。此前两者都掉进「这次会议还没有纪要内容」，用户无从分辨。
   if (kind === "minutes" && status === "transcribed") {
@@ -3679,7 +3675,7 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
         <strong>${escapeHtml(vm.project?.name ?? "")}</strong>
         ${meetingSwitcherOptions ? `<select class="wh-pill" data-r8-drive-project-switcher="true" aria-label="${escapeHtml(routeT(locale, "drive.switchProject"))}">${meetingSwitcherOptions}</select>` : ""}
       </nav>`;
-  const projectTitle = vm.project?.name ?? (locale === "zh-CN" ? "会议洞察" : "Meeting insights");
+  const projectTitle = vm.project?.name ?? (goldPathCopyT(locale, "meetingInsights"));
   const selectedMeeting = vm.meetings.find((meeting) => meeting.id === vm.selected_meeting_id) ?? vm.meetings[0];
   const meetingRows = vm.meetings.length
     ? vm.meetings.slice(0, 10).map((meeting) => `<a class="wh-r4-route-row" href="/meetings?project_id=${escapeHtml(meeting.project_id)}&m=${escapeHtml(meeting.id)}" data-r5-meeting-id="${escapeHtml(meeting.id)}" data-r5-meeting-status="${escapeHtml(meeting.status)}" data-r5-meeting-selected="${escapeHtml(String(meeting.id === selectedMeeting?.id))}">
@@ -3696,7 +3692,7 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
     // WEB-08：空态合并——没有会议时列表卡内不再重复「还没有会议」文案（此前与头部副标题、底部
     // 引导卡同屏三连）；整页只保留下方 data-r5-meeting-empty 一张有引导的空态卡。
     : (selectedMeeting
-      ? `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "这场会议还没有洞察。" : "No insights from this meeting yet.")}</p>`
+      ? `<p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "noInsightsFromThisMeetingYet"))}</p>`
       : "");
   const transcript = selectedMeeting?.transcript_text?.trim() || meetingContentFallback("transcript", selectedMeeting?.status, locale, vm.ai_analysis_configured);
   const minutes = selectedMeeting?.minutes_md?.trim() || meetingContentFallback("minutes", selectedMeeting?.status, locale, vm.ai_analysis_configured);
@@ -3767,20 +3763,17 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "meeting.kicker"))}</span>
           <h1>${escapeHtml(projectTitle)}</h1>
-          <p>${escapeHtml(selectedMeeting?.title ?? (locale === "zh-CN"
-            // WEB-08：无会议时头部副标题用中性描述，不再与下方引导空态卡重复同一句「还没有会议」。
-            ? "会议转写、纪要和洞察都会归到这里。"
-            : "Meeting transcripts, minutes and insights land here."))}</p>
+          <p>${escapeHtml(selectedMeeting?.title ?? (goldPathCopyT(locale, "meetingTranscriptsMinutesAndInsightsLand")))}</p>
         </div>
-        <span class="wh-r4-route-count" title="${escapeHtml(locale === "zh-CN" ? "待确认洞察" : "Insights pending review")}">${escapeHtml(`${vm.summary.pending_insight_count} ${locale === "zh-CN" ? "条待确认" : "pending"}`)}</span>
+        <span class="wh-r4-route-count" title="${escapeHtml(goldPathCopyT(locale, "insightsPendingReview"))}">${escapeHtml(`${vm.summary.pending_insight_count} ${goldPathCopyT(locale, "pending")}`)}</span>
       </header>
       ${aiNotConfiguredBanner}
       ${vm.can_manage && vm.project ? `<details class="wh-card wh-r4-route-card" data-r10-meeting-import="true">
-        <summary>${escapeHtml(locale === "zh-CN" ? "＋ 导入会议转写" : "＋ Import meeting transcript")}</summary>
-        <p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "把会议纪要或转写文本粘进来，团队就能围绕它确认洞察、生成任务。" : "Paste minutes or a transcript; the team can then confirm insights and spin up tasks from it.")}</p>
-        <label class="wh-r4-route-stack"><strong>${escapeHtml(locale === "zh-CN" ? "会议标题" : "Meeting title")}</strong><input class="wh-r4-intake-free-text" style="min-height:auto" type="text" maxlength="256" data-r10-meeting-import-title="true" aria-label="${escapeHtml(locale === "zh-CN" ? "会议标题" : "Meeting title")}" /></label>
-        <label class="wh-r4-route-stack"><strong>${escapeHtml(locale === "zh-CN" ? "转写/纪要文本" : "Transcript / minutes text")}</strong><textarea class="wh-r4-intake-free-text" rows="6" maxlength="200000" data-r10-meeting-import-text="true" aria-label="${escapeHtml(locale === "zh-CN" ? "转写或纪要文本" : "Transcript or minutes text")}"></textarea></label>
-        <div class="wh-r4-route-actions"><button type="button" class="wh-btn wh-btn-primary" data-r10-meeting-import-submit="${escapeHtml(vm.project.id)}">${escapeHtml(locale === "zh-CN" ? "导入" : "Import")}</button></div>
+        <summary>${escapeHtml(goldPathCopyT(locale, "importMeetingTranscript"))}</summary>
+        <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "pasteMinutesOrATranscriptThe"))}</p>
+        <label class="wh-r4-route-stack"><strong>${escapeHtml(goldPathCopyT(locale, "meetingTitle"))}</strong><input class="wh-r4-intake-free-text" style="min-height:auto" type="text" maxlength="256" data-r10-meeting-import-title="true" aria-label="${escapeHtml(goldPathCopyT(locale, "meetingTitle"))}" /></label>
+        <label class="wh-r4-route-stack"><strong>${escapeHtml(goldPathCopyT(locale, "transcriptMinutesText"))}</strong><textarea class="wh-r4-intake-free-text" rows="6" maxlength="200000" data-r10-meeting-import-text="true" aria-label="${escapeHtml(goldPathCopyT(locale, "transcriptOrMinutesText"))}"></textarea></label>
+        <div class="wh-r4-route-actions"><button type="button" class="wh-btn wh-btn-primary" data-r10-meeting-import-submit="${escapeHtml(vm.project.id)}">${escapeHtml(goldPathCopyT(locale, "import"))}</button></div>
       </details>` : ""}
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r5-meeting-list="true">
@@ -3805,7 +3798,7 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
           <pre class="wh-r5-meeting-text">${escapeHtml(minutes)}</pre>
           ${reanalyzeButton}
         </section>
-      </div>` : `<div class="wh-r4-route-grid"><article class="wh-card wh-r4-route-card" data-r5-meeting-empty="true"><h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "meeting.empty"))}</h3><p class="wh-subtle">${escapeHtml(vm.can_manage ? (locale === "zh-CN" ? "会议录音或转写接入后，Cuu 会自动整理出纪要和待办洞察，并显示在这里。" : "Once a meeting recording or transcript is brought in, Cuu drafts the minutes and action insights here.") : (locale === "zh-CN" ? "团队的会议接入后，这里会出现转写、纪要和洞察。" : "Once a team meeting is brought in, its transcript, minutes and insights show up here."))}</p></article></div>`}
+      </div>` : `<div class="wh-r4-route-grid"><article class="wh-card wh-r4-route-card" data-r5-meeting-empty="true"><h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "meeting.empty"))}</h3><p class="wh-subtle">${escapeHtml(vm.can_manage ? (goldPathCopyT(locale, "onceAMeetingRecordingOrTranscript")) : (goldPathCopyT(locale, "onceATeamMeetingIsBrought")))}</p></article></div>`}
     </section>`
   });
 }
@@ -3949,12 +3942,10 @@ function renderNotificationMutePanel(locale: WorkHubLocale): string {
   // 某类通知，故独立成一行、勾选＝开启（不同于下方 mute 行的勾选＝静音）。同样 SSR 先禁用、GET 回填后解禁。
   // 文案避开 web 端不露出的「Cuu」品牌词（smoke 门：web HTML 不含 Cuu；桌面端另有带 Cuu 的措辞）。
   const careToggle = `<label class="wh-r5-notif-mute-row wh-r17-notif-care-row" data-r17-notification-care-row="true"><input type="checkbox" data-r17-notification-care-toggle="true" disabled /><span>${escapeHtml(
-    zh ? "主动关怀问候" : "Care check-ins"
+    goldPathCopyT(locale, "careCheckIns")
   )}</span></label>
   <p class="wh-subtle wh-r17-notif-care-help">${escapeHtml(
-    zh
-      ? "在你负荷高、或连续深夜工作时，会收到一句私下问候，可随时关闭。"
-      : "You'll get a private check-in when your load is high or you're working late nights — turn it off anytime."
+    goldPathCopyT(locale, "youLlGetAPrivateCheck")
   )}</p>`;
   return `<details class="wh-card wh-r4-route-card wh-r5-notif-mute" data-r5-notification-mute-panel="true">
         <summary>${escapeHtml(routeT(locale, "notifications.muteTitle"))}</summary>
@@ -3962,7 +3953,7 @@ function renderNotificationMutePanel(locale: WorkHubLocale): string {
         <p class="wh-subtle">${escapeHtml(routeT(locale, "notifications.muteHelp"))}</p>
         <div class="wh-r5-notif-mute-list">${rows}</div>
         <p class="wh-subtle wh-r5-notif-mute-status" data-r5-notification-mute-status="idle" hidden></p>
-        <button type="button" class="wh-btn" data-r10-notification-mute-retry="true" hidden>${escapeHtml(zh ? "重新读取设置" : "Reload settings")}</button>
+        <button type="button" class="wh-btn" data-r10-notification-mute-retry="true" hidden>${escapeHtml(goldPathCopyT(locale, "reloadSettings"))}</button>
       </details>`;
 }
 
@@ -3991,8 +3982,8 @@ function renderNotificationsRouteComponent(vm: NotificationPageVM, locale: WorkH
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "notifications.kicker"))}</span>
-          <h1>${escapeHtml(locale === "zh-CN" ? "别错过要紧事" : "Don't miss what matters")}</h1>
-          ${vm.capped ? `<p class="wh-subtle" data-r9-notifications-capped="true">${escapeHtml(locale === "zh-CN" ? "只显示最近 200 条——上面的总数不含更早的历史。" : "Showing the latest 200 — the totals above exclude older history.")}</p>` : ""}
+          <h1>${escapeHtml(goldPathCopyT(locale, "donTMissWhatMatters"))}</h1>
+          ${vm.capped ? `<p class="wh-subtle" data-r9-notifications-capped="true">${escapeHtml(goldPathCopyT(locale, "showingTheLatest200TheTotals"))}</p>` : ""}
           <p>${escapeHtml(`${notificationBucketTitle("needs_decision", locale)} ${vm.summary.needs_decision_count} · ${notificationBucketTitle("fyi", locale)} ${vm.summary.fyi_count} · ${notificationBucketTitle("done", locale)} ${vm.summary.done_count}`)}</p>
         </div>
         <div class="wh-r4-route-actions">${markAll}</div>
@@ -4066,7 +4057,7 @@ function renderHealthRouteComponent(vm: ProjectHealthPageVM, locale: WorkHubLoca
   const cards = vm.cards.length
     ? vm.cards.map((card) => renderHealthCard(card, locale)).join("")
     : `<p class="wh-subtle">${escapeHtml(routeT(locale, "health.empty"))}</p>
-      <div class="wh-r4-route-actions"><a class="wh-btn wh-btn-primary" href="/projects" data-r9-health-empty-cta="true">${escapeHtml(locale === "zh-CN" ? "打开项目" : "Open projects")}</a></div>`;
+      <div class="wh-r4-route-actions"><a class="wh-btn wh-btn-primary" href="/projects" data-r9-health-empty-cta="true">${escapeHtml(goldPathCopyT(locale, "openProjects"))}</a></div>`;
   const memberNote = vm.viewer_scope === "member"
     ? `<p class="wh-subtle" data-r5-7-health-bands-only="true">${escapeHtml(routeT(locale, "health.bandsOnly"))}</p>`
     : "";
@@ -4082,7 +4073,7 @@ function renderHealthRouteComponent(vm: ProjectHealthPageVM, locale: WorkHubLoca
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "health.kicker"))}</span>
           <h1>${escapeHtml(routeT(locale, "health.title"))}</h1>
-          <p>${escapeHtml(locale === "zh-CN" ? "每个项目一张健康卡：分数、风险信号与下一步入口。" : "One health card per project: score, risk signals, and where to act next.")}</p>
+          <p>${escapeHtml(goldPathCopyT(locale, "oneHealthCardPerProjectScore"))}</p>
         </div>
       </header>
       ${memberNote}
@@ -4158,10 +4149,10 @@ function renderCalendarRouteComponent(vm: CalendarPageVM, locale: WorkHubLocale)
   const calendarHref = (date: string, view: string) => `/calendar?date=${encodeURIComponent(date)}&view=${encodeURIComponent(view)}`;
   const calendarControls = `<div class="wh-r4-route-actions" data-r10-calendar-controls="true">
         <a class="wh-btn" href="${escapeHtml(calendarHref(shifted(-shiftDays), vm.scope.view))}" data-r10-calendar-prev="true">${escapeHtml(zh ? (vm.scope.view === "day" ? "前一天" : "上一周") : (vm.scope.view === "day" ? "Previous day" : "Previous week"))}</a>
-        <a class="wh-btn" href="/calendar" data-r10-calendar-today="true">${escapeHtml(zh ? "回到今天" : "Today")}</a>
+        <a class="wh-btn" href="/calendar" data-r10-calendar-today="true">${escapeHtml(goldPathCopyT(locale, "today"))}</a>
         <a class="wh-btn" href="${escapeHtml(calendarHref(shifted(shiftDays), vm.scope.view))}" data-r10-calendar-next="true">${escapeHtml(zh ? (vm.scope.view === "day" ? "后一天" : "下一周") : (vm.scope.view === "day" ? "Next day" : "Next week"))}</a>
-        <a class="wh-btn${vm.scope.view === "day" ? " wh-btn-primary" : ""}" href="${escapeHtml(calendarHref(anchorDate, "day"))}" data-r10-calendar-view-day="true" aria-pressed="${escapeHtml(String(vm.scope.view === "day"))}">${escapeHtml(zh ? "日视图" : "Day")}</a>
-        <a class="wh-btn${vm.scope.view === "day" ? "" : " wh-btn-primary"}" href="${escapeHtml(calendarHref(anchorDate, "week"))}" data-r10-calendar-view-week="true" aria-pressed="${escapeHtml(String(vm.scope.view !== "day"))}">${escapeHtml(zh ? "周视图" : "Week")}</a>
+        <a class="wh-btn${vm.scope.view === "day" ? " wh-btn-primary" : ""}" href="${escapeHtml(calendarHref(anchorDate, "day"))}" data-r10-calendar-view-day="true" aria-pressed="${escapeHtml(String(vm.scope.view === "day"))}">${escapeHtml(goldPathCopyT(locale, "day"))}</a>
+        <a class="wh-btn${vm.scope.view === "day" ? "" : " wh-btn-primary"}" href="${escapeHtml(calendarHref(anchorDate, "week"))}" data-r10-calendar-view-week="true" aria-pressed="${escapeHtml(String(vm.scope.view !== "day"))}">${escapeHtml(goldPathCopyT(locale, "week"))}</a>
       </div>`;
   const dayRows = vm.days.map((day) => `<section class="wh-card wh-r4-route-card" data-r5-calendar-day="${escapeHtml(day.date)}" data-r5-calendar-day-count="${escapeHtml(String(day.blocks.length))}">
     <h3 role="heading" aria-level="2">${escapeHtml(day.date)}</h3>
@@ -4179,7 +4170,7 @@ function renderCalendarRouteComponent(vm: CalendarPageVM, locale: WorkHubLocale)
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "calendar.kicker"))}</span>
-          <h1>${escapeHtml(locale === "zh-CN" ? "接下来几天的安排" : "What's coming up")}</h1>
+          <h1>${escapeHtml(goldPathCopyT(locale, "whatSComingUp"))}</h1>
           <p>${escapeHtml(`${routeT(locale, "calendar.week")} · ${formatLocalDate(vm.scope.range_start)} - ${formatLocalDate(vm.scope.range_end)}`)}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.block_count))}</span>
@@ -4211,9 +4202,9 @@ function renderBudgetRows(vm: CostDashboardVM, locale: WorkHubLocale) {
       return `<div role="listitem" class="wh-r4-route-row" data-r4-cost-budget-row="${escapeHtml(String(index))}" data-r4-cost-budget-status="${escapeHtml(usage.status)}" data-r4-cost-budget-enabled="false">
       <div>
         <strong>${escapeHtml(usage.scope_label)}</strong>
-        <p>${escapeHtml(locale === "zh-CN" ? "预算未启用" : "Budget not enabled")}</p>
+        <p>${escapeHtml(goldPathCopyT(locale, "budgetNotEnabled"))}</p>
       </div>
-      <span class="wh-pill">${escapeHtml(locale === "zh-CN" ? "未启用" : "Not enabled")}</span>
+      <span class="wh-pill">${escapeHtml(goldPathCopyT(locale, "notEnabled"))}</span>
     </div>`;
     }
     const ratio = usage.max_tokens > 0 ? Math.round((usage.total_tokens / usage.max_tokens) * 100) : 0;
@@ -4263,14 +4254,14 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
     { id: "active_team_count", label: routeT(locale, "agents.active"), value: String(vm.kpis.active_team_count) },
     { id: "waiting_decision", label: routeT(locale, "agents.waiting"), value: String(vm.kpis.waiting_decision_count), href: "/" },
     // UX-M11：今日成本口径=当前可见的活跃军团账目，不是全组织今日总账——标签说清楚，不冒充。
-    { id: "today_cost", label: routeT(locale, "agents.todayCost"), value: costAmount(vm.kpis.today_cost_cny, locale), note: locale === "zh-CN" ? "仅含当前可见军团" : "Visible teams only" },
+    { id: "today_cost", label: routeT(locale, "agents.todayCost"), value: costAmount(vm.kpis.today_cost_cny, locale), note: goldPathCopyT(locale, "visibleTeamsOnly") },
     // 普通用户审查：「自主率」这种词要注明口径（当日 AI 判官复核通过率，无审阅回退 run 成功率）。
-    { id: "autonomy_rate", label: routeT(locale, "agents.autonomy"), value: `${vm.kpis.autonomy_rate_pct}%`, note: locale === "zh-CN" ? "今日 AI 复核通过率" : "Today's AI review pass rate" },
+    { id: "autonomy_rate", label: routeT(locale, "agents.autonomy"), value: `${vm.kpis.autonomy_rate_pct}%`, note: goldPathCopyT(locale, "todaySAiReviewPassRate") },
     // R13 批 P4（KPI：AI 自动合并数/占比）：与 cost 页 ai_auto_merge 同源同口径；缺省（取数失败/非管理员）
     // 时整张卡不渲染，不冒充 0 次。
     ...(vm.kpis.ai_auto_merge_count !== undefined ? [{
       id: "ai_auto_merge",
-      label: locale === "zh-CN" ? "AI 自动合并" : "AI auto-merges",
+      label: goldPathCopyT(locale, "aiAutoMerges"),
       value: locale === "zh-CN" ? `${vm.kpis.ai_auto_merge_count} 次` : `${vm.kpis.ai_auto_merge_count}`,
       ...(vm.kpis.ai_auto_merge_ratio_pct !== undefined
         ? { note: locale === "zh-CN" ? `占今日通过评审的 ${vm.kpis.ai_auto_merge_ratio_pct}%` : `${vm.kpis.ai_auto_merge_ratio_pct}% of today's approvals` }
@@ -4285,7 +4276,7 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
   const sourceWarnings = vm.source_warnings ?? [];
   const warningStrip = sourceWarnings.length
     ? `<section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r9-agent-source-warnings="${escapeHtml(String(sourceWarnings.length))}">
-        <h3 role="heading" aria-level="2">${escapeHtml(locale === "zh-CN" ? "决策数据未完全加载" : "Decision data is partially loaded")}</h3>
+        <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "decisionDataIsPartiallyLoaded"))}</h3>
         <div class="wh-r4-route-timeline" role="list">${sourceWarnings.map((warning) => `<p class="wh-subtle" data-r9-agent-source-warning="${escapeHtml(warning.source)}">${escapeHtml(warning.message)}</p>`).join("")}</div>
       </section>`
     : "";
@@ -4326,7 +4317,7 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
         }
         const ageMs = Date.now() - parsedAt;
         if (ageMs < 0) {
-          return `<span class="wh-subtle" data-r9-agent-plan-freshness="true">${escapeHtml(locale === "zh-CN" ? "刚刚有动静" : "active just now")}</span>`;
+          return `<span class="wh-subtle" data-r9-agent-plan-freshness="true">${escapeHtml(goldPathCopyT(locale, "activeJustNow"))}</span>`;
         }
         const minutes = Math.max(1, Math.floor(ageMs / 60000));
         const label = minutes < 60
@@ -4350,7 +4341,7 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
       <div class="wh-r4-route-meta" data-r9-agent-plan-roles="true">${roles}</div>
       <div class="wh-r4-route-meta" data-r9-agent-plan-statuses="true">${statuses}</div>
       <div class="wh-r4-route-meta">
-        <span class="wh-subtle">${escapeHtml(`${routeT(locale, "agents.cost")}: ${costAmount(plan.cost.used_cny, locale)}${plan.cost.budget_cny ? `/${costAmount(plan.cost.budget_cny, locale)}` : ""} · ${plan.judge.total > 0 ? `${routeT(locale, "agents.judge")}: ${plan.judge.pass_rate_pct}%` : (locale === "zh-CN" ? "暂无复核" : "No reviews yet")}`)}</span>
+        <span class="wh-subtle">${escapeHtml(`${routeT(locale, "agents.cost")}: ${costAmount(plan.cost.used_cny, locale)}${plan.cost.budget_cny ? `/${costAmount(plan.cost.budget_cny, locale)}` : ""} · ${plan.judge.total > 0 ? `${routeT(locale, "agents.judge")}: ${plan.judge.pass_rate_pct}%` : (goldPathCopyT(locale, "noReviewsYet"))}`)}</span>
         ${freshness}
         ${budgetLink}
       </div>
@@ -4390,7 +4381,7 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "agents.kicker"))}</span>
-          <h1>${escapeHtml(locale === "zh-CN" ? "军团正在为你干活" : "Your agent teams at work")}</h1>
+          <h1>${escapeHtml(goldPathCopyT(locale, "yourAgentTeamsAtWork"))}</h1>
           <p>${escapeHtml(routeT(locale, "agents.summary"))}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(vm.kpis.active_team_count))}</span>
@@ -4517,7 +4508,7 @@ function renderMemoryProfileItem(item: UserMemoryManagementItemVM, locale: WorkH
   return `<article class="wh-card wh-r4-route-card" data-r14-mem-item="${escapeHtml(item.id)}" data-r14-mem-updated-at="${escapeHtml(item.updated_at)}">
     <div class="wh-r4-route-meta">
       <span class="wh-pill">${escapeHtml(memoryCategoryLabel(item.category, locale))}</span>
-      ${item.workspace_scoped ? "" : `<span class="wh-pill">${escapeHtml(zh ? "全局" : "Global")}</span>`}
+      ${item.workspace_scoped ? "" : `<span class="wh-pill">${escapeHtml(goldPathCopyT(locale, "global"))}</span>`}
     </div>
     <p data-r14-mem-value-view="true">${escapeHtml(item.value_md)}</p>
     <textarea class="wh-r14-mem-textarea" data-r14-mem-value-input maxlength="2000" hidden>${escapeHtml(item.value_md)}</textarea>
@@ -4548,14 +4539,14 @@ function renderMemoryProfilePanel(vm: UserMemoryManagementPageVM, locale: WorkHu
 function renderMemorySkillOpRow(index: number, locale: WorkHubLocale, visible: boolean): string {
   const zh = locale === "zh-CN";
   return `<div class="wh-r14-mem-op-row" data-r14-skill-op-row="${index}" ${visible ? "" : "hidden"}>
-    <select data-r14-skill-op-type aria-label="${escapeHtml(zh ? "操作类型" : "Operation")}">
-      <option value="">${escapeHtml(zh ? "（不改这一行）" : "(leave unchanged)")}</option>
-      <option value="add_section">${escapeHtml(zh ? "新增段落" : "Add section")}</option>
-      <option value="modify_section">${escapeHtml(zh ? "修改段落" : "Modify section")}</option>
-      <option value="remove_section">${escapeHtml(zh ? "删除段落" : "Remove section")}</option>
+    <select data-r14-skill-op-type aria-label="${escapeHtml(goldPathCopyT(locale, "operation"))}">
+      <option value="">${escapeHtml(goldPathCopyT(locale, "leaveUnchanged"))}</option>
+      <option value="add_section">${escapeHtml(goldPathCopyT(locale, "addSection"))}</option>
+      <option value="modify_section">${escapeHtml(goldPathCopyT(locale, "modifySection"))}</option>
+      <option value="remove_section">${escapeHtml(goldPathCopyT(locale, "removeSection"))}</option>
     </select>
-    <input type="text" data-r14-skill-op-section maxlength="80" placeholder="${escapeHtml(zh ? "段落标题，如：边界情况" : "Section title, e.g. Edge cases")}" aria-label="${escapeHtml(zh ? "段落标题" : "Section title")}" />
-    <textarea class="wh-r14-mem-textarea" data-r14-skill-op-content maxlength="4000" placeholder="${escapeHtml(zh ? "段落正文（新增/修改时需要）" : "Section body (required for add/modify)")}" aria-label="${escapeHtml(zh ? "段落正文" : "Section body")}"></textarea>
+    <input type="text" data-r14-skill-op-section maxlength="80" placeholder="${escapeHtml(goldPathCopyT(locale, "sectionTitleEGEdgeCases"))}" aria-label="${escapeHtml(goldPathCopyT(locale, "sectionTitle"))}" />
+    <textarea class="wh-r14-mem-textarea" data-r14-skill-op-content maxlength="4000" placeholder="${escapeHtml(goldPathCopyT(locale, "sectionBodyRequiredForAddModify"))}" aria-label="${escapeHtml(goldPathCopyT(locale, "sectionBody"))}"></textarea>
   </div>`;
 }
 
@@ -4587,8 +4578,8 @@ function renderMemorySkillItem(item: TeamSkillManagementItemVM, locale: WorkHubL
         ${renderMemorySkillOpRow(0, locale, true)}
         ${renderMemorySkillOpRow(1, locale, false)}
         ${renderMemorySkillOpRow(2, locale, false)}
-        <button type="button" class="wh-btn" data-r14-skill-add-op-btn="true">${escapeHtml(zh ? "+ 加一处修改" : "+ Add another edit")}</button>
-        <textarea class="wh-r14-mem-textarea" data-r14-skill-rationale maxlength="2000" placeholder="${escapeHtml(zh ? "为什么这样改（可选）" : "Why this change (optional)")}" aria-label="${escapeHtml(zh ? "修改说明" : "Rationale")}"></textarea>
+        <button type="button" class="wh-btn" data-r14-skill-add-op-btn="true">${escapeHtml(goldPathCopyT(locale, "addAnotherEdit"))}</button>
+        <textarea class="wh-r14-mem-textarea" data-r14-skill-rationale maxlength="2000" placeholder="${escapeHtml(goldPathCopyT(locale, "whyThisChangeOptional"))}" aria-label="${escapeHtml(goldPathCopyT(locale, "rationale"))}"></textarea>
         <div class="wh-r4-route-actions">
           <button type="button" class="wh-btn wh-btn-primary" data-r14-skill-submit-btn="true">${escapeHtml(routeT(locale, "memory.save"))}</button>
           <button type="button" class="wh-btn" data-r14-skill-edit-cancel-btn="true">${escapeHtml(routeT(locale, "memory.cancel"))}</button>
@@ -4703,7 +4694,7 @@ function renderProjectsRouteComponent(vm: ProjectListVM, locale: WorkHubLocale):
         </form>
       </header>
       <section class="wh-card wh-r4-route-card" data-r8-projects-list="true">
-        ${projects.length > 5 ? `<input class="wh-pill" type="search" data-r12-project-filter="true" maxlength="120" placeholder="${escapeHtml(locale === "zh-CN" ? "按项目名过滤…" : "Filter by name…")}" aria-label="${escapeHtml(locale === "zh-CN" ? "过滤项目" : "Filter projects")}" />` : ""}
+        ${projects.length > 5 ? `<input class="wh-pill" type="search" data-r12-project-filter="true" maxlength="120" placeholder="${escapeHtml(goldPathCopyT(locale, "filterByName"))}" aria-label="${escapeHtml(goldPathCopyT(locale, "filterProjects"))}" />` : ""}
         <div class="wh-r4-route-timeline" role="list">${rows}</div>
       </section>
     </section>`
@@ -4716,11 +4707,11 @@ function renderProjectsRouteComponent(vm: ProjectListVM, locale: WorkHubLocale):
 function githubActivityKindLabel(kind: GithubActivityVM["kind"], zh: boolean): string {
   switch (kind) {
     case "commit":
-      return zh ? "提交" : "Commit";
+      return goldPathCopyT(zh, "commit");
     case "pull_request":
       return "PR";
     case "issue":
-      return zh ? "议题" : "Issue";
+      return goldPathCopyT(zh, "issue");
     default:
       return kind;
   }
@@ -4762,7 +4753,7 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
   const viewableOpen = vm.summary.open_work_item_count;
   const totalOpen = vm.summary.total_open_work_item_count ?? viewableOpen;
   const openCountLabel = totalOpen > viewableOpen
-    ? `${routeT(locale, "projects.openItems")} ${totalOpen} · ${zh ? "你可处理" : "you can handle"} ${viewableOpen}`
+    ? `${routeT(locale, "projects.openItems")} ${totalOpen} · ${goldPathCopyT(locale, "youCanHandle")} ${viewableOpen}`
     : `${routeT(locale, "projects.openItems")} ${totalOpen}`;
   // 隐藏量拆成两类：total > viewable 是权限/职责范围过滤，viewable > 本页 rows 是主页摘要折叠。
   // 旧文案让用户「进入项目查看全部」，但当前页面已经是项目主页，不能指向不存在的隐藏工作项入口。
@@ -4778,7 +4769,7 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
           ? `项目主页摘要展示你可处理的 ${shownOpen} / ${viewableOpen} 条进行中工作`
           : `Project home shows ${shownOpen} of ${viewableOpen} open items you can handle`);
       } else {
-        parts.push(zh ? "本页没有可处理的进行中工作" : "No open items are currently in your handleable list");
+        parts.push(goldPathCopyT(locale, "noOpenItemsAreCurrentlyIn"));
       }
       if (collapsedOpenCount > 0) {
         parts.push(zh
@@ -4808,7 +4799,7 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
       <div><strong>${escapeHtml(file.name)}</strong></div>
       <div class="wh-r4-route-meta">
         <span class="wh-pill">${escapeHtml(formatLocalDate(file.updated_at))}</span>
-        <span class="wh-pill">${escapeHtml(zh ? "在网盘中查看" : "View in drive")}</span>
+        <span class="wh-pill">${escapeHtml(goldPathCopyT(locale, "viewInDrive"))}</span>
       </div>
     </a>`).join("")
     : `<p class="wh-subtle" data-r8-project-home-no-files="true">${escapeHtml(routeT(locale, "projectHome.noFiles"))}</p>`;
@@ -4826,8 +4817,8 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
   // G4 #9（E3 web 只读入口）：规划草案小区块——SSR 出骨架，browser.ts 拉 GET /api/projects/:id/plan-drafts
   // 后填 pending_review 计数 + 最新草案状态（只读；起草/审批/物化都在桌面客户端）。取数失败/无权静默降级。
   const plansSection = `<section class="wh-card wh-r4-route-card" data-r17-project-home-plans="true" data-r17-project-home-plans-project="${escapeHtml(project.id)}">
-        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "规划草案" : "Plan drafts")}</h3>
-        <div data-r17-project-home-plans-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载规划草案…" : "Loading plan drafts…")}</p></div>
+        <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "planDrafts"))}</h3>
+        <div data-r17-project-home-plans-body="true"><p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "loadingPlanDrafts"))}</p></div>
       </section>`;
   // G4 #24（项目自定义指令 web 入口）：SSR 出骨架，browser.ts 拉 GET /api/projects/:id/instructions
   // 后按权限渲可编辑 textarea（失焦 PATCH 保存）或只读说明（403）。与桌面 W4b1 同一错误矩阵。
@@ -4835,8 +4826,8 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
   // bindProjectHomeMembersPanel 拉 /api/users（主区全员计数）与 /api/projects/:id/conversations（协同
   // 会话数 + 主区会话 id）后填数并链到主区会话镜像。轻量镜像，不复制桌面工作台的成员全功能。
   const membersSection = `<section class="wh-card wh-r4-route-card" data-r18-project-home-members="true" data-r18-project-home-members-project="${escapeHtml(project.id)}">
-        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "成员" : "Members")}</h3>
-        <div data-r18-project-home-members-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载成员摘要…" : "Loading member summary…")}</p></div>
+        <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "members"))}</h3>
+        <div data-r18-project-home-members-body="true"><p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "loadingMemberSummary"))}</p></div>
       </section>`;
   // R20 wave4（R19-1 OKR 前端接线）→ R23 F-01（OKR 列表/详情持久化）：服务端 POST /api/objectives
   // （建目标+关键结果）与 POST /api/objectives/:id/link（挂工作项）此前没有前端入口；列表也一度只是
@@ -4847,25 +4838,23 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
   // membersSection 的既有先例：GET 数据永不在 SSR 内嵌，一律客户端水合），不再假装「服务端没有列表
   // 端点」。
   const objectivesSection = `<section class="wh-card wh-r4-route-card" data-r20-project-home-objectives="true" data-r20-project-home-objectives-project="${escapeHtml(project.id)}">
-        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "OKR · 目标与关键结果" : "OKR — objectives & key results")}</h3>
-        <p class="wh-subtle">${escapeHtml(zh
-          ? "目标是工作区级的，不专属这个项目。建好目标后，可以把下面「进行中工作」里的工作项挂上去追踪进度。"
-          : "Objectives are workspace-wide, not scoped to this project. Once created, link items from the open-work list above to track progress.")}</p>
+        <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "okrObjectivesKeyResults"))}</h3>
+        <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "objectivesAreWorkspaceWideNotScoped"))}</p>
         <form data-r20-okr-create-form="true">
           <div class="wh-r4-route-row">
-            <input type="text" class="wh-pill" data-r20-okr-title-input maxlength="256" placeholder="${escapeHtml(zh ? "目标标题" : "Objective title")}" aria-label="${escapeHtml(zh ? "目标标题" : "Objective title")}" />
+            <input type="text" class="wh-pill" data-r20-okr-title-input maxlength="256" placeholder="${escapeHtml(goldPathCopyT(locale, "objectiveTitle"))}" aria-label="${escapeHtml(goldPathCopyT(locale, "objectiveTitle"))}" />
           </div>
           <div class="wh-r4-route-row">
-            <textarea class="wh-pill" style="width:100%;box-sizing:border-box;resize:vertical" data-r20-okr-description-input maxlength="4000" rows="2" placeholder="${escapeHtml(zh ? "目标说明（可选）" : "Description (optional)")}" aria-label="${escapeHtml(zh ? "目标说明" : "Description")}"></textarea>
+            <textarea class="wh-pill" style="width:100%;box-sizing:border-box;resize:vertical" data-r20-okr-description-input maxlength="4000" rows="2" placeholder="${escapeHtml(goldPathCopyT(locale, "descriptionOptional"))}" aria-label="${escapeHtml(goldPathCopyT(locale, "description"))}"></textarea>
           </div>
           <div class="wh-r4-route-row">
-            <textarea class="wh-pill" style="width:100%;box-sizing:border-box;resize:vertical" data-r20-okr-kr-input maxlength="2000" rows="3" placeholder="${escapeHtml(zh ? "关键结果，每行一条（可选，最多 8 条）" : "Key results, one per line (optional, up to 8)")}" aria-label="${escapeHtml(zh ? "关键结果" : "Key results")}"></textarea>
+            <textarea class="wh-pill" style="width:100%;box-sizing:border-box;resize:vertical" data-r20-okr-kr-input maxlength="2000" rows="3" placeholder="${escapeHtml(goldPathCopyT(locale, "keyResultsOnePerLineOptional"))}" aria-label="${escapeHtml(goldPathCopyT(locale, "keyResults"))}"></textarea>
           </div>
           <p class="wh-subtle" data-r20-okr-create-status hidden></p>
-          <button type="submit" class="wh-btn wh-btn-primary" data-r20-okr-create-submit="true">${escapeHtml(zh ? "创建目标" : "Create objective")}</button>
+          <button type="submit" class="wh-btn wh-btn-primary" data-r20-okr-create-submit="true">${escapeHtml(goldPathCopyT(locale, "createObjective"))}</button>
         </form>
         <div data-r20-okr-list role="list">
-          <p class="wh-subtle" data-r20-okr-list-loading="true">${escapeHtml(zh ? "正在加载目标…" : "Loading objectives…")}</p>
+          <p class="wh-subtle" data-r20-okr-list-loading="true">${escapeHtml(goldPathCopyT(locale, "loadingObjectives"))}</p>
         </div>
       </section>`;
   // R23 P4（R20 P2A 端点上界面）：项目生命周期分区——归档 / 删除。POST /api/projects/:id/{archive,delete}
@@ -4874,25 +4863,21 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
   // 两个动作都是破坏性的，走 apps/web 既有的两段式确认（armConfirmButton），第一次点只是换文案。
   const lifecycleSection = vm.can_manage_lifecycle === true
     ? `<section class="wh-card wh-r4-route-card" data-r23-project-lifecycle="true" data-r23-project-lifecycle-project="${escapeHtml(project.id)}">
-        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "项目生命周期" : "Project lifecycle")}</h3>
-        <p class="wh-subtle">${escapeHtml(zh
-          ? "归档会把项目从团队项目列表里收起来，已有的工作与文件都还在；删除会把项目整体下架，只有管理员或项目负责人能做这两件事。"
-          : "Archiving tucks the project out of the team list while keeping its work and files; deleting takes the whole project down. Both are limited to admins and the project owner.")}</p>
+        <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "projectLifecycle"))}</h3>
+        <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "archivingTucksTheProjectOutOf"))}</p>
         <div class="wh-r4-route-actions">
-          <button type="button" class="wh-btn" data-r23-project-archive="true">${escapeHtml(zh ? "归档项目" : "Archive project")}</button>
-          <button type="button" class="wh-btn" data-r23-project-delete="true">${escapeHtml(zh ? "删除项目" : "Delete project")}</button>
+          <button type="button" class="wh-btn" data-r23-project-archive="true">${escapeHtml(goldPathCopyT(locale, "archiveProject"))}</button>
+          <button type="button" class="wh-btn" data-r23-project-delete="true">${escapeHtml(goldPathCopyT(locale, "deleteProject"))}</button>
         </div>
         <p class="wh-subtle" data-r23-project-lifecycle-status="true" hidden></p>
       </section>`
     : "";
   const instructionsSection = `<section class="wh-card wh-r4-route-card" data-r17-project-home-instructions="true" data-r17-project-home-instructions-project="${escapeHtml(project.id)}">
-        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "自定义指令" : "Custom instructions")}</h3>
+        <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "customInstructions"))}</h3>
         <p class="wh-subtle">${escapeHtml(
-          zh
-            ? "该项目的所有 AI 对话与自动执行都会读到这段指令；与系统工作纪律冲突时以纪律为准。"
-            : "Every AI conversation and automated run in this project reads this text; when it conflicts with the system's working discipline, the discipline wins."
+          goldPathCopyT(locale, "everyAiConversationAndAutomatedRun")
         )}</p>
-        <div data-r17-project-home-instructions-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载自定义指令…" : "Loading custom instructions…")}</p></div>
+        <div data-r17-project-home-instructions-body="true"><p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "loadingCustomInstructions"))}</p></div>
       </section>`;
   const rows = vm.open_work_items.length
     ? vm.open_work_items.map((item) => `<a class="wh-r4-route-row" href="${escapeHtml(safeHref(item.href))}" data-r8-project-home-item="${escapeHtml(item.id)}" data-r8-project-home-item-code="${escapeHtml(item.code)}">
@@ -4902,7 +4887,7 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
           <span class="wh-pill">${escapeHtml(item.code)}</span>
           <span class="wh-pill" data-tone="${escapeHtml(item.status)}">${escapeHtml(workItemStatusLabel(locale, item.status))}</span>
           <span class="wh-pill">${escapeHtml(attentionPriorityLabel(item.priority, zh))}</span>
-          ${item.army ? `<span class="wh-pill" data-r9-project-army-pill="${escapeHtml(item.id)}" title="${escapeHtml(zh ? "AI 军团任务计划的子任务完成数" : "Agent team subtasks done")}">${escapeHtml(zh ? `军团子任务 ${item.army.done}/${item.army.total}` : `Agent team ${item.army.done}/${item.army.total}`)}</span>` : ""}
+          ${item.army ? `<span class="wh-pill" data-r9-project-army-pill="${escapeHtml(item.id)}" title="${escapeHtml(goldPathCopyT(locale, "agentTeamSubtasksDone"))}">${escapeHtml(zh ? `军团子任务 ${item.army.done}/${item.army.total}` : `Agent team ${item.army.done}/${item.army.total}`)}</span>` : ""}
         </div>
       </div>
     </a>`).join("")
@@ -4929,7 +4914,7 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
         <div class="wh-r4-route-actions">
           <a class="wh-btn wh-btn-primary" href="${escapeHtml(safeHref(vm.actions.new_task.href))}" data-action-id="${escapeHtml(vm.actions.new_task.id)}" data-method="${escapeHtml(vm.actions.new_task.method)}" data-r8-project-home-new-task="true">${escapeHtml(vm.actions.new_task.label)}</a>
           <a class="wh-btn" href="${escapeHtml(safeHref(vm.actions.open_drive.href))}" data-action-id="${escapeHtml(vm.actions.open_drive.id)}" data-method="${escapeHtml(vm.actions.open_drive.method)}" data-r8-project-home-open-drive="true">${escapeHtml(vm.actions.open_drive.label)}</a>
-          <a class="wh-btn" href="/projects/${escapeHtml(project.id)}/timeline" data-r15-project-home-timeline="true">${escapeHtml(zh ? "时间线" : "Timeline")}</a>
+          <a class="wh-btn" href="/projects/${escapeHtml(project.id)}/timeline" data-r15-project-home-timeline="true">${escapeHtml(goldPathCopyT(locale, "timeline"))}</a>
         </div>
       </header>
       <section class="wh-card wh-r4-route-card" data-r8-project-home-list="true">
@@ -4964,11 +4949,11 @@ function renderProjectTimelineRouteComponent(vm: ProjectTimelinePageVM, locale: 
   const rowHtml = (item: TimelineWorkItemVM): string => {
     const duePill = item.due_at
       ? `<span class="wh-pill"${item.overdue ? ' data-tone="overdue"' : ""}>${escapeHtml(
-          `${zh ? "截止" : "Due"} ${formatLocalDate(item.due_at)}`
+          `${goldPathCopyT(locale, "due3")} ${formatLocalDate(item.due_at)}`
         )}</span>`
-      : `<span class="wh-pill">${escapeHtml(zh ? "未定期" : "No date")}</span>`;
+      : `<span class="wh-pill">${escapeHtml(goldPathCopyT(locale, "noDate"))}</span>`;
     const overduePill = item.overdue
-      ? `<span class="wh-pill" data-tone="overdue">${escapeHtml(zh ? "逾期" : "Overdue")}</span>`
+      ? `<span class="wh-pill" data-tone="overdue">${escapeHtml(goldPathCopyT(locale, "overdue"))}</span>`
       : "";
     const blocksPill = item.blocks_count > 0
       ? `<span class="wh-pill" data-r15-timeline-blocks="${escapeHtml(String(item.blocks_count))}">${escapeHtml(
@@ -4977,7 +4962,7 @@ function renderProjectTimelineRouteComponent(vm: ProjectTimelinePageVM, locale: 
       : "";
     const depsPill = item.depends_on.length
       ? `<span class="wh-pill">${escapeHtml(
-          `${zh ? "依赖" : "Needs"} ${item.depends_on.map((depId) => codeById.get(depId) ?? depId.slice(0, 8)).join(" ")}`
+          `${goldPathCopyT(locale, "needs")} ${item.depends_on.map((depId) => codeById.get(depId) ?? depId.slice(0, 8)).join(" ")}`
         )}</span>`
       : "";
     // OKR 标注：悬停显目标名（G4 #36：VM 现带 objective_titles，服务端 join 得到；缺省/取名失败时
@@ -4987,7 +4972,7 @@ function renderProjectTimelineRouteComponent(vm: ProjectTimelinePageVM, locale: 
       : item.objective_ids ?? [];
     const okrPill = item.objective_ids && item.objective_ids.length
       ? `<span class="wh-pill" data-r15-timeline-okr="${escapeHtml(String(item.objective_ids.length))}" title="${escapeHtml(
-          `${zh ? "目标" : "Objectives"} ${okrHoverNames.join(zh ? "、" : ", ")}`
+          `${goldPathCopyT(locale, "objectives")} ${okrHoverNames.join(zh ? "、" : ", ")}`
         )}">${item.objective_ids.length > 1 ? `OKR ×${item.objective_ids.length}` : "OKR"}</span>`
       : "";
     const assigneePill = item.assignee
@@ -5018,7 +5003,7 @@ function renderProjectTimelineRouteComponent(vm: ProjectTimelinePageVM, locale: 
   const groupSection = (title: string, dueLabel: string | undefined, doneTag: string, items: TimelineWorkItemVM[]): string => {
     const body = items.length
       ? `<div class="wh-r4-route-table">${sortRows(items).map(rowHtml).join("")}</div>`
-      : `<p class="wh-subtle">${escapeHtml(zh ? "这个里程碑下还没有工作项。" : "No work items under this milestone yet.")}</p>`;
+      : `<p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "noWorkItemsUnderThisMilestone"))}</p>`;
     return `<section class="wh-card wh-r4-route-card" data-r15-timeline-group="true">
       <h3 role="heading" aria-level="2">${escapeHtml(title)}${dueLabel ? ` <span class="wh-pill">${escapeHtml(dueLabel)}</span>` : ""}${doneTag}</h3>
       ${body}
@@ -5029,22 +5014,22 @@ function renderProjectTimelineRouteComponent(vm: ProjectTimelinePageVM, locale: 
     .sort((a, b) => a.sort - b.sort)
     .map((milestone: ProjectMilestoneVM) => {
       const items = vm.items.filter((item) => item.milestone_id === milestone.id);
-      const dueLabel = milestone.due_at ? `${zh ? "截止" : "Due"} ${formatLocalDate(milestone.due_at)}` : undefined;
+      const dueLabel = milestone.due_at ? `${goldPathCopyT(locale, "due3")} ${formatLocalDate(milestone.due_at)}` : undefined;
       const doneTag = milestone.status === "done"
-        ? ` <span class="wh-pill" data-tone="done">${escapeHtml(zh ? "已达成" : "Reached")}</span>`
+        ? ` <span class="wh-pill" data-tone="done">${escapeHtml(goldPathCopyT(locale, "reached"))}</span>`
         : "";
       return groupSection(milestone.title, dueLabel, doneTag, items);
     })
     .join("");
   const unassignedItems = vm.items.filter((item) => !item.milestone_id || !knownMilestoneIds.has(item.milestone_id));
   const unassignedSection = unassignedItems.length
-    ? groupSection(zh ? "未挂里程碑" : "No milestone", undefined, "", unassignedItems)
+    ? groupSection(goldPathCopyT(locale, "noMilestone"), undefined, "", unassignedItems)
     : "";
 
   // 关键路径：逾期且卡着别人的项置顶警示。
   const criticalSection = vm.critical.overdue_blocking.length
     ? `<section class="wh-card wh-r4-route-card" data-r15-timeline-critical="${escapeHtml(String(vm.critical.overdue_blocking.length))}">
-        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "这些逾期项卡着别人" : "These overdue items block others")}</h3>
+        <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "theseOverdueItemsBlockOthers"))}</h3>
         <div class="wh-r4-route-meta">${vm.critical.overdue_blocking
           .map((ref) => `<span class="wh-pill" data-tone="overdue">${escapeHtml(
             `${codeById.get(ref.work_item_id) ?? ref.work_item_id.slice(0, 8)} · ${zh ? `卡着 ${ref.blocks_count} 项` : `blocks ${ref.blocks_count}`}`
@@ -5057,9 +5042,7 @@ function renderProjectTimelineRouteComponent(vm: ProjectTimelinePageVM, locale: 
   const emptySection = isEmpty
     ? `<section class="wh-card wh-r4-route-card" data-r15-timeline-empty="true">
         <p class="wh-subtle">${escapeHtml(
-          zh
-            ? "这个项目还没有里程碑或排期。到桌面工作台的「时间线」标签里建里程碑、连依赖，这里就能看到只读进度。"
-            : "This project has no milestones or schedule yet. Create milestones and link dependencies in the desktop workbench Timeline tab — this read-only view will reflect them."
+          goldPathCopyT(locale, "thisProjectHasNoMilestonesOr")
         )}</p>
       </section>`
     : "";
@@ -5074,7 +5057,7 @@ function renderProjectTimelineRouteComponent(vm: ProjectTimelinePageVM, locale: 
     html: `<section class="wh-r4-route" data-r4-route-component="project-timeline" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r15-timeline="${escapeHtml(vm.project.id)}" data-r15-timeline-milestone-count="${escapeHtml(String(vm.milestones.length))}" data-r15-timeline-item-count="${escapeHtml(String(vm.items.length))}">
       <header class="wh-r4-route-head">
         <div>
-          <span class="wh-r4-route-kicker">${escapeHtml(zh ? "时间线" : "Timeline")}</span>
+          <span class="wh-r4-route-kicker">${escapeHtml(goldPathCopyT(locale, "timeline"))}</span>
           <h1>${escapeHtml(vm.project.name)}</h1>
           <div class="wh-r4-route-meta">
             <span class="wh-pill">${escapeHtml(zh ? `里程碑 ${vm.milestones.length}` : `Milestones ${vm.milestones.length}`)}</span>
@@ -5082,7 +5065,7 @@ function renderProjectTimelineRouteComponent(vm: ProjectTimelinePageVM, locale: 
           </div>
         </div>
         <div class="wh-r4-route-actions">
-          <a class="wh-btn" href="/projects/${escapeHtml(vm.project.id)}" data-r15-timeline-back="true">${escapeHtml(zh ? "返回项目主页" : "Back to project")}</a>
+          <a class="wh-btn" href="/projects/${escapeHtml(vm.project.id)}" data-r15-timeline-back="true">${escapeHtml(goldPathCopyT(locale, "backToProject"))}</a>
         </div>
       </header>
       ${criticalSection}${emptySection}${milestoneSections}${unassignedSection}
@@ -5113,7 +5096,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
       // Cuu 卡上(那里 action_href 指向 /api/workitems/:id/pause|downgrade);看板层没有可作用的单一目标。原来给它们
       // 配自指 href(/dashboard/cost)渲成按钮,点了只跳回本页=假动作。改成诚实的「可以这样应对」建议文字,不再撒谎。
       const optionButtons = options.length
-        ? `<span class="wh-subtle">${escapeHtml(zhNotice ? "可以这样应对：" : "What you can do: ")}</span>${options.map((option) => `<span class="wh-pill" data-r4-cost-notice-option="${escapeHtml(option.id)}">${escapeHtml(option.label)}</span>`).join("")}`
+        ? `<span class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "whatYouCanDo"))}</span>${options.map((option) => `<span class="wh-pill" data-r4-cost-notice-option="${escapeHtml(option.id)}">${escapeHtml(option.label)}</span>`).join("")}`
         : "";
       const severityLabel = localizedEnumLabel(
         notice.severity,
@@ -5152,7 +5135,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
       const overBudget = burnPct !== undefined && burnPct > 100
         ? `<p class="wh-pill-danger" data-r9-cost-army-over="${escapeHtml(item.task_plan_id)}">${escapeHtml(zhNotice
           ? `已超预算（${burnPct}%${item.budget_cny ? `，上限 ${costAmount(item.budget_cny, locale)}` : ""}）`
-          : `Over budget (${burnPct}%${item.budget_cny ? `, cap ${costAmount(item.budget_cny, locale)}` : ""})`)} <a class="wh-btn" href="#wh-cost-budget" data-r9-cost-army-handle="true">${escapeHtml(zhNotice ? "去处理" : "Handle it")}</a></p>`
+          : `Over budget (${burnPct}%${item.budget_cny ? `, cap ${costAmount(item.budget_cny, locale)}` : ""})`)} <a class="wh-btn" href="#wh-cost-budget" data-r9-cost-army-handle="true">${escapeHtml(goldPathCopyT(locale, "handleIt"))}</a></p>`
         : "";
       const statusPill = item.status
         ? `<span class="wh-pill" data-tone="${escapeHtml(item.status)}">${escapeHtml(taskPlanStatusLabel(locale, item.status as Parameters<typeof taskPlanStatusLabel>[1]))}</span>`
@@ -5160,8 +5143,8 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
       return `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-cost-army-plan="${escapeHtml(item.task_plan_id)}">
       <div>
         <strong>${item.work_item_id
-          ? `<a class="wh-r4-route-row-title" href="/workitems/${escapeHtml(encodeURIComponent(item.work_item_id))}" data-r9-cost-army-drill="${escapeHtml(item.task_plan_id)}" title="${escapeHtml(zhNotice ? "打开工作项，看子任务与每次运行的回放" : "Open the work item to see subtasks and per-run replays")}">${escapeHtml(item.label ?? (zhNotice ? "军团任务计划" : "Task plan"))}</a>`
-          : escapeHtml(item.label ?? (zhNotice ? "军团任务计划" : "Task plan"))}</strong>
+          ? `<a class="wh-r4-route-row-title" href="/workitems/${escapeHtml(encodeURIComponent(item.work_item_id))}" data-r9-cost-army-drill="${escapeHtml(item.task_plan_id)}" title="${escapeHtml(goldPathCopyT(locale, "openTheWorkItemToSee"))}">${escapeHtml(item.label ?? (goldPathCopyT(locale, "taskPlan2")))}</a>`
+          : escapeHtml(item.label ?? (goldPathCopyT(locale, "taskPlan2")))}</strong>
         <p>${escapeHtml(zhNotice
           ? `${item.child_runs} 个子运行 · ${item.task_plan_id.slice(0, 8)}`
           : `${item.child_runs} child ${item.child_runs === 1 ? "run" : "runs"} · ${item.task_plan_id.slice(0, 8)}`)}</p>
@@ -5186,18 +5169,16 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
   // 免得这两个维度对非管理员悄悄消失又没人解释为什么。
   const nonAdminNote = vm.viewer_is_admin === false
     ? `<section class="wh-card wh-r4-route-card" data-r9-cost-non-admin-note="true">
-        <p class="wh-subtle">${escapeHtml(zhNotice
-          ? "按人 / 按军团 / 按目标 / 按工作项 / 按团队的全组织分组仅管理员可见——这里只显示你自己的用量与预算。"
-          : "Org-wide breakdowns (by person, agent team, objective, work item, or team) are admin-only — this page shows your own usage and budgets.")}</p>
+        <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "orgWideBreakdownsByPersonAgent"))}</p>
       </section>`
     : "";
   const armyCard = vm.by_task_plan.length
     ? `<section class="wh-card wh-r4-route-card" data-r9-cost-army="true" data-r9-cost-army-count="${escapeHtml(String(vm.by_task_plan.length))}">
-          <h3 role="heading" aria-level="2">${escapeHtml(zhNotice ? "军团花费" : "Agent team spend")}</h3>
-          <p class="wh-subtle">${escapeHtml(zhNotice ? "按任务计划分组的 AI 军团开销（近 90 天账目）。" : "Agent team cost grouped by task plan (last 90 days).")}</p>
+          <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "agentTeamSpend"))}</h3>
+          <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "agentTeamCostGroupedByTask"))}</p>
           <div class="wh-r4-route-timeline" role="list">${armyRows}</div>
           ${armyCapNote}
-          <div class="wh-r4-route-actions"><a class="wh-btn" href="/dashboard/agents" data-r9-cost-army-cta="true">${escapeHtml(zhNotice ? "去指挥台看军团" : "Open the command deck")}</a></div>
+          <div class="wh-r4-route-actions"><a class="wh-btn" href="/dashboard/agents" data-r9-cost-army-cta="true">${escapeHtml(goldPathCopyT(locale, "openTheCommandDeck"))}</a></div>
         </section>`
     : "";
   // UX-M10（规格 §3.5 三维分组）：按人 / 按军团计划 / 按目标三个维度都要在成本页可达。
@@ -5218,7 +5199,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
     : "";
   const byUserCard = vm.by_user.length
     ? `<section class="wh-card wh-r4-route-card" data-r9-cost-by-user="true">
-          <h3 role="heading" aria-level="2">${escapeHtml(zhNotice ? "按人花费" : "Spend by person")}</h3>
+          <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "spendByPerson"))}</h3>
           <div class="wh-r4-route-timeline" role="list">${byUserRows}</div>
           ${byUserCapNote}
         </section>`
@@ -5236,7 +5217,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
     : "";
   const byObjectiveCard = vm.by_objective.length
     ? `<section class="wh-card wh-r4-route-card" data-r9-cost-by-objective="true">
-          <h3 role="heading" aria-level="2">${escapeHtml(zhNotice ? "目标花费" : "Spend by objective")}</h3>
+          <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "spendByObjective"))}</h3>
           <div class="wh-r4-route-timeline" role="list">${byObjectiveRows}</div>
           ${byObjectiveCapNote}
         </section>`
@@ -5344,8 +5325,8 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
     : "";
   const byAssigneeCard = vm.by_assignee.length
     ? `<section class="wh-card wh-r4-route-card" data-r13-cost-by-assignee="true">
-          <h3 role="heading" aria-level="2">${escapeHtml(zhNotice ? "按执行者分账" : "Spend by assignee")}</h3>
-          <p class="wh-subtle">${escapeHtml(zhNotice ? "谁执行了这些 AI 运行——按干活的人记账，而不是按提任务的人。" : "Who ran the work — attributed to the assignee who executed it, not whoever filed the task.")}</p>
+          <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "spendByAssignee"))}</h3>
+          <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "whoRanTheWorkAttributedTo"))}</p>
           <div class="wh-r4-route-timeline" role="list">${byAssigneeRows}</div>
           ${byAssigneeCapNote}
         </section>`
@@ -5354,14 +5335,12 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
   // 是 D 主题（全托管透明度）在成本页的落点。
   const aiAutoMergeCard = vm.ai_auto_merge
     ? `<section class="wh-card wh-r4-route-card" data-r13-cost-ai-auto-merge="true" data-r13-cost-ai-auto-merge-count="${escapeHtml(String(vm.ai_auto_merge.count))}" data-r13-cost-ai-auto-merge-ratio="${escapeHtml(String(vm.ai_auto_merge.ratio_pct))}">
-          <h3 role="heading" aria-level="2">${escapeHtml(zhNotice ? "AI 自动合并" : "AI auto-merges")}</h3>
+          <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "aiAutoMerges"))}</h3>
           <div class="wh-r4-route-meta">
             <span class="wh-pill">${escapeHtml(zhNotice ? `今日 ${vm.ai_auto_merge.count} 次` : `${vm.ai_auto_merge.count} today`)}</span>
             <span class="wh-pill">${escapeHtml(zhNotice ? `占今日通过评审的 ${vm.ai_auto_merge.ratio_pct}%` : `${vm.ai_auto_merge.ratio_pct}% of today's approvals`)}</span>
           </div>
-          <p class="wh-subtle">${escapeHtml(zhNotice
-            ? "全托管模式（第 5 档）下，AI 复核通过并立刻自己合并，这些次数里没有人工复核这一步。"
-            : "Under fully-managed mode (tier 5), AI reviews and merges on its own — no human check happens for these.")}</p>
+          <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "underFullyManagedModeTier5"))}</p>
         </section>`
     : "";
   // K5：「干活 vs 自进化」分账卡——把夜间技能自迭代的开销显性化（复利劳动力的自我打磨成本）。
@@ -5389,16 +5368,12 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
   const emptyStateCard = vm.empty_state
     ? `<section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-cost-empty-state="${escapeHtml(vm.empty_state)}">
           <h3 role="heading" aria-level="2">${escapeHtml(vm.empty_state === "usage_not_connected"
-            ? (zhNotice ? "用量统计还没接入" : "Usage tracking not connected")
-            : (zhNotice ? "还没有 AI 用量记录" : "No AI usage yet"))}</h3>
+            ? (goldPathCopyT(locale, "usageTrackingNotConnected"))
+            : (goldPathCopyT(locale, "noAiUsageYet")))}</h3>
           <p>${escapeHtml(vm.empty_state === "usage_not_connected"
-            ? (zhNotice
-              ? "下面的数字暂时都是 0，因为用量统计还没接好；接入后这里会显示真实成本。"
-              : "The figures below read 0 because usage tracking isn't connected yet — real cost will appear once it is.")
-            : (zhNotice
-              ? "下面的数字暂时都是 0。派一个任务让 AI 跑一次，这里就会出现成本。"
-              : "The figures below read 0 for now. Assign a task and let AI run once — cost will show up here."))}</p>
-          ${vm.empty_state === "no_agent_runs" /* term-allow：empty_state 枚举是 VM 标识符，非用户文案 */ ? `<div class="wh-r4-route-actions"><a class="wh-btn wh-btn-primary" href="/intake" data-r9-cost-empty-cta="true">${escapeHtml(zhNotice ? "派一个任务" : "Assign a task")}</a></div>` : ""}
+            ? (goldPathCopyT(locale, "theFiguresBelowRead0Because"))
+            : (goldPathCopyT(locale, "theFiguresBelowRead0For")))}</p>
+          ${vm.empty_state === "no_agent_runs" /* term-allow：empty_state 枚举是 VM 标识符，非用户文案 */ ? `<div class="wh-r4-route-actions"><a class="wh-btn wh-btn-primary" href="/intake" data-r9-cost-empty-cta="true">${escapeHtml(goldPathCopyT(locale, "assignATask"))}</a></div>` : ""}
         </section>`
     : "";
 
@@ -5424,7 +5399,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-cost-metrics="true">
           <h3 role="heading" aria-level="2">${escapeHtml(goldPathT(locale, "cost.estimatedTitle"))}</h3>
           <div class="wh-r4-route-meta">
-            <span class="wh-pill">${escapeHtml(`${goldPathT(locale, "cost.tokenTitle")}: ${uiFormatCount(props.totalTokens, locale)} ${locale === "zh-CN" ? "个 token" : "tokens"}`)}</span>
+            <span class="wh-pill">${escapeHtml(`${goldPathT(locale, "cost.tokenTitle")}: ${uiFormatCount(props.totalTokens, locale)} ${goldPathCopyT(locale, "tokens")}`)}</span>
             <span class="wh-pill">${escapeHtml(goldPathT(locale, "cost.estimatedTitle"))}: ${escapeHtml(costAmount(props.totalCostCny, locale))}</span>
             <span class="wh-pill" data-r4-cost-trend-days="${escapeHtml(String(props.trendCount))}">${escapeHtml(`${routeT(locale, "cost.trend")}: ${props.trendCount}`)}</span>
           </div>
@@ -5472,7 +5447,7 @@ function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale
   const searchBlock = scopeLanding
     ? `<div data-r4-knowledge-scope-landing="true">${landingProjects.length
       ? `<form class="wh-r4-knowledge-search" method="get" action="/knowledge/search" role="search" data-r12-knowledge-scope-form="true">
-          <select class="wh-pill" name="project_id" aria-label="${escapeHtml(locale === "zh-CN" ? "选择要检索的项目" : "Pick a project to search")}">${landingProjects.map((project, index) => `<option value="${escapeHtml(project.id)}"${index === 0 ? " selected" : ""}>${escapeHtml(project.name)}</option>`).join("")}</select>
+          <select class="wh-pill" name="project_id" aria-label="${escapeHtml(goldPathCopyT(locale, "pickAProjectToSearch"))}">${landingProjects.map((project, index) => `<option value="${escapeHtml(project.id)}"${index === 0 ? " selected" : ""}>${escapeHtml(project.name)}</option>`).join("")}</select>
           <input type="search" name="q" maxlength="120" placeholder="${escapeHtml(routeT(locale, "knowledge.searchPlaceholder"))}" aria-label="${escapeHtml(routeT(locale, "knowledge.searchLabel"))}" autocomplete="off" />
           <button class="wh-btn wh-btn-primary" type="submit">${escapeHtml(routeT(locale, "knowledge.searchSubmit"))}</button>
         </form>` : ""}
@@ -5637,15 +5612,15 @@ function mirrorSystemEventText(content: Record<string, unknown>, locale: WorkHub
   if (event === "run_settled_report") {
     const outcome = typeof content["outcome"] === "string" ? content["outcome"] : "";
     const label = outcome === "escalated"
-      ? (zh ? "需要你拍板" : "Needs your call")
-      : (zh ? "这次没干成" : "Didn't land this time");
+      ? (goldPathCopyT(locale, "needsYourCall"))
+      : (goldPathCopyT(locale, "didnTLandThisTime"));
     return title ? `${title} · ${label}` : label;
   }
   if (event === "proposal_opened") {
-    return title ? (zh ? `已起草${sep}${title}` : `Drafted: ${title}`) : (zh ? "已起草变更" : "Change drafted");
+    return title ? (zh ? `已起草${sep}${title}` : `Drafted: ${title}`) : (goldPathCopyT(locale, "changeDrafted"));
   }
   if (event === "proposal_auto_merged") {
-    return title ? (zh ? `已自动采纳${sep}${title}` : `Auto-adopted: ${title}`) : (zh ? "已自动采纳" : "Auto-adopted");
+    return title ? (zh ? `已自动采纳${sep}${title}` : `Auto-adopted: ${title}`) : (goldPathCopyT(locale, "autoAdopted"));
   }
   return mirrorBestEffortNoteText(content, routeT(locale, "conversation.systemFallback"));
 }
@@ -5701,7 +5676,7 @@ function mirrorActionCardHtml(content: Record<string, unknown>, locale: WorkHubL
     const record = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
     const titleMd = typeof record["title_md"] === "string" ? record["title_md"] : typeof record["title"] === "string" ? record["title"] : "";
     const title = stripMarkdown(titleMd);
-    return `<span class="wh-mirror-clarify-opt">${escapeHtml(title || (zh ? "（未命名）" : "(untitled)"))}</span>`;
+    return `<span class="wh-mirror-clarify-opt">${escapeHtml(title || (goldPathCopyT(locale, "untitled")))}</span>`;
   }).join("");
   return `<div class="wh-mirror-clarify"><span class="wh-mirror-clarify-badge">${escapeHtml(header)}</span>${list ? `<div class="wh-mirror-clarify-opts">${list}</div>` : ""}</div>`;
 }
@@ -5762,8 +5737,8 @@ function renderConversationRouteComponent(input: ConversationMirrorInput, locale
   // 的 bindConversationParticipantsPanel 拉 GET /participants 后按 scope/is_dm 渲成员条 + 群管理动作
   // （加人/移出，DM/main 只渲说明无动作），照 settings AI 面板/项目指令面板的「SSR 骨架 + 客户端水合」纪律。
   const participantsSection = `<section class="wh-card wh-r4-route-card wh-mirror-participants" data-r18-conversation-participants="true" data-r18-conversation-id="${escapeHtml(input.conversationId)}">
-        <h2 role="heading" aria-level="2">${escapeHtml(zh ? "参与者" : "Participants")}</h2>
-        <div data-r18-conversation-participants-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载参与者…" : "Loading participants…")}</p></div>
+        <h2 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "participants"))}</h2>
+        <div data-r18-conversation-participants-body="true"><p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "loadingParticipants"))}</p></div>
       </section>`;
   const stream = input.messages.length === 0
     ? `<p class="wh-mirror-empty">${escapeHtml(routeT(locale, "conversation.empty"))}</p>`
@@ -5857,7 +5832,7 @@ function renderSearchRouteComponent(q: string | undefined, locale: WorkHubLocale
         <button class="wh-btn wh-btn-primary" type="submit">${escapeHtml(routeT(locale, "search.submit"))}</button>
       </form>
       <p class="wh-subtle" data-r14-search-status="${hasValidQuery ? "loading" : "prompt"}">${escapeHtml(routeT(locale, promptKey))}</p>
-      <button type="button" class="wh-btn" data-r14-search-retry="true" hidden>${escapeHtml(locale === "zh-CN" ? "重试" : "Retry")}</button>
+      <button type="button" class="wh-btn" data-r14-search-retry="true" hidden>${escapeHtml(goldPathCopyT(locale, "retry"))}</button>
       <div class="wh-r4-route-stack" data-r14-search-results="true" ${hasValidQuery ? "" : "hidden"}>${groups}</div>
     </section>`
   });
@@ -5895,22 +5870,22 @@ function renderSettingsAiAssistantCard(locale: WorkHubLocale, desktopHref: strin
   const renderOptions = (options: Array<[string, string, string]>) =>
     options.map(([value, zhLabel, enLabel]) => `<option value="${escapeHtml(value)}">${escapeHtml(zh ? zhLabel : enLabel)}</option>`).join("");
   return `<section class="wh-card wh-r4-route-card" data-r13-settings-ai-panel="true">
-          <h3 role="heading" aria-level="2">${escapeHtml(zh ? "AI 助手" : "AI assistant")}</h3>
-          <p class="wh-subtle">${escapeHtml(zh ? "单聊默认档、接单策略与助手主动性在这里就能改，改完立即生效——即使你在「只观察」档也能在这里自救。" : "Change your default 1:1 mode, dispatch policy and assistant proactivity right here — it takes effect immediately, even if you're stuck in observe-only mode.")}</p>
+          <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "aiAssistant"))}</h3>
+          <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "changeYourDefault11Mode"))}</p>
           <p class="wh-subtle" data-r13-settings-ai-status="loading" hidden></p>
-          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "默认模式（单聊五档）" : "Default mode (1:1, five levels)")}</strong>
-            <select class="wh-pill" data-r13-settings-ai-mode-select aria-label="${escapeHtml(zh ? "默认模式" : "Default mode")}" disabled>${renderOptions(modeOptions)}</select>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(goldPathCopyT(locale, "defaultMode11FiveLevels"))}</strong>
+            <select class="wh-pill" data-r13-settings-ai-mode-select aria-label="${escapeHtml(goldPathCopyT(locale, "defaultMode"))}" disabled>${renderOptions(modeOptions)}</select>
           </div>
-          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "接单策略" : "Dispatch policy")}</strong>
-            <select class="wh-pill" data-r13-settings-ai-dispatch-select aria-label="${escapeHtml(zh ? "接单策略" : "Dispatch policy")}" disabled>${renderOptions(dispatchOptions)}</select>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(goldPathCopyT(locale, "dispatchPolicy"))}</strong>
+            <select class="wh-pill" data-r13-settings-ai-dispatch-select aria-label="${escapeHtml(goldPathCopyT(locale, "dispatchPolicy"))}" disabled>${renderOptions(dispatchOptions)}</select>
           </div>
-          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "助手主动性" : "Assistant proactivity")}</strong>
-            <select class="wh-pill" data-r13-settings-ai-proactivity-select aria-label="${escapeHtml(zh ? "助手主动性" : "Assistant proactivity")}" disabled>${renderOptions(proactivityOptions)}</select>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(goldPathCopyT(locale, "assistantProactivity"))}</strong>
+            <select class="wh-pill" data-r13-settings-ai-proactivity-select aria-label="${escapeHtml(goldPathCopyT(locale, "assistantProactivity"))}" disabled>${renderOptions(proactivityOptions)}</select>
           </div>
-          <p class="wh-subtle">${escapeHtml(zh ? "调低主动性后：关怀消息不再送达，临期提醒只在真的逾期后发，AI 助手在项目群里也会多等一会儿才开口。" : "Turn it down and: care messages stop, deadline nudges wait until something is actually overdue, and the assistant waits longer before speaking up in a project chat.")}</p>
-          <button type="button" class="wh-btn" data-r13-settings-ai-retry hidden>${escapeHtml(zh ? "重试读取" : "Retry loading")}</button>
-          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "细粒度开关 · 模型档位 · 项目治理" : "Granular switches, model tier, project governance")}</strong><span class="wh-pill">${escapeHtml(zh ? "需要桌面客户端" : "Desktop app required")}</span></div>
-          <a class="wh-btn" href="${escapeHtml(safeHref(desktopHref))}" data-action-id="open_desktop_ai_settings" data-method="GET" data-requires-desktop="true">${escapeHtml(zh ? "其余 AI 项在桌面客户端调整" : "Adjust the rest in the desktop app")}</a>
+          <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "turnItDownAndCareMessages"))}</p>
+          <button type="button" class="wh-btn" data-r13-settings-ai-retry hidden>${escapeHtml(goldPathCopyT(locale, "retryLoading"))}</button>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(goldPathCopyT(locale, "granularSwitchesModelTierProjectGovernance"))}</strong><span class="wh-pill">${escapeHtml(goldPathCopyT(locale, "desktopAppRequired"))}</span></div>
+          <a class="wh-btn" href="${escapeHtml(safeHref(desktopHref))}" data-action-id="open_desktop_ai_settings" data-method="GET" data-requires-desktop="true">${escapeHtml(goldPathCopyT(locale, "adjustTheRestInTheDesktop"))}</a>
         </section>`;
 }
 
@@ -5928,34 +5903,34 @@ function renderSettingsMyProfileCard(locale: WorkHubLocale): string {
   // 点破用途的引导语，不看条件（04 §4 铁律 3 的精神延伸：宁可老实地"总是提示"，不假装能判断"要不要提示"）。
   // 决策队列版本的提示卡留作后续项，见本批汇报。
   return `<section class="wh-card wh-r4-route-card" data-r13-settings-profile-panel="true">
-          <h3 role="heading" aria-level="2">${escapeHtml(zh ? "我的资料" : "My profile")}</h3>
-          <p class="wh-subtle" data-r14-settings-profile-guidance-hint="true">${escapeHtml(zh ? "填好这些，AI 助手派活会更准。" : "Fill these in — the AI assistant's task assignments get more accurate.")}</p>
-          <p class="wh-subtle">${escapeHtml(zh ? "以后 AI 助手派活时会参考这些信息，帮你把活派给最合适的人。" : "The AI assistant uses this information when suggesting who to assign work to.")}</p>
+          <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "myProfile"))}</h3>
+          <p class="wh-subtle" data-r14-settings-profile-guidance-hint="true">${escapeHtml(goldPathCopyT(locale, "fillTheseInTheAiAssistant"))}</p>
+          <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "theAiAssistantUsesThisInformation"))}</p>
           <p class="wh-subtle" data-r13-settings-profile-status="loading" hidden></p>
-          <div role="listitem" class="wh-r4-route-row" data-r14-settings-avatar-row="true"><strong>${escapeHtml(zh ? "头像" : "Avatar")}</strong>
+          <div role="listitem" class="wh-r4-route-row" data-r14-settings-avatar-row="true"><strong>${escapeHtml(goldPathCopyT(locale, "avatar"))}</strong>
             <div class="wh-avatar-field">
               <span class="wh-avatar-preview" data-r14-avatar-preview="true">
                 <span class="wh-avatar-fallback" data-r14-avatar-fallback="true" aria-hidden="true">?</span>
-                <img class="wh-avatar-img" data-r14-avatar-img="true" alt="${escapeHtml(zh ? "当前头像" : "Current avatar")}" hidden />
+                <img class="wh-avatar-img" data-r14-avatar-img="true" alt="${escapeHtml(goldPathCopyT(locale, "currentAvatar"))}" hidden />
               </span>
               <label class="wh-btn wh-avatar-upload-label" data-r14-avatar-upload-label="true">
-                <span>${escapeHtml(zh ? "更换头像" : "Change avatar")}</span>
+                <span>${escapeHtml(goldPathCopyT(locale, "changeAvatar"))}</span>
                 <input type="file" accept="image/png,image/jpeg,image/webp" class="wh-avatar-file-input" data-r14-avatar-file-input="true" hidden disabled />
               </label>
-              <button type="button" class="wh-btn" data-r14-avatar-remove-btn="true" hidden disabled>${escapeHtml(zh ? "移除头像" : "Remove avatar")}</button>
+              <button type="button" class="wh-btn" data-r14-avatar-remove-btn="true" hidden disabled>${escapeHtml(goldPathCopyT(locale, "removeAvatar"))}</button>
               <p class="wh-subtle" data-r14-avatar-status="true" hidden></p>
             </div>
           </div>
-          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "职位/角色头衔" : "Title / role")}</strong>
-            <input type="text" class="wh-pill" data-r13-settings-profile-title-input aria-label="${escapeHtml(zh ? "职位/角色头衔" : "Title / role")}" placeholder="${escapeHtml(zh ? "例如：前端负责人" : "e.g. Frontend lead")}" maxlength="128" disabled />
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(goldPathCopyT(locale, "titleRole"))}</strong>
+            <input type="text" class="wh-pill" data-r13-settings-profile-title-input aria-label="${escapeHtml(goldPathCopyT(locale, "titleRole"))}" placeholder="${escapeHtml(goldPathCopyT(locale, "eGFrontendLead"))}" maxlength="128" disabled />
           </div>
-          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "简介" : "Bio")}</strong>
-            <textarea class="wh-pill" data-r13-settings-profile-bio-input aria-label="${escapeHtml(zh ? "简介" : "Bio")}" rows="3" maxlength="4000" placeholder="${escapeHtml(zh ? "简单介绍一下自己" : "A short bio")}" disabled></textarea>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(goldPathCopyT(locale, "bio"))}</strong>
+            <textarea class="wh-pill" data-r13-settings-profile-bio-input aria-label="${escapeHtml(goldPathCopyT(locale, "bio"))}" rows="3" maxlength="4000" placeholder="${escapeHtml(goldPathCopyT(locale, "aShortBio"))}" disabled></textarea>
           </div>
-          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "技能标签" : "Skill tags")}</strong>
-            <input type="text" class="wh-pill" data-r13-settings-profile-skills-input aria-label="${escapeHtml(zh ? "技能标签，用逗号分隔" : "Skill tags, comma separated")}" placeholder="${escapeHtml(zh ? "用逗号分隔，例如：react, typescript" : "Comma separated, e.g. react, typescript")}" disabled />
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(goldPathCopyT(locale, "skillTags"))}</strong>
+            <input type="text" class="wh-pill" data-r13-settings-profile-skills-input aria-label="${escapeHtml(goldPathCopyT(locale, "skillTagsCommaSeparated"))}" placeholder="${escapeHtml(goldPathCopyT(locale, "commaSeparatedEGReactTypescript"))}" disabled />
           </div>
-          <button type="button" class="wh-btn" data-r13-settings-profile-retry hidden>${escapeHtml(zh ? "重试读取" : "Retry loading")}</button>
+          <button type="button" class="wh-btn" data-r13-settings-profile-retry hidden>${escapeHtml(goldPathCopyT(locale, "retryLoading"))}</button>
         </section>`;
 }
 
@@ -5970,9 +5945,9 @@ function renderSettingsMyProfileCard(locale: WorkHubLocale): string {
 function renderSettingsDevicesCard(locale: WorkHubLocale): string {
   const zh = locale === "zh-CN";
   return `<section class="wh-card wh-r4-route-card" data-r20-settings-devices="true">
-          <h3 role="heading" aria-level="2">${escapeHtml(zh ? "已登录设备" : "Signed-in devices")}</h3>
-          <p class="wh-subtle">${escapeHtml(zh ? "配对到这个账号的客户端设备。撤销不再使用的设备后，那台设备需要重新配对才能再次访问。" : "Client devices paired to this account. Revoking a device you no longer use requires it to re-pair before it can access your account again.")}</p>
-          <div data-r20-settings-devices-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载设备…" : "Loading devices…")}</p></div>
+          <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "signedInDevices"))}</h3>
+          <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "clientDevicesPairedToThisAccount"))}</p>
+          <div data-r20-settings-devices-body="true"><p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "loadingDevices"))}</p></div>
         </section>`;
 }
 
@@ -5983,17 +5958,17 @@ function renderSettingsDevicesCard(locale: WorkHubLocale): string {
 // 清单。非管理员不渲此分区（服务端各端点也再门控一遍，不靠前端自觉）。
 function renderSettingsMembersSection(locale: WorkHubLocale): string {
   const zh = locale === "zh-CN";
-  return `<p class="wh-r4-route-kicker" data-r18-settings-members-kicker="true">${escapeHtml(zh ? "团队成员（管理员）" : "Team members (admins)")}</p>
+  return `<p class="wh-r4-route-kicker" data-r18-settings-members-kicker="true">${escapeHtml(goldPathCopyT(locale, "teamMembersAdmins"))}</p>
       <div class="wh-r4-route-grid" data-r18-settings-members-grid="true">
         <section class="wh-card wh-r4-route-card" data-r18-settings-members="true">
-          <h3 role="heading" aria-level="2">${escapeHtml(zh ? "成员" : "Members")}</h3>
-          <p class="wh-subtle">${escapeHtml(zh ? "管理工作区成员的角色与去留。不能对自己动手，也不能移出或降级最后一名管理员。" : "Manage members' roles and removal. You can't act on yourself or remove/demote the last admin.")}</p>
-          <div data-r18-settings-members-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载成员…" : "Loading members…")}</p></div>
+          <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "members"))}</h3>
+          <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "manageMembersRolesAndRemovalYou"))}</p>
+          <div data-r18-settings-members-body="true"><p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "loadingMembers"))}</p></div>
         </section>
         <section class="wh-card wh-r4-route-card" data-r18-settings-invites="true">
-          <h3 role="heading" aria-level="2">${escapeHtml(zh ? "邀请成员" : "Invite members")}</h3>
-          <p class="wh-subtle">${escapeHtml(zh ? "生成一次性邀请链接令牌，自行转交给对方。令牌只显示一次，服务端不再可取回。" : "Generate a one-time invite token to hand off out-of-band. The token is shown once and can't be retrieved again.")}</p>
-          <div data-r18-settings-invites-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载邀请…" : "Loading invites…")}</p></div>
+          <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "inviteMembers"))}</h3>
+          <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "generateAOneTimeInviteToken"))}</p>
+          <div data-r18-settings-invites-body="true"><p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "loadingInvites"))}</p></div>
           <!-- R20 P1-05：令牌展示区是 body 的持久兄弟节点，不在水合重建的 [data-r18-settings-invites-body] 域内——
                生成邀请后重拉未过期清单（重建 body）绝不会销毁刚展示的一次性令牌，令牌可持续可见可复制。 -->
           <div data-r18-settings-invite-token="true" hidden></div>
@@ -6008,12 +5983,10 @@ function renderSettingsMembersSection(locale: WorkHubLocale): string {
 function renderSettingsBudgetPolicySection(locale: WorkHubLocale): string {
   const zh = locale === "zh-CN";
   return `<section class="wh-card wh-r4-route-card" data-r20-settings-budget-policies="true">
-        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "AI 预算策略（管理员）" : "AI budget policies (admins)")}</h3>
-        <p class="wh-subtle">${escapeHtml(zh
-          ? "按范围（工作项/任务/目标/用户/团队/评测）设置的 AI 用量与费用上限，以及超限后的处理方式。"
-          : "Token and spend caps for the AI engine, scoped by work item / task / objective / user / team / eval, plus what happens on overrun.")}</p>
+        <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "aiBudgetPoliciesAdmins"))}</h3>
+        <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "tokenAndSpendCapsForThe"))}</p>
         <p class="wh-subtle" data-r20-settings-budget-policies-status="loading" hidden></p>
-        <div data-r20-settings-budget-policies-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载预算策略…" : "Loading budget policies…")}</p></div>
+        <div data-r20-settings-budget-policies-body="true"><p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "loadingBudgetPolicies"))}</p></div>
       </section>`;
 }
 
@@ -6024,12 +5997,10 @@ function renderSettingsBudgetPolicySection(locale: WorkHubLocale): string {
 function renderSettingsWorkspaceAuditSection(locale: WorkHubLocale): string {
   const zh = locale === "zh-CN";
   return `<section class="wh-card wh-r4-route-card" data-r23-settings-workspace-audit="true">
-        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "工作区审计（管理员）" : "Workspace audit (admins)")}</h3>
-        <p class="wh-subtle">${escapeHtml(zh
-          ? "这个工作区里发生过的改动：什么时候、谁做的、做了什么、对象是谁。按时间倒序，最新的在最前。"
-          : "What has happened in this workspace: when, who, what action, and on which object. Newest first.")}</p>
-        <div class="wh-r4-route-timeline" role="list" data-r23-settings-workspace-audit-body="true"><p class="wh-subtle" data-r23-settings-workspace-audit-loading="true">${escapeHtml(zh ? "正在加载审计记录…" : "Loading audit entries…")}</p></div>
-        <div class="wh-r4-route-actions"><button type="button" class="wh-btn" data-r23-settings-workspace-audit-more="true" hidden>${escapeHtml(zh ? "加载更多" : "Load more")}</button></div>
+        <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "workspaceAuditAdmins"))}</h3>
+        <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "whatHasHappenedInThisWorkspace"))}</p>
+        <div class="wh-r4-route-timeline" role="list" data-r23-settings-workspace-audit-body="true"><p class="wh-subtle" data-r23-settings-workspace-audit-loading="true">${escapeHtml(goldPathCopyT(locale, "loadingAuditEntries"))}</p></div>
+        <div class="wh-r4-route-actions"><button type="button" class="wh-btn" data-r23-settings-workspace-audit-more="true" hidden>${escapeHtml(goldPathCopyT(locale, "loadMore"))}</button></div>
         <p class="wh-subtle" data-r23-settings-workspace-audit-status="true" hidden></p>
       </section>`;
 }
@@ -6043,10 +6014,10 @@ function settingsPluginStatusLabel(
   zh: boolean
 ): string {
   if (!plugin.enabled || plugin.status === "disabled") {
-    return zh ? "已停用" : "Disabled";
+    return goldPathCopyT(zh, "disabled");
   }
   if (plugin.status === "load_failed") {
-    return zh ? "装不上" : "Won't load";
+    return goldPathCopyT(zh, "wonTLoad");
   }
   return zh
     ? `已启用 · ${plugin.tool_count} 个工具`
@@ -6058,10 +6029,10 @@ function settingsPluginCompatNote(
   zh: boolean
 ): string {
   if (plugin.compat_verdict === "blocked") {
-    return zh ? " · 安装前体检说它跟当前部署不兼容" : " · the pre-install check found it incompatible here";
+    return goldPathCopyT(zh, "thePreInstallCheckFoundIt");
   }
   if (plugin.compat_verdict === "warn") {
-    return zh ? " · 安装前体检有提醒" : " · the pre-install check raised a warning";
+    return goldPathCopyT(zh, "thePreInstallCheckRaisedA");
   }
   return "";
 }
@@ -6073,7 +6044,7 @@ function renderSettingsPluginsSection(vm: SettingsPageVM, locale: WorkHubLocale)
   }
   const zh = locale === "zh-CN";
   const body = plugins.length === 0
-    ? `<p class="wh-subtle">${escapeHtml(zh ? "还没有装任何插件。" : "No plugins installed yet.")}</p>`
+    ? `<p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "noPluginsInstalledYet"))}</p>`
     : plugins
         .map((plugin) => `<div role="listitem" class="wh-r4-route-row" data-r24-settings-plugin="${escapeHtml(plugin.id)}" data-r24-settings-plugin-status="${escapeHtml(plugin.status)}">
             <div>
@@ -6083,10 +6054,8 @@ function renderSettingsPluginsSection(vm: SettingsPageVM, locale: WorkHubLocale)
           </div>`)
         .join("");
   return `<section class="wh-card wh-r4-route-card" data-r24-settings-plugins="${escapeHtml(String(plugins.length))}">
-        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "插件" : "Plugins")}</h3>
-        <p class="wh-subtle">${escapeHtml(zh
-          ? "这里是这台服务器上装好的插件（兼容 DeepSeek Harness 的工具类插件）。安装、启用停用、移除都在桌面客户端的设置里做——安装要指到本机的一个目录。"
-          : "Plugins installed on this server (DeepSeek Harness tool plugins). Install, enable, disable and remove them from the desktop app's settings — installing needs a directory on that machine."
+        <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "plugins"))}</h3>
+        <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "pluginsInstalledOnThisServerDeepseek")
         )}</p>
         <div class="wh-r4-route-timeline" role="list">${body}</div>
       </section>`;
@@ -6115,7 +6084,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale,
           <p>${escapeHtml(goldPathT(locale, "settings.summary"))}</p>
         </div>
       </header>
-      <p class="wh-r4-route-kicker" data-r10-settings-personal="true">${escapeHtml(locale === "zh-CN" ? "个人设置" : "Personal settings")}</p>
+      <p class="wh-r4-route-kicker" data-r10-settings-personal="true">${escapeHtml(goldPathCopyT(locale, "personalSettings"))}</p>
       <div class="wh-r4-route-grid" data-r10-settings-personal-grid="true">
         <section class="wh-card wh-r4-route-card" data-r4-settings-language="true">
           <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "settings.language"))}</h3>
@@ -6127,12 +6096,12 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale,
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-settings-device="true">
           <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "settings.device"))}</h3>
-          <div role="listitem" class="wh-r4-route-row" title="${escapeHtml(locale === "zh-CN" ? "「是」表示改文件等本地动作只在桌面客户端执行，网页端只读——这是安全边界不是故障。" : "Yes means local actions (file writes) run only in the desktop app; the web stays read-only — a safety boundary, not a fault.")}"><strong>${escapeHtml(routeT(locale, "settings.localExecution"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.localExecutionBoundary))}</span></div>
-          <p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "「是」= 改文件等本地动作只在桌面客户端执行，网页端只读——安全边界，非故障。" : "Yes = local actions run only in the desktop app; the web stays read-only — a safety boundary, not a fault.")}</p>
+          <div role="listitem" class="wh-r4-route-row" title="${escapeHtml(goldPathCopyT(locale, "yesMeansLocalActionsFileWrites"))}"><strong>${escapeHtml(routeT(locale, "settings.localExecution"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.localExecutionBoundary))}</span></div>
+          <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "yesLocalActionsRunOnlyIn"))}</p>
           <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.independentPet"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.independentPetWindow))}</span></div>
           <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.petBoundary"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, !props.petModelSettingsInWeb))}</span></div>
-          <div role="listitem" class="wh-r4-route-row" title="${escapeHtml(locale === "zh-CN" ? "恢复交付物到本地文件需要桌面客户端在线；「是」为正常态。" : "Restoring deliverables to local files requires the desktop app; Yes is the normal state.")}"><strong>${escapeHtml(routeT(locale, "settings.desktopGate"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.restoreRequiresDesktop))}</span></div>
-          <p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "恢复交付物到本地文件需桌面客户端在线；「是」为正常态。" : "Restoring deliverables to local files needs the desktop app; Yes is normal.")}</p>
+          <div role="listitem" class="wh-r4-route-row" title="${escapeHtml(goldPathCopyT(locale, "restoringDeliverablesToLocalFilesRequires"))}"><strong>${escapeHtml(routeT(locale, "settings.desktopGate"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.restoreRequiresDesktop))}</span></div>
+          <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "restoringDeliverablesToLocalFilesNeeds"))}</p>
           <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.webLocalActions"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.webLocalActionsEnabled))}</span></div>
           <a class="wh-btn" href="${escapeHtml(safeHref(props.restoreHref))}" data-action-id="open_desktop_settings" data-method="GET" data-requires-desktop="${escapeHtml(String(props.restoreRequiresDesktop))}">${escapeHtml(routeT(locale, "settings.restore"))}</a>
         </section>
@@ -6141,23 +6110,23 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale,
         ${renderSettingsDevicesCard(locale)}
       </div>
       ${vm.permission_policies !== undefined ? `<section class="wh-card wh-r4-route-card" data-r9-settings-policies="${escapeHtml(String(vm.permission_policies.length))}">
-        <h3 role="heading" aria-level="2">${escapeHtml(locale === "zh-CN" ? "自动通过规则" : "Auto-approve rules")}</h3>
-        <p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "勾选「以后同类自动通过」留下的常驻规则都在这里；新增、调整、撤销都在桌面客户端里管理。" : "Standing rules from \u201calways allow\u201d live here; add, adjust, and revoke them from the desktop app.")}</p>
+        <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "autoApproveRules"))}</h3>
+        <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "standingRulesFromAlwaysAllowLive"))}</p>
         <div class="wh-r4-route-timeline" role="list">${vm.permission_policies.length
           ? vm.permission_policies.map((policy) => `<div role="listitem" class="wh-r4-route-row" data-r9-settings-policy="${escapeHtml(policy.id)}">
             <div>
               <strong>${escapeHtml(policy.action_pattern)}</strong>
-              <p>${escapeHtml(`${policy.effect === "allow" ? (locale === "zh-CN" ? "自动通过" : "Auto-allow") : policy.effect === "deny" ? (locale === "zh-CN" ? "自动拒绝" : "Auto-deny") : (locale === "zh-CN" ? "每次询问" : "Ask")}${policy.learned_from_session ? (locale === "zh-CN" ? " · 来自审批时的勾选" : " · learned from approval") : ""}`)}</p>
+              <p>${escapeHtml(`${policy.effect === "allow" ? (goldPathCopyT(locale, "autoAllow")) : policy.effect === "deny" ? (goldPathCopyT(locale, "autoDeny")) : (goldPathCopyT(locale, "ask"))}${policy.learned_from_session ? (goldPathCopyT(locale, "learnedFromApproval")) : ""}`)}</p>
             </div>
-            <a class="wh-btn" href="${escapeHtml(safeHref(policy.revoke_href))}" data-action-id="revoke_policy" data-method="DELETE" data-requires-desktop="true">${escapeHtml(locale === "zh-CN" ? "撤销" : "Revoke")}</a>
+            <a class="wh-btn" href="${escapeHtml(safeHref(policy.revoke_href))}" data-action-id="revoke_policy" data-method="DELETE" data-requires-desktop="true">${escapeHtml(goldPathCopyT(locale, "revoke"))}</a>
           </div>`).join("")
-          : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "还没有常驻规则。" : "No standing rules yet.")}</p>`}</div>
+          : `<p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "noStandingRulesYet"))}</p>`}</div>
       </section>` : ""}
       ${renderSettingsPluginsSection(vm, locale)}
       ${membersSection}
       ${budgetPolicySection}
       ${workspaceAuditSection}
-      <p class="wh-r4-route-kicker" data-r10-settings-diagnostics="true">${escapeHtml(locale === "zh-CN" ? "系统诊断（管理员关注；普通成员只读参考）" : "System diagnostics (for admins; read-only reference for members)")}</p>
+      <p class="wh-r4-route-kicker" data-r10-settings-diagnostics="true">${escapeHtml(goldPathCopyT(locale, "systemDiagnosticsForAdminsReadOnly"))}</p>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-settings-runtime="true">
           <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "settings.runtime"))}</h3>
@@ -6170,10 +6139,10 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale,
           <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "settings.llm"))}</h3>
           <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.provider"))}</strong><span class="wh-pill">${escapeHtml(props.defaultProvider)}</span></div>
           <div role="listitem" class="wh-r4-route-row"><div><strong>${escapeHtml(routeT(locale, "settings.model"))}</strong><p>${escapeHtml(props.defaultModel)}</p></div><span class="wh-pill">${escapeHtml(String(props.providerCount))}</span></div>
-          <div role="listitem" class="wh-r4-route-row" title="${escapeHtml(locale === "zh-CN" ? "AI 引擎的服务端密钥；「未配置」时 AI 功能不可用，需管理员在服务端设置。" : "Server-side key for the AI engine; if unset, AI features are unavailable until an admin configures it.")}"><strong>${escapeHtml(routeT(locale, "settings.apiKey"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.apiKeyConfigured, locale))}</span></div>
-          ${!props.apiKeyConfigured ? `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "AI 引擎密钥未配置——AI 功能不可用，请管理员在服务端设置。" : "AI engine key not set — AI features are unavailable until an admin configures the server.")}</p>` : ""}
+          <div role="listitem" class="wh-r4-route-row" title="${escapeHtml(goldPathCopyT(locale, "serverSideKeyForTheAi"))}"><strong>${escapeHtml(routeT(locale, "settings.apiKey"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.apiKeyConfigured, locale))}</span></div>
+          ${!props.apiKeyConfigured ? `<p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "aiEngineKeyNotSetAi"))}</p>` : ""}
           <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.baseUrl"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.baseUrlConfigured, locale))}</span></div>
-          <p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "密钥只存服务端环境变量，绝不发给浏览器。" : "Keys live only in server env vars and never reach the browser.")}</p>
+          <p class="wh-subtle">${escapeHtml(goldPathCopyT(locale, "keysLiveOnlyInServerEnv"))}</p>
         </section>
       </div>
 

@@ -2,6 +2,8 @@ import type { ObjectiveDetailResponse, ObjectiveListItemVM, ProjectHomeWorkItemV
 import type { WorkHubLocale } from "@workhub/ui/gold-path";
 import { escapeHtml } from "@workhub/web-runtime";
 
+import { webT } from "./locales.js";
+
 // R23 F-01（OKR 列表/详情持久化）：项目主页 OKR 面板此前只有创建/挂链两个写动作——列表是会话内内存态
 // （刷新即失，见 apps/web/src/browser.ts 里 bindProjectHomeObjectivesPanel 的旧注释）。服务端已补
 // GET /api/projects/:id/objectives（列表）与 GET /api/objectives/:id（详情），这里是纯字符串渲染层：
@@ -18,17 +20,17 @@ function objectiveLinkControlsHtml(openWorkItems: ProjectHomeWorkItemVM[], local
   const zh = zhLocale(locale);
   if (!openWorkItems.length) {
     return `<span class="wh-subtle">${escapeHtml(
-      zh ? "这个项目暂无进行中工作项可挂。" : "No open work items in this project to link yet."
+      webT(zh, "noOpenWorkItemsInThis")
     )}</span>`;
   }
   const options = openWorkItems
     .map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(`${item.code} · ${item.title}`)}</option>`)
     .join("");
-  return `<select class="wh-pill" data-r20-okr-link-select aria-label="${escapeHtml(zh ? "选择要挂的工作项" : "Pick a work item to link")}">
-      <option value="">${escapeHtml(zh ? "选择工作项…" : "Pick a work item…")}</option>
+  return `<select class="wh-pill" data-r20-okr-link-select aria-label="${escapeHtml(webT(zh, "pickAWorkItemToLink"))}">
+      <option value="">${escapeHtml(webT(zh, "pickAWorkItem"))}</option>
       ${options}
     </select>
-    <button type="button" class="wh-btn" data-r20-okr-link-submit="true">${escapeHtml(zh ? "挂链" : "Link")}</button>`;
+    <button type="button" class="wh-btn" data-r20-okr-link-submit="true">${escapeHtml(webT(zh, "link"))}</button>`;
 }
 
 // 一个目标渲两个相邻同级块：可见行 + 默认折叠的详情容器（用 objective_id 关联，不依赖兄弟节点顺序）。
@@ -49,7 +51,7 @@ export function objectiveRowHtml(
         </div>
       </div>
       <div>
-        <button type="button" class="wh-btn" data-r23-okr-detail-toggle="true" aria-expanded="false">${escapeHtml(zh ? "详情" : "Details")}</button>
+        <button type="button" class="wh-btn" data-r23-okr-detail-toggle="true" aria-expanded="false">${escapeHtml(webT(zh, "details"))}</button>
         ${objectiveLinkControlsHtml(openWorkItems, locale)}
         <p class="wh-subtle" data-r20-okr-link-status hidden></p>
       </div>
@@ -60,16 +62,14 @@ export function objectiveRowHtml(
 function objectiveListEmptyHtml(locale: WorkHubLocale) {
   const zh = zhLocale(locale);
   return `<p class="wh-subtle" data-r20-okr-list-empty="true">${escapeHtml(
-    zh
-      ? "这个工作区还没有创建目标。用上面的表单建一个吧。"
-      : "No objectives yet in this workspace — create one with the form above."
+    webT(zh, "noObjectivesYetInThisWorkspace")
   )}</p>`;
 }
 
 function objectiveListCappedNoteHtml(locale: WorkHubLocale) {
   const zh = zhLocale(locale);
   return `<p class="wh-subtle" data-r20-okr-list-capped="true">${escapeHtml(
-    zh ? "还有更多目标未显示。" : "More objectives exist but aren't shown here."
+    webT(zh, "moreObjectivesExistButArenT")
   )}</p>`;
 }
 
@@ -89,7 +89,7 @@ export function objectiveListBodyHtml(
 
 export function objectiveListLoadingHtml(locale: WorkHubLocale) {
   const zh = zhLocale(locale);
-  return `<p class="wh-subtle" data-r20-okr-list-loading="true">${escapeHtml(zh ? "正在加载目标…" : "Loading objectives…")}</p>`;
+  return `<p class="wh-subtle" data-r20-okr-list-loading="true">${escapeHtml(webT(zh, "loadingObjectives"))}</p>`;
 }
 
 // P1-07 同款取舍（project-home-plans 先例）：403（无权）与其它失败（网络/5xx）分开报——前者不该被
@@ -98,12 +98,12 @@ export function objectiveListErrorHtml(locale: WorkHubLocale, forbidden: boolean
   const zh = zhLocale(locale);
   if (forbidden) {
     return `<p class="wh-subtle" data-r20-okr-list-forbidden="true">${escapeHtml(
-      zh ? "你没有查看目标的权限。" : "You don't have permission to view objectives."
+      webT(zh, "youDonTHavePermissionTo4")
     )}</p>`;
   }
   return `<p class="wh-subtle" data-r20-okr-list-error="true">${escapeHtml(
-    zh ? "目标加载失败，稍后重试。" : "Couldn't load objectives — retry later."
-  )}</p><button type="button" class="wh-btn" data-r20-okr-list-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+    webT(zh, "couldnTLoadObjectivesRetryLater")
+  )}</p><button type="button" class="wh-btn" data-r20-okr-list-retry="true">${escapeHtml(webT(zh, "retry"))}</button>`;
 }
 
 function keyResultRowHtml(keyResult: ObjectiveDetailResponse["key_results"][number]) {
@@ -123,38 +123,38 @@ function linkedTaskPlanRowHtml(plan: ObjectiveDetailResponse["linked_task_plans"
 // 上限提示，capped 时追加一句「更多未显示」而不是悄悄截断。
 export function objectiveDetailBodyHtml(detail: ObjectiveDetailResponse, locale: WorkHubLocale) {
   const zh = zhLocale(locale);
-  const cappedSuffix = (capped: boolean) => (capped ? ` · ${escapeHtml(zh ? "更多未显示" : "more not shown")}` : "");
+  const cappedSuffix = (capped: boolean) => (capped ? ` · ${escapeHtml(webT(zh, "moreNotShown"))}` : "");
   const keyResultsHtml = detail.key_results.length
     ? detail.key_results.map(keyResultRowHtml).join("")
-    : `<p class="wh-subtle">${escapeHtml(zh ? "还没有关键结果。" : "No key results yet.")}</p>`;
+    : `<p class="wh-subtle">${escapeHtml(webT(zh, "noKeyResultsYet"))}</p>`;
   const workItemsHtml = detail.linked_work_items.length
     ? detail.linked_work_items.map(linkedWorkItemRowHtml).join("")
-    : `<p class="wh-subtle">${escapeHtml(zh ? "还没有挂链的工作项。" : "No linked work items yet.")}</p>`;
+    : `<p class="wh-subtle">${escapeHtml(webT(zh, "noLinkedWorkItemsYet"))}</p>`;
   const taskPlansHtml = detail.linked_task_plans.length
     ? detail.linked_task_plans.map(linkedTaskPlanRowHtml).join("")
-    : `<p class="wh-subtle">${escapeHtml(zh ? "还没有挂链的执行计划。" : "No linked task plans yet.")}</p>`;
+    : `<p class="wh-subtle">${escapeHtml(webT(zh, "noLinkedTaskPlansYet"))}</p>`;
   return `<div data-r23-okr-detail-krs="true">
-      <p class="wh-subtle"><strong>${escapeHtml(zh ? "关键结果" : "Key results")}</strong>${cappedSuffix(detail.key_results_capped)}</p>
+      <p class="wh-subtle"><strong>${escapeHtml(webT(zh, "keyResults"))}</strong>${cappedSuffix(detail.key_results_capped)}</p>
       ${keyResultsHtml}
     </div>
     <div data-r23-okr-detail-workitems="true">
-      <p class="wh-subtle"><strong>${escapeHtml(zh ? "挂链工作项" : "Linked work items")}</strong>${cappedSuffix(detail.linked_work_items_capped)}</p>
+      <p class="wh-subtle"><strong>${escapeHtml(webT(zh, "linkedWorkItems"))}</strong>${cappedSuffix(detail.linked_work_items_capped)}</p>
       ${workItemsHtml}
     </div>
     <div data-r23-okr-detail-plans="true">
-      <p class="wh-subtle"><strong>${escapeHtml(zh ? "挂链执行计划" : "Linked task plans")}</strong>${cappedSuffix(detail.linked_task_plans_capped)}</p>
+      <p class="wh-subtle"><strong>${escapeHtml(webT(zh, "linkedTaskPlans"))}</strong>${cappedSuffix(detail.linked_task_plans_capped)}</p>
       ${taskPlansHtml}
     </div>`;
 }
 
 export function objectiveDetailLoadingHtml(locale: WorkHubLocale) {
   const zh = zhLocale(locale);
-  return `<p class="wh-subtle">${escapeHtml(zh ? "加载详情中…" : "Loading detail…")}</p>`;
+  return `<p class="wh-subtle">${escapeHtml(webT(zh, "loadingDetail"))}</p>`;
 }
 
 export function objectiveDetailErrorHtml(locale: WorkHubLocale) {
   const zh = zhLocale(locale);
   return `<p class="wh-subtle" data-r23-okr-detail-error="true">${escapeHtml(
-    zh ? "详情加载失败，请重试。" : "Couldn't load detail — please retry."
-  )}</p><button type="button" class="wh-btn" data-r23-okr-detail-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+    webT(zh, "couldnTLoadDetailPleaseRetry")
+  )}</p><button type="button" class="wh-btn" data-r23-okr-detail-retry="true">${escapeHtml(webT(zh, "retry"))}</button>`;
 }
