@@ -1754,7 +1754,10 @@ fn take_pending_deep_link_from(
 // 目标窗 webview 加载完成、订阅好 "deep-link" 事件后调用：取回窗口创建期间错过的那条深链计划。
 // 浏览器 dev 态/无暂存/非本窗目标都回 None，前端按「没有兜底」继续正常启动。
 #[tauri::command]
-fn take_pending_deep_link(app: tauri::AppHandle, window: tauri::Window) -> Option<ShellDeepLinkPlan> {
+fn take_pending_deep_link(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+) -> Option<ShellDeepLinkPlan> {
     let state = app.state::<Mutex<PendingShellDeepLink>>();
     let Ok(mut pending) = state.lock() else {
         return None;
@@ -2166,15 +2169,28 @@ mod tests {
 
         // 别的窗口（main 先 boot）来问：拿不到，且 stash 留给真正的目标窗。
         let mut pending = Some((plan.clone(), stashed_at));
-        let taken = take_pending_deep_link_from(&mut pending, "main", stashed_at + Duration::from_secs(1));
+        let taken =
+            take_pending_deep_link_from(&mut pending, "main", stashed_at + Duration::from_secs(1));
         assert!(taken.is_none());
-        assert!(pending.is_some(), "mismatched window must not consume the stash");
+        assert!(
+            pending.is_some(),
+            "mismatched window must not consume the stash"
+        );
 
         // 目标窗（workbench）来问：拿到且一次性清除。
-        let taken = take_pending_deep_link_from(&mut pending, "workbench", stashed_at + Duration::from_secs(2));
+        let taken = take_pending_deep_link_from(
+            &mut pending,
+            "workbench",
+            stashed_at + Duration::from_secs(2),
+        );
         assert_eq!(taken, Some(plan.clone()));
         assert!(pending.is_none());
-        assert!(take_pending_deep_link_from(&mut pending, "workbench", stashed_at + Duration::from_secs(3)).is_none());
+        assert!(take_pending_deep_link_from(
+            &mut pending,
+            "workbench",
+            stashed_at + Duration::from_secs(3)
+        )
+        .is_none());
 
         // 过期（> TTL）：目标窗来问也拿不到，stash 清掉不留污染。
         let mut stale = Some((plan, stashed_at));
