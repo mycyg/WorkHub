@@ -20,6 +20,7 @@ import {
 } from "../services/drive-pages.js";
 import { jsonObjectFromText, readJsonObject } from "./json-body.js";
 import { isUuidParam } from "./uuid-param.js";
+import { serviceT } from "../services/locales.js";
 
 export type DriveRoutesDependencies = {
   auth?: AuthDependencySource;
@@ -547,7 +548,7 @@ export function createDriveRoutes(deps: DriveRoutesDependencies = {}) {
       const data = await drivePages.draftToProposal({
         actor: c.var.actor,
         locale,
-        workItemId: requireUuidParam(c.req.param("workItemId"), "事项")
+        workItemId: requireUuidParam(c.req.param("workItemId"), serviceT("zh-CN", "taskLabel"))
       });
       return c.json(pageEnvelope(data, locale));
     } catch (error) {

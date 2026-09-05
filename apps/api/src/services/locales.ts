@@ -105,6 +105,7 @@ const zh = {
   taskEditForbidden: "你没有权限修改这个任务。",
   taskDeliverableEditForbidden: "你没有权限修改这个任务的正式交付物。",
   taskNotFound: "没有找到这个任务。",
+  taskLabel: "任务",
   taskCannotRefinalize: "这个任务的当前状态不允许重新定稿；若刚提交过新的澄清回答，请刷新后重试。",
   knowledgeSearchScopeRequired: "请在具体任务或项目内检索。",
 
@@ -230,6 +231,7 @@ const en = {
   taskEditForbidden: "You don't have permission to edit this task.",
   taskDeliverableEditForbidden: "You don't have permission to edit this task's accepted deliverables.",
   taskNotFound: "That task wasn't found.",
+  taskLabel: "task",
   taskCannotRefinalize: "This task's current status doesn't allow re-finalizing. If you just submitted new answers, refresh and try again.",
   knowledgeSearchScopeRequired: "Search inside a specific task or project.",
 
