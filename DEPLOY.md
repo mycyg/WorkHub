@@ -44,7 +44,7 @@ docker compose --env-file .env.pilot -f docker-compose.pilot.yml logs -f workhub
 
 镜像预装（工人沙箱白名单库，R5.11.1）：`pandas / numpy / matplotlib / python-docx / openpyxl / python-pptx` + Noto CJK 字体。即 AI 工人可直接交付 **Word、Excel、PPT、统计图表（中文标签）、数据分析报告、可运行脚本**。工人内置七个预设技能（docx/xlsx/pptx/图表/分析/报告/脚本），涉及对应交付物时会先加载技能合同再动手，避免库 API 误用。沙箱仍禁网、禁装包。
 
-> 注意：`run_command`（工人跑 python/node 产出上述交付物的能力）默认 **fail-closed（关）**——未隔离的命令执行器可访问宿主路径，因此不默认开启。LAN 单机试运行是受信环境，`.env.pilot.example` 已置 `AGENT_RUN_ALLOW_UNSANDBOXED_COMMANDS=true` 打开它；**多租户/公网部署务必保持 false**，并由部署方注入真正隔离的 runner（容器/namespace/firejail）。
+> 注意：`run_command`（工人跑 python/node 产出上述交付物的能力）在 macOS 上一律包进 Seatbelt 系统沙箱（禁网、写只限工作目录，执行完整度上报 full），开箱即用；在没有系统级沙箱后端的平台（目前 Linux/Windows，含本 Docker 镜像）默认 **fail-closed 拒绝执行**。LAN 单机试运行是受信环境，`.env.pilot.example` 已置 `AGENT_RUN_ALLOW_UNSANDBOXED_COMMANDS=true` 把它降级到用户态软沙箱（命令白名单 + 路径围栏 + 预算，上报 partial，**不是安全边界**）；**多租户/公网部署务必保持 false**，并由部署方注入真正隔离的 runner（容器/namespace/firejail）。沙箱局限与免责口径见 `SAFETY.md`。
 
 ## 3.2 没有大模型 key 时的行为
 
