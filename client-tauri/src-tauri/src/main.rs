@@ -25,6 +25,9 @@ use workhub_client_tauri::pet_window::{
     LogicalPosition, LogicalRect, PetWindowMode, PetWindowPlacementPlan, PetWindowPointerInput,
     PetWindowSettings, DEFAULT_PET_CURSOR_NEAR_RADIUS,
 };
+use workhub_client_tauri::shell_log::{
+    init_shell_log_dir, shell_log_error, shell_log_info, shell_log_warn,
+};
 use workhub_client_tauri::single_instance::single_instance_plan_from_args_for_locale;
 use workhub_client_tauri::sse_worker::{
     spawn_default_shell_sse_workers, ShellClientToken, ShellServerUrl,
@@ -505,13 +508,14 @@ fn pet_cursor_client_position(app: tauri::AppHandle) -> Result<PetCursorClientPo
 fn set_client_token(state: tauri::State<'_, ShellClientToken>, token: String) {
     let trimmed = token.trim();
     if trimmed.is_empty() {
-        eprintln!("WorkHub: client token cleared by webview");
+        shell_log_info("client_token_cleared", "webview cleared the client token");
         // SEC P0-02：清空必须递增身份代际并唤醒等待者（ShellClientToken::set 内部两件事都做）——退出/换号后
         // 旧账号私有 SSE pump 靠代际变更立即中止，不再一直把旧身份事件灌到 TCP 偶然断。旧实现在这里只写 None
         // 后直接 return（连 notify 都不发），正是本缺陷根因。
         let generation = state.set(None);
-        eprintln!(
-            "WorkHub: client token generation now {generation} (cleared); any active SSE pump aborts on the next tick"
+        shell_log_info(
+            "client_token_generation",
+            format!("now {generation} (cleared); any active SSE pump aborts on the next tick"),
         );
         return;
     }
@@ -523,12 +527,16 @@ fn set_client_token(state: tauri::State<'_, ShellClientToken>, token: String) {
         .nth_back(3)
         .map(|(i, _)| &trimmed[i..])
         .unwrap_or(trimmed);
-    eprintln!("WorkHub: client token received (…{tail}); SSE /me authenticates on next reconnect");
+    shell_log_info(
+        "client_token_received",
+        format!("…{tail}; SSE /me authenticates on next reconnect"),
+    );
     // 递增身份代际并唤醒（RUST-1 + SEC P0-02）：挂起中的 worker 立即以新身份重连；活跃的旧身份 pump 感知代际
     // 变更后中止，再以新令牌重连——不再干等满一个退避周期，也不再拿旧身份续流。
     let generation = state.set(Some(trimmed.to_string()));
-    eprintln!(
-        "WorkHub: client token generation now {generation}; SSE reconnects with the new identity"
+    shell_log_info(
+        "client_token_generation",
+        format!("now {generation}; SSE reconnects with the new identity"),
     );
 }
 
@@ -598,16 +606,22 @@ fn set_server_url(
     // 也会清一遍（双保险）。清空同样递增身份代际 → 活跃的旧连接立刻中止（SEC P0-02 的既有机制）。
     let token_generation = token.set(None);
     let server_generation = server.set(normalized.clone());
-    eprintln!(
-        "WorkHub: shell server url changed from {previous} to {normalized}; client token cleared \
-         (identity generation {token_generation}), endpoint generation {server_generation}; SSE \
-         reconnects against the new server"
+    shell_log_info(
+        "server_url_changed",
+        format!(
+            "from {previous} to {normalized}; client token cleared (identity generation \
+             {token_generation}), endpoint generation {server_generation}; SSE reconnects against \
+             the new server"
+        ),
     );
     if std::env::var(WORKHUB_SERVER_URL_ENV).is_ok() {
         // 环境变量在启动时覆盖配置文件（见 load_shell_config_from_json_and_env）——本次改动在运行期生效，
         // 但下次启动会被环境变量顶回去。这是运维自己设的优先级，不去偷偷改它，只留一行诊断。
-        eprintln!(
-            "WorkHub: {WORKHUB_SERVER_URL_ENV} is set and will override this saved address on the next launch"
+        shell_log_warn(
+            "server_url_env_override",
+            format!(
+                "{WORKHUB_SERVER_URL_ENV} is set and will override this saved address on the next launch"
+            ),
         );
     }
 
@@ -621,8 +635,9 @@ fn set_server_url(
             url: normalized.clone(),
         },
     ) {
-        eprintln!(
-            "WorkHub: failed to broadcast the server change ({error}); other windows keep the old address until they reload"
+        shell_log_warn(
+            "server_change_broadcast_failed",
+            format!("{error}; other windows keep the old address until they reload"),
         );
     }
 
@@ -722,7 +737,7 @@ fn apply_shell_locale(app: &tauri::AppHandle, locale: WorkHubLocale) -> Result<(
     // 工作台窗已开着时标题跟着切（没建过就不用管，建窗时会按当时的 locale 设）。best-effort。
     if let Some(workbench) = app.get_webview_window("workbench") {
         if let Err(error) = workbench.set_title(workbench_window_title(locale)) {
-            eprintln!("failed to update workbench window title locale: {error}");
+            shell_log_warn("workbench_title_locale_failed", error);
         }
     }
     Ok(())
@@ -1015,7 +1030,12 @@ fn execute_window_control(
 
     if plan.label == MAIN_WINDOW_LABEL {
         if let Err(error) = configure_main_window_chrome(&window) {
-            eprintln!("failed to configure main window chrome; continuing window control: {error}");
+            shell_log_warn(
+                "main_window_chrome_failed",
+                format!(
+                    "failed to configure main window chrome; continuing window control: {error}"
+                ),
+            );
         }
     }
 
@@ -1059,7 +1079,10 @@ fn install_workhub_global_hotkey(app: &tauri::AppHandle) -> Result<(), String> {
 // （跟托盘/深链/通知同一条控制协议），不另造第二套窗口控制协议。
 fn toggle_main_window_from_global_hotkey(app: &tauri::AppHandle) {
     let Some(window) = app.get_webview_window("main") else {
-        eprintln!("WorkHub: global hotkey fired but the main window is unavailable");
+        shell_log_warn(
+            "global_hotkey_no_main_window",
+            "global hotkey fired but the main window is unavailable",
+        );
         return;
     };
     let is_focused = window.is_focused().unwrap_or(false);
@@ -1069,7 +1092,7 @@ fn toggle_main_window_from_global_hotkey(app: &tauri::AppHandle) {
         show_main_window_plan(ShellWindowControlSource::Setting)
     };
     if let Err(error) = execute_window_control(app, plan) {
-        eprintln!("WorkHub: failed to apply global hotkey window control: {error}");
+        shell_log_error("global_hotkey_control_failed", error);
     }
 }
 
@@ -1105,7 +1128,7 @@ fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
     #[cfg(target_os = "macos")]
     if let tauri::RunEvent::Reopen { .. } = event {
         if let Err(error) = apply_dock_reopen(app) {
-            eprintln!("WorkHub: failed to restore the main window on Dock reopen: {error}");
+            shell_log_error("dock_reopen_failed", error);
         }
     }
 }
@@ -1298,7 +1321,7 @@ fn create_workbench_window_if_missing(
     // 是 CSS 半透兜底的"实底"。必须调度回主线程。
     let glass_window = window.clone();
     if let Err(error) = window.run_on_main_thread(move || apply_workbench_glass(&glass_window)) {
-        eprintln!("failed to schedule workbench glass on main thread: {error}");
+        shell_log_warn("workbench_glass_schedule_failed", error);
     }
     Ok(window)
 }
@@ -1307,13 +1330,13 @@ fn create_workbench_window_if_missing(
 // CSS backdrop-filter 无内容可糊。失败不致命(前端 ds-glass-strong 半透底兜底),但留下真机诊断。
 fn apply_workbench_glass(window: &tauri::WebviewWindow) {
     if let Err(error) = window.set_background_color(Some(Color(0, 0, 0, 0))) {
-        eprintln!("failed to clear workbench window background: {error}");
+        shell_log_warn("workbench_background_failed", error);
     }
     // R13 V1：固定浅色玻璃（用户拍板）——先把窗口外观钉死 light（系统深色模式下浅色材质会翻黑,
     // set_theme 在 macOS 落到 NSAppearance）,材质从深色 HudWindow 换 UnderWindowBackground
     // （浅外观下的标准衬底毛玻璃;真机 A/B 候选还有 Sidebar/Popover,以与聚焦盒浅色面板协调为准）。
     if let Err(error) = window.set_theme(Some(tauri::Theme::Light)) {
-        eprintln!("failed to pin workbench light appearance: {error}");
+        shell_log_warn("workbench_appearance_failed", error);
     }
     #[cfg(target_os = "macos")]
     if std::env::var("WORKHUB_DISABLE_VIBRANCY").is_err() {
@@ -1323,12 +1346,18 @@ fn apply_workbench_glass(window: &tauri::WebviewWindow) {
             Some(window_vibrancy::NSVisualEffectState::Active),
             Some(24.0),
         ) {
-            eprintln!("workbench vibrancy unavailable, falling back to translucent base: {error}");
+            shell_log_warn(
+                "workbench_vibrancy_unavailable",
+                format!("falling back to the translucent base: {error}"),
+            );
         }
     }
     #[cfg(target_os = "windows")]
     if let Err(error) = window_vibrancy::apply_acrylic(window, Some((24, 24, 32, 120))) {
-        eprintln!("workbench acrylic unavailable, falling back to translucent base: {error}");
+        shell_log_warn(
+            "workbench_acrylic_unavailable",
+            format!("falling back to the translucent base: {error}"),
+        );
     }
 }
 
@@ -1521,7 +1550,10 @@ fn log_main_window_startup_fallback(
     step: MainWindowStartupFallbackStep,
     error: impl std::fmt::Display,
 ) {
-    eprintln!("{}", main_window_startup_fallback_message(step, error));
+    shell_log_warn(
+        "main_window_startup_fallback",
+        main_window_startup_fallback_message(step, error),
+    );
 }
 
 #[cfg(target_os = "macos")]
@@ -1659,7 +1691,7 @@ fn install_workhub_tray(app: &tauri::App, locale: WorkHubLocale) -> Result<(), S
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {
             if let Err(error) = handle_tray_action(app, event.id().as_ref()) {
-                eprintln!("failed to handle WorkHub tray action: {error}");
+                shell_log_error("tray_action_failed", error);
             }
         })
         .on_tray_icon_event(|tray, event| {
@@ -1670,7 +1702,7 @@ fn install_workhub_tray(app: &tauri::App, locale: WorkHubLocale) -> Result<(), S
             } = event
             {
                 if let Err(error) = handle_tray_action(tray.app_handle(), TRAY_SHOW_MAIN_ID) {
-                    eprintln!("failed to handle WorkHub tray left click: {error}");
+                    shell_log_error("tray_left_click_failed", error);
                 }
             }
         });
@@ -1781,7 +1813,7 @@ fn install_workhub_deep_links(app: &tauri::App) -> Result<(), String> {
             // continue, mirroring the runtime on_open_url handler below rather
             // than propagating with `?` and aborting the whole app setup.
             if let Err(error) = handle_deep_link_url(&app_handle, url.as_str()) {
-                eprintln!("failed to handle startup deep link {url}: {error}");
+                shell_log_error("startup_deep_link_failed", format!("{url}: {error}"));
             }
         }
     }
@@ -1790,7 +1822,7 @@ fn install_workhub_deep_links(app: &tauri::App) -> Result<(), String> {
     app.deep_link().on_open_url(move |event| {
         for url in event.urls() {
             if let Err(error) = handle_deep_link_url(&listener_app, url.as_str()) {
-                eprintln!("failed to handle WorkHub deep link {}: {error}", url);
+                shell_log_error("deep_link_failed", format!("{url}: {error}"));
             }
         }
     });
@@ -2045,20 +2077,24 @@ fn migrate_legacy_shell_data(app: &tauri::AppHandle) {
                     continue;
                 }
                 match migrate_shell_data_file(&legacy, &current) {
-                    Ok(true) => eprintln!(
-                        "WorkHub: moved {} into the app data directory ({})",
-                        legacy.display(),
-                        current.display()
+                    Ok(true) => shell_log_info(
+                        "shell_data_migrated",
+                        format!("moved {} to {}", legacy.display(), current.display()),
                     ),
                     Ok(false) => {}
-                    Err(error) => eprintln!(
-                        "WorkHub: could not move {file_name} into the app data directory; continuing with defaults: {error}"
+                    Err(error) => shell_log_warn(
+                        "shell_data_migration_failed",
+                        format!(
+                            "could not move {file_name} into the app data directory; continuing \
+                             with defaults: {error}"
+                        ),
                     ),
                 }
             }
-            Err(error) => {
-                eprintln!("WorkHub: could not resolve {file_name} for migration: {error}")
-            }
+            Err(error) => shell_log_warn(
+                "shell_data_migration_failed",
+                format!("could not resolve {file_name}: {error}"),
+            ),
         }
     }
 }
@@ -2166,7 +2202,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             if let Err(error) = handle_single_instance_launch(app, args, cwd) {
-                eprintln!("failed to handle WorkHub single-instance launch: {error}");
+                shell_log_error("single_instance_failed", error);
             }
         }))
         .plugin(tauri_plugin_deep_link::init())
@@ -2205,6 +2241,25 @@ fn main() {
             }
         })
         .setup(|app| {
+            // BX-01：先装文件日志出口，后面所有 shell_log_* 才能落盘（装之前只进 stderr）。
+            // 目录解析失败/建不出来都不算失败，退回只有 stderr 的旧行为。
+            match app.path().resolve("", BaseDirectory::AppLog) {
+                Ok(dir) => {
+                    let where_to_look = dir.display().to_string();
+                    init_shell_log_dir(dir);
+                    // 路径也写进日志：用户报障时「日志在哪」这一问必须有答案，而这一行本身就在那份文件里。
+                    shell_log_info(
+                        "shell_started",
+                        format!(
+                            "WorkHub {} started; shell logs are written to {where_to_look}",
+                            app.package_info().version
+                        ),
+                    );
+                }
+                Err(error) => eprintln!(
+                    "WorkHub: could not resolve the log directory; logging to stderr only: {error}"
+                ),
+            }
             // L-07：先把旧位置（Application Support 根目录）的数据文件搬进应用专属目录，再读配置——
             // 否则这次启动会读不到用户此前设过的服务器地址/桌宠位置。失败只记日志。
             migrate_legacy_shell_data(app.handle());
@@ -2232,12 +2287,19 @@ fn main() {
             // R15：全局热键唤起聚焦盒（交互规划 04 §二第 2 项）——注册失败（多半是 Option+Space 被
             // 别的应用占用）只记日志降级，绝不 panic/绝不让应用起不来：托盘/常驻小窗仍是保底触达路径。
             if let Err(error) = install_workhub_global_hotkey(app.handle()) {
-                eprintln!(
-                    "WorkHub: {error}; continuing without the global hotkey (tray icon and the docked spotlight window remain available)"
+                shell_log_warn(
+                    "global_hotkey_unavailable",
+                    format!(
+                        "{error}; continuing without the global hotkey (tray icon and the docked \
+                         spotlight window remain available)"
+                    ),
                 );
             }
             if workhub_sse_disabled_from_env(|name| std::env::var(name).ok()) {
-                eprintln!("WorkHub SSE worker disabled by {WORKHUB_DISABLE_SSE_ENV}.");
+                shell_log_info(
+                    "sse_worker_disabled",
+                    format!("disabled by {WORKHUB_DISABLE_SSE_ENV}"),
+                );
             } else {
                 spawn_default_shell_sse_workers(app.handle().clone(), shell_config)
                     .map_err(|error| format!("failed to start WorkHub SSE worker: {error:?}"))?;
@@ -2249,7 +2311,7 @@ fn main() {
                 tauri::async_runtime::spawn(async move {
                     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
                     if let Err(error) = open_workbench(qa_handle, None, None) {
-                        eprintln!("qa open_workbench failed: {error}");
+                        shell_log_error("qa_open_workbench_failed", error);
                     }
                 });
             }
@@ -2323,7 +2385,7 @@ fn main() {
         // 启动失败（坏 tauri.conf.json / 缺 main·pet 窗口标签 / 缺图标 / 插件初始化失败等）原本只 panic 出
         // 一句无上下文的 "failed to run WorkHub Tauri shell"。改为打印真实错误(Debug)再非零退出，便于诊断。
         .unwrap_or_else(|error| {
-            eprintln!("WorkHub Tauri shell failed to start: {error:?}");
+            shell_log_error("shell_start_failed", format!("{error:?}"));
             std::process::exit(1);
         })
         .run(handle_run_event);
