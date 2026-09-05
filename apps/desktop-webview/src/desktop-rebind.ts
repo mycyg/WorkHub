@@ -47,9 +47,14 @@ function escapeHtml(value: string): string {
 //（getClientToken 每请求实时读它走 header）。登出态绝不自动用固定昵称 rebind——必须由用户显式提交。
 // 服务端如实返回的 identity.created（这个昵称是刚建的新用户，还是复用了已有账号）原样落首启标记：
 // 复用已有账号（created=false）不该继续渲「建你的第一个项目」——那个账号在服务器上可能早就有项目了。
+// R24 S4（桌面端接线）：locale 由调用方（bindDesktopRebindScreen）原样转发它挂屏时已经解出的应用
+// 语言——desktop-bootstrap 在昵称模式下真正新建用户时会读它（见 apps/api/src/routes/auth.ts 的
+// resolveNewUserLocale），不带就退回 Accept-Language、都没有才落旧默认 zh-CN（走查复现的原始 bug：
+// 英文用户首启被整壳翻译成中文）。已存在用户不受影响——服务端只在插入分支使用这个值。
 export async function runDesktopRebind(input: {
   client: DesktopRebindClient;
   nickname: string;
+  locale: WorkHubLocale;
   deviceName?: string;
   platform?: string;
   storage: Pick<Storage, "setItem" | "removeItem">;
@@ -61,7 +66,8 @@ export async function runDesktopRebind(input: {
   const result = await input.client.bootstrapDesktop({
     nickname,
     device_name: input.deviceName?.trim() || "WorkHub Desktop",
-    platform: input.platform ?? "desktop"
+    platform: input.platform ?? "desktop",
+    locale: input.locale
   });
   if (!result?.client_token) {
     throw new Error("desktop re-bind did not return a client token");
@@ -177,6 +183,7 @@ export function bindDesktopRebindScreen(
     void runDesktopRebind({
       client: input.client,
       nickname,
+      locale: input.locale,
       ...(input.deviceName ? { deviceName: input.deviceName } : {}),
       ...(input.platform ? { platform: input.platform } : {}),
       storage: input.storage
