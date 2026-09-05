@@ -103,6 +103,14 @@ function selectedScopeOptionId(session: SmokeSessionResponse, label: string): st
   return optionId;
 }
 
+// 真 PG 门允许在同一个库上复跑（本机反复跑才是常态）。这条门禁用的默认项目是种子夹具里
+// 固定 id 的那一个（defaultSeedFixture.projects，ensureDefaultSeed 幂等插入，跨进程持久存在），
+// 所以「主线工单」这条 outputs/ 交付物如果写死路径，第二次跑时项目网盘里已经有上一次跑留下的
+// 同路径正式版——全新工单的第一次合并就会撞上「和正式版撞车」的冲突，而不是这段本该验证的
+// 干净合并。加一段每次进程启动都不同的随机后缀，让本次跑的交付物路径必然是网盘里从未出现过的
+// 新路径，跟并发探针那条一样，不指望数据库是干净的。
+const smokeDeliverablePath = `outputs/result-${randomUUID().slice(0, 8)}.md`;
+
 function executableAgentClient(): AgentLoopClient {
   const responses = [
     {
@@ -125,7 +133,7 @@ function executableAgentClient(): AgentLoopClient {
           id: "tool-r1-pg-1",
           name: "write_file",
           input: {
-            path: "outputs/result.md",
+            path: smokeDeliverablePath,
             content: "R1 PG smoke deliverable"
           }
         }
@@ -1094,14 +1102,42 @@ async function main() {
     // 恰好一个成功、一个如实 conflict——乐观 CAS 不丢更新、不静默双写。
     {
       const memoryRepo = createUserMemoryRepository(db);
+      const initialProbeValueMd = "初始偏好。";
       const seededMemory = await memoryRepo.mergeUpsert({
         userId: seedUser.id,
         workspaceId: settings.auth.defaultWorkspaceId,
         category: "preference",
         key: "r9-concurrency-probe",
-        valueMd: "初始偏好。"
+        valueMd: initialProbeValueMd
       });
-      if (seededMemory.status !== "upserted") {
+      // 真 PG 门允许在同一个库上复跑（CI 每次新容器，本机反复跑才是常态）：上一次跑的并发探针
+      // 已经把这行改成了「并发 A/B 版偏好」，本次拿写死的初始值去 mergeUpsert（无 base）必然落在
+      // conflict 分支——这不是这段要证明的东西（要证明的是「同 base 并发写恰好一个赢家」）。
+      //
+      // 不能像 seedAdminHeaders 那样简单把「现存行的值」当基点直接喂给下面的并发对：如果上一次
+      // 跑遗留的值恰好等于本次两个候选值之一（比如上次是 A 赢，这次留下的现存值就是「并发 A 版
+      // 偏好。」)，mergeUpsert 里「新旧同值即放行、不比较 base」的快路径会让候选 A 那一路做一次
+      // 内容不变的「空转」更新——它虽然真的 UPDATE 了一行（confidence/updatedAt 会变），但没有
+      // 把 valueMd 从现存值挪走；README 级 CAS 语义因此失效：候选 B 那一路在它之后拿锁重新核对
+      // WHERE valueMd=现存值 时仍然匹配（因为 A 那一路根本没把值改走），于是两路都能 upserted、
+      // 一个都不 conflict——单测两次真跑就在这条件下炸过（["upserted","upserted"]）。
+      //
+      // 修法：先用一次不参与并发的 mergeUpsert，把现存行显式转回 initialProbeValueMd 这个与两个
+      // 候选值都不同的固定基点——这一步没有并发对手，CAS 必赢，结果就是一个确定、干净的起点，
+      // 下面的并发断言因此可以继续按原样验证「同 base 并发写恰好一个赢家」，不放宽一个字。
+      if (seededMemory.status === "conflict") {
+        const resetToInitial = await memoryRepo.mergeUpsert({
+          userId: seedUser.id,
+          workspaceId: settings.auth.defaultWorkspaceId,
+          category: "preference",
+          key: "r9-concurrency-probe",
+          valueMd: initialProbeValueMd,
+          baseValueMd: seededMemory.current.valueMd
+        });
+        if (resetToInitial.status !== "upserted") {
+          throw new Error(`Expected concurrency probe reset-to-initial to succeed, got ${resetToInitial.status}`);
+        }
+      } else if (seededMemory.status !== "upserted") {
         throw new Error(`Expected concurrency probe seed upserted, got ${seededMemory.status}`);
       }
       // 两个并发写都基于同一 base（fast-forward 竞争）：乐观 CAS 必须恰好放行一个，
@@ -1113,7 +1149,7 @@ async function main() {
           category: "preference",
           key: "r9-concurrency-probe",
           valueMd: "并发 A 版偏好。",
-          baseValueMd: "初始偏好。"
+          baseValueMd: initialProbeValueMd
         }),
         memoryRepo.mergeUpsert({
           userId: seedUser.id,
@@ -1121,7 +1157,7 @@ async function main() {
           category: "preference",
           key: "r9-concurrency-probe",
           valueMd: "并发 B 版偏好。",
-          baseValueMd: "初始偏好。"
+          baseValueMd: initialProbeValueMd
         })
       ]);
       const statuses = [left.status, right.status].sort();
@@ -1170,7 +1206,7 @@ async function main() {
       throw new Error("Expected AgentRun workdir before second proposal.");
     }
     const secondContent = "R1 PG smoke deliverable v2";
-    await writeFile(path.join(runWorkdir, "outputs", "result.md"), secondContent, "utf8");
+    await writeFile(path.join(runWorkdir, smokeDeliverablePath), secondContent, "utf8");
     const secondSha = sha256Text(secondContent);
     const firstChange = proposalBeforeMerge.diffManifest.changes[0];
     if (!firstChange) {
@@ -1192,7 +1228,7 @@ async function main() {
             sha256_before: firstAcceptedForRestore.sha256After,
             sha256_after: secondSha
           },
-          human_summary: "更新 outputs/result.md 为第二版。"
+          human_summary: `更新 ${smokeDeliverablePath} 为第二版。`
         }
       ]
     };
@@ -1636,7 +1672,7 @@ async function main() {
     }
 
     const oneClickContent = "R1.17 incoming proposal should be fused by one-click AI apply";
-    await writeFile(path.join(runWorkdir, "outputs", "result.md"), oneClickContent, "utf8");
+    await writeFile(path.join(runWorkdir, smokeDeliverablePath), oneClickContent, "utf8");
     const oneClickSha = sha256Text(oneClickContent);
     const oneClickManifest: typeof proposalBeforeMerge.diffManifest = {
       ...proposalBeforeMerge.diffManifest,
@@ -2705,6 +2741,12 @@ async function main() {
     if (!reReserve.run_id) {
       throw new Error("Expected enqueue to succeed after the crashed reservation hold was released.");
     }
+    // 这条门自己造的最后一个 run（reReserve）此刻仍持有一份 active 预留——如果不收掉，它会在真库里
+    // 一直躺到下次复跑，把 team/day 已用量顶死：下次跑到这条门时，两个全新并发入队会因为额度已经
+    // 被上一次跑遗留的这份预留占满而双双 402（本该恰好一个赢）。取消它、释放预留，让这条注释里
+    // 自称「自包含」的门名副其实——跑完不在真库里留手尾，跟前面 B-R9.0-2 取消升级重试 run 释放
+    // 预算持有量是同一个理由、同一个手法（queue.abort 会经 reservationRepo.reconcile 把持有量还回去）。
+    await loserQueue.abort(reReserve.run_id, { id: seedUser.id, isAdmin: true });
 
     // 还原 team/day cap，避免影响本 smoke 后续/重跑。
     const teamDayRestore = await app.request("/api/cost/policies/team/pcost-team-day-v0", {

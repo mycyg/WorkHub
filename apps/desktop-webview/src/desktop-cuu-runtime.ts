@@ -25,7 +25,6 @@ import {
   type CreateWorkItemRequest,
   type CuuLauncherWorkItemSpec,
   type EvidenceRef,
-  type GoldPathSurfaceVM,
   type MergeProposalRequest,
   type ReviewProposalRequest,
   type ResolveEscalationRequest,
@@ -365,7 +364,6 @@ type DesktopShellGlobal = {
 };
 
 export type TimerId = ReturnType<typeof globalThis.setTimeout>;
-type GoldPathEvent = GoldPathSurfaceVM["events"][number];
 type DesktopCuuActionClient = Pick<
   WorkHubApiClient,
   "respondApproval" | "nextQuestion" | "searchKnowledge" | "useEvidenceForWorkItem"
@@ -930,39 +928,6 @@ export function createDesktopShellScriptedListener(
       return dispatched;
     }
   };
-}
-
-export function createDesktopCuuDemoScript(
-  surface: Pick<GoldPathSurfaceVM, "events">,
-  input: {
-    initialDelayMs?: number;
-    intervalMs?: number;
-    includeOfflineStatus?: boolean;
-  } = {}
-): DesktopShellScriptedEvent[] {
-  const initialDelayMs = input.initialDelayMs ?? 500;
-  const intervalMs = input.intervalMs ?? 1100;
-  const events = selectDemoEvents(surface.events);
-  const script = events.map<DesktopShellScriptedEvent>((event, index) => ({
-    eventName: "push-event",
-    delayMs: initialDelayMs + index * intervalMs,
-    payload: desktopShellPayloadFromWorkHubEvent(event)
-  }));
-
-  if (input.includeOfflineStatus) {
-    script.push({
-      eventName: "sse-status",
-      delayMs: initialDelayMs + events.length * intervalMs,
-      payload: {
-        stream_kind: "global",
-        stream_path: "/api/push/stream",
-        state: "retrying",
-        message: "连接不太稳，Cuu 正在重连。"
-      }
-    });
-  }
-
-  return script;
 }
 
 // ── R12 批7:被派活告知气泡(action_card_item.dispatch_ask) ────────────────────────────
@@ -2164,58 +2129,6 @@ function renderAction(action: CuuCardAction) {
     return `<span class="wh-cuu-action" data-tone="${escapeHtml(action.tone)}">${escapeHtml(action.label)}</span>`;
   }
   return `<a class="wh-cuu-action" href="${escapeHtml(safeHref(action.href))}" data-cuu-action-id="${escapeHtml(action.id)}" data-tone="${escapeHtml(action.tone)}" data-method="${escapeHtml(action.method ?? "GET")}" data-requires-reason="${action.requires_reason ? "true" : "false"}">${escapeHtml(action.label)}</a>`;
-}
-
-function selectDemoEvents(events: GoldPathEvent[]) {
-  const selected = [
-    events.find((event) => event.type === eventTypes.permissionAsk && Boolean(event.session_id)),
-    events.find((event) => event.type === eventTypes.agentRunStarted),
-    events.find((event) => event.type === eventTypes.knowledgeEvidenceReady),
-    events.find((event) => event.type === eventTypes.budgetWarning || event.type === eventTypes.budgetExhausted),
-    events.find((event) => event.type === eventTypes.proposalOpened),
-    events.find((event) => event.type === eventTypes.permissionAsk && (event.attention?.kind === "approval" || Boolean(event.proposal_id))),
-    events.find((event) => event.type === eventTypes.proposalMerged)
-  ].filter((event): event is GoldPathEvent => Boolean(event));
-
-  const seen = new Set<string>();
-  const unique = selected.filter((event) => {
-    if (seen.has(event.event_id)) {
-      return false;
-    }
-    seen.add(event.event_id);
-    return true;
-  });
-  return unique.length > 0 ? unique : events.slice(0, 6);
-}
-
-function desktopShellPayloadFromWorkHubEvent(event: GoldPathEvent) {
-  const stream = streamFromTopic(event.topic);
-  return {
-    event: event.type,
-    data: JSON.stringify(event),
-    stream_kind: stream.kind,
-    stream_path: stream.path
-  };
-}
-
-function streamFromTopic(topic: string) {
-  const [kind, id] = topic.split(":", 2);
-  if (kind === "user") {
-    return { kind: "me", path: "/api/push/stream/me" };
-  }
-  if (kind === "workitem" && id) {
-    return { kind, path: `/api/push/stream/workitem/${encodeURIComponent(id)}` };
-  }
-  if (kind === "run" && id) {
-    return { kind, path: `/api/push/stream/run/${encodeURIComponent(id)}` };
-  }
-  if (kind === "session" && id) {
-    return { kind, path: `/api/push/stream/session/${encodeURIComponent(id)}` };
-  }
-  if (kind === "proposal" && id) {
-    return { kind, path: `/api/push/stream/proposal/${encodeURIComponent(id)}` };
-  }
-  return { kind: "global", path: "/api/push/stream" };
 }
 
 function approvalDecisionFromAction(actionId: string | undefined, requiresReason: boolean): "allow" | "deny" {
