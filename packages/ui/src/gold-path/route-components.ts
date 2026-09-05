@@ -36,6 +36,8 @@ import type {
   TaskPlanVM,
   GoldPathSurfaceVM,
   WorkItemAgentTeamVM,
+  // R23 P4（R20 P2A 端点上界面）：工作项评论流的行契约。
+  WorkItemComment,
   WorkItemDetailVM,
   // R14 批 MEM（记忆可见可治理）：/settings/memory 两 tab 的管理面 VM。
   UserMemoryManagementPageVM,
@@ -43,6 +45,8 @@ import type {
   TeamSkillManagementPageVM,
   TeamSkillManagementItemVM
 } from "@workhub/contracts";
+// R23 P4：留言输入框的长度上限直接用契约常量，避免前后端各写一个数字后悄悄漂移。
+import { WORK_ITEM_COMMENT_MAX_CHARS } from "@workhub/contracts";
 
 import { personAvatarTileHtml } from "../avatar/avatar-tile.js";
 import { renderAgentRunReplay } from "../replay/index.js";
@@ -2312,7 +2316,12 @@ const auditActionLabels: Record<string, [string, string]> = {
   "proposal.merged": ["采纳变更申请", "Change adopted"],
   "proposal.rejected": ["驳回变更申请", "Proposal rejected"],
   "approval.approved": ["审批通过", "Approval granted"],
-  "approval.rejected": ["审批打回", "Approval rejected"]
+  "approval.rejected": ["审批打回", "Approval rejected"],
+  // R23 P4：R20 P2A 的四个写动作此前只落审计、没有任何界面读它们，标签一并补上。
+  "work_item.assigned": ["指派事项", "Item assigned"],
+  "work_item.claimed": ["认领事项", "Item claimed"],
+  "project.archived": ["归档项目", "Project archived"],
+  "project.deleted": ["删除项目", "Project deleted"]
 };
 
 function auditActionLabel(action: string, zh: boolean): string {
@@ -2363,6 +2372,78 @@ export function renderWorkItemAuditTimelineRows(logs: AuditLogFact[], locale: Wo
       <span class="wh-pill">${escapeHtml(formatApprovalTimestamp(entry.created_at))}</span>
     </div>`)
     .join("") + overflow;
+}
+
+// R23 P4（R20 P2A 端点上界面）：工作区审计流（GET /api/workspace/audit，仅管理员）的对象列——
+// entity_type 是库里的机器串（work_item / project / proposal…），直接吐给管理员看没意义，先查表再兜底分词。
+const auditEntityTypeLabels: Record<string, [string, string]> = {
+  work_item: ["事项", "Work item"],
+  project: ["项目", "Project"],
+  proposal: ["变更申请", "Proposal"],
+  approval: ["审批", "Approval"],
+  snapshot: ["还原点", "Restore point"],
+  workspace_member: ["工作区成员", "Workspace member"],
+  drive_item: ["网盘文件", "Drive file"]
+};
+
+function auditEntityLabel(entity: AuditLogFact["entity"], zh: boolean): string {
+  const hit = auditEntityTypeLabels[entity.entity_type];
+  const typeLabel = hit ? (zh ? hit[0] : hit[1]) : humanizeToken(entity.entity_type.replace(/[._]/gu, " "));
+  // id 只留前 8 位——管理员用它跟别的记录对齐，看全长 uuid 反而读不动；完整 id 仍在 data-* 上可取。
+  return `${typeLabel} ${entity.entity_id.slice(0, 8)}`;
+}
+
+// R23 P4：工作区审计流的行渲染（纯函数，供 apps/web 的 bindSettingsWorkspaceAuditPanel 与单测复用）。
+// 与工作项审计时间线（renderWorkItemAuditTimelineRows）分开：那边是单个事项的全量，这边是跨事项的
+// 分页流——不做本地截断，"还有更多"由服务端分页与「加载更多」按钮表达，否则会和分页口径打架。
+export function renderWorkspaceAuditRows(logs: AuditLogFact[], locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  if (logs.length === 0) {
+    return `<p class="wh-subtle" data-r23-workspace-audit-empty="true">${escapeHtml(zh ? "这个工作区还没有审计记录。" : "No audit entries in this workspace yet.")}</p>`;
+  }
+  return logs
+    .map((entry) => `<div role="listitem" class="wh-r4-route-row" data-r23-workspace-audit-entry="${escapeHtml(entry.id)}" data-r23-workspace-audit-entry-action="${escapeHtml(entry.action)}" data-r23-workspace-audit-entry-entity="${escapeHtml(entry.entity.entity_id)}">
+      <div>
+        <strong>${escapeHtml(auditActionLabel(entry.action, zh))}</strong>
+        <p>${escapeHtml(`${auditActorLabel(entry.actor, zh)} · ${auditEntityLabel(entry.entity, zh)}`)}${entry.undone_at ? escapeHtml(zh ? "（已撤销）" : " (undone)") : ""}</p>
+      </div>
+      <span class="wh-pill">${escapeHtml(formatApprovalTimestamp(entry.created_at))}</span>
+    </div>`)
+    .join("");
+}
+
+// R23 P4（R20 P2A 端点上界面）：工作项评论流的行渲染（纯函数，供 apps/web 的 bindWorkItemCommentsPanel
+// 与单测复用）。服务端按对话顺序（旧→新）返回最多 200 条，详情页默认只展开最近 WORK_ITEM_COMMENT_VISIBLE_COUNT
+// 条——更早的用「展开更早的 N 条」按需加载，不做无提示的静默截断。
+export const WORK_ITEM_COMMENT_VISIBLE_COUNT = 8;
+
+export function renderWorkItemCommentRows(
+  comments: WorkItemComment[],
+  locale: WorkHubLocale,
+  options: { expanded?: boolean } = {}
+): string {
+  const zh = locale === "zh-CN";
+  if (comments.length === 0) {
+    return `<p class="wh-subtle" data-r23-workitem-comments-empty="true">${escapeHtml(zh ? "还没有人在这个事项下留言。" : "No comments on this item yet.")}</p>`;
+  }
+  const expanded = options.expanded === true;
+  const hiddenCount = expanded ? 0 : Math.max(0, comments.length - WORK_ITEM_COMMENT_VISIBLE_COUNT);
+  const visible = hiddenCount > 0 ? comments.slice(comments.length - WORK_ITEM_COMMENT_VISIBLE_COUNT) : comments;
+  const moreButton = hiddenCount > 0
+    ? `<button type="button" class="wh-btn" data-r23-workitem-comments-more="${escapeHtml(String(hiddenCount))}">${escapeHtml(
+        zh ? `展开更早的 ${hiddenCount} 条` : `Show ${hiddenCount} earlier`
+      )}</button>`
+    : "";
+  const rows = visible
+    .map((comment) => `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r23-workitem-comment="${escapeHtml(comment.id)}">
+      <div>
+        <strong>${escapeHtml(comment.author_nickname)}</strong>
+        <p>${escapeHtml(comment.body)}</p>
+      </div>
+      <span class="wh-pill">${escapeHtml(formatApprovalTimestamp(comment.created_at))}</span>
+    </div>`)
+    .join("");
+  return `${moreButton}${rows}`;
 }
 
 function workItemAuditTimelineLoadingHtml(locale: WorkHubLocale): string {
@@ -2676,6 +2757,80 @@ function renderWorkItemSourceContext(vm: WorkItemDetailVM, locale: WorkHubLocale
   </div>`;
 }
 
+// R23 P4（R20 P2A 端点上界面）：工作项「负责人与协作」卡。POST /api/workitems/:id/{claim,assign} 服务端
+// 早已齐备（work-item-assignment.ts），此前两端一个入口都没有。资格由详情页 VM 的 can_claim / can_assign
+// 下发（服务端用与写端点完全相同的谓词算），没资格就不渲那个按钮——不渲一个点下去必定 403 的假入口。
+// 指派对象选择器沿用审批转交的既有做法：折叠的 <details>，展开时才去拉本工作区花名册（不进首屏 loader）。
+function renderWorkItemAssignmentCard(vm: WorkItemDetailVM, locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  const claimedNickname = vm.workitem.claimed_by_nickname ?? "";
+  const currentLine = vm.workitem.claimed_by_user_id
+    ? `<div role="listitem" class="wh-r4-route-row" data-r23-workitem-assignment-current="${escapeHtml(vm.workitem.claimed_by_user_id)}">
+        <div><strong>${escapeHtml(zh ? "现在谁在跟" : "Who's on it")}</strong><p>${escapeHtml(claimedNickname || (zh ? "已认领" : "Claimed"))}</p></div>
+        ${personAvatarTileHtml({ userId: vm.workitem.claimed_by_user_id, label: claimedNickname })}
+      </div>`
+    : `<p class="wh-subtle" data-r23-workitem-assignment-unclaimed="true">${escapeHtml(zh ? "还没有人认领这个事项。" : "Nobody has picked this item up yet.")}</p>`;
+  // 指派名单：POST /api/workitems/:id/assign 写的是 work_item_assignments，不是认领人——不把它渲出来，
+  // 指派成功后这张卡会毫无变化。服务端已按 lead 优先排好序；名字缺席（账号被硬删）时只说角色，不吐裸 id。
+  const assigneeRows = (vm.assignees ?? [])
+    .map((assignee) => {
+      const roleLabel = assignee.role === "lead" ? (zh ? "主责" : "Lead") : (zh ? "协作" : "Collaborator");
+      const name = assignee.nickname ?? (zh ? "已停用的成员" : "Removed member");
+      return `<div role="listitem" class="wh-r4-route-row" data-r23-workitem-assignee="${escapeHtml(assignee.user_id)}" data-r23-workitem-assignee-role="${escapeHtml(assignee.role)}">
+        <div><strong>${escapeHtml(name)}</strong><p>${escapeHtml(roleLabel)}</p></div>
+        ${assignee.nickname ? personAvatarTileHtml({ userId: assignee.user_id, label: assignee.nickname }) : ""}
+      </div>`;
+    })
+    .join("");
+  const assigneeBlock = assigneeRows
+    ? `<p class="wh-subtle" data-r23-workitem-assignees="true">${escapeHtml(zh ? "已指派给：" : "Assigned to:")}</p><div class="wh-r4-route-table">${assigneeRows}</div>`
+    : "";
+  const claimButton = vm.can_claim === true
+    ? `<button type="button" class="wh-btn wh-btn-primary" data-r23-workitem-claim="true">${escapeHtml(zh ? "我来认领" : "Claim it")}</button>`
+    : "";
+  const assignBlock = vm.can_assign === true
+    ? `<details class="wh-r4-approval-field" data-r23-workitem-assign="true">
+        <summary>${escapeHtml(zh ? "指派给…" : "Assign to…")}</summary>
+        <p class="wh-subtle">${escapeHtml(zh ? "把这个事项交给工作区里的某位同事，并标明是主责还是协作。" : "Hand this item to a teammate in this workspace, as lead or collaborator.")}</p>
+        <select class="wh-pill" data-r23-workitem-assign-select="true" aria-label="${escapeHtml(zh ? "选择被指派人" : "Pick an assignee")}"><option value="">${escapeHtml(zh ? "展开后加载成员…" : "Members load on open…")}</option></select>
+        <select class="wh-pill" data-r23-workitem-assign-role="true" aria-label="${escapeHtml(zh ? "选择角色" : "Pick a role")}">
+          <option value="collaborator">${escapeHtml(zh ? "协作" : "Collaborator")}</option>
+          <option value="lead">${escapeHtml(zh ? "主责" : "Lead")}</option>
+        </select>
+        <div class="wh-r4-route-actions"><button type="button" class="wh-btn" data-r23-workitem-assign-submit="true">${escapeHtml(zh ? "确认指派" : "Assign")}</button></div>
+      </details>`
+    : "";
+  const noActionNote = !claimButton && !assignBlock
+    ? `<p class="wh-subtle" data-r23-workitem-assignment-readonly="true">${escapeHtml(zh ? "你只能查看这个事项的归属，改动归属需要管理员、提交人或主责。" : "You can see who owns this item; changing that is for admins, the submitter, or the current lead.")}</p>`
+    : "";
+  return `<section class="wh-card wh-r4-route-card" data-r23-workitem-assignment="true" data-r23-workitem-assignment-workitem="${escapeHtml(vm.workitem.id)}">
+        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "负责人与协作" : "Owner & collaborators")}</h3>
+        <div class="wh-r4-route-table">${currentLine}</div>
+        ${assigneeBlock}
+        ${claimButton ? `<div class="wh-r4-route-actions">${claimButton}</div>` : ""}
+        ${assignBlock}
+        ${noActionNote}
+        <p class="wh-subtle" data-r23-workitem-assignment-status="true" hidden></p>
+      </section>`;
+}
+
+// R23 P4（R20 P2A 端点上界面）：工作项评论区。GET/POST /api/workitems/:id/comments 服务端早已齐备
+// （work-item-comments.ts），此前两端零界面。列表是客户端按需水合（详情页 VM 不带评论，也不该为了
+// 一段讨论把整页 VM 撑大）；取数失败要显式可见并可重试，绝不用「还没有人留言」糊弄一次真实的失败。
+function renderWorkItemCommentsCard(vm: WorkItemDetailVM, locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  return `<section class="wh-card wh-r4-route-card" data-r23-workitem-comments="true" data-r23-workitem-comments-workitem="${escapeHtml(vm.workitem.id)}">
+        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "讨论" : "Discussion")}</h3>
+        <p class="wh-subtle">${escapeHtml(zh ? "能看到这个事项的同事都能在这里留言，留言会连同署名一起留档。" : "Anyone who can see this item can comment here; comments are kept with your name on them.")}</p>
+        <div class="wh-r4-route-timeline" role="list" data-r23-workitem-comments-body="true"><p class="wh-subtle" data-r23-workitem-comments-loading="true">${escapeHtml(zh ? "正在加载讨论…" : "Loading discussion…")}</p></div>
+        <form data-r23-workitem-comment-form="true">
+          <textarea class="wh-pill" style="width:100%;box-sizing:border-box;resize:vertical" rows="3" maxlength="${WORK_ITEM_COMMENT_MAX_CHARS}" data-r23-workitem-comment-input="true" aria-label="${escapeHtml(zh ? "写一条留言" : "Write a comment")}" placeholder="${escapeHtml(zh ? "写一条留言…" : "Write a comment…")}"></textarea>
+          <p class="wh-subtle" data-r23-workitem-comment-status="true" hidden></p>
+          <div class="wh-r4-route-actions"><button type="submit" class="wh-btn" data-r23-workitem-comment-submit="true">${escapeHtml(zh ? "发布留言" : "Post comment")}</button></div>
+        </form>
+      </section>`;
+}
+
 function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocale): WebRouteComponent {
   const title = vm.workitem.title ?? vm.workitem.code;
   const summary = stripMarkdown(vm.workitem.summary_md ?? vm.workitem.raw_description ?? uiT(locale, "workitem.defaultSummary"));
@@ -2773,6 +2928,10 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
           <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "workitem.trace"))}</h3>
           <div class="wh-r4-route-timeline" role="list">${traceRows(vm, locale)}</div>
         </section>
+      </div>
+      <div class="wh-r4-route-grid">
+        ${renderWorkItemAssignmentCard(vm, locale)}
+        ${renderWorkItemCommentsCard(vm, locale)}
       </div>
       <section class="wh-card wh-r4-route-card" data-r4-workitem-evidence="true">
         <h3 role="heading" aria-level="2">${escapeHtml(uiT(locale, "generic.evidence"))}</h3>
@@ -4596,6 +4755,23 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
             : "No objectives created in this session yet — the server has no endpoint to list existing ones, so newly created objectives appear here right away.")}</p>
         </div>
       </section>`;
+  // R23 P4（R20 P2A 端点上界面）：项目生命周期分区——归档 / 删除。POST /api/projects/:id/{archive,delete}
+  // 服务端早已齐备（project-ops.ts），此前 web 只有一枚「已归档」徽标、没有任何动作入口。资格由 VM 的
+  // can_manage_lifecycle 下发（服务端用与写端点同一个谓词算），没资格整块不渲——不给会 403 的假入口。
+  // 两个动作都是破坏性的，走 apps/web 既有的两段式确认（armConfirmButton），第一次点只是换文案。
+  const lifecycleSection = vm.can_manage_lifecycle === true
+    ? `<section class="wh-card wh-r4-route-card" data-r23-project-lifecycle="true" data-r23-project-lifecycle-project="${escapeHtml(project.id)}">
+        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "项目生命周期" : "Project lifecycle")}</h3>
+        <p class="wh-subtle">${escapeHtml(zh
+          ? "归档会把项目从团队项目列表里收起来，已有的工作与文件都还在；删除会把项目整体下架，只有管理员或项目负责人能做这两件事。"
+          : "Archiving tucks the project out of the team list while keeping its work and files; deleting takes the whole project down. Both are limited to admins and the project owner.")}</p>
+        <div class="wh-r4-route-actions">
+          <button type="button" class="wh-btn" data-r23-project-archive="true">${escapeHtml(zh ? "归档项目" : "Archive project")}</button>
+          <button type="button" class="wh-btn" data-r23-project-delete="true">${escapeHtml(zh ? "删除项目" : "Delete project")}</button>
+        </div>
+        <p class="wh-subtle" data-r23-project-lifecycle-status="true" hidden></p>
+      </section>`
+    : "";
   const instructionsSection = `<section class="wh-card wh-r4-route-card" data-r17-project-home-instructions="true" data-r17-project-home-instructions-project="${escapeHtml(project.id)}">
         <h3 role="heading" aria-level="2">${escapeHtml(zh ? "自定义指令" : "Custom instructions")}</h3>
         <p class="wh-subtle">${escapeHtml(
@@ -4659,6 +4835,7 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
       ${objectivesSection}
       ${membersSection}
       ${instructionsSection}
+      ${lifecycleSection}
       <a class="wh-r4-route-kicker" href="/projects" data-r8-project-home-back="true">${escapeHtml(routeT(locale, "projectHome.back"))}</a>
     </section>`
   });
@@ -5716,9 +5893,27 @@ function renderSettingsBudgetPolicySection(locale: WorkHubLocale): string {
       </section>`;
 }
 
+// R23 P4（R20 P2A 端点上界面）：/settings 的「工作区审计」分区——GET /api/workspace/audit 服务端早已
+// 齐备（workspace-audit.ts，仅管理员），此前两端零界面：谁改了什么、什么时候改的，管理员在界面上根本
+// 查不到。非管理员连 GET 都是 403，所以整块只在 isAdmin 为真时渲（同成员分区/预算策略分区的既有做法）。
+// SSR 只出加载态骨架，真实数据由 apps/web 的 bindSettingsWorkspaceAuditPanel 分页拉取。
+function renderSettingsWorkspaceAuditSection(locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  return `<section class="wh-card wh-r4-route-card" data-r23-settings-workspace-audit="true">
+        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "工作区审计（管理员）" : "Workspace audit (admins)")}</h3>
+        <p class="wh-subtle">${escapeHtml(zh
+          ? "这个工作区里发生过的改动：什么时候、谁做的、做了什么、对象是谁。按时间倒序，最新的在最前。"
+          : "What has happened in this workspace: when, who, what action, and on which object. Newest first.")}</p>
+        <div class="wh-r4-route-timeline" role="list" data-r23-settings-workspace-audit-body="true"><p class="wh-subtle" data-r23-settings-workspace-audit-loading="true">${escapeHtml(zh ? "正在加载审计记录…" : "Loading audit entries…")}</p></div>
+        <div class="wh-r4-route-actions"><button type="button" class="wh-btn" data-r23-settings-workspace-audit-more="true" hidden>${escapeHtml(zh ? "加载更多" : "Load more")}</button></div>
+        <p class="wh-subtle" data-r23-settings-workspace-audit-status="true" hidden></p>
+      </section>`;
+}
+
 function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale, isAdmin = false): WebRouteComponent {
   const membersSection = isAdmin ? renderSettingsMembersSection(locale) : "";
   const budgetPolicySection = isAdmin ? renderSettingsBudgetPolicySection(locale) : "";
+  const workspaceAuditSection = isAdmin ? renderSettingsWorkspaceAuditSection(locale) : "";
   const reactComponent = createSettingsReactRouteComponent(vm, locale);
   const reactAttrs = dataAttrs(reactRouteComponentMarkerAttrs(reactComponent));
   const props = reactComponent.props;
@@ -5778,6 +5973,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale,
       </section>` : ""}
       ${membersSection}
       ${budgetPolicySection}
+      ${workspaceAuditSection}
       <p class="wh-r4-route-kicker" data-r10-settings-diagnostics="true">${escapeHtml(locale === "zh-CN" ? "系统诊断（管理员关注；普通成员只读参考）" : "System diagnostics (for admins; read-only reference for members)")}</p>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-settings-runtime="true">

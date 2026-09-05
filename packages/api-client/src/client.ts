@@ -19,6 +19,8 @@ import type {
   WorkHubApiClient,
   WorkHubApiClientOptions
 } from "./types.js";
+// R23 P4：工作区审计流查询串构造器的入参类型（契约层直取，types.ts 只是把它挂进方法签名）。
+import type { WorkspaceAuditQuery } from "@workhub/contracts";
 
 export class WorkHubApiError extends Error {
   constructor(
@@ -192,6 +194,32 @@ function withSearchParams(path: string, params: SearchRequestParams) {
     query.set("limit", String(params.limit));
   }
   return `${path}?${query.toString()}`;
+}
+
+// R23 P4（R20 P2A 端点上界面）：工作区审计流的查询串。工作区**不**在这里传——服务端恒取自认证身份
+// （services/workspace-audit.ts 硬隔离），客户端只能给过滤与分页参数。
+function withWorkspaceAuditQuery(path: string, query?: WorkspaceAuditQuery) {
+  const params = new URLSearchParams();
+  if (query?.actor_user_id) {
+    params.set("actor_user_id", query.actor_user_id);
+  }
+  if (query?.action) {
+    params.set("action", query.action);
+  }
+  if (query?.from) {
+    params.set("from", query.from);
+  }
+  if (query?.to) {
+    params.set("to", query.to);
+  }
+  if (query?.limit !== undefined) {
+    params.set("limit", String(query.limit));
+  }
+  if (query?.offset !== undefined) {
+    params.set("offset", String(query.offset));
+  }
+  const search = params.toString();
+  return search ? `${path}?${search}` : path;
 }
 
 // R14 批 MEM：用户记忆列表可选按 category 过滤。
@@ -599,6 +627,21 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
     // 同样的提议列表数据早已内嵌进工作项详情页 VM，核实零消费后随后端路由一并删除。
     listWorkItemConflicts: (workItemId) => request(`/api/workitems/${encodeURIComponent(workItemId)}/conflicts`),
     getWorkItemAuditTimeline: (workItemId) => request(`/api/workitems/${encodeURIComponent(workItemId)}/audit`),
+    // R23 P4（R20 P2A 端点上界面）：指派/认领/评论。author 不在请求体里——服务端取当前登录身份的展示名，
+    // 不接受客户端伪造（见 services/work-item-comments.ts）。
+    assignWorkItem: (workItemId, payload) =>
+      request(`/api/workitems/${encodeURIComponent(workItemId)}/assign`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    claimWorkItem: (workItemId) =>
+      request(`/api/workitems/${encodeURIComponent(workItemId)}/claim`, { method: "POST" }),
+    listWorkItemComments: (workItemId) => request(`/api/workitems/${encodeURIComponent(workItemId)}/comments`),
+    createWorkItemComment: (workItemId, payload) =>
+      request(`/api/workitems/${encodeURIComponent(workItemId)}/comments`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
     getProposal: (id) => request(`/api/proposals/${encodeURIComponent(id)}`),
     reviewProposal: (id, payload, options) =>
       request(withPageLocale(`/api/proposals/${encodeURIComponent(id)}/review`, options), {
@@ -721,6 +764,13 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       }),
     pilotDay1Metrics: (options) => request(withPilotDay1MetricsOptions("/api/pilot/day1/metrics", options)),
     listProjects: () => request("/api/projects"),
+    // R23 P4（R20 P2A 端点上界面）：项目归档/软删（两个端点都无请求体，管理员/项目所有者门）。
+    archiveProject: (projectId) =>
+      request(`/api/projects/${encodeURIComponent(projectId)}/archive`, { method: "POST" }),
+    deleteProject: (projectId) =>
+      request(`/api/projects/${encodeURIComponent(projectId)}/delete`, { method: "POST" }),
+    // R23 P4（R20 P2A 端点上界面）：工作区审计流（仅管理员，非管理员 403）。
+    listWorkspaceAudit: (query) => request(withWorkspaceAuditQuery("/api/workspace/audit", query)),
     replayAgentRun: (runId, options) => request(withPageLocale(`/api/agent-runs/${encodeURIComponent(runId)}/replay`, options)),
     // R14 批 MEM（记忆可见可治理）：用户记忆治理面。
     listUserMemories: (options) => request(withUserMemoryListOptions("/api/me/memories", options)),

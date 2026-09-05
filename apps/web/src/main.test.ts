@@ -294,6 +294,19 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async getWorkItemAuditTimeline() {
       throw new Error("not needed");
     },
+    // R23 P4（R20 P2A 端点上界面）：指派/认领/评论四个方法的存根——本文件测的是首屏渲染，不走这些写路径。
+    async assignWorkItem() {
+      throw new Error("not needed");
+    },
+    async claimWorkItem() {
+      throw new Error("not needed");
+    },
+    async listWorkItemComments() {
+      throw new Error("not needed");
+    },
+    async createWorkItemComment() {
+      throw new Error("not needed");
+    },
     async getProposal() {
       throw new Error("not needed");
     },
@@ -379,6 +392,16 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
       throw new Error("not needed");
     },
     async listProjects() {
+      throw new Error("not needed");
+    },
+    // R23 P4（R20 P2A 端点上界面）：项目归档/软删与工作区审计流的存根。
+    async archiveProject() {
+      throw new Error("not needed");
+    },
+    async deleteProject() {
+      throw new Error("not needed");
+    },
+    async listWorkspaceAudit() {
       throw new Error("not needed");
     },
     async replayAgentRun() {

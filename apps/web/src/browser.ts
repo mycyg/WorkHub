@@ -5,6 +5,9 @@ import {
   goldPathT,
   normalizeWorkHubLocale,
   renderWorkItemAuditTimelineRows,
+  // R23 P4（R20 P2A 端点上界面）：工作项评论流与工作区审计流的行渲染（纯函数，服务端数据到手后调用）。
+  renderWorkItemCommentRows,
+  renderWorkspaceAuditRows,
   type GoldPathAppShell,
   type WorkHubLocale
 } from "@workhub/ui/gold-path";
@@ -125,6 +128,23 @@ import { resolveWebMemoryConflictAction } from "./attention-actions.js";
 import { liveStreamTargetsForRoute } from "./live-stream-targets.js";
 import { renderMyConversationsSectionHtml } from "./my-conversations.js";
 import { fetchWorkspaceRosterMembers, type WorkspaceRosterVM } from "./workspace-roster.js";
+import {
+  checkAssigneeSelection,
+  checkWorkItemCommentBody,
+  humanizeWorkItemCollaborationError
+} from "./workitem-collaboration.js";
+import {
+  humanizeProjectLifecycleError,
+  projectLifecycleConfirmLabel,
+  projectLifecycleSuccessMessage,
+  type ProjectLifecycleAction
+} from "./project-lifecycle.js";
+import {
+  hasMoreWorkspaceAuditPages,
+  humanizeWorkspaceAuditError,
+  nextWorkspaceAuditOffset,
+  WORKSPACE_AUDIT_PAGE_SIZE
+} from "./workspace-audit.js";
 
 const root = document.getElementById("root");
 const liveLastEventIdStorageKey = "workhub.live.lastEventId";
@@ -2264,6 +2284,10 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindNotificationMutePanel(root, result, client, locale, signal);
   bindHomeProjectsRetry(root, client, locale, signal);
   bindWorkItemAuditTimelinePanel(root, result, client, locale, signal);
+  bindWorkItemAssignmentPanel(root, result, client, locale, signal);
+  bindWorkItemCommentsPanel(root, result, client, locale, signal);
+  bindProjectLifecyclePanel(root, result, client, locale, signal);
+  bindSettingsWorkspaceAuditPanel(root, result, client, locale, signal);
   bindProjectHomePlansPanel(root, result, client, locale, signal);
   bindProjectHomeInstructionsPanel(root, result, client, locale, signal);
   bindProjectHomeMembersPanel(root, result, client, locale, signal);
@@ -2597,6 +2621,384 @@ function bindWorkItemAuditTimelinePanel(
     }
   };
   void load();
+}
+
+// R23 P4（R20 P2A 端点上界面）：工作项「负责人与协作」卡的接线——认领（POST /api/workitems/:id/claim）
+// 与指派（POST /api/workitems/:id/assign）。两个按钮渲不渲由服务端 VM 的 can_claim / can_assign 决定
+// （route-components.ts），这里只负责：拿到按钮就接真动作、失败必须看得见、成功后重渲详情页让归属
+// 立刻反映出来。指派对象清单沿用审批转交的既有做法——展开 <details> 时才拉本工作区花名册（翻页到底）。
+function bindWorkItemAssignmentPanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "workitem") {
+    return;
+  }
+  const section = container.querySelector<HTMLElement>("[data-r23-workitem-assignment]");
+  const workItemId = section?.getAttribute("data-r23-workitem-assignment-workitem") ?? "";
+  if (!section || !workItemId) {
+    return;
+  }
+  const zh = locale === "zh-CN";
+  const status = section.querySelector<HTMLElement>("[data-r23-workitem-assignment-status]");
+  const setStatus = (text: string, tone: "saving" | "error") => {
+    if (!status) {
+      return;
+    }
+    status.hidden = false;
+    status.textContent = text;
+    status.setAttribute("data-r23-workitem-assignment-status", tone);
+  };
+
+  const claimButton = section.querySelector<HTMLButtonElement>("[data-r23-workitem-claim]");
+  claimButton?.addEventListener("click", () => {
+    claimButton.disabled = true;
+    setStatus(zh ? "正在认领…" : "Claiming…", "saving");
+    void (async () => {
+      try {
+        await client.claimWorkItem(workItemId);
+        if (signal.aborted) {
+          return;
+        }
+        await renderCurrentRoute(client, locale);
+      } catch (error) {
+        if (signal.aborted) {
+          return;
+        }
+        claimButton.disabled = false;
+        setStatus(humanizeWorkItemCollaborationError(error, "claim", locale), "error");
+      }
+    })();
+  }, { signal });
+
+  // 花名册懒加载：与审批转交同一套（展开才拉、失败允许收起再展开重试），不进首屏 loader。
+  const assignDetails = section.querySelector<HTMLDetailsElement>("[data-r23-workitem-assign]");
+  const assignSelect = section.querySelector<HTMLSelectElement>("[data-r23-workitem-assign-select]");
+  assignDetails?.querySelector("summary")?.addEventListener("click", () => {
+    if (!assignSelect || assignDetails.dataset["r23AssignLoaded"] === "true") {
+      return;
+    }
+    assignDetails.dataset["r23AssignLoaded"] = "true";
+    void fetchWorkspaceRosterMembers(client)
+      .then((members) => {
+        if (signal.aborted) {
+          return;
+        }
+        assignSelect.innerHTML = members
+          .map((member) => `<option value="${escapeHtml(member.user_id)}">${escapeHtml(member.nickname)}${member.is_admin ? (zh ? "（管理员）" : " (admin)") : ""}</option>`)
+          .join("");
+      })
+      .catch(() => {
+        if (signal.aborted) {
+          return;
+        }
+        assignDetails.dataset["r23AssignLoaded"] = "false";
+        assignSelect.innerHTML = `<option value="">${escapeHtml(zh ? "成员没加载出来，收起再展开重试" : "Couldn't load members — reopen to retry")}</option>`;
+      });
+  }, { signal });
+
+  const assignSubmit = section.querySelector<HTMLButtonElement>("[data-r23-workitem-assign-submit]");
+  assignSubmit?.addEventListener("click", () => {
+    const roleSelect = section.querySelector<HTMLSelectElement>("[data-r23-workitem-assign-role]");
+    const selection = checkAssigneeSelection(assignSelect?.value ?? "", locale);
+    if (!selection.ok) {
+      setStatus(selection.message, "error");
+      return;
+    }
+    const role = roleSelect?.value === "lead" ? "lead" : "collaborator";
+    assignSubmit.disabled = true;
+    setStatus(zh ? "正在指派…" : "Assigning…", "saving");
+    void (async () => {
+      try {
+        await client.assignWorkItem(workItemId, { assignee_user_id: selection.body, role });
+        if (signal.aborted) {
+          return;
+        }
+        await renderCurrentRoute(client, locale);
+      } catch (error) {
+        if (signal.aborted) {
+          return;
+        }
+        assignSubmit.disabled = false;
+        setStatus(humanizeWorkItemCollaborationError(error, "assign", locale), "error");
+      }
+    })();
+  }, { signal });
+}
+
+// R23 P4（R20 P2A 端点上界面）：工作项讨论区的接线——列表按需水合（GET /api/workitems/:id/comments）
+// 与发布（POST 同路径）。详情页 VM 不带评论，所以这里是纯客户端水合；取数失败给可见告警 + 可点重试，
+// 绝不拿「还没有人留言」糊弄一次真实的失败（同 bindWorkItemAuditTimelinePanel 的既有纪律）。
+// 防重复提交：提交期间禁用按钮，失败时回显错误并把按钮放回去（用户刚敲的内容不清空）。
+function bindWorkItemCommentsPanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "workitem") {
+    return;
+  }
+  const section = container.querySelector<HTMLElement>("[data-r23-workitem-comments]");
+  const body = section?.querySelector<HTMLElement>("[data-r23-workitem-comments-body]");
+  const workItemId = section?.getAttribute("data-r23-workitem-comments-workitem") ?? "";
+  if (!section || !body || !workItemId) {
+    return;
+  }
+  const zh = locale === "zh-CN";
+  const form = section.querySelector<HTMLFormElement>("[data-r23-workitem-comment-form]");
+  const input = section.querySelector<HTMLTextAreaElement>("[data-r23-workitem-comment-input]");
+  const submit = section.querySelector<HTMLButtonElement>("[data-r23-workitem-comment-submit]");
+  const status = section.querySelector<HTMLElement>("[data-r23-workitem-comment-status]");
+  const setStatus = (text: string, tone: "saving" | "error") => {
+    if (!status) {
+      return;
+    }
+    status.hidden = false;
+    status.textContent = text;
+    status.setAttribute("data-r23-workitem-comment-status", tone);
+  };
+  const clearStatus = () => {
+    if (status) {
+      status.hidden = true;
+      status.textContent = "";
+    }
+  };
+
+  // 展开更早的留言＝纯客户端展开已拉到的同一批数据，不再发请求（服务端一次最多回 200 条）。
+  const paint = (comments: Awaited<ReturnType<BrowserApiClient["listWorkItemComments"]>>["comments"], expanded: boolean) => {
+    body.innerHTML = renderWorkItemCommentRows(comments, locale, { expanded });
+    body.querySelector<HTMLButtonElement>("[data-r23-workitem-comments-more]")
+      ?.addEventListener("click", () => paint(comments, true), { signal });
+  };
+
+  const load = async () => {
+    try {
+      const result_ = await client.listWorkItemComments(workItemId);
+      if (signal.aborted) {
+        return;
+      }
+      paint(result_.comments, false);
+    } catch (error) {
+      if (signal.aborted) {
+        return;
+      }
+      body.innerHTML = `<p class="wh-subtle" data-r23-workitem-comments-error="true">${escapeHtml(
+        humanizeWorkItemCollaborationError(error, "comment", locale)
+      )}</p><button type="button" class="wh-btn" data-r23-workitem-comments-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+      body.querySelector<HTMLButtonElement>("[data-r23-workitem-comments-retry]")
+        ?.addEventListener("click", () => void load(), { signal });
+    }
+  };
+
+  form?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!input || !submit || submit.disabled) {
+      return;
+    }
+    const checked = checkWorkItemCommentBody(input.value, locale);
+    if (!checked.ok) {
+      setStatus(checked.message, "error");
+      return;
+    }
+    submit.disabled = true;
+    setStatus(zh ? "正在发布…" : "Posting…", "saving");
+    void (async () => {
+      try {
+        await client.createWorkItemComment(workItemId, { body: checked.body });
+        if (signal.aborted) {
+          return;
+        }
+        input.value = "";
+        clearStatus();
+        submit.disabled = false;
+        await load();
+      } catch (error) {
+        if (signal.aborted) {
+          return;
+        }
+        // 失败不清空输入框——用户刚写的内容比一次失败的请求金贵。
+        submit.disabled = false;
+        setStatus(humanizeWorkItemCollaborationError(error, "comment", locale), "error");
+      }
+    })();
+  }, { signal });
+
+  void load();
+}
+
+// R23 P4（R20 P2A 端点上界面）：项目主页「项目生命周期」分区的接线——归档 / 删除（两个 POST）。
+// 分区本身只在服务端说 can_manage_lifecycle 时才渲，这里再套一层两段式确认（armConfirmButton，
+// 与设备撤销/成员移出同一范式）：第一次点只换文案，5 秒内再点才真发请求。成功后回项目列表——
+// 项目主页此刻已经不再是活跃项目（服务端 findProjectById 只回活跃项目，留在原地会 404）。
+function bindProjectLifecyclePanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "project-home") {
+    return;
+  }
+  const section = container.querySelector<HTMLElement>("[data-r23-project-lifecycle]");
+  const projectId = section?.getAttribute("data-r23-project-lifecycle-project") ?? "";
+  if (!section || !projectId) {
+    return;
+  }
+  const zh = locale === "zh-CN";
+  const status = section.querySelector<HTMLElement>("[data-r23-project-lifecycle-status]");
+  const setStatus = (text: string, tone: "saving" | "error") => {
+    if (!status) {
+      return;
+    }
+    status.hidden = false;
+    status.textContent = text;
+    status.setAttribute("data-r23-project-lifecycle-status", tone);
+  };
+
+  const run = async (action: ProjectLifecycleAction, button: HTMLButtonElement) => {
+    button.disabled = true;
+    setStatus(action === "archive"
+      ? (zh ? "正在归档…" : "Archiving…")
+      : (zh ? "正在删除…" : "Deleting…"), "saving");
+    try {
+      const done = action === "archive"
+        ? await client.archiveProject(projectId)
+        : await client.deleteProject(projectId);
+      if (signal.aborted) {
+        return;
+      }
+      // 先跳完再报喜：navigateWebRoute 会重渲整页（root.innerHTML 被换掉），提示挂在跳转之前会被
+      // 这次重渲连根抹掉——用户就只看到项目凭空消失、没有任何「已归档/已删除」的交代。既有的
+      // 「新建项目→项目主页」也是先 await 跳转、再在新页面上挂提示（本文件 bootstrapProject 分支）。
+      await navigateWebRoute("/projects", client, locale);
+      if (signal.aborted) {
+        return;
+      }
+      showRouteNotice(root ?? container, actionSuccessNotice(
+        locale,
+        projectLifecycleSuccessMessage(action, done.project.name, locale),
+        action === "archive" ? "archive_project" : "delete_project"
+      ));
+    } catch (error) {
+      if (signal.aborted) {
+        return;
+      }
+      button.disabled = false;
+      setStatus(humanizeProjectLifecycleError(error, action, locale), "error");
+    }
+  };
+
+  const wire = (selector: string, action: ProjectLifecycleAction) => {
+    const button = section.querySelector<HTMLButtonElement>(selector);
+    button?.addEventListener("click", () => armConfirmButton(button, {
+      confirmLabel: projectLifecycleConfirmLabel(action, locale),
+      onConfirm: () => void run(action, button)
+    }), { signal });
+  };
+  wire("[data-r23-project-archive]", "archive");
+  wire("[data-r23-project-delete]", "delete");
+}
+
+// R23 P4（R20 P2A 端点上界面）：/settings 管理员区「工作区审计」的接线——GET /api/workspace/audit
+// 分页拉取（服务端只回 {limit,offset,count}，翻页游标算术在 apps/web/src/workspace-audit.ts）。
+// 「加载更多」把下一页追加在后面，不重画已看过的部分；无权（403）与其它失败分开，其它失败给可点重试。
+function bindSettingsWorkspaceAuditPanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "settings") {
+    return;
+  }
+  const section = container.querySelector<HTMLElement>("[data-r23-settings-workspace-audit]");
+  const body = section?.querySelector<HTMLElement>("[data-r23-settings-workspace-audit-body]");
+  if (!section || !body) {
+    return;
+  }
+  const zh = locale === "zh-CN";
+  const moreButton = section.querySelector<HTMLButtonElement>("[data-r23-settings-workspace-audit-more]");
+  const status = section.querySelector<HTMLElement>("[data-r23-settings-workspace-audit-status]");
+  const setStatus = (text: string | null, tone: "loading" | "error") => {
+    if (!status) {
+      return;
+    }
+    if (text === null) {
+      status.hidden = true;
+      status.textContent = "";
+      return;
+    }
+    status.hidden = false;
+    status.textContent = text;
+    status.setAttribute("data-r23-settings-workspace-audit-status", tone);
+  };
+
+  let offset = 0;
+  let loading = false;
+
+  const load = async (append: boolean) => {
+    if (loading) {
+      return;
+    }
+    loading = true;
+    if (moreButton) {
+      moreButton.disabled = true;
+    }
+    setStatus(zh ? "正在加载…" : "Loading…", "loading");
+    try {
+      const page = await client.listWorkspaceAudit({ limit: WORKSPACE_AUDIT_PAGE_SIZE, offset });
+      if (signal.aborted) {
+        return;
+      }
+      const rows = renderWorkspaceAuditRows(page.audit_logs, locale);
+      if (append && page.audit_logs.length > 0) {
+        body.insertAdjacentHTML("beforeend", rows);
+      } else if (!append) {
+        body.innerHTML = rows;
+      }
+      offset = nextWorkspaceAuditOffset(page.page);
+      const more = hasMoreWorkspaceAuditPages(page.page);
+      if (moreButton) {
+        moreButton.hidden = !more;
+        moreButton.disabled = false;
+      }
+      setStatus(null, "loading");
+    } catch (error) {
+      if (signal.aborted) {
+        return;
+      }
+      const message = humanizeWorkspaceAuditError(error, locale);
+      if (append) {
+        setStatus(message, "error");
+        if (moreButton) {
+          moreButton.disabled = false;
+        }
+      } else {
+        const forbidden = error instanceof WorkHubApiError && error.status === 403;
+        body.innerHTML = forbidden
+          ? `<p class="wh-subtle" data-r23-settings-workspace-audit-forbidden="true">${escapeHtml(message)}</p>`
+          : `<p class="wh-subtle" data-r23-settings-workspace-audit-error="true">${escapeHtml(message)}</p><button type="button" class="wh-btn" data-r23-settings-workspace-audit-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+        body.querySelector<HTMLButtonElement>("[data-r23-settings-workspace-audit-retry]")
+          ?.addEventListener("click", () => void load(false), { signal });
+        if (moreButton) {
+          moreButton.hidden = true;
+        }
+        setStatus(null, "loading");
+      }
+    } finally {
+      loading = false;
+    }
+  };
+
+  moreButton?.addEventListener("click", () => void load(true), { signal });
+  void load(false);
 }
 
 // G4 #24（项目自定义指令 web 入口）：项目主页「自定义指令」卡——GET /api/projects/:id/instructions

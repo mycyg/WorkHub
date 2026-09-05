@@ -712,3 +712,32 @@ test("project home does not let claimed items bypass the workspace visibility ga
   assert.equal(vm.summary.total_open_work_item_count, 1);
   assert.equal(vm.empty_state, "no_open_work");
 });
+
+// R23 P4（R20 P2A 端点上界面）：项目主页要渲「归档 / 删除」两个动作，就得先知道当前这个人有没有资格。
+// can_manage_lifecycle 直接借 project-ops 的导出谓词算（与 POST /api/projects/:id/{archive,delete} 同一把
+// 尺子），前端据此决定整块渲不渲——两处各写一份的话，迟早漂移成「看得见点了却 403」。
+test("R23 P4: project home ships can_manage_lifecycle using the same gate as the archive/delete endpoints", async () => {
+  const page = async (over: Partial<AuthActor> = {}, project = projectRow()) => {
+    const svc = createProjectHomePageService({
+      repo: repo(async () => project, async () => [openItem()]),
+      driveRepo: driveRepo(),
+      now: () => new Date("2026-06-23T00:00:00.000Z")
+    });
+    return svc.page({ actor: actor(over), projectId: PROJ, locale: "zh-CN" });
+  };
+
+  // 项目所有者：可管理。
+  assert.equal((await page()).can_manage_lifecycle, true);
+
+  // 同工作区的普通成员（非所有者、非管理员）：能看项目主页，但不能归档/删除。
+  const memberUser = "33333333-3333-4333-8333-3333333333ee";
+  assert.equal((await page({ id: memberUser, userId: memberUser })).can_manage_lifecycle, false);
+
+  // 同工作区管理员：可管理。
+  assert.equal((await page({ id: memberUser, userId: memberUser, isAdmin: true })).can_manage_lifecycle, true);
+
+  // 孤儿项目（workspaceId 为 NULL）对管理员不敞开——R21 收口的 NULL 旁路必须在 VM 上同样体现，
+  // 否则界面会给出一个服务端一定拒绝的入口。
+  const orphan = projectRow({ workspaceId: null, ownerUserId: null } as Partial<WorkItemProjectRow>);
+  assert.equal((await page({ id: memberUser, userId: memberUser, isAdmin: true }, orphan)).can_manage_lifecycle, false);
+});

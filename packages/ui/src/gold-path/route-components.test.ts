@@ -2,11 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { AgentArmyDashboardVM, AttentionItem, AuditLogFact, CalendarPageVM, ConversationMessageVM, DrivePageVM, ProjectHealthPageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProjectListVM, ProposalConflict, ProposalDetailVM, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
+import type { AgentArmyDashboardVM, AttentionItem, AuditLogFact, CalendarPageVM, ConversationMessageVM, DrivePageVM, ProjectHealthPageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProjectListVM, ProposalConflict, ProposalDetailVM, SessionVM, SettingsPageVM, WorkItemComment, WorkItemDetailVM } from "@workhub/contracts";
 
 import { renderAgentRunReplay } from "../replay/index.js";
 import { formatLocalDate, formatLocalTimestamp } from "../i18n.js";
-import { renderWebRouteComponent, renderWebRouteComponents, renderWorkItemAuditTimelineRows } from "./route-components.js";
+import {
+  renderWebRouteComponent,
+  renderWebRouteComponents,
+  renderWorkItemAuditTimelineRows,
+  // R23 P4（R20 P2A 端点上界面）：评论流与工作区审计流的纯行渲染。
+  renderWorkItemCommentRows,
+  renderWorkspaceAuditRows
+} from "./route-components.js";
 import { renderOnboardingScreen } from "../onboarding.js";
 import { renderWebProductShell } from "./product-shell.js";
 import { renderGoldPathSurface } from "./render.js";
@@ -4552,4 +4559,274 @@ test("R15 web-mirror conversation component renders system_event risk digest and
   assert.equal(html.includes("跟进 供应延期"), true);
   assert.equal(html.includes("**跟进**"), false);
   assert.equal(html.includes("<button"), false);
+});
+
+// R23 P4（R20 P2A 端点上界面）：POST /api/workitems/:id/{claim,assign} 后端早已齐备，两端却一个入口
+// 都没有。工作项详情页新增「负责人与协作」卡——两个动作的按钮各自由服务端下发的资格（can_claim /
+// can_assign）决定渲不渲，绝不渲一个点下去必定 403 的假入口。
+test("R23 P4: work item route component gates claim/assign controls on the server-issued permissions", () => {
+  const base = surfaceVm().page_vms.workitem;
+
+  const both = renderWebRouteComponent({
+    key: "workitem",
+    workitem: { ...base, can_claim: true, can_assign: true }
+  }, { locale: "zh-CN" });
+  assert.equal(both.html.includes('data-r23-workitem-assignment="true"'), true);
+  assert.equal(both.html.includes(`data-r23-workitem-assignment-workitem="${base.workitem.id}"`), true);
+  assert.equal(both.html.includes('data-r23-workitem-claim="true"'), true);
+  assert.equal(both.html.includes('data-r23-workitem-assign="true"'), true);
+  assert.equal(both.html.includes('data-r23-workitem-assign-select="true"'), true);
+  assert.equal(both.html.includes('data-r23-workitem-assign-role="true"'), true);
+  assert.equal(both.html.includes('data-r23-workitem-assign-submit="true"'), true);
+  assert.equal(both.html.includes('data-r23-workitem-assignment-readonly="true"'), false);
+
+  const claimOnly = renderWebRouteComponent({
+    key: "workitem",
+    workitem: { ...base, can_claim: true, can_assign: false }
+  }, { locale: "zh-CN" });
+  assert.equal(claimOnly.html.includes('data-r23-workitem-claim="true"'), true);
+  assert.equal(claimOnly.html.includes('data-r23-workitem-assign="true"'), false);
+
+  // 两项资格都没有（或 VM 根本没带这两个字段——旧夹具）：一个按钮都不渲，只留一句说清谁能改。
+  const readOnly = renderWebRouteComponent({ key: "workitem", workitem: base }, { locale: "zh-CN" });
+  assert.equal(readOnly.html.includes('data-r23-workitem-claim="true"'), false);
+  assert.equal(readOnly.html.includes('data-r23-workitem-assign="true"'), false);
+  assert.equal(readOnly.html.includes('data-r23-workitem-assignment-readonly="true"'), true);
+
+  // 已认领时详情页要说清现在谁在跟；没人认领时给诚实空态而不是留白。
+  const claimed = renderWebRouteComponent({
+    key: "workitem",
+    workitem: {
+      ...base,
+      workitem: {
+        ...base.workitem,
+        claimed_by_user_id: "95000000-0000-4000-8000-000000000031",
+        claimed_by_nickname: "小拓"
+      }
+    }
+  }, { locale: "zh-CN" });
+  assert.equal(claimed.html.includes('data-r23-workitem-assignment-current="95000000-0000-4000-8000-000000000031"'), true);
+  assert.equal(claimed.html.includes("小拓"), true);
+  assert.equal(readOnly.html.includes('data-r23-workitem-assignment-unclaimed="true"'), true);
+
+  const en = renderWebRouteComponent({
+    key: "workitem",
+    workitem: { ...base, can_claim: true, can_assign: true }
+  }, { locale: "en-US" });
+  assert.equal(en.html.includes("Claim it"), true);
+  assert.equal(en.html.includes("Assign to"), true);
+  assertNoMainWindowBoundaryLeak(both.html);
+  assertNoMainWindowBoundaryLeak(en.html);
+});
+
+// R23 P4：assign 写的是 work_item_assignments，不是 claimed_by——详情页若只渲「现在谁在跟」，指派完
+// 页面毫无变化，那就是个看不出结果的假动作。名单要渲出来，角色要说人话，名字缺席也不能吐裸 user id。
+test("R23 P4: work item route component lists assignees with their role in plain words", () => {
+  const base = surfaceVm().page_vms.workitem;
+  const lead = "95000000-0000-4000-8000-000000000041";
+  const helper = "95000000-0000-4000-8000-000000000042";
+  const ghost = "95000000-0000-4000-8000-000000000043";
+
+  // 没有任何指派时不渲空名单区块（诚实缺省，不给读者一个空壳）。
+  const none = renderWebRouteComponent({ key: "workitem", workitem: base }, { locale: "zh-CN" });
+  assert.equal(none.html.includes('data-r23-workitem-assignees="true"'), false);
+
+  const withAssignees = renderWebRouteComponent({
+    key: "workitem",
+    workitem: {
+      ...base,
+      assignees: [
+        { user_id: lead, nickname: "小拓", role: "lead" as const },
+        { user_id: helper, nickname: "阿岚", role: "collaborator" as const }
+      ]
+    }
+  }, { locale: "zh-CN" });
+  assert.equal(withAssignees.html.includes('data-r23-workitem-assignees="true"'), true);
+  assert.equal(withAssignees.html.includes(`data-r23-workitem-assignee="${lead}"`), true);
+  assert.equal(withAssignees.html.includes(`data-r23-workitem-assignee-role="lead"`), true);
+  assert.equal(withAssignees.html.includes(`data-r23-workitem-assignee="${helper}"`), true);
+  assert.equal(withAssignees.html.includes("小拓"), true);
+  assert.equal(withAssignees.html.includes("阿岚"), true);
+  // 角色不能裸吐机器枚举给读者看。
+  assert.equal(withAssignees.html.includes("主责"), true);
+  assert.equal(withAssignees.html.includes("协作"), true);
+
+  // 账号被硬删（nickname 缺席）：这一行仍要在（不能因为名字没了就把人吞掉），但绝不渲裸 uuid 当名字。
+  const ghosted = renderWebRouteComponent({
+    key: "workitem",
+    workitem: { ...base, assignees: [{ user_id: ghost, role: "collaborator" as const }] }
+  }, { locale: "zh-CN" });
+  assert.equal(ghosted.html.includes(`data-r23-workitem-assignee="${ghost}"`), true);
+  assert.equal(ghosted.html.includes("已停用的成员"), true);
+  assert.equal(ghosted.html.includes(`<strong>${ghost}</strong>`), false);
+
+  const en = renderWebRouteComponent({
+    key: "workitem",
+    workitem: { ...base, assignees: [{ user_id: lead, nickname: "Tuo", role: "lead" as const }] }
+  }, { locale: "en-US" });
+  assert.equal(en.html.includes("Assigned to:"), true);
+  assert.equal(en.html.includes("Lead"), true);
+  assertNoMainWindowBoundaryLeak(withAssignees.html);
+});
+
+// R23 P4：GET/POST /api/workitems/:id/comments 此前两端零界面。详情页 VM 不带评论，所以讨论区是
+// 客户端按需水合——这里只锁 SSR 骨架（挂载点 + 加载中文案 + 发布表单），列表本身由 browser.ts 注入。
+test("R23 P4: work item route component renders a discussion slot with a post-comment form", () => {
+  const base = surfaceVm().page_vms.workitem;
+  const zh = renderWebRouteComponent({ key: "workitem", workitem: base }, { locale: "zh-CN" });
+  const en = renderWebRouteComponent({ key: "workitem", workitem: base }, { locale: "en-US" });
+
+  assert.equal(zh.html.includes('data-r23-workitem-comments="true"'), true);
+  assert.equal(zh.html.includes(`data-r23-workitem-comments-workitem="${base.workitem.id}"`), true);
+  assert.equal(zh.html.includes('data-r23-workitem-comments-body="true"'), true);
+  assert.equal(zh.html.includes('data-r23-workitem-comments-loading="true"'), true);
+  assert.equal(zh.html.includes('data-r23-workitem-comment-form="true"'), true);
+  assert.equal(zh.html.includes('data-r23-workitem-comment-input="true"'), true);
+  assert.equal(zh.html.includes('data-r23-workitem-comment-submit="true"'), true);
+  assert.equal(zh.html.includes("正在加载讨论"), true);
+  assert.equal(en.html.includes("Loading discussion"), true);
+  assert.equal(en.html.includes("Post comment"), true);
+  assertNoMainWindowBoundaryLeak(zh.html);
+  assertNoMainWindowBoundaryLeak(en.html);
+});
+
+// R23 P4：评论行渲染是纯函数（renderWorkItemCommentRows），供 browser.ts 拉到数据后复用。服务端按
+// 对话顺序回最多 200 条，详情页默认只展开最近 8 条——更早的必须有一颗明说条数的展开按钮，不许静默截断。
+test("R23 P4: renderWorkItemCommentRows shows the latest comments and offers an honest expand control", () => {
+  const comment = (n: number): WorkItemComment => ({
+    id: `comment-${n}`,
+    work_item_id: "94000000-0000-4000-8000-000000000005",
+    author_nickname: `作者${n}`,
+    body: `第 ${n} 条留言`,
+    created_at: "2026-07-10T09:00:00.000Z",
+    updated_at: "2026-07-10T09:00:00.000Z"
+  });
+
+  const empty = renderWorkItemCommentRows([], "en-US");
+  assert.equal(empty.includes("No comments on this item yet"), true);
+  assert.equal(renderWorkItemCommentRows([], "zh-CN").includes("还没有人在这个事项下留言"), true);
+
+  const few = renderWorkItemCommentRows([comment(1), comment(2)], "zh-CN");
+  assert.equal(few.includes('data-r23-workitem-comment="comment-1"'), true);
+  assert.equal(few.includes("第 2 条留言"), true);
+  assert.equal(few.includes("作者1"), true);
+  assert.equal(few.includes("data-r23-workitem-comments-more"), false);
+
+  const many = Array.from({ length: 11 }, (_, index) => comment(index + 1));
+  const collapsed = renderWorkItemCommentRows(many, "zh-CN");
+  // 只展开最近 8 条：最早的 3 条不在里面，且展开按钮把 3 这个数字说出来。
+  assert.equal(collapsed.includes('data-r23-workitem-comments-more="3"'), true);
+  assert.equal(collapsed.includes("展开更早的 3 条"), true);
+  assert.equal(collapsed.includes('data-r23-workitem-comment="comment-1"'), false);
+  assert.equal(collapsed.includes('data-r23-workitem-comment="comment-11"'), true);
+
+  const expanded = renderWorkItemCommentRows(many, "zh-CN", { expanded: true });
+  assert.equal(expanded.includes('data-r23-workitem-comment="comment-1"'), true);
+  assert.equal(expanded.includes("data-r23-workitem-comments-more"), false);
+});
+
+// R23 P4（R20 P2A 端点上界面）：POST /api/projects/:id/{archive,delete} 后端早已齐备，web 端此前只有
+// 一枚「已归档」徽标、没有任何动作入口。项目主页新增「项目生命周期」分区——整块由服务端下发的
+// can_manage_lifecycle 决定渲不渲（管理员/项目负责人之外的人连区块都看不到）。
+test("R23 P4: project home renders archive/delete controls only when the server says the viewer may manage lifecycle", () => {
+  const baseVm = {
+    generated_at: "2026-06-11T09:00:00.000Z",
+    project: {
+      id: "93000000-0000-4000-8000-000000000001",
+      name: "R5 Workspace",
+      slug: "r5-workspace",
+      description: null,
+      owner_label: "owner",
+      status: "active" as const
+    },
+    summary: { open_work_item_count: 0, total_open_work_item_count: 0 },
+    open_work_items: [],
+    drive: { file_count: 0, recent_files: [] },
+    actions: {
+      new_task: { id: "new_task", label: "新任务", method: "GET" as const, href: "/intake" },
+      open_drive: { id: "open_drive", label: "打开网盘", method: "GET" as const, href: "/drive?project_id=93000000-0000-4000-8000-000000000001" }
+    }
+  };
+
+  const asMember = renderWebRouteComponent({ key: "project-home", project: baseVm }, { locale: "zh-CN" });
+  assert.equal(asMember.html.includes('data-r23-project-lifecycle="true"'), false);
+  assert.equal(asMember.html.includes('data-r23-project-archive="true"'), false);
+  assert.equal(asMember.html.includes('data-r23-project-delete="true"'), false);
+
+  const asOwner = renderWebRouteComponent({
+    key: "project-home",
+    project: { ...baseVm, can_manage_lifecycle: true }
+  }, { locale: "zh-CN" });
+  assert.equal(asOwner.html.includes('data-r23-project-lifecycle="true"'), true);
+  assert.equal(asOwner.html.includes('data-r23-project-lifecycle-project="93000000-0000-4000-8000-000000000001"'), true);
+  assert.equal(asOwner.html.includes('data-r23-project-archive="true"'), true);
+  assert.equal(asOwner.html.includes('data-r23-project-delete="true"'), true);
+  assert.equal(asOwner.html.includes("归档项目"), true);
+
+  const asOwnerEn = renderWebRouteComponent({
+    key: "project-home",
+    project: { ...baseVm, can_manage_lifecycle: true }
+  }, { locale: "en-US" });
+  assert.equal(asOwnerEn.html.includes("Archive project"), true);
+  assert.equal(asOwnerEn.html.includes("Delete project"), true);
+  assertNoMainWindowBoundaryLeak(asOwner.html);
+  assertNoMainWindowBoundaryLeak(asOwnerEn.html);
+});
+
+// R23 P4（R20 P2A 端点上界面）：GET /api/workspace/audit（仅管理员）此前两端零界面——管理员在界面上
+// 根本查不到「谁在什么时候改了什么」。/settings 新增「工作区审计」分区，非管理员整块不渲（他们连 GET
+// 都是 403）；SSR 只出骨架 + 「加载更多」按钮，真实分页由 browser.ts 拉取。
+test("R23 P4: settings workspace audit section is admin-gated and ships a paging skeleton", () => {
+  const settingsVm = surfaceVm().page_vms.settings;
+  assert.ok(settingsVm);
+
+  const asMember = renderWebRouteComponent({ key: "settings", settings: settingsVm, isAdmin: false }, { locale: "zh-CN" });
+  assert.equal(asMember.html.includes('data-r23-settings-workspace-audit="true"'), false);
+
+  const asAdmin = renderWebRouteComponent({ key: "settings", settings: settingsVm, isAdmin: true }, { locale: "zh-CN" });
+  assert.equal(asAdmin.html.includes('data-r23-settings-workspace-audit="true"'), true);
+  assert.equal(asAdmin.html.includes('data-r23-settings-workspace-audit-body="true"'), true);
+  assert.equal(asAdmin.html.includes('data-r23-settings-workspace-audit-loading="true"'), true);
+  assert.equal(asAdmin.html.includes('data-r23-settings-workspace-audit-more="true"'), true);
+  assert.equal(asAdmin.html.includes("正在加载审计记录"), true);
+
+  const asAdminEn = renderWebRouteComponent({ key: "settings", settings: settingsVm, isAdmin: true }, { locale: "en-US" });
+  assert.equal(asAdminEn.html.includes("Workspace audit"), true);
+  assert.equal(asAdminEn.html.includes("Load more"), true);
+});
+
+// R23 P4：工作区审计行渲染是纯函数（renderWorkspaceAuditRows）。与单事项时间线不同，这里**不**做本地
+// 截断——「还有更多」由服务端分页与「加载更多」按钮表达，本地再截一刀会和分页口径打架。对象列要把
+// entity_type 这种机器串翻成人话。
+test("R23 P4: renderWorkspaceAuditRows localizes action/actor/object columns and never truncates locally", () => {
+  const entry = (id: string, action: string): AuditLogFact => ({
+    id,
+    actor: { actor_kind: "human", actor_nickname: "小拓" },
+    entity: { entity_type: "project", entity_id: "93000000-0000-4000-8000-000000000001" },
+    action,
+    detail_json: {},
+    created_at: "2026-07-10T09:00:00.000Z"
+  });
+
+  assert.equal(renderWorkspaceAuditRows([], "zh-CN").includes("这个工作区还没有审计记录"), true);
+  assert.equal(renderWorkspaceAuditRows([], "en-US").includes("No audit entries in this workspace yet"), true);
+
+  const rows = renderWorkspaceAuditRows([entry("a1", "project.archived"), entry("a2", "work_item.assigned")], "zh-CN");
+  assert.equal(rows.includes('data-r23-workspace-audit-entry="a1"'), true);
+  assert.equal(rows.includes('data-r23-workspace-audit-entry-action="project.archived"'), true);
+  assert.equal(rows.includes('data-r23-workspace-audit-entry-entity="93000000-0000-4000-8000-000000000001"'), true);
+  // R20 P2A 的四个写动作此前没有任何界面读它们，标签一并补齐，不能裸吐 "project.archived"。
+  assert.equal(rows.includes("归档项目"), true);
+  assert.equal(rows.includes("指派事项"), true);
+  assert.equal(rows.includes("项目 93000000"), true);
+  assert.equal(rows.includes("小拓"), true);
+  assert.equal(rows.includes(formatLocalDate("2026-07-10T09:00:00.000Z")), true);
+
+  const many = Array.from({ length: 25 }, (_, index) => entry(`a${index}`, "project.archived"));
+  const all = renderWorkspaceAuditRows(many, "zh-CN");
+  assert.equal(all.split("data-r23-workspace-audit-entry=").length - 1, 25);
+
+  const en = renderWorkspaceAuditRows([entry("a3", "work_item.claimed")], "en-US");
+  assert.equal(en.includes("Item claimed"), true);
+  assert.equal(en.includes("Project 93000000"), true);
 });
