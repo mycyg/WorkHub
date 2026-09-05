@@ -14,13 +14,14 @@
 
 import type {
   McpServerConnectionVM,
+  McpServerErrorCode,
   McpServerTrustLevel,
   McpServerVM
 } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { withErrorDetail } from "../../load-state-copy.js";
-import { spotlightViewsT } from "./locales.js";
+import { spotlightViewsT, type SpotlightViewsCopyKey } from "./locales.js";
 
 /**
  * 工具名预览的三个常量与 `@workhub/mcp-client` 的 `names.ts` 逐字对齐，但**刻意不 import 那个包**：
@@ -87,11 +88,45 @@ export function mcpStatusLine(server: McpServerVM, connection: McpServerConnecti
 }
 
 /**
+ * 连接/会话失败的**稳定错误码** → 一句人话。
+ *
+ * 全表覆盖 `mcpServerErrorCodeSchema` 的九条码（`satisfies` 保证契约新增一条码时这里编译不过，
+ * 而不是悄悄落到兜底句上）。句子与网页只读清单逐字同句，同一台服务器在两端只有一种说法。
+ *
+ * `mcp_connect_failed` 是「这次说不出原因」的兜底码，它的那一句就是既有的通用句——不为它编一个
+ * 更具体的原因。**绝不解析 `last_error` 里的英文诊断串**：那是给人看的现场信息（stderr 尾巴、
+ * 命令路径、失败次数），照着它切字符串会在下一次改措辞时把中文界面变成半截英文。
+ */
+const MCP_ERROR_CODE_COPY = {
+  mcp_spawn_failed: "mcpFailSpawn",
+  mcp_handshake_timeout: "mcpFailHandshakeTimeout",
+  mcp_protocol_version_unsupported: "mcpFailProtocolVersion",
+  mcp_protocol_error: "mcpFailProtocol",
+  mcp_server_error: "mcpFailServerError",
+  mcp_call_timeout: "mcpFailCallTimeout",
+  mcp_not_running: "mcpFailNotRunning",
+  mcp_exited: "mcpFailExited",
+  mcp_connect_failed: "mcpConnectFailedHint"
+} as const satisfies Record<McpServerErrorCode, SpotlightViewsCopyKey>;
+
+export function mcpErrorCodeLine(code: McpServerErrorCode | undefined, zh: boolean): string | undefined {
+  return code === undefined ? undefined : spotlightViewsT(zh, MCP_ERROR_CODE_COPY[code]);
+}
+
+/**
  * 状态行之下的补充说明：为什么连不上 / 为什么不再自动重连 / 连上了却一个工具都没有。
+ *
+ * 「为什么连不上」优先按 `last_error_code` 出人话（R26 M8 才把码带到读形状上；在那之前这里只能
+ * 落回通用的一句）。码**可能缺席**——行上有诊断、这个进程却不记得那次失败时（重启之后）就没有码，
+ * 那时仍然说通用的那一句，而不是编一个它并不知道的原因。连接快照上的码优先于行上的码：
+ * 前者来自这个进程最近一次握手，后者是上一次持久化的分类。
  *
  * `last_error` 与 `blocked_reason` 都是服务端给的**诊断串**（多数情况下是英文），不是界面文案——
  * 所以产品句子在前、原始诊断只作为括号里的次级信息（`withErrorDetail` 的既有口径），
  * 而不是把一句英文直接当结论渲上去。
+ *
+ * 重连预算耗尽时两句话都要说：为什么失败（码）+ 为什么不再自动重试。它们是两件事，
+ * 下一步动作也不同（修服务器 vs 点「测试连接」）。
  */
 export function mcpReasonLine(
   server: McpServerVM,
@@ -104,7 +139,13 @@ export function mcpReasonLine(
   if (server.status === "connect_failed") {
     const blocked = connection?.blocked_reason;
     const reason = blocked ?? connection?.last_error ?? server.last_error;
-    const lead = blocked ? spotlightViewsT(zh, "mcpRetryBudgetSpent") : spotlightViewsT(zh, "mcpConnectFailedHint");
+    const coded = mcpErrorCodeLine(connection?.last_error_code ?? server.last_error_code, zh);
+    const sentences = [coded, blocked ? spotlightViewsT(zh, "mcpRetryBudgetSpent") : undefined]
+      .filter((sentence): sentence is string => sentence !== undefined);
+    // 中文句子自带句号，英文句间要一个空格（同 withErrorDetail 里按语言分叉的口径）。
+    const lead = sentences.length > 0
+      ? sentences.join(zh ? "" : " ")
+      : spotlightViewsT(zh, "mcpConnectFailedHint");
     return reason ? withErrorDetail(zh, lead, new Error(reason)) : lead;
   }
   const toolCount = connection?.tool_count ?? server.tool_count;
@@ -223,7 +264,7 @@ export type DesktopMcpFormState = {
 };
 
 export type DesktopMcpSectionState = {
-  /** 管理员门：服务端只给管理员填 settings VM 的 plugins 字段，这里跟着同一个信号（见 settings.ts 的接线注释）。 */
+  /** 管理员门：服务端只给管理员填 settings VM 的 mcp_servers 字段，这里跟着同一个信号（见 settings.ts 的接线注释）。 */
   visible: boolean;
   servers: readonly McpServerVM[] | undefined;
   /** 按 id 索引的连接事实。停用/尚未连过的服务器不在这张表里。 */

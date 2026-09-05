@@ -1329,10 +1329,11 @@ export function createSettingsView(): SpotlightCapabilityView {
 
       // R26 M7：MCP 服务器治理。
       //
-      // 管理员门借 `vm.plugins !== undefined`：服务端只给管理员填那个字段，而 /api/mcp-servers 整条
-      // 端点也是管理员门（403 `mcp_admin_required`）——两者是同一个身份判定的两个出口，借它就不必
-      // 自己猜身份、也不必靠一个注定 403 的请求闪一下。settings VM 目前**没有** mcp_servers 字段
-      // （那是工包 M8 的网页只读行要加的），等它落地后这里可以换成同款的 `vm.mcp_servers !== undefined`。
+      // 管理员门走 `vm.mcp_servers !== undefined`：服务端只给管理员填那个字段（M8 的网页只读行加的），
+      // 而 /api/mcp-servers 整条端点也是管理员门（403 `mcp_admin_required`）——两者是同一个身份判定
+      // 的两个出口，据它就不必自己猜身份、也不必靠一个注定 403 的请求闪一下。M7 当时这个字段还不
+      // 存在，借的是同一道门的 `vm.plugins`；M8 落地后换成本字段，一个只有插件管理权的身份不会再
+      // 看到一个必然 403 的分区。
       let mcpServers: McpServerVM[] | undefined;
       let mcpConnections: Record<string, McpServerConnectionVM> = {};
       let mcpSecretRefEnvPrefix = "";
@@ -1496,7 +1497,7 @@ export function createSettingsView(): SpotlightCapabilityView {
         );
         const mcpHtml = mcpServersSectionHtml(
           {
-            visible: vm.plugins !== undefined,
+            visible: vm.mcp_servers !== undefined,
             servers: mcpServers,
             connections: mcpConnections,
             secretRefEnvPrefix: mcpSecretRefEnvPrefix,
@@ -1636,8 +1637,8 @@ export function createSettingsView(): SpotlightCapabilityView {
           loadServerHealth(),
           // 非管理员的 VM 里没有 plugins 字段——那就连列表都不去拉（省一次注定 403 的请求）。
           vm.plugins !== undefined ? loadPlugins() : Promise.resolve(),
-          // MCP 清单端点同样是管理员门，借同一个信号（见上面 mcpServers 那组状态的注释）。
-          vm.plugins !== undefined ? loadMcpServers() : Promise.resolve()
+          // MCP 清单端点同样是管理员门，据它自己的那个信号（见上面 mcpServers 那组状态的注释）。
+          vm.mcp_servers !== undefined ? loadMcpServers() : Promise.resolve()
         ]);
         if (disposed) return;
         renderAll();
