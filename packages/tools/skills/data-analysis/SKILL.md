@@ -50,5 +50,5 @@ if numeric.shape[1] >= 2:
 ## 常见坑
 
 - `groupby().agg()` 用命名聚合（如上），不要用已废弃的 dict-of-dict 形式。
-- 中文列名直接可用；读 CSV 乱码时尝试 `encoding="gbk"` 一次，仍失败按 blocker 上报。
+- 中文列名直接可用；读 CSV 乱码时尝试 `encoding="gbk"` 一次，仍失败就在总结里说清这份数据读不出来、需要谁来提供可用版本。
 - 不要画图——图表交给 stat-charts 技能（先分析出数，再加载它）。

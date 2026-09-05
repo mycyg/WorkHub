@@ -180,10 +180,6 @@ function renderActions(actions: ActionSpec[]) {
     .join("")}</div>`;
 }
 
-function shortFingerprint(value: string | undefined) {
-  return value ? value.slice(0, 10) : undefined;
-}
-
 function objectRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -589,13 +585,15 @@ function renderConflictChooser(conflicts: ProposalConflict[], options?: UiRender
 function renderConflict(conflict: ProposalConflict, options?: UiRenderOptions & { chooserHandled?: boolean }) {
   const locale = uiLocale(options);
   const target = conflict.target_path ?? conflict.target_key;
-  const existing = shortFingerprint(conflict.existing.sha256 ?? conflict.existing.ref);
-  const incoming = shortFingerprint(conflict.incoming.sha256_after ?? conflict.incoming.ref);
-  const meta = [
-    `<span class="wh-pill">${escapeHtml(uiT(locale, "proposal.conflictTarget"))}: ${escapeHtml(target)}</span>`,
-    existing ? `<span class="wh-pill">${escapeHtml(uiT(locale, "proposal.conflictExisting"))}: ${escapeHtml(existing)}</span>` : "",
-    incoming ? `<span class="wh-pill">${escapeHtml(uiT(locale, "proposal.conflictIncoming"))}: ${escapeHtml(incoming)}</span>` : ""
-  ].filter(Boolean).join("");
+  // A2-50：两侧内容指纹（sha256 前 10 位）对业务用户零信息量，而同一张卡的正文写的正是
+  // 「不用看技术细节，直接选一个处理方式」。指纹只留 data 属性给取证/自动化，界面上不出现。
+  const existing = conflict.existing.sha256 ?? conflict.existing.ref;
+  const incoming = conflict.incoming.sha256_after ?? conflict.incoming.ref;
+  const fingerprintAttributes = [
+    existing ? ` data-proposal-conflict-current-ref="${escapeHtml(existing)}"` : "",
+    incoming ? ` data-proposal-conflict-incoming-ref="${escapeHtml(incoming)}"` : ""
+  ].join("");
+  const meta = `<span class="wh-pill">${escapeHtml(uiT(locale, "proposal.conflictTarget"))}: ${escapeHtml(target)}</span>`;
   const previews = conflict.options
     .flatMap((option) => [
       renderTextPatchPreview(option, { locale }),
@@ -613,7 +611,7 @@ function renderConflict(conflict: ProposalConflict, options?: UiRenderOptions & 
     return renderConflictOption(option, { locale });
   }).join("");
 
-  return `<article class="wh-conflict-card" data-conflict-id="${escapeHtml(conflict.id)}" data-target-key="${escapeHtml(conflict.target_key)}">
+  return `<article class="wh-conflict-card" data-conflict-id="${escapeHtml(conflict.id)}" data-target-key="${escapeHtml(conflict.target_key)}"${fingerprintAttributes}>
     <strong>${escapeHtml(conflict.headline)}</strong>
     <p class="wh-conflict-summary">${escapeHtml(conflict.summary_text)}</p>
     <div class="wh-conflict-meta">${meta}</div>

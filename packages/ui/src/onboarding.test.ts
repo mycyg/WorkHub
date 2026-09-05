@@ -25,7 +25,9 @@ test("renderPasswordAuthScreen register tab adds a nickname field and the first-
   assert.match(html, /data-r23-auth-tab="register"/u);
   assert.match(html, /data-r23-auth-nickname="true"/u);
   assert.match(html, /data-r23-auth-first-admin-hint="true"/u);
-  assert.match(html, /自动成为管理员/u);
+  assert.match(html, /第一个注册的人会成为管理员/u);
+  // A2-51：登录第一屏不出现「实例」这类部署运维词。
+  assert.doesNotMatch(html, /实例/u);
   assert.match(html, /创建账号/u);
   // 注册屏绝不该出现管理员口令字段——那是 nickname 模式的 renderOnboardingScreen 专属，密码模式
   // 首个注册者由服务端自动判定，前端不采集也不应该采集"我是管理员"这类字段。

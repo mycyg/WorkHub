@@ -15,6 +15,8 @@ import {
 } from "../structured-field-details.js";
 import { renderSubrecordItemDiff, subrecordItemDiffCss } from "../subrecord-item-diff.js";
 
+import { replayT as t } from "./locales.js";
+
 export type ReplayRenderSurface = "web" | "desktop";
 
 export type ReplayRenderedPage = {
@@ -73,82 +75,6 @@ function safeHref(value: unknown): string {
   return "#";
 }
 
-// 与 packages/ui/src/i18n.ts 的 `copy`/`uiT` 同形态的本地词典：把原来散落各处、每次调用都
-// 内联中英文字面量的 copy(locale, zh, en) 换成「键 → 词典」查表，和 gold-path 组件体系
-// （route-components.ts 经由 uiT/goldPathT）统一成同一种 i18n 函数形状。真正跨页共用的概念
-// （状态、步骤计数、数量单复数）直接复用 ../i18n.js 导出的 uiT/uiCount，不在这里重复定义。
-type ReplayCopy = Record<WorkHubLocale, string>;
-
-const replayCopy = {
-  "replay.kicker": { "zh-CN": "执行回放", "en-US": "Replay Work" },
-  "replay.title": { "zh-CN": "查看 AI 怎么做的", "en-US": "See how AI did it" },
-  "replay.emptySummary": {
-    "zh-CN": "关键步骤、证据、快照和成本都在这里。",
-    "en-US": "Key steps, evidence, snapshots, and cost are shown here."
-  },
-  "replay.keyStepsTitle": { "zh-CN": "关键步骤", "en-US": "Key steps" },
-  "replay.acceptedDeliverablesTitle": { "zh-CN": "正式交付物", "en-US": "Accepted deliverables" },
-  "replay.decisionRecordTitle": { "zh-CN": "决策记录", "en-US": "Decision record" },
-  "replay.fieldAuditTitle": { "zh-CN": "字段审计", "en-US": "Field audit" },
-  "replay.fieldWritebackAuditTitle": { "zh-CN": "字段写回审计", "en-US": "Field writeback audit" },
-  "replay.backToWorkItem": { "zh-CN": "← 返回任务", "en-US": "← Back to work item" },
-  "replay.railKicker": { "zh-CN": "回放摘要", "en-US": "Replay summary" },
-  "replay.tokenTitle": { "zh-CN": "Token 用量", "en-US": "Tokens used" },
-  "replay.costTitle": { "zh-CN": "估算成本", "en-US": "Estimated cost" },
-  "replay.snapshotTitle": { "zh-CN": "快照", "en-US": "Snapshots" },
-  "replay.deliverablePreview": { "zh-CN": "预览", "en-US": "Preview" },
-  "replay.deliverableDownload": { "zh-CN": "下载", "en-US": "Download" },
-  "replay.deliverableRestore": { "zh-CN": "还原", "en-US": "Restore" },
-  "replay.optionKeepCurrent": { "zh-CN": "保留正式版", "en-US": "Keep accepted version" },
-  "replay.optionAcceptIncoming": { "zh-CN": "采纳这次版本", "en-US": "Accept this version" },
-  "replay.optionAiFusion": { "zh-CN": "AI 融合建议", "en-US": "AI fusion draft" },
-  "replay.attemptConflict": { "zh-CN": "出现冲突", "en-US": "Conflict found" },
-  "replay.attemptMerged": { "zh-CN": "已采纳", "en-US": "Accepted" },
-  "replay.recordedFallback": { "zh-CN": "已记录", "en-US": "Recorded" },
-  "replay.decisionKeepCurrent": { "zh-CN": "保留正式版", "en-US": "Kept accepted version" },
-  "replay.decisionAcceptIncoming": { "zh-CN": "采纳这次版本", "en-US": "Accepted this version" },
-  "replay.decisionAiFusion": { "zh-CN": "采用 AI 融合稿", "en-US": "Used AI fusion draft" },
-  "replay.checksumLabel": { "zh-CN": "结果校验码", "en-US": "Result checksum" },
-  "replay.hunkDecisionReplayTitle": { "zh-CN": "逐段选择回放", "en-US": "Hunk decision replay" },
-  "replay.hunkAuditRowTitle": { "zh-CN": "重叠段", "en-US": "Overlap hunk" },
-  "replay.bulkClickedScope": { "zh-CN": "点击范围", "en-US": "Clicked scope" },
-  "replay.bulkAcceptedScope": { "zh-CN": "采纳范围", "en-US": "Accepted scope" },
-  "replay.bulkResolved": { "zh-CN": "已处理", "en-US": "Resolved" },
-  "replay.bulkBlocked": { "zh-CN": "被阻断", "en-US": "Blocked" },
-  "replay.bulkActionReplayTitle": { "zh-CN": "批量动作回放", "en-US": "Bulk action replay" },
-  "replay.patchPreviewTitle": { "zh-CN": "改动预览", "en-US": "Change preview" },
-  "replay.structuredFieldCheckTitle": { "zh-CN": "结构化字段检查", "en-US": "Structured field check" },
-  "replay.recommendedBadge": { "zh-CN": "推荐", "en-US": "Recommended" },
-  "replay.chosenBadge": { "zh-CN": "已选择", "en-US": "Chosen" },
-  "replay.noChoiceLabel": { "zh-CN": "未选择", "en-US": "Not chosen" },
-  "replay.conflictAtPrefix": { "zh-CN": "冲突位置", "en-US": "Conflict at" },
-  // R20 DSK-UX（R19-3）：改动快照的「撤销此次改动」动作——把文件还原到某个快照。二次确认（武装→再点执行）
-  // 沿用仓库既有 5 秒先例（decideRollbackConfirmation/网盘删除），文案键在这里统一，binder 只读 data-* 取字。
-  "replay.snapshotListTitle": { "zh-CN": "改动快照", "en-US": "Change snapshots" },
-  "replay.snapshotListHint": {
-    "zh-CN": "撤销会把文件还原到该快照、覆盖之后的改动；此操作需在桌面客户端执行。",
-    "en-US": "Undoing restores files to that snapshot and overwrites later changes; do it in the desktop app."
-  },
-  "replay.snapshotRevert": { "zh-CN": "撤销此次改动", "en-US": "Undo these changes" },
-  "replay.snapshotRevertArm": { "zh-CN": "确认撤销？再点一次", "en-US": "Undo? Click again" },
-  "replay.snapshotReverting": { "zh-CN": "撤销中…", "en-US": "Undoing…" },
-  "replay.snapshotReverted": { "zh-CN": "已回滚", "en-US": "Reverted" },
-  "replay.snapshotRevertRetry": { "zh-CN": "撤销失败，点此重试", "en-US": "Undo failed — retry" },
-  "replay.snapshotKindPreStep": { "zh-CN": "执行前快照", "en-US": "Pre-step snapshot" },
-  "replay.snapshotKindMerge": { "zh-CN": "合并快照", "en-US": "Merge snapshot" },
-  "replay.snapshotKindManual": { "zh-CN": "手动快照", "en-US": "Manual snapshot" },
-  "replay.snapshotKindBase": { "zh-CN": "基线快照", "en-US": "Base snapshot" },
-  // WIRE-07：进行中的 run 在回放页给「中止执行」入口（POST /api/agent-runs/:id/abort）。渲染层只吐
-  // 带 data-* 的静态标记，两段式确认与调用都在 web 的 api-action 分发里（armConfirmButton 先例）。
-  "replay.abortRun": { "zh-CN": "中止执行", "en-US": "Abort run" }
-} satisfies Record<string, ReplayCopy>;
-
-type ReplayCopyKey = keyof typeof replayCopy;
-
-function t(locale: WorkHubLocale, key: ReplayCopyKey): string {
-  return replayCopy[key][locale];
-}
-
 function objectRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -197,8 +123,15 @@ function lineRangeLabel(locale: WorkHubLocale, startLine: number, endLine: numbe
     : (locale === "zh-CN" ? `第 ${startLine}-${endLine} 行` : `Lines ${startLine}-${endLine}`);
 }
 
+// 批量动作的结果此前把内部枚举（merged/conflict/…）原样拼进「结果：」一行。走已有的人话映射，
+// 未知值回落到「已记录」而不是把枚举渲给用户。
 function bulkResultLine(locale: WorkHubLocale, result: string) {
-  return locale === "zh-CN" ? `结果：${result}` : `Result: ${result}`;
+  const label = result === "merged"
+    ? t(locale, "replay.attemptMerged")
+    : result === "conflict"
+      ? t(locale, "replay.attemptConflict")
+      : t(locale, "replay.recordedFallback");
+  return locale === "zh-CN" ? `结果：${label}` : `Result: ${label}`;
 }
 
 function renderTextHunkDecisionAudit(attempt: ReplayMergeAttemptVM, locale: WorkHubLocale) {
@@ -215,18 +148,17 @@ function renderTextHunkDecisionAudit(attempt: ReplayMergeAttemptVM, locale: Work
       <span class="wh-pill">${escapeHtml(decisionLabel(locale, decision.decision))}</span>
     </div>`)
     .join("");
-  // L24：原始 64 位十六进制摘要对普通用户是开发者黑话。改为带标签 + 截断展示（完整值留在 title 供核对），
-  // 既保留「这次结果有指纹可校验」的可信度，又不再把一长串乱码糊在用户脸上。
-  const sha = attempt.text_hunk_output_sha256
-    ? `<p class="wh-replay-audit-code" title="${escapeHtml(attempt.text_hunk_output_sha256)}">${escapeHtml(t(locale, "replay.checksumLabel"))} · ${escapeHtml(attempt.text_hunk_output_sha256.slice(0, 12))}…</p>`
+  // A2-49：结果指纹（sha256）对业务用户零信息量，不再有可见文案。值留在 data 属性上，
+  // 取证/自动化仍能读到，界面上不出现一串十六进制。
+  const shaAttribute = attempt.text_hunk_output_sha256
+    ? ` data-replay-text-hunk-output-sha256="${escapeHtml(attempt.text_hunk_output_sha256)}"`
     : "";
-  return `<section class="wh-replay-audit" data-replay-text-hunk-decision-audit="true" data-replay-text-hunk-decision-count="${escapeHtml(String(decisions.length))}">
+  return `<section class="wh-replay-audit" data-replay-text-hunk-decision-audit="true" data-replay-text-hunk-decision-count="${escapeHtml(String(decisions.length))}"${shaAttribute}>
     <div class="wh-replay-audit-head">
       <strong>${escapeHtml(t(locale, "replay.hunkDecisionReplayTitle"))}</strong>
-      <span class="wh-pill">${escapeHtml(uiCount(locale, attempt.text_hunk_count ?? decisions.length, "段", "hunk"))}</span>
+      <span class="wh-pill">${escapeHtml(uiCount(locale, attempt.text_hunk_count ?? decisions.length, "段", "section"))}</span>
     </div>
     <div class="wh-replay-audit-list">${rows}</div>
-    ${sha}
   </section>`;
 }
 
@@ -524,12 +456,13 @@ export interface ReplayRevertDeps {
 const REVERT_ARM_TIMEOUT_MS = 5000;
 
 // data-* 缺失时的兜底文案（正常路径由 renderSnapshots 注入本地化文案，binder 保持 locale 无关）。
+// 兜底也走词典（zh 侧），不在这里内联中文字面量。
 const REVERT_LABEL_FALLBACK = {
-  idle: "撤销此次改动",
-  arm: "确认撤销？再点一次",
-  reverting: "撤销中…",
-  reverted: "已回滚",
-  retry: "撤销失败，点此重试"
+  idle: t("zh-CN", "replay.snapshotRevert"),
+  arm: t("zh-CN", "replay.snapshotRevertArm"),
+  reverting: t("zh-CN", "replay.snapshotReverting"),
+  reverted: t("zh-CN", "replay.snapshotReverted"),
+  retry: t("zh-CN", "replay.snapshotRevertRetry")
 } as const;
 
 export function bindReplayRevertActions(root: ReplayRevertRoot, deps: ReplayRevertDeps): () => void {

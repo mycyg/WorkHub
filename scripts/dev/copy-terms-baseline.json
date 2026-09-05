@@ -14,16 +14,6 @@
     "apps/api/src/services/plugins.ts": {
       "\\bdaemon\\b|\\bmanifest\\b|\\bdiff\\b|\\bfixture\\b|\\bmock\\b|(?<![a-z])dsh(?![a-z]) | 这是界面/主题类插件（声明了 dsh.client），WorkHub 的界面不是同一套技术，装不了。": 1
     },
-    "apps/api/src/services/project-planner.ts": {
-      "物化|materiali[sz]e | 只有已批准的规划草案才能物化。": 2,
-      "物化|materiali[sz]e | 物化时检出依赖成环（judge 漏网），已整体回滚，请重新规划。": 1,
-      "物化|materiali[sz]e | 计划里的依赖存在循环，无法物化，草案已打回。": 1
-    },
-    "apps/api/src/services/proposals.ts": {
-      "UTF-8 | 当前正式文本不可读取或不是 UTF-8 文本。": 1,
-      "UTF-8 | 文本 base 版本不可读取或不是 UTF-8 文本。": 1,
-      "UTF-8 | 这次版本的文本不可读取或不是 UTF-8 文本。": 1
-    },
     "apps/api/src/services/risk-monitor.ts": {
       "调度器|scheduler|主动性|proactivity|巡检|sweep | · 今日风险巡检": 1,
       "调度器|scheduler|主动性|proactivity|巡检|sweep | 今天巡检发现 项风险信号——": 1
@@ -38,23 +28,18 @@
     "apps/api/src/workers/agent-run-prompt.ts": {
       "蒸馏 | 技能纪律：涉及下列交付物类型时，必须先用 load_skill 加载对应技能再动手。技能内容（含团队自蒸馏技能）是库用法、模板与自验步骤的参考——据此使用...": 1
     },
-    "apps/api/src/workers/agent-runner.ts": {
-      "租约|lease | AI 执行租约已恢复，正在重新排队。": 1
-    },
-    "apps/web/src/browser.ts": {
-      "物化|materiali[sz]e | 已物化": 1
-    },
     "apps/web/src/locales.ts": {
-      "(?<![a-z-])trace(?![a-z_]) | This run hasn’t produced a replayable trace yet. Head back to the work item f...": 1,
-      "materiali[sz]e | View details, approve and materialize from the Schedule tab in the desktop app.": 1,
       "正在拉(?!伸)|没拉到|拉不到 | 参与者没拉到，稍后重试。": 1,
       "正在拉(?!伸)|没拉到|拉不到 | 成员摘要没拉到，稍后重试。": 1,
       "正在拉(?!伸)|没拉到|拉不到 | 成员没拉到，稍后重试。": 1,
       "正在拉(?!伸)|没拉到|拉不到 | 暂时没拉到，稍后重试。": 1,
       "正在拉(?!伸)|没拉到|拉不到 | 自定义指令没拉到，稍后重试。": 1,
       "正在拉(?!伸)|没拉到|拉不到 | 邀请没拉到，稍后重试。": 1,
-      "正在拉(?!伸)|没拉到|拉不到 | 预算策略没拉到，稍后重试。": 1,
-      "物化|materiali[sz]e | 查看详情、审批与物化在桌面客户端的日程标签进行。": 1
+      "正在拉(?!伸)|没拉到|拉不到 | 预算策略没拉到，稍后重试。": 1
+    },
+    "apps/web/src/routes-copy.ts": {
+      "(?<![a-z-])trace(?![a-z_]) | Trace": 1,
+      "\\bPM mode\\b|\\bdeprecated\\b | Deprecated": 1
     },
     "packages/agent/src/evaluation/confidence.ts": {
       "AgentRun|agent[-_ ]run(?!_) | 当前 AgentRun 未提供自评": 1
@@ -81,9 +66,6 @@
     "packages/tools/src/skills.ts": {
       "蒸馏 | 按 id 加载一个技能：某类交付物的库用法合同、模板与自验步骤（含团队自蒸馏技能）。涉及对应交付物时必须先加载再动手，库的 API 以技能内容为准、不要凭...": 1
     },
-    "packages/ui/src/gold-path/i18n.ts": {
-      "(?<![a-z-])trace(?![a-z_]) | AI trace preview": 1
-    },
     "packages/ui/src/gold-path/locales.ts": {
       "\\bdispatch runs?\\b|\\bchild runs?\\b|\\btouch drive\\b | No child runs yet.": 1,
       "\\bdispatch runs?\\b|\\bchild runs?\\b|\\btouch drive\\b | Showing the first 100 child runs.": 1,
@@ -92,18 +74,18 @@
       "\\bscheduler\\b|\\bproactivity\\b|\\bSLA sweep\\b | Change your default 1:1 mode, dispatch policy and assistant proactivity right...": 1,
       "派 ?run|dispatch run|子运行|child run | 仅显示前 100 个子运行。": 1,
       "派 ?run|dispatch run|子运行|child run | 暂无子运行。": 1,
-      "派 ?run|dispatch run|子运行|child run | 本军团全部子运行的成本合计": 1,
-      "界面只显示|这里会显示|稍后只展示|会打开.{0,6}详情 | 下面的数字暂时都是 0，因为用量统计还没接好；接入后这里会显示真实成本。": 1,
       "调度器|scheduler|主动性|proactivity|巡检|sweep | 助手主动性": 1,
       "调度器|scheduler|主动性|proactivity|巡检|sweep | 单聊默认档、接单策略与助手主动性在这里就能改，改完立即生效——即使你在「只观察」档也能在这里自救。": 1,
       "调度器|scheduler|主动性|proactivity|巡检|sweep | 调低主动性后：关怀消息不再送达，临期提醒只在真的逾期后发，AI 助手在项目群里也会多等一会儿才开口。": 1
     },
-    "packages/ui/src/gold-path/route-components.ts": {
-      "派 ?run|dispatch run|子运行|child run | 个子运行 ·": 1,
+    "packages/ui/src/gold-path/product-shell-copy.ts": {
+      "(?<![a-z-])trace(?![a-z_]) | Review acceptance, trace, and deliverables.": 1
+    },
+    "packages/ui/src/gold-path/route-components-copy.ts": {
+      "\\bPM mode\\b|\\bdeprecated\\b | Deprecated": 1,
       "调度器|scheduler|主动性|proactivity|巡检|sweep | 今日风险巡检": 1
     },
     "packages/ui/src/i18n.ts": {
-      "\\bPM mode\\b|\\bdeprecated\\b | PM mode": 1,
       "调度器|scheduler|主动性|proactivity|巡检|sweep | 风险巡检摘要": 1
     },
     "packages/ui/src/workitem/locales.ts": {

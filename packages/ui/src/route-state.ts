@@ -1,6 +1,7 @@
 import { normalizeWorkHubLocale, type WorkHubLocale } from "./gold-path/i18n.js";
 
 import { uiCopyT } from "./locales.js";
+import { routeInfo, stateCopy } from "./route-state-copy.js";
 
 export type RouteStateKind = "loading" | "empty" | "error" | "forbidden" | "notFound";
 
@@ -92,114 +93,6 @@ export const routeStateCss = [
   "@media (max-width:980px){.wh-route-state-row{grid-template-columns:1fr}.wh-route-state-route{position:sticky;top:0;z-index:1}}"
 ].join("");
 
-const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; route: string }>> = {
-  "zh-CN": {
-    home: { label: "总览", route: "/" },
-    projects: { label: "项目", route: "/projects" },
-    "project-home": { label: "项目主页", route: "/projects/:id" },
-    "project-timeline": { label: "时间线", route: "/projects/:id/timeline" },
-    intake: { label: "快捷入口", route: "/intake/:sessionId" },
-    approvals: { label: "审批中心", route: "/approvals" },
-    workitem: { label: "工作项详情", route: "/workitems/:id" },
-    proposal: { label: "变更申请", route: "/proposals/:id" },
-    conversation: { label: "会话镜像", route: "/conversations/:id" },
-    drive: { label: "项目网盘", route: "/drive" },
-    meetings: { label: "会议洞察", route: "/meetings" },
-    notifications: { label: "通知中心", route: "/notifications" },
-    calendar: { label: "日程", route: "/calendar" },
-    health: { label: "项目健康", route: "/dashboard/health" },
-    replay: { label: "执行回放", route: "/agent-runs/:id/replay" },
-    cost: { label: "成本仪表盘", route: "/dashboard/cost" },
-    agents: { label: "军团", route: "/dashboard/agents" },
-    knowledge: { label: "证据检索", route: "/knowledge/search" },
-    search: { label: "搜索", route: "/dashboard/search" },
-    skills: { label: "团队技能", route: "/dashboard/skills" },
-    settings: { label: "设置", route: "/settings" },
-    memory: { label: "记忆管理", route: "/settings/memory" }
-  },
-  "en-US": {
-    home: { label: "Overview", route: "/" },
-    projects: { label: "Projects", route: "/projects" },
-    "project-home": { label: "Project home", route: "/projects/:id" },
-    "project-timeline": { label: "Timeline", route: "/projects/:id/timeline" },
-    intake: { label: "Intake", route: "/intake/:sessionId" },
-    approvals: { label: "Approval center", route: "/approvals" },
-    workitem: { label: "Work item detail", route: "/workitems/:id" },
-    proposal: { label: "Change request", route: "/proposals/:id" },
-    conversation: { label: "Conversation mirror", route: "/conversations/:id" },
-    drive: { label: "Project drive", route: "/drive" },
-    meetings: { label: "Meeting insights", route: "/meetings" },
-    notifications: { label: "Notifications", route: "/notifications" },
-    calendar: { label: "Calendar", route: "/calendar" },
-    health: { label: "Project health", route: "/dashboard/health" },
-    replay: { label: "Run replay", route: "/agent-runs/:id/replay" },
-    cost: { label: "Cost dashboard", route: "/dashboard/cost" },
-    agents: { label: "Agent teams", route: "/dashboard/agents" },
-    knowledge: { label: "Evidence search", route: "/knowledge/search" },
-    search: { label: "Search", route: "/dashboard/search" },
-    skills: { label: "Team skills", route: "/dashboard/skills" },
-    settings: { label: "Settings", route: "/settings" },
-    memory: { label: "Memory", route: "/settings/memory" }
-  }
-};
-
-const stateCopy: Record<WorkHubLocale, Record<RouteStateKind, { title: string; body: string; action: string }>> = {
-  "zh-CN": {
-    loading: {
-      title: "正在加载真实数据",
-      body: "正在等待后台返回真实数据，不会显示假的成功或过期内容。",
-      action: "保持等待"
-    },
-    empty: {
-      title: "现在没有需要处理的事项",
-      body: "这里暂时没有内容，可以新建、返回或查看历史。",
-      action: "回到总览"
-    },
-    error: {
-      title: "页面暂时加载失败",
-      body: "已记录出错信息，你可以重试；需要时把这一页发给技术同事帮忙排查。",
-      action: "重试"
-    },
-    forbidden: {
-      title: "你没有权限查看",
-      body: "这部分内容需要授权，请联系有权限的人开通。",
-      action: "申请访问"
-    },
-    notFound: {
-      title: "没有找到这个页面",
-      body: "链接可能已经失效，或这条内容已被删除、移动。",
-      action: "返回首页"
-    }
-  },
-  "en-US": {
-    loading: {
-      title: "Loading real data",
-      body: "The page waits for the backend service instead of showing fake success.",
-      action: "Keep waiting"
-    },
-    empty: {
-      title: "Nothing needs action right now",
-      body: "Empty states stay quiet and leave a create, back, or history entry.",
-      action: "Back to overview"
-    },
-    error: {
-      title: "This page failed to load",
-      body: "The page keeps context and a trace id so users can retry and engineers can debug.",
-      action: "Retry"
-    },
-    forbidden: {
-      title: "You do not have access",
-      body: "The state explains who can grant access without exposing private work.",
-      action: "Request access"
-    },
-    notFound: {
-      title: "We couldn't find this page",
-      body: "The link may be broken, or this item was moved or deleted.",
-      action: "Back to home"
-    }
-  }
-};
-
 function escapeHtml(value: unknown) {
   return String(value ?? "")
     .replace(/&/gu, "&amp;")
@@ -228,8 +121,9 @@ export function renderRouteStateCard(input: RouteStateCardInput) {
   const meta = input.state === "forbidden"
     ? input.ownerLabel ?? (uiCopyT(locale, "needsOwnerApproval"))
     : input.route ?? route.route;
-  const errorFooter = input.state === "error"
-    ? `<p class="wh-route-state-trace" data-route-state-trace="true">${escapeHtml(input.traceId ?? "trace_id=r4-web-route-state")}</p>`
+  // A2-06：没有 traceId 时不再拼一条内部代号兜底串（旧值是轮次代号 + 模块名），整条 footer 不渲染。
+  const errorFooter = input.state === "error" && input.traceId
+    ? `<p class="wh-route-state-trace" data-route-state-trace="true">${escapeHtml(input.traceId)}</p>`
     : "";
   return `<article class="wh-route-state-card" data-route-key="${input.routeKey}" data-route-state="${input.state}" data-locale="${locale}">
     <span class="wh-route-state-pill">${escapeHtml(meta)}</span>

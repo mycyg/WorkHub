@@ -50,6 +50,7 @@ import {
 } from "@workhub/ui";
 
 import { webT } from "./locales.js";
+import { metricLabels, shellPageTitles } from "./routes-copy.js";
 
 export type WebRouteLoadStatus = "idle" | "loading" | "ready" | "empty" | "error" | "forbidden" | "notFound";
 
@@ -617,164 +618,6 @@ const shellDefaultRoutes = {
   memory: "/settings/memory"
 } satisfies Record<GoldPathRenderedPage["key"], string>;
 
-const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"], string>> = {
-  "zh-CN": {
-    home: "总览",
-    projects: "项目",
-    "project-home": "项目主页",
-    "project-timeline": "时间线",
-    // NAMING pass：导航项与所有 CTA（新任务）对齐——「接入」是工程词。
-    intake: "新任务",
-    approvals: "审批",
-    workitem: "任务详情",
-    proposal: "变更申请",
-    conversation: "会话镜像",
-    drive: "项目网盘",
-    meetings: "会议洞察",
-    notifications: "通知中心",
-    calendar: "日程",
-    health: "项目健康",
-    replay: "执行回放",
-    cost: "成本",
-    agents: "军团",
-    knowledge: "知识证据",
-    search: "搜索",
-    skills: "团队技能",
-    settings: "设置",
-    memory: "记忆管理"
-  },
-  "en-US": {
-    home: "Overview",
-    projects: "Projects",
-    "project-home": "Project home",
-    "project-timeline": "Timeline",
-    intake: "New task",
-    approvals: "Approvals",
-    workitem: "Task detail",
-    proposal: "Change request",
-    conversation: "Conversation mirror",
-    drive: "Project drive",
-    meetings: "Meeting insights",
-    notifications: "Notifications",
-    calendar: "Calendar",
-    health: "Project health",
-    replay: "Execution replay",
-    cost: "Cost",
-    agents: "Agent teams",
-    knowledge: "Knowledge evidence",
-    search: "Search",
-    skills: "Team skills",
-    settings: "Settings",
-    memory: "Memory management"
-  }
-};
-
-const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
-  "zh-CN": {
-    primary: "当前焦点",
-    queue: "队列",
-    running: "后台运行",
-    pending: "待处理",
-    requests: "请求",
-    trace: "轨迹",
-    deliverables: "交付物",
-    files: "文件",
-    meetings: "会议",
-    insights: "洞察",
-    unread: "未读",
-    done: "已归档",
-    overdue: "逾期",
-    today: "今日",
-    folders: "文件夹",
-    versions: "版本",
-    evidence: "证据",
-    checks: "检查",
-    comments: "评论",
-    steps: "步骤",
-    decisions: "决策",
-    snapshots: "快照",
-    tokens: "Tokens",
-    cost: "成本",
-    budget: "预算",
-    agentTeams: "军团",
-    autonomy: "自治率",
-    options: "选项",
-    refs: "来源",
-    runtime: "运行时",
-    projects: "项目",
-    attention: "需要关注",
-    critical: "告急",
-    openwork: "进行中",
-    status: "状态",
-    owner: "负责人",
-    archived: "已归档",
-    events: "事项",
-    needsDecision: "需要你决定",
-    resolvedInsights: "已处理洞察",
-    skillsActive: "激活技能",
-    skillsRefined: "已精修",
-    skillsAiAuthored: "AI 撰写",
-    skillsDeprecated: "已停用",
-    memoriesActive: "AI 记住",
-    acceptedDeliverables: "已采纳",
-    activeProjects: "有进展",
-    query: "搜索词",
-    messages: "消息",
-    milestones: "里程碑"
-  },
-  "en-US": {
-    primary: "Focus",
-    queue: "Queue",
-    running: "Background",
-    pending: "Pending",
-    requests: "Requests",
-    trace: "Trace",
-    deliverables: "Deliverables",
-    files: "Files",
-    meetings: "Meetings",
-    insights: "Insights",
-    unread: "Unread",
-    done: "Archived",
-    overdue: "Overdue",
-    today: "Today",
-    folders: "Folders",
-    versions: "Versions",
-    evidence: "Evidence",
-    checks: "Checks",
-    comments: "Comments",
-    steps: "Steps",
-    decisions: "Decisions",
-    snapshots: "Snapshots",
-    tokens: "Tokens",
-    cost: "Cost",
-    budget: "Budget",
-    agentTeams: "Teams",
-    autonomy: "Autonomy",
-    options: "Options",
-    refs: "Sources",
-    runtime: "Runtime",
-    projects: "Projects",
-    attention: "Attention",
-    critical: "Critical",
-    openwork: "Open",
-    status: "Status",
-    owner: "Owner",
-    archived: "Archived",
-    events: "Events",
-    needsDecision: "Needs your decision",
-    resolvedInsights: "Resolved insights",
-    skillsActive: "Active skills",
-    skillsRefined: "Refined",
-    skillsAiAuthored: "AI-authored",
-    skillsDeprecated: "Deprecated",
-    memoriesActive: "AI remembers",
-    acceptedDeliverables: "Accepted",
-    activeProjects: "Active",
-    query: "Query",
-    messages: "Messages",
-    milestones: "Milestones"
-  }
-};
 
 function metric(locale: WorkHubLocale, id: string, value: string): WebProductMetric {
   return {
@@ -984,16 +827,14 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
   if (surface.key === "knowledge") {
     return [
       metric(locale, "refs", String(surface.evidence.evidence_refs.length)),
-      metric(locale, "evidence", surface.evidence.missing_evidence_note ? (webT(locale, "missing")) : (webT(locale, "found"))),
-      metric(locale, "runtime", webT(locale, "liveData"))
+      metric(locale, "evidence", surface.evidence.missing_evidence_note ? (webT(locale, "missing")) : (webT(locale, "found")))
     ];
   }
   if (surface.key === "search") {
-    // 服务端只知道 URL 里的 q（结果由客户端拉取），masthead 如实只报「当前搜索词」+「实时数据」，
+    // 服务端只知道 URL 里的 q（结果由客户端拉取），masthead 如实只报「当前搜索词」，
     // 不编造结果计数（那要等客户端 fetch 完才知道）。
     return [
-      metric(locale, "query", surface.q && surface.q.length > 0 ? surface.q : (webT(locale, "notSet2"))),
-      metric(locale, "runtime", webT(locale, "liveData"))
+      metric(locale, "query", surface.q && surface.q.length > 0 ? surface.q : (webT(locale, "notSet2")))
     ];
   }
   if (surface.key === "skills") {
@@ -1764,7 +1605,6 @@ function renderReadyRoute(
   const routeComponents = routeComponentsForSurface(surface, locale, shellUser?.isAdmin ?? false);
   const shell = renderWebProductShell(rendered, {
     appName: "WorkHub",
-    surfaceLabel: "Web R4",
     apiBaseLabel: apiLabelFor(match),
     currentRoute: match.pathname,
     locale,

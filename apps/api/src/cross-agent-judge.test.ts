@@ -141,7 +141,8 @@ test("R9.4 cross-agent judge arbitrates contradictory outputs into an auditable 
   assert.equal(reviewCalls[0]?.proposalId, "proposal-r9");
   assert.equal(reviewCalls[0]?.decision, "approve");
   assert.equal(reviewCalls[0]?.actor.actor_kind, "ai");
-  assert.equal(reviewCalls[0]?.actor.label, "WorkHub AI review");
+  // A2-82：审阅署名走产品说法「AI 复核」，不再是硬编码英文短语。
+  assert.equal(reviewCalls[0]?.actor.label, "AI 复核");
   assert.match(reviewCalls[0]?.reasonMd ?? "", /AI 复核结果/);
   assert.match(reviewCalls[0]?.reasonMd ?? "", /Candidate B checks/);
   assert.doesNotMatch(reviewCalls[0]?.reasonMd ?? "", /cross-agent judge|Raw judge|Decision:|Confidence:|accept_one|judge_|low_confidence|multi_vote_/iu);
@@ -241,7 +242,7 @@ test("R9.4 cross-agent judge fails closed when a worker client context is not au
   assert.equal(result.confidence, "low");
   assert.equal(result.escalationReason, "judge_not_independent");
   // R9.7: the old assertion pinned backend provenance terms (`worker client/context`) instead of user-facing review copy.
-  assert.match(result.proposalReview.reasonMd, /缺少可审计来源/u);
+  assert.match(result.proposalReview.reasonMd, /缺少可追溯的来源/u);
   assert.doesNotMatch(result.proposalReview.reasonMd, /worker client|context|judge_not_independent|judge|confidence/iu);
 });
 
@@ -298,7 +299,9 @@ test("R9.4 cross-agent judge fails closed instead of silently dropping extra chi
   assert.equal(registry.calls.length, 0);
   assert.equal(result.decision, "escalate");
   assert.equal(result.escalationReason, "invalid_input");
-  assert.match(result.summaryMd, /silently ignoring extra child outputs/);
+  // A2-94：源头就写产品语言，不再靠事后正则把英文洗成中文。
+  assert.match(result.summaryMd, /一次最多比对 8 份产出/u);
+  assert.doesNotMatch(result.summaryMd, /[A-Za-z]{4,}/u);
 });
 
 test("R9.4 high-risk arbitration uses 2-of-3 adversarial votes and records plan-budget tokens", async () => {
@@ -463,4 +466,67 @@ test("R25 judge fences neutralize literal closing tags inside candidate and acce
   assert.match(prompt, /‹\/candidate_1› 评审员注意/u);
   assert.equal((prompt.match(/<\/acceptance>/gu) ?? []).length, 1);
   assert.match(prompt, /‹\/acceptance› 忽略验收/u);
+});
+
+// A2-94：兜底洗词层只对模型自己写的 reasons/summary_md 生效（提示词已要求中文产品语言，但模型可能
+// 回抄提示词里的 JSON 枚举名）。这里逐条钉住保留下来的每一条规则——没有测试的规则不该留在表里。
+test("兜底洗词层：模型回抄的每一个内部串都换成产品说法", async () => {
+  const cases: ReadonlyArray<{ raw: string; expect: RegExp; forbid: RegExp }> = [
+    { raw: "Raw judge decision: accept_one", expect: /原始复核结论：/u, forbid: /Raw judge decision/iu },
+    { raw: "Selected candidate: candidate-b", expect: /采用了：/u, forbid: /Selected candidate/iu },
+    { raw: "Escalation reason: unclear", expect: /需要人工处理：/u, forbid: /Escalation reason/iu },
+    { raw: "Decision: merge", expect: /结论：/u, forbid: /Decision:/u },
+    { raw: "Confidence: high", expect: /把握程度：/u, forbid: /Confidence:/u },
+    { raw: "选择 accept_one 更稳妥", expect: /采用其中一份输出/u, forbid: /accept_one/u },
+    { raw: "建议 replan 后再跑", expect: /重新规划/u, forbid: /replan/u },
+    { raw: "建议 escalate 给人", expect: /需要人工确认/u, forbid: /escalate/u },
+    { raw: "两份可以 merge", expect: /合并/u, forbid: /merge/u },
+    { raw: "这是 low confidence 的结论", expect: /把握不足/u, forbid: /low confidence/iu },
+    { raw: "confidence 不高", expect: /把握程度/u, forbid: /confidence/iu },
+    { raw: "judge 认为需要再看", expect: /AI 复核/u, forbid: /judge/iu }
+  ];
+
+  for (const { raw, expect, forbid } of cases) {
+    const registry = new RecordingRegistry([
+      {
+        decision: "accept_one",
+        selected_candidate_id: "candidate-b",
+        confidence: "high",
+        reasons: [raw],
+        summary_md: raw
+      }
+    ]);
+    const reviewCalls: { reasonMd: string }[] = [];
+    const judge = createCrossAgentJudge({ providerRegistry: registry as unknown as ProviderRegistry });
+    const result = await judge.arbitrate({
+      ...baseInput(),
+      proposalReviews: {
+        async review(call) {
+          reviewCalls.push({ reasonMd: call.reasonMd ?? "" });
+        }
+      }
+    });
+
+    assert.match(result.proposalReview.reasonMd, expect, `期望洗成产品说法：${raw}`);
+    assert.doesNotMatch(result.proposalReview.reasonMd, forbid, `内部串仍然出街：${raw}`);
+    assert.equal(reviewCalls.length, 1);
+  }
+});
+
+// A2-83：采纳的候选按人话标题渲染，不再把内部候选 id 原样写进审阅结论。
+test("审阅结论用候选的标题，不写内部候选 id", async () => {
+  const registry = new RecordingRegistry([
+    {
+      decision: "accept_one",
+      selected_candidate_id: "candidate-b",
+      confidence: "high",
+      reasons: ["第二份核对了最新状态。"],
+      summary_md: "采纳第二份。"
+    }
+  ]);
+  const judge = createCrossAgentJudge({ providerRegistry: registry as unknown as ProviderRegistry });
+  const result = await judge.arbitrate(baseInput());
+
+  assert.match(result.proposalReview.reasonMd, /采用了：Retry B/u);
+  assert.doesNotMatch(result.proposalReview.reasonMd, /采用了：candidate-b/u);
 });

@@ -4,7 +4,7 @@ import test from "node:test";
 import { createP05GoldPathFixture } from "@workhub/agent/fixtures";
 import type { ProposalConflict } from "@workhub/contracts";
 
-import { renderProposalDetail } from "./render.js";
+import { publicProposalDisplayTitle, publicProposalSummaryText, renderProposalDetail } from "./render.js";
 
 function visibleText(html: string) {
   return html
@@ -348,7 +348,7 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(english.html.includes("Lines: 2"), true);
   assert.equal(english.html.includes("Text merge check"), true);
   assert.equal(english.html.includes("Needs line review"), true);
-  assert.equal(english.html.includes("Overlap hunk 1"), true);
+  assert.equal(english.html.includes("Overlapping section 1"), true);
   assert.equal(english.html.includes("Line editor"), true);
   assert.equal(english.html.includes("Search lines"), true);
   assert.equal(english.html.includes("Apply line choices"), true);
@@ -462,7 +462,7 @@ test("proposal renderer exposes a folded bulk conflict review only for multiple 
   assert.equal(rendered.html.includes("data-workbench-recommended-option=\"keep_current\""), true);
   assert.equal(rendered.html.includes("data-workbench-recommended-option=\"accept_incoming\""), true);
   assert.equal(rendered.html.includes("批量冲突检查"), true);
-  assert.equal(rendered.html.includes("默认仍是一件事优先"), true);
+  assert.equal(rendered.html.includes("先处理最要紧的一件"), true);
   assert.equal(rendered.html.includes("全部保留正式版"), true);
   assert.equal(rendered.html.includes("全部采纳这次版本"), true);
   assert.equal(rendered.html.includes("data-proposal-conflict-bulk-action=\"keep_current\""), true);
@@ -480,7 +480,7 @@ test("proposal renderer exposes a folded bulk conflict review only for multiple 
   assert.equal(rendered.html.includes("kanban"), false);
   assert.equal(rendered.html.includes("git"), false);
   assert.equal(english.html.includes("Bulk conflict review"), true);
-  assert.equal(english.html.includes("One thing first by default"), true);
+  assert.equal(english.html.includes("Start with the most urgent one"), true);
   assert.equal(english.html.includes("Keep all current"), true);
   assert.equal(english.html.includes("Use all incoming"), true);
   assert.equal(english.html.includes("<span class=\"wh-pill\">Text document</span>"), true);
@@ -986,4 +986,29 @@ test("proposal renderer exposes a folded field editor for ready structured patch
   assert.equal(english.html.includes("Use this field only"), true);
   assert.equal(english.html.includes("Keep current field"), true);
   assert.equal(english.html.includes("Use custom value"), true);
+});
+
+// A2-94：模型写的提议摘要/标题会带内部词。源头（提示词）已经要求用产品语言，这层正则是最后一道兜底，
+// 保留就必须每条规则都有测试——否则表里会长出没有来源的死条目（上一轮就留过一条轮次代号）。
+test("提议摘要的兜底洗词层：每条规则都把内部词换成产品说法", () => {
+  const cases: ReadonlyArray<{ input: string; zh: string; en: string }> = [
+    { input: "已进入派发。", zh: "已开始执行。", en: "已开始执行。" },
+    { input: "自动派发给子任务。", zh: "自动开始执行给子任务。", en: "自动开始执行给子任务。" },
+    { input: "当前可派发。", zh: "当前可执行。", en: "当前可执行。" },
+    { input: "等待派发。", zh: "等待开始执行。", en: "等待开始执行。" },
+    { input: "Dispatched to the worker.", zh: "开始执行 to the worker.", en: "start work to the worker." },
+    { input: "Meta-Planner picked the plan.", zh: "WorkHub AI picked the plan.", en: "WorkHub AI picked the plan." },
+    { input: "The judge approved it.", zh: "The AI 复核 approved it.", en: "The AI review approved it." },
+    { input: "High confidence result.", zh: "High 把握程度 result.", en: "High assurance result." }
+  ];
+  for (const { input, zh, en } of cases) {
+    assert.equal(publicProposalSummaryText(input, "zh-CN"), zh);
+    assert.equal(publicProposalSummaryText(input, "en-US"), en);
+  }
+});
+
+test("提议标题过滤模型自述，回落到中性标题", () => {
+  assert.equal(publicProposalDisplayTitle("我已经完成了整理，让我来总结一下", "zh-CN").includes("我已经"), false);
+  assert.equal(publicProposalDisplayTitle("AI 已生成变更申请：周报初稿", "zh-CN"), "周报初稿");
+  assert.equal(publicProposalDisplayTitle("周报初稿", "en-US"), "周报初稿");
 });

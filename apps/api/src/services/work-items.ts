@@ -62,6 +62,7 @@ import {
 import type { AuthActor } from "../middleware/auth.js";
 import { parseOutputContract } from "../pages/output-contract.js";
 import { acceptedDeliverableToVm } from "./accepted-deliverables.js";
+import { serviceT } from "./locales.js";
 import { getDefaultProviderRegistry } from "./provider-registry.js";
 import { checkEntryLlmBudget, entryLlmBudgetExceededMessage } from "./entry-llm-budget.js";
 
@@ -289,18 +290,18 @@ const workItemCopy: Record<WorkHubLocale, Record<WorkItemCopyKey, string>> = {
     "question.confirm.evidence.description": "先从项目历史、文档和任务里找依据。",
     "question.confirm.adjust.label": "调整范围",
     "question.confirm.adjust.description": "回到上一步补充澄清回答。",
-    "question.clarify.title": "需要先确认一个关键点",
+    "question.clarify.title": serviceT("zh-CN", "clarifyTitleFallback"),
     "question.clarify.placeholder": "直接补一句：必须依据的文件、目标读者、输出形式或验收口径。",
     "question.scope.title": "这件事先按哪种交付方式处理？",
     "question.scope.document.label": "文档/方案草稿",
-    "question.scope.document.description": "适合周报、方案、说明书、PR 式变更说明。",
-    "question.scope.document.impact": "第一阶段只改文件、不动别的东西，风险最低。",
+    "question.scope.document.description": serviceT("zh-CN", "scopeDocumentDescription"),
+    "question.scope.document.impact": serviceT("zh-CN", "scopeDocumentImpact"),
     "question.scope.data.label": "结构化数据",
     "question.scope.data.description": "适合 JSON、YAML、CSV、配置或表格分析。",
     "question.scope.data.impact": "会保留字段级证据和回滚点。",
     "question.scope.code.label": "小型代码/模板",
     "question.scope.code.description": "适合低风险代码片段、模板或配置改动。",
-    "question.scope.code.impact": "需要通过快照、测试和审批。",
+    "question.scope.code.impact": serviceT("zh-CN", "scopeCodeImpact"),
     "question.scope.ai.label": "让 AI 判断",
     "question.scope.ai.description": "我会按证据和风险选择最稳的交付路径。",
     "question.scope.ai.impact": "不用打字，点选就行。",
@@ -326,12 +327,12 @@ const workItemCopy: Record<WorkHubLocale, Record<WorkItemCopyKey, string>> = {
     "question.confirm.evidence.description": "Search project history, documents, and related tasks first.",
     "question.confirm.adjust.label": "Adjust scope",
     "question.confirm.adjust.description": "Go back and refine the clarification answer.",
-    "question.clarify.title": "One key detail to confirm",
+    "question.clarify.title": "Which material should this be based on?",
     "question.clarify.placeholder": "Add the required file, audience, output shape, or acceptance criteria.",
     "question.scope.title": "Which delivery path should this use first?",
     "question.scope.document.label": "Document / plan draft",
-    "question.scope.document.description": "Best for reports, plans, manuals, and PR-style change notes.",
-    "question.scope.document.impact": "Lowest risk: the first stage only touches files, nothing else.",
+    "question.scope.document.description": "Good for weekly updates, proposals, specs and change notes.",
+    "question.scope.document.impact": "Only files change — nothing else is touched, so the risk is lowest.",
     "question.scope.data.label": "Structured data",
     "question.scope.data.description": "Best for JSON, YAML, CSV, configuration, or spreadsheet analysis.",
     "question.scope.data.impact": "Keeps field-level evidence and rollback points.",
@@ -485,7 +486,7 @@ function acceptanceItemsFromClarification(locale: WorkHubLocale | undefined) {
 
 function titleFromIntent(intentText: string | undefined) {
   const compact = compactText(intentText, 64);
-  return compact ?? "待澄清事项";
+  return compact ?? serviceT("zh-CN", "pendingClarification");
 }
 
 // R10-0c：澄清草稿升级为「选项优先」契约——LLM 给出 2-4 个可点选的具体答案候选（含推荐项），
@@ -983,7 +984,7 @@ function clarificationDraftMissingError(locale: WorkHubLocale): WorkItemServiceE
     "clarification_draft_missing",
     locale === "en-US"
       ? "The clarification question for this session is missing or out of date. Retry generating it by restarting intake for this work item."
-      : "这个会话的澄清反问还没生成或已失效。请重新进入该事项的接入流程，重试生成澄清反问。"
+      : serviceT("zh-CN", "clarifyQuestionGone")
   );
 }
 
@@ -1130,7 +1131,7 @@ function canReadWorkItemAccessRow(
 function assertCanReadDetail(rows: StoredWorkItemDetailRows, actor: AuthActor) {
   const allowed = canReadWorkItemAccessRow(detailToWorkItemAccessRecord(rows), actor);
   if (!allowed) {
-    throw new WorkItemServiceError(403, "forbidden", "你没有权限查看这个事项。");
+    throw new WorkItemServiceError(403, "forbidden", serviceT("zh-CN", "taskViewForbidden"));
   }
 }
 
@@ -1170,14 +1171,14 @@ function assertCanMutateWorkItemRows(rows: StoredWorkItemDetailRows, actor: Auth
   if (canMutateWorkItem(rows, actor)) {
     return;
   }
-  throw new WorkItemServiceError(403, "forbidden", "你没有权限修改这个事项。");
+  throw new WorkItemServiceError(403, "forbidden", serviceT("zh-CN", "taskEditForbidden"));
 }
 
 function assertCanMutateWorkItemArtifacts(rows: StoredWorkItemDetailRows, actor: AuthActor) {
   if (canMutateWorkItem(rows, actor)) {
     return;
   }
-  throw new WorkItemServiceError(403, "forbidden", "你没有权限修改这个事项的正式交付物。");
+  throw new WorkItemServiceError(403, "forbidden", serviceT("zh-CN", "taskDeliverableEditForbidden"));
 }
 
 function toWorkItemVm(row: WorkItemRow): WorkItem {
@@ -1820,7 +1821,7 @@ function sessionVmFor(
 }
 
 function handleMissingWorkItem(): never {
-  throw new WorkItemServiceError(404, "not_found", "没有找到这个事项。");
+  throw new WorkItemServiceError(404, "not_found", serviceT("zh-CN", "taskNotFound"));
 }
 
 export function createDbWorkItemService(repository: WorkItemDataRepository, options: ServiceOptions = {}): WorkItemService {
@@ -2136,7 +2137,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         submitterUserId: input.actor.userId ?? input.actor.id,
         title,
         rawDescription: input.payload.intent_text ?? title,
-        summaryMd: input.payload.intent_text ? `待澄清：${input.payload.intent_text}` : "待澄清事项。",
+        summaryMd: input.payload.intent_text ? `待澄清：${input.payload.intent_text}` : serviceT("zh-CN", "pendingClarificationSentence"),
         status: "ai_clarifying",
         at: now()
       });
@@ -2316,7 +2317,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
           throw new WorkItemServiceError(
             409,
             "workitem_state_conflict",
-            "这个事项的当前状态不允许重新定稿；若刚提交过新的澄清回答，请刷新后重试。"
+            serviceT("zh-CN", "taskCannotRefinalize")
           );
         }
         await repository.insertChatMessage({
@@ -2429,7 +2430,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         projectContext = project;
       } else if (!input.actor.isAdmin) {
         // 既无工单也无项目 = 全局检索，非管理员禁止（避免泄露全部项目资料）。
-        throw new WorkItemServiceError(403, "forbidden", "请在具体事项或项目内检索。");
+        throw new WorkItemServiceError(403, "forbidden", serviceT("zh-CN", "knowledgeSearchScopeRequired"));
       }
       const query = input.payload.query ?? input.payload.q;
       const searchInput: Parameters<WorkItemDataRepository["searchKnowledge"]>[0] = {};
@@ -2627,8 +2628,8 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
       workspace_id: "00000000-0000-4000-8000-000000000002",
       submitter_user_id: input.actor.userId ?? input.actor.id,
       title: input.title ?? titleFromIntent(input.rawDescription),
-      raw_description: input.rawDescription ?? input.title ?? "待澄清事项。",
-      summary_md: input.rawDescription ?? input.title ?? "待澄清事项。",
+      raw_description: input.rawDescription ?? input.title ?? serviceT("zh-CN", "pendingClarificationSentence"),
+      summary_md: input.rawDescription ?? input.title ?? serviceT("zh-CN", "pendingClarificationSentence"),
       status: input.status,
       priority: "normal",
       sync_state: "pending",

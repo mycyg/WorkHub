@@ -1,6 +1,8 @@
 import type { WorkHubLocale } from "@workhub/ui/gold-path";
 import { escapeHtml, safeHref } from "@workhub/web-runtime";
 
+import { webT } from "./locales.js";
+
 export type DrivePreviewPayload = {
   filename?: string | undefined;
   mime?: string | undefined;
@@ -31,10 +33,11 @@ function drivePreviewTypeLabel(previewType: string | undefined, locale: WorkHubL
     return "";
   }
   if (normalized === "text") {
-    return locale === "en-US" ? "Text preview" : "文本预览";
+    return webT(locale, "textPreview");
   }
   if (normalized === "cached_text") {
-    return locale === "en-US" ? "Cached text preview" : "缓存文本预览";
+    // A2-59：「缓存」是取数来源的实现细节，对用户与普通文本预览没有区别。
+    return webT(locale, "textPreview");
   }
   return locale === "en-US" ? "Preview available" : "可预览";
 }

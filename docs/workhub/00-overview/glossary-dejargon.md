@@ -309,3 +309,35 @@ WorkHub 有**两套词汇**,且必须严格分层:
 10. 机械可查的部分由 `pnpm audit:copy-terms` 守(禁词表在 `scripts/dev/check-copy-terms.ts`,中文表跑全部扫描目标、英文表跑词典文件);词典独占由 `pnpm audit:ui-i18n` 守。
 
 > **一句话收尾**:内部我们用 GitHub 的精确;对用户,我们只说「AI 拟好了,确认?」。这张表就是这两个世界之间唯一的翻译官。
+
+---
+
+## 11. 用户面权威用词(同一概念只有一个说法)
+
+同一个东西在界面上只能有一个名字。下表左列是概念,中间两列是**唯一**允许出现在用户面(UI、通知、AI 输出、交付物)的中英说法,右列是**不得再出现**的其它叫法。内部代码标识符、数据库字段、事件名不受本表约束。
+
+| 概念 | 用户面(中) | 用户面(英) | 不再使用 |
+|---|---|---|---|
+| WorkItem | **任务** | **Task** | 工作项、事项、工单、需求单 |
+| TaskPlan / 子任务集合 | **任务计划** | **Task plan** | 执行计划、拆解计划 |
+| AgentRun | **这次执行** | **This run** | AgentRun、run、跑批 |
+| Agent army / task plan dashboard | **AI 小组** | **AI teams** | 军团、智能代理军团、指挥台、代理军团 |
+| Snapshot | **还原点** | **Restore point** | 快照、snapshot、存档 |
+| Autonomy ratio | **自主率** | **Autonomy** | 自治率、自动化率 |
+| Proposal | **变更申请** | **Change request** | Proposal、提议、合并请求 |
+| Replay | **回放** | **Replay** | trace、轨迹、执行轨迹 |
+| Invite token | **邀请码** | **Invite code** | 令牌、token、邀请令牌 |
+| Token(计费单位) | (不出现在用户面,只说钱) | (same) | 令牌、tokens |
+| Materialize | **生成任务** | **Create the tasks** | 物化 |
+| Link objective ↔ work item | **关联** | **Link** | 挂链、挂接、挂上去 |
+| Escalation routing | **指派审批人** | **Assign an approver** | 路由、未路由、已路由 |
+| Dispatch a run | **开始执行** | **Start** | 派发、下发、投递 |
+| AI reviewer(cross-agent judge) | **AI 复核** | **AI review** | judge、判官、WorkHub AI review |
+| Full autonomy level | **全托管** | **Full autonomy** | 第 5 档、L5、五档 |
+| Human-reserved | **只能人来做** | **People-only** | 人工保留、human_reserved |
+| Deliverable(网盘里的产出文件) | **交付物** | **Deliverable** | 产出物、产物、artifact |
+
+> 补充规则:
+> - 「AI 小组」下的单个执行单位对用户叫 **子任务**(subtask),不叫 worker/agent/工人。
+> - 状态徽章一律走 §7 的标签映射;映射缺失时用该维度的中性词(如「其他状态」),**不得**把枚举原样摊平。
+> - 界面里出现的人,一律用昵称;拿不到昵称时说「其他成员」「已停用成员」,**不得**显示 id 前缀。

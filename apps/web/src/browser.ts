@@ -165,7 +165,7 @@ import {
   WORKSPACE_AUDIT_PAGE_SIZE
 } from "./workspace-audit.js";
 
-import { webT } from "./locales.js";
+import { webT, webTf } from "./locales.js";
 
 const root = document.getElementById("root");
 const liveLastEventIdStorageKey = "workhub.live.lastEventId";
@@ -947,9 +947,7 @@ function bindGoldPathNavigation(
               ? (locale === "en-US"
                 ? "Handed off — this decision now waits on them."
                 : "已转交，这件事改由对方拿主意。")
-              : (locale === "en-US"
-                ? "Approval handed off — it now routes to them."
-                : "已转交，这条审批会路由给对方处理。"));
+              : webT(locale, "approvalHandedOffToThem"));
           showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, summary, "delegate_approval"));
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, "delegate_approval"));
@@ -2047,7 +2045,7 @@ function bindGoldPathNavigation(
         }
         return;
       }
-      // B-R9.6 §3.1：军团面板「暂停派发/恢复派发」。成功后原地翻转按钮（暂停↔恢复）+
+      // B-R9.6 §3.1：AI 小组面板「暂停执行/恢复执行」。成功后原地翻转按钮（暂停↔恢复）+
       // 同步面板状态标记，不整页重取（M12：全量 refetch 会破 loader/SSE smoke 门）。
       const planDispatchAction = taskPlanDispatchActionFromHref(href);
       if (planDispatchAction) {
@@ -2061,16 +2059,16 @@ function bindGoldPathNavigation(
           if (!actionTarget.isConnected) {
             await renderCurrentRoute(client, locale);
             showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, planDispatchAction.action === "pause"
-              ? (locale === "en-US" ? "Dispatch paused." : "已暂停派发。")
-              : (locale === "en-US" ? "Dispatch resumed." : "已恢复派发。"), actionId));
+              ? webT(locale, "aiTeamPaused2")
+              : webT(locale, "aiTeamResumed2"), actionId));
             return;
           }
           actionTarget.setAttribute("href", `/api/task-plans/${encodeURIComponent(planDispatchAction.planId)}/${nextKind}`);
           actionTarget.dataset.actionId = `${nextKind}_dispatch`;
           actionTarget.dataset.r9AgentTeamDispatchControl = nextKind;
           actionTarget.textContent = nextKind === "resume"
-            ? (locale === "en-US" ? "Resume dispatch" : "恢复派发")
-            : (locale === "en-US" ? "Pause dispatch" : "暂停派发");
+            ? webT(locale, "resumeTeam")
+            : webT(locale, "pauseTeam");
           const panel = actionTarget.closest<HTMLElement>("[data-r9-agent-team-panel]");
           panel?.setAttribute("data-r9-agent-team-status", result.status);
           // UX 审计（M3）：按钮翻了、标题还喊「推进中」在撒谎——头行随状态一起改写。
@@ -2079,12 +2077,12 @@ function bindGoldPathNavigation(
             const ratioMatch = /(\d+\/\d+)/u.exec(heading.textContent ?? "");
             const ratio = ratioMatch?.[1] ?? "";
             heading.textContent = result.status === "paused"
-              ? (locale === "en-US" ? `Team paused ${ratio}` : `军团已暂停 ${ratio}`).trim()
-              : (locale === "en-US" ? `Team in progress ${ratio}` : `军团进行中 ${ratio}`).trim();
+              ? webTf(locale, "aiTeamPausedRatio", { ratio }).trim()
+              : webTf(locale, "aiTeamInProgressRatio", { ratio }).trim();
           }
           const body = planDispatchAction.action === "pause"
-            ? (locale === "en-US" ? "Dispatch paused — running subtasks will finish, no new ones start." : "已暂停派发——在跑的子任务会跑完，不再派新的。")
-            : (locale === "en-US" ? "Dispatch resumed — ready subtasks are being sent out." : "已恢复派发——就绪的子任务正在派出。");
+            ? webT(locale, "pausedRunningSubtasksFinish")
+            : webT(locale, "resumedReadySubtasksStarting");
           showRouteNotice(shellRoot, actionSuccessNotice(locale, body, actionId));
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
@@ -2729,7 +2727,7 @@ function bindProjectHomePlansPanel(
       pending_review: ["待审阅", "Pending review"],
       approved: ["已批准", "Approved"],
       rejected: ["已驳回", "Rejected"],
-      materialized: ["已物化", "Materialized"]
+      materialized: [webT("zh-CN", "planDraftTasksCreated"), webT("en-US", "planDraftTasksCreated")]
     };
     const hit = map[status];
     return hit ? (zh ? hit[0] : hit[1]) : status;

@@ -13,6 +13,8 @@ import {
 } from "@workhub/db";
 import { topics } from "@workhub/events";
 
+import { serviceT, serviceTf } from "./locales.js";
+
 import { getDefaultPushBus } from "../broker/index.js";
 import type { PushBus } from "../broker/types.js";
 
@@ -140,7 +142,7 @@ export function classifyHumanReservedToolCall(input: Pick<HumanReservedToolCall,
 }
 
 function buildHumanReservedReason(row: WorkItemHumanReservedRow, fallbackTitle?: string) {
-  return `这个事项「${titleFor(row, fallbackTitle)}」已标记为人工处理。我不会让 AI 工人自动施工，已经把它转给人来接手。`;
+  return serviceTf("zh-CN", "humanReservedHandoff", { title: titleFor(row, fallbackTitle) });
 }
 
 const toolRiskLabels: Record<HumanReservedToolRiskCategory, string> = {
@@ -164,14 +166,14 @@ function toolInputShape(input: unknown) {
 
 function buildHighRiskToolReason(row: WorkItemHumanReservedRow, toolCall: HumanReservedToolCall, category: HumanReservedToolRiskCategory, fallbackTitle?: string) {
   const label = toolRiskLabels[category];
-  return `这个事项「${titleFor(row, fallbackTitle)}」请求执行${label}类高风险动作。我已经停止自动工具调用，并转给人确认。`;
+  return serviceTf("zh-CN", "humanReservedHighRisk", { title: titleFor(row, fallbackTitle), category: label });
 }
 
 function humanReservedHandoff(row: WorkItemHumanReservedRow) {
   return {
-    done: ["已识别该事项被标记为人工处理。"],
-    todo: ["请负责人确认接手人和下一步计划。"],
-    blockers: ["用户明确不让 AI 工人自动施工。"],
+    done: [serviceT("zh-CN", "humanReservedDone")],
+    todo: [serviceT("zh-CN", "humanReservedOwnerNext")],
+    blockers: [serviceT("zh-CN", "humanReservedBlocker")],
     artifacts: [],
     source: "work_item",
     work_item: {
@@ -184,9 +186,9 @@ function humanReservedHandoff(row: WorkItemHumanReservedRow) {
 
 function highRiskToolHandoff(row: WorkItemHumanReservedRow, toolCall: HumanReservedToolCall, category: HumanReservedToolRiskCategory, agentRunId?: string) {
   return {
-    done: [`已拦截${toolRiskLabels[category]}类高风险工具调用。`],
-    todo: ["请负责人确认是否允许该动作，并由人执行或改写任务边界。"],
-    blockers: ["法务、财务、身份、对外发布、外部系统类高风险动作不能由 AI 工人自动执行。"],
+    done: [serviceTf("zh-CN", "highRiskToolDone", { category: toolRiskLabels[category] })],
+    todo: [serviceT("zh-CN", "highRiskToolTodo")],
+    blockers: [serviceT("zh-CN", "highRiskToolBlocker")],
     artifacts: [],
     source: "tool_call",
     risk_category: category,
