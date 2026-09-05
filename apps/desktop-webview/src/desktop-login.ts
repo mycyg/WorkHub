@@ -194,22 +194,35 @@ export async function runDesktopBootstrapWithLock<T>(input: {
 // desktop-bootstrap 仍然 404，就地切到凭据门，不需要用户自己诊断。
 export type DesktopAuthModeProbeClient = Pick<WorkHubApiClient, "request">;
 
+// R24 S5（N-02 根治）：探测结果必须能分清「可达但探不到已知 auth_mode」与「根本连不上」——旧版把
+// 两者一律折叠成 null，resolveDesktopFirstRunGate 只能按「大概率是老服务端」赌成 nickname 模式。
+// 真机复验（r24-S5-reverify.md N-02）证实：后端完全不可达时（关着/装错地址/断网）也会走同一条
+// 折叠路径，用户被直接扔进一张注定连不上的昵称/凭据登录门，而全仓这时候没有任何入口能填服务器
+// 地址——连接服务器屏只在 gate === "offline" 时才会渲（desktopBootScreenForGate），可探测函数从
+// 没产出过这个信号。现在拆成两态：reachable:true（不管 mode 认不认识，"探到了"这件事本身是确定
+// 的）与 reachable:false（request() 抛出的任何异常——网络错误/超时/非 2xx/2xx 但读不出 JSON，
+// 共同点是"没能从这台地址拿到一个可信应答"，调用方不需要也不应该再细分错误子类型）。
+export type DesktopAuthModeProbeResult =
+  | { reachable: true; mode: "nickname" | "password" | "hybrid" | null }
+  | { reachable: false };
+
 export async function probeDesktopAuthMode(
   client: DesktopAuthModeProbeClient
-): Promise<"nickname" | "password" | "hybrid" | null> {
+): Promise<DesktopAuthModeProbeResult> {
   try {
     // client.health() 的 HealthResponse 类型暂未收纳 auth_mode（并行 S3 施工中）——按可选字段防御性读取，
     // 不等它落地也能工作；一旦类型补上，这行不用改（结构上仍然兼容）。
     const response = await client.request<{ auth_mode?: unknown }>("/api/health");
     const mode = response?.auth_mode;
-    return mode === "nickname" || mode === "password" || mode === "hybrid" ? mode : null;
+    return { reachable: true, mode: mode === "nickname" || mode === "password" || mode === "hybrid" ? mode : null };
   } catch {
-    // 网络错误/后端不可达：探测失败，不确定——调用方按「不确定」处理，不当成任何一种确定模式。
-    return null;
+    // 网络错误/超时/非 2xx/应答读不出 JSON：探测失败，且这次是"连不上"而不是"连上了但不认识"——
+    // 调用方必须能分辨这两件事（见上方类型注释），不能再一律折叠成同一个 null。
+    return { reachable: false };
   }
 }
 
-export type DesktopFirstRunGate = "needs-credentials" | "logged-out";
+export type DesktopFirstRunGate = "needs-credentials" | "logged-out" | "offline";
 
 export async function resolveDesktopFirstRunGate(input: {
   client: DesktopAuthModeProbeClient;
@@ -223,16 +236,24 @@ export async function resolveDesktopFirstRunGate(input: {
     return "logged-out";
   }
   const probed = await probeDesktopAuthMode(input.client);
-  if (probed === "password" || probed === "hybrid") {
+  if (!probed.reachable) {
+    // 不可达：不确定的事不能赌成"就是昵称模式"——回 offline。ensureDesktopClientToken /
+    // ensureWorkbenchClientToken（browser.ts / workbench/boot.ts）里"非 needs-credentials/
+    // logged-out 的 gate 一律落到无 token 时返回 offline"这条既有兜底，会让 desktopBootScreenForGate
+    // 浮出 connect-server 屏——不需要改这两个 boot 入口，offline 已经是它们认识的值。
+    return "offline";
+  }
+  if (probed.mode === "password" || probed.mode === "hybrid") {
     rememberDesktopAuthModeHint(input.storage, "password");
     return "needs-credentials";
   }
-  if (probed === "nickname") {
+  if (probed.mode === "nickname") {
     rememberDesktopAuthModeHint(input.storage, "nickname");
   }
-  // probed === null（探测失败/服务端太旧没有这个字段）：按 nickname 处理——本仓库默认模式，猜错时
-  // 提交环节的 404 兜底（见上方模块顶注）比预先假定密码模式、把 LAN 信任模式的用户扔进陌生的邮箱
-  // 密码表单更安全（同 apps/web/src/auth-screen-mode.ts 的 detectAuthScreenMode 同一取舍）。
+  // probed.mode === null（可达，但探不到这个字段——老服务端没有 auth_mode）：按 nickname 处理——
+  // 本仓库默认模式，猜错时提交环节的 404 兜底（见上方模块顶注）比预先假定密码模式、把 LAN 信任
+  // 模式的用户扔进陌生的邮箱密码表单更安全（同 apps/web/src/auth-screen-mode.ts 的
+  // detectAuthScreenMode 同一取舍）。
   return "logged-out";
 }
 
@@ -250,7 +271,7 @@ export async function resolveDesktopFirstRunGateWithLock(input: {
   lockTtlMs?: number;
   waitMs?: number;
   pollMs?: number;
-}): Promise<DesktopFirstRunGate | "ready" | "offline"> {
+}): Promise<DesktopFirstRunGate | "ready"> {
   const locked = await runDesktopBootstrapWithLock({
     storage: input.storage,
     readToken: input.readToken,

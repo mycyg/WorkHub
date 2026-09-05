@@ -468,13 +468,43 @@ function fakeAuthModeProbeClient(response: unknown, error?: unknown) {
   };
 }
 
-test("probeDesktopAuthMode reads a valid auth_mode off /api/health and rejects junk/missing values", async () => {
-  assert.equal(await probeDesktopAuthMode(fakeAuthModeProbeClient({ auth_mode: "password" })), "password");
-  assert.equal(await probeDesktopAuthMode(fakeAuthModeProbeClient({ auth_mode: "hybrid" })), "hybrid");
-  assert.equal(await probeDesktopAuthMode(fakeAuthModeProbeClient({ auth_mode: "nickname" })), "nickname");
-  assert.equal(await probeDesktopAuthMode(fakeAuthModeProbeClient({ auth_mode: "bogus" })), null);
-  assert.equal(await probeDesktopAuthMode(fakeAuthModeProbeClient({})), null);
-  assert.equal(await probeDesktopAuthMode(fakeAuthModeProbeClient(undefined, new Error("offline"))), null);
+// R24 S5（N-02 根治）：probeDesktopAuthMode 现在回三态而不是一个可能是 null 的字符串——「可达 + 认识
+// 的 mode」「可达 + 不认识/缺字段（老服务端）」「根本不可达」必须能互相区分,见 desktop-login.ts 顶注。
+test("probeDesktopAuthMode reads a valid auth_mode off /api/health when reachable", async () => {
+  assert.deepEqual(await probeDesktopAuthMode(fakeAuthModeProbeClient({ auth_mode: "password" })), {
+    reachable: true,
+    mode: "password"
+  });
+  assert.deepEqual(await probeDesktopAuthMode(fakeAuthModeProbeClient({ auth_mode: "hybrid" })), {
+    reachable: true,
+    mode: "hybrid"
+  });
+  assert.deepEqual(await probeDesktopAuthMode(fakeAuthModeProbeClient({ auth_mode: "nickname" })), {
+    reachable: true,
+    mode: "nickname"
+  });
+});
+
+test("probeDesktopAuthMode is reachable but mode:null for a junk/missing field (old server that answers but doesn't know auth_mode)", async () => {
+  assert.deepEqual(await probeDesktopAuthMode(fakeAuthModeProbeClient({ auth_mode: "bogus" })), {
+    reachable: true,
+    mode: null
+  });
+  assert.deepEqual(await probeDesktopAuthMode(fakeAuthModeProbeClient({})), { reachable: true, mode: null });
+});
+
+test("probeDesktopAuthMode reports reachable:false for a network error, a timeout, and a non-2xx status alike", async () => {
+  assert.deepEqual(await probeDesktopAuthMode(fakeAuthModeProbeClient(undefined, new TypeError("Failed to fetch"))), {
+    reachable: false
+  });
+  assert.deepEqual(
+    await probeDesktopAuthMode(fakeAuthModeProbeClient(undefined, new WorkHubApiError(408, "request_timeout", "timed out"))),
+    { reachable: false }
+  );
+  assert.deepEqual(
+    await probeDesktopAuthMode(fakeAuthModeProbeClient(undefined, new WorkHubApiError(502, "http_error", "bad gateway"))),
+    { reachable: false }
+  );
 });
 
 test("resolveDesktopFirstRunGate trusts a remembered hint before probing the network", async () => {
@@ -506,11 +536,22 @@ test("resolveDesktopFirstRunGate probes and remembers nickname as the logged-out
   assert.equal(values.get("workhub_auth_mode"), "nickname");
 });
 
-test("resolveDesktopFirstRunGate defaults to the nickname rebind screen when the probe is inconclusive (old server / offline)", async () => {
+test("resolveDesktopFirstRunGate defaults to the nickname rebind screen when reachable but the server is too old to know auth_mode", async () => {
   const { storage, values } = fakeReadWriteStorage();
-  const client = fakeAuthModeProbeClient(undefined, new Error("offline"));
+  const client = fakeAuthModeProbeClient({});
   assert.equal(await resolveDesktopFirstRunGate({ client, storage }), "logged-out");
   // 探测失败不落任何 hint——不确定的事不该被当成确定的记下来。
+  assert.equal(values.get("workhub_auth_mode"), undefined);
+});
+
+// R24 S5（N-02 根治）：这是被真机复验揪出来的回归——旧代码把"根本连不上"跟上面那条"老服务端可达但
+// 缺字段"混成同一个分支,都猜成 nickname,把用户扔进一张注定连不上的登录门。现在必须回 offline，
+// 让 ensureDesktopClientToken/ensureWorkbenchClientToken 的既有兜底浮出连接服务器屏。
+test("resolveDesktopFirstRunGate returns offline when the backend is unreachable (network error/timeout/non-2xx)", async () => {
+  const { storage, values } = fakeReadWriteStorage();
+  const client = fakeAuthModeProbeClient(undefined, new TypeError("Failed to fetch"));
+  assert.equal(await resolveDesktopFirstRunGate({ client, storage }), "offline");
+  // 不可达同样不落任何 hint——它甚至比"探到了但不认识"更不确定。
   assert.equal(values.get("workhub_auth_mode"), undefined);
 });
 
@@ -551,6 +592,22 @@ test("resolveDesktopFirstRunGateWithLock falls back to offline when the lock sta
     },
     waitMs: 500,
     pollMs: 100
+  });
+  assert.equal(result, "offline");
+});
+
+// R24 S5（N-02 根治）：与上面那条不同——这里锁是空的（这扇窗口自己抢到并真的跑了探测），
+// offline 来自 resolveDesktopFirstRunGate 本身探测不可达，不是锁超时兜底。两条路径都会落到同一个
+// "offline"值,但走的是完全不同的代码分支,分开断言防止其中一条悄悄失效而不被发现。
+test("resolveDesktopFirstRunGateWithLock propagates offline when this window wins the lock but the backend is unreachable", async () => {
+  const h = lockTestHarness();
+  const client = fakeAuthModeProbeClient(undefined, new TypeError("Failed to fetch"));
+  const result = await resolveDesktopFirstRunGateWithLock({
+    client,
+    storage: h.storage,
+    readToken: () => undefined,
+    now: h.now,
+    sleep: h.sleep
   });
   assert.equal(result, "offline");
 });
