@@ -411,7 +411,7 @@ test("clicking a locale option syncs the native shell via set_shell_locale befor
     const reloadCalls: number[] = [];
     const storageCalls: Array<{ key: string; value: string }> = [];
 
-    const globals = globalThis as typeof globalThis & { __TAURI__?: unknown; window?: unknown };
+    const globals = globalThis as unknown as { __TAURI__?: unknown; window?: unknown };
     const originalTauri = globals.__TAURI__;
     const originalWindow = globals.window;
     globals.__TAURI__ = {
@@ -484,7 +484,7 @@ test("clicking a locale option still reloads when no Tauri invoke is available (
     const vm = settingsVm();
     const reloadCalls: number[] = [];
 
-    const globals = globalThis as typeof globalThis & { __TAURI__?: unknown; window?: unknown };
+    const globals = globalThis as unknown as { __TAURI__?: unknown; window?: unknown };
     const originalTauri = globals.__TAURI__;
     const originalWindow = globals.window;
     delete globals.__TAURI__;
