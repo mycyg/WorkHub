@@ -941,6 +941,23 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
     enablePlugin: (id) => request(`/api/plugins/${encodeURIComponent(id)}/enable`, { method: "POST" }),
     disablePlugin: (id) => request(`/api/plugins/${encodeURIComponent(id)}/disable`, { method: "POST" }),
     removePlugin: (id) => request(`/api/plugins/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    // R26 M3：MCP 服务器治理（仅管理员）。id 一律 encodeURIComponent——服务端按 uuid 形状校验，
+    // 但客户端不该假设调用方给的一定是 uuid。
+    listMcpServers: () => request("/api/mcp-servers"),
+    addMcpServer: (payload) =>
+      request("/api/mcp-servers", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    enableMcpServer: (id) => request(`/api/mcp-servers/${encodeURIComponent(id)}/enable`, { method: "POST" }),
+    disableMcpServer: (id) => request(`/api/mcp-servers/${encodeURIComponent(id)}/disable`, { method: "POST" }),
+    reloadMcpServer: (id) => request(`/api/mcp-servers/${encodeURIComponent(id)}/reload`, { method: "POST" }),
+    updateMcpServer: (id, payload) =>
+      request(`/api/mcp-servers/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload)
+      }),
+    removeMcpServer: (id) => request(`/api/mcp-servers/${encodeURIComponent(id)}`, { method: "DELETE" }),
     pages: {
       attention: (options) => request(withPageLocale("/api/pages/attention", options)),
       approvals: (options) => request(withApprovalPageOptions("/api/pages/approvals", options)),

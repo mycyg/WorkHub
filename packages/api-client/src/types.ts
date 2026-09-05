@@ -104,6 +104,11 @@ import type {
   PatchTeamSkillRequest,
   PluginListVM,
   PluginVM,
+  // R26 M3：MCP（Model Context Protocol，模型上下文协议）服务器治理的请求/响应契约。
+  AddMcpServerRequest,
+  McpServerActionResult,
+  McpServerListVM,
+  UpdateMcpServerRequest,
   // R23 SA-06：管理员手动催一轮「AI 自学团队技能」的回执契约。
   TeamSkillCurateNowResponse,
   // R14 批 FEEDBACK（web-feedback-ui）：提议详情页「有用/没用」反馈的 PUT 请求体契约。
@@ -589,6 +594,20 @@ export type WorkHubApiClient = {
   enablePlugin?: (id: string) => Promise<PluginVM>;
   disablePlugin?: (id: string) => Promise<PluginVM>;
   removePlugin?: (id: string) => Promise<{ removed: true }>;
+  // R26 M3：MCP 服务器治理（全部仅管理员，非管理员 403）。添加只认这台机器上真实存在的可执行文件——
+  // `npx` 一类「每次启动从网上下载并执行」的启动器在静态体检就被拒（`mcp_remote_exec_refused`），
+  // 凭据不落库、只存指向服务端变量的引用（`mcp_secret_ref_out_of_scope` 管住指向哪里）。
+  // 「测试连接」失败是 200 的一条结论，不是 HTTP 错误：回执里的 `server.status` / `connection` 说话。
+  // 可选方法：桌面客户端可能连到还没有这批端点的旧服务端，调用方按 `if (!client.listMcpServers)` 降级，
+  // 不做非空断言硬调（MRG-25 的既有取舍，同插件那五个方法）。
+  listMcpServers?: () => Promise<McpServerListVM>;
+  addMcpServer?: (payload: AddMcpServerRequest) => Promise<McpServerActionResult>;
+  enableMcpServer?: (id: string) => Promise<McpServerActionResult>;
+  disableMcpServer?: (id: string) => Promise<McpServerActionResult>;
+  reloadMcpServer?: (id: string) => Promise<McpServerActionResult>;
+  updateMcpServer?: (id: string, payload: UpdateMcpServerRequest) => Promise<McpServerActionResult>;
+  // 204，没有响应体——删除没有第二种成功形态。
+  removeMcpServer?: (id: string) => Promise<void>;
   pages: PageClient;
   streams: PushStreamClient;
   streamUrl: (path: string) => string;
