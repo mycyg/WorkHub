@@ -15,9 +15,14 @@ export const updateUserPreferencesRequestSchema = z.object({
 });
 export type UpdateUserPreferencesRequest = z.infer<typeof updateUserPreferencesRequestSchema>;
 
+// R24 S3 严重#4：四个建号入口（identify/desktop-bootstrap/register/invites-accept）新增可选
+// locale——服务端建新用户时优先用它，其次探测 Accept-Language，都没有才落旧默认 zh-CN
+// （见 apps/api/src/middleware/auth.ts 的 resolveNewUserLocale）。契约新增，additive，不破坏性；
+// 只在真正新建用户时生效，已存在用户的偏好不因请求带这个字段而被覆盖。
 export const identifyRequestSchema = z.object({
   nickname: z.string().min(1).max(64),
-  admin_secret: z.string().max(256).optional()
+  admin_secret: z.string().max(256).optional(),
+  locale: workHubLocaleSchema.optional()
 });
 export type IdentifyRequest = z.infer<typeof identifyRequestSchema>;
 
@@ -26,7 +31,9 @@ export type IdentifyRequest = z.infer<typeof identifyRequestSchema>;
 export const passwordRegisterRequestSchema = z.object({
   email: z.string().email().max(320),
   password: z.string().min(8).max(1024),
-  nickname: z.string().min(1).max(64)
+  nickname: z.string().min(1).max(64),
+  // R24 S3 严重#4：新建号可选 locale，见 identifyRequestSchema 顶注。
+  locale: workHubLocaleSchema.optional()
 });
 export type PasswordRegisterRequest = z.infer<typeof passwordRegisterRequestSchema>;
 
@@ -52,7 +59,9 @@ export type InviteCreateRequest = z.infer<typeof inviteCreateRequestSchema>;
 export const inviteAcceptRequestSchema = z.object({
   token: z.string().min(1).max(512),
   nickname: z.string().min(1).max(64),
-  password: z.string().min(8).max(1024)
+  password: z.string().min(8).max(1024),
+  // R24 S3 严重#4：新建号可选 locale，见 identifyRequestSchema 顶注。
+  locale: workHubLocaleSchema.optional()
 });
 export type InviteAcceptRequest = z.infer<typeof inviteAcceptRequestSchema>;
 
@@ -219,7 +228,10 @@ export const desktopBootstrapRequestSchema = z.object({
   nickname: z.string().min(1).max(64),
   admin_secret: z.string().max(256).optional(),
   device_name: z.string().trim().min(1).max(128),
-  platform: z.string().max(64).optional()
+  platform: z.string().max(64).optional(),
+  // R24 S3 严重#4：新建号可选 locale，见 identifyRequestSchema 顶注。桌面端应在首启时带上
+  // 系统/应用语言（目前尚未接线——见 apps/api 端该轮 Agent Note 的遗留项）。
+  locale: workHubLocaleSchema.optional()
 });
 export type DesktopBootstrapRequest = z.infer<typeof desktopBootstrapRequestSchema>;
 
