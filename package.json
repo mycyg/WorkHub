@@ -2,6 +2,7 @@
   "name": "workhub",
   "version": "0.1.0",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "packageManager": "pnpm@11.0.9",
   "engines": {
@@ -13,7 +14,7 @@
     "build": "pnpm -r --if-present build",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
-    "lint": "pnpm audit:agent-notes && pnpm audit:copy-terms && pnpm audit:portable-config && pnpm audit:target-paths && pnpm audit:migrations && pnpm audit:desktop-version && pnpm qa:r2-release-gate && pnpm qa:r4-rust-system-i18n && pnpm qa:cuu-r3-launcher-smoke && pnpm qa:cuu-r3-dev-server-smoke && pnpm qa:cuu-r3-run-stream-smoke && pnpm qa:cuu-r3-run-failure-smoke && pnpm qa:cuu-r3-reload-restore-smoke && pnpm qa:cuu-r3-error-fault-smoke",
+    "lint": "pnpm audit:agent-notes && pnpm audit:copy-terms && pnpm audit:portable-config && pnpm audit:target-paths && pnpm audit:migrations && pnpm audit:desktop-version && pnpm qa:r2-release-gate && pnpm qa:r4-rust-system-i18n && pnpm qa:cuu-r3-launcher-smoke && pnpm qa:cuu-r3-dev-server-smoke && pnpm qa:cuu-r3-run-stream-smoke && pnpm qa:cuu-r3-run-failure-smoke && pnpm qa:cuu-r3-reload-restore-smoke && pnpm qa:cuu-r3-error-fault-smoke && pnpm audit:third-party-notices",
     "verify": "pnpm typecheck && pnpm test && pnpm lint",
     "qa:r1-route-visual": "tsx scripts/qa/r1-route-visual-qa.ts",
     "qa:r4-web-route-state-matrix": "tsx scripts/qa/r4-web-route-state-matrix.ts",
@@ -50,6 +51,8 @@
     "audit:copy-terms": "tsx scripts/dev/check-copy-terms.ts",
     "audit:desktop-version": "tsx scripts/dev/check-desktop-version.ts",
     "sync:desktop-version": "tsx scripts/dev/sync-desktop-version.ts",
+    "audit:third-party-notices": "tsx scripts/dev/gen-third-party-notices.ts --check",
+    "gen:third-party-notices": "tsx scripts/dev/gen-third-party-notices.ts",
     "release:desktop": "bash scripts/dev/release-desktop.sh"
   },
   "devDependencies": {

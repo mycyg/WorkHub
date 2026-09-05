@@ -27,7 +27,7 @@ WorkHub 是一个 AI 项目经理产品（后端 API + agent 循环 + web/桌面
 ```sh
 pnpm typecheck   # 写完 *.test.ts 后必跑一遍——pnpm test 走 tsx，不做严格类型检查
 pnpm test        # 单测（tsx，node:test / vitest 视包而定）
-pnpm lint        # audit:* 六件套 + qa:r2-release-gate + qa:r4-rust-system-i18n + cuu-r3 六件套
+pnpm lint        # audit:* 七件套 + qa:r2-release-gate + qa:r4-rust-system-i18n + cuu-r3 六件套
 pnpm verify      # typecheck && test && lint —— CI 的 workspace job 就跑这条，别只跑 test 就当过了
 ```
 
