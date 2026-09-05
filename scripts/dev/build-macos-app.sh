@@ -16,12 +16,55 @@
 #
 # 注意：ad-hoc 签名不是 Apple 公证，`spctl --assess` 仍会「rejected（未公证）」——这是预期的，
 # 本门禁只保证「bundle 结构完整、签名自洽、能本机启动」，不保证 Gatekeeper 放行分发。
+#
+# 产物路径口（R24-S2 W-4）：不带 --target 的本机构建产物在 target/release/bundle/macos/，
+# 但 `cargo tauri build --target <triple>` 交叉/多 target 构建时产物在
+# target/<triple>/release/bundle/macos/ 下——原先写死前者，桌面发布 workflow 每个矩阵 target
+# 跑完都会在这一步报「expected bundle not found」。路径解析顺序（不改变默认行为）：
+#   1) WORKHUB_MACOS_BUILD_APP_PATH 显式给整条路径（绝对路径直接用；相对路径按仓库根解析）——
+#      CI 在 WORKHUB_MACOS_BUILD_SKIP_BUILD=1 模式下没有 "$@" 可供解析 --target，只能靠这个。
+#   2) 否则从传给本脚本的构建参数里找 --target/-t <triple>（本机手动交叉构建时最省心，
+#      跟真正执行的 `cargo tauri build "$@"` 用的是同一份参数，不会两处漂移）。
+#   3) 都没有 → 回退到原先的默认路径（本机原生构建，行为不变）。
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/../.." && pwd)"
 tauri_dir="$repo_root/client-tauri/src-tauri"
-app_path="$tauri_dir/target/release/bundle/macos/WorkHub.app"
+
+resolve_app_path() {
+  if [[ -n "${WORKHUB_MACOS_BUILD_APP_PATH:-}" ]]; then
+    if [[ "$WORKHUB_MACOS_BUILD_APP_PATH" == /* ]]; then
+      echo "$WORKHUB_MACOS_BUILD_APP_PATH"
+    else
+      echo "$repo_root/$WORKHUB_MACOS_BUILD_APP_PATH"
+    fi
+    return
+  fi
+
+  local build_target=""
+  local args=("$@")
+  local i arg
+  for ((i = 0; i < ${#args[@]}; i++)); do
+    arg="${args[$i]}"
+    case "$arg" in
+      --target=*) build_target="${arg#--target=}" ;;
+      --target | -t)
+        if ((i + 1 < ${#args[@]})); then
+          build_target="${args[$((i + 1))]}"
+        fi
+        ;;
+    esac
+  done
+
+  if [[ -n "$build_target" ]]; then
+    echo "$tauri_dir/target/$build_target/release/bundle/macos/WorkHub.app"
+  else
+    echo "$tauri_dir/target/release/bundle/macos/WorkHub.app"
+  fi
+}
+
+app_path="$(resolve_app_path "$@")"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "build-macos-app: this gate only runs on macOS (uname=$(uname -s)); skipping." >&2
