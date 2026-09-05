@@ -28,12 +28,10 @@ import {
   createSnapshotRepository,
   createUserRepository,
   createUserMemoryRepository,
-  defaultSeedFixture,
   defaultSeedIds,
   escalationEvents,
   mergeAttempts,
   mergeProposals,
-  orgs,
   proposals,
   projects,
   projectDriveItems,
@@ -44,21 +42,16 @@ import {
   taskPlanItems,
   taskPlans,
   usageRecords,
-  users,
   workItemAcceptanceItems,
   workItemTaskItems,
   workItemTaskPlans,
-  workItems,
-  workspaces
+  workItems
 } from "@workhub/db";
 import { buildUsageRecord } from "@workhub/cost";
 import type { DeliverableChangeManifest } from "@workhub/contracts";
 import { Hono } from "hono";
-import { generateSignedCookie } from "hono/cookie";
-import { HTTPException } from "hono/http-exception";
-import { ZodError } from "zod";
 
-import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "../middleware/auth.js";
+import { type AuthDependencies, type AuthEnv } from "../middleware/auth.js";
 import { createAgentRunRoutes } from "../routes/agent-runs.js";
 import { createCostRoutes } from "../routes/cost.js";
 import { createEscalationRoutes } from "../routes/escalations.js";
@@ -70,13 +63,14 @@ import { createTaskPlanRoutes } from "../routes/task-plans.js";
 import { createWorkItemRoutes } from "../routes/workitems.js";
 import type { MergeFusionCandidateGenerator } from "../services/merge-fusion-candidates.js";
 import { createDbAgentRunPersistence } from "../services/agent-run-persistence.js";
-import { createEscalationService, EscalationServiceError } from "../services/escalations.js";
+import { createEscalationService } from "../services/escalations.js";
 import { createDbProposalService, ProposalServiceError } from "../services/proposals.js";
 import { createDbTaskDispatchEscalationSink, createTaskDispatcher } from "../services/task-dispatcher.js";
-import { createTaskPlanMergeApprovalHandler, createTaskPlanWorkflowService, TaskPlanServiceError } from "../services/task-plans.js";
+import { createTaskPlanMergeApprovalHandler, createTaskPlanWorkflowService } from "../services/task-plans.js";
 import { createDbWorkItemService } from "../services/work-items.js";
 import { AgentRunnerError, createInMemoryAgentRunQueue, type AgentRunQueue, type AgentRunQueueRecord } from "../workers/agent-runner.js";
 import { selectTenantScopedBudgetPolicyRows } from "./r1-pg-budget-policy.js";
+import { assertNotProduction, ensureDefaultSeed, seedAdminHeaders, withErrors } from "./r1-pg-harness.js";
 
 function sha256Text(value: string) {
   return createHash("sha256").update(value, "utf8").digest("hex");
@@ -285,40 +279,9 @@ function deterministicTaskPlanner() {
   };
 }
 
-function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<T>) {
-  app.onError((error, c) => {
-    if (error instanceof ZodError) {
-      return c.json({ ok: false, error: { code: "validation_error", message: "invalid payload" } }, 422);
-    }
-    if (error instanceof EscalationServiceError) {
-      return c.json({ ok: false, error: { code: error.code, message: error.message } }, error.status as 400);
-    }
-    if (error instanceof TaskPlanServiceError) {
-      return c.json({ ok: false, error: { code: error.code, message: error.message } }, error.status as 400);
-    }
-    if (error instanceof ProposalServiceError) {
-      return c.json({ ok: false, error: { code: error.code, message: error.message } }, error.status as 400);
-    }
-    if (error instanceof HTTPException) {
-      return c.json({ ok: false, error: { code: "http_error", message: error.message } }, error.status);
-    }
-    throw error;
-  });
-  return app;
-}
-
-async function ensureDefaultSeed(db: ReturnType<typeof createDatabaseClient>["db"]) {
-  await db.insert(orgs).values(defaultSeedFixture.orgs).onConflictDoNothing();
-  await db.insert(workspaces).values(defaultSeedFixture.workspaces).onConflictDoNothing();
-  await db.insert(users).values(defaultSeedFixture.users).onConflictDoNothing();
-  await db.insert(projects).values(defaultSeedFixture.projects).onConflictDoNothing();
-}
-
 async function main() {
   const settings = loadSettings(process.env);
-  if (settings.appEnv === "production") {
-    throw new Error("Refusing to run R1 PG smoke in production.");
-  }
+  assertNotProduction(settings, "R1 PG smoke");
 
   await runMigrations(settings);
   const client = createDatabaseClient(settings);
@@ -453,12 +416,8 @@ async function main() {
       proposalAudit: proposalRepository,
       autoRun: false
     }));
-    const seedUser = defaultSeedFixture.users[0];
-    if (!seedUser) {
-      throw new Error("Default seed user is missing.");
-    }
-    const cookie = await generateSignedCookie(COOKIE_NAME, seedUser.cookieToken, settings.auth.cookieSecret);
-    const headers = { Cookie: cookie };
+    const seedUser = await seedAdminHeaders(settings, userRepo);
+    const headers = seedUser.headers;
     const session = await app.request("/api/sessions", {
       method: "POST",
       headers,
