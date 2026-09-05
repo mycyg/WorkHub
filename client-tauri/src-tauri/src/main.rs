@@ -34,6 +34,11 @@ use workhub_client_tauri::shell_log::{
     init_shell_log_dir, shell_log_error, shell_log_info, shell_log_warn,
 };
 use workhub_client_tauri::single_instance::single_instance_plan_from_args_for_locale;
+use workhub_client_tauri::spotlight_window::{
+    anchored_spotlight_position, clamp_spotlight_size, default_spotlight_top,
+    plan_spotlight_growth, reconcile_spotlight_anchor, spotlight_show_anchor, SpotlightAnchor,
+    SpotlightGrowthPlan, SpotlightRect, SPOTLIGHT_GROWTH_FRAME_MS,
+};
 use workhub_client_tauri::sse_worker::{
     spawn_default_shell_sse_workers, ShellClientToken, ShellServerUrl,
 };
@@ -58,7 +63,10 @@ use workhub_client_tauri::windows::workbench_window_title;
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex,
+    },
     time::{Duration, Instant},
 };
 
@@ -764,34 +772,191 @@ fn get_server_url(server: tauri::State<'_, ShellServerUrl>) -> ShellServerUrlQue
 }
 
 // R8 真·Spotlight：webview 测得盒子内容高度后调它缩放主窗（盒子随内容生长/收缩，苹果聚焦风）。
-// 只改 main 窗内尺寸，top-left 锚定不动 → 向下生长。clamp 防 webview 传来的异常值把窗口撑爆/压没。
-fn clamp_spotlight_size(width: f64, height: f64) -> (f64, f64) {
-    let safe_width = if width.is_finite() {
-        width.clamp(420.0, 1600.0)
-    } else {
-        720.0
-    };
-    let safe_height = if height.is_finite() {
-        height.clamp(48.0, 1400.0)
-    } else {
-        480.0
-    };
-    (safe_width, safe_height)
+// R25：两条历史缺口都在这里收口，算术全在 spotlight_window.rs（纯函数、有单测）——
+// - M-02：不再让平台决定锚哪条边（macOS 的 setContentSize: 保 frame 左下角 → 每次收缩顶边往下掉），
+//   而是每帧显式把窗口摆回「记住的顶边 + 水平中心」。
+// - BX-06：一次性 set_size 的硬跳变摊成一串 ~16ms 的中间帧（ease-out，180ms）。
+
+/// 聚焦盒几何的壳层记账。
+///
+/// `anchor` 是「顶边 + 水平中心 + 上次亲手摆下的落点」；`generation` 是补间代际：每次新的
+/// `set_spotlight_size` 自增，仍在飞的补间线程发现代际变了就自行退场——这就是"新目标到来时
+/// 从当前中间值重新起跑"的实现（旧线程不会把窗口拽回它那条旧曲线）。
+#[derive(Default)]
+struct SpotlightGeometry {
+    anchor: Mutex<Option<SpotlightAnchor>>,
+    generation: AtomicU64,
+}
+
+/// 主窗所在显示器的工作区（逻辑坐标）。拿不到显示器（热插拔中 / 无显示器）→ None，
+/// 调用方据此选择"不夹紧"而不是瞎猜一个屏幕。
+fn spotlight_work_area(window: &tauri::WebviewWindow) -> Option<SpotlightRect> {
+    let monitor = match window.current_monitor() {
+        Ok(Some(monitor)) => Some(monitor),
+        _ => window.primary_monitor().ok().flatten(),
+    }?;
+    let scale = valid_scale_factor(monitor.scale_factor());
+    let area = monitor.work_area();
+    let position = area.position.to_logical::<f64>(scale);
+    let size = area.size.to_logical::<f64>(scale);
+    Some(SpotlightRect::new(
+        position.x,
+        position.y,
+        size.width,
+        size.height,
+    ))
+}
+
+/// 主窗此刻的逻辑几何。位置取 `outer_position`、尺寸取 `inner_size`——主窗 decorations:false，
+/// 两者同框；`set_size` 设的也是 inner，读写口径必须一致否则锚点会按边框宽度逐次漂。
+fn spotlight_current_rect(window: &tauri::WebviewWindow) -> Option<SpotlightRect> {
+    let scale = window.scale_factor().map(valid_scale_factor).unwrap_or(1.0);
+    let position = window.outer_position().ok()?.to_logical::<f64>(scale);
+    let size = window.inner_size().ok()?.to_logical::<f64>(scale);
+    Some(SpotlightRect::new(
+        position.x,
+        position.y,
+        size.width,
+        size.height,
+    ))
+}
+
+/// 记账：把「刚亲手摆下去的落点」写回锚点。锁被毒化（另一线程 panic 过）时静默跳过——
+/// 下一次对账会当成"窗口不在壳层摆的地方"重记锚点，比让窗口控制路径整条炸掉划算。
+fn remember_spotlight_placement(
+    geometry: &SpotlightGeometry,
+    anchor: SpotlightAnchor,
+    applied: (f64, f64),
+) {
+    if let Ok(mut slot) = geometry.anchor.lock() {
+        *slot = Some(SpotlightAnchor {
+            applied: Some(applied),
+            ..anchor
+        });
+    }
+}
+
+/// 摆一帧：先改尺寸、再按锚点摆位置。
+///
+/// 顺序不能反。macOS 的 `setContentSize:` 保的是 frame 左下角，改完尺寸顶边会先掉下去；紧跟着的
+/// `set_position` 把顶边/水平中心摆回锚点。两条消息在同一轮事件循环里处理，看不到中间态——而反过来
+/// （先摆位置再改尺寸）就是 M-02 那个"每次都以底边为锚点重排"的老 bug。
+///
+/// 摆成功后把这一帧的落点记进 `applied`：下一次调用据此判定窗口"还停在壳层摆的地方"，
+/// 从而沿用记住的顶边（含底边让位之前的原始值），而不是把让位后的 y 误当成用户的新偏好。
+fn apply_spotlight_frame(
+    window: &tauri::WebviewWindow,
+    geometry: &SpotlightGeometry,
+    anchor: SpotlightAnchor,
+    width: f64,
+    height: f64,
+    work_area: Option<SpotlightRect>,
+) {
+    if let Err(error) = window.set_size(LogicalSize::new(width, height)) {
+        shell_log_warn("spotlight_resize_failed", error);
+        return;
+    }
+    let (x, y) = anchored_spotlight_position(&anchor, width, height, work_area);
+    if window
+        .set_position(TauriLogicalPosition::new(x, y))
+        .is_err()
+    {
+        // 摆位置失败（极少见）不回写 applied：记一个其实没摆成功的落点会让下一次对账误判"没被拖走"。
+        return;
+    }
+    remember_spotlight_placement(geometry, anchor, (x, y));
 }
 
 #[tauri::command]
-fn set_spotlight_size(app: tauri::AppHandle, width: f64, height: f64) -> Result<(), String> {
+fn set_spotlight_size(
+    app: tauri::AppHandle,
+    width: f64,
+    height: f64,
+    reduced_motion: Option<bool>,
+) -> Result<(), String> {
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| "main window is not available".to_string())?;
     // 下限对齐窗口计划的 minWidth=420 / minHeight=48，让 idle 细搜索条能真正贴住内容；上限防越界。
     let (safe_width, safe_height) = clamp_spotlight_size(width, height);
-    window
-        .set_size(LogicalSize::new(safe_width, safe_height))
-        .map_err(|error| format!("failed to resize main window: {error}"))?;
-    // chain3：内容变高时把窗口顶回工作区内——否则小屏 / 窗口被拖到靠下时，盒子底部会长到屏幕外够不着。
-    keep_window_bottom_in_work_area(&window, safe_height);
+    let geometry = app.state::<SpotlightGeometry>();
+    let Some(current) = spotlight_current_rect(&window) else {
+        // 读不到窗口几何 → 退回一次性 set_size（旧行为），不猜位置也不动锚点。
+        return window
+            .set_size(LogicalSize::new(safe_width, safe_height))
+            .map_err(|error| format!("failed to resize main window: {error}"));
+    };
+    let work_area = spotlight_work_area(&window);
+    let stored = geometry.anchor.lock().ok().and_then(|slot| *slot);
+    let anchor = reconcile_spotlight_anchor(stored, current);
+    // 自增代际 = 作废任何仍在飞的补间；它们下一帧就会看到代际不符并退场。
+    let generation = geometry.generation.fetch_add(1, Ordering::SeqCst) + 1;
+
+    match plan_spotlight_growth(current.height, safe_height, reduced_motion.unwrap_or(false)) {
+        SpotlightGrowthPlan::Snap => {
+            apply_spotlight_frame(
+                &window,
+                &geometry,
+                anchor,
+                safe_width,
+                safe_height,
+                work_area,
+            );
+        }
+        SpotlightGrowthPlan::Animate(frames) => {
+            // 补间跑在独立线程上：命令本身立刻返回（webview 的 invoke 不必等 180ms），窗口消息由
+            // tauri 的事件循环代理处理（`set_size`/`set_position` 从任意线程调用都会被转投主线程）。
+            // 工作区在开跑前量一次就够——180ms 内窗口不会换显示器，而每帧再问一次显示器要多 12 次
+            // 跨线程往返。
+            let app_handle = app.clone();
+            std::thread::spawn(move || {
+                let Some(window) = app_handle.get_webview_window("main") else {
+                    return;
+                };
+                let geometry = app_handle.state::<SpotlightGeometry>();
+                let interval = Duration::from_millis(SPOTLIGHT_GROWTH_FRAME_MS);
+                for (index, frame_height) in frames.into_iter().enumerate() {
+                    // 首帧立刻走（"生长"必须在按键的同一拍里起步），之后每帧间隔 ~16ms。
+                    if index > 0 {
+                        std::thread::sleep(interval);
+                    }
+                    if geometry.generation.load(Ordering::SeqCst) != generation {
+                        return;
+                    }
+                    apply_spotlight_frame(
+                        &window,
+                        &geometry,
+                        anchor,
+                        safe_width,
+                        frame_height,
+                        work_area,
+                    );
+                }
+            });
+        }
+    }
     Ok(())
+}
+
+/// 主窗（重新）显示时把盒子摆回「记住的顶边 + 屏幕水平居中」——托盘「打开 WorkHub」、Option+Space、
+/// Dock 点击、深链走的都是 `execute_window_control`，故这一条挂在那里，不另造第二套窗口控制路。
+/// 顶边保留是因为"盒子停在哪个高度"是用户偏好；水平回中线是因为聚焦盒的心智模型就是"屏幕中间那条"。
+fn recentre_spotlight_on_show(app: &tauri::AppHandle, window: &tauri::WebviewWindow) {
+    let geometry = app.state::<SpotlightGeometry>();
+    let Some(current) = spotlight_current_rect(window) else {
+        return;
+    };
+    let work_area = spotlight_work_area(window);
+    let stored = geometry.anchor.lock().ok().and_then(|slot| *slot);
+    let anchor = spotlight_show_anchor(reconcile_spotlight_anchor(stored, current), work_area);
+    let (x, y) = anchored_spotlight_position(&anchor, current.width, current.height, work_area);
+    if window
+        .set_position(TauriLogicalPosition::new(x, y))
+        .is_err()
+    {
+        return;
+    }
+    remember_spotlight_placement(&geometry, anchor, (x, y));
 }
 
 // R15 批 A6（托盘/Dock 角标）：把「有几件待办/未读」推到系统托盘 + macOS Dock 层——workbench 关着、聚焦盒
@@ -899,30 +1064,6 @@ fn move_main_window_by(app: tauri::AppHandle, delta_x: f64, delta_y: f64) -> Res
             position.y + delta_y,
         ))
         .map_err(|error| format!("failed to move main window: {error}"))
-}
-
-// 若窗口底边超出当前显示器工作区，则上移使其落回区内（不小于工作区顶）。失败不致命。
-fn keep_window_bottom_in_work_area(window: &tauri::WebviewWindow, height_logical: f64) {
-    let monitor = match window.current_monitor() {
-        Ok(Some(monitor)) => Some(monitor),
-        _ => window.primary_monitor().ok().flatten(),
-    };
-    let Some(monitor) = monitor else {
-        return;
-    };
-    let scale = valid_scale_factor(monitor.scale_factor());
-    let area = monitor.work_area();
-    let area_pos = area.position.to_logical::<f64>(scale);
-    let area_size = area.size.to_logical::<f64>(scale);
-    let Ok(pos) = window.outer_position() else {
-        return;
-    };
-    let pos = pos.to_logical::<f64>(scale);
-    let max_bottom = area_pos.y + area_size.height;
-    if pos.y + height_logical > max_bottom {
-        let new_y = (max_bottom - height_logical).max(area_pos.y);
-        let _ = window.set_position(TauriLogicalPosition::new(pos.x, new_y));
-    }
 }
 
 // R7.1：切换 pet 窗口的 ignore_cursor_events(true=点击穿透到下方/false=接管点击)。由 webview 命中测试驱动，
@@ -1092,18 +1233,24 @@ fn execute_window_control(
         .get_webview_window(&plan.label)
         .ok_or_else(|| format!("{} window is not available", plan.label))?;
 
-    match plan.action {
+    // R25（M-02）：这次控制有没有把窗口「亮出来」——只有亮出来的那几条才需要把聚焦盒摆回锚点，
+    // 单纯的 Hide/Focus 不该动窗口位置（Focus 常发生在窗口本来就在用户放的地方时）。
+    let became_visible = match plan.action {
         ShellWindowControlAction::Show => {
             if plan.label == "pet" {
                 keep_pet_window_above_desktop(&window)?;
             }
             window
                 .show()
-                .map_err(|error| format!("failed to show {} window: {error}", plan.label))?
+                .map_err(|error| format!("failed to show {} window: {error}", plan.label))?;
+            true
         }
-        ShellWindowControlAction::Hide => window
-            .hide()
-            .map_err(|error| format!("failed to hide {} window: {error}", plan.label))?,
+        ShellWindowControlAction::Hide => {
+            window
+                .hide()
+                .map_err(|error| format!("failed to hide {} window: {error}", plan.label))?;
+            false
+        }
         ShellWindowControlAction::Toggle => {
             let visible = window.is_visible().map_err(|error| {
                 format!("failed to read {} window visibility: {error}", plan.label)
@@ -1112,6 +1259,7 @@ fn execute_window_control(
                 window
                     .hide()
                     .map_err(|error| format!("failed to hide {} window: {error}", plan.label))?;
+                false
             } else {
                 if plan.label == "pet" {
                     keep_pet_window_above_desktop(&window)?;
@@ -1119,11 +1267,15 @@ fn execute_window_control(
                 window
                     .show()
                     .map_err(|error| format!("failed to show {} window: {error}", plan.label))?;
+                true
             }
         }
-        ShellWindowControlAction::Focus => window
-            .set_focus()
-            .map_err(|error| format!("failed to focus {} window: {error}", plan.label))?,
+        ShellWindowControlAction::Focus => {
+            window
+                .set_focus()
+                .map_err(|error| format!("failed to focus {} window: {error}", plan.label))?;
+            false
+        }
         ShellWindowControlAction::ShowAndFocus => {
             window
                 .show()
@@ -1133,8 +1285,9 @@ fn execute_window_control(
                     .set_focus()
                     .map_err(|error| format!("failed to focus {} window: {error}", plan.label))?;
             }
+            true
         }
-    }
+    };
 
     if plan.label == MAIN_WINDOW_LABEL {
         if let Err(error) = configure_main_window_chrome(&window) {
@@ -1144,6 +1297,11 @@ fn execute_window_control(
                     "failed to configure main window chrome; continuing window control: {error}"
                 ),
             );
+        }
+        // R25（M-02）：托盘「打开 WorkHub」/ Option+Space / Dock 点击 / 深链——所有唤起路径都在这里
+        // 汇合，故"回到记住的顶边 + 屏幕水平居中"只此一处。失败不致命（位置摆不动不该挡住窗口显示）。
+        if became_visible {
+            recentre_spotlight_on_show(app, &window);
         }
     }
 
@@ -1744,7 +1902,7 @@ fn configure_main_window_native_drag(_window: &tauri::WebviewWindow) -> Result<(
 }
 
 // R8 真·Spotlight：启动时把主窗摆到屏幕上方居中（苹果聚焦盒的位置），之后随内容向下生长。失败不致命。
-fn position_main_window_top_center(window: &tauri::WebviewWindow) {
+fn position_main_window_top_center(app: &tauri::AppHandle, window: &tauri::WebviewWindow) {
     let monitor = match window.current_monitor() {
         Ok(Some(monitor)) => Some(monitor),
         _ => window.primary_monitor().ok().flatten(),
@@ -1760,9 +1918,24 @@ fn position_main_window_top_center(window: &tauri::WebviewWindow) {
         return;
     };
     let inner = inner.to_logical::<f64>(scale);
+    let area = SpotlightRect::new(area_pos.x, area_pos.y, area_size.width, area_size.height);
     let x = area_pos.x + (area_size.width - inner.width).max(0.0) / 2.0;
-    let y = area_pos.y + area_size.height * 0.10;
-    let _ = window.set_position(TauriLogicalPosition::new(x, y));
+    // R25：默认顶边改由 spotlight_window::default_spotlight_top 定义（工作区高度的 10%，与这里原来的
+    // 硬编码 0.10 同值），让"没有记忆时摆哪"只有一处真相——spotlight_show_anchor 的兜底也读它。
+    let y = default_spotlight_top(area);
+    if window
+        .set_position(TauriLogicalPosition::new(x, y))
+        .is_err()
+    {
+        return;
+    }
+    // R25（M-02）：把出厂落点种进锚点记账，第一次 set_spotlight_size 就有顶边可守（否则首次生长会
+    // 以窗口当时的位置重新起锚，等于把出厂居中的意图丢掉）。
+    remember_spotlight_placement(
+        &app.state::<SpotlightGeometry>(),
+        SpotlightAnchor::new(y, x + inner.width / 2.0),
+        (x, y),
+    );
 }
 
 // R19-13：托盘菜单构建抽成独立函数,让启动安装(install_workhub_tray)与运行时切语言(set_shell_locale →
@@ -2507,6 +2680,8 @@ fn main() {
         .manage(ShellDeviceName::default())
         // MRG-23：深链事件重放兜底（见 handle_deep_link_plan / take_pending_deep_link）。
         .manage(Mutex::new(PendingShellDeepLink::default()))
+        // R25（M-02/BX-06）：聚焦盒的锚点与补间代际。见 set_spotlight_size / recentre_spotlight_on_show。
+        .manage(SpotlightGeometry::default())
         // R24 玻璃调试开关的前端半边：材质在 Rust 里贴，盒子的半透白底只有 webview 能改，
         // 所以 WORKHUB_GLASS_ALPHA 置位时在页面加载完成后把值递进去（不置位=不注入任何脚本）。
         // 只递给带聚焦盒外壳的两个窗；桌宠窗没有玻璃盒，不掺和。
@@ -2680,7 +2855,7 @@ fn main() {
             }
             // R8 真·Spotlight：把主窗摆到屏幕上方居中（聚焦盒位置）；之后 set_spotlight_size 随内容缩放。
             if let Some(main_window) = app.get_webview_window("main") {
-                position_main_window_top_center(&main_window);
+                position_main_window_top_center(&app.handle().clone(), &main_window);
             }
             Ok(())
         })
@@ -3061,16 +3236,6 @@ mod tests {
         for value in ["", "0", "false", "off", "no", "disabled"] {
             assert!(!workhub_sse_disabled_from_env(env_value(Some(value))));
         }
-    }
-
-    #[test]
-    fn spotlight_size_clamp_allows_idle_search_bar_height() {
-        assert_eq!(clamp_spotlight_size(720.0, 52.0), (720.0, 52.0));
-        assert_eq!(clamp_spotlight_size(200.0, 20.0), (420.0, 48.0));
-        assert_eq!(
-            clamp_spotlight_size(f64::NAN, f64::INFINITY),
-            (720.0, 480.0)
-        );
     }
 
     #[test]
