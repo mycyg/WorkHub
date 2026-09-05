@@ -1940,7 +1940,7 @@ test("R4.11 Proposal route component preserves review actions, rollback, changes
   assert.equal(proposal.html.includes(`data-r4-proposal-change-count="${vm.page_vms.proposal.manifest.changes.length}"`), true);
   assert.equal(proposal.html.includes(`data-r4-proposal-check-count="${vm.page_vms.proposal.manifest.checks.length}"`), true);
   assert.equal(proposal.html.includes("Deliverable change request"), true);
-  assert.equal(proposal.html.includes("Rollback snapshot kept (manual restore)"), true);
+  assert.equal(proposal.html.includes("Restore point kept (manual restore)"), true);
   assert.equal(proposal.html.includes('data-action-id="request_changes"'), true);
   assert.equal(proposal.html.includes('data-method="POST"'), true);
   assert.equal(proposal.html.includes('data-requires-reason="true"'), true);

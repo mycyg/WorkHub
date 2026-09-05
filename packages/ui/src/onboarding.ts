@@ -8,7 +8,7 @@ export type OnboardingScreenInput = {
   targetRoute?: string | undefined;
 };
 
-type OnboardingCopyKey =
+export type OnboardingCopyKey =
   | "kicker"
   | "title"
   | "summary"
@@ -22,36 +22,7 @@ type OnboardingCopyKey =
   | "targetPrefix"
   | "lanNote";
 
-const onboardingCopy: Record<WorkHubLocale, Record<OnboardingCopyKey, string>> = {
-  "zh-CN": {
-    kicker: "WorkHub",
-    title: "报到后开始干活",
-    summary: "告诉团队你是谁。每个项目都有群聊、网盘和 AI 项目经理——派活干活它来，审批拍板归你。",
-    nicknameLabel: "你的昵称",
-    nicknamePlaceholder: "例如：小拓",
-    localeLabel: "界面语言",
-    adminToggle: "我是管理员",
-    adminLabel: "管理员口令",
-    adminHint: "只有认领管理员昵称才需要填。",
-    submit: "进入 WorkHub",
-    targetPrefix: "完成后将打开",
-    lanNote: "局域网信任模式：无需密码，凭昵称报到。"
-  },
-  "en-US": {
-    kicker: "WorkHub",
-    title: "Sign in to get to work",
-    summary: "Tell the team who you are. Every project gets a group chat, a drive and an AI project manager - it does the work, you approve and decide.",
-    nicknameLabel: "Your nickname",
-    nicknamePlaceholder: "e.g. Alex",
-    localeLabel: "Interface language",
-    adminToggle: "I am an admin",
-    adminLabel: "Admin passphrase",
-    adminHint: "Only needed when claiming an admin nickname.",
-    submit: "Enter WorkHub",
-    targetPrefix: "You will land on",
-    lanNote: "LAN trust mode: no password, just report in with a nickname."
-  }
-};
+import { onboardingCopy, passwordAuthCopy } from "./onboarding-copy.js";
 
 function t(locale: WorkHubLocale, key: OnboardingCopyKey) {
   return onboardingCopy[locale][key];
@@ -150,7 +121,7 @@ export type PasswordAuthScreenInput = {
   presetNickname?: string | undefined;
 };
 
-type PasswordAuthCopyKey =
+export type PasswordAuthCopyKey =
   | "kicker"
   | "loginTitle"
   | "loginSummary"
@@ -168,47 +139,6 @@ type PasswordAuthCopyKey =
   | "submitRegister"
   | "firstAdminHint"
   | "targetPrefix";
-
-const passwordAuthCopy: Record<WorkHubLocale, Record<PasswordAuthCopyKey, string>> = {
-  "zh-CN": {
-    kicker: "WorkHub",
-    loginTitle: "登录 WorkHub",
-    loginSummary: "这个实例要求账号和密码登录。输入邮箱和密码进入工作台。",
-    registerTitle: "创建账号",
-    registerSummary: "还没有账号？用邮箱和密码创建一个。",
-    tabLogin: "登录",
-    tabRegister: "注册",
-    emailLabel: "邮箱",
-    emailPlaceholder: "you@example.com",
-    passwordLabel: "密码",
-    nicknameLabel: "你的昵称",
-    nicknamePlaceholder: "例如：小拓",
-    localeLabel: "界面语言",
-    submitLogin: "登录",
-    submitRegister: "创建账号",
-    firstAdminHint: "本实例目前还没有管理员——如果你是第一个注册的人，这个账号会自动成为管理员。",
-    targetPrefix: "完成后将打开"
-  },
-  "en-US": {
-    kicker: "WorkHub",
-    loginTitle: "Sign in to WorkHub",
-    loginSummary: "This instance requires an account and password. Enter your email and password to continue.",
-    registerTitle: "Create your account",
-    registerSummary: "No account yet? Create one with an email and password.",
-    tabLogin: "Sign in",
-    tabRegister: "Register",
-    emailLabel: "Email",
-    emailPlaceholder: "you@example.com",
-    passwordLabel: "Password",
-    nicknameLabel: "Your nickname",
-    nicknamePlaceholder: "e.g. Alex",
-    localeLabel: "Interface language",
-    submitLogin: "Sign in",
-    submitRegister: "Create account",
-    firstAdminHint: "This instance has no admin yet — if you're the first person to register, this account becomes the admin automatically.",
-    targetPrefix: "You will land on"
-  }
-};
 
 function authT(locale: WorkHubLocale, key: PasswordAuthCopyKey) {
   return passwordAuthCopy[locale][key];

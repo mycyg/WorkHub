@@ -1,5 +1,7 @@
 import type { WorkHubLocale } from "@workhub/contracts";
 
+import { mergeDecisionLabel } from "./i18n.js";
+import { structuredFieldDetailsT as t } from "./structured-field-details-copy.js";
 import { structuredFieldLabel } from "./structured-field-labels.js";
 
 type StructuredDetailSurface = "proposal" | "replay";
@@ -19,10 +21,6 @@ function objectRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function text(locale: WorkHubLocale, zh: string, en: string) {
-  return locale === "zh-CN" ? zh : en;
-}
-
 function shortString(value: string) {
   const collapsed = value.replace(/\s+/gu, " ").trim();
   return collapsed.length > 72 ? `${collapsed.slice(0, 69)}...` : collapsed;
@@ -33,7 +31,7 @@ function summarizeArray(value: unknown[], locale: WorkHubLocale) {
     .map((item) => objectRecord(item)?.["title"])
     .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
     .map(shortString);
-  const unit = text(locale, "项", "items");
+  const unit = t(locale, "items");
   if (names.length === 0) {
     return `${value.length} ${unit}`;
   }
@@ -42,7 +40,7 @@ function summarizeArray(value: unknown[], locale: WorkHubLocale) {
 
 function summarizeValue(value: unknown, locale: WorkHubLocale): string {
   if (value === undefined) {
-    return text(locale, "未记录", "Not recorded");
+    return t(locale, "notRecorded");
   }
   if (value === null) {
     return "null";
@@ -63,7 +61,7 @@ function summarizeValue(value: unknown, locale: WorkHubLocale): string {
       return shortString(title);
     }
     const keyCount = Object.keys(record).length;
-    return text(locale, `${keyCount} 个字段`, `${keyCount} fields`);
+    return `${keyCount} ${t(locale, "fieldsUnit")}`;
   }
   return String(value);
 }
@@ -94,19 +92,18 @@ function operationRows(input: {
       const dataPrefix = input.surface === "proposal" ? "proposal" : "replay";
       const countPill = itemCount === undefined
         ? ""
-        : `<span class="wh-pill">${escapeHtml(text(input.locale, "数量", "Items"))}: ${escapeHtml(String(itemCount))}</span>`;
+        : `<span class="wh-pill">${escapeHtml(t(input.locale, "count"))}: ${escapeHtml(String(itemCount))}</span>`;
       const decisionPill = decision
-        ? `<span class="wh-pill">${escapeHtml(text(input.locale, "策略", "Decision"))}: ${escapeHtml(decision)}</span>`
+        ? `<span class="wh-pill">${escapeHtml(t(input.locale, "choice"))}: ${escapeHtml(mergeDecisionLabel(input.locale, decision))}</span>`
         : "";
-      const typePill = typeof valueType === "string"
-        ? `<span class="wh-pill">${escapeHtml(text(input.locale, "类型", "Type"))}: ${escapeHtml(valueType)}</span>`
-        : "";
+      // A2-47：值类型（object/array/string）是 JS 实现细节，用户读不出意义。只保留 data 属性给测试/脚本，不再渲成药丸。
+      const typePill = "";
       return `<div class="wh-field-row" data-${dataPrefix}-structured-field-${input.mode}="${escapeHtml(field)}" data-structured-field-value-type="${escapeHtml(typeof valueType === "string" ? valueType : "")}" data-structured-field-item-count="${escapeHtml(itemCount === undefined ? "" : String(itemCount))}">
         <div>
           <strong>${escapeHtml(structuredFieldLabel(input.locale, field))}</strong>
-          <p class="wh-structured-fields">${escapeHtml(text(input.locale, "原始值", "Base"))}: ${escapeHtml(summarizeValue(beforeValue, input.locale))}</p>
-          <p class="wh-structured-fields">${escapeHtml(text(input.locale, "当前", "Current"))}: ${escapeHtml(summarizeValue(currentValue, input.locale))}</p>
-          <p class="wh-structured-fields">${escapeHtml(text(input.locale, "写入", "After"))}: ${escapeHtml(summarizeValue(afterValue, input.locale))}</p>
+          <p class="wh-structured-fields">${escapeHtml(t(input.locale, "baseValue"))}: ${escapeHtml(summarizeValue(beforeValue, input.locale))}</p>
+          <p class="wh-structured-fields">${escapeHtml(t(input.locale, "currentValue"))}: ${escapeHtml(summarizeValue(currentValue, input.locale))}</p>
+          <p class="wh-structured-fields">${escapeHtml(t(input.locale, "afterValue"))}: ${escapeHtml(summarizeValue(afterValue, input.locale))}</p>
         </div>
         <div class="wh-field-row-meta">${typePill}${countPill}${decisionPill}</div>
       </div>`;
@@ -133,7 +130,7 @@ export function renderStructuredFieldOperationDetails(input: {
   const dataPrefix = input.surface === "proposal" ? "proposal" : "replay";
   return `<section class="wh-field-details" data-${dataPrefix}-structured-field-details="true">
     <div class="wh-structured-head">
-      <strong>${escapeHtml(text(input.locale, "字段改动详情", "Field-level targets"))}</strong>
+      <strong>${escapeHtml(t(input.locale, "fieldChangeTitle"))}</strong>
       <span class="wh-pill">${escapeHtml(String(operations.length))}</span>
     </div>
     <div class="wh-field-list">${rows}</div>
@@ -167,16 +164,17 @@ export function renderStructuredFieldAuditDetails(input: {
       if (!rows) {
         return "";
       }
+      // A2-48：还原点 id 对用户零意义，只说「可以还原」这一件他能用上的事。
       const snapshot = typeof detail["merge_snapshot_id"] === "string"
-        ? `<span class="wh-pill">${escapeHtml(text(input.locale, "快照", "Snapshot"))}: ${escapeHtml(detail["merge_snapshot_id"].slice(0, 8))}</span>`
+        ? `<span class="wh-pill" data-structured-field-restorable="true">${escapeHtml(t(input.locale, "restorable"))}</span>`
         : "";
       return `<article class="wh-field-details" data-replay-structured-field-audit="true">
         <div class="wh-structured-head">
-          <strong>${escapeHtml(text(input.locale, "字段保存记录", "Field writeback audit"))}</strong>
+          <strong>${escapeHtml(t(input.locale, "writebackTitle"))}</strong>
           <span class="wh-pill">${escapeHtml(String(changes.length))}</span>
         </div>
         <div class="wh-structured-meta">
-          <span class="wh-pill">${escapeHtml(text(input.locale, "策略", "Strategy"))}: field_merge</span>
+          <span class="wh-pill">${escapeHtml(t(input.locale, "choice"))}: ${escapeHtml(mergeDecisionLabel(input.locale, "field_merge"))}</span>
           ${snapshot}
         </div>
         <div class="wh-field-list">${rows}</div>
