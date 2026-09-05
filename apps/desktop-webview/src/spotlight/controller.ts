@@ -90,6 +90,11 @@ export function handleSpotlightCapabilityEscape(body: SpotlightInternalBackHost,
   return "top_back" as const;
 }
 
+// M-01（R24 S3 走查）：顶栏徽章此前写死"⌘K"，但真正注册的全局唤起热键是 Option+Space
+// （client-tauri/src-tauri/src/main.rs install_workhub_global_hotkey：Modifiers::ALT + Code::Space）。
+// Esc 把主窗整个隐藏后按 ⌘K 毫无反应——徽章名不副实，新用户只能去翻托盘菜单。改成真实热键；
+// Cmd+K 在窗口已打开时仍然有效（见下面 window "keydown" 里的 resetLauncher 分支），只是不再谎称
+// 它能在盒子隐藏时把它唤回来。
 export function renderSpotlightShellHtml(locale: WorkHubLocale): string {
   const zh = locale === "zh-CN";
   const placeholder = zh ? "想做点什么？新任务 / 审批 / 网盘 / 项目…" : "What do you need? new task / approve / drive…";
@@ -108,7 +113,7 @@ export function renderSpotlightShellHtml(locale: WorkHubLocale): string {
             <span class="wh-spot-title" data-spot-title></span>
             <span class="wh-spot-subtitle" data-spot-subtitle></span>
           </div>
-          <kbd class="wh-spot-kbd">⌘K</kbd>
+          <kbd class="wh-spot-kbd" title="${zh ? "随时按这个组合键唤起（隐藏后也一样）" : "Press this anytime to bring the box back — even while hidden"}">⌥Space</kbd>
           <button type="button" aria-hidden="true" tabindex="-1" class="wh-spot-drag-sheet" data-spot-drag-sheet></button>
         </div>
         <div class="wh-spot-ask-banner" data-spot-ask-banner hidden role="status" aria-live="polite">
@@ -174,7 +179,10 @@ function renderAskCuuBlock(askCuu: AskCuuUiState, query: string, locale: WorkHub
   </div>`;
 }
 
-function renderLauncherGrid(
+// exported for M-04/M-05 unit coverage (controller.test.ts) — mountSpotlight() itself has no test
+// harness (no jsdom in this repo; see workbench/chat/view.test.ts's "无 jsdom" note), but this render
+// function is pure and safe to call directly with a matches array + a stub AskCuu state.
+export function renderLauncherGrid(
   matches: CommandMatch[],
   locale: WorkHubLocale,
   badges: Partial<Record<CommandId, number>>,
@@ -190,13 +198,15 @@ function renderLauncherGrid(
       return `<div class="wh-spot-grid"><div class="wh-spot-empty-grid">${renderAskCuuBlock(askCuu, query, locale)}</div></div>`;
     }
     // 普通用户审查 R2：搜索框邀请自然语言，整句需求却落「没有匹配」死路——给「当新任务交给 Cuu」出口。
-    return `<div class="wh-spot-grid"><div class="wh-spot-empty-grid">${zh ? "没有匹配的能力" : "No matching capability"}
+    // M-05（R24 S3 走查）："capability"是开发者黑话，且原文案自相矛盾（说"没有匹配"又紧接着给两个
+    // 可执行入口）——改成人话，直接指向下面已经给出的出口，不留没头没脑的一句判决。
+    return `<div class="wh-spot-grid"><div class="wh-spot-empty-grid">${zh ? "没找到对应的功能，你可以直接问问 Cuu" : "Nothing matched — you can ask Cuu directly"}
       ${renderAskCuuBlock(askCuu, query, locale)}
       <div class="wh-spot-intake-actions"><button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-spot-fallback-intake>${zh ? "把这句话当新任务交给 Cuu" : "Hand this to Cuu as a new task"}</button></div>
     </div></div>`;
   }
   // 空查询时给一无所知的新用户一句温和的引导：先亮身份(WorkHub·Cuu)，再说怎么用 + Esc 关闭提示
-  // （搜索框无 header，保持聚焦盒观感；⌘K 已在右上角标出）。
+  // （搜索框无 header，保持聚焦盒观感；全局唤起热键已在右上角标出）。
   const hello = showHello
     ? `<div class="wh-spot-hello ds-anim-fade-in">${
         zh
@@ -414,7 +424,12 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       locale,
       body: viewRoot,
       back: () => dispatch({ type: "back" }),
-      resetShell: () => dispatch({ type: "reset" }),
+      // M-04/S-05（R24 S3 走查）：此前走 dispatch({type:"reset"}) → 通用 render() 的 launcher 分支，
+      // 那条路径会强制 searchActive=true（展开成全高网格，压在刚打开的工作台窗口上）且从不清空
+      // input2.value——state.query 已经归零但输入框还留着上一次的查询字，网格却按空查询显示全量
+      // 能力表，两者对不上。resetLauncher() 才是"事情办完了，真正退回 idle 条"的既有实现（Cmd+K/
+      // 顶层 Esc/SpotlightHandle.reset 都用它），resetShell 改接它，同时把这两个视觉 bug 一起解决。
+      resetShell: () => resetLauncher(),
       open: (nextId, nextTarget) => openCapabilityWithTarget(nextId, nextTarget),
       ...(target ? { target } : {}),
       setSubtitle: (text) => {
@@ -501,6 +516,10 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
         if (bodyEl) {
           bodyEl.style.paddingBottom = "";
         }
+        // M-03（R24 S3 走查）：显示时那 56px 的 paddingBottom 让位已经算进了窗口高度里——但退场只
+        // 复原了 padding，从没重新测量过，窗口高度就停在"含 toast"的那一档，留一条空灰带。退场后
+        // 必须再请求一次 resize，让盒子跟着收缩回真实内容高度。
+        requestResize();
       }, 220);
     }, 3200);
   };
