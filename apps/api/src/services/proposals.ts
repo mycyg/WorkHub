@@ -612,7 +612,17 @@ function safeStorageSegment(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]/gu, "_").slice(0, 128) || "unknown";
 }
 
-function filenameForAiFusionCandidate(context: MergeProposalCandidateApplicationContext) {
+// 用户可见的文件名段：保留原文（含中文），只挡路径分隔符、控制字符与保留符号。
+// 与 safeStorageSegment 分开：后者用于内部 id 目录段，必须是纯 ASCII。
+function safeVisibleFilenameSegment(value: string) {
+  return value
+    .replace(/[\u0000-\u001f\u007f/\\:*?"<>|]/gu, "")
+    .replace(/\s+/gu, "-")
+    .replace(/^[.-]+|[.-]+$/gu, "")
+    .slice(0, 80);
+}
+
+export function filenameForAiFusionCandidate(context: MergeProposalCandidateApplicationContext) {
   const targetPath = context.conflict.target_path ? normalizeManifestPath(context.conflict.target_path) : "";
   if (targetPath) {
     const basename = path.posix.basename(targetPath);
@@ -620,33 +630,51 @@ function filenameForAiFusionCandidate(context: MergeProposalCandidateApplication
       return basename;
     }
   }
-  return `${safeStorageSegment(context.conflict.change_id)}.ai-fusion.md`;
+  // A2-88：兜底文件名此前带内部 change_id 与 "ai-fusion" 这个内部方案代号。改用变更申请标题
+  // （用户自己看得懂的名字）；标题不可用时退回一个中性文件名，不把内部 id 写进网盘。
+  const fromTitle = safeVisibleFilenameSegment(context.proposalTitle);
+  return fromTitle ? `${fromTitle}.md` : "merged-result.md";
 }
 
-function aiFusionCandidateMarkdown(context: MergeProposalCandidateApplicationContext) {
-  const candidate = context.candidate;
-  const mergedValue = JSON.stringify(candidate?.merged_value ?? {}, null, 2);
+// 合并后的字段值渲成人能读的 Markdown：数组按条列，对象/标量按一行写。
+function mergedFieldMarkdown(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => {
+      if (item && typeof item === "object") {
+        const record = item as Record<string, unknown>;
+        const title = record["title"] ?? record["name"] ?? record["text"] ?? record["summary_md"];
+        return `- ${typeof title === "string" && title.trim() ? title.trim() : JSON.stringify(item)}`;
+      }
+      return `- ${String(item)}`;
+    });
+  }
+  if (value && typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([key, item]) => `- ${structuredFieldTitle(key)}：${typeof item === "string" ? item : JSON.stringify(item)}`);
+  }
+  return [String(value ?? "")];
+}
+
+// A2-88：这份文件会落进项目网盘，是用户会打开的交付物——只写合并后的内容本身。
+// 变更申请 id、合并建议 id、冲突 key、选中的方案、AI 自己的融合理由，全部留在变更申请页与回放里，
+// 不进文件正文（「交付物是自包含的最终态」「不把 agent 的推理写进交付物」）。
+export function aiFusionCandidateMarkdown(context: MergeProposalCandidateApplicationContext) {
+  const mergedValue = context.candidate?.merged_value;
+  const directText = textFromAiFusionMergedValue(mergedValue);
+  const body = directText
+    ? [directText.trim()]
+    : Object.entries(structuredMergedValueFieldRecord(mergedValue)).flatMap(([field, value]) => [
+      `## ${structuredFieldTitle(field)}`,
+      "",
+      ...mergedFieldMarkdown(value),
+      ""
+    ]);
   return [
-    "# AI 融合正式稿",
+    `# ${context.proposalTitle}`,
     "",
-    `- 变更申请：${context.proposalTitle}`,
-    `- Proposal ID：${context.proposalId}`,
-    `- Merge Proposal ID：${context.mergeProposalId}`,
-    `- 冲突目标：${context.conflictKey}`,
-    `- 选择方案：${context.chosenOptionKey}`,
-    `- 候选来源：${candidate?.source ?? "unknown"}`,
-    "",
-    "## 融合理由",
-    "",
-    candidate?.rationale_md ?? "未提供融合理由。",
-    "",
-    "## 融合内容",
-    "",
-    "```json",
-    mergedValue,
-    "```",
+    ...(body.length > 0 ? body : [serviceT("zh-CN", "mergedResultEmpty")]),
     ""
-  ].join("\n");
+  ].join("\n").replace(/\n{3,}/gu, "\n\n");
 }
 
 function effectiveAiFusionTargetKind(context: MergeProposalCandidateApplicationContext) {

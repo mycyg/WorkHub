@@ -82,6 +82,7 @@ const zh = {
   textIncomingUnreadable: "这次版本的文件读不出来，或者不是纯文本，没法逐段合并。",
   mergeSuggestionNotFound: "没有找到这个合并建议，请刷新后重试。",
   proposalWrongTask: "这份变更申请不属于这个任务，请刷新后重试。",
+  mergedResultEmpty: "（合并后的内容为空）",
 
   // 任务计划（task-plans）
   planStructureCheck: "每个子任务都写了验收标准，任务之间没有互相等待的死循环，预算加起来正好 100%。",
@@ -175,6 +176,7 @@ const en = {
   textIncomingUnreadable: "This version's file can't be read as plain text, so it can't be merged section by section.",
   mergeSuggestionNotFound: "That merge suggestion wasn't found — refresh and try again.",
   proposalWrongTask: "This change request doesn't belong to this task. Refresh and try again.",
+  mergedResultEmpty: "(The merged result is empty.)",
 
   planStructureCheck: "Every subtask has acceptance criteria, none of them wait on each other in a loop, and the budget adds up to 100%.",
 

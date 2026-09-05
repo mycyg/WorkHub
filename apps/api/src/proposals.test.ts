@@ -56,7 +56,9 @@ import {
   ProposalServiceError,
   ProposalServiceMergeConflictError,
   ProposalServiceRebaseRequiredError,
+  aiFusionCandidateMarkdown,
   drivePathFromTargetPath,
+  filenameForAiFusionCandidate,
   readBaseSnapshotFusionExcerpt,
   type ProposalService,
   type StoredProposal
@@ -4770,4 +4772,53 @@ test("proposal routes expose conflict cards, choose AI candidates, and apply an 
     body: JSON.stringify({})
   });
   assert.equal(reapply.status, 409);
+});
+
+// A2-88：AI 融合稿会作为交付文件落进项目网盘，用户会直接打开它。文件里只能有合并后的内容本身——
+// 内部 id、冲突 key、选中的方案、AI 自己的融合理由、JSON 围栏一律不进正文（那些留在变更申请页与回放）。
+test("AI 融合交付文件只写合并后的内容，不写 id、方案 key 与 AI 的融合理由", () => {
+  const markdown = aiFusionCandidateMarkdown({
+    proposalId: "10000000-0000-4000-8000-000000000001",
+    mergeProposalId: "10000000-0000-4000-8000-000000000002",
+    proposalTitle: "区域发布复盘包模板",
+    conflictKey: "work_item:10000000-0000-4000-8000-000000000003",
+    chosenOptionKey: "ai_fusion",
+    conflict: {
+      change_id: "10000000-0000-4000-8000-000000000004",
+      target_key: "work_item:10000000-0000-4000-8000-000000000003",
+      target_kind: "structured_record",
+      target_path: null
+    },
+    candidate: {
+      source: "unknown",
+      rationale_md: "我先比对了两版的字段，再挑了更完整的一版。",
+      merged_value: {
+        fields: {
+          title: "区域发布复盘包（三季度）",
+          acceptance_items: [{ title: "口径已确认" }, { title: "成本一目了然" }]
+        }
+      }
+    }
+  } as unknown as Parameters<typeof aiFusionCandidateMarkdown>[0]);
+
+  assert.match(markdown, /^# 区域发布复盘包模板/u);
+  assert.match(markdown, /区域发布复盘包（三季度）/u);
+  assert.match(markdown, /- 口径已确认/u);
+  // 过程与溯源不进交付物。
+  assert.doesNotMatch(markdown, /AI 融合正式稿/u);
+  assert.doesNotMatch(markdown, /Proposal ID|Merge Proposal ID/u);
+  assert.doesNotMatch(markdown, /冲突目标|选择方案|候选来源|融合理由/u);
+  assert.doesNotMatch(markdown, /unknown/u);
+  assert.doesNotMatch(markdown, /```json/u);
+  assert.doesNotMatch(markdown, /10000000-0000-4000-8000/u);
+});
+
+test("AI 融合交付文件的兜底文件名用变更申请标题，不带内部 id", () => {
+  const filename = filenameForAiFusionCandidate({
+    proposalTitle: "区域发布复盘包模板",
+    conflict: { change_id: "10000000-0000-4000-8000-000000000004", target_path: null }
+  } as unknown as Parameters<typeof filenameForAiFusionCandidate>[0]);
+
+  assert.equal(filename, "区域发布复盘包模板.md");
+  assert.doesNotMatch(filename, /ai-fusion|10000000/u);
 });

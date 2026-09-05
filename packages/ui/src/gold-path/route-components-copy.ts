@@ -650,7 +650,7 @@ export const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "intake.startNext": "Next: pick a work type, then let AI do the work.",
     "intake.startEvidence": "Evidence and cost will appear in Replay and Cost.",
     "intake.startIntent": "Real task",
-    "intake.startIntentPlaceholder": "Example: turn today's pilot feedback into blocker issues, adoption notes, and next owners.",
+    "intake.startIntentPlaceholder": "Example: turn today's customer feedback into open issues, adoption notes, and next owners.",
     "knowledge.kicker": "Knowledge fallback",
     "knowledge.sources": "Evidence sources",
     "knowledge.missing": "No reliable evidence found. WorkHub will not invent sources.",
