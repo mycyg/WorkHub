@@ -96,7 +96,8 @@ import { openWorkbenchRouteFromPet } from "./workbench/cuu-bubble-open.js";
 import {
   parseDesktopShellConnectionChangedPayload,
   type DesktopShellConnectionChangedPayload,
-  type DesktopShellSystemNotificationPlan
+  type DesktopShellSystemNotificationPlan,
+  primeDesktopConnectionState
 } from "./shell-events.js";
 
 export type DesktopSurface = "main" | "pet";
@@ -1827,29 +1828,30 @@ export async function bootDesktopPetSurface(
     loggedInUnlisten = maybeLoggedInUnlisten;
   }
 
-  // R25-Q：连接状态"单一真相"——先拉一次 get_connection_state 补初值（不必等 SSE worker 下一次真实
-  // 迁移才第一次知道状态），再订阅运行期广播。两者都只更新 connectionStatus + render()，不碰
-  // currentCard/窗口尺寸（见 desktopPetConnectionStatusText 顶注——L-06 根治的关键就是这条提示完全
-  // 独立于卡片/resize 管线）。best-effort：拉取失败/无 __TAURI__ 时 connectionStatus 保持 undefined，
-  // 不渲任何提示。
-  void readDesktopConnectionState().then((raw) => {
-    const payload = parseDesktopShellConnectionChangedPayload(raw);
-    if (payload) {
-      connectionStatus = payload;
-      render();
-    }
-  });
+  // R25-Q：连接状态"单一真相"——订阅与快照都只更新 connectionStatus + render()，不碰 currentCard/
+  // 窗口尺寸（见 desktopPetConnectionStatusText 顶注——L-06 根治的关键就是这条提示完全独立于卡片/
+  // resize 管线）。顺序由 primeDesktopConnectionState 钉死：先订阅、订阅落地后再拉一次 get_connection_state
+  // 补初值、事件永远比快照新（真机验收 DEFECT-1）。best-effort：拉取失败/无 __TAURI__ 时
+  // connectionStatus 保持 undefined，不渲任何提示。
   let connectionChangedUnlisten: DesktopShellUnlisten | undefined;
-  const maybeConnectionChangedUnlisten = await shellListen?.("workhub-connection-changed", (event) => {
-    const payload = parseDesktopShellConnectionChangedPayload(event.payload);
-    if (payload) {
+  void primeDesktopConnectionState({
+    subscribe: async (onPayload) => {
+      const maybeUnlisten = await shellListen?.("workhub-connection-changed", (event) => {
+        const payload = parseDesktopShellConnectionChangedPayload(event.payload);
+        if (payload) {
+          onPayload(payload);
+        }
+      });
+      if (typeof maybeUnlisten === "function") {
+        connectionChangedUnlisten = maybeUnlisten;
+      }
+    },
+    read: () => readDesktopConnectionState(),
+    apply: (payload) => {
       connectionStatus = payload;
       render();
     }
   });
-  if (typeof maybeConnectionChangedUnlisten === "function") {
-    connectionChangedUnlisten = maybeConnectionChangedUnlisten;
-  }
 
   // MRG-20：OS 通知到达不再抢焦点/强制导航。壳层广播的 system-notification 计划先按路由暂存；
   // 用户在桌宠 Cuu 卡上点出同一目标路由的动作时，才把计划回传原生 focus_system_notification

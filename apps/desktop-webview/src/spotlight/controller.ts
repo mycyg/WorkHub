@@ -1269,8 +1269,14 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       }
     },
     setConnectionState: (payload) => {
+      const wasHidden = connectionBanner.hidden;
       connectionState = payload;
       updateConnectionBannerVisibility();
+      // 细条出现/消失都会改盒子高度：不主动请求一次尺寸重算，窗口要等下一次别的尺寸变更才跟上
+      // （真机实测细条隐藏后有约 15 秒的 35px 透明空窗会吃点击）。
+      if (connectionBanner.hidden !== wasHidden) {
+        requestResize();
+      }
     },
     dispose: () => {
       controllerAbort.abort();

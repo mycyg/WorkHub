@@ -44,7 +44,7 @@ import {
   resolveDesktopTauriInvoke,
   takeDesktopPendingDeepLink
 } from "./desktop-window-controls.js";
-import { parseDesktopShellConnectionChangedPayload } from "./shell-events.js";
+import { parseDesktopShellConnectionChangedPayload, primeDesktopConnectionState } from "./shell-events.js";
 import {
   mountSpotlight,
   type SpotlightManualDragFn,
@@ -423,17 +423,19 @@ async function bootSpotlight() {
         saveProjectContextFromRoute: saveDesktopCuuProjectContextFromRoute
       });
     });
-    // R25-Q：连接状态"单一真相"——先拉一次 get_connection_state 补初值（不必等 SSE worker 下一次
-    // 真实迁移才第一次知道状态），再订阅运行期广播。都喂给 spotlight.setConnectionState，聚焦盒顶部
-    // 细条只读这一份，不再各自猜。best-effort：拉取失败/无 __TAURI__ 时保持"未知"（不渲横幅）。
-    void readDesktopConnectionState().then((raw) => {
-      spotlight.setConnectionState(parseDesktopShellConnectionChangedPayload(raw));
-    });
-    void shellListen?.("workhub-connection-changed", (event) => {
-      const payload = parseDesktopShellConnectionChangedPayload(event.payload);
-      if (payload) {
-        spotlight.setConnectionState(payload);
-      }
+    // R25-Q：连接状态"单一真相"——都喂给 spotlight.setConnectionState，聚焦盒顶部细条只读这一份，
+    // 不再各自猜。顺序由 primeDesktopConnectionState 钉死：先订阅、订阅落地后再拉快照、事件永远比快照新
+    // （真机验收 DEFECT-1）。best-effort：拉取失败/无 __TAURI__ 时保持"未知"（不渲横幅）。
+    void primeDesktopConnectionState({
+      subscribe: (onPayload) =>
+        shellListen?.("workhub-connection-changed", (event) => {
+          const payload = parseDesktopShellConnectionChangedPayload(event.payload);
+          if (payload) {
+            onPayload(payload);
+          }
+        }),
+      read: () => readDesktopConnectionState(),
+      apply: (payload) => spotlight.setConnectionState(payload)
     });
     // R25-Q（源头对称）：登录成功现在可能由工作台窗口广播（reloadAfterWorkbenchLogin，source:
     // "workbench"）——此前主窗从不订阅这个事件（它自己就是唯一的广播源，reloadAfterDesktopLogin
