@@ -156,6 +156,24 @@ export function createNewProjectView(): SpotlightCapabilityView {
         { signal: ctx.signal }
       );
 
+      // 单字段表单：Enter 直接提交——同 apps/web/src/browser.ts 已有的既定 UX 预期（该文件注释：
+      // "项目名输入框按 Enter 即触发「新建项目」"），只有一个输入框时回车是最自然的提交手势。
+      // 中文输入法组合态的回车是"选字"，不当提交（同 controller.ts/search.ts 既有的
+      // isComposing/keyCode 229 守卫）。
+      body.addEventListener(
+        "keydown",
+        (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement) || !target.matches("[data-new-project-name]")) return;
+          if (event.isComposing || event.keyCode === 229) return;
+          if (event.key === "Enter") {
+            event.preventDefault();
+            void submit();
+          }
+        },
+        { signal: ctx.signal }
+      );
+
       return () => {
         disposed = true;
       };
