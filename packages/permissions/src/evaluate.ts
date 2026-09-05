@@ -69,7 +69,10 @@ function policyAppliesToActor(policy: PermissionPolicyRecord, actor: PermissionA
     case "role":
       return Boolean(actor.roleIds?.includes(policy.scopeId));
     case "session":
-      return policy.scopeId === actor.sessionId || policy.scopeId === actor.id;
+      // CORE-06：session 级策略只匹配 sessionId——不再同时匹配 actor.id。此前对人 actor
+      // （sessionId 回退为 actor.id，见 approvals.ts actorToPermissionActor）一条 remember=always
+      // 的「本会话允许」会永久命中该用户后续所有会话，与用户心智（仅本次会话）不符，且策略无过期。
+      return policy.scopeId === actor.sessionId;
     default:
       return false;
   }

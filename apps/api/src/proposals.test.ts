@@ -31,6 +31,7 @@ import {
   type ProposalAcceptedDriveFile,
   type ReviewRow,
   type StoredProposalRows,
+  type TaskPlanRow,
   ClientDeviceAuthRow as DbClientDeviceAuthRow,
   ClientDeviceRepository as DbClientDeviceRepository,
   ProposalRepositoryConflictError,
@@ -1453,6 +1454,60 @@ test("reviewable proposal summaries mark task-plan manifests as plan_review", as
   assert.equal(reviewable.find((item) => item.id === proposal.id)?.review_kind, "plan_review");
 });
 
+test("API-01 createFromManifest rejects task-plan changes that do not reference the item's own draft", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, {
+    now: () => now,
+    id: ids(),
+    taskPlanDrafts: {
+      // 受害计划挂在别的事项/已非草稿 → 查不到该事项名下的草稿。
+      async findDraftPlanByIdAndWorkItem() {
+        return null;
+      }
+    }
+  });
+  const itemManifest = taskPlanManifest();
+
+  await assert.rejects(
+    service.createFromManifest({
+      workItemId: itemManifest.work_item_id,
+      manifest: itemManifest,
+      actor: { actor_kind: "human", actor_user_id: userId },
+      title: "计划提议"
+    }),
+    (error: unknown) => error instanceof ProposalServiceError
+      && error.status === 422
+      && error.code === "task_plan_draft_mismatch"
+  );
+});
+
+test("API-01 createFromManifest accepts task-plan changes that reference the item's own draft", async () => {
+  const repository = new MemoryProposalRepository();
+  const lookups: Array<{ planId: string; workItemId: string }> = [];
+  const service = createDbProposalService(repository, {
+    now: () => now,
+    id: ids(),
+    taskPlanDrafts: {
+      async findDraftPlanByIdAndWorkItem(input) {
+        lookups.push(input);
+        return { id: input.planId, workItemId: input.workItemId, status: "draft" } as TaskPlanRow;
+      }
+    }
+  });
+  const itemManifest = taskPlanManifest();
+  const planId = itemManifest.changes[0]?.target_ref.entity_id;
+
+  const proposal = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub Meta-Planner" },
+    title: "计划提议"
+  });
+
+  assert.equal(proposal.work_item_id, itemManifest.work_item_id);
+  assert.deepEqual(lookups, [{ planId, workItemId: itemManifest.work_item_id }]);
+});
+
 test("R9.7 task-plan proposal merge keeps the parent work item active for child dispatch", async () => {
   const repository = new MemoryProposalRepository();
   const service = createDbProposalService(repository, { now: () => now, id: ids() });
@@ -1512,6 +1567,31 @@ test("proposal create rejects branch ids that belong to a different work item", 
   assert.equal(response.status, 422);
   const body = await response.json() as { ok: false; error: { code: string } };
   assert.equal(body.error.code, "proposal_branch_workitem_mismatch");
+});
+
+test("API-02 proposal create relabels client-supplied checks as self-reported", async () => {
+  const { app, runtimeSettings } = appWithDbProposalRoutes();
+  const itemManifest = manifest(0);
+  itemManifest.checks = [
+    { id: "scope", label: "范围检查", status: "passed", detail: "仅文件改动。", source: "verified" },
+    { id: "build", label: "构建通过", status: "passed" }
+  ];
+
+  const response = await app.request(`/api/workitems/${itemManifest.work_item_id}/proposals`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: await cookie(runtimeSettings)
+    },
+    body: JSON.stringify({ manifest: itemManifest })
+  });
+
+  assert.equal(response.status, 201);
+  const body = await response.json() as { ok: true; data: { diff_manifest: DeliverableChangeManifest } };
+  assert.deepEqual(
+    body.data.diff_manifest.checks.map((check) => check.source),
+    ["self_reported", "self_reported"]
+  );
 });
 
 test("db proposal merge materializes inline generated text deliverables without a workdir", async () => {
@@ -4395,7 +4475,7 @@ test("findings[#168] a throwing bus does not fail the merge (best-effort publish
   );
 });
 
-test("proposal merge reports a typed contract error when the merged snapshot is missing", async () => {
+test("API-07 proposal merge reports a server error when the merged snapshot is missing", async () => {
   const runtimeSettings = settings();
   const auth = authDeps(runtimeSettings);
   const baseProposals = createInMemoryProposalService({ now: () => now, id: ids() });
@@ -4421,16 +4501,27 @@ test("proposal merge reports a typed contract error when the merged snapshot is 
     decision: "approve"
   });
 
-  const response = await app.request(`/api/proposals/${created.id}/merge`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Cookie: await cookie(runtimeSettings) },
-    body: JSON.stringify({})
-  });
+  const errors: unknown[][] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => {
+    errors.push(args);
+  };
+  try {
+    const response = await app.request(`/api/proposals/${created.id}/merge`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: await cookie(runtimeSettings) },
+      body: JSON.stringify({})
+    });
 
-  assert.equal(response.status, 409);
-  const body = await response.json() as { ok: false; error: { code: string; message: string } };
-  assert.equal(body.error.code, "merge_snapshot_missing");
-  assert.match(body.error.message, /缺少合并快照/u);
+    // API-07：合并已落库——500（服务端数据不完整）而非 409（客户端冲突），客户端不得当失败重试。
+    assert.equal(response.status, 500);
+    const body = await response.json() as { ok: false; error: { code: string; message: string } };
+    assert.equal(body.error.code, "merge_snapshot_missing");
+    assert.match(body.error.message, /快照/u);
+    assert.equal(errors.some((entry) => entry[0] === "proposal.merge_snapshot_missing"), true);
+  } finally {
+    console.error = originalError;
+  }
 });
 
 test("proposal routes expose conflict cards, choose AI candidates, and apply an AI fusion artifact", async (t) => {

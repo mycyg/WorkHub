@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   applyPendingWorkbenchDeepLink,
+  applyReplayedShellDeepLink,
   bindWorkbenchDeepLinkListener,
   bindWorkbenchLoggedOutListener,
   clientToken,
@@ -181,6 +182,54 @@ test("bindWorkbenchDeepLinkListener ignores deep links that target a different w
       route: "/approvals",
       windowControl: { label: "main", action: "show_and_focus", source: "deep_link", focus: true, reason: "deep_link" }
     }
+  });
+
+  assert.deepEqual(calls, []);
+});
+
+// MRG-23：壳层暂存的深链重放——窗口创建期间错过的 emit 由 boot 后的 take_pending_deep_link 补回。
+test("applyReplayedShellDeepLink applies the shell-stashed deep link once the webview is up", async () => {
+  const calls: Array<[string, string | undefined]> = [];
+  const shell = {
+    selectProject: (projectId: string, conversationId?: string) => {
+      calls.push([projectId, conversationId]);
+    }
+  };
+  const plan = {
+    rawUrl: "workhub://workbench/project-9",
+    scheme: "workhub",
+    route: "/workbench/project-9",
+    windowControl: { label: "workbench", action: "show_and_focus", source: "deep_link", focus: true, reason: "deep_link" }
+  };
+
+  await applyReplayedShellDeepLink(shell, { takePendingDeepLink: async () => plan });
+
+  assert.deepEqual(calls, [["project-9", undefined]]);
+});
+
+test("applyReplayedShellDeepLink no-ops on missing stash, wrong window, errors, and disabled (logged-out) boots", async () => {
+  const calls: unknown[] = [];
+  const shell = { selectProject: (...args: unknown[]) => calls.push(args) };
+
+  // 无暂存 / 取失败 / 目标是别的窗口 / 登出态禁用——全部安静跳过。
+  await applyReplayedShellDeepLink(shell, { takePendingDeepLink: async () => null });
+  await applyReplayedShellDeepLink(shell, { takePendingDeepLink: async () => { throw new Error("no shell"); } });
+  await applyReplayedShellDeepLink(shell, {
+    takePendingDeepLink: async () => ({
+      rawUrl: "workhub://open/approvals",
+      scheme: "workhub",
+      route: "/approvals",
+      windowControl: { label: "main", action: "show_and_focus", source: "deep_link", focus: true, reason: "deep_link" }
+    })
+  });
+  await applyReplayedShellDeepLink(shell, {
+    enabled: false,
+    takePendingDeepLink: async () => ({
+      rawUrl: "workhub://workbench/project-9",
+      scheme: "workhub",
+      route: "/workbench/project-9",
+      windowControl: { label: "workbench", action: "show_and_focus", source: "deep_link", focus: true, reason: "deep_link" }
+    })
   });
 
   assert.deepEqual(calls, []);

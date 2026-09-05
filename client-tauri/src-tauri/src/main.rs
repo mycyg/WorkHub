@@ -39,9 +39,14 @@ use workhub_client_tauri::window_controls::{
 
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::Mutex,
+    time::{Duration, Instant},
 };
+
+// DSK-12：仅 write_cuu_qa_dom_report_to_path（debug-only QA 命令）用到 Path。
+#[cfg(debug_assertions)]
+use std::path::Path;
 
 use tauri::{
     menu::{Menu, MenuBuilder, MenuItemBuilder},
@@ -737,6 +742,9 @@ fn toggle_pet_window(app: tauri::AppHandle) -> Result<ShellWindowControlPlan, St
     )
 }
 
+// DSK-12：写文件的 QA 命令只在 debug build 编入（release 里不存在这个入口）。
+// release 构建连名字都不注册，打包产物里没有任何「webview 一句话就写任意路径文件」的面。
+#[cfg(debug_assertions)]
 #[tauri::command]
 fn write_cuu_qa_dom_report(report_json: String) -> Result<(), String> {
     let Some(path) = std::env::var(WORKHUB_CUU_QA_DOM_REPORT_PATH_ENV)
@@ -752,6 +760,7 @@ fn write_cuu_qa_dom_report(report_json: String) -> Result<(), String> {
     write_cuu_qa_dom_report_to_path(&path, &report)
 }
 
+#[cfg(debug_assertions)]
 fn write_cuu_qa_dom_report_to_path(path: &Path, report: &serde_json::Value) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| {
@@ -1566,6 +1575,9 @@ fn restore_pet_window_interaction_state(app: &tauri::AppHandle) -> Result<(), St
     Ok(())
 }
 
+// WIRE-04：前端零 invoke 的死命令——它只为 QA 录屏流水线存在（scripts/qa/cuu-tauri-motion-capture.ps1
+// 通过它触发与托盘菜单相同的恢复 handler，见 cuu-r3-agent-entry.md），与 DSK-12 同口径：仅 debug build 编入。
+#[cfg(debug_assertions)]
 #[tauri::command]
 fn restore_pet_window_interaction(app: tauri::AppHandle) -> Result<(), String> {
     handle_tray_action(&app, TRAY_RESTORE_PET_INTERACTION_ID)
@@ -1702,8 +1714,52 @@ fn apply_deep_link_plan<H: DeepLinkWindowHost>(
 fn handle_deep_link_plan(app: &tauri::AppHandle, plan: &ShellDeepLinkPlan) -> Result<(), String> {
     let mut host = TauriDeepLinkWindowHost { app };
     apply_deep_link_plan(&mut host, plan)?;
+    // MRG-23：先暂存再广播。目标窗若是这次调用刚创建的（workbench 是 create:false 按需建），它的
+    // webview 还没跑到订阅 "deep-link" 那一步，这次 emit 必丢——暂存一份（TTL 15s、按目标窗口
+    // label 认领、一次性），目标窗 boot 完成后调 take_pending_deep_link 取回。覆盖全部三条入口：
+    // 冷启动 URL、single-instance argv、focus_system_notification。
+    if let Ok(mut pending) = app.state::<Mutex<PendingShellDeepLink>>().lock() {
+        pending.plan = Some((plan.clone(), Instant::now()));
+    }
     app.emit(event_channel_name(ShellEvent::DeepLink), plan.clone())
         .map_err(|error| format!("failed to emit deep-link event: {error}"))
+}
+
+// MRG-23：深链事件重放兜底的状态与判定（纯函数部分脱离 AppHandle 可单测）。
+const PENDING_DEEP_LINK_TTL: Duration = Duration::from_secs(15);
+
+#[derive(Default)]
+struct PendingShellDeepLink {
+    plan: Option<(ShellDeepLinkPlan, Instant)>,
+}
+
+// 认领一条暂存深链：只对「目标窗口 label 匹配 + 未过期」返回并清除；不匹配则放回去等目标窗口来取，
+// 过期即弃。一次性语义防止窗口长期隐藏复用时，一条陈旧 stash 被误当成「这次」的目标。
+fn take_pending_deep_link_from(
+    pending: &mut Option<(ShellDeepLinkPlan, Instant)>,
+    window_label: &str,
+    now: Instant,
+) -> Option<ShellDeepLinkPlan> {
+    let (plan, stashed_at) = pending.take()?;
+    if now.duration_since(stashed_at) > PENDING_DEEP_LINK_TTL {
+        return None;
+    }
+    if plan.window_control.label != window_label {
+        *pending = Some((plan, stashed_at));
+        return None;
+    }
+    Some(plan)
+}
+
+// 目标窗 webview 加载完成、订阅好 "deep-link" 事件后调用：取回窗口创建期间错过的那条深链计划。
+// 浏览器 dev 态/无暂存/非本窗目标都回 None，前端按「没有兜底」继续正常启动。
+#[tauri::command]
+fn take_pending_deep_link(app: tauri::AppHandle, window: tauri::Window) -> Option<ShellDeepLinkPlan> {
+    let state = app.state::<Mutex<PendingShellDeepLink>>();
+    let Ok(mut pending) = state.lock() else {
+        return None;
+    };
+    take_pending_deep_link_from(&mut pending.plan, window.label(), Instant::now())
 }
 
 fn handle_deep_link_url(app: &tauri::AppHandle, raw_url: &str) -> Result<(), String> {
@@ -1817,6 +1873,39 @@ fn should_hide_instead_of_close(window_label: &str) -> bool {
     matches!(window_label, "main" | "workbench")
 }
 
+// DSK-12 / WIRE-04：write_cuu_qa_dom_report 与 restore_pet_window_interaction 是 QA 专用命令（录屏/截图
+// 流水线用），只在 debug build 注册进 invoke handler——release 产物里这两个入口不存在。用宏把命令清单
+// 收敛成一份，debug/release 只差尾部两个 QA 命令，避免整份清单在两个 cfg 分支里各写一遍漂移。
+macro_rules! workhub_invoke_handler {
+    ($($qa_command:ident),* $(,)?) => {
+        tauri::generate_handler![
+            set_pet_window_mode,
+            set_pet_window_settings,
+            start_pet_window_drag,
+            save_pet_window_position,
+            sample_pet_cursor_near,
+            pet_cursor_client_position,
+            set_pet_window_click_through,
+            set_client_token,
+            set_spotlight_size,
+            set_shell_badge,
+            set_shell_locale,
+            focus_system_notification,
+            start_main_window_drag,
+            move_main_window_by,
+            show_main_window,
+            hide_main_window,
+            focus_main_route,
+            open_workbench,
+            show_pet_window,
+            hide_pet_window,
+            toggle_pet_window,
+            take_pending_deep_link
+            $(, $qa_command)*
+        ]
+    };
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
@@ -1835,6 +1924,8 @@ fn main() {
         .manage(Mutex::new(WorkHubLocale::default()))
         // R8：webview bootstrap 拿到的设备令牌经 set_client_token 写入此处，供 Rust SSE worker 鉴权（修 Cuu 重连中）。
         .manage(ShellClientToken::default())
+        // MRG-23：深链事件重放兜底（见 handle_deep_link_plan / take_pending_deep_link）。
+        .manage(Mutex::new(PendingShellDeepLink::default()))
         .on_window_event(|window, event| {
             // findings[#132/H15]：主窗口带 OS 关闭按钮(tauri.conf decorations:true)，Tauri v2 默认关闭即销毁 webview，
             // 之后托盘/深链/通知再想唤起主窗都会因 get_webview_window("main")==None 而失败（execute_window_control 报错），
@@ -1947,31 +2038,16 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
-            set_pet_window_mode,
-            set_pet_window_settings,
-            start_pet_window_drag,
-            save_pet_window_position,
-            sample_pet_cursor_near,
-            pet_cursor_client_position,
-            set_pet_window_click_through,
-            set_client_token,
-            set_spotlight_size,
-            set_shell_badge,
-            set_shell_locale,
-            focus_system_notification,
-            start_main_window_drag,
-            move_main_window_by,
-            show_main_window,
-            hide_main_window,
-            focus_main_route,
-            open_workbench,
-            show_pet_window,
-            hide_pet_window,
-            toggle_pet_window,
-            restore_pet_window_interaction,
-            write_cuu_qa_dom_report
-        ])
+        .invoke_handler({
+            #[cfg(debug_assertions)]
+            {
+                workhub_invoke_handler!(restore_pet_window_interaction, write_cuu_qa_dom_report)
+            }
+            #[cfg(not(debug_assertions))]
+            {
+                workhub_invoke_handler!()
+            }
+        })
         // R19-16：改用 build()? + App::run(callback) 收尾，以便注册 RunEvent 回调消费 macOS Dock 图标点击
         // （applicationShouldHandleReopen → RunEvent::Reopen）。主窗自绘关闭/Cmd+W 都是 hide 不是 close
         // （见 should_hide_instead_of_close），用户经常把主窗藏进托盘；此前 main() 以 Builder::run 收尾、
@@ -2078,6 +2154,37 @@ mod tests {
 
         assert_eq!(host.created_windows, vec!["workbench".to_string()]);
         assert_eq!(host.controlled_labels, vec!["workbench".to_string()]);
+    }
+
+    // MRG-23：暂存深链的认领语义——目标窗口 label 匹配且未过期才交出（一次性），错窗认领放回去，过期即弃。
+    #[test]
+    fn pending_deep_link_is_taken_only_by_its_target_window_while_fresh() {
+        let plan =
+            deep_link_plan_from_url("workhub://workbench/86000000-0000-4000-8000-000000000001")
+                .unwrap();
+        let stashed_at = Instant::now();
+
+        // 别的窗口（main 先 boot）来问：拿不到，且 stash 留给真正的目标窗。
+        let mut pending = Some((plan.clone(), stashed_at));
+        let taken = take_pending_deep_link_from(&mut pending, "main", stashed_at + Duration::from_secs(1));
+        assert!(taken.is_none());
+        assert!(pending.is_some(), "mismatched window must not consume the stash");
+
+        // 目标窗（workbench）来问：拿到且一次性清除。
+        let taken = take_pending_deep_link_from(&mut pending, "workbench", stashed_at + Duration::from_secs(2));
+        assert_eq!(taken, Some(plan.clone()));
+        assert!(pending.is_none());
+        assert!(take_pending_deep_link_from(&mut pending, "workbench", stashed_at + Duration::from_secs(3)).is_none());
+
+        // 过期（> TTL）：目标窗来问也拿不到，stash 清掉不留污染。
+        let mut stale = Some((plan, stashed_at));
+        let taken = take_pending_deep_link_from(
+            &mut stale,
+            "workbench",
+            stashed_at + PENDING_DEEP_LINK_TTL + Duration::from_secs(1),
+        );
+        assert!(taken.is_none());
+        assert!(stale.is_none(), "expired stash must be dropped");
     }
 
     fn env_value(value: Option<&'static str>) -> impl Fn(&str) -> Option<String> {

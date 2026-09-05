@@ -30,11 +30,34 @@ function usageFromResponse(response: LlmCreateResponse) {
 
 // 用量记账是尽力而为：sink（通常是 DB 写）抛错不应让一次已成功的模型调用失败、从而拖垮整个 run。
 // 记账失败大声告警、继续返回响应（可用性优先于一次瞬时记账的完整性）。
+//
+// CORE-08：但「尽力而为」不等于「静默欠计」——此前只 console.warn，预算/审计欠计无人知晓，
+// 闸门被系统性放宽。现在失败时：1) 打结构化 error 日志（可检索/告警）；2) 累加进程内失败计数
+// （usageRecordFailureCount，供指标导出/测试断言欠计发生过）。
+let usageRecordFailures = 0;
+
+/** 进程内「用量记账失败」累计次数——每次 recordUsage 抛错 +1。欠计观测指标（测试亦可断言）。 */
+export function usageRecordFailureCount() {
+  return usageRecordFailures;
+}
+
 async function recordUsageSafely(sink: UsageSink, record: UsageRecord) {
   try {
     await sink.recordUsage(record);
   } catch (error) {
-    console.warn("WorkHub usage sink failed; run continues without this usage record", error);
+    usageRecordFailures += 1;
+    console.error(JSON.stringify({
+      level: "error",
+      event: "usage_record_failed",
+      detail: "WorkHub usage sink failed; run continues without this usage record (budget/audit undercounted)",
+      provider: record.provider,
+      model: record.model,
+      task: record.task,
+      source: record.source,
+      ...(record.runId ? { runId: record.runId } : {}),
+      ...(record.workspaceId ? { workspaceId: record.workspaceId } : {}),
+      error: error instanceof Error ? error.message : String(error)
+    }));
   }
 }
 

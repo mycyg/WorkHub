@@ -3,9 +3,16 @@
 // API：pages.drive 需 project_id（与知识检索同理先选项目）；恢复走 client.restoreDriveItem。
 
 import type { DriveItemVM, DrivePageVM } from "@workhub/contracts";
-import { defaultPorts } from "@workhub/config/ports";
 import { escapeHtml } from "@workhub/web-runtime";
 
+import {
+  resolveDesktopApiBaseFromStorage
+} from "../../desktop-api-base.js";
+import {
+  clearDesktopClientToken,
+  readDesktopClientToken,
+  writeDesktopClientToken
+} from "../../desktop-client-token.js";
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 
 const FOLDER_ICON =
@@ -31,9 +38,11 @@ export function driveResourceHref(href: string, apiBaseUrl?: string): string {
   return base ? `${base}${href}` : href;
 }
 
+// DSK-05/06：API 基地址与设备令牌都走单一收口 helper（../../desktop-api-base.ts、
+// ../../desktop-client-token.ts）——非法基地址按未配置回落本机默认；令牌明文 localStorage 的
+// 已知风险见 desktop-client-token.ts 头部注释。
 export function driveResourceApiBase(): string {
-  const override = driveResourceStorage()?.getItem("workhub_api_base")?.trim();
-  return (override && override.length > 0 ? override : `http://127.0.0.1:${defaultPorts.api}`).replace(/\/+$/u, "");
+  return resolveDesktopApiBaseFromStorage(driveResourceStorage());
 }
 
 function driveResourceStorage(): Storage | undefined {
@@ -42,19 +51,21 @@ function driveResourceStorage(): Storage | undefined {
 
 function driveResourceToken(): string | undefined {
   const storage = driveResourceStorage();
-  return storage?.getItem("workhub_client_token") ?? storage?.getItem("yqgl_client_token") ?? undefined;
+  return storage ? readDesktopClientToken(storage) : undefined;
 }
 
 function storeDriveResourceToken(token: string): void {
   const storage = driveResourceStorage();
-  storage?.setItem("workhub_client_token", token);
-  storage?.setItem("yqgl_client_token", token);
+  if (storage) {
+    writeDesktopClientToken(storage, token);
+  }
 }
 
 function clearDriveResourceToken(): void {
   const storage = driveResourceStorage();
-  storage?.removeItem("workhub_client_token");
-  storage?.removeItem("yqgl_client_token");
+  if (storage) {
+    clearDesktopClientToken(storage);
+  }
 }
 
 export function driveResourceHeaders(): Headers {

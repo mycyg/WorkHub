@@ -118,6 +118,8 @@ test("desktop Live2D model pages carry no inline scripts (CSP script-src 'self')
     assert.ok(bootSrc, `${modelPage.html} must reference its external boot script`);
     const bootJs = readFileSync(resolve(testDir, modelPage.boot), "utf8");
     assert.match(bootJs, /loadlive2d\("live2d"/u);
-    assert.match(bootJs, /workhub:cuu-live2d/u);
+    // 状态经 <html data-live2d-status> 暴露给 QA capture；DSK-13：postMessage 死通道已删，不许复活。
+    assert.match(bootJs, /dataset\.live2dStatus/u);
+    assert.doesNotMatch(bootJs, /postMessage/u);
   }
 });

@@ -9,6 +9,8 @@ import {
   type WorkHubDatabaseClient
 } from "@workhub/db";
 
+import { getDefaultStructuredLogger } from "../logging.js";
+
 import type {
   AgentRunClaimLease,
   AgentRunHeartbeatLease,
@@ -104,7 +106,7 @@ function toPersistenceTrace(trace: AgentRunTraceStepRecord[]): AgentRunTraceForP
   }));
 }
 
-function queueStatus(status: string): AgentRunQueueStatus {
+function queueStatus(status: string, runId?: string): AgentRunQueueStatus {
   switch (status) {
     case "queued":
     case "running":
@@ -114,6 +116,12 @@ function queueStatus(status: string): AgentRunQueueStatus {
     case "cancelled":
       return status;
     default:
+      // INF-11：未知 DB 状态此前静默映射 failed——未来 schema 加新状态时无人察觉。
+      // 留一条结构化 warn（含 runId/原始状态），映射行为不变（failed 兜底）。
+      getDefaultStructuredLogger().warn("agent_run_unknown_status_mapped_to_failed", {
+        status,
+        ...(runId ? { runId } : {})
+      });
       return "failed";
   }
 }
@@ -219,7 +227,7 @@ function toQueueRun(rows: StoredAgentRunRows): AgentRunQueueRecord {
     ...(rows.run.objectiveMd ? { objective_md: rows.run.objectiveMd } : {}),
     actor_id: rows.run.actorUserId ?? rows.run.actor,
     mode: rows.run.mode,
-    status: queueStatus(rows.run.status),
+    status: queueStatus(rows.run.status, rows.run.id),
     title: rows.run.title,
     ...(rows.run.workdirRef ? { workdir_ref: rows.run.workdirRef } : {}),
     budget: {

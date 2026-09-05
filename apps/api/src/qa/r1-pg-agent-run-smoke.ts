@@ -580,7 +580,8 @@ async function main() {
     }
     const cancelledDraft = await taskPlanRepository.cancelDraftPlan({
       planId: cancelledPlanBody.data.plan_id,
-      workspaceId: settings.auth.defaultWorkspaceId
+      workspaceId: settings.auth.defaultWorkspaceId,
+      workItemId: taskPlanWorkItemId
     });
     if (cancelledDraft?.status !== "cancelled") {
       throw new Error(`Expected draft plan to cancel before the atomicity probe, got ${cancelledDraft?.status ?? "missing"}`);

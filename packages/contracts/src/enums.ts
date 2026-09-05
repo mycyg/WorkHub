@@ -131,7 +131,9 @@ export const permissionEffects = ["allow", "deny", "ask"] as const;
 export const permissionEffectSchema = z.enum(permissionEffects);
 export type PermissionEffect = z.infer<typeof permissionEffectSchema>;
 
-export const approvalStatuses = ["pending", "approved", "denied", "expired", "delegated"] as const;
+// CORE-11：删掉死枚举值 "delegated"——实现从不写该状态（委派保持 status=pending，只写
+// delegated_to_user_id，见 approvals 服务/approval_requests 表），留着只会让契约与实现发散。
+export const approvalStatuses = ["pending", "approved", "denied", "expired"] as const;
 export const approvalStatusSchema = z.enum(approvalStatuses);
 export type ApprovalStatus = z.infer<typeof approvalStatusSchema>;
 

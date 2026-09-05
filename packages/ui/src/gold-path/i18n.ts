@@ -420,7 +420,9 @@ const goldPathCopy = {
     "runtime.reason.format": "交付格式要改",
     "runtime.rejectNeedsReason": "打回时请说明原因。先选一个原因，AI 会带着它继续改。",
     "runtime.rejectReasonFirst": "先选一个打回原因，AI 会在下一轮带上它继续改。",
-    "runtime.actionPending": "这个功能还在开发中，暂时不可用。",
+    // UI-10：未知/未接线的服务端动作曾静默退化为「处理中」式提示——用户会傻等一个永远不会来的结果。
+    // 明确告知「暂未支持」；真实 in-flight 请求走 runtime.actionInProgress（注意两套 key 别混用）。
+    "runtime.actionPending": "此动作暂未支持。",
     "runtime.actionInProgress": "正在处理，请稍候，别重复点击。处理结果会在这里提示。",
     "runtime.logoutFailedBody": "网络或服务端出错，退出没有完成——这台设备上的登录可能仍然有效。请检查网络后再试一次；共享设备请务必重试到看到退出成功为止。",
     "runtime.notice.inProgressTitle": "处理中",
@@ -615,7 +617,7 @@ const goldPathCopy = {
     "runtime.reason.format": "Delivery format needs work",
     "runtime.rejectNeedsReason": "Choose a rejection reason first. AI will use it in the next revision.",
     "runtime.rejectReasonFirst": "Choose a rejection reason first. AI will carry it into the next revision.",
-    "runtime.actionPending": "This action is still waiting for its service wiring.",
+    "runtime.actionPending": "This action isn't supported yet.",
     "runtime.actionInProgress": "Working on it — no need to click again. The result will show up here.",
     "runtime.logoutFailedBody": "A network or server error interrupted sign-out — you may still be signed in on this device. Check your connection and try again; on a shared device, retry until you see it succeed.",
     "runtime.notice.inProgressTitle": "In progress",

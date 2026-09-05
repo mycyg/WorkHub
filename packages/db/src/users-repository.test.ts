@@ -147,3 +147,83 @@ test("R14 AVATAR findAvatar reports an actual missing avatar (row exists, column
 
   assert.deepEqual(result, { avatarWebp: null, avatarUpdatedAt: null });
 });
+
+// ── CORE-02：cookie_token 哈希落库 + 旧明文行读取兼容 ─────────────────────────────
+
+test("CORE-02 createUser stores the sha256 hash of the cookie token, never the plaintext", async () => {
+  const { createUserRepository, hashCookieToken } = await repositoryModule();
+  const created = userRow({ cookieToken: hashCookieToken("raw-cookie-token") });
+  const { db, queries } = createQueryRecorder([[created]]);
+
+  const result = await createUserRepository(db).createUser({
+    nickname: "张三",
+    cookieToken: "raw-cookie-token"
+  });
+
+  assert.equal(result.cookieToken, hashCookieToken("raw-cookie-token"));
+  const query = queries[0];
+  assert.equal(query?.operation, "insert");
+  const values = query?.valuesValue as Record<string, unknown>;
+  assert.equal(values.cookieToken, hashCookieToken("raw-cookie-token"));
+  assert.notEqual(values.cookieToken, "raw-cookie-token");
+});
+
+test("CORE-02 rotateCookieToken stores the sha256 hash of the new token", async () => {
+  const { createUserRepository, hashCookieToken } = await repositoryModule();
+  const rotated = userRow({ cookieToken: hashCookieToken("rotated-token") });
+  const { db, queries } = createQueryRecorder([[rotated]]);
+
+  const result = await createUserRepository(db).rotateCookieToken(userId, "rotated-token");
+
+  assert.equal(result?.cookieToken, hashCookieToken("rotated-token"));
+  const query = queries[0];
+  assert.equal(query?.operation, "update");
+  const set = query?.setValue as Record<string, unknown>;
+  assert.equal(set.cookieToken, hashCookieToken("rotated-token"));
+});
+
+test("CORE-02 findActiveByCookieToken matches hashed rows without an extra write", async () => {
+  const { createUserRepository, hashCookieToken } = await repositoryModule();
+  const hashed = userRow({ cookieToken: hashCookieToken("hashed-token") });
+  const { db, queries } = createQueryRecorder([[hashed]]);
+
+  const result = await createUserRepository(db).findActiveByCookieToken("hashed-token");
+
+  assert.equal(result?.id, userId);
+  // 哈希命中：只读，不触发升级写。
+  assert.equal(queries.length, 1);
+  assert.equal(queries[0]?.operation, "select");
+  // WHERE 同时覆盖哈希值与明文（过渡期双读），且仍按 active 行过滤。
+  assert.ok(params(queries[0]).includes(hashCookieToken("hashed-token")));
+  assert.ok(params(queries[0]).includes("hashed-token"));
+  assert.equal(references(queries[0], users.deletedAt), true);
+});
+
+test("CORE-02 findActiveByCookieToken upgrades a legacy plaintext row to the hash on a hit", async () => {
+  const { createUserRepository, hashCookieToken } = await repositoryModule();
+  const legacy = userRow({ cookieToken: "legacy-plaintext-token" });
+  const upgraded = userRow({ cookieToken: hashCookieToken("legacy-plaintext-token") });
+  const { db, queries } = createQueryRecorder([[legacy], [upgraded]]);
+
+  const result = await createUserRepository(db).findActiveByCookieToken("legacy-plaintext-token");
+
+  // 命中明文旧行 → 同请求内升级为哈希；返回行的 cookieToken 已是哈希值（cookie 值不变，下次走哈希分支）。
+  assert.equal(result?.cookieToken, hashCookieToken("legacy-plaintext-token"));
+  assert.equal(queries.length, 2);
+  const upgrade = queries[1];
+  assert.equal(upgrade?.operation, "update");
+  const set = upgrade?.setValue as Record<string, unknown>;
+  assert.equal(set.cookieToken, hashCookieToken("legacy-plaintext-token"));
+  assert.equal(references(upgrade, users.id), true);
+  assert.equal(references(upgrade, users.deletedAt), true);
+});
+
+test("CORE-02 findActiveByCookieToken returns null for an unknown token", async () => {
+  const { createUserRepository } = await repositoryModule();
+  const { db, queries } = createQueryRecorder([[]]);
+
+  const result = await createUserRepository(db).findActiveByCookieToken("no-such-token");
+
+  assert.equal(result, null);
+  assert.equal(queries.length, 1);
+});

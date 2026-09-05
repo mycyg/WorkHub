@@ -137,6 +137,12 @@ export async function enforceSandboxBudget(workdir: string, budget: Pick<Sandbox
 
 function sandboxEnv(workdir: string): Record<string, string> {
   return {
+    // CORE-16 风险标注（高危，刻意保留）：透传宿主 PATH 意味着白名单命令（python3/node/…）解析到的是
+    // 宿主真实解释器及其整套 site-packages/全局工具，子进程可读到宿主 PATH 上的一切可执行文件。
+    // 本 env 是「预算+路径围栏」级别的软沙箱，不是安全边界：一旦部署方置
+    // AGENT_RUN_ALLOW_UNSANDBOXED_COMMANDS=true（默认 false，见 DEPLOY.md），run_command 即把宿主机
+    // 交给模型生成的命令——仅限受信 LAN 单机试点；多租户/公网部署必须保持 false 并注入真正隔离的
+    // runner（容器/namespace/firejail）。若未来要做真隔离，此处应换成最小白名单 PATH 而非宿主透传。
     PATH: process.env.PATH ?? "",
     PYTHONPATH: workdir,
     HOME: workdir,

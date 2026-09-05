@@ -55,3 +55,19 @@ export function dismissDesktopMainWindow(
 ): boolean {
   return invokeDesktopWindowCommand("hide_main_window", undefined, scope);
 }
+
+// MRG-23：目标窗 webview boot 完成后向壳层取回「窗口创建期间错过的深链计划」（Rust 侧
+// take_pending_deep_link：TTL 15s、按窗口 label 认领、一次性）。浏览器 dev 态/无暂存 → undefined。
+export async function takeDesktopPendingDeepLink(
+  scope: DesktopWindowControlsScope = globalThis as DesktopWindowControlsScope
+): Promise<unknown> {
+  const invoke = resolveDesktopTauriInvoke(scope);
+  if (typeof invoke !== "function") {
+    return undefined;
+  }
+  try {
+    return await Promise.resolve(invoke("take_pending_deep_link", undefined));
+  } catch {
+    return undefined;
+  }
+}

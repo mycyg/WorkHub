@@ -1270,7 +1270,6 @@ const proposalMergeConflictResponse = proposalConflictErrorResponse(
     "merge_conflict",
     "rebase_required",
     "stale_base",
-    "merge_snapshot_missing",
     "delivery_artifact_missing",
     "delivery_artifact_changed",
     "delivery_artifact_unsafe_path",
@@ -1281,6 +1280,12 @@ const proposalMergeConflictResponse = proposalConflictErrorResponse(
     "task_plan_budget_share_invalid"
   ]
 );
+// API-07：合并已落库但快照 id 缺失是服务端数据不完整——回 500（客户端不得当失败重试）。
+const proposalMergeSnapshotMissingResponse = jsonErrorStatusResponse(
+  "500",
+  "Merge committed but the snapshot record is incomplete",
+  ["merge_snapshot_missing"]
+).responses["500"];
 const proposalMergeDispatchFailureResponse = jsonErrorStatusResponse(
   "503",
   "Task-plan proposal was approved but child-run dispatch failed",
@@ -1511,6 +1516,7 @@ const proposalMergeResponse = {
     "404": proposalNotFoundResponse,
     "409": proposalMergeConflictResponse,
     "422": proposalValidationResponse,
+    "500": proposalMergeSnapshotMissingResponse,
     "503": proposalMergeDispatchFailureResponse
   }
 } as const;
@@ -1633,7 +1639,7 @@ const approvalRequestResponseSchema = {
     agent_run_id: uuidStringSchema,
     action_pattern: { type: "string", minLength: 1, maxLength: 128 },
     payload_json: approvalPayloadResponseSchema,
-    status: { type: "string", enum: ["pending", "approved", "denied", "expired", "delegated"] },
+    status: { type: "string", enum: ["pending", "approved", "denied", "expired"] },
     routed_to_user_id: uuidStringSchema,
     decided_by_user_id: uuidStringSchema,
     decision_reason_md: { type: "string" },
@@ -7489,7 +7495,11 @@ export function getOpenApiDocument() {
                   }
                 }
               }
-            }
+            },
+            // API-08：空选择按全局错误信封回 422。
+            ...jsonErrorStatusResponse("422", "Batch request has no usable approval ids", [
+              "field_value_required"
+            ]).responses
           }
         }
       },

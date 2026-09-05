@@ -10,7 +10,7 @@ export type TaskPlanApprovalRepository = {
 };
 
 export type TaskPlanRejectionRepository = {
-  cancelDraftPlan: (input: { planId: string; workspaceId: string; cancelledAt?: Date }) => Promise<TaskPlanRow | null>;
+  cancelDraftPlan: (input: { planId: string; workspaceId: string; workItemId: string; cancelledAt?: Date }) => Promise<TaskPlanRow | null>;
 };
 
 export type TaskPlanMergeApprovalHandler = (proposal: StoredProposal) => Promise<TaskPlanRow | null>;
@@ -94,6 +94,8 @@ export function createTaskPlanReviewRejectionHandler(input: {
     const cancelled = await input.taskPlans.cancelDraftPlan({
       planId: target.planId,
       workspaceId: target.workspaceId,
+      // API-01：带上提议所属事项——仓库 WHERE 会核对计划确实挂在这个事项下，跨事项引用直接 miss → 409。
+      workItemId: target.workItemId,
       cancelledAt: now()
     });
     if (!cancelled) {

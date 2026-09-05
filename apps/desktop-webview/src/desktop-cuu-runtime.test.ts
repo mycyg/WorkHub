@@ -2184,6 +2184,63 @@ test("R20 P1-03: closing the subscription clears fallback timers and stops resch
   assert.equal(getCalls, callsAfterClose);
 });
 
+test("DSK-11: fallback polling yields while SSE events keep flowing, resumes when the stream goes silent", async () => {
+  FakeEventSource.instances = [];
+  const clock = createFakeClock();
+  let now = 0;
+  let getCalls = 0;
+  const client = {
+    streamUrl(path: string) {
+      return `/daemon${path}`;
+    },
+    async getAgentRun() {
+      getCalls += 1;
+      return agentRunLive({ status: "running" });
+    }
+  };
+  const subscription = subscribeDesktopCuuAgentRunStream({
+    client,
+    run: agentRunLive({ status: "running" }),
+    EventSourceCtor: FakeEventSource,
+    fallbackRefreshMs: 1000,
+    timers: { setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, now: () => now },
+    onCard() {},
+    onStatus() {}
+  });
+  const source = FakeEventSource.instances[0]!;
+
+  // 流还没来任何事件：第一拍兜底照常跑（初始不是「活跃」）。
+  clock.fire();
+  await flushAsync();
+  assert.equal(getCalls, 1);
+
+  // SSE 事件到达（事件自身驱动一次 refresh）→ 之后活跃期内的兜底拍全部让位，不再双通道重复拉。
+  now = 10_000;
+  source.emit(eventTypes.agentRunStep, workHubEvent({
+    event_id: "10000000-0000-4000-8000-000000000701",
+    type: eventTypes.agentRunStep,
+    topic: "run:10000000-0000-4000-8000-000000000301",
+    data: { run_id: "10000000-0000-4000-8000-000000000301" }
+  }));
+  await flushAsync();
+  assert.equal(getCalls, 2);
+  clock.fire();
+  await flushAsync();
+  assert.equal(getCalls, 2, "fallback must skip while the SSE stream is active");
+  clock.fire();
+  await flushAsync();
+  assert.equal(getCalls, 2);
+
+  // 流静默超过 2 拍（事件停在 now=10_000，now 走到 12_500）→ 兜底恢复拉取。
+  now = 12_500;
+  clock.fire();
+  await flushAsync();
+  assert.equal(getCalls, 3, "fallback must resume once the stream has been silent for two beats");
+
+  subscription.close();
+  assert.equal(clock.pendingCount(), 0);
+});
+
 test("desktop Cuu runtime maps API and stream failures to Cuu cards", () => {
   const budget = cardFromDesktopCuuRuntimeError(new WorkHubApiError(402, "budget_exhausted", "预算用完了。"));
   const permission = cardFromDesktopCuuRuntimeError(new WorkHubApiError(403, "forbidden", "没有权限。"), { locale: "en-US" });
@@ -2963,4 +3020,42 @@ test("submitDesktopCuuAction runs the three new card actions through the client"
     ["budget", "e1", "add_budget"],
     ["skip", "p1"]
   ]);
+});
+
+// INF-08：SSE 断线重连成功（同一 stream_kind 第二次及以后的 open）要触发一次全量重拉对账——
+// 后端不回放断线窗口的事件，不能只靠下一条增量兜底。首连不触发（壳层启动已拉过）。
+test("desktop Cuu runtime fires onSseReconnected on stream reconnect, not on first connect", async () => {
+  const handlers = new Map<string, (event: DesktopShellEventEnvelope) => void>();
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => {};
+  };
+  let reconnects = 0;
+  const runtime = await bindDesktopShellCuuRuntime({
+    listen,
+    locale: "zh-CN",
+    notify: () => undefined,
+    onSseReconnected: () => {
+      reconnects += 1;
+    }
+  });
+  const sseStatus = (state: string) => {
+    handlers.get("sse-status")?.({
+      payload: {
+        stream_kind: "me",
+        stream_path: "/api/push/stream/me",
+        state
+      }
+    });
+  };
+
+  sseStatus("open");
+  assert.equal(reconnects, 0, "first connect does not re-pull (the shell just fetched)");
+  sseStatus("retrying");
+  sseStatus("open");
+  assert.equal(reconnects, 1, "a reconnect triggers exactly one full reconciliation");
+  sseStatus("open");
+  assert.equal(reconnects, 2, "every subsequent reconnect re-pulls");
+
+  await runtime.dispose();
 });

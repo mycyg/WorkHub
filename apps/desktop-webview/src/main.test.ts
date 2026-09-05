@@ -28,8 +28,6 @@ import {
   renderDesktopAgentRunLive,
   loadDesktopAgentArmyDashboard,
   loadDesktopIntakeCuuCard,
-  loadDesktopProposalConflictCuuCards,
-  loadDesktopProposalCuuCard,
   loadDesktopGoldPathSurface,
   loadDesktopWorkItemCuuCard,
   renderDesktopIntakeSession,
@@ -176,6 +174,7 @@ type FakeDesktopDomElement = {
   dispatch: (type: string, event?: FakeDesktopDomEvent) => void;
   focus?: (options?: FocusOptions) => void;
   removeAttribute?: (name: string) => void;
+  setAttribute?: (name: string, value: string) => void;
 };
 
 function fakeDesktopDomElement(extra: Partial<FakeDesktopDomElement> = {}): FakeDesktopDomElement {
@@ -836,19 +835,15 @@ test("desktop webview surface advertises and loads the shared P0.5 gold path pag
   assert.equal((await renderDesktopAgentRunReplay(fakeClient(surface), "run", "en-US")).html.includes("See how AI did it"), true);
   assert.equal((await loadDesktopAgentArmyDashboard(fakeClient(surface), "en-US")).plans[0]?.work_item_title, "竞品价格调研");
   assert.equal((await loadDesktopWorkItemCuuCard(fakeClient(surface), "work")).state, "carrying_document");
-  assert.equal((await loadDesktopProposalCuuCard(fakeClient(surface), "proposal")).state, "carrying_document");
 
   const conflictSurface = {
     ...(surface as unknown as object),
     conflicts: [proposalConflict("work", "proposal")]
   } as GoldPathSurfaceVM & { conflicts: ProposalConflict[] };
   const renderedConflict = await renderDesktopProposalDetail(fakeClient(conflictSurface), "proposal");
-  const conflictCards = await loadDesktopProposalConflictCuuCards(fakeClient(conflictSurface), "proposal");
   assert.equal(desktopWebviewSurface.pages.includes("/api/workitems/:id/conflicts"), true);
   assert.equal(renderedConflict.conflictCount, 1);
   assert.equal(renderedConflict.html.includes("data-conflict-option-id=\"accept_incoming\""), true);
-  assert.equal(conflictCards[0]?.payload_ref?.entity_type, "proposal_conflict");
-  assert.equal(conflictCards[0]?.actions.find((action) => action.id === "accept_incoming")?.payload !== undefined, true);
 });
 
 test("desktop webview catalog exposes settings APIs while Rust owns local capabilities", () => {
@@ -1129,6 +1124,59 @@ test("desktop offline settings edit the API base locally instead of navigating t
   retry.dispatch("click");
   assert.deepEqual(reloads, ["reload", "reload", "reload"]);
   assert.deepEqual(rebuilds, ["rebuild"]);
+});
+
+// DSK-05：非法服务器地址（非 http/https / 带凭据 / 畸形串）拒存、不 reload，行内报错。
+test("desktop offline settings refuse to store an invalid API base (DSK-05)", () => {
+  const storageCalls: Array<{ method: "setItem" | "removeItem"; key: string; value?: string }> = [];
+  const reloads: string[] = [];
+  const removedFromError: string[] = [];
+  const hiddenAttrs: string[] = [];
+
+  const form = fakeDesktopDomElement();
+  const apiInput = fakeDesktopDomElement({ value: "javascript:alert(1)" });
+  const errorEl = fakeDesktopDomElement({
+    removeAttribute(name) {
+      removedFromError.push(name);
+    },
+    setAttribute(name, value) {
+      hiddenAttrs.push(`${name}=${value}`);
+    }
+  });
+  const root = fakeDesktopRoot({
+    "#wh-offline-settings": form,
+    "#wh-api-base": apiInput,
+    "#wh-api-base-error": errorEl
+  });
+
+  bindDesktopOfflineCard(root, {
+    apiBase: "http://127.0.0.1:8787",
+    detail: "ECONNREFUSED",
+    locale: "zh-CN",
+    storage: {
+      setItem(key, value) {
+        storageCalls.push({ method: "setItem", key, value });
+      },
+      removeItem(key) {
+        storageCalls.push({ method: "removeItem", key });
+      }
+    },
+    reload: () => { reloads.push("reload"); }
+  });
+
+  form.dispatch("submit", { preventDefault: () => {} });
+  assert.deepEqual(storageCalls, [], "an invalid address must never reach localStorage");
+  assert.deepEqual(reloads, [], "no reload on rejection");
+  assert.deepEqual(removedFromError, ["hidden"]);
+  assert.match(String((errorEl as { textContent?: string }).textContent), /http:\/\/ 或 https:\/\//u);
+
+  // 合法地址仍照常归一化保存并重载（尾部斜杠归一）。
+  (apiInput as { value?: string }).value = "https://workhub.example///";
+  form.dispatch("submit", { preventDefault: () => {} });
+  assert.deepEqual(storageCalls, [
+    { method: "setItem", key: "workhub_api_base", value: "https://workhub.example" }
+  ]);
+  assert.deepEqual(reloads, ["reload"]);
 });
 
 test("Spotlight boot starts transparent without a legacy boot card or capture background", () => {

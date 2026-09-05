@@ -851,6 +851,34 @@ test("B-R9.0 read access alone cannot resolve, delegate, or decide budget on an 
   assert.deepEqual(repository.budgetDecisionCalls, []);
 });
 
+test("API-06 escalation resolve and delegate authenticate before parsing the payload schema", async () => {
+  // 畸形 body + 无权限：必须拿 403（鉴权），而不是泄露契约的 422（schema 校验）。
+  const readableNotMutable = {
+    async canReadWorkItems(input: { workItemIds: string[] }) {
+      return new Set<string>(input.workItemIds);
+    },
+    async assertCanMutateWorkItem() {
+      throw new WorkItemServiceError(403, "forbidden", "你没有权限修改这个事项。");
+    }
+  };
+  const repository = new MemoryEscalationRepository();
+  const service = createEscalationService({
+    repository,
+    users: false,
+    memberships: false,
+    workItems: readableNotMutable,
+    now: () => now
+  });
+  const expectForbidden = (error: unknown) => error instanceof Error
+    && (error as { status?: number }).status === 403
+    && (error as { code?: string }).code === "forbidden";
+
+  await assert.rejects(service.resolve(escalationId, actor(), { action: "definitely-not-valid" }), expectForbidden);
+  await assert.rejects(service.delegate(escalationId, actor(), { to_user_id: 12345 }), expectForbidden);
+  assert.deepEqual(repository.resolveCalls, []);
+  assert.deepEqual(repository.delegateCalls, []);
+});
+
 test("B-R9.0 mutate-permitted actor still resolves and delegates escalations", async () => {
   let mutateChecks = 0;
   const mutableWorkItems = {

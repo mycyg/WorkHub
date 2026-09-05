@@ -413,6 +413,17 @@ export function uiFormatCny(value: string | number | null | undefined, locale: W
   return `${prefix}${amount}`;
 }
 
+// WEB-09：成本页 token 大数字此前直出（0/5000000）——大数难读。统一千分位分组（zh-CN/en-US 的
+// Intl 分组符同为逗号）。非法输入原样返回——同 formatLocalTimestamp 的「渲染层不因脏数据炸整页」纪律。
+export function uiFormatCount(value: number | string | null | undefined, locale: WorkHubLocale = "zh-CN") {
+  const parsed = typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
+  if (!Number.isFinite(parsed)) {
+    const fallback = String(value ?? "0").trim();
+    return fallback || "0";
+  }
+  return new Intl.NumberFormat(locale === "en-US" ? "en-US" : "zh-CN", { maximumFractionDigits: 0 }).format(parsed);
+}
+
 // G4 #22/#35（通知类型标签，双端共享）：通知类型是点分命名空间
 // （comment.mention / workitem.escalated / work_item.due_soon / conversation.message / agent_run.succeeded …）。
 // 精确类型映射（双语）→ 命名空间前缀兜底（双语）→ 最后才 humanize，绝不把裸机器 token 抛给用户。

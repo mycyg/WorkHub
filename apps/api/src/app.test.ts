@@ -19,7 +19,7 @@ import {
 
 import app from "./app.js";
 import { httpErrorCodeFor } from "./http-error-codes.js";
-import { jsonObjectMessage, malformedJsonMessage } from "./routes/json-body.js";
+import { jsonObjectMessage, malformedJsonMessage, readJsonObject } from "./routes/json-body.js";
 
 interface HealthBody {
   ok: true;
@@ -264,6 +264,58 @@ test("global body limit does not shadow the Drive upload size contract", async (
   });
   assert.equal(overDriveLimit.status, 413);
   assert.equal(((await overDriveLimit.json()) as ErrorBody).error.code, "payload_too_large");
+});
+
+test("API-03 readJsonObject enforces a streaming hard cap when Content-Length is missing", async () => {
+  // chunked/无声明长度绕过 app.ts 的头部预检——readJsonObject 必须自己边读边限量。
+  const oversized = JSON.stringify({ pad: "x".repeat(1_048_576) });
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(oversized.slice(0, 64)));
+      controller.enqueue(new TextEncoder().encode(oversized.slice(64)));
+      controller.close();
+    }
+  });
+  const request = new Request("http://localhost/api/sessions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: stream,
+    duplex: "half"
+  });
+  assert.equal(request.headers.get("content-length"), null);
+
+  await assert.rejects(
+    readJsonObject({ req: { raw: request } }),
+    (error: unknown) => error instanceof HTTPException && error.status === 413
+  );
+
+  // 流式小 body 照常解析。
+  const okRequest = new Request("http://localhost/api/sessions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{\"a\":1}"
+  });
+  assert.deepEqual(await readJsonObject({ req: { raw: okRequest } }), { a: 1 });
+});
+
+test("API-05 validation errors return only field path summaries, not raw zod issues", async () => {
+  const response = await app.request("/api/auth/identify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nickname: 123, admin_secret: 456 })
+  });
+
+  assert.equal(response.status, 422);
+  const body = await response.json() as {
+    ok: false;
+    error: { code: string; details?: { invalid_fields?: string[] } & Record<string, unknown> };
+  };
+  assert.equal(body.error.code, "validation_error");
+  assert.deepEqual(body.error.details?.invalid_fields, ["nickname", "admin_secret"]);
+  // 不回 schema 内部：没有 expected/received/code 等 zod issue 字段。
+  const raw = JSON.stringify(body);
+  assert.equal(raw.includes("\"expected\""), false);
+  assert.equal(raw.includes("\"received\""), false);
 });
 
 test("CORS preflight allows the desktop client token headers (cross-origin desktop fetch)", async () => {
@@ -1725,7 +1777,7 @@ test("Approval and permission OpenAPI contracts document decision and policy act
   assert.deepEqual(approvalRequest?.required, ["id", "action_pattern", "payload_json", "status", "created_at", "updated_at"]);
   assert.deepEqual(approvalRequest?.properties?.status, {
     type: "string",
-    enum: ["pending", "approved", "denied", "expired", "delegated"]
+    enum: ["pending", "approved", "denied", "expired"]
   });
   assert.deepEqual(jsonErrorCodeProperty(body.paths, "/api/approvals", "get", "401"), {
     type: "string",
@@ -2244,7 +2296,6 @@ test("Proposal OpenAPI contracts document review, merge, and conflict action pay
             "merge_conflict",
             "rebase_required",
             "stale_base",
-            "merge_snapshot_missing",
             "delivery_artifact_missing",
             "delivery_artifact_changed",
             "delivery_artifact_unsafe_path",
@@ -2255,6 +2306,11 @@ test("Proposal OpenAPI contracts document review, merge, and conflict action pay
     });
     assert.deepEqual(error?.properties?.recoverable, { type: "boolean", const: true });
   }
+  // API-07：合并已提交但快照缺失是服务端错误——登记为 500，不再是让客户端重试的 409。
+  assert.deepEqual(jsonErrorCodeProperty(body.paths, "/api/proposals/{id}/merge", "post", "500"), {
+    type: "string",
+    enum: ["merge_snapshot_missing"]
+  });
   assert.deepEqual(jsonErrorCodeProperty(body.paths, "/api/proposals/{id}/merge", "post", "422"), {
     type: "string",
     enum: ["validation_error"]

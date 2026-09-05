@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { decideDriveDeleteConfirmation } from "./view.js";
+import { decideDriveDeleteConfirmation, driveViewDeletedItems } from "./view.js";
 
 // R20 DSK-UX（R19-23）：mountDriveView 本身没有直接单测——这个 workspace 的测试运行器没有真实 DOM
 // （node --import tsx --test，无 jsdom；见 side-panel.test.ts / chat/view.test.ts 顶部同款注释）。所以把
@@ -18,4 +18,11 @@ test("decideDriveDeleteConfirmation deletes when the same item is clicked a seco
 
 test("decideDriveDeleteConfirmation re-arms a different item instead of deleting the previously armed one", () => {
   assert.deepEqual(decideDriveDeleteConfirmation("file-1", "file-2"), { kind: "arm", itemId: "file-2" });
+});
+
+test("driveViewDeletedItems tolerates VMs from older servers that lack deleted_items (MRG-28)", () => {
+  assert.deepEqual(driveViewDeletedItems({}), []);
+  assert.deepEqual(driveViewDeletedItems({ deleted_items: undefined }), []);
+  const item = { id: "file-1" };
+  assert.deepEqual(driveViewDeletedItems({ deleted_items: [item] as never }), [item]);
 });

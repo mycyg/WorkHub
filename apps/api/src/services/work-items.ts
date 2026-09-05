@@ -57,6 +57,7 @@ import type { AuthActor } from "../middleware/auth.js";
 import { parseOutputContract } from "../pages/output-contract.js";
 import { acceptedDeliverableToVm } from "./accepted-deliverables.js";
 import { getDefaultProviderRegistry } from "./provider-registry.js";
+import { checkEntryLlmBudget, entryLlmBudgetExceededMessage } from "./entry-llm-budget.js";
 
 export const knowledgeSearchRequestSchema = z.object({
   q: z.string().trim().min(1).max(500).optional(),
@@ -161,6 +162,9 @@ type ServiceOptions = {
   clarificationGenerator?: ClarificationQuestionGenerator;
   projectFileContext?: ProjectFileContextProvider;
   providerRegistry?: ProviderRegistry;
+  // API-04：入口澄清 LLM（createSession/next-question 共用的生成路径）的预算软闸——
+  // 真正要调 generator 前调用，超预算时由它抛 429；复用已存草稿不触发。
+  budgetGate?: (input: { workspaceId?: string; locale?: WorkHubLocale }) => Promise<void>;
 };
 
 type ClarificationFileContext = {
@@ -1957,6 +1961,8 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
           : "AI 材料分析尚未配置，WorkHub 无法生成真实澄清反问。"
       );
     }
+    // API-04：真正要调 LLM 生成反问前过预算软闸（复用已存草稿的路径在上面已 return，不触发）。
+    await options.budgetGate?.({ workspaceId: workItem.workspaceId ?? actor.workspaceId, locale });
     const fallback = fallbackClarificationDraft(input);
     let generated: ClarificationQuestionDraft | undefined;
     try {
@@ -2079,8 +2085,9 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     },
 
     async getSession(input) {
+      // CHAT-06：读会话是读路径——requireDetail 内已做 assertCanReadDetail；只读干系人
+      // （可观不可改）也要能看澄清问答。写路径（createSession/nextQuestion）仍保持 mutate 判定。
       const rows = await requireDetail(input.sessionId, input.actor);
-      assertCanMutateWorkItemRows(rows, input.actor);
       const clarificationAnswers = await repository.listSessionClarificationAnswers(rows.workItem.id);
       if (clarificationAnswers.length > 0) {
         return sessionVmFor(rows.workItem, "confirm", input.locale);
@@ -2287,6 +2294,21 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     async bindEvidence(input) {
       const rows = await requireDetail(input.workItemId, input.actor);
       assertCanMutateWorkItemRows(rows, input.actor);
+      // CHAT-05：evidence_refs 客户端可任意构造——work_item 类引用（ref.id 即事项 id）必须真实存在
+      // 且 actor 可读，否则能把无权访问的事项绑进证据流。其余 source_type（drive_file/meeting 等）
+      // 的实体不经过本服务存取，暂无服务端可校验的真源，维持透传。不可见按 404 处理，不泄露存在性。
+      const workItemRefIds = input.payload.evidence_refs
+        .filter((ref) => ref.source_type === "work_item")
+        .map((ref) => ref.id);
+      if (workItemRefIds.length > 0) {
+        const records = await repository.findWorkItemAccessRecords([...new Set(workItemRefIds)]);
+        for (const refId of workItemRefIds) {
+          const record = records.get(refId);
+          if (!record || !canReadWorkItemAccessRow(record, input.actor)) {
+            throw new WorkItemServiceError(404, "evidence_ref_not_found", "引用的证据不存在或不可见。");
+          }
+        }
+      }
       await repository.insertChatMessage({
         workItemId: input.workItemId,
         role: "user",
@@ -2593,6 +2615,8 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
     const fallback = fallbackClarificationDraft(input);
     let generated: ClarificationQuestionDraft | undefined;
     if (options.clarificationGenerator) {
+      // API-04：内存路径同口径——调 LLM 前过预算软闸。
+      await options.budgetGate?.({ workspaceId: actor.workspaceId, locale });
       try {
         generated = await options.clarificationGenerator(input);
       } catch (error) {
@@ -2864,7 +2888,13 @@ export function getDefaultWorkItemService() {
   if (!defaultWorkItemService) {
     defaultWorkItemDbClient = getSharedDatabaseClient();
     defaultWorkItemService = createDbWorkItemService(createWorkItemRepository(defaultWorkItemDbClient.db), {
-      providerRegistry: getDefaultProviderRegistry()
+      providerRegistry: getDefaultProviderRegistry(),
+      // API-04：入口澄清 LLM 的预算软闸（团队维度已用量，与 reply-judge 同款软闸口径）。
+      budgetGate: async ({ workspaceId, locale }) => {
+        if (!await checkEntryLlmBudget({ workspaceId })) {
+          throw new WorkItemServiceError(429, "budget_exhausted", entryLlmBudgetExceededMessage(locale));
+        }
+      }
     });
   }
   return defaultWorkItemService;

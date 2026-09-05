@@ -1,21 +1,15 @@
 // Cuu Hijiki Live2D 模型页引导脚本（DSK-04：从内联 <script> 抽出——tauri.conf.json 的
 // CSP `script-src 'self'` 不允许内联脚本，dev 走 vite 无 CSP 所以只有打包后才暴露）。
 // 依赖同目录 live2d.js 先加载（HTML 里本脚本在其后引入），全局 loadlive2d 由它提供。
+// 状态只写 <html data-live2d-status>（QA capture 脚本的 wait_selector 读它）；DSK-13：此前还向
+// 父窗投 "workhub:cuu-live2d" 消息——全仓库没有任何接收方，死通道已删。
 (() => {
   const root = document.documentElement;
   const post = (status, detail) => {
     root.dataset.live2dStatus = status;
-    try {
-      window.parent.postMessage(
-        {
-          type: "workhub:cuu-live2d",
-          model: "hijiki",
-          status,
-          detail: detail || ""
-        },
-        "*"
-      );
-    } catch {}
+    if (status === "error" && detail) {
+      root.dataset.live2dError = String(detail);
+    }
   };
 
   window.addEventListener("error", (event) => {

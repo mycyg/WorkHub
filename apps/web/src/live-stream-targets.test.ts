@@ -51,8 +51,7 @@ test("R20 P2-06 the web conversation mirror route subscribes to its conversation
   // R20 P2-04（会话 rename 跨端同步）：会话被改名时镜像页要重渲对齐新标题——conversation.title.updated 必须
   // 在订阅面内。EventSource 按事件名订阅，漏登记 = 事件被静默丢弃、镜像页永远显示旧名字。
   assert.ok(conversationTarget.eventTypes?.includes("conversation.title.updated"));
-  // 断线重连要补拉全量对账，不能只靠增量。
-  assert.equal(conversationTarget.refreshOnReconnect, true);
+  // 断线重连的全量补拉已由 live-runtime 对所有流统一兜底（INF-08），不再按 target 开关。
 });
 
 test("R20 P2-06 the me stream is always present and non-conversation routes add no conversation target", () => {

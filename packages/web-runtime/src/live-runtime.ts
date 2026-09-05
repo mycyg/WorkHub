@@ -7,9 +7,6 @@ export type WebLiveStreamTarget = {
   // conversation.* 事件，而不必把这些事件塞进全局订阅面（否则 me 流会在每个页面收到会话推送——
   // 正是 G-web 窄化纪律要避免的）。
   eventTypes?: string[] | undefined;
-  // R20 P2-06：断线重连后是否补拉全量对账。开着时，这条流第二次及以后的 connected（即重连，非首连）
-  // 触发一次全量重渲——把重连窗口里漏掉的增量事件通过一次权威全量拉取补回，不只依赖增量。
-  refreshOnReconnect?: boolean | undefined;
 };
 
 export type WebLiveEventSourceEvent = {
@@ -55,7 +52,7 @@ type LiveEventSourceEntry = {
   // rank10：连续错误计数(连上/收到事件即清零)。超阈值=会话很可能已失效——停止让浏览器对死流无限重连。
   errorStreak: number;
   // R20 P2-06：这条流累计触发 connected 的次数。首连=1（不补拉，刚拉过），>1 即重连——
-  // 配合 target.refreshOnReconnect 触发全量对账，补回断线窗口漏掉的增量事件。
+  // INF-08 起所有流重连都触发全量对账（不再按 target 开关），补回断线窗口漏掉的增量事件。
   connectedCount: number;
 };
 
@@ -249,9 +246,11 @@ export function createWebLiveRuntime(options: WebLiveRuntimeOptions) {
       const connected = Number(String((globalThis.document?.documentElement.dataset.r4LiveConnectedCount ?? "0"))) + 1;
       setMetric("r4LiveConnectedCount", connected);
       setMetric("r4LiveLastConnectedStream", target.key);
-      // R20 P2-06：重连补拉。首连（connectedCount===1）刚由外壳全量拉过，不重复；第二次及以后的
-      // connected 是断线重连——漏掉的增量事件由这次全量重渲对账补回（会话镜像即靠这条兜住重连窗口）。
-      if (entry.target.refreshOnReconnect && entry.connectedCount > 1) {
+      // INF-08：重连补拉无条件化（R20 P2-06 时只给会话镜像流开了 refreshOnReconnect 开关）。
+      // 首连（connectedCount===1）刚由外壳全量拉过，不重复；第二次及以后的 connected 是断线重连——
+      // 后端不回放断线窗口（sse/stream.ts 恒报 resume_mode:"fresh"），漏掉的增量事件由这次全量
+      // 重渲对账补回。去抖窗口把多条流同时重连合并成一次拉取。
+      if (entry.connectedCount > 1) {
         setMetric("r4LiveReconnectRefetchStream", entry.target.key);
         scheduleLiveRouteRefresh("reconnect", entry.target.key);
       }

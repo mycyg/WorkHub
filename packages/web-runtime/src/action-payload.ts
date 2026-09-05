@@ -378,6 +378,9 @@ export function actionElementCreateWorkItemPayload(element: HTMLElement): Action
 
 // R8 /projects「新建项目」：从 sibling 输入框读用户填的项目名，bootstrap 按 slug 派生唯一新建。
 // 空名时 fail-closed（field_value_required），避免误复用试点项目。
+// INT-03：显式带空 description——服务端对缺省 description 会回落到英文样板文案
+// （"Pilot Day 0 project context created from…"），用户自建项目不该带它。本地化默认名/描述的
+// 服务端侧收口（payload 全缺省时按 locale 出默认）属 apps/api 面，由对应批次处理。
 export function actionElementCreateProjectPayload(element: HTMLElement): ActionPayloadResult<BootstrapProjectRequest> {
   const form = element.closest<HTMLElement>("[data-r8-project-create-form]");
   const scope: ParentNode = form ?? element.parentElement ?? element;
@@ -386,7 +389,7 @@ export function actionElementCreateProjectPayload(element: HTMLElement): ActionP
   if (!name) {
     return { ok: false, reason: "field_value_required" };
   }
-  return { ok: true, payload: { name } };
+  return { ok: true, payload: { name, description: "" } };
 }
 
 export function actionElementEvidenceBindingPayload(element: HTMLElement): ActionPayloadResult<UseEvidenceForTaskRequest> {

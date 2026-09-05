@@ -52,6 +52,49 @@ function isEnvelope<T>(value: unknown): value is ApiEnvelope<T> {
   return (record.ok === true && "data" in record) || (record.ok === false && "error" in record);
 }
 
+// UI-06：已知合法的非信封 2xx 端点（存活/就绪探针、OpenAPI 文档、根信息）——它们回原始 JSON
+// 不带 {ok,data} 信封属正常。其余路径的 2xx 响应必须是完整信封、裸 ack（{ok:true}，如 logout/
+// revoke 一族）或空 body（/api/auth/me 未识别时 200 空 body）；其它形状在此前会原样塞给调用方，
+// 畸形 VM 到渲染期才炸成整页错误卡——这里 fail-fast，抛带 path 的契约错误。
+const RAW_JSON_RESPONSE_PATHS = new Set(["/", "/api/health", "/api/ready", "/api/openapi.json", "/openapi.json"]);
+
+function pathWithoutQuery(path: string) {
+  return path.split("?")[0]?.split("#")[0] ?? path;
+}
+
+function contractViolation(responseStatus: number, path: string, detail: string): WorkHubApiError {
+  return new WorkHubApiError(
+    responseStatus,
+    "contract_violation",
+    `WorkHub API 响应不符合契约（${path}）：${detail}`
+  );
+}
+
+function assertSuccessBodyShape(body: unknown, path: string, responseStatus: number) {
+  if (body === null || body === undefined) {
+    return;
+  }
+  if (typeof body !== "object") {
+    // SPA fallback / 网关错误页把 HTML 或纯文本塞进 2xx——绝不能当 VM 交给渲染层。
+    throw contractViolation(responseStatus, path, "non-json body");
+  }
+  const record = body as Record<string, unknown>;
+  if ("ok" in record) {
+    if (typeof record.ok !== "boolean") {
+      throw contractViolation(responseStatus, path, "envelope ok flag is not a boolean");
+    }
+    // ok:false 却缺 error 半边（错误被吞比炸页面更难查）；{ok:true} 无 data 是合法裸 ack。
+    if (record.ok === false) {
+      throw contractViolation(responseStatus, path, "error envelope missing error field");
+    }
+    return;
+  }
+  if (RAW_JSON_RESPONSE_PATHS.has(pathWithoutQuery(path))) {
+    return;
+  }
+  throw contractViolation(responseStatus, path, "missing envelope");
+}
+
 function encodedStreamPath(kind: "workitem" | "run" | "session" | "proposal" | "conversation", id: string) {
   return `/api/push/stream/${kind}/${encodeURIComponent(id)}`;
 }
@@ -348,6 +391,7 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       }
       return body.data;
     }
+    assertSuccessBodyShape(body, path, response.status);
     return body as T;
   }
 

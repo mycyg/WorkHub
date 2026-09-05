@@ -11,8 +11,10 @@ import { WorkHubApiError } from "@workhub/api-client/client";
 import type { PasswordLoginRequest, WorkHubApiClient } from "@workhub/api-client";
 import type { WorkHubLocale } from "@workhub/ui/gold-path";
 
-// 与 browser.ts / workbench/boot.ts 同一套令牌键 + 登出标记键——写令牌前清登出标记，落新键。
-const CLIENT_TOKEN_KEY = "workhub_client_token";
+import { writeDesktopClientToken } from "./desktop-client-token.js";
+
+// 与 browser.ts / workbench/boot.ts 同一套登出标记键 + 令牌收口（DSK-06，desktop-client-token.ts）——
+// 写令牌前清登出标记，落新键。
 const DESKTOP_LOGGED_OUT_FLAG = "workhub_desktop_logged_out";
 // 探得的认证模式提示：首启 bootstrap 成功=nickname、404=password（见 isPasswordModeBootstrapError）。
 // 仅用于登出后选对再登录门（密码模式渲凭据表单）——登出态绝不自动昵称 rebind，故不能靠再探一次
@@ -169,7 +171,7 @@ export async function runDesktopCredentialLogin(input: {
     throw new Error("desktop exchange did not return a client token");
   }
   input.storage.removeItem(DESKTOP_LOGGED_OUT_FLAG);
-  input.storage.setItem(CLIENT_TOKEN_KEY, exchange.client_token);
+  writeDesktopClientToken(input.storage, exchange.client_token);
   return { client_token: exchange.client_token };
 }
 

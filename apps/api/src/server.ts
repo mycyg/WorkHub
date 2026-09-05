@@ -117,7 +117,10 @@ function shutdown(exitCode: number) {
   eventOutboxDrainScheduler.stop();
   conversationObserverScheduler?.stop();
   conversationReplyJudgeScheduler?.stop();
-  const forceExit = setTimeout(() => process.exit(exitCode), 2000);
+  // INF-09：2s 强退会截断在飞持久化（run 终态/trace 落库半途被杀，只能靠恢复重跑兜底）。
+  // 放宽到 8s：server.close 等连接排空期间给在飞写入留足时间；SSE 长连接不会主动排空，
+  // 8s 后仍强退兜底（只是上限，不是常态等待）。
+  const forceExit = setTimeout(() => process.exit(exitCode), 8000);
   forceExit.unref?.();
   server.close(() => {
     clearTimeout(forceExit);

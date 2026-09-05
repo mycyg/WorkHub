@@ -13,6 +13,7 @@ import {
   LlmRequestTimeoutError,
   ProviderNotConfiguredError,
   nextRetryDecision,
+  usageRecordFailureCount,
   type LlmCreateParams,
   type LlmCreateResponse,
   type LlmStream,
@@ -110,6 +111,48 @@ test("stream wrapper preserves async iteration and records usage on final messag
   assert.deepEqual(events, ["content_block_delta"]);
   assert.equal(usageSink.records.length, 1);
   assert.equal(usageSink.records[0]?.inputTokens, 200);
+});
+
+test("CORE-08: usage sink failure keeps the call alive, logs a structured error and bumps the failure counter", async () => {
+  const transport = new FakeTransport();
+  const settings = loadSettings({
+    LLM_API_KEY: "secret-provider-key",
+    PROVIDER_DEEPSEEK_COST_INPUT_CNY_PER_MTOK: "2",
+    PROVIDER_DEEPSEEK_COST_OUTPUT_CNY_PER_MTOK: "8"
+  });
+  const registry = createProviderRegistry({
+    config: createProviderRegistryConfig(settings),
+    transportFactory: () => transport,
+    usageSink: {
+      recordUsage() {
+        throw new Error("db down");
+      }
+    }
+  });
+  const client = registry.get({ id: "actor-1", runId: "run-1", workspaceId: "workspace-b" }, "worker");
+
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => {
+    errors.push(args.map(String).join(" "));
+  };
+  const before = usageRecordFailureCount();
+  try {
+    const response = await client.messages.create({ maxTokens: 1000, messages: [{ role: "user", content: "hi" }] });
+    // 记账失败不拖垮已成功的模型调用。
+    assert.equal(response.id, "msg-1");
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.equal(usageRecordFailureCount(), before + 1);
+  assert.equal(errors.length, 1);
+  const logged = JSON.parse(errors[0] as string) as Record<string, unknown>;
+  assert.equal(logged.level, "error");
+  assert.equal(logged.event, "usage_record_failed");
+  assert.equal(logged.runId, "run-1");
+  assert.equal(logged.workspaceId, "workspace-b");
+  assert.equal(logged.error, "db down");
 });
 
 test("registry routing can switch a task to another configured model", () => {

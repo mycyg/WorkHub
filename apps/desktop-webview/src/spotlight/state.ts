@@ -75,9 +75,14 @@ const SHELL_ROUTE_CAPABILITIES: ReadonlyArray<readonly [string, CommandId]> = [
   ["/intake", "intake"],
   ["/proposals", "proposals"],
   ["/workitems", "workitem"],
+  // WIRE-02：legacy 需求直链（workhub://open/r/:id → /r/:id，deep_link.rs）——需求即工作项，
+  // 映射到 workitem 能力并带出 id，不再落回 launcher 白跳。
+  ["/r", "workitem"],
   ["/agent-runs", "replay"],
   ["/replay", "replay"],
   ["/drive", "drive"],
+  // WIRE-02：桌宠卡片链接白名单（pet-surface.ts desktopPetMainRouteFromHref）放行 /files——归到网盘能力。
+  ["/files", "drive"],
   ["/projects", "projects"],
   ["/p", "projects"],
   ["/knowledge", "knowledge"],
@@ -85,6 +90,8 @@ const SHELL_ROUTE_CAPABILITIES: ReadonlyArray<readonly [string, CommandId]> = [
   ["/dashboard/agents", "agents"],
   ["/dashboard/cost", "cost"],
   ["/cost", "cost"],
+  // WIRE-02：workhub://open/notifications → /notifications——通知能力视图本就存在，缺的是映射。
+  ["/notifications", "notifications"],
   ["/settings", "settings"]
 ];
 

@@ -69,6 +69,7 @@ export const envSchema = z.object({
 
   // R2 auth epic：认证模式旗标。'nickname'(默认)=现状(cookie 载 user.cookieToken)，行为逐字节不变；
   // 'password'=cookie 载服务端会话 secret，经 sessions.token_hash 解析；'hybrid'=会话优先、解析不到回退 cookieToken（迁移期）。
+  // CORE-02：nickname 没有口令/会话边界，validateRuntimeConfig 在 APP_ENV=production 下拒绝该值。
   AUTH_MODE: z.enum(["nickname", "hybrid", "password"]).default("nickname"),
   SESSION_ABSOLUTE_TTL_HOURS: z.coerce.number().int().positive().default(authDefaults.sessionAbsoluteTtlHours),
   SESSION_IDLE_TTL_HOURS: z.coerce.number().int().positive().default(authDefaults.sessionIdleTtlHours),
@@ -426,6 +427,12 @@ export function validateRuntimeConfig(value: Settings) {
 
   if (value.auth.corsAllowOrigins.includes("*")) {
     throw new Error("CORS_ALLOW_ORIGINS cannot include * in production");
+  }
+
+  // CORE-02：nickname 模式没有口令/会话边界（cookie 即身份，cookie_token 一库泄漏=全员可冒充）。
+  // 生产必须走 password 或 hybrid（会话优先、回退 cookieToken 迁移期）。
+  if (value.auth.authMode === "nickname") {
+    throw new Error("AUTH_MODE cannot be nickname in production (use password or hybrid)");
   }
 
   if (value.workerCount > 1 && value.broker.backend === "memory") {

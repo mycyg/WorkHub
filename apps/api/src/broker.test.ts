@@ -47,22 +47,36 @@ test("local queue keeps the old maxsize/drop-slow-subscriber backpressure rule",
   await bus.unsubscribe("run:r1", subscription);
 });
 
-test("findings: an event dropped under backpressure emits a warn", async () => {
+test("INF-12: an event dropped under backpressure emits a structured warn and bumps the drop counter", async () => {
   const bus = new InProcessPushBus(2);
   const subscription = await bus.subscribe("run:r-drop"); // 订阅但不消费
-  const warnings: unknown[][] = [];
-  const originalWarn = console.warn;
-  console.warn = (...args: unknown[]) => {
-    warnings.push(args);
-  };
+  const lines: string[] = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: string | Uint8Array) => {
+    lines.push(String(chunk));
+    return true;
+  }) as typeof process.stdout.write;
   try {
     await bus.publish("run:r-drop", "agent_run.step", { step: 1 });
     await bus.publish("run:r-drop", "agent_run.step", { step: 2 });
-    await bus.publish("run:r-drop", "agent_run.step", { step: 3 }); // 满队列 → drop → warn
+    await bus.publish("run:r-drop", "agent_run.step", { step: 3 }); // 满队列 → drop → 结构化 warn + 计数
   } finally {
-    console.warn = originalWarn;
+    process.stdout.write = originalWrite;
   }
-  assert.equal(warnings.some((entry) => entry[0] === "push bus dropped event under backpressure"), true);
+  const warnLines = lines
+    .map((line) => {
+      try {
+        return JSON.parse(line) as { level?: string; event?: string; topic?: string; dropped_count?: number };
+      } catch {
+        return {};
+      }
+    })
+    .filter((entry) => entry.event === "push_bus_event_dropped_backpressure");
+  assert.equal(warnLines.length, 1, "dropped event surfaces exactly one structured warn");
+  assert.equal(warnLines[0]?.level, "warn");
+  assert.equal(warnLines[0]?.topic, "run:r-drop");
+  assert.equal(warnLines[0]?.dropped_count, 1);
+  assert.equal(bus.droppedEventCount, 1, "the bus exposes the cumulative drop count for metrics");
 
   await bus.unsubscribe("run:r-drop", subscription);
 });

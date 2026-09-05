@@ -1539,6 +1539,38 @@ test("approval routes keep work-item-less approvals in the routed user's inbox e
   assert.equal((await deps.approvals.findById(otherUserApproval.id))?.status, "pending");
 });
 
+test("API-08 respond-batch returns the global error envelope when no approvals are selected", async () => {
+  const runtimeSettings = settings();
+  const deps = serviceDeps();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/approvals", createApprovalRoutes({
+    auth: authDeps(runtimeSettings),
+    service: deps.service,
+    workItems: allowingWorkItems()
+  }));
+  const headers = {
+    "Content-Type": "application/json",
+    Cookie: await generateSignedCookie(COOKIE_NAME, "cookie-alice", runtimeSettings.auth.cookieSecret)
+  };
+
+  const response = await app.request("/api/approvals/respond-batch", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ ids: [] })
+  });
+
+  assert.equal(response.status, 422);
+  const body = await response.json() as {
+    ok: false;
+    code?: string;
+    error?: { code: string; message: string };
+  };
+  // 全局信封：{ ok:false, error:{ code, message } }，不是顶层 code/message。
+  assert.equal(body.code, undefined);
+  assert.equal(body.error?.code, "field_value_required");
+  assert.match(body.error?.message ?? "", /至少勾选一条/u);
+});
+
 test("approval routes paginate after filtering hidden work item approvals", async () => {
   const runtimeSettings = settings();
   const deps = serviceDeps();

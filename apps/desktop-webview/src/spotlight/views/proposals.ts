@@ -86,9 +86,11 @@ function publicProposalSummary(markdown: string, zh: boolean) {
     (zh ? "先看总结和改动，再决定是否采纳。" : "Review the summary and changes before deciding.");
 }
 
-function checkText(check: ProposalDetailVM["manifest"]["checks"][number]) {
+function checkText(check: ProposalDetailVM["manifest"]["checks"][number], zh: boolean) {
   const detail = check.status === "passed" ? "" : check.detail?.trim();
-  return detail ? `${check.label}：${detail}` : check.label;
+  const base = detail ? `${check.label}：${detail}` : check.label;
+  // API-02：HTTP 自供 manifest 的 checks 被服务端标为 self_reported——评审时明示「提交者自报」。
+  return check.source === "self_reported" ? `${base}（${zh ? "提交者自报" : "self-reported"}）` : base;
 }
 
 export function detailHtml(vm: ProposalDetailVM, zh: boolean): string {
@@ -99,7 +101,7 @@ export function detailHtml(vm: ProposalDetailVM, zh: boolean): string {
   const riskTone = m.risk.level === "high" ? "handoff" : m.risk.level === "medium" ? "permission" : "info";
   const checks = m.checks.length
     ? `<div class="wh-spot-checks">${m.checks
-        .map((ck) => `<span class="wh-spot-check wh-spot-check--${ck.status}">${escapeHtml(checkText(ck))}</span>`)
+        .map((ck) => `<span class="wh-spot-check wh-spot-check--${ck.status}">${escapeHtml(checkText(ck, zh))}</span>`)
         .join("")}</div>`
     : "";
   const isOpen = vm.status === "opened";

@@ -69,6 +69,7 @@ import { TaskPlanApprovalError } from "./services/task-plan-approval.js";
 import { ProjectServiceError } from "./services/projects.js";
 import { PilotDay1MetricsServiceError } from "./services/pilot-day1-metrics.js";
 import { httpErrorCodeFor } from "./http-error-codes.js";
+import { resolveMaxJsonBodyBytes } from "./routes/json-body.js";
 import { ApprovalServiceError } from "./services/approvals.js";
 import { EscalationServiceError } from "./services/escalations.js";
 import { MemoryConflictServiceError } from "./services/memory-conflicts.js";
@@ -106,16 +107,9 @@ app.use("*", createRequestLogMiddleware(logger));
 
 // 请求体大小上限（抗大负载 DoS）：仅对带体方法（POST/PUT/PATCH）按 Content-Length 早拒，超限回 413。
 // 1 MB 默认对 JSON API 足够宽裕；可经 MAX_REQUEST_BODY_BYTES 调整（无效/非正值回退默认）。
-// 注意：仅看头部声明，不缓冲/不测量流——缺 Content-Length 时放行（chunked/流式由下游各自把关）。
-const DEFAULT_MAX_REQUEST_BODY_BYTES = 1_048_576; // 1 MiB
-function resolveMaxRequestBodyBytes(): number {
-  const raw = process.env.MAX_REQUEST_BODY_BYTES;
-  if (!raw) {
-    return DEFAULT_MAX_REQUEST_BODY_BYTES;
-  }
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_REQUEST_BODY_BYTES;
-}
+// API-03：Content-Length 只是声明预检——chunked/缺声明的绕过由 readJsonObject（json-body.ts）的
+// 流式硬上限兜底，两者共用 resolveMaxJsonBodyBytes 保持同一口径。
+const MAX_REQUEST_BODY_BYTES = resolveMaxJsonBodyBytes();
 // 安全响应头（纵深防御）：在所有响应上钉死浏览器侧的几道防线，紧跟请求日志、早于路由。
 // - X-Content-Type-Options: nosniff —— 禁 MIME 嗅探，挡内容类型混淆。
 // - X-Frame-Options: DENY —— 禁任何站点 iframe 嵌入本服务，挡点击劫持。
@@ -148,7 +142,6 @@ app.use("*", async (c, next) => {
   c.header("Content-Security-Policy-Report-Only", CONTENT_SECURITY_POLICY);
 });
 
-const MAX_REQUEST_BODY_BYTES = resolveMaxRequestBodyBytes();
 const BODY_BEARING_METHODS = new Set(["POST", "PUT", "PATCH"]);
 // R9 批次0-5：网盘上传不再整体豁免请求体上限（豁免后 drive 路由是先 formData() 全量入内存
 // 才比 32MiB，登录成员发 GB 级 body 可在 413 之前打爆进程）。改为同一中间件里给它一个
@@ -323,13 +316,17 @@ app.route("/api/pilot", createPilotRoutes());
 
 app.onError((error, c) => {
   if (error instanceof ZodError) {
+    // API-05：issues 全量回客户端会泄漏 schema 内部（期望值/接收值/嵌套结构）——只回字段路径摘要。
+    const invalidFields = [...new Set(
+      error.issues.map((issue) => issue.path.join(".") || "(root)")
+    )].slice(0, 20);
     return c.json(
       {
         ok: false,
         error: {
           code: "validation_error",
           message: "Request payload does not match the WorkHub API contract.",
-          details: error.issues
+          details: { invalid_fields: invalidFields }
         }
       },
       422

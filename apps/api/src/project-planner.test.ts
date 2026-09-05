@@ -291,14 +291,23 @@ test("E3a createDraft enforces permission, project existence, workspace, and int
     (e: unknown) => e instanceof ProjectPlannerServiceError && e.status === 404
   );
 
-  // 项目 owner 但无工作区 → 422。
+  // 项目 owner 但无工作区 → CORE-07 起租户栅栏 fail-closed，栅栏处即 403（admin 同——
+  // projectScopeMatches 对 null workspaceId 一律不匹配；服务端 422 分支留作纵深防御）。
   const noWorkspace = createProjectPlannerService({
     ...base,
     projectRepo: { findProjectById: async () => fakeProject({ workspaceId: null, ownerUserId: userId }) }
   });
   await assert.rejects(
     noWorkspace.createDraft({ projectId, actor: { id: userId, userId } as AuthActor, intent: "x" }),
-    (e: unknown) => e instanceof ProjectPlannerServiceError && e.code === "project_plan_workspace_missing" && e.status === 422
+    (e: unknown) => e instanceof ProjectPlannerServiceError && e.status === 403
+  );
+  await assert.rejects(
+    noWorkspace.createDraft({
+      projectId,
+      actor: { id: userId, userId, isAdmin: true, orgId: "00000000-0000-4000-8000-000000000001" } as AuthActor,
+      intent: "x"
+    }),
+    (e: unknown) => e instanceof ProjectPlannerServiceError && e.status === 403
   );
 
   // 空意图 → 400。

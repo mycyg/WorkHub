@@ -1,7 +1,6 @@
 import {
   budgetNoticeSchema,
   eventTypes,
-  type ActionSpec,
   type AgentRunLiveVM,
   type AttentionAction,
   type AttentionItem,
@@ -11,10 +10,8 @@ import {
   type CuuState,
   type EvidenceBubble,
   type EvidenceRef,
-  type GoldPathSurfaceVM,
   type ProposalConflict,
   type ProposalConflictOption,
-  type ProposalDetailVM,
   type QuestionCard,
   type ReplayTraceVM,
   type SessionVM,
@@ -197,19 +194,6 @@ function publicProposalSummary(text: string | undefined, options: CuuLocaleOptio
     : normalizeProposalMergeVerb(compact, options);
 }
 
-function proposalNextStepForStatus(status: ProposalDetailVM["status"], options: CuuLocaleOptions = {}) {
-  switch (status) {
-    case "opened":
-      return cuuT(options.locale, "proposal.nextStepOpened");
-    case "reviewed":
-      return cuuT(options.locale, "proposal.nextStepReviewed");
-    case "merged":
-      return cuuT(options.locale, "proposal.nextStepMerged");
-    case "rejected":
-      return cuuT(options.locale, "proposal.nextStepRejected");
-  }
-}
-
 function proposalNextStepForAttention(item: AttentionItem, options: CuuLocaleOptions = {}) {
   if (item.kind === "plan_review") {
     return cuuT(options.locale, "proposal.planNextStepOpened");
@@ -388,31 +372,6 @@ function clarificationInputForAttention(
   };
 }
 
-function mapActionSpec(action: ActionSpec, tone: CuuCardActionTone): CuuCardAction {
-  return {
-    id: action.id,
-    label: action.label,
-    tone,
-    method: action.method,
-    href: action.href,
-    ...(action.requires_desktop ? { requires_desktop: action.requires_desktop } : {}),
-    ...(action.requires_reason ? { requires_reason: action.requires_reason } : {}),
-    ...(action.request_json ? { payload: action.request_json } : {})
-  };
-}
-
-function evidenceById(evidenceRefs: EvidenceRef[]) {
-  const seen = new Set<string>();
-  const result: EvidenceRef[] = [];
-  for (const evidence of evidenceRefs) {
-    if (!seen.has(evidence.id)) {
-      seen.add(evidence.id);
-      result.push(evidence);
-    }
-  }
-  return result;
-}
-
 function budgetScopeChip(scope: BudgetScope, options: CuuLocaleOptions = {}): CuuCardChip {
   switch (scope.kind) {
     case "workitem":
@@ -434,10 +393,6 @@ function budgetScopeChip(scope: BudgetScope, options: CuuLocaleOptions = {}): Cu
 
 function budgetStatusLabel(status: CostDashboardVM["top_exhaustion_risks"][number]["status"], options: CuuLocaleOptions) {
   return cuuT(options.locale, `cost.status.${status}`);
-}
-
-function proposalCheckStatusLabel(status: ProposalDetailVM["manifest"]["checks"][number]["status"], options: CuuLocaleOptions) {
-  return cuuT(options.locale, `proposal.checkStatus.${status}`);
 }
 
 const budgetActionLabels = {
@@ -750,94 +705,6 @@ export function cardFromEvidenceBubble(bubble: EvidenceBubble, options: CuuLocal
   });
 }
 
-export function cardFromProposalDetail(vm: ProposalDetailVM, options: CuuLocaleOptions = {}): CuuCard {
-  const state: CuuState =
-    vm.status === "merged" ? "celebrating" : vm.status === "rejected" ? "revision_requested" : "carrying_document";
-  const changes = vm.manifest.changes.slice(0, 5);
-  const checks = vm.manifest.checks.slice(0, 5);
-  const sections: CuuCardSection[] = [
-    {
-      id: "summary",
-      title: cuuT(options.locale, "proposal.summarySection"),
-      lines: [publicProposalSummary(vm.manifest.summary_md, options)]
-    },
-    proposalNextStepSection(
-      vm.status === "reviewed" && vm.review_actions.approve_hold
-        ? cuuT(options.locale, "proposal.planNextStepReviewed")
-        : proposalNextStepForStatus(vm.status, options),
-      options
-    ),
-    {
-      id: "changes",
-      title: cuuT(options.locale, "proposal.changesSection"),
-      lines: changes.map((change) =>
-        change.target_ref.path ? `${change.human_summary} (${change.target_ref.path})` : change.human_summary
-      )
-    },
-    {
-      id: "risk",
-      title: cuuT(options.locale, "proposal.riskSection"),
-      lines: [
-        vm.manifest.risk.human_label,
-        vm.manifest.risk.reversible
-          ? cuuT(options.locale, "proposal.rollbackAvailable")
-          : cuuT(options.locale, "proposal.rollbackUnavailable"),
-        vm.manifest.rollback.description
-      ]
-    }
-  ];
-
-  if (checks.length) {
-    sections.push({
-      id: "checks",
-      title: cuuT(options.locale, "proposal.checksSection"),
-      lines: checks.map((check) =>
-        `${check.label}: ${proposalCheckStatusLabel(check.status, options)}${check.detail ? ` - ${check.detail}` : ""}`
-      )
-    });
-  }
-
-  const actions = vm.status === "opened"
-    ? [
-        mapActionSpec(vm.review_actions.approve, "primary"),
-        mapActionSpec(vm.review_actions.request_changes, "danger")
-      ]
-    : vm.status === "reviewed" && vm.review_actions.merge
-      ? [
-          mapActionSpec(vm.review_actions.merge, "primary"),
-          ...(vm.review_actions.approve_hold ? [mapActionSpec(vm.review_actions.approve_hold, "secondary")] : [])
-        ]
-      : [];
-
-  return withMotion({
-    id: vm.proposal_id,
-    kind: vm.status === "merged" ? "completion" : "proposal",
-    state,
-    title: publicProposalTitle(vm.title, options),
-    message: publicProposalSummary(vm.manifest.summary_md, options),
-    priority: vm.status === "opened" ? "high" : "normal",
-    actions,
-    chips: changes.map((change) => ({
-      id: change.id,
-      label: change.target_ref.path ?? change.human_summary,
-      tone: change.change_type === "deleted" ? "danger" : "neutral",
-      description: change.human_summary
-    })),
-    sections,
-    evidence_refs: evidenceById([...vm.evidence_refs, ...vm.manifest.evidence_refs]),
-    payload_ref: {
-      entity_type: "proposal",
-      entity_id: vm.proposal_id,
-      href: `/proposals/${vm.proposal_id}`
-    },
-    source: optionalSource({
-      entity_type: "proposal",
-      entity_id: vm.proposal_id,
-      work_item_id: vm.work_item_id
-    })
-  });
-}
-
 function proposalConflictOptionLabel(option: ProposalConflictOption, options: CuuLocaleOptions = {}) {
   if (option.id === "keep_current") {
     return cuuT(options.locale, "proposal.conflictKeepCurrent");
@@ -925,10 +792,6 @@ export function cardFromProposalConflict(conflict: ProposalConflict, options: Cu
       work_item_id: conflict.work_item_id
     })
   });
-}
-
-export function cardsFromProposalConflicts(conflicts: ProposalConflict[], options: CuuLocaleOptions = {}): CuuCard[] {
-  return conflicts.map((conflict) => cardFromProposalConflict(conflict, options));
 }
 
 function stateForWorkItem(status: WorkItemStatus, hasProposal: boolean): CuuState {
@@ -1411,28 +1274,5 @@ export function cardFromEvent(event: WorkHubEvent<unknown>, options: CuuLocaleOp
       ...(event.project_id ? { project_id: event.project_id } : {})
     }),
     created_at: event.ts
-  });
-}
-
-export function cardsFromGoldPathSurface(surface: GoldPathSurfaceVM, options: CuuLocaleOptions = {}): CuuCard[] {
-  const cards = [
-    surface.page_vms.attention.primary ? cardFromAttentionItem(surface.page_vms.attention.primary, options) : undefined,
-    ...surface.page_vms.attention.queue.map((item) => cardFromAttentionItem(item, options)),
-    cardFromQuestionCard(surface.page_vms.question, options),
-    cardFromWorkItemDetail(surface.page_vms.workitem, options),
-    cardFromEvidenceBubble(surface.page_vms.evidence, options),
-    cardFromProposalDetail(surface.page_vms.proposal, options),
-    cardFromReplayTrace(surface.page_vms.replay, options),
-    ...cardsFromCostDashboard(surface.page_vms.cost, options),
-    ...surface.events.map((event) => cardFromEvent(event as WorkHubEvent<unknown>, options))
-  ].filter((card): card is CuuCard => Boolean(card));
-
-  const seen = new Set<string>();
-  return cards.filter((card) => {
-    if (seen.has(card.id)) {
-      return false;
-    }
-    seen.add(card.id);
-    return true;
   });
 }

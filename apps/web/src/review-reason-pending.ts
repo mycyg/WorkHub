@@ -56,3 +56,36 @@ export function resolvePendingSendBack(state: PendingSendBackState): PendingSend
   }
   return undefined;
 }
+
+// UI-11：预设理由按钮 vs 文本框残留草稿——此前 `customReason || preset` 让残留草稿静默盖过用户
+// 刚点的预设理由按钮（实际提交的不是他点的那条）。草稿非空且未经二次确认即拦下（调用方给武装式
+// 提示：再点一次=确认用手写理由，或清空文本框用预设）；已确认则显式以手写理由提交，不替他删字。
+export function resolveSendBackReasonMd(
+  presetReason: string,
+  customDraft: string | undefined,
+  draftUseConfirmed = false
+): { ok: true; reasonMd: string } | { ok: false; reason: "custom_draft_blocks_preset" } {
+  const draft = customDraft?.trim() ?? "";
+  if (draft.length > 0) {
+    return draftUseConfirmed
+      ? { ok: true, reasonMd: draft }
+      : { ok: false, reason: "custom_draft_blocks_preset" };
+  }
+  return { ok: true, reasonMd: presetReason };
+}
+
+// UI-12：审批打回理由草稿 Map（R10-P1-2 按事项隔离引入）此前只增不减——已处理的审批条目常驻
+// 内存。审批处理成功（通过/打回/批量通过）后调 settle 清掉对应条目。
+export type ApprovalReasonDrafts = Map<string, string>;
+
+export function createApprovalReasonDrafts(): ApprovalReasonDrafts {
+  return new Map<string, string>();
+}
+
+export function settleApprovalReasonDrafts(drafts: ApprovalReasonDrafts, ...approvalIds: (string | undefined)[]): void {
+  for (const id of approvalIds) {
+    if (id) {
+      drafts.delete(id);
+    }
+  }
+}

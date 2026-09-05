@@ -678,7 +678,9 @@ test("persistent intake requires mutation access before regenerating an existing
   assert.equal(chatWrites, 0);
 });
 
-test("persistent getSession requires mutation access before generating a missing clarification", async () => {
+test("CHAT-06 persistent getSession allows read-only stakeholders and reports a missing draft without generating", async () => {
+  // CHAT-06：读会话降为 read 判定——只读干系人（member 指派、非提交人/负责人）不再 403；
+  // 无已存草稿时按 CHAT-1 口径回 409 引导走生成路径重试，读路径仍不生成、不留痕。
   let generatorCalls = 0;
   let chatWrites = 0;
   const repo: WorkItemDataRepository = {
@@ -728,8 +730,8 @@ test("persistent getSession requires mutation access before generating a missing
     }),
     (error) =>
       error instanceof WorkItemServiceError
-      && error.status === 403
-      && error.message === "你没有权限修改这个事项。"
+      && error.status === 409
+      && error.code === "clarification_draft_missing"
   );
   assert.equal(generatorCalls, 0);
   assert.equal(chatWrites, 0);
@@ -1737,7 +1739,8 @@ test("session clarification answer uses generic mutation access, not artifact-sp
   assert.equal(answerWritten, false);
 });
 
-test("session readback requires mutation access even after clarification answers exist", async () => {
+test("CHAT-06 session readback allows read-only stakeholders once clarification answers exist", async () => {
+  // CHAT-06：读路径降为 read 判定——只读干系人可看澄清进度（confirm 阶段 VM）；写路径仍要 mutate。
   const repo = {
     ...repository(),
     async readWorkItemDetail() {
@@ -1760,17 +1763,13 @@ test("session readback requires mutation access even after clarification answers
   } as unknown as WorkItemDataRepository;
   const service = createDbWorkItemService(repo, { now: () => now });
 
-  await assert.rejects(
-    () => service.getSession({
-      sessionId: workItemId,
-      actor,
-      locale: "zh-CN"
-    }),
-    (error) =>
-      error instanceof WorkItemServiceError
-      && error.status === 403
-      && error.message === "你没有权限修改这个事项。"
-  );
+  const session = await service.getSession({
+    sessionId: workItemId,
+    actor,
+    locale: "zh-CN"
+  });
+
+  assert.equal(session.session_id, workItemId);
 });
 
 test("assigned lead can continue a private clarification session", async () => {
@@ -1909,6 +1908,148 @@ test("evidence binding uses generic mutation access, not artifact-specific acces
       && error.message === "你没有权限修改这个事项。"
   );
   assert.equal(evidenceBound, false);
+});
+
+test("CHAT-05 evidence binding rejects work-item refs that do not exist or are not visible", async () => {
+  let evidenceBound = false;
+  const referencedWorkItemId = "93000000-0000-4000-8000-000000000902";
+  const repo = {
+    ...repository(),
+    async readWorkItemDetail() {
+      // actor 是绑定目标事项的提交人（有写权限）。
+      return detailRows({ status: "spec_ready", submitterUserId: userId });
+    },
+    async findWorkItemAccessRecords() {
+      // 被引用的事项查不到（不存在/已删除）。
+      return new Map();
+    },
+    async insertChatMessage() {
+      evidenceBound = true;
+      throw new Error("service must not bind forged evidence refs");
+    }
+  } as unknown as WorkItemDataRepository;
+  const service = createDbWorkItemService(repo, { now: () => now });
+
+  await assert.rejects(
+    () => service.bindEvidence({
+      workItemId,
+      actor,
+      locale: "zh-CN",
+      payload: {
+        evidence_refs: [{
+          id: referencedWorkItemId,
+          source_type: "work_item",
+          source_id: "DEMO-902",
+          title: "伪造的证据引用",
+          href: `/workitems/${referencedWorkItemId}`
+        }]
+      }
+    }),
+    (error) =>
+      error instanceof WorkItemServiceError
+      && error.status === 404
+      && error.code === "evidence_ref_not_found"
+  );
+  assert.equal(evidenceBound, false);
+});
+
+test("CHAT-05 evidence binding rejects work-item refs the actor cannot read", async () => {
+  let evidenceBound = false;
+  const referencedWorkItemId = "93000000-0000-4000-8000-000000000903";
+  const repo = {
+    ...repository(),
+    async readWorkItemDetail() {
+      return detailRows({ status: "spec_ready", submitterUserId: userId });
+    },
+    async findWorkItemAccessRecords(ids: string[]) {
+      // 引用的事项存在，但属于另一个 workspace——actor 不可读。
+      return new Map(ids.map((id) => [id, {
+        id,
+        status: "in_review",
+        submitterUserId: "93000000-0000-4000-8000-000000000888",
+        claimedByUserId: null,
+        workspaceId: "92000000-0000-4000-8000-000000009999",
+        project: {
+          archived: false,
+          deletedAt: null,
+          ownerUserId: "93000000-0000-4000-8000-000000000888",
+          workspaceId: "92000000-0000-4000-8000-000000009999"
+        },
+        assignments: []
+      }]));
+    },
+    async insertChatMessage() {
+      evidenceBound = true;
+      throw new Error("service must not bind evidence refs the actor cannot read");
+    }
+  } as unknown as WorkItemDataRepository;
+  const service = createDbWorkItemService(repo, { now: () => now });
+
+  await assert.rejects(
+    () => service.bindEvidence({
+      workItemId,
+      actor,
+      locale: "zh-CN",
+      payload: {
+        evidence_refs: [{
+          id: referencedWorkItemId,
+          source_type: "work_item",
+          source_id: "DEMO-903",
+          title: "跨工作区事项的引用",
+          href: `/workitems/${referencedWorkItemId}`
+        }]
+      }
+    }),
+    (error) =>
+      error instanceof WorkItemServiceError
+      && error.status === 404
+      && error.code === "evidence_ref_not_found"
+  );
+  assert.equal(evidenceBound, false);
+});
+
+test("CHAT-05 evidence binding accepts work-item refs the actor can read", async () => {
+  const referencedWorkItemId = "93000000-0000-4000-8000-000000000904";
+  const repo = {
+    ...repository(),
+    async readWorkItemDetail() {
+      return detailRows({ status: "spec_ready", submitterUserId: userId });
+    },
+    async findWorkItemAccessRecords(ids: string[]) {
+      return new Map(ids.map((id) => [id, {
+        id,
+        status: "in_review",
+        submitterUserId: "93000000-0000-4000-8000-000000000888",
+        claimedByUserId: null,
+        workspaceId: defaultSeedIds.workspaceId,
+        project: {
+          archived: false,
+          deletedAt: null,
+          ownerUserId: null,
+          workspaceId: defaultSeedIds.workspaceId
+        },
+        assignments: []
+      }]));
+    }
+  } as unknown as WorkItemDataRepository;
+  const service = createDbWorkItemService(repo, { now: () => now });
+
+  const detail = await service.bindEvidence({
+    workItemId,
+    actor,
+    locale: "zh-CN",
+    payload: {
+      evidence_refs: [{
+        id: referencedWorkItemId,
+        source_type: "work_item",
+        source_id: "DEMO-904",
+        title: "同工作区可读事项",
+        href: `/workitems/${referencedWorkItemId}`
+      }]
+    }
+  });
+
+  assert.equal(detail.workitem.id, workItemId);
 });
 
 test("work item detail wraps VM assembly drift as an internal contract error", async () => {
@@ -2676,4 +2817,88 @@ test("accepted deliverable restore requires artifact mutation access, not just d
     (error) => error instanceof WorkItemServiceError && error.status === 403
   );
   assert.equal(restoreCalled, false);
+});
+
+test("API-04 createSession refuses clarification generation when the budget gate rejects", async () => {
+  let generatorCalls = 0;
+  const repo = {
+    ...repository(),
+    async readWorkItemDetail() {
+      return detailRows({ status: "ai_clarifying", submitterUserId: userId });
+    }
+  } as unknown as WorkItemDataRepository;
+  const service = createDbWorkItemService(repo, {
+    now: () => now,
+    async projectFileContext() {
+      return [];
+    },
+    async clarificationGenerator() {
+      generatorCalls += 1;
+      return { title: "不应生成的反问" };
+    },
+    async budgetGate() {
+      throw new WorkItemServiceError(429, "budget_exhausted", "团队本期 AI 预算已用完，请追加或上调预算后再试。");
+    }
+  });
+
+  await assert.rejects(
+    () => service.createSession({
+      actor,
+      locale: "zh-CN",
+      payload: { work_item_id: workItemId }
+    }),
+    (error) =>
+      error instanceof WorkItemServiceError
+      && error.status === 429
+      && error.code === "budget_exhausted"
+  );
+  assert.equal(generatorCalls, 0);
+});
+
+test("API-04 createSession does not consult the budget gate when reusing a stored draft", async () => {
+  let gateCalls = 0;
+  const repo = {
+    ...repository(),
+    async readWorkItemDetail() {
+      return detailRows({
+        status: "ai_clarifying",
+        submitterUserId: userId,
+        title: "写一份团队周会纪要模板",
+        rawDescription: "写一份团队周会纪要模板"
+      });
+    },
+    async findLatestChatMessageByKind() {
+      return {
+        id: "chat-stored",
+        workItemId,
+        role: "assistant",
+        kind: "clarification_question",
+        contentJson: { title: "周会纪要模板要覆盖哪些固定栏目？", body: "写一份团队周会纪要模板" },
+        selectedOptionKey: null,
+        userOtherText: null,
+        createdAt: now
+      };
+    }
+  } as unknown as WorkItemDataRepository;
+  const service = createDbWorkItemService(repo, {
+    now: () => now,
+    async projectFileContext() {
+      return [];
+    },
+    async clarificationGenerator() {
+      throw new Error("generator must not run when a stored draft is reused");
+    },
+    async budgetGate() {
+      gateCalls += 1;
+    }
+  });
+
+  const session = await service.createSession({
+    actor,
+    locale: "zh-CN",
+    payload: { work_item_id: workItemId }
+  });
+
+  assert.equal(session.session_id, workItemId);
+  assert.equal(gateCalls, 0);
 });

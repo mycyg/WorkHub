@@ -47,7 +47,10 @@ function projectIsActive(project: ProjectAccessRecord): boolean {
 }
 
 function projectScopeMatches(project: ProjectAccessRecord, actor: Pick<PermissionActor, "orgId" | "workspaceId">): boolean {
-  if (project.workspaceId && actor.workspaceId && project.workspaceId !== actor.workspaceId) {
+  // CORE-07：工作区栅栏 fail-closed——此前 `project.workspaceId && actor.workspaceId && …` 的写法
+  // 在任一侧为 null 时直接放行（双 null 存量行 → 跨工作区可见/可管）。现在 null 一律视为不匹配；
+  // admin 的跨工作区只读不走这里（canViewProjectDrive 用 org 级 projectOrgMatches），不受影响。
+  if (!project.workspaceId || !actor.workspaceId || project.workspaceId !== actor.workspaceId) {
     return false;
   }
   if (project.orgId && actor.orgId && project.orgId !== actor.orgId) {

@@ -226,6 +226,8 @@ test("allows redis broker for multiple production workers when url is configured
     COOKIE_SECRET: "strong-secret-strong-secret-1234", ADMIN_CLAIM_SECRET: "admin-secret-123456",
     COOKIE_SECURE: "true",
     CORS_ALLOW_ORIGINS: "http://localhost:5173",
+    // CORE-02：生产不允许 nickname 认证。
+    AUTH_MODE: "password",
     WORKER_COUNT: "2",
     BROKER_BACKEND: "redis",
     BROKER_URL: "redis://127.0.0.1:6379"
@@ -233,6 +235,32 @@ test("allows redis broker for multiple production workers when url is configured
 
   assert.equal(value.broker.backend, "redis");
   assert.equal(value.broker.url, "redis://127.0.0.1:6379");
+});
+
+test("CORE-02 fails closed for nickname auth mode in production", () => {
+  assert.throws(
+    () =>
+      loadSettings({
+        APP_ENV: "production",
+        COOKIE_SECRET: "strong-secret-strong-secret-1234", ADMIN_CLAIM_SECRET: "admin-secret-123456",
+        COOKIE_SECURE: "true",
+        CORS_ALLOW_ORIGINS: "http://localhost:5173",
+        AUTH_MODE: "nickname"
+      }),
+    /AUTH_MODE cannot be nickname in production/u
+  );
+});
+
+test("CORE-02 allows hybrid auth mode in production", () => {
+  const value = loadSettings({
+    APP_ENV: "production",
+    COOKIE_SECRET: "strong-secret-strong-secret-1234", ADMIN_CLAIM_SECRET: "admin-secret-123456",
+    COOKIE_SECURE: "true",
+    CORS_ALLOW_ORIGINS: "http://localhost:5173",
+    AUTH_MODE: "hybrid"
+  });
+
+  assert.equal(value.auth.authMode, "hybrid");
 });
 
 test("requires broker url for non-memory production broker", () => {

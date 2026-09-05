@@ -118,8 +118,77 @@ test("api client converts error envelopes to WorkHubApiError", async () => {
   );
 });
 
-test("api client surfaces inner error.details consistently on non-2xx errors", async () => {
+// UI-06：2xx 的非信封 body（SPA fallback HTML / 网关错误页）此前原样塞给调用方、渲染期才炸整页。
+// 现在 fail-fast 抛带 path 的 contract_violation。
+test("UI-06: api client rejects a 2xx non-JSON body as a contract violation naming the path", async () => {
   const client = createApiClient({
+    fetchFn: async () =>
+      new Response("<html><body>Not Found</body></html>", {
+        status: 200,
+        headers: { "Content-Type": "text/html" }
+      })
+  });
+
+  await assert.rejects(
+    () => client.request("/api/pages/home"),
+    (error) => {
+      assert.equal(error instanceof WorkHubApiError, true);
+      const apiError = error as WorkHubApiError;
+      assert.equal(apiError.code, "contract_violation");
+      assert.equal(apiError.message.includes("/api/pages/home"), true);
+      return true;
+    }
+  );
+});
+
+test("UI-06: api client rejects malformed envelopes and non-envelope objects on 2xx", async () => {
+  // ok:false 却缺 error 半边。
+  const missingError = createApiClient({
+    fetchFn: async () =>
+      new Response(JSON.stringify({ ok: false }), { status: 200, headers: { "Content-Type": "application/json" } })
+  });
+  await assert.rejects(
+    () => missingError.request("/api/pages/home?locale=zh-CN"),
+    (error) => error instanceof WorkHubApiError && error.code === "contract_violation" && error.message.includes("/api/pages/home")
+  );
+
+  // 既非信封、也不在裸响应白名单里的普通对象。
+  const noEnvelope = createApiClient({
+    fetchFn: async () =>
+      new Response(JSON.stringify({ home: {} }), { status: 200, headers: { "Content-Type": "application/json" } })
+  });
+  await assert.rejects(
+    () => noEnvelope.request("/api/pages/home"),
+    (error) => error instanceof WorkHubApiError && error.code === "contract_violation"
+  );
+
+  // ok 非布尔——畸形信封。
+  const weirdOk = createApiClient({
+    fetchFn: async () =>
+      new Response(JSON.stringify({ ok: "yes", data: {} }), { status: 200, headers: { "Content-Type": "application/json" } })
+  });
+  await assert.rejects(
+    () => weirdOk.request("/api/pages/home"),
+    (error) => error instanceof WorkHubApiError && error.code === "contract_violation"
+  );
+});
+
+test("UI-06: bare {ok:true} acks and empty 200 bodies stay valid", async () => {
+  // logout/revoke 一族的裸 ack（无 data 半边）是既有合法形状。
+  const ack = createApiClient({
+    fetchFn: async () =>
+      new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "Content-Type": "application/json" } })
+  });
+  await assert.doesNotReject(() => ack.logout());
+
+  // /api/auth/me 未识别时回 200 空 body——null 原样透传。
+  const empty = createApiClient({
+    fetchFn: async () => new Response("", { status: 200, headers: { "Content-Type": "application/json" } })
+  });
+  assert.equal(await empty.me(), null);
+});
+
+test("api client surfaces inner error.details consistently on non-2xx errors", async () => {  const client = createApiClient({
     fetchFn: async () =>
       new Response(
         JSON.stringify({ ok: false, error: { code: "merge_conflict", message: "冲突", details: { conflicts: [{ id: "c1" }] } } }),

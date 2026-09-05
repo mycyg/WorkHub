@@ -40,6 +40,7 @@ import {
   type DesktopCuuCatLive2DRender
 } from "./cuu-cat-live2d-runtime.js";
 import { writeDesktopPetQaDomSnapshot } from "./cuu-qa-dom-report.js";
+import { readDesktopClientToken } from "./desktop-client-token.js";
 import { liquidGlassHeadHtml } from "./liquid-glass.js";
 import {
   liquidGlassFilterCss,
@@ -1769,6 +1770,11 @@ export async function bootDesktopPetSurface(
       rememberSystemNotificationPlan(plan);
     },
     retryingDelayMs: desktopPetRuntimeRetryingDelayMs,
+    // INF-08：SSE 断线重连成功即全量重拉待拍板卡——断线窗口漏掉的 push 事件（后端无回放）不再靠
+    // 下一条增量才补齐。refreshVisibleAttentionCard 自带「当前卡不是 attention 卡就早退」守卫，多补无害。
+    onSseReconnected: () => {
+      void refreshVisibleAttentionCard();
+    },
     get locale() {
       return locale;
     }
@@ -2295,8 +2301,10 @@ function petPriorityLabel(priority: CuuCard["priority"], locale: WorkHubLocale) 
   }
 }
 
+// DSK-06：令牌读取走 desktop-client-token.ts 单一收口。
 function clientToken() {
-  return globalThis.localStorage?.getItem("workhub_client_token") ?? globalThis.localStorage?.getItem("yqgl_client_token") ?? undefined;
+  const storage = globalThis.localStorage;
+  return storage ? readDesktopClientToken(storage) : undefined;
 }
 
 function agentRunIdFromPetCard(card: CuuCard | undefined) {

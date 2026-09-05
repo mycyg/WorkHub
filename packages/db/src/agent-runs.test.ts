@@ -114,3 +114,75 @@ test("R9.7 agent run repository lists unsettled task-plan terminal runs with a d
   assert.equal(stepQuery?.fromTable, agentSteps);
   assert.ok(queryReferences(stepQuery?.where, agentSteps.agentRunId));
 });
+
+// INF-05（取消竞态）：cancelActiveRun 只翻 status、不摘 claimedBy，worker 随后落终态的 UPDATE 仅凭
+// claimedBy fencing 仍能命中，把 cancelled 覆盖回 succeeded。终态 + fencing 的 UPDATE 现在必须额外带
+// status='running' 谓词；行已不在 running 即命中 0 行，调用方走 lost-claim 出口。
+test("INF-05: a fenced terminal updateRun carries a status='running' predicate", async () => {
+  const runId = "40000000-0000-4000-8000-0000000000d1";
+  const workerId = "worker-cancel-race";
+  const base = {
+    runId,
+    workspaceId,
+    workItemId,
+    actorUserId,
+    mode: "worker" as const,
+    title: "Terminal fenced write",
+    model: "deepseek-v4-flash",
+    budget: { maxSteps: 15, totalTimeoutS: 300, maxTokens: 120000, maxCostCny: "5" },
+    budgetDecisionJson: {},
+    usage: { stepsUsed: 1, tokenIn: 1, tokenOut: 1, estimatedCostCny: "0" },
+    createdAt: now,
+    updatedAt: now
+  };
+  const { db, queries } = createQueryRecorder([[runRow(runId, "81000000-0000-4000-8000-0000000000d1")]]);
+  const repository = createAgentRunRepository(db);
+
+  await repository.updateRun({ ...base, status: "succeeded" }, workerId);
+
+  const terminalQuery = queries.at(-1);
+  assert.equal(terminalQuery?.operation, "update");
+  assert.equal(terminalQuery?.targetTable, agentRuns);
+  assert.ok(queryReferences(terminalQuery?.where, agentRuns.claimedBy));
+  assert.ok(queryReferences(terminalQuery?.where, agentRuns.status));
+  assert.ok(queryParamValues(terminalQuery?.where).includes(runId));
+  assert.ok(queryParamValues(terminalQuery?.where).includes(workerId));
+  assert.ok(
+    queryParamValues(terminalQuery?.where).includes("running"),
+    "fenced terminal writes must require the row to still be running"
+  );
+});
+
+test("INF-05: non-terminal or unfenced updateRun writes keep the old predicates", async () => {
+  const runId = "40000000-0000-4000-8000-0000000000d2";
+  const workerId = "worker-mid-run";
+  const base = {
+    runId,
+    workspaceId,
+    workItemId,
+    actorUserId,
+    mode: "worker" as const,
+    title: "Mid-run fenced write",
+    model: "deepseek-v4-flash",
+    budget: { maxSteps: 15, totalTimeoutS: 300, maxTokens: 120000, maxCostCny: "5" },
+    budgetDecisionJson: {},
+    usage: { stepsUsed: 0, tokenIn: 0, tokenOut: 0, estimatedCostCny: "0" },
+    createdAt: now,
+    updatedAt: now
+  };
+  const { db, queries } = createQueryRecorder([
+    [runRow(runId, "81000000-0000-4000-8000-0000000000d2")],
+    [runRow(runId, "81000000-0000-4000-8000-0000000000d2")]
+  ]);
+  const repository = createAgentRunRepository(db);
+
+  // 非终态 + fencing（执行中的进度写）：只按 id + claimedBy 收窄，不得多出 status 谓词。
+  await repository.updateRun({ ...base, status: "running" }, workerId);
+  const midRunQuery = queries.at(-1);
+  assert.deepEqual(queryParamValues(midRunQuery?.where).sort(), [runId, workerId].sort());
+
+  // 终态但无 fencing（enqueue 补偿等非执行路径）：只按 id，保持原无守卫语义。
+  await repository.updateRun({ ...base, status: "failed" });
+  const unfencedQuery = queries.at(-1);
+  assert.deepEqual(queryParamValues(unfencedQuery?.where), [runId]);
+});

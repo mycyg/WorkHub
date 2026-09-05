@@ -2860,6 +2860,56 @@ test("drive page route rejects malformed item_id before it reaches the repositor
   assert.equal(pageCalls, 0);
 });
 
+test("API-06 drive comment route authenticates before parsing the request body", async () => {
+  // 无权限 + 畸形 body：必须拿 403（鉴权），而不是泄露 schema 的 422。
+  const runtimeSettings = settings();
+  let commentCalls = 0;
+  const drivePages: DrivePageService = {
+    async page() {
+      return readOnlyDrivePage();
+    },
+    async file() {
+      return unusedDriveFile();
+    },
+    async uploadFile() {
+      throw new Error("not needed");
+    },
+    async deleteItem() {
+      throw new Error("not needed");
+    },
+    async restoreItem() {
+      throw new Error("not needed");
+    },
+    async createComment(): Promise<never> {
+      commentCalls += 1;
+      throw new Error("createComment must not run for a read-only actor");
+    },
+    async commentToDraft() {
+      throw new Error("not needed");
+    },
+    async draftToProposal() {
+      throw new Error("not needed");
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/drive", createDriveRoutes({
+    auth: authDeps(runtimeSettings),
+    drivePages,
+    settings: runtimeSettings
+  }));
+
+  const response = await app.request(`/api/drive/projects/${projectId}/comments`, {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings), "Content-Type": "application/json" },
+    body: JSON.stringify({ body: 12345 })
+  });
+
+  assert.equal(response.status, 403);
+  const body = await response.json() as { ok: false; error: { code: string } };
+  assert.equal(body.error.code, "drive_forbidden");
+  assert.equal(commentCalls, 0);
+});
+
 test("drive upload route authenticates, parses payload, and returns a refreshed page VM", async () => {
   const defaultRuntimeSettings = settings();
   const defaultUploadRoot = path.join(defaultRuntimeSettings.dataDir, "project-drive", "uploads", projectId);

@@ -123,6 +123,8 @@ export function writeDesktopPetQaDomSnapshot(
     return;
   }
   const report = collectDesktopPetQaDomSnapshot(root, reason);
+  // DSK-12：write_cuu_qa_dom_report 在 release build 不编入（仅 debug）——这里本来就被 QA env 闩着且
+  // 错误静默，release 里 invoke 失败只是 catch 掉的 no-op。
   void Promise.resolve(invoke("write_cuu_qa_dom_report", { reportJson: JSON.stringify(report) })).catch(() => undefined);
 }
 

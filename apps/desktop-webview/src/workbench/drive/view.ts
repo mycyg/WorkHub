@@ -58,6 +58,13 @@ function buildBreadcrumb(items: readonly DriveItemVM[], folderId: string | undef
   return [{ id: undefined, name: projectName }, ...chain];
 }
 
+// MRG-28：旧版服务端的 DrivePageVM 可能不带 deleted_items 字段——统一在这里兜底成空数组，
+// 渲染层（回收站列表 / 计数）不再各自判空，也不会因 undefined.length 把整视图炸白屏。
+// 抽成纯函数是因为本 workspace 的测试运行器没有真实 DOM（见 view.test.ts 顶部注释）。
+export function driveViewDeletedItems(vm: { deleted_items?: DrivePageVM["deleted_items"] | undefined }): DrivePageVM["deleted_items"] {
+  return vm.deleted_items ?? [];
+}
+
 export function mountDriveView(
   container: HTMLElement,
   input: {
@@ -106,7 +113,8 @@ export function mountDriveView(
       return;
     }
     const zh = input.locale === "zh-CN";
-    const deletedItems = vm.deleted_items;
+    // MRG-28：连旧版服务端时 VM 可能没有 deleted_items 字段——空值兜底，不让回收站/计数把整视图炸白屏。
+    const deletedItems = driveViewDeletedItems(vm);
     const errorBanner = actionError
       ? `<p class="wh-wb-drive-action-error">${escapeHtml(actionError)}</p>`
       : "";

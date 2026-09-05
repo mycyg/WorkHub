@@ -101,6 +101,21 @@ test("workhubToolsToPi honors registry visibility (canUse)", async () => {
 	);
 });
 
+// MRG-16 回归门：resolveMissingTool（config-builder.ts）让「模型点名即执行」走到 registry.execute——
+// 这里锁死 registry.execute 对不可见工具重新过 canUse 门禁（动态收紧的工具不能被点名绕过）。
+test("registry.execute refuses a tool that canUse hides, even when the model names it", async () => {
+	let toggledOff = false;
+	const registry = createToolRegistry([echoSpec], { canUse: () => !toggledOff });
+	assert.equal((await registry.toModelTools(ctx)).length, 1);
+
+	// 中途收紧：工具从可见列表消失（如角色/权限变化），模型仍拿着上一轮的名字点名调用。
+	toggledOff = true;
+	assert.equal((await registry.toModelTools(ctx)).length, 0);
+	const result = await registry.execute("echo", { message: "hi" }, ctx);
+	assert.equal(result.isError, true);
+	assert.match(result.content, /tool not available: echo/);
+});
+
 // --- isError propagation companion ----------------------------------------
 
 test("workhubAfterToolCall propagates the stashed isError flag", async () => {

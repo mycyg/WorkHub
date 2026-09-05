@@ -1,6 +1,5 @@
 import { createApiClient } from "@workhub/api-client/client";
 import { workHubLocaleStorageKey } from "@workhub/contracts";
-import { defaultPorts } from "@workhub/config/ports";
 import { createCuuController } from "@workhub/cuu";
 import type { WorkHubLocale } from "@workhub/ui/gold-path";
 import {
@@ -9,6 +8,13 @@ import {
   setDocumentLocale
 } from "@workhub/web-runtime";
 
+import {
+  clearDesktopClientToken,
+  readDesktopClientToken,
+  writeDesktopClientToken
+} from "./desktop-client-token.js";
+import { resolveDesktopApiBaseFromStorage } from "./desktop-api-base.js";
+import { startVisibilityAwarePolling } from "./desktop-visibility-polling.js";
 import {
   resolveDesktopShellEmitter,
   resolveDesktopShellListen,
@@ -29,7 +35,8 @@ import {
   dismissDesktopMainWindow,
   dragDesktopMainWindow,
   moveDesktopMainWindowBy as moveDesktopMainWindowByCommand,
-  resizeDesktopMainWindow
+  resizeDesktopMainWindow,
+  takeDesktopPendingDeepLink
 } from "./desktop-window-controls.js";
 import {
   mountSpotlight,
@@ -48,20 +55,18 @@ import {
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
 
+// DSK-06：令牌读写统一走 desktop-client-token.ts（明文 localStorage 的已知风险见该文件头部注释）。
 function clientToken() {
-  return window.localStorage.getItem("workhub_client_token") ?? window.localStorage.getItem("yqgl_client_token") ?? undefined;
+  return readDesktopClientToken(window.localStorage);
 }
 
 // 测试反馈修复（窗口空白）：打包后 webview 的同源是 tauri://（没有 /api），baseUrl="" 会让所有 API 调用落空、
 // 首页加载不出→整窗空白。桌面客户端改为默认连本机后端（API 默认端口），并可用 localStorage.workhub_api_base
 // 覆盖（指向远端/不同端口的 WorkHub 后端）。后端 CORS 已反射桌面 tauri 源 + 本机回环（apps/api app.ts），故跨源带
 // cookie 可达。注意：仍需后端在跑；连不上时显示的是连接错误而非空白。
+// DSK-05：覆盖值的读取/校验收口到 desktop-api-base.ts——非法值（非 http/https、带凭据/查询串）按未配置处理。
 function resolveDesktopApiBase(): string {
-  const override = window.localStorage.getItem("workhub_api_base");
-  if (override && override.trim().length > 0) {
-    return override.trim().replace(/\/+$/u, "");
-  }
-  return `http://127.0.0.1:${defaultPorts.api}`;
+  return resolveDesktopApiBaseFromStorage(window.localStorage);
 }
 
 // 桌面跨源(tauri://localhost→127.0.0.1)无法用 SameSite=Lax cookie 鉴权，必须持 client token 走 header。
@@ -111,7 +116,7 @@ async function bootstrapDesktopClientToken(client: BrowserApiClient): Promise<De
       platform: "desktop"
     });
     if (result?.client_token) {
-      window.localStorage.setItem("workhub_client_token", result.client_token);
+      writeDesktopClientToken(window.localStorage, result.client_token);
       rememberDesktopAuthModeHint(window.localStorage, "nickname");
       return "ready";
     }
@@ -179,7 +184,7 @@ async function ensureDesktopClientToken(client: BrowserApiClient): Promise<Deskt
       await client.me();
     } catch (error) {
       if (isStaleDesktopClientTokenError(error)) {
-        window.localStorage.removeItem("workhub_client_token");
+        clearDesktopClientToken(window.localStorage);
         if ((await bootstrapDesktopClientTokenWithLock(client)) === "needs-credentials") {
           return "needs-credentials";
         }
@@ -348,6 +353,16 @@ async function bootSpotlight() {
         saveProjectContextFromRoute: saveDesktopCuuProjectContextFromRoute
       });
     });
+    // MRG-23：冷启动深链（应用未运行时 OS 直接唤起 workhub://…）在主窗 webview 订阅前就 emit 了——
+    // 挂载完成后向壳层取回暂存的最后一条（按窗口 label 认领，这里只会拿到发给 main 的），不再丢。
+    void takeDesktopPendingDeepLink().then((plan) => {
+      if (plan) {
+        handleDesktopSpotlightShellNavigate(plan, {
+          spotlight,
+          saveProjectContextFromRoute: saveDesktopCuuProjectContextFromRoute
+        });
+      }
+    });
     // rank12：把「待你拍板」实时条数喂给 launcher 审批角标——盒子的核心承诺是一眼看到有几条待决策。
     // 启动拉一次 + 每 30s + 窗口重新聚焦时刷新；best-effort，失败不更新角标、不影响盒子。
     const refreshApprovalsBadge = async () => {
@@ -370,7 +385,12 @@ async function bootSpotlight() {
       }
     };
     void refreshApprovalsBadge();
-    window.setInterval(() => void refreshApprovalsBadge(), 30_000);
+    // DSK-10：轮询随窗口可见性暂停——聚焦盒长期隐藏（常态）时不再空打后端；重新可见立刻补刷一次。
+    // 返回的 disposer 会清表 + 摘监听（当前 Spotlight 壳不卸载，disposer 主要为对称/可测性留着）。
+    startVisibilityAwarePolling({
+      refresh: () => void refreshApprovalsBadge(),
+      intervalMs: 30_000
+    });
     window.addEventListener("focus", () => void refreshApprovalsBadge());
   } catch (error) {
     renderDesktopOfflineCard(root, locale, error);

@@ -1059,3 +1059,34 @@ test("the settings view revokes a policy only on the confirmed second click, cal
     assert.doesNotMatch(body.innerHTML, /data-set-revoke-policy="pol-1"/u, "the revoked policy must disappear from the list");
   });
 });
+
+test("MRG-25: a client without revokePermissionPolicy degrades quietly (no stuck 撤销中…, no throw)", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = { ...settingsVm(), permission_policies: [policyVm({ id: "pol-1" })] } as unknown as SettingsPageVM;
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          }
+          // 故意不带 revokePermissionPolicy（旧版 api-client，可选方法缺失）。
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+
+    // 两次点击（武装 + 确认）都不该抛错、按钮不该永久卡「撤销中…」。
+    body.click(new FakeElement(new Set(["[data-set-revoke-policy]"]), { setRevokePolicy: "pol-1" }));
+    body.click(new FakeElement(new Set(["[data-set-revoke-policy]"]), { setRevokePolicy: "pol-1" }));
+    await tick();
+    await tick();
+
+    assert.doesNotMatch(body.innerHTML, /撤销中/u, "busy label must not stick when the method is missing");
+    assert.match(body.innerHTML, /当前客户端版本不支持撤销/u);
+  });
+});

@@ -21,6 +21,7 @@ import type {
 } from "@workhub/contracts";
 
 import { getDefaultProviderRegistry } from "./provider-registry.js";
+import { checkEntryLlmBudget, entryLlmBudgetExceededMessage } from "./entry-llm-budget.js";
 import { createMetaPlanner, type MetaPlanner, type MetaPlannerDraftItem } from "./meta-planner.js";
 import { getDefaultObjectiveService, type ObjectiveService } from "./objectives.js";
 import {
@@ -49,7 +50,7 @@ export class TaskPlanServiceError extends Error {
 export type TaskPlanWorkflowRepository = {
   findDraftPlanForWorkItem?: (input: { workItemId: string; workspaceId: string }) => Promise<TaskPlanRow | null>;
   createDraftPlan: (input: CreateDraftTaskPlanInput) => Promise<void>;
-  cancelDraftPlan: (input: { planId: string; workspaceId: string; cancelledAt?: Date }) => Promise<TaskPlanRow | null>;
+  cancelDraftPlan: (input: { planId: string; workspaceId: string; workItemId: string; cancelledAt?: Date }) => Promise<TaskPlanRow | null>;
   approvePlan: (input: { planId: string; workspaceId: string; workItemId: string; approvedAt?: Date }) => Promise<TaskPlanRow | null>;
 };
 
@@ -79,6 +80,8 @@ export type TaskPlanWorkflowOptions = {
   teamSkills?: Pick<TeamSkillRepository, "listActive"> | false;
   // B-R9.2-5：计划总预算（¥），落 budgetJson.max_cost_cny，派发时按份额切给子 run。
   planBudgetCny?: string;
+  // API-04：计划拆解 LLM 的预算软闸——拆解前调用，超预算时由它抛 429。
+  budgetGate?: (input: { workspaceId: string; locale?: WorkHubLocale }) => Promise<void>;
   id?: () => string;
   now?: () => Date;
 };
@@ -267,6 +270,8 @@ export function createTaskPlanWorkflowService(options: TaskPlanWorkflowOptions):
       if (existingDraft) {
         throw new TaskPlanServiceError(409, "task_plan_draft_exists", "这个事项已有待审任务计划，请刷新后处理已有计划。");
       }
+      // API-04：拆解是计费 LLM 调用——先过团队维度预算软闸，超预算 429 不进拆解。
+      await options.budgetGate?.({ workspaceId, ...(input.locale ? { locale: input.locale } : {}) });
       const draftKey = `${workspaceId}:${workItem.id}`;
       if (inFlightDrafts.has(draftKey)) {
         throw new TaskPlanServiceError(409, "task_plan_draft_in_progress", "任务计划正在生成，请稍后刷新查看。");
@@ -358,6 +363,7 @@ export function createTaskPlanWorkflowService(options: TaskPlanWorkflowOptions):
           await options.taskPlans.cancelDraftPlan({
             planId,
             workspaceId,
+            workItemId: workItem.id,
             cancelledAt: now()
           });
           throw error;
@@ -390,7 +396,12 @@ export function getDefaultTaskPlanWorkflowService() {
       planner: createMetaPlanner({ providerRegistry: getDefaultProviderRegistry() }),
       objectives: getDefaultObjectiveService(),
       userMemories: createUserMemoryRepository(db),
-      teamSkills: createTeamSkillRepository(db)
+      teamSkills: createTeamSkillRepository(db),
+      budgetGate: async ({ workspaceId, locale }) => {
+        if (!await checkEntryLlmBudget({ workspaceId })) {
+          throw new TaskPlanServiceError(429, "budget_exhausted", entryLlmBudgetExceededMessage(locale));
+        }
+      }
     });
   }
   return defaultTaskPlanWorkflowService;

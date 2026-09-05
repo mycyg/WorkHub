@@ -512,13 +512,15 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
   }
 
   return {
-    async resolve(id: string, actor: AuthActor, input: ResolveEscalationRequest, locale: WorkHubLocale = "zh-CN") {
-      const payload = resolveEscalationRequestSchema.parse(input);
+    // API-06：input 收原始 body（unknown），schema 解析放到鉴权之后——
+    // 未授权者发畸形 body 应拿 403/404，而不是泄露契约的 422。
+    async resolve(id: string, actor: AuthActor, input: unknown, locale: WorkHubLocale = "zh-CN") {
       const existing = await repository.findById({ id, workspaceId: actor.workspaceId });
       if (!existing) {
         throw new EscalationServiceError(404, "escalation_not_found", "没有找到这条升级。");
       }
       await ensureMutableEscalation(existing, actor);
+      const payload = resolveEscalationRequestSchema.parse(input);
       const targetStatus = resolveTargetStatus(payload.action);
       const taskPlanId = taskPlanIdFromHandoff(existing);
       const taskPlanAction = hasTaskPlanResolutionTarget(existing) ? payload.action : undefined;
@@ -682,13 +684,14 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
       };
     },
 
-    async delegate(id: string, actor: AuthActor, input: DelegateEscalationRequest, locale: WorkHubLocale = "zh-CN") {
-      const payload = delegateEscalationRequestSchema.parse(input);
+    async delegate(id: string, actor: AuthActor, input: unknown, locale: WorkHubLocale = "zh-CN") {
       const existing = await repository.findById({ id, workspaceId: actor.workspaceId });
       if (!existing) {
         throw new EscalationServiceError(404, "escalation_not_found", "没有找到这条升级。");
       }
+      // API-06：同 resolve——鉴权先于 schema 解析。
       await ensureMutableEscalation(existing, actor);
+      const payload = delegateEscalationRequestSchema.parse(input);
       if (users) {
         const target = await users.findActiveById(payload.to_user_id);
         if (!target) {
