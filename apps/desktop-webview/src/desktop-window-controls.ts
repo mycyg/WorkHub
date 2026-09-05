@@ -71,3 +71,14 @@ export async function takeDesktopPendingDeepLink(
     return undefined;
   }
 }
+
+// S5-N-04 诊断出口：把 webview 侧看到的壳层事件写进 Rust 的统一日志（~/Library/Logs/<bundle>/）。
+// 打包后的 release webview 既没有检查器也没人读 stderr，缺了这条就没法区分「事件没送到前端」与
+// 「送到了但前端没认出路由」。best-effort：浏览器 dev 态没有 __TAURI__ 时直接 no-op，绝不抛。
+export function logDesktopShellDiagnostic(
+  event: string,
+  message: string,
+  scope: DesktopWindowControlsScope = globalThis as DesktopWindowControlsScope
+): boolean {
+  return invokeDesktopWindowCommand("record_shell_diagnostic", { event, message }, scope);
+}

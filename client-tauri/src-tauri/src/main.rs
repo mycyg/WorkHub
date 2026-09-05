@@ -1051,13 +1051,35 @@ fn execute_window_control(
     // 全局 emit：桌宠/工作台窗从不消费 navigate（工作台走 deep-link 通道），事件面越窄越好。
     // 注意 Tauri 的过滤只作用于**显式限定了 target 的**监听器，JS 侧默认的 Any 监听仍会收到——
     // 所以 payload 里也带上 label，接收端要自证时有据可依。
-    if let Some(payload) = shell_navigate_payload(&plan) {
-        app.emit_to(
-            payload.label.clone(),
-            event_channel_name(ShellEvent::Navigate),
-            payload,
-        )
-        .map_err(|error| format!("failed to emit main window navigation: {error}"))?;
+    match shell_navigate_payload(&plan) {
+        Some(payload) => {
+            let route = payload.route.clone();
+            let label = payload.label.clone();
+            app.emit_to(
+                label.clone(),
+                event_channel_name(ShellEvent::Navigate),
+                payload,
+            )
+            .map_err(|error| format!("failed to emit main window navigation: {error}"))?;
+            shell_log_info(
+                "shell_navigate_emitted",
+                format!(
+                    "route={route} label={label} source={:?} reason={}",
+                    plan.source, plan.reason
+                ),
+            );
+        }
+        None => shell_log_info(
+            "shell_navigate_skipped",
+            format!(
+                "label={} action={:?} source={:?} reason={} route={}",
+                plan.label,
+                plan.action,
+                plan.source,
+                plan.reason,
+                plan.route.as_deref().unwrap_or("-")
+            ),
+        ),
     }
 
     Ok(plan)
@@ -1134,6 +1156,28 @@ fn apply_dock_reopen(app: &tauri::AppHandle) -> Result<(), String> {
 // applicationShouldHandleReopen）。非 macOS 上整段 cfg 掉，参数随之未用，故 allow(unused_variables)。
 #[allow(unused_variables)]
 fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
+    // S5-N-04 诊断：macOS 热态深链的每一段都要留痕。`Opened` 是 deep-link 插件唯一的热态入口
+    // （插件在自己的 on_event 里把它转成 `deep-link://new-url` 事件），`Reopen` 则是"应用被激活"
+    // 那条与之赛跑的路径——两条分别记一行，日志里就能直接读出"URL 到底有没有送到壳层"。
+    #[cfg(target_os = "macos")]
+    match &event {
+        tauri::RunEvent::Opened { urls } => {
+            let joined = urls
+                .iter()
+                .map(|url| url.as_str().to_string())
+                .collect::<Vec<_>>()
+                .join(" ");
+            shell_log_info("run_event_opened", format!("urls=[{joined}]"));
+        }
+        tauri::RunEvent::Reopen {
+            has_visible_windows,
+            ..
+        } => shell_log_info(
+            "run_event_reopen",
+            format!("has_visible_windows={has_visible_windows}"),
+        ),
+        _ => {}
+    }
     #[cfg(target_os = "macos")]
     if let tauri::RunEvent::Reopen { .. } = event {
         if let Err(error) = apply_dock_reopen(app) {
@@ -1830,6 +1874,13 @@ fn install_workhub_deep_links(app: &tauri::App) -> Result<(), String> {
         .deep_link()
         .get_current()
         .map_err(|error| format!("failed to read startup deep-link URLs: {error}"))?;
+    shell_log_info(
+        "deep_link_startup_urls",
+        format!(
+            "count={}",
+            start_urls.as_ref().map(|urls| urls.len()).unwrap_or(0)
+        ),
+    );
     if let Some(urls) = start_urls {
         for url in urls {
             // A malformed cold-start deep link must never brick launch: log and
@@ -1844,6 +1895,7 @@ fn install_workhub_deep_links(app: &tauri::App) -> Result<(), String> {
     let listener_app = app.handle().clone();
     app.deep_link().on_open_url(move |event| {
         for url in event.urls() {
+            shell_log_info("deep_link_url_received", url.as_str());
             if let Err(error) = handle_deep_link_url(&listener_app, url.as_str()) {
                 shell_log_error("deep_link_failed", format!("{url}: {error}"));
             }
@@ -1953,6 +2005,41 @@ fn take_pending_deep_link(
     take_pending_deep_link_from(&mut pending.plan, window.label(), Instant::now())
 }
 
+// S5-N-04 诊断出口：webview 侧（聚焦盒的 navigate/deep-link 处理）把自己看到的东西写进同一份壳层日志。
+// 打包后的 release webview 没有检查器、stderr 也没人读，缺了这条就只能靠"窗口有没有变"猜前端收没收到事件。
+// 纪律：事件名归一成 `webview_` 前缀的 snake_case（与壳层自己的事件名不撞车、便于 grep），长度设硬上限，
+// 换行压平——一条日志一行是 shell_log 的既定形状。
+const WEBVIEW_DIAGNOSTIC_EVENT_MAX: usize = 64;
+const WEBVIEW_DIAGNOSTIC_MESSAGE_MAX: usize = 512;
+
+fn webview_diagnostic_event_name(event: &str) -> String {
+    let sanitized: String = event
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .take(WEBVIEW_DIAGNOSTIC_EVENT_MAX)
+        .collect();
+    if sanitized.is_empty() {
+        "webview_diagnostic".to_string()
+    } else {
+        format!("webview_{sanitized}")
+    }
+}
+
+fn webview_diagnostic_message(message: &str) -> String {
+    message
+        .chars()
+        .take(WEBVIEW_DIAGNOSTIC_MESSAGE_MAX)
+        .collect()
+}
+
+#[tauri::command]
+fn record_shell_diagnostic(event: String, message: String) {
+    shell_log_info(
+        &webview_diagnostic_event_name(&event),
+        webview_diagnostic_message(&message),
+    );
+}
+
 fn handle_deep_link_url(app: &tauri::AppHandle, raw_url: &str) -> Result<(), String> {
     let locale = current_workhub_locale(app);
     let plan = deep_link_plan_from_url(raw_url).map_err(|error| {
@@ -1962,6 +2049,13 @@ fn handle_deep_link_url(app: &tauri::AppHandle, raw_url: &str) -> Result<(), Str
         )
     })?;
 
+    shell_log_info(
+        "deep_link_plan",
+        format!(
+            "url={raw_url} route={} label={} action={:?}",
+            plan.route, plan.window_control.label, plan.window_control.action
+        ),
+    );
     handle_deep_link_plan(app, &plan)
 }
 
@@ -1971,6 +2065,14 @@ fn handle_single_instance_launch(
     cwd: String,
 ) -> Result<(), String> {
     let plan = single_instance_plan_from_args_for_locale(&args, &cwd, current_workhub_locale(app));
+    shell_log_info(
+        "single_instance_launch",
+        format!(
+            "args=[{}] deep_links={}",
+            args.join(" "),
+            plan.deep_links.len()
+        ),
+    );
     if plan.deep_links.is_empty() {
         execute_window_control(app, plan.window_control.clone())?;
     } else {
@@ -2215,7 +2317,8 @@ macro_rules! workhub_invoke_handler {
             show_pet_window,
             hide_pet_window,
             toggle_pet_window,
-            take_pending_deep_link
+            take_pending_deep_link,
+            record_shell_diagnostic
             $(, $qa_command)*
         ]
     };
