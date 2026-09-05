@@ -8,7 +8,9 @@
 // 漏一个枚举取值该在 labels.test.ts 里红（那里按 contracts 的枚举数组逐个断言有映射），
 // 而不是在界面上漏出 `delivery_ready` 这种生 id。
 
-import { spotlightEnumLabel, spotlightT } from "./locales.js";
+import { humanizeAgentToolId, type AgentRunReminderFacts } from "@workhub/contracts";
+
+import { spotlightEnumLabel, spotlightT, type SpotlightCopyKey } from "./locales.js";
 
 export function workItemStatusLabel(status: string, zh: boolean): string {
   return spotlightEnumLabel("workItemStatus", status, zh) ?? spotlightT(zh, "unknownStatus");
@@ -48,6 +50,40 @@ export function agentStepPublicSummary(
     default:
       return step.output_excerpt ?? spotlightT(zh, "recordedOneStep");
   }
+}
+
+// R26 批 B6 观测面：把一条「重复动作提醒」的结构化事实渲成回放时间线上的一句人话。
+// 与 web 端 packages/ui i18n.ts 的 agentRunReminderLine 同口径（同八条模板、同引号与顿号约定）——
+// 两端各留一份是这一层的既有惯例（agentStepPublicSummary 等同款），词表本身在 locales.ts。
+//
+// 工具名一律先过 humanizeAgentToolId 去下划线再加引号，界面上绝不出现 run_command 这类原始 id；
+// 重复的那一步没有工具调用时退到不提工具的那半边模板，不留悬空括号。
+const REMINDER_COPY_KEYS = {
+  "identical:tool:1": "reminderIdenticalToolFirst",
+  "identical:plain:1": "reminderIdenticalPlainFirst",
+  "alternating:tool:1": "reminderAlternatingToolFirst",
+  "alternating:plain:1": "reminderAlternatingPlainFirst",
+  "identical:tool:2": "reminderIdenticalToolSecond",
+  "identical:plain:2": "reminderIdenticalPlainSecond",
+  "alternating:tool:2": "reminderAlternatingToolSecond",
+  "alternating:plain:2": "reminderAlternatingPlainSecond"
+} as const satisfies Record<string, SpotlightCopyKey>;
+
+function reminderToolNames(facts: AgentRunReminderFacts, zh: boolean): string {
+  const ids = facts.tool_ids ?? (facts.tool_id ? [facts.tool_id] : []);
+  const quoted = ids.map((id) => (zh ? `「${humanizeAgentToolId(id)}」` : `“${humanizeAgentToolId(id)}”`));
+  return quoted.join(zh ? "、" : ", ");
+}
+
+export function agentRunReminderLine(facts: AgentRunReminderFacts, zh: boolean): string {
+  const tools = reminderToolNames(facts, zh);
+  const key = REMINDER_COPY_KEYS[`${facts.shape}:${tools ? "tool" : "plain"}:${facts.tier}`];
+  return spotlightT(zh, key).replace("{repeats}", String(facts.repeats)).replace("{tools}", tools);
+}
+
+/** 提醒行的左侧标签（与 agentStepPhaseLabel 同位）。 */
+export function agentRunReminderPhaseLabel(zh: boolean): string {
+  return spotlightT(zh, "reminderPhase");
 }
 
 // 选项风险等级（contracts riskLevel low/medium/high）：与 web route-components localizedEnumLabel 同口径。

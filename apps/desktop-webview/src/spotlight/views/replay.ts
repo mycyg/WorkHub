@@ -8,14 +8,21 @@
 // 回放整页用的 gold-path 旧卡片语言），改用 Spotlight 自己的玻璃组件词汇（wh-spot-*）画同一份数据，
 // 复用同一套 data-* 属性契约让既有、已测试的 binder 原样生效。
 
-import type { AgentRunLiveVM, AgentStep, AttentionHomeVM, ReplayTraceVM } from "@workhub/contracts";
+import { readAgentRunReminderFacts, type AgentRunLiveVM, type AgentStep, type AttentionHomeVM, type ReplayTraceVM } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 import { formatLocalTimestamp } from "@workhub/ui";
 import type { ReplayRevertRoot } from "@workhub/ui/replay";
 
 import { bindDesktopAgentRunReplayRevert } from "../../desktop-agent-run-replay.js";
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
-import { agentRunStatusLabel, agentStepPhaseLabel, agentStepPublicSummary, snapshotKindLabel } from "../labels.js";
+import {
+  agentRunReminderLine,
+  agentRunReminderPhaseLabel,
+  agentRunStatusLabel,
+  agentStepPhaseLabel,
+  agentStepPublicSummary,
+  snapshotKindLabel
+} from "../labels.js";
 
 import { spotlightViewsT } from "./locales.js";
 
@@ -63,6 +70,22 @@ export function runListHtml(runs: BgRun[], zh: boolean): string {
     .join("")}</div>`;
 }
 
+// R26 批 B6 观测面：某一步之后的提醒行。脏数据（缺档位 / 形态不认识 / 根本不是对象）由
+// readAgentRunReminderFacts 挡掉——返回 undefined 就整行不渲，绝不把半截事实编成一句话。
+export function runReminderRows(reminders: ReadonlyArray<unknown> | undefined, stepNo: number, zh: boolean): string {
+  if (!reminders?.length) {
+    return "";
+  }
+  return reminders
+    .map((entry) => readAgentRunReminderFacts(entry))
+    .filter((facts): facts is NonNullable<typeof facts> => Boolean(facts) && facts?.step_no === stepNo)
+    .map(
+      (facts) =>
+        `<div class="wh-spot-trace-step" data-spot-reminder-tier="${facts.tier}"><div class="wh-spot-trace-phase">${escapeHtml(agentRunReminderPhaseLabel(zh))}</div><div class="wh-spot-trace-out">${escapeHtml(agentRunReminderLine(facts, zh))}</div></div>`
+    )
+    .join("");
+}
+
 function traceHtml(vm: AgentRunLiveVM, zh: boolean, waiting = false): string {
   const u = vm.usage;
   // L14：列表里这条运行标着「等你拍板」(waiting_for_user，仅 attention 列表态有,详情 VM 的 status 枚举不含它)。
@@ -76,13 +99,29 @@ function traceHtml(vm: AgentRunLiveVM, zh: boolean, waiting = false): string {
     <div class="wh-spot-metric"><span class="wh-spot-metric-k">${spotlightViewsT(zh, "cost2")}</span><span class="wh-spot-metric-v">¥${escapeHtml(String(u.estimated_cost_cny))}</span></div>
   </div>`;
   const steps = vm.trace ?? [];
-  const timeline = steps.length
+  // R26 批 B6 观测面：把「这一步之后 Cuu 被劝过什么」补进时间线。提醒不是模型的一步（是运行环境
+  // 往对话里追加的一句话），所以不占步号、也不冒充步骤行——单独一行，带 data-spot-reminder-tier。
+  const reminderRows = (stepNo: number) => runReminderRows(vm.reminders, stepNo, zh);
+  const renderedStepNos = new Set(steps.map((step) => step.step_no));
+  // 对不上任何步骤行的提醒（trace 还没拉到那一步 / 数据不齐）补在末尾，绝不因为对不上就悄悄丢掉。
+  const orphanRows = [
+    ...new Set(
+      (vm.reminders ?? [])
+        .map((entry) => readAgentRunReminderFacts(entry))
+        .filter((facts): facts is NonNullable<typeof facts> => Boolean(facts) && !renderedStepNos.has(facts?.step_no ?? -1))
+        .map((facts) => facts.step_no)
+    )
+  ]
+    .sort((a, b) => a - b)
+    .map(reminderRows)
+    .join("");
+  const timeline = steps.length || orphanRows
     ? `<div class="wh-spot-trace">${steps
         .map(
           (s) =>
-            `<div class="wh-spot-trace-step"><div class="wh-spot-trace-phase">${escapeHtml(agentStepPhaseLabel(s.phase, zh))}</div><div class="wh-spot-trace-out">${escapeHtml(agentStepPublicSummary(s, zh))}</div></div>`
+            `<div class="wh-spot-trace-step"><div class="wh-spot-trace-phase">${escapeHtml(agentStepPhaseLabel(s.phase, zh))}</div><div class="wh-spot-trace-out">${escapeHtml(agentStepPublicSummary(s, zh))}</div></div>${reminderRows(s.step_no)}`
         )
-        .join("")}</div>`
+        .join("")}${orphanRows}</div>`
     : `<p class="wh-spot-bubble-note" style="color:var(--ds-ink-muted)">${spotlightViewsT(zh, "noStepsYet")}</p>`;
   return `<div class="wh-spot-dash ds-anim-fade-in"><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-run-back style="align-self:flex-start">${spotlightViewsT(zh, "backToRuns")}</button>${header}${decideBtn}${timeline}</div>`;
 }

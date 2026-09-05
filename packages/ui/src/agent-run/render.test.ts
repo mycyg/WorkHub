@@ -158,7 +158,7 @@ test("B6: 英文界面渲英文提醒行；脏数据整行不渲，不把半截�
       { step_no: 1, tier: 1, repeats: 3, shape: "spiral" },
       "not-an-object"
     ]
-  };
+  } as unknown as AgentRunLiveVM;
 
   const en = renderAgentRunLive(withJunk, "web", { locale: "en-US" });
   assert.equal(en.html.includes("Second reminder: Cuu repeated the same action for 5 steps"), true);
