@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { McpServerConnectionVM, McpServerVM } from "@workhub/contracts";
+import type { McpServerConnectionVM, McpServerErrorCode, McpServerVM } from "@workhub/contracts";
 
 import {
   MCP_SERVER_NAME_MAX_CHARS,
@@ -9,6 +9,7 @@ import {
   MCP_TOOL_ID_PREFIX,
   emptyMcpFormState,
   mcpAddErrorText,
+  mcpErrorCodeLine,
   mcpReasonLine,
   mcpServersSectionHtml,
   mcpStatusLine,
@@ -139,6 +140,106 @@ test("a spent reconnect budget says why nothing is being retried and points at T
   const reason = mcpReasonLine(server, connection, true) ?? "";
   assert.match(reason, /不自动重连/u);
   assert.match(reason, /测试连接/u);
+});
+
+// —— R26 F3：连不上的原因按稳定错误码出话 —— //
+
+// 契约 mcpServerErrorCodeSchema 的九条码。这里写死一份，是为了在契约新增一条码而
+// MCP_ERROR_CODE_COPY 忘了跟时**测试先红**（那张表的 satisfies 只保证不缺键，保证不了这里有覆盖）。
+const MCP_ERROR_CODES: readonly McpServerErrorCode[] = [
+  "mcp_spawn_failed",
+  "mcp_handshake_timeout",
+  "mcp_protocol_version_unsupported",
+  "mcp_protocol_error",
+  "mcp_server_error",
+  "mcp_call_timeout",
+  "mcp_not_running",
+  "mcp_exited",
+  "mcp_connect_failed"
+];
+
+test("every error code has its own sentence in both languages, and no code leaves it blank", () => {
+  const zhLines = new Set<string>();
+  for (const code of MCP_ERROR_CODES) {
+    const zhLine = mcpErrorCodeLine(code, true) ?? "";
+    const enLine = mcpErrorCodeLine(code, false) ?? "";
+    assert.ok(zhLine.length > 0, `${code} 没有中文句子`);
+    assert.ok(enLine.length > 0, `${code} has no English sentence`);
+    assert.notEqual(zhLine, enLine, `${code} 两种语言给了同一串`);
+    zhLines.add(zhLine);
+  }
+  // 九条各说各的：合并两条码会让两种完全不同的下一步动作看起来是同一件事。
+  assert.equal(zhLines.size, MCP_ERROR_CODES.length);
+  // 拿不到码时不出这一行——由 mcpReasonLine 落回通用句，而不是在这里编一个原因。
+  assert.equal(mcpErrorCodeLine(undefined, true), undefined);
+});
+
+test("the fallback code says exactly what a missing code says — it means the same thing", () => {
+  const withFallbackCode = mcpServerVm({
+    status: "connect_failed",
+    tool_count: 0,
+    last_error_code: "mcp_connect_failed"
+  } as Partial<McpServerVM>);
+  const withNoCode = mcpServerVm({ status: "connect_failed", tool_count: 0 } as Partial<McpServerVM>);
+  assert.equal(mcpReasonLine(withFallbackCode, undefined, true), mcpReasonLine(withNoCode, undefined, true));
+});
+
+test("a handshake timeout finally gets the sentence M7 could not give", () => {
+  const server = mcpServerVm({
+    status: "connect_failed",
+    tool_count: 0,
+    tools: [],
+    last_error: "mcp handshake timed out after 20000ms",
+    last_error_code: "mcp_handshake_timeout"
+  } as Partial<McpServerVM>);
+  const reason = mcpReasonLine(server, undefined, true) ?? "";
+  assert.match(reason, /^服务器没有在规定时间内应答。/u, "按码出的原因在最前");
+  assert.match(reason, /handshake timed out/u, "原始诊断仍然只是括号里的次级信息");
+  assert.doesNotMatch(reason, /连不上这台服务器/u, "有了具体原因就不再说那句笼统的");
+  assert.match(mcpReasonLine(server, undefined, false) ?? "", /^The server did not answer in time\./u);
+});
+
+test("the connection snapshot's code wins over the row's — it is this process's latest handshake", () => {
+  const server = mcpServerVm({
+    status: "connect_failed",
+    tool_count: 0,
+    last_error: "spawn ENOENT",
+    last_error_code: "mcp_spawn_failed"
+  } as Partial<McpServerVM>);
+  const connection: McpServerConnectionVM = {
+    live: false,
+    tool_count: 0,
+    last_error: "mcp server exited with code 1",
+    last_error_code: "mcp_exited"
+  };
+  assert.match(mcpReasonLine(server, connection, true) ?? "", /^这台服务器自己退出了。/u);
+});
+
+test("no code at all keeps M7's generic sentence rather than inventing a reason", () => {
+  const server = mcpServerVm({
+    status: "connect_failed",
+    tool_count: 0,
+    last_error: "mcp server 'gh' is not running"
+  } as Partial<McpServerVM>);
+  const reason = mcpReasonLine(server, undefined, true) ?? "";
+  assert.match(reason, /^连不上这台服务器。/u);
+  assert.match(reason, /is not running/u);
+});
+
+test("a spent retry budget says both things: why it failed and why nothing is retrying", () => {
+  const server = mcpServerVm({ status: "connect_failed", tool_count: 0 } as Partial<McpServerVM>);
+  const connection: McpServerConnectionVM = {
+    live: false,
+    tool_count: 0,
+    blocked_reason: "mcp server 'gh' failed 4 times within 10 minutes; last error: spawn ENOENT",
+    last_error_code: "mcp_spawn_failed"
+  };
+  const reason = mcpReasonLine(server, connection, true) ?? "";
+  assert.match(reason, /^这台服务器没能启动。/u);
+  assert.match(reason, /不自动重连/u);
+  assert.match(reason, /测试连接/u);
+  // 英文两句之间要有空格，不然会连成一串。
+  assert.match(mcpReasonLine(server, connection, false) ?? "", /start\. It failed too many times/u);
 });
 
 test("connected with zero tools is its own answer, not a silent success", () => {

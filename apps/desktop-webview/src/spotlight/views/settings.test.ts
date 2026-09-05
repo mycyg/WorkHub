@@ -2325,9 +2325,9 @@ function mcpActionResult(server: McpServerVM, over: Record<string, unknown> = {}
   } as unknown as McpServerActionResult;
 }
 
-/** 管理员的 settings VM（服务端只给管理员填 plugins；MCP 区借同一个信号）。 */
+/** 管理员的 settings VM：服务端只给管理员填 plugins 与 mcp_servers，两个区各据自己那个字段。 */
 function adminSettingsVm(): SettingsPageVM {
-  return { ...settingsVm(), plugins: [] } as unknown as SettingsPageVM;
+  return { ...settingsVm(), plugins: [], mcp_servers: [] } as unknown as SettingsPageVM;
 }
 
 function mcpListVm(servers: McpServerVM[], over: Record<string, unknown> = {}) {
@@ -2388,6 +2388,38 @@ test("a non-admin settings view never fetches the MCP server list either", async
     await tick();
     assert.equal(listed, 0, "省一次注定 403 的请求");
     assert.doesNotMatch(body.innerHTML, /data-spot-mcp-section/u);
+  });
+});
+
+test("R26 F3: the MCP section follows mcp_servers, not the plugins field it borrowed in M7", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    let listed = 0;
+    // 一个填了 plugins、却没有 mcp_servers 的 VM：M7 借 plugins 时这里会渲出一个必然 403 的分区。
+    const pluginsOnly = { ...settingsVm(), plugins: [] } as unknown as SettingsPageVM;
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return pluginsOnly; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          },
+          async listPlugins() {
+            return { plugins: [], bootstrap_path_count: 0 } as unknown as never;
+          },
+          async listMcpServers() {
+            listed += 1;
+            return mcpListVm([]);
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+    assert.equal(listed, 0);
+    assert.doesNotMatch(body.innerHTML, /data-spot-mcp-section/u);
+    assert.match(body.innerHTML, /data-spot-plugins-section/u, "插件区仍据 plugins 渲染，两个门互不牵连");
   });
 });
 

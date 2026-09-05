@@ -120,6 +120,9 @@ export function toAgentRunLiveVm(run: AgentRunQueueRecord, locale: WorkHubLocale
     budget_decision: run.budget_decision,
     usage: run.usage,
     trace: run.trace.map((step) => toAgentStepVm(run.run_id, step)),
+    // B6b：提醒是独立一行，不是一步——只透传事实，句子由两端按 locale 组装（packages/ui 的
+    // agentRunReminderLine / 桌面 spotlight）。空数组不带键：缺席与 [] 同义，少一个没语义差别的第三态。
+    ...(run.reminders?.length ? { reminders: run.reminders } : {}),
     ...(run.handoff ? { handoff: toStructuredHandoff(run.handoff) } : {}),
     stream_href: `/api/push/stream/run/${run.run_id}`,
     replay_href: `/api/agent-runs/${run.run_id}/replay`
@@ -524,6 +527,8 @@ export function buildReplayTracePage(input: {
   return parseOutputContract(replayTraceVmSchema, {
     run: toAgentRunVm(input.run, locale),
     steps: input.run.trace.map((step) => toAgentStepVm(input.run.run_id, step)),
+    // B6b：同 toAgentRunLiveVm——回放读的是库里的 reminders_json，实时读的是运行记录，两条路同一形状。
+    ...(input.run.reminders?.length ? { reminders: input.run.reminders } : {}),
     evidence_refs: buildReplayEvidenceRefs(auditLogs, locale),
     snapshots,
     audit_logs: auditLogs,

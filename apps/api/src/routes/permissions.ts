@@ -25,6 +25,7 @@ import {
   type WorkItemService
 } from "../services/work-items.js";
 import { readJsonObject } from "./json-body.js";
+import { serviceT } from "../services/locales.js";
 import { isUuidParam } from "./uuid-param.js";
 
 export type PermissionRoutesDependencies = {
@@ -48,7 +49,7 @@ export function createPermissionRoutes(deps: PermissionRoutesDependencies = {}) 
   async function assertCanReadWorkItem(workItemId: string, actor: AuthEnv["Variables"]["actor"]) {
     const workItems = deps.workItems === false ? undefined : deps.workItems ?? getDefaultWorkItemService();
     if (!workItems) {
-      throw new HTTPException(403, { message: "你没有权限查看这个事项。" });
+      throw new HTTPException(403, { message: serviceT("zh-CN", "taskViewForbidden") });
     }
     try {
       await workItems.detailPage({ workItemId, actor });
@@ -107,7 +108,7 @@ export function createPermissionRoutes(deps: PermissionRoutesDependencies = {}) 
     }
     const payload = createApprovalRequestSchema.parse(rawPayload);
     if (!payload.work_item_id && payload.routed_to_user_id && payload.routed_to_user_id !== c.var.currentUser.id) {
-      throw new HTTPException(403, { message: "无事项上下文的审批只能路由给自己。" });
+      throw new HTTPException(403, { message: serviceT("zh-CN", "approvalWithoutTaskContext") });
     }
     // 防止任意用户把待审批塞进别人的收件箱：非管理员只能把 /ask 路由给自己。
     // 服务端的合法升级（agent-runner → 路由给工作项负责人）走 service.createApproval 直连，不经此 HTTP 路由。

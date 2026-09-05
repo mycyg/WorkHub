@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  agentRunReminderVmSchema,
   agentRunSchema,
   agentStepSchema,
   snapshotSchema,
@@ -45,6 +46,7 @@ import {
 import { userMemoryCategorySchema } from "./domain/user-memory.js";
 import { skillEditOpSchema, teamSkillStatusSchema, TEAM_SKILL_MAX_EDIT_OPS } from "./domain/team-skill.js";
 import { githubActivityVmSchema } from "./domain/github.js";
+import { mcpServerSummaryVmSchema } from "./domain/mcp.js";
 import { pluginSummaryVmSchema } from "./domain/plugin.js";
 
 export const actionSpecSchema = z.object({
@@ -1428,6 +1430,10 @@ export type ProposalChangeDiffVM = z.infer<typeof proposalChangeDiffVmSchema>;
 export const replayTraceVmSchema = z.object({
   run: agentRunSchema,
   steps: z.array(agentStepSchema),
+  // R26 批 B6 观测面：这次运行里「重复动作被劝过几次、劝的是什么」。additive optional——存量客户端
+  // 不认识这个键读旧响应零回归，缺席与空数组同义（时间线不渲提醒行）。每一行对应一条 agent_run.reminded
+  // 事件，渲染层按 step_no 插进步骤时间线。
+  reminders: z.array(agentRunReminderVmSchema).optional(),
   evidence_refs: z.array(evidenceRefSchema),
   snapshots: z.array(snapshotSchema),
   audit_logs: z.array(auditLogFactSchema).optional(),
@@ -1442,6 +1448,10 @@ export const agentRunTraceVmSchema = z.object({
   run: agentRunSchema,
   steps: z.array(agentStepSchema),
   current_step: agentStepSchema.optional(),
+  // R26 批 B6 观测面：这次运行里「重复动作被劝过几次、劝的是什么」。additive optional——存量客户端
+  // 不认识这个键读旧响应零回归，缺席与空数组同义（时间线不渲提醒行）。每一行对应一条 agent_run.reminded
+  // 事件，渲染层按 step_no 插进步骤时间线。
+  reminders: z.array(agentRunReminderVmSchema).optional(),
   budget: z.record(z.string(), z.unknown()),
   snapshot_refs: z.array(snapshotSchema),
   handoff: structuredHandoffSchema.optional(),
@@ -1561,6 +1571,11 @@ export const settingsPageVmSchema = z.object({
   // 网页端不做安装/启停：安装要给一个本机绝对路径，那是「这台服务器上的目录」，只在桌面端说得通；
   // 网页在这里只回答「这个部署上装了什么、还活着吗」，动作入口指向桌面客户端。
   plugins: z.array(pluginSummaryVmSchema).optional(),
+  // R26 M8：已登记 MCP 服务器的**只读**清单（仅管理员——服务端只给管理员填，同 plugins）。
+  // 网页端不做添加/启停：要填的是这台服务器上的一条启动命令，那是「跑着 API 的那台机器」上的事实，
+  // 只在桌面端说得通；网页在这里只回答「这个部署接了什么、还连得上吗」，动作入口指向桌面客户端。
+  // 行的形状是裁剪过的 summary，结构性不含命令 / 参数 / 环境变量 / 密钥引用 / 工作目录。
+  mcp_servers: z.array(mcpServerSummaryVmSchema).optional(),
   runtime: z.object({
     app_env: z.enum(["development", "test", "production"]),
     runtime_status: z.enum(["ready", "attention_needed"]),

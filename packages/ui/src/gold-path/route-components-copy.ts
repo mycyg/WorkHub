@@ -242,6 +242,25 @@ export type RouteCopyKey =
   | "projectHome.noFiles"
   | "projectHome.github"
   | "projectHome.githubEmpty"
+  | "settings.mcpServers"
+  | "settings.mcpIntro"
+  | "settings.mcpEmpty"
+  | "settings.mcpConnectedToolsOne"
+  | "settings.mcpConnectedToolsMany"
+  | "settings.mcpConnectedNoTools"
+  | "settings.mcpCantConnect"
+  | "settings.mcpTrustReadOnly"
+  | "settings.mcpTrustExternalEffect"
+  | "settings.mcpPrecheckBlocked"
+  | "settings.mcpPrecheckWarn"
+  | "settings.mcpErrSpawnFailed"
+  | "settings.mcpErrHandshakeTimeout"
+  | "settings.mcpErrProtocolVersion"
+  | "settings.mcpErrProtocol"
+  | "settings.mcpErrServerRefused"
+  | "settings.mcpErrCallTimeout"
+  | "settings.mcpErrNotRunning"
+  | "settings.mcpErrExited"
   | "settings.runtime"
   | "settings.llm"
   | "settings.language"
@@ -552,6 +571,25 @@ export const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "skills.curateNowConfirm": "确认开始？再点一次",
     "skills.curateNowStarted": "已开始自学，跑完刷新这一页就能看到结果。",
     "skills.curateNowFailed": "没能开始，请稍后再试。",
+    "settings.mcpServers": "MCP 服务器",
+    "settings.mcpIntro": "这个部署上接入的 MCP 服务器。添加、启停和移除在桌面客户端的设置里操作。",
+    "settings.mcpEmpty": "还没有接入 MCP 服务器。",
+    "settings.mcpConnectedToolsOne": "已连接 · 1 个工具",
+    "settings.mcpConnectedToolsMany": "已连接 · {count} 个工具",
+    "settings.mcpConnectedNoTools": "已连接 · 它没有提供工具",
+    "settings.mcpCantConnect": "连不上",
+    "settings.mcpTrustReadOnly": "已断言为只读 · 自述只读的工具不再逐次转人",
+    "settings.mcpTrustExternalEffect": "按最高风险运行 · 每次调用都要人确认",
+    "settings.mcpPrecheckBlocked": " · 启动前检查拦下了它",
+    "settings.mcpPrecheckWarn": " · 启动前检查有提醒",
+    "settings.mcpErrSpawnFailed": "这台服务器没能启动。",
+    "settings.mcpErrHandshakeTimeout": "服务器没有在规定时间内应答。",
+    "settings.mcpErrProtocolVersion": "双方的协议版本对不上。",
+    "settings.mcpErrProtocol": "服务器的应答读不了。",
+    "settings.mcpErrServerRefused": "服务器拒绝了这次连接。",
+    "settings.mcpErrCallTimeout": "上一次调用等太久没有结果。",
+    "settings.mcpErrNotRunning": "这台服务器当前没在运行。",
+    "settings.mcpErrExited": "这台服务器自己退出了。",
     "settings.runtime": "服务状态",
     "settings.llm": "AI 运行配置",
     "settings.language": "语言",
@@ -860,6 +898,25 @@ export const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "skills.curateNowConfirm": "Start now? Click again",
     "skills.curateNowStarted": "Started. Refresh this page once it finishes to see what changed.",
     "skills.curateNowFailed": "Could not start. Try again in a moment.",
+    "settings.mcpServers": "MCP servers",
+    "settings.mcpIntro": "MCP servers connected to this deployment. Add, enable, disable and remove them in the desktop app's settings.",
+    "settings.mcpEmpty": "No MCP servers yet.",
+    "settings.mcpConnectedToolsOne": "Connected · 1 tool",
+    "settings.mcpConnectedToolsMany": "Connected · {count} tools",
+    "settings.mcpConnectedNoTools": "Connected · it offers no tools",
+    "settings.mcpCantConnect": "Can't connect",
+    "settings.mcpTrustReadOnly": "Asserted read-only · tools that declare themselves read-only stop going to a person",
+    "settings.mcpTrustExternalEffect": "Runs at the highest risk tier · every call needs a person",
+    "settings.mcpPrecheckBlocked": " · the pre-start check refused it",
+    "settings.mcpPrecheckWarn": " · the pre-start check raised a warning",
+    "settings.mcpErrSpawnFailed": "The server could not start.",
+    "settings.mcpErrHandshakeTimeout": "The server did not answer in time.",
+    "settings.mcpErrProtocolVersion": "The two sides' protocol versions do not match.",
+    "settings.mcpErrProtocol": "The server's answer could not be read.",
+    "settings.mcpErrServerRefused": "The server refused the connection.",
+    "settings.mcpErrCallTimeout": "The last call took too long to come back.",
+    "settings.mcpErrNotRunning": "The server is not running right now.",
+    "settings.mcpErrExited": "The server exited on its own.",
     "settings.runtime": "Service status",
     "settings.llm": "AI runtime config",
     "settings.language": "Language",

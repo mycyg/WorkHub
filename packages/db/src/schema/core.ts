@@ -1817,6 +1817,11 @@ export const agentRuns = pgTable(
     outcomeReason: varchar("outcome_reason", { length: 256 }),
     handoffMd: text("handoff_md"),
     handoffJson: jsonb("handoff_json").$type<JsonObject>(),
+    // R26 批 B6b：这次运行里「重复动作被劝过几次、劝的是什么」。每个元素是 contracts 的
+    // agentRunReminderFactsSchema（step_no/tier/repeats/shape/tool_id?/tool_ids?）——只有事实没有句子，
+    // 中英文由两端各自按 locale 组装。null 与空数组同义（没被劝过），读回一律退回缺席。
+    // 不落 agent_steps：提醒不是模型的一步，混进步号会让「跑了几步」撒谎（见 0075 迁移注释）。
+    remindersJson: jsonb("reminders_json").$type<JsonObject[]>(),
     workdirRef: varchar("workdir_ref", { length: 512 }),
     claimedBy: varchar("claimed_by", { length: 128 }),
     claimedAt: timestampTz("claimed_at"),

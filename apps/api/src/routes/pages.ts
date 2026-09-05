@@ -41,6 +41,7 @@ import {
 } from "@workhub/db";
 
 import { isUuidParam } from "./uuid-param.js";
+import { serviceT } from "../services/locales.js";
 
 import { buildAttentionHomePage } from "../pages/attention.js";
 import { buildAgentArmyDashboardPage } from "../pages/agent-army.js";
@@ -118,6 +119,7 @@ import {
 } from "../workers/agent-skill-curation.js";
 import { getDefaultCostLedgerStore } from "../services/cost-ledger-store.js";
 import { getDefaultPluginService, type PluginService } from "../services/plugins.js";
+import { getDefaultMcpServerService, type McpServerService } from "../services/mcp-servers.js";
 import { getDefaultBudgetPolicyStore } from "../services/cost-policy-store.js";
 
 export type PageRoutesDependencies = {
@@ -126,6 +128,8 @@ export type PageRoutesDependencies = {
   // R24-P 阶段 1：设置页的只读插件清单（仅管理员）。懒解析——不注入时推迟到真有管理员请求
   // 设置页才建默认服务，路由工厂本身不建 DB 连接。
   plugins?: Pick<PluginService, "list">;
+  // R26 M8：设置页的只读 MCP 服务器清单（仅管理员）。懒解析同 plugins——路由工厂本身不建连接。
+  mcpServers?: Pick<McpServerService, "list">;
   escalations?: EscalationService;
   memoryConflicts?: Pick<MemoryConflictService, "listAttentionItems">;
   proposals?: ProposalService;
@@ -334,6 +338,8 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const approvals = deps.approvals ?? createApprovalService();
   let pluginsService: Pick<PluginService, "list"> | undefined = deps.plugins;
   const plugins = () => (pluginsService ??= getDefaultPluginService());
+  let mcpServersService: Pick<McpServerService, "list"> | undefined = deps.mcpServers;
+  const mcpServers = () => (mcpServersService ??= getDefaultMcpServerService());
   const escalations = deps.escalations ?? createEscalationService();
   const memoryConflicts = deps.memoryConflicts ?? createMemoryConflictService();
   const proposals = deps.proposals ?? getDefaultProposalService();
@@ -656,9 +662,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       if (pending.counts.pending_total_capped === 1) {
         sourceWarnings.push({
           source: "approvals",
-          message: locale === "en-US"
-            ? "There are more pending approvals than shown here — open Approvals for the full list."
-            : "待审批的事项比这里显示的更多——去审批页看完整清单。"
+          message: serviceT(locale, "approvalsCappedMore")
         });
       }
     } catch {
@@ -758,7 +762,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     // 路由 uuid 形参先校验：非 uuid 串原本直达 detailPage 的 uuid 列 → PG 22P02 → 误报 500；
     // 与「合法但不存在」同样回 404，不泄露事项存在性。
     if (!isUuidParam(c.req.param("id"))) {
-      throw new HTTPException(404, { message: "没有找到这个事项。" });
+      throw new HTTPException(404, { message: serviceT("zh-CN", "taskNotFound") });
     }
     try {
       const data = await workItems.detailPage({
@@ -1121,6 +1125,33 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
         installedPlugins = undefined;
       }
     }
+    // R26 M8：网页设置页的**只读** MCP 服务器清单，同一道管理员门。列表里每一行都从完整 VM 裁剪成
+    // summary（命令 / 参数 / 环境变量 / 密钥引用 / 工作目录一律不进网页），连不上的那一行再补上
+    // 稳定错误码——它来自本进程的连接快照，行上没有存码的列，所以拿不到时就不给，界面回落到
+    // 通用的一句「连不上」。取数失败降级为不渲这一区，与上面两区同款取舍。
+    let registeredMcpServers: Parameters<typeof buildSettingsPage>[0]["mcpServers"];
+    if (c.var.currentUser.isAdmin) {
+      try {
+        const listed = await mcpServers().list({ actor: c.var.actor });
+        registeredMcpServers = listed.servers.map((server) => {
+          const errorCode = server.last_error_code ?? listed.connections[server.id]?.last_error_code;
+          return {
+            id: server.id,
+            server_name: server.server_name,
+            ...(server.display_name ? { display_name: server.display_name } : {}),
+            transport: server.transport,
+            enabled: server.enabled,
+            status: server.status,
+            trust_level: server.trust_level,
+            tool_count: server.tool_count,
+            precheck_verdict: server.precheck_report.verdict,
+            ...(server.status === "connect_failed" && errorCode ? { last_error_code: errorCode } : {})
+          };
+        });
+      } catch {
+        registeredMcpServers = undefined;
+      }
+    }
     const runtimeReadiness = await readiness(authSettings);
     return c.json(pageEnvelope(buildSettingsPage({
       settings: authSettings,
@@ -1129,7 +1160,8 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       preferenceLocale,
       preferenceSource: "server",
       ...(permissionPolicies ? { permissionPolicies } : {}),
-      ...(installedPlugins ? { plugins: installedPlugins } : {})
+      ...(installedPlugins ? { plugins: installedPlugins } : {}),
+      ...(registeredMcpServers ? { mcpServers: registeredMcpServers } : {})
     }), locale));
   });
 

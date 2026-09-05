@@ -3537,6 +3537,11 @@ const settingsPageResponseSchema = {
   properties: {
     generated_at: dateTimeStringSchema,
     locale: { type: "string", enum: ["zh-CN", "en-US"] },
+    // 下面三段只在请求者是管理员时才出现，非管理员是**结构性缺席**（不是空数组——空数组会被
+    // 读成「一条都没有」）。additionalProperties: false 之下漏掉它们等于说这个响应不合法。
+    permission_policies: { type: "array", items: { type: "object", additionalProperties: true } },
+    plugins: { type: "array", items: { type: "object", additionalProperties: true } },
+    mcp_servers: { type: "array", items: { type: "object", additionalProperties: true } },
     runtime: { type: "object", additionalProperties: true },
     llm_runtime: { type: "object", additionalProperties: true },
     budgets: { type: "object", additionalProperties: true },
@@ -4521,6 +4526,23 @@ const agentRunUsageResponseSchema = {
   },
   additionalProperties: false
 } as const;
+// R26 批 B6 观测面：一次「重复动作提醒」的结构化事实（contracts 的 agentRunReminderFactsSchema）。
+// 只有事实、没有句子——中英文由前端按 payload 组装，所以这里也不该出现任何可读文案字段。
+// 同一形状同时是 SSE 事件 agent_run.reminded 的 data 主体（该事件不在 openapi 里描述：
+// /api/push/stream/* 一律只声明 text/event-stream 字符串，从不逐类枚举事件形状）。
+const agentRunReminderResponseSchema = {
+  type: "object",
+  required: ["step_no", "tier", "repeats", "shape"],
+  properties: {
+    step_no: { type: "integer", minimum: 1 },
+    tier: { type: "integer", enum: [1, 2] },
+    repeats: { type: "integer", minimum: 1 },
+    shape: { type: "string", enum: ["identical", "alternating"] },
+    tool_id: { type: "string", minLength: 1 },
+    tool_ids: { type: "array", minItems: 2, items: { type: "string", minLength: 1 } }
+  },
+  additionalProperties: false
+} as const;
 const agentRunLiveResponseSchema = {
   type: "object",
   required: [
@@ -4546,6 +4568,7 @@ const agentRunLiveResponseSchema = {
     budget_decision: agentRunBudgetDecisionResponseSchema,
     usage: agentRunUsageResponseSchema,
     trace: { type: "array", items: agentStepResponseSchema },
+    reminders: { type: "array", items: agentRunReminderResponseSchema },
     handoff: structuredHandoffResponseSchema,
     stream_href: { type: "string", minLength: 1 },
     replay_href: { type: "string", minLength: 1 }
@@ -4574,6 +4597,7 @@ const replayTraceResponseSchema = {
   properties: {
     run: agentRunResponseSchema,
     steps: { type: "array", items: agentStepResponseSchema },
+    reminders: { type: "array", items: agentRunReminderResponseSchema },
     evidence_refs: { type: "array", items: evidenceRefSchema },
     snapshots: { type: "array", items: snapshotResponseSchema },
     audit_logs: { type: "array", items: { type: "object", additionalProperties: true } },
@@ -6372,6 +6396,22 @@ const mcpServerVmJsonSchema = {
     trust_level: { type: "string", enum: ["read_only", "external_effect"] },
     precheck_report: mcpPrecheckReportJsonSchema,
     last_error: { type: "string", maxLength: 2000 },
+    // last_error 的稳定码，两端界面按码出话而不解析上面那串英文诊断。表里没有存码的列，
+    // 所以只有当前进程还记得那次失败时才有——重启之后诊断还在、码缺席。
+    last_error_code: {
+      type: "string",
+      enum: [
+        "mcp_spawn_failed",
+        "mcp_handshake_timeout",
+        "mcp_protocol_version_unsupported",
+        "mcp_protocol_error",
+        "mcp_server_error",
+        "mcp_call_timeout",
+        "mcp_not_running",
+        "mcp_exited",
+        "mcp_connect_failed"
+      ]
+    },
     tool_count: { type: "integer", minimum: 0 },
     tools: { type: "array", items: { type: "string" } },
     installed_by: uuidStringSchema,
@@ -6389,7 +6429,22 @@ const mcpServerConnectionJsonSchema = {
     tool_count: { type: "integer", minimum: 0 },
     tool_ids: { type: "array", items: { type: "string", maxLength: 64 } },
     blocked_reason: { type: "string", maxLength: 2000 },
-    last_error: { type: "string", maxLength: 2000 }
+    last_error: { type: "string", maxLength: 2000 },
+    // 有 last_error 就一定有码（拿不到失败原因时是 mcp_connect_failed）。
+    last_error_code: {
+      type: "string",
+      enum: [
+        "mcp_spawn_failed",
+        "mcp_handshake_timeout",
+        "mcp_protocol_version_unsupported",
+        "mcp_protocol_error",
+        "mcp_server_error",
+        "mcp_call_timeout",
+        "mcp_not_running",
+        "mcp_exited",
+        "mcp_connect_failed"
+      ]
+    }
   },
   additionalProperties: false
 } as const;

@@ -2,6 +2,7 @@ import {
   settingsPageVmSchema,
   workHubLocaleStorageKey,
   workHubLocales,
+  type McpServerSummaryVM,
   type PluginSummaryVM,
   type SettingsPageVM,
   type WorkHubLocale
@@ -28,6 +29,10 @@ type SettingsPageInput = {
   // 这里刻意收窄成 PluginSummaryVM 而不是 PluginVM：source_path 是这台服务器上的绝对路径，
   // 网页只读列表不需要它。
   plugins?: PluginSummaryVM[];
+  // R26 M8：已登记 MCP 服务器的只读摘要（仅管理员——调用方负责这道门，与 plugins 同口径）。
+  // 收窄成 McpServerSummaryVM 而不是 McpServerVM：命令、参数、环境变量、密钥引用与工作目录都是
+  // 这台服务器上的事实与潜在凭据指针，网页只读清单结构性不该有它们的位置。
+  mcpServers?: McpServerSummaryVM[];
   generatedAt?: Date;
 };
 
@@ -55,6 +60,7 @@ export function buildSettingsPage(input: SettingsPageInput): SettingsPageVM {
       }
       : {}),
     ...(input.plugins ? { plugins: input.plugins } : {}),
+    ...(input.mcpServers ? { mcp_servers: input.mcpServers } : {}),
     runtime: {
       app_env: input.settings.appEnv,
       runtime_status: input.readiness.ready && brokerConfigured && databaseConfigured ? "ready" : "attention_needed",

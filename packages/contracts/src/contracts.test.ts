@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  agentRunRemindedEventSchema,
+  agentRunReminderFactsSchema,
+  readAgentRunReminderFacts,
   allowedWorkItemTransitions,
   agentArmyDashboardVmSchema,
   agentRunStatuses,
@@ -902,6 +905,7 @@ test("formal event names are the only exported implementation names", () => {
   const exportedEventTypes = Object.values(eventTypes) as string[];
 
   assert.equal(eventTypes.agentRunStarted, "agent_run.started");
+  assert.equal(eventTypes.agentRunReminded, "agent_run.reminded");
   assert.equal(eventTypes.sessionQuestion, "session.question");
   assert.equal(eventTypes.confidenceScored, "confidence.scored");
   assert.equal(eventTypes.escalationOpened, "escalation.opened");
@@ -2199,4 +2203,65 @@ test("findings: meeting insight status enum no longer accepts the dead 'creating
   }
   // 死值已移除。
   assert.equal(meetingInsightVmSchema.safeParse({ ...base, status: "creating_requirement" }).success, false);
+});
+
+// R26 批 B6 观测面：agent_run.reminded 的形状。前两档提醒（tier 1/2）走这条，第三档升级走
+// agent_run.escalated——tier 3 不是本事件的合法取值，schema 必须挡住。
+test("B6: agent_run.reminded 只收 tier 1/2 的结构化事实，topic 必须与 run_id 对上", () => {
+  const data = {
+    run_id: "40000000-0000-4000-8000-000000000031",
+    step_no: 3,
+    tier: 1 as const,
+    repeats: 3,
+    shape: "identical" as const,
+    tool_id: "run_command"
+  };
+  const event = {
+    event_id: "40000000-0000-4000-8000-0000000000ff",
+    type: "agent_run.reminded" as const,
+    topic: `run:${data.run_id}`,
+    ts: "2026-09-06T00:00:00.000Z",
+    preview_text: "repeat_reminder tier=1",
+    data
+  };
+  assert.equal(agentRunRemindedEventSchema.safeParse(event).success, true);
+  // 第三档不走这条事件。
+  assert.equal(agentRunRemindedEventSchema.safeParse({ ...event, data: { ...data, tier: 3 } }).success, false);
+  // topic 与 run_id 不一致的事件不放行（同会话类事件的既有口径）。
+  assert.equal(agentRunRemindedEventSchema.safeParse({ ...event, topic: "run:other" }).success, false);
+  // 事件里不许夹带渲染好的句子——文案由两端按 locale 组装。
+  assert.equal(
+    agentRunRemindedEventSchema.safeParse({ ...event, data: { ...data, message: "连续 3 次" } }).success,
+    false
+  );
+});
+
+test("B6: readAgentRunReminderFacts 剥掉事件专属字段，脏数据一律返回 undefined", () => {
+  const facts = readAgentRunReminderFacts({
+    run_id: "40000000-0000-4000-8000-000000000031",
+    work_item_id: "50000000-0000-4000-8000-000000000031",
+    step_no: 5,
+    tier: 2,
+    repeats: 5,
+    shape: "alternating",
+    tool_id: "echo",
+    tool_ids: ["echo", "run_command"]
+  });
+  assert.deepEqual(facts, {
+    step_no: 5,
+    tier: 2,
+    repeats: 5,
+    shape: "alternating",
+    tool_id: "echo",
+    tool_ids: ["echo", "run_command"]
+  });
+  // 缺 tier / 形态不认识 / 根本不是对象——渲染层据此整行不渲。
+  assert.equal(readAgentRunReminderFacts({ step_no: 3, repeats: 3, shape: "identical" }), undefined);
+  assert.equal(readAgentRunReminderFacts({ step_no: 3, tier: 1, repeats: 3, shape: "spiral" }), undefined);
+  assert.equal(readAgentRunReminderFacts(undefined), undefined);
+  // 单工具重复不带 tool_ids；facts 本身允许缺工具名（重复步没有工具调用）。
+  assert.equal(
+    agentRunReminderFactsSchema.safeParse({ step_no: 3, tier: 1, repeats: 3, shape: "identical" }).success,
+    true
+  );
 });

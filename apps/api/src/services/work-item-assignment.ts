@@ -30,6 +30,7 @@ import {
 } from "@workhub/db";
 
 import type { AuthActor } from "../middleware/auth.js";
+import { serviceT } from "./locales.js";
 import { WorkItemServiceError } from "./work-items.js";
 
 export type AssignmentRole = (typeof ASSIGNMENT_ROLES)[number];
@@ -110,7 +111,7 @@ export function createWorkItemAssignmentService(
   async function requireAccessRow(workItemId: string): Promise<WorkItemAccessRow> {
     const row = await deps.workItems.findWorkItemAccessRecord(workItemId);
     if (!row) {
-      throw new WorkItemServiceError(404, "not_found", "没有找到这个事项。(Work item not found.)");
+      throw new WorkItemServiceError(404, "not_found", serviceT("zh-CN", "taskNotFound"));
     }
     return row;
   }
@@ -120,17 +121,25 @@ export function createWorkItemAssignmentService(
       const accessRow = await requireAccessRow(workItemId);
       const allowed = canManageWorkItemAssignees(accessRow, permissionUser(actor), permissionScope(actor));
       if (!allowed) {
-        throw new WorkItemServiceError(403, "forbidden", "你没有权限指派这个事项。");
+        throw new WorkItemServiceError(403, "forbidden", serviceT("zh-CN", "taskAssignForbidden"));
       }
       // 被指派人必须是这个工作项所属工作区的 active 成员——否则会把工作指派给不在本租户的人。
       const workspaceId = accessRow.workspaceId ?? accessRow.project?.workspaceId ?? null;
       if (!workspaceId) {
-        throw new WorkItemServiceError(409, "work_item_workspace_missing", "这个事项还没有归属工作区，暂时无法指派。");
+        throw new WorkItemServiceError(
+          409,
+          "work_item_workspace_missing",
+          serviceT("zh-CN", "taskWorkspaceMissingAssign")
+        );
       }
       // MRG-13：双查对齐 approvals delegate——membership 不查 users.deletedAt，已停用账号仍可能留着
       // active 成员行；先过 findActiveById（只回活跃账号），把「指派给已停用账号」挡在 422。
       if (!deps.users) {
-        throw new WorkItemServiceError(503, "assign_user_directory_unavailable", "成员目录暂时无法校验，事项没有被指派。");
+        throw new WorkItemServiceError(
+          503,
+          "assign_user_directory_unavailable",
+          serviceT("zh-CN", "assigneeDirectoryUnavailable")
+        );
       }
       const assignee = await deps.users.findActiveById(assigneeUserId);
       if (!assignee) {
@@ -163,14 +172,18 @@ export function createWorkItemAssignmentService(
       const accessRow = await requireAccessRow(workItemId);
       const allowed = canClaimWorkItem(accessRow, permissionUser(actor), permissionScope(actor));
       if (!allowed) {
-        throw new WorkItemServiceError(403, "forbidden", "你现在还不能认领这个事项。");
+        throw new WorkItemServiceError(403, "forbidden", serviceT("zh-CN", "taskClaimForbidden"));
       }
       // R21 加固（A9 兜底口径统一）：与 assign 一致——workspaceId 缺失时兜到项目侧，而不是 actor 侧。
       // 旧写法兜 actor.workspaceId 会让「工作项/项目都没归属工作区」的行被写进 actor 的工作区（跨租户
       // 语义污染），且与 claimOwnerlessWorkItem 的 workspace CAS 谓词对不上。
       const workspaceId = accessRow.workspaceId ?? accessRow.project?.workspaceId ?? null;
       if (!workspaceId) {
-        throw new WorkItemServiceError(409, "work_item_workspace_missing", "这个事项还没有归属工作区，暂时无法认领。");
+        throw new WorkItemServiceError(
+          409,
+          "work_item_workspace_missing",
+          serviceT("zh-CN", "taskWorkspaceMissingClaim")
+        );
       }
       const claimed = await deps.workItems.claimOwnerlessWorkItem({
         workItemId,
@@ -180,7 +193,7 @@ export function createWorkItemAssignmentService(
       });
       if (!claimed) {
         // CAS 落空：已被别人认领 / 已离开可认领状态（并发或过期点击）——不覆盖既有认领人。
-        throw new WorkItemServiceError(409, "work_item_not_claimable", "这个事项已被认领或已不在可认领状态。");
+        throw new WorkItemServiceError(409, "work_item_not_claimable", serviceT("zh-CN", "taskNotClaimable"));
       }
       await writeAuditBestEffort({
         actorKind: "human",

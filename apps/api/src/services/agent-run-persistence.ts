@@ -1,3 +1,4 @@
+import { readAgentRunReminderFacts } from "@workhub/contracts";
 import {
   createAgentRunRepository,
   getSharedDatabaseClient,
@@ -10,6 +11,10 @@ import {
 } from "@workhub/db";
 
 import { getDefaultStructuredLogger } from "../logging.js";
+
+import {
+  AGENT_RUN_REMINDER_CAP
+} from "../workers/agent-runner.js";
 
 import type {
   AgentRunClaimLease,
@@ -88,6 +93,9 @@ function toPersistenceRun(run: AgentRunQueueRecord): AgentRunForPersistence {
     ...(outcomeReason ? { outcomeReason } : {}),
     ...(handoffText ? { handoffMd: handoffText } : {}),
     ...(run.handoff ? { handoffJson: run.handoff as unknown as Record<string, unknown> } : {}),
+    // B6b：空数组不落列——缺席与 [] 同义（没被劝过），写 [] 只会让「这一列有没有内容」多出一个
+    // 没有语义差别的第三态。省略键后 drizzle 在 UPDATE 里跳过这一列，既有值不被清空。
+    ...(run.reminders?.length ? { remindersJson: run.reminders as unknown as Record<string, unknown>[] } : {}),
     ...(run.workdir_ref ? { workdirRef: run.workdir_ref } : {}),
     createdAt: toDate(run.created_at),
     updatedAt: toDate(run.updated_at)
@@ -178,6 +186,21 @@ function queueHandoff(rows: StoredAgentRunRows): AgentRunQueueRecord["handoff"] 
   };
 }
 
+// B6b：读回提醒。null（从没劝过）/ 非数组（脏数据）一律退回缺席；逐条走 contracts 的宽容读取，
+// 解析不出来的那一条整条丢掉——渲染层宁可少一行，也绝不把半截数据编成一句话。上限与运行器写入侧同为
+// AGENT_RUN_REMINDER_CAP，防一行畸形 JSON 把整页时间线撑爆。
+function queueReminders(rows: StoredAgentRunRows): AgentRunQueueRecord["reminders"] {
+  const raw = rows.run.remindersJson;
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+  const reminders = raw
+    .map((item) => readAgentRunReminderFacts(item))
+    .filter((item): item is NonNullable<typeof item> => Boolean(item))
+    .slice(0, AGENT_RUN_REMINDER_CAP);
+  return reminders.length > 0 ? reminders : undefined;
+}
+
 function queueTrace(rows: StoredAgentRunRows): AgentRunTraceStepRecord[] {
   return rows.steps.map((step) => {
     const record: AgentRunTraceStepRecord = {
@@ -202,6 +225,7 @@ function queueTrace(rows: StoredAgentRunRows): AgentRunTraceStepRecord[] {
 function toQueueRun(rows: StoredAgentRunRows): AgentRunQueueRecord {
   const usage = queueUsage(rows);
   const handoff = queueHandoff(rows);
+  const reminders = queueReminders(rows);
   const claim = rows.run.claimedBy && rows.run.claimedAt && rows.run.heartbeatAt && rows.run.leaseExpiresAt
     ? {
         claimed_by: rows.run.claimedBy,
@@ -244,6 +268,7 @@ function toQueueRun(rows: StoredAgentRunRows): AgentRunQueueRecord {
       estimated_cost_cny: usage.estimatedCostCny
     },
     trace: queueTrace(rows),
+    ...(reminders ? { reminders } : {}),
     ...(handoff ? { handoff } : {}),
     ...(claim ? { claim } : {}),
     created_at: rows.run.createdAt.toISOString(),

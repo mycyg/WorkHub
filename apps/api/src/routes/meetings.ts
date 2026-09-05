@@ -16,6 +16,7 @@ import {
 } from "../services/meeting-pages.js";
 import { isUuidParam } from "./uuid-param.js";
 import { readJsonObject } from "./json-body.js";
+import { serviceT } from "../services/locales.js";
 
 // R10-P2-2：导入会议转写请求体。
 const importMeetingTranscriptSchema = z.object({
@@ -146,7 +147,7 @@ export function createMeetingRoutes(deps: MeetingRoutesDependencies = {}) {
       const data = await meetingPages.draftToProposal({
         actor: c.var.actor,
         locale,
-        workItemId: requireUuidParam(c.req.param("workItemId"), "事项")
+        workItemId: requireUuidParam(c.req.param("workItemId"), serviceT("zh-CN", "taskLabel"))
       });
       return c.json(pageEnvelope(data, locale));
     } catch (error) {

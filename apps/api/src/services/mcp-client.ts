@@ -44,6 +44,7 @@ import {
   McpSessionError,
   spawnMcpServerProcess,
   type McpServerSpawn,
+  type McpSessionFailureReason,
   type McpStdioSession
 } from "@workhub/mcp-client/stdio";
 import { errorToolResult, sanitizeModelFacingText, type AnyToolSpec, type ToolResult } from "@workhub/tools";
@@ -146,6 +147,14 @@ export type McpServerStatusSnapshot = {
   live: boolean;
   /** 最近一次失败的英文诊断。 */
   lastError?: string;
+  /**
+   * 最近一次失败的**原因枚举**（会话级失败才有；工具清单本身不合法这类失败没有）。
+   *
+   * 这一层刻意只回原因、不回错误码：`mcp_*` 码与它们的人话住在 `./mcp-servers.ts`（M3 的
+   * `describeMcpSessionFailure`），而那个文件 import 本文件。让本文件反过来去取那份映射会绕成一个
+   * 循环，复制一份则是第二份会漂移的词表——回原因、由上一层翻码，两边都只有一份事实源。
+   */
+  lastErrorReason?: McpSessionFailureReason;
   /** 重连预算耗尽的原因；有值表示在 `reload()` 之前不再重试这一台。 */
   blockedReason?: string;
   /** 上一次成功发现的公开工具名。 */
@@ -276,6 +285,8 @@ type Connection = {
   descriptors: McpToolDescriptor[];
   status: McpServerStatusSnapshot["status"];
   lastError?: string;
+  /** `lastError` 那一次失败的原因枚举；非会话级失败（如工具清单不合法）没有。 */
+  lastErrorReason?: McpSessionFailureReason;
   blockedReason?: string;
   /** 单调时钟上的最后一次使用时刻。 */
   lastUsedAt: number;
@@ -438,6 +449,7 @@ export function createMcpClient(options: McpClientOptions = {}): McpClient {
     const detail = `mcp server '${connection.config.serverName}' exited unexpectedly (code ${info.code ?? "null"}, signal ${info.signal ?? "null"})`;
     connection.status = "connect_failed";
     connection.lastError = detail;
+    connection.lastErrorReason = "exited";
     connection.descriptors = [];
     recordFailure(connection, detail);
     logger.warn("mcp_server_exited", {
@@ -504,6 +516,7 @@ export function createMcpClient(options: McpClientOptions = {}): McpClient {
       connection.descriptors = translation.descriptors;
       connection.status = "connected";
       delete connection.lastError;
+      delete connection.lastErrorReason;
       logger.info("mcp_server_connected", {
         server_name: config.serverName,
         workspace_id: config.workspaceId,
@@ -522,6 +535,13 @@ export function createMcpClient(options: McpClientOptions = {}): McpClient {
       connection.descriptors = [];
       connection.status = "connect_failed";
       connection.lastError = detail;
+      // 非会话级失败（工具清单坍缩、密钥引用解析不到）没有原因枚举——不硬塞一个，
+      // 让上一层如实回落到「连不上」那条兜底码。
+      if (error instanceof McpSessionError) {
+        connection.lastErrorReason = error.reason;
+      } else {
+        delete connection.lastErrorReason;
+      }
       recordFailure(connection, detail);
       connection.session = undefined;
       // 握手失败时会话自己已经收过一次尾；这里再关一次是幂等的，防的是「握手成功但列工具失败」
@@ -769,6 +789,7 @@ export function createMcpClient(options: McpClientOptions = {}): McpClient {
       toolCount: connection.descriptors.length,
       live: connection.session?.isLive() === true,
       ...(connection.lastError ? { lastError: connection.lastError } : {}),
+      ...(connection.lastErrorReason ? { lastErrorReason: connection.lastErrorReason } : {}),
       ...(connection.blockedReason ? { blockedReason: connection.blockedReason } : {}),
       toolIds: connection.descriptors.map((descriptor) => descriptor.toolId)
     };

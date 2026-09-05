@@ -185,3 +185,28 @@ export function buildDoomLoopReminder(signal: DoomLoopSignal): string {
   lines.push(SOURCE_NOTE);
   return lines.join("\n");
 }
+
+/**
+ * B6 观测面：把信号压成 `agent_run.reminded` 事件的 data（除 run_id/work_item_id 之外的部分）。
+ * 只有事实，没有句子——中英文都由前端按 payload 组装（见 `@workhub/contracts` 的
+ * `agentRunReminderFactsSchema` 注释）。tier 3 走升级路径，不该走到这里；真传进来也照常返回，
+ * 由调用方负责不发（两套引擎都在 tier 3 分支提前 return）。
+ */
+export function doomLoopReminderEventFacts(signal: DoomLoopSignal, stepNo: number): {
+  step_no: number;
+  tier: DoomLoopTier;
+  repeats: number;
+  shape: DoomLoopShape;
+  tool_id?: string;
+  tool_ids?: string[];
+} {
+  const names = mergedToolNames(signal.actions);
+  return {
+    step_no: stepNo,
+    tier: signal.tier,
+    repeats: signal.repeats,
+    shape: signal.shape,
+    ...(names[0] ? { tool_id: names[0] } : {}),
+    ...(names.length > 1 ? { tool_ids: names } : {})
+  };
+}

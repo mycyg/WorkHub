@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import type { AgentRunLiveVM, AgentStep, ReplayTraceVM, Snapshot } from "@workhub/contracts";
 
-import { createReplayView, runListHtml, snapshotsSectionHtml } from "./replay.js";
+import { createReplayView, runListHtml, runReminderRows, snapshotsSectionHtml } from "./replay.js";
 
 const ts = "2026-07-03T10:24:00.000Z";
 
@@ -416,5 +416,83 @@ test("F-06 a snapshot renders as unactionable text (not a dead button) when the 
   assert.match(body.innerHTML, /本机暂不支持撤销/u);
   assert.equal(body.querySelectorAll("[data-replay-revert-snapshot]").length, 0);
 
+  dispose?.();
+});
+
+// R26 批 B6 观测面：桌面回放时间线要能看见「重复动作被劝了几次、劝的是什么」。
+test("B6 桌面回放在被劝的那一步之后补一条人话提醒行，不裸露原始工具 id", () => {
+  const zh = runReminderRows(
+    [{ step_no: 2, tier: 1, repeats: 3, shape: "identical", tool_id: "read_project_file" }],
+    2,
+    true
+  );
+
+  assert.match(zh, /第一次提醒：Cuu 连续 3 步做了同一件事/u);
+  assert.match(zh, /「read project file」/u);
+  assert.doesNotMatch(zh, /read_project_file/u);
+  assert.match(zh, /data-spot-reminder-tier="1"/u);
+  // 别的步骤不该借到这一行。
+  assert.equal(
+    runReminderRows([{ step_no: 2, tier: 1, repeats: 3, shape: "identical" }], 3, true),
+    ""
+  );
+});
+
+test("B6 桌面回放第二档提醒说明「再重复就交给人接手」，英文界面出英文", () => {
+  const facts = [
+    { step_no: 5, tier: 2, repeats: 5, shape: "alternating", tool_id: "echo", tool_ids: ["echo", "mcp__gh__list_issues"] }
+  ];
+
+  assert.match(runReminderRows(facts, 5, true), /再重复下去，这次执行会自动交给人接手。/u);
+  assert.match(runReminderRows(facts, 5, true), /「echo」、「list issues」/u);
+  const en = runReminderRows(facts, 5, false);
+  assert.match(en, /Second reminder: Cuu kept switching between two actions for 5 steps/u);
+  assert.match(en, /handed to a person/u);
+  assert.doesNotMatch(en, /mcp__gh__/u);
+});
+
+test("B6 桌面回放对脏提醒整行不渲，缺工具名时不留悬空括号", () => {
+  assert.equal(runReminderRows([{ step_no: 1, repeats: 3, shape: "identical" }], 1, true), "");
+  assert.equal(runReminderRows([{ step_no: 1, tier: 1, repeats: 3, shape: "spiral" }], 1, true), "");
+  assert.equal(runReminderRows(["not-an-object", null, undefined], 1, true), "");
+  assert.equal(runReminderRows(undefined, 1, true), "");
+
+  const plain = runReminderRows([{ step_no: 1, tier: 1, repeats: 3, shape: "identical" }], 1, true);
+  assert.match(plain, /第一次提醒：Cuu 连续 3 步做了同一件事，已让它换个做法再继续。/u);
+  assert.doesNotMatch(plain, /（/u);
+});
+
+test("B6 桌面回放：run 时间线把提醒排在它所属那一步之后，对不上步骤的补在末尾", async () => {
+  const body = { innerHTML: "", addEventListener() {} } as unknown as HTMLElement;
+  const view = createReplayView();
+  const vm = liveRun();
+  const withReminders: AgentRunLiveVM = {
+    ...vm,
+    status: "succeeded",
+    reminders: [
+      { step_no: vm.trace[0]?.step_no ?? 1, tier: 1, repeats: 3, shape: "identical", tool_id: "run_command" },
+      { step_no: 4242, tier: 2, repeats: 5, shape: "identical", tool_id: "echo" }
+    ]
+  };
+  const dispose = view.mount({
+    client: { async getAgentRun() { return withReminders; } },
+    locale: "zh-CN",
+    body,
+    back() {},
+    open() {},
+    target: { id: "93000000-0000-4000-8000-000000000911" },
+    setSubtitle() {},
+    toast() {},
+    requestResize() {},
+    refocusBody() {},
+    signal: new AbortController().signal
+  } as unknown as Parameters<typeof view.mount>[0]) as (() => void) | undefined;
+  await tick();
+
+  const firstReminderAt = body.innerHTML.indexOf('data-spot-reminder-tier="1"');
+  const orphanAt = body.innerHTML.indexOf('data-spot-reminder-tier="2"');
+  assert.equal(firstReminderAt > -1, true, "第一档提醒行应出现在时间线里");
+  assert.equal(orphanAt > firstReminderAt, true, "对不上步骤的提醒补在末尾，不被丢掉");
+  assert.doesNotMatch(body.innerHTML, /run_command/u);
   dispose?.();
 });

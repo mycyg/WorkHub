@@ -316,6 +316,18 @@ const zh = {
   mcpErrRemoteExec: "npx 这类启动器每次启动都会从网上下载并执行代码，我们不这么起服务器。请先在这台机器上把它装好，再填装好之后的可执行文件路径。",
   mcpErrSecretRefOutOfScope: "密钥引用只能指向服务端上带指定前缀的变量名。",
   mcpErrValidation: "有字段填得不对，检查后重填。",
+  // R26 F3：连接/会话失败的稳定错误码各一句人话（契约 mcpServerErrorCodeSchema）。
+  // 与网页只读清单（packages/ui/.../route-components-copy.ts 的 settings.mcpErr*）逐字同句：
+  // 同一台服务器在两端只有一种说法。第九条码 mcp_connect_failed 是「说不出原因」的兜底，
+  // 用的就是既有的 mcpConnectFailedHint。
+  mcpFailCallTimeout: "上一次调用等太久没有结果。",
+  mcpFailExited: "这台服务器自己退出了。",
+  mcpFailHandshakeTimeout: "服务器没有在规定时间内应答。",
+  mcpFailNotRunning: "这台服务器当前没在运行。",
+  mcpFailProtocol: "服务器的应答读不了。",
+  mcpFailProtocolVersion: "双方的协议版本对不上。",
+  mcpFailServerError: "服务器拒绝了这次连接。",
+  mcpFailSpawn: "这台服务器没能启动。",
   mcpFieldArgs: "启动参数，一行一个（可不填）",
   mcpFieldCommand: "启动命令：这台机器上的可执行文件，完整路径最稳",
   mcpFieldCwd: "工作目录（可不填）",
@@ -935,6 +947,14 @@ const en = {
     "Launchers like npx download and run code from the network on every start, so we don't launch servers that way. Install it on this machine first, then point at the installed executable.",
   mcpErrSecretRefOutOfScope: "Secret references can only point at server-side variable names carrying the required prefix.",
   mcpErrValidation: "Something in the form isn't right. Check it and try again.",
+  mcpFailCallTimeout: "The last call took too long to come back.",
+  mcpFailExited: "The server exited on its own.",
+  mcpFailHandshakeTimeout: "The server did not answer in time.",
+  mcpFailNotRunning: "The server is not running right now.",
+  mcpFailProtocol: "The server's answer could not be read.",
+  mcpFailProtocolVersion: "The two sides' protocol versions do not match.",
+  mcpFailServerError: "The server refused the connection.",
+  mcpFailSpawn: "The server could not start.",
   mcpFieldArgs: "Start-up arguments, one per line (optional)",
   mcpFieldCommand: "Start command: an executable on this machine — a full path is safest",
   mcpFieldCwd: "Working directory (optional)",
