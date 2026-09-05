@@ -243,6 +243,18 @@ importers:
         specifier: ^4.0.1
         version: 4.4.3
 
+  packages/mcp-client:
+    dependencies:
+      '@workhub/plugin-host':
+        specifier: workspace:*
+        version: link:../plugin-host
+      '@workhub/tools':
+        specifier: workspace:*
+        version: link:../tools
+      zod:
+        specifier: ^4.0.1
+        version: 4.4.3
+
   packages/permissions:
     dependencies:
       '@workhub/contracts':
