@@ -19,6 +19,7 @@ import {
 } from "@workhub/db";
 
 import { getDefaultStructuredLogger, type StructuredLogger } from "../logging.js";
+import { serviceT, serviceTf } from "./locales.js";
 
 // R14 批 RISK（风险预警巡检，见 r14-release-readiness/05-risk-design.md §3-§4）：薄 worker + 厚 service
 // 二层结构（照 conversation-reply-judge.ts 范式）——这个文件是厚的那层：signal 判定（三条纯函数，
@@ -104,9 +105,12 @@ export function buildRiskDigest(input: {
     const shown = shownItems.map((item) => `${item.code}（${item.title}）已停滞 ${item.daysIdle} 天`);
     const remainder = stalled.totalCount - shownItems.length;
     bodyParagraphs.push(
-      `工单停滞（${stalled.totalCount} 项）：${shown.join("；")}${remainder > 0 ? `；及其余 ${remainder} 项` : ""}`
+      serviceTf("zh-CN", "riskStalledParagraph", {
+        count: stalled.totalCount,
+        items: `${shown.join("；")}${remainder > 0 ? serviceTf("zh-CN", "riskStalledRemainder", { count: remainder }) : ""}`
+      })
     );
-    summaryParts.push(`${stalled.totalCount} 项工单停滞`);
+    summaryParts.push(serviceTf("zh-CN", "riskStalledSummary", { count: stalled.totalCount }));
     totalSignalCount += stalled.totalCount;
   }
 
@@ -119,7 +123,8 @@ export function buildRiskDigest(input: {
     );
     const remainder = deadline.totalCount - shownItems.length;
     bodyParagraphs.push(
-      `临期未动工（${deadline.totalCount} 项）：${shown.join("；")}${remainder > 0 ? `；及其余 ${remainder} 项` : ""}`
+      // 「及其余 N 项」与停滞那一段是同一句话，共用同一条词典条目，不各写一份。
+      `临期未动工（${deadline.totalCount} 项）：${shown.join("；")}${remainder > 0 ? serviceTf("zh-CN", "riskStalledRemainder", { count: remainder }) : ""}`
     );
     summaryParts.push(`${deadline.totalCount} 项临期未动工`);
     totalSignalCount += deadline.totalCount;
@@ -199,7 +204,7 @@ function computeStalledAndDeadlineSignals(
   const deadlineItems: Array<{ code: string; title: string; daysUntilDue: number }> = [];
 
   for (const item of items) {
-    const title = item.title ?? "(未命名工单)";
+    const title = item.title ?? serviceT("zh-CN", "taskUntitled");
     const idleDays = (now.getTime() - item.updatedAt.getTime()) / ONE_DAY_MS;
     if (idleDays >= settings.stall_days_threshold) {
       stalledItems.push({ code: item.code, title, daysIdle: Math.floor(idleDays) });

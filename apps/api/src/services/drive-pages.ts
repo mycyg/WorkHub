@@ -39,6 +39,7 @@ import { ASSIGNMENT_ROLES, canManageProjectDrive, canViewProjectDrive, canViewWo
 import type { AuthActor } from "../middleware/auth.js";
 import { parseOutputContract } from "../pages/output-contract.js";
 import { acceptedDeliverableToVm } from "./accepted-deliverables.js";
+import { serviceT } from "./locales.js";
 import {
   getDefaultProposalService,
   ProposalServiceError,
@@ -920,7 +921,7 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
   }) {
     const source = input.page.source_context;
     if (!source || source.source_type !== "drive_comment") {
-      throw new DrivePageServiceError(409, "这个事项不是从网盘评论生成的草稿。", "drive_draft_source_missing");
+      throw new DrivePageServiceError(409, serviceT("zh-CN", "driveDraftNotFromComment"), "drive_draft_source_missing");
     }
     const workItem = input.page.workitem;
     const titleBase = compactText(workItem.title ?? workItem.summary_md ?? source.body, 80) ?? "Drive comment proposal";
@@ -1221,7 +1222,7 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
       });
       const source = initialPage.source_context;
       if (!source || source.source_type !== "drive_comment") {
-        throw new DrivePageServiceError(409, "这个事项不是从网盘评论生成的草稿。", "drive_draft_source_missing");
+        throw new DrivePageServiceError(409, serviceT("zh-CN", "driveDraftNotFromComment"), "drive_draft_source_missing");
       }
       await ensureCanManage({
         actor: input.actor,

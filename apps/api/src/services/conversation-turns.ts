@@ -85,6 +85,7 @@ import { getDefaultStructuredLogger, type StructuredLogger } from "../logging.js
 import type { AuthActor } from "../middleware/auth.js";
 import { InternalContractError, parseOutputContract } from "../pages/output-contract.js";
 import { notifyConversationMessage } from "./conversation-message-notify.js";
+import { serviceT, serviceTf } from "./locales.js";
 import {
   MAX_TURN_CONVERSATION_REFS,
   TURN_CONVERSATION_REF_MESSAGE_LIMIT,
@@ -616,14 +617,16 @@ async function executeCreateWorkItemTool(
     });
     return {
       content: `已经建好工单了：《${detail.workitem.title}》。`,
-      auditSummary: `建工单：${detail.workitem.title}`,
+      // 标题在 VM 上是可选的；透明日志这一行是用户看得见的，拿不到就回落到刚提交的那个标题，
+      // 不把 "undefined" 渲进聊天里。
+      auditSummary: serviceTf("zh-CN", "turnWorkItemCreated", { title: detail.workitem.title ?? input.title }),
       isError: false
     };
   } catch (error) {
     if (error instanceof WorkItemServiceError) {
       return {
         content: `没能建成工单：${error.message}——如实告诉对方，不要假装已经建好。`,
-        auditSummary: "建工单失败",
+        auditSummary: serviceT("zh-CN", "turnWorkItemCreateFailed"),
         isError: true
       };
     }

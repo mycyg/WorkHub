@@ -18,6 +18,7 @@ import {
 
 import type { AuthActor } from "../middleware/auth.js";
 import { WorkItemServiceError } from "./work-items.js";
+import { serviceT } from "./locales.js";
 
 export type WorkItemCommentService = {
   list: (input: { workItemId: string; actor: AuthActor }) => Promise<WorkItemCommentsResult>;
@@ -53,7 +54,7 @@ export function createWorkItemCommentService(
   async function requireVisibleWorkItem(workItemId: string, actor: AuthActor): Promise<WorkItemAccessRow> {
     const row = await deps.workItems.findWorkItemAccessRecord(workItemId);
     if (!row) {
-      throw new WorkItemServiceError(404, "not_found", "没有找到这个事项。(Work item not found.)");
+      throw new WorkItemServiceError(404, "not_found", serviceT("zh-CN", "taskCommentsNotFound"));
     }
     const allowed = canViewWorkItemRecord(
       row,
@@ -61,7 +62,7 @@ export function createWorkItemCommentService(
       actor.workspaceId ? { workspaceId: actor.workspaceId } : undefined
     );
     if (!allowed) {
-      throw new WorkItemServiceError(403, "forbidden", "你没有权限查看这个事项的评论。");
+      throw new WorkItemServiceError(403, "forbidden", serviceT("zh-CN", "taskCommentsForbidden"));
     }
     return row;
   }

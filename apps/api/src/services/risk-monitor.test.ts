@@ -110,8 +110,8 @@ test("buildRiskDigest assembles a single-signal digest with a PM-toned template 
   const digest = buildRiskDigest({ projectId, projectName: "星尘短剧", signals });
 
   assert.equal(digest.notificationTitle, "星尘短剧 · 今日风险巡检");
-  assert.match(digest.notificationBody, /工单停滞（1 项）：WI-1（接入支付）已停滞 6 天/u);
-  assert.equal(digest.chatSummary, "今天巡检发现 1 项风险信号——1 项工单停滞");
+  assert.match(digest.notificationBody, /任务停滞（1 项）：WI-1（接入支付）已停滞 6 天/u);
+  assert.equal(digest.chatSummary, "今天巡检发现 1 项风险信号——1 项任务停滞");
   assert.deepEqual(digest.chatCounts, { stalled: 1, deadline: 0, costSpike: false, githubStale: false });
 });
 
@@ -124,11 +124,11 @@ test("buildRiskDigest combines the work-item and cost signal kinds into one mult
   const digest = buildRiskDigest({ projectId, projectName: "星尘短剧", signals });
 
   // 4 = 2 项停滞 + 1 项临期 + 成本放量计 1（信号计数按「项」累计，成本是项目级信号恒记 1）。
-  assert.equal(digest.chatSummary, "今天巡检发现 4 项风险信号——2 项工单停滞、1 项临期未动工、成本异常放量");
+  assert.equal(digest.chatSummary, "今天巡检发现 4 项风险信号——2 项任务停滞、1 项临期未动工、成本异常放量");
   assert.deepEqual(digest.chatCounts, { stalled: 2, deadline: 1, costSpike: true, githubStale: false });
   const paragraphs = digest.notificationBody.split("\n");
   assert.equal(paragraphs.length, 3);
-  assert.match(paragraphs[0]!, /工单停滞（2 项）/u);
+  assert.match(paragraphs[0]!, /任务停滞（2 项）/u);
   assert.match(paragraphs[1]!, /临期未动工（1 项）/u);
   assert.match(paragraphs[2]!, /今日 ¥128，是近 7 日日均（¥40）的 3.2 倍/u);
 });
@@ -136,7 +136,7 @@ test("buildRiskDigest combines the work-item and cost signal kinds into one mult
 test("buildRiskDigest caps each signal bucket display and appends an honest overflow note", () => {
   const items = Array.from({ length: 7 }, (_, index) => ({
     code: `WI-${index}`,
-    title: `工单 ${index}`,
+    title: `任务 ${index}`,
     daysIdle: 10 - index
   }));
   const digest = buildRiskDigest({
