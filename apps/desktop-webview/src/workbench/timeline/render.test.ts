@@ -41,13 +41,16 @@ function ui(overrides: Partial<TimelineUiState> = {}): TimelineUiState {
   return { ...emptyTimelineUiState(), ...overrides };
 }
 
-test("empty timeline (no milestones, no items) shows guidance + the coming-soon Cuu note, not a fake button", () => {
+test("empty timeline (no milestones, no items) shows guidance + a real pointer to the Cuu plan-drafting tab, not a fake button", () => {
   const html = renderTimelineHtml({ vm: vm({ empty_state: "no_work_items" }), locale: "zh-CN", ui: ui() });
   assert.equal(html.includes("还没有时间线"), true);
   // 真可用的入口（新建里程碑，端点现成）而不是无接线的假按钮。
   assert.equal(html.includes("data-wb-tl-new-milestone"), true);
-  // Cuu 起草计划是预留说明（E3 未合），不是能点的按钮。
-  assert.equal(html.includes("即将上线"), true);
+  // F-08：E3（Cuu 起草整份计划）已经在「日程」标签落地——这里不再写「即将上线」的过时占位，
+  // 而是指路到真入口（与 schedule/render.ts 的 data-wb-sc-plan-new 按钮同一句文案）。
+  assert.equal(html.includes("即将上线"), false);
+  assert.equal(html.includes("日程"), true);
+  assert.equal(html.includes("用 Cuu 起草计划"), true);
   assert.equal(/data-wb-tl-cuu-draft/.test(html), false);
 });
 
