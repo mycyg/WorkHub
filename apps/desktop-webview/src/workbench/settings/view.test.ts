@@ -749,7 +749,7 @@ test("the risk threshold save button validates each field against the contract b
     container.dispatch("click", new FakeElement(new Set(["[data-wb-risk-save]"])));
     await tick();
     assert.equal(patched.length, 0);
-    assert.match(container.innerHTML, /工单停滞天数阈值要在 1 到 90 天之间/u);
+    assert.match(container.innerHTML, /「多少天没进展算停滞」要填 1 到 90 天/u);
   });
 });
 

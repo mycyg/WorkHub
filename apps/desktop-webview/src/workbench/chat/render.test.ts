@@ -2143,10 +2143,10 @@ test("renderModePopoverHtml states the server-issued model/key line and never im
 
 test("renderModePopoverHtml includes the granular-breakdown note as plain text, not a fake button", () => {
   const html = renderModePopoverHtml({ mode: 3, locale: "zh-CN" });
-  assert.match(html, /按能力细分/u);
+  assert.match(html, /按事项细分/u);
   // No data-* hook and no <button> wrapper — this line isn't wired to anything real yet, so it must
   // not look clickable (04 §4 rule 3: don't render an affordance with no real destination).
-  assert.doesNotMatch(html, /<button[^>]*按能力细分/u);
+  assert.doesNotMatch(html, /<button[^>]*按事项细分/u);
 });
 
 test("renderModeObserveOnlyHintHtml warns that Cuu will not reply, before the user hits the 409", () => {

@@ -349,8 +349,8 @@ export function mountScheduleView(
           ...plan,
           busy: false,
           notice: zh
-            ? `已物化到时间线：${r.milestone_ids.length} 里程碑 · ${r.work_item_ids.length} 工作项。`
-            : `Materialized: ${r.milestone_ids.length} milestones · ${r.work_item_ids.length} items.`
+            ? `已写入时间线：${r.milestone_ids.length} 个里程碑 · ${r.work_item_ids.length} 个任务。`
+            : `Added to the timeline: ${r.milestone_ids.length} milestones · ${r.work_item_ids.length} tasks.`
         };
         render();
       })

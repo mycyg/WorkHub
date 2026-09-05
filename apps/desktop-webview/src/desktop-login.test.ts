@@ -745,7 +745,7 @@ test("describeDesktopRegisterError maps backend statuses to retryable, non-leaky
   assert.match(describeDesktopRegisterError(new Error("Failed to fetch"), "zh-CN"), /注册失败/u);
 });
 
-// —— R24 S4：我有邀请令牌页签 —— //
+// —— R24 S4：我有邀请码页签 —— //
 
 test("runDesktopInviteAccept posts the token/nickname/password to invites/accept, exchanges for a device token, and marks the identity as created", async () => {
   const calls: { request?: { path: string; body: unknown }; bootstrap?: unknown } = {};

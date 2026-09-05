@@ -19,7 +19,7 @@ import {
 const zh = {
   allFiles: "所有文件",
   changed: "变动文件",
-  changedProposalManifestChangeSetOpen: "变动 = 提议 manifest 的变更集（待审 / 已合），点文件看逐句对照。",
+  changedProposalManifestChangeSetOpen: "这里是待审和已合入的变更涉及的文件，点文件看逐句对照。",
   couldnTLoadTryAgain: loadFailedRetryZh("这块内容"),
   loadingChangedFiles: loadingZh("变动文件"),
   loadingDrive: loadingZh("网盘"),
@@ -32,7 +32,7 @@ const zh = {
 const en = {
   allFiles: "All files",
   changed: "Changed",
-  changedProposalManifestChangeSetOpen: "Changed = proposal manifest change set; open a file for the line-by-line diff.",
+  changedProposalManifestChangeSetOpen: "These are the files touched by open and merged changes. Open one for the line-by-line comparison.",
   couldnTLoadTryAgain: loadFailedRetryEn("this"),
   loadingChangedFiles: loadingEn("changed files"),
   loadingDrive: loadingEn("the drive"),

@@ -115,7 +115,7 @@ function statusLabel(status: WorkItemStatus, zh: boolean): string {
     spec_ready: { zh: "待开工", en: "Ready" },
     ai_working: { zh: "进行中", en: "In progress" },
     escalated: { zh: "已升级", en: "Escalated" },
-    pm_mode: { zh: "人工接管", en: "PM mode" },
+    pm_mode: { zh: "人工接管", en: "Handled by a person" },
     in_review: { zh: "评审中", en: "In review" },
     merged: { zh: "已合并", en: "Merged" },
     done: { zh: "已完成", en: "Done" },
