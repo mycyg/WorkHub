@@ -10,10 +10,11 @@ import {
   membersById,
   modePatchFailedText,
   renderChatEmptyStateHtml,
-  renderComingSoonPickerHtml,
   renderComposerHtml,
   renderConnectionBannerHtml,
   renderConversationAccessDeniedHtml,
+  renderConversationRefPickerHtml,
+  renderSkillPickerHtml,
   renderCuuToggleHtml,
   renderCuuTurnErrorHtml,
   renderCuuTurnPendingHtml,
@@ -1861,16 +1862,26 @@ test("renderComposerHtml behaves exactly as before when turnActive is omitted (m
   assert.equal(withoutTurnActive, withExplicitFalse);
 });
 
-// G-desktop 止血批 1：撤掉「#会话」灰 chip——R14 批 CHAT 当时已经撤掉了同款的「/技能」假 affordance，
-// 只留「#会话」在原地摆着等 SEARCH 批接线；SEARCH 批至今没有真的接上，这个 chip 点了/打了 # 只会弹
-// 一句「即将上线」，仍然违反 04 §4 铁律 3。现在两个 chip 都不再出现，composer 占位符里的 "# 会话"
-// 提示语也一并去掉。这条断言从「# 在、/ 不在」收窄成「# 和 / 都不在」。
-test("renderComposerHtml no longer renders either the # or the / not-yet-available tag", () => {
+// R23 F-07：「#会话」「/技能」两个入口回到工具条——这一次是真控件（真实候选 + 选中插入 + 服务端解析），
+// 所以断言从 G-desktop 止血批 1 的「# 和 / 都不在」翻回「三个入口都在，且都不是灰态假 affordance」。
+// 那批把它们撤掉是对的（当时点开只有一句「即将上线」，违反 04 §4 铁律 3）；这条测试连同 --soon 灰态
+// 的缺席断言一起留着，保证功能真接上之前谁也不能把它们再摆回去。
+test("renderComposerHtml renders all three live composer triggers (@ / # / slash) with no grey placeholder tag", () => {
   const html = renderComposerHtml({ locale: "zh-CN", draftText: "", attachments: [], sending: false });
   assert.match(html, /data-wb-chat-tool-trigger="@"/u);
+  assert.match(html, /data-wb-chat-tool-trigger="#"/u);
+  assert.match(html, /data-wb-chat-tool-trigger="\/"/u);
   assert.doesNotMatch(html, /wh-wb-chat-ctag--soon/u);
-  assert.doesNotMatch(html, /技能/u);
-  assert.doesNotMatch(html, /# 会话/u);
+  assert.doesNotMatch(html, /即将上线/u);
+});
+
+test("renderComposerHtml tells the user in the placeholder what all three triggers do", () => {
+  const zh = renderComposerHtml({ locale: "zh-CN", draftText: "", attachments: [], sending: false });
+  assert.match(zh, /# 会话/u);
+  assert.match(zh, /\/ 技能/u);
+  const en = renderComposerHtml({ locale: "en-US", draftText: "", attachments: [], sending: false });
+  assert.match(en, /# conversation/u);
+  assert.match(en, /\/ skill/u);
 });
 
 // —— pickers —— //
@@ -1903,17 +1914,132 @@ test("renderMentionPickerHtml shows an honest empty state when nothing matches",
   assert.match(html, /没有匹配结果/u);
 });
 
-test("renderComingSoonPickerHtml for # is clearly labeled coming-soon, not a live search box", () => {
-  const html = renderComingSoonPickerHtml({ locale: "zh-CN", trigger: "#" });
-  assert.match(html, /会话引用/u);
-  assert.match(html, /即将上线/u);
-  assert.match(html, /即将上线/u);
+// —— R23 F-07：#会话引用 / /技能唤起 picker（取代此前的「即将上线」占位 picker）—— //
+//
+// 这两个 picker 与 @ picker 是同一档控件：同一套行标记（.wh-wb-chat-picker-row + role="option" +
+// data-wb-chat-pick-*）、同一套高亮/加载/空态口径。下面的断言按这四件事各钉一条：候选行带得回可解析的
+// 载荷、加载态诚实、空态诚实、高亮走 aria-selected（键盘导航靠它，见 view.test.ts 的下标状态机）。
+
+test("renderConversationRefPickerHtml lists conversations with the conversation id as the pick payload", () => {
+  const html = renderConversationRefPickerHtml({
+    locale: "zh-CN",
+    conversations: [
+      { conversationId: "conv-1", title: "预算复盘" },
+      { conversationId: "conv-2", title: "投放排期" }
+    ],
+    loading: false
+  });
+  assert.match(html, /data-wb-chat-picker="conversation_ref"/u);
+  assert.match(html, /data-wb-chat-pick-conversation="conv-1"/u);
+  assert.match(html, /data-wb-chat-pick-conversation="conv-2"/u);
+  assert.match(html, /预算复盘/u);
+  // 与 @ picker 同一套行标记——键盘导航/点击接线（view.ts）对三个 picker 是同一条路径。
+  assert.match(html, /class="wh-wb-chat-picker-row"[^>]*role="option"/u);
 });
 
-test("renderComingSoonPickerHtml for / is clearly labeled coming-soon", () => {
-  const html = renderComingSoonPickerHtml({ locale: "zh-CN", trigger: "/" });
-  assert.match(html, /技能唤起/u);
-  assert.match(html, /即将上线/u);
+test("renderConversationRefPickerHtml shows a loading state instead of a fake empty list while fetching", () => {
+  const html = renderConversationRefPickerHtml({ locale: "zh-CN", conversations: [], loading: true });
+  assert.match(html, /加载中/u);
+  assert.doesNotMatch(html, /没有可引用的会话/u);
+});
+
+test("renderConversationRefPickerHtml says plainly when the project has nothing to reference", () => {
+  const html = renderConversationRefPickerHtml({ locale: "zh-CN", conversations: [], loading: false });
+  assert.match(html, /没有可引用的会话/u);
+  assert.doesNotMatch(html, /data-wb-chat-pick-conversation/u);
+});
+
+test("renderConversationRefPickerHtml marks the highlighted row with aria-selected for keyboard navigation", () => {
+  const html = renderConversationRefPickerHtml({
+    locale: "zh-CN",
+    conversations: [
+      { conversationId: "conv-1", title: "预算复盘" },
+      { conversationId: "conv-2", title: "投放排期" }
+    ],
+    loading: false,
+    highlightedIndex: 1
+  });
+  assert.match(html, /aria-selected="true"[^>]*data-wb-chat-pick-conversation="conv-2"/u);
+  assert.match(html, /aria-selected="false"[^>]*data-wb-chat-pick-conversation="conv-1"/u);
+});
+
+test("renderConversationRefPickerHtml escapes a conversation title that contains markup", () => {
+  const html = renderConversationRefPickerHtml({
+    locale: "zh-CN",
+    conversations: [{ conversationId: "conv-x", title: '<img src=x onerror="alert(1)">' }],
+    loading: false
+  });
+  assert.doesNotMatch(html, /<img/u);
+  assert.match(html, /&lt;img/u);
+});
+
+test("renderConversationRefPickerHtml localizes its empty state", () => {
+  const html = renderConversationRefPickerHtml({ locale: "en-US", conversations: [], loading: false });
+  assert.match(html, /No conversations to reference/u);
+});
+
+test("renderSkillPickerHtml lists skills with the skill key as the pick payload and shows when to use each", () => {
+  const html = renderSkillPickerHtml({
+    locale: "zh-CN",
+    skills: [{ skillKey: "weekly-report", name: "周报模板", whenToUse: "写周报之前" }],
+    loading: false
+  });
+  assert.match(html, /data-wb-chat-picker="skill_ref"/u);
+  assert.match(html, /data-wb-chat-pick-skill="weekly-report"/u);
+  assert.match(html, /周报模板/u);
+  // 适用场景是选得准的关键——光有名字看不出该不该唤起它。
+  assert.match(html, /写周报之前/u);
+});
+
+test("renderSkillPickerHtml omits the hint element entirely when a skill has no when-to-use text", () => {
+  const html = renderSkillPickerHtml({
+    locale: "zh-CN",
+    skills: [{ skillKey: "k", name: "无说明技能", whenToUse: "" }],
+    loading: false
+  });
+  assert.match(html, /data-wb-chat-pick-skill="k"/u);
+  assert.doesNotMatch(html, /wh-wb-chat-picker-row-hint/u);
+});
+
+test("renderSkillPickerHtml shows a loading state instead of a fake empty list while fetching", () => {
+  const html = renderSkillPickerHtml({ locale: "zh-CN", skills: [], loading: true });
+  assert.match(html, /加载中/u);
+  assert.doesNotMatch(html, /还没有攒下/u);
+});
+
+test("renderSkillPickerHtml says plainly when the team has no skills yet", () => {
+  const html = renderSkillPickerHtml({ locale: "zh-CN", skills: [], loading: false });
+  assert.match(html, /还没有攒下/u);
+  assert.doesNotMatch(html, /data-wb-chat-pick-skill/u);
+});
+
+test("renderSkillPickerHtml marks the highlighted row with aria-selected for keyboard navigation", () => {
+  const html = renderSkillPickerHtml({
+    locale: "zh-CN",
+    skills: [
+      { skillKey: "a", name: "周报模板", whenToUse: "写周报之前" },
+      { skillKey: "b", name: "复盘模板", whenToUse: "项目收尾时" }
+    ],
+    loading: false,
+    highlightedIndex: 0
+  });
+  assert.match(html, /aria-selected="true"[^>]*data-wb-chat-pick-skill="a"/u);
+  assert.match(html, /aria-selected="false"[^>]*data-wb-chat-pick-skill="b"/u);
+});
+
+test("renderSkillPickerHtml escapes skill names and hints that contain markup", () => {
+  const html = renderSkillPickerHtml({
+    locale: "zh-CN",
+    skills: [{ skillKey: "k", name: "<b>粗</b>", whenToUse: '<img src=x onerror="alert(1)">' }],
+    loading: false
+  });
+  assert.doesNotMatch(html, /<b>粗<\/b>/u);
+  assert.doesNotMatch(html, /<img/u);
+});
+
+test("renderSkillPickerHtml localizes its empty state", () => {
+  const html = renderSkillPickerHtml({ locale: "en-US", skills: [], loading: false });
+  assert.match(html, /no skills to invoke yet/u);
 });
 
 // —— R12（模式五档弹层，仅协同会话 composer）—— //
