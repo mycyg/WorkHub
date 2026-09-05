@@ -17,7 +17,9 @@ export type ActionPayloadResult<T> =
   | { ok: true; payload?: T }
   | { ok: false; reason: ActionPayloadFailureReason };
 
-function hrefPathname(href: string, origin = globalThis.location?.origin ?? "http://workhub.local") {
+// R23 F-04：转交动作分类（delegate.ts）也要按同一口径解析 href——导出而不是再写一份 URL 解析，
+// 免得两处对「相对路径 / 绝对 URL / 带查询串」的判定漂移。
+export function hrefPathname(href: string, origin = globalThis.location?.origin ?? "http://workhub.local") {
   return new URL(href, origin).pathname;
 }
 

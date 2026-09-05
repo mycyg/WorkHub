@@ -55,6 +55,8 @@ import {
   createWebLiveRuntime,
   cssEscape,
   createWorkItemActionFromHref,
+  delegateResultSummaryText,
+  delegateTargetFromHref,
   desktopRequiredNotice,
   dirtyGuardRefreshAction,
   driveCommentDraftFromHref,
@@ -86,6 +88,7 @@ import {
   selectionNotice,
   sessionNextQuestionIdFromHref,
   setDocumentLocale,
+  submitDelegateAction,
   safeHref,
   showRouteNotice as showSharedRouteNotice,
   startAgentRunQueuedNoticeBody,
@@ -122,6 +125,7 @@ import {
   unmountReactRouteIsland
 } from "./react-route-mount.js";
 import { resolveWebMemoryConflictAction } from "./attention-actions.js";
+import { buildDelegateOptionNodes, buildDelegateStatusOption, delegatePickerHref } from "./delegate-options.js";
 import { liveStreamTargetsForRoute } from "./live-stream-targets.js";
 import { renderMyConversationsSectionHtml } from "./my-conversations.js";
 import { fetchWorkspaceRosterMembers, type WorkspaceRosterVM } from "./workspace-roster.js";
@@ -843,39 +847,52 @@ function bindGoldPathNavigation(
       })();
       return;
     }
-    // R10-P2-5（R20 P1-08 收尾）：审批转交——打开「转交给同事」时懒加载成员清单（不进 loader，不动 smoke
-    // 计数）。数据源＝本工作区花名册（GET /api/workspace/roster，分页翻到底），取代此前误用的全局
-    // /api/users（跨租户泄露 + 硬 200 截断）；管理员标签改读 roster 行的 is_admin，展示行为与此前等价。
-    // 确认转交走既有 delegateApproval 全链（服务端重路由+通知），成功后重渲。
-    const delegateSummary = event.target instanceof Element ? event.target.closest("[data-r10-approval-delegate] summary") : null;
+    // R10-P2-5（R20 P1-08 收尾 / R23 F-04）：转交选人器——审批转交与升级转交共用同一份。打开
+    //「转交给同事」时懒加载成员清单（不进 loader，不动 smoke 计数）。数据源＝本工作区花名册
+    //（GET /api/workspace/roster，分页翻到底），取代此前误用的全局 /api/users（跨租户泄露 + 硬 200 截断）；
+    // 管理员标签读 roster 行的 is_admin。选项用 DOM 节点逐个建（buildDelegateOptionNodes），昵称走
+    // textContent，不再拼 innerHTML 字符串。
+    // R23 F-04：确认转交按 href 分派——/api/approvals/:id/delegate 走 delegateApproval，
+    // /api/escalations/:id/delegate 走 delegateEscalation（此前 SDK 里零调用，升级转交端到端没有入口）。
+    const delegateSummary = event.target instanceof Element ? event.target.closest("[data-wh-delegate] summary") : null;
     if (delegateSummary) {
-      const details = delegateSummary.closest<HTMLElement>("[data-r10-approval-delegate]");
-      const select = details?.querySelector<HTMLSelectElement>("[data-r10-approval-delegate-select]");
-      if (details && select && details.dataset["r10DelegateLoaded"] !== "true") {
-        details.dataset["r10DelegateLoaded"] = "true";
+      const details = delegateSummary.closest<HTMLElement>("[data-wh-delegate]");
+      const select = details?.querySelector<HTMLSelectElement>("[data-wh-delegate-select]");
+      if (details && select && details.dataset["whDelegateLoaded"] !== "true") {
+        details.dataset["whDelegateLoaded"] = "true";
+        const doc = select.ownerDocument;
         void fetchWorkspaceRosterMembers(client)
           .then((members) => {
-            select.innerHTML = members
-              .map((member) => `<option value="${escapeHtml(member.user_id)}">${escapeHtml(member.nickname)}${member.is_admin ? (locale === "en-US" ? " (admin)" : "（管理员）") : ""}</option>`)
-              .join("");
+            select.replaceChildren(...buildDelegateOptionNodes(
+              () => doc.createElement("option"),
+              members.map((member) => ({ id: member.user_id, nickname: member.nickname, is_admin: member.is_admin })),
+              locale
+            ));
           })
           .catch(() => {
-            details.dataset["r10DelegateLoaded"] = "false";
-            select.innerHTML = `<option value="">${locale === "en-US" ? "Couldn't load members — reopen to retry" : "成员没加载出来，收起再展开重试"}</option>`;
+            details.dataset["whDelegateLoaded"] = "false";
+            select.replaceChildren(buildDelegateStatusOption(
+              () => doc.createElement("option"),
+              locale === "en-US" ? "Couldn't load members — reopen to retry" : "成员没加载出来，收起再展开重试"
+            ));
           });
       }
       return;
     }
-    const delegateSubmit = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-r10-approval-delegate-submit]") : null;
+    const delegateSubmit = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-wh-delegate-submit]") : null;
     if (delegateSubmit) {
       event.preventDefault();
-      const select = shellRoot.querySelector<HTMLSelectElement>("[data-r10-approval-delegate-select]");
+      const picker = delegateSubmit.closest<HTMLElement>("[data-wh-delegate]");
+      const select = picker?.querySelector<HTMLSelectElement>("[data-wh-delegate-select]");
       const toUserId = select?.value || "";
       const selectedRow = [...shellRoot.querySelectorAll<HTMLElement>("[data-r4-approval-item]")]
         .find((row) => row.getAttribute("data-r4-approval-selected") === "true");
-      const respondHref = selectedRow?.dataset["r4ApprovalRespondHref"] ?? "";
-      const approvalId = approvalRespondIdFromHref(respondHref);
-      if (!toUserId || !approvalId) {
+      const href = delegatePickerHref({
+        pickerHref: picker?.dataset["whDelegateHref"],
+        selectedApprovalRespondHref: selectedRow?.dataset["r4ApprovalRespondHref"]
+      });
+      const target = href ? delegateTargetFromHref(href) : undefined;
+      if (!toUserId || !href || !target) {
         showRouteNotice(shellRoot, fieldValueRequiredNotice(locale, "delegate_approval"));
         return;
       }
@@ -885,11 +902,18 @@ function bindGoldPathNavigation(
       showRouteNotice(shellRoot, actionInProgressNotice(locale, "delegate_approval"), undefined, 0);
       void (async () => {
         try {
-          await client.delegateApproval(approvalId, { to_user_id: toUserId });
+          const result = await submitDelegateAction(client, href, toUserId, { locale });
           await renderCurrentRoute(client, locale);
-          showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, locale === "en-US"
-            ? "Approval handed off — it now routes to them."
-            : "已转交，这条审批会路由给对方处理。", "delegate_approval"));
+          // 升级转交的服务端回执里带人话摘要（谁接手了这件事），有就用它；审批转交没有，回落本地文案。
+          const summary = delegateResultSummaryText(result)
+            ?? (target.kind === "escalation"
+              ? (locale === "en-US"
+                ? "Handed off — this decision now waits on them."
+                : "已转交，这件事改由对方拿主意。")
+              : (locale === "en-US"
+                ? "Approval handed off — it now routes to them."
+                : "已转交，这条审批会路由给对方处理。"));
+          showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, summary, "delegate_approval"));
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, "delegate_approval"));
         } finally {

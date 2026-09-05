@@ -1252,17 +1252,33 @@ function actionClass(action: AttentionAction | ActionSpec, index: number) {
   return index === 0 ? "wh-btn wh-btn-primary" : "wh-btn";
 }
 
-// rank1：转交他人(delegate)在 web 尚无选人 UI/分类器——会落到「功能开发中」toast 的死按钮。
-// 桌面已隐藏(attention.ts/pet-surface)，web 在此一并隐藏，两端一致;待选人 UI 落地再放开。
-// href 形如 /api/approvals/{id}/delegate。
-function isUnsupportedWebAction(href: string): boolean {
-  return /\/delegate(?:[/?#]|$)/u.test(href);
+// R23 F-04：转交动作（/api/approvals/:id/delegate、/api/escalations/:id/delegate）不能当普通按钮渲——
+// 它需要一个「转交给谁」的选人器。此前 web 与两端一样直接把动作剥掉（rank1 的临时办法），于是升级
+// 转交端到端零入口。现在改成：动作行里不渲它，改在动作行下面挂一份选人器（renderDelegatePicker），
+// 选人 + 确认走 browser.ts 的统一分发。
+function isDelegateActionHref(href: string): boolean {
+  return /^(?:.*)?\/api\/(?:approvals|escalations)\/[^/]+\/delegate(?:[?#]|$)/u.test(href);
 }
 
-function renderActions(actions: (AttentionAction | ActionSpec)[]) {
-  const shown = actions.filter((action) => !isUnsupportedWebAction(action.href));
+// 转交选人器（审批工作台与任意决策卡共用同一份结构）：折叠起来不占地方，展开时才懒加载工作区成员。
+// href 省略＝由 browser.ts 按当前选中的审批行推导（审批工作台的动作面板是整页共享的，卡片不固定）。
+function renderDelegatePicker(locale: WorkHubLocale, href?: string) {
+  const zh = locale === "zh-CN";
+  return `<details class="wh-r4-approval-field" data-wh-delegate="true"${href ? ` data-wh-delegate-href="${escapeHtml(safeHref(href))}"` : ""}>
+              <summary>${escapeHtml(zh ? "转交给同事" : "Hand off to a teammate")}</summary>
+              <p class="wh-subtle">${escapeHtml(zh ? "请假、轮值或这事不归你管时，把它交给合适的人。" : "On leave, on rotation, or not your call — hand this to the right person.")}</p>
+              <select class="wh-pill" data-wh-delegate-select="true" aria-label="${escapeHtml(zh ? "选择转交对象" : "Pick a teammate")}"><option value="">${escapeHtml(zh ? "展开后加载成员…" : "Members load on open…")}</option></select>
+              <div class="wh-r4-route-actions"><button type="button" class="wh-btn" data-wh-delegate-submit="true">${escapeHtml(zh ? "确认转交" : "Delegate")}</button></div>
+            </details>`;
+}
+
+function renderActions(actions: (AttentionAction | ActionSpec)[], locale?: WorkHubLocale) {
+  const shown = actions.filter((action) => !isDelegateActionHref(action.href));
+  // 卡上带转交动作时，把选人器挂在动作行后面（locale 缺省＝调用方还没接选人器，按旧行为只渲动作）。
+  const delegateAction = locale ? actions.find((action) => isDelegateActionHref(action.href)) : undefined;
+  const picker = delegateAction && locale ? renderDelegatePicker(locale, delegateAction.href) : "";
   if (shown.length === 0) {
-    return "";
+    return picker;
   }
   return `<div class="wh-r4-route-actions">${shown
     .map((action, index) => {
@@ -1279,7 +1295,7 @@ function renderActions(actions: (AttentionAction | ActionSpec)[]) {
       const buttonRole = "method" in action && action.method && action.method !== "GET" ? " role=\"button\"" : "";
       return `<a class="${actionClass(action, index)}" href="${escapeHtml(safeHref(action.href))}" data-action-id="${escapeHtml(action.id)}"${buttonRole}${reason}${method}${desktop}${requestJson}${postRunNext}>${escapeHtml(action.label)}</a>`;
     })
-    .join("")}</div>`;
+    .join("")}</div>${picker}`;
 }
 
 function jsonAttr(value: unknown) {
@@ -1615,7 +1631,7 @@ function renderHomeRouteComponent(
         <p style="white-space:pre-line">${escapeHtml(primary.reason_text ?? primary.summary_text)}</p>
         ${mergeEditor}
         ${evidenceCount > 0 ? `<div class="wh-r4-status"><span>${escapeHtml(zh ? `用到证据 ${evidenceCount} 条` : `${evidenceCount} evidence`)}</span></div>` : ""}
-        ${renderActions(primaryActions)}
+        ${renderActions(primaryActions, locale)}
       </section>`
     : `<section class="wh-card wh-r4-route-card wh-r4-decision" data-r4-home-decision="true">
         <div class="wh-r4-decision-top"></div>
@@ -2196,12 +2212,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
             ${primary ? `<label class="wh-r4-approval-field"><span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "approvals.reasonLabel"))}</span><textarea class="wh-r4-approval-reason" data-r4-approval-reason rows="2" aria-label="${escapeHtml(goldPathT(locale, "approvals.reasonLabel"))}" placeholder="${escapeHtml(goldPathT(locale, "approvals.reasonPlaceholder"))}"></textarea></label>
             <label class="wh-r4-approval-remember"><input type="checkbox" data-r4-approval-remember /> <span>${escapeHtml(goldPathT(locale, "approvals.rememberLabel"))}</span></label>
             <p class="wh-subtle" data-r4-approval-remember-help="true">${escapeHtml(goldPathT(locale, "approvals.rememberHelp"))}</p>
-            <details class="wh-r4-approval-field" data-r10-approval-delegate="true">
-              <summary>${escapeHtml(zh ? "转交给同事" : "Hand off to a teammate")}</summary>
-              <p class="wh-subtle">${escapeHtml(zh ? "请假、轮值或这事不归你管时，把这条审批路由给合适的人。" : "On leave, on rotation, or not your call — route this approval to the right person.")}</p>
-              <select class="wh-pill" data-r10-approval-delegate-select="true" aria-label="${escapeHtml(zh ? "选择转交对象" : "Pick a teammate")}"><option value="">${escapeHtml(zh ? "展开后加载成员…" : "Members load on open…")}</option></select>
-              <div class="wh-r4-route-actions"><button type="button" class="wh-btn" data-r10-approval-delegate-submit="true">${escapeHtml(zh ? "确认转交" : "Delegate")}</button></div>
-            </details>` : ""}
+            ${renderDelegatePicker(locale)}` : ""}
           </section>
           <section class="wh-card wh-r4-route-card">
             <h3 role="heading" aria-level="2">${escapeHtml(goldPathT(locale, "approvals.ruleTitle"))}</h3>

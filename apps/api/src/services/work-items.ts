@@ -127,6 +127,13 @@ export type WorkItemService = {
     workItemIds: string[];
     actor: AuthActor;
   }) => Promise<Set<string>>;
+  // R23 F-04（升级转交动作只发给有权转交的人）：canReadWorkItems 的写权限孪生体——同一次
+  // findWorkItemAccessRecords、同一套 canMutateWorkItem 判定，返回「能改」的那部分 id 集合。
+  // 决策卡列表要按行决定发不发写类动作（转交），逐行 assertCanMutateWorkItem 会退回整页 detail 装配。
+  canMutateWorkItems: (input: {
+    workItemIds: string[];
+    actor: AuthActor;
+  }) => Promise<Set<string>>;
   assertCanMutateWorkItem: (input: {
     workItemId: string;
     actor: AuthActor;
@@ -1119,20 +1126,36 @@ function assertCanReadDetail(rows: StoredWorkItemDetailRows, actor: AuthActor) {
   }
 }
 
-function canMutateWorkItem(rows: StoredWorkItemDetailRows, actor: AuthActor) {
+// R23 F-04：与 canReadWorkItemAccessRow 对称——写权限判定也抽成只依赖「摊平后的访问记录」的纯函数，
+// 让批量路径（canMutateWorkItems，走 findWorkItemAccessRecords）与单条路径（canMutateWorkItem，走整页
+// detail）用同一套口径。两条路径判定漂移过一次就会出现「卡上发了转交按钮、点下去 403」的死按钮。
+function canMutateWorkItemAccessRow(
+  row: {
+    submitterUserId: string;
+    claimedByUserId: string | null;
+    workspaceId: string | null;
+    project: { archived: boolean | null; deletedAt: Date | null; ownerUserId: string | null; workspaceId: string | null } | null;
+    assignments: Array<{ userId: string; role: string }>;
+  },
+  actor: AuthActor
+) {
   const userId = actor.userId ?? actor.id;
   const inWorkspace = !actor.workspaceId
-    || actor.workspaceId === rows.workItem.workspaceId
-    || actor.workspaceId === rows.projectWorkspaceId;
-  const projectActive = !rows.projectArchived && rows.projectDeletedAt == null;
-  const canWorkAssignment = rows.assignments.some(
+    || actor.workspaceId === row.workspaceId
+    || actor.workspaceId === (row.project?.workspaceId ?? null);
+  const projectActive = !row.project?.archived && row.project?.deletedAt == null;
+  const canWorkAssignment = row.assignments.some(
     (assignment) => assignment.userId === userId && (ASSIGNMENT_ROLES as readonly string[]).includes(assignment.role)
   );
-  const ownsOrWorksItem = rows.projectOwnerUserId === userId
-    || rows.workItem.submitterUserId === userId
-    || rows.workItem.claimedByUserId === userId
+  const ownsOrWorksItem = (row.project?.ownerUserId ?? null) === userId
+    || row.submitterUserId === userId
+    || row.claimedByUserId === userId
     || canWorkAssignment;
   return projectActive && inWorkspace && (actor.isAdmin || ownsOrWorksItem);
+}
+
+function canMutateWorkItem(rows: StoredWorkItemDetailRows, actor: AuthActor) {
+  return canMutateWorkItemAccessRow(detailToWorkItemAccessRecord(rows), actor);
 }
 
 function assertCanMutateWorkItemRows(rows: StoredWorkItemDetailRows, actor: AuthActor) {
@@ -1854,6 +1877,24 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     return visible;
   }
 
+  // R23 F-04：批量写权限判定（决策卡按行决定发不发转交动作）。与 canReadWorkItems 同一次查询形状、
+  // 同一套 canMutateWorkItem 判定，只是谓词换成写口径。
+  async function canMutateWorkItems(input: { workItemIds: string[]; actor: AuthActor }): Promise<Set<string>> {
+    const uniqueIds = [...new Set(input.workItemIds)];
+    if (uniqueIds.length === 0) {
+      return new Set();
+    }
+    const records = await repository.findWorkItemAccessRecords(uniqueIds);
+    const mutable = new Set<string>();
+    for (const workItemId of uniqueIds) {
+      const record = records.get(workItemId);
+      if (record && canMutateWorkItemAccessRow(record, input.actor)) {
+        mutable.add(workItemId);
+      }
+    }
+    return mutable;
+  }
+
   const projectFileContext = options.projectFileContext ?? defaultProjectFileContext;
   const clarificationGenerator = options.clarificationGenerator
     ?? (options.providerRegistry ? createLlmClarificationGenerator(options.providerRegistry) : undefined);
@@ -2416,6 +2457,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
 
     projectNamesForWorkItems,
     canReadWorkItems,
+    canMutateWorkItems,
 
     async assertCanMutateWorkItem(input) {
       const rows = await requireDetail(input.workItemId, input.actor);
@@ -2858,6 +2900,12 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
     },
 
     async canReadWorkItems(input) {
+      return new Set(input.workItemIds.filter((id) => workItems.has(id)));
+    },
+
+    // R23 F-04：内存双不建模项目/指派，写权限与读权限同口径（存在即可改）——与下面 assertCanMutateWorkItem
+    // 的「存在即放行」保持一致。
+    async canMutateWorkItems(input) {
       return new Set(input.workItemIds.filter((id) => workItems.has(id)));
     },
 

@@ -211,6 +211,10 @@ function workItemServiceFor(input: {
     async canReadWorkItems() {
       throw new Error("not needed");
     },
+    // R23 F-04 fallout：同上——本夹具只跑正式交付物下载/还原路由，不碰转交动作可见性。
+    async canMutateWorkItems() {
+      throw new Error("not needed");
+    },
     async assertCanMutateWorkItem() {
       return;
     },

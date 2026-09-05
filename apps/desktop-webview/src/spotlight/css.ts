@@ -122,6 +122,11 @@ export const spotlightCss = [
   ".wh-spot-reason-text{box-sizing:border-box;width:100%;min-height:72px;margin-top:10px;resize:vertical;border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-md);background:transparent;color:var(--ds-ink);font:500 13px/1.5 var(--ds-font);padding:10px 12px;box-shadow:inset 0 1px 0 rgba(255,255,255,.34)}",
   ".wh-spot-reason-text::placeholder{color:var(--ds-ink-faint)}.wh-spot-reason-text:focus{outline:none;border-color:var(--ds-danger);box-shadow:0 0 0 3px var(--ds-danger-soft),inset 0 1px 0 rgba(255,255,255,.65)}",
   ".wh-spot-reason-actions{display:flex;justify-content:flex-end;margin-top:9px}",
+  // R23 F-04：转交选人层里的成员下拉（与打回理由的文本框同款玻璃字段样式，只是换成 select）。
+  ".wh-spot-delegate-select{box-sizing:border-box;width:100%;margin-bottom:9px;border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-md);background:transparent;color:var(--ds-ink);font:600 12.5px/1.5 var(--ds-font);padding:9px 11px}",
+  ".wh-spot-delegate-select:focus{outline:none;border-color:var(--ds-accent);box-shadow:0 0 0 3px rgba(10,132,255,.18)}",
+  // R23 F-04：外部入口（桌宠「转交他人」）指名进来的那张卡——一圈强调色描边，让人一眼认出是哪条。
+  ".wh-spot-card[data-att-focus=\"true\"]{box-shadow:inset 0 0 0 2px var(--ds-accent),0 16px 34px rgba(10,132,255,.14)}",
   // 空/加载/错误/占位。
   ".wh-spot-empty{text-align:center;padding:34px 18px}",
   ".wh-spot-empty-face{font:700 30px/1 var(--ds-font);color:var(--ds-accent)}",
