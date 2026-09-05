@@ -90,6 +90,118 @@ test("login surfaces a 401 from the backend as a WorkHubApiError (bad credential
   );
 });
 
+// R23 P2（SA-04 web 密码注册屏）：register 走请求体（绝不进 URL），成功建会话返回身份。
+test("register posts credentials to /api/auth/register in the body and returns identity", async () => {
+  let seenUrl: string | undefined;
+  let seenMethod: string | undefined;
+  let seenBody: string | undefined;
+  const client = createApiClient({
+    baseUrl: "http://127.0.0.1:8787",
+    fetchFn: async (input, init) => {
+      seenUrl = typeof input === "string" ? input : String(input);
+      seenMethod = init?.method;
+      seenBody = typeof init?.body === "string" ? init.body : undefined;
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          data: {
+            id: "u1",
+            nickname: "alice",
+            display_name: "alice",
+            created: true,
+            locale: "zh-CN",
+            preferences: { locale: "zh-CN" },
+            is_admin: true,
+            availability_status: "online"
+          }
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } }
+      );
+    }
+  });
+
+  const identity = await client.register({ email: "alice@example.com", password: "hunter2-strong-pass", nickname: "alice" });
+  assert.equal(identity.id, "u1");
+  assert.equal(identity.is_admin, true);
+  assert.equal(seenMethod, "POST");
+  assert.equal(seenUrl, "http://127.0.0.1:8787/api/auth/register");
+  assert.ok(!seenUrl?.includes("hunter2-strong-pass"), "password must never appear in the URL");
+  assert.deepEqual(JSON.parse(seenBody ?? "{}"), {
+    email: "alice@example.com",
+    password: "hunter2-strong-pass",
+    nickname: "alice"
+  });
+});
+
+test("register surfaces a 409 (email already registered) as a WorkHubApiError", async () => {
+  const client = createApiClient({
+    fetchFn: async () =>
+      new Response(JSON.stringify({ ok: false, error: { code: "conflict", message: "该邮箱已注册" } }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" }
+      })
+  });
+
+  await assert.rejects(
+    () => client.register({ email: "dup@example.com", password: "hunter2-strong-pass", nickname: "dup" }),
+    (error) => error instanceof WorkHubApiError && error.status === 409
+  );
+});
+
+// R23 P2（SA-05 web 个人空间新建）：list 走 GET，create 走 POST 请求体，两者都命中 /api/me/personal-projects。
+test("listPersonalProjects and createPersonalProject hit /api/me/personal-projects with the right verbs", async () => {
+  const seen: Array<{ url: string; method: string | undefined }> = [];
+  const client = createApiClient({
+    baseUrl: "http://127.0.0.1:8787",
+    fetchFn: async (input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      seen.push({ url, method: init?.method });
+      if (init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            data: {
+              project: {
+                id: "p1",
+                workspace_id: "w1",
+                name: "我的空间",
+                slug: "personal-1",
+                owner_nickname: "alice",
+                owner_user_id: "u1",
+                archived: false,
+                created_at: "2026-09-05T00:00:00.000Z",
+                updated_at: "2026-09-05T00:00:00.000Z",
+                open_work_item_count: 0,
+                is_personal: true
+              },
+              created: true,
+              context_ready: true
+            }
+          }),
+          { status: 201, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(
+        JSON.stringify({ ok: true, data: { generated_at: "2026-09-05T00:00:00.000Z", projects: [] } }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+  });
+
+  const list = await client.listPersonalProjects();
+  assert.deepEqual(list.projects, []);
+  const created = await client.createPersonalProject({});
+  assert.equal(created.project.name, "我的空间");
+  assert.equal(created.created, true);
+  assert.deepEqual(
+    seen.map((entry) => ({ url: entry.url, method: entry.method })),
+    [
+      { url: "http://127.0.0.1:8787/api/me/personal-projects", method: undefined },
+      { url: "http://127.0.0.1:8787/api/me/personal-projects", method: "POST" }
+    ]
+  );
+});
+
 test("api client preserves raw ok health payloads that are not WorkHub envelopes", async () => {
   const client = createApiClient({
     fetchFn: async () =>

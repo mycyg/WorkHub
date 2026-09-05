@@ -415,8 +415,15 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         body: JSON.stringify(payload)
       }),
     // 桌面凭据登录（密码/hybrid 模式）：明文密码只走请求体，建会话 cookie（credentials: include），随后 bootstrapDesktop 据会话换 client_token。
+    // web 密码登录屏（SA-04）同样复用它——两端明文密码都只走请求体，绝不进 URL/query。
     login: (payload) =>
       request<IdentityResponse>("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    // R23 P2（SA-04）：密码/hybrid 模式注册。同 login，密码只走请求体；成功即建会话 cookie。
+    register: (payload) =>
+      request<IdentityResponse>("/api/auth/register", {
         method: "POST",
         body: JSON.stringify(payload)
       }),
@@ -721,6 +728,13 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       }),
     pilotDay1Metrics: (options) => request(withPilotDay1MetricsOptions("/api/pilot/day1/metrics", options)),
     listProjects: () => request("/api/projects"),
+    // R23 P2（SA-05）：个人空间清单/新建，参见 types.ts 上方注释。
+    listPersonalProjects: () => request("/api/me/personal-projects"),
+    createPersonalProject: (payload) =>
+      request("/api/me/personal-projects", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
     replayAgentRun: (runId, options) => request(withPageLocale(`/api/agent-runs/${encodeURIComponent(runId)}/replay`, options)),
     // R14 批 MEM（记忆可见可治理）：用户记忆治理面。
     listUserMemories: (options) => request(withUserMemoryListOptions("/api/me/memories", options)),

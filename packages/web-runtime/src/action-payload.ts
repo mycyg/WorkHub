@@ -71,6 +71,13 @@ export function createNamedProjectActionFromHref(href: string) {
   return hrefPathname(href) === "/api/projects/bootstrap";
 }
 
+// R23 P2（SA-05 web 个人空间新建）：POST /api/me/personal-projects——服务端按「我的空间」/「我的空间 2」…
+// 自动命名，前端不需要采集任何字段，故没有配套的 actionElement*Payload（团队项目那份靠输入框取名字，
+// 个人空间没有这个输入框）。
+export function createPersonalSpaceActionFromHref(href: string) {
+  return hrefPathname(href) === "/api/me/personal-projects";
+}
+
 export function startAgentRunActionFromHref(href: string) {
   const path = hrefPathname(href);
   const match = /^\/api\/workitems\/([^/]+)\/agent-runs$/u.exec(path);

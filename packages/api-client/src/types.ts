@@ -11,6 +11,9 @@ import type {
   BudgetPolicyUpdate,
   BootstrapProjectRequest,
   BootstrapProjectResult,
+  // R23 P2（SA-05 web 个人空间新建）：GET/POST /api/me/personal-projects 复用团队项目 bootstrap 的响应形状。
+  CreatePersonalProjectRequest,
+  CreatePersonalProjectResult,
   ClientDeviceRegisterRequest,
   ClientDeviceRegisterResponse,
   ClientDeviceResponse,
@@ -238,6 +241,11 @@ export type HealthResponse = {
   env?: string;
   runtime: string;
   port: number;
+  // R14 FIX#8（无 key 自托管的静默死）：provider registry 是否已配置——apps/api/src/app.ts 的
+  // /api/health 处理器无条件带上这个字段（openapi.ts 的 healthResponseSchema 也把它标 required）。
+  // 此前这个类型漏了它，桌面端只能绕过 client.health() 走裸类型的 client.request(...)；
+  // 补上后 web 的常驻「AI 未配置」横幅（apps/web/src/ai-provider-status.ts）也能走同一个类型化方法。
+  ai_provider_configured: boolean;
 };
 
 export type IdentifyRequest = {
@@ -250,6 +258,14 @@ export type IdentifyRequest = {
 export type PasswordLoginRequest = {
   email: string;
   password: string;
+};
+
+// R23 P2（SA-04 web 密码注册屏）：password/hybrid 模式下的账号注册（POST /api/auth/register）。
+// 零管理员实例的首个注册者服务端自动提为 admin——前端不需要、也不应该带任何"我是管理员"字段。
+export type PasswordRegisterRequest = {
+  email: string;
+  password: string;
+  nickname: string;
 };
 
 export type IdentityResponse = {
@@ -329,7 +345,11 @@ export type WorkHubApiClient = {
   openapi: () => Promise<unknown>;
   identify: (payload: IdentifyRequest) => Promise<IdentityResponse>;
   // 桌面凭据登录（密码/hybrid 模式）：POST /api/auth/login 建会话 cookie，随后 bootstrapDesktop 据会话换 client_token。
+  // web 密码登录屏（SA-04）同样复用这一个方法——两端都只建会话 cookie，桌面额外多走一步 exchange 成 client_token。
   login: (payload: PasswordLoginRequest) => Promise<IdentityResponse>;
+  // R23 P2（SA-04）：密码/hybrid 模式下的账号注册。web 密码登录屏在探得 nickname 模式不可用（identify 404）
+  // 后用它自举首个管理员或注册普通成员；成功即建会话 cookie，语义与 login 一致。
+  register: (payload: PasswordRegisterRequest) => Promise<IdentityResponse>;
   // 桌面首启引导：昵称模式=昵称 identify + 设备注册一步到位；密码/hybrid 模式=凭已登录会话换设备令牌。均返回 client_token。
   bootstrapDesktop: (payload: DesktopBootstrapRequest) => Promise<DesktopBootstrapResponse>;
   // 设备管理（需已鉴权）：注册 / 列表 / 当前 / 吊销。
@@ -454,6 +474,11 @@ export type WorkHubApiClient = {
   revokePermissionPolicy?: (id: string) => Promise<PermissionPolicy>;
   pilotDay1Metrics: (options?: PilotDay1MetricsRequestOptions) => Promise<PilotDay1MetricsSnapshot>;
   listProjects: () => Promise<ProjectListVM>;
+  // R23 P2（SA-05 web 个人空间新建）：GET/POST /api/me/personal-projects——后端早已挂载并有 OpenAPI 描述
+  // （apps/api/src/routes/personal-projects.ts、app.ts:309），此前只有 apps/web 内部用裸 client.request(...)
+  // 兜底；补上类型化方法后 web「新建个人空间」按钮与既有取数点都走同一个方法。
+  listPersonalProjects: () => Promise<ProjectListVM>;
+  createPersonalProject: (payload: CreatePersonalProjectRequest) => Promise<CreatePersonalProjectResult>;
   replayAgentRun: (runId: string, options?: PageRequestOptions) => Promise<ReplayTraceVM>;
   // R14 批 MEM（记忆可见可治理）：用户记忆治理面——本人可读写，管理员也不能代读/代改他人记忆。
   // 必需字段（集成收口改定，与 search 同口径）：可选方法会诱导 ?. 调用静默吞；两个穷举 mock 的存根
