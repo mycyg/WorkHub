@@ -34,7 +34,7 @@ const replayCopy = {
   "replay.decisionKeepCurrent": { "zh-CN": "保留正式版", "en-US": "Kept accepted version" },
   "replay.decisionAcceptIncoming": { "zh-CN": "采纳这次版本", "en-US": "Accepted this version" },
   "replay.decisionAiFusion": { "zh-CN": "采用 AI 融合稿", "en-US": "Used AI fusion draft" },
-  "replay.hunkDecisionReplayTitle": { "zh-CN": "逐段选择回放", "en-US": "Hunk decision replay" },
+  "replay.hunkDecisionReplayTitle": { "zh-CN": "逐段选择回放", "en-US": "Section-by-section choices" },
   "replay.hunkAuditRowTitle": { "zh-CN": "重叠段", "en-US": "Overlapping section" },
   "replay.bulkClickedScope": { "zh-CN": "点击范围", "en-US": "Clicked scope" },
   "replay.bulkAcceptedScope": { "zh-CN": "采纳范围", "en-US": "Accepted scope" },

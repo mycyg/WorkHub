@@ -317,7 +317,9 @@ test("replay renderer exposes structured field operation targets and writeback a
   assert.equal(en.html.includes("Text merge check"), true);
   assert.equal(en.html.includes("Overlapping section 1"), true);
   assert.equal(en.html.includes("Affected lines: line 3"), true);
-  assert.equal(en.html.includes("Hunk decision replay"), true);
+  assert.equal(en.html.includes("Section-by-section choices"), true);
+  // 可见文案里不再有 hunk；data-* 标记属性（data-overlap-hunk-*）是机器钩子，不受此约束。
+  assert.equal(/>[^<]*hunk/iu.test(en.html), false);
   assert.equal(en.html.includes("Lines 8-11"), true);
   assert.equal(en.html.includes("Accepted this version"), true);
   assert.equal(en.html.includes("Bulk action replay"), true);
