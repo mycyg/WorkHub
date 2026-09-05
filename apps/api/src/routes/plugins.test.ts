@@ -139,6 +139,7 @@ function row(overrides: Partial<PluginRow> = {}): PluginRow {
     sourcePath: ECHO_PATH,
     enabled: true,
     status: "installed",
+    trustLevel: "external_effect",
     compatReport: okReport() as unknown as PluginRow["compatReport"],
     loadReport: null,
     toolCount: 1,
@@ -157,7 +158,10 @@ function memoryRepository(seed: PluginRow[] = []) {
       return rows.filter((entry) => entry.workspaceId === workspaceId);
     },
     async listEnabledForWorkspace(workspaceId) {
-      return rows.filter((entry) => entry.workspaceId === workspaceId && entry.enabled && entry.status !== "disabled");
+      return rows.filter(
+        (entry) =>
+          entry.workspaceId === workspaceId && entry.enabled && entry.status !== "disabled" && entry.status !== "crashed"
+      );
     },
     async findById(workspaceId, id) {
       return rows.find((entry) => entry.workspaceId === workspaceId && entry.id === id) ?? null;
@@ -173,6 +177,7 @@ function memoryRepository(seed: PluginRow[] = []) {
         version: input.version ?? null,
         sourcePath: input.sourcePath,
         status: input.status,
+        trustLevel: input.trustLevel ?? "external_effect",
         enabled: input.enabled ?? true,
         compatReport: input.compatReport as unknown as PluginRow["compatReport"],
         toolCount: input.toolCount ?? 0,
@@ -200,6 +205,27 @@ function memoryRepository(seed: PluginRow[] = []) {
         ...rows[index]!,
         enabled: input.enabled,
         status: input.enabled ? ("installed" as const) : ("disabled" as const)
+      };
+      rows[index] = next;
+      return next;
+    },
+    async setTrustLevel(input) {
+      const index = rows.findIndex((entry) => entry.workspaceId === input.workspaceId && entry.id === input.id);
+      if (index < 0) return null;
+      const next = { ...rows[index]!, trustLevel: input.trustLevel };
+      rows[index] = next;
+      return next;
+    },
+    async markCrashed(input) {
+      const index = rows.findIndex(
+        (entry) => entry.workspaceId === input.workspaceId && entry.sourcePath === input.sourcePath
+      );
+      if (index < 0) return null;
+      const next = {
+        ...rows[index]!,
+        status: "crashed" as const,
+        toolCount: 0,
+        loadReport: input.loadReport as unknown as PluginRow["loadReport"]
       };
       rows[index] = next;
       return next;
@@ -551,6 +577,7 @@ test("设置页 VM 只在调用方真的填了清单时才带 plugins；摘要�
         version: "0.1.0",
         enabled: true,
         status: "installed",
+        trust_level: "external_effect",
         tool_count: 2,
         compat_verdict: "ok"
       }

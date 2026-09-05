@@ -32,13 +32,17 @@ test("装真实形状的 dsh 工具型插件：Cordis Context + ctx.tools + ctx.
   assert.equal(listed.plugins.length, 1);
   assert.deepEqual(
     { ...listed.plugins[0], path: "<fixture>" },
-    { pluginId: "dsh-plugin-echo", path: "<fixture>", ok: true, toolCount: 1, promptSectionCount: 1 }
+    { pluginId: "dsh-plugin-echo", path: "<fixture>", ok: true, toolCount: 2, promptSectionCount: 1 }
   );
-  assert.equal(listed.tools.length, 1);
+  assert.equal(listed.tools.length, 2);
   const tool = listed.tools[0]!;
   assert.equal(tool.toolId, "plugin__dsh-plugin-echo__echo");
   // defineTool 归一化后的 JSON Schema 原样直通。
   assert.deepEqual((tool.jsonSchema as { required?: string[] }).required, ["text"]);
+  // 夹具的两个工具各占一档：echo 在 defineTool 之后补了 readOnlyHint，write_note 没有。
+  assert.equal(tool.selfReportedReadOnly, true);
+  assert.equal(listed.tools[1]?.toolId, "plugin__dsh-plugin-echo__write_note");
+  assert.equal(listed.tools[1]?.selfReportedReadOnly, false);
 
   const result = await runtime.callTool(tool.toolId, { text: "ping", times: 2, upper: true });
   assert.equal(result.ok, true);
@@ -71,7 +75,7 @@ test("一个插件装挂了不影响另一个——失败原因如实进报告",
     assert.equal(brokenReport?.ok, false);
     assert.match(brokenReport?.error ?? "", /plugin blew up at import time/u);
     assert.equal(okReport?.ok, true);
-    assert.equal(listed.tools.length, 1, "好插件的工具照常上线");
+    assert.equal(listed.tools.length, 2, "好插件的工具照常上线");
   } finally {
     await rm(broken, { recursive: true, force: true });
   }
@@ -86,7 +90,7 @@ test("apply 里抛错的插件被隔离，宿主照常返回其它插件的工�
     const runtime = await createPluginHostRuntime([throwing, ECHO_FIXTURE]);
     const listed = runtime.listTools();
     assert.equal(listed.plugins.find((report) => report.pluginId === "dsh-plugin-throwing")?.ok, false);
-    assert.equal(listed.tools.length, 1);
+    assert.equal(listed.tools.length, 2);
   } finally {
     await rm(throwing, { recursive: true, force: true });
   }

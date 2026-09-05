@@ -3,10 +3,18 @@
  *
  * Shaped after the real published bundle `dsh-plugin-finance-data@0.2.0`: a
  * schemastery `Config`, an `inject` list, a named `apply(ctx, config)` export,
- * one `ctx.tools.register(defineTool({...}))` call, and one guarded
+ * `ctx.tools.register(defineTool({...}))` calls, and one guarded
  * `ctx.systemPrompt.section()` effect. It exists so `pnpm qa:plugin-smoke`
  * exercises the real `@deepseek-ai/dsh-tools` `defineTool` pipeline offline,
  * without pulling an unvetted third-party package into the build.
+ *
+ * It registers two tools on purpose, one per risk tier:
+ *   - `echo` spreads `readOnlyHint: true` over the normalized definition, so the
+ *     host reports it as self-reported read-only. Note that `defineTool` rebuilds
+ *     the definition from a fixed field list, so the hint has to be added after
+ *     the call — inside the options object it would be dropped.
+ *   - `write_note` makes no such declaration, so it stays on the highest tier
+ *     even when an admin trusts this plugin as read-only.
  *
  * @module dsh-plugin-echo
  */
@@ -32,8 +40,17 @@ const SECTION_TEXT = [
   "- Use the `echo` tool to repeat a phrase back verbatim when you need to prove the plugin bridge is live.",
 ].join("\n");
 
+/**
+ * `defineTool` normalizes its options into a fresh object built from a fixed
+ * field list, so extra keys never survive the call. Adding them afterwards is
+ * the only way a dsh tool can carry a hint the toolkit itself has no field for.
+ */
+function withHints(definition, hints) {
+  return Object.assign(definition, hints);
+}
+
 function apply(ctx, config) {
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withHints(defineTool({
     name: "echo",
     description:
       "Echo a phrase back, optionally repeated and upper-cased. Use it to prove that a DeepSeek Harness plugin tool is reachable from a WorkHub agent run.",
@@ -64,6 +81,29 @@ function apply(ctx, config) {
       title: "Echo: " + args.text,
       kind: "other",
       rawInput: args,
+    }),
+  }), { readOnlyHint: true }));
+
+  ctx.tools.register(defineTool({
+    name: "write_note",
+    description:
+      "Compose a note line from a title and a body. It makes no read-only declaration, so it stays on the highest risk tier.",
+    parameters: {
+      title: { type: "string", required: true, description: "Note title." },
+      body: { type: "string", description: "Note body." },
+    },
+    output: {
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          line: { type: "string" },
+        },
+      },
+      render: (_args, value) => [{ type: "text", text: value.line }],
+    },
+    execute: async (args) => ({
+      line: args.body ? String(args.title) + ": " + String(args.body) : String(args.title),
     }),
   }));
 

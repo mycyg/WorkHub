@@ -18,9 +18,20 @@ export const pluginSourceKindSchema = z.literal("local_path");
 export type PluginSourceKind = z.infer<typeof pluginSourceKindSchema>;
 
 // installed=登记且试加载成功；load_failed=登记了但宿主加载失败（原因在 load_report）；
-// disabled=管理员停用（不进宿主，工具不出现在任何一次执行里）。
-export const pluginStatusSchema = z.enum(["installed", "load_failed", "disabled"]);
+// disabled=管理员停用（不进宿主，工具不出现在任何一次执行里）；
+// crashed=它把插件宿主进程反复弄崩了，已被单独隔离（同一工作区的其它插件照常工作）。
+// crashed 与 load_failed 分成两个词而不是合并：前者是「装上了、跑起来把进程带崩了」，
+// 后者是「根本没装上」，用户要做的处置完全不同。
+export const pluginStatusSchema = z.enum(["installed", "load_failed", "disabled", "crashed"]);
 export type PluginStatus = z.infer<typeof pluginStatusSchema>;
+
+// 管理员对这个插件的信任断言——**风险上限**，不是保证。
+//   external_effect（默认）：按最高风险对待，它的每个工具都走人工保留门。
+//   read_only：管理员断言这个插件只读；在这个上限内，**自述只读**的工具才落到低风险档
+//             （见 packages/plugin-host/src/to-tool-spec.ts 的真值表）。
+// 断言与自述是 AND：插件只能在管理员划定的上限内降风险，永远不能自己抬权限。
+export const pluginTrustLevelSchema = z.enum(["read_only", "external_effect"]);
+export type PluginTrustLevel = z.infer<typeof pluginTrustLevelSchema>;
 
 // 静态体检单条结论。block=拒装；warn=允许尝试但先把话说清；pass=这条没问题。
 export const pluginCompatCheckLevelSchema = z.enum(["pass", "warn", "block"]);
@@ -86,6 +97,8 @@ export const pluginVmSchema = z.object({
   source_path: z.string().min(1).max(1000),
   enabled: z.boolean(),
   status: pluginStatusSchema,
+  // 管理员断言的风险上限（默认 external_effect）。
+  trust_level: pluginTrustLevelSchema,
   // 已上线的工具数（试加载成功才有）。
   tool_count: z.number().int().nonnegative(),
   compat_report: pluginCompatReportSchema,
@@ -99,10 +112,20 @@ export type PluginVM = z.infer<typeof pluginVmSchema>;
 // 安装请求。只有一个字段：本机目录路径。strict——多传字段直接 422，不静默忽略。
 export const installPluginRequestSchema = z
   .object({
-    source_path: z.string().min(1).max(1000)
+    source_path: z.string().min(1).max(1000),
+    // 不传就是 external_effect：没表过态等于按最高风险装。
+    trust_level: pluginTrustLevelSchema.optional()
   })
   .strict();
 export type InstallPluginRequest = z.infer<typeof installPluginRequestSchema>;
+
+// 改一个已装插件的信任级别。单字段 strict——这个端点只做这一件事。
+export const updatePluginTrustRequestSchema = z
+  .object({
+    trust_level: pluginTrustLevelSchema
+  })
+  .strict();
+export type UpdatePluginTrustRequest = z.infer<typeof updatePluginTrustRequestSchema>;
 
 // 列表响应：记录 + 一条环境说明（宿主捆绑版本、开发引导路径是否在用）。
 export const pluginListVmSchema = z.object({
@@ -122,6 +145,7 @@ export const pluginSummaryVmSchema = z.object({
   version: z.string().max(80).optional(),
   enabled: z.boolean(),
   status: pluginStatusSchema,
+  trust_level: pluginTrustLevelSchema,
   tool_count: z.number().int().nonnegative(),
   compat_verdict: pluginCompatReportSchema.shape.verdict
 });

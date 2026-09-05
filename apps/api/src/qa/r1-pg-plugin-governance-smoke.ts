@@ -7,21 +7,24 @@
  * 的 r1-pg-smoke job 里追加一步），起库/种子/鉴权/错误信封全部复用 `r1-pg-harness.ts`。
  *
  * 断言清单（任一条不成立即非零退出）：
- *  1. 迁移 0072 真的建出了 `plugins` 表（列 / 唯一索引 / CHECK / 外键逐条核对）——
- *     这是「全新库直接到 0072」这条路径在 CI 上的证据；
+ *  1. 迁移 0072 + 0074 真的落在了 `plugins` 表上（列 / 唯一索引 / CHECK / 外键逐条核对）——
+ *     这是「全新库整链跑到最新」这条路径在 CI 上的证据；
  *  2. 空清单：`GET /api/plugins` 回 `plugins: []`、`bootstrap_path_count: 0`
  *     （不设 `WORKHUB_PLUGIN_PATHS` 时清单里不该凭空多出引导路径）；
  *  3. 非管理员四个端点全 403 `plugin_admin_required`（治理面是管理员门，不是客户端自己猜身份）；
  *  4. 体检拒装的三类各打一次，各自的错误码不许混：假目录 → `plugin_manifest_unreadable`、
  *     有 `dsh.client` → `plugin_client_surface_unsupported`、有安装期脚本 → `plugin_install_scripts_refused`；
- *  5. 装 echo 夹具（本机绝对路径）→ 201、`status='installed'`、`load_report.ok` 且 `tool_count=1`；
+ *  5. 装 echo 夹具（本机绝对路径）→ 201、`status='installed'`、`load_report.ok` 且 `tool_count=2`；
+ *     不说信任级别就落到最保守的 `external_effect`；
  *     同一目录再装一次 → 409 `plugin_already_installed`（真库唯一索引这条路，不是应用层记性好）；
  *  6. **工具注册表的可观测点**：`pluginHost.toolSpecs({ workspaceId })` —— 这正是 agent-runner 的
  *     `defaultPluginToolsProvider` 走的那一条，所以它出现/消失就等于「这次执行有没有这个工具」。
  *     装完 → 有；停用 → 没有；再启用 → 又有（每一步都真的重启了宿主子进程并重新握手）；
+ *     `PATCH` 把信任级别改成 `read_only` → 自述只读的那个工具当场落到 `none` / `plugin:<id>:read`，
+ *     没有自述的那个原地不动（分级真值在真库上的那一份证据）；
  *  7. 移除 → 清单空、工具消失、再对这个 id 动手是 404 `plugin_not_found`；
- *  8. 四个写动作各落**恰好一条**审计（installed / enabled / disabled / removed），
- *     都带工作区、操作者、插件名与来源路径。
+ *  8. 五个写动作各落**恰好一条**审计（installed / trust_changed / enabled / disabled / removed），
+ *     都带工作区、操作者、插件名、来源路径与当时的信任级别。
  *
  * 不需要任何 LLM key：这条门一次模型请求都不发（治理面本来就与模型无关；插件工具真的被 Cuu
  * 调起来那一条在 `pnpm qa:plugin-smoke`，那条用假 provider + 内存仓储）。
@@ -61,6 +64,7 @@ import {
 
 const ECHO_PLUGIN_ID = "dsh-plugin-echo";
 const ECHO_TOOL_ID = "plugin__dsh-plugin-echo__echo";
+const NOTE_TOOL_ID = "plugin__dsh-plugin-echo__write_note";
 
 function repoRoot() {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -125,9 +129,11 @@ async function assertPluginsSchema(pool: WorkHubDatabaseClient["pool"]) {
       "tool_count",
       "installed_by",
       "created_at",
-      "updated_at"
+      "updated_at",
+      // 0074 加的列排在最后——ADD COLUMN 就是往后追加，顺序本身也是「这条迁移真跑过」的证据。
+      "trust_level"
     ],
-    "plugins 表的列与 0072 迁移不一致"
+    "plugins 表的列与 0072 + 0074 两次迁移不一致"
   );
 
   const indexes = await pool.query<{ indexname: string }>(
@@ -152,10 +158,27 @@ async function assertPluginsSchema(pool: WorkHubDatabaseClient["pool"]) {
       "plugins_source_kind_ck",
       "plugins_status_ck",
       "plugins_tool_count_ck",
+      "plugins_trust_level_ck",
       "plugins_workspace_id_fkey"
     ],
-    "plugins 表的约束与 0072 迁移不一致（source_kind / status / tool_count 三条 CHECK 必须都在）"
+    "plugins 表的约束与 0072 + 0074 不一致（source_kind / status / tool_count / trust_level 四条 CHECK 必须都在）"
   );
+
+  // 0074 把两条 CHECK 都翻新过：status 多一个 crashed，trust_level 是新的两值枚举。
+  // 直接读 pg_get_constraintdef 而不是「再装一遍看看报不报错」——后者会污染这条门的数据。
+  const checks = await pool.query<{ conname: string; def: string }>(
+    "select conname, pg_get_constraintdef(oid) as def from pg_constraint where conrelid = to_regclass('public.plugins') and contype = 'c'"
+  );
+  const defByName = new Map(checks.rows.map((row) => [row.conname, row.def]));
+  assert.match(
+    defByName.get("plugins_status_ck") ?? "",
+    /crashed/u,
+    "0074 之后 status 必须能表达 crashed（一个坏插件被单独熔断的落库态）"
+  );
+  const trustDef = defByName.get("plugins_trust_level_ck") ?? "";
+  for (const level of ["read_only", "external_effect"]) {
+    assert.match(trustDef, new RegExp(level, "u"), `trust_level CHECK 少了 ${level}`);
+  }
   line("0072 plugins 表", { columns: columnNames.length, indexes: indexNames.length, constraints: constraintNames.length });
 }
 
@@ -228,7 +251,7 @@ async function main() {
 
   try {
     const db = client.db;
-    console.log("[1/8] 核对迁移 0072 在真库上的落地形状");
+    console.log("[1/8] 核对迁移 0072 + 0074 在真库上的落地形状");
     await assertPluginsSchema(client.pool);
     await ensureDefaultSeed(db);
     // 同一个库上复跑：先清掉上一轮留下的行，否则「空清单」这条断言测的是别人的残留。
@@ -269,7 +292,7 @@ async function main() {
     assert.ok(emptyList.host_dsh_tools_version, "清单该带上宿主捆绑的 dsh-tools 版本（安装页据此解释兼容性）");
 
     console.log("");
-    console.log("[3/8] 非管理员：四个端点全 403");
+    console.log("[3/8] 非管理员：五个端点全 403");
     const someId = randomUUID();
     for (const [label, request] of [
       ["GET /api/plugins", app.request("/api/plugins", { headers: memberHeaders })],
@@ -279,6 +302,14 @@ async function main() {
           method: "POST",
           headers: memberHeaders,
           body: JSON.stringify({ source_path: echoPath })
+        })
+      ],
+      [
+        "PATCH /api/plugins/:id",
+        app.request(`/api/plugins/${someId}`, {
+          method: "PATCH",
+          headers: memberHeaders,
+          body: JSON.stringify({ trust_level: "read_only" })
         })
       ],
       [
@@ -326,7 +357,7 @@ async function main() {
       "安装 echo 夹具"
     );
     line("id / name / version", `${installed.id} / ${installed.name} / ${installed.version ?? "(无)"}`);
-    line("status / enabled", `${installed.status} / ${installed.enabled}`);
+    line("status / enabled / trust", `${installed.status} / ${installed.enabled} / ${installed.trust_level}`);
     line("compat_report.verdict", installed.compat_report.verdict);
     line("load_report", installed.load_report ?? "(无)");
     assert.equal(installed.name, ECHO_PLUGIN_ID);
@@ -334,9 +365,14 @@ async function main() {
     assert.equal(installed.source_path, echoPath, "source_path 必须是安装时给的那个绝对路径");
     assert.equal(installed.status, "installed", `试加载没成功：${JSON.stringify(installed.load_report)}`);
     assert.equal(installed.enabled, true);
-    assert.equal(installed.tool_count, 1, "echo 夹具应当贡献恰好一个工具");
+    assert.equal(installed.tool_count, 2, "echo 夹具应当贡献两个工具（各占一档风险）");
+    assert.equal(
+      installed.trust_level,
+      "external_effect",
+      "安装时没说信任级别就该落到最保守的一档——没表态不等于授权"
+    );
     assert.equal(installed.load_report?.ok, true);
-    assert.equal(installed.load_report?.tool_count, 1);
+    assert.equal(installed.load_report?.tool_count, 2);
     assert.equal(installed.load_report?.prompt_section_count, 1);
     assert.equal(installed.installed_by, admin.id, "installed_by 应当指向真的装它的那个管理员");
 
@@ -358,12 +394,72 @@ async function main() {
     // toolSpecs 就是 agent-runner 的 defaultPluginToolsProvider 走的那一条——
     // 它返回什么，这次执行里模型就能看到什么。
     const afterInstall = await pluginHost.toolSpecs({ workspaceId });
-    line("toolSpecs（装完）", afterInstall.map((spec) => spec.id));
-    assert.equal(afterInstall.length, 1, "装完之后这个工作区应当恰好多出一个插件工具");
-    const spec = afterInstall[0]!;
-    assert.equal(spec.id, ECHO_TOOL_ID);
-    assert.equal(spec.sideEffect, "external_effect", "插件工具一律按最高风险对待（阶段 0 保守口径）");
-    assert.equal(spec.minScope, `plugin:${ECHO_PLUGIN_ID}:external_effect`);
+    line("toolSpecs（装完）", afterInstall.map((spec) => `${spec.id}=${spec.sideEffect}`));
+    assert.equal(afterInstall.length, 2, "装完之后这个工作区应当多出这个插件的两个工具");
+    for (const spec of afterInstall) {
+      assert.equal(
+        spec.sideEffect,
+        "external_effect",
+        `没有信任断言时 ${spec.id} 必须按最高风险对待（自述只读也抬不动上限）`
+      );
+      assert.equal(spec.minScope, `plugin:${ECHO_PLUGIN_ID}:external_effect`);
+    }
+    assert.deepEqual(afterInstall.map((spec) => spec.id).sort(), [ECHO_TOOL_ID, NOTE_TOOL_ID].sort());
+
+    // 分级真值在真库上的那一份证据：改一次断言，工具当场分成两档。
+    const trusted = await expectOk<PluginVM>(
+      await app.request(`/api/plugins/${installed.id}`, {
+        method: "PATCH",
+        headers: admin.headers,
+        body: JSON.stringify({ trust_level: "read_only" })
+      }),
+      200,
+      "断言为只读"
+    );
+    assert.equal(trusted.trust_level, "read_only");
+    const graded = await pluginHost.toolSpecs({ workspaceId });
+    line("toolSpecs（断言只读后）", graded.map((spec) => `${spec.id}=${spec.sideEffect}/${spec.minScope}`));
+    const gradedEcho = graded.find((spec) => spec.id === ECHO_TOOL_ID);
+    const gradedNote = graded.find((spec) => spec.id === NOTE_TOOL_ID);
+    assert.equal(gradedEcho?.sideEffect, "none", "自述只读的工具应当落到低风险档");
+    assert.equal(gradedEcho?.minScope, `plugin:${ECHO_PLUGIN_ID}:read`);
+    assert.equal(gradedNote?.sideEffect, "external_effect", "没有只读自述的工具不该跟着降档");
+    assert.equal(gradedNote?.minScope, `plugin:${ECHO_PLUGIN_ID}:external_effect`);
+
+    // 收回断言 → 两个工具一起回到最高档（这一列就是上限本身，不是一次性开关）。
+    const untrusted = await expectOk<PluginVM>(
+      await app.request(`/api/plugins/${installed.id}`, {
+        method: "PATCH",
+        headers: admin.headers,
+        body: JSON.stringify({ trust_level: "external_effect" })
+      }),
+      200,
+      "收回只读断言"
+    );
+    assert.equal(untrusted.trust_level, "external_effect");
+    assert.deepEqual(
+      (await pluginHost.toolSpecs({ workspaceId })).map((spec) => spec.sideEffect),
+      ["external_effect", "external_effect"],
+      "收回断言之后两个工具都该回到最高风险档"
+    );
+    // 落库了才算数：直接读真库那一列，不信内存里的回执。
+    const persisted = await client.pool.query<{ trust_level: string }>(
+      "select trust_level from plugins where id = $1",
+      [installed.id]
+    );
+    assert.equal(persisted.rows[0]?.trust_level, "external_effect", "信任级别必须真的写进 plugins 表");
+    // 非法值走契约层 422，不是靠 DB 的 CHECK 兜底报 500。
+    await expectError(
+      await app.request(`/api/plugins/${installed.id}`, {
+        method: "PATCH",
+        headers: admin.headers,
+        body: JSON.stringify({ trust_level: "sure-why-not" })
+      }),
+      422,
+      "validation_error",
+      "非法的信任级别"
+    );
+
     const reports = await pluginHost.loadReports(workspaceId);
     line("宿主加载报告", reports);
     assert.equal(reports.length, 1);
@@ -399,11 +495,11 @@ async function main() {
     );
     assert.equal(reenabled.status, "installed", `重新试加载没成功：${JSON.stringify(reenabled.load_report)}`);
     assert.equal(reenabled.enabled, true);
-    assert.equal(reenabled.tool_count, 1);
+    assert.equal(reenabled.tool_count, 2);
     const afterEnable = await pluginHost.toolSpecs({ workspaceId });
     line("toolSpecs（重新启用后）", afterEnable.map((entry) => entry.id));
-    assert.equal(afterEnable.length, 1, "重新启用之后插件工具应当回到注册表里");
-    assert.equal(afterEnable[0]?.id, ECHO_TOOL_ID);
+    assert.equal(afterEnable.length, 2, "重新启用之后插件工具应当回到注册表里");
+    assert.deepEqual(afterEnable.map((entry) => entry.id).sort(), [ECHO_TOOL_ID, NOTE_TOOL_ID].sort());
 
     const removed = await expectOk<{ removed: true }>(
       await app.request(`/api/plugins/${installed.id}`, { method: "DELETE", headers: admin.headers }),
@@ -437,14 +533,14 @@ async function main() {
     );
 
     console.log("");
-    console.log("[8/8] 四个写动作各落一条审计");
+    console.log("[8/8] 五个写动作各落一条审计");
     const auditRows = await auditRepo.listAuditLogsForEntity("plugin", installed.id, { limit: 50 });
     const actions = auditRows.map((row) => row.action).sort();
     line("审计动作", actions);
     assert.deepEqual(
       actions,
-      ["plugin.disabled", "plugin.enabled", "plugin.installed", "plugin.removed"],
-      "四个写动作应当各落恰好一条审计（安装/启用/停用/移除）"
+      ["plugin.disabled", "plugin.enabled", "plugin.installed", "plugin.removed", "plugin.trust_changed", "plugin.trust_changed"],
+      "五种写动作各落审计；信任级别改了两次（断言只读 → 收回）就是两条"
     );
     for (const row of auditRows) {
       const detail = (row.detailJson ?? {}) as Record<string, unknown>;
@@ -456,7 +552,22 @@ async function main() {
       assert.equal(detail["plugin_name"], ECHO_PLUGIN_ID, `${row.action} 的审计 detail 缺插件名`);
       assert.equal(detail["source_path"], echoPath, `${row.action} 的审计 detail 缺来源路径`);
       assert.equal(detail["source_kind"], "local_path");
+      assert.ok(
+        detail["trust_level"] === "read_only" || detail["trust_level"] === "external_effect",
+        `${row.action} 的审计 detail 缺当时的信任级别`
+      );
     }
+    const trustAudits = auditRows
+      .filter((row) => row.action === "plugin.trust_changed")
+      .map((row) => (row.detailJson ?? {}) as Record<string, unknown>)
+      .map((detail) => `${String(detail["previous_trust_level"])}→${String(detail["trust_level"])}`)
+      .sort();
+    line("plugin.trust_changed 轨迹", trustAudits);
+    assert.deepEqual(
+      trustAudits,
+      ["external_effect→read_only", "read_only→external_effect"].sort(),
+      "授权改动的前后两档都要落审计——只记新值就说不清是谁把门打开的"
+    );
     const installedAudit = auditRows.find((row) => row.action === "plugin.installed");
     const installedDetail = (installedAudit?.detailJson ?? {}) as Record<string, unknown>;
     line("plugin.installed detail", installedDetail);
@@ -464,7 +575,9 @@ async function main() {
     assert.equal(installedDetail["load_ok"], true);
 
     console.log("");
-    console.log("R1 PG 插件治理冒烟通过：0072 在真库上落地，清单/启停/移除全链走通，工具注册表随之增减，四个动作各有审计。");
+    console.log(
+      "R1 PG 插件治理冒烟通过：0072 + 0074 在真库上落地，清单/信任级别/启停/移除全链走通，工具注册表随之增减与分级，写动作各有审计。"
+    );
   } finally {
     await pluginHost.close();
     await rm(fixtureRoot, { recursive: true, force: true });

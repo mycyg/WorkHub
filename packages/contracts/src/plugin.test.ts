@@ -8,8 +8,10 @@ import {
   pluginSourceKindSchema,
   pluginStatusSchema,
   pluginSummaryVmSchema,
+  pluginTrustLevelSchema,
   pluginVmSchema,
-  settingsPageVmSchema
+  settingsPageVmSchema,
+  updatePluginTrustRequestSchema
 } from "./index.js";
 
 // R24-P 阶段 1：插件治理契约。这些断言钉的是治理红线，不是字段拼写。
@@ -34,11 +36,41 @@ test("the only accepted install source is a local path", () => {
   }
 });
 
-test("plugin status covers installed / load_failed / disabled and nothing else", () => {
-  for (const status of ["installed", "load_failed", "disabled"]) {
+test("plugin status covers installed / load_failed / disabled / crashed and nothing else", () => {
+  for (const status of ["installed", "load_failed", "disabled", "crashed"]) {
     assert.equal(pluginStatusSchema.parse(status), status);
   }
-  assert.equal(pluginStatusSchema.safeParse("crashed").success, false);
+  assert.equal(pluginStatusSchema.safeParse("broken").success, false);
+});
+
+test("trust level is the admin-asserted ceiling — two values, and it is never optional on a record", () => {
+  for (const level of ["read_only", "external_effect"]) {
+    assert.equal(pluginTrustLevelSchema.parse(level), level);
+  }
+  // 「部分只读」「大概安全」这种中间态不给一个可表达的值：上限只能是这两档之一。
+  for (const refused of ["partial", "trusted", "none", "sandbox_file"]) {
+    assert.equal(pluginTrustLevelSchema.safeParse(refused).success, false, `${refused} must not be assertable`);
+  }
+  assert.deepEqual(updatePluginTrustRequestSchema.parse({ trust_level: "read_only" }), { trust_level: "read_only" });
+  // strict：改信任级别这个端点只做这一件事，顺带塞别的字段是契约违规而不是静默丢弃。
+  assert.equal(
+    updatePluginTrustRequestSchema.safeParse({ trust_level: "read_only", enabled: true }).success,
+    false
+  );
+  assert.equal(updatePluginTrustRequestSchema.safeParse({}).success, false);
+});
+
+test("installing without saying anything about trust means the highest tier (the request simply omits it)", () => {
+  const parsed = installPluginRequestSchema.parse({ source_path: "/srv/plugins/echo" });
+  assert.equal("trust_level" in parsed, false, "契约层不替管理员填一个默认断言——那是服务端的事");
+  assert.equal(
+    installPluginRequestSchema.parse({ source_path: "/srv/plugins/echo", trust_level: "read_only" }).trust_level,
+    "read_only"
+  );
+  assert.equal(
+    installPluginRequestSchema.safeParse({ source_path: "/srv/plugins/echo", trust_level: "sure" }).success,
+    false
+  );
 });
 
 test("the install request is strict — a stray field is a contract violation, not a silent drop", () => {
@@ -88,6 +120,7 @@ test("the plugin VM always carries a compatibility report; the load report is op
     source_path: "/srv/plugins/dsh-plugin-echo",
     enabled: true,
     status: "installed",
+    trust_level: "external_effect",
     tool_count: 1,
     compat_report: compatReport(),
     created_at: checkedAt,
@@ -123,9 +156,12 @@ test("the web-facing summary row never carries the host directory path", () => {
     version: "0.1.0",
     enabled: true,
     status: "installed",
+    trust_level: "read_only",
     tool_count: 1,
     compat_verdict: "ok"
   });
+  // 网页只读清单也带信任级别：一个部署上「哪些插件被断言成只读」是所有人都该看得见的事实。
+  assert.equal(summary.trust_level, "read_only");
   // source_path 是这台服务器上的绝对路径——网页只读列表不需要它，契约层就不给它一个位置。
   assert.equal("source_path" in summary, false);
   assert.equal(
@@ -134,6 +170,7 @@ test("the web-facing summary row never carries the host directory path", () => {
       name: "dsh-plugin-echo",
       enabled: true,
       status: "installed",
+      trust_level: "external_effect",
       tool_count: 1,
       compat_verdict: "sure-why-not"
     }).success,

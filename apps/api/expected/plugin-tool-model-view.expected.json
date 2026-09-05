@@ -24,11 +24,63 @@
     },
     "side_effect": "external_effect"
   },
+  "model_tool_read_only_trusted": {
+    "name": "plugin__dsh-plugin-echo__echo",
+    "description": "Echo a phrase back, optionally repeated and upper-cased. Use it to prove that a DeepSeek Harness plugin tool is reachable from a WorkHub agent run.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "Phrase to echo back."
+        },
+        "times": {
+          "type": "integer",
+          "description": "How many times to repeat the phrase (default 1)."
+        },
+        "upper": {
+          "type": "boolean",
+          "description": "Upper-case the echoed phrase."
+        }
+      },
+      "required": [
+        "text"
+      ]
+    },
+    "side_effect": "none"
+  },
   "visible_by_task_plan_role": {
-    "(no role)": true,
-    "produce": true,
-    "integrate": true,
-    "research": false,
-    "review": false
+    "admin_trust_external_effect": {
+      "plugin__dsh-plugin-echo__echo": {
+        "(no role)": true,
+        "produce": true,
+        "integrate": true,
+        "research": false,
+        "review": false
+      },
+      "plugin__dsh-plugin-echo__write_note": {
+        "(no role)": true,
+        "produce": true,
+        "integrate": true,
+        "research": false,
+        "review": false
+      }
+    },
+    "admin_trust_read_only": {
+      "plugin__dsh-plugin-echo__echo": {
+        "(no role)": true,
+        "produce": true,
+        "integrate": true,
+        "research": true,
+        "review": true
+      },
+      "plugin__dsh-plugin-echo__write_note": {
+        "(no role)": true,
+        "produce": true,
+        "integrate": true,
+        "research": false,
+        "review": false
+      }
+    }
   }
 }

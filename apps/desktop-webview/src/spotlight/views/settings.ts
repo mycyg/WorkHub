@@ -605,9 +605,17 @@ function pluginStatusLine(plugin: PluginVM, zh: boolean): string {
       ? `装不上${reason ? `：${reason}` : ""}`
       : `Won't load${reason ? `: ${reason}` : ""}`;
   }
+  if (plugin.status === "crashed") {
+    return spotlightViewsT(zh, "pluginStoppedAfterRepeatedFailures");
+  }
   return zh
     ? `已启用 · ${plugin.tool_count} 个工具`
     : `Enabled · ${plugin.tool_count} tool${plugin.tool_count === 1 ? "" : "s"}`;
+}
+
+/** 信任级别这一行：它是这个插件的**风险上限**，所以说的是上限，不是「它安全」。 */
+export function pluginTrustLine(plugin: PluginVM, zh: boolean): string {
+  return spotlightViewsT(zh, plugin.trust_level === "read_only" ? "pluginTrustReadOnly" : "pluginTrustExternalEffect");
 }
 
 export type DesktopPluginInstallOutcome =
@@ -661,13 +669,23 @@ export function pluginsSectionHtml(state: DesktopPluginsSectionState, zh: boolea
                 : (spotlightViewsT(zh, "remove"));
             const compat = pluginCompatLines(plugin.compat_report, zh);
             const title = plugin.version ? `${plugin.name} ${plugin.version}` : plugin.name;
-            return `<div class="wh-spot-row" style="cursor:default" data-spot-plugin="${escapeHtml(plugin.id)}">
+            const trustArmed = state.armedKey === `trust:${plugin.id}`;
+            const trustLabel = busy
+              ? (spotlightViewsT(zh, "working"))
+              : trustArmed
+                ? (spotlightViewsT(zh, "sureClickAgain5"))
+                : plugin.trust_level === "read_only"
+                  ? (spotlightViewsT(zh, "takeBackReadOnlyTrust"))
+                  : (spotlightViewsT(zh, "trustAsReadOnly"));
+            return `<div class="wh-spot-row" style="cursor:default" data-spot-plugin="${escapeHtml(plugin.id)}" data-spot-plugin-trust="${escapeHtml(plugin.trust_level)}">
               <div class="wh-spot-row-main">
                 <div class="wh-spot-row-title">${escapeHtml(title)}</div>
                 <div class="wh-spot-row-sub">${escapeHtml(pluginStatusLine(plugin, zh))}</div>
+                <div class="wh-spot-row-sub">${escapeHtml(pluginTrustLine(plugin, zh))}</div>
                 <div class="wh-spot-row-sub">${escapeHtml(plugin.source_path)}</div>
                 ${compat.map((line) => `<div class="wh-spot-row-sub">${escapeHtml(line)}</div>`).join("")}
               </div>
+              <button type="button" class="wh-spot-act ds-pressable ${trustArmed ? "wh-spot-act--danger" : "wh-spot-act--quiet"}" data-set-plugin-trust="${escapeHtml(plugin.id)}" ${busy ? "disabled" : ""}>${trustLabel}</button>
               <button type="button" class="wh-spot-act ds-pressable ${toggleArmed ? "wh-spot-act--danger" : "wh-spot-act--quiet"}" data-set-plugin-toggle="${escapeHtml(plugin.id)}" ${busy ? "disabled" : ""}>${toggleLabel}</button>
               <button type="button" class="wh-spot-act ds-pressable ${removeArmed ? "wh-spot-act--danger" : "wh-spot-act--quiet"}" data-set-plugin-remove="${escapeHtml(plugin.id)}" ${busy ? "disabled" : ""}>${removeLabel}</button>
             </div>`;
@@ -736,6 +754,7 @@ export function pluginsSectionHtml(state: DesktopPluginsSectionState, zh: boolea
     <div class="wh-spot-set-label">${spotlightViewsT(zh, "plugins")}</div>
     <div class="wh-spot-row-sub">${spotlightViewsT(zh, "compatibleWithDeepseekHarnessToolPlugins")
     }</div>
+    <div class="wh-spot-row-sub">${spotlightViewsT(zh, "pluginTrustSectionNote")}</div>
     ${hostNote ? `<div class="wh-spot-row-sub">${escapeHtml(hostNote)}</div>` : ""}
     ${rows}
     ${bootstrapNote ? `<div class="wh-spot-row-sub">${escapeHtml(bootstrapNote)}</div>` : ""}
@@ -1694,6 +1713,27 @@ export function createSettingsView(): SpotlightCapabilityView {
         );
       }
 
+      /**
+       * 改信任级别。**只有「往下放宽」需要两段式确认**——那一步是在撤掉一道人工门；
+       * 往回收紧是把门装回去，没有理由再拦一次。
+       */
+      function setPluginTrust(plugin: PluginVM): void {
+        const call = ctx.client.setPluginTrustLevel;
+        if (!call) {
+          pluginErrorText = spotlightViewsT(ctx.locale, "thisServerVersionHasNoPlugin2");
+          renderAll();
+          return;
+        }
+        const next = plugin.trust_level === "read_only" ? "external_effect" : "read_only";
+        runPluginAction(
+          plugin.id,
+          () => call.call(ctx.client, plugin.id, { trust_level: next }),
+          (result) => replacePluginRow(result as PluginVM),
+          spotlightViewsT(ctx.locale, next === "read_only" ? "pluginTrustReadOnly" : "pluginTrustExternalEffect"),
+          spotlightViewsT(ctx.locale, "couldnTChangeIt")
+        );
+      }
+
       function removePlugin(plugin: PluginVM): void {
         const call = ctx.client.removePlugin;
         if (!call) {
@@ -1958,6 +1998,36 @@ export function createSettingsView(): SpotlightCapabilityView {
           if (!pluginInstallBusy) {
             submitPluginInstall();
           }
+          return;
+        }
+        // 信任级别：放宽（→ 只读断言）要两段式确认，收紧（→ 最高风险）立即生效。
+        const trustBtn = target.closest<HTMLElement>("[data-set-plugin-trust]");
+        if (trustBtn?.dataset.setPluginTrust) {
+          const id = trustBtn.dataset.setPluginTrust;
+          const plugin = (plugins ?? []).find((entry) => entry.id === id);
+          if (!plugin || pluginBusyId) {
+            return;
+          }
+          if (plugin.trust_level === "read_only") {
+            clearPluginArm();
+            setPluginTrust(plugin);
+            return;
+          }
+          const decision = decidePolicyRevokeConfirmation(pluginArmedKey, `trust:${id}`);
+          if (decision.kind === "execute") {
+            setPluginTrust(plugin);
+            return;
+          }
+          clearPluginArm();
+          pluginArmedKey = `trust:${id}`;
+          pluginErrorText = undefined;
+          pluginArmTimer = setTimeout(() => {
+            pluginArmTimer = undefined;
+            if (disposed) return;
+            pluginArmedKey = undefined;
+            renderAll();
+          }, 5000);
+          renderAll();
           return;
         }
         // 启停/移除都是两段式确认（复用 decidePolicyRevokeConfirmation 这个纯 armed/clicked 判定）。

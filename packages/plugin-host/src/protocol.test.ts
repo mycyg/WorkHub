@@ -44,5 +44,6 @@ test("未成帧的残留留在 pending 里，进程半途死掉时能解释", ()
 });
 
 test("协议版本是显式常量（改版必须同时改两端）", () => {
-  assert.equal(PLUGIN_HOST_PROTOCOL_VERSION, 1);
+  // 2：R26 X 给 PluginToolDescriptor 加了必填的 selfReportedReadOnly。
+  assert.equal(PLUGIN_HOST_PROTOCOL_VERSION, 2);
 });

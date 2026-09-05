@@ -17,6 +17,7 @@ import type {
   McpTransport,
   PluginSourceKind,
   PluginStatus,
+  PluginTrustLevel,
   RiskLevel,
   TaskPlanItemRole,
   TaskPlanItemStatus,
@@ -2491,6 +2492,11 @@ export const plugins = pgTable(
     sourcePath: text("source_path").notNull(),
     enabled: boolean("enabled").notNull().default(true),
     status: varchar("status", { length: 24 }).$type<PluginStatus>().notNull().default("installed"),
+    // 管理员断言的风险上限（R26 X，见 0074）。默认最保守的一档：没表过态就按最高风险跑。
+    trustLevel: varchar("trust_level", { length: 24 })
+      .$type<PluginTrustLevel>()
+      .notNull()
+      .default("external_effect"),
     // 安装前的静态体检结论（读 package.json，不执行插件任何代码）。
     compatReport: jsonb("compat_report").$type<JsonObject>().notNull(),
     // 宿主试加载结果；加载失败时 status='load_failed'，原因留在这里而不是只在日志里一闪而过。
@@ -2501,15 +2507,16 @@ export const plugins = pgTable(
   },
   (table): PgTableExtraConfigValue[] => [
     check("plugins_source_kind_ck", sql`${table.sourceKind} in ('local_path')`),
-    check("plugins_status_ck", sql`${table.status} in ('installed', 'load_failed', 'disabled')`),
+    check("plugins_status_ck", sql`${table.status} in ('installed', 'load_failed', 'disabled', 'crashed')`),
+    check("plugins_trust_level_ck", sql`${table.trustLevel} in ('read_only', 'external_effect')`),
     check("plugins_tool_count_ck", sql`${table.toolCount} >= 0`),
     // 同一工作区同一目录只能装一次——重复安装是 409「已经装过了」，不是两条各自启停的记录。
     uniqueIndex("plugins_workspace_source_path_uq").on(table.workspaceId, table.sourcePath),
     index("plugins_workspace_created_idx").on(table.workspaceId, table.createdAt),
-    // 宿主装配热路径：只挑启用且未被停用的行；部分索引不给停用行付索引成本。
+    // 宿主装配热路径：只挑启用、未被停用、也没被熔断的行；部分索引不给这两类行付索引成本。
     index("plugins_workspace_enabled_idx")
       .on(table.workspaceId)
-      .where(sql`${table.enabled} = true and ${table.status} <> 'disabled'`)
+      .where(sql`${table.enabled} = true and ${table.status} <> 'disabled' and ${table.status} <> 'crashed'`)
   ]
 );
 
