@@ -18,6 +18,9 @@ import {
 } from "./ask-cuu.js";
 import { commandRegistry, type CommandId, type CommandMatch } from "../command-palette.js";
 import { renderWorkHubLiquidGlassLayer, scheduleWorkHubLiquidGlassFilterRebuild } from "../liquid-glass-filter.js";
+import { noAiProviderConfiguredText } from "../ai-provider-banner-copy.js";
+import { resolveDesktopTauriInvoke } from "../desktop-window-controls.js";
+import { stashPendingWorkbenchDeepLink } from "../workbench/pending-deep-link.js";
 import { resolveCapabilityView } from "./registry.js";
 import {
   initialSpotlightState,
@@ -48,6 +51,15 @@ export type MountSpotlightInput = {
   dismiss?: () => void;
   // 能力页写动作成功后通知壳层刷新外部入口（角标、桌宠卡片等）。
   onActionSettled?: () => void;
+  // R24 S6（E-10）：首次登录（browser.ts 据 desktop-first-run.ts 的 isDesktopFirstRun 判定）→ launcher
+  // 空查询时不落空网格，落一张「建你的第一个项目」引导卡；非首次/已建过项目 → 保持现有启动器。
+  firstRun?: boolean;
+  // 引导卡建好项目后调用（browser.ts 落 markDesktopOnboarded）——同一次会话内立刻回落到普通启动器，
+  // 不需要 reload 才能摆脱这张卡。
+  onFirstRunComplete?: () => void;
+  // R24 S6（E-11）：health.ai_provider_configured 的探测结果。false 才在盒子顶部渲横幅；true/未知
+  // （health 探测失败，见 browser.ts bootSpotlight 的 best-effort 取舍）都不渲——探测失败不是「没配置」。
+  aiProviderConfigured?: boolean;
 };
 
 export type SpotlightHandle = {
@@ -115,6 +127,7 @@ export function renderSpotlightShellHtml(locale: WorkHubLocale): string {
           <span class="wh-spot-ask-banner-text" data-spot-ask-banner-text></span>
           <button type="button" class="wh-spot-ask-banner-undo ds-pressable" data-spot-ask-banner-undo>${zh ? "撤回" : "Undo"}</button>
         </div>
+        <div class="wh-spot-ai-banner" data-spot-ai-banner hidden role="status"></div>
         <div class="wh-spot-body" data-spot-body></div>
       </div>
     </div>`;
@@ -227,6 +240,35 @@ function renderLauncherGrid(
   return `${hello}<div class="wh-spot-grid${showHello ? " ds-stagger" : ""}" id="wh-spot-listbox" role="listbox" aria-label="${zh ? "能力列表" : "Capabilities"}">${cards}</div>`;
 }
 
+export type SpotlightFirstRunCardState = { kind: "idle" } | { kind: "creating" } | { kind: "error"; message: string };
+
+// R24 S6（E-10）：首次登录的落地页——不落空网格，落一张「建你的第一个项目」引导卡；建好直接打开工作台。
+// 复用命令面板既有的 wh-spot-intake-*（卡片壳）/ wh-spot-freetext--line（单行输入，见 settings.ts /
+// memory.ts 同款用法）视觉词汇，不新造一套样式。
+export function renderFirstRunCardHtml(locale: WorkHubLocale, state: SpotlightFirstRunCardState): string {
+  const zh = locale === "zh-CN";
+  const busy = state.kind === "creating";
+  const title = zh ? "建你的第一个项目" : "Create your first project";
+  const sub = zh
+    ? "项目是团队协作和 Cuu 干活的地方——建好就直接带你进去。"
+    : "A project is where your team and Cuu get to work — we'll open it as soon as it's ready.";
+  const namePlaceholder = zh ? "项目名称，例如：市场部日常" : "Project name, e.g. Marketing ops";
+  const submitLabel = busy ? (zh ? "创建中…" : "Creating…") : zh ? "创建并打开" : "Create and open";
+  const errorHtml =
+    state.kind === "error"
+      ? `<p data-spot-first-run-error style="margin:0;font-size:12px;color:#E5484D" role="alert">${escapeHtml(state.message)}</p>`
+      : `<p data-spot-first-run-error hidden style="margin:0;font-size:12px;color:#E5484D" role="alert"></p>`;
+  return `<div class="wh-spot-grid"><div class="wh-spot-intake ds-anim-fade-in">
+    <h3 class="wh-spot-intake-title">${escapeHtml(title)}</h3>
+    <p class="wh-spot-intake-body">${escapeHtml(sub)}</p>
+    <input type="text" class="wh-spot-freetext wh-spot-freetext--line" data-spot-first-run-name maxlength="80" placeholder="${escapeHtml(namePlaceholder)}" aria-label="${escapeHtml(namePlaceholder)}" ${busy ? "disabled" : ""} />
+    <div class="wh-spot-intake-actions">
+      <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-spot-first-run-create ${busy ? "disabled" : ""}>${escapeHtml(submitLabel)}</button>
+    </div>
+    ${errorHtml}
+  </div></div>`;
+}
+
 export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   const { host, client, locale } = input;
   const doc = host.ownerDocument ?? document;
@@ -234,7 +276,12 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   let badges: Partial<Record<CommandId, number>> = { ...(input.badges ?? {}) };
   let state: SpotlightState = initialSpotlightState();
   // 苹果聚焦盒：没点击(搜索框未聚焦)且空查询时,盒子只露一条搜索框;点击聚焦或输入才展开能力网格。
-  let searchActive = false;
+  // R24 S6：首次登录例外——引导卡要一开机就可见，不该藏在「先点一下」的收起态背后。
+  let searchActive = Boolean(input.firstRun);
+  // R24 S6（E-10）：首次登录的落地页状态——建完项目或用户开始搜索/切到某个能力后就不再是首次了
+  // （不持久化"搜索过一次就永久退出首启"——只在本次挂载会话内生效，reload 后仍由 input.firstRun 决定）。
+  let firstRunActive = Boolean(input.firstRun);
+  let firstRunState: SpotlightFirstRunCardState = { kind: "idle" };
   let disposeView: (() => void) | undefined;
   // 待消费的跳转目标实体：open(id, target) 设置 → 下一次 renderCapability 读入该能力 ctx 后清空（rank13/14）。
   let pendingTarget: SpotlightTarget | undefined;
@@ -253,6 +300,19 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   const subtitleEl = host.querySelector<HTMLElement>("[data-spot-subtitle]")!;
   const askBanner = host.querySelector<HTMLElement>("[data-spot-ask-banner]")!;
   const askBannerText = host.querySelector<HTMLElement>("[data-spot-ask-banner-text]")!;
+  const aiBanner = host.querySelector<HTMLElement>("[data-spot-ai-banner]")!;
+  // R24 S6（E-11）：只用聚焦盒的人此前完全看不到「AI 未配置」这件事（那条提示只在工作台聊天区）。
+  // 只有明确探到 false 才渲——探测失败/未知（input.aiProviderConfigured === undefined）都不渲，
+  // 同工作台聊天区 shouldShowNoAiProviderBanner 的既有取舍：探测失败不等于没配置，不能吓用户。
+  const showAiProviderBanner = input.aiProviderConfigured === false;
+  if (showAiProviderBanner) {
+    aiBanner.textContent = noAiProviderConfiguredText(locale);
+  }
+  // 横幅只在盒子展开时显示（收起态只留一条搜索框，不该被一条常驻横幅撑大）；launcher/能力页都算展开，
+  // 两处渲染各自在设完 data-collapsed 后调用它同步。
+  const updateAiBannerVisibility = () => {
+    aiBanner.hidden = !showAiProviderBanner || box.dataset.collapsed === "true";
+  };
   let suppressNextFocusExpansion = false;
   let suppressSearchFocusUntil = 0;
   let suppressSearchClickUntil = 0;
@@ -342,10 +402,16 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     // 未主动交互且空查询 → 收起,只留搜索框(data-collapsed=true);点击或输入后才展开能力网格。
     const expanded = searchActive || state.query.trim().length > 0;
     box.dataset.collapsed = expanded ? "false" : "true";
-    body.innerHTML = expanded
-      ? renderLauncherGrid(launcherMatches(state, locale), locale, badges, state.query.trim().length === 0, askCuuState, state.query)
-      : "";
+    // R24 S6：首次登录且还没开始搜索 → 落地页是「建你的第一个项目」引导卡，不是能力网格/hello。
+    // 一旦开始搜索（有查询词）就让位给正常的搜索结果——首启不该拦住"我就是想找个东西"的用户。
+    const showFirstRun = firstRunActive && state.query.trim().length === 0;
+    body.innerHTML = !expanded
+      ? ""
+      : showFirstRun
+        ? renderFirstRunCardHtml(locale, firstRunState)
+        : renderLauncherGrid(launcherMatches(state, locale), locale, badges, state.query.trim().length === 0, askCuuState, state.query);
     syncLauncherActiveDescendant();
+    updateAiBannerVisibility();
   };
 
   // 「问问 Cuu」区块随 askCuuState 变化时的重渲——只重画能力网格区，不动 mode/顶栏（还在 launcher 内）。
@@ -387,6 +453,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     // 于是 css 的 [data-collapsed=true] .wh-spot-body{display:none} + applyResize 的 52px 钳制会把整个能力
     // 内容(审批/工作项/diff/网盘)藏起来,只剩标题栏。能力态从不是收起态,这里显式展开(同时解 52px 钳制)。
     box.dataset.collapsed = "false";
+    updateAiBannerVisibility();
     const cmd = commandRegistry.find((c) => c.id === id);
     titleEl.textContent = cmd ? cmd.label[zh ? "zh-CN" : "en"] : id;
     subtitleEl.textContent = "";
@@ -905,9 +972,58 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   topEl.addEventListener("pointerup", clearDragStart);
   topEl.addEventListener("pointercancel", clearDragStart);
 
+  // R24 S6（E-10）：首启引导卡「创建并打开」——建项目 → 标记首启完成（落地页从此走普通启动器）→
+  // stash 深链目标 + invoke open_workbench 直接打开该项目（同 spotlight/views/workbench-open.ts 的
+  // 既有 stash+invoke 手法，避免冷启动深链竞态，见其顶部注释）。非 Tauri 环境（浏览器 dev 预览）没有
+  // 原生窗口可开——项目仍然建成功，用 toast 如实说明，不假装打开了工作台。
+  const submitFirstRunProject = async () => {
+    if (firstRunState.kind === "creating") {
+      return;
+    }
+    const nameEl = body.querySelector<HTMLInputElement>("[data-spot-first-run-name]");
+    const name = nameEl?.value.trim() ?? "";
+    if (!name) {
+      firstRunState = { kind: "error", message: zh ? "请先填写项目名称。" : "Please enter a project name first." };
+      renderLauncherBody();
+      return;
+    }
+    firstRunState = { kind: "creating" };
+    renderLauncherBody();
+    try {
+      const result = await client.bootstrapProject({ name });
+      const projectId = result.project.id;
+      firstRunActive = false;
+      input.onFirstRunComplete?.();
+      const invoke = resolveDesktopTauriInvoke();
+      if (invoke) {
+        stashPendingWorkbenchDeepLink({ projectId });
+        void Promise.resolve(invoke("open_workbench", { projectId })).catch(() => undefined);
+      } else {
+        showToast(
+          zh
+            ? "项目已创建，这个预览环境打不开工作台窗口。"
+            : "Project created — this preview can't open the workbench window.",
+          "info"
+        );
+      }
+      resetLauncher();
+    } catch (error) {
+      firstRunState = {
+        kind: "error",
+        message:
+          error instanceof Error ? error.message : zh ? "创建失败，请重试。" : "Couldn't create the project — retry."
+      };
+      renderLauncherBody();
+    }
+  };
+
   body.addEventListener("click", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    if (target.closest<HTMLElement>("[data-spot-first-run-create]")) {
+      void submitFirstRunProject();
       return;
     }
     const cap = target.closest<HTMLElement>("[data-spot-cap]");
@@ -935,6 +1051,19 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       const presentation = askCuuState.presentation;
       askCuuState = askCuuReducer(askCuuState, { type: "dismiss" });
       applyAskCuuAction(presentation);
+    }
+  });
+
+  // R24 S6：首启引导卡的项目名称输入框没有包在 <form> 里（同网格里其它单行输入的既有写法），
+  // Enter 键需要委托监听补上「打字后直接回车提交」，不用非得去点按钮。
+  body.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+    const target = event.target;
+    if (target instanceof HTMLElement && target.matches("[data-spot-first-run-name]")) {
+      event.preventDefault();
+      void submitFirstRunProject();
     }
   });
 
@@ -1074,8 +1203,9 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     setBadges: (next) => {
       badges = { ...badges, ...next };
       if (!openCapabilityId(state)) {
-        body.innerHTML = renderLauncherGrid(launcherMatches(state, locale), locale, badges, state.query.trim().length === 0, askCuuState, state.query);
-        syncLauncherActiveDescendant();
+        // R24 S6：复用 renderLauncherBody 而不是重复内联同一段渲染逻辑——它已经知道该渲首启卡
+        // 还是能力网格（角标刷新在首启卡还没让位时触发也不该把卡片错渲成网格）。
+        renderLauncherBody();
         requestResize();
       }
     },

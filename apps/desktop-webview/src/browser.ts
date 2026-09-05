@@ -319,7 +319,9 @@ async function bootSpotlight() {
       dismiss: dismissMainWindow,
       firstRun,
       onFirstRunComplete: () => markDesktopOnboarded(window.localStorage),
-      aiProviderConfigured: health?.ai_provider_configured,
+      ...(typeof health?.ai_provider_configured === "boolean"
+        ? { aiProviderConfigured: health.ai_provider_configured }
+        : {}),
       onActionSettled: () => {
         void refreshApprovalsBadge();
         notifyPetAttentionRefresh();

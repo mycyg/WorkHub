@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleSpotlightCapabilityEscape, renderSpotlightShellHtml, SPOTLIGHT_INTERNAL_BACK_SELECTOR } from "./controller.js";
+import {
+  handleSpotlightCapabilityEscape,
+  renderFirstRunCardHtml,
+  renderSpotlightShellHtml,
+  SPOTLIGHT_INTERNAL_BACK_SELECTOR
+} from "./controller.js";
 
 // D-01（R23 精简批）：这三条用例原来住在 apps/desktop-webview/src/main.test.ts（main.ts 死 barrel 的
 // 自证测试文件），但测的是 controller.ts 的真实行为——它没有自己的 controller.test.ts（只有专测拖拽
@@ -59,4 +64,38 @@ test("Spotlight shell renders native drag affordances without dead resize handle
   assert.doesNotMatch(html, /data-tauri-drag-region/u);
   assert.doesNotMatch(html, /data-spot-resize/u);
   assert.doesNotMatch(html, /ds-glass-strong/u);
+});
+
+// R24 S6（E-11）：聚焦盒顶部的「AI 未配置」横幅挂钩——初始隐藏，mountSpotlight 据 health 探测结果决定
+// 是否揭开（不在这里测那部分 DOM 接线，同本文件既有取舍：mountSpotlight 本身没有任何直接单测，见文件顶注）。
+test("Spotlight shell reserves a hidden-by-default AI-provider banner slot", () => {
+  const html = renderSpotlightShellHtml("zh-CN");
+  assert.match(html, /data-spot-ai-banner hidden/u);
+});
+
+// R24 S6（E-10）：首启引导卡——不落空网格，落「建你的第一个项目」+ 一个输入框。
+test("renderFirstRunCardHtml renders a project-name input and create button in the idle state", () => {
+  const html = renderFirstRunCardHtml("zh-CN", { kind: "idle" });
+  assert.match(html, /建你的第一个项目/u);
+  assert.match(html, /data-spot-first-run-name/u);
+  assert.match(html, /data-spot-first-run-create/u);
+  assert.doesNotMatch(html, /disabled/u);
+  assert.match(html, /data-spot-first-run-error hidden/u);
+
+  const en = renderFirstRunCardHtml("en-US", { kind: "idle" });
+  assert.match(en, /Create your first project/u);
+});
+
+test("renderFirstRunCardHtml disables the input/button and shows a busy label while creating", () => {
+  const html = renderFirstRunCardHtml("en-US", { kind: "creating" });
+  assert.match(html, /data-spot-first-run-name[^>]+disabled/u);
+  assert.match(html, /data-spot-first-run-create[^>]+disabled/u);
+  assert.match(html, /Creating…/u);
+});
+
+test("renderFirstRunCardHtml surfaces a visible, non-disabled retry state on error", () => {
+  const html = renderFirstRunCardHtml("zh-CN", { kind: "error", message: "创建失败，请重试。" });
+  assert.match(html, /data-spot-first-run-error[^>]*role="alert">创建失败，请重试。/u);
+  assert.doesNotMatch(html, /data-spot-first-run-error hidden/u);
+  assert.doesNotMatch(html, /data-spot-first-run-create[^>]+disabled/u);
 });
