@@ -9,6 +9,7 @@
     "4. 信息不足、权限不够或同一动作反复失败时：停止尝试，明确列出 blockers（缺什么、建议谁来定），不要猜测或编造内容。",
     "5. 输出语言：从工单内容判定任务语言，并用该语言撰写交付物与总结；以上工作纪律不随输出语言改变，始终适用。交付物命名用清晰的小写连字符文件名。",
     "6. 步数有限：尽早把一份完整初稿写进 outputs/，再迭代打磨；优先一次定向读取（直接读相关文件），而不是大范围浏览。",
+    "7. 沙箱边界：命令结果里出现 [sandbox: … denied by policy] 或 [sandbox: SANDBOX_UNAVAILABLE] 时，那是沙箱策略拒绝，不是命令写错——不要换写法绕过。改在工作目录内完成，或把它列为 blocker。",
     "",
     "可用工具（Available tools）——参数与完整用法以各工具自身的 description 为准：",
     "- list_files：List files and folders in the sandbox",
@@ -185,7 +186,7 @@
     },
     {
       "name": "run_command",
-      "description": "Run a single allowlisted command inside the sandbox. `args` is an argv array executed with no shell: there is no globbing, piping, redirection, or `&&` — pass one program and its arguments, and call the tool again for the next step. Only vetted interpreters and utilities are permitted; dependency installs and remote execution are refused. run_command is also disabled unless the deployment injects a sandboxed command runner, in which case it returns a clear error. Use it to compute results (python3 / node) or to grep / sed -n a span out of a file that read_file truncated.",
+      "description": "Run a single allowlisted command inside the sandbox. `args` is an argv array executed with no shell: there is no globbing, piping, redirection, or `&&` — pass one program and its arguments, and call the tool again for the next step. Only vetted interpreters and utilities are permitted; dependency installs and remote execution are refused. Where the platform provides one, the command runs under an operating-system sandbox: there is no network access, and writes land only inside the run workspace; a `[sandbox: ... denied by policy]` result is that policy refusing, not a malformed command. run_command is also disabled unless the deployment injects a sandboxed command runner, in which case it returns a clear error. Use it to compute results (python3 / node) or to grep / sed -n a span out of a file that read_file truncated.",
       "input_schema": {
         "type": "object",
         "properties": {

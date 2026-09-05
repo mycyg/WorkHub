@@ -144,7 +144,7 @@
   },
   {
     "name": "run_command",
-    "description": "Run a single allowlisted command inside the sandbox. `args` is an argv array executed with no shell: there is no globbing, piping, redirection, or `&&` — pass one program and its arguments, and call the tool again for the next step. Only vetted interpreters and utilities are permitted; dependency installs and remote execution are refused. run_command is also disabled unless the deployment injects a sandboxed command runner, in which case it returns a clear error. Use it to compute results (python3 / node) or to grep / sed -n a span out of a file that read_file truncated.",
+    "description": "Run a single allowlisted command inside the sandbox. `args` is an argv array executed with no shell: there is no globbing, piping, redirection, or `&&` — pass one program and its arguments, and call the tool again for the next step. Only vetted interpreters and utilities are permitted; dependency installs and remote execution are refused. Where the platform provides one, the command runs under an operating-system sandbox: there is no network access, and writes land only inside the run workspace; a `[sandbox: ... denied by policy]` result is that policy refusing, not a malformed command. run_command is also disabled unless the deployment injects a sandboxed command runner, in which case it returns a clear error. Use it to compute results (python3 / node) or to grep / sed -n a span out of a file that read_file truncated.",
     "input_schema": {
       "type": "object",
       "properties": {
