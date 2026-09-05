@@ -11,6 +11,71 @@
 2. SA-08（中）：README/DEPLOY.md 承诺无 key 时顶部横幅，web 端实际没有。
 3. SA-05（中）：个人空间只能在桌面创建，web 端此前连按钮都没有（后来发现 SSR 已由前序工人补好，只是点击没接线）。
 
+## Decision（SA-04，已实现）
+
+- **模式探测不新增端点**——复用 `POST /api/auth/identify` 本身的行为差异：该端点在解析请求体
+  *之前* 就先检查 `AUTH_MODE`（`apps/api/src/routes/auth.ts` 的 `passwordModeEnabled`），
+  password/hybrid 模式恒 404；nickname 模式下传空昵称只会在 schema 校验（`min(1)`）这一步失败
+  （422），不会走到 `getOrCreateActiveByNickname`，不会建用户。探测函数
+  `apps/web/src/auth-screen-mode.ts` 的 `detectAuthScreenMode` 因此可以安全地用 `{nickname:""}`
+  探测，零副作用；任何非 404 的结果（含网络错误）一律回退到 nickname（本仓库默认值，误判代价
+  最小——参考桌面端 `desktop-login.ts` 的 `isPasswordModeBootstrapError` 同款「用 404 判定模式」
+  先例，只是探测的端点换成了 web 更自然的 identify 而非 desktop-bootstrap）。
+- **探测结果缓存 Promise（非缓存值）**，一个页面会话内只探测一次——AUTH_MODE 是部署期常量，
+  重复探测除了浪费一次网络往返没有任何好处；同 SA-08 `aiProviderConfiguredCached` 的缓存写法
+  （`x ??= fn().then(...)`，天然合并并发调用，不会因为还没 resolve 就重复发起）。
+- `showOnboardingScreen` 从同步函数变成异步函数（要 await 探测结果）后，新增 `renderId` 竞态
+  守卫（写法照抄 `renderCurrentRoute` 自身已有的同款守卫）——等待期间如果又发生了一次更新的
+  登出/导航请求（`activeRouteRenderId` 被递归调用递增），旧的这次探测结果作废，不覆盖新画面。
+  15 处调用点按各自上下文改成 `await`（enclosing 函数本就 async 且随后 `return`）或
+  `void`（同步回调/`.then` 链），未做的话会在这批改动后触发
+  `@typescript-eslint/no-floating-promises`（这个仓库其它「不等的异步调用」处都是这样处理的，
+  如 `void renderCurrentRouteOrOnboard(...).catch(...)`）。
+- **登录/注册/昵称报到三条路径共享 `completeAuthSuccess`**——从原 `submitOnboarding` 里抽出「设
+  身份→同步语言偏好→渲工作台」这段收尾编排，避免三份几乎一样的代码。`fallbackNickname` 参数
+  （`identityUserFrom` 解不出昵称时的兜底显示名）视场景取不同值：昵称报到用输入的昵称、密码
+  登录没有对应概念故退而用邮箱、密码注册用输入的昵称——这个兜底路径正常不会触发（服务端响应
+  正常情况下总能提供 nickname），只是防御性分支。
+- 注册屏（`renderPasswordAuthScreen` 的 register tab）**不采集任何「我是管理员」字段**——
+  `POST /api/auth/register` 服务端在建号前直接查 `hasAnyActiveAdmin()`，零管理员实例的首个
+  注册者自动建为 admin（`apps/api/src/routes/auth.ts:~505`）；前端只用一句 hint 说明这件事
+  （`firstAdminHint` 文案），不用表单字段掺和进服务端已经做完的判定，避免「用户勾选了我是管理员
+  但服务端判定不是」或反过来的语义分裂。
+- 错误文案统一走 `describeAuthScreenError(error, locale, context)`——同一个函数处理 login 和
+  register 的错误分支（`context` 参数区分「409＝密码错」vs「409＝该邮箱已注册」），而不是两个
+  重复的函数；对 400/422 的处理刻意不透传服务端原文（服务端的 `WeakPasswordError` 消息只有中文，
+  英文界面下会露馅），改用通用的双语「请检查邮箱/昵称/密码」文案——同桌面端 `describeDesktopLoginError`
+  的既有取舍（`MRG-26` 注释：4xx 消息虽是「写给人看的」，但只对本就双语的错误码路径这样做，
+  未国际化的服务端消息不能直接透传）。
+- DEPLOY.md §8（安全口径）补 `AUTH_MODE=password/hybrid` 的生产要求和「登录屏切到注册标签页」
+  的首个管理员流程；顺带记录一个发现（未在本批修）：`packages/config/src/env.ts` 的
+  `validateRuntimeConfig` 在生产环境无条件要求 `ADMIN_CLAIM_SECRET` 非空且 ≥16 位，但这个值
+  只在 nickname 模式的 identify/desktop-bootstrap 认领路径里被读取——而 nickname 模式本身在
+  生产环境是被禁止的（同一个函数里的另一条 fail-closed 规则）。等于生产部署被迫配置一个永远不会
+  被用到的密钥。已 `spawn_task`（task_ae85fd2b）留给后续会话判断是放宽校验还是维持现状加注释，
+  不在本批顺手改动共享的配置校验函数。
+
+## Alternatives considered（SA-04）
+
+- 新增一个公开、无需鉴权的端点/字段直接暴露 `AUTH_MODE`（如扩展 `GET /api/health`）：否决——
+  收益（省掉一次探测请求 + 不依赖 identify 的 404 副作用）不值得再开一个需要长期维护的公开面，
+  尤其是 identify 的探测法已经零副作用、且和桌面端「用 404 判定模式」的既有先例完全一致。
+- 保持 `showOnboardingScreen` 同步、在渲染前用「已缓存」的模式做同步分支（第一次访问强制先当
+  nickname 渲一次，探测结果出来后再切换）：否决——闪烁一次«昵称屏→密码屏»的体验比等一次探测
+  更糟，尤其密码模式下昵称屏提交必然 404，等于让用户看一眼注定失败的表单。
+- 登录/注册各自独立处理错误文案（不共享 describeAuthScreenError）：否决——两者错误码高度重叠
+  （401 只属于 login、409 只属于 register，其余 429/400/422/404 完全共享），拆开是纯重复。
+
+## Consequences（SA-04）
+
+- `showOnboardingScreen` 从同步变异步是这批改动里唯一有「新引入的竞态窗口」的地方——已加
+  `renderId` 守卫，但如果未来有新调用点忘记 `void`/`await`，不会有任何工具报错：核实过这个仓库
+  各包的 `lint` 脚本就是 `tsc --noEmit` 的别名（没有 ESLint 配置文件，无
+  `no-floating-promises` 规则），未加 `void` 的浮空 Promise 纯靠人工审查发现。全文各处
+  `void xxx(...).catch(...)` 只是团队约定的可读性写法，不是工具强制——这批改动照抄这个约定。
+- 两处手写的全量 `WorkHubApiClient` 假实现已在 SDK 基础提交里补了 `register` 桩——这批新增的
+  `login`/`register` 调用不需要再改那两个文件（`login` 桩此前就有）。
+
 ## Decision（SA-05，已实现）
 
 - 「新建个人空间」按钮点击后**停留在 /projects 原地、`renderCurrentRoute` 整页刷新**，不像团队项目
