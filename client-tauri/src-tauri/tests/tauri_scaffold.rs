@@ -195,7 +195,9 @@ fn macos_main_window_exposes_manual_drag_fallback_for_transparent_search_center(
         "Spotlight center dragging cannot depend only on native drag regions because the search input can consume the gesture"
     );
     assert!(raw.contains("window.outer_position()"));
-    assert!(raw.contains("window.set_position(TauriLogicalPosition::new("));
+    // 断言的是「存在一条手工摆位置的通路」，不是它的换行方式——rustfmt 会按行宽把
+    // `window.set_position(..)` 拆成 `window\n    .set_position(..)`，故只认方法调用本身。
+    assert!(raw.contains(".set_position(TauriLogicalPosition::new("));
     assert!(raw.contains("move_main_window_by,"));
 }
 

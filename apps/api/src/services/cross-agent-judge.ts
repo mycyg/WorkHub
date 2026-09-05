@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { neutralizeFenceTags } from "@workhub/agent/loop";
+
 import type { LlmActor, LlmCreateResponse, ProviderRegistry } from "@workhub/agent/providers";
 import {
   confidenceGradeSchema,
@@ -17,7 +19,8 @@ const MAX_CANDIDATES = 8;
 const MAX_CANDIDATE_CHARS = 6_000;
 const MAX_ACCEPTANCE_ITEMS = 20;
 
-const HIGH_RISK_VOTE_PERSPECTIVES = [
+// R25 批 B1：仅加 export（内容逐字未动）——golden 门要用这份视角清单去渲染多视角评审提示词。
+export const HIGH_RISK_VOTE_PERSPECTIVES = [
   {
     id: "correctness",
     label: "Correctness auditor",
@@ -232,11 +235,13 @@ function clip(value: string, maxChars: number) {
   return value.length > maxChars ? `${value.slice(0, maxChars)}\n[truncated ${value.length - maxChars} chars]` : value;
 }
 
+// R25：候选正文来自其它 agent、验收来自工单——都是不可信内容，装入前中和其中的围栏标签（含 candidate_N），
+// 否则一行字面 </candidate_1> 或 </acceptance> 就能提前闭合围栏、冒充评审指令。
 function fenced(name: string, value: string) {
-  return `<${name}>\n${value}\n</${name}>`;
+  return `<${name}>\n${neutralizeFenceTags(value)}\n</${name}>`;
 }
 
-function candidatePrompt(candidate: CrossAgentCandidate, index: number) {
+export function candidatePrompt(candidate: CrossAgentCandidate, index: number) {
   const confidence = candidate.confidence
     ? [
       `confidence_grade: ${candidate.confidence.grade}`,
@@ -255,7 +260,8 @@ function candidatePrompt(candidate: CrossAgentCandidate, index: number) {
   ].filter((value): value is string => typeof value === "string").join("\n"));
 }
 
-function judgePrompt(input: CrossAgentJudgeInput, perspective?: typeof HIGH_RISK_VOTE_PERSPECTIVES[number]) {
+// R25 批 B1：仅加 export（函数体逐字未动），供 golden 门直接调用。
+export function judgePrompt(input: CrossAgentJudgeInput, perspective?: typeof HIGH_RISK_VOTE_PERSPECTIVES[number]) {
   const candidates = input.candidates.slice(0, MAX_CANDIDATES);
   return [
     "Compare these WorkHub child-agent outputs for the same plan/task. Return strict JSON only with this shape:",

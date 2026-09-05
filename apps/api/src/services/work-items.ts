@@ -196,7 +196,7 @@ export type ClarificationQuestionDraft = {
   recommended_option_id?: string | undefined;
 };
 
-type ClarificationQuestionInput = {
+export type ClarificationQuestionInput = {
   workItem: Pick<WorkItemRow, "id" | "projectId" | "title" | "rawDescription">;
   files: ClarificationFileContext[];
   actor: AuthActor;
@@ -890,7 +890,9 @@ function fallbackClarificationDraft(input: ClarificationQuestionInput): Clarific
   };
 }
 
-function clarificationPrompt(input: ClarificationQuestionInput) {
+// R25 批 B1：仅加 export（函数体逐字未动）——本来就是纯字符串组装（locale 分支在内），
+// 只是没导出。golden 门直接调用它，见 apps/api/src/golden/service-prompt-private.golden.test.ts。
+export function clarificationPrompt(input: ClarificationQuestionInput) {
   const zh = input.locale !== "en-US";
   const intent = input.workItem.rawDescription ?? input.workItem.title ?? "";
   const files = input.files.length

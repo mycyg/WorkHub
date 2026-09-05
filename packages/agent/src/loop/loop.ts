@@ -828,8 +828,24 @@ export function parseReviewJson(text: string): { grade: 1 | 2 | 3 | 4 | 5; ratio
 // 若内容里出现一行字面的 </outputs>，它就能提前闭合围栏、伪造其它围栏来逃逸并冒充指令，击穿「仅 grade-5 自动合并」的信任边界。
 // 因此在装入围栏前，把内容里所有「已知评审围栏标签」的尖括号中和成全角书名号（‹ ›），使其无法发出真正的定界符。
 // 中和是确定性的、可测的（不需要随机串）：真正的定界符只会是 fenced() 自己写出的那一对。
-const FENCE_TAG_PATTERN = /<\/?(outputs|worker_claim|task|acceptance|changes|work_item_context|user_memory|agent_private_memory)\s*>/giu;
-// 导出供 api 侧（agent-runner / user-memory）复用同一口径，避免两处中和逻辑漂移。
+// 围栏标签登记表：所有「把不可信内容夹进围栏」的拼接点（本文件 fenced()、apps/api 的 agent-run-prompt /
+// user-memory / agent-memory / project-instructions-context / cross-agent-judge）用到的标签名都必须在这里登记，
+// 否则内容里一行字面的 </tag> 就能提前闭合围栏、把后文送到围栏外冒充指令。
+// R25 修：task_plan_objective 曾漏登记（objective_md 由 meta-planner 生成、可人工编辑，半可控）；
+// judge 的 candidate_N 是动态标签，用 candidate_\d+ 一并覆盖。
+export const FENCE_TAG_NAMES = [
+  "outputs",
+  "worker_claim",
+  "task",
+  "acceptance",
+  "changes",
+  "work_item_context",
+  "user_memory",
+  "agent_private_memory",
+  "task_plan_objective"
+] as const;
+const FENCE_TAG_PATTERN = new RegExp(`<\\/?(?:${FENCE_TAG_NAMES.join("|")}|candidate_\\d+)\\s*>`, "giu");
+// 导出供 api 侧（agent-run-prompt / user-memory / agent-memory / judge）复用同一口径，避免多处中和逻辑漂移。
 export function neutralizeFenceTags(text: string): string {
   // 仅替换被识别为围栏标签的 token 的尖括号：< → ‹、> → ›。普通文本里的 < > 不受影响。
   return text.replace(FENCE_TAG_PATTERN, (match) => match.replace(/</gu, "‹").replace(/>/gu, "›"));

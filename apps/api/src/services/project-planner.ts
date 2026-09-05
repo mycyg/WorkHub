@@ -297,7 +297,9 @@ function toPayload(plan: RawPlan): ProjectPlanDraftPayload {
   };
 }
 
-function plannerPrompt(input: ProjectPlannerCreateDraftInput, feedback: readonly string[] = []) {
+// R25 批 B1：仅加 export（函数体逐字未动）——这两个本来就是纯字符串组装，只是没导出，
+// golden 门需要直接调用它们。见 apps/api/src/golden/service-prompt-private.golden.test.ts。
+export function plannerPrompt(input: ProjectPlannerCreateDraftInput, feedback: readonly string[] = []) {
   const locale = normalizeWorkHubLocale(input.locale);
   const zh = locale !== "en-US";
   return [
@@ -327,7 +329,7 @@ function plannerPrompt(input: ProjectPlannerCreateDraftInput, feedback: readonly
   ].filter((value): value is string => typeof value === "string").join("\n");
 }
 
-function judgePrompt(plan: RawPlan, input: ProjectPlannerCreateDraftInput) {
+export function judgePrompt(plan: RawPlan, input: ProjectPlannerCreateDraftInput) {
   return [
     "Judge this WorkHub project plan. Return strict JSON only:",
     "{\"decision\":\"approve|retry|escalate\",\"confidence\":\"high|medium|low\",\"reasons\":[\"...\"]}",

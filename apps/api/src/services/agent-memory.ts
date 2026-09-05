@@ -237,7 +237,9 @@ function createLlmAgentMemoryPromotionJudge(
   };
 }
 
-export function buildAgentMemoryPromptSection(rows: AgentMemoryRow[]): string {
+// R25 批 B1：入参收窄成「本函数真正渲染的那两列」——渲染层只该看见它写进提示词的字段，
+// 也让 apps/api/expected/ 的 golden 夹具不必伪造一整行 DB 记录（全行仍可直接传入，赋值兼容）。
+export function buildAgentMemoryPromptSection(rows: Pick<AgentMemoryRow, "category" | "valueMd">[]): string {
   if (rows.length === 0) {
     return "";
   }

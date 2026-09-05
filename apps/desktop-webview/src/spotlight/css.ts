@@ -29,7 +29,12 @@ export const spotlightCss = [
   // R13 V2（工作台窗同款玻璃盒踩过的坑，见 r13-v2-window-craft.md）：外层 box-shadow 是矩形投影，会画到原生裁剪出的
   // 圆角外面，在真机截图上留下一截直角残影（用户描述"上面圆角正常，下面有一个直角阴影边缘"就是这个）。阴影交给原生
   // NSWindow 的 shadow（tauri.conf.json 主窗 `shadow:true`），这里只留顶部内高光（inset，天然被圆角裁得干净）。
-  ".wh-spot{position:relative;display:flex;flex-direction:column;border-radius:var(--ds-radius-xl);overflow:hidden;-webkit-app-region:no-drag;background:linear-gradient(135deg,var(--wh-spot-glass-top),var(--wh-spot-glass-bottom));border:1px solid rgba(255,255,255,.7);box-shadow:inset 0 1px 0 rgba(255,255,255,.75);backdrop-filter:blur(40px) saturate(185%);-webkit-backdrop-filter:blur(40px) saturate(185%)}",
+  // R25（BX-06）：max-height:100vh 是生长补间的另一半。壳层把窗口高度摊成一串 ~16ms 的中间帧，
+  // 而 DOM 里的盒子在第一帧就已经是目标高度了——不钳住的话，补间途中盒子比透明窗高，圆角底边和
+  // 边框被窗口裁在外面，看起来是一条直角断口在往下爬。钳到 100vh（＝当前这一帧的窗口高）后盒子
+  // 与窗口同高，圆角始终完整，内容由 .wh-spot-body 的 overflow 收着，观感就是"盒子在长"。
+  // 量高时 controller.ts 的 applyResize 会临时把它摘成 none，否则测出来的自然高会被窗口反向钳住。
+  ".wh-spot{position:relative;display:flex;flex-direction:column;max-height:100vh;border-radius:var(--ds-radius-xl);overflow:hidden;-webkit-app-region:no-drag;background:linear-gradient(135deg,var(--wh-spot-glass-top),var(--wh-spot-glass-bottom));border:1px solid rgba(255,255,255,.7);box-shadow:inset 0 1px 0 rgba(255,255,255,.75);backdrop-filter:blur(40px) saturate(185%);-webkit-backdrop-filter:blur(40px) saturate(185%)}",
   ".wh-spot>.wh-liquid-glass-content{display:flex;flex-direction:column;min-width:0;min-height:0}",
   // 真毛玻璃由盒子自己的半透白底渐变(--wh-spot-glass-top/bottom)+ 原生 vibrancy 提供；
   // 关掉冗余的 SVG warp/haze 折射层与 rim 描边——rim 的 1px 边叠在盒 border 上正是搜索条上那"两道横杠"，
@@ -70,7 +75,12 @@ export const spotlightCss = [
   // 内容区。
   ".wh-spot-body{padding:12px;max-height:min(560px,calc(100vh - 96px));overflow-y:auto;overscroll-behavior:contain}",
   // 能力网格（launcher）。
-  ".wh-spot-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}",
+  // R25（BX-06）：内容淡入。顺序是"先渲内容 → 量高 → 请求窗口生长"，所以内容从不缺席（不会先空白
+  // 再长出）；这条淡入是让内容不在窗口还在长的时候硬生生弹出来。挂在网格上而不是 .wh-spot-body 上，
+  // 是因为网格每次重渲都是新节点、动画天然重放，body 是常驻节点、CSS 动画只会在挂载时跑一次。
+  // 时长取 --ds-dur-fast（<壳层 180ms 的生长），淡入先收尾、生长后收尾，读起来是"内容先到、盒子跟上"。
+  // 系统「减弱动态效果」由 design-system.ts 的 `.wh-ds *{animation-duration:1ms!important}` 统一压平。
+  ".wh-spot-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;animation:ds-fade-in var(--ds-dur-fast) var(--ds-ease) both}",
   ".wh-spot-cap{display:flex;align-items:center;gap:11px;text-align:left;border:1px solid transparent;background:transparent;border-radius:var(--ds-radius-md);padding:11px 12px;cursor:pointer;color:var(--ds-ink);transition:transform var(--ds-dur-fast) var(--ds-ease-out),background var(--ds-dur-fast) var(--ds-ease),border-color var(--ds-dur-fast) var(--ds-ease),box-shadow var(--ds-dur-fast) var(--ds-ease);will-change:transform}",
   ".wh-spot-cap:hover{background:transparent;border-color:rgba(255,255,255,.32)}",
   ".wh-spot-cap:hover{transform:translateY(-1px);box-shadow:var(--ds-shadow-1)}",
