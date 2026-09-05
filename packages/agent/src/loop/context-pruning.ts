@@ -331,61 +331,106 @@ export function createSpillWriter(options: { workdir?: string; maxTotalBytes?: n
   };
 }
 
-// ── 引擎适配：传统 loop 的 wire 消息 ──────────────────────────────────────────
+
+// ── 引擎适配层（两套引擎共用同一份计划与判定） ────────────────────────────────
 
 /**
- * 传统 `loop.ts` 的历史投影：遍历 `LlmMessage[]`，按顺序取出所有 `tool_result` 块的字符串
- * 内容，交给 {@link planToolResultPruning} 算计划，再**原地按下标改写内容**。
+ * 一条可剪枝的工具结果「槽位」：当前文本 + 写回它的方法。
  *
- * 配对守卫在这里是结构性的、不是靠检查得来的：本函数只改 `tool_result` 块的 `content`
- * 字符串，从不增删消息、不动 `tool_use_id`、不动块的顺序——`tool_use` 与它的 `tool_result`
- * 因此不可能被切开。
- *
- * 返回 `contextChars` = 改写后整段历史的字符总量（含 assistant 文本与工具调用参数），
- * 供 {@link decidePruningSufficient} 重算压力。
+ * 引擎的差别到这里为止：传统 `loop.ts` 的槽位落在 `LlmMessage` 的 `tool_result` 块上，
+ * loop2 的落在 pi `ToolResultMessage` 的文本块上。**改的只是槽位里的字符串**，消息本身
+ * 一条不增、一条不删、顺序不动——`tool_use` / `tool_result` 的配对因此结构性地不可能被切开。
  */
-export function pruneWireToolResults(
-  messages: WireMessage[],
+export type ToolResultSlot = { content: string; write: (next: string) => void };
+
+/**
+ * 一段历史的上下文压力投影。两套引擎必须按**同一口径**构造，否则同一段历史会算出不同的压力、
+ * 进而在「剪枝够不够」上分叉（shadow-assert 的等价性检查会红）。口径：
+ *
+ *  - `slots`：所有 `tool_result` 的文本，按历史顺序（越靠前越老）。
+ *  - `otherChars`：其余进入模型上下文的文本字符量——纯字符串消息内容、`text` / `thinking`
+ *    块的正文、工具调用的名字加上参数的 `JSON.stringify` 长度。**不含**任何 wire 结构本身
+ *    （块类型名、id、角色字段），因为那些恰好是两套引擎唯一形状不同的地方。
+ */
+export type ContextProjection = { slots: ToolResultSlot[]; otherChars: number };
+
+export type ToolResultPruningResult = {
+  /** 被剪的工具结果条数。 */
+  prunedResults: number;
+  /** 剪掉的字符总量。 */
+  prunedChars: number;
+  /** 剪枝之后这段历史的字符总量（`otherChars` + 剪后所有工具结果文本）。 */
+  contextChars: number;
+};
+
+/** 按计划就地改写槽位文本，并算出剪后的上下文字符量。 */
+export function applyToolResultPruning(
+  projection: ContextProjection,
   options: ToolResultPruningOptions = {}
-): { prunedChars: number; prunedResults: number; contextChars: number } {
-  const slots: { message: WireMessage; blockIndex: number; content: string }[] = [];
+): ToolResultPruningResult {
+  const { slots, otherChars } = projection;
+  const plan = planToolResultPruning(slots.map((slot) => slot.content), options);
+  const contents = slots.map((slot) => slot.content);
+  for (const item of plan.pruned) {
+    contents[item.index] = item.content;
+    slots[item.index]!.write(item.content);
+  }
+  return {
+    prunedResults: plan.pruned.length,
+    prunedChars: plan.prunedChars,
+    contextChars: contents.reduce((total, content) => total + content.length, 0) + otherChars
+  };
+}
+
+/** {@link projectWireContext} 需要的最小消息形状（`LlmMessage` 就是这个形状）。 */
+export type WireMessage = { role: string; content: unknown };
+
+/** 工具调用参数计入 `otherChars` 的口径：`JSON.stringify` 的长度（不可序列化时退回 String）。 */
+function argumentChars(value: unknown): number {
+  try {
+    return (JSON.stringify(value) ?? "null").length;
+  } catch {
+    return String(value).length;
+  }
+}
+
+/**
+ * 传统 `loop.ts` 的历史投影：`LlmMessage[]` → {@link ContextProjection}。
+ * 口径见 {@link ContextProjection}；loop2 侧的 `projectPiContext` 必须与本函数逐条对齐。
+ */
+export function projectWireContext(messages: readonly WireMessage[]): ContextProjection {
+  const slots: ToolResultSlot[] = [];
+  let otherChars = 0;
   for (const message of messages) {
+    if (typeof message.content === "string") {
+      otherChars += message.content.length;
+      continue;
+    }
     if (!Array.isArray(message.content)) {
       continue;
     }
-    message.content.forEach((raw, blockIndex) => {
-      const block = raw as { type?: unknown; content?: unknown } | null;
-      if (!block || typeof block !== "object" || block.type !== "tool_result" || typeof block.content !== "string") {
+    const blocks = message.content as Record<string, unknown>[];
+    blocks.forEach((block, blockIndex) => {
+      if (!block || typeof block !== "object") {
         return;
       }
-      slots.push({ message, blockIndex, content: block.content });
+      if (block.type === "tool_result" && typeof block.content === "string") {
+        slots.push({
+          content: block.content,
+          write: (next) => {
+            blocks[blockIndex] = { ...block, content: next };
+          }
+        });
+        return;
+      }
+      if ((block.type === "text" || block.type === "thinking") && typeof block.text === "string") {
+        otherChars += block.text.length;
+        return;
+      }
+      if (block.type === "tool_use") {
+        otherChars += (typeof block.name === "string" ? block.name.length : 0) + argumentChars(block.input);
+      }
     });
   }
-  const plan = planToolResultPruning(slots.map((slot) => slot.content), options);
-  for (const item of plan.pruned) {
-    const slot = slots[item.index]!;
-    const blocks = slot.message.content as Record<string, unknown>[];
-    blocks[slot.blockIndex] = { ...blocks[slot.blockIndex]!, content: item.content };
-  }
-  return { prunedChars: plan.prunedChars, prunedResults: plan.pruned.length, contextChars: measureWireChars(messages) };
+  return { slots, otherChars };
 }
-
-/** 一条 wire 消息里所有文本的字符量（字符串内容直接计；块数组按 JSON 长度计，含参数与标记）。 */
-export function measureWireChars(messages: readonly WireMessage[]): number {
-  let chars = 0;
-  for (const message of messages) {
-    if (typeof message.content === "string") {
-      chars += message.content.length;
-      continue;
-    }
-    try {
-      chars += JSON.stringify(message.content).length;
-    } catch {
-      chars += String(message.content).length;
-    }
-  }
-  return chars;
-}
-
-/** {@link pruneWireToolResults} 需要的最小消息形状（`LlmMessage` 与 pi 的 wire 消息都满足）。 */
-export type WireMessage = { role: string; content: unknown };

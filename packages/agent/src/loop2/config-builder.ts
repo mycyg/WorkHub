@@ -48,6 +48,15 @@ import { eventTypes } from "@workhub/contracts";
 
 import type { LlmMessage } from "../providers/types.js";
 import { checkLoopBudget, controlFromAssistant, createInitialUsage, DoomLoopDetector } from "../loop/control.js";
+import {
+	applyToolResultPruning,
+	createSpillWriter,
+	decidePruningSufficient,
+	DEFAULT_TOOL_RESULT_CONTEXT_CHARS,
+	truncateForContext,
+	type ContextProjection,
+	type ToolResultSlot,
+} from "../loop/context-pruning.js";
 import { buildDoomLoopReminder, DOOM_LOOP_ESCALATION_REASON } from "../loop/doom-loop-reminder.js";
 import { buildStructuredHandoff } from "../loop/handoff.js";
 import {
@@ -256,6 +265,66 @@ function buildToolCtx(input: AgentLoopInput): ToolExecutionContext {
 	};
 }
 
+/**
+ * B10 第一段：pi 转写 → 与 `loop.ts` 同口径的上下文压力投影（`projectWireContext` 的 pi 版）。
+ *
+ * 两侧口径必须逐条对齐，否则同一段历史会算出不同的压力、在「剪枝够不够」上分叉，
+ * shadow-assert 的等价性检查会红。对齐表（左 = wire，右 = pi）：
+ *   user 的字符串 content   ↔ UserMessage.content 为字符串时
+ *   text / thinking 块正文  ↔ TextContent.text / ThinkingContent.thinking
+ *   tool_use.name + 参数    ↔ ToolCall.name + arguments（同一个参数对象，JSON 长度相同）
+ *   tool_result.content     ↔ ToolResultMessage 的文本块（拼接后算一条槽位）
+ * 结构字段（块类型名、id、role、timestamp）两边形状本就不同，一律不计。
+ */
+function projectPiContext(messages: AgentMessage[]): ContextProjection {
+	const slots: ToolResultSlot[] = [];
+	let otherChars = 0;
+	for (const message of messages) {
+		const role = (message as { role?: string }).role;
+		if (role === "toolResult") {
+			const toolResult = message as ToolResultMessage;
+			const texts = toolResult.content.filter(
+				(block): block is Extract<ToolResultMessage["content"][number], { type: "text" }> => block.type === "text",
+			);
+			if (texts.length === 0) continue;
+			slots.push({
+				content: texts.map((block) => block.text).join("\n"),
+				write: (next) => {
+					// 只改文本：把剪后的正文写回第一个文本块，其余文本块删掉（我们的工具结果恒为单块，
+					// 多块只可能来自外部构造）。消息本身、toolCallId、图片块一概不动。
+					const kept = toolResult.content.filter((block) => block.type !== "text");
+					toolResult.content = [{ type: "text", text: next }, ...kept];
+				},
+			});
+			continue;
+		}
+		const content = (message as { content?: unknown }).content;
+		if (typeof content === "string") {
+			otherChars += content.length;
+			continue;
+		}
+		if (!Array.isArray(content)) continue;
+		for (const raw of content as Record<string, unknown>[]) {
+			if (!raw || typeof raw !== "object") continue;
+			if (raw.type === "text" && typeof raw.text === "string") otherChars += raw.text.length;
+			else if (raw.type === "thinking" && typeof raw.thinking === "string") otherChars += raw.thinking.length;
+			else if (raw.type === "toolCall") {
+				otherChars += (typeof raw.name === "string" ? raw.name.length : 0) + argumentChars(raw.arguments);
+			}
+		}
+	}
+	return { slots, otherChars };
+}
+
+/** 工具调用参数计入 otherChars 的口径（与 `context-pruning.ts` 的同名内部函数一致）。 */
+function argumentChars(value: unknown): number {
+	try {
+		return (JSON.stringify(value) ?? "null").length;
+	} catch {
+		return String(value).length;
+	}
+}
+
 function toolResultFromMessage(message: ToolResultMessage): ToolResult {
 	const stashed = extractWorkhubToolResult(message.details);
 	if (stashed) return stashed;
@@ -338,6 +407,27 @@ async function runAgentLoop2Body(
 	// error tool_results, so capture + abort + re-throw after the loop to stay a faithful stand-in
 	// for AgentLoop.run (whose input.tools.execute throws propagate out and fail the run).
 	let fatalToolError: unknown;
+	// B10 第二段：与 loop.ts 同一份落盘器 + 同一份截断函数。loop.ts 在把结果写进 messages 时做，
+	// loop2 在 execute 返回给 pi 时做——两处都是「结果第一次进入模型可见历史」的那一刻，
+	// 因此两套引擎的 wire 文本逐字节相同（equivalence.test.ts 的 requestMessages 断言守住这一点）。
+	// 完整 ToolResult 仍原样挂在 AgentToolResult.details 上，step.toolResults / trace 不受影响。
+	const toolResultContextChars = input.budget.toolResultContextChars ?? DEFAULT_TOOL_RESULT_CONTEXT_CHARS;
+	const spill = createSpillWriter({
+		...(input.workdir ? { workdir: input.workdir } : {}),
+		...(input.budget.spillMaxTotalBytes !== undefined ? { maxTotalBytes: input.budget.spillMaxTotalBytes } : {}),
+	});
+	// sinkStepNo 在 turn_start 时已经加到当前步号，工具执行发生在同一轮之内，所以这里取到的
+	// 步号与 loop.ts 的 stepNo（usage.stepsUsed + 1）相同。
+	const toPiToolResult = async (result: ToolResult, toolName: string): Promise<AgentToolResult<ToolResult>> => {
+		const spillPath =
+			result.content.length > toolResultContextChars
+				? await spill({ stepNo: sinkStepNo, toolName, content: result.content })
+				: undefined;
+		return {
+			content: [{ type: "text", text: truncateForContext(result.content, toolResultContextChars, spillPath ? { spillPath } : {}) }],
+			details: result,
+		};
+	};
 
 	// Merge the caller signal with an internal controller so a fatal tool error stops promptly.
 	const runController = new AbortController();
@@ -418,13 +508,13 @@ async function runAgentLoop2Body(
 		execute: async (_toolCallId: string, params: Record<string, unknown>): Promise<AgentToolResult<ToolResult>> => {
 			try {
 				const result = await input.tools.execute(name, params, ctx);
-				return workhubToolResultToPi(result);
+				return await toPiToolResult(result, name);
 			} catch (error) {
 				// Legacy loop.run lets input.tools.execute throws propagate out. Capture, abort, and
 				// re-throw after the loop; return an error result so the current batch finishes cleanly.
 				fatalToolError = error;
 				runController.abort(error);
-				return workhubToolResultToPi(errorToolResult(error instanceof Error ? error.message : String(error)));
+				return await toPiToolResult(errorToolResult(error instanceof Error ? error.message : String(error)), name);
 			}
 		},
 	});
@@ -462,6 +552,40 @@ async function runAgentLoop2Body(
 			timestamp: Date.now(),
 		};
 		return [summaryMessage, ...tail];
+	};
+
+	// B10 第一段（免费剪枝），镜像 loop.ts 的 tryPruneInsteadOfCompact：压缩触发时先把历史里
+	// 保留窗口之外、超预算的工具结果剪成 head + 标记 + tail，重算压力；够了就不发摘要请求。
+	// 只在 context_window 触发上做（max_tokens 的自愈依赖摘要 + 尾部裁剪，剪枝解决不了）。
+	// 判不够时剪枝结果照样保留——只是让随后的摘要更便宜，配对结构一个字不动。
+	const tryPruneInsteadOfCompact = async (messages: AgentMessage[], stepNo: number): Promise<boolean> => {
+		const pruned = applyToolResultPruning(projectPiContext(messages), {
+			...(input.budget.pruneToolResultChars !== undefined ? { maxChars: input.budget.pruneToolResultChars } : {}),
+			...(input.budget.pruneRetainRatio !== undefined ? { retainRatio: input.budget.pruneRetainRatio } : {}),
+		});
+		const decision = decidePruningSufficient({
+			prunedChars: pruned.prunedChars,
+			contextChars: pruned.contextChars,
+			...(input.budget.contextWindowTokens !== undefined ? { contextWindowTokens: input.budget.contextWindowTokens } : {}),
+			...(input.budget.compactThreshold !== undefined ? { compactThreshold: input.budget.compactThreshold } : {}),
+		});
+		if (!decision.sufficient) return false;
+		// 压缩次数不计（这一次没花钱），但压缩线照常前推——与 loop.ts 逐字一致。
+		nextCompactionAtTokens = usage.totalTokens + compactionThreshold();
+		await input.emit?.({
+			type: eventTypes.agentRunCompacting,
+			previewText: `上下文已剪枝（剪掉 ${pruned.prunedResults} 条工具结果的中段，省下 ${pruned.prunedChars} 字符，未发摘要请求）`,
+			data: {
+				run_id: input.runId,
+				step_no: stepNo,
+				trigger: "context_window",
+				compactions,
+				summary_kind: "pruned",
+				pruned_results: pruned.prunedResults,
+				pruned_chars: pruned.prunedChars,
+			},
+		});
+		return true;
 	};
 
 	// P3b: full compaction (bookkeeping + structured summary + prune + emit), mirroring loop.ts compactNow.
@@ -508,6 +632,10 @@ async function runAgentLoop2Body(
 			}
 			const decision = checkLoopBudget(usage, input.budget);
 			if (decision?.signal === "compact" && usage.totalTokens >= nextCompactionAtTokens && compactions < maxCompactions) {
+				// B10 stage 1: free pruning first; when it frees enough, no summary request is made
+				// (no context_compact billing). Mirrors loop.ts tryPruneInsteadOfCompact, including
+				// its position AFTER the compaction-budget-exhausted decision.
+				if (await tryPruneInsteadOfCompact(messages, sinkStepNo)) return messages;
 				// Context-window compaction fires before the upcoming turn's model call; step_no is that
 				// upcoming step (sinkStepNo was bumped by this turn's turn_start), matching loop.ts's
 				// compactNow("context_window", usage.stepsUsed + 1).

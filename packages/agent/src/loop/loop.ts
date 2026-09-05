@@ -15,10 +15,11 @@ import {
 import type { LlmMessage, LlmStreamEvent } from "../providers/types.js";
 import { checkLoopBudget, controlFromAssistant, createInitialUsage, DoomLoopDetector, isTruncatedToolBatch } from "./control.js";
 import {
+  applyToolResultPruning,
   createSpillWriter,
   decidePruningSufficient,
   DEFAULT_TOOL_RESULT_CONTEXT_CHARS,
-  pruneWireToolResults,
+  projectWireContext,
   truncateForContext
 } from "./context-pruning.js";
 import { buildDoomLoopReminder, DOOM_LOOP_ESCALATION_REASON } from "./doom-loop-reminder.js";
@@ -1228,7 +1229,7 @@ export class AgentLoop {
     // （后续那条提示明说「基于摘要中的进度继续」），剪枝解决不了那个问题。
     // 判不够时剪枝结果**照样保留**——那只是让随后的摘要更便宜，不改变任何配对结构。
     const tryPruneInsteadOfCompact = async (stepNo: number) => {
-      const pruned = pruneWireToolResults(messages, {
+      const pruned = applyToolResultPruning(projectWireContext(messages), {
         ...(input.budget.pruneToolResultChars !== undefined ? { maxChars: input.budget.pruneToolResultChars } : {}),
         ...(input.budget.pruneRetainRatio !== undefined ? { retainRatio: input.budget.pruneRetainRatio } : {})
       });
@@ -1305,30 +1306,32 @@ export class AgentLoop {
       usage.secondsUsed = elapsedSeconds(startedAt);
       const budgetDecision = checkLoopBudget(usage, input.budget);
       if (budgetDecision?.signal === "compact" && usage.totalTokens >= nextCompactionAtTokens) {
-        // B10：先试免费剪枝。它排在压缩次数耗尽的升级判定**之前**——剪枝不花钱也不占配额，
-        // 能靠它撑过去就没有理由叫醒一个人（与 B6「先劝再断」同一条纪律）。
+        if ((usage.compactions ?? 0) >= maxCompactions) {
+          const handoff = buildStructuredHandoff({
+            steps,
+            budgetHit: "tokens",
+            reason: "上下文压缩次数已用尽"
+          });
+          await input.emit?.({
+            type: eventTypes.agentRunEscalated,
+            previewText: "上下文压缩次数已用尽",
+            data: { run_id: input.runId, handoff }
+          });
+          return terminalResult({
+            status: "escalated",
+            reason: "compact_budget_exhausted",
+            control: "escalate",
+            usage,
+            steps,
+            handoff
+          });
+        }
+        // B10 第一段：先试免费剪枝，够了就不发那次摘要请求。
+        // 剪枝排在「压缩次数耗尽」判定**之后**而不是之前：loop2 的耗尽判定发生在
+        // shouldStopAfterTurn（那里拿不到即将发出的历史），两套引擎必须逐字同步，
+        // 这条顺序是同步的代价。剪枝让摘要变少，本来就会让耗尽这条路更难走到。
         const prunedEnough = await tryPruneInsteadOfCompact(usage.stepsUsed + 1);
         if (!prunedEnough) {
-          if ((usage.compactions ?? 0) >= maxCompactions) {
-            const handoff = buildStructuredHandoff({
-              steps,
-              budgetHit: "tokens",
-              reason: "上下文压缩次数已用尽"
-            });
-            await input.emit?.({
-              type: eventTypes.agentRunEscalated,
-              previewText: "上下文压缩次数已用尽",
-              data: { run_id: input.runId, handoff }
-            });
-            return terminalResult({
-              status: "escalated",
-              reason: "compact_budget_exhausted",
-              control: "escalate",
-              usage,
-              steps,
-              handoff
-            });
-          }
           await compactNow("context_window", usage.stepsUsed + 1);
         }
       }
