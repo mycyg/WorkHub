@@ -31,6 +31,7 @@ import {
   createProposalRepository,
   createTaskPlanRepository,
   createTeamSkillRepository,
+  createWorkItemRepository,
   getSharedDatabaseClient,
   listCostByAssigneeForWorkspace,
   type AiFeedbackRepository,
@@ -154,6 +155,8 @@ export type PageRoutesDependencies = {
   // R13 批 P4：labor-split 按 assignee 记账的一次性 SQL 聚合读——注入点仅供测试替身，
   // 生产默认直接调 packages/db 的 listCostByAssigneeForWorkspace。
   assigneeCostReader?: (input: { teamId: string; sinceBucket?: string; limit?: number }) => Promise<AssigneeCostInputRow[]>;
+  // 成本页「按任务分账」的人话标签（编号 · 标题）：注入点仅供测试替身，生产默认直连 packages/db 一次批量取数。
+  workItemLabelReader?: (input: { workspaceId: string; workItemIds: string[] }) => Promise<Map<string, string>>;
   agentArmyDashboard?: {
     page: (input: {
       actor: AuthEnv["Variables"]["actor"];
@@ -358,6 +361,11 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const assigneeCostReader = deps.assigneeCostReader
     ?? ((input: { teamId: string; sinceBucket?: string; limit?: number }) =>
       listCostByAssigneeForWorkspace(getSharedDatabaseClient().db, input));
+  const workItemLabelReader = deps.workItemLabelReader
+    ?? (async (input: { workspaceId: string; workItemIds: string[] }) => {
+      const rows = await createWorkItemRepository(getSharedDatabaseClient().db).listWorkItemLabelsByIds(input);
+      return new Map(rows.map((row) => [row.id, row.title ? `${row.code} · ${row.title}` : row.code]));
+    });
 
   type DashboardSourceWarning = NonNullable<AgentArmyDashboardVM["source_warnings"]>[number];
   type DashboardSourceWarnings = DashboardSourceWarning[];
@@ -989,6 +997,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     // B-R9.6 UX-H4：军团行元数据（名称/状态/预算）。展示增强——取数失败降级为无名行，不拖垮成本页。
     let taskPlanMeta: Map<string, { label: string; status: string; maxCostCny?: number }> | undefined;
     let objectiveTitles: Map<string, string> | undefined;
+    let workItemLabels: Map<string, string> | undefined;
     if (c.var.currentUser.isAdmin && c.var.actor.workspaceId) {
       const planIds = [...new Set(ledgerEntries
         .map((entry) => entry.taskPlanId ?? (entry.scope.kind === "task" ? entry.scope.taskPlanId : undefined))
@@ -1009,6 +1018,17 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
           objectiveTitles = await objectives.listObjectiveTitlesByIds({ workspaceId: c.var.actor.workspaceId, objectiveIds });
         } catch {
           objectiveTitles = undefined;
+        }
+      }
+      // 「按任务分账」用编号 · 标题（by_workitem 的 code），不渲内部 id；取数失败同样降级——页面层回落中性词。
+      const workItemIds = [...new Set(ledgerEntries
+        .map((entry) => entry.workItemId ?? (entry.scope.kind === "workitem" ? entry.scope.workitemId : undefined))
+        .filter((value): value is string => Boolean(value)))];
+      if (workItemIds.length > 0) {
+        try {
+          workItemLabels = await workItemLabelReader({ workspaceId: c.var.actor.workspaceId, workItemIds });
+        } catch {
+          workItemLabels = undefined;
         }
       }
     }
@@ -1039,6 +1059,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       ledgerEntries,
       ...(taskPlanMeta ? { taskPlanMeta } : {}),
       ...(objectiveTitles ? { objectiveTitles } : {}),
+      ...(workItemLabels ? { workItemLabels } : {}),
       ...(assigneeCostRows ? { assigneeCostRows } : {}),
       ...(aiAutoMergeCounts ? { aiAutoMergeCounts } : {})
     });
