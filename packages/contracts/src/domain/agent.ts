@@ -62,6 +62,47 @@ export const agentStepSchema = z.object({
 });
 export type AgentStep = z.infer<typeof agentStepSchema>;
 
+// R26 批 B6 观测面：一次「重复动作提醒」的结构化事实。同一份形状被两处引用：
+//  - SSE 事件 agent_run.reminded 的 data（events.ts 的 agentRunRemindedDataSchema 在此之上加 run_id）；
+//  - 运行 VM 的 reminders 行（下方 agentRunReminderVmSchema），让回放/实时时间线能补上这一行。
+// 这里只有事实，没有句子：档位、连续重复步数、重复形态、工具名。中英文句子由两端按 locale 组装。
+//
+// tool_ids 只在「一次重复涉及不止一个工具」（交替形态 A-B-A-B 且两边工具不同）时出现；单工具的常见
+// 情形只留 tool_id，同一事实不存两份。两者都可能缺席（重复的那一步没有工具调用），渲染层要能退回
+// 不提工具名的说法。
+export const doomLoopShapes = ["identical", "alternating"] as const;
+export const doomLoopShapeSchema = z.enum(doomLoopShapes);
+export type DoomLoopShapeKind = z.infer<typeof doomLoopShapeSchema>;
+
+export const agentRunReminderFactsSchema = z.object({
+  /** 触发提醒的那一步（1 起）。 */
+  step_no: z.number().int().positive(),
+  /** 1=温和提醒，2=详细提醒。第三档不走这条，升级发 agent_run.escalated。 */
+  tier: z.union([z.literal(1), z.literal(2)]),
+  /** 连续重复的步数：全同形态=同一动作连续步数；交替形态=构成 A-B-A-B 的连续步数。 */
+  repeats: z.number().int().positive(),
+  shape: doomLoopShapeSchema,
+  /** 参与重复的第一个工具名（原始工具 id，人话化交给前端）。重复步没有工具调用时缺席。 */
+  tool_id: z.string().min(1).optional(),
+  /** 涉及多个工具时的完整列表（去重、按出现顺序）；单工具时缺席。 */
+  tool_ids: z.array(z.string().min(1)).min(2).optional()
+});
+export type AgentRunReminderFacts = z.infer<typeof agentRunReminderFactsSchema>;
+
+/** 运行 VM 里的一行提醒。形状与事件 data 的公共部分逐字段相同，故渲染层一份代码通吃两个来源。 */
+export const agentRunReminderVmSchema = agentRunReminderFactsSchema.strict();
+export type AgentRunReminderVM = z.infer<typeof agentRunReminderVmSchema>;
+
+/**
+ * 宽容读取：从任意来源（SSE envelope 的 data、VM 里的一行）解析出可渲染的提醒事实，多余字段
+ * （run_id/work_item_id 等）自动剥掉。解析不出来返回 undefined——渲染层据此整行不渲，
+ * 绝不把半截数据编成一句话。两端共用同一份，免得中英文两套 UI 各写一遍容错分支后行为分叉。
+ */
+export function readAgentRunReminderFacts(value: unknown): AgentRunReminderFacts | undefined {
+  const parsed = agentRunReminderFactsSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
 export const agentToolCallSchema = z.object({
   id: z.string().min(1),
   tool_id: z.string().min(1),
@@ -129,6 +170,10 @@ export const agentRunLiveVmSchema = z.object({
   budget_decision: agentRunBudgetDecisionVmSchema,
   usage: agentRunLiveUsageSchema,
   trace: z.array(agentStepSchema),
+  // R26 批 B6 观测面：这次运行里「重复动作被劝过几次、劝的是什么」。additive optional——存量客户端
+  // 不认识这个键读旧响应零回归，缺席与空数组同义（时间线不渲提醒行）。每一行对应一条 agent_run.reminded
+  // 事件，渲染层按 step_no 插进步骤时间线。
+  reminders: z.array(agentRunReminderVmSchema).optional(),
   handoff: structuredHandoffSchema.optional(),
   stream_href: z.string().min(1),
   replay_href: z.string().min(1)

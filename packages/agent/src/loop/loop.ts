@@ -22,7 +22,7 @@ import {
   projectWireContext,
   truncateForContext
 } from "./context-pruning.js";
-import { buildDoomLoopReminder, DOOM_LOOP_ESCALATION_REASON } from "./doom-loop-reminder.js";
+import { buildDoomLoopReminder, doomLoopReminderEventFacts, DOOM_LOOP_ESCALATION_REASON } from "./doom-loop-reminder.js";
 import { nextRetryDecision } from "../providers/retry.js";
 import { buildStructuredHandoff } from "./handoff.js";
 import type {
@@ -1531,6 +1531,17 @@ export class AgentLoop {
         // 再叠一条提醒既冗余又会打乱压缩收尾；tier 3 已在上面升级，走不到这里。
         if (loopSignal) {
           messages.push({ role: "user", content: buildDoomLoopReminder(loopSignal) });
+          // B6 观测面：提醒真的注入了才发事件——「劝过几次、劝的是什么」是前端时间线的唯一来源。
+          // previewText 是机器串（同 escalated 的 "doom_loop"）：句子由前端按 locale 组装，
+          // 事件里不放中文文案。tier 3 已在上面升级返回，本行只会看到第一、二档。
+          await input.emit?.({
+            type: eventTypes.agentRunReminded,
+            previewText: `repeat_reminder tier=${loopSignal.tier}`,
+            data: {
+              run_id: input.runId,
+              ...doomLoopReminderEventFacts(loopSignal, step.index)
+            }
+          });
         }
         continue;
       }

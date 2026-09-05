@@ -4,6 +4,9 @@ const eventTypeToCuuState: Partial<Record<EventType, CuuState>> = {
   [eventTypes.agentRunStarted]: "thinking",
   [eventTypes.agentRunStep]: "thinking",
   [eventTypes.agentRunCompacting]: "thinking",
+  // R26 批 B6：前两档提醒只是「换个做法」的自救提示，运行仍在继续——桌宠保持 thinking，不变 worried。
+  // worried 是「需要人介入」的信号，那由第三档的 agent_run.escalated 负责。
+  [eventTypes.agentRunReminded]: "thinking",
   [eventTypes.agentRunFailed]: "worried",
   [eventTypes.agentRunEscalated]: "worried",
   [eventTypes.confidenceScored]: "thinking",

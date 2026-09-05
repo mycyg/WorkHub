@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { eventTypeSchema } from "./enums.js";
 import { idSchema, isoDateTimeSchema } from "./domain/common.js";
+import { agentRunReminderFactsSchema } from "./domain/agent.js";
 import {
   conversationMessageReactionVmSchema,
   conversationMessageVmSchema
@@ -517,3 +518,39 @@ export const conversationTitleUpdatedEventSchema = z
     }
   });
 export type ConversationTitleUpdatedEvent = z.infer<typeof conversationTitleUpdatedEventSchema>;
+
+// R26 批 B6 观测面：agent_run.reminded——重复动作「先劝再断」的前两档提醒。运行环境往对话里追加了
+// 一条提醒（让模型自己换做法），运行**没有**中断；第三档才升级，那条走 agent_run.escalated，两者互斥，
+// 同一次判定绝不会各发一条。
+//
+// payload 只带结构化事实，**不带任何用户可见文案**：档位、连续重复步数、重复形态、参与重复的工具名。
+// 句子由两端各自按 locale 组装（packages/ui 的 agentRunReminderLine / 桌面端 spotlight labels）——
+// 事件里塞中文句子会让英文界面无法本地化，也会把模型可见的提醒正文和界面文案锁死在一起。
+export const agentRunRemindedDataSchema = agentRunReminderFactsSchema
+  .extend({
+    run_id: idSchema,
+    work_item_id: idSchema.optional()
+  })
+  .strict();
+export type AgentRunRemindedData = z.infer<typeof agentRunRemindedDataSchema>;
+
+export const agentRunRemindedEventSchema = z
+  .object({
+    event_id: idSchema,
+    type: z.literal("agent_run.reminded"),
+    topic: z.string().min(1),
+    ts: isoDateTimeSchema,
+    preview_text: z.string().max(200).optional(),
+    data: agentRunRemindedDataSchema
+  })
+  .strict()
+  .superRefine((event, ctx) => {
+    if (event.topic !== `run:${event.data.run_id}`) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["topic"],
+        message: "agent-run-reminded topic must match data.run_id"
+      });
+    }
+  });
+export type AgentRunRemindedEvent = z.infer<typeof agentRunRemindedEventSchema>;

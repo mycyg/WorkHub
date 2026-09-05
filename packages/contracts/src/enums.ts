@@ -184,6 +184,11 @@ export const eventTypes = {
   agentRunStep: "agent_run.step",
   stepToolResult: "step.tool_result",
   agentRunCompacting: "agent_run.compacting",
+  // R26 批 B6 观测面：重复动作「先劝再断」的前两档（默认连续 3 步、5 步）发这条——运行环境
+  // 往对话里追加了一条提醒、让模型自己换做法，运行仍在继续。第三档才升级，走 agent_run.escalated，
+  // 因此这两类事件互斥、不会为同一次判定各发一条。payload 见 events.ts 的
+  // agentRunRemindedDataSchema（档位/连续步数/重复形态/工具名），文案一律由前端按 payload 组装。
+  agentRunReminded: "agent_run.reminded",
   agentRunFailed: "agent_run.failed",
   agentRunEscalated: "agent_run.escalated",
   sessionQuestion: "session.question",

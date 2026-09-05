@@ -57,7 +57,7 @@ import {
 	type ContextProjection,
 	type ToolResultSlot,
 } from "../loop/context-pruning.js";
-import { buildDoomLoopReminder, DOOM_LOOP_ESCALATION_REASON } from "../loop/doom-loop-reminder.js";
+import { buildDoomLoopReminder, doomLoopReminderEventFacts, DOOM_LOOP_ESCALATION_REASON } from "../loop/doom-loop-reminder.js";
 import { buildStructuredHandoff } from "../loop/handoff.js";
 import {
 	finalizeL3,
@@ -726,6 +726,17 @@ async function runAgentLoop2Body(
 			}
 			if (loopSignal && workhubResults.length > 0) {
 				pendingDoomLoopReminder = buildDoomLoopReminder(loopSignal);
+				// B6 观测面：与 loop.ts 同一时点、同一形状发 agent_run.reminded。shouldStopAfterTurn 跑在
+				// turn_end 之后，而 turn_end 的 sink 刚发完这一步的 agentRunStep(control)——因此这条事件在
+				// 两套引擎的事件序列里落在同一个位置（equivalence 的 projectEvents 逐条比对）。
+				await input.emit?.({
+					type: eventTypes.agentRunReminded,
+					previewText: `repeat_reminder tier=${loopSignal.tier}`,
+					data: {
+						run_id: input.runId,
+						...doomLoopReminderEventFacts(loopSignal, step.index),
+					},
+				});
 			}
 
 			// Budget escalate (steps / timeout / tokens / cost) — same predicate + timing as loop.ts
