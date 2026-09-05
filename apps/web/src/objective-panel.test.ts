@@ -77,13 +77,13 @@ test("objectiveRowHtml falls back to an honest note when the project has no open
   const html = objectiveRowHtml(objectiveA, [], "zh-CN");
 
   assert.doesNotMatch(html, /data-r20-okr-link-select/u);
-  assert.match(html, /这个项目暂无进行中工作项可挂/u);
+  assert.match(html, /这个项目暂时没有可关联的进行中任务/u);
 });
 
 test("objectiveRowHtml localizes into English", () => {
   const html = objectiveRowHtml(objectiveA, [], "en-US");
 
-  assert.match(html, /No open work items in this project to link yet\./u);
+  assert.match(html, /No open tasks in this project to link yet\./u);
   assert.match(html, />Details</u);
 });
 
@@ -130,8 +130,8 @@ test("objectiveDetailBodyHtml renders honest per-section empty states when nothi
   const html = objectiveDetailBodyHtml(fullDetail(), "zh-CN");
 
   assert.match(html, /还没有关键结果/u);
-  assert.match(html, /还没有挂链的工作项/u);
-  assert.match(html, /还没有挂链的执行计划/u);
+  assert.match(html, /还没有关联的任务。/u);
+  assert.match(html, /还没有关联的任务计划。/u);
   assert.doesNotMatch(html, /更多未显示/u);
 });
 

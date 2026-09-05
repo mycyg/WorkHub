@@ -1137,16 +1137,15 @@ test("R9.6 web route loads agent dashboard through the typed Page VM endpoint", 
   assert.equal(result.html.includes('data-r9-agent-kpi="waiting_decision"'), true);
   assert.equal(result.html.includes('href="/"'), true);
   assert.equal(result.html.includes('href="/workitems/96000000-0000-4000-8000-000000000002"'), true);
-  // R9.7 UX spec uses the web-facing concept name "军团"; the old "智能代理军团"
-  // assertion was implementation copy, not the product glossary.
-  assert.equal(result.html.includes("军团"), true);
-  assert.equal(result.html.includes("智能代理军团"), false);
+  // A2-10：同一实体在导航/页面标题/卡片上只有一个名字——「AI 小组」。
+  assert.equal(result.html.includes("AI 小组"), true);
+  assert.equal(result.html.includes("军团"), false);
   assert.equal(result.html.includes("竞品资料梳理"), true);
   assert.equal(result.html.includes("卡在: 竞品复核"), true);
   assert.equal(result.html.includes("追加预算继续"), false);
 });
 
-test("R9.7 web Agent dashboard shell uses product-facing Agent team copy", async () => {
+test("R9.7 web Agent dashboard shell uses product-facing AI team copy", async () => {
   const { client } = fakeRouteClient(goldPathSurfaceVm());
   const match = resolveWebRoute("/dashboard/agents");
   assert.ok(match);
@@ -1154,8 +1153,9 @@ test("R9.7 web Agent dashboard shell uses product-facing Agent team copy", async
   const result = await loadWebRoute(client, match, "en-US");
 
   assert.equal(result.status, "ready");
-  assert.equal(result.html.includes("Agent teams"), true);
+  assert.equal(result.html.includes("AI teams"), true);
   assert.equal(result.html.includes("Agent Army"), false);
+  assert.equal(result.html.includes("Agent teams"), false);
 });
 
 test("R9.6 web Agent Army dashboard renders an honest empty state without fake plan cards", async () => {
@@ -1188,7 +1188,7 @@ test("R9.6 web Agent Army dashboard renders an honest empty state without fake p
 
   assert.equal(result.status, "ready");
   assert.equal(result.html.includes('data-r9-agent-dashboard-empty="no_agent_armies"'), true);
-  assert.equal(result.html.includes("还没有军团在跑"), true);
+  assert.equal(result.html.includes("还没有 AI 小组在跑"), true);
   assert.equal(result.html.includes('href="/intake"'), true);
   assert.equal(result.html.includes('data-r9-agent-plan-card='), false);
 });
@@ -1314,7 +1314,7 @@ test("S1 Day0 /intake renders a project bootstrap start surface instead of empty
   assert.equal(result.html.includes('data-s1-day1-intent-input="true"'), true);
   assert.equal(result.html.includes('data-action-id="start_intake"'), true);
   assert.equal(result.html.includes('href="/api/projects/bootstrap"'), true);
-  assert.equal(result.html.includes("&quot;name&quot;:&quot;Pilot Project&quot;"), true);
+  assert.equal(result.html.includes("&quot;name&quot;:&quot;Default project&quot;"), true);
   assert.equal(result.html.includes("&quot;slug&quot;:&quot;pilot-project&quot;"), true);
   assert.equal(result.html.includes("Day 0 Pilot Project"), false);
   assert.equal(result.html.includes('data-route-state="empty"'), false);
@@ -1339,7 +1339,7 @@ test("M17 empty replay renders a tailored empty state linking back to the work i
   assert.equal(result.html.includes("Nothing needs action"), false);
   // back link goes to the parent work item, not the global overview
   assert.equal(result.html.includes("/workitems/00000000-0000-4000-8000-000000000104"), true);
-  assert.equal(result.html.includes("Back to the work item"), true);
+  assert.equal(result.html.includes("Back to the task"), true);
 });
 
 test("R4.14 knowledge route loader carries search payload into a cited fallback route component", async () => {
@@ -1483,7 +1483,8 @@ test("R14 batch SEARCH: search route surfaces the current query as a masthead me
   assert.equal(result.status, "ready");
   assert.equal(result.html.includes('data-r4-product-metric="query"'), true);
   assert.equal(result.html.includes(">budget<"), true);
-  assert.equal(result.html.includes('data-r4-product-metric="runtime"'), true);
+  // A2-33：搜索页 masthead 不再摆「运行时: 实时数据」这条开发期非假数据标记。
+  assert.equal(result.html.includes('data-r4-product-metric="runtime"'), false);
 });
 
 test("R4.13 proposal route loader carries conflict API data into advanced route UX", async () => {
@@ -1857,7 +1858,7 @@ test("R8 S2b project-home route renders project meta, open-work links, CTAs, bac
   // +N more hint when true count exceeds the shown list (73 - 1 = 72)
   assert.equal(result.html.includes('data-r8-project-home-more="72"'), true);
   // 旧断言接受 "open the project to review all"，但当前已经在项目主页且没有单独的隐藏工作项页面。
-  assert.equal(result.html.includes("Project home shows 1 of 73 open items you can handle"), true);
+  assert.equal(result.html.includes("You can act on 1 of 73 open items"), true);
   assert.equal(result.html.includes("open the project to review all"), false);
   // recent files card (drive sync is core) — file count + a recent file linking into the drive
   assert.equal(result.html.includes('data-r8-project-home-files="1"'), true);
@@ -1916,7 +1917,7 @@ test("M5 project-home: 进行中 stat chip uses the全量 total (matches header 
   assert.equal(result.html.includes('data-r8-project-home-filtered="5"'), true);
   assert.equal(result.html.includes('data-r8-project-home-collapsed="2"'), true);
   // 旧断言要求不提权限原因，但 VM 已区分 total 与可处理数；继续中性处理会掩盖权限过滤真相。
-  assert.equal(result.html.includes("Project home shows 1 of 3 open items you can handle"), true);
+  assert.equal(result.html.includes("You can act on 1 of 3 open items"), true);
   assert.equal(result.html.includes("5 more are outside your permissions or assignment scope"), true);
   assert.equal(result.html.includes("open the project to review all"), false);
 
@@ -2130,8 +2131,8 @@ test("R8 S4b intake start without a project keeps the generic bootstrap path (ba
   assert.ok(match);
   const result = await loadWebRoute(client, match, "en-US");
   assert.equal(result.status, "ready");
-  assert.equal(result.html.includes("Pilot project"), true);
-  assert.equal(result.html.includes("data-request-json"), true, "generic start still bootstraps a pilot project");
+  assert.equal(result.html.includes("Default project"), true);
+  assert.equal(result.html.includes("data-request-json"), true, "generic start still bootstraps the default project");
   assert.equal(result.html.includes("data-s4b-project-id"), false);
 });
 
@@ -2247,7 +2248,7 @@ test("R9 drive route loader tells the truth when the recycle bin is truncated", 
   assert.equal(result.html.match(/data-r5-drive-recycle-item=/g)?.length, 5);
   assert.equal(result.html.match(/data-r5-drive-recycle-restore=/g)?.length, 5);
   assert.equal(result.html.includes('data-r9-drive-recycle-hidden-count="3"'), true);
-  assert.equal(result.html.includes("本页先显示 5 项；还有 3 项未加载。"), true);
+  assert.equal(result.html.includes("已显示 5 项，还有 3 项。"), true);
   assert.equal(result.html.includes("回收站是空的。"), false);
 });
 

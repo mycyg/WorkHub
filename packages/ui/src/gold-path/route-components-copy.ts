@@ -308,7 +308,9 @@ export type RouteCopyKey =
   | "projectHome.collapsedSummary"
   | "projectHome.armyPill"
   | "cost.subtaskCount"
-  | "cost.armyCapped";
+  | "cost.armyCapped"
+  | "plan.shareShort"
+  | "plan.shareOver";
 
 export const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
   "zh-CN": {
@@ -617,7 +619,9 @@ export const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "projectHome.collapsedSummary": "另有 {count} 条这里没有展开",
     "projectHome.armyPill": "AI 小组子任务 {done}/{total}",
     "cost.subtaskCount": "{count} 个子任务",
-    "cost.armyCapped": "按花费只显示前 8 个 AI 小组（共 {total} 个）。"
+    "cost.armyCapped": "按花费只显示前 8 个 AI 小组（共 {total} 个）。",
+    "plan.shareShort": "预算份额加起来是 {total}%，还差 {delta}%，修正后才能批准并开始。",
+    "plan.shareOver": "预算份额加起来是 {total}%，超出 {delta}%，修正后才能批准并开始。"
   },
   "en-US": {
     "workitem.context": "Task context",
@@ -923,6 +927,8 @@ export const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "projectHome.collapsedSummary": "{count} more not shown here",
     "projectHome.armyPill": "AI team {done}/{total}",
     "cost.subtaskCount": "{count} subtasks",
-    "cost.armyCapped": "Showing the 8 costliest AI teams of {total}."
+    "cost.armyCapped": "Showing the 8 costliest AI teams of {total}.",
+    "plan.shareShort": "Budget shares add up to {total}% — {delta}% short. Fix them before approving.",
+    "plan.shareOver": "Budget shares add up to {total}% — {delta}% over. Fix them before approving."
   }
 };

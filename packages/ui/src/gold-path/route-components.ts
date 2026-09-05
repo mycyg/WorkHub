@@ -2203,9 +2203,11 @@ function renderTaskPlanItemsPanel(vm: ProposalDetailVM, locale: WorkHubLocale): 
   const totalShare = ordered.reduce((sum, item) => sum + item.budget_share_pct, 0);
   const shareNote = totalShare === 100
     ? `<p class="wh-subtle" data-r9-plan-share-total="100">${escapeHtml(goldPathCopyT(locale, "budgetSharesAddUpTo100"))}</p>`
-    : `<p class="wh-pill-danger" data-r9-plan-share-total="${escapeHtml(String(totalShare))}" data-r9-plan-share-invalid="true">${escapeHtml(zh
-      ? `预算份额加起来是 ${totalShare}%，${totalShare < 100 ? `还差 ${100 - totalShare}%` : `超出 ${totalShare - 100}%`}，修正后才能批准并派发。`
-      : `Budget shares add up to ${totalShare}%, ${totalShare < 100 ? `${100 - totalShare}% short` : `${totalShare - 100}% over`} — fix them before approving and dispatching.`)}</p>`;
+    : `<p class="wh-pill-danger" data-r9-plan-share-total="${escapeHtml(String(totalShare))}" data-r9-plan-share-invalid="true">${escapeHtml(
+      totalShare < 100
+        ? routeTf(locale, "plan.shareShort", { total: totalShare, delta: 100 - totalShare })
+        : routeTf(locale, "plan.shareOver", { total: totalShare, delta: totalShare - 100 })
+    )}</p>`;
   return `<section class="wh-card wh-r4-route-card" data-r9-plan-items="true" data-r9-plan-item-count="${escapeHtml(String(ordered.length))}">
       <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "subtasks"))}</h3>
       <div class="wh-r4-route-timeline" role="list">${rows}</div>
