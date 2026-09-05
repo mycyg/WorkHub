@@ -37,6 +37,7 @@ import {
   type McpPrecheckReport,
   type McpServerActionResult,
   type McpServerConnectionVM,
+  type McpServerErrorCode,
   type McpServerListVM,
   type McpServerVM,
   type UpdateMcpServerRequest
@@ -105,7 +106,7 @@ const PRECHECK_REFUSALS: Record<string, { status: number; copy: McpServersCopyKe
  * 治理动作失败），所以这张表平时走的是「整次 reload 整体炸了」那条罕见路径；导出它是为了让 M7
  * 的设置页和未来放开 HTTP 之后的调用点共用同一份映射，而不是各自再猜一遍英文诊断的意思。
  */
-const SESSION_FAILURES: Record<McpSessionFailureReason, { code: string; copy: McpServersCopyKey }> = {
+const SESSION_FAILURES: Record<McpSessionFailureReason, { code: McpServerErrorCode; copy: McpServersCopyKey }> = {
   spawn_failed: { code: "mcp_spawn_failed", copy: "spawnFailed" },
   handshake_timeout: { code: "mcp_handshake_timeout", copy: "handshakeTimeout" },
   protocol_version_unsupported: { code: "mcp_protocol_version_unsupported", copy: "protocolVersionUnsupported" },
@@ -116,8 +117,18 @@ const SESSION_FAILURES: Record<McpSessionFailureReason, { code: string; copy: Mc
   exited: { code: "mcp_exited", copy: "exited" }
 };
 
+/**
+ * 会话失败原因 → 对外稳定码。拿不到原因时回落到「连不上」。
+ *
+ * M2 的连接监督只在快照里回**原因枚举**（它不认识 `mcp_*` 码，认识了就得反过来 import 本文件，
+ * 绕成一个循环）；翻成码这一步固定发生在这里，于是全仓只有这一张表。
+ */
+export function mcpSessionFailureCode(reason: McpSessionFailureReason | undefined): McpServerErrorCode {
+  return reason ? SESSION_FAILURES[reason].code : "mcp_connect_failed";
+}
+
 /** 会话失败原因的对外码与人话。拿不到原因时回落到「连不上」。 */
-export function describeMcpSessionFailure(error: unknown): { code: string; message: string } {
+export function describeMcpSessionFailure(error: unknown): { code: McpServerErrorCode; message: string } {
   const mapped = error instanceof McpSessionError ? SESSION_FAILURES[error.reason] : undefined;
   if (!mapped) {
     return { code: "mcp_connect_failed", message: mcpServersT("connectFailed") };
@@ -231,7 +242,10 @@ function toConnectionVm(snapshot: McpServerStatusSnapshot): McpServerConnectionV
     tool_count: snapshot.toolCount,
     ...(snapshot.toolIds.length > 0 ? { tool_ids: snapshot.toolIds } : {}),
     ...(snapshot.blockedReason ? { blocked_reason: snapshot.blockedReason } : {}),
-    ...(snapshot.lastError ? { last_error: snapshot.lastError } : {})
+    // 有诊断文本就一定有码：界面永远拿得到一句按码写的话，诊断串只作为括号里的次级信息。
+    ...(snapshot.lastError
+      ? { last_error: snapshot.lastError, last_error_code: mcpSessionFailureCode(snapshot.lastErrorReason) }
+      : {})
   };
 }
 
@@ -240,7 +254,7 @@ function toConnectionVm(snapshot: McpServerStatusSnapshot): McpServerConnectionV
  * 写回这一行，所以重启 API 之后读到的仍然是上一次真实结论。内存快照只补一件行上没有的事——
  * 「此刻还有没有活着的子进程」，那件事在 `connection` 里单独给。
  */
-export function toMcpServerVm(row: McpServerRow): McpServerVM {
+export function toMcpServerVm(row: McpServerRow, snapshot?: McpServerStatusSnapshot): McpServerVM {
   const tools = stringArray(row.toolsJson);
   // fail-closed 输出契约：VM 装配走样 → 500，而不是把半成品甩给客户端（同 pages/* 的既有口径）。
   return parseOutputContract(
@@ -261,6 +275,11 @@ export function toMcpServerVm(row: McpServerRow): McpServerVM {
       trust_level: row.trustLevel,
       precheck_report: row.precheckReport as unknown as McpPrecheckReport,
       ...(row.lastError ? { last_error: row.lastError } : {}),
+      // 码来自**本进程**的连接记录，因为 mcp_servers 表没有存码的列。行上有诊断而这个进程没连过
+      // 它（重启之后、或从没启用过）时码就缺席——那是如实的「说不出这一次的原因」，不是没出过错。
+      ...(row.lastError && snapshot?.lastError
+        ? { last_error_code: mcpSessionFailureCode(snapshot.lastErrorReason) }
+        : {}),
       tool_count: row.toolCount,
       ...(tools.length > 0 ? { tools } : {}),
       ...(row.installedBy ? { installed_by: row.installedBy } : {}),
@@ -374,7 +393,7 @@ export function createMcpServerService(deps: McpServerServiceDependencies): McpS
     return parseOutputContract(
       mcpServerActionResultSchema,
       {
-        server: toMcpServerVm(input.row),
+        server: toMcpServerVm(input.row, input.snapshot),
         ...(connection ? { connection } : {}),
         risk_tokens: serverNameRiskTokens(input.row.serverName)
       },
@@ -422,7 +441,7 @@ export function createMcpServerService(deps: McpServerServiceDependencies): McpS
       return parseOutputContract(
         mcpServerListVmSchema,
         {
-          servers: rows.map(toMcpServerVm),
+          servers: rows.map((row) => toMcpServerVm(row, snapshotFor(snapshots, row.id))),
           connections,
           secret_ref_env_prefix: MCP_SECRET_REF_ENV_PREFIX,
           available_secret_refs: availableSecretRefs()

@@ -37,6 +37,23 @@ export type McpServerTrustLevel = z.infer<typeof mcpServerTrustLevelSchema>;
 export const mcpPrecheckCheckLevelSchema = z.enum(["pass", "warn", "block"]);
 export type McpPrecheckCheckLevel = z.infer<typeof mcpPrecheckCheckLevelSchema>;
 
+// 连接/会话失败的**稳定错误码**。两端界面按码出话，绝不解析 `last_error` 里的英文诊断串——
+// 那是给人看的现场信息（stderr 尾巴、命令路径、失败次数），照着它切字符串会在下一次改措辞时
+// 把中文界面变成半截英文。前八条一一对应 `@workhub/mcp-client/stdio` 的会话失败原因，
+// `mcp_connect_failed` 是「拿不到原因」的兜底（例如工具清单本身不合法这类非会话级失败）。
+export const mcpServerErrorCodeSchema = z.enum([
+  "mcp_spawn_failed",
+  "mcp_handshake_timeout",
+  "mcp_protocol_version_unsupported",
+  "mcp_protocol_error",
+  "mcp_server_error",
+  "mcp_call_timeout",
+  "mcp_not_running",
+  "mcp_exited",
+  "mcp_connect_failed"
+]);
+export type McpServerErrorCode = z.infer<typeof mcpServerErrorCodeSchema>;
+
 // 体检项 id——服务端与两端 UI 共用的稳定键，文案由展示层按 locale 出（这里只存结构与英文诊断）。
 // 不执行任何插件/服务器代码：只做字符串校验、PATH 查找、一次 access()。
 export const mcpPrecheckCheckIdSchema = z.enum([
@@ -103,6 +120,14 @@ export const mcpServerVmSchema = z.object({
   precheck_report: mcpPrecheckReportSchema,
   // 握手/调用失败的人话原因（连接失败时非空，成功后清空）。
   last_error: z.string().max(2000).optional(),
+  /**
+   * `last_error` 对应的稳定码，界面据此出人话。
+   *
+   * **只有本进程还记得那次失败时才有**：行上存的是诊断文本，`mcp_servers` 表没有存码的列，
+   * 所以重启 API 之后行还在、码没了。缺席不代表没出过错——它代表「这一次的原因这个进程说不出来」，
+   * 界面此时回落到通用的一句「连不上」加上诊断，与 `last_error` 一直以来的用法一致。
+   */
+  last_error_code: mcpServerErrorCodeSchema.optional(),
   // 最近一次发现的工具数。
   tool_count: z.number().int().nonnegative(),
   // 最近一次发现的工具名清单，给设置页预览（最多 6 个 + 「还有 N 个」由展示层截断）。
@@ -125,7 +150,13 @@ export const mcpServerSummaryVmSchema = z.object({
   status: mcpServerStatusSchema,
   trust_level: mcpServerTrustLevelSchema,
   tool_count: z.number().int().nonnegative(),
-  precheck_verdict: mcpPrecheckReportSchema.shape.verdict
+  precheck_verdict: mcpPrecheckReportSchema.shape.verdict,
+  /**
+   * 连不上时的稳定码。网页只读行不给 `last_error` 一个位置——那是宿主机的现场诊断（命令路径、
+   * stderr 尾巴），和 `command` / `cwd` 属于同一类不该出现在网页上的事实；码本身不含宿主机信息，
+   * 却足以让这一行说出「握手超时」而不是笼统的「连不上」。
+   */
+  last_error_code: mcpServerErrorCodeSchema.optional()
 });
 export type McpServerSummaryVM = z.infer<typeof mcpServerSummaryVmSchema>;
 
@@ -198,7 +229,9 @@ export const mcpServerConnectionVmSchema = z.object({
   tool_ids: z.array(z.string().max(64)).optional(),
   /** 重连预算耗尽的原因；有值表示在下一次「测试连接」之前不再重试这一台。 */
   blocked_reason: z.string().max(2000).optional(),
-  last_error: z.string().max(2000).optional()
+  last_error: z.string().max(2000).optional(),
+  /** `last_error` 对应的稳定码。有 `last_error` 就一定有码（拿不到原因时是 `mcp_connect_failed`）。 */
+  last_error_code: mcpServerErrorCodeSchema.optional()
 });
 export type McpServerConnectionVM = z.infer<typeof mcpServerConnectionVmSchema>;
 
