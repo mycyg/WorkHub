@@ -195,17 +195,25 @@ export function renderCenterErrorHtml(locale: Locale): string {
 // 类名，这类"整窗只在极少数分支出现一次"的状态不值得为它扩 workbenchCss 的常驻体积。工作台不拥有
 // 重新登录的 UI（那是主窗 spotlight 设置视图的地盘，见 boot.ts bindWorkbenchLoggedOutListener 顶部
 // 注释），这里只诚实地说明现状，不摆一个只会转发到别处、看起来能操作的按钮。
-export function renderWorkbenchLoggedOutHtml(locale: Locale): string {
+// R24 S4：昵称模式的首启（这台设备从没连接过服务器，boot.ts 判定 gate="logged-out" 但从未真的登出过）
+// 复用同一张整窗替换态——只换标题/说明，不写「已登出」（这台设备从来没登过，说"已登出"是在撒谎）。
+// context 默认 "logged-out"（向后兼容既有调用方/既有测试对「已登出」文案的断言）。
+export function renderWorkbenchLoggedOutHtml(locale: Locale, context: "first-run" | "logged-out" = "logged-out"): string {
   const zh = locale === "zh-CN";
+  const title = context === "first-run" ? (zh ? "欢迎使用 WorkHub" : "Welcome to WorkHub") : zh ? "已登出" : "Signed out";
+  const body =
+    context === "first-run"
+      ? zh
+        ? "这台设备第一次连接这台服务器。去主窗口登录后，回来打开这个工作台就能继续用。"
+        : "This device hasn't connected to this server before. Sign in from the main window, then reopen this workbench to continue."
+      : zh
+        ? "这台设备已经登出。去主窗口重新登录后，回来打开这个工作台就能继续用。"
+        : "This device signed out. Sign back in from the main window, then reopen this workbench to continue.";
   return `<div class="wh-ds wh-wb" data-wb-loggedout>
     <div style="min-height:100vh;display:grid;place-items:center;box-sizing:border-box;padding:24px">
       <div class="ds-glass" style="padding:28px 30px;border-radius:16px;display:grid;gap:10px;max-width:340px;text-align:center">
-        <strong style="font:700 16px/1.3 var(--ds-font,system-ui);color:var(--ds-ink,#1c2333)">${zh ? "已登出" : "Signed out"}</strong>
-        <p style="margin:0;font:500 13px/1.6 var(--ds-font,system-ui);color:var(--ds-ink-muted,#5a6478)">${
-          zh
-            ? "这台设备已经登出。去主窗口重新登录后，回来打开这个工作台就能继续用。"
-            : "This device signed out. Sign back in from the main window, then reopen this workbench to continue."
-        }</p>
+        <strong style="font:700 16px/1.3 var(--ds-font,system-ui);color:var(--ds-ink,#1c2333)">${title}</strong>
+        <p style="margin:0;font:500 13px/1.6 var(--ds-font,system-ui);color:var(--ds-ink-muted,#5a6478)">${body}</p>
       </div>
     </div>
   </div>`;
@@ -236,8 +244,9 @@ export type WorkbenchShellHandle = {
   openDmConversation: (conversationId: string) => void;
   // G-desktop 止血批 3：跨窗口登出广播——boot.ts 在两处调用它：①mount 那一刻标记本来就已登出
   // （isWorkbenchDesktopLoggedOut() 为真）；②运行中收到其它窗口发起的 workhub-logged-out 广播。
-  // 幂等：已经在登出态再调一次是安全的空操作。
-  showLoggedOut: () => void;
+  // 幂等：已经在登出态再调一次是安全的空操作。R24 S4：boot.ts 首启（这台设备从没连接过）也复用这个
+  // 整窗替换态，传 "first-run" 换标题/说明；不传/运行期广播（永远是真登出）默认 "logged-out"。
+  showLoggedOut: (context?: "first-run" | "logged-out") => void;
   dispose: () => void;
 };
 
@@ -1962,14 +1971,14 @@ export function mountWorkbenchShell(
   // boot.ts 的 bindWorkbenchLoggedOutListener。幂等（已经在登出态/真正卸载后再调都是空操作），
   // 不复用主 dispose() 的 disposed 标记——工作台窗是常驻可复用的窗口实例，登出只是"这个窗口手里的
   // 身份失效了"，不是"这个窗口要被销毁了"，两件事分开判断，真正的 dispose() 仍然只在窗口真卸载时调。
-  const showLoggedOut = () => {
+  const showLoggedOut = (context: "first-run" | "logged-out" = "logged-out") => {
     if (disposed || loggedOut) {
       return;
     }
     loggedOut = true;
     disposeActiveSubviews();
     unsubscribe();
-    root.innerHTML = renderWorkbenchDocumentHead() + renderWorkbenchLoggedOutHtml(input.locale);
+    root.innerHTML = renderWorkbenchDocumentHead() + renderWorkbenchLoggedOutHtml(input.locale, context);
   };
 
   return {

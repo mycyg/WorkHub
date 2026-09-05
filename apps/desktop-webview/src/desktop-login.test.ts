@@ -116,6 +116,12 @@ test("runDesktopCredentialLogin logs in, exchanges for a device token, stores it
         },
         client_token: "device-token-that-is-long-enough-000000"
       };
+    },
+    register: async () => {
+      throw new Error("login flow must not call register");
+    },
+    request: async () => {
+      throw new Error("login flow must not call the raw request path");
     }
   };
   const { storage, values, removed } = fakeReadWriteStorage({ workhub_desktop_logged_out: "1" });
@@ -143,6 +149,12 @@ test("runDesktopCredentialLogin propagates a bad-credentials error and does not 
     },
     bootstrapDesktop: async () => {
       throw new Error("must not reach exchange when login fails");
+    },
+    register: async () => {
+      throw new Error("unused");
+    },
+    request: async () => {
+      throw new Error("unused");
     }
   };
   const { storage, values } = fakeReadWriteStorage();
@@ -420,9 +432,9 @@ test("resolveDesktopFirstRunGate trusts a remembered hint before probing the net
   const { storage } = fakeReadWriteStorage({ workhub_auth_mode: "password" });
   let probed = false;
   const client = {
-    request: async () => {
+    request: async <T>() => {
       probed = true;
-      return { auth_mode: "nickname" };
+      return { auth_mode: "nickname" } as T;
     }
   };
   assert.equal(await resolveDesktopFirstRunGate({ client, storage }), "needs-credentials");
@@ -478,7 +490,7 @@ test("resolveDesktopFirstRunGateWithLock adopts a sibling window's freshly-store
 test("resolveDesktopFirstRunGateWithLock falls back to offline when the lock stays busy with no token", async () => {
   const h = lockTestHarness();
   h.storage.setItem("workhub_desktop_bootstrap_lock", `winner@${h.now() + 60_000}`);
-  const client = { request: async () => ({ auth_mode: "nickname" }) };
+  const client = { request: async <T>() => ({ auth_mode: "nickname" } as T) };
   const result = await resolveDesktopFirstRunGateWithLock({
     client,
     storage: h.storage,

@@ -2441,6 +2441,24 @@ test("createDesktopPetLoggedOutCard renders an honest signed-out card in both lo
   assert.match(en.message, /sign back in/iu);
 });
 
+// R24 S4：同一张卡服务首启（这台设备从没连接过）——只是标题/说明换成欢迎文案，不写「已登出」
+// （这台设备从来没登过，说"已登出"是在撒谎）。
+test("createDesktopPetLoggedOutCard renders a welcoming first-run card when asked, distinct from the signed-out card", () => {
+  const zh = createDesktopPetLoggedOutCard("zh-CN", "first-run");
+  assert.equal(zh.id, "pet-first-run");
+  assert.match(zh.title, /欢迎使用 WorkHub/u);
+  assert.doesNotMatch(zh.title, /已登出/u);
+  assert.match(zh.message, /第一次连接/u);
+
+  const en = createDesktopPetLoggedOutCard("en-US", "first-run");
+  assert.match(en.title, /Welcome to WorkHub/u);
+  assert.match(en.message, /hasn't connected before/u);
+
+  // 默认参数仍是既有「已登出」行为（向后兼容）。
+  const defaulted = createDesktopPetLoggedOutCard("zh-CN");
+  assert.equal(defaulted.id, "pet-logged-out");
+});
+
 // G-desktop 止血批 3：桌宠窗和工作台窗共用同一条 workhub-logged-out 广播（见
 // desktop-cuu-runtime.ts 的 DesktopShellEventName 顶部注释）——主窗登出时已经开着的桌宠窗不会跟着
 // reload，之前完全没有 handler，会拿着刚被清空的 client token 静默连环 401。这条测试钉死：桌宠窗收到
@@ -2470,6 +2488,58 @@ test("pet surface swaps to an honest signed-out card when it receives the workhu
         await runtime.dispose();
       }
       assert.ok(stopped.includes("workhub-logged-out"));
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+  }
+});
+
+// R24 S4：pet 窗没有表单空间渲登录门/首启屏——调用方（browser.ts）在 boot 之前就探过鉴权门，
+// 探到"这台设备还没有可用身份"时直接传 signInNeededContext，桌宠开机就亮对应文案的卡，
+// 不再尝试恢复上次卡片/浮现待拍板（那些请求反正会因为没有 client token 静默失败）。
+test("bootDesktopPetSurface shows the first-run card immediately when told the device has never connected, skipping card restore/attention", async () => {
+  const target = globalThis as typeof globalThis & { __WORKHUB_CUU_QA_LOCALE__?: unknown };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "zh-CN";
+  try {
+    await withFakePetDom(async (root) => {
+      const calls: unknown[] = [];
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient(calls),
+        signInNeededContext: "first-run"
+      });
+      try {
+        await waitForFakePetCardMode();
+        assert.match(root.innerHTML, /data-cuu-card-id="pet-first-run"/u);
+        assert.match(root.innerHTML, /欢迎使用 WorkHub/u);
+        // 恢复卡片/浮现待拍板都要打真实的 API——signInNeededContext 分支必须完全绕开它们。
+        assert.deepEqual(calls, []);
+      } finally {
+        await runtime.dispose();
+      }
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+  }
+});
+
+test("bootDesktopPetSurface shows the signed-out card immediately when told this is a real logout, not the first-run welcome", async () => {
+  const target = globalThis as typeof globalThis & { __WORKHUB_CUU_QA_LOCALE__?: unknown };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "en-US";
+  try {
+    await withFakePetDom(async (root) => {
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient([]),
+        signInNeededContext: "logged-out"
+      });
+      try {
+        await waitForFakePetCardMode();
+        assert.match(root.innerHTML, /data-cuu-card-id="pet-logged-out"/u);
+        assert.match(root.innerHTML, /Signed out/u);
+      } finally {
+        await runtime.dispose();
+      }
     });
   } finally {
     target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;

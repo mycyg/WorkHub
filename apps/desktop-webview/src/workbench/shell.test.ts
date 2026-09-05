@@ -90,6 +90,26 @@ test("renderWorkbenchLoggedOutHtml renders an honest, actionless signed-out scre
   assert.doesNotMatch(en, /<button/u);
 });
 
+// R24 S4：昵称模式的首启（这台设备从没连接过）复用同一张整窗替换态——只换标题/说明，
+// 不写「已登出」（这台设备从来没登过，说"已登出"是撒谎）；默认值/显式 "logged-out" 都不变。
+test("renderWorkbenchLoggedOutHtml defaults to the signed-out copy and swaps to first-run welcome copy on request", () => {
+  const loggedOut = renderWorkbenchLoggedOutHtml("en-US");
+  assert.match(loggedOut, /Signed out/u);
+
+  const loggedOutExplicit = renderWorkbenchLoggedOutHtml("en-US", "logged-out");
+  assert.match(loggedOutExplicit, /Signed out/u);
+
+  const firstRun = renderWorkbenchLoggedOutHtml("en-US", "first-run");
+  assert.match(firstRun, /data-wb-loggedout/u);
+  assert.match(firstRun, /Welcome to WorkHub/u);
+  assert.doesNotMatch(firstRun, /Signed out/u);
+  assert.doesNotMatch(firstRun, /<button/u);
+
+  const firstRunZh = renderWorkbenchLoggedOutHtml("zh-CN", "first-run");
+  assert.match(firstRunZh, /欢迎使用 WorkHub/u);
+  assert.doesNotMatch(firstRunZh, /已登出/u);
+});
+
 // renderSidePanelPlaceholderHtml (the "coming soon" notice) retired in R13 batch P1 — the army panel
 // now renders real three-zone content (army/render.ts, covered by army/render.test.ts) instead of a
 // placeholder. shell.ts's own idle fallback (no conversation focused at all) is
