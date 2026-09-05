@@ -400,11 +400,11 @@ fn fallback_title_for_event(event: &str, locale: WorkHubLocale) -> &'static str 
             "budget.exhausted" => "AI 预算已耗尽",
             "budget.warning" => "AI 预算接近上限",
             "permission.ask" => "Cuu 需要你的审批",
-            "proposal.opened" => "新的变更提案",
-            "proposal.reviewed" => "变更提案有反馈",
-            "proposal.merged" => "变更提案已合并",
+            "proposal.opened" => "新的变更申请",
+            "proposal.reviewed" => "变更申请有反馈",
+            "proposal.merged" => "变更申请已合并",
             "revision.fedback" => "需要修订",
-            "agent_run.failed" => "AI 运行失败",
+            "agent_run.failed" => "这次执行失败了",
             "agent_run.escalated" | "escalation.opened" => "Cuu 需要你决策",
             "sync.conflict" => "本地同步冲突",
             _ => "WorkHub 有新的提醒",
@@ -413,11 +413,11 @@ fn fallback_title_for_event(event: &str, locale: WorkHubLocale) -> &'static str 
             "budget.exhausted" => "AI budget is exhausted",
             "budget.warning" => "AI budget is near the limit",
             "permission.ask" => "Cuu needs your approval",
-            "proposal.opened" => "New change proposal",
-            "proposal.reviewed" => "Change proposal feedback",
-            "proposal.merged" => "Change proposal merged",
+            "proposal.opened" => "New change request",
+            "proposal.reviewed" => "Change request feedback",
+            "proposal.merged" => "Change request merged",
             "revision.fedback" => "Revision requested",
-            "agent_run.failed" => "AI run failed",
+            "agent_run.failed" => "This run didn't finish",
             "agent_run.escalated" | "escalation.opened" => "Cuu needs a decision",
             "sync.conflict" => "Local sync conflict",
             _ => "WorkHub has a new alert",
@@ -430,7 +430,7 @@ fn fallback_body_for_event(event: &str, locale: WorkHubLocale) -> &'static str {
         WorkHubLocale::ZhCn => match event {
             "permission.ask" => "打开 WorkHub 允许、拒绝或记住这条规则。",
             "budget.exhausted" => "新的自动运行会暂停，直到预算问题被处理。",
-            "budget.warning" => "打开成本看板，选择更省的执行路径。",
+            "budget.warning" => "打开成本看板，换个更省的做法。",
             "proposal.merged" => "变更已并入底稿，打开 WorkHub 查看合并结果。",
             "sync.conflict" => "选择本地、云端或 AI 合并建议。",
             _ => "打开 WorkHub 查看详情。",
@@ -438,7 +438,7 @@ fn fallback_body_for_event(event: &str, locale: WorkHubLocale) -> &'static str {
         WorkHubLocale::EnUs => match event {
             "permission.ask" => "Open WorkHub to allow, deny, or remember this rule.",
             "budget.exhausted" => "New automated runs are paused until the budget is handled.",
-            "budget.warning" => "Open the cost dashboard and choose a cheaper execution path.",
+            "budget.warning" => "Open the cost dashboard and pick a cheaper option.",
             "proposal.merged" => {
                 "The change is merged into the draft. Open WorkHub for the result."
             }
@@ -596,7 +596,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(plan.urgency, ShellSystemNotificationUrgency::High);
-        assert_eq!(plan.title, "变更提案已合并");
+        assert_eq!(plan.title, "变更申请已合并");
         assert_eq!(plan.body, "变更已并入底稿，打开 WorkHub 查看合并结果。");
         assert_eq!(plan.route, "/proposals/proposal-9");
 
@@ -607,7 +607,7 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        assert_eq!(plan_en.title, "Change proposal merged");
+        assert_eq!(plan_en.title, "Change request merged");
         assert_eq!(
             plan_en.body,
             "The change is merged into the draft. Open WorkHub for the result."
