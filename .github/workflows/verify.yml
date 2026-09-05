@@ -27,6 +27,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
+      # scripts/ 不是 workspace 包，`pnpm test` 的 -r 递归覆盖不到；门禁脚本自身的测试
+      # （文案 locale 独占扫描器）在这里单独跑一步。
+      - run: pnpm test:scripts
 
   web-live-route-smoke:
     runs-on: ubuntu-latest

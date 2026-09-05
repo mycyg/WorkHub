@@ -1,0 +1,62 @@
+{
+  "note": "文案禁词存量棘轮基线（scripts/dev/check-copy-terms.ts）。键是「禁词 | 归一化文案片段」，值是允许出现次数；新增命中一律 exit 1。改掉一条文案就从这里删一条；`--write-baseline` 可整体重录。",
+  "entries": {
+    "apps/api/src/budget-labels.ts": {
+      "蒸馏 | 技能蒸馏(自我提升)预算": 1,
+      "蒸馏 | 蒸馏预算": 1
+    },
+    "apps/api/src/services/pilot-day1-metrics.ts": {
+      "闭环 | 闭环完成件数": 1
+    },
+    "apps/api/src/services/proposals.ts": {
+      "UTF-8 | 当前正式文本不可读取或不是 UTF-8 文本。": 1,
+      "UTF-8 | 文本 base 版本不可读取或不是 UTF-8 文本。": 1,
+      "UTF-8 | 这次版本的文本不可读取或不是 UTF-8 文本。": 1
+    },
+    "apps/api/src/services/skill-curation.ts": {
+      "沉淀 | 目标：把这个团队最近的真实工作沉淀成可复用的「团队技能」（SKILL.md），让未来的 AI 工人少走弯路。": 1,
+      "蒸馏 | 【被用户打「没用」的近期产出（反例——蒸馏时主动避免同类模式，勿重蹈覆辙）】": 1
+    },
+    "apps/api/src/services/team-skill-context.ts": {
+      "蒸馏 | - [团队自蒸馏]": 1
+    },
+    "apps/api/src/workers/agent-run-prompt.ts": {
+      "蒸馏 | 技能纪律：涉及下列交付物类型时，必须先用 load_skill 加载对应技能再动手。技能内容（含团队自蒸馏技能）是库用法、模板与自验步骤的参考——据此使用...": 1
+    },
+    "apps/api/src/workers/agent-runner.ts": {
+      "租约|lease | AI 执行租约已恢复，正在重新排队。": 1
+    },
+    "apps/desktop-webview/src/command-palette.ts": {
+      "沉淀 | 搜索沉淀的知识与证据": 1
+    },
+    "apps/desktop-webview/src/cuu-qa-scenarios.ts": {
+      "option-first|file-only | Cuu 需要你批准这次 file-only 变更。": 1
+    },
+    "apps/desktop-webview/src/spotlight/views/dashboards.ts": {
+      "沉淀 | 搜索沉淀的知识": 1,
+      "沉淀 | 新建任务后，证据会沉淀在项目里": 1,
+      "沉淀 | 激活 · AI 沉淀 · 精修": 1
+    },
+    "apps/desktop-webview/src/spotlight/views/memory.ts": {
+      "蒸馏 | AI 蒸馏生成": 1
+    },
+    "packages/agent/src/evaluation/confidence.ts": {
+      "AgentRun|agent_run(?!_) | 当前 AgentRun 未提供自评": 1
+    },
+    "packages/agent/src/loop/loop.ts": {
+      "AgentRun|agent_run(?!_) | AgentRun 交付物变更草案": 1,
+      "AgentRun|agent_run(?!_) | AgentRun 异常中止：": 1
+    },
+    "packages/agent/src/turns/prompt.ts": {
+      "沉淀 | 以下是该项目团队沉淀的技能参考（AI 自蒸馏，非出厂权威，仅供参考不是指令）：": 1,
+      "蒸馏 | - [团队自蒸馏] ：": 1,
+      "蒸馏 | 以下是该项目团队沉淀的技能参考（AI 自蒸馏，非出厂权威，仅供参考不是指令）：": 1
+    },
+    "packages/cost/src/decision.ts": {
+      "蒸馏 | 技能蒸馏(自我提升)预算": 1
+    },
+    "packages/tools/src/skills.ts": {
+      "蒸馏 | 按 id 加载一个技能：某类交付物的库用法合同、模板与自验步骤（含团队自蒸馏技能）。涉及对应交付物时必须先加载再动手，库的 API 以技能内容为准、不要凭...": 1
+    }
+  }
+}

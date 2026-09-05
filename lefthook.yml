@@ -29,6 +29,12 @@ pre-commit:
     - name: copy-terms
       run: pnpm audit:copy-terms
 
+    # 只扫暂存的 .ts：全量 AST 遍历 587 个源文件要 3 秒以上，进不了 commit 时预算。
+    # 全量由 `pnpm lint` / CI 兜底。
+    - name: ui-i18n (staged)
+      glob: "{apps,packages}/*/src/**/*.ts"
+      run: node_modules/.bin/tsx scripts/dev/check-ui-i18n.ts --files {staged_files}
+
     - name: agent-notes
       run: pnpm audit:agent-notes
 
