@@ -57,6 +57,7 @@ import {
   createPersonalSpaceActionFromHref,
   clearActiveRouteDirty as sharedClearActiveRouteDirty,
   clearLiveDirtyMetrics as sharedClearLiveDirtyMetrics,
+  chooseThenApplyMergeCandidate,
   conflictsFromMergeError,
   createTaskPlanActionFromHref,
   createWebLiveRuntime,
@@ -93,6 +94,7 @@ import {
   proposalActionFromHref,
   reasonRequiredNotice,
   reviewReasonButtons,
+  selectedConflictChooserCandidate,
   selectionNotice,
   sessionNextQuestionIdFromHref,
   setDocumentLocale,
@@ -1804,6 +1806,35 @@ function bindGoldPathNavigation(
         }
       } catch (error) {
         showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        return;
+      }
+      // F-05：撞车「先选稿再采纳」——多处冲突各自带融合稿时，选择器（renderConflictChooser）把它们
+      // 折进一个单选 + 确认；这里认的是选择器自己的占位 data-action-href（不指向真端点，只用来过
+      // 上面 api-action 分类门），真正的 merge_proposal_id 从勾选的 radio 读。没选中就提示，不静默失败。
+      if (actionTarget.dataset.proposalConflictChooserSubmit === "true") {
+        const chooserContainer = actionTarget.closest<HTMLElement>("[data-proposal-conflict-chooser]");
+        const selected = chooserContainer ? selectedConflictChooserCandidate(chooserContainer) : undefined;
+        if (!selected) {
+          chooserContainer?.querySelector<HTMLElement>("[data-proposal-conflict-chooser-warning]")?.removeAttribute("hidden");
+          return;
+        }
+        try {
+          const merge = await chooseThenApplyMergeCandidate(client, selected.mergeProposalId, { locale });
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, merge.attention.summary_text, actionId));
+          }
+        } catch (error) {
+          if (selected.proposalId && await showRebaseRequiredNotice(shellRoot, error, selected.proposalId, client, locale, actionId)) {
+            return;
+          }
+          if (!showMergeConflictNotice(shellRoot, error, locale, actionId)) {
+            showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+          }
+          if (error instanceof WorkHubApiError && error.status === 409) {
+            await renderCurrentRoute(client, locale);
+          }
+        }
         return;
       }
       const mergeProposalCandidateApplyId = mergeProposalCandidateApplyIdFromHref(href);

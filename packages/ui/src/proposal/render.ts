@@ -93,6 +93,10 @@ export const proposalCss = [
   ".wh-conflict-list{display:grid;gap:12px;margin:20px 0}.wh-conflict-head{display:grid;gap:4px;border:1px solid #ffd6c8;background:#fff7f3;border-radius:12px;padding:14px}.wh-conflict-head .wh-kicker{color:#b94733}",
   ".wh-conflict-card{border:1px solid #f1d2c8;background:#fffdfb;border-radius:12px;padding:14px;display:grid;gap:10px}.wh-conflict-meta{display:flex;gap:8px;flex-wrap:wrap}.wh-conflict-summary{margin:0;color:var(--muted);line-height:1.5}.wh-conflict-options{display:flex;gap:10px;flex-wrap:wrap}.wh-recommended{font-size:11px;font-weight:800;border-radius:999px;padding:3px 7px;background:#eaf0ff;color:var(--blue)}",
   ".wh-conflict-workbench{border:1px solid #d9e2f3;background:#f8fbff;border-radius:12px;padding:12px}.wh-conflict-workbench>summary{cursor:pointer;font-weight:800;display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-conflict-workbench-body{margin:8px 0;color:var(--muted);font-size:13px;line-height:1.5}.wh-conflict-workbench-list{display:grid;gap:6px}.wh-conflict-workbench-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;border-top:1px solid #e2e8f5;padding-top:8px}.wh-conflict-workbench-row:first-child{border-top:0;padding-top:0}.wh-conflict-workbench-target{font-weight:700;overflow-wrap:anywhere}.wh-conflict-workbench-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}",
+  // F-05：撞车「先选稿再采纳」——多处冲突各自带一份融合稿时，折进这一个选择器（单选 + 确认），
+  // 而不是散在各卡片上的 N 个一键采纳按钮（避免手误采纳错的稿子）。只有一处融合稿时不渲染
+  // （render.ts 里 fusionChooserCandidates().length<2 直接返回空 html），维持既有一键采纳。
+  ".wh-conflict-chooser{border:1px solid #cfe0d9;background:#f4fbf7;border-radius:12px;padding:14px;display:grid;gap:10px}.wh-conflict-chooser>legend{padding:0;font-weight:800}.wh-conflict-chooser-body{margin:0;color:var(--muted);font-size:13px;line-height:1.5}.wh-conflict-chooser-list{display:grid;gap:8px}.wh-conflict-chooser-option{display:flex;gap:10px;align-items:flex-start;border:1px solid #dcece3;background:#fff;border-radius:10px;padding:10px;cursor:pointer}.wh-conflict-chooser-option input{margin-top:3px}.wh-conflict-chooser-option-body{display:grid;gap:2px;min-width:0}.wh-conflict-chooser-option-body strong{overflow-wrap:anywhere}.wh-conflict-chooser-warning{margin:0;color:var(--danger);font-size:13px}.wh-conflict-chooser-warning[hidden]{display:none}",
   richPatchViewerCss,
   overlapHunkReviewCss,
   routeLineEditorCss,
@@ -524,7 +528,65 @@ function renderConflictWorkbench(conflicts: ProposalConflict[], options?: UiRend
   };
 }
 
-function renderConflict(conflict: ProposalConflict, options?: UiRenderOptions) {
+// F-05：一处冲突若已生成 AI 融合稿，其 ai_fusion 候选带 merge_proposal_id + action.id="apply_ai_fusion"
+// （见 apps/api/src/services/proposals.ts 的 conflictOptionsFor：两者同一个条件下一起出现）。取这一对，
+// 供下面的选择器分组渲染；只有一处时调用方直接跳过分组，保留既有一键采纳。
+type FusionChooserCandidate = {
+  conflict: ProposalConflict;
+  option: ProposalConflictOption;
+  mergeProposalId: string;
+};
+
+function fusionChooserCandidates(conflicts: ProposalConflict[]): FusionChooserCandidate[] {
+  return conflicts.flatMap((conflict) => {
+    const mergeProposalId = conflict.merge_proposal_id;
+    const option = conflict.options.find((candidate) => candidate.id === "ai_fusion");
+    if (!mergeProposalId || !option || option.action?.id !== "apply_ai_fusion") {
+      return [];
+    }
+    return [{ conflict, option, mergeProposalId }];
+  });
+}
+
+function renderConflictChooserOption(
+  candidate: FusionChooserCandidate,
+  index: number,
+  options?: UiRenderOptions
+) {
+  const locale = uiLocale(options);
+  const target = candidate.conflict.target_path ?? candidate.conflict.target_key;
+  const planLabel = `${uiT(locale, "proposal.conflictChooserPlanPrefix")} ${index + 1}`;
+  return `<label class="wh-conflict-chooser-option" data-conflict-chooser-row="${escapeHtml(candidate.conflict.id)}">
+    <input type="radio" name="wh-conflict-chooser" data-conflict-chooser-option="true" data-merge-proposal-id="${escapeHtml(candidate.mergeProposalId)}" data-proposal-id="${escapeHtml(candidate.conflict.proposal_id)}" value="${escapeHtml(candidate.mergeProposalId)}">
+    <span class="wh-conflict-chooser-option-body">
+      <strong>${escapeHtml(planLabel)}</strong>
+      <span class="wh-subtle">${escapeHtml(target)}</span>
+      <span class="wh-subtle">${escapeHtml(candidate.option.summary_text)}</span>
+    </span>
+  </label>`;
+}
+
+function renderConflictChooser(conflicts: ProposalConflict[], options?: UiRenderOptions) {
+  const candidates = fusionChooserCandidates(conflicts);
+  if (candidates.length < 2) {
+    return { html: "", actionHrefs: [] as string[], handledConflictIds: new Set<string>() };
+  }
+  const locale = uiLocale(options);
+  const rows = candidates.map((candidate, index) => renderConflictChooserOption(candidate, index, { locale })).join("");
+  return {
+    actionHrefs: candidates.map((candidate) => candidate.option.action?.href).filter((href): href is string => Boolean(href)),
+    handledConflictIds: new Set(candidates.map((candidate) => candidate.conflict.id)),
+    html: `<fieldset class="wh-conflict-chooser" data-proposal-conflict-chooser="true" data-proposal-conflict-chooser-count="${candidates.length}">
+      <legend><span class="wh-kicker">${escapeHtml(uiT(locale, "proposal.conflictChooserTitle"))}</span></legend>
+      <p class="wh-conflict-chooser-body">${escapeHtml(uiT(locale, "proposal.conflictChooserBody"))}</p>
+      <div class="wh-conflict-chooser-list">${rows}</div>
+      <p class="wh-conflict-chooser-warning" data-proposal-conflict-chooser-warning="true" role="alert" hidden>${escapeHtml(uiT(locale, "proposal.conflictChooserPickFirst"))}</p>
+      <button type="button" class="wh-btn wh-btn-primary" data-proposal-conflict-chooser-submit="true" data-action-id="choose_merge_plan" data-action-href="/api/merge-proposals/choose-selected" data-method="POST">${escapeHtml(uiT(locale, "proposal.conflictChooserSubmit"))}</button>
+    </fieldset>`
+  };
+}
+
+function renderConflict(conflict: ProposalConflict, options?: UiRenderOptions & { chooserHandled?: boolean }) {
   const locale = uiLocale(options);
   const target = conflict.target_path ?? conflict.target_key;
   const existing = shortFingerprint(conflict.existing.sha256 ?? conflict.existing.ref);
@@ -542,12 +604,20 @@ function renderConflict(conflict: ProposalConflict, options?: UiRenderOptions) {
     ])
     .filter(Boolean)
     .join("");
+  // F-05：这一处的 ai_fusion 简单按钮已并入上方选择器（同一个 apply 只该有一个入口）——换成指路条，
+  // 不留一个和上方选择器打架的第二个一键采纳。keep_current/accept_incoming 是独立决策，不受影响。
+  const optionsHtml = conflict.options.map((option) => {
+    if (options?.chooserHandled && option.id === "ai_fusion") {
+      return `<span class="wh-pill" data-conflict-option-id="ai_fusion" data-conflict-option-handled-above="true">${escapeHtml(uiT(locale, "proposal.conflictChooserHandledAbove"))}</span>`;
+    }
+    return renderConflictOption(option, { locale });
+  }).join("");
 
   return `<article class="wh-conflict-card" data-conflict-id="${escapeHtml(conflict.id)}" data-target-key="${escapeHtml(conflict.target_key)}">
     <strong>${escapeHtml(conflict.headline)}</strong>
     <p class="wh-conflict-summary">${escapeHtml(conflict.summary_text)}</p>
     <div class="wh-conflict-meta">${meta}</div>
-    <div class="wh-conflict-options">${conflict.options.map((option) => renderConflictOption(option, { locale })).join("")}</div>
+    <div class="wh-conflict-options">${optionsHtml}</div>
     ${previews}
   </article>`;
 }
@@ -558,6 +628,7 @@ export function renderProposalConflictCards(
 ): ProposalConflictRenderedCards {
   const locale = uiLocale(options);
   const workbench = renderConflictWorkbench(conflicts, { locale });
+  const chooser = renderConflictChooser(conflicts, { locale });
   const lineEditor = renderRouteLineEditor(conflicts, { locale });
   const actionHrefs = conflicts.flatMap((conflict) =>
     conflict.options.map((option) => option.action?.href).filter((href): href is string => Boolean(href))
@@ -567,14 +638,14 @@ export function renderProposalConflictCards(
   }
   return {
     conflictCount: conflicts.length,
-    actionHrefs: [...actionHrefs, ...workbench.actionHrefs],
+    actionHrefs: [...actionHrefs, ...workbench.actionHrefs, ...chooser.actionHrefs],
     html: `<section class="wh-conflict-list" data-proposal-conflicts="${conflicts.length}">
       <div class="wh-conflict-head">
         <span class="wh-kicker">${escapeHtml(uiT(locale, "proposal.conflictTitle"))}</span>
         <p class="wh-subtle">${escapeHtml(uiT(locale, "proposal.conflictBody"))}</p>
       </div>
-      ${lineEditor}${workbench.html}
-      ${conflicts.map((conflict) => renderConflict(conflict, { locale })).join("")}
+      ${lineEditor}${workbench.html}${chooser.html}
+      ${conflicts.map((conflict) => renderConflict(conflict, { locale, chooserHandled: chooser.handledConflictIds.has(conflict.id) })).join("")}
     </section>`
   };
 }

@@ -7,7 +7,13 @@
 import type { PageRequestOptions, WorkHubApiClient } from "@workhub/api-client";
 import { WorkHubApiError } from "@workhub/api-client";
 import type { MergeProposalRequest, ProposalChangeDiffVM, ProposalDetailVM } from "@workhub/contracts";
-import { actionElementApplyPayload, actionElementMergePayload, actionHrefFromElement } from "@workhub/web-runtime";
+import {
+  actionElementApplyPayload,
+  actionElementMergePayload,
+  actionHrefFromElement,
+  chooseThenApplyMergeCandidate,
+  selectedConflictChooserCandidate
+} from "@workhub/web-runtime";
 
 import {
   classifyProposalConflictActionHref,
@@ -28,9 +34,10 @@ type Locale = "zh-CN" | "en-US";
 
 // #12 合并冲突逐条解决要用到 applyMergeProposalCandidate（apply 候选合入方案）——additive 扩客户端切面，
 // shell 传的是全量 WorkHubApiClient，运行时本就有。
+// F-05：撞车「先选稿再采纳」选择器确认后先 choose 再 apply，同样 additive 补 chooseMergeProposalCandidate。
 export type EditorViewApiClient = Pick<
   WorkHubApiClient,
-  "request" | "pages" | "mergeProposal" | "reviewProposal" | "applyMergeProposalCandidate"
+  "request" | "pages" | "mergeProposal" | "reviewProposal" | "applyMergeProposalCandidate" | "chooseMergeProposalCandidate"
 >;
 
 export type EditorViewTarget = {
@@ -446,10 +453,22 @@ export function mountEditorView(
     if (busy) {
       return;
     }
+    // F-05：多处冲突各自带融合稿时，选择器（renderConflictChooser）把它们折进一个单选 + 确认按钮，
+    // 提交时先读勾选的 radio 拿 merge_proposal_id；没选中就点亮选择器自带的提示条，不静默失败
+    // （编辑器的 conflict 态没有独立的行内提示槽，复用选择器自带的 hidden 提示条最省事）。
+    const chooserSubmit = targetEl.dataset.proposalConflictChooserSubmit === "true" ? targetEl : undefined;
+    const chooserContainer = chooserSubmit?.closest<HTMLElement>("[data-proposal-conflict-chooser]");
+    const chooserSelection = chooserContainer ? selectedConflictChooserCandidate(chooserContainer) : undefined;
+    if (chooserSubmit && !chooserSelection) {
+      chooserContainer?.querySelector<HTMLElement>("[data-proposal-conflict-chooser-warning]")?.removeAttribute("hidden");
+      return;
+    }
     busy = true;
     try {
       let result: unknown;
-      if (action.kind === "apply") {
+      if (chooserSelection) {
+        result = await chooseThenApplyMergeCandidate(input.client, chooserSelection.mergeProposalId, pageOptions(input.locale));
+      } else if (action.kind === "apply") {
         const payload = actionElementApplyPayload(targetEl);
         if (!payload.ok) {
           return;

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { WorkHubApiError } from "@workhub/api-client/client";
-import type { ProposalConflict } from "@workhub/contracts";
+import type { ProposalConflict, ProposalMergeResult } from "@workhub/contracts";
 
 import {
   acceptedDeliverableRestoreFromHref,
@@ -11,7 +11,9 @@ import {
   agentRunAbortIdFromHref,
   approvalRespondIdFromHref,
   bootstrapProjectActionFromHref,
+  chooseThenApplyMergeCandidate,
   conflictsFromMergeError,
+  type MergeCandidateChooseClient,
   createTaskPlanActionFromHref,
   createNamedProjectActionFromHref,
   createPersonalSpaceActionFromHref,
@@ -30,6 +32,7 @@ import {
   meetingInsightActionFromHref,
   meetingReanalyzeFromHref,
   memoryConflictActionFromHref,
+  selectedConflictChooserCandidate,
   skipPlanProposalIdFromHref,
   taskPlanDispatchActionFromHref,
   isNativeResourceLink,
@@ -334,4 +337,77 @@ test("skipPlanProposalIdFromHref and taskPlanDispatchActionFromHref parse their 
   assert.deepEqual(taskPlanDispatchActionFromHref("/api/task-plans/t1/pause"), { planId: "t1", action: "pause" });
   assert.deepEqual(taskPlanDispatchActionFromHref("/api/task-plans/t1/resume"), { planId: "t1", action: "resume" });
   assert.equal(taskPlanDispatchActionFromHref("/api/task-plans/t1/cancel"), undefined);
+});
+
+// F-05：从「选一份合并方案」选择器容器里读出用户勾选的那一项（:checked 的 data-merge-proposal-id/
+// data-proposal-id）。跟其它 DOM 读取纯函数一样，用手搭的最小 querySelector 桩，不需要真 DOM。
+test("F-05 selectedConflictChooserCandidate reads the checked radio's merge proposal and proposal id", () => {
+  const checkedRadio = { dataset: { mergeProposalId: "mp-2", proposalId: "proposal-9" } };
+  const container = {
+    querySelector(selector: string) {
+      return selector === "[data-conflict-chooser-option]:checked" ? checkedRadio : null;
+    }
+  };
+  assert.deepEqual(
+    selectedConflictChooserCandidate(container as unknown as ParentNode),
+    { mergeProposalId: "mp-2", proposalId: "proposal-9" }
+  );
+});
+
+test("F-05 selectedConflictChooserCandidate returns undefined when nothing is checked yet", () => {
+  const container = { querySelector: () => null };
+  assert.equal(selectedConflictChooserCandidate(container as unknown as ParentNode), undefined);
+});
+
+test("F-05 selectedConflictChooserCandidate tolerates a missing proposal id on the checked radio", () => {
+  const container = {
+    querySelector: () => ({ dataset: { mergeProposalId: "mp-1" } })
+  };
+  assert.deepEqual(
+    selectedConflictChooserCandidate(container as unknown as ParentNode),
+    { mergeProposalId: "mp-1" }
+  );
+});
+
+// F-05：choose 必须先于 apply 完成才算「先选稿再采纳」——顺序错了等于没做这道确认门。
+test("F-05 chooseThenApplyMergeCandidate calls choose before apply with the same merge proposal id", async () => {
+  const calls: string[] = [];
+  const client: MergeCandidateChooseClient = {
+    async chooseMergeProposalCandidate(id, payload) {
+      calls.push(`choose:${id}:${payload.option_key}`);
+      return { merge_proposal_id: id, chosen_option_key: payload.option_key };
+    },
+    async applyMergeProposalCandidate(id, payload, options) {
+      calls.push(`apply:${id}:${JSON.stringify(payload)}:${options?.locale ?? ""}`);
+      return { attention: { summary_text: "已采纳融合稿" } } as unknown as ProposalMergeResult;
+    }
+  };
+
+  const result = await chooseThenApplyMergeCandidate(client, "mp-1", { locale: "zh-CN" });
+
+  assert.deepEqual(calls, [
+    "choose:mp-1:ai_fusion",
+    "apply:mp-1:{\"confirm\":true}:zh-CN"
+  ]);
+  assert.equal(result.attention.summary_text, "已采纳融合稿");
+});
+
+test("F-05 chooseThenApplyMergeCandidate never calls apply when choose rejects (already chosen elsewhere)", async () => {
+  const calls: string[] = [];
+  const client: MergeCandidateChooseClient = {
+    async chooseMergeProposalCandidate(id) {
+      calls.push(`choose:${id}`);
+      throw new WorkHubApiError(409, "merge_proposal_already_chosen", "already chosen");
+    },
+    async applyMergeProposalCandidate(id) {
+      calls.push(`apply:${id}`);
+      return { attention: { summary_text: "不该走到这" } } as unknown as ProposalMergeResult;
+    }
+  };
+
+  await assert.rejects(
+    () => chooseThenApplyMergeCandidate(client, "mp-1"),
+    (error: unknown) => error instanceof WorkHubApiError && error.status === 409
+  );
+  assert.deepEqual(calls, ["choose:mp-1"]);
 });
