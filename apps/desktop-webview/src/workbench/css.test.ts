@@ -51,9 +51,13 @@ test("the chat center view manages its own scroll/layout instead of inheriting t
   assert.match(workbenchCss, /\.wh-wb-center\.wh-wb-center--chat\{padding:0;display:flex;flex-direction:column;overflow:hidden\}/u);
 });
 
-test("the # and / composer tags are visually distinct (not-yet-available) from the live @ tag", () => {
-  assert.match(workbenchCss, /\.wh-wb-chat-ctag--soon\{[^}]*cursor:default/u);
+// R23 F-07：# 会话引用 / / 技能唤起真的接线之后，三个 composer 入口（@ / # / /）是同一档真控件，
+// 不再有「看得见但点不动」的灰态样式——那套 --soon 规则连同占位 picker 一起删了。
+test("the composer tags are all live controls — no not-yet-available grey variant remains", () => {
+  assert.doesNotMatch(workbenchCss, /wh-wb-chat-ctag--soon/u);
+  assert.doesNotMatch(workbenchCss, /wh-wb-chat-picker--soon/u);
   assert.doesNotMatch(workbenchCss, /\.wh-wb-chat-ctag\{[^}]*cursor:default/u);
+  assert.match(workbenchCss, /\.wh-wb-chat-ctag\{[^}]*cursor:pointer/u);
 });
 
 test("reduced-motion users get the chat typing dots and composer tag transitions shortened too", () => {

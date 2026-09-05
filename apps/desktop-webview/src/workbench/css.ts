@@ -774,14 +774,12 @@ export const workbenchCss = [
     "padding:4px 8px;border-radius:99px;background:var(--ds-glass-quiet);border:0;cursor:pointer}",
   ".wh-wb-chat-ctag b{color:var(--ds-accent)}",
   ".wh-wb-chat-ctag:hover{background:var(--ds-glass-strong)}",
-  ".wh-wb-chat-ctag--soon{cursor:default;opacity:.55}",
-  ".wh-wb-chat-ctag--soon:hover{background:var(--ds-glass-quiet)}",
   ".wh-wb-chat-send{margin-left:auto;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;" +
     "border-radius:50%;border:0;background:linear-gradient(135deg,#0a84ff,#64d2ff);color:#fff;cursor:pointer}",
   ".wh-wb-chat-send svg{width:13px;height:13px}",
   ".wh-wb-chat-send:disabled{opacity:.35;cursor:default;background:var(--ds-glass)}",
 
-  // —— @ picker / 「即将可用」占位 picker —— //
+  // —— @ / # / 「/」三个 composer picker（同一套行样式）—— //
   ".wh-wb-chat-picker{position:absolute;left:12px;right:12px;bottom:calc(100% + 8px);max-height:220px;overflow-y:auto;" +
     "border-radius:var(--ds-radius-md);border:1px solid var(--ds-glass-border);" +
     "background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(248,250,253,.99));box-shadow:0 20px 50px -20px rgba(60,60,67,.35);padding:6px}",
@@ -792,9 +790,9 @@ export const workbenchCss = [
   ".wh-wb-chat-picker-row:hover{background:rgba(20,30,50,.05)}",
   ".wh-wb-chat-picker-row svg{width:14px;height:14px;color:var(--ds-ink-muted);flex:0 0 auto}",
   ".wh-wb-chat-picker-loading,.wh-wb-chat-picker-empty{padding:8px;font:500 12px/1.4 var(--ds-font);color:var(--ds-ink-faint)}",
-  ".wh-wb-chat-picker--soon{padding:12px}",
-  ".wh-wb-chat-picker-title{font:700 12.5px/1.3 var(--ds-font);color:var(--ds-ink)}",
-  ".wh-wb-chat-picker-soon-note{margin-top:4px;font:500 11.5px/1.5 var(--ds-font);color:var(--ds-ink-faint)}",
+  // R23 F-07：技能行的副标题（适用场景）——挤在名字右侧，长了就省略号，不让它把行撑成两行。
+  ".wh-wb-chat-picker-row-hint{margin-left:auto;padding-left:10px;font:500 11px/1.3 var(--ds-font);color:var(--ds-ink-faint);" +
+    "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:52%}",
 
   // —— 网盘标签页 + 侧栏预览/版本历史（批 6）——视觉复审逮到的硬伤:这套类名此前一条规则都没有,
   // 真机裸奔成浏览器默认排版。观感对齐 prototype 的 .file-row/.side 系(玻璃底/hairline/圆角 token)。

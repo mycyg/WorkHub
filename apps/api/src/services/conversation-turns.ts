@@ -22,6 +22,8 @@ import {
   SEND_FILE_CARD_TOOL,
   buildContextCompactionPrompt,
   buildTurnContextSummarySection,
+  buildTurnConversationRefSection,
+  buildTurnInvokedSkillSection,
   buildTurnMemorySection,
   buildTurnMessages,
   buildTurnProjectInstructionsSection,
@@ -72,6 +74,7 @@ import {
   type ConversationMessageRow,
   type ConversationRepository,
   type TeamSkillRepository,
+  type TeamSkillRow,
   type UserMemoryRepository,
   type WorkHubDatabaseClient
 } from "@workhub/db";
@@ -81,6 +84,14 @@ import { getDefaultStructuredLogger, type StructuredLogger } from "../logging.js
 import type { AuthActor } from "../middleware/auth.js";
 import { InternalContractError, parseOutputContract } from "../pages/output-contract.js";
 import { notifyConversationMessage } from "./conversation-message-notify.js";
+import {
+  MAX_TURN_CONVERSATION_REFS,
+  TURN_CONVERSATION_REF_MESSAGE_LIMIT,
+  mayInvokeSkill,
+  mayReferenceConversation,
+  resolveConversationRefs,
+  resolveSkillRefs
+} from "./conversation-turn-references.js";
 import { createNotificationService } from "./notifications.js";
 import { getDefaultBudgetPolicyStore } from "./cost-policy-store.js";
 import { getDefaultCostLedgerStore } from "./cost-ledger-store.js";
@@ -124,6 +135,9 @@ const DEFAULT_MAX_TURN_RESPONSE_TOKENS = 4000;
 // （设计稿「踩雷」明确点名的已知风险，这里给出修订值而不是留着不动）。
 const DEFAULT_TURN_TIMEOUT_MS = 120_000;
 const TURN_TEAM_SKILL_TOP_N = 5;
+// R23 F-07：解析 `#会话标题` 时一次取多少条本项目可见会话当候选——仓库层 limit 上限是 100，这里取
+// 一半：项目里的会话数远小于这个量级，候选越多每条消息的字符串匹配成本越高，够用即可。
+const TURN_CONVERSATION_REF_CANDIDATE_LIMIT = 50;
 
 // ── R13 批 C1（会话上下文压缩）常量 ───────────────────────────────────────────────────
 //
@@ -242,9 +256,16 @@ export type ConversationTurnSystemEventPoster = (input: {
 }) => Promise<unknown>;
 
 export type ConversationTurnServiceDeps = {
+  // R23 F-07：新增 listVisibleForProject（`#会话标题` 解析用的候选清单）与 listMessagesBefore（被引会话
+  // 的最近一页消息）；两者的 viewerUserId 都是发起人本人，权限收口在仓库层。不改动其它既有方法的用法。
   conversations: Pick<
     ConversationRepository,
-    "findVisibleAccessRecord" | "listMessagesAfter" | "createCuuMessage" | "updateContextSummary"
+    | "findVisibleAccessRecord"
+    | "listMessagesAfter"
+    | "listMessagesBefore"
+    | "createCuuMessage"
+    | "updateContextSummary"
+    | "listVisibleForProject"
   >;
   aiSettings: Pick<AiSettingsRepository, "findUserProfileAccessRecord">;
   userMemories: Pick<UserMemoryRepository, "listForUser" | "touch">;
@@ -846,11 +867,120 @@ type PreparedTurn = {
   // R16 批 W4a：预先算好的项目自定义指令段（""＝不注入——未配置或所属项目是 DM 容器）,两条 system
   // 拼接路径（runLegacyTurnLoop / runConversationTurnSegment）共用同一份,不重复判定 DM 容器围栏。
   projectInstructionsSection: string;
+  // R23 F-07：这一轮触发消息里 `#会话` / `/技能` 解析出来的附加材料段（""＝这条消息没引用任何东西，
+  // 或引用的名字解析不上）。同 projectInstructionsSection 的取舍：两条 system 拼接路径共用同一份。
+  referenceSection: string;
   contextSummaryMd: string | null;
   triggerText: string;
   persistAndBroadcastCuuMessage: (messageInput: PersistCuuMessageInput) => Promise<ConversationTurnResultVM["message"]>;
   tryPersistToolNote: (contentJson: Record<string, unknown>) => Promise<void>;
 };
+
+// R23 F-07（`#会话引用` / `/技能唤起`）：把触发消息正文里点名的会话/技能变成一段 system prompt 附加材料。
+//
+// 权限：被引会话的候选清单与消息都用**发起人本人**的 viewerUserId 去查（listVisibleForProject /
+// listMessagesAfter 都是仓库层带 viewer 门控的读，看不见就分别拿不到候选/拿到 null）——引用绝不能变成
+// 「拿别人会话 id 让 Cuu 念给我听」的旁路。
+//
+// 成本：不带 `#` 的消息完全不查会话清单（mayReferenceConversation 便宜预判）；技能清单本来这一轮就已经
+// 查过（listActive），唤起解析不额外多查。被引会话每条一次消息分页读，条数由 MAX_TURN_CONVERSATION_REFS
+// 封顶（2 条），每条只取最近 TURN_CONVERSATION_REF_MESSAGE_LIMIT 条。
+//
+// 失败一律 fail-open：任何一条引用查失败只记一条 warn 并跳过它，不让「引用拉不到」把整轮回应炸掉——
+// 用户要的是回应，附加材料是加分项不是前置条件。
+async function buildTurnReferenceSection(
+  deps: ConversationTurnServiceDeps,
+  logger: Pick<StructuredLogger, "warn">,
+  input: {
+    triggerText: string;
+    workspaceId: string;
+    viewerUserId: string;
+    projectId: string;
+    conversationId: string;
+    teamSkillRows: readonly TeamSkillRow[];
+  }
+): Promise<string> {
+  const parts: string[] = [];
+
+  const skills = mayInvokeSkill(input.triggerText)
+    ? resolveSkillRefs(
+        input.triggerText,
+        input.teamSkillRows.map((row) => ({
+          skillKey: row.skillKey,
+          name: row.name,
+          whenToUse: row.whenToUse,
+          contentMd: row.contentMd
+        }))
+      )
+    : [];
+  if (skills.length > 0) {
+    parts.push(
+      buildTurnInvokedSkillSection(
+        skills.map((skill) => ({ name: skill.name, whenToUse: skill.whenToUse, contentMd: skill.contentMd }))
+      )
+    );
+  }
+
+  if (mayReferenceConversation(input.triggerText)) {
+    let candidates: Array<{ id: string; title: string }> = [];
+    try {
+      const visible = await deps.conversations.listVisibleForProject({
+        workspaceId: input.workspaceId,
+        viewerUserId: input.viewerUserId,
+        projectId: input.projectId,
+        limit: TURN_CONVERSATION_REF_CANDIDATE_LIMIT
+      });
+      candidates = (visible?.rows ?? []).map((row) => ({ id: row.id, title: row.title }));
+    } catch (error) {
+      logger.warn("conversation_turn_reference_candidates_failed", { conversationId: input.conversationId, error });
+    }
+    const refs = resolveConversationRefs(input.triggerText, candidates, {
+      excludeConversationId: input.conversationId,
+      max: MAX_TURN_CONVERSATION_REFS
+    });
+    const loaded: Array<{ title: string; messages: Array<{ senderLabel: string; text: string }> }> = [];
+    for (const ref of refs) {
+      try {
+        // 「最近 N 条」＝反向游标的第一页（beforeSeq 传契约允许的上界＝「早于一切已存在的 seq」，同
+        // 桌面端首屏拉最新一页的既有用法），仓库层已按 seq 升序回。拿不到（对本人不可见/已删）就静默
+        // 跳过这条引用——fail-closed 的可见性判定在仓库层，这里不做二次判断。
+        const refPage = await deps.conversations.listMessagesBefore({
+          workspaceId: input.workspaceId,
+          viewerUserId: input.viewerUserId,
+          conversationId: ref.id,
+          beforeSeq: Number.MAX_SAFE_INTEGER,
+          limit: TURN_CONVERSATION_REF_MESSAGE_LIMIT
+        });
+        if (!refPage) {
+          continue;
+        }
+        const rows = refPage.rows;
+        const senderIds = [
+          ...new Set(rows.map((row) => row.senderUserId).filter((value): value is string => Boolean(value)))
+        ];
+        const refNicknames = senderIds.length > 0 ? await deps.nicknames(senderIds) : new Map<string, string>();
+        const messages = buildHistory(rows, refNicknames).map((row) => ({
+          senderLabel: row.senderLabel,
+          text: row.text
+        }));
+        if (messages.length > 0) {
+          loaded.push({ title: ref.title, messages });
+        }
+      } catch (error) {
+        logger.warn("conversation_turn_reference_fetch_failed", {
+          conversationId: input.conversationId,
+          referencedConversationId: ref.id,
+          error
+        });
+      }
+    }
+    if (loaded.length > 0) {
+      parts.push(buildTurnConversationRefSection(loaded));
+    }
+  }
+
+  return parts.filter((part) => part.length > 0).join("\n\n");
+}
 
 async function prepareTurnContext(
   runtime: TurnRuntime,
@@ -969,6 +1099,17 @@ async function prepareTurnContext(
   const projectInstructionsSection = access.projectIsDmContainer
     ? ""
     : buildTurnProjectInstructionsSection(access.projectInstructionsMd);
+  // R23 F-07：这条触发消息里点名的 `#会话标题` / `/技能名`——解析成真实会话/技能后，把被引会话的近期
+  // 讨论与被唤起技能的正文一起拼进这一轮 system prompt。解析规则与桌面端输入框的触发符解析同源，
+  // 见 ./conversation-turn-references.ts 顶部注释。
+  const referenceSection = await buildTurnReferenceSection(deps, logger, {
+    triggerText,
+    workspaceId: human.workspaceId,
+    viewerUserId: human.userId,
+    projectId: access.conversation.projectId,
+    conversationId: input.conversationId,
+    teamSkillRows
+  });
   if (userMemoryRows.length > 0) {
     try {
       await deps.userMemories.touch(userMemoryRows.map((row) => row.id), now(), { workspaceId: human.workspaceId });
@@ -1061,6 +1202,7 @@ async function prepareTurnContext(
     pendingClarification,
     memorySection,
     projectInstructionsSection,
+    referenceSection,
     contextSummaryMd,
     triggerText,
     persistAndBroadcastCuuMessage,
@@ -1077,6 +1219,7 @@ async function runLegacyTurnLoop(
 ): Promise<ConversationTurnResultVM> {
   const { deps, now, logger } = runtime;
   const { turnId, toolCtx, memorySection, pendingClarification, projectInstructionsSection, contextSummaryMd, client } = prepared;
+  const referenceSection = prepared.referenceSection;
   const persistAndBroadcastCuuMessage = prepared.persistAndBroadcastCuuMessage;
   const tryPersistToolNote = prepared.tryPersistToolNote;
 
@@ -1113,7 +1256,9 @@ async function runLegacyTurnLoop(
         // R16 批 W4a：项目自定义指令——位置在通用工作纪律之后、会话上下文（滚动摘要/记忆）之前。
         projectInstructionsSection,
         contextSummaryMd ? buildTurnContextSummarySection(contextSummaryMd) : "",
-        memorySection.promptSection
+        memorySection.promptSection,
+        // R23 F-07：这一轮消息里 `#会话` / `/技能` 点名带进来的材料——放在最后，紧挨着正题。
+        referenceSection
       ]
         .filter((part) => part.length > 0)
         .join("\n\n");
@@ -1399,7 +1544,9 @@ async function runConversationTurnSegment(
     // R16 批 W4a：项目自定义指令——位置在通用工作纪律之后、会话上下文（滚动摘要/记忆）之前。
     prepared.projectInstructionsSection,
     prepared.contextSummaryMd ? buildTurnContextSummarySection(prepared.contextSummaryMd) : "",
-    prepared.memorySection.promptSection
+    prepared.memorySection.promptSection,
+    // R23 F-07：同 runLegacyTurnLoop 的拼接顺序——引用材料放在最后，紧挨着正题。
+    prepared.referenceSection
   ]
     .filter((part) => part.length > 0)
     .join("\n\n");

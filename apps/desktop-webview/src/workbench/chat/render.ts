@@ -1848,8 +1848,8 @@ export function renderComposerHtml(input: {
       ? "Cuu 回完这条就好…"
       : "Just a moment — Cuu is replying to the last one…"
     : zh
-      ? "发消息给项目组和 Cuu…(@ 引用网盘文件/成员)"
-      : "Message the team and Cuu… (@ file/member)";
+      ? "发消息给项目组和 Cuu…(@ 网盘文件/成员，# 会话，/ 技能)"
+      : "Message the team and Cuu… (@ file/member, # conversation, / skill)";
   const modeChip = input.modeChipHtml ?? "";
   // data-wb-chat-picker-slot：@/#// picker 的挂载点，特意留空——view.ts 单独更新这一个子节点的
   // innerHTML（每次按键都可能要开关/刷新 picker），绝不重建整个 composer（那会打断 textarea 的
@@ -1857,14 +1857,12 @@ export function renderComposerHtml(input: {
   // data-wb-chat-mode-pop-slot：模式五档弹层的挂载点，同一套"独立子节点刷新"取舍——主区会话里这个
   // 节点永远是空的（view.ts 从不在那里写入），有节点但不写内容，比"这个节点本身按会话种类条件渲染"
   // 更简单也更安全（不会因为切换会话种类漏挂/漏卸载一个挂载点）。
-  // G-desktop 止血批 1：撤掉「#会话」灰 chip——上一批（R14 CHAT）已经撤掉了同款的「/技能」假
-  // affordance，只留「#会话」在原地摆着（当时点名"等 SEARCH 批接线"），但会话引用搜索至今没有真的
-  // 接上，这个 chip 点了/打了 # 只会弹一句「即将上线」，仍然是 04 §4 铁律 3 禁止的「没有真接线的
-  // 控件不能看起来能点」。现在一并撤掉，composer 占位符里"# 会话"的提示语同理去掉——不再暗示一个
-  // 打不通的功能。真正的解析器（trigger-parser.ts 的 detectComposerTrigger）和这个 chip / picker
-  // 用过的 CSS 类（.wh-wb-chat-ctag--soon /.wh-wb-chat-picker--soon）都原样保留在 css.ts，接线时
-  // 直接复用现成视觉，见 view.ts renderPicker() 顶部注释。
-  return `<div class="wh-wb-chat-composer">${errorHtml}${replyBannerHtml}${attachmentsHtml}<div class="wh-wb-chat-cbox"><textarea class="wh-wb-chat-input" rows="1" placeholder="${escapeHtml(placeholder)}" data-wb-chat-input${input.sending ? " disabled" : ""}>${escapeHtml(input.draftText)}</textarea><div class="wh-wb-chat-ctools"><button type="button" class="wh-wb-chat-ctag" data-wb-chat-tool-trigger="@"><b>@</b> ${zh ? "文件·成员" : "file · member"}</button>${modeChip}<button type="button" class="wh-wb-chat-send" data-wb-chat-send${canSend ? "" : " disabled"} aria-label="${zh ? "发送" : "Send"}">${workbenchIcons.send}</button></div><div data-wb-chat-mode-pop-slot></div><div data-wb-chat-picker-slot></div></div></div>`;
+  // R23 F-07：「#会话」「/技能」两个入口回来了——这一次它们是真的（会话引用走本项目可见会话清单、
+  // 技能唤起走工作区活跃技能清单，选中后插入可读的纯文本引用，服务端按名字解析回真实会话/技能并把
+  // 材料喂进这一轮回应，见 render 的两个 picker 函数与 view.ts 的取数）。G-desktop 止血批 1 当时把
+  // 这两个 chip 撤掉是对的（那时它们点开只有一句「即将上线」，属于 04 §4 铁律 3 禁止的假 affordance），
+  // 现在功能真的接上了才把入口放回来，同时撤掉那批留下的 --soon 样式与占位 picker 函数。
+  return `<div class="wh-wb-chat-composer">${errorHtml}${replyBannerHtml}${attachmentsHtml}<div class="wh-wb-chat-cbox"><textarea class="wh-wb-chat-input" rows="1" placeholder="${escapeHtml(placeholder)}" data-wb-chat-input${input.sending ? " disabled" : ""}>${escapeHtml(input.draftText)}</textarea><div class="wh-wb-chat-ctools"><button type="button" class="wh-wb-chat-ctag" data-wb-chat-tool-trigger="@"><b>@</b> ${zh ? "文件·成员" : "file · member"}</button><button type="button" class="wh-wb-chat-ctag" data-wb-chat-tool-trigger="#"><b>#</b> ${zh ? "会话" : "conversation"}</button><button type="button" class="wh-wb-chat-ctag" data-wb-chat-tool-trigger="/"><b>/</b> ${zh ? "技能" : "skill"}</button>${modeChip}<button type="button" class="wh-wb-chat-send" data-wb-chat-send${canSend ? "" : " disabled"} aria-label="${zh ? "发送" : "Send"}">${workbenchIcons.send}</button></div><div data-wb-chat-mode-pop-slot></div><div data-wb-chat-picker-slot></div></div></div>`;
 }
 
 // —— R12（模式五档）：仅协同会话（conversationKind === 'collab'）composer 出现——2026-07-12 纠偏后
@@ -2058,15 +2056,67 @@ export function renderMentionPickerHtml(input: {
   return `<div class="wh-wb-chat-picker" data-wb-chat-picker="mention" role="listbox">${memberSection}${fileSection}${empty}</div>`;
 }
 
-// —— # / picker：G-desktop 止血批 1 起不再被 view.ts 调用——打「#会话」/「/技能」现在诚实地不弹任何
-// picker（不是「即将可用」的假 UI，是真的什么都还没有），composer 工具条的「#会话」灰 chip 也一并
-// 撤了（见 renderComposerHtml 顶部注释）。这个函数本身留着不删——纯函数、有单测、# / 触发符解析
-// （trigger-parser.ts）和它用的 CSS 类都原样保留，等会话引用搜索真的接线时，直接在 view.ts 的
-// renderPicker() 里把 slot.innerHTML = "" 换回调用这个函数即可，不用重新设计这块 UI。 —— //
+// —— R23 F-07：# 会话引用 / / 技能唤起 picker（真实取数，不是占位）——
+//
+// 两个 picker 复用 @ picker 同一套行样式/键盘口径（.wh-wb-chat-picker-row + roving tabindex +
+// highlightedIndex 下标），选中后往输入框里插的是**纯文本**「#会话标题 」/「/技能名 」——引用语义
+// 与 @ 提及完全同一套机制：正文里写可读的名字，服务端按名字解析回真实会话/技能
+// （apps/api/src/services/conversation-turn-references.ts），消息体不加任何结构化字段。
+// 这样房间里每个人在聊天记录里都看得见「这句话引用了什么」，而不是一个只有 Cuu 看得见的隐形引用。
+// 决策与代价见 .agents/notes/implemented/2026-09-05-chat-conversation-and-skill-references.md。 —— //
 
-export function renderComingSoonPickerHtml(input: { locale: Locale; trigger: "#" | "/" }): string {
+export type ConversationRefPickerOption = { conversationId: string; title: string };
+export type SkillPickerOption = { skillKey: string; name: string; whenToUse: string };
+
+export function renderConversationRefPickerHtml(input: {
+  locale: Locale;
+  conversations: readonly ConversationRefPickerOption[];
+  loading: boolean;
+  // 同 renderMentionPickerHtml：可选，不传就等于「没有高亮」。
+  highlightedIndex?: number;
+}): string {
   const zh = input.locale === "zh-CN";
-  const title = input.trigger === "#" ? (zh ? "会话引用" : "Conversation reference") : zh ? "技能唤起" : "Skill invocation";
-  const note = zh ? "即将上线" : "Coming soon";
-  return `<div class="wh-wb-chat-picker wh-wb-chat-picker--soon" data-wb-chat-picker="soon"><div class="wh-wb-chat-picker-title">${escapeHtml(title)}</div><div class="wh-wb-chat-picker-soon-note">${escapeHtml(note)}</div></div>`;
+  const title = zh ? "会话" : "Conversations";
+  if (input.loading) {
+    return `<div class="wh-wb-chat-picker" data-wb-chat-picker="conversation_ref" role="listbox"><div class="wh-wb-chat-picker-section-title">${escapeHtml(title)}</div><div class="wh-wb-chat-picker-loading">${zh ? "加载中…" : "Loading…"}</div></div>`;
+  }
+  const rows = input.conversations
+    .map((conversation, index) => {
+      const isHighlighted = index === input.highlightedIndex;
+      const highlightAttr = isHighlighted ? ' style="outline:2px solid rgba(10,132,255,.55);outline-offset:-2px"' : "";
+      return `<button type="button" class="wh-wb-chat-picker-row" tabindex="-1" role="option" aria-selected="${isHighlighted}"${highlightAttr} data-wb-chat-pick-conversation="${escapeHtml(conversation.conversationId)}">${workbenchIcons.chat}<span>${escapeHtml(conversation.title)}</span></button>`;
+    })
+    .join("");
+  const body = rows
+    ? `<div class="wh-wb-chat-picker-section-title">${escapeHtml(title)}</div>${rows}`
+    : `<div class="wh-wb-chat-picker-empty">${zh ? "这个项目里没有可引用的会话" : "No conversations to reference in this project"}</div>`;
+  return `<div class="wh-wb-chat-picker" data-wb-chat-picker="conversation_ref" role="listbox">${body}</div>`;
+}
+
+export function renderSkillPickerHtml(input: {
+  locale: Locale;
+  skills: readonly SkillPickerOption[];
+  loading: boolean;
+  highlightedIndex?: number;
+}): string {
+  const zh = input.locale === "zh-CN";
+  const title = zh ? "团队技能" : "Team skills";
+  if (input.loading) {
+    return `<div class="wh-wb-chat-picker" data-wb-chat-picker="skill_ref" role="listbox"><div class="wh-wb-chat-picker-section-title">${escapeHtml(title)}</div><div class="wh-wb-chat-picker-loading">${zh ? "加载中…" : "Loading…"}</div></div>`;
+  }
+  const rows = input.skills
+    .map((skill, index) => {
+      const isHighlighted = index === input.highlightedIndex;
+      const highlightAttr = isHighlighted ? ' style="outline:2px solid rgba(10,132,255,.55);outline-offset:-2px"' : "";
+      // 副标题＝这条技能的适用场景（when_to_use）——光看名字选不准，写出来才知道该不该唤起它。
+      const hint = skill.whenToUse
+        ? `<span class="wh-wb-chat-picker-row-hint">${escapeHtml(skill.whenToUse)}</span>`
+        : "";
+      return `<button type="button" class="wh-wb-chat-picker-row" tabindex="-1" role="option" aria-selected="${isHighlighted}"${highlightAttr} data-wb-chat-pick-skill="${escapeHtml(skill.skillKey)}">${workbenchIcons.tool}<span>${escapeHtml(skill.name)}</span>${hint}</button>`;
+    })
+    .join("");
+  const body = rows
+    ? `<div class="wh-wb-chat-picker-section-title">${escapeHtml(title)}</div>${rows}`
+    : `<div class="wh-wb-chat-picker-empty">${zh ? "这个团队还没有攒下可唤起的技能" : "This team has no skills to invoke yet"}</div>`;
+  return `<div class="wh-wb-chat-picker" data-wb-chat-picker="skill_ref" role="listbox">${body}</div>`;
 }
