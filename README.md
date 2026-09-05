@@ -150,7 +150,72 @@ packages/
   web-runtime/       两端共用的客户端运行时(SSE 订阅、动作派发、脏态跟踪)。
   api-client/        对着 contracts 生成的带类型 HTTP 客户端。
   tools/             agent 工具实现 —— 沙箱文件操作、run_command、技能加载 —— 以及迁移重放安全审计器。
+  plugin-host/       第三方插件的子进程宿主 —— 兼容 DeepSeek Harness 的工具类插件,dsh 依赖全部关在这个包里。
 ```
+
+## 插件
+
+WorkHub 兼容 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的**工具类**插件:一个插件给 Cuu 添几件工具,Cuu 在执行里调它们。
+
+**先把兼容面说清楚,免得你装了一半才发现**:
+
+| 这类插件 | 能不能装 |
+|---|---|
+| 工具类(`ctx.tools.register`) | 能。这是唯一被支持的一类。 |
+| 界面/主题类(`package.json` 里有 `dsh.client`) | **不能**,而且以后也不会能。这类插件跑在浏览器里的第二个 Cordis 上下文 + React;WorkHub 的界面不是这套技术,装进来只会得到一个什么都不发生的空壳,所以安装前直接拒绝并说明原因。 |
+| 带 `prepare` / `postinstall` 等安装期脚本的包 | **不装**。这些脚本在装包时就跑,在任何沙箱之外。 |
+| 模型 provider / 定时任务 / 面板类 | 还不行,排在后面的阶段。 |
+
+安装源只认**这台服务器上的一个目录**:npm 包名、git 地址、tarball 都会在安装时执行包自己的脚本,所以不开。
+
+**怎么装**:桌面客户端 → 设置 → 插件 → 「从本机目录安装」,填目录的绝对路径。管理员才看得到这一区;网页端的设置页只显示一份只读清单。安装时服务端先读那个目录的 `package.json` 做体检(**不执行插件任何代码**),再登记,再让插件宿主真的试加载一次——装不上不会让你猜,原因会写在列表里。开发时也可以用环境变量 `WORKHUB_PLUGIN_PATHS`(逗号分隔的本地路径)直接挂上,那些路径和清单里的会合并去重。
+
+**插件跑在哪**:一个独立的子进程,不是 API 进程。它没有数据库连接、没有 Redis、没有大模型密钥——环境变量按白名单组装。插件贡献的每件工具都当作有外部副作用对待,于是照样走 WorkHub 既有的还原点、人工保留动作拦截与审批;每次调用都落审计。但这是**隔离容器,不是沙箱**:子进程仍以启动 API 的那个系统用户身份运行,能读写这台机器上它能碰的文件、能出网。装谁的插件,自己判断。
+
+**写一个自己的**:照 [`packages/plugin-host/qa/fixtures/dsh-plugin-echo/`](packages/plugin-host/qa/fixtures/dsh-plugin-echo/) 抄。一个目录、一个 `package.json`、一个入口文件就够了:
+
+```jsonc
+// package.json —— 声明入口与 peer;别加 prepare/postinstall,加了装不进来
+{
+  "name": "dsh-plugin-echo",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
+    "@deepseek-ai/schemastery": "^3.18.1"
+  }
+}
+```
+
+```js
+// lib/index.js —— 命名导出 apply(ctx),在里面注册工具
+import { defineTool } from "@deepseek-ai/dsh-tools";
+
+export const name = "echo";
+export const inject = ["tools"];
+
+export function apply(ctx) {
+  ctx.tools.register(defineTool({
+    name: "echo",
+    description: "把一句话原样回显。",
+    parameters: {
+      text: { type: "string", required: true, description: "要回显的内容。" }
+    },
+    output: {
+      schema: { type: "object", additionalProperties: false, properties: { text: { type: "string" } } },
+      render: (_args, value) => [{ type: "text", text: value.text }]
+    },
+    execute: async (args) => ({ text: String(args.text) })
+  }));
+}
+```
+
+`pnpm qa:plugin-smoke` 会拿这个夹具跑一遍完整链路:装载 → Cuu 在一次执行里调到它 → 结果进执行轨迹 → 调用落审计。
+
+**一句实话**:dsh 的 `0.1.x` 还在破坏性地改。已发布的第三方插件常常是对着另一个版本发的,装上去会在加载期报错——安装页会把「它要哪个版本」和「我们捆的是哪个版本」两个数一起摆给你看,但我们对上游没有影响力。
 
 ## 文档
 
