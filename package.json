@@ -54,6 +54,7 @@
     "sync:desktop-version": "tsx scripts/dev/sync-desktop-version.ts",
     "audit:third-party-notices": "tsx scripts/dev/gen-third-party-notices.ts --check",
     "gen:third-party-notices": "tsx scripts/dev/gen-third-party-notices.ts",
+    "gen:expected": "pnpm --filter @workhub/agent gen:expected && pnpm --filter @workhub/api gen:expected",
     "release:desktop": "bash scripts/dev/release-desktop.sh"
   },
   "devDependencies": {

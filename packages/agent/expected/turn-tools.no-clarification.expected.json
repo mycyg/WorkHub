@@ -1,0 +1,70 @@
+[
+  {
+    "name": "drive_search",
+    "description": "只读检索这个项目网盘里的文件（按文件名模糊匹配，最多返回 5 条）。不会修改任何内容，也不会把结果发给对方——检索完之后，如果确实找到了对方要的文件，再调用 send_file_card 发出去。",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "send_file_card",
+    "description": "把 drive_search 检索到的某一个具体文件，以文件卡片的形式发给对方。只能发之前检索到的、确认存在且有权限查看的文件；找不到或不确定就诚实说找不到，不要编造文件或编造 drive_item_id。",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "drive_item_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        }
+      },
+      "required": [
+        "drive_item_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "ask_clarifying_question",
+    "description": "当对方想让你新建一个工单/任务，但需求还含糊（缺关键信息，无法直接建出一个可执行的工单）时，用这个工具提出一个具体的澄清问题；调用后这一轮直接结束，等对方回答，不要在同一轮里又调用别的工具。",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "question": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "options": {
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "placeholder": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "additionalProperties": false
+    }
+  }
+]
