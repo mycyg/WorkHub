@@ -1,7 +1,6 @@
 import type { WorkHubApiClient } from "@workhub/api-client";
 import type { ProposalConflict, ProposalDetailVM, WorkHubLocale } from "@workhub/contracts";
 import { renderProposalDetail } from "@workhub/ui/proposal";
-import { bindReplayRevertActions, renderAgentRunReplay, type ReplayRevertRoot } from "@workhub/ui/replay";
 
 // D-01（R23 精简批）：这组渲染/接线函数原来住在 apps/desktop-webview/src/main.ts（一个从没被任何 HTML
 // 入口加载的死 barrel，真实桌面壳走 Spotlight，不走这条客户端渲染路径）。main.ts 里其余的
@@ -30,29 +29,10 @@ export async function renderDesktopProposalDetail(client: WorkHubApiClient, prop
   });
 }
 
-export function loadDesktopAgentRunReplay(client: WorkHubApiClient, runId: string) {
-  return client.replayAgentRun(runId);
-}
-
-export async function renderDesktopAgentRunReplay(client: WorkHubApiClient, runId: string, locale?: WorkHubLocale) {
-  return renderAgentRunReplay(await loadDesktopAgentRunReplay(client, runId), "desktop", locale ? { locale } : undefined);
-}
-
-// R20 DSK-UX（R19-3）：桌面壳挂上 replay 的 HTML 后调这里，给「撤销此次改动」按钮接真回调——桌面本就是
-// 本地客户端，可直接执行 POST /api/agent-runs/:id/revert（snapshot_id 走 body）。web 端不接这条、由既有
-// data-requires-desktop 拦截渲成「需在桌面端操作」。二次确认 + 刷新都在 @workhub/ui 的 bindReplayRevertActions
-// 里，这里只做「传 client + 回调」的薄接线。缺 revertAgentRun（旧 client）则安静退化成 no-op。
-export function bindDesktopAgentRunReplayRevert(
-  root: ReplayRevertRoot,
-  client: WorkHubApiClient,
-  options?: { onReverted?: (info: { runId: string; snapshotId: string }) => void }
-): () => void {
-  const revert = client.revertAgentRun;
-  if (!revert) {
-    return () => {};
-  }
-  return bindReplayRevertActions(root, {
-    revert: (runId, payload) => revert(runId, payload),
-    ...(options?.onReverted ? { onReverted: options.onReverted } : {})
-  });
-}
+// 回放三件（load/render/bind revert）的唯一实现在 desktop-agent-run-replay.ts（Spotlight 回放视图也从那里 import）；
+// 这里只转出口，供 scripts/qa/r1-route-visual-qa.ts 等按「路由渲染入口」取用。
+export {
+  bindDesktopAgentRunReplayRevert,
+  loadDesktopAgentRunReplay,
+  renderDesktopAgentRunReplay
+} from "./desktop-agent-run-replay.js";
