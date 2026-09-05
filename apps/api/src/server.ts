@@ -16,6 +16,7 @@ import { getDefaultGithubSyncScheduler } from "./workers/github-poll.js";
 import { getDefaultPulseScheduler } from "./workers/pulse-scheduler.js";
 import { getDefaultEventOutboxDrainScheduler } from "./workers/event-outbox-drain.js";
 import { getDefaultMeetingAnalysisScheduler } from "./workers/meeting-analysis.js";
+import { closeDefaultPluginHostClient } from "./services/plugin-host-client.js";
 
 // 进程级兜底：未捕获异常/未处理 rejection 此前无人接，一次走线的 throw/reject 会静默杀掉 daemon
 // 或留下半死状态。早注册（先于 server start），与下方 SIGINT/SIGTERM 优雅退出互补、不替代。
@@ -141,6 +142,11 @@ function shutdown(exitCode: number) {
   conversationObserverScheduler?.stop();
   conversationReplyJudgeScheduler?.stop();
   meetingAnalysisScheduler?.stop();
+  // R24-P：插件宿主子进程跟着 API 一起收尾——关 stdin 让它自退，超时再 SIGTERM。
+  // fail-open：关不掉不该拖住 API 退出（下面 8s 强退兜底照旧）。
+  void closeDefaultPluginHostClient().catch((error) => {
+    logger.warn("plugin_host_close_failed", { error });
+  });
   // INF-09：2s 强退会截断在飞持久化（run 终态/trace 落库半途被杀，只能靠恢复重跑兜底）。
   // 放宽到 8s：server.close 等连接排空期间给在飞写入留足时间；SSE 长连接不会主动排空，
   // 8s 后仍强退兜底（只是上限，不是常态等待）。

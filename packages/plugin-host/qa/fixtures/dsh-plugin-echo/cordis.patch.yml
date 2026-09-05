@@ -1,0 +1,9 @@
+# dsh-plugin-echo — bundle patch layer (QA fixture).
+# Same shape as a real published dsh bundle: composes over an empty entry list,
+# so the only patch is an `insert` appending one composition row.
+- insert:
+    - id: echo
+      name: 'dsh-plugin-echo'
+      config:
+        personaSection: true
+        sectionOrder: 6
