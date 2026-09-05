@@ -636,6 +636,70 @@ test("list_changed 之后下一次装配刷新清单（不在一次执行中途�
   await client.close();
 });
 
+test("清单刷新失败不把一次能成的调用变成错误：留着上一份清单继续用", async () => {
+  await keepingEventLoopAlive(async () => {
+    let listCalls = 0;
+    const spawns: SpawnInput[] = [];
+    const children: FakeChild[] = [];
+    const spawnProcess: McpServerSpawn = (input) => {
+      spawns.push(input);
+      const child = fakeChild((message, live) => {
+        const method = methodOf(message);
+        if (method === "initialize") {
+          live.say(
+            encodeJsonRpcLine({
+              jsonrpc: JSONRPC_VERSION,
+              id: idOf(message),
+              result: {
+                protocolVersion: MCP_CLIENT_PROTOCOL_VERSION,
+                capabilities: { tools: { listChanged: true } },
+                serverInfo: {}
+              }
+            })
+          );
+          return;
+        }
+        if (method === "tools/list") {
+          listCalls += 1;
+          if (listCalls > 1) {
+            live.say(
+              encodeJsonRpcLine({
+                jsonrpc: JSONRPC_VERSION,
+                id: idOf(message),
+                error: { code: -32000, message: "list is unavailable right now" }
+              })
+            );
+            return;
+          }
+          live.say(encodeJsonRpcLine({ jsonrpc: JSONRPC_VERSION, id: idOf(message), result: { tools: [ECHO_TOOL] } }));
+          return;
+        }
+        if (method === "tools/call") {
+          live.say(
+            encodeJsonRpcLine({
+              jsonrpc: JSONRPC_VERSION,
+              id: idOf(message),
+              result: { content: [{ type: "text", text: "pong" }] }
+            })
+          );
+        }
+      });
+      children.push(child);
+      return child;
+    };
+    const client = clientFor([serverConfig()], { spawnProcess });
+    const specs = await client.toolSpecs({ workspaceId: WORKSPACE });
+    children[0]?.say(encodeJsonRpcLine({ jsonrpc: JSONRPC_VERSION, method: "notifications/tools/list_changed" }));
+    await new Promise((resolve) => setImmediate(resolve));
+    const result = await specs[0]!.execute({}, CTX);
+    assert.equal(result.ok, true, result.content);
+    assert.equal(result.content, "pong");
+    assert.equal(client.status(WORKSPACE)[0]?.toolCount, 1, "刷新失败时留着上一份清单");
+    assert.equal(spawns.length, 1, "刷新失败不该换进程");
+    await client.close();
+  });
+});
+
 test("清单里配置变了就换一个新进程（旧的收干净）", async () => {
   const server = fakeServer();
   let configs = [serverConfig()];

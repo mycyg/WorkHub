@@ -553,29 +553,39 @@ export function createMcpClient(options: McpClientOptions = {}): McpClient {
       }
       // 服务器说过它的清单变了：只在这里（下一次取清单时）刷新，绝不在一次执行中途换掉模型
       // 已经看过的工具清单。
-      const refreshed = await connection.session.listTools();
-      const translation = describeMcpTools({
-        serverName: connection.config.serverName,
-        trustLevel: connection.config.trustLevel,
-        tools: refreshed
-      });
-      if (translation.ok) {
-        connection.descriptors = translation.descriptors;
-        logger.info("mcp_tools_refreshed", {
-          server_name: connection.config.serverName,
-          tools: translation.descriptors.length
+      //
+      // **刷新失败不往上抛**：这个函数同时是「调一个工具之前」的必经之路，让一次刷新失败把一次
+      // 本来能成的调用变成错误，是拿次要路径的故障去伤主路径。留着上一份清单继续用，并记日志。
+      try {
+        const refreshed = await connection.session.listTools();
+        const translation = describeMcpTools({
+          serverName: connection.config.serverName,
+          trustLevel: connection.config.trustLevel,
+          tools: refreshed
         });
-        await writeConnectionResult(connection, {
-          status: "connected",
-          toolCount: translation.descriptors.length,
-          tools: translation.descriptors.map((descriptor) => descriptor.rawName),
-          lastError: null
-        });
-      } else {
-        logger.warn("mcp_tools_refresh_rejected", {
+        if (translation.ok) {
+          connection.descriptors = translation.descriptors;
+          logger.info("mcp_tools_refreshed", {
+            server_name: connection.config.serverName,
+            tools: translation.descriptors.length
+          });
+          await writeConnectionResult(connection, {
+            status: "connected",
+            toolCount: translation.descriptors.length,
+            tools: translation.descriptors.map((descriptor) => descriptor.rawName),
+            lastError: null
+          });
+        } else {
+          logger.warn("mcp_tools_refresh_rejected", {
+            server_name: connection.config.serverName,
+            reason: translation.reason,
+            detail: translation.detail
+          });
+        }
+      } catch (error) {
+        logger.warn("mcp_tools_refresh_failed", {
           server_name: connection.config.serverName,
-          reason: translation.reason,
-          detail: translation.detail
+          error
         });
       }
       return;
