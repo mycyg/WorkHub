@@ -46,6 +46,7 @@ import { createAgentRunRoutes, type ProposalReplayAuditReader } from "./routes/a
 import { createDbAgentRunPersistence } from "./services/agent-run-persistence.js";
 import { createAgentRunConfidenceRecorder } from "./services/agent-run-confidence.js";
 import { createAgentRunSnapshotHook } from "./services/agent-run-snapshots.js";
+import { captureStdoutLines } from "@workhub/tools/test-support";
 import { createHumanReservedGuard } from "./services/human-reserved-guard.js";
 import { createInMemoryProposalService } from "./services/proposals.js";
 import { WorkItemServiceError, type WorkItemService } from "./services/work-items.js";
@@ -5536,13 +5537,8 @@ test("P3-02 budget lease renewal that updates 0 rows surfaces a structured log i
     },
     outstandingForScopes: async () => new Map()
   };
-  const logLines: string[] = [];
-  const originalWrite = process.stdout.write.bind(process.stdout);
-  process.stdout.write = ((chunk: string | Uint8Array) => {
-    logLines.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
-    return true;
-  }) as typeof process.stdout.write;
-  try {
+  // 捕获且透传（见 @workhub/tools/test-support）：整段替换 process.stdout.write 会吞掉报告器的 TAP 行。
+  const { lines: logLines } = await captureStdoutLines(async () => {
     const queue = createInMemoryAgentRunQueue({
       settings: runtimeSettings,
       now: () => new Date(now.getTime() + tick++ * 100),
@@ -5560,7 +5556,7 @@ test("P3-02 budget lease renewal that updates 0 rows surfaces a structured log i
       eventBus: false,
       requireDeliverable: false
     });
-    const run = await queue.enqueue({
+    await queue.enqueue({
       workItemId,
       actorId: userId,
       title: "Budget lease renew 0-row run"
@@ -5570,9 +5566,7 @@ test("P3-02 budget lease renewal that updates 0 rows surfaces a structured log i
     await renewSeen.promise;
     releaseProvider.resolve();
     await running;
-  } finally {
-    process.stdout.write = originalWrite;
-  }
+  });
 
   const sawNoRowsLog = logLines.some((line) => line.includes("agent_run_budget_lease_renew_no_rows"));
   assert.equal(sawNoRowsLog, true, "0-row budget lease renewal must be observable via structured log, not silently swallowed");
@@ -8013,18 +8007,8 @@ test("INF-11: an unknown persisted run status maps to failed AND emits a structu
     }
   };
   const persistence = createDbAgentRunPersistence(repository);
-  const lines: string[] = [];
-  const originalWrite = process.stdout.write.bind(process.stdout);
-  process.stdout.write = ((chunk: string | Uint8Array) => {
-    lines.push(String(chunk));
-    return true;
-  }) as typeof process.stdout.write;
-  let mapped;
-  try {
-    mapped = await persistence.get(runId);
-  } finally {
-    process.stdout.write = originalWrite;
-  }
+  // 捕获且透传（见 @workhub/tools/test-support）：整段替换 process.stdout.write 会吞掉报告器的 TAP 行。
+  const { result: mapped, lines } = await captureStdoutLines(() => persistence.get(runId));
 
   assert.equal(mapped?.status, "failed", "unknown statuses still fall back to failed (behavior unchanged)");
   const warned = lines.some((line) => {

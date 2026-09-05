@@ -6295,6 +6295,183 @@ const pluginAdminForbiddenResponse = jsonErrorStatusResponse("403", "Managing pl
 const pluginNotFoundResponse = jsonErrorStatusResponse("404", "No such plugin in this workspace", [
   "plugin_not_found"
 ]);
+// R26 M3：MCP（Model Context Protocol）服务器治理。precheck_report 是**登记前不执行任何东西**的
+// 静态体检结论（字符串判定 + 一次 access）；连接事实与行上的状态刻意分成两个字段——行说的是
+// 「上一次连接尝试的结论」（重启 API 之后仍然读得到），connection 说的是「此刻还有没有活着的子进程」。
+const mcpPrecheckReportJsonSchema = {
+  type: "object",
+  required: ["verdict", "checks", "checked_at"],
+  properties: {
+    verdict: { type: "string", enum: ["ok", "warn", "blocked"] },
+    checks: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["id", "level"],
+        properties: {
+          id: {
+            type: "string",
+            enum: [
+              "server_name",
+              "command_resolvable",
+              "remote_exec_launcher",
+              "args_shape",
+              "env_credential_shaped",
+              "env_overrides_base",
+              "secret_ref_scope",
+              "secret_refs_present"
+            ]
+          },
+          level: { type: "string", enum: ["pass", "warn", "block"] },
+          detail: { type: "string", maxLength: 500 }
+        },
+        additionalProperties: false
+      }
+    },
+    checked_at: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
+const mcpServerVmJsonSchema = {
+  type: "object",
+  required: [
+    "id",
+    "server_name",
+    "transport",
+    "command",
+    "args",
+    "env",
+    "secret_refs",
+    "tool_call_timeout_ms",
+    "enabled",
+    "status",
+    "trust_level",
+    "precheck_report",
+    "tool_count",
+    "created_at",
+    "updated_at"
+  ],
+  properties: {
+    id: uuidStringSchema,
+    // 模型可见工具名的命名空间；本地配置，绝不取远端自报的 serverInfo.name。工作区内唯一。
+    server_name: { type: "string", pattern: "^[A-Za-z0-9_-]{1,32}$" },
+    display_name: { type: "string", minLength: 1, maxLength: 200 },
+    // 单值枚举不是笔误：HTTP 传输引入出网目的地治理与密钥落库两件全新的事，放开要走新迁移。
+    transport: { type: "string", enum: ["stdio"] },
+    command: { type: "string", maxLength: 1000 },
+    args: { type: "array", items: { type: "string" } },
+    // 只允许非密键；凭据形状的键在体检就被拒，本列结构性存不进密文。
+    env: { type: "object", additionalProperties: { type: "string" } },
+    // {子进程 env 名: 服务端 env 名}——存指针不是值。
+    secret_refs: { type: "object", additionalProperties: { type: "string" } },
+    cwd: { type: "string", minLength: 1, maxLength: 1000 },
+    tool_call_timeout_ms: { type: "integer", minimum: 1000, maximum: 300000 },
+    enabled: { type: "boolean" },
+    status: { type: "string", enum: ["connected", "connect_failed", "disabled"] },
+    // 管理员断言的读写上限：服务器只能在这个上限内把风险往下降，不能自己往上抬。
+    trust_level: { type: "string", enum: ["read_only", "external_effect"] },
+    precheck_report: mcpPrecheckReportJsonSchema,
+    last_error: { type: "string", maxLength: 2000 },
+    tool_count: { type: "integer", minimum: 0 },
+    tools: { type: "array", items: { type: "string" } },
+    installed_by: uuidStringSchema,
+    created_at: dateTimeStringSchema,
+    updated_at: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
+const mcpServerConnectionJsonSchema = {
+  type: "object",
+  required: ["live", "tool_count"],
+  properties: {
+    // 空闲回收把子进程收掉之后 live=false 而 status 仍是 connected——下次用到会重新握手。
+    live: { type: "boolean" },
+    tool_count: { type: "integer", minimum: 0 },
+    tool_ids: { type: "array", items: { type: "string", maxLength: 64 } },
+    blocked_reason: { type: "string", maxLength: 2000 },
+    last_error: { type: "string", maxLength: 2000 }
+  },
+  additionalProperties: false
+} as const;
+const mcpServerActionResultJsonSchema = {
+  type: "object",
+  required: ["server", "risk_tokens"],
+  properties: {
+    server: mcpServerVmJsonSchema,
+    connection: mcpServerConnectionJsonSchema,
+    // 服务器名里会让它的每一个工具都被判成高风险、每次调用都停下来转人的词。
+    risk_tokens: { type: "array", items: { type: "string", maxLength: 64 } }
+  },
+  additionalProperties: false
+} as const;
+const mcpServerListJsonSchema = {
+  type: "object",
+  required: ["servers", "connections", "secret_ref_env_prefix", "available_secret_refs"],
+  properties: {
+    servers: { type: "array", items: mcpServerVmJsonSchema },
+    connections: { type: "object", additionalProperties: mcpServerConnectionJsonSchema },
+    secret_ref_env_prefix: { type: "string", minLength: 1, maxLength: 80 },
+    // 只有名字，没有值——添加表单据此避免填一个还没配的引用。
+    available_secret_refs: { type: "array", items: { type: "string", maxLength: 200 } }
+  },
+  additionalProperties: false
+} as const;
+const addMcpServerRequestJsonSchema = {
+  type: "object",
+  required: ["server_name", "command"],
+  properties: {
+    // 形状判定归静态体检（它给 mcp_server_name_invalid / mcp_server_name_taken 两个不同的码），
+    // 契约层只限长——在这里用正则挡掉，客户端只会收到一个说不清原因的 validation_error。
+    server_name: { type: "string", minLength: 1, maxLength: 200 },
+    display_name: { type: "string", minLength: 1, maxLength: 200 },
+    command: { type: "string", minLength: 1, maxLength: 1000 },
+    args: { type: "array", items: { type: "string", maxLength: 4000 }, maxItems: 64 },
+    env: { type: "object", additionalProperties: { type: "string", maxLength: 4000 } },
+    secret_refs: { type: "object", additionalProperties: { type: "string", minLength: 1, maxLength: 200 } },
+    cwd: { type: "string", minLength: 1, maxLength: 1000 },
+    tool_call_timeout_ms: { type: "integer", minimum: 1000, maximum: 300000 },
+    trust_level: { type: "string", enum: ["read_only", "external_effect"] },
+    enabled: { type: "boolean" }
+  },
+  additionalProperties: false
+} as const;
+const updateMcpServerRequestJsonSchema = {
+  type: "object",
+  // 刻意不含 server_name / command：改名会让模型可见工具名整体换一批（历史审计还挂在旧名下），
+  // 改命令等于指向另一个可执行文件——两者都走「移除再添加」，好让体检与审计重跑一遍完整流程。
+  minProperties: 1,
+  properties: {
+    trust_level: { type: "string", enum: ["read_only", "external_effect"] },
+    tool_call_timeout_ms: { type: "integer", minimum: 1000, maximum: 300000 },
+    env: { type: "object", additionalProperties: { type: "string", maxLength: 4000 } },
+    secret_refs: { type: "object", additionalProperties: { type: "string", minLength: 1, maxLength: 200 } }
+  },
+  additionalProperties: false
+} as const;
+const mcpAdminForbiddenResponse = jsonErrorStatusResponse("403", "Managing MCP servers requires an admin", [
+  "invalid_client_token",
+  "forbidden",
+  "mcp_admin_required"
+]);
+const mcpServerNotFoundResponse = jsonErrorStatusResponse("404", "No such MCP server in this workspace", [
+  "mcp_server_not_found",
+  "not_found"
+]);
+const mcpPrecheckRefusedResponse = jsonErrorStatusResponse(
+  "422",
+  "The pre-start health check refused this configuration; every refusal has its own stable code so clients never parse the English diagnostic",
+  [
+    "validation_error",
+    "mcp_server_name_invalid",
+    "mcp_command_not_found",
+    "mcp_remote_exec_refused",
+    "mcp_args_invalid",
+    "mcp_env_credential_shaped",
+    "mcp_env_overrides_base",
+    "mcp_secret_ref_out_of_scope",
+    "mcp_precheck_refused"
+  ]
+);
 const patchUserMemoryRequestJsonSchema = {
   type: "object",
   required: ["value_md", "expected_updated_at"],
@@ -8675,6 +8852,129 @@ export function getOpenApiDocument() {
             "403": jsonErrorStatusResponse("403", "Workspace audit is admin-only", [
               "forbidden"
             ]).responses["403"]
+          }
+        }
+      },
+      "/api/mcp-servers": {
+        get: {
+          tags: ["settings"],
+          summary: "Admin-only: registered MCP servers, what this process currently sees of each connection, and which server-side secret variables can be referenced",
+          responses: {
+            "200": jsonDataResponse(
+              mcpServerListJsonSchema,
+              "Every MCP server registered in this workspace"
+            ).responses["200"],
+            "403": mcpAdminForbiddenResponse.responses["403"],
+            "401": conversationAuthRequiredResponse,
+            "500": conversationInternalResponse
+          }
+        },
+        post: {
+          tags: ["settings"],
+          summary: "Admin-only: register an MCP server (static health check, then register, then hand-shake with the new list)",
+          ...jsonRequestBody(addMcpServerRequestJsonSchema),
+          responses: {
+            "201": jsonDataStatusResponse(
+              mcpServerActionResultJsonSchema,
+              "201",
+              "Registered; status and connection say whether the handshake actually worked"
+            ).responses["201"],
+            "400": jsonErrorStatusResponse("400", "The request body was not a JSON object", [
+              "malformed_json",
+              "json_object_required"
+            ]).responses["400"],
+            "403": mcpAdminForbiddenResponse.responses["403"],
+            "409": jsonErrorStatusResponse("409", "That name is already used by another server in this workspace", [
+              "mcp_server_name_taken"
+            ]).responses["409"],
+            "422": mcpPrecheckRefusedResponse.responses["422"],
+            "413": conversationPayloadTooLargeResponse,
+            "401": conversationAuthRequiredResponse,
+            "500": conversationInternalResponse
+          }
+        }
+      },
+      "/api/mcp-servers/{id}/enable": {
+        post: {
+          tags: ["settings"],
+          summary: "Admin-only: enable an MCP server and hand-shake with it again",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse(
+              mcpServerActionResultJsonSchema,
+              "The server after the reconnect attempt"
+            ).responses["200"],
+            "403": mcpAdminForbiddenResponse.responses["403"],
+            "404": mcpServerNotFoundResponse.responses["404"],
+            "401": conversationAuthRequiredResponse,
+            "500": conversationInternalResponse
+          }
+        }
+      },
+      "/api/mcp-servers/{id}/disable": {
+        post: {
+          tags: ["settings"],
+          summary: "Admin-only: disable an MCP server — its process is reclaimed and its tools stop appearing in any run",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse(mcpServerActionResultJsonSchema, "The server, now disabled").responses["200"],
+            "403": mcpAdminForbiddenResponse.responses["403"],
+            "404": mcpServerNotFoundResponse.responses["404"],
+            "401": conversationAuthRequiredResponse,
+            "500": conversationInternalResponse
+          }
+        }
+      },
+      "/api/mcp-servers/{id}/reload": {
+        post: {
+          tags: ["settings"],
+          summary: "Admin-only: test the connection — hand-shake again and report honestly (a failed connection is a 200 answer, not an HTTP error)",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse(
+              mcpServerActionResultJsonSchema,
+              "The server plus what this process now sees; a failure shows up in status and last_error"
+            ).responses["200"],
+            "403": mcpAdminForbiddenResponse.responses["403"],
+            "404": mcpServerNotFoundResponse.responses["404"],
+            "401": conversationAuthRequiredResponse,
+            "500": conversationInternalResponse
+          }
+        }
+      },
+      "/api/mcp-servers/{id}": {
+        patch: {
+          tags: ["settings"],
+          summary: "Admin-only: change the trust ceiling, the per-call timeout, the plain environment variables or the secret references",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(updateMcpServerRequestJsonSchema),
+          responses: {
+            "200": jsonDataResponse(
+              mcpServerActionResultJsonSchema,
+              "The server after the change, reconnected so the running process uses the new settings"
+            ).responses["200"],
+            "400": jsonErrorStatusResponse("400", "The request body was not a JSON object", [
+              "malformed_json",
+              "json_object_required"
+            ]).responses["400"],
+            "403": mcpAdminForbiddenResponse.responses["403"],
+            "404": mcpServerNotFoundResponse.responses["404"],
+            "422": mcpPrecheckRefusedResponse.responses["422"],
+            "413": conversationPayloadTooLargeResponse,
+            "401": conversationAuthRequiredResponse,
+            "500": conversationInternalResponse
+          }
+        },
+        delete: {
+          tags: ["settings"],
+          summary: "Admin-only: remove an MCP server from the registry (the program on disk is left alone)",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "204": conversationNoContentResponse,
+            "403": mcpAdminForbiddenResponse.responses["403"],
+            "404": mcpServerNotFoundResponse.responses["404"],
+            "401": conversationAuthRequiredResponse,
+            "500": conversationInternalResponse
           }
         }
       },

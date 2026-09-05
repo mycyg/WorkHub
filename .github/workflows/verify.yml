@@ -29,6 +29,10 @@ jobs:
       - run: pnpm verify
       # 插件宿主端到端冒烟（不需要 PG / 不需要模型 key）：起一个 tsx 子进程装 echo 夹具，证明插件工具被 Cuu 调到、结果进轨迹、调用落审计。
       - run: pnpm qa:plugin-smoke
+      # MCP 端到端冒烟（不需要 PG / 不需要模型 key）：起一台真的 stdio MCP 夹具服务器子进程，证明
+      # 配置一行 → 握手 → 工具进注册表 → Cuu 调到 → 结果（围栏已中和）进轨迹 → 落审计；再把管理员
+      # 断言收回最高档，证明同一个调用会停下来转人。
+      - run: pnpm qa:mcp-smoke
       # scripts/ 不是 workspace 包，`pnpm test` 的 -r 递归覆盖不到；门禁脚本自身的测试
       # （文案 locale 独占扫描器）在这里单独跑一步。
       - run: pnpm test:scripts
@@ -38,6 +42,8 @@ jobs:
     timeout-minutes: 20
     env:
       WORKHUB_QA_CHROME_EXTRA_ARGS: "--no-sandbox --disable-dev-shm-usage"
+      # 失败时把每一步等待的标签打到 stderr（否则 CDP 错误只有 websocket 栈，看不出死在哪一步）。
+      WORKHUB_QA_TRACE: "1"
     steps:
       - uses: actions/checkout@v4
       - name: Install CJK fonts for deterministic zh-CN text metrics

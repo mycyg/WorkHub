@@ -1193,6 +1193,70 @@ test("R24-P 阶段 1：api client 覆盖插件治理五个端点（清单/安装
   ]);
 });
 
+test("R26 M3：api client 覆盖 MCP 服务器治理七个端点（清单/添加/启停/测试连接/改配置/移除）", async () => {
+  const calls: Array<{ url: string; method: string; body: string | undefined }> = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET", body: typeof init?.body === "string" ? init.body : undefined });
+      return new Response(JSON.stringify({ ok: true, data: { id: "ok" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  await client.listMcpServers!();
+  // 添加体里没有 transport/status/tool_count 的位置——那些是服务端事实，服务端 strict 校验会拒。
+  await client.addMcpServer!({ server_name: "gh", command: "/usr/local/bin/mcp-server-github" });
+  await client.enableMcpServer!("server-1");
+  await client.disableMcpServer!("server-1");
+  await client.reloadMcpServer!("server-1");
+  await client.updateMcpServer!("server-1", { trust_level: "read_only" });
+  await client.removeMcpServer!("server-1");
+
+  assert.deepEqual(calls, [
+    { url: "/api/mcp-servers", method: "GET", body: undefined },
+    {
+      url: "/api/mcp-servers",
+      method: "POST",
+      body: JSON.stringify({ server_name: "gh", command: "/usr/local/bin/mcp-server-github" })
+    },
+    { url: "/api/mcp-servers/server-1/enable", method: "POST", body: undefined },
+    { url: "/api/mcp-servers/server-1/disable", method: "POST", body: undefined },
+    { url: "/api/mcp-servers/server-1/reload", method: "POST", body: undefined },
+    { url: "/api/mcp-servers/server-1", method: "PATCH", body: JSON.stringify({ trust_level: "read_only" }) },
+    { url: "/api/mcp-servers/server-1", method: "DELETE", body: undefined }
+  ]);
+});
+
+test("R26 M3：移除走 204 无体，客户端不因为「没有响应体」把一次成功的删除读成失败", async () => {
+  const client = createApiClient({
+    // DELETE /api/mcp-servers/:id 服务端回 204——删除没有第二种成功形态。
+    fetchFn: async () => new Response(null, { status: 204 })
+  });
+  const removed = (await client.removeMcpServer!("server-1")) as unknown;
+  // 空 body 在 request() 里读成 null；方法声明成 Promise<void> 说的是「没有东西可读」，
+  // 与既有的 204 方法（deleteProposalFeedback 等）同口径——这里断言的是「不抛、也不当成契约违规」。
+  assert.equal(removed, null);
+});
+
+test("R26 M3：治理端点的类型化错误原样透出，桌面端才能按码出人话", async () => {
+  const client = createApiClient({
+    fetchFn: async () =>
+      new Response(
+        JSON.stringify({
+          ok: false,
+          error: { code: "mcp_remote_exec_refused", message: "先把它装到这台机器上，再填装好之后的路径。" }
+        }),
+        { status: 422, headers: { "Content-Type": "application/json" } }
+      )
+  });
+  await assert.rejects(
+    () => client.addMcpServer!({ server_name: "gh", command: "npx" }),
+    (error: unknown) => error instanceof WorkHubApiError && error.status === 422 && error.code === "mcp_remote_exec_refused"
+  );
+});
+
 test("R14 batch FEEDBACK: api client PUTs/DELETEs proposal feedback against the single shared endpoint", async () => {
   const calls: Array<{ url: string; method: string; body: string | undefined }> = [];
   const client = createApiClient({
