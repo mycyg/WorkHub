@@ -1,4 +1,5 @@
 export * from "./types.js";
+export * from "./context-pruning.js";
 export * from "./control.js";
 export * from "./doom-loop-reminder.js";
 export * from "./handoff.js";

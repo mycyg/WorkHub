@@ -22,6 +22,15 @@ export type AgentLoopBudget = RunBudget & Partial<SandboxBudget> & {
   maxCompactions?: number;
   /** 写回对话上下文的单条 tool_result 字符上限（默认 8000）；trace 不受影响。 */
   toolResultContextChars?: number;
+  /**
+   * B10 第一段：压缩触发时剪枝的单条 tool_result 字符预算（默认 2000，见
+   * `loop/context-pruning.ts` DEFAULT_PRUNE_TOOL_RESULT_CHARS）。
+   */
+  pruneToolResultChars?: number;
+  /** B10 第一段：保留窗口比例，历史末尾这一比例的工具结果不剪（默认 0.16，至少 1 条）。 */
+  pruneRetainRatio?: number;
+  /** B10 第二段：单次 run 允许落盘到 `.spill/` 的总字节上限（默认 16 MiB）。 */
+  spillMaxTotalBytes?: number;
   /** provider 瞬态错误重试的退避基数（毫秒，默认 500）。 */
   providerRetryBaseDelayMs?: number;
   /** 单次重试延迟上限（毫秒，默认 60000）。findings[#49]：钳住上游 Retry-After，防恶意/异常上游 park worker 数小时。 */
