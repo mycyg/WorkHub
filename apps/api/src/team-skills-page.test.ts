@@ -5,6 +5,10 @@ import type { TeamSkillRow } from "@workhub/db";
 
 import { buildTeamSkillsPage } from "./pages/team-skills.js";
 
+// R23 SA-06：curation 是必填输入（页面要回答「这台部署到底有没有人在攒技能」），大部分既有断言
+// 不关心它——统一给一个「已开启、当前空闲、本进程还没跑过」的缺省，专门的状态断言另起一条测试。
+const idleCuration = { enabled: true, running: false, last_run_at: null } as const;
+
 function row(over: Partial<TeamSkillRow> & Pick<TeamSkillRow, "skillKey">): TeamSkillRow {
   return {
     id: `ts-${over.skillKey}`,
@@ -30,6 +34,7 @@ function row(over: Partial<TeamSkillRow> & Pick<TeamSkillRow, "skillKey">): Team
 
 test("buildTeamSkillsPage maps active skills, sorts by key, and totals correctly", () => {
   const page = buildTeamSkillsPage({
+    curation: idleCuration,
     skills: [
       row({ skillKey: "quarterly-report", version: 3 }),
       row({ skillKey: "code-script", createdByKind: "human", sourceKind: "authored" })
@@ -49,19 +54,20 @@ test("buildTeamSkillsPage maps active skills, sorts by key, and totals correctly
 
 test("findings: out-of-range / non-finite confidence is clamped/skipped, not 500ing the page", () => {
   // 越界值夹紧到 [0,1]，不抛 InternalContractError。
-  const over = buildTeamSkillsPage({ skills: [row({ skillKey: "over", confidenceScore: 1.7 })] });
+  const over = buildTeamSkillsPage({ skills: [row({ skillKey: "over", confidenceScore: 1.7 })], curation: idleCuration });
   assert.equal(over.skills[0]?.confidence_score, 1);
 
-  const under = buildTeamSkillsPage({ skills: [row({ skillKey: "under", confidenceScore: -0.4 })] });
+  const under = buildTeamSkillsPage({ skills: [row({ skillKey: "under", confidenceScore: -0.4 })], curation: idleCuration });
   assert.equal(under.skills[0]?.confidence_score, 0);
 
   // NaN / 非有限值：跳过该字段而不是毒化整页。
-  const nan = buildTeamSkillsPage({ skills: [row({ skillKey: "nan", confidenceScore: Number.NaN })] });
+  const nan = buildTeamSkillsPage({ skills: [row({ skillKey: "nan", confidenceScore: Number.NaN })], curation: idleCuration });
   assert.equal(nan.skills[0]?.confidence_score, undefined);
 });
 
 test("buildTeamSkillsPage surfaces K2 refinement provenance from samplesJson", () => {
   const page = buildTeamSkillsPage({
+    curation: idleCuration,
     skills: [
       row({
         skillKey: "quarterly-report",
@@ -83,6 +89,7 @@ test("buildTeamSkillsPage surfaces K2 refinement provenance from samplesJson", (
 
 test("buildTeamSkillsPage ignores non-refinement samplesJson (new-skill distill provenance)", () => {
   const page = buildTeamSkillsPage({
+    curation: idleCuration,
     skills: [row({ skillKey: "data-analysis", samplesJson: { accepted: 9, escalations: 2 } })]
   });
   assert.equal(page.skills[0]?.provenance, undefined);
@@ -90,13 +97,31 @@ test("buildTeamSkillsPage ignores non-refinement samplesJson (new-skill distill 
 });
 
 test("buildTeamSkillsPage emits no_skills empty state when there are no active skills", () => {
-  const page = buildTeamSkillsPage({ skills: [] });
+  const page = buildTeamSkillsPage({ skills: [], curation: idleCuration });
   assert.equal(page.skills.length, 0);
   assert.equal(page.totals.active, 0);
   assert.equal(page.empty_state, "no_skills");
 });
 
 test("buildTeamSkillsPage omits confidence_score when null", () => {
-  const page = buildTeamSkillsPage({ skills: [row({ skillKey: "x", confidenceScore: null })] });
+  const page = buildTeamSkillsPage({ skills: [row({ skillKey: "x", confidenceScore: null })], curation: idleCuration });
   assert.equal(page.skills[0]?.confidence_score, undefined);
+});
+
+// R23 SA-06：自学状态原样透出——页面装配层不猜、不美化。三个字段各自有真值来源（开关+密钥、
+// 调度器的 running 标志、本进程记到的上一轮），装配层把它们原样带上就是最诚实的做法。
+test("R23 SA-06 buildTeamSkillsPage passes the self-learning status straight through", () => {
+  const running = buildTeamSkillsPage({
+    skills: [],
+    curation: { enabled: true, running: true, last_run_at: "2026-09-04T18:30:00.000Z" }
+  });
+  assert.deepEqual(running.curation, {
+    enabled: true,
+    running: true,
+    last_run_at: "2026-09-04T18:30:00.000Z"
+  });
+
+  const off = buildTeamSkillsPage({ skills: [], curation: { enabled: false, running: false, last_run_at: null } });
+  assert.equal(off.curation.enabled, false);
+  assert.equal(off.curation.last_run_at, null);
 });
