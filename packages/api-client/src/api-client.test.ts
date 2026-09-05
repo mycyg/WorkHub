@@ -90,6 +90,118 @@ test("login surfaces a 401 from the backend as a WorkHubApiError (bad credential
   );
 });
 
+// R23 P2（SA-04 web 密码注册屏）：register 走请求体（绝不进 URL），成功建会话返回身份。
+test("register posts credentials to /api/auth/register in the body and returns identity", async () => {
+  let seenUrl: string | undefined;
+  let seenMethod: string | undefined;
+  let seenBody: string | undefined;
+  const client = createApiClient({
+    baseUrl: "http://127.0.0.1:8787",
+    fetchFn: async (input, init) => {
+      seenUrl = typeof input === "string" ? input : String(input);
+      seenMethod = init?.method;
+      seenBody = typeof init?.body === "string" ? init.body : undefined;
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          data: {
+            id: "u1",
+            nickname: "alice",
+            display_name: "alice",
+            created: true,
+            locale: "zh-CN",
+            preferences: { locale: "zh-CN" },
+            is_admin: true,
+            availability_status: "online"
+          }
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } }
+      );
+    }
+  });
+
+  const identity = await client.register({ email: "alice@example.com", password: "hunter2-strong-pass", nickname: "alice" });
+  assert.equal(identity.id, "u1");
+  assert.equal(identity.is_admin, true);
+  assert.equal(seenMethod, "POST");
+  assert.equal(seenUrl, "http://127.0.0.1:8787/api/auth/register");
+  assert.ok(!seenUrl?.includes("hunter2-strong-pass"), "password must never appear in the URL");
+  assert.deepEqual(JSON.parse(seenBody ?? "{}"), {
+    email: "alice@example.com",
+    password: "hunter2-strong-pass",
+    nickname: "alice"
+  });
+});
+
+test("register surfaces a 409 (email already registered) as a WorkHubApiError", async () => {
+  const client = createApiClient({
+    fetchFn: async () =>
+      new Response(JSON.stringify({ ok: false, error: { code: "conflict", message: "该邮箱已注册" } }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" }
+      })
+  });
+
+  await assert.rejects(
+    () => client.register({ email: "dup@example.com", password: "hunter2-strong-pass", nickname: "dup" }),
+    (error) => error instanceof WorkHubApiError && error.status === 409
+  );
+});
+
+// R23 P2（SA-05 web 个人空间新建）：list 走 GET，create 走 POST 请求体，两者都命中 /api/me/personal-projects。
+test("listPersonalProjects and createPersonalProject hit /api/me/personal-projects with the right verbs", async () => {
+  const seen: Array<{ url: string; method: string | undefined }> = [];
+  const client = createApiClient({
+    baseUrl: "http://127.0.0.1:8787",
+    fetchFn: async (input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      seen.push({ url, method: init?.method });
+      if (init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            data: {
+              project: {
+                id: "p1",
+                workspace_id: "w1",
+                name: "我的空间",
+                slug: "personal-1",
+                owner_nickname: "alice",
+                owner_user_id: "u1",
+                archived: false,
+                created_at: "2026-09-05T00:00:00.000Z",
+                updated_at: "2026-09-05T00:00:00.000Z",
+                open_work_item_count: 0,
+                is_personal: true
+              },
+              created: true,
+              context_ready: true
+            }
+          }),
+          { status: 201, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(
+        JSON.stringify({ ok: true, data: { generated_at: "2026-09-05T00:00:00.000Z", projects: [] } }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+  });
+
+  const list = await client.listPersonalProjects();
+  assert.deepEqual(list.projects, []);
+  const created = await client.createPersonalProject({});
+  assert.equal(created.project.name, "我的空间");
+  assert.equal(created.created, true);
+  assert.deepEqual(
+    seen.map((entry) => ({ url: entry.url, method: entry.method })),
+    [
+      { url: "http://127.0.0.1:8787/api/me/personal-projects", method: undefined },
+      { url: "http://127.0.0.1:8787/api/me/personal-projects", method: "POST" }
+    ]
+  );
+});
+
 test("api client preserves raw ok health payloads that are not WorkHub envelopes", async () => {
   const client = createApiClient({
     fetchFn: async () =>
@@ -474,6 +586,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   await client.createMeetingInsightDraft("project-1", "insight-1");
   await client.dismissMeetingInsight("project-1", "insight-1");
   await client.createMeetingDraftProposal("work-1");
+  await client.reanalyzeMeeting("meeting-1");
   await client.costUsage();
   await client.costPolicies();
   await client.updateCostPolicy("user", "pcost-user-day-v0", { max_tokens: 250000 });
@@ -526,6 +639,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     "POST /api/meetings/projects/project-1/insights/insight-1/draft",
     "POST /api/meetings/projects/project-1/insights/insight-1/dismiss",
     "POST /api/meetings/workitems/work-1/proposal-draft",
+    "POST /api/meetings/meeting-1/analyze",
     "GET /api/cost/usage",
     "GET /api/cost/policies",
     "PUT /api/cost/policies/user/pcost-user-day-v0",
@@ -573,6 +687,7 @@ test("api client carries locale on typed page VM requests", async () => {
   await client.createMeetingInsightDraft("project 1", "insight 1", { locale: "zh-CN" });
   await client.dismissMeetingInsight("project 1", "insight 1", { locale: "en-US" });
   await client.createMeetingDraftProposal("work 1", { locale: "zh-CN" });
+  await client.reanalyzeMeeting("meeting 1", { locale: "en-US" });
   await client.resolveEscalation("esc 1", { action: "retry" }, { locale: "en-US" });
   await client.resolveBudgetDecision("esc 1", "finish_current_output", { locale: "en-US" });
   await client.delegateEscalation("esc 1", { to_user_id: "user 1" }, { locale: "en-US" });
@@ -605,6 +720,7 @@ test("api client carries locale on typed page VM requests", async () => {
     "/api/meetings/projects/project%201/insights/insight%201/draft?locale=zh-CN",
     "/api/meetings/projects/project%201/insights/insight%201/dismiss?locale=en-US",
     "/api/meetings/workitems/work%201/proposal-draft?locale=zh-CN",
+    "/api/meetings/meeting%201/analyze?locale=en-US",
     "/api/escalations/esc%201/resolve?locale=en-US",
     "/api/escalations/esc%201/budget-actions/finish_current_output?locale=en-US",
     "/api/escalations/esc%201/delegate?locale=en-US",
@@ -828,6 +944,54 @@ test("api client exposes the objective create + link endpoints (R19-1 OKR wiring
   ]);
 });
 
+// R23 F-01（OKR 列表/详情持久化）：服务端新增的两个读端点——GET /api/projects/:id/objectives（项目
+// 主页 OKR 面板首屏，实际列出该项目所在工作区的全部目标）与 GET /api/objectives/:id（详情：关键结果 +
+// 挂链工作项 + 挂链执行计划）——此前没有任何类型化客户端方法能调用。锁死 URL/方法与信封解包正确。
+test("api client exposes the objective list + detail read endpoints (R23 F-01 wiring)", async () => {
+  const calls: Array<{ url: string; method: string }> = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET" });
+      if (String(input).includes("/objectives/objective-1")) {
+        return new Response(JSON.stringify({
+          ok: true,
+          data: {
+            objective_id: "objective-1",
+            title: "R23 稳定性目标",
+            description_md: null,
+            status: "active",
+            progress_percent: 40,
+            owner_user_id: null,
+            created_at: "2026-09-01T00:00:00.000Z",
+            updated_at: "2026-09-01T00:00:00.000Z",
+            key_results: [],
+            key_results_capped: false,
+            linked_work_items: [],
+            linked_work_items_capped: false,
+            linked_task_plans: [],
+            linked_task_plans_capped: false
+          }
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({
+        ok: true,
+        data: { objectives: [], capped: false }
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+  });
+
+  const list = await client.listObjectives("project-1");
+  const detail = await client.getObjective("objective-1");
+
+  assert.deepEqual(calls, [
+    { url: "/api/projects/project-1/objectives", method: "GET" },
+    { url: "/api/objectives/objective-1", method: "GET" }
+  ]);
+  assert.deepEqual(list, { objectives: [], capped: false });
+  assert.equal(detail.objective_id, "objective-1");
+  assert.equal(detail.title, "R23 稳定性目标");
+});
+
 // R20 R19-27（工作项跨 run 审计时间线）：后端早有 GET /api/workitems/:id/audit（快照 + 审计事实 +
 // manifest 校验，packages/db audit-repository 有测试覆盖），但此前客户端没有任何类型化方法能调用
 // 它——web 端因此从没拉过这份数据、更别提渲染。锁定 URL/方法与信封解包（envelope → data）正确。
@@ -922,6 +1086,8 @@ test("api client exposes the team skill governance endpoints (list/patch/deactiv
   });
   await client.deactivateTeamSkillManage!("skill-1");
   await client.deactivateTeamSkillManage!("skill-1", { reason: "已过时" });
+  // R23 SA-06：管理员手动催一轮自学——无请求体（这一轮覆盖整个部署的技能库，没有可选参数）。
+  await client.curateTeamSkillsNow!();
 
   assert.deepEqual(calls, [
     { url: "/api/team-skills/manage", method: "GET", body: undefined },
@@ -935,7 +1101,8 @@ test("api client exposes the team skill governance endpoints (list/patch/deactiv
       })
     },
     { url: "/api/team-skills/manage/skill-1/deactivate", method: "POST", body: JSON.stringify({}) },
-    { url: "/api/team-skills/manage/skill-1/deactivate", method: "POST", body: JSON.stringify({ reason: "已过时" }) }
+    { url: "/api/team-skills/manage/skill-1/deactivate", method: "POST", body: JSON.stringify({ reason: "已过时" }) },
+    { url: "/api/team-skills/curate-now", method: "POST", body: undefined }
   ]);
 });
 
@@ -1028,4 +1195,174 @@ test("R20 DSK-UX (R19-5): api client DELETEs a permission policy against /api/pe
   const policy = await client.revokePermissionPolicy!("policy-1");
   assert.equal(policy.id, "policy-1");
   assert.deepEqual(calls, [{ url: "/api/permissions/policy-1", method: "DELETE", body: undefined }]);
+});
+
+// R23 P4（R20 P2A 端点上界面）：指派/认领/评论/归档/软删/工作区审计七个端点此前一个类型化客户端方法
+// 都没有——前端因此永远调不到它们。这里钉死每个方法打的 URL、方法与请求体形状（尤其是 id 必须 URL 编码、
+// 无请求体的动作不许硬塞一个空 body）。
+test("R23 P4: api client wires the R20 P2A work item / project / workspace-audit endpoints", async () => {
+  const calls: Array<{ url: string; method: string; body: string | undefined }> = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push({
+        url: String(input),
+        method: init?.method ?? "GET",
+        body: typeof init?.body === "string" ? init.body : undefined
+      });
+      return new Response(JSON.stringify({ ok: true, data: {} }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  await client.assignWorkItem("wi 1", { assignee_user_id: "u-9", role: "lead" });
+  await client.claimWorkItem("wi 1");
+  await client.listWorkItemComments("wi 1");
+  await client.createWorkItemComment("wi 1", { body: "看过了，可以推进" });
+  await client.archiveProject("p 1");
+  await client.deleteProject("p 1");
+
+  assert.deepEqual(calls, [
+    { url: "/api/workitems/wi%201/assign", method: "POST", body: JSON.stringify({ assignee_user_id: "u-9", role: "lead" }) },
+    { url: "/api/workitems/wi%201/claim", method: "POST", body: undefined },
+    { url: "/api/workitems/wi%201/comments", method: "GET", body: undefined },
+    { url: "/api/workitems/wi%201/comments", method: "POST", body: JSON.stringify({ body: "看过了，可以推进" }) },
+    { url: "/api/projects/p%201/archive", method: "POST", body: undefined },
+    { url: "/api/projects/p%201/delete", method: "POST", body: undefined }
+  ]);
+  // 留言正文只走请求体，绝不出现在 URL 里。
+  assert.ok(!calls[3]!.url.includes("可以推进"));
+});
+
+test("R23 P4: workspace audit query string carries filters and paging, never a workspace id", async () => {
+  const urls: string[] = [];
+  const client = createApiClient({
+    fetchFn: async (input) => {
+      urls.push(String(input));
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          data: {
+            generated_at: "2026-09-05T09:00:00.000Z",
+            workspace_id: "11111111-1111-4111-8111-111111111111",
+            audit_logs: [],
+            page: { limit: 25, offset: 0, count: 0 }
+          }
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+  });
+
+  const page = await client.listWorkspaceAudit();
+  assert.equal(page.page.limit, 25);
+  await client.listWorkspaceAudit({ limit: 25, offset: 50 });
+  await client.listWorkspaceAudit({ action: "project.archived", actor_user_id: "u-9", from: "2026-09-01T00:00:00.000Z" });
+
+  assert.deepEqual(urls, [
+    // 无参数时不拼一个空 "?"。
+    "/api/workspace/audit",
+    "/api/workspace/audit?limit=25&offset=50",
+    "/api/workspace/audit?actor_user_id=u-9&action=project.archived&from=2026-09-01T00%3A00%3A00.000Z"
+  ]);
+  // 工作区恒取自认证身份（服务端硬隔离）——客户端不许把 workspace 塞进查询串。
+  assert.ok(urls.every((url) => !url.includes("workspace_id=")));
+});
+
+
+test("R23 F-02: api client GETs the permission policy list against /api/permissions", async () => {
+  const calls: Array<{ url: string; method: string }> = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET" });
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          data: [
+            {
+              id: "policy-1",
+              scope_kind: "workspace",
+              scope_id: "ws-1",
+              action_pattern: "drive.write:*",
+              effect: "allow",
+              priority: 0,
+              learned_from_session: false,
+              created_at: "2026-07-17T08:00:00.000Z",
+              updated_at: "2026-07-17T08:00:00.000Z"
+            }
+          ]
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+  });
+
+  const policies = await client.listPermissionPolicies!();
+  assert.equal(policies.length, 1);
+  assert.equal(policies[0]!.id, "policy-1");
+  assert.deepEqual(calls, [{ url: "/api/permissions", method: "GET" }]);
+});
+
+test("R23 F-02: api client PUTs a new/adjusted permission policy against /api/permissions", async () => {
+  const calls: Array<{ url: string; method: string; body: string | undefined }> = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET", body: typeof init?.body === "string" ? init.body : undefined });
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          data: {
+            id: "policy-2",
+            scope_kind: "workspace",
+            scope_id: "ws-1",
+            action_pattern: "drive.write:*",
+            effect: "ask",
+            priority: 0,
+            learned_from_session: false,
+            created_at: "2026-07-17T08:00:00.000Z",
+            updated_at: "2026-07-17T08:00:00.000Z"
+          }
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+  });
+
+  const payload = {
+    scope_kind: "workspace" as const,
+    scope_id: "ws-1",
+    action_pattern: "drive.write:*",
+    effect: "ask" as const,
+    priority: 0,
+    learned_from_session: false
+  };
+  const policy = await client.createPermissionPolicy!(payload);
+  assert.equal(policy.id, "policy-2");
+  assert.deepEqual(calls, [{ url: "/api/permissions", method: "PUT", body: JSON.stringify(payload) }]);
+});
+
+test("R23 F-02: api client POSTs an ask-permission request against /api/permissions/ask", async () => {
+  const calls: Array<{ url: string; method: string; body: string | undefined }> = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET", body: typeof init?.body === "string" ? init.body : undefined });
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          data: {
+            outcome: "pending",
+            approval: { id: "appr-1", action_pattern: "drive.write:*", status: "pending", created_at: "2026-07-17T08:00:00.000Z", updated_at: "2026-07-17T08:00:00.000Z" },
+            attention: { id: "att-1", kind: "approval", summary_text: "有一条待你拍板的申请" }
+          }
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+  });
+
+  const payload = { action_pattern: "drive.write:*", kind: "tool" as const, payload_json: { raw_args: {} } };
+  const result = await client.askPermission!(payload);
+  assert.equal(result.outcome, "pending");
+  assert.deepEqual(calls, [{ url: "/api/permissions/ask", method: "POST", body: JSON.stringify(payload) }]);
 });

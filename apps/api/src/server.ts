@@ -4,7 +4,10 @@ import app, { attachWebStatic, logger } from "./app.js";
 import { settings } from "@workhub/config";
 import { getDefaultProviderRegistry } from "./services/provider-registry.js";
 import { getDefaultAgentRunRecoveryScheduler } from "./workers/agent-run-recovery.js";
-import { getDefaultAgentRunSkillCurationScheduler } from "./workers/agent-skill-curation.js";
+import {
+  getDefaultAgentRunSkillCurationScheduler,
+  skillCurationAvailability
+} from "./workers/agent-skill-curation.js";
 import { getDefaultConversationObserverScheduler } from "./workers/conversation-observer.js";
 import { getDefaultConversationReplyJudgeScheduler } from "./workers/conversation-reply-judge.js";
 import { getDefaultSessionSweepScheduler } from "./workers/session-sweep.js";
@@ -12,6 +15,7 @@ import { getDefaultRiskMonitorScheduler } from "./workers/risk-monitor.js";
 import { getDefaultGithubSyncScheduler } from "./workers/github-poll.js";
 import { getDefaultPulseScheduler } from "./workers/pulse-scheduler.js";
 import { getDefaultEventOutboxDrainScheduler } from "./workers/event-outbox-drain.js";
+import { getDefaultMeetingAnalysisScheduler } from "./workers/meeting-analysis.js";
 
 // 进程级兜底：未捕获异常/未处理 rejection 此前无人接，一次走线的 throw/reject 会静默杀掉 daemon
 // 或留下半死状态。早注册（先于 server start），与下方 SIGINT/SIGTERM 优雅退出互补、不替代。
@@ -37,11 +41,19 @@ if (settings.webDistDir) {
 const recoveryScheduler = getDefaultAgentRunRecoveryScheduler();
 recoveryScheduler.start();
 
-// 团队技能闲时自蒸馏（默认关闭：AGENT_RUN_SKILL_CURATION_ENABLED=true 才启）。
-const skillCurationScheduler = settings.agentRun.skillCurationEnabled
+// 团队技能闲时自蒸馏。R23 SA-06 起默认开启（AGENT_RUN_SKILL_CURATION_ENABLED 默认 true），
+// 但没配 LLM 密钥时不启动——与观察者/回话判定器同款 isConfigured 守卫：无 key 时每夜只会白跑
+// analyze 查询再被 provider 的 fail-fast 打回，刷警告不产出。启动后仍受「队列空闲才跑」+ 当日
+// curation 花费闸双闸约束。要整体关掉：AGENT_RUN_SKILL_CURATION_ENABLED=false。
+const skillCurationAvailable = skillCurationAvailability();
+const skillCurationScheduler = skillCurationAvailable.enabled
   ? getDefaultAgentRunSkillCurationScheduler()
   : undefined;
-skillCurationScheduler?.start();
+if (skillCurationScheduler) {
+  skillCurationScheduler.start();
+} else if (!skillCurationAvailable.enabled) {
+  logger.info("skill_curation_disabled", { reason: skillCurationAvailable.reason });
+}
 
 // R2 auth epic：会话清扫——仅密码/混合模式启动（nickname 模式不签发会话，无需清扫）。
 const sessionSweepScheduler =
@@ -90,6 +102,17 @@ if (conversationReplyJudgeScheduler) {
   logger.info("conversation_reply_judge_disabled", { reason: "llm_provider_not_configured" });
 }
 
+// SA-02 批：会议分析——把导入的转写送去生成纪要 + 洞察。与观察者同档 isConfigured 门控：
+// 未配置 provider 时不启动，会议诚实停在「转写已导入」，页面直说 AI 未配置（不是假装在处理）。
+const meetingAnalysisScheduler = getDefaultProviderRegistry().isConfigured()
+  ? getDefaultMeetingAnalysisScheduler()
+  : undefined;
+if (meetingAnalysisScheduler) {
+  meetingAnalysisScheduler.start();
+} else {
+  logger.info("meeting_analysis_disabled", { reason: "llm_provider_not_configured" });
+}
+
 const server = serve(
   {
     fetch: app.fetch,
@@ -117,6 +140,7 @@ function shutdown(exitCode: number) {
   eventOutboxDrainScheduler.stop();
   conversationObserverScheduler?.stop();
   conversationReplyJudgeScheduler?.stop();
+  meetingAnalysisScheduler?.stop();
   // INF-09：2s 强退会截断在飞持久化（run 终态/trace 落库半途被杀，只能靠恢复重跑兜底）。
   // 放宽到 8s：server.close 等连接排空期间给在飞写入留足时间；SSE 长连接不会主动排空，
   // 8s 后仍强退兜底（只是上限，不是常态等待）。

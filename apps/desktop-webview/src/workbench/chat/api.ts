@@ -10,6 +10,7 @@ import type {
   RemoveConversationParticipantResultVM,
   AiFeedbackVerdict,
   AiMode,
+  ConversationListPageVM,
   ConversationMessagePageVM,
   ConversationMessageVM,
   ConversationParticipantsVM,
@@ -81,6 +82,25 @@ export function fetchOlderConversationMessagesPage(
     limit: String(input.limit ?? DEFAULT_INITIAL_HISTORY_PAGE_LIMIT)
   });
   return client.request<ConversationMessagePageVM>(`${conversationPath(conversationId, "messages")}?${query.toString()}`);
+}
+
+// R23 F-07（composer 的「#会话」picker）：本项目里发起人可见的会话清单。GET /api/projects/:id/conversations
+// 没有 `q` 搜索参数（服务端只按参与者门控 + 游标分页，见 apps/api/src/routes/conversations.ts:49），所以
+// 这里一次拉一页、由 view.ts 在本地按输入的查询词过滤——同 @ picker 的成员半边（filterMembers 也是本地
+// 过滤既有成员切片），不是每敲一个字就打一次服务端。
+// 上限 50：与服务端解析 `#会话标题` 时取的候选条数（TURN_CONVERSATION_REF_CANDIDATE_LIMIT）对齐——picker
+// 里选得到的，服务端就解析得回来；不让用户从列表里选中一条服务端候选窗口够不着的会话。
+export const CONVERSATION_REF_PICKER_PAGE_LIMIT = 50;
+
+export function fetchProjectConversations(
+  client: ChatApiClient,
+  projectId: string,
+  limit: number = CONVERSATION_REF_PICKER_PAGE_LIMIT
+): Promise<ConversationListPageVM> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  return client.request<ConversationListPageVM>(
+    `/api/projects/${encodeURIComponent(projectId)}/conversations?${query.toString()}`
+  );
 }
 
 // R14 批 CHAT：text 变体新增 optional reply_to_message_id（引用回复）——additive，不带这个字段的既有

@@ -1,15 +1,21 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
-import { eventTypes, type ActionSpec, type AiFeedbackVerdict, type ClientDeviceResponse, type DmListVM, type ProjectListVM, type PutAiFeedbackRequest, type SearchResultsVm, type SkillEditOp } from "@workhub/contracts";
+import type { IdentityResponse } from "@workhub/api-client";
+import { eventTypes, type ActionSpec, type AiFeedbackVerdict, type ClientDeviceResponse, type DmListVM, type ObjectiveDetailResponse, type ProjectListVM, type PutAiFeedbackRequest, type SearchResultsVm, type SkillEditOp } from "@workhub/contracts";
 import {
   classifyGoldPathHref,
   goldPathT,
   normalizeWorkHubLocale,
   renderWorkItemAuditTimelineRows,
+  // R23 P4（R20 P2A 端点上界面）：工作项评论流与工作区审计流的行渲染（纯函数，服务端数据到手后调用）。
+  renderWorkItemCommentRows,
+  renderWorkspaceAuditRows,
   type GoldPathAppShell,
   type WorkHubLocale
 } from "@workhub/ui/gold-path";
 import { renderProposalConflictCards } from "@workhub/ui/proposal";
-import { renderOnboardingScreen, renderInviteAcceptScreen } from "@workhub/ui";
+import { renderOnboardingScreen, renderInviteAcceptScreen, renderPasswordAuthScreen, type PasswordAuthScreenTab } from "@workhub/ui";
+import { renderAiReadinessBannerHtml, renderIntakeAiReadinessNoteHtml } from "./ai-readiness-banner.js";
+import { detectAuthScreenMode, describeAuthScreenError, type AuthScreenMode } from "./auth-screen-mode.js";
 import { openAvatarCropModal } from "./avatar-crop-modal.js";
 import { armConfirmButton } from "./confirm-button.js";
 import {
@@ -24,7 +30,7 @@ import {
   settleApprovalReasonDrafts
 } from "./review-reason-pending.js";
 import { runOnboardingLocaleSync } from "./onboarding-locale-sync.js";
-import { buildSettingsDeviceRow, humanizeDeviceRevokeError } from "./settings-devices.js";
+import { buildSettingsDeviceRow, humanizeDeviceRevokeError, shouldSignOutDespiteRevokeCurrentDeviceFailure } from "./settings-devices.js";
 import {
   acceptedDeliverableRestoreFromHref,
   actionElementApplyPayload,
@@ -48,13 +54,17 @@ import {
   browserLocale,
   bootstrapProjectActionFromHref,
   createNamedProjectActionFromHref,
+  createPersonalSpaceActionFromHref,
   clearActiveRouteDirty as sharedClearActiveRouteDirty,
   clearLiveDirtyMetrics as sharedClearLiveDirtyMetrics,
+  chooseThenApplyMergeCandidate,
   conflictsFromMergeError,
   createTaskPlanActionFromHref,
   createWebLiveRuntime,
   cssEscape,
   createWorkItemActionFromHref,
+  delegateResultSummaryText,
+  delegateTargetFromHref,
   desktopRequiredNotice,
   dirtyGuardRefreshAction,
   driveCommentDraftFromHref,
@@ -78,14 +88,17 @@ import {
   mergeProposalCandidateApplyIdFromHref,
   meetingDraftProposalFromHref,
   meetingInsightActionFromHref,
+  meetingReanalyzeFromHref,
   notificationActionFromHref,
   persistBrowserLocale,
   proposalActionFromHref,
   reasonRequiredNotice,
   reviewReasonButtons,
+  selectedConflictChooserCandidate,
   selectionNotice,
   sessionNextQuestionIdFromHref,
   setDocumentLocale,
+  submitDelegateAction,
   safeHref,
   showRouteNotice as showSharedRouteNotice,
   startAgentRunQueuedNoticeBody,
@@ -122,9 +135,35 @@ import {
   unmountReactRouteIsland
 } from "./react-route-mount.js";
 import { resolveWebMemoryConflictAction } from "./attention-actions.js";
+import { buildDelegateOptionNodes, buildDelegateStatusOption, delegatePickerHref } from "./delegate-options.js";
 import { liveStreamTargetsForRoute } from "./live-stream-targets.js";
 import { renderMyConversationsSectionHtml } from "./my-conversations.js";
+import {
+  objectiveDetailBodyHtml,
+  objectiveDetailErrorHtml,
+  objectiveDetailLoadingHtml,
+  objectiveListBodyHtml,
+  objectiveListErrorHtml,
+  objectiveListLoadingHtml
+} from "./objective-panel.js";
 import { fetchWorkspaceRosterMembers, type WorkspaceRosterVM } from "./workspace-roster.js";
+import {
+  checkAssigneeSelection,
+  checkWorkItemCommentBody,
+  humanizeWorkItemCollaborationError
+} from "./workitem-collaboration.js";
+import {
+  humanizeProjectLifecycleError,
+  projectLifecycleConfirmLabel,
+  projectLifecycleSuccessMessage,
+  type ProjectLifecycleAction
+} from "./project-lifecycle.js";
+import {
+  hasMoreWorkspaceAuditPages,
+  humanizeWorkspaceAuditError,
+  nextWorkspaceAuditOffset,
+  WORKSPACE_AUDIT_PAGE_SIZE
+} from "./workspace-audit.js";
 
 const root = document.getElementById("root");
 const liveLastEventIdStorageKey = "workhub.live.lastEventId";
@@ -755,7 +794,7 @@ function bindGoldPathNavigation(
           return;
         }
       }
-      showOnboardingScreen(client, locale);
+      await showOnboardingScreen(client, locale);
       return;
     }
 
@@ -843,39 +882,52 @@ function bindGoldPathNavigation(
       })();
       return;
     }
-    // R10-P2-5（R20 P1-08 收尾）：审批转交——打开「转交给同事」时懒加载成员清单（不进 loader，不动 smoke
-    // 计数）。数据源＝本工作区花名册（GET /api/workspace/roster，分页翻到底），取代此前误用的全局
-    // /api/users（跨租户泄露 + 硬 200 截断）；管理员标签改读 roster 行的 is_admin，展示行为与此前等价。
-    // 确认转交走既有 delegateApproval 全链（服务端重路由+通知），成功后重渲。
-    const delegateSummary = event.target instanceof Element ? event.target.closest("[data-r10-approval-delegate] summary") : null;
+    // R10-P2-5（R20 P1-08 收尾 / R23 F-04）：转交选人器——审批转交与升级转交共用同一份。打开
+    //「转交给同事」时懒加载成员清单（不进 loader，不动 smoke 计数）。数据源＝本工作区花名册
+    //（GET /api/workspace/roster，分页翻到底），取代此前误用的全局 /api/users（跨租户泄露 + 硬 200 截断）；
+    // 管理员标签读 roster 行的 is_admin。选项用 DOM 节点逐个建（buildDelegateOptionNodes），昵称走
+    // textContent，不再拼 innerHTML 字符串。
+    // R23 F-04：确认转交按 href 分派——/api/approvals/:id/delegate 走 delegateApproval，
+    // /api/escalations/:id/delegate 走 delegateEscalation（此前 SDK 里零调用，升级转交端到端没有入口）。
+    const delegateSummary = event.target instanceof Element ? event.target.closest("[data-wh-delegate] summary") : null;
     if (delegateSummary) {
-      const details = delegateSummary.closest<HTMLElement>("[data-r10-approval-delegate]");
-      const select = details?.querySelector<HTMLSelectElement>("[data-r10-approval-delegate-select]");
-      if (details && select && details.dataset["r10DelegateLoaded"] !== "true") {
-        details.dataset["r10DelegateLoaded"] = "true";
+      const details = delegateSummary.closest<HTMLElement>("[data-wh-delegate]");
+      const select = details?.querySelector<HTMLSelectElement>("[data-wh-delegate-select]");
+      if (details && select && details.dataset["whDelegateLoaded"] !== "true") {
+        details.dataset["whDelegateLoaded"] = "true";
+        const doc = select.ownerDocument;
         void fetchWorkspaceRosterMembers(client)
           .then((members) => {
-            select.innerHTML = members
-              .map((member) => `<option value="${escapeHtml(member.user_id)}">${escapeHtml(member.nickname)}${member.is_admin ? (locale === "en-US" ? " (admin)" : "（管理员）") : ""}</option>`)
-              .join("");
+            select.replaceChildren(...buildDelegateOptionNodes(
+              () => doc.createElement("option"),
+              members.map((member) => ({ id: member.user_id, nickname: member.nickname, is_admin: member.is_admin })),
+              locale
+            ));
           })
           .catch(() => {
-            details.dataset["r10DelegateLoaded"] = "false";
-            select.innerHTML = `<option value="">${locale === "en-US" ? "Couldn't load members — reopen to retry" : "成员没加载出来，收起再展开重试"}</option>`;
+            details.dataset["whDelegateLoaded"] = "false";
+            select.replaceChildren(buildDelegateStatusOption(
+              () => doc.createElement("option"),
+              locale === "en-US" ? "Couldn't load members — reopen to retry" : "成员没加载出来，收起再展开重试"
+            ));
           });
       }
       return;
     }
-    const delegateSubmit = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-r10-approval-delegate-submit]") : null;
+    const delegateSubmit = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-wh-delegate-submit]") : null;
     if (delegateSubmit) {
       event.preventDefault();
-      const select = shellRoot.querySelector<HTMLSelectElement>("[data-r10-approval-delegate-select]");
+      const picker = delegateSubmit.closest<HTMLElement>("[data-wh-delegate]");
+      const select = picker?.querySelector<HTMLSelectElement>("[data-wh-delegate-select]");
       const toUserId = select?.value || "";
       const selectedRow = [...shellRoot.querySelectorAll<HTMLElement>("[data-r4-approval-item]")]
         .find((row) => row.getAttribute("data-r4-approval-selected") === "true");
-      const respondHref = selectedRow?.dataset["r4ApprovalRespondHref"] ?? "";
-      const approvalId = approvalRespondIdFromHref(respondHref);
-      if (!toUserId || !approvalId) {
+      const href = delegatePickerHref({
+        pickerHref: picker?.dataset["whDelegateHref"],
+        selectedApprovalRespondHref: selectedRow?.dataset["r4ApprovalRespondHref"]
+      });
+      const target = href ? delegateTargetFromHref(href) : undefined;
+      if (!toUserId || !href || !target) {
         showRouteNotice(shellRoot, fieldValueRequiredNotice(locale, "delegate_approval"));
         return;
       }
@@ -885,11 +937,18 @@ function bindGoldPathNavigation(
       showRouteNotice(shellRoot, actionInProgressNotice(locale, "delegate_approval"), undefined, 0);
       void (async () => {
         try {
-          await client.delegateApproval(approvalId, { to_user_id: toUserId });
+          const result = await submitDelegateAction(client, href, toUserId, { locale });
           await renderCurrentRoute(client, locale);
-          showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, locale === "en-US"
-            ? "Approval handed off — it now routes to them."
-            : "已转交，这条审批会路由给对方处理。", "delegate_approval"));
+          // 升级转交的服务端回执里带人话摘要（谁接手了这件事），有就用它；审批转交没有，回落本地文案。
+          const summary = delegateResultSummaryText(result)
+            ?? (target.kind === "escalation"
+              ? (locale === "en-US"
+                ? "Handed off — this decision now waits on them."
+                : "已转交，这件事改由对方拿主意。")
+              : (locale === "en-US"
+                ? "Approval handed off — it now routes to them."
+                : "已转交，这条审批会路由给对方处理。"));
+          showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, summary, "delegate_approval"));
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, "delegate_approval"));
         } finally {
@@ -1267,6 +1326,25 @@ function bindGoldPathNavigation(
         }
         return;
       }
+      // R23 P2（SA-05）：/projects 页「新建个人空间」按钮——服务端自动命名（无字段可采集，见
+      // action-payload.ts 的 createPersonalSpaceActionFromHref 注释），成功后停留在原地刷新整页
+      // （renderCurrentRoute），新空间随 bindMyConversationsPanel 的水合重新取数一起出现在列表里；
+      // 不像团队项目那样跳进新建资源的主页——个人空间创建是「清单里多一行」，不是「开始一个新项目」。
+      if (createPersonalSpaceActionFromHref(href) && actionTarget.dataset.r19CreatePersonalSpace === "true") {
+        try {
+          const created = await client.createPersonalProject({});
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            const body = locale === "en-US"
+              ? `Created personal space: ${created.project.name}.`
+              : `已创建个人空间：${created.project.name}。`;
+            showRouteNotice(root, actionSuccessNotice(locale, body, actionId));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
       if (bootstrapProjectActionFromHref(href) && actionTarget.dataset.s1Day0StartIntake === "true") {
         // S4b：从项目主页「新任务」进来时动作带 data-s4b-project-id → 直接在该项目建会话，跳过「试点项目」bootstrap。
         // R10-0c：通用入口渲了项目选择器时，以用户选中的项目为准（空值=「新建试点项目」走 bootstrap 兜底）。
@@ -1569,6 +1647,27 @@ function bindGoldPathNavigation(
         }
         return;
       }
+      // SA-02 重新生成纪要：一次 LLM 调用要几十秒，用上面导入转写同款「忙碌闸 + 进行中提示」，
+      // 免得用户在没有任何反馈的十几秒里连点，把同一场会议重复送去分析。
+      const meetingReanalyze = meetingReanalyzeFromHref(href);
+      if (meetingReanalyze) {
+        const busyKey = actionId ?? "meeting_reanalyze";
+        if (!beginBusyAction(busyKey)) {
+          return;
+        }
+        showRouteNotice(shellRoot, actionInProgressNotice(locale, busyKey), undefined, 0);
+        try {
+          const result = await client.reanalyzeMeeting(meetingReanalyze.meetingId, { locale });
+          await renderCurrentRoute(client, locale);
+          const refreshed = shellRoot.querySelector<HTMLElement>("[data-r5-meetings-route]") ?? shellRoot;
+          showRouteNotice(refreshed, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        } finally {
+          endBusyAction(busyKey);
+        }
+        return;
+      }
       const meetingDraftProposal = meetingDraftProposalFromHref(href);
       if (meetingDraftProposal) {
         try {
@@ -1707,6 +1806,35 @@ function bindGoldPathNavigation(
         }
       } catch (error) {
         showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        return;
+      }
+      // F-05：撞车「先选稿再采纳」——多处冲突各自带融合稿时，选择器（renderConflictChooser）把它们
+      // 折进一个单选 + 确认；这里认的是选择器自己的占位 data-action-href（不指向真端点，只用来过
+      // 上面 api-action 分类门），真正的 merge_proposal_id 从勾选的 radio 读。没选中就提示，不静默失败。
+      if (actionTarget.dataset.proposalConflictChooserSubmit === "true") {
+        const chooserContainer = actionTarget.closest<HTMLElement>("[data-proposal-conflict-chooser]");
+        const selected = chooserContainer ? selectedConflictChooserCandidate(chooserContainer) : undefined;
+        if (!selected) {
+          chooserContainer?.querySelector<HTMLElement>("[data-proposal-conflict-chooser-warning]")?.removeAttribute("hidden");
+          return;
+        }
+        try {
+          const merge = await chooseThenApplyMergeCandidate(client, selected.mergeProposalId, { locale });
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, merge.attention.summary_text, actionId));
+          }
+        } catch (error) {
+          if (selected.proposalId && await showRebaseRequiredNotice(shellRoot, error, selected.proposalId, client, locale, actionId)) {
+            return;
+          }
+          if (!showMergeConflictNotice(shellRoot, error, locale, actionId)) {
+            showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+          }
+          if (error instanceof WorkHubApiError && error.status === 409) {
+            await renderCurrentRoute(client, locale);
+          }
+        }
         return;
       }
       const mergeProposalCandidateApplyId = mergeProposalCandidateApplyIdFromHref(href);
@@ -2264,14 +2392,20 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindNotificationMutePanel(root, result, client, locale, signal);
   bindHomeProjectsRetry(root, client, locale, signal);
   bindWorkItemAuditTimelinePanel(root, result, client, locale, signal);
+  bindWorkItemAssignmentPanel(root, result, client, locale, signal);
+  bindWorkItemCommentsPanel(root, result, client, locale, signal);
+  bindProjectLifecyclePanel(root, result, client, locale, signal);
+  bindSettingsWorkspaceAuditPanel(root, result, client, locale, signal);
   bindProjectHomePlansPanel(root, result, client, locale, signal);
   bindProjectHomeInstructionsPanel(root, result, client, locale, signal);
   bindProjectHomeMembersPanel(root, result, client, locale, signal);
   bindMyConversationsPanel(root, result, client, locale, signal);
+  bindAiReadinessNotices(root, result, client, locale, signal);
   bindProjectHomeObjectivesPanel(root, result, client, locale, signal);
   bindConversationParticipantsPanel(root, result, client, locale, signal);
   bindSearchRoutePanel(root, result, client, locale, signal);
   bindSettingsAiProfilePanel(root, result, client, locale, signal);
+  bindTeamSkillsCurationPanel(root, result, client, locale, signal);
   bindSettingsBudgetPolicyPanel(root, result, client, locale, signal);
   bindSettingsMembersPanel(root, result, client, locale, signal);
   bindSettingsMyProfilePanel(root, result, client, locale, signal);
@@ -2281,6 +2415,67 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindMemoryPanel(root, result, client, locale, signal);
   bindProposalFeedbackNotePanel(root, result, client, locale, signal);
   bindLiveRouteStreams(result, client, locale);
+}
+
+// R23 SA-06：技能页「立即自学一轮」的水合。按钮只在 SSR 判定「管理员 + 已启用 + 当前没在跑」时才渲，
+// 所以这里找不到按钮就静默返回（非管理员、未启用、正在跑三种情况都走这条路，不报错、不占位）。
+// 两段式确认沿用 apps/web/src/confirm-button.ts（第一次点换确认文案，5 秒自动复原）——手动催一轮会
+// 真的花钱打 LLM，不该是零确认的单击。
+// fail-soft：这一页的主体（技能列表）由 SSR 出，这里的请求成败都不影响它——失败只在按钮下方留一句
+// 人话，不清空页面、不弹错误壳。
+function bindTeamSkillsCurationPanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "skills") {
+    return;
+  }
+  const button = container.querySelector<HTMLButtonElement>("[data-r23-skills-curate-now]");
+  if (!button) {
+    return;
+  }
+  const notice = container.querySelector<HTMLElement>("[data-r23-skills-curate-notice]");
+  const zh = locale === "zh-CN";
+  const confirmLabel = button.dataset.r23SkillsCurateConfirmLabel ?? (zh ? "确认开始？再点一次" : "Start now? Click again");
+  const say = (text: string, tone: "started" | "error") => {
+    if (!notice) {
+      return;
+    }
+    notice.hidden = false;
+    notice.textContent = text;
+    notice.setAttribute("data-r23-skills-curate-notice", tone);
+  };
+  button.addEventListener(
+    "click",
+    () => {
+      armConfirmButton(button, {
+        confirmLabel,
+        onConfirm: () => {
+          button.disabled = true;
+          void client
+            .curateTeamSkillsNow()
+            .then(() => {
+              if (signal.aborted) {
+                return;
+              }
+              // 已开跑就不该再点第二次——按钮留在禁用态，页面刷新后由服务端的 running 状态接管。
+              say(zh ? "已开始自学，跑完刷新这一页就能看到结果。" : "Started. Refresh this page once it finishes to see what changed.", "started");
+            })
+            .catch(() => {
+              if (signal.aborted) {
+                return;
+              }
+              button.disabled = false;
+              say(zh ? "没能开始，请稍后再试。" : "Could not start. Try again in a moment.", "error");
+            });
+        }
+      });
+    },
+    { signal }
+  );
 }
 
 // R14 批 CHAT（web-avatars，2026-07-14 用户点名新增）：把 route-components.ts 里用
@@ -2310,6 +2505,53 @@ function bindAvatarTiles(container: HTMLElement, signal: AbortSignal) {
       img.hidden = true;
     };
     img.src = `/api/users/${encodeURIComponent(userId)}/avatar`;
+  });
+}
+
+// R23 P2（SA-08）：README 承诺的「AI 服务未配置」顶部横幅——此前只存在于桌面聊天输入区，web 端一个
+// 提示都没有，新用户第一次提需求才撞见后端失败响应。取数源是 GET /api/health 的
+// ai_provider_configured（部署级事实，只随 LLM_API_KEY + 容器重启变化，不随路由/会话变化），
+// 缓存这次页面会话里的第一次探活结果——不必每次导航都重新打一次这个请求。取数失败按「已配置」
+// 处理（不显示横幅）：宁可这次刷新暂时看不到提示，也不能因为一次网络抖动就吓唬本来配置正常的用户。
+let cachedAiProviderConfigured: Promise<boolean> | undefined;
+
+function aiProviderConfiguredCached(client: BrowserApiClient): Promise<boolean> {
+  cachedAiProviderConfigured ??= client.health().then(
+    (health) => health.ai_provider_configured,
+    () => true
+  );
+  return cachedAiProviderConfigured;
+}
+
+// 挂在每次就绪路由渲染后、不按路由 key 过滤（同 bindAvatarTiles 的先例）——壳层横幅挂载点
+// [data-wh-ai-banner] 在每次导航时都随整段 shell HTML 重新渲成 SSR 的 hidden 空态（product-shell.ts
+// 不知道这件事，也不应该知道——见该文件顶部注释），所以这里每次都要重新水合，而不是只做一次。
+// intake 路由额外在起点面板内插一条更具体的说明（提交会失败，不只是「有条横幅」）。
+function bindAiReadinessNotices(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  const banner = container.querySelector<HTMLElement>("[data-wh-ai-banner]");
+  const intakeRoute = result.match.key === "intake"
+    ? container.querySelector<HTMLElement>('[data-r4-route-component="intake"]')
+    : null;
+  if (!banner && !intakeRoute) {
+    return;
+  }
+  void aiProviderConfiguredCached(client).then((configured) => {
+    if (signal.aborted || configured) {
+      return;
+    }
+    if (banner) {
+      banner.innerHTML = renderAiReadinessBannerHtml(locale);
+      banner.hidden = false;
+    }
+    if (intakeRoute && !intakeRoute.querySelector("[data-r23-intake-ai-note]")) {
+      intakeRoute.insertAdjacentHTML("afterbegin", renderIntakeAiReadinessNoteHtml(locale));
+    }
   });
 }
 
@@ -2599,6 +2841,384 @@ function bindWorkItemAuditTimelinePanel(
   void load();
 }
 
+// R23 P4（R20 P2A 端点上界面）：工作项「负责人与协作」卡的接线——认领（POST /api/workitems/:id/claim）
+// 与指派（POST /api/workitems/:id/assign）。两个按钮渲不渲由服务端 VM 的 can_claim / can_assign 决定
+// （route-components.ts），这里只负责：拿到按钮就接真动作、失败必须看得见、成功后重渲详情页让归属
+// 立刻反映出来。指派对象清单沿用审批转交的既有做法——展开 <details> 时才拉本工作区花名册（翻页到底）。
+function bindWorkItemAssignmentPanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "workitem") {
+    return;
+  }
+  const section = container.querySelector<HTMLElement>("[data-r23-workitem-assignment]");
+  const workItemId = section?.getAttribute("data-r23-workitem-assignment-workitem") ?? "";
+  if (!section || !workItemId) {
+    return;
+  }
+  const zh = locale === "zh-CN";
+  const status = section.querySelector<HTMLElement>("[data-r23-workitem-assignment-status]");
+  const setStatus = (text: string, tone: "saving" | "error") => {
+    if (!status) {
+      return;
+    }
+    status.hidden = false;
+    status.textContent = text;
+    status.setAttribute("data-r23-workitem-assignment-status", tone);
+  };
+
+  const claimButton = section.querySelector<HTMLButtonElement>("[data-r23-workitem-claim]");
+  claimButton?.addEventListener("click", () => {
+    claimButton.disabled = true;
+    setStatus(zh ? "正在认领…" : "Claiming…", "saving");
+    void (async () => {
+      try {
+        await client.claimWorkItem(workItemId);
+        if (signal.aborted) {
+          return;
+        }
+        await renderCurrentRoute(client, locale);
+      } catch (error) {
+        if (signal.aborted) {
+          return;
+        }
+        claimButton.disabled = false;
+        setStatus(humanizeWorkItemCollaborationError(error, "claim", locale), "error");
+      }
+    })();
+  }, { signal });
+
+  // 花名册懒加载：与审批转交同一套（展开才拉、失败允许收起再展开重试），不进首屏 loader。
+  const assignDetails = section.querySelector<HTMLDetailsElement>("[data-r23-workitem-assign]");
+  const assignSelect = section.querySelector<HTMLSelectElement>("[data-r23-workitem-assign-select]");
+  assignDetails?.querySelector("summary")?.addEventListener("click", () => {
+    if (!assignSelect || assignDetails.dataset["r23AssignLoaded"] === "true") {
+      return;
+    }
+    assignDetails.dataset["r23AssignLoaded"] = "true";
+    void fetchWorkspaceRosterMembers(client)
+      .then((members) => {
+        if (signal.aborted) {
+          return;
+        }
+        assignSelect.innerHTML = members
+          .map((member) => `<option value="${escapeHtml(member.user_id)}">${escapeHtml(member.nickname)}${member.is_admin ? (zh ? "（管理员）" : " (admin)") : ""}</option>`)
+          .join("");
+      })
+      .catch(() => {
+        if (signal.aborted) {
+          return;
+        }
+        assignDetails.dataset["r23AssignLoaded"] = "false";
+        assignSelect.innerHTML = `<option value="">${escapeHtml(zh ? "成员没加载出来，收起再展开重试" : "Couldn't load members — reopen to retry")}</option>`;
+      });
+  }, { signal });
+
+  const assignSubmit = section.querySelector<HTMLButtonElement>("[data-r23-workitem-assign-submit]");
+  assignSubmit?.addEventListener("click", () => {
+    const roleSelect = section.querySelector<HTMLSelectElement>("[data-r23-workitem-assign-role]");
+    const selection = checkAssigneeSelection(assignSelect?.value ?? "", locale);
+    if (!selection.ok) {
+      setStatus(selection.message, "error");
+      return;
+    }
+    const role = roleSelect?.value === "lead" ? "lead" : "collaborator";
+    assignSubmit.disabled = true;
+    setStatus(zh ? "正在指派…" : "Assigning…", "saving");
+    void (async () => {
+      try {
+        await client.assignWorkItem(workItemId, { assignee_user_id: selection.body, role });
+        if (signal.aborted) {
+          return;
+        }
+        await renderCurrentRoute(client, locale);
+      } catch (error) {
+        if (signal.aborted) {
+          return;
+        }
+        assignSubmit.disabled = false;
+        setStatus(humanizeWorkItemCollaborationError(error, "assign", locale), "error");
+      }
+    })();
+  }, { signal });
+}
+
+// R23 P4（R20 P2A 端点上界面）：工作项讨论区的接线——列表按需水合（GET /api/workitems/:id/comments）
+// 与发布（POST 同路径）。详情页 VM 不带评论，所以这里是纯客户端水合；取数失败给可见告警 + 可点重试，
+// 绝不拿「还没有人留言」糊弄一次真实的失败（同 bindWorkItemAuditTimelinePanel 的既有纪律）。
+// 防重复提交：提交期间禁用按钮，失败时回显错误并把按钮放回去（用户刚敲的内容不清空）。
+function bindWorkItemCommentsPanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "workitem") {
+    return;
+  }
+  const section = container.querySelector<HTMLElement>("[data-r23-workitem-comments]");
+  const body = section?.querySelector<HTMLElement>("[data-r23-workitem-comments-body]");
+  const workItemId = section?.getAttribute("data-r23-workitem-comments-workitem") ?? "";
+  if (!section || !body || !workItemId) {
+    return;
+  }
+  const zh = locale === "zh-CN";
+  const form = section.querySelector<HTMLFormElement>("[data-r23-workitem-comment-form]");
+  const input = section.querySelector<HTMLTextAreaElement>("[data-r23-workitem-comment-input]");
+  const submit = section.querySelector<HTMLButtonElement>("[data-r23-workitem-comment-submit]");
+  const status = section.querySelector<HTMLElement>("[data-r23-workitem-comment-status]");
+  const setStatus = (text: string, tone: "saving" | "error") => {
+    if (!status) {
+      return;
+    }
+    status.hidden = false;
+    status.textContent = text;
+    status.setAttribute("data-r23-workitem-comment-status", tone);
+  };
+  const clearStatus = () => {
+    if (status) {
+      status.hidden = true;
+      status.textContent = "";
+    }
+  };
+
+  // 展开更早的留言＝纯客户端展开已拉到的同一批数据，不再发请求（服务端一次最多回 200 条）。
+  const paint = (comments: Awaited<ReturnType<BrowserApiClient["listWorkItemComments"]>>["comments"], expanded: boolean) => {
+    body.innerHTML = renderWorkItemCommentRows(comments, locale, { expanded });
+    body.querySelector<HTMLButtonElement>("[data-r23-workitem-comments-more]")
+      ?.addEventListener("click", () => paint(comments, true), { signal });
+  };
+
+  const load = async () => {
+    try {
+      const result_ = await client.listWorkItemComments(workItemId);
+      if (signal.aborted) {
+        return;
+      }
+      paint(result_.comments, false);
+    } catch (error) {
+      if (signal.aborted) {
+        return;
+      }
+      body.innerHTML = `<p class="wh-subtle" data-r23-workitem-comments-error="true">${escapeHtml(
+        humanizeWorkItemCollaborationError(error, "comment", locale)
+      )}</p><button type="button" class="wh-btn" data-r23-workitem-comments-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+      body.querySelector<HTMLButtonElement>("[data-r23-workitem-comments-retry]")
+        ?.addEventListener("click", () => void load(), { signal });
+    }
+  };
+
+  form?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!input || !submit || submit.disabled) {
+      return;
+    }
+    const checked = checkWorkItemCommentBody(input.value, locale);
+    if (!checked.ok) {
+      setStatus(checked.message, "error");
+      return;
+    }
+    submit.disabled = true;
+    setStatus(zh ? "正在发布…" : "Posting…", "saving");
+    void (async () => {
+      try {
+        await client.createWorkItemComment(workItemId, { body: checked.body });
+        if (signal.aborted) {
+          return;
+        }
+        input.value = "";
+        clearStatus();
+        submit.disabled = false;
+        await load();
+      } catch (error) {
+        if (signal.aborted) {
+          return;
+        }
+        // 失败不清空输入框——用户刚写的内容比一次失败的请求金贵。
+        submit.disabled = false;
+        setStatus(humanizeWorkItemCollaborationError(error, "comment", locale), "error");
+      }
+    })();
+  }, { signal });
+
+  void load();
+}
+
+// R23 P4（R20 P2A 端点上界面）：项目主页「项目生命周期」分区的接线——归档 / 删除（两个 POST）。
+// 分区本身只在服务端说 can_manage_lifecycle 时才渲，这里再套一层两段式确认（armConfirmButton，
+// 与设备撤销/成员移出同一范式）：第一次点只换文案，5 秒内再点才真发请求。成功后回项目列表——
+// 项目主页此刻已经不再是活跃项目（服务端 findProjectById 只回活跃项目，留在原地会 404）。
+function bindProjectLifecyclePanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "project-home") {
+    return;
+  }
+  const section = container.querySelector<HTMLElement>("[data-r23-project-lifecycle]");
+  const projectId = section?.getAttribute("data-r23-project-lifecycle-project") ?? "";
+  if (!section || !projectId) {
+    return;
+  }
+  const zh = locale === "zh-CN";
+  const status = section.querySelector<HTMLElement>("[data-r23-project-lifecycle-status]");
+  const setStatus = (text: string, tone: "saving" | "error") => {
+    if (!status) {
+      return;
+    }
+    status.hidden = false;
+    status.textContent = text;
+    status.setAttribute("data-r23-project-lifecycle-status", tone);
+  };
+
+  const run = async (action: ProjectLifecycleAction, button: HTMLButtonElement) => {
+    button.disabled = true;
+    setStatus(action === "archive"
+      ? (zh ? "正在归档…" : "Archiving…")
+      : (zh ? "正在删除…" : "Deleting…"), "saving");
+    try {
+      const done = action === "archive"
+        ? await client.archiveProject(projectId)
+        : await client.deleteProject(projectId);
+      if (signal.aborted) {
+        return;
+      }
+      // 先跳完再报喜：navigateWebRoute 会重渲整页（root.innerHTML 被换掉），提示挂在跳转之前会被
+      // 这次重渲连根抹掉——用户就只看到项目凭空消失、没有任何「已归档/已删除」的交代。既有的
+      // 「新建项目→项目主页」也是先 await 跳转、再在新页面上挂提示（本文件 bootstrapProject 分支）。
+      await navigateWebRoute("/projects", client, locale);
+      if (signal.aborted) {
+        return;
+      }
+      showRouteNotice(root ?? container, actionSuccessNotice(
+        locale,
+        projectLifecycleSuccessMessage(action, done.project.name, locale),
+        action === "archive" ? "archive_project" : "delete_project"
+      ));
+    } catch (error) {
+      if (signal.aborted) {
+        return;
+      }
+      button.disabled = false;
+      setStatus(humanizeProjectLifecycleError(error, action, locale), "error");
+    }
+  };
+
+  const wire = (selector: string, action: ProjectLifecycleAction) => {
+    const button = section.querySelector<HTMLButtonElement>(selector);
+    button?.addEventListener("click", () => armConfirmButton(button, {
+      confirmLabel: projectLifecycleConfirmLabel(action, locale),
+      onConfirm: () => void run(action, button)
+    }), { signal });
+  };
+  wire("[data-r23-project-archive]", "archive");
+  wire("[data-r23-project-delete]", "delete");
+}
+
+// R23 P4（R20 P2A 端点上界面）：/settings 管理员区「工作区审计」的接线——GET /api/workspace/audit
+// 分页拉取（服务端只回 {limit,offset,count}，翻页游标算术在 apps/web/src/workspace-audit.ts）。
+// 「加载更多」把下一页追加在后面，不重画已看过的部分；无权（403）与其它失败分开，其它失败给可点重试。
+function bindSettingsWorkspaceAuditPanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "settings") {
+    return;
+  }
+  const section = container.querySelector<HTMLElement>("[data-r23-settings-workspace-audit]");
+  const body = section?.querySelector<HTMLElement>("[data-r23-settings-workspace-audit-body]");
+  if (!section || !body) {
+    return;
+  }
+  const zh = locale === "zh-CN";
+  const moreButton = section.querySelector<HTMLButtonElement>("[data-r23-settings-workspace-audit-more]");
+  const status = section.querySelector<HTMLElement>("[data-r23-settings-workspace-audit-status]");
+  const setStatus = (text: string | null, tone: "loading" | "error") => {
+    if (!status) {
+      return;
+    }
+    if (text === null) {
+      status.hidden = true;
+      status.textContent = "";
+      return;
+    }
+    status.hidden = false;
+    status.textContent = text;
+    status.setAttribute("data-r23-settings-workspace-audit-status", tone);
+  };
+
+  let offset = 0;
+  let loading = false;
+
+  const load = async (append: boolean) => {
+    if (loading) {
+      return;
+    }
+    loading = true;
+    if (moreButton) {
+      moreButton.disabled = true;
+    }
+    setStatus(zh ? "正在加载…" : "Loading…", "loading");
+    try {
+      const page = await client.listWorkspaceAudit({ limit: WORKSPACE_AUDIT_PAGE_SIZE, offset });
+      if (signal.aborted) {
+        return;
+      }
+      const rows = renderWorkspaceAuditRows(page.audit_logs, locale);
+      if (append && page.audit_logs.length > 0) {
+        body.insertAdjacentHTML("beforeend", rows);
+      } else if (!append) {
+        body.innerHTML = rows;
+      }
+      offset = nextWorkspaceAuditOffset(page.page);
+      const more = hasMoreWorkspaceAuditPages(page.page);
+      if (moreButton) {
+        moreButton.hidden = !more;
+        moreButton.disabled = false;
+      }
+      setStatus(null, "loading");
+    } catch (error) {
+      if (signal.aborted) {
+        return;
+      }
+      const message = humanizeWorkspaceAuditError(error, locale);
+      if (append) {
+        setStatus(message, "error");
+        if (moreButton) {
+          moreButton.disabled = false;
+        }
+      } else {
+        const forbidden = error instanceof WorkHubApiError && error.status === 403;
+        body.innerHTML = forbidden
+          ? `<p class="wh-subtle" data-r23-settings-workspace-audit-forbidden="true">${escapeHtml(message)}</p>`
+          : `<p class="wh-subtle" data-r23-settings-workspace-audit-error="true">${escapeHtml(message)}</p><button type="button" class="wh-btn" data-r23-settings-workspace-audit-retry="true">${escapeHtml(zh ? "重试" : "Retry")}</button>`;
+        body.querySelector<HTMLButtonElement>("[data-r23-settings-workspace-audit-retry]")
+          ?.addEventListener("click", () => void load(false), { signal });
+        if (moreButton) {
+          moreButton.hidden = true;
+        }
+        setStatus(null, "loading");
+      }
+    } finally {
+      loading = false;
+    }
+  };
+
+  moreButton?.addEventListener("click", () => void load(true), { signal });
+  void load(false);
+}
+
 // G4 #24（项目自定义指令 web 入口）：项目主页「自定义指令」卡——GET /api/projects/:id/instructions
 // 展示；能管项目（GET 成功）→ 可编辑 textarea + 失焦 PATCH 保存；无权（403）→ 只读说明。错误矩阵对齐
 // 桌面 W4b1（403 forbidden / 422 validation / 其它 network，保存失败绝不回滚用户刚敲的内容）。
@@ -2768,7 +3388,7 @@ function bindMyConversationsPanel(
         (value) => value,
         (): DmListVM | null => null
       ),
-      client.request<ProjectListVM>("/api/me/personal-projects").then(
+      client.listPersonalProjects().then(
         (value) => value,
         (): ProjectListVM | null => null
       )
@@ -2858,12 +3478,17 @@ function bindProjectHomeMembersPanel(
   void hydrate();
 }
 
-// R20 wave4（R19-1 OKR 前端接线）：项目主页 OKR 卡的客户端接线。创建目标表单是纯 POST（不依赖任何
-// GET，SSR 已常渲、不锁禁用），提交调 client.createObjective；成功后本地追加一行「刚创建的目标」，
-// 带「挂到某个工作项」的选择器（数据源用本页已加载的 open_work_items，不额外发请求）+ 挂链按钮
-// （client.linkObjective）。服务端没有列全部已有目标的端点，故这份列表只是会话内、不持久化——
-// 空态文案已诚实说明这点（route-components renderProjectHomeObjectivesSection）。两个动作失败都要
-// 显式报错（4xx/5xx 都在状态行报文案），不静默吞。
+// R20 wave4（R19-1 OKR 前端接线）→ R23 F-01（OKR 列表/详情持久化）：项目主页 OKR 卡的客户端接线。
+// 创建目标表单是纯 POST（不依赖任何 GET，SSR 已常渲、不锁禁用），提交调 client.createObjective；
+// 挂链调 client.linkObjective。此前列表只是会话内内存态（刷新即失）——服务端已补
+// GET /api/projects/:id/objectives（首屏真拉取，工作区级列表，不做项目过滤）与
+// GET /api/objectives/:id（详情：关键结果 + 挂链工作项 + 挂链执行计划），这里改为：
+//   * 挂载时真拉取列表，fail-soft（403 与其它失败分开报，同 P1-07 project-home-plans 先例）；
+//   * 创建/挂链成功后整表重拉（不做本地乐观拼接，服务端已是唯一真相源）；
+//   * 每行「详情」按钮首次展开时拉 GET /api/objectives/:id 并缓存，收起不重拉；挂链成功会使该
+//     目标的详情缓存失效（下次展开重新拉，避免展示挂链前的旧快照）。
+// 列表/行/详情的纯字符串渲染在 ./objective-panel.js（不碰 DOM，单测覆盖）；这里只管取数与事件接线，
+// 全部用事件委托挂在 list 容器上（整表重拉会替换所有子节点，逐行绑定的监听器活不过一次重拉）。
 function bindProjectHomeObjectivesPanel(
   container: HTMLElement,
   result: WebRouteReadyResult,
@@ -2882,12 +3507,13 @@ function bindProjectHomeObjectivesPanel(
   const submitButton = form?.querySelector<HTMLButtonElement>("[data-r20-okr-create-submit]");
   const createStatus = section?.querySelector<HTMLElement>("[data-r20-okr-create-status]");
   const list = section?.querySelector<HTMLElement>("[data-r20-okr-list]");
-  const emptyNote = list?.querySelector<HTMLElement>("[data-r20-okr-list-empty]");
-  if (!section || !form || !titleInput || !descriptionInput || !krInput || !submitButton || !list) {
+  const projectId = section?.getAttribute("data-r20-project-home-objectives-project") ?? "";
+  if (!section || !form || !titleInput || !descriptionInput || !krInput || !submitButton || !list || !projectId) {
     return;
   }
   const zh = locale === "zh-CN";
   const openWorkItems = result.surface.project.open_work_items;
+  const detailCache = new Map<string, ObjectiveDetailResponse>();
 
   const setCreateStatus = (text: string, tone: "saving" | "saved" | "error") => {
     if (!createStatus) {
@@ -2906,65 +3532,85 @@ function bindProjectHomeObjectivesPanel(
       .slice(0, 8)
       .map((title) => ({ title }));
 
-  const renderObjectiveRow = (objective: { objective_id: string; title: string; status: string; progress_percent: number }) => {
-    if (emptyNote) {
-      emptyNote.hidden = true;
-    }
-    const row = document.createElement("div");
-    row.className = "wh-r4-route-row";
-    row.setAttribute("data-r20-okr-item", objective.objective_id);
-    const options = openWorkItems
-      .map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(`${item.code} · ${item.title}`)}</option>`)
-      .join("");
-    const linkControls = openWorkItems.length
-      ? `<select class="wh-pill" data-r20-okr-link-select aria-label="${escapeHtml(zh ? "选择要挂的工作项" : "Pick a work item to link")}">
-          <option value="">${escapeHtml(zh ? "选择工作项…" : "Pick a work item…")}</option>
-          ${options}
-        </select>
-        <button type="button" class="wh-btn" data-r20-okr-link-submit="true">${escapeHtml(zh ? "挂链" : "Link")}</button>`
-      : `<span class="wh-subtle">${escapeHtml(zh ? "这个项目暂无进行中工作项可挂。" : "No open work items in this project to link yet.")}</span>`;
-    row.innerHTML = `<div>
-        <strong>${escapeHtml(objective.title)}</strong>
-        <div class="wh-r4-route-meta">
-          <span class="wh-pill">${escapeHtml(objective.status)}</span>
-          <span class="wh-pill">${escapeHtml(`${objective.progress_percent}%`)}</span>
-        </div>
-      </div>
-      <div>
-        ${linkControls}
-        <p class="wh-subtle" data-r20-okr-link-status hidden></p>
-      </div>`;
-    list.append(row);
-
-    const select = row.querySelector<HTMLSelectElement>("[data-r20-okr-link-select]");
-    const linkButton = row.querySelector<HTMLButtonElement>("[data-r20-okr-link-submit]");
-    const linkStatus = row.querySelector<HTMLElement>("[data-r20-okr-link-status]");
-    const setLinkStatus = (text: string, tone: "saving" | "saved" | "error") => {
-      if (!linkStatus) {
+  const load = async () => {
+    list.innerHTML = objectiveListLoadingHtml(locale);
+    try {
+      const data = await client.listObjectives(projectId);
+      if (signal.aborted) {
         return;
       }
-      linkStatus.hidden = false;
-      linkStatus.textContent = text;
-      linkStatus.setAttribute("data-r20-okr-link-status", tone);
-    };
-    linkButton?.addEventListener(
-      "click",
-      () => {
+      list.innerHTML = objectiveListBodyHtml(data.objectives, data.capped, openWorkItems, locale);
+    } catch (error) {
+      if (signal.aborted) {
+        return;
+      }
+      const forbidden = error instanceof WorkHubApiError && error.status === 403;
+      list.innerHTML = objectiveListErrorHtml(locale, forbidden);
+    }
+  };
+
+  const loadDetail = (objectiveId: string, detailBody: HTMLElement) => {
+    detailBody.innerHTML = objectiveDetailLoadingHtml(locale);
+    void client
+      .getObjective(objectiveId)
+      .then((detail) => {
+        if (signal.aborted) {
+          return;
+        }
+        detailCache.set(objectiveId, detail);
+        detailBody.innerHTML = objectiveDetailBodyHtml(detail, locale);
+      })
+      .catch(() => {
+        if (signal.aborted) {
+          return;
+        }
+        detailBody.innerHTML = objectiveDetailErrorHtml(locale);
+      });
+  };
+
+  const setLinkStatus = (row: HTMLElement, text: string, tone: "saving" | "saved" | "error") => {
+    const linkStatus = row.querySelector<HTMLElement>("[data-r20-okr-link-status]");
+    if (!linkStatus) {
+      return;
+    }
+    linkStatus.hidden = false;
+    linkStatus.textContent = text;
+    linkStatus.setAttribute("data-r20-okr-link-status", tone);
+  };
+
+  // 事件委托：list 的子节点在每次 load() 后整体替换，逐行绑定的监听器会随之失效——统一挂在
+  // 稳定的 list 容器上，按点击目标 closest() 出具体动作，兼容重拉后的新 DOM。
+  list.addEventListener(
+    "click",
+    (event) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) {
+        return;
+      }
+      const linkButton = target.closest<HTMLButtonElement>("[data-r20-okr-link-submit]");
+      if (linkButton) {
+        const row = linkButton.closest<HTMLElement>("[data-r20-okr-item]");
+        const objectiveId = row?.getAttribute("data-r20-okr-item") ?? "";
+        const select = row?.querySelector<HTMLSelectElement>("[data-r20-okr-link-select]");
         const workItemId = select?.value ?? "";
+        if (!row || !objectiveId) {
+          return;
+        }
         if (!workItemId) {
-          setLinkStatus(zh ? "先选一个工作项。" : "Pick a work item first.", "error");
+          setLinkStatus(row, zh ? "先选一个工作项。" : "Pick a work item first.", "error");
           return;
         }
         linkButton.disabled = true;
-        setLinkStatus(zh ? "挂链中…" : "Linking…", "saving");
+        setLinkStatus(row, zh ? "挂链中…" : "Linking…", "saving");
         void client
-          .linkObjective(objective.objective_id, { work_item_id: workItemId })
+          .linkObjective(objectiveId, { work_item_id: workItemId })
           .then(() => {
             if (signal.aborted) {
               return;
             }
-            linkButton.disabled = false;
-            setLinkStatus(zh ? "已挂链" : "Linked", "saved");
+            detailCache.delete(objectiveId);
+            setLinkStatus(row, zh ? "已挂链" : "Linked", "saved");
+            void load();
           })
           .catch((error: unknown) => {
             if (signal.aborted) {
@@ -2972,14 +3618,60 @@ function bindProjectHomeObjectivesPanel(
             }
             linkButton.disabled = false;
             setLinkStatus(
+              row,
               error instanceof WorkHubApiError ? error.message : (zh ? "挂链失败，请重试" : "Link failed — please retry"),
               "error"
             );
           });
-      },
-      { signal }
-    );
-  };
+        return;
+      }
+
+      const detailToggle = target.closest<HTMLButtonElement>("[data-r23-okr-detail-toggle]");
+      if (detailToggle) {
+        const row = detailToggle.closest<HTMLElement>("[data-r20-okr-item]");
+        const objectiveId = row?.getAttribute("data-r20-okr-item") ?? "";
+        const detailBody = objectiveId
+          ? list.querySelector<HTMLElement>(`[data-r23-okr-detail-body="${objectiveId}"]`)
+          : null;
+        if (!objectiveId || !detailBody) {
+          return;
+        }
+        const expanded = detailToggle.getAttribute("aria-expanded") === "true";
+        if (expanded) {
+          detailToggle.setAttribute("aria-expanded", "false");
+          detailToggle.textContent = zh ? "详情" : "Details";
+          detailBody.hidden = true;
+          return;
+        }
+        detailToggle.setAttribute("aria-expanded", "true");
+        detailToggle.textContent = zh ? "收起" : "Collapse";
+        detailBody.hidden = false;
+        const cached = detailCache.get(objectiveId);
+        if (cached) {
+          detailBody.innerHTML = objectiveDetailBodyHtml(cached, locale);
+          return;
+        }
+        loadDetail(objectiveId, detailBody);
+        return;
+      }
+
+      const detailRetry = target.closest<HTMLButtonElement>("[data-r23-okr-detail-retry]");
+      if (detailRetry) {
+        const detailBody = detailRetry.closest<HTMLElement>("[data-r23-okr-detail-body]");
+        const objectiveId = detailBody?.getAttribute("data-r23-okr-detail-body") ?? "";
+        if (objectiveId && detailBody) {
+          loadDetail(objectiveId, detailBody);
+        }
+        return;
+      }
+
+      const listRetry = target.closest<HTMLButtonElement>("[data-r20-okr-list-retry]");
+      if (listRetry) {
+        void load();
+      }
+    },
+    { signal }
+  );
 
   form.addEventListener(
     "submit",
@@ -3001,7 +3693,7 @@ function bindProjectHomeObjectivesPanel(
           ...(description ? { description_md: description } : {}),
           ...(keyResults.length ? { key_results: keyResults } : {})
         })
-        .then((created) => {
+        .then(() => {
           if (signal.aborted) {
             return;
           }
@@ -3010,7 +3702,7 @@ function bindProjectHomeObjectivesPanel(
           titleInput.value = "";
           descriptionInput.value = "";
           krInput.value = "";
-          renderObjectiveRow(created);
+          void load();
         })
         .catch((error: unknown) => {
           if (signal.aborted) {
@@ -3025,6 +3717,8 @@ function bindProjectHomeObjectivesPanel(
     },
     { signal }
   );
+
+  void load();
 }
 
 // R18 批 H1（web 会话镜像成员管理）：只读会话镜像的「参与者」侧区水合。SSR（route-components
@@ -4226,14 +4920,18 @@ function bindSettingsAiProfilePanel(
   }
   const modeSelect = panel.querySelector<HTMLSelectElement>("[data-r13-settings-ai-mode-select]");
   const dispatchSelect = panel.querySelector<HTMLSelectElement>("[data-r13-settings-ai-dispatch-select]");
-  if (!modeSelect || !dispatchSelect) {
+  // R23 P3b（SA-07）：助手主动性三档。此前 web 这一项标着「需要桌面客户端」——但 PATCH
+  // /me/ai-profile 本来就收 cuu_proactivity，纯粹是没接线；档位现在真被 care-scan / ddl-chase /
+  // conversation-observer 读取了，web 也就没有理由继续把用户往桌面端赶。
+  const proactivitySelect = panel.querySelector<HTMLSelectElement>("[data-r13-settings-ai-proactivity-select]");
+  if (!modeSelect || !dispatchSelect || !proactivitySelect) {
     return;
   }
   const status = panel.querySelector<HTMLElement>("[data-r13-settings-ai-status]");
   const retryButton = panel.querySelector<HTMLButtonElement>("[data-r13-settings-ai-retry]");
   const zh = locale === "zh-CN";
   // GET/PATCH 都走 client.request 的类型安全转发口（drive_preview 同款先例），只声明用得到的字段。
-  type AiProfileSlice = { default_mode: number; dispatch_policy: string };
+  type AiProfileSlice = { default_mode: number; dispatch_policy: string; cuu_proactivity: string };
   const profilePath = "/api/me/ai-profile";
   let lastSaved: AiProfileSlice | undefined;
 
@@ -4248,6 +4946,7 @@ function bindSettingsAiProfilePanel(
   const setEnabled = (enabled: boolean) => {
     modeSelect.disabled = !enabled;
     dispatchSelect.disabled = !enabled;
+    proactivitySelect.disabled = !enabled;
   };
 
   const hydrate = async () => {
@@ -4261,9 +4960,14 @@ function bindSettingsAiProfilePanel(
       if (signal.aborted) {
         return;
       }
-      lastSaved = { default_mode: profile.default_mode, dispatch_policy: profile.dispatch_policy };
+      lastSaved = {
+        default_mode: profile.default_mode,
+        dispatch_policy: profile.dispatch_policy,
+        cuu_proactivity: profile.cuu_proactivity
+      };
       modeSelect.value = String(profile.default_mode);
       dispatchSelect.value = profile.dispatch_policy;
+      proactivitySelect.value = profile.cuu_proactivity;
       setEnabled(true);
       if (status) {
         status.hidden = true;
@@ -4298,9 +5002,14 @@ function bindSettingsAiProfilePanel(
       if (signal.aborted) {
         return;
       }
-      lastSaved = { default_mode: profile.default_mode, dispatch_policy: profile.dispatch_policy };
+      lastSaved = {
+        default_mode: profile.default_mode,
+        dispatch_policy: profile.dispatch_policy,
+        cuu_proactivity: profile.cuu_proactivity
+      };
       modeSelect.value = String(profile.default_mode);
       dispatchSelect.value = profile.dispatch_policy;
+      proactivitySelect.value = profile.cuu_proactivity;
       setStatus(zh ? "已保存" : "Saved", "saved");
     } catch {
       if (signal.aborted) {
@@ -4340,6 +5049,21 @@ function bindSettingsAiProfilePanel(
       void enqueueSave({ dispatch_policy: nextPolicy }, () => {
         if (lastSaved) {
           dispatchSelect.value = lastSaved.dispatch_policy;
+        }
+      });
+    },
+    { signal }
+  );
+  proactivitySelect.addEventListener(
+    "change",
+    () => {
+      const nextLevel = proactivitySelect.value;
+      if (!["quiet", "balanced", "proactive"].includes(nextLevel) || nextLevel === lastSaved?.cuu_proactivity) {
+        return;
+      }
+      void enqueueSave({ cuu_proactivity: nextLevel }, () => {
+        if (lastSaved) {
+          proactivitySelect.value = lastSaved.cuu_proactivity;
         }
       });
     },
@@ -4518,6 +5242,13 @@ function bindSettingsMyProfilePanel(
 // 不是 bug，见 settings-devices.ts isCurrentDevice 顶部注释）+ 撤销（POST /:id/revoke，两段式确认同
 // P2-08 参与者移出的 armConfirmButton 范式；已撤销/本机行不出撤销按钮）。格式化/判定纯逻辑拆在
 // apps/web/src/settings-devices.ts（可单测，这里只是 DOM 拼装胶水）。
+//
+// R23 F-03（撤销本机收尾）：额外挂一个不依附于任何具体行的「撤销本机并登出」动作——「本机」探测
+// 在纯网页会话上结构性地几乎总是探测不到（见上面注释），意味着"哪一行是本机"这件事本来就常年是
+// 空——但登出这件事本身不该因此没有入口。两段式确认后先调 revokeCurrentClientDevice（本机若真是
+// 已注册的本地客户端设备，这里会真的撤销它；纯网页会话下这一步几乎总是 403/404，按 settings-devices.ts
+// shouldSignOutDespiteRevokeCurrentDeviceFailure 的判定折叠为"没有可撤销的记录，继续登出"，不是失败），
+// 再复用既有 client.logout() + showOnboardingScreen 收尾（同 shellRoot 的 data-wh-logout 处理器）。
 function bindSettingsDevicesPanel(
   container: HTMLElement,
   result: WebRouteReadyResult,
@@ -4535,30 +5266,39 @@ function bindSettingsDevicesPanel(
     return;
   }
 
-  const render = (devices: ClientDeviceResponse[], currentDeviceId: string | null) => {
-    if (!devices.length) {
-      body.innerHTML = `<p class="wh-subtle" data-r20-settings-devices-empty="true">${escapeHtml(
-        zh ? "还没有已登录的设备。" : "No signed-in devices yet."
-      )}</p>`;
-      return;
-    }
+  const revokeCurrentRowHtml = `<div class="wh-r4-route-row" data-r20-settings-devices-revoke-current-row="true">
+      <div>
+        <strong>${escapeHtml(zh ? "撤销本机并登出" : "Revoke this device and sign out")}</strong>
+        <p>${escapeHtml(zh
+          ? "撤销这台设备的本地登录凭证（若有），并退出登录回到登录页。"
+          : "Revokes this device's local sign-in credential (if any) and signs you out back to the login screen."
+        )}</p>
+      </div>
+      <button type="button" class="wh-btn wh-btn-danger" data-r20-settings-devices-revoke-current="true">${escapeHtml(zh ? "撤销本机" : "Revoke this device")}</button>
+    </div>`;
 
-    const rowsHtml = devices
-      .map((raw) => {
-        const row = buildSettingsDeviceRow(raw, currentDeviceId, locale);
-        const revokeBtn = row.canRevoke
-          ? `<button type="button" class="wh-btn" data-r20-settings-device-revoke="${escapeHtml(row.id)}">${escapeHtml(zh ? "撤销" : "Revoke")}</button>`
-          : "";
-        return `<div class="wh-r4-route-row" data-r20-settings-device="${escapeHtml(row.id)}" data-r20-settings-device-current="${escapeHtml(String(row.isCurrent))}" data-r20-settings-device-revoked="${escapeHtml(String(row.isRevoked))}">
-            <div>
-              <strong>${escapeHtml(row.deviceName)}</strong>
-              <p>${escapeHtml(row.platform)} · ${escapeHtml(row.lastSeenLabel)}</p>
-            </div>
-            <div class="wh-r4-route-meta"><span class="wh-pill">${escapeHtml(row.statusLabel)}</span>${revokeBtn}</div>
-          </div>`;
-      })
-      .join("");
-    body.innerHTML = `<div class="wh-r4-route-table" data-r20-settings-devices-count="${escapeHtml(String(devices.length))}">${rowsHtml}</div>
+  const render = (devices: ClientDeviceResponse[], currentDeviceId: string | null) => {
+    const rowsHtml = !devices.length
+      ? `<p class="wh-subtle" data-r20-settings-devices-empty="true">${escapeHtml(
+          zh ? "还没有已登录的设备。" : "No signed-in devices yet."
+        )}</p>`
+      : `<div class="wh-r4-route-table" data-r20-settings-devices-count="${escapeHtml(String(devices.length))}">${devices
+          .map((raw) => {
+            const row = buildSettingsDeviceRow(raw, currentDeviceId, locale);
+            const revokeBtn = row.canRevoke
+              ? `<button type="button" class="wh-btn" data-r20-settings-device-revoke="${escapeHtml(row.id)}">${escapeHtml(zh ? "撤销" : "Revoke")}</button>`
+              : "";
+            return `<div class="wh-r4-route-row" data-r20-settings-device="${escapeHtml(row.id)}" data-r20-settings-device-current="${escapeHtml(String(row.isCurrent))}" data-r20-settings-device-revoked="${escapeHtml(String(row.isRevoked))}">
+                <div>
+                  <strong>${escapeHtml(row.deviceName)}</strong>
+                  <p>${escapeHtml(row.platform)} · ${escapeHtml(row.lastSeenLabel)}</p>
+                </div>
+                <div class="wh-r4-route-meta"><span class="wh-pill">${escapeHtml(row.statusLabel)}</span>${revokeBtn}</div>
+              </div>`;
+          })
+          .join("")}</div>`;
+    body.innerHTML = `${rowsHtml}
+      ${revokeCurrentRowHtml}
       <p class="wh-subtle" data-r20-settings-devices-status hidden></p>`;
 
     const status = body.querySelector<HTMLElement>("[data-r20-settings-devices-status]");
@@ -4601,6 +5341,61 @@ function bindSettingsDevicesPanel(
         { signal }
       );
     });
+
+    // R23 F-03：撤销本机并登出——先尽力撤销本机的本地客户端凭证，结构性的"没有可撤销记录"
+    // （403/404，见 shouldSignOutDespiteRevokeCurrentDeviceFailure）不挡登出；任何其它错误都停下、
+    // 可见、可重试，不假装已经登出。
+    const doRevokeCurrentAndSignOut = async (button: HTMLButtonElement) => {
+      button.disabled = true;
+      setStatus(zh ? "正在撤销本机…" : "Revoking this device…", "saving");
+      try {
+        await client.revokeCurrentClientDevice();
+      } catch (error) {
+        if (signal.aborted) {
+          return;
+        }
+        if (!shouldSignOutDespiteRevokeCurrentDeviceFailure(error)) {
+          button.disabled = false;
+          setStatus(humanizeDeviceRevokeError(error, locale), "error");
+          return;
+        }
+        // 结构性的"没有可撤销记录"——不是失败，继续走登出。
+      }
+      if (signal.aborted) {
+        return;
+      }
+      setStatus(zh ? "正在登出…" : "Signing out…", "saving");
+      try {
+        await client.logout();
+      } catch (error) {
+        if (signal.aborted) {
+          return;
+        }
+        // 同 shellRoot 的 data-wh-logout 处理器：只有「会话本就无效」才可视为已登出，
+        // 网络中断/服务端 5xx 时必须停下显式报错，不能在共享设备上假装已经登出。
+        const sessionAlreadyGone = error instanceof WorkHubApiError
+          && (error.status === 401 || error.code === "not_identified");
+        if (!sessionAlreadyGone) {
+          button.disabled = false;
+          setStatus(zh ? "登出失败，请重试。" : "Sign-out failed — please try again.", "error");
+          showRouteNotice(container, logoutFailedNotice(locale));
+          return;
+        }
+      }
+      showOnboardingScreen(client, locale);
+    };
+
+    const revokeCurrentBtn = body.querySelector<HTMLButtonElement>("[data-r20-settings-devices-revoke-current]");
+    if (revokeCurrentBtn) {
+      revokeCurrentBtn.addEventListener(
+        "click",
+        () => armConfirmButton(revokeCurrentBtn, {
+          confirmLabel: zh ? "确认撤销并登出？再点一次" : "Revoke & sign out — click again",
+          onConfirm: () => void doRevokeCurrentAndSignOut(revokeCurrentBtn)
+        }),
+        { signal }
+      );
+    }
   };
 
   const load = async () => {
@@ -5281,17 +6076,42 @@ function clearReadyRouteBindings() {
   liveRuntime?.clearRefreshTimer();
 }
 
-function showOnboardingScreen(
+// R23 P2（SA-04）：AUTH_MODE 是部署期常量（读环境变量，容器生命周期内不变）——探测一次即可，
+// 缓存这次页面会话的探测 Promise（同 aiProviderConfiguredCached 的先例：缓存 Promise 本身而非
+// resolve 后的值，并发调用天然共享同一次探测，不会因为还没 resolve 就重复发起第二次）。
+let authScreenModePromise: Promise<AuthScreenMode> | undefined;
+
+function resolveAuthScreenMode(client: BrowserApiClient): Promise<AuthScreenMode> {
+  authScreenModePromise ??= detectAuthScreenMode((payload) => client.identify(payload));
+  return authScreenModePromise;
+}
+
+// R23 P2（SA-04）：生产环境强制 AUTH_MODE!='nickname' 时，POST /api/auth/identify 恒 404——
+// 这个函数曾经只渲 renderOnboardingScreen（昵称 + 管理员口令），密码/hybrid 模式的用户完全无路可走
+// （登出/会话过期都会落到这里，此前落到的都是打不开的昵称表单）。现在先探测模式，再决定渲哪一个屏；
+// 探测结果缓存后，同一页面会话内的重复调用（登出、tab 切回探活、SSE 掉线回退等）几乎不再等待。
+//
+// 新增的 await 意味着这个函数不再是同步的——如果等待探测期间又发生了一次更新的 showOnboardingScreen/
+// renderCurrentRoute 调用（activeRouteRenderId 被更新的调用递增），这次探测结果作废，绝不覆盖更新的
+// 画面（同 renderCurrentRoute 自身的 renderId 竞态守卫）。
+async function showOnboardingScreen(
   client: BrowserApiClient,
   locale: WorkHubLocale,
-  input: { errorText?: string; presetNickname?: string } = {}
-) {
+  input: {
+    errorText?: string;
+    presetNickname?: string;
+    presetEmail?: string;
+    presetRegisterNickname?: string;
+    authTab?: PasswordAuthScreenTab;
+  } = {}
+): Promise<void> {
   if (!root) {
     return;
   }
   // R11 回归修复：R10 想修的「探活切注册屏后在途 renderCurrentRoute 盖回失效内容」竞态，
   // 递增被错落在 renderFatalRouteError（anchor 撞名）——真正的 not_identified 分流全走这里。
   activeRouteRenderId += 1;
+  const renderId = activeRouteRenderId;
   clearReadyRouteBindings();
   liveRuntime?.closeAllLiveEventSources();
   // findings[#low]：live runtime 单例创建时一次性捕获 locale。登出→切语言→重登后，
@@ -5304,6 +6124,23 @@ function showOnboardingScreen(
   activeLocale = locale;
   setDocumentLocale(locale);
   const targetRoute = `${window.location.pathname}${window.location.search}`;
+  const mode = await resolveAuthScreenMode(client);
+  if (!root || renderId !== activeRouteRenderId) {
+    return;
+  }
+  if (mode === "password") {
+    const tab: PasswordAuthScreenTab = input.authTab === "register" ? "register" : "login";
+    root.innerHTML = renderPasswordAuthScreen({
+      locale,
+      tab,
+      targetRoute,
+      ...(input.errorText ? { errorText: input.errorText } : {}),
+      ...(input.presetEmail ? { presetEmail: input.presetEmail } : {}),
+      ...(input.presetRegisterNickname ? { presetNickname: input.presetRegisterNickname } : {})
+    }).html;
+    bindPasswordAuthScreen(client, locale, tab, input.presetEmail, input.presetRegisterNickname);
+    return;
+  }
   root.innerHTML = renderOnboardingScreen({
     locale,
     targetRoute,
@@ -5329,7 +6166,7 @@ function bindOnboardingScreen(client: BrowserApiClient, locale: WorkHubLocale, p
         return;
       }
       persistBrowserLocale(nextLocale);
-      showOnboardingScreen(client, nextLocale, {
+      void showOnboardingScreen(client, nextLocale, {
         ...(nicknameInput?.value.trim() ? { presetNickname: nicknameInput.value.trim() } : {})
       });
     });
@@ -5337,6 +6174,41 @@ function bindOnboardingScreen(client: BrowserApiClient, locale: WorkHubLocale, p
   root.querySelector<HTMLFormElement>("[data-r5-9-onboarding-form]")?.addEventListener("submit", (event) => {
     event.preventDefault();
     void submitOnboarding(client, locale);
+  });
+}
+
+// R23 P2（SA-04）：登录/注册/昵称报到三条路径共享的「认证成功之后」编排——设身份、同步语言偏好
+// （并发发起 + 失败可见可重试，见下方 R20 P2-09 的注释）、渲工作台。fallbackNickname 只在
+// identityUserFrom 从响应体解不出昵称时兜底（服务端响应缺字段的防御性分支，正常不会触发）：
+// 昵称报到用用户刚输入的昵称；密码登录没有对应的"昵称"，退而用邮箱；密码注册用用户刚输入的昵称。
+async function completeAuthSuccess(
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  identity: IdentityResponse,
+  fallbackNickname: string
+) {
+  currentIdentity = identityUserFrom(identity) ?? { nickname: fallbackNickname, isAdmin: false };
+  persistBrowserLocale(locale);
+  // R20 P2-09：此前 `.catch(() => undefined)` 把语言偏好同步失败整个吞掉——用户以为界面语言已经
+  // 存到服务端，换设备/清缓存后又会掉回默认语言。不阻塞进入工作台（PATCH 与渲染并发发起），但落地
+  // 后要是没同步成功，就给可见告警 + 就地重试按钮，不能悄悄丢。
+  //
+  // R21（补丁）：notice 靠壳层 DOM 上的 [data-wh-app-notice]，引导页模板没有这个节点——PATCH 先于
+  // renderCurrentRouteOrOnboard 渲完 settle 时（典型场景：断网几乎立即 reject），告警会在壳层还没
+  // 渲出来那一刻被无声吞掉。所以这里立刻发起 PATCH（保持并发/不阻塞语义），但只把这个已经在飞的
+  // Promise 传给 runOnboardingLocaleSync，真正渲染 notice 的调用要等 renderCurrentRouteOrOnboard
+  // 之后才做。编排逻辑本身在 onboarding-locale-sync.ts（browser.ts 顶层引用 document，没法被单测
+  // 覆盖）。
+  const localeSyncFirstAttempt = client.updatePreferences({ locale }).then(() => undefined);
+  // 提前挂一个空 catch，避免壳层渲染这段时间内 Node 把它当成未处理拒绝报出来；真正的失败处理仍然
+  // 在 runOnboardingLocaleSync 里、渲染完成之后才触发。
+  localeSyncFirstAttempt.catch(() => undefined);
+  await renderCurrentRouteOrOnboard(client, locale);
+  await runOnboardingLocaleSync({
+    firstAttempt: localeSyncFirstAttempt,
+    retryUpdatePreferences: () => client.updatePreferences({ locale }).then(() => undefined),
+    showSyncFailedNotice: (retry) => showOnboardingLocaleSyncFailedNotice(locale, retry),
+    showSyncSucceededNotice: () => showOnboardingLocaleSyncSucceededNotice(locale)
   });
 }
 
@@ -5348,7 +6220,7 @@ async function submitOnboarding(client: BrowserApiClient, locale: WorkHubLocale)
   const nickname = nicknameInput?.value.trim() ?? "";
   if (!nickname) {
     // R6（表单）：留空提交此前只 focus 零反馈（表单带 novalidate，原生气泡也不弹）——渲染可见错误条。
-    showOnboardingScreen(client, locale, {
+    void showOnboardingScreen(client, locale, {
       errorText: locale === "en-US" ? "Please enter a nickname first." : "请先填写昵称。",
       presetNickname: ""
     });
@@ -5365,36 +6237,144 @@ async function submitOnboarding(client: BrowserApiClient, locale: WorkHubLocale)
       nickname,
       ...(adminSecret ? { admin_secret: adminSecret } : {})
     });
-    currentIdentity = identityUserFrom(identity) ?? { nickname, isAdmin: false };
-    persistBrowserLocale(locale);
-    // R20 P2-09：此前 `.catch(() => undefined)` 把语言偏好同步失败整个吞掉——用户以为界面语言已经
-    // 存到服务端，换设备/清缓存后又会掉回默认语言。不阻塞进入工作台（PATCH 与渲染并发发起），但落地
-    // 后要是没同步成功，就给可见告警 + 就地重试按钮，不能悄悄丢。
-    //
-    // R21（补丁）：notice 靠壳层 DOM 上的 [data-wh-app-notice]，引导页模板没有这个节点——PATCH 先于
-    // renderCurrentRouteOrOnboard 渲完 settle 时（典型场景：断网几乎立即 reject），告警会在壳层还没
-    // 渲出来那一刻被无声吞掉。所以这里立刻发起 PATCH（保持并发/不阻塞语义），但只把这个已经在飞的
-    // Promise 传给 runOnboardingLocaleSync，真正渲染 notice 的调用要等 renderCurrentRouteOrOnboard
-    // 之后才做。编排逻辑本身在 onboarding-locale-sync.ts（browser.ts 顶层引用 document，没法被单测
-    // 覆盖）。
-    const localeSyncFirstAttempt = client.updatePreferences({ locale }).then(() => undefined);
-    // 提前挂一个空 catch，避免壳层渲染这段时间内 Node 把它当成未处理拒绝报出来；真正的失败处理仍然
-    // 在 runOnboardingLocaleSync 里、渲染完成之后才触发。
-    localeSyncFirstAttempt.catch(() => undefined);
-    await renderCurrentRouteOrOnboard(client, locale);
-    await runOnboardingLocaleSync({
-      firstAttempt: localeSyncFirstAttempt,
-      retryUpdatePreferences: () => client.updatePreferences({ locale }).then(() => undefined),
-      showSyncFailedNotice: (retry) => showOnboardingLocaleSyncFailedNotice(locale, retry),
-      showSyncSucceededNotice: () => showOnboardingLocaleSyncSucceededNotice(locale)
-    });
+    await completeAuthSuccess(client, locale, identity, nickname);
   } catch (error) {
     const errorText = error instanceof Error && error.message
       ? error.message
       : goldPathT(locale, "runtime.actionFail");
-    showOnboardingScreen(client, locale, { errorText, presetNickname: nickname });
+    void showOnboardingScreen(client, locale, { errorText, presetNickname: nickname });
   } finally {
     endBusyAction("onboarding_identify");
+  }
+}
+
+// R23 P2（SA-04）：密码/hybrid 模式登录注册屏的 DOM 接线——tab 切换（登录⇄注册，走完整
+// showOnboardingScreen 重渲，探测结果已缓存故几乎零延迟）、语言切换（同 bindOnboardingScreen 的
+// 昵称屏先例）、表单提交按当前 tab 分流到 submitPasswordLogin / submitPasswordRegister。
+function bindPasswordAuthScreen(
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  tab: PasswordAuthScreenTab,
+  presetEmail?: string,
+  presetNickname?: string
+) {
+  if (!root) {
+    return;
+  }
+  const emailInput = root.querySelector<HTMLInputElement>("[data-r23-auth-email]");
+  if (emailInput && presetEmail) {
+    emailInput.value = presetEmail;
+  }
+  if (presetNickname) {
+    const nicknameInput = root.querySelector<HTMLInputElement>("[data-r23-auth-nickname]");
+    if (nicknameInput) {
+      nicknameInput.value = presetNickname;
+    }
+  }
+  emailInput?.focus();
+  for (const option of root.querySelectorAll<HTMLButtonElement>("[data-r23-auth-tab-option]")) {
+    option.addEventListener("click", (event) => {
+      event.preventDefault();
+      const nextTab: PasswordAuthScreenTab = option.getAttribute("data-r23-auth-tab-option") === "register" ? "register" : "login";
+      if (nextTab === tab) {
+        return;
+      }
+      const email = emailInput?.value.trim();
+      void showOnboardingScreen(client, locale, {
+        authTab: nextTab,
+        ...(email ? { presetEmail: email } : {})
+      });
+    });
+  }
+  for (const option of root.querySelectorAll<HTMLButtonElement>("[data-r23-auth-locale-option]")) {
+    option.addEventListener("click", (event) => {
+      event.preventDefault();
+      const nextLocale = normalizeWorkHubLocale(option.getAttribute("data-r23-auth-locale-option"));
+      if (nextLocale === locale) {
+        return;
+      }
+      persistBrowserLocale(nextLocale);
+      const email = emailInput?.value.trim();
+      const nicknameValue = root?.querySelector<HTMLInputElement>("[data-r23-auth-nickname]")?.value.trim();
+      void showOnboardingScreen(client, nextLocale, {
+        authTab: tab,
+        ...(email ? { presetEmail: email } : {}),
+        ...(nicknameValue ? { presetRegisterNickname: nicknameValue } : {})
+      });
+    });
+  }
+  root.querySelector<HTMLFormElement>("[data-r23-auth-form]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (tab === "register") {
+      void submitPasswordRegister(client, locale);
+    } else {
+      void submitPasswordLogin(client, locale);
+    }
+  });
+}
+
+async function submitPasswordLogin(client: BrowserApiClient, locale: WorkHubLocale) {
+  if (!root) {
+    return;
+  }
+  const email = root.querySelector<HTMLInputElement>("[data-r23-auth-email]")?.value.trim() ?? "";
+  const password = root.querySelector<HTMLInputElement>("[data-r23-auth-password]")?.value ?? "";
+  if (!email || !password) {
+    void showOnboardingScreen(client, locale, {
+      authTab: "login",
+      errorText: locale === "en-US" ? "Enter your email and password." : "请填写邮箱和密码。",
+      ...(email ? { presetEmail: email } : {})
+    });
+    return;
+  }
+  if (!beginBusyAction("password_auth")) {
+    return;
+  }
+  try {
+    const identity = await client.login({ email, password });
+    await completeAuthSuccess(client, locale, identity, email);
+  } catch (error) {
+    void showOnboardingScreen(client, locale, {
+      authTab: "login",
+      errorText: describeAuthScreenError(error, locale, "login"),
+      presetEmail: email
+    });
+  } finally {
+    endBusyAction("password_auth");
+  }
+}
+
+async function submitPasswordRegister(client: BrowserApiClient, locale: WorkHubLocale) {
+  if (!root) {
+    return;
+  }
+  const email = root.querySelector<HTMLInputElement>("[data-r23-auth-email]")?.value.trim() ?? "";
+  const nickname = root.querySelector<HTMLInputElement>("[data-r23-auth-nickname]")?.value.trim() ?? "";
+  const password = root.querySelector<HTMLInputElement>("[data-r23-auth-password]")?.value ?? "";
+  if (!email || !nickname || !password) {
+    void showOnboardingScreen(client, locale, {
+      authTab: "register",
+      errorText: locale === "en-US" ? "Fill in email, nickname, and password." : "请填写邮箱、昵称和密码。",
+      ...(email ? { presetEmail: email } : {}),
+      ...(nickname ? { presetRegisterNickname: nickname } : {})
+    });
+    return;
+  }
+  if (!beginBusyAction("password_auth")) {
+    return;
+  }
+  try {
+    const identity = await client.register({ email, nickname, password });
+    await completeAuthSuccess(client, locale, identity, nickname);
+  } catch (error) {
+    void showOnboardingScreen(client, locale, {
+      authTab: "register",
+      errorText: describeAuthScreenError(error, locale, "register"),
+      presetEmail: email,
+      presetRegisterNickname: nickname
+    });
+  } finally {
+    endBusyAction("password_auth");
   }
 }
 
@@ -5554,7 +6534,7 @@ async function renderCurrentRouteOrOnboard(client: BrowserApiClient, locale: Wor
     await renderCurrentRoute(client, locale, options);
   } catch (error) {
     if (error instanceof WorkHubApiError && error.code === "not_identified") {
-      showOnboardingScreen(client, locale);
+      await showOnboardingScreen(client, locale);
       return;
     }
     throw error;
@@ -5609,13 +6589,13 @@ async function boot() {
         .then((me) => {
           if (!me) {
             currentIdentity = undefined;
-            showOnboardingScreen(client, activeLocale);
+            void showOnboardingScreen(client, activeLocale);
           }
         })
         .catch((error) => {
           if (error instanceof WorkHubApiError && (error.status === 401 || error.code === "not_identified")) {
             currentIdentity = undefined;
-            showOnboardingScreen(client, activeLocale);
+            void showOnboardingScreen(client, activeLocale);
           }
         })
         .finally(() => {
@@ -5637,7 +6617,7 @@ async function boot() {
       me = await client.me();
     } catch (error) {
       if (error instanceof WorkHubApiError && (error.status === 401 || error.code === "not_identified")) {
-        showOnboardingScreen(client, locale);
+        await showOnboardingScreen(client, locale);
         return;
       }
       throw error;
@@ -5648,7 +6628,7 @@ async function boot() {
       activeLocale = locale;
       await renderCurrentRouteOrOnboard(client, locale);
     } else {
-      showOnboardingScreen(client, locale);
+      await showOnboardingScreen(client, locale);
     }
   } catch (error) {
     renderFatalRouteError(locale, error);

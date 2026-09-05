@@ -8,7 +8,8 @@ import type {
   ConversationRow,
   TeamSkillRow,
   UserAiProfileRow,
-  UserMemoryRow
+  UserMemoryRow,
+  VisibleConversationRow
 } from "@workhub/db";
 import type { DriveItemVM, DrivePageVM, WorkItemDetailVM } from "@workhub/contracts";
 
@@ -401,6 +402,16 @@ function defaultConversationsDeps(): ConversationTurnServiceDeps["conversations"
     // 命中就说明某处测试的 seq 设置没有按预期短路在压缩触发判定之前，直接报错比静默返回更容易定位。
     async updateContextSummary() {
       throw new Error("updateContextSummary not expected");
+    },
+    // R23 F-07（`#会话引用`）：候选会话清单。默认空——绝大多数既有测试的触发消息里没有 `#`，
+    // buildTurnReferenceSection 的便宜预判会直接跳过这条查询；真要测引用的用例自己覆盖它。
+    async listVisibleForProject() {
+      return { rows: [], capped: false, nextCursor: null };
+    },
+    // R23 F-07：被引会话的最近一页消息。默认报错——只有解析出真实引用的用例才会走到这里，命中说明
+    // 测试路径没有按预期短路（同这个文件里其它未测方法的既有取舍）。
+    async listMessagesBefore(): Promise<never> {
+      throw new Error("listMessagesBefore not expected");
     }
   };
 }
@@ -1484,6 +1495,324 @@ test("loop2(on): never injects project instructions into a DM-container conversa
   );
   assert.ok(params);
   assert.doesNotMatch(params.system, /这个项目在设置里配置的自定义指令/);
+});
+
+// ── R23 F-07（聊天「#会话引用」/「/技能唤起」）─────────────────────────────────────────────
+// 触发消息正文里的 `#会话标题` / `/技能名` 由服务端解析回真实会话/技能（与 @ 提及同一套「正文里的
+// 可读名字 + 服务端解析」机制，决策见 .agents/notes/implemented/2026-09-05-chat-conversation-and-
+// skill-references.md），被引会话的最近讨论与被唤起技能的正文一起注入这一轮 system prompt。
+// 权限收口在仓库层（候选清单与消息都用发起人本人的 viewerUserId 查）；任何一条引用查不到/查失败都
+// fail-open 跳过，不炸整轮回应。
+
+const referencedConversationId = "14000000-0000-4000-8000-000000000031";
+
+function referencedConversationRow(): VisibleConversationRow {
+  return {
+    ...conversationRow({ id: referencedConversationId, title: "预算复盘" }),
+    participantRole: "member"
+  } as VisibleConversationRow;
+}
+
+test("createTurn pulls the referenced conversation's recent messages into the system prompt", async () => {
+  const mainSpy: unknown[] = [];
+  const listedBefore: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async listMessagesAfter() {
+          return {
+            rows: [userMessageRow({ contentJson: { text: "对一下 #预算复盘 里的口径" } })],
+            hasMore: false,
+            nextAfterSeq: 1
+          };
+        },
+        async listVisibleForProject() {
+          return { rows: [referencedConversationRow()], capped: false, nextCursor: null };
+        },
+        async listMessagesBefore(listInput) {
+          listedBefore.push(listInput);
+          return {
+            rows: [
+              userMessageRow({
+                id: "14000000-0000-4000-8000-000000000032",
+                conversationId: referencedConversationId,
+                contentJson: { text: "口径按含税金额算" }
+              })
+            ],
+            hasMore: false,
+            nextBeforeSeq: 1
+          };
+        }
+      },
+      client: respondingClient([], "好的，收到", mainSpy)
+    })
+  );
+
+  await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  const params = mainSpy.find(
+    (entry): entry is { system: string } => typeof (entry as Record<string, unknown>)?.["system"] === "string"
+  );
+  assert.ok(params);
+  assert.match(params.system, /点名引用了下面这些会话/u);
+  assert.match(params.system, /会话《预算复盘》最近的讨论/u);
+  assert.match(params.system, /口径按含税金额算/u);
+  // 发言人标注用昵称，不泄漏 user id。
+  assert.match(params.system, /阿曼：口径按含税金额算/u);
+  assert.doesNotMatch(params.system, new RegExp(userId, "u"));
+  // 被引会话的读走的是发起人本人的 viewerUserId（权限收口在仓库层）。
+  assert.equal(listedBefore.length, 1);
+  assert.equal((listedBefore[0] as { viewerUserId: string }).viewerUserId, userId);
+  assert.equal((listedBefore[0] as { conversationId: string }).conversationId, referencedConversationId);
+});
+
+test("createTurn does not query the conversation candidate list when the message carries no reference", async () => {
+  let candidateQueries = 0;
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async listVisibleForProject() {
+          candidateQueries += 1;
+          return { rows: [], capped: false, nextCursor: null };
+        }
+      }
+    })
+  );
+
+  await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+  assert.equal(candidateQueries, 0);
+});
+
+test("createTurn skips a reference to the conversation the message was sent in", async () => {
+  const mainSpy: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({ conversation: conversationRow({ title: "本会话" }) });
+        },
+        async listMessagesAfter() {
+          return {
+            rows: [userMessageRow({ contentJson: { text: "看看 #本会话 说过什么" } })],
+            hasMore: false,
+            nextAfterSeq: 1
+          };
+        },
+        async listVisibleForProject() {
+          return {
+            rows: [{ ...conversationRow({ title: "本会话" }), participantRole: "owner" } as VisibleConversationRow],
+            capped: false,
+            nextCursor: null
+          };
+        }
+        // listMessagesBefore 保持默认桩（命中即抛）——自引用必须在拉消息之前就被跳过。
+      },
+      client: respondingClient([], "好的，收到", mainSpy)
+    })
+  );
+
+  await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  const params = mainSpy.find(
+    (entry): entry is { system: string } => typeof (entry as Record<string, unknown>)?.["system"] === "string"
+  );
+  assert.ok(params);
+  assert.doesNotMatch(params.system, /点名引用了下面这些会话/u);
+});
+
+test("createTurn silently drops a reference whose conversation is not visible to the sender", async () => {
+  const mainSpy: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async listMessagesAfter() {
+          return {
+            rows: [userMessageRow({ contentJson: { text: "看看 #预算复盘" } })],
+            hasMore: false,
+            nextAfterSeq: 1
+          };
+        },
+        async listVisibleForProject() {
+          return { rows: [referencedConversationRow()], capped: false, nextCursor: null };
+        },
+        async listMessagesBefore() {
+          // 仓库层的 fail-closed 可见性判定：看不见就是 null。
+          return null;
+        }
+      },
+      client: respondingClient([], "好的，收到", mainSpy)
+    })
+  );
+
+  const result = await service.createTurn({
+    actor: actor(),
+    conversationId,
+    payload: { user_message_id: userMessageId }
+  });
+
+  assert.equal(textContent(result.message).text, "好的，收到");
+  const params = mainSpy.find(
+    (entry): entry is { system: string } => typeof (entry as Record<string, unknown>)?.["system"] === "string"
+  );
+  assert.ok(params);
+  assert.doesNotMatch(params.system, /点名引用了下面这些会话/u);
+});
+
+test("createTurn still answers when loading a referenced conversation throws", async () => {
+  const warnings: string[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async listMessagesAfter() {
+          return {
+            rows: [userMessageRow({ contentJson: { text: "看看 #预算复盘" } })],
+            hasMore: false,
+            nextAfterSeq: 1
+          };
+        },
+        async listVisibleForProject() {
+          return { rows: [referencedConversationRow()], capped: false, nextCursor: null };
+        },
+        async listMessagesBefore(): Promise<never> {
+          throw new Error("db down");
+        }
+      },
+      logger: {
+        warn: (event: string) => {
+          warnings.push(event);
+        }
+      }
+    })
+  );
+
+  const result = await service.createTurn({
+    actor: actor(),
+    conversationId,
+    payload: { user_message_id: userMessageId }
+  });
+
+  assert.equal(textContent(result.message).text, "看过了，整体不错");
+  assert.ok(warnings.includes("conversation_turn_reference_fetch_failed"));
+});
+
+test("createTurn injects the invoked team skill's full body when the message opens with /skill-name", async () => {
+  const mainSpy: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      teamSkills: {
+        async listActive() {
+          return [
+            teamSkillRow({
+              name: "周报模板",
+              whenToUse: "写周报之前",
+              contentMd: "先列三段：做完了什么 / 卡在哪 / 下周做什么"
+            })
+          ];
+        }
+      },
+      conversations: {
+        async listMessagesAfter() {
+          return {
+            rows: [userMessageRow({ contentJson: { text: "/周报模板 帮我起一份这周的" } })],
+            hasMore: false,
+            nextAfterSeq: 1
+          };
+        }
+      },
+      client: respondingClient([], "好的，收到", mainSpy)
+    })
+  );
+
+  await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  const params = mainSpy.find(
+    (entry): entry is { system: string } => typeof (entry as Record<string, unknown>)?.["system"] === "string"
+  );
+  assert.ok(params);
+  assert.match(params.system, /唤起了下面这条团队技能/u);
+  assert.match(params.system, /技能《周报模板》（适用场景：写周报之前）/u);
+  assert.match(params.system, /先列三段：做完了什么 \/ 卡在哪 \/ 下周做什么/u);
+});
+
+test("createTurn injects nothing when the leading slash does not name an active skill", async () => {
+  const mainSpy: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async listMessagesAfter() {
+          return {
+            rows: [userMessageRow({ contentJson: { text: "/这条技能不存在 帮我看看" } })],
+            hasMore: false,
+            nextAfterSeq: 1
+          };
+        }
+      },
+      client: respondingClient([], "好的，收到", mainSpy)
+    })
+  );
+
+  const result = await service.createTurn({
+    actor: actor(),
+    conversationId,
+    payload: { user_message_id: userMessageId }
+  });
+
+  assert.equal(textContent(result.message).text, "好的，收到");
+  const params = mainSpy.find(
+    (entry): entry is { system: string } => typeof (entry as Record<string, unknown>)?.["system"] === "string"
+  );
+  assert.ok(params);
+  assert.doesNotMatch(params.system, /唤起了下面这条团队技能/u);
+});
+
+test("loop2(on): the same reference and skill material reaches the system prompt", async () => {
+  const mainSpy: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      loop2Mode: "on",
+      teamSkills: {
+        async listActive() {
+          return [teamSkillRow({ name: "周报模板", whenToUse: "写周报之前", contentMd: "先列三段" })];
+        }
+      },
+      conversations: {
+        async listMessagesAfter() {
+          return {
+            rows: [userMessageRow({ contentJson: { text: "/周报模板 顺便对一下 #预算复盘" } })],
+            hasMore: false,
+            nextAfterSeq: 1
+          };
+        },
+        async listVisibleForProject() {
+          return { rows: [referencedConversationRow()], capped: false, nextCursor: null };
+        },
+        async listMessagesBefore() {
+          return {
+            rows: [
+              userMessageRow({
+                id: "14000000-0000-4000-8000-000000000033",
+                conversationId: referencedConversationId,
+                contentJson: { text: "口径按含税金额算" }
+              })
+            ],
+            hasMore: false,
+            nextBeforeSeq: 1
+          };
+        }
+      },
+      client: respondingClient([], "好的，收到", mainSpy)
+    })
+  );
+
+  await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  const params = mainSpy.find(
+    (entry): entry is { system: string } => typeof (entry as Record<string, unknown>)?.["system"] === "string"
+  );
+  assert.ok(params);
+  assert.match(params.system, /会话《预算复盘》最近的讨论/u);
+  assert.match(params.system, /口径按含税金额算/u);
+  assert.match(params.system, /技能《周报模板》/u);
 });
 
 test("createTurn touches injected user memories and swallows a touch failure without failing the turn", async () => {

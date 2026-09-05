@@ -854,6 +854,9 @@ test("meeting page route authenticates and passes project and selected meeting q
   const runtimeSettings = settings();
   const calls: Array<{ projectId?: string; meetingId?: string; locale?: string; actorId?: string }> = [];
   const meetingPages: MeetingPageService = {
+    async reanalyzeMeeting() {
+      throw new Error("not needed");
+    },
     async page(input) {
       calls.push({
         ...(input.projectId ? { projectId: input.projectId } : {}),
@@ -896,6 +899,9 @@ test("meeting page route rejects a malformed selected meeting id before loading 
   const runtimeSettings = settings();
   const calls: unknown[] = [];
   const meetingPages: MeetingPageService = {
+    async reanalyzeMeeting() {
+      throw new Error("not needed");
+    },
     async page(input) {
       calls.push(input);
       return minimalMeetingPage();
@@ -933,6 +939,9 @@ test("meeting mutation route authenticates and returns a refreshed meeting page"
   const runtimeSettings = settings();
   const calls: Array<{ projectId: string; insightId: string; actorId?: string }> = [];
   const meetingPages: MeetingPageService = {
+    async reanalyzeMeeting() {
+      throw new Error("not needed");
+    },
     async page() {
       throw new Error("not needed");
     },
@@ -976,6 +985,9 @@ test("meeting mutation routes reject malformed insight ids before calling the se
   const runtimeSettings = settings();
   const calls: string[] = [];
   const meetingPages: MeetingPageService = {
+    async reanalyzeMeeting() {
+      throw new Error("not needed");
+    },
     async page() {
       throw new Error("not needed");
     },
@@ -1016,6 +1028,9 @@ test("meeting draft proposal route authenticates and returns a refreshed work it
   const runtimeSettings = settings();
   const calls: Array<{ workItemId: string; locale?: string; actorId?: string }> = [];
   const meetingPages: MeetingPageService = {
+    async reanalyzeMeeting() {
+      throw new Error("not needed");
+    },
     async page() {
       throw new Error("not needed");
     },
@@ -1215,4 +1230,189 @@ test("meeting draftToProposal lets assigned work item leads create the proposal 
     actorUserId: userId
   }]);
   assert.equal(result.workitem.id, workItemId);
+});
+
+// ── SA-02 重新生成纪要 ────────────────────────────────────────────────────────────────
+
+function analysisStub(overrides: {
+  configured?: boolean;
+  outcome?: "analyzed" | "failed" | "skipped_budget" | "skipped_not_claimable";
+  calls?: Array<{ meetingId: string; force?: boolean }>;
+} = {}) {
+  return {
+    isConfigured: () => overrides.configured ?? true,
+    analyzeMeeting: async (input: { meetingId: string; force?: boolean }) => {
+      overrides.calls?.push({ meetingId: input.meetingId, ...(input.force ? { force: input.force } : {}) });
+      return {
+        outcome: overrides.outcome ?? "analyzed" as const,
+        meeting_id: input.meetingId,
+        insight_count: 1
+      };
+    }
+  };
+}
+
+function repoWithMeetingContext() {
+  const repo = new MutableMeetingRepo() as MutableMeetingRepo & MeetingRepository;
+  repo.findMeetingContext = async () => ({ project: projectRow(), meeting: meetingRow() });
+  return repo;
+}
+
+test("SA-02 会议页服务：重新生成纪要强制重跑分析并回一份新页面", async () => {
+  const calls: Array<{ meetingId: string; force?: boolean }> = [];
+  const service = createMeetingPageService({
+    repo: repoWithMeetingContext(),
+    analysis: analysisStub({ calls }),
+    now: () => now
+  });
+
+  const page = await service.reanalyzeMeeting({ actor: actor(), meetingId, locale: "zh-CN" });
+
+  // force=true 是关键：已经 ready 的会议也要能重跑，否则「重新生成纪要」点了没反应。
+  assert.deepEqual(calls, [{ meetingId, force: true }]);
+  assert.equal(page.meetings.length, 1);
+  assert.equal(page.ai_analysis_configured, true);
+});
+
+test("SA-02 会议页服务：AI 未配置时直说，而不是假装重跑", async () => {
+  const service = createMeetingPageService({
+    repo: repoWithMeetingContext(),
+    analysis: analysisStub({ configured: false }),
+    now: () => now
+  });
+
+  await assert.rejects(
+    () => service.reanalyzeMeeting({ actor: actor(), meetingId }),
+    (error) => {
+      assert.equal((error as MeetingPageServiceError).status, 503);
+      assert.equal((error as MeetingPageServiceError).code, "meeting_analysis_unavailable");
+      return true;
+    }
+  );
+});
+
+test("SA-02 会议页服务：分析失败时报错，转写不受影响", async () => {
+  const service = createMeetingPageService({
+    repo: repoWithMeetingContext(),
+    analysis: analysisStub({ outcome: "failed" }),
+    now: () => now
+  });
+
+  await assert.rejects(
+    () => service.reanalyzeMeeting({ actor: actor(), meetingId }),
+    (error) => {
+      assert.equal((error as MeetingPageServiceError).status, 409);
+      assert.equal((error as MeetingPageServiceError).code, "meeting_analysis_failed");
+      return true;
+    }
+  );
+});
+
+test("SA-02 会议页服务：无权管理这个项目的人不能重新生成纪要", async () => {
+  const repo = new MutableMeetingRepo() as MutableMeetingRepo & MeetingRepository;
+  repo.findMeetingContext = async () => ({
+    project: projectRow(),
+    // 上传者是别人、当前用户也不是项目 owner —— canManageProjectMeeting 应当拒绝。
+    meeting: { ...meetingRow(), uploadedByUserId: "96000000-0000-4000-8000-0000000000aa" }
+  });
+  const service = createMeetingPageService({
+    repo,
+    analysis: analysisStub(),
+    now: () => now
+  });
+  const outsider = { ...actor(), userId: "96000000-0000-4000-8000-0000000000bb", id: "96000000-0000-4000-8000-0000000000bb" };
+
+  await assert.rejects(
+    () => service.reanalyzeMeeting({ actor: outsider, meetingId }),
+    (error) => {
+      assert.equal((error as MeetingPageServiceError).status, 403);
+      assert.equal((error as MeetingPageServiceError).code, "meeting_forbidden");
+      return true;
+    }
+  );
+});
+
+test("SA-02 会议页服务：AI 未配置时页面回传 ai_analysis_configured=false 并撤下重新生成入口", async () => {
+  const service = createMeetingPageService({
+    repo: repoWithMeetingContext(),
+    analysis: analysisStub({ configured: false }),
+    now: () => now
+  });
+
+  const page = await service.page({ actor: actor(), projectId });
+
+  assert.equal(page.ai_analysis_configured, false);
+  assert.equal(page.meetings[0]?.actions.reanalyze, undefined);
+});
+
+test("SA-02 会议页服务：导入转写后立刻排一次分析", async () => {
+  const calls: Array<{ meetingId: string; force?: boolean }> = [];
+  const repo = new MutableMeetingRepo() as MutableMeetingRepo & MeetingRepository;
+  repo.importTranscript = async () => ({ id: meetingId });
+  const service = createMeetingPageService({
+    repo,
+    analysis: analysisStub({ calls }),
+    now: () => now
+  });
+
+  await service.importTranscript({
+    actor: actor(),
+    projectId,
+    title: "Q3 定价评审",
+    transcriptText: "王工：定价页要加阶梯档。"
+  });
+  // 排队是 fire-and-forget（导入请求不该被一次 LLM 调用拖住），让出一轮事件循环再断言。
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(calls, [{ meetingId }]);
+});
+
+test("SA-02 重新生成纪要路由：鉴权、透传会议 id 与语言，并挡住畸形 id", async () => {
+  const runtimeSettings = settings();
+  const calls: Array<{ meetingId: string; locale?: string; actorId?: string }> = [];
+  const meetingPages: MeetingPageService = {
+    async reanalyzeMeeting(input) {
+      calls.push({
+        meetingId: input.meetingId,
+        ...(input.locale ? { locale: input.locale } : {}),
+        ...(input.actor.userId ? { actorId: input.actor.userId } : {})
+      });
+      return minimalMeetingPage();
+    },
+    async page() {
+      throw new Error("not needed");
+    },
+    async insightToDraft() {
+      throw new Error("not needed");
+    },
+    async dismissInsight() {
+      throw new Error("not needed");
+    },
+    async importTranscript() {
+      throw new Error("not needed");
+    },
+    async draftToProposal() {
+      throw new Error("not needed");
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/meetings", createMeetingRoutes({ auth: authDeps(runtimeSettings), meetingPages }));
+
+  const ok = await app.request(`/api/meetings/${meetingId}/analyze?locale=en-US`, {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+  assert.equal(ok.status, 200);
+  assert.deepEqual(calls, [{ meetingId, locale: "en-US", actorId: userId }]);
+
+  // 非 uuid 的路径参数在到达 PG 之前就被挡掉（否则 22P02 会冒成未捕获 500）。
+  const malformed = await app.request("/api/meetings/not-a-uuid/analyze", {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+  assert.equal(malformed.status, 404);
+  assert.equal(calls.length, 1);
+
+  const anonymous = await app.request(`/api/meetings/${meetingId}/analyze`, { method: "POST" });
+  assert.equal(anonymous.status, 401);
 });

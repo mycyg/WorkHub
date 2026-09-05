@@ -53,9 +53,11 @@ docker compose --env-file .env.pilot -f docker-compose.pilot.yml logs -f workhub
 - 群聊、工单、审批、网盘、看板等**不依赖 AI 的功能照常可用**。
 - 主区静默观察者（拎活）与回话判定器（该不该主动搭话）**都不会启动**——服务端只打一行
   `conversation_observer_disabled` / `conversation_reply_judge_disabled` 日志，不会反复重试打空转的 LLM 请求。
-- 风险巡检（工单停滞/临期/成本异常）与 GitHub 轮询走确定性规则，**不依赖 LLM，照常运行**，与是否配置 key 无关。
-- Web/桌面 composer 顶部会出现一条“AI 服务未配置”的横幅（读 `GET /api/health` 的 `ai_provider_configured`
-  字段）。**这条横幅只是提示，不拦发送**——如果这时候用户仍然直接找 Cuu 说话（1:1 协同会话或 @Cuu），
+- 风险巡检（工单停滞/临期/成本异常/绑定仓库长期没有新提交）与 GitHub 轮询走确定性规则，**不依赖 LLM，照常运行**，与是否配置 key 无关。
+- 团队技能夜间自学（§3.4）**不会启动**——服务端只打一行 `skill_curation_disabled` 日志（`reason` 写明是没配密钥还是被开关关掉），不会每夜白跑一遍再被打回。
+- Web 端任意页面顶部、桌面聊天输入区顶部都会出现一条”AI 服务未配置”的横幅（读 `GET /api/health` 的
+  `ai_provider_configured` 字段——与设置页显示的密钥状态同一来源）。**这条横幅只是提示，不拦发送**——
+  如果这时候用户仍然直接找 Cuu 说话（1:1 协同会话或 @Cuu），
   会同步收到一条明确的失败响应（“这一轮 Cuu 没接上，请再试一次”，HTTP 500），而不是卡死、超时或没反应。
   这是已知的、可接受的降级行为：错误是即时且可见的，不是静默假死。
 
@@ -73,6 +75,28 @@ GITHUB_TOKEN_ENC_KEY=$(openssl rand -base64 32)
 `GITHUB_TOKEN_ENC_KEY` 用 AES-256-GCM 加密落库的项目级 GitHub PAT，**故意与 `COOKIE_SECRET` 分离**——两者
 威胁模型和轮换节奏不同（会话伪造 vs 解密全部项目的 GitHub 令牌）。留空时绑定端点直接 fail-closed 返回
 503，绝不会把令牌明文落库；GitHub 轮询 worker 照常启动但每轮拉取零结果，只在首次打一行 warn 日志。
+
+绑定之后，每日风险巡检会多出一条信号：**这个项目绑了仓库，但已经很久没有新提交**。「很久」的天数由
+`GITHUB_STALE_DAYS` 决定（1–90，默认 7），是部署级设置，不逐项目配置。刚绑上的仓库、以及一次都还没
+成功同步过的绑定，都不会被算进这条信号——那种时候我们其实并不知道仓库动没动。
+
+## 3.4 团队技能夜间自学（默认开启）
+
+运行队列闲下来时，AI 会回看已完成的工作（包括成员点过的差评），把可复用的做法蒸馏成团队技能，
+成员在「团队技能」页就能看到攒下了什么。这条链路默认开启：
+
+```bash
+# .env.pilot 里想关掉时才需要这一行：
+AGENT_RUN_SKILL_CURATION_ENABLED=false
+# 两轮之间的间隔（毫秒），默认一天：
+# AGENT_RUN_SKILL_CURATION_INTERVAL_MS=86400000
+```
+
+三重约束保证它不会烧钱或空转：没配 `LLM_API_KEY` 时根本不启动；只在运行队列空闲时才开跑；每轮仍受
+当日蒸馏花费上限（`BUDGET_DEFAULT_CURATION_DAILY_COST_CNY`）约束，超额整轮跳过。
+
+管理员不想等今晚的，可以在「团队技能」页点「立即自学一轮」（`POST /api/team-skills/curate-now`）——
+非管理员没有这个按钮且调用会被拒；已经在跑时会明确告知「正在进行」，不会并发起第二轮。
 
 ## 4. 备份与恢复
 
@@ -136,6 +160,17 @@ docker compose --env-file .env.pilot -f docker-compose.pilot.yml up -d --build  
 Pilot 栈默认 `APP_ENV=development` —— 对应规格树的 **LAN-first 信任模型**（D-3）：同网即信任、昵称报到、无密码、cookie 走 http。这是给可信局域网内 1–10 人试运行的口径。
 
 **如果要暴露到公网/HTTPS**：设 `APP_ENV=production`，此时配置守卫会强制要求强 `COOKIE_SECRET`、`COOKIE_SECURE=true`（需 HTTPS）、收紧 `CORS_ALLOW_ORIGINS`（不许 `*`）——任何一项不满足进程直接拒绝启动（fail-closed）。完整威胁模型重审清单见 `docs/workhub/01-architecture/security-and-permissions.md` §1.3。
+
+**`AUTH_MODE` 在生产环境必须是 `password` 或 `hybrid`，不能是 `nickname`**（同一处 fail-closed 守卫，进程直接拒绝启动）——昵称模式没有口令/会话边界，cookie 即身份，不适合暴露到公网。设置：
+
+```bash
+# .env.pilot 加一行（或直接设为容器环境变量）：
+AUTH_MODE=password
+```
+
+这两种模式下 web 和桌面端都改走邮箱 + 密码登录（`POST /api/auth/login`）；`/`（web）首次打开会自动探测到这个模式并渲染邮箱/密码表单，不再是昵称报到屏。**首个管理员怎么来**：这两种模式下没有"填昵称 + 勾选管理员 + 填 `ADMIN_CLAIM_SECRET`"这条路——改成在登录屏切到"注册"标签页，用邮箱 + 昵称 + 密码创建账号（`POST /api/auth/register`）；只要这个实例当前还没有任何管理员，**第一个完成注册的账号会被服务端自动提为管理员**，不需要额外操作。之后再注册的账号都是普通成员，管理员身份只能后续在设置页的成员管理里手动授予。
+
+注意：配置守卫仍然要求 `ADMIN_CLAIM_SECRET` 在生产环境非空且 ≥16 位（这道检查不区分 `AUTH_MODE`），但这个值只在昵称模式的认领流程里会被读取——`password`/`hybrid` 模式下随便生成一个满足长度要求的随机串占位即可（`openssl rand -hex 16`），它不会被用到、也不会影响上面这条"第一个注册者自动成为管理员"的流程。
 
 ## 9. 日志口径
 

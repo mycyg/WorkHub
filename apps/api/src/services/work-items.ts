@@ -51,7 +51,13 @@ import {
 } from "@workhub/contracts";
 import type { ProviderRegistry } from "@workhub/agent/providers";
 
-import { ASSIGNMENT_ROLES, canViewProjectDrive, canViewWorkItemRecord } from "@workhub/permissions";
+import {
+  ASSIGNMENT_ROLES,
+  canClaimWorkItem,
+  canManageWorkItemAssignees,
+  canViewProjectDrive,
+  canViewWorkItemRecord
+} from "@workhub/permissions";
 
 import type { AuthActor } from "../middleware/auth.js";
 import { parseOutputContract } from "../pages/output-contract.js";
@@ -124,6 +130,13 @@ export type WorkItemService = {
   // 去重。改成批量、轻量的访问记录判定——一次 IN 查询把一批 workItemId 的可见性判完，返回可读的那部分 id 集合。
   projectNamesForWorkItems: (input: { workItemIds: string[]; actor: AuthActor }) => Promise<Map<string, string>>;
   canReadWorkItems: (input: {
+    workItemIds: string[];
+    actor: AuthActor;
+  }) => Promise<Set<string>>;
+  // R23 F-04（升级转交动作只发给有权转交的人）：canReadWorkItems 的写权限孪生体——同一次
+  // findWorkItemAccessRecords、同一套 canMutateWorkItem 判定，返回「能改」的那部分 id 集合。
+  // 决策卡列表要按行决定发不发写类动作（转交），逐行 assertCanMutateWorkItem 会退回整页 detail 装配。
+  canMutateWorkItems: (input: {
     workItemIds: string[];
     actor: AuthActor;
   }) => Promise<Set<string>>;
@@ -1119,20 +1132,36 @@ function assertCanReadDetail(rows: StoredWorkItemDetailRows, actor: AuthActor) {
   }
 }
 
-function canMutateWorkItem(rows: StoredWorkItemDetailRows, actor: AuthActor) {
+// R23 F-04：与 canReadWorkItemAccessRow 对称——写权限判定也抽成只依赖「摊平后的访问记录」的纯函数，
+// 让批量路径（canMutateWorkItems，走 findWorkItemAccessRecords）与单条路径（canMutateWorkItem，走整页
+// detail）用同一套口径。两条路径判定漂移过一次就会出现「卡上发了转交按钮、点下去 403」的死按钮。
+function canMutateWorkItemAccessRow(
+  row: {
+    submitterUserId: string;
+    claimedByUserId: string | null;
+    workspaceId: string | null;
+    project: { archived: boolean | null; deletedAt: Date | null; ownerUserId: string | null; workspaceId: string | null } | null;
+    assignments: Array<{ userId: string; role: string }>;
+  },
+  actor: AuthActor
+) {
   const userId = actor.userId ?? actor.id;
   const inWorkspace = !actor.workspaceId
-    || actor.workspaceId === rows.workItem.workspaceId
-    || actor.workspaceId === rows.projectWorkspaceId;
-  const projectActive = !rows.projectArchived && rows.projectDeletedAt == null;
-  const canWorkAssignment = rows.assignments.some(
+    || actor.workspaceId === row.workspaceId
+    || actor.workspaceId === (row.project?.workspaceId ?? null);
+  const projectActive = !row.project?.archived && row.project?.deletedAt == null;
+  const canWorkAssignment = row.assignments.some(
     (assignment) => assignment.userId === userId && (ASSIGNMENT_ROLES as readonly string[]).includes(assignment.role)
   );
-  const ownsOrWorksItem = rows.projectOwnerUserId === userId
-    || rows.workItem.submitterUserId === userId
-    || rows.workItem.claimedByUserId === userId
+  const ownsOrWorksItem = (row.project?.ownerUserId ?? null) === userId
+    || row.submitterUserId === userId
+    || row.claimedByUserId === userId
     || canWorkAssignment;
   return projectActive && inWorkspace && (actor.isAdmin || ownsOrWorksItem);
+}
+
+function canMutateWorkItem(rows: StoredWorkItemDetailRows, actor: AuthActor) {
+  return canMutateWorkItemAccessRow(detailToWorkItemAccessRecord(rows), actor);
 }
 
 function assertCanMutateWorkItemRows(rows: StoredWorkItemDetailRows, actor: AuthActor) {
@@ -1504,7 +1533,14 @@ function taskPlanAgentTeamToVm(
 function buildWorkItemDetail(
   rows: StoredWorkItemDetailRows,
   locale: WorkHubLocale = "zh-CN",
-  options: { includeAcceptedDeliverableRestore?: boolean; includeSourceProposalDraftAction?: boolean } = {}
+  options: {
+    includeAcceptedDeliverableRestore?: boolean;
+    includeSourceProposalDraftAction?: boolean;
+    // R23 P4（R20 P2A 端点上界面）：详情页「认领 / 指派给…」两个动作的资格。只有 detailPage 这条路径
+    // 会算（它拿得到 actor），其它构造路径（新建/更新后回显）省略——省略即前端不渲按钮，不是渲个会 403 的。
+    canClaim?: boolean;
+    canAssign?: boolean;
+  } = {}
 ): WorkItemDetailVM {
   const latestProposal = rows.latestProposal
     ? deliverableChangeManifestSchema.safeParse(rows.latestProposal.diffManifest)
@@ -1581,6 +1617,22 @@ function buildWorkItemDetail(
     }
     : undefined;
   const sourceContext = driveSourceContext ?? meetingSourceContext ?? observerSourceContext;
+  // R23 P4（R20 P2A 端点上界面）：指派名单摊平成 VM 行。lead 排在 collaborator 前面（谁主责是读者第一
+  // 眼要找的），同角色内按展示名稳定排序，页面刷新两次不会自己换顺序。上限 50 与契约一致——真被指派
+  // 50 人以上时截断，不让一个异常事项把详情页撑爆。
+  const assigneeList = [...rows.assignments]
+    .map((assignment) => ({
+      user_id: assignment.userId,
+      ...(assignment.nickname ? { nickname: assignment.nickname } : {}),
+      role: assignment.role === "lead" ? ("lead" as const) : ("collaborator" as const)
+    }))
+    .sort((left, right) => {
+      if (left.role !== right.role) {
+        return left.role === "lead" ? -1 : 1;
+      }
+      return (left.nickname ?? left.user_id).localeCompare(right.nickname ?? right.user_id);
+    })
+    .slice(0, 50);
   const taskPlan = taskPlanToVm(rows.taskPlan);
   const agentTeam = taskPlanAgentTeamToVm(rows.taskPlan, locale);
   // R13 批 P4：conversation_observer 没有评论/纪要正文可转草稿——三路显式分支，第三路（观察者来源）
@@ -1640,7 +1692,14 @@ function buildWorkItemDetail(
     })),
     actions: {
       ...(createProposalAction ? { create_proposal_draft: createProposalAction } : {})
-    }
+    },
+    ...(options.canClaim === undefined ? {} : { can_claim: options.canClaim }),
+    ...(options.canAssign === undefined ? {} : { can_assign: options.canAssign }),
+    // R23 P4（R20 P2A 端点上界面）：指派名单。POST /api/workitems/:id/assign 写 work_item_assignments，
+    // 与 claimed_by 是两回事——不把它端出来，指派成功后详情页会毫无变化（看不出结果的假动作）。
+    // 空名单省略字段（诚实缺省，前端不渲空区块）；未知角色的历史行按 collaborator 收口，
+    // 不让一条脏数据把整页 VM 校验打挂。
+    ...(assigneeList.length > 0 ? { assignees: assigneeList } : {})
   }, "work-item.detail");
 }
 
@@ -1852,6 +1911,24 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
       }
     }
     return visible;
+  }
+
+  // R23 F-04：批量写权限判定（决策卡按行决定发不发转交动作）。与 canReadWorkItems 同一次查询形状、
+  // 同一套 canMutateWorkItem 判定，只是谓词换成写口径。
+  async function canMutateWorkItems(input: { workItemIds: string[]; actor: AuthActor }): Promise<Set<string>> {
+    const uniqueIds = [...new Set(input.workItemIds)];
+    if (uniqueIds.length === 0) {
+      return new Set();
+    }
+    const records = await repository.findWorkItemAccessRecords(uniqueIds);
+    const mutable = new Set<string>();
+    for (const workItemId of uniqueIds) {
+      const record = records.get(workItemId);
+      if (record && canMutateWorkItemAccessRow(record, input.actor)) {
+        mutable.add(workItemId);
+      }
+    }
+    return mutable;
   }
 
   const projectFileContext = options.projectFileContext ?? defaultProjectFileContext;
@@ -2408,14 +2485,23 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     async detailPage(input) {
       const rows = await requireDetail(input.workItemId, input.actor);
       const canMutate = canMutateWorkItem(rows, input.actor);
+      // R23 P4：认领/指派资格用与 POST /api/workitems/:id/{claim,assign} 服务层完全相同的谓词算
+      // （@workhub/permissions 的 canClaimWorkItem / canManageWorkItemAssignees，作用域同样只按 workspace——
+      // 见 work-item-assignment.ts 里 permissionScope 的说明），前端据此决定按钮渲不渲。
+      const accessRecord = detailToWorkItemAccessRecord(rows);
+      const permissionUser = { id: input.actor.userId ?? input.actor.id, isAdmin: input.actor.isAdmin };
+      const permissionScope = input.actor.workspaceId ? { workspaceId: input.actor.workspaceId } : undefined;
       return buildWorkItemDetail(rows, input.locale, {
         includeAcceptedDeliverableRestore: canMutate,
-        includeSourceProposalDraftAction: canMutate
+        includeSourceProposalDraftAction: canMutate,
+        canClaim: canClaimWorkItem(accessRecord, permissionUser, permissionScope),
+        canAssign: canManageWorkItemAssignees(accessRecord, permissionUser, permissionScope)
       });
     },
 
     projectNamesForWorkItems,
     canReadWorkItems,
+    canMutateWorkItems,
 
     async assertCanMutateWorkItem(input) {
       const rows = await requireDetail(input.workItemId, input.actor);
@@ -2858,6 +2944,12 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
     },
 
     async canReadWorkItems(input) {
+      return new Set(input.workItemIds.filter((id) => workItems.has(id)));
+    },
+
+    // R23 F-04：内存双不建模项目/指派，写权限与读权限同口径（存在即可改）——与下面 assertCanMutateWorkItem
+    // 的「存在即放行」保持一致。
+    async canMutateWorkItems(input) {
       return new Set(input.workItemIds.filter((id) => workItems.has(id)));
     },
 

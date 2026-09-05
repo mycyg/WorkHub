@@ -2753,6 +2753,8 @@ const meetingPageResponseSchema = {
       additionalProperties: false
     },
     can_manage: { type: "boolean" },
+    // SA-02：这个部署是否配了 AI。false 时页面必须直说「AI 未配置，只保存了转写」。
+    ai_analysis_configured: { type: "boolean" },
     selected_meeting_id: uuidStringSchema,
     meetings: { type: "array", items: { type: "object", additionalProperties: true } },
     empty_state: { type: "string", enum: ["no_project", "no_meetings"] }
@@ -3472,9 +3474,21 @@ const teamSkillPageItemResponseSchema = {
   },
   additionalProperties: false
 } as const;
+// R23 SA-06：夜间自学的运行状态。enabled = 开关已开且这台部署配了 LLM 密钥（缺一样今晚都不会跑）；
+// last_run_at 只反映本进程记到的上一轮，重启后回 null——不拿审计日志里「上次学到新技能的时间」冒充。
+const teamSkillCurationStatusResponseSchema = {
+  type: "object",
+  required: ["enabled", "running", "last_run_at"],
+  properties: {
+    enabled: { type: "boolean" },
+    running: { type: "boolean" },
+    last_run_at: { ...dateTimeStringSchema, nullable: true }
+  },
+  additionalProperties: false
+} as const;
 const teamSkillsPageResponseSchema = {
   type: "object",
-  required: ["generated_at", "skills", "totals"],
+  required: ["generated_at", "skills", "totals", "curation"],
   properties: {
     generated_at: dateTimeStringSchema,
     skills: { type: "array", items: teamSkillPageItemResponseSchema },
@@ -3488,6 +3502,7 @@ const teamSkillsPageResponseSchema = {
       },
       additionalProperties: false
     },
+    curation: teamSkillCurationStatusResponseSchema,
     empty_state: { type: "string", enum: ["no_skills"] }
   },
   additionalProperties: false
@@ -3651,6 +3666,22 @@ const workItemDetailResponseSchema = {
         create_proposal_draft: actionSpecSchema
       },
       additionalProperties: false
+    },
+    can_claim: { type: "boolean" },
+    can_assign: { type: "boolean" },
+    // R23 P4：指派名单（POST /api/workitems/:id/assign 写入的 work_item_assignments 行）。省略＝无人被指派。
+    assignees: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          user_id: { type: "string", format: "uuid" },
+          nickname: { type: "string" },
+          role: { type: "string", enum: ["lead", "collaborator"] }
+        },
+        required: ["user_id", "role"],
+        additionalProperties: false
+      }
     }
   },
   additionalProperties: false
@@ -3722,7 +3753,8 @@ const projectHomePageResponseSchema = {
       },
       additionalProperties: false
     },
-    empty_state: { type: "string", enum: ["no_open_work"] }
+    empty_state: { type: "string", enum: ["no_open_work"] },
+    can_manage_lifecycle: { type: "boolean" }
   },
   additionalProperties: false
 } as const;
@@ -7967,6 +7999,27 @@ export function getOpenApiDocument() {
           }
         }
       },
+      "/api/meetings/{meetingId}/analyze": {
+        post: {
+          tags: ["meetings"],
+          summary: "Regenerate the AI minutes and insights for one meeting",
+          parameters: [pathUuidParameter("meetingId"), localeQueryParameter],
+          responses: {
+            ...jsonOkResponse(meetingPageResponseSchema).responses,
+            "401": meetingMutationNotIdentifiedResponse,
+            "403": meetingInsightForbiddenResponse,
+            "404": meetingInsightNotFoundResponse,
+            ...jsonErrorStatusResponse("409", "Meeting analysis could not run", [
+              "meeting_analysis_unsupported",
+              "meeting_analysis_budget_exhausted",
+              "meeting_analysis_failed"
+            ]).responses,
+            ...jsonErrorStatusResponse("503", "AI analysis is not configured on this deployment", [
+              "meeting_analysis_unavailable"
+            ]).responses
+          }
+        }
+      },
       "/api/meetings/projects/{projectId}/import": {
         post: {
           tags: ["meetings"],
@@ -8791,6 +8844,43 @@ export function getOpenApiDocument() {
           }
         }
       },
+      "/api/team-skills/curate-now": {
+        post: {
+          tags: ["memory"],
+          summary: "Admin-only: run one round of nightly team-skill self-learning right now",
+          responses: {
+            "202": jsonDataStatusResponse(
+              {
+                type: "object",
+                required: ["started", "curation"],
+                properties: {
+                  started: { type: "boolean", const: true },
+                  curation: teamSkillCurationStatusResponseSchema
+                },
+                additionalProperties: false
+              },
+              "202",
+              "The round runs in the background; read the skills page for its outcome"
+            ).responses["202"],
+            "403": jsonErrorStatusResponse("403", "Triggering a self-learning round requires an admin", [
+              "invalid_client_token",
+              "forbidden",
+              "human_required",
+              "team_skill_admin_required"
+            ]).responses["403"],
+            "409": jsonErrorStatusResponse(
+              "409",
+              "A round is already running, or self-learning is switched off on this deployment",
+              ["team_skill_curation_in_progress", "team_skill_curation_disabled"]
+            ).responses["409"],
+            "503": jsonErrorStatusResponse("503", "This deployment has no LLM API key configured", [
+              "ai_provider_not_configured"
+            ]).responses["503"],
+            "401": conversationAuthRequiredResponse,
+            "500": conversationInternalResponse
+          }
+        }
+      },
       "/api/team-skills/manage/{id}/deactivate": {
         post: {
           tags: ["memory"],
@@ -9199,6 +9289,91 @@ export function getOpenApiDocument() {
           }
         }
       },
+      // R23 F-01（OKR 列表/详情持久化）：objectives 表没有 objective 级的软删/取消枚举以外的状态机变化，
+      // status 字段是 objectiveStatuses/keyResultStatuses（active/paused/done/archived、
+      // active/done/at_risk/cancelled）——与契约层 packages/contracts/src/enums.ts 保持一致。
+      "/api/objectives/{id}": {
+        get: {
+          tags: ["objectives"],
+          summary: "Read one objective's detail (key results + linked work items + linked task plans)",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: [
+                "objective_id", "title", "description_md", "status", "progress_percent",
+                "owner_user_id", "created_at", "updated_at",
+                "key_results", "key_results_capped",
+                "linked_work_items", "linked_work_items_capped",
+                "linked_task_plans", "linked_task_plans_capped"
+              ],
+              properties: {
+                objective_id: uuidStringSchema,
+                title: { type: "string", minLength: 1 },
+                description_md: { anyOf: [{ type: "string" }, { type: "null" }] },
+                status: { type: "string", enum: ["active", "paused", "done", "archived"] },
+                progress_percent: { type: "integer" },
+                owner_user_id: { anyOf: [uuidStringSchema, { type: "null" }] },
+                created_at: dateTimeStringSchema,
+                updated_at: dateTimeStringSchema,
+                key_results: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    required: ["id", "seq", "title", "target_value", "current_value", "unit", "status", "progress_percent"],
+                    properties: {
+                      id: uuidStringSchema,
+                      seq: { type: "integer" },
+                      title: { type: "string", minLength: 1 },
+                      target_value: { anyOf: [{ type: "string" }, { type: "null" }] },
+                      current_value: { anyOf: [{ type: "string" }, { type: "null" }] },
+                      unit: { anyOf: [{ type: "string" }, { type: "null" }] },
+                      status: { type: "string", enum: ["active", "done", "at_risk", "cancelled"] },
+                      progress_percent: { type: "integer" }
+                    },
+                    additionalProperties: false
+                  }
+                },
+                key_results_capped: { type: "boolean" },
+                linked_work_items: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    required: ["id", "code", "title", "status"],
+                    properties: {
+                      id: uuidStringSchema,
+                      code: { type: "string", minLength: 1 },
+                      title: { anyOf: [{ type: "string" }, { type: "null" }] },
+                      status: { type: "string" }
+                    },
+                    additionalProperties: false
+                  }
+                },
+                linked_work_items_capped: { type: "boolean" },
+                linked_task_plans: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    required: ["id", "work_item_id", "status", "created_at"],
+                    properties: {
+                      id: uuidStringSchema,
+                      work_item_id: uuidStringSchema,
+                      status: { type: "string" },
+                      created_at: dateTimeStringSchema
+                    },
+                    additionalProperties: false
+                  }
+                },
+                linked_task_plans_capped: { type: "boolean" }
+              },
+              additionalProperties: false
+            }, "Objective detail").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": proposalForbiddenResponse,
+            "404": proposalNotFoundResponse
+          }
+        }
+      },
       "/api/projects/{id}/milestones": {
         post: {
           tags: ["projects"],
@@ -9325,6 +9500,46 @@ export function getOpenApiDocument() {
             "404": jsonErrorStatusResponse("404", "Project was not found or is already deleted", [
               "project_not_found"
             ]).responses["404"]
+          }
+        }
+      },
+      // R23 F-01（OKR 列表/详情持久化）：项目主页 OKR 面板首屏——目标是工作区级实体，这条路由只是给
+      // 项目主页一个顺手入口，返回该项目所在工作区的全部目标（不做项目级过滤），与
+      // apps/api/src/routes/projects.ts 的实现注释一致。
+      "/api/projects/{id}/objectives": {
+        get: {
+          tags: ["projects"],
+          summary: "List a workspace's objectives from a project's home page (objectives are workspace-wide, not project-scoped)",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["objectives", "capped"],
+              properties: {
+                objectives: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    required: ["objective_id", "title", "description_md", "status", "progress_percent", "owner_user_id", "updated_at"],
+                    properties: {
+                      objective_id: uuidStringSchema,
+                      title: { type: "string", minLength: 1 },
+                      description_md: { anyOf: [{ type: "string" }, { type: "null" }] },
+                      status: { type: "string", enum: ["active", "paused", "done", "archived"] },
+                      progress_percent: { type: "integer" },
+                      owner_user_id: { anyOf: [uuidStringSchema, { type: "null" }] },
+                      updated_at: dateTimeStringSchema
+                    },
+                    additionalProperties: false
+                  }
+                },
+                capped: { type: "boolean" }
+              },
+              additionalProperties: false
+            }, "Workspace objectives list").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": proposalForbiddenResponse,
+            "404": jsonErrorStatusResponse("404", "Project was not found", ["project_not_found"]).responses["404"]
           }
         }
       },

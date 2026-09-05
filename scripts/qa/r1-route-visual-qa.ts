@@ -8,11 +8,11 @@ import { spawn } from "node:child_process";
 import {
   renderWebAgentRunReplay,
   renderWebProposalDetail
-} from "../../apps/web/src/main.js";
+} from "../../apps/web/src/route-render.js";
 import {
   renderDesktopAgentRunReplay,
   renderDesktopProposalDetail
-} from "../../apps/desktop-webview/src/main.js";
+} from "../../apps/desktop-webview/src/route-render.js";
 
 type Locale = "zh-CN" | "en-US";
 type Surface = "web" | "desktop";

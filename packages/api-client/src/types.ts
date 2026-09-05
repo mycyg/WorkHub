@@ -7,13 +7,32 @@ import type {
   AttentionHomeVM,
   // R20 R19-27（工作项跨 run 审计时间线）：GET /api/workitems/:id/audit 的响应契约。
   AuditTimelineVM,
+  // R23 F-02（权限策略新增/调整 + 主动申请审批的 ask 响应）：POST /api/permissions/ask 复用既有
+  // 审批创建契约（work_item_id 可选，无事项上下文的审批只能路由给自己，见 routes/permissions.ts）。
+  ApprovalRequest,
+  AttentionItem,
   BudgetPolicy,
   BudgetPolicyUpdate,
   BootstrapProjectRequest,
   BootstrapProjectResult,
+  // R23 P4（R20 P2A 端点上界面）：指派/认领、工作项评论、项目归档/软删、工作区审计流的请求与响应契约。
+  AssignWorkItemRequest,
+  AssignWorkItemResult,
+  ClaimWorkItemResult,
+  CreateWorkItemCommentRequest,
+  WorkItemComment,
+  WorkItemCommentsResult,
+  ArchiveProjectResult,
+  DeleteProjectResult,
+  WorkspaceAuditListVM,
+  WorkspaceAuditQuery,
+  // R23 P2（SA-05 web 个人空间新建）：GET/POST /api/me/personal-projects 复用团队项目 bootstrap 的响应形状。
+  CreatePersonalProjectRequest,
+  CreatePersonalProjectResult,
   ClientDeviceRegisterRequest,
   ClientDeviceRegisterResponse,
   ClientDeviceResponse,
+  CreateApprovalRequest,
   DesktopBootstrapRequest,
   DesktopBootstrapResponse,
   CostDashboardVM,
@@ -28,6 +47,9 @@ import type {
   CreateObjectiveResponse,
   LinkObjectiveRequest,
   LinkObjectiveResponse,
+  // R23 F-01（OKR 列表/详情持久化）：项目主页 OKR 面板首屏真拉取 + 详情抽屉的响应契约。
+  ListObjectivesResponse,
+  ObjectiveDetailResponse,
   DrivePageVM,
   MeetingPageVM,
   ApplyMergeProposalCandidateRequest,
@@ -78,10 +100,14 @@ import type {
   TeamSkillManagementItemVM,
   PatchUserMemoryRequest,
   PatchTeamSkillRequest,
+  // R23 SA-06：管理员手动催一轮「AI 自学团队技能」的回执契约。
+  TeamSkillCurateNowResponse,
   // R14 批 FEEDBACK（web-feedback-ui）：提议详情页「有用/没用」反馈的 PUT 请求体契约。
   PutAiFeedbackRequest,
   // R20 DSK-UX（R19-5 撤销学到的自动通过策略 / R19-3 撤销 AI 文件改动）：治理策略与快照回滚的写契约。
+  PermissionEffect,
   PermissionPolicy,
+  PermissionPolicyWrite,
   RevertAgentRunRequest,
   Snapshot
 } from "@workhub/contracts";
@@ -238,6 +264,11 @@ export type HealthResponse = {
   env?: string;
   runtime: string;
   port: number;
+  // R14 FIX#8（无 key 自托管的静默死）：provider registry 是否已配置——apps/api/src/app.ts 的
+  // /api/health 处理器无条件带上这个字段（openapi.ts 的 healthResponseSchema 也把它标 required）。
+  // 此前这个类型漏了它，桌面端只能绕过 client.health() 走裸类型的 client.request(...)；
+  // 补上后 web 的常驻「AI 未配置」横幅（apps/web/src/ai-provider-status.ts）也能走同一个类型化方法。
+  ai_provider_configured: boolean;
 };
 
 export type IdentifyRequest = {
@@ -250,6 +281,14 @@ export type IdentifyRequest = {
 export type PasswordLoginRequest = {
   email: string;
   password: string;
+};
+
+// R23 P2（SA-04 web 密码注册屏）：password/hybrid 模式下的账号注册（POST /api/auth/register）。
+// 零管理员实例的首个注册者服务端自动提为 admin——前端不需要、也不应该带任何"我是管理员"字段。
+export type PasswordRegisterRequest = {
+  email: string;
+  password: string;
+  nickname: string;
 };
 
 export type IdentityResponse = {
@@ -286,6 +325,15 @@ export type EscalationDelegateResult = {
     summary_text: string;
   };
 };
+
+// R23 F-02：POST /api/permissions/ask 的对外收窄结果。服务端 routes/permissions.ts 的
+// toPublicApprovalCreationResult 已经把内部 ApprovalCreationResult（还带 consideredPolicies 等
+// 评估细节）收窄成这四种形状之一——这里的类型跟着收窄后的真实响应走，不是重新照抄内部类型。
+export type AskPermissionResult =
+  | { outcome: "allowed"; decision: { effect: PermissionEffect; action_pattern: string; reason?: string } }
+  | { outcome: "denied"; decision: { effect: PermissionEffect; action_pattern: string; reason?: string } }
+  | { outcome: "escalated"; reason: "no_approver" }
+  | { outcome: "pending"; approval: ApprovalRequest; attention: AttentionItem };
 
 export type PageClient = {
   attention: (options?: PageRequestOptions) => Promise<AttentionHomeVM>;
@@ -329,7 +377,11 @@ export type WorkHubApiClient = {
   openapi: () => Promise<unknown>;
   identify: (payload: IdentifyRequest) => Promise<IdentityResponse>;
   // 桌面凭据登录（密码/hybrid 模式）：POST /api/auth/login 建会话 cookie，随后 bootstrapDesktop 据会话换 client_token。
+  // web 密码登录屏（SA-04）同样复用这一个方法——两端都只建会话 cookie，桌面额外多走一步 exchange 成 client_token。
   login: (payload: PasswordLoginRequest) => Promise<IdentityResponse>;
+  // R23 P2（SA-04）：密码/hybrid 模式下的账号注册。web 密码登录屏在探得 nickname 模式不可用（identify 404）
+  // 后用它自举首个管理员或注册普通成员；成功即建会话 cookie，语义与 login 一致。
+  register: (payload: PasswordRegisterRequest) => Promise<IdentityResponse>;
   // 桌面首启引导：昵称模式=昵称 identify + 设备注册一步到位；密码/hybrid 模式=凭已登录会话换设备令牌。均返回 client_token。
   bootstrapDesktop: (payload: DesktopBootstrapRequest) => Promise<DesktopBootstrapResponse>;
   // 设备管理（需已鉴权）：注册 / 列表 / 当前 / 吊销。
@@ -364,6 +416,14 @@ export type WorkHubApiClient = {
   // POST /api/objectives 与 POST /api/objectives/:id/link，此前没有任何类型化客户端方法能调用它们。
   createObjective: (payload: CreateObjectiveRequest) => Promise<CreateObjectiveResponse>;
   linkObjective: (objectiveId: string, payload: LinkObjectiveRequest) => Promise<LinkObjectiveResponse>;
+  // R23 F-01（OKR 列表/详情持久化）：项目主页 OKR 面板首屏真拉取（按 project id 挂 URL，实际列出该
+  // 项目所在工作区的全部目标——目标是工作区级实体）+ 详情抽屉（含关键结果/挂链工作项/挂链执行计划）。
+  // 服务端 GET /api/projects/:id/objectives 与 GET /api/objectives/:id 早已就位（routes/projects.ts、
+  // routes/objectives.ts），此前没有任何类型化客户端方法能调用——与 createObjective/linkObjective 同批
+  // 加入、同样标必填（本文件手写全量字面量 mock 的两处需跟着补桩，见 apps/web、apps/desktop-webview 的
+  // main.test.ts）。
+  listObjectives: (projectId: string) => Promise<ListObjectivesResponse>;
+  getObjective: (objectiveId: string) => Promise<ObjectiveDetailResponse>;
   startAgentRun: (workItemId: string, payload?: StartAgentRunRequest, options?: PageRequestOptions) => Promise<AgentRunLiveVM>;
   getAgentRun: (runId: string) => Promise<AgentRunLiveVM>;
   getAgentRunTrace: (runId: string, after?: number) => Promise<AgentStep[]>;
@@ -398,6 +458,13 @@ export type WorkHubApiClient = {
   // 服务端已有 GET /api/workitems/:id/audit（fail-closed 走 detailPage 同一套可见性），此前没有
   // 任何类型化客户端方法能调用它——前端因此从来没有拉过这份数据、更别提渲染。
   getWorkItemAuditTimeline: (workItemId: string) => Promise<AuditTimelineVM>;
+  // R23 P4（R20 P2A 端点上界面）：工作项指派/认领与评论流四个端点此前零客户端方法、两端零界面。
+  // assign 需要「管理员 / 提交人 / 现任 lead」资格，claim 只在事项还没人认领且处于可认领状态时成立——
+  // 两个资格都由详情页 VM 的 can_assign / can_claim 下发，前端不自己判权限。
+  assignWorkItem: (workItemId: string, payload: AssignWorkItemRequest) => Promise<AssignWorkItemResult>;
+  claimWorkItem: (workItemId: string) => Promise<ClaimWorkItemResult>;
+  listWorkItemComments: (workItemId: string) => Promise<WorkItemCommentsResult>;
+  createWorkItemComment: (workItemId: string, payload: CreateWorkItemCommentRequest) => Promise<WorkItemComment>;
   getProposal: (id: string) => Promise<Proposal>;
   reviewProposal: (id: string, payload: ReviewProposalRequest, options?: PageRequestOptions) => Promise<ProposalReviewResult>;
   mergeProposal: (id: string, payload?: MergeProposalRequest, options?: PageRequestOptions) => Promise<ProposalMergeResult>;
@@ -445,6 +512,8 @@ export type WorkHubApiClient = {
   ) => Promise<ConversationMessagePageVM>;
   dismissMeetingInsight: (projectId: string, insightId: string, options?: PageRequestOptions) => Promise<MeetingPageVM>;
   createMeetingDraftProposal: (workItemId: string, options?: PageRequestOptions) => Promise<WorkItemDetailVM>;
+  /** SA-02：重新生成这场会议的纪要与洞察（AI 未配置 / 分析失败后的人工补跑入口）。 */
+  reanalyzeMeeting: (meetingId: string, options?: PageRequestOptions) => Promise<MeetingPageVM>;
   costUsage: () => Promise<CostSummaryVM>;
   costPolicies: () => Promise<BudgetPolicy[]>;
   updateCostPolicy: (scope: BudgetPolicy["scope_kind"], id: string, payload: BudgetPolicyUpdate) => Promise<BudgetPolicy>;
@@ -452,8 +521,34 @@ export type WorkHubApiClient = {
   // ——桌面壳层天然满足本地客户端门；策略列表本身也只有管理员能读到（见 settings VM 的 permission_policies）。
   // 可选：同 revertAgentRun 的取舍（避免强迫 apps/web 完整 client 字面量 mock 补桩），调用点用 `!` 断言。
   revokePermissionPolicy?: (id: string) => Promise<PermissionPolicy>;
+  // R23 F-02：GET /api/permissions（admin-only）——列出当前租户全部权限策略。桌面设置页目前经由
+  // pages.settings() 的 permission_policies 拿列表（那份 VM 已经够用，且撤销走的是本地乐观过滤，不需要
+  // 整表重拉），这个方法暂无内置消费者，留作对齐 4 端点的 SDK 完整面（同 listUsers/costUsage 等已被记录
+  // 为「零调用即正常」的既有先例，见 2026-08-20-reserved-endpoints-and-sdk-policy.md）。可选：同
+  // revokePermissionPolicy 的取舍。
+  listPermissionPolicies?: () => Promise<PermissionPolicy[]>;
+  // R23 F-02：PUT /api/permissions（本地客户端 + 管理员门）——新增/调整一条权限策略。等价规则会被
+  // 服务端收敛为已存在的记录直接返回（见 services/approvals.ts createPolicy 的
+  // findEquivalentActivePolicy），调用方按响应里的 id 去重合并进本地列表即可。可选：同上。
+  createPermissionPolicy?: (payload: PermissionPolicyWrite) => Promise<PermissionPolicy>;
+  // R23 F-02：POST /api/permissions/ask——主动申请审批（无匹配策略时落 pending 审批供人审；命中
+  // allow/deny 策略时服务端直接给出决策；无审批人可路由时 escalated）。可选：同上（避免强迫既有
+  // WorkHubApiClient 字面量 mock 补一个当前无内置消费者的桩）。
+  askPermission?: (payload: CreateApprovalRequest) => Promise<AskPermissionResult>;
   pilotDay1Metrics: (options?: PilotDay1MetricsRequestOptions) => Promise<PilotDay1MetricsSnapshot>;
   listProjects: () => Promise<ProjectListVM>;
+  // R23 P4（R20 P2A 端点上界面）：项目生命周期两个破坏性动作。归档＝从团队项目列表隐去（可恢复语义由
+  // 服务端定义），删除＝落墓碑。两者都只有管理员/项目所有者能做，项目主页据 can_manage_lifecycle 渲入口。
+  archiveProject: (projectId: string) => Promise<ArchiveProjectResult>;
+  deleteProject: (projectId: string) => Promise<DeleteProjectResult>;
+  // R23 P4（R20 P2A 端点上界面）：工作区级审计流（仅管理员）。工作区不由客户端指定——服务端恒取自
+  // 认证身份，这里只能传过滤与分页参数。
+  listWorkspaceAudit: (query?: WorkspaceAuditQuery) => Promise<WorkspaceAuditListVM>;
+  // R23 P2（SA-05 web 个人空间新建）：GET/POST /api/me/personal-projects——后端早已挂载并有 OpenAPI 描述
+  // （apps/api/src/routes/personal-projects.ts、app.ts:309），此前只有 apps/web 内部用裸 client.request(...)
+  // 兜底；补上类型化方法后 web「新建个人空间」按钮与既有取数点都走同一个方法。
+  listPersonalProjects: () => Promise<ProjectListVM>;
+  createPersonalProject: (payload: CreatePersonalProjectRequest) => Promise<CreatePersonalProjectResult>;
   replayAgentRun: (runId: string, options?: PageRequestOptions) => Promise<ReplayTraceVM>;
   // R14 批 MEM（记忆可见可治理）：用户记忆治理面——本人可读写，管理员也不能代读/代改他人记忆。
   // 必需字段（集成收口改定，与 search 同口径）：可选方法会诱导 ?. 调用静默吞；两个穷举 mock 的存根
@@ -465,6 +560,9 @@ export type WorkHubApiClient = {
   listTeamSkillsManage: () => Promise<TeamSkillManagementPageVM>;
   patchTeamSkillManage: (id: string, payload: PatchTeamSkillRequest) => Promise<TeamSkillManagementItemVM>;
   deactivateTeamSkillManage: (id: string, payload?: { reason?: string }) => Promise<{ deprecated: true }>;
+  // R23 SA-06：立刻跑一轮「AI 自学团队技能」，不等今晚。仅管理员（403）；已经在跑或开关关着 409、
+  // 没配 LLM 密钥 503。回执只承诺「已开跑」，跑完的结果去技能页的 curation 区块看。
+  curateTeamSkillsNow: () => Promise<TeamSkillCurateNowResponse>;
   pages: PageClient;
   streams: PushStreamClient;
   streamUrl: (path: string) => string;

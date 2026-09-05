@@ -11,12 +11,19 @@ import {
   actionElementMergePayload,
   actionHrefFromElement,
   approvalRespondIdFromHref,
+  delegateResultSummaryText,
+  delegateTargetFromHref,
+  chooseThenApplyMergeCandidate,
   escapeHtml,
   escalationActionFromHref,
+  fetchWorkspaceRosterMembers,
+  isDelegateActionHref,
   memoryConflictActionFromHref,
   proposalActionFromHref,
+  selectedConflictChooserCandidate,
   skipPlanProposalIdFromHref,
-  safeHref
+  safeHref,
+  submitDelegateAction
 } from "@workhub/web-runtime";
 
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
@@ -133,10 +140,16 @@ function renderAction(action: AttentionItem["actions"][number]): string {
   return `<button ${attrs}>${escapeHtml(action.label)}</button>`;
 }
 
-// 桌面暂不支持「转交他人」（需要选人 UI，且没有任何能力承接）——与其渲染一个点了
-// 静默无效/误导 toast 的按钮，不如先不显示(rank8)。href 形如 /api/approvals/{id}/delegate。
-function isUnsupportedDesktopAction(href: string): boolean {
-  return /\/delegate(?:[/?#]|$)/u.test(href);
+// R23 F-04（升级转交端到端）：桌面此前把「转交他人」整个剥掉（rank8：没有选人 UI，点了只会落到
+// runAction 末尾那句「这类请到对应能力处理」的死 toast）。现在按钮留着，点它先就地展开这个选人层
+// ——与打回理由层同款做法（actionrow 的兄弟节点），选完再提交。成员来自本工作区花名册
+// （GET /api/workspace/roster，翻页翻到底），与 web 选人器同一份实现。
+function delegatePicker(zh: boolean, href: string): string {
+  return `<div class="wh-spot-reasons" data-att-delegate data-att-delegate-href="${escapeHtml(safeHref(href))}">
+    <p class="wh-spot-reasons-q">${zh ? "转交给谁？" : "Hand off to whom?"}</p>
+    <select class="wh-spot-delegate-select" data-att-delegate-select aria-label="${escapeHtml(zh ? "选择转交对象" : "Pick a teammate")}"><option value="">${escapeHtml(zh ? "正在加载成员…" : "Loading members…")}</option></select>
+    <div class="wh-spot-reasons-row"><button type="button" class="wh-spot-act ds-pressable" data-att-delegate-submit>${escapeHtml(zh ? "确认转交" : "Hand off")}</button></div>
+  </div>`;
 }
 
 // UX-M6（桌面可编辑合并）：sync_conflict 卡「合并成一条（可编辑）」在桌面也要真可编辑——
@@ -198,7 +211,7 @@ export function renderApprovalDetailInline(detail: ApprovalDetailVM, itemId: str
 function renderCard(item: AttentionItem, zh: boolean): string {
   const tone = toneForKind(item.kind);
   const desc = item.reason_text ?? item.summary_text ?? "";
-  const actions = item.actions.filter((a) => !isUnsupportedDesktopAction(a.href));
+  const actions = item.actions;
   const title = attentionCardDisplayTitle(item, zh);
   return `<article class="wh-spot-card ds-glass" data-att-id="${escapeHtml(item.id)}" data-att-kind="${escapeHtml(item.kind)}" data-att-tone="${tone}">
     <span class="wh-spot-card-bar wh-spot-card-bar--${tone}"></span>
@@ -323,11 +336,18 @@ export type AttentionInboxApiClient = Pick<
   | "reviewProposal"
   | "mergeProposal"
   | "applyMergeProposalCandidate"
+  // F-05：撞车「先选稿再采纳」——多候选融合稿分组选择器确认后先 choose 再 apply。
+  | "chooseMergeProposalCandidate"
   | "resolveBudgetDecision"
   | "resolveEscalation"
   | "resolveMemoryConflict"
   | "skipTaskPlanProposal"
   | "postApprovalComment"
+  // R23 F-04：转交动作（审批 + 升级）与选人器的花名册拉取。request 是花名册翻页要的通用出口
+  // （fetchWorkspaceRosterMembers 只要求 { request }），不是给这套逻辑开的任意后门。
+  | "delegateApproval"
+  | "delegateEscalation"
+  | "request"
 >;
 
 // 导航型动作 href 分类出的跳转目标（classifyAttentionActionHref 的 view 联合）——刻意不复用 spotlight
@@ -344,6 +364,9 @@ export type AttentionInboxContext = {
   requestResize: () => void;
   open: (view: AttentionInboxNavView, target?: { id?: string; route?: string }) => void;
   onActionSettled?: (() => void) | undefined;
+  // R23 F-04：进来时要直奔哪张卡（桌宠「转交他人」把主窗打开到 /approvals?id=<决策 id>，
+  // 见 pet-surface 的 desktopPetDelegateMainRoute）。首屏渲完滚到那张卡并高亮一次，之后的刷新不再跳。
+  target?: { id?: string } | undefined;
 };
 
 // R17 #17：mount 句柄——dispose 卸载 + refresh 重拉列表。spotlight 侧只取 .dispose（见 createAttentionView），
@@ -365,6 +388,8 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
       let retry: (() => void) | undefined;
       // R5：审批详情取自 pages.approvals 的 items_detail——同一次会话内缓存，refresh 后失效。
       let approvalDetailCache: Awaited<ReturnType<typeof client.pages.approvals>> | undefined;
+      // R23 F-04：外部入口带进来的目标卡（只认一次——用完清空，之后的 refresh 不该再把人拽回去）。
+      let pendingFocusItemId = ctx.target?.id;
 
       const setSubtitleFromVm = (vm: AttentionHomeVM) => {
         const n = vm.queue?.length ?? 0;
@@ -376,10 +401,28 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
         ctx.setSubtitle(n > 0 ? (zh ? `${n} 条待你拍板` : `${n} waiting on you`) : zh ? "都处理完了" : "all done");
       };
 
+      // R23 F-04：把外部入口指名的那张卡滚进视野并高亮。找不到就安静放过（队列可能已经被处理掉了），
+      // 不弹「没找到」——用户看到的是一个正常队列，没必要为一次导航提示解释。
+      const focusPendingItem = () => {
+        const itemId = pendingFocusItemId;
+        if (!itemId) {
+          return;
+        }
+        pendingFocusItemId = undefined;
+        const card = [...body.querySelectorAll<HTMLElement>("[data-att-id]")]
+          .find((node) => node.dataset.attId === itemId);
+        if (!card) {
+          return;
+        }
+        card.dataset.attFocus = "true";
+        card.scrollIntoView?.({ block: "nearest" });
+      };
+
       const render = (vm: AttentionHomeVM) => {
         if (disposed) return;
         const hasSourceWarnings = (vm.source_warnings?.length ?? 0) > 0;
         body.innerHTML = `${renderSourceWarnings(vm, zh)}${renderQueue(vm, zh, hasSourceWarnings)}`;
+        focusPendingItem();
         setSubtitleFromVm(vm);
         ctx.requestResize();
       };
@@ -415,10 +458,21 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
           return;
         }
         if (busy) return;
+        // F-05：多处冲突各自带融合稿时，选择器（renderConflictChooser）把它们折进一个单选 + 确认按钮，
+        // 提交时先读勾选的 radio 拿 merge_proposal_id，没选中就点亮选择器自带的提示条，不静默失败。
+        const chooserSubmit = target.dataset.proposalConflictChooserSubmit === "true" ? target : undefined;
+        const chooserContainer = chooserSubmit?.closest<HTMLElement>("[data-proposal-conflict-chooser]");
+        const chooserSelection = chooserContainer ? selectedConflictChooserCandidate(chooserContainer) : undefined;
+        if (chooserSubmit && !chooserSelection) {
+          chooserContainer?.querySelector<HTMLElement>("[data-proposal-conflict-chooser-warning]")?.removeAttribute("hidden");
+          return;
+        }
         busy = true;
         try {
           let result: unknown;
-          if (action.kind === "apply") {
+          if (chooserSelection) {
+            result = await chooseThenApplyMergeCandidate(client, chooserSelection.mergeProposalId, { locale: ctx.locale });
+          } else if (action.kind === "apply") {
             const payload = actionElementApplyPayload(target);
             if (!payload.ok) {
               ctx.toast(zh ? "冲突选项缺少必要参数" : "This conflict option is missing details", "error");
@@ -470,6 +524,26 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
           }
           const res = await client.resolveEscalation(escalation.escalationId, payload, { locale: ctx.locale });
           ctx.toast(summaryText(res) ?? (zh ? "升级已处理" : "Escalation handled"), "ok");
+          return true;
+        }
+        // R23 F-04：转交（审批 /api/approvals/:id/delegate、升级 /api/escalations/:id/delegate）。
+        // 必须排在下面的通用分类之前——否则会一路落到末尾那句「这类请到对应能力处理」的兜底 toast，
+        // 新动作等于白发。转交对象取自本卡展开的选人层（DOM 就是这次点击的上下文，与 mergeDraft 同款取法）。
+        if (isDelegateActionHref(href)) {
+          const picker = actionTarget?.closest<HTMLElement>("[data-att-delegate]");
+          const toUserId = picker?.querySelector<HTMLSelectElement>("[data-att-delegate-select]")?.value ?? "";
+          if (!toUserId) {
+            ctx.toast(zh ? "先选一位同事，再确认转交" : "Pick a teammate first", "error");
+            return false;
+          }
+          const delegated = await submitDelegateAction(client, href, toUserId, { locale: ctx.locale });
+          ctx.toast(
+            delegateResultSummaryText(delegated)
+              ?? (delegateTargetFromHref(href)?.kind === "escalation"
+                ? (zh ? "已转交，这件事改由对方拿主意" : "Handed off — this decision now waits on them")
+                : (zh ? "已转交，这条审批会路由给对方" : "Approval handed off — it now routes to them")),
+            "ok"
+          );
           return true;
         }
         const mergeDraft = actionTarget
@@ -569,6 +643,38 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
         } finally {
           busy = false;
           restore();
+        }
+      };
+
+      // R23 F-04：选人层展开后懒加载工作区成员（不进首屏加载，不改 attention 拉取次数）。选项用
+      // textContent 逐个建节点——昵称是用户可改的自由文本，拼 innerHTML 就是把它当标记解析。
+      const loadDelegateMembers = async (select: HTMLSelectElement) => {
+        const doc = select.ownerDocument;
+        const statusOption = (text: string) => {
+          const option = doc.createElement("option");
+          option.value = "";
+          option.textContent = text;
+          return option;
+        };
+        try {
+          const members = await fetchWorkspaceRosterMembers(client);
+          if (disposed || !select.isConnected) {
+            return;
+          }
+          if (members.length === 0) {
+            select.replaceChildren(statusOption(zh ? "这个工作区还没有其他成员" : "No other members in this workspace"));
+            return;
+          }
+          select.replaceChildren(...members.map((member) => {
+            const option = doc.createElement("option");
+            option.value = member.user_id;
+            option.textContent = `${member.nickname}${member.is_admin ? (zh ? "（管理员）" : " (admin)") : ""}`;
+            return option;
+          }));
+        } catch {
+          if (!disposed && select.isConnected) {
+            select.replaceChildren(statusOption(zh ? "成员没加载出来，收起再展开重试" : "Couldn't load members — reopen to retry"));
+          }
         }
       };
 
@@ -677,6 +783,16 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
           })();
           return;
         }
+        // R23 F-04：选人层的「确认转交」——href 存在选人层容器上（与理由层同款），提交走统一 submit，
+        // 具体调哪个 SDK 方法由 runAction 的 delegate 分支按 href 分派。
+        const delegateSubmit = target.closest<HTMLButtonElement>("[data-att-delegate-submit]");
+        if (delegateSubmit) {
+          const pickerHref = delegateSubmit.closest<HTMLElement>("[data-att-delegate]")?.dataset.attDelegateHref;
+          if (pickerHref) {
+            void submit(pickerHref, "delegate", undefined, delegateSubmit);
+          }
+          return;
+        }
         // 1) 选了打回理由 → 以该理由打回（href 从理由层容器取，审批/看改动通用）。
         const reasonBtn = target.closest<HTMLButtonElement>("[data-att-reason]");
         if (reasonBtn) {
@@ -706,6 +822,21 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
           if (row && !row.parentElement?.querySelector("[data-att-reasons]")) {
             row.insertAdjacentHTML("afterend", reasonChips(zh, href));
             ctx.requestResize();
+          }
+          return;
+        }
+        // R23 F-04：转交要先选人——点「转交他人」只就地展开选人层（不提交），成员懒加载。
+        // 必须排在下面的导航分类与 submit 之前。
+        if (isDelegateActionHref(href)) {
+          const row = actionBtn.closest<HTMLElement>("[data-att-actionrow]");
+          const host = row?.parentElement;
+          if (row && host && !host.querySelector("[data-att-delegate]")) {
+            row.insertAdjacentHTML("afterend", delegatePicker(zh, href));
+            ctx.requestResize();
+            const select = host.querySelector<HTMLSelectElement>("[data-att-delegate] [data-att-delegate-select]");
+            if (select) {
+              void loadDelegateMembers(select);
+            }
           }
           return;
         }

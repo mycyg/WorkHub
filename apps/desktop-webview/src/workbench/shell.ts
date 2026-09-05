@@ -85,7 +85,11 @@ export type WorkbenchShellApiClient = WorkbenchRailApiClient &
     // 写方法（respondApproval/resolveEscalation/resolveBudgetDecision/resolveMemoryConflict/skipTaskPlanProposal/
     // applyMergeProposalCandidate/postApprovalComment）——全是 WorkHubApiClient 早已具名存在的方法（spotlight
     // 审批视图一直在用），boot 传的就是全量 createApiClient()，这里只是把 shell 的 Pick 白名单补齐，零新增 api 面。
-    | "respondApproval" | "resolveEscalation" | "resolveBudgetDecision" | "resolveMemoryConflict" | "skipTaskPlanProposal" | "applyMergeProposalCandidate" | "postApprovalComment">;
+    // F-05：撞车选择器确认后先 choose 再 apply，同一组决策动作补 chooseMergeProposalCandidate，同样零新增 api 面。
+    | "respondApproval" | "resolveEscalation" | "resolveBudgetDecision" | "resolveMemoryConflict" | "skipTaskPlanProposal" | "applyMergeProposalCandidate" | "chooseMergeProposalCandidate" | "postApprovalComment"
+    // R23 F-04（升级转交端到端）：收件箱的决策卡现在也带「转交他人」，两个 delegate 写方法同样属于
+    // WorkHubApiClient 早已具名存在的方法（花名册翻页用上面已有的 request），白名单补齐即可。
+    | "delegateApproval" | "delegateEscalation">;
 
 // 照 boot.ts 的 clientToken() 同款 helper——shell.ts 不 import boot.ts（避免 boot.ts → shell.ts →
 // chat/view.ts → ... 的循环 import 风险），改由 mountWorkbenchShell 的调用方（boot.ts 本尊）注入

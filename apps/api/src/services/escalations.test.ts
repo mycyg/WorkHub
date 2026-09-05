@@ -55,7 +55,9 @@ function row(partial: Partial<EscalationServiceRow> = {}): EscalationServiceRow 
 function createEscalationService(
   deps: Parameters<typeof createEscalationServiceImpl>[0] = {}
 ): ReturnType<typeof createEscalationServiceImpl> {
-  return createEscalationServiceImpl({ workItems: false, runQueue: false, ...deps });
+  // R23 F-04：审计/通知默认拔掉——否则 delegate 的提交后副作用会去连真 PG（单测里只会刷一串 warn）。
+  // 要验留痕/通知的用例显式传 auditLogs/notifications 假实现。
+  return createEscalationServiceImpl({ workItems: false, runQueue: false, auditLogs: false, notifications: false, ...deps });
 }
 
 class MemoryEscalationRepository implements EscalationRepository {
@@ -1102,4 +1104,201 @@ test("R12 A2/A3: non-observer escalations never touch action-card state", async 
   await service.resolve(escalationId, actor(), { action: "retry" });
 
   assert.equal(called, 0);
+});
+
+// ── R23 F-04（升级转交端到端）─────────────────────────────────────────────────────
+// 此前：POST /api/escalations/:id/delegate + SDK delegateEscalation 都在，但服务端从不在升级卡上
+// 发 delegate 动作，三端还各自把它剥掉——端到端零入口。下面四条锁住新行为。
+
+test("R23 F-04 升级卡对有写权限的人发「转交他人」动作（href 打真端点）", async () => {
+  const repository = new MemoryEscalationRepository();
+  const service = createEscalationService({
+    repository,
+    users: false,
+    workItems: {
+      async canReadWorkItems(input: { workItemIds: string[] }) {
+        return new Set<string>(input.workItemIds);
+      },
+      async canMutateWorkItems(input: { workItemIds: string[] }) {
+        return new Set<string>(input.workItemIds);
+      },
+      async assertCanMutateWorkItem() {
+        throw new Error("attention listing must not demand mutate permission");
+      }
+    },
+    now: () => now
+  });
+
+  const items = await service.listAttentionItems({ actor: actor(), locale: "zh-CN" });
+  const delegate = items[0]?.actions.find((action) => action.id === "escalation_delegate");
+
+  assert.equal(delegate?.label, "转交他人");
+  assert.equal(delegate?.method, "POST");
+  assert.equal(delegate?.href, `/api/escalations/${escalationId}/delegate`);
+  // 既有三个 resolve 动作一个都没少。
+  assert.deepEqual(items[0]?.actions.map((action) => action.id), [
+    "escalation_retry",
+    "escalation_pm_mode",
+    "escalation_cancel",
+    "escalation_delegate"
+  ]);
+
+  const english = await service.listAttentionItems({ actor: actor(), locale: "en-US" });
+  assert.equal(english[0]?.actions.find((action) => action.id === "escalation_delegate")?.label, "Hand off");
+});
+
+test("R23 F-04 只读的人拿不到转交按钮（不发点下去必 403 的死按钮）", async () => {
+  const repository = new MemoryEscalationRepository();
+  const service = createEscalationService({
+    repository,
+    users: false,
+    workItems: {
+      async canReadWorkItems(input: { workItemIds: string[] }) {
+        return new Set<string>(input.workItemIds);
+      },
+      async canMutateWorkItems() {
+        return new Set<string>();
+      },
+      async assertCanMutateWorkItem() {
+        throw new WorkItemServiceError(403, "forbidden", "你没有权限修改这个事项。");
+      }
+    },
+    now: () => now
+  });
+
+  const items = await service.listAttentionItems({ actor: actor(), locale: "zh-CN" });
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0]?.actions.some((action) => action.id === "escalation_delegate"), false);
+});
+
+test("R23 F-04 已有牵头人时转交按钮改口叫「改派他人」；预算卡也能转交", async () => {
+  const delegatedRow = row({ suggestedLeadUserId: delegateTargetUserId });
+  const budgetRow = row({
+    id: "94000000-0000-4000-8000-000000000401",
+    workItemId: "94000000-0000-4000-8000-000000000402",
+    trigger: "budget_exhausted",
+    handoffJson: {
+      attention_kind: "budget",
+      notice: { options: [{ id: "add_budget", label: "追加预算继续" }] }
+    }
+  });
+  const repository = new MemoryEscalationRepository({ listRows: [delegatedRow, budgetRow] });
+  const service = createEscalationService({
+    repository,
+    users: false,
+    workItems: {
+      async canReadWorkItems(input: { workItemIds: string[] }) {
+        return new Set<string>(input.workItemIds);
+      },
+      async canMutateWorkItems(input: { workItemIds: string[] }) {
+        return new Set<string>(input.workItemIds);
+      },
+      async assertCanMutateWorkItem() {
+        throw new Error("attention listing must not demand mutate permission");
+      }
+    },
+    now: () => now
+  });
+
+  const items = await service.listAttentionItems({ actor: actor(), locale: "zh-CN" });
+
+  assert.equal(items[0]?.actions.find((action) => action.id === "escalation_delegate")?.label, "改派他人");
+  assert.equal(items[1]?.kind, "budget");
+  assert.equal(
+    items[1]?.actions.find((action) => action.id === "escalation_delegate")?.href,
+    `/api/escalations/${budgetRow.id}/delegate`
+  );
+});
+
+test("R23 F-04 被转交到名下的人能真处理这条升级，卡也带转交动作", async () => {
+  // 转交若只改 suggested_lead_user_id、不放行写权限，接手人看得见卡、每个动作却 403——等于空转。
+  const handedToMe = row({ suggestedLeadUserId: userId });
+  const repository = new MemoryEscalationRepository({ findRow: handedToMe, listRows: [handedToMe] });
+  const service = createEscalationService({
+    repository,
+    users: false,
+    memberships: false,
+    workItems: {
+      async canReadWorkItems(input: { workItemIds: string[] }) {
+        return new Set<string>(input.workItemIds);
+      },
+      // 接手人不是提交人/认领人/协作者——批量写判定与逐条 assert 都说「不能改」。
+      async canMutateWorkItems() {
+        return new Set<string>();
+      },
+      async assertCanMutateWorkItem() {
+        throw new WorkItemServiceError(403, "forbidden", "你没有权限修改这个事项。");
+      }
+    },
+    now: () => now
+  });
+
+  const resolved = await service.resolve(escalationId, actor(), { action: "pm_mode" });
+  assert.equal(resolved.escalation.id, escalationId);
+
+  const items = await service.listAttentionItems({ actor: actor(), locale: "zh-CN" });
+  assert.equal(items[0]?.actions.some((action) => action.id === "escalation_delegate"), true);
+});
+
+test("R23 F-04 转交落审计并通知接手人；副作用失败不翻已落库的转交", async () => {
+  const repository = new MemoryEscalationRepository({ findRow: row({ suggestedLeadUserId: null }) });
+  const auditEntries: Array<Record<string, unknown>> = [];
+  const notified: Array<Record<string, unknown>> = [];
+  const service = createEscalationService({
+    repository,
+    users: false,
+    memberships: false,
+    auditLogs: {
+      async createAuditLog(entry: Record<string, unknown>) {
+        auditEntries.push(entry);
+        return { id: "audit-1" } as never;
+      }
+    },
+    notifications: {
+      async createNotification(draft: Record<string, unknown>) {
+        notified.push(draft);
+        return null;
+      }
+    },
+    now: () => now
+  });
+
+  await service.delegate(escalationId, actor(), { to_user_id: delegateTargetUserId });
+
+  assert.equal(auditEntries.length, 1);
+  assert.equal(auditEntries[0]?.["action"], "escalation.delegated");
+  assert.equal(auditEntries[0]?.["entityType"], "escalation_event");
+  assert.deepEqual(auditEntries[0]?.["detailJson"], {
+    escalation_id: escalationId,
+    work_item_id: workItemId,
+    from_user_id: null,
+    to_user_id: delegateTargetUserId,
+    delegated_by_user_id: userId
+  });
+  assert.equal(notified.length, 1);
+  assert.equal(notified[0]?.["userId"], delegateTargetUserId);
+  assert.equal(notified[0]?.["workItemId"], workItemId);
+  assert.equal(notified[0]?.["dedupeKey"], `escalation_delegated:${escalationId}:${delegateTargetUserId}`);
+  assert.match(String(notified[0]?.["title"]), /转交给你处理/u);
+
+  // 审计/通知炸了也不该把已经落库的转交翻成 500。
+  const noisy = createEscalationService({
+    repository: new MemoryEscalationRepository(),
+    users: false,
+    memberships: false,
+    auditLogs: {
+      async createAuditLog(): Promise<never> {
+        throw new Error("audit down");
+      }
+    },
+    notifications: {
+      async createNotification(): Promise<never> {
+        throw new Error("notify down");
+      }
+    },
+    now: () => now
+  });
+  const delegated = await noisy.delegate(escalationId, actor(), { to_user_id: delegateTargetUserId });
+  assert.equal(delegated.escalation.suggested_lead_user_id, delegateTargetUserId);
 });

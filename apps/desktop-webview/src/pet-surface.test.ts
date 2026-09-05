@@ -27,6 +27,7 @@ import {
   createDesktopPetLoggedOutCard,
   defaultDesktopPetPointerSnapshot,
   desktopPetAliveIdlePolicy,
+  desktopPetDelegateMainRoute,
   desktopPetInitialIdleAction,
   desktopPetLocale,
   desktopPetPointerSmoothingAlpha,
@@ -2657,6 +2658,82 @@ test("pet surface falls back to an honest 'could not open' message when no Tauri
   }
 });
 
+// D1（R19-13 托盘语言联动补线）：桌宠设置菜单切语言此前只广播给主窗、更新本地偏好，
+// 从没通知原生外壳——托盘菜单/tooltip/通知兜底文案永远停在启动语言。现在切换成功后
+// 真调 set_shell_locale，与 spotlight/views/settings.ts 的主窗切语言同一份修法。
+test("pet settings menu locale switch also syncs the native shell via set_shell_locale", async () => {
+  const invokeCalls: Array<{ command: string; args: Record<string, unknown> | undefined }> = [];
+  const target = globalThis as typeof globalThis & { __TAURI__?: unknown };
+  const originalTauri = target.__TAURI__;
+  target.__TAURI__ = {
+    core: {
+      async invoke(command: string, args?: Record<string, unknown>) {
+        invokeCalls.push({ command, args });
+        return undefined;
+      }
+    }
+  };
+
+  try {
+    await withFakePetDom(async (root) => {
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient([])
+      });
+      try {
+        await root.click(fakePetTarget({ "data-pet-menu-locale": "en-US" }));
+        // setLocalePreference 的原生外壳同步挂在 client.updatePreferences(...).then(...)——
+        // fire-and-forget，不在点击处理器内 await，故需要多等一拍微任务让它真正落地。
+        await Promise.resolve();
+        await Promise.resolve();
+        // 只筛 set_shell_locale——挂载期间桌宠还会为窗口设置发其它 invoke（如 set_pet_window_settings），
+        // 那些跟本条修复无关，不该让这条断言对它们的存在/顺序敏感。
+        assert.deepEqual(
+          invokeCalls.filter((call) => call.command === "set_shell_locale"),
+          [{ command: "set_shell_locale", args: { locale: "en-US" } }]
+        );
+      } finally {
+        await runtime.dispose();
+      }
+    });
+  } finally {
+    if (originalTauri === undefined) {
+      delete target.__TAURI__;
+    } else {
+      target.__TAURI__ = originalTauri;
+    }
+  }
+});
+
+// 非 Tauri 环境（web 预览/无壳层测试替身）没有 invoke 时，切语言仍要正常完成——best-effort
+// 跳过，不抛错、不卡住偏好更新。
+test("pet settings menu locale switch degrades quietly with no Tauri invoke available", async () => {
+  const target = globalThis as typeof globalThis & { __TAURI__?: unknown };
+  const originalTauri = target.__TAURI__;
+  delete target.__TAURI__;
+
+  try {
+    await withFakePetDom(async (root) => {
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient([])
+      });
+      try {
+        await root.click(fakePetTarget({ "data-pet-menu-locale": "en-US" }));
+        await Promise.resolve();
+        await Promise.resolve();
+        assert.match(root.innerHTML, /data-pet-menu-locale="en-US" aria-pressed="true"/u);
+      } finally {
+        await runtime.dispose();
+      }
+    });
+  } finally {
+    if (originalTauri === undefined) {
+      delete target.__TAURI__;
+    } else {
+      target.__TAURI__ = originalTauri;
+    }
+  }
+});
+
 test("pet surface persists and restores the current session question card", async () => {
   const storage = createFakeLocalStorage();
   const target = globalThis as typeof globalThis & {
@@ -3250,4 +3327,107 @@ test("pet window bridge rejects unavailable invoke and maps preferences", async 
     }),
     { scale_percent: 150, opacity_percent: 60, pass_through: true, hide_on_hover: true }
   );
+});
+
+// ── R23 F-04（升级转交端到端）─────────────────────────────────────────────────────
+// 桌宠气泡里塞不下一份花名册下拉，但此前的做法是把「转交他人」整个剥掉（rank8 的
+// stripUnsupportedPetActions），于是升级转交在桌宠这一端彻底没有入口。现在按钮留着，
+// 点它把主窗口的决策队列打开到这张卡，选人在那边完成。
+test("R23 F-04 pet hand-off action maps to the main-window decision queue, named at that card", () => {
+  assert.equal(
+    desktopPetDelegateMainRoute("/api/escalations/esc-1/delegate"),
+    "/approvals?id=esc-1"
+  );
+  assert.equal(
+    desktopPetDelegateMainRoute("/api/approvals/approval-1/delegate"),
+    "/approvals?id=approval-1"
+  );
+  // id 进查询串要编码，否则带斜杠/问号的 id 会把路由本身改写掉。
+  assert.equal(
+    desktopPetDelegateMainRoute("/api/escalations/esc%201/delegate"),
+    "/approvals?id=esc%201"
+  );
+  // 别的动作一律不认——这个分支排在桌宠其它 href 分类之前，认错了会把正常动作吞成一次导航。
+  assert.equal(desktopPetDelegateMainRoute("/api/escalations/esc-1/resolve"), undefined);
+  assert.equal(desktopPetDelegateMainRoute("/approvals"), undefined);
+  assert.equal(desktopPetDelegateMainRoute(null), undefined);
+  assert.equal(desktopPetDelegateMainRoute(undefined), undefined);
+});
+
+test("R23 F-04 pet surface keeps the hand-off action and opens the main window on that card", async () => {
+  const escalationId = "50000000-0000-4000-8000-000000000f04";
+  const escalation: AttentionItem = {
+    id: escalationId,
+    kind: "escalation",
+    priority: "urgent",
+    work_item_id: "50000000-0000-4000-8000-000000000f05",
+    source_ref: { entity_type: "escalation_event", entity_id: escalationId },
+    title: "《供应延期》卡住了",
+    summary_text: "供应商没回复，等你拿主意。",
+    reason_text: "供应商没回复，等你拿主意。",
+    actions: [
+      { id: "escalation_pm_mode", label: "我来定方向", style: "primary", method: "POST", href: `/api/escalations/${escalationId}/resolve` },
+      { id: "escalation_delegate", label: "转交他人", style: "secondary", method: "POST", href: `/api/escalations/${escalationId}/delegate` }
+    ],
+    cuu_state: "worried",
+    created_at: "2026-09-05T01:00:00.000Z"
+  };
+  const handlers = new Map<string, (event: { payload: unknown }) => void>();
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => handlers.delete(eventName);
+  };
+  const focusedMainRoutes: string[] = [];
+  const client = {
+    ...createPetHarnessClient([]),
+    pages: {
+      attention: async () => ({ primary: null, queue: [] })
+    }
+  } as unknown as DesktopPetSurfaceClient;
+  const target = globalThis as typeof globalThis & { __WORKHUB_CUU_QA_LOCALE__?: unknown };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "zh-CN";
+
+  try {
+    await withFakePetDom(async (root) => {
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client,
+        listen,
+        petWindowBridge: {
+          setMode() {},
+          focusMainRoute(route) {
+            focusedMainRoutes.push(route);
+          }
+        }
+      });
+      try {
+        handlers.get("push-event")?.({
+          payload: shellPayload(eventTypes.permissionAsk, {
+            summary_text: escalation.summary_text,
+            attention: escalation
+          })
+        });
+        await waitForFakePetCardMode();
+
+        // 动作留在卡上了（此前会被 stripUnsupportedPetActions 剥掉）。
+        assert.match(root.innerHTML, /data-cuu-action-id="escalation_delegate"/u);
+        assert.match(root.innerHTML, /转交他人/u);
+
+        const delegate = await root.click(fakePetTarget({
+          href: `/api/escalations/${escalationId}/delegate`,
+          "data-cuu-action-id": "escalation_delegate"
+        }, "a"));
+        await waitForFakePetCardMode();
+
+        assert.equal(delegate.defaultPrevented, true);
+        assert.deepEqual(focusedMainRoutes, [`/approvals?id=${escalationId}`]);
+        // 说清为什么跳走——否则用户只看到窗口一闪。
+        assert.match(root.innerHTML, /转交要先选人，已在主窗口打开这条待办/u);
+      } finally {
+        await runtime.dispose();
+      }
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+  }
 });

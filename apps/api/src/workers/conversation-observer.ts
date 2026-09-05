@@ -34,6 +34,7 @@ import {
   createActionCardRepository,
   createAiDecisionRepository,
   createAiSettingsRepository,
+  createGithubBindingRepository,
   createNotificationRepository,
   createUserProfileRepository,
   createWorkItemRepository,
@@ -43,6 +44,7 @@ import {
   type ActionCardItemStatus,
   type AiDecisionRepository,
   type AiSettingsRepository,
+  type GithubBindingRepository,
   type NotificationRepository,
   type ObserverCandidateRow,
   type PlanItemInput,
@@ -54,6 +56,11 @@ import { getDefaultPushBus, type PushBus } from "../broker/index.js";
 import { getDefaultStructuredLogger, type StructuredLogger } from "../logging.js";
 import { InternalContractError, parseOutputContract } from "../pages/output-contract.js";
 import { getDefaultBudgetPolicyStore } from "../services/cost-policy-store.js";
+import {
+  buildRepoActivityLines,
+  REPO_ACTIVITY_FETCH_LIMIT
+} from "../services/github-activity-context.js";
+import { resolveProactivityPolicy } from "../services/proactivity-policy.js";
 import { getDefaultCostLedgerStore } from "../services/cost-ledger-store.js";
 import { getDefaultProviderRegistry } from "../services/provider-registry.js";
 import { getDefaultAgentRunQueue, type AgentRunQueue } from "./agent-runner.js";
@@ -92,6 +99,10 @@ export type ConversationObserverTickResult = {
   cards_created: number;
   cards_appended: number;
   skipped_quiet_hours: number;
+  // R23 P3b（SA-07）：SQL 粗筛放行、但按项目负责人的「助手主动性」档位算出的精确静默窗口还没到——
+  // 讨论其实还没停下来，这一轮先不开口。与 skipped_quiet_hours 分开计：一个是「还没到时候」，
+  // 一个是「到点了但在安静时段」，运维要能分辨。
+  skipped_proactivity_window: number;
   skipped_low_quality: number;
   skipped_budget: number;
   // R13 H1：createOrAppendCard 撞了 items 表唯一约束、被当幂等重复吞掉的次数——跟
@@ -162,6 +173,9 @@ export type ConversationObserverDeps = {
   // R13 批 A2（派人推荐 v2）：派活候选名单——聚合资料完整度/历史交付/技能标签，喂给 LLM prompt 参考
   // 及 resolveAssignee 的兜底排序（见 buildAssigneeRoster 顶部注释）。
   userProfiles: Pick<UserProfileRepository, "listCandidatesForProject">;
+  // R23 P3b（SA-03）：项目绑定仓库的最近动态——喂进观察者 prompt 的「客观记录」小节，让 Cuu 拎活时
+  // 能看见代码那边到底动了没有。可选：GitHub 集成未绑定/取数失败时整段不出现，观察者行为回到既有路径。
+  githubActivity?: Pick<GithubBindingRepository, "listRecentActivitiesByProject">;
   client: ObserverClientProvider;
   policyStore: Pick<BudgetPolicyStore, "listPolicies">;
   ledgerStore: Pick<CostLedgerStore, "usageSnapshots">;
@@ -175,6 +189,25 @@ export type ConversationObserverDeps = {
   maxMessagesPerAnalysis?: number;
   onError?: (error: unknown) => void;
 };
+
+// ── R23 P3b（SA-07）：按「助手主动性」档位算出的精确静默窗口 ────────────────────────────
+//
+// 「讨论停下多久之后 Cuu 才开口拎事」此前只有项目级的一个固定值（project_ai_governance.
+// silence_window_secs），设置页那三档（安静/均衡/主动）落库后无人读取。这里把档位系数乘上去：
+// 安静档 ×2（更能沉住气）、均衡档 ×1（逐字保持接线前的行为）、主动档 ×0.5（更快接话）。
+//
+// 档位取项目负责人的——主区会话是项目级的，没有单一"被打扰的人"，负责人的节奏偏好最接近这条
+// 会话该有的开口节奏（ownerProactivity 由 listObserverCandidates 一次 join 带回，worker 不再多查库）。
+//
+// 纯函数：不碰 DB/网络，只用候选行自带的字段，便于单测三档差异。
+export function observerSilenceWindowMs(candidate: ObserverCandidateRow): number {
+  const policy = resolveProactivityPolicy(candidate.ownerProactivity);
+  return candidate.silenceWindowSecs * policy.observerSilenceMultiplier * 1000;
+}
+
+export function isObserverSilenceElapsed(candidate: ObserverCandidateRow, now: Date): boolean {
+  return now.getTime() - candidate.lastMessageAt.getTime() >= observerSilenceWindowMs(candidate);
+}
 
 // ── 安静时段：纯函数,不碰 DB/网络,worker 用捕获的候选行本地过滤 ──────────────────────────
 
@@ -845,6 +878,22 @@ async function analyzeConversation(
   // 没法按每条要派的活单独重排，这是设计文档记录在案的简化。
   const discussionText = promptMessages.map((message) => message.text).join(" ");
   const roster = await buildAssigneeRoster(deps, candidate, discussionText, now);
+  // R23 P3b（SA-03）：仓库动态取数——失败不打断分析（GitHub 是可选集成，它坏了不该让观察者哑火）。
+  let repoActivity: string[] = [];
+  if (deps.githubActivity) {
+    try {
+      const rows = await deps.githubActivity.listRecentActivitiesByProject(
+        candidate.projectId,
+        REPO_ACTIVITY_FETCH_LIMIT
+      );
+      repoActivity = buildRepoActivityLines(rows, { now });
+    } catch (error) {
+      deps.logger?.warn?.("conversation_observer_repo_activity_failed", {
+        conversationId: candidate.conversationId,
+        error
+      });
+    }
+  }
   const candidateRosterForPrompt = roster.slice(0, CANDIDATE_ROSTER_PROMPT_MAX).map((entry) => ({
     nickname: entry.nickname,
     title: entry.title,
@@ -863,7 +912,8 @@ async function analyzeConversation(
         content: buildObserverUserPrompt({
           projectName: candidate.projectId,
           messages: promptMessages,
-          candidateRoster: candidateRosterForPrompt
+          candidateRoster: candidateRosterForPrompt,
+          ...(repoActivity.length > 0 ? { repoActivity } : {})
         })
       }
     ]
@@ -975,6 +1025,7 @@ export function createConversationObserverScheduler(deps: ConversationObserverDe
     let cardsCreated = 0;
     let cardsAppended = 0;
     let skippedQuietHours = 0;
+    let skippedProactivityWindow = 0;
     let skippedLowQuality = 0;
     let skippedBudget = 0;
     let skippedDuplicateWrite = 0;
@@ -983,6 +1034,13 @@ export function createConversationObserverScheduler(deps: ConversationObserverDe
       const candidates = await deps.actionCards.listObserverCandidates({ now: startedAt, limit: maxCandidatesPerTick });
       scanned = candidates.length;
       for (const candidate of candidates) {
+        // R23 P3b（SA-07）：精确静默窗口闸必须排在安静时段之前。SQL 那层只按「最宽可能窗口」（主动档
+        // 的 0.5 倍）粗筛，返回的行里混着「按本项目档位其实还没到点」的会话；先跑安静时段判定会把这些
+        // 还没成熟的会话记进 skipped_quiet_hours，那个计数的语义（该开口了但被静音）就被稀释了。
+        if (!isObserverSilenceElapsed(candidate, startedAt)) {
+          skippedProactivityWindow += 1;
+          continue;
+        }
         if (isWithinQuietHours(parseQuietHours(candidate.quietHoursJson), startedAt)) {
           skippedQuietHours += 1;
           continue;
@@ -1028,6 +1086,7 @@ export function createConversationObserverScheduler(deps: ConversationObserverDe
         cards_created: cardsCreated,
         cards_appended: cardsAppended,
         skipped_quiet_hours: skippedQuietHours,
+        skipped_proactivity_window: skippedProactivityWindow,
         skipped_low_quality: skippedLowQuality,
         skipped_budget: skippedBudget,
         skipped_duplicate_write: skippedDuplicateWrite,
@@ -1052,6 +1111,7 @@ export function createConversationObserverScheduler(deps: ConversationObserverDe
       cards_created: 0,
       cards_appended: 0,
       skipped_quiet_hours: 0,
+      skipped_proactivity_window: 0,
       skipped_low_quality: 0,
       skipped_budget: 0,
       skipped_duplicate_write: 0,
@@ -1119,6 +1179,7 @@ export function getDefaultConversationObserverScheduler(): ConversationObserverS
     decisions: createAiDecisionRepository(db),
     aiSettings: createAiSettingsRepository(db),
     userProfiles: createUserProfileRepository(db),
+    githubActivity: createGithubBindingRepository(db),
     client: defaultClientProvider(),
     policyStore: getDefaultBudgetPolicyStore(),
     ledgerStore: getDefaultCostLedgerStore(),

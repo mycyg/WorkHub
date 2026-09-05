@@ -31,6 +31,7 @@ import {
   type ProposalConflict,
   type WorkHubLocale
 } from "@workhub/contracts";
+import { delegateTargetFromHref } from "@workhub/web-runtime";
 
 import {
   renderDesktopCuuCatLive2DForIdleAction,
@@ -41,6 +42,7 @@ import {
 } from "./cuu-cat-live2d-runtime.js";
 import { writeDesktopPetQaDomSnapshot } from "./cuu-qa-dom-report.js";
 import { readDesktopClientToken } from "./desktop-client-token.js";
+import { resolveDesktopTauriInvoke } from "./desktop-window-controls.js";
 import { liquidGlassHeadHtml } from "./liquid-glass.js";
 import {
   liquidGlassFilterCss,
@@ -792,6 +794,22 @@ function desktopPetOpenMainRouteFallback(locale: WorkHubLocale) {
   return locale === "en-US" ? "Cuu could not open this in WorkHub." : "Cuu 暂时打不开主窗口。";
 }
 
+// R23 F-04（升级转交端到端）：桌宠气泡里塞不下一份花名册下拉，但也不该像以前那样把「转交他人」
+// 整个剥掉（rank8）——那让升级转交在桌宠这一端彻底没有入口。改为把主窗口的决策队列打开到这张卡，
+// 选人在那边完成（主窗 attention 视图有内联选人器）。
+// 决策卡的 id 就是审批/升级本身的 id（见服务端 attention item 的 id 字段），?id= 会被
+// entityIdFromShellRoute 抠成 SpotlightTarget.id，主窗据此把这张卡滚进视野并高亮。
+export function desktopPetDelegateMainRoute(href: string | null | undefined): string | undefined {
+  const target = href ? delegateTargetFromHref(href) : undefined;
+  return target ? `/approvals?id=${encodeURIComponent(target.id)}` : undefined;
+}
+
+function desktopPetDelegateOpenedNotice(locale: WorkHubLocale) {
+  return locale === "en-US"
+    ? "Transferring needs a name — opened it in the main window."
+    : "转交要先选人，已在主窗口打开这条待办。";
+}
+
 // MRG-20：system-notification 计划按「路由 path」暂存/消费——通知 route 可能带查询串
 //（/approvals?approvalId=…），而卡片动作 href 常是裸路径；对齐到 path 才能认出同一件事。
 export function desktopSystemNotificationPlanRouteKey(route: string | null | undefined): string | undefined {
@@ -1013,18 +1031,8 @@ export async function bootDesktopPetSurface(
     });
   };
 
-  // rank8：桌宠暂不支持「转交他人」（无选人 UI、无能力承接，点了静默无效）——
-  // 在唯一的卡片展示入口剥掉 delegate 动作，避免渲染出点了没反应的按钮。href 形如 /api/approvals/{id}/delegate。
-  const stripUnsupportedPetActions = (card: CuuCard | undefined): CuuCard | undefined => {
-    if (!card?.actions?.length) {
-      return card;
-    }
-    const kept = card.actions.filter((a) => !(a.href && /\/delegate(?:[/?#]|$)/u.test(a.href)));
-    return kept.length === card.actions.length ? card : { ...card, actions: kept };
-  };
-
   const setCard = (rawCard: CuuCard | undefined, status?: string, options: { persist?: boolean } = {}) => {
-    const card = normalizeDesktopPetCard(stripUnsupportedPetActions(rawCard), locale);
+    const card = normalizeDesktopPetCard(rawCard, locale);
     const nextRunId = agentRunIdFromPetCard(card);
     if (runStreamSubscription && nextRunId !== runStreamSubscription.runId) {
       runStreamSubscription.close();
@@ -1270,6 +1278,13 @@ export async function bootDesktopPetSurface(
     // ③广播主窗——两窗语言态不再长期漂移。
     void client.updatePreferences({ locale: nextLocale })
       .then(() => {
+        // D1（R19-13 托盘语言联动补线）：同 spotlight/views/settings.ts——桌宠窗切语言成功后
+        // 也要让原生外壳（托盘菜单/tooltip/通知兜底文案）跟着换，否则只有主窗改了偏好、壳层
+        // 停在启动语言。best-effort、fire-and-forget，非 Tauri 环境没有 invoke 时直接跳过。
+        const invokeShell = resolveDesktopTauriInvoke();
+        if (invokeShell) {
+          void Promise.resolve(invokeShell("set_shell_locale", { locale: nextLocale })).catch(() => undefined);
+        }
         void refreshVisibleAttentionCard();
         try {
           shellEmitter?.emitTo?.("main", "pet-locale-changed", { locale: nextLocale });
@@ -1507,6 +1522,20 @@ export async function bootDesktopPetSurface(
       freeText: root.querySelector<HTMLTextAreaElement>("[data-pet-free-text]")?.value.trim()
     });
     if (!action) {
+      // R23 F-04：「转交他人」——桌宠没有选人 UI，把主窗口的决策队列打开到这张卡，让人在那边选。
+      // 先于下面两个分类检查：delegate href 是 /api/… 前缀，它们都不认，顺序只影响可读性。
+      const delegateRoute = desktopPetDelegateMainRoute(anchor.getAttribute("href"));
+      if (delegateRoute) {
+        event.preventDefault();
+        try {
+          await openMainRouteFromPet(delegateRoute);
+          statusText = desktopPetDelegateOpenedNotice(locale);
+        } catch {
+          statusText = desktopPetOpenMainRouteFallback(locale);
+        }
+        render();
+        return;
+      }
       // R12 批7:Cuu 气泡点击 → 深链定位工作台会话/行动卡(dispatch_ask/workbench-interrupt 卡的
       // "去工作台看看"动作，见 buildDesktopDispatchAskCuuCard/buildDesktopWorkbenchInterruptCuuCard)。
       // 先于 desktopPetMainRouteFromHref 检查——两者的 href 前缀不重叠，顺序不影响正确性。

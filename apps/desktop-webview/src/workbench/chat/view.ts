@@ -1,8 +1,10 @@
 // WorkHub 桌面 · 群聊/协同会话共用视图——imperative 挂载/事件绑定层（照 shell.ts/rail.ts 的分工：纯渲染在
 // render.ts，这里只负责拉数据、绑 DOM 事件、维护会话内的瞬态状态）。批 2 范围：文本+file_card 发送、
 // @ 成员/文件 picker（真实）、SSE 接线（断线指数退避重连+重连后 afterSeq 补缺口）、typing 节流。
-// # 会话引用 / / 技能唤起的假「即将上线」picker 已在 G-desktop 止血批 1 撤线（renderPicker() 打这两个
-// 触发符时就地清空挂载点，不再渲染任何东西）——解析器 trigger-parser.ts 还在，真要接的时候见那里注释。
+// R23 F-07 起 # 会话引用 / / 技能唤起也是真的：三个触发符共用同一套 picker 交互（候选取数 → 本地过滤 →
+// 键盘/点击选中 → commitComposerInsertion 插入可读纯文本），服务端按插入的名字解析回真实会话/技能并把
+// 材料喂进这一轮 Cuu 回应。chip 语义为什么是纯文本而不是结构化引用字段，见
+// .agents/notes/implemented/2026-09-05-chat-conversation-and-skill-references.md。
 // R12（final-turns-wiring）起：input.conversationKind === 'collab' 时，发一条文本消息之后会自动请求
 // 一轮 Cuu 回应（POST /conversations/:id/turns），流式 delta 拼进临时气泡，落定后换成真消息——
 // 逻辑全部下沉进 turn.ts 的纯函数（shouldRequestConversationTurn/appendTurnDelta/
@@ -44,6 +46,7 @@ import {
   fetchNotifications,
   fetchOlderConversationMessagesPage,
   fetchPresence,
+  fetchProjectConversations,
   otherParticipantUserIds,
   patchConversationCuu,
   patchMyAiMode,
@@ -121,6 +124,7 @@ import {
   renderLoadEarlierHtml,
   renderMemberBarHtml,
   renderDmHeadBarHtml,
+  renderConversationRefPickerHtml,
   renderMentionPickerHtml,
   renderMessageHtml,
   renderModeChipHtml,
@@ -133,17 +137,20 @@ import {
   renderPendingOutgoingHtml,
   renderPinBarHtml,
   renderReadReceiptHtml,
+  renderSkillPickerHtml,
   renderStreamingCuuBubbleHtml,
   renderTypingIndicatorHtml,
   renderUnreadDividerHtml,
   type ChatRenderContext,
   type ComposerAttachmentChip,
   type ConnectionBannerState,
+  type ConversationRefPickerOption,
   type LoadEarlierState,
   type MemberManageParticipantRow,
   type MentionPickerFile,
   type MentionPickerMember,
   type PendingOutgoingMessage,
+  type SkillPickerOption,
   type WorkbenchMemberVM
 } from "./render.js";
 import {
@@ -196,13 +203,20 @@ import { pruneExpiredTypingUsers, upsertTypingUser, type TypingState } from "./t
 
 type Locale = "zh-CN" | "en-US";
 
-export type ChatDrivePageClient = {
+// composer 三个 picker 要读的两个只读页端点，写成刚好够用的结构化形状（不是整个 PageClient）——
+// 测试里给假客户端只要补这两个方法，不必伪造 packages/api-client 的完整公共面。
+// R23 F-07：`skills` 是「/技能」picker 的候选来源。刻意用 GET /api/pages/skills 而不是治理面的
+// /api/team-skills/manage：前者的数据源就是服务端解析 `/技能名` 时用的同一份 teamSkills.listActive
+// （见 apps/api/src/routes/pages.ts 的 /skills 与 apps/api/src/services/conversation-turns.ts），
+// picker 里选得到的技能，服务端一定唤起得了；后者还会带上停用的历史版本，选中即解析不上。
+export type ChatComposerPageClient = {
   pages: {
     drive: (options: { projectId: string; q?: string }) => Promise<{ items: readonly { id: string; name: string; kind: string }[] }>;
+    skills: () => Promise<{ skills: readonly { skill_key: string; name: string; when_to_use: string }[] }>;
   };
 };
 
-export type ChatViewApiClient = ChatApiClient & ChatDrivePageClient;
+export type ChatViewApiClient = ChatApiClient & ChatComposerPageClient;
 
 export type ChatViewHandle = {
   dispose: () => void;
@@ -226,6 +240,9 @@ type PendingSendRecord = {
 
 const TYPING_PING_MIN_INTERVAL_MS = 2000;
 const FILE_SEARCH_DEBOUNCE_MS = 250;
+// R23 F-07：#会话 / /技能 两个 picker 的取数节奏。与文件搜索同一个量级（一次按键抖动的手感门槛），
+// 但它们各自只在触发符打开时取一页、之后本地过滤，所以这个 debounce 真正挡的是"连按/连删触发符"。
+const PICKER_SEARCH_DEBOUNCE_MS = 250;
 const TYPING_PRUNE_INTERVAL_MS = 750;
 const MAX_PICKER_RESULTS = 8;
 // R13 批4c：Cuu 不是真实 workspace 成员（没有 user_id），@ picker 里用一个固定的 sentinel id 代表她；
@@ -371,6 +388,105 @@ export function clampPickerHighlight(current: number | undefined, count: number)
     return 0;
   }
   return Math.min(Math.max(current, 0), count - 1);
+}
+
+// —— R23 F-07（「#会话引用」/「/技能唤起」picker 的可测内核）——————————————————————————
+//
+// mountChatView 本身没有 DOM 单测（见文件顶部注释），所以这三块都做成导出的纯函数/可注入时钟的
+// 工厂——候选映射、本地过滤、取数节奏各自能单独验，DOM 接线只剩"把它们串起来"。
+
+// 会话清单 VM → picker 候选行。排除**当前正在发言的这条会话**：服务端解析引用时同样会跳过自引用
+// （resolveConversationRefs 的 excludeConversationId，见 apps/api/src/services/conversation-turn-references.ts），
+// 列一条选了也不会生效的行就是骗人。
+export function toConversationRefOptions(
+  page: { conversations: readonly { id: string; title: string }[] },
+  options: { excludeConversationId?: string } = {}
+): ConversationRefPickerOption[] {
+  const excluded = options.excludeConversationId?.toLowerCase();
+  return page.conversations
+    .filter((conversation) => conversation.title.length > 0 && conversation.id.toLowerCase() !== excluded)
+    .map((conversation) => ({ conversationId: conversation.id, title: conversation.title }));
+}
+
+// 本地过滤——两个端点都没有 `q` 搜索参数（见 api.ts 的 fetchProjectConversations 注释），候选清单在
+// 触发符打开时取一次，之后边打字边在本地筛，同 @ picker 的成员半边（filterMembers）。
+export function filterConversationRefOptions(
+  options: readonly ConversationRefPickerOption[],
+  query: string,
+  max: number = MAX_PICKER_RESULTS
+): ConversationRefPickerOption[] {
+  const normalized = query.trim().toLowerCase();
+  const matches = normalized
+    ? options.filter((option) => option.title.toLowerCase().includes(normalized))
+    : options;
+  return matches.slice(0, max);
+}
+
+// 只按技能名过滤（不搜"适用场景"）——插进正文的是技能名，能搜到却看不出为什么搜到，比少几条结果更糟。
+export function filterSkillOptions(
+  options: readonly SkillPickerOption[],
+  query: string,
+  max: number = MAX_PICKER_RESULTS
+): SkillPickerOption[] {
+  const normalized = query.trim().toLowerCase();
+  const matches = normalized ? options.filter((option) => option.name.toLowerCase().includes(normalized)) : options;
+  return matches.slice(0, max);
+}
+
+export type PickerSearchClock = {
+  setTimeout?: (callback: () => void, timeout: number) => number;
+  clearTimeout?: (handle: number) => void;
+};
+
+export type PickerSearchRunner = {
+  // 排一次取数：先撤掉上一次还没到点的定时器（debounce），代次 +1（单调）；请求回来时代次对不上就
+  // 整个丢弃，settle 一次都不调——晚到的旧响应绝不允许覆盖新一次的结果。
+  run: <T>(fetcher: () => Promise<T>, settle: (result: T | undefined) => void) => void;
+  // dispose/关闭 picker 时调用：撤定时器 + 代次 +1，让已经在飞的那次回来时也落不了地。
+  cancel: () => void;
+};
+
+// 取数节奏（debounce + 单调代次）——照 @ picker 文件搜索（scheduleFileSearch）的既有套路，但抽成可测
+// 的工厂：那份内联实现没有 DOM 测试能覆盖，这里不动它（改一个正在正常工作、且没有测试兜底的路径，
+// 风险大于收益），新的两条取数走这个共用工厂。
+export function createPickerSearchRunner(
+  debounceMs: number,
+  clock: PickerSearchClock = globalThis as PickerSearchClock
+): PickerSearchRunner {
+  let timer: number | undefined;
+  let generation = 0;
+  const clearPending = (): void => {
+    if (timer !== undefined) {
+      clock.clearTimeout?.(timer);
+      timer = undefined;
+    }
+  };
+  return {
+    run<T>(fetcher: () => Promise<T>, settle: (result: T | undefined) => void): void {
+      clearPending();
+      const mine = ++generation;
+      timer = clock.setTimeout?.(() => {
+        timer = undefined;
+        void fetcher()
+          .then((result) => {
+            if (mine === generation) {
+              settle(result);
+            }
+          })
+          .catch(() => {
+            // 取数失败＝这一次没有候选（picker 渲染诚实的空态），不弹错误横幅——引用是加分项，
+            // 不该因为清单拉不到就打断正在打字的人。
+            if (mine === generation) {
+              settle(undefined);
+            }
+          });
+      }, debounceMs);
+    },
+    cancel(): void {
+      clearPending();
+      generation += 1;
+    }
+  };
 }
 
 // —— R14 FIX#8 前端半（composer 无 key 横幅） —— //
@@ -553,16 +669,27 @@ export function mountChatView(
   let mentionMembers: MentionPickerMember[] = [];
   let mentionFiles: MentionPickerFile[] = [];
   let mentionFilesLoading = false;
+  // R23 F-07：#会话 / /技能 两个 picker 的候选清单。两个来源端点都没有服务端搜索参数（见 api.ts 的
+  // fetchProjectConversations 注释），所以是「触发符打开时取一页 → 之后本地过滤」；loading 只用来渲
+  // 首次那一下的「加载中…」，重开时旧清单继续显示、在背后静默刷新（不闪空）。
+  let conversationRefOptions: ConversationRefPickerOption[] = [];
+  let conversationRefOptionsLoading = false;
+  let skillOptions: SkillPickerOption[] = [];
+  let skillOptionsLoading = false;
   // R13 H1（键盘可达性）：@ picker 的方向键高亮下标——下标口径是"成员在前、文件在后"拼起来的一条
   // 序列（跟 renderMentionPickerHtml 内部的 optionIndex 计数一致）。每次触发状态变化（新字符、
   // 切换/关闭 trigger）都在 applyTriggerState 里重置成 0——边打字边过滤这种交互，每次结果变化都
   // 该回到"第一条最相关"，不保留上一次的位置。
-  let mentionHighlightIndex: number | undefined;
+  let pickerHighlightIndex: number | undefined;
   let draftFallback = "";
   let pendingCounter = 0;
   let lastTypingPingAt = 0;
   let fileSearchTimer: ReturnType<typeof setTimeout> | undefined;
   let fileSearchGeneration = 0;
+  // R23 F-07：两个 picker 各自一个 debounce + 单调代次的取数 runner（createPickerSearchRunner）——
+  // 各管各的状态，从 # 切到 / 的过程中先前那次会话取数即便回来了，代次也已过期，一个字都不写。
+  const conversationRefSearch = createPickerSearchRunner(PICKER_SEARCH_DEBOUNCE_MS);
+  const skillSearch = createPickerSearchRunner(PICKER_SEARCH_DEBOUNCE_MS);
   let streamHandle: ConversationStreamHandle | undefined;
   // R12（final-turns-wiring）：协同会话 turn 的瞬态 UI 状态——只在 input.conversationKind === "collab"
   // 时才会被置为非初始值（beginTurn 是唯一的写入点，而 beginTurn 只在 shouldRequestConversationTurn
@@ -1334,10 +1461,29 @@ export function mountChatView(
     jumpEl!.innerHTML = hasUnread && !nearBottom ? renderJumpToUnreadHtml(input.locale) : "";
   }
 
-  // R13 H1（键盘可达性）：@ picker 当前可选行总数——成员在前、文件在后拼起来的同一条序列（跟
+  // R23 F-07：#会话 / /技能 picker 当前真正渲出来的那几行（本地按触发符查询词过滤 + 封顶）——
+  // renderPicker、键盘计数、Enter 选中三处必须看到**同一份**列表，所以统一从这两个函数取，绝不各算各的。
+  function visibleConversationRefOptions(): ConversationRefPickerOption[] {
+    return filterConversationRefOptions(conversationRefOptions, activeTrigger?.query ?? "");
+  }
+
+  function visibleSkillOptions(): SkillPickerOption[] {
+    return filterSkillOptions(skillOptions, activeTrigger?.query ?? "");
+  }
+
+  // R13 H1（键盘可达性）：当前 picker 的可选行总数。@ 是"成员在前、文件在后"拼起来的同一条序列（跟
   // renderMentionPickerHtml 内部的 optionIndex 计数口径一致）；mentionMembers/mentionFiles 本身已经
-  // 分别封顶到 MAX_PICKER_RESULTS，这里不用再切一刀。
-  function mentionOptionCount(): number {
+  // 分别封顶到 MAX_PICKER_RESULTS，这里不用再切一刀。R23 F-07 起 # 和 / 也各自报自己的可见行数。
+  function pickerOptionCount(): number {
+    if (!activeTrigger) {
+      return 0;
+    }
+    if (activeTrigger.kind === "conversation_ref") {
+      return visibleConversationRefOptions().length;
+    }
+    if (activeTrigger.kind === "skill_ref") {
+      return visibleSkillOptions().length;
+    }
     return mentionMembers.length + mentionFiles.length;
   }
 
@@ -1353,7 +1499,7 @@ export function mountChatView(
     if (activeTrigger.kind === "mention") {
       // exactOptionalPropertyTypes：highlightedIndex 是可选字段，undefined 时整个键都不出现
       // （同 renderCtx 里 openReassignItemId 的取舍）。
-      const highlightedIndex = clampPickerHighlight(mentionHighlightIndex, mentionOptionCount());
+      const highlightedIndex = clampPickerHighlight(pickerHighlightIndex, pickerOptionCount());
       slot.innerHTML = renderMentionPickerHtml({
         locale: input.locale,
         members: mentionMembers,
@@ -1363,18 +1509,43 @@ export function mountChatView(
       });
       return;
     }
-    // G-desktop 止血批 1：# 会话引用 / / 技能唤起还没真正接线——不再弹一块「即将上线」的假 picker
-    // （04 §4 铁律 3），保持挂载点空白，就跟什么都没触发一样诚实。见 render.ts 的
-    // renderComingSoonPickerHtml 顶部注释：函数留着没删，真接线时把这一行换回调它即可。
-    slot.innerHTML = "";
+    // R23 F-07：# 会话引用 / / 技能唤起——真的 picker（真实候选、真实选中插入），不再是空挂载点。
+    if (activeTrigger.kind === "conversation_ref") {
+      const conversations = visibleConversationRefOptions();
+      const highlightedIndex = clampPickerHighlight(pickerHighlightIndex, conversations.length);
+      slot.innerHTML = renderConversationRefPickerHtml({
+        locale: input.locale,
+        conversations,
+        // 只有"手上一条候选都还没有"时才渲加载态——重开触发符时旧清单继续显示、背后静默刷新。
+        loading: conversationRefOptionsLoading && conversationRefOptions.length === 0,
+        ...(highlightedIndex !== undefined ? { highlightedIndex } : {})
+      });
+      return;
+    }
+    const skills = visibleSkillOptions();
+    const skillHighlightedIndex = clampPickerHighlight(pickerHighlightIndex, skills.length);
+    slot.innerHTML = renderSkillPickerHtml({
+      locale: input.locale,
+      skills,
+      loading: skillOptionsLoading && skillOptions.length === 0,
+      ...(skillHighlightedIndex !== undefined ? { highlightedIndex: skillHighlightedIndex } : {})
+    });
   }
 
   // R13 H1（键盘可达性）：方向键/Enter 选中 @ picker 当前高亮的那一行——跟鼠标点 data-wb-chat-pick-*
   // 走的是同一条落地路径（pickMember/pickFile），只是入口从 click 换成 keydown。高亮下标越界（比如
   // 列表在异步文件搜索落地前后缩小了）先夹回合法范围，取不到就什么都不做（没有可选项）。
-  function selectHighlightedMentionOption(): void {
-    const highlighted = clampPickerHighlight(mentionHighlightIndex, mentionOptionCount());
-    if (highlighted === undefined) {
+  function selectHighlightedPickerOption(): void {
+    const highlighted = clampPickerHighlight(pickerHighlightIndex, pickerOptionCount());
+    if (highlighted === undefined || !activeTrigger) {
+      return;
+    }
+    if (activeTrigger.kind === "conversation_ref") {
+      pickConversationRef(visibleConversationRefOptions()[highlighted]?.conversationId);
+      return;
+    }
+    if (activeTrigger.kind === "skill_ref") {
+      pickSkill(visibleSkillOptions()[highlighted]?.skillKey);
       return;
     }
     if (highlighted < mentionMembers.length) {
@@ -2796,12 +2967,59 @@ export function mountChatView(
     }, FILE_SEARCH_DEBOUNCE_MS);
   }
 
+  // R23 F-07：#会话 picker 的候选清单——只在触发符「刚打开」时取一页（端点没有 q 参数，边打字边重复
+  // 拉同一页是纯浪费；之后每次按键只在本地过滤）。切走再切回来会重新取一次：期间在别处新建/改名的
+  // 会话不该在这个列表里看不见。
+  function loadConversationRefOptions(): void {
+    conversationRefOptionsLoading = true;
+    conversationRefSearch.run(
+      () => fetchProjectConversations(input.client, input.projectId),
+      (page) => {
+        if (disposed) {
+          return;
+        }
+        // 取数失败（page === undefined）＝这一次没有候选，picker 渲诚实的空态，不弹错误横幅。
+        conversationRefOptions = page
+          ? toConversationRefOptions(page, { excludeConversationId: input.conversationId })
+          : [];
+        conversationRefOptionsLoading = false;
+        renderPicker();
+      }
+    );
+  }
+
+  // R23 F-07：/技能 picker 的候选清单——同上的一次性取数节奏。数据源刻意与服务端解析 `/技能名` 时用的
+  // 同一份活跃技能清单对齐（见 ChatComposerPageClient 的 skills 注释）。
+  function loadSkillOptions(): void {
+    skillOptionsLoading = true;
+    skillSearch.run(
+      () => input.client.pages.skills(),
+      (page) => {
+        if (disposed) {
+          return;
+        }
+        skillOptions = page
+          ? page.skills.map((skill) => ({
+              skillKey: skill.skill_key,
+              name: skill.name,
+              whenToUse: skill.when_to_use
+            }))
+          : [];
+        skillOptionsLoading = false;
+        renderPicker();
+      }
+    );
+  }
+
   function applyTriggerState(text: string, cursor: number): void {
+    // R23 F-07：上一次的触发符种类——用来判断 # / / 的 picker 是不是"刚打开"（要取一次清单），
+    // 还是只是在同一个 picker 里继续打字（本地过滤即可）。
+    const previousKind = activeTrigger?.kind;
     const trigger = detectComposerTrigger(text, cursor);
     activeTrigger = trigger ?? undefined;
     // R13 H1（键盘可达性）：每次触发状态变化（新字符改了过滤词、切换/关闭 trigger）都回到"第一条
     // 最相关"——边打字边过滤的列表不该保留上一次按键留下的高亮位置。
-    mentionHighlightIndex = 0;
+    pickerHighlightIndex = 0;
     if (trigger?.kind === "mention") {
       mentionMembers = filterMembers(trigger.query);
       scheduleFileSearch(trigger.query);
@@ -2809,7 +3027,36 @@ export function mountChatView(
     }
     mentionFiles = [];
     mentionFilesLoading = false;
+    if (trigger?.kind === "conversation_ref" && previousKind !== "conversation_ref") {
+      loadConversationRefOptions();
+    }
+    if (trigger?.kind === "skill_ref" && previousKind !== "skill_ref") {
+      loadSkillOptions();
+    }
     renderPicker();
+  }
+
+  // 选中一条候选后的落地动作：把 [触发符, 光标) 这段换成 insertion、关掉 picker、光标落到插入内容之后。
+  // @ / # / / 三个 picker 共用（R23 F-07 起）——三份逐字重复的插入尾巴只该有一份。
+  function commitComposerInsertion(insertion: string): void {
+    const ta = textareaEl();
+    if (!ta || !activeTrigger) {
+      return;
+    }
+    const result = applyComposerChipInsertion(ta.value, activeTrigger, insertion);
+    ta.value = result.text;
+    draftFallback = result.text;
+    activeTrigger = undefined;
+    mentionFiles = [];
+    mentionFilesLoading = false;
+    try {
+      ta.setSelectionRange(result.cursor, result.cursor);
+    } catch {
+      // ignore — value is already correct even if the cursor can't be restored.
+    }
+    ta.focus();
+    renderPicker();
+    syncSendButtonDisabled();
   }
 
   function pickMember(userId: string | undefined): void {
@@ -2820,23 +3067,38 @@ export function mountChatView(
     // 查不到），让用户能用同一套 @ 交互点出「@Cuu」；落库后仍然只是纯文本 "@Cuu " 前缀——服务端的
     // @Cuu 检测（回话判定器）按显示名词边界匹配这段文本，不依赖任何结构化 user_id 标记。
     const nickname = userId === CUU_MENTION_SENTINEL_USER_ID ? CUU_MENTION_DISPLAY_NAME : membersMap.get(userId)?.nickname;
-    const ta = textareaEl();
-    if (!nickname || !ta) {
+    if (!nickname) {
       return;
     }
-    const result = applyComposerChipInsertion(ta.value, activeTrigger, `@${nickname} `);
-    ta.value = result.text;
-    draftFallback = result.text;
-    activeTrigger = undefined;
-    mentionFiles = [];
-    try {
-      ta.setSelectionRange(result.cursor, result.cursor);
-    } catch {
-      // ignore — value is already correct even if the cursor can't be restored.
+    commitComposerInsertion(`@${nickname} `);
+  }
+
+  // R23 F-07：选中一条会话 → 正文里插入**可读的纯文本**「#会话标题 」。与 @ 提及完全同一套机制：
+  // 消息体不带任何结构化引用字段，服务端按标题把它解析回真实会话
+  // （apps/api/src/services/conversation-turn-references.ts），聊天记录里每个人都看得见引用了什么。
+  // 决策与代价见 .agents/notes/implemented/2026-09-05-chat-conversation-and-skill-references.md。
+  function pickConversationRef(conversationId: string | undefined): void {
+    if (!conversationId || !activeTrigger) {
+      return;
     }
-    ta.focus();
-    renderPicker();
-    syncSendButtonDisabled();
+    const option = conversationRefOptions.find((candidate) => candidate.conversationId === conversationId);
+    if (!option) {
+      return;
+    }
+    commitComposerInsertion(`#${option.title} `);
+  }
+
+  // R23 F-07：选中一条技能 → 正文开头插入「/技能名 」（斜杠命令语义，见 trigger-parser.ts）。同上：
+  // 纯文本，服务端按名字解析回真实技能并把它的正文注入这一轮 system prompt。
+  function pickSkill(skillKey: string | undefined): void {
+    if (!skillKey || !activeTrigger) {
+      return;
+    }
+    const option = skillOptions.find((candidate) => candidate.skillKey === skillKey);
+    if (!option) {
+      return;
+    }
+    commitComposerInsertion(`/${option.name} `);
   }
 
   function pickFile(itemId: string | undefined): void {
@@ -2884,16 +3146,34 @@ export function mountChatView(
     syncSendButtonDisabled();
   }
 
-  function insertMentionShortcut(): void {
+  // 工具条上的三个入口（@ 文件·成员 / # 会话 / / 技能）——点一下＝替用户把触发符打进输入框并打开对应
+  // picker，等价于自己敲那个字符，不是另一条平行路径。
+  function insertTriggerShortcut(trigger: "@" | "#" | "/"): void {
     const ta = textareaEl();
     if (!ta) {
       return;
     }
     ta.focus();
+    if (trigger === "/") {
+      // R23 F-07：「/技能」是斜杠命令语义——解析器只认整条消息**最开头**那个 `/`
+      // （trigger-parser.ts 的 detectComposerTrigger），所以这个入口把 `/` 插到正文最前面、光标放在它
+      // 后面。插在当前光标处只会得到一个不触发任何 picker 的字面斜杠，那才是骗人的按钮。
+      const nextValue = `/${ta.value}`;
+      ta.value = nextValue;
+      draftFallback = nextValue;
+      try {
+        ta.setSelectionRange(1, 1);
+      } catch {
+        // ignore.
+      }
+      applyTriggerState(nextValue, 1);
+      syncSendButtonDisabled();
+      return;
+    }
     const cursor = ta.selectionStart ?? ta.value.length;
     const before = ta.value.slice(0, cursor);
     const needsSpace = before.length > 0 && !/\s$/u.test(before);
-    const insertion = `${needsSpace ? " " : ""}@`;
+    const insertion = `${needsSpace ? " " : ""}${trigger}`;
     const nextValue = `${before}${insertion}${ta.value.slice(cursor)}`;
     const nextCursor = cursor + insertion.length;
     ta.value = nextValue;
@@ -2904,6 +3184,7 @@ export function mountChatView(
       // ignore.
     }
     applyTriggerState(nextValue, nextCursor);
+    syncSendButtonDisabled();
   }
 
   function issueSend(record: PendingSendRecord): void {
@@ -3207,21 +3488,22 @@ export function mountChatView(
     if (!(event.target instanceof HTMLTextAreaElement) || !event.target.matches("[data-wb-chat-input]")) {
       return;
     }
-    // R13 H1（键盘可达性）：@ picker 打开着的时候，方向键/Enter/Escape 先喂给它——焦点仍然留在
-    // textarea 里（边打字边过滤这条 UX 不能丢，见 mentionHighlightIndex 顶部注释），只是这几个键
-    // 从"移动文本光标/发送/什么都不做"临时改道成"picker 导航"。# / 触发符（G-desktop 止血批 1 起
-    // 不再渲染任何 picker）没有可选行，Escape 仍然生效（关掉 activeTrigger），方向键/Enter 对它是
-    // no-op（activeTrigger.kind !== "mention"）。
-    if (activeTrigger?.kind === "mention") {
+    // R13 H1（键盘可达性）：picker 打开着的时候，方向键/Enter/Escape 先喂给它——焦点仍然留在 textarea
+    // 里（边打字边过滤这条 UX 不能丢，见 pickerHighlightIndex 顶部注释），只是这几个键从"移动文本
+    // 光标/发送"临时改道成"picker 导航"。R23 F-07 起三种触发符（@ / # / /）走同一套。
+    // 只在**真的有可选行**时改道：一条候选都没有（还在取数、或过滤到空）时不能吞掉 Enter，否则用户
+    // 打了个 `#` 就再也发不出这条消息了。Escape 不受这条限制——它只是关掉 picker，任何时候都该生效。
+    const openPickerOptionCount = activeTrigger ? pickerOptionCount() : 0;
+    if (activeTrigger && openPickerOptionCount > 0) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
-        mentionHighlightIndex = movePickerHighlight(mentionHighlightIndex, event.key === "ArrowDown" ? 1 : -1, mentionOptionCount());
+        pickerHighlightIndex = movePickerHighlight(pickerHighlightIndex, event.key === "ArrowDown" ? 1 : -1, openPickerOptionCount);
         renderPicker();
         return;
       }
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
-        selectHighlightedMentionOption();
+        selectHighlightedPickerOption();
         return;
       }
     }
@@ -3253,8 +3535,9 @@ export function mountChatView(
       cancelReply();
       return;
     }
-    if (target.closest('[data-wb-chat-tool-trigger="@"]')) {
-      insertMentionShortcut();
+    const toolTrigger = target.closest<HTMLElement>("[data-wb-chat-tool-trigger]")?.dataset.wbChatToolTrigger;
+    if (toolTrigger === "@" || toolTrigger === "#" || toolTrigger === "/") {
+      insertTriggerShortcut(toolTrigger);
       return;
     }
     if (target.closest("[data-wb-chat-mode-toggle]")) {
@@ -3283,6 +3566,18 @@ export function mountChatView(
     const fileRow = target.closest<HTMLElement>("[data-wb-chat-pick-file]");
     if (fileRow) {
       pickFile(fileRow.dataset.wbChatPickFile);
+      return;
+    }
+    // R23 F-07：#会话 / /技能 两个 picker 的行——与键盘 Enter 走同一条落地路径（pickConversationRef /
+    // pickSkill），只是入口从 keydown 换成 click。
+    const conversationRow = target.closest<HTMLElement>("[data-wb-chat-pick-conversation]");
+    if (conversationRow) {
+      pickConversationRef(conversationRow.dataset.wbChatPickConversation);
+      return;
+    }
+    const skillRow = target.closest<HTMLElement>("[data-wb-chat-pick-skill]");
+    if (skillRow) {
+      pickSkill(skillRow.dataset.wbChatPickSkill);
     }
   });
 
@@ -3830,6 +4125,10 @@ export function mountChatView(
       if (fileSearchTimer !== undefined) {
         clearTimeout(fileSearchTimer);
       }
+      // R23 F-07：撤掉两个 picker 还没到点的取数 + 让已经在飞的那次回来时代次已过期（不写任何状态、
+      // 不往已卸载的挂载点渲染）。
+      conversationRefSearch.cancel();
+      skillSearch.cancel();
       if (actionCardRunProgressRefetchTimer !== undefined) {
         clearTimeout(actionCardRunProgressRefetchTimer);
       }

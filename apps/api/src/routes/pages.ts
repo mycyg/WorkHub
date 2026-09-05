@@ -13,6 +13,7 @@ import {
   type NotificationPageVM,
   type ProjectHealthPageVM,
   type ApprovalRequest,
+  type TeamSkillCurationStatusVM,
   type WorkHubLocale
 } from "@workhub/contracts";
 
@@ -110,6 +111,10 @@ import {
   getDefaultAgentRunQueue,
   type AgentRunQueue
 } from "../workers/agent-runner.js";
+import {
+  peekSkillCurationRunState,
+  skillCurationAvailability
+} from "../workers/agent-skill-curation.js";
 import { getDefaultCostLedgerStore } from "../services/cost-ledger-store.js";
 import { getDefaultBudgetPolicyStore } from "../services/cost-policy-store.js";
 
@@ -135,6 +140,9 @@ export type PageRoutesDependencies = {
   aiWorklog?: AiWorklogMetricsService;
   readiness?: (runtimeSettings: Settings) => Promise<ReadinessResult>;
   teamSkills?: Pick<TeamSkillRepository, "listActive">;
+  // R23 SA-06：技能页的「AI 夜间自学」状态源。默认直接读 worker 侧真值（只看不建调度器）；
+  // 注入点仅供测试替身。
+  skillCuration?: () => TeamSkillCurationStatusVM;
   taskPlans?: Pick<ReturnType<typeof createTaskPlanRepository>, "listDashboardPlans" | "listPlanMetaByIds">;
   objectives?: Pick<ObjectiveRepository, "listObjectiveTitlesByIds">;
   // R13 批 P4：KPI「AI 自动合并数/占比」的计数来源（reviews 表 ai actor 的今日通过评审计数）。
@@ -151,6 +159,17 @@ export type PageRoutesDependencies = {
   };
   allowUnauthenticatedGoldPath?: boolean;
 };
+
+// R23 SA-06：技能页的「AI 夜间自学」状态默认取数——只读 worker 侧现状，绝不在这里把调度器建出来
+// （页面渲染不该有副作用）。本进程还没跑过就诚实回 running:false / last_run_at:null。
+function defaultSkillCurationStatus(): TeamSkillCurationStatusVM {
+  const runState = peekSkillCurationRunState();
+  return {
+    enabled: skillCurationAvailability().enabled,
+    running: runState.running,
+    last_run_at: runState.lastRunAt
+  };
+}
 
 const AGENT_DASHBOARD_PUBLIC_PLAN_LIMIT = 20;
 const AGENT_DASHBOARD_VISIBILITY_CANDIDATE_LIMIT = 50;
@@ -324,6 +343,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const aiWorklog = deps.aiWorklog ?? getDefaultAiWorklogMetricsService();
   const readiness = deps.readiness ?? checkReadiness;
   const teamSkills = deps.teamSkills ?? createTeamSkillRepository(getSharedDatabaseClient().db);
+  const skillCuration = deps.skillCuration ?? defaultSkillCurationStatus;
   const taskPlans = deps.taskPlans ?? createTaskPlanRepository(getSharedDatabaseClient().db);
   const objectives = deps.objectives ?? createObjectiveRepository(getSharedDatabaseClient().db);
   // R13 批 P4：KPI「AI 自动合并数/占比」+ labor-split 按 assignee 记账，均只读、均照 taskPlans/objectives
@@ -1035,7 +1055,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     // 经 seed 成员解析 == 默认工作区，零变化；多租户下各成员只看自己工作区的技能。
     const workspaceId = c.var.actor.workspaceId;
     const active = await teamSkills.listActive(workspaceId);
-    return c.json(pageEnvelope(buildTeamSkillsPage({ skills: active }), locale));
+    return c.json(pageEnvelope(buildTeamSkillsPage({ skills: active, curation: skillCuration() }), locale));
   });
 
   routes.get("/settings", createCurrentUserMiddleware(authSource), async (c) => {

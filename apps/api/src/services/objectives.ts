@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import {
   createObjectiveRepository,
   getSharedDatabaseClient,
+  type ObjectiveDetailResult as DbObjectiveDetailResult,
+  type ObjectiveListResult as DbObjectiveListResult,
   type ObjectivePlanningContextResult,
   type ObjectiveProgressSnapshot as DbObjectiveProgressSnapshot,
   type ObjectiveRepository as DbObjectiveRepository,
@@ -10,6 +12,8 @@ import {
 } from "@workhub/db";
 
 export type ObjectiveProgressSnapshot = DbObjectiveProgressSnapshot;
+export type ObjectiveListResult = DbObjectiveListResult;
+export type ObjectiveDetailResult = DbObjectiveDetailResult;
 
 export type ObjectiveRepository = Pick<
   DbObjectiveRepository,
@@ -19,6 +23,8 @@ export type ObjectiveRepository = Pick<
   | "createObjective"
   | "linkWorkItem"
   | "listActiveObjectiveIdsForWorkspace"
+  | "listObjectivesForWorkspace"
+  | "readObjectiveDetail"
 >;
 
 export type ObjectivePlanningContextForPlanner = {
@@ -58,6 +64,11 @@ export type ObjectiveService = {
     linkedByUserId?: string;
   }) => Promise<void>;
   refreshWorkspaceObjectives: (workspaceId: string) => Promise<number>;
+  // R23 F-01（OKR 列表/详情持久化）：项目主页 OKR 面板首屏真拉取 + 详情抽屉的读入口。两个方法都是
+  // 仓库层的薄封装（同 createObjective/linkWorkItem 的既有风格——业务逻辑在仓库查询里，服务层不加工），
+  // 路由层负责映射成响应契约的 snake_case 形状。
+  listObjectives: (input: { workspaceId: string; limit?: number }) => Promise<ObjectiveListResult>;
+  getObjective: (input: { workspaceId: string; objectiveId: string }) => Promise<ObjectiveDetailResult | null>;
 };
 
 export type ObjectiveServiceOptions = {
@@ -190,6 +201,14 @@ export function createObjectiveService(options: ObjectiveServiceOptions): Object
         }
       }
       return refreshed;
+    },
+
+    async listObjectives(input) {
+      return options.objectives.listObjectivesForWorkspace(input);
+    },
+
+    async getObjective(input) {
+      return options.objectives.readObjectiveDetail(input);
     }
   };
 }

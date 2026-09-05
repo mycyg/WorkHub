@@ -91,6 +91,27 @@ export const teamSkillVmSchema = z.object({
 });
 export type TeamSkillVM = z.infer<typeof teamSkillVmSchema>;
 
+// R23 SA-06：AI 夜间自学团队技能的运行状态——技能页据此显示「上次自学时间 / 未启用 / 正在进行」。
+// enabled=开关已开 **且** 这台部署配了 LLM 密钥（缺一样今晚都不会跑，那就诚实说「未启用」，
+// 不要显示成「已开启，等今晚」）；running=此刻正在跑；last_run_at=本进程记到的上一轮开跑完成时间，
+// 记不到就是 null——刻意不拿审计日志里「上次学到新技能的时间」冒充「上次自学时间」（没学到东西
+// 的那些轮次同样是跑过的）。
+export const teamSkillCurationStatusVmSchema = z.object({
+  enabled: z.boolean(),
+  running: z.boolean(),
+  last_run_at: isoDateTimeSchema.nullable()
+});
+export type TeamSkillCurationStatusVM = z.infer<typeof teamSkillCurationStatusVmSchema>;
+
+// R23 SA-06：管理员手动触发一轮自学的回执（POST /api/team-skills/curate-now）。
+// started 恒为 true（拒绝的情况走 403/409/503 错误码，不会走到这里），curation 是触发之后的最新状态，
+// 前端可直接拿它替换页面上的 curation 区块。
+export const teamSkillCurateNowResponseSchema = z.object({
+  started: z.literal(true),
+  curation: teamSkillCurationStatusVmSchema
+});
+export type TeamSkillCurateNowResponse = z.infer<typeof teamSkillCurateNowResponseSchema>;
+
 export const teamSkillsPageVmSchema = z.object({
   generated_at: isoDateTimeSchema,
   skills: z.array(teamSkillVmSchema),
@@ -99,6 +120,7 @@ export const teamSkillsPageVmSchema = z.object({
     ai_authored: z.number().int().nonnegative(),
     refined: z.number().int().nonnegative()
   }),
+  curation: teamSkillCurationStatusVmSchema,
   empty_state: z.enum(["no_skills"]).optional()
 });
 export type TeamSkillsPageVM = z.infer<typeof teamSkillsPageVmSchema>;
@@ -387,11 +409,17 @@ export const meetingRecordVmSchema = z.object({
   audio_size_bytes: z.number().int().nonnegative(),
   transcript_text: z.string().optional(),
   minutes_md: z.string().optional(),
-  status: z.enum(["processing", "ready", "failed"]),
+  // SA-02（会议分析链路）：`transcribed` 从此是可见状态——转写已入库、AI 纪要尚未生成。此前
+  // 服务端把它折叠进 `processing`，于是「等 AI」和「AI 从没被叫起来」在页面上长得一模一样。
+  status: z.enum(["processing", "transcribed", "ready", "failed"]),
   job_id: idSchema.optional(),
   created_at: isoDateTimeSchema,
   updated_at: isoDateTimeSchema,
-  insights: z.array(meetingInsightVmSchema).default([])
+  insights: z.array(meetingInsightVmSchema).default([]),
+  // 重新生成纪要——仅项目管理者、且这场会议确实可以重跑分析时下发。
+  actions: z.object({
+    reanalyze: actionSpecSchema.optional()
+  }).default({})
 });
 export type MeetingRecordVM = z.infer<typeof meetingRecordVmSchema>;
 
@@ -412,6 +440,9 @@ export const meetingPageVmSchema = z.object({
     dismissed_insight_count: z.number().int().nonnegative()
   }),
   can_manage: z.boolean().default(false),
+  // SA-02：这个部署到底有没有配 AI。false 时页面必须直说「AI 未配置，只保存了转写」，
+  // 而不是让用户对着「还没有纪要」干等一个永远不会来的结果。默认 true 兼容旧生产者。
+  ai_analysis_configured: z.boolean().default(true),
   selected_meeting_id: idSchema.optional(),
   meetings: z.array(meetingRecordVmSchema),
   empty_state: z.enum(["no_project", "no_meetings"]).optional()
@@ -706,7 +737,11 @@ export const projectHomePageVmSchema = z.object({
   // R14 批 GH（07-gh-design.md §5.1）：GitHub 活动展示切片，additive/optional——省略时表示"没绑定
   // repo 或绑定了但暂无活动"，不是渲染空列表/占位区块（诚实缺省，同 army/empty_state 的手法）。
   // 取数失败同样降级为省略，不拖垮整个项目主页（照 army pill 的 try/catch 静默降级）。
-  github_activities: z.array(githubActivityVmSchema).optional()
+  github_activities: z.array(githubActivityVmSchema).optional(),
+  // R23 P4（R20 P2A 端点上界面）：能不能归档/删除这个项目——服务端用与 POST /api/projects/:id/{archive,delete}
+  // 完全相同的判定算出（管理员且确证同工作区，或项目所有者），前端据此决定「项目生命周期」分区渲不渲。
+  // 可选（additive）：旧夹具不带时按 false 处理，不会给没权限的人渲出会 403 的按钮。
+  can_manage_lifecycle: z.boolean().optional()
 });
 export type ProjectHomePageVM = z.infer<typeof projectHomePageVmSchema>;
 
@@ -1234,7 +1269,22 @@ export const workItemDetailVmSchema = z.object({
   })).default([]),
   actions: z.object({
     create_proposal_draft: actionSpecSchema.optional()
-  }).default({})
+  }).default({}),
+  // R23 P4（R20 P2A 端点上界面）：详情页要能渲「认领」「指派给…」两个动作，就得先知道当前这个人有没有
+  // 资格——两个布尔由服务端用与 POST /api/workitems/:id/{claim,assign} 完全相同的权限判定算出
+  // （canClaimWorkItem / canManageWorkItemAssignees），前端据此决定按钮渲不渲，不自己猜规则。
+  // 可选（additive）：旧夹具/旧客户端不带这两个字段时，前端按「不渲按钮」处理，不会凭空多出假入口。
+  can_claim: z.boolean().optional(),
+  can_assign: z.boolean().optional(),
+  // R23 P4（R20 P2A 端点上界面）：指派名单（work_item_assignments 的行）。POST /api/workitems/:id/assign
+  // 写的是这张表、**不是** claimed_by——详情页若只渲「现在谁在跟」（认领人），指派完页面会毫无变化，
+  // 那就是个看不出结果的假动作。nickname 与认领人一样由服务端 join users 同源下发，前端不吐裸 user id。
+  // 省略＝这个事项没有任何指派（诚实缺省，不渲空名单区块，同 github_activities 的手法）。
+  assignees: z.array(z.object({
+    user_id: idSchema,
+    nickname: z.string().min(1).max(120).optional(),
+    role: z.enum(["lead", "collaborator"])
+  })).max(50).optional()
 });
 export type WorkItemDetailVM = z.infer<typeof workItemDetailVmSchema>;
 

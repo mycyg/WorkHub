@@ -1,4 +1,9 @@
-import { teamSkillsPageVmSchema, type TeamSkillsPageVM, type TeamSkillVM } from "@workhub/contracts";
+import {
+  teamSkillsPageVmSchema,
+  type TeamSkillCurationStatusVM,
+  type TeamSkillsPageVM,
+  type TeamSkillVM
+} from "@workhub/contracts";
 import type { TeamSkillRow } from "@workhub/db";
 
 import { parseOutputContract } from "./output-contract.js";
@@ -6,6 +11,10 @@ import { parseOutputContract } from "./output-contract.js";
 export type TeamSkillsPageInput = {
   // 当前激活的团队技能（一 key 一 active），按 skill_key 排序。
   skills: readonly TeamSkillRow[];
+  // R23 SA-06：AI 夜间自学的运行状态。刻意做成必填——页面要回答「这台部署到底有没有人在攒技能」，
+  // 由路由从 worker 侧读真值传入（读不到就是 running:false / last_run_at:null 的诚实缺省），
+  // 页面装配层自己不猜。
+  curation: TeamSkillCurationStatusVM;
   generatedAt?: Date;
 };
 
@@ -73,6 +82,7 @@ export function buildTeamSkillsPage(input: TeamSkillsPageInput): TeamSkillsPageV
       ai_authored: aiAuthored,
       refined
     },
+    curation: input.curation,
     ...(skills.length === 0 ? { empty_state: "no_skills" as const } : {})
   }, "team-skills");
 }

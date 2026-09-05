@@ -1,17 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { SettingsPageVM, UserAiProfileVM, UserProfileVM } from "@workhub/contracts";
+import type { ClientDeviceResponse, SettingsPageVM, UserAiProfileVM, UserProfileVM } from "@workhub/contracts";
 
 import {
   createSettingsView,
   decidePolicyRevokeConfirmation,
+  devicesSectionHtml,
   logoutErrorPanelHtml,
   permissionPoliciesSectionHtml,
+  permissionPolicyFormHtml,
   runDesktopLogout,
+  type DesktopDevicesSectionState,
   type DesktopLogoutEffects,
   type DesktopLogoutStage,
-  type DesktopLogoutView
+  type DesktopLogoutView,
+  type PermissionPolicyFormState
 } from "./settings.js";
 import type { SpotlightViewContext } from "../view-context.js";
 
@@ -396,6 +400,145 @@ test("a failed AI profile fetch does not block the rest of settings, and offers 
 
     assert.equal(profileCalls, 2);
     assert.match(body.innerHTML, /data-set-ai-mode="3" data-sel="true"/u);
+  });
+});
+
+// D1（R19-13 托盘语言联动补线）：主窗设置页切语言此前只更新偏好 + reload，从没通知原生外壳——
+// 托盘菜单/tooltip/通知兜底文案永远停在启动语言。现在 reload 前真调 set_shell_locale，与
+// pet-surface.ts 桌宠菜单切语言同一份修法（对应用例见 pet-surface.test.ts）。plain Node 没有
+// window 全局，故这里连同 __TAURI__ 一起临时打桩，覆盖「storage 写入 → invoke → reload」全链。
+test("clicking a locale option syncs the native shell via set_shell_locale before reloading", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = settingsVm();
+    const invokeCalls: Array<{ command: string; args: Record<string, unknown> | undefined }> = [];
+    const reloadCalls: number[] = [];
+    const storageCalls: Array<{ key: string; value: string }> = [];
+
+    const globals = globalThis as unknown as { __TAURI__?: unknown; window?: unknown };
+    const originalTauri = globals.__TAURI__;
+    const originalWindow = globals.window;
+    globals.__TAURI__ = {
+      core: {
+        async invoke(command: string, args?: Record<string, unknown>) {
+          invokeCalls.push({ command, args });
+          return undefined;
+        }
+      }
+    };
+    globals.window = {
+      localStorage: {
+        setItem(key: string, value: string) {
+          storageCalls.push({ key, value });
+        }
+      },
+      location: {
+        reload() {
+          reloadCalls.push(1);
+        }
+      }
+    };
+
+    try {
+      await createSettingsView().mount(
+        baseCtx(body, {
+          client: {
+            pages: { async settings() { return vm; } },
+            async request<T>(path: string) {
+              if (path === "/api/me/profile") {
+                return userProfileVm() as unknown as T;
+              }
+              return aiProfileVm() as unknown as T;
+            },
+            async updatePreferences() {
+              return {} as never;
+            }
+          } as unknown as SpotlightViewContext["client"]
+        })
+      );
+      await tick();
+
+      body.click(new FakeElement(new Set(["[data-set-locale]"]), { setLocale: "en-US" }));
+      await tick();
+      await tick();
+      await tick();
+
+      assert.deepEqual(storageCalls, [{ key: "workhub_locale", value: "en-US" }]);
+      // invoke 必须发生——且是在 reload 之前调用的语句序（见 settings.ts 的 .then() 回调顺序）。
+      assert.deepEqual(invokeCalls, [{ command: "set_shell_locale", args: { locale: "en-US" } }]);
+      assert.deepEqual(reloadCalls, [1]);
+    } finally {
+      if (originalTauri === undefined) {
+        delete globals.__TAURI__;
+      } else {
+        globals.__TAURI__ = originalTauri;
+      }
+      if (originalWindow === undefined) {
+        delete globals.window;
+      } else {
+        globals.window = originalWindow;
+      }
+    }
+  });
+});
+
+test("clicking a locale option still reloads when no Tauri invoke is available (web/non-desktop degrade)", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = settingsVm();
+    const reloadCalls: number[] = [];
+
+    const globals = globalThis as unknown as { __TAURI__?: unknown; window?: unknown };
+    const originalTauri = globals.__TAURI__;
+    const originalWindow = globals.window;
+    delete globals.__TAURI__;
+    globals.window = {
+      localStorage: { setItem() {} },
+      location: {
+        reload() {
+          reloadCalls.push(1);
+        }
+      }
+    };
+
+    try {
+      await createSettingsView().mount(
+        baseCtx(body, {
+          client: {
+            pages: { async settings() { return vm; } },
+            async request<T>(path: string) {
+              if (path === "/api/me/profile") {
+                return userProfileVm() as unknown as T;
+              }
+              return aiProfileVm() as unknown as T;
+            },
+            async updatePreferences() {
+              return {} as never;
+            }
+          } as unknown as SpotlightViewContext["client"]
+        })
+      );
+      await tick();
+
+      body.click(new FakeElement(new Set(["[data-set-locale]"]), { setLocale: "en-US" }));
+      await tick();
+      await tick();
+      await tick();
+
+      // best-effort：没有 invoke 时安静跳过，绝不阻塞 reload。
+      assert.deepEqual(reloadCalls, [1]);
+    } finally {
+      if (originalTauri === undefined) {
+        delete globals.__TAURI__;
+      } else {
+        globals.__TAURI__ = originalTauri;
+      }
+      if (originalWindow === undefined) {
+        delete globals.window;
+      } else {
+        globals.window = originalWindow;
+      }
+    }
   });
 });
 
@@ -1088,5 +1231,436 @@ test("MRG-25: a client without revokePermissionPolicy degrades quietly (no stuck
 
     assert.doesNotMatch(body.innerHTML, /撤销中/u, "busy label must not stick when the method is missing");
     assert.match(body.innerHTML, /当前客户端版本不支持撤销/u);
+  });
+});
+
+// —— R23 F-02（权限策略新增/调整）—— //
+
+function policyFormState(over: Partial<PermissionPolicyFormState> = {}): PermissionPolicyFormState {
+  return {
+    scopeKind: "workspace",
+    scopeId: "ws-1",
+    actionPattern: "drive.write:*",
+    effect: "ask",
+    priority: "0",
+    busy: false,
+    errorText: undefined,
+    supported: true,
+    ...over
+  };
+}
+
+test("permissionPolicyFormHtml marks the selected scope-kind/effect chips, and only shows the priority kill-switch hint for deny", () => {
+  const askHtml = permissionPolicyFormHtml(policyFormState({ effect: "ask" }), true);
+  assert.match(askHtml, /data-set-policy-scope-kind="workspace" data-sel="true"/u);
+  assert.match(askHtml, /data-set-policy-effect="ask" data-sel="true"/u);
+  assert.doesNotMatch(askHtml, /跨范围强制熔断/u);
+
+  const denyHtml = permissionPolicyFormHtml(policyFormState({ effect: "deny" }), true);
+  assert.match(denyHtml, /data-set-policy-effect="deny" data-sel="true"/u);
+  assert.match(denyHtml, /跨范围强制熔断/u, "the OVERRIDE_DENY_PRIORITY warning must only show for a deny rule");
+});
+
+test("permissionPolicyFormHtml disables inputs and shows a submitting label while busy, and surfaces errorText", () => {
+  const html = permissionPolicyFormHtml(policyFormState({ busy: true, errorText: "保存失败，请重试。" }), true);
+  assert.match(html, /正在提交…/u);
+  assert.match(html, /data-set-policy-submit="true" disabled/u);
+  assert.match(html, /保存失败，请重试。/u);
+});
+
+test("permissionPoliciesSectionHtml renders the new/adjust form alongside the list when a form state is given", () => {
+  const html = permissionPoliciesSectionHtml({
+    policies: [policyVm()],
+    armedId: undefined,
+    busyId: undefined,
+    errorText: undefined,
+    zh: true,
+    form: policyFormState()
+  });
+  assert.match(html, /data-spot-policy-form-section="true"/u);
+  assert.match(html, /新增 \/ 调整策略/u);
+});
+
+test("R23 F-02: submitting the new-policy form calls createPermissionPolicy with the entered fields and merges the result into the list", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    // 表单跟列表共用同一个 admin-only 门（vm.permission_policies 非 undefined 才渲，见
+    // permissionPoliciesSectionHtml）——这里需要一个非 undefined 的（哪怕是空）数组来模拟管理员视角。
+    const vm = { ...settingsVm(), permission_policies: [] } as unknown as SettingsPageVM;
+    const createCalls: Array<Record<string, unknown>> = [];
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm({ workspace_id: "ws-9" }) as unknown as T;
+          },
+          async createPermissionPolicy(payload: Record<string, unknown>) {
+            createCalls.push(payload);
+            return policyVm({ id: "new-pol", action_pattern: payload.action_pattern, effect: payload.effect }) as unknown as never;
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+
+    body.focusOutOn(new FakeElement(new Set(["[data-set-policy-scope-id]"]), {}, "ws-custom"));
+    body.focusOutOn(new FakeElement(new Set(["[data-set-policy-action-pattern]"]), {}, "drive.write:*"));
+    body.focusOutOn(new FakeElement(new Set(["[data-set-policy-priority]"]), {}, "5"));
+    body.click(new FakeElement(new Set(["[data-set-policy-effect]"]), { setPolicyEffect: "deny" }));
+    body.click(new FakeElement(new Set(["[data-set-policy-submit]"])));
+    await tick();
+    await tick();
+
+    assert.deepEqual(createCalls, [
+      {
+        scope_kind: "workspace",
+        scope_id: "ws-custom",
+        action_pattern: "drive.write:*",
+        effect: "deny",
+        priority: 5,
+        learned_from_session: false
+      }
+    ]);
+    assert.match(body.innerHTML, /data-set-revoke-policy="new-pol"/u, "the newly created policy must appear in the list without a full page reload");
+  });
+});
+
+test("R23 F-02: clicking the 'workspace' scope chip prefills scope_id from the AI profile's workspace_id when still empty", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = { ...settingsVm(), permission_policies: [] } as unknown as SettingsPageVM;
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm({ workspace_id: "ws-prefill" }) as unknown as T;
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+
+    body.click(new FakeElement(new Set(["[data-set-policy-scope-kind]"]), { setPolicyScopeKind: "role" }));
+    body.click(new FakeElement(new Set(["[data-set-policy-scope-kind]"]), { setPolicyScopeKind: "workspace" }));
+    await tick();
+
+    assert.match(body.innerHTML, /data-set-policy-scope-id value="ws-prefill"/u);
+  });
+});
+
+test("R23 F-02: submitting the new-policy form with empty fields shows a validation error and never calls createPermissionPolicy", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = { ...settingsVm(), permission_policies: [] } as unknown as SettingsPageVM;
+    let createCalls = 0;
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          },
+          async createPermissionPolicy() {
+            createCalls += 1;
+            return policyVm() as unknown as never;
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+
+    body.click(new FakeElement(new Set(["[data-set-policy-submit]"])));
+    await tick();
+
+    assert.equal(createCalls, 0, "blank scope_id/action_pattern must never reach the server");
+    assert.match(body.innerHTML, /请填写范围 ID 与动作模式/u);
+  });
+});
+
+test("MRG-25: a client without createPermissionPolicy degrades quietly when submitting the new-policy form", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = { ...settingsVm(), permission_policies: [] } as unknown as SettingsPageVM;
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          }
+          // 故意不带 createPermissionPolicy（旧版 api-client，可选方法缺失）。
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+
+    body.focusOutOn(new FakeElement(new Set(["[data-set-policy-scope-id]"]), {}, "ws-1"));
+    body.focusOutOn(new FakeElement(new Set(["[data-set-policy-action-pattern]"]), {}, "drive.write:*"));
+    body.click(new FakeElement(new Set(["[data-set-policy-submit]"])));
+    await tick();
+
+    assert.match(body.innerHTML, /当前客户端版本不支持新增策略/u);
+  });
+});
+
+// —— R23 F-03（设备管理收尾 · 桌面镜像）—— //
+
+function clientDevice(over: Partial<ClientDeviceResponse> = {}): ClientDeviceResponse {
+  return {
+    id: "d0000000-0000-4000-8000-000000000001",
+    user_id: "u0000000-0000-4000-8000-000000000001",
+    device_name: "Ica's MacBook Pro",
+    platform: "desktop",
+    created_at: "2026-06-01T00:00:00.000Z",
+    updated_at: "2026-06-01T00:00:00.000Z",
+    last_seen_at: "2026-07-18T03:04:00.000Z",
+    ...over
+  };
+}
+
+function devicesState(over: Partial<DesktopDevicesSectionState> = {}): DesktopDevicesSectionState {
+  return {
+    devices: [clientDevice()],
+    failed: false,
+    currentDeviceId: null,
+    armedId: undefined,
+    busyId: undefined,
+    errorText: undefined,
+    revokeCurrentArmed: false,
+    revokeCurrentBusy: false,
+    ...over
+  };
+}
+
+test("devicesSectionHtml renders a failed state with a retry button", () => {
+  const html = devicesSectionHtml(devicesState({ failed: true, devices: undefined }), true);
+  assert.match(html, /data-set-devices-retry="true"/u);
+  assert.match(html, /设备没拉到/u);
+});
+
+test("devicesSectionHtml shows an empty-state note when there are no devices", () => {
+  const html = devicesSectionHtml(devicesState({ devices: [] }), true);
+  assert.match(html, /还没有已登录的设备/u);
+});
+
+test("devicesSectionHtml marks the current device with a distinct revoke-and-sign-out action, not the plain per-id revoke button", () => {
+  const html = devicesSectionHtml(
+    devicesState({ devices: [clientDevice({ id: "dev-1" })], currentDeviceId: "dev-1" }),
+    true
+  );
+  assert.match(html, /本机/u);
+  assert.match(html, /data-set-revoke-current-device="true"/u);
+  assert.doesNotMatch(html, /data-set-revoke-device="dev-1"/u, "the current device row must not carry the plain per-id revoke action");
+});
+
+test("devicesSectionHtml gives a non-current device the plain two-step revoke action", () => {
+  const html = devicesSectionHtml(
+    devicesState({ devices: [clientDevice({ id: "dev-2" })], currentDeviceId: "some-other-id" }),
+    true
+  );
+  assert.match(html, /data-set-revoke-device="dev-2"/u);
+  assert.doesNotMatch(html, /data-set-revoke-current-device/u);
+});
+
+test("devicesSectionHtml never marks a revoked device as current or revocable, even if its id matches the probe", () => {
+  const html = devicesSectionHtml(
+    devicesState({ devices: [clientDevice({ id: "dev-1", revoked_at: "2026-07-18T04:00:00.000Z" })], currentDeviceId: "dev-1" }),
+    true
+  );
+  assert.match(html, /已撤销/u);
+  assert.doesNotMatch(html, /data-set-revoke-current-device/u);
+  assert.doesNotMatch(html, /data-set-revoke-device="dev-1"/u, "a revoked device gets no revoke action at all");
+});
+
+test("the settings view renders the signed-in devices list from listClientDevices/currentClientDevice", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = settingsVm();
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          },
+          async listClientDevices() {
+            return [clientDevice({ id: "dev-1", device_name: "This Mac" }), clientDevice({ id: "dev-2", device_name: "Old iPad" })];
+          },
+          async currentClientDevice() {
+            return clientDevice({ id: "dev-1" });
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+
+    assert.match(body.innerHTML, /This Mac/u);
+    assert.match(body.innerHTML, /Old iPad/u);
+    assert.match(body.innerHTML, /data-set-revoke-current-device="true"/u);
+    assert.match(body.innerHTML, /data-set-revoke-device="dev-2"/u);
+  });
+});
+
+test("the settings view revokes another device only on the confirmed second click, calling revokeClientDevice once, and keeps the row visible as 已撤销", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = settingsVm();
+    const revokeCalls: string[] = [];
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          },
+          async listClientDevices() {
+            return [clientDevice({ id: "dev-1" }), clientDevice({ id: "dev-2", device_name: "Old iPad" })];
+          },
+          async currentClientDevice() {
+            return clientDevice({ id: "dev-1" });
+          },
+          async revokeClientDevice(id: string) {
+            revokeCalls.push(id);
+            return clientDevice({ id, device_name: "Old iPad", revoked_at: "2026-07-18T04:00:00.000Z" });
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+
+    body.click(new FakeElement(new Set(["[data-set-revoke-device]"]), { setRevokeDevice: "dev-2" }));
+    assert.equal(revokeCalls.length, 0, "the first click must only arm, not revoke");
+    assert.match(body.innerHTML, /确定？再点一次/u);
+
+    body.click(new FakeElement(new Set(["[data-set-revoke-device]"]), { setRevokeDevice: "dev-2" }));
+    await tick();
+    await tick();
+
+    assert.deepEqual(revokeCalls, ["dev-2"]);
+    assert.match(body.innerHTML, /Old iPad/u, "a revoked device stays visible (audit trail), unlike a revoked permission policy");
+    assert.match(body.innerHTML, /已撤销/u);
+    assert.doesNotMatch(body.innerHTML, /data-set-revoke-device="dev-2"/u, "a revoked device loses its revoke action");
+  });
+});
+
+test("R23 F-03: revoking the current device (two-step) routes through the existing sign-out flow, never the plain per-device revoke calls", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = settingsVm();
+    const revokeClientDeviceCalls: string[] = [];
+    const revokeCurrentClientDeviceCalls: number[] = [];
+    let logoutCalls = 0;
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          },
+          async listClientDevices() {
+            return [clientDevice({ id: "dev-1" })];
+          },
+          async currentClientDevice() {
+            return clientDevice({ id: "dev-1" });
+          },
+          async revokeClientDevice(id: string) {
+            revokeClientDeviceCalls.push(id);
+            return clientDevice({ id, revoked_at: "2026-07-18T04:00:00.000Z" });
+          },
+          async revokeCurrentClientDevice() {
+            revokeCurrentClientDeviceCalls.push(1);
+            return clientDevice({ id: "dev-1", revoked_at: "2026-07-18T04:00:00.000Z" });
+          },
+          // 服务端登出会按 client-token 顺带撤销这台设备（见 apps/api/src/routes/auth.ts 的 logout
+          // 处理器）——真正要验证的是"撤销本机"点了两下之后跑的是这条登出状态机，而不是任何单独的
+          // 设备撤销调用。这里让 logout 失败（同既有登出失败路径测试的取舍），停在服务端阶段之前，
+          // 不必在 node 测试环境里伪造真实的 window.localStorage/window.location.reload。
+          async logout() {
+            logoutCalls += 1;
+            throw new Error("network down");
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+
+    assert.match(body.innerHTML, /data-set-revoke-current-device="true"/u);
+    assert.match(body.innerHTML, /撤销本机并登出/u);
+
+    body.click(new FakeElement(new Set(["[data-set-revoke-current-device]"])));
+    assert.equal(logoutCalls, 0, "the first click must only arm, not sign out yet");
+    assert.match(body.innerHTML, /确定？再点一次/u);
+
+    body.click(new FakeElement(new Set(["[data-set-revoke-current-device]"])));
+    await tick();
+    await tick();
+
+    assert.equal(logoutCalls, 1, "confirming must run the existing sign-out flow");
+    assert.deepEqual(revokeClientDeviceCalls, [], "must never call the plain per-device revoke for the current device");
+    assert.deepEqual(revokeCurrentClientDeviceCalls, [], "must not call revokeCurrentClientDevice directly either — logout already revokes the device server-side by client-token");
+  });
+});
+
+test("the settings view retries loading devices after a failure", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = settingsVm();
+    let listCalls = 0;
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          },
+          async listClientDevices() {
+            listCalls += 1;
+            if (listCalls === 1) {
+              throw new Error("network down");
+            }
+            return [clientDevice({ id: "dev-1" })];
+          },
+          async currentClientDevice() {
+            return clientDevice({ id: "dev-1" });
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+
+    assert.match(body.innerHTML, /data-set-devices-retry="true"/u);
+
+    body.click(new FakeElement(new Set(["[data-set-devices-retry]"])));
+    await tick();
+    await tick();
+
+    assert.equal(listCalls, 2);
+    assert.doesNotMatch(body.innerHTML, /data-set-devices-retry/u);
   });
 });

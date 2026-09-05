@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 
 import { bootstrapProjectRequestSchema } from "@workhub/contracts";
 
@@ -8,6 +9,10 @@ import {
   type AuthDependencySource,
   type AuthEnv
 } from "../middleware/auth.js";
+import {
+  getDefaultObjectiveService,
+  type ObjectiveService
+} from "../services/objectives.js";
 import {
   getDefaultProjectService,
   ProjectServiceError,
@@ -24,6 +29,7 @@ export type ProjectRoutesDependencies = {
   auth?: AuthDependencySource;
   projects?: ProjectService;
   projectOps?: ProjectOpsService;
+  objectives?: Pick<ObjectiveService, "listObjectives">;
 };
 
 // 路由 uuid 形参先校验：非 uuid 串原本直达服务层的 uuid 列 → PG 22P02 → 误报 500；
@@ -47,6 +53,7 @@ export function createProjectRoutes(deps: ProjectRoutesDependencies = {}) {
   const authSource = deps.auth ?? getDefaultAuthDependencies;
   const projects = deps.projects ?? getDefaultProjectService();
   const projectOps = deps.projectOps ?? getDefaultProjectOpsService();
+  const objectives = deps.objectives ?? getDefaultObjectiveService();
 
   routes.get("/", createCurrentUserMiddleware(authSource), async (c) => {
     try {
@@ -87,6 +94,37 @@ export function createProjectRoutes(deps: ProjectRoutesDependencies = {}) {
     } catch (error) {
       handleProjectError(error);
     }
+  });
+
+  // R23 F-01（OKR 列表/详情持久化）：项目主页 OKR 面板首屏——目标是工作区级实体（objectives 表没有
+  // project_id 列，见 packages/db/src/schema/core.ts），这条按项目挂 URL 只是给项目主页一个顺手入口，
+  // 实际返回 project 所在工作区的全部目标，不做项目级过滤。鉴权判定照现有 objectives 写端点
+  // （POST /api/objectives 等）：未登录 401（由 createCurrentUserMiddleware 处理），当前 actor 没有
+  // 工作区 403；:id 非法 uuid 沿用本文件既有 requireProjectId（404，不区分「格式非法」与「不存在」）。
+  routes.get("/:id/objectives", createCurrentUserMiddleware(authSource), async (c) => {
+    // 目标不是项目级实体，:id 只做格式校验（非法 uuid → 404），返回值本身不需要——查询按 actor 的
+    // 工作区走，不按 project 二次过滤。
+    requireProjectId(c.req.param("id"));
+    const workspaceId = c.var.actor.workspaceId;
+    if (!workspaceId) {
+      throw new HTTPException(403, { message: "没有权限查看目标。" });
+    }
+    const result = await objectives.listObjectives({ workspaceId });
+    return c.json({
+      ok: true,
+      data: {
+        objectives: result.items.map((objective) => ({
+          objective_id: objective.id,
+          title: objective.title,
+          description_md: objective.descriptionMd,
+          status: objective.status,
+          progress_percent: objective.progressPercent,
+          owner_user_id: objective.ownerUserId,
+          updated_at: objective.updatedAt.toISOString()
+        })),
+        capped: result.capped
+      }
+    });
   });
 
   return routes;

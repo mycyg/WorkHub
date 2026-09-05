@@ -21,6 +21,8 @@ import { canViewProjectDrive, canViewWorkItemRecord } from "@workhub/permissions
 
 import type { AuthActor } from "../middleware/auth.js";
 import { parseOutputContract } from "../pages/output-contract.js";
+// R23 P4：归档/删除的资格判定与 POST /api/projects/:id/{archive,delete} 同源（见 project-ops.ts 的注释）。
+import { canManageProjectLifecycle } from "./project-ops.js";
 
 export type ProjectHomePageService = {
   page: (input: { actor: AuthActor; projectId: string; locale?: WorkHubLocale }) => Promise<ProjectHomePageVM>;
@@ -248,7 +250,10 @@ export function createProjectHomePageService(deps: ProjectHomePageServiceDepende
         },
         ...(visibleOpenCount === 0 ? { empty_state: "no_open_work" as const } : {}),
         // 未绑定 repo 或绑定了但暂无活动，都省略这个字段（诚实缺省，见 §5.1 与 fetchRecentGithubActivities）。
-        ...(githubActivities.length > 0 ? { github_activities: githubActivities } : {})
+        ...(githubActivities.length > 0 ? { github_activities: githubActivities } : {}),
+        // R23 P4（R20 P2A 端点上界面）：项目主页据此渲不渲「归档 / 删除」两个动作。判定直接借 project-ops
+        // 的导出谓词，与两个 POST 端点用同一把尺子——不会出现「渲了按钮点下去 403」或「有权限却没入口」。
+        can_manage_lifecycle: canManageProjectLifecycle(project, actor)
       };
       return parseOutputContract(projectHomePageVmSchema, data, "project.home");
     }

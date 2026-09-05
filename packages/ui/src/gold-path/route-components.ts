@@ -36,6 +36,8 @@ import type {
   TaskPlanVM,
   GoldPathSurfaceVM,
   WorkItemAgentTeamVM,
+  // R23 P4（R20 P2A 端点上界面）：工作项评论流的行契约。
+  WorkItemComment,
   WorkItemDetailVM,
   // R14 批 MEM（记忆可见可治理）：/settings/memory 两 tab 的管理面 VM。
   UserMemoryManagementPageVM,
@@ -43,6 +45,8 @@ import type {
   TeamSkillManagementPageVM,
   TeamSkillManagementItemVM
 } from "@workhub/contracts";
+// R23 P4：留言输入框的长度上限直接用契约常量，避免前后端各写一个数字后悄悄漂移。
+import { WORK_ITEM_COMMENT_MAX_CHARS } from "@workhub/contracts";
 
 import { personAvatarTileHtml } from "../avatar/avatar-tile.js";
 import { renderAgentRunReplay } from "../replay/index.js";
@@ -418,6 +422,10 @@ type RouteCopyKey =
   | "meeting.openProposal"
   | "meeting.reason"
   | "meeting.approvalSafe"
+  | "meeting.reanalyze"
+  | "meeting.aiNotConfigured"
+  | "meeting.minutesQueued"
+  | "meeting.minutesNotConfigured"
   | "meeting.empty"
   | "meeting.status.ready"
   | "meeting.status.transcribed"
@@ -508,6 +516,16 @@ type RouteCopyKey =
   | "skills.version"
   | "skills.readiness"
   | "skills.refinedFrom"
+  | "skills.curationTitle"
+  | "skills.curationOffSetting"
+  | "skills.curationRunning"
+  | "skills.curationIdle"
+  | "skills.curationLastRun"
+  | "skills.curationNeverRun"
+  | "skills.curateNow"
+  | "skills.curateNowConfirm"
+  | "skills.curateNowStarted"
+  | "skills.curateNowFailed"
   | "projects.kicker"
   | "projects.title"
   | "projects.summary"
@@ -697,6 +715,10 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "meeting.openProposal": "查看变更申请",
     "meeting.reason": "AI 推荐理由",
     "meeting.approvalSafe": "审批安全：确认前不会修改正式资料。",
+    "meeting.reanalyze": "重新生成纪要",
+    "meeting.aiNotConfigured": "这个部署还没有配置 AI：导入的会议只会保存转写，纪要和洞察不会自动生成。",
+    "meeting.minutesQueued": "纪要还在生成，稍后回来查看。",
+    "meeting.minutesNotConfigured": "AI 还没有配置，这场会议只保存了转写。",
     "meeting.empty": "这个项目还没有会议洞察。",
     "meeting.status.ready": "已生成",
     "meeting.status.transcribed": "转写已导入",
@@ -810,6 +832,16 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "skills.version": "版本",
     "skills.readiness": "成熟度",
     "skills.refinedFrom": "精修自 v",
+    "skills.curationTitle": "AI 自学",
+    "skills.curationOffSetting": "这台服务器没有开启 AI 自学，技能库不会自己增长。",
+    "skills.curationRunning": "AI 正在自学，稍后回来看看。",
+    "skills.curationIdle": "已开启：任务队列闲下来时，AI 会从做完的工作里总结新技能。",
+    "skills.curationLastRun": "上次自学",
+    "skills.curationNeverRun": "服务器这次启动后还没自学过。",
+    "skills.curateNow": "立即自学一轮",
+    "skills.curateNowConfirm": "确认开始？再点一次",
+    "skills.curateNowStarted": "已开始自学，跑完刷新这一页就能看到结果。",
+    "skills.curateNowFailed": "没能开始，请稍后再试。",
     "settings.runtime": "运行时",
     "settings.llm": "AI 运行配置",
     "settings.language": "语言",
@@ -979,6 +1011,10 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "meeting.openProposal": "Open change request",
     "meeting.reason": "AI rationale",
     "meeting.approvalSafe": "Approval-safe: official project state will not change until you confirm.",
+    "meeting.reanalyze": "Regenerate minutes",
+    "meeting.aiNotConfigured": "This deployment has no AI configured: imported meetings keep their transcript only — minutes and insights are not generated.",
+    "meeting.minutesQueued": "Minutes are still being generated — check back shortly.",
+    "meeting.minutesNotConfigured": "AI is not configured, so this meeting only has its transcript.",
     "meeting.empty": "This project does not have meeting insights yet.",
     "meeting.status.ready": "Ready",
     "meeting.status.transcribed": "Transcript imported",
@@ -1090,6 +1126,16 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "skills.version": "Version",
     "skills.readiness": "Readiness",
     "skills.refinedFrom": "refined from v",
+    "skills.curationTitle": "AI self-learning",
+    "skills.curationOffSetting": "AI self-learning is off on this server, so the skill library will not grow on its own.",
+    "skills.curationRunning": "The AI is learning right now — check back shortly.",
+    "skills.curationIdle": "On: whenever the task queue goes idle, the AI sums up new skills from finished work.",
+    "skills.curationLastRun": "Last learned",
+    "skills.curationNeverRun": "Nothing learned yet since this server started.",
+    "skills.curateNow": "Learn a round now",
+    "skills.curateNowConfirm": "Start now? Click again",
+    "skills.curateNowStarted": "Started. Refresh this page once it finishes to see what changed.",
+    "skills.curateNowFailed": "Could not start. Try again in a moment.",
     "settings.runtime": "Runtime",
     "settings.llm": "AI runtime config",
     "settings.language": "Language",
@@ -1252,17 +1298,33 @@ function actionClass(action: AttentionAction | ActionSpec, index: number) {
   return index === 0 ? "wh-btn wh-btn-primary" : "wh-btn";
 }
 
-// rank1：转交他人(delegate)在 web 尚无选人 UI/分类器——会落到「功能开发中」toast 的死按钮。
-// 桌面已隐藏(attention.ts/pet-surface)，web 在此一并隐藏，两端一致;待选人 UI 落地再放开。
-// href 形如 /api/approvals/{id}/delegate。
-function isUnsupportedWebAction(href: string): boolean {
-  return /\/delegate(?:[/?#]|$)/u.test(href);
+// R23 F-04：转交动作（/api/approvals/:id/delegate、/api/escalations/:id/delegate）不能当普通按钮渲——
+// 它需要一个「转交给谁」的选人器。此前 web 与两端一样直接把动作剥掉（rank1 的临时办法），于是升级
+// 转交端到端零入口。现在改成：动作行里不渲它，改在动作行下面挂一份选人器（renderDelegatePicker），
+// 选人 + 确认走 browser.ts 的统一分发。
+function isDelegateActionHref(href: string): boolean {
+  return /^(?:.*)?\/api\/(?:approvals|escalations)\/[^/]+\/delegate(?:[?#]|$)/u.test(href);
 }
 
-function renderActions(actions: (AttentionAction | ActionSpec)[]) {
-  const shown = actions.filter((action) => !isUnsupportedWebAction(action.href));
+// 转交选人器（审批工作台与任意决策卡共用同一份结构）：折叠起来不占地方，展开时才懒加载工作区成员。
+// href 省略＝由 browser.ts 按当前选中的审批行推导（审批工作台的动作面板是整页共享的，卡片不固定）。
+function renderDelegatePicker(locale: WorkHubLocale, href?: string) {
+  const zh = locale === "zh-CN";
+  return `<details class="wh-r4-approval-field" data-wh-delegate="true"${href ? ` data-wh-delegate-href="${escapeHtml(safeHref(href))}"` : ""}>
+              <summary>${escapeHtml(zh ? "转交给同事" : "Hand off to a teammate")}</summary>
+              <p class="wh-subtle">${escapeHtml(zh ? "请假、轮值或这事不归你管时，把它交给合适的人。" : "On leave, on rotation, or not your call — hand this to the right person.")}</p>
+              <select class="wh-pill" data-wh-delegate-select="true" aria-label="${escapeHtml(zh ? "选择转交对象" : "Pick a teammate")}"><option value="">${escapeHtml(zh ? "展开后加载成员…" : "Members load on open…")}</option></select>
+              <div class="wh-r4-route-actions"><button type="button" class="wh-btn" data-wh-delegate-submit="true">${escapeHtml(zh ? "确认转交" : "Delegate")}</button></div>
+            </details>`;
+}
+
+function renderActions(actions: (AttentionAction | ActionSpec)[], locale?: WorkHubLocale) {
+  const shown = actions.filter((action) => !isDelegateActionHref(action.href));
+  // 卡上带转交动作时，把选人器挂在动作行后面（locale 缺省＝调用方还没接选人器，按旧行为只渲动作）。
+  const delegateAction = locale ? actions.find((action) => isDelegateActionHref(action.href)) : undefined;
+  const picker = delegateAction && locale ? renderDelegatePicker(locale, delegateAction.href) : "";
   if (shown.length === 0) {
-    return "";
+    return picker;
   }
   return `<div class="wh-r4-route-actions">${shown
     .map((action, index) => {
@@ -1279,7 +1341,7 @@ function renderActions(actions: (AttentionAction | ActionSpec)[]) {
       const buttonRole = "method" in action && action.method && action.method !== "GET" ? " role=\"button\"" : "";
       return `<a class="${actionClass(action, index)}" href="${escapeHtml(safeHref(action.href))}" data-action-id="${escapeHtml(action.id)}"${buttonRole}${reason}${method}${desktop}${requestJson}${postRunNext}>${escapeHtml(action.label)}</a>`;
     })
-    .join("")}</div>`;
+    .join("")}</div>${picker}`;
 }
 
 function jsonAttr(value: unknown) {
@@ -1615,7 +1677,7 @@ function renderHomeRouteComponent(
         <p style="white-space:pre-line">${escapeHtml(primary.reason_text ?? primary.summary_text)}</p>
         ${mergeEditor}
         ${evidenceCount > 0 ? `<div class="wh-r4-status"><span>${escapeHtml(zh ? `用到证据 ${evidenceCount} 条` : `${evidenceCount} evidence`)}</span></div>` : ""}
-        ${renderActions(primaryActions)}
+        ${renderActions(primaryActions, locale)}
       </section>`
     : `<section class="wh-card wh-r4-route-card wh-r4-decision" data-r4-home-decision="true">
         <div class="wh-r4-decision-top"></div>
@@ -2196,12 +2258,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
             ${primary ? `<label class="wh-r4-approval-field"><span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "approvals.reasonLabel"))}</span><textarea class="wh-r4-approval-reason" data-r4-approval-reason rows="2" aria-label="${escapeHtml(goldPathT(locale, "approvals.reasonLabel"))}" placeholder="${escapeHtml(goldPathT(locale, "approvals.reasonPlaceholder"))}"></textarea></label>
             <label class="wh-r4-approval-remember"><input type="checkbox" data-r4-approval-remember /> <span>${escapeHtml(goldPathT(locale, "approvals.rememberLabel"))}</span></label>
             <p class="wh-subtle" data-r4-approval-remember-help="true">${escapeHtml(goldPathT(locale, "approvals.rememberHelp"))}</p>
-            <details class="wh-r4-approval-field" data-r10-approval-delegate="true">
-              <summary>${escapeHtml(zh ? "转交给同事" : "Hand off to a teammate")}</summary>
-              <p class="wh-subtle">${escapeHtml(zh ? "请假、轮值或这事不归你管时，把这条审批路由给合适的人。" : "On leave, on rotation, or not your call — route this approval to the right person.")}</p>
-              <select class="wh-pill" data-r10-approval-delegate-select="true" aria-label="${escapeHtml(zh ? "选择转交对象" : "Pick a teammate")}"><option value="">${escapeHtml(zh ? "展开后加载成员…" : "Members load on open…")}</option></select>
-              <div class="wh-r4-route-actions"><button type="button" class="wh-btn" data-r10-approval-delegate-submit="true">${escapeHtml(zh ? "确认转交" : "Delegate")}</button></div>
-            </details>` : ""}
+            ${renderDelegatePicker(locale)}` : ""}
           </section>
           <section class="wh-card wh-r4-route-card">
             <h3 role="heading" aria-level="2">${escapeHtml(goldPathT(locale, "approvals.ruleTitle"))}</h3>
@@ -2312,7 +2369,12 @@ const auditActionLabels: Record<string, [string, string]> = {
   "proposal.merged": ["采纳变更申请", "Change adopted"],
   "proposal.rejected": ["驳回变更申请", "Proposal rejected"],
   "approval.approved": ["审批通过", "Approval granted"],
-  "approval.rejected": ["审批打回", "Approval rejected"]
+  "approval.rejected": ["审批打回", "Approval rejected"],
+  // R23 P4：R20 P2A 的四个写动作此前只落审计、没有任何界面读它们，标签一并补上。
+  "work_item.assigned": ["指派事项", "Item assigned"],
+  "work_item.claimed": ["认领事项", "Item claimed"],
+  "project.archived": ["归档项目", "Project archived"],
+  "project.deleted": ["删除项目", "Project deleted"]
 };
 
 function auditActionLabel(action: string, zh: boolean): string {
@@ -2363,6 +2425,78 @@ export function renderWorkItemAuditTimelineRows(logs: AuditLogFact[], locale: Wo
       <span class="wh-pill">${escapeHtml(formatApprovalTimestamp(entry.created_at))}</span>
     </div>`)
     .join("") + overflow;
+}
+
+// R23 P4（R20 P2A 端点上界面）：工作区审计流（GET /api/workspace/audit，仅管理员）的对象列——
+// entity_type 是库里的机器串（work_item / project / proposal…），直接吐给管理员看没意义，先查表再兜底分词。
+const auditEntityTypeLabels: Record<string, [string, string]> = {
+  work_item: ["事项", "Work item"],
+  project: ["项目", "Project"],
+  proposal: ["变更申请", "Proposal"],
+  approval: ["审批", "Approval"],
+  snapshot: ["还原点", "Restore point"],
+  workspace_member: ["工作区成员", "Workspace member"],
+  drive_item: ["网盘文件", "Drive file"]
+};
+
+function auditEntityLabel(entity: AuditLogFact["entity"], zh: boolean): string {
+  const hit = auditEntityTypeLabels[entity.entity_type];
+  const typeLabel = hit ? (zh ? hit[0] : hit[1]) : humanizeToken(entity.entity_type.replace(/[._]/gu, " "));
+  // id 只留前 8 位——管理员用它跟别的记录对齐，看全长 uuid 反而读不动；完整 id 仍在 data-* 上可取。
+  return `${typeLabel} ${entity.entity_id.slice(0, 8)}`;
+}
+
+// R23 P4：工作区审计流的行渲染（纯函数，供 apps/web 的 bindSettingsWorkspaceAuditPanel 与单测复用）。
+// 与工作项审计时间线（renderWorkItemAuditTimelineRows）分开：那边是单个事项的全量，这边是跨事项的
+// 分页流——不做本地截断，"还有更多"由服务端分页与「加载更多」按钮表达，否则会和分页口径打架。
+export function renderWorkspaceAuditRows(logs: AuditLogFact[], locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  if (logs.length === 0) {
+    return `<p class="wh-subtle" data-r23-workspace-audit-empty="true">${escapeHtml(zh ? "这个工作区还没有审计记录。" : "No audit entries in this workspace yet.")}</p>`;
+  }
+  return logs
+    .map((entry) => `<div role="listitem" class="wh-r4-route-row" data-r23-workspace-audit-entry="${escapeHtml(entry.id)}" data-r23-workspace-audit-entry-action="${escapeHtml(entry.action)}" data-r23-workspace-audit-entry-entity="${escapeHtml(entry.entity.entity_id)}">
+      <div>
+        <strong>${escapeHtml(auditActionLabel(entry.action, zh))}</strong>
+        <p>${escapeHtml(`${auditActorLabel(entry.actor, zh)} · ${auditEntityLabel(entry.entity, zh)}`)}${entry.undone_at ? escapeHtml(zh ? "（已撤销）" : " (undone)") : ""}</p>
+      </div>
+      <span class="wh-pill">${escapeHtml(formatApprovalTimestamp(entry.created_at))}</span>
+    </div>`)
+    .join("");
+}
+
+// R23 P4（R20 P2A 端点上界面）：工作项评论流的行渲染（纯函数，供 apps/web 的 bindWorkItemCommentsPanel
+// 与单测复用）。服务端按对话顺序（旧→新）返回最多 200 条，详情页默认只展开最近 WORK_ITEM_COMMENT_VISIBLE_COUNT
+// 条——更早的用「展开更早的 N 条」按需加载，不做无提示的静默截断。
+export const WORK_ITEM_COMMENT_VISIBLE_COUNT = 8;
+
+export function renderWorkItemCommentRows(
+  comments: WorkItemComment[],
+  locale: WorkHubLocale,
+  options: { expanded?: boolean } = {}
+): string {
+  const zh = locale === "zh-CN";
+  if (comments.length === 0) {
+    return `<p class="wh-subtle" data-r23-workitem-comments-empty="true">${escapeHtml(zh ? "还没有人在这个事项下留言。" : "No comments on this item yet.")}</p>`;
+  }
+  const expanded = options.expanded === true;
+  const hiddenCount = expanded ? 0 : Math.max(0, comments.length - WORK_ITEM_COMMENT_VISIBLE_COUNT);
+  const visible = hiddenCount > 0 ? comments.slice(comments.length - WORK_ITEM_COMMENT_VISIBLE_COUNT) : comments;
+  const moreButton = hiddenCount > 0
+    ? `<button type="button" class="wh-btn" data-r23-workitem-comments-more="${escapeHtml(String(hiddenCount))}">${escapeHtml(
+        zh ? `展开更早的 ${hiddenCount} 条` : `Show ${hiddenCount} earlier`
+      )}</button>`
+    : "";
+  const rows = visible
+    .map((comment) => `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r23-workitem-comment="${escapeHtml(comment.id)}">
+      <div>
+        <strong>${escapeHtml(comment.author_nickname)}</strong>
+        <p>${escapeHtml(comment.body)}</p>
+      </div>
+      <span class="wh-pill">${escapeHtml(formatApprovalTimestamp(comment.created_at))}</span>
+    </div>`)
+    .join("");
+  return `${moreButton}${rows}`;
 }
 
 function workItemAuditTimelineLoadingHtml(locale: WorkHubLocale): string {
@@ -2676,6 +2810,80 @@ function renderWorkItemSourceContext(vm: WorkItemDetailVM, locale: WorkHubLocale
   </div>`;
 }
 
+// R23 P4（R20 P2A 端点上界面）：工作项「负责人与协作」卡。POST /api/workitems/:id/{claim,assign} 服务端
+// 早已齐备（work-item-assignment.ts），此前两端一个入口都没有。资格由详情页 VM 的 can_claim / can_assign
+// 下发（服务端用与写端点完全相同的谓词算），没资格就不渲那个按钮——不渲一个点下去必定 403 的假入口。
+// 指派对象选择器沿用审批转交的既有做法：折叠的 <details>，展开时才去拉本工作区花名册（不进首屏 loader）。
+function renderWorkItemAssignmentCard(vm: WorkItemDetailVM, locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  const claimedNickname = vm.workitem.claimed_by_nickname ?? "";
+  const currentLine = vm.workitem.claimed_by_user_id
+    ? `<div role="listitem" class="wh-r4-route-row" data-r23-workitem-assignment-current="${escapeHtml(vm.workitem.claimed_by_user_id)}">
+        <div><strong>${escapeHtml(zh ? "现在谁在跟" : "Who's on it")}</strong><p>${escapeHtml(claimedNickname || (zh ? "已认领" : "Claimed"))}</p></div>
+        ${personAvatarTileHtml({ userId: vm.workitem.claimed_by_user_id, label: claimedNickname })}
+      </div>`
+    : `<p class="wh-subtle" data-r23-workitem-assignment-unclaimed="true">${escapeHtml(zh ? "还没有人认领这个事项。" : "Nobody has picked this item up yet.")}</p>`;
+  // 指派名单：POST /api/workitems/:id/assign 写的是 work_item_assignments，不是认领人——不把它渲出来，
+  // 指派成功后这张卡会毫无变化。服务端已按 lead 优先排好序；名字缺席（账号被硬删）时只说角色，不吐裸 id。
+  const assigneeRows = (vm.assignees ?? [])
+    .map((assignee) => {
+      const roleLabel = assignee.role === "lead" ? (zh ? "主责" : "Lead") : (zh ? "协作" : "Collaborator");
+      const name = assignee.nickname ?? (zh ? "已停用的成员" : "Removed member");
+      return `<div role="listitem" class="wh-r4-route-row" data-r23-workitem-assignee="${escapeHtml(assignee.user_id)}" data-r23-workitem-assignee-role="${escapeHtml(assignee.role)}">
+        <div><strong>${escapeHtml(name)}</strong><p>${escapeHtml(roleLabel)}</p></div>
+        ${assignee.nickname ? personAvatarTileHtml({ userId: assignee.user_id, label: assignee.nickname }) : ""}
+      </div>`;
+    })
+    .join("");
+  const assigneeBlock = assigneeRows
+    ? `<p class="wh-subtle" data-r23-workitem-assignees="true">${escapeHtml(zh ? "已指派给：" : "Assigned to:")}</p><div class="wh-r4-route-table">${assigneeRows}</div>`
+    : "";
+  const claimButton = vm.can_claim === true
+    ? `<button type="button" class="wh-btn wh-btn-primary" data-r23-workitem-claim="true">${escapeHtml(zh ? "我来认领" : "Claim it")}</button>`
+    : "";
+  const assignBlock = vm.can_assign === true
+    ? `<details class="wh-r4-approval-field" data-r23-workitem-assign="true">
+        <summary>${escapeHtml(zh ? "指派给…" : "Assign to…")}</summary>
+        <p class="wh-subtle">${escapeHtml(zh ? "把这个事项交给工作区里的某位同事，并标明是主责还是协作。" : "Hand this item to a teammate in this workspace, as lead or collaborator.")}</p>
+        <select class="wh-pill" data-r23-workitem-assign-select="true" aria-label="${escapeHtml(zh ? "选择被指派人" : "Pick an assignee")}"><option value="">${escapeHtml(zh ? "展开后加载成员…" : "Members load on open…")}</option></select>
+        <select class="wh-pill" data-r23-workitem-assign-role="true" aria-label="${escapeHtml(zh ? "选择角色" : "Pick a role")}">
+          <option value="collaborator">${escapeHtml(zh ? "协作" : "Collaborator")}</option>
+          <option value="lead">${escapeHtml(zh ? "主责" : "Lead")}</option>
+        </select>
+        <div class="wh-r4-route-actions"><button type="button" class="wh-btn" data-r23-workitem-assign-submit="true">${escapeHtml(zh ? "确认指派" : "Assign")}</button></div>
+      </details>`
+    : "";
+  const noActionNote = !claimButton && !assignBlock
+    ? `<p class="wh-subtle" data-r23-workitem-assignment-readonly="true">${escapeHtml(zh ? "你只能查看这个事项的归属，改动归属需要管理员、提交人或主责。" : "You can see who owns this item; changing that is for admins, the submitter, or the current lead.")}</p>`
+    : "";
+  return `<section class="wh-card wh-r4-route-card" data-r23-workitem-assignment="true" data-r23-workitem-assignment-workitem="${escapeHtml(vm.workitem.id)}">
+        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "负责人与协作" : "Owner & collaborators")}</h3>
+        <div class="wh-r4-route-table">${currentLine}</div>
+        ${assigneeBlock}
+        ${claimButton ? `<div class="wh-r4-route-actions">${claimButton}</div>` : ""}
+        ${assignBlock}
+        ${noActionNote}
+        <p class="wh-subtle" data-r23-workitem-assignment-status="true" hidden></p>
+      </section>`;
+}
+
+// R23 P4（R20 P2A 端点上界面）：工作项评论区。GET/POST /api/workitems/:id/comments 服务端早已齐备
+// （work-item-comments.ts），此前两端零界面。列表是客户端按需水合（详情页 VM 不带评论，也不该为了
+// 一段讨论把整页 VM 撑大）；取数失败要显式可见并可重试，绝不用「还没有人留言」糊弄一次真实的失败。
+function renderWorkItemCommentsCard(vm: WorkItemDetailVM, locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  return `<section class="wh-card wh-r4-route-card" data-r23-workitem-comments="true" data-r23-workitem-comments-workitem="${escapeHtml(vm.workitem.id)}">
+        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "讨论" : "Discussion")}</h3>
+        <p class="wh-subtle">${escapeHtml(zh ? "能看到这个事项的同事都能在这里留言，留言会连同署名一起留档。" : "Anyone who can see this item can comment here; comments are kept with your name on them.")}</p>
+        <div class="wh-r4-route-timeline" role="list" data-r23-workitem-comments-body="true"><p class="wh-subtle" data-r23-workitem-comments-loading="true">${escapeHtml(zh ? "正在加载讨论…" : "Loading discussion…")}</p></div>
+        <form data-r23-workitem-comment-form="true">
+          <textarea class="wh-pill" style="width:100%;box-sizing:border-box;resize:vertical" rows="3" maxlength="${WORK_ITEM_COMMENT_MAX_CHARS}" data-r23-workitem-comment-input="true" aria-label="${escapeHtml(zh ? "写一条留言" : "Write a comment")}" placeholder="${escapeHtml(zh ? "写一条留言…" : "Write a comment…")}"></textarea>
+          <p class="wh-subtle" data-r23-workitem-comment-status="true" hidden></p>
+          <div class="wh-r4-route-actions"><button type="submit" class="wh-btn" data-r23-workitem-comment-submit="true">${escapeHtml(zh ? "发布留言" : "Post comment")}</button></div>
+        </form>
+      </section>`;
+}
+
 function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocale): WebRouteComponent {
   const title = vm.workitem.title ?? vm.workitem.code;
   const summary = stripMarkdown(vm.workitem.summary_md ?? vm.workitem.raw_description ?? uiT(locale, "workitem.defaultSummary"));
@@ -2773,6 +2981,10 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
           <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "workitem.trace"))}</h3>
           <div class="wh-r4-route-timeline" role="list">${traceRows(vm, locale)}</div>
         </section>
+      </div>
+      <div class="wh-r4-route-grid">
+        ${renderWorkItemAssignmentCard(vm, locale)}
+        ${renderWorkItemCommentsCard(vm, locale)}
       </div>
       <section class="wh-card wh-r4-route-card" data-r4-workitem-evidence="true">
         <h3 role="heading" aria-level="2">${escapeHtml(uiT(locale, "generic.evidence"))}</h3>
@@ -3425,9 +3637,19 @@ function renderDriveRouteComponent(
 
 // L27：转写/纪要为空时不能再共用「这个项目还没有会议洞察」——那是讲洞察、不是讲转写，且会议只是还在
 // 处理(processing)/处理失败(failed)时这句是错的。按会议状态给出贴合的占位，让用户分得清「还在生成 / 生成失败 / 真的没有」。
-function meetingContentFallback(kind: "transcript" | "minutes", status: string | undefined, locale: WorkHubLocale): string {
+function meetingContentFallback(
+  kind: "transcript" | "minutes",
+  status: string | undefined,
+  locale: WorkHubLocale,
+  aiConfigured = true
+): string {
   const zh = locale === "zh-CN";
   const noun = kind === "transcript" ? (zh ? "转写" : "Transcript") : (zh ? "纪要" : "Minutes");
+  // SA-02：转写已入库、纪要还没生成，是两种完全不同的处境——AI 压根没配（等下去也不会有），
+  // 和 AI 已排队（等一会就有）。此前两者都掉进「这次会议还没有纪要内容」，用户无从分辨。
+  if (kind === "minutes" && status === "transcribed") {
+    return routeT(locale, aiConfigured ? "meeting.minutesQueued" : "meeting.minutesNotConfigured");
+  }
   if (status === "processing") {
     return zh ? `${noun}还在准备中，稍后回来查看。` : `${noun} is still being prepared — check back shortly.`;
   }
@@ -3476,8 +3698,16 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
     : (selectedMeeting
       ? `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "这场会议还没有洞察。" : "No insights from this meeting yet.")}</p>`
       : "");
-  const transcript = selectedMeeting?.transcript_text?.trim() || meetingContentFallback("transcript", selectedMeeting?.status, locale);
-  const minutes = selectedMeeting?.minutes_md?.trim() || meetingContentFallback("minutes", selectedMeeting?.status, locale);
+  const transcript = selectedMeeting?.transcript_text?.trim() || meetingContentFallback("transcript", selectedMeeting?.status, locale, vm.ai_analysis_configured);
+  const minutes = selectedMeeting?.minutes_md?.trim() || meetingContentFallback("minutes", selectedMeeting?.status, locale, vm.ai_analysis_configured);
+  const reanalyzeAction = selectedMeeting?.actions?.reanalyze;
+  const reanalyzeButton = reanalyzeAction
+    ? `<div class="wh-r4-route-actions"><a class="wh-btn" href="${escapeHtml(safeHref(reanalyzeAction.href))}" data-action-id="${escapeHtml(reanalyzeAction.id)}" data-method="${escapeHtml(reanalyzeAction.method)}" data-r23-meeting-reanalyze="${escapeHtml(selectedMeeting?.id ?? "")}">${escapeHtml(reanalyzeAction.label ?? routeT(locale, "meeting.reanalyze"))}</a></div>`
+    : "";
+  // AI 未配置时页面直说，而不是让人对着「还没有纪要」猜是不是坏了。
+  const aiNotConfiguredBanner = vm.ai_analysis_configured
+    ? ""
+    : `<p class="wh-subtle" data-r23-meeting-ai-unconfigured="true">${escapeHtml(routeT(locale, "meeting.aiNotConfigured"))}</p>`;
   const insightRows = selectedMeeting?.insights.length
     ? selectedMeeting.insights.map((insight) => {
       const createDraftAction = insight.actions?.create_draft;
@@ -3513,12 +3743,15 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
     }).join("")
     : `<article class="wh-card wh-r4-route-card"><p>${escapeHtml(routeT(locale, "meeting.empty"))}</p></article>`;
   const primaryHrefs = [
-    ...vm.meetings.flatMap((meeting) => meeting.insights.flatMap((insight) => [
-      insight.actions?.create_draft?.href,
-      insight.actions?.dismiss?.href,
-      insight.draft_href,
-      insight.proposal_href
-    ]))
+    ...vm.meetings.flatMap((meeting) => [
+      meeting.actions?.reanalyze?.href,
+      ...meeting.insights.flatMap((insight) => [
+        insight.actions?.create_draft?.href,
+        insight.actions?.dismiss?.href,
+        insight.draft_href,
+        insight.proposal_href
+      ])
+    ])
   ].filter((value): value is string => Boolean(value));
 
   return createWebRouteComponent({
@@ -3541,6 +3774,7 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
         </div>
         <span class="wh-r4-route-count" title="${escapeHtml(locale === "zh-CN" ? "待确认洞察" : "Insights pending review")}">${escapeHtml(`${vm.summary.pending_insight_count} ${locale === "zh-CN" ? "条待确认" : "pending"}`)}</span>
       </header>
+      ${aiNotConfiguredBanner}
       ${vm.can_manage && vm.project ? `<details class="wh-card wh-r4-route-card" data-r10-meeting-import="true">
         <summary>${escapeHtml(locale === "zh-CN" ? "＋ 导入会议转写" : "＋ Import meeting transcript")}</summary>
         <p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "把会议纪要或转写文本粘进来，团队就能围绕它确认洞察、生成任务。" : "Paste minutes or a transcript; the team can then confirm insights and spin up tasks from it.")}</p>
@@ -3569,6 +3803,7 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
         <section class="wh-card wh-r4-route-card" data-r5-meeting-minutes="true">
           <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "meeting.minutes"))}</h3>
           <pre class="wh-r5-meeting-text">${escapeHtml(minutes)}</pre>
+          ${reanalyzeButton}
         </section>
       </div>` : `<div class="wh-r4-route-grid"><article class="wh-card wh-r4-route-card" data-r5-meeting-empty="true"><h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "meeting.empty"))}</h3><p class="wh-subtle">${escapeHtml(vm.can_manage ? (locale === "zh-CN" ? "会议录音或转写接入后，Cuu 会自动整理出纪要和待办洞察，并显示在这里。" : "Once a meeting recording or transcript is brought in, Cuu drafts the minutes and action insights here.") : (locale === "zh-CN" ? "团队的会议接入后，这里会出现转写、纪要和洞察。" : "Once a team meeting is brought in, its transcript, minutes and insights show up here."))}</p></article></div>`}
     </section>`
@@ -4178,7 +4413,43 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
   });
 }
 
-function renderTeamSkillsRouteComponent(vm: TeamSkillsPageVM, locale: WorkHubLocale): WebRouteComponent {
+// R23 SA-06：技能页的「AI 自学」状态区块。此前这一页只列已有技能，从不回答「这台部署到底有没有人
+// 在攒技能」——而夜间自学 worker 长期默认关着，页面上却一句话都不说，用户只会以为 AI 没本事。
+// 三种状态各说各的实话，绝不含糊成一句「运行中」：
+//   * 未启用（开关关了 / 没配 LLM 密钥，服务端已合并成一个 enabled=false）；
+//   * 正在跑；
+//   * 已开启、当前空闲——附上次跑完的时间；本进程启动后还没跑过就照实说，不假装从没自学过。
+// 管理员多一个「立即自学一轮」按钮（两段式确认，水合在 apps/web/src/browser.ts）。
+function renderTeamSkillsCurationSection(vm: TeamSkillsPageVM, locale: WorkHubLocale, isAdmin: boolean): string {
+  // 契约上 curation 必填；但渲染层面对「还没升级到这版契约的服务端 / 旧夹具」时不能整页炸成错误卡——
+  // 没有这段信息就不渲这一节（诚实缺省），而不是猜一个「未开启」。
+  const curation = (vm as Partial<TeamSkillsPageVM>).curation;
+  if (!curation) {
+    return "";
+  }
+  const statusText = !curation.enabled
+    ? routeT(locale, "skills.curationOffSetting")
+    : curation.running
+      ? routeT(locale, "skills.curationRunning")
+      : routeT(locale, "skills.curationIdle");
+  const lastRun = curation.last_run_at
+    ? `<span class="wh-pill" data-r23-skills-curation-last-run="${escapeHtml(curation.last_run_at)}">${escapeHtml(`${routeT(locale, "skills.curationLastRun")} ${formatLocalTimestamp(curation.last_run_at)}`)}</span>`
+    : `<span class="wh-subtle" data-r23-skills-curation-never="true">${escapeHtml(routeT(locale, "skills.curationNeverRun"))}</span>`;
+  // 按钮只在「管理员 + 已启用 + 当前没在跑」时出现——渲一个必然被服务端 403/409 打回的按钮就是假入口。
+  // 服务端仍然独立判定（不信前端），这里只是不给用户送一次注定失败的点击。
+  const action = isAdmin && curation.enabled && !curation.running
+    ? `<button type="button" class="wh-btn" data-r23-skills-curate-now="true" data-r23-skills-curate-confirm-label="${escapeHtml(routeT(locale, "skills.curateNowConfirm"))}">${escapeHtml(routeT(locale, "skills.curateNow"))}</button>`
+    : "";
+  return `<section class="wh-card wh-r4-route-card" data-r23-skills-curation="${escapeHtml(curation.enabled ? (curation.running ? "running" : "idle") : "disabled")}">
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "skills.curationTitle"))}</h3>
+          <p class="wh-subtle" data-r23-skills-curation-status="true">${escapeHtml(statusText)}</p>
+          <div class="wh-r4-route-meta">${lastRun}</div>
+          ${action}
+          <p class="wh-subtle" data-r23-skills-curate-notice="true" hidden></p>
+        </section>`;
+}
+
+function renderTeamSkillsRouteComponent(vm: TeamSkillsPageVM, locale: WorkHubLocale, isAdmin = false): WebRouteComponent {
   const cards = vm.skills.length
     ? vm.skills.map((skill) => {
         const badges = [
@@ -4221,6 +4492,7 @@ function renderTeamSkillsRouteComponent(vm: TeamSkillsPageVM, locale: WorkHubLoc
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(vm.totals.active))}</span>
       </header>
+      ${renderTeamSkillsCurationSection(vm, locale, isAdmin)}
       <div class="wh-r4-route-grid">${cards}</div>
     </section>`
   });
@@ -4566,12 +4838,14 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
         <h3 role="heading" aria-level="2">${escapeHtml(zh ? "成员" : "Members")}</h3>
         <div data-r18-project-home-members-body="true"><p class="wh-subtle">${escapeHtml(zh ? "正在加载成员摘要…" : "Loading member summary…")}</p></div>
       </section>`;
-  // R20 wave4（R19-1 OKR 前端接线）：服务端 POST /api/objectives（建目标+关键结果）与
-  // POST /api/objectives/:id/link（挂工作项）此前完全没有前端入口。目标是工作区级实体（objectives 表
-  // 没有 project_id 列），不是「这个项目的目标」——文案刻意不说「项目目标」。服务端没有列目标的端点
-  // （只有按 id 批量取标题/按状态取 id 列表），故本卡只能话本次会话内创建过的目标（不持久化列表），
-  // 创建成功后立刻在下面追加一行，带「挂到这里的某个工作项」选择器——数据源直接用本页已有的
-  // open_work_items（不额外请求）。
+  // R20 wave4（R19-1 OKR 前端接线）→ R23 F-01（OKR 列表/详情持久化）：服务端 POST /api/objectives
+  // （建目标+关键结果）与 POST /api/objectives/:id/link（挂工作项）此前没有前端入口；列表也一度只是
+  // 会话内内存态。目标是工作区级实体（objectives 表没有 project_id 列），不是「这个项目的目标」——
+  // 文案刻意不说「项目目标」。服务端现已提供 GET /api/projects/:id/objectives（该项目所在工作区的全部
+  // 目标，仍不做项目级过滤）与 GET /api/objectives/:id（详情），browser.ts 的
+  // bindProjectHomeObjectivesPanel 挂载后真拉取——这里只出 SSR 加载骨架（同 plansSection/
+  // membersSection 的既有先例：GET 数据永不在 SSR 内嵌，一律客户端水合），不再假装「服务端没有列表
+  // 端点」。
   const objectivesSection = `<section class="wh-card wh-r4-route-card" data-r20-project-home-objectives="true" data-r20-project-home-objectives-project="${escapeHtml(project.id)}">
         <h3 role="heading" aria-level="2">${escapeHtml(zh ? "OKR · 目标与关键结果" : "OKR — objectives & key results")}</h3>
         <p class="wh-subtle">${escapeHtml(zh
@@ -4591,11 +4865,26 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
           <button type="submit" class="wh-btn wh-btn-primary" data-r20-okr-create-submit="true">${escapeHtml(zh ? "创建目标" : "Create objective")}</button>
         </form>
         <div data-r20-okr-list role="list">
-          <p class="wh-subtle" data-r20-okr-list-empty="true">${escapeHtml(zh
-            ? "本次会话里还没有创建目标——服务端暂不提供列出全部已有目标的端点，创建后会立刻显示在这里。"
-            : "No objectives created in this session yet — the server has no endpoint to list existing ones, so newly created objectives appear here right away.")}</p>
+          <p class="wh-subtle" data-r20-okr-list-loading="true">${escapeHtml(zh ? "正在加载目标…" : "Loading objectives…")}</p>
         </div>
       </section>`;
+  // R23 P4（R20 P2A 端点上界面）：项目生命周期分区——归档 / 删除。POST /api/projects/:id/{archive,delete}
+  // 服务端早已齐备（project-ops.ts），此前 web 只有一枚「已归档」徽标、没有任何动作入口。资格由 VM 的
+  // can_manage_lifecycle 下发（服务端用与写端点同一个谓词算），没资格整块不渲——不给会 403 的假入口。
+  // 两个动作都是破坏性的，走 apps/web 既有的两段式确认（armConfirmButton），第一次点只是换文案。
+  const lifecycleSection = vm.can_manage_lifecycle === true
+    ? `<section class="wh-card wh-r4-route-card" data-r23-project-lifecycle="true" data-r23-project-lifecycle-project="${escapeHtml(project.id)}">
+        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "项目生命周期" : "Project lifecycle")}</h3>
+        <p class="wh-subtle">${escapeHtml(zh
+          ? "归档会把项目从团队项目列表里收起来，已有的工作与文件都还在；删除会把项目整体下架，只有管理员或项目负责人能做这两件事。"
+          : "Archiving tucks the project out of the team list while keeping its work and files; deleting takes the whole project down. Both are limited to admins and the project owner.")}</p>
+        <div class="wh-r4-route-actions">
+          <button type="button" class="wh-btn" data-r23-project-archive="true">${escapeHtml(zh ? "归档项目" : "Archive project")}</button>
+          <button type="button" class="wh-btn" data-r23-project-delete="true">${escapeHtml(zh ? "删除项目" : "Delete project")}</button>
+        </div>
+        <p class="wh-subtle" data-r23-project-lifecycle-status="true" hidden></p>
+      </section>`
+    : "";
   const instructionsSection = `<section class="wh-card wh-r4-route-card" data-r17-project-home-instructions="true" data-r17-project-home-instructions-project="${escapeHtml(project.id)}">
         <h3 role="heading" aria-level="2">${escapeHtml(zh ? "自定义指令" : "Custom instructions")}</h3>
         <p class="wh-subtle">${escapeHtml(
@@ -4659,6 +4948,7 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
       ${objectivesSection}
       ${membersSection}
       ${instructionsSection}
+      ${lifecycleSection}
       <a class="wh-r4-route-kicker" href="/projects" data-r8-project-home-back="true">${escapeHtml(routeT(locale, "projectHome.back"))}</a>
     </section>`
   });
@@ -5595,11 +5885,18 @@ function renderSettingsAiAssistantCard(locale: WorkHubLocale, desktopHref: strin
     ["ask", "先问我（确认后开工）", "Ask me first (starts after I confirm)"],
     ["manual", "只挂单（我手动启动）", "Queue only (I start it manually)"]
   ];
+  // R23 P3b（SA-07）：助手主动性三档。措辞与桌面端设置页逐字对齐（apps/desktop-webview/src/
+  // spotlight/views/settings.ts 的 proactivityCopy），免得同一个档位在两端叫法不一样。
+  const proactivityOptions: Array<[string, string, string]> = [
+    ["quiet", "安静 · 很少主动开口", "Quiet · rarely speaks up first"],
+    ["balanced", "均衡 · 看情况开口（默认）", "Balanced · speaks up when it matters (default)"],
+    ["proactive", "主动 · 更常主动汇报", "Proactive · reports progress more often"]
+  ];
   const renderOptions = (options: Array<[string, string, string]>) =>
     options.map(([value, zhLabel, enLabel]) => `<option value="${escapeHtml(value)}">${escapeHtml(zh ? zhLabel : enLabel)}</option>`).join("");
   return `<section class="wh-card wh-r4-route-card" data-r13-settings-ai-panel="true">
           <h3 role="heading" aria-level="2">${escapeHtml(zh ? "AI 助手" : "AI assistant")}</h3>
-          <p class="wh-subtle">${escapeHtml(zh ? "单聊默认档与接单策略在这里就能改，改完立即生效——即使你在「只观察」档也能在这里自救。" : "Change your default 1:1 mode and dispatch policy right here — it takes effect immediately, even if you're stuck in observe-only mode.")}</p>
+          <p class="wh-subtle">${escapeHtml(zh ? "单聊默认档、接单策略与助手主动性在这里就能改，改完立即生效——即使你在「只观察」档也能在这里自救。" : "Change your default 1:1 mode, dispatch policy and assistant proactivity right here — it takes effect immediately, even if you're stuck in observe-only mode.")}</p>
           <p class="wh-subtle" data-r13-settings-ai-status="loading" hidden></p>
           <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "默认模式（单聊五档）" : "Default mode (1:1, five levels)")}</strong>
             <select class="wh-pill" data-r13-settings-ai-mode-select aria-label="${escapeHtml(zh ? "默认模式" : "Default mode")}" disabled>${renderOptions(modeOptions)}</select>
@@ -5607,8 +5904,12 @@ function renderSettingsAiAssistantCard(locale: WorkHubLocale, desktopHref: strin
           <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "接单策略" : "Dispatch policy")}</strong>
             <select class="wh-pill" data-r13-settings-ai-dispatch-select aria-label="${escapeHtml(zh ? "接单策略" : "Dispatch policy")}" disabled>${renderOptions(dispatchOptions)}</select>
           </div>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "助手主动性" : "Assistant proactivity")}</strong>
+            <select class="wh-pill" data-r13-settings-ai-proactivity-select aria-label="${escapeHtml(zh ? "助手主动性" : "Assistant proactivity")}" disabled>${renderOptions(proactivityOptions)}</select>
+          </div>
+          <p class="wh-subtle">${escapeHtml(zh ? "调低主动性后：关怀消息不再送达，临期提醒只在真的逾期后发，AI 助手在项目群里也会多等一会儿才开口。" : "Turn it down and: care messages stop, deadline nudges wait until something is actually overdue, and the assistant waits longer before speaking up in a project chat.")}</p>
           <button type="button" class="wh-btn" data-r13-settings-ai-retry hidden>${escapeHtml(zh ? "重试读取" : "Retry loading")}</button>
-          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "细粒度开关 · 助手主动性 · 模型档位 · 项目治理" : "Granular switches, assistant proactivity, model tier, project governance")}</strong><span class="wh-pill">${escapeHtml(zh ? "需要桌面客户端" : "Desktop app required")}</span></div>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "细粒度开关 · 模型档位 · 项目治理" : "Granular switches, model tier, project governance")}</strong><span class="wh-pill">${escapeHtml(zh ? "需要桌面客户端" : "Desktop app required")}</span></div>
           <a class="wh-btn" href="${escapeHtml(safeHref(desktopHref))}" data-action-id="open_desktop_ai_settings" data-method="GET" data-requires-desktop="true">${escapeHtml(zh ? "其余 AI 项在桌面客户端调整" : "Adjust the rest in the desktop app")}</a>
         </section>`;
 }
@@ -5716,9 +6017,27 @@ function renderSettingsBudgetPolicySection(locale: WorkHubLocale): string {
       </section>`;
 }
 
+// R23 P4（R20 P2A 端点上界面）：/settings 的「工作区审计」分区——GET /api/workspace/audit 服务端早已
+// 齐备（workspace-audit.ts，仅管理员），此前两端零界面：谁改了什么、什么时候改的，管理员在界面上根本
+// 查不到。非管理员连 GET 都是 403，所以整块只在 isAdmin 为真时渲（同成员分区/预算策略分区的既有做法）。
+// SSR 只出加载态骨架，真实数据由 apps/web 的 bindSettingsWorkspaceAuditPanel 分页拉取。
+function renderSettingsWorkspaceAuditSection(locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  return `<section class="wh-card wh-r4-route-card" data-r23-settings-workspace-audit="true">
+        <h3 role="heading" aria-level="2">${escapeHtml(zh ? "工作区审计（管理员）" : "Workspace audit (admins)")}</h3>
+        <p class="wh-subtle">${escapeHtml(zh
+          ? "这个工作区里发生过的改动：什么时候、谁做的、做了什么、对象是谁。按时间倒序，最新的在最前。"
+          : "What has happened in this workspace: when, who, what action, and on which object. Newest first.")}</p>
+        <div class="wh-r4-route-timeline" role="list" data-r23-settings-workspace-audit-body="true"><p class="wh-subtle" data-r23-settings-workspace-audit-loading="true">${escapeHtml(zh ? "正在加载审计记录…" : "Loading audit entries…")}</p></div>
+        <div class="wh-r4-route-actions"><button type="button" class="wh-btn" data-r23-settings-workspace-audit-more="true" hidden>${escapeHtml(zh ? "加载更多" : "Load more")}</button></div>
+        <p class="wh-subtle" data-r23-settings-workspace-audit-status="true" hidden></p>
+      </section>`;
+}
+
 function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale, isAdmin = false): WebRouteComponent {
   const membersSection = isAdmin ? renderSettingsMembersSection(locale) : "";
   const budgetPolicySection = isAdmin ? renderSettingsBudgetPolicySection(locale) : "";
+  const workspaceAuditSection = isAdmin ? renderSettingsWorkspaceAuditSection(locale) : "";
   const reactComponent = createSettingsReactRouteComponent(vm, locale);
   const reactAttrs = dataAttrs(reactRouteComponentMarkerAttrs(reactComponent));
   const props = reactComponent.props;
@@ -5765,7 +6084,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale,
       </div>
       ${vm.permission_policies !== undefined ? `<section class="wh-card wh-r4-route-card" data-r9-settings-policies="${escapeHtml(String(vm.permission_policies.length))}">
         <h3 role="heading" aria-level="2">${escapeHtml(locale === "zh-CN" ? "自动通过规则" : "Auto-approve rules")}</h3>
-        <p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "勾选「以后同类自动通过」留下的常驻规则都在这里；撤销需在桌面端操作。" : "Standing rules from \u201calways allow\u201d live here; revoking requires the desktop app.")}</p>
+        <p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "勾选「以后同类自动通过」留下的常驻规则都在这里；新增、调整、撤销都在桌面客户端里管理。" : "Standing rules from \u201calways allow\u201d live here; add, adjust, and revoke them from the desktop app.")}</p>
         <div class="wh-r4-route-timeline" role="list">${vm.permission_policies.length
           ? vm.permission_policies.map((policy) => `<div role="listitem" class="wh-r4-route-row" data-r9-settings-policy="${escapeHtml(policy.id)}">
             <div>
@@ -5778,6 +6097,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale,
       </section>` : ""}
       ${membersSection}
       ${budgetPolicySection}
+      ${workspaceAuditSection}
       <p class="wh-r4-route-kicker" data-r10-settings-diagnostics="true">${escapeHtml(locale === "zh-CN" ? "系统诊断（管理员关注；普通成员只读参考）" : "System diagnostics (for admins; read-only reference for members)")}</p>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-settings-runtime="true">
@@ -5839,7 +6159,7 @@ export type WebRouteComponentInput =
   | { key: "agents"; agents: AgentArmyDashboardVM }
   | { key: "knowledge"; evidence: EvidenceBubble; sourceRef?: string | undefined; scopeLanding?: boolean | undefined; projects?: ProjectListVM | undefined }
   | { key: "search"; q?: string | undefined }
-  | { key: "skills"; skills: TeamSkillsPageVM }
+  | { key: "skills"; skills: TeamSkillsPageVM; isAdmin?: boolean | undefined }
   | { key: "settings"; settings: SettingsPageVM; isAdmin?: boolean | undefined }
   | { key: "memory"; memory: { userMemories: UserMemoryManagementPageVM; teamSkills: TeamSkillManagementPageVM; tab: "profile" | "skills"; isAdmin: boolean } };
 
@@ -5891,7 +6211,7 @@ export function renderWebRouteComponent(
     case "search":
       return renderSearchRouteComponent(input.q, locale);
     case "skills":
-      return renderTeamSkillsRouteComponent(input.skills, locale);
+      return renderTeamSkillsRouteComponent(input.skills, locale, input.isAdmin ?? false);
     case "settings":
       return renderSettingsRouteComponent(input.settings, locale, input.isAdmin ?? false);
     case "memory":

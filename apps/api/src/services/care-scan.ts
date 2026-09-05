@@ -1,6 +1,7 @@
 import { settings as runtimeSettings } from "@workhub/config";
 import {
   countDeliveredCareIntentsForUser,
+  createAiSettingsRepository,
   createUserRepository,
   detectFrustrationSignals,
   detectHighLoadSignals,
@@ -17,6 +18,11 @@ import {
 
 import { getDefaultStructuredLogger, type StructuredLogger } from "../logging.js";
 import { CARE_MESSAGE_MUTE_TYPE } from "./notifications.js";
+import {
+  createAiSettingsProactivityLoader,
+  createProactivityProfileReader,
+  type ProactivityProfileLoader
+} from "./proactivity-policy.js";
 import {
   careConversationText,
   getDefaultProactiveIntentService,
@@ -58,6 +64,9 @@ export type CareScanRunResult = {
   suppressed_no_personal_space: number;
   // 用户关掉了关怀。
   skipped_opted_out: number;
+  // R23 P3b（SA-07）：用户把「助手主动性」调成了安静档——关怀整条不投。与 skipped_opted_out
+  // 分开计数：一个是「专门关掉关怀」，一个是「整体调低了主动性」，运维要能分辨。
+  skipped_quiet_profile: number;
   // 静默时段（本 tick 不产 intent，下个非静默 tick 再产；周抑制键保证一周一次）。
   skipped_quiet_hours: number;
   started_at: string;
@@ -80,6 +89,9 @@ export type CareScanServiceDeps = {
   countWeeklyCareForUser: (input: { targetUserId: string; from: Date; to: Date }) => Promise<number>;
   // 关怀 opt-out 判定（true=用户关掉了关怀，跳过）。默认永远 false（不注入=不启用 opt-out）。
   isCareOptedOut: (userId: string) => Promise<boolean>;
+  // R23 P3b（SA-07）：读用户的「助手主动性」档位。可选——不注入时全员按默认档（均衡）处理，
+  // 即接线前的既有行为。
+  loadProactivity?: ProactivityProfileLoader;
   proactive: Pick<ProactiveIntentService, "recordAndDeliver">;
   quietHours: ProactiveQuietHours;
   weeklyCap: number;
@@ -169,6 +181,7 @@ export function createCareScanService(deps: CareScanServiceDeps): { runOnce(): P
         suppressed_weekly_cap: 0,
         suppressed_no_personal_space: 0,
         skipped_opted_out: 0,
+        skipped_quiet_profile: 0,
         skipped_quiet_hours: 0
       };
 
@@ -200,6 +213,8 @@ export function createCareScanService(deps: CareScanServiceDeps): { runOnce(): P
       // 每用户本周已投递关怀数（懒查一次、投成功后本地自增）+ opt-out 缓存（同一 tick 同一用户只查一次）。
       const weeklyTally = new Map<string, number>();
       const optOutCache = new Map<string, boolean>();
+      // R23 P3b（SA-07）：档位同样是 tick 级缓存（同一人一轮只读一次档案）。
+      const proactivity = createProactivityProfileReader(deps.loadProactivity ?? (async () => undefined));
 
       for (const signal of active) {
         if (quiet) {
@@ -213,6 +228,13 @@ export function createCareScanService(deps: CareScanServiceDeps): { runOnce(): P
         }
         if (optedOut) {
           result.skipped_opted_out += 1;
+          continue;
+        }
+        // R23 P3b（SA-07）：安静档不投关怀。放在 opt-out 之后、周闸之前——先判「这个人要不要」，
+        // 再算「本周还剩几次」，免得给不该收的人白白消耗周配额统计。
+        const policy = await proactivity.get({ workspaceId: signal.workspaceId, userId: signal.userId });
+        if (!policy.allowCare) {
+          result.skipped_quiet_profile += 1;
           continue;
         }
         let delivered = weeklyTally.get(signal.userId);
@@ -259,6 +281,7 @@ export function getDefaultCareScanService(): ReturnType<typeof createCareScanSer
   if (!defaultCareScanService) {
     const db = getSharedDatabaseClient().db;
     const users = createUserRepository(db);
+    const aiSettings = createAiSettingsRepository(db);
     defaultCareScanService = createCareScanService({
       detectHighLoad: (input) => detectHighLoadSignals(db, input),
       detectLateNight: (input) => detectLateNightSignals(db, input),
@@ -279,6 +302,8 @@ export function getDefaultCareScanService(): ReturnType<typeof createCareScanSer
           return false;
         }
       },
+      // R23 P3b（SA-07）：读「助手主动性」档位——安静档整条不投关怀。
+      loadProactivity: createAiSettingsProactivityLoader((key) => aiSettings.findUserProfileAccessRecord(key)),
       proactive: getDefaultProactiveIntentService(),
       quietHours: parseProactiveQuietHours(runtimeSettings.proactive.quietHours),
       weeklyCap: runtimeSettings.proactive.careWeeklyCap,

@@ -85,6 +85,20 @@ export function buildSettingsDeviceRow(
   };
 }
 
+// R23 F-03（撤销本机并登出）：POST /api/client-devices/revoke-current 在纯网页会话上唯一可能的失败
+// 就是 403「local client required」——网页从不携带本地客户端 client-token 请求头（见上面
+// isCurrentDevice 顶部注释：GET /current 的探测预期 403，同样结构性成立），故这条撤销本机也一样。
+// 404（这条设备记录已经不在了，比如另一个标签页刚撤销过）同理，都不是「出问题了」，是「网页本来就
+// 没有可撤销的本地客户端设备记录」这件事的结构性表现。用户点「撤销本机并登出」真正要的结果是登出
+// 这件事发生——不该因为这个结构性必然会撞见的子步骤「失败」就把人晾在原地、不给登出。除此之外的
+// 任何错误（网络中断/5xx/未知）都必须停下来：那种情况下不知道服务端真实状态，不能装作已经处理好了。
+export function shouldSignOutDespiteRevokeCurrentDeviceFailure(error: unknown): boolean {
+  const status = error && typeof error === "object" && "status" in error
+    ? (error as { status?: unknown }).status
+    : undefined;
+  return status === 403 || status === 404;
+}
+
 // 撤销失败的人话化——不静默吞错（工单纪律③）。duck-type 读 `.code`（WorkHubApiError 的公开字段）而不
 // import 运行时类，保持本模块零副作用/纯函数、单测无需构造真实错误实例。未知错误兜底成通用重试文案，
 // 绝不把裸 Error.message（可能带内部细节）直接吐给用户。

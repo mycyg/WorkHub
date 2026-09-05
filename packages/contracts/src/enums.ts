@@ -49,6 +49,17 @@ export const workItemModes = ["worker", "pm"] as const;
 export const workItemModeSchema = z.enum(workItemModes);
 export type WorkItemMode = z.infer<typeof workItemModeSchema>;
 
+// R23 F-01（OKR 列表/详情持久化）：镜像 packages/db/src/schema/core.ts 里 objectives/key_results 表的本地
+// ObjectiveStatus/KeyResultStatus 字面量联合——db 层为避免循环依赖没有直接导入本文件，这里独立声明一份
+// 供 GET /api/projects/:id/objectives 与 GET /api/objectives/:id 的响应契约使用；两侧改动值时要同步。
+export const objectiveStatuses = ["active", "paused", "done", "archived"] as const;
+export const objectiveStatusSchema = z.enum(objectiveStatuses);
+export type ObjectiveStatus = z.infer<typeof objectiveStatusSchema>;
+
+export const keyResultStatuses = ["active", "done", "at_risk", "cancelled"] as const;
+export const keyResultStatusSchema = z.enum(keyResultStatuses);
+export type KeyResultStatus = z.infer<typeof keyResultStatusSchema>;
+
 // B-R9.6 §3.1：paused = 人按下「暂停派发」。在跑的子 run 不杀，只停新派发；resume 回 dispatching。
 export const taskPlanStatuses = ["draft", "proposed", "approved", "dispatching", "paused", "done", "cancelled"] as const;
 export const taskPlanStatusSchema = z.enum(taskPlanStatuses);

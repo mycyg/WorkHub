@@ -28,6 +28,7 @@ const CONVERSATION_ID = "80000000-0000-4000-8000-000000000002";
 const MESSAGE_ID = "80000000-0000-4000-8000-000000000003";
 const ITEM_ID = "80000000-0000-4000-8000-000000000004";
 const WORK_ITEM_ID = "80000000-0000-4000-8000-000000000005";
+const MEETING_ID = "80000000-0000-4000-8000-000000000006";
 
 function fixtureVm(overrides: Partial<SearchResultsVm> = {}): SearchResultsVm {
   return {
@@ -244,7 +245,7 @@ test("searchResultsHtml renders a null work-item title as an honest placeholder,
   assert.doesNotMatch(html, />null</u);
 });
 
-test("searchResultsHtml gives meetings an honest degrade note (no per-meeting deep link exists)", () => {
+test("searchResultsHtml gives meetings a real per-meeting deep link (F-09: the meetings capability view now exists)", () => {
   const vm = fixtureVm({
     groups: [
       { scope: "conversations", has_more: false, results: [] },
@@ -255,7 +256,7 @@ test("searchResultsHtml gives meetings an honest degrade note (no per-meeting de
         has_more: false,
         results: [
           {
-            meeting_id: "80000000-0000-4000-8000-000000000006",
+            meeting_id: MEETING_ID,
             project_id: PROJECT_ID,
             project_name: "增长项目",
             title: "季度评审",
@@ -269,9 +270,10 @@ test("searchResultsHtml gives meetings an honest degrade note (no per-meeting de
     ]
   });
   const html = searchResultsHtml(vm, true);
-  assert.match(html, /会议详情暂不能从搜索直达/u);
+  assert.doesNotMatch(html, /会议详情暂不能从搜索直达/u);
   assert.match(html, /data-search-kind="meeting"/u);
   assert.match(html, new RegExp(`data-search-project-id="${PROJECT_ID}"`, "u"));
+  assert.match(html, new RegExp(`data-search-meeting-id="${MEETING_ID}"`, "u"));
 });
 
 test("searchResultsHtml wires drive/workitem/conversation rows with the exact dataset the click handler expects", () => {
@@ -308,10 +310,15 @@ test("resolveSearchRowAction resolves each kind from its dataset, and rejects in
     workItemId: "w1"
   });
   assert.equal(resolveSearchRowAction({ searchKind: "workitem" }), undefined);
-  assert.deepEqual(resolveSearchRowAction({ searchKind: "meeting", searchProjectId: "p1" }), {
+  // F-09：会议命中现在要求 meetingId 才能直达该场会议详情——只有 projectId 时诚实回退 undefined
+  // （不再是「够开项目级就行」的旧口径）。
+  assert.deepEqual(resolveSearchRowAction({ searchKind: "meeting", searchProjectId: "p1", searchMeetingId: "m1" }), {
     kind: "meeting",
-    projectId: "p1"
+    projectId: "p1",
+    meetingId: "m1"
   });
+  assert.equal(resolveSearchRowAction({ searchKind: "meeting", searchProjectId: "p1" }), undefined);
+  assert.equal(resolveSearchRowAction({ searchKind: "meeting", searchMeetingId: "m1" }), undefined);
   assert.equal(resolveSearchRowAction({}), undefined);
   assert.equal(resolveSearchRowAction({ searchKind: "bogus" } as SearchRowDataset), undefined);
 });
@@ -696,26 +703,15 @@ test("clicking a conversation row invokes open_workbench with a project+conversa
   });
 });
 
-test("clicking a meeting row degrades honestly: opens the project only (no conversationId), with a degrade toast", async () => {
+test("clicking a meeting row opens the meetings capability directly on that meeting (F-09: no more workbench degrade)", async () => {
   await withFakeHTMLElement(async () => {
-    const calls: Array<[string, Record<string, unknown> | undefined]> = [];
-    (globalThis as { __TAURI__?: unknown }).__TAURI__ = {
-      core: { invoke: async (command: string, args?: Record<string, unknown>) => (calls.push([command, args]), undefined) }
-    };
-    const toasts: Array<{ message: string; tone?: string | undefined }> = [];
-    try {
-      const body = new FakeBody();
-      createSearchView().mount(baseCtx(body, { toast: (message, tone) => toasts.push({ message, tone }) }));
-      const row = new FakeElement(new Set(["[data-search-row]"]));
-      row.dataset = { searchRow: "true", searchKind: "meeting", searchProjectId: PROJECT_ID };
-      body.click(row);
-      await tick();
-      assert.deepEqual(calls, [["open_workbench", { projectId: PROJECT_ID }]]);
-      assert.equal(toasts[0]!.tone, "ok");
-      assert.match(toasts[0]!.message, /已在工作台打开该项目，会议详情请在里面查看/u);
-    } finally {
-      delete (globalThis as { __TAURI__?: unknown }).__TAURI__;
-    }
+    const opened: Array<[string, unknown]> = [];
+    const body = new FakeBody();
+    createSearchView().mount(baseCtx(body, { open: (id, target) => opened.push([id, target]) }));
+    const row = new FakeElement(new Set(["[data-search-row]"]));
+    row.dataset = { searchRow: "true", searchKind: "meeting", searchProjectId: PROJECT_ID, searchMeetingId: MEETING_ID };
+    body.click(row);
+    assert.deepEqual(opened, [["meetings", { id: PROJECT_ID, route: `?m=${MEETING_ID}` }]]);
   });
 });
 
@@ -726,7 +722,9 @@ test("a row click without a Tauri bridge (browser dev preview) gives an honest '
     const body = new FakeBody();
     createSearchView().mount(baseCtx(body, { toast: (message, tone) => toasts.push({ message, tone }) }));
     const row = new FakeElement(new Set(["[data-search-row]"]));
-    row.dataset = { searchRow: "true", searchKind: "meeting", searchProjectId: PROJECT_ID };
+    // 会议命中已直达 ctx.open("meetings", ...)，不再经过需要 Tauri 桥的工作台路径——这条守卫
+    // 现在唯一还会走到的 kind 是会话（唯二仍走 openInWorkbench 的分支）。
+    row.dataset = { searchRow: "true", searchKind: "conversation", searchProjectId: PROJECT_ID, searchConversationId: CONVERSATION_ID };
     body.click(row);
     await tick();
     assert.equal(toasts.length, 1);

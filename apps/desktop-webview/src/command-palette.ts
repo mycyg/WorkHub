@@ -18,6 +18,8 @@ export type CommandId =
   // 的 keywords 都含「搜索/search」，注册表顺序即打平分时的默认胜出方（见 command-palette.test.ts）。
   | "search"
   | "knowledge"
+  // F-09：会议（转写/纪要/洞察卡）——项目内能力，紧挨 knowledge（同属"项目内容检索/浏览"一类）。
+  | "meetings"
   | "cost"
   | "team"
   | "notifications"
@@ -137,6 +139,17 @@ export const commandRegistry: DesktopCommand[] = [
     keywords: ["知识", "检索", "搜索", "knowledge", "search", "wiki", "docs"],
     icon: ic('<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.3-4.3"/>'),
     action: { kind: "open-window", target: "knowledge" }
+  },
+  {
+    // F-09：会议列表 → 转写/纪要/洞察详情，与 web /meetings 页同源数据（packages/contracts
+    // meetingPageVmSchema）。桌面此前完全没有会议视图，搜索结果只能诚实降级——本能力落地后
+    // 两处都直达同一个视图（见 spotlight/views/meetings.ts、spotlight/views/search.ts）。
+    id: "meetings",
+    label: { "zh-CN": "会议", en: "Meetings" },
+    hint: { "zh-CN": "转写、纪要与洞察卡片", en: "Transcripts, minutes, and insight cards" },
+    keywords: ["会议", "纪要", "转写", "洞察", "会议记录", "meeting", "meetings", "minutes", "transcript"],
+    icon: ic('<path d="M4 5h16v11H9l-4 4z"/><path d="M8 9h8M8 12.5h5"/>'),
+    action: { kind: "open-window", target: "meetings" }
   },
   {
     id: "cost",

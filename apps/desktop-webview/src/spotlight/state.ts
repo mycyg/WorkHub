@@ -83,6 +83,11 @@ const SHELL_ROUTE_CAPABILITIES: ReadonlyArray<readonly [string, CommandId]> = [
   ["/drive", "drive"],
   // WIRE-02：桌宠卡片链接白名单（pet-surface.ts desktopPetMainRouteFromHref）放行 /files——归到网盘能力。
   ["/files", "drive"],
+  // F-09：会议详情深链——web 同款路由形态 /meetings?project_id=&m=（服务端已支持，见
+  // apps/api/src/routes/pages.ts GET /meetings）。项目 id 走 entityIdFromShellRoute 的查询参数回退
+  // （project_id 排在 m 前面命中），会议 id 由 views/meetings.ts 自己从 target.route 里再解析一次
+  // （同 drive 的 item_id 处理），这里只需把路由前缀映到能力。
+  ["/meetings", "meetings"],
   ["/projects", "projects"],
   ["/p", "projects"],
   ["/knowledge", "knowledge"],

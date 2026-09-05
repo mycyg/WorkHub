@@ -108,5 +108,60 @@ export function createObjectiveRoutes(deps: ObjectiveRoutesDependencies = {}) {
     return c.json({ ok: true, data: { objective_id: objectiveId, work_item_id: payload.work_item_id } });
   });
 
+  // R23 F-01（OKR 列表/详情持久化）：详情——鉴权判定与上面两个写端点同款（未登录 401、无工作区 403），
+  // 非法 uuid 与「合法但不在本工作区」的目标同样回 404（不给攻击者区分存在性的信号）。
+  routes.get("/:id", createCurrentUserMiddleware(authSource), async (c) => {
+    const objectiveId = c.req.param("id");
+    if (!isUuidParam(objectiveId)) {
+      throw new HTTPException(404, { message: "没有找到这个目标。" });
+    }
+    const workspaceId = c.var.actor.workspaceId;
+    if (!workspaceId) {
+      throw new HTTPException(403, { message: "没有权限查看目标。" });
+    }
+    const detail = await service.getObjective({ workspaceId, objectiveId });
+    if (!detail) {
+      throw new HTTPException(404, { message: "没有找到这个目标。" });
+    }
+    return c.json({
+      ok: true,
+      data: {
+        objective_id: detail.objective.id,
+        title: detail.objective.title,
+        description_md: detail.objective.descriptionMd,
+        status: detail.objective.status,
+        progress_percent: detail.objective.progressPercent,
+        owner_user_id: detail.objective.ownerUserId,
+        created_at: detail.objective.createdAt.toISOString(),
+        updated_at: detail.objective.updatedAt.toISOString(),
+        key_results: detail.keyResults.map((keyResult) => ({
+          id: keyResult.id,
+          seq: keyResult.seq,
+          title: keyResult.title,
+          target_value: keyResult.targetValue,
+          current_value: keyResult.currentValue,
+          unit: keyResult.unit,
+          status: keyResult.status,
+          progress_percent: keyResult.progressPercent
+        })),
+        key_results_capped: detail.keyResultsCapped,
+        linked_work_items: detail.linkedWorkItems.map((item) => ({
+          id: item.id,
+          code: item.code,
+          title: item.title,
+          status: item.status
+        })),
+        linked_work_items_capped: detail.workItemsCapped,
+        linked_task_plans: detail.linkedTaskPlans.map((plan) => ({
+          id: plan.id,
+          work_item_id: plan.workItemId,
+          status: plan.status,
+          created_at: plan.createdAt.toISOString()
+        })),
+        linked_task_plans_capped: detail.taskPlansCapped
+      }
+    });
+  });
+
   return routes;
 }

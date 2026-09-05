@@ -820,6 +820,10 @@ function workItemsWithAcceptedDeliverables(deliverables: AcceptedDeliverableVM[]
     async canReadWorkItems(input) {
       return new Set(input.workItemIds);
     },
+    // R23 F-04 fallout：canMutateWorkItems 同为接口必填项；本夹具不验转交动作可见性，宽松桩即可。
+    async canMutateWorkItems(input) {
+      return new Set(input.workItemIds);
+    },
     async assertCanMutateArtifacts() {
       return;
     },

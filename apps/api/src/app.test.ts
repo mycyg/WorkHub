@@ -513,7 +513,8 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["get", "/api/me/personal-projects"],
     ["post", "/api/me/personal-projects"],
     ["get", "/api/drive/projects/{projectId}/items/{itemId}/versions"],
-    ["post", "/api/drive/projects/{projectId}/items/{itemId}/versions/{versionId}/restore"]
+    ["post", "/api/drive/projects/{projectId}/items/{itemId}/versions/{versionId}/restore"],
+    ["post", "/api/meetings/{meetingId}/analyze"]
   ] as const;
   for (const [method, route] of expectedRoutes) {
     assert.ok(body.paths[route]?.[method], `${method.toUpperCase()} ${route} missing from OpenAPI document`);
@@ -2656,6 +2657,8 @@ test("Drive and Project page OpenAPI responses document their page VM envelopes"
   ]);
   assert.deepEqual(Object.keys(projectData?.properties ?? {}).sort(), [
     "actions",
+    // R23 P4（R20 P2A 端点上界面）：项目主页据它渲不渲「归档 / 删除」——服务端用与两个写端点相同的谓词算。
+    "can_manage_lifecycle",
     "drive",
     "empty_state",
     "generated_at",
@@ -2760,7 +2763,9 @@ test("secondary page OpenAPI routes document query parameters and page VM envelo
     // only covered pre-army user/team/workitem buckets and would let the OpenAPI contract drift.
     ["/api/pages/cost", ["generated_at", "currency", "total_cost_cny", "token_in", "token_out", "trend", "by_user", "by_team", "by_workitem", "by_task_plan", "by_objective", "model_breakdown", "budget", "notices", "top_exhaustion_risks"]],
     ["/api/pages/agents", ["generated_at", "kpis", "plans", "recent_escalations", "page_info"]],
-    ["/api/pages/skills", ["generated_at", "skills", "totals"]],
+    // R23 SA-06：curation 是必填——技能页必须回答「这台部署到底有没有人在攒技能」，可选字段会让
+    // 前端回到「没有就当没开」的猜测，那正是这一批要修掉的毛病。
+    ["/api/pages/skills", ["generated_at", "skills", "totals", "curation"]],
     ["/api/pages/settings", ["generated_at", "locale", "runtime", "llm_runtime", "budgets", "language", "device"]]
   ] as const) {
     const schema = jsonResponseSchema(body.paths, path, "get", "200");

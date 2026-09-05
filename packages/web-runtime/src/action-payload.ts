@@ -1,11 +1,14 @@
 import { WorkHubApiError } from "@workhub/api-client/client";
+import type { PageRequestOptions } from "@workhub/api-client";
 import type {
   ApplyMergeProposalCandidateRequest,
   BootstrapProjectRequest,
+  ChooseMergeProposalCandidateRequest,
   CreateWorkItemRequest,
   MergeProposalRequest,
   NextQuestionRequest,
   ProposalConflict,
+  ProposalMergeResult,
   UseEvidenceForTaskRequest
 } from "@workhub/contracts";
 
@@ -17,7 +20,9 @@ export type ActionPayloadResult<T> =
   | { ok: true; payload?: T }
   | { ok: false; reason: ActionPayloadFailureReason };
 
-function hrefPathname(href: string, origin = globalThis.location?.origin ?? "http://workhub.local") {
+// R23 F-04：转交动作分类（delegate.ts）也要按同一口径解析 href——导出而不是再写一份 URL 解析，
+// 免得两处对「相对路径 / 绝对 URL / 带查询串」的判定漂移。
+export function hrefPathname(href: string, origin = globalThis.location?.origin ?? "http://workhub.local") {
   return new URL(href, origin).pathname;
 }
 
@@ -69,6 +74,13 @@ export function bootstrapProjectActionFromHref(href: string) {
 
 export function createNamedProjectActionFromHref(href: string) {
   return hrefPathname(href) === "/api/projects/bootstrap";
+}
+
+// R23 P2（SA-05 web 个人空间新建）：POST /api/me/personal-projects——服务端按「我的空间」/「我的空间 2」…
+// 自动命名，前端不需要采集任何字段，故没有配套的 actionElement*Payload（团队项目那份靠输入框取名字，
+// 个人空间没有这个输入框）。
+export function createPersonalSpaceActionFromHref(href: string) {
+  return hrefPathname(href) === "/api/me/personal-projects";
 }
 
 export function startAgentRunActionFromHref(href: string) {
@@ -162,6 +174,13 @@ export function meetingDraftProposalFromHref(href: string) {
   const path = hrefPathname(href);
   const match = /^\/api\/meetings\/workitems\/([^/]+)\/proposal-draft$/u.exec(path);
   return match?.[1] ? { workItemId: decodeURIComponent(match[1]) } : undefined;
+}
+
+// SA-02 重新生成纪要。只有两段路径，与上面几条会议动作（projects/... / workitems/...）不会撞。
+export function meetingReanalyzeFromHref(href: string) {
+  const path = hrefPathname(href);
+  const match = /^\/api\/meetings\/([^/]+)\/analyze$/u.exec(path);
+  return match?.[1] ? { meetingId: decodeURIComponent(match[1]) } : undefined;
 }
 
 export function notificationActionFromHref(href: string) {
@@ -418,4 +437,45 @@ export function conflictsFromMergeError(error: unknown): ProposalConflict[] {
     }
   }
   return [];
+}
+
+export type SelectedConflictChooserCandidate = {
+  mergeProposalId: string;
+  proposalId?: string;
+};
+
+// F-05：从「选一份合并方案」选择器（packages/ui/proposal/render.ts 的 renderConflictChooser，多处冲突
+// 各自带融合稿时才渲染）里读出用户勾选的那一项。渲染层给每个 radio 打了 data-merge-proposal-id/
+// data-proposal-id，这里只做一次 :checked 读取，不碰网络——三端（web/桌面 spotlight/工作台编辑器）
+// 共用同一份读取逻辑，行为不会跑偏。
+export function selectedConflictChooserCandidate(container: ParentNode): SelectedConflictChooserCandidate | undefined {
+  const checked = container.querySelector<HTMLElement>("[data-conflict-chooser-option]:checked");
+  const mergeProposalId = checked?.dataset.mergeProposalId;
+  if (!mergeProposalId) {
+    return undefined;
+  }
+  const proposalId = checked.dataset.proposalId;
+  return proposalId ? { mergeProposalId, proposalId } : { mergeProposalId };
+}
+
+export type MergeCandidateChooseClient = {
+  chooseMergeProposalCandidate: (id: string, payload: ChooseMergeProposalCandidateRequest) => Promise<unknown>;
+  applyMergeProposalCandidate: (
+    id: string,
+    payload?: ApplyMergeProposalCandidateRequest,
+    options?: PageRequestOptions
+  ) => Promise<ProposalMergeResult>;
+};
+
+// F-05「先选稿再采纳」：choose 只登记选中了哪份候选（服务端 CAS 写 chosen_option_key，同一份候选被
+// 别人先选过会 409），真正写回正式交付物仍是既有的 apply。choose 失败直接冒泡给调用方，不掩盖成功
+// 状态、也不静默重试。候选目前只有 ai_fusion 一种可选路由——keep_current/accept_incoming 走 /merge
+// 内联解决，选择器根本不会为它们生成候选（见 fusionChooserCandidates），故 option_key 定死。
+export async function chooseThenApplyMergeCandidate(
+  client: MergeCandidateChooseClient,
+  mergeProposalId: string,
+  options?: PageRequestOptions
+): Promise<ProposalMergeResult> {
+  await client.chooseMergeProposalCandidate(mergeProposalId, { option_key: "ai_fusion" });
+  return client.applyMergeProposalCandidate(mergeProposalId, { confirm: true }, options);
 }

@@ -759,6 +759,49 @@ test("meeting page VM carries insight actions, evidence, and proposal links", ()
 
   assert.equal(parsed.meetings[0]?.insights[0]?.actions.create_draft?.method, "POST");
   assert.equal(parsed.meetings[0]?.insights[0]?.evidence_refs[0]?.source_type, "meeting");
+  // SA-02 兼容位：老生产者不带这两个字段时，页面按「AI 已配置、没有重新生成入口」渲染。
+  assert.equal(parsed.ai_analysis_configured, true);
+  assert.deepEqual(parsed.meetings[0]?.actions, {});
+});
+
+test("SA-02 meeting VM carries the transcribed status, the AI switch, and a regenerate action", () => {
+  const base = meetingPageVmSchema.parse({
+    generated_at: "2026-09-05T02:00:00.000Z",
+    summary: {
+      meeting_count: 1,
+      ready_count: 0,
+      pending_insight_count: 0,
+      confirmed_insight_count: 0,
+      dismissed_insight_count: 0
+    },
+    can_manage: true,
+    ai_analysis_configured: false,
+    meetings: [{
+      id: "93000000-0000-4000-8000-000000000021",
+      project_id: "93000000-0000-4000-8000-000000000001",
+      uploaded_by_user_id: "93000000-0000-4000-8000-000000000003",
+      uploaded_by_label: "PM",
+      title: "Q3 pricing review",
+      audio_filename: "transcript-import.md",
+      audio_size_bytes: 512,
+      // 转写已入库、纪要还没生成——这个态在 SA-02 之前会被服务端折叠成 processing。
+      status: "transcribed",
+      created_at: "2026-09-05T02:00:00.000Z",
+      updated_at: "2026-09-05T02:00:00.000Z",
+      insights: [],
+      actions: {
+        reanalyze: {
+          id: "meeting_reanalyze",
+          label: "Regenerate minutes",
+          method: "POST",
+          href: "/api/meetings/93000000-0000-4000-8000-000000000021/analyze"
+        }
+      }
+    }]
+  });
+  assert.equal(base.ai_analysis_configured, false);
+  assert.equal(base.meetings[0]?.status, "transcribed");
+  assert.equal(base.meetings[0]?.actions.reanalyze?.href, "/api/meetings/93000000-0000-4000-8000-000000000021/analyze");
 });
 
 test("work item detail VM carries Meeting source context and proposal draft action", () => {

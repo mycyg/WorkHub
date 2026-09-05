@@ -92,4 +92,20 @@ test("R19-15 empty personal + DM state renders an honest hint, not a broken entr
     locale: "zh-CN"
   });
   assert.match(html, /data-r19-my-conversations-empty="true"/u);
+  // R23 P2（SA-05）：合并空态不再吞掉「新建个人空间」入口——按钮必须仍然可见。
+  assert.match(html, /data-r19-create-personal-space="true"/u);
+  // 空态文案不再谎称"完整的新建...在桌面工作台里"——创建本身现在 web 就能做。
+  assert.doesNotMatch(html, /完整的新建/u);
+});
+
+test("R23 P2 the personal-space group always exposes a create button that posts to the existing endpoint", () => {
+  const html = renderMyConversationsSectionHtml({ dm: dmList, personal: personalProjects, locale: "zh-CN" });
+  assert.match(html, /data-r19-create-personal-space="true"/u);
+  assert.match(html, /data-action-id="create_personal_space"/u);
+  assert.match(html, /data-method="POST"/u);
+  assert.match(html, /href="\/api\/me\/personal-projects"/u);
+  assert.match(html, /新建个人空间/u);
+
+  const enHtml = renderMyConversationsSectionHtml({ dm: dmList, personal: personalProjects, locale: "en-US" });
+  assert.match(enHtml, /New personal space/u);
 });

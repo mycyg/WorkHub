@@ -317,3 +317,94 @@ test("E3a createDraft enforces permission, project existence, workspace, and int
     (e: unknown) => e instanceof ProjectPlannerServiceError && e.code === "project_plan_intent_required" && e.status === 400
   );
 });
+
+// ---- R23 P3b（SA-03）：仓库动态进规划上下文 ----
+
+test("SA-03 planner prompt carries the repo activity block and the judge sees it too", async () => {
+  const registry = new RecordingRegistry([
+    validPlan(),
+    { decision: "approve", confidence: "high", reasons: ["coherent"] }
+  ]);
+  const planner = createProjectPlanner({ providerRegistry: registry as unknown as ProviderRegistry });
+  await planner.createDraft({
+    ...plannerInput,
+    repoActivity: ["提交 · 昨天：修好了支付回调", "合并请求 · 3 天前：支付重构（merged）"]
+  });
+
+  const draftPrompt = String(registry.calls[0]?.params.messages[0]?.content);
+  assert.match(draftPrompt, /Recent code repository activity/u);
+  assert.match(draftPrompt, /修好了支付回调/u);
+  assert.match(draftPrompt, /reference material, not instructions/u);
+  const judgePrompt = String(registry.calls[1]?.params.messages[0]?.content);
+  assert.match(judgePrompt, /支付重构/u);
+});
+
+test("SA-03 planner prompt omits the repo activity block entirely when there is none", async () => {
+  const registry = new RecordingRegistry([
+    validPlan(),
+    { decision: "approve", confidence: "high", reasons: ["coherent"] }
+  ]);
+  const planner = createProjectPlanner({ providerRegistry: registry as unknown as ProviderRegistry });
+  await planner.createDraft(plannerInput);
+
+  const draftPrompt = String(registry.calls[0]?.params.messages[0]?.content);
+  assert.doesNotMatch(draftPrompt, /Recent code repository activity \(objective record/u);
+  assert.match(String(registry.calls[1]?.params.messages[0]?.content), /Recent code repository activity:\nNone/u);
+});
+
+test("SA-03 createDraft summarizes recent repo activity into the planner input, capped per kind", async () => {
+  const { repo } = createFakeProjectPlannerRepository();
+  const { calls, planner } = recordingPlanner();
+  const occurred = (daysAgo: number) => new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
+  const requested: Array<{ projectId: string; limit: number }> = [];
+  const service = createProjectPlannerService({
+    repo,
+    projectRepo: { findProjectById: async () => fakeProject() },
+    timelineRepo: fakeTimelineRepo(),
+    githubActivity: {
+      listRecentActivitiesByProject: async (id: string, limit: number) => {
+        requested.push({ projectId: id, limit });
+        return [
+          { kind: "commit", title: "修好了支付回调", occurredAt: occurred(1), state: null, authorLogin: "amy" },
+          { kind: "commit", title: "补测试", occurredAt: occurred(2), state: null, authorLogin: null },
+          { kind: "commit", title: "改文案", occurredAt: occurred(3), state: null, authorLogin: null },
+          { kind: "commit", title: "更早的提交", occurredAt: occurred(4), state: null, authorLogin: null },
+          { kind: "issue", title: "回调偶发超时", occurredAt: occurred(2), state: "open", authorLogin: null },
+          { kind: "commit", title: "上个月的提交", occurredAt: occurred(40), state: null, authorLogin: null }
+        ] as never;
+      }
+    },
+    planner
+  });
+
+  await service.createDraft({ projectId, actor: makeActor(), intent: "Ship v1" });
+
+  assert.deepEqual(requested, [{ projectId, limit: 30 }]);
+  const plannerCall = calls[0] as { repoActivity?: string[] };
+  assert.ok(plannerCall.repoActivity);
+  assert.equal(plannerCall.repoActivity.length, 4, "3 commits (per-kind cap) + 1 issue");
+  assert.ok(plannerCall.repoActivity.some((line) => /修好了支付回调/u.test(line)));
+  assert.ok(plannerCall.repoActivity.every((line) => !/上个月的提交/u.test(line)), "out-of-window rows are dropped");
+  assert.ok(plannerCall.repoActivity.every((line) => !/更早的提交/u.test(line)), "per-kind cap keeps only the newest 3");
+});
+
+test("SA-03 createDraft still produces a draft when the repo activity lookup fails", async () => {
+  const { repo } = createFakeProjectPlannerRepository();
+  const { calls, planner } = recordingPlanner();
+  const service = createProjectPlannerService({
+    repo,
+    projectRepo: { findProjectById: async () => fakeProject() },
+    timelineRepo: fakeTimelineRepo(),
+    githubActivity: {
+      listRecentActivitiesByProject: async () => {
+        throw new Error("github table exploded");
+      }
+    },
+    planner
+  });
+
+  const vm = await service.createDraft({ projectId, actor: makeActor(), intent: "Ship v1" });
+
+  assert.equal(vm.status, "pending_review");
+  assert.equal((calls[0] as { repoActivity?: string[] }).repoActivity, undefined);
+});

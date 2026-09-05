@@ -7,7 +7,8 @@ import {
   formatDeviceLastSeen,
   humanizeDeviceRevokeError,
   isCurrentDevice,
-  isDeviceRevoked
+  isDeviceRevoked,
+  shouldSignOutDespiteRevokeCurrentDeviceFailure
 } from "./settings-devices.js";
 
 function device(partial: Partial<ClientDeviceResponse> = {}): ClientDeviceResponse {
@@ -104,4 +105,16 @@ test("R20 P2-05 humanizeDeviceRevokeError: never silently swallows — always re
   assert.equal(humanizeDeviceRevokeError(new Error("boom"), "zh-CN"), "撤销失败，请稍后重试。");
   assert.equal(humanizeDeviceRevokeError(null, "en-US"), "Revoke failed, please try again.");
   assert.equal(humanizeDeviceRevokeError("weird-string-error", "en-US"), "Revoke failed, please try again.");
+});
+
+test("R23 F-03 shouldSignOutDespiteRevokeCurrentDeviceFailure: 403/404 are the expected 'nothing to revoke on a plain web session' shapes and still sign out", () => {
+  assert.equal(shouldSignOutDespiteRevokeCurrentDeviceFailure({ status: 403 }), true, "no local client device — the structural norm for a plain web session");
+  assert.equal(shouldSignOutDespiteRevokeCurrentDeviceFailure({ status: 404 }), true, "device already gone (e.g. another tab just revoked it)");
+});
+
+test("R23 F-03 shouldSignOutDespiteRevokeCurrentDeviceFailure: any other failure must block sign-out (network/5xx/unknown are not safe to paper over)", () => {
+  assert.equal(shouldSignOutDespiteRevokeCurrentDeviceFailure({ status: 500 }), false);
+  assert.equal(shouldSignOutDespiteRevokeCurrentDeviceFailure(new Error("network down")), false);
+  assert.equal(shouldSignOutDespiteRevokeCurrentDeviceFailure(null), false);
+  assert.equal(shouldSignOutDespiteRevokeCurrentDeviceFailure(undefined), false);
 });

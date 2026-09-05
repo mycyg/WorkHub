@@ -2902,3 +2902,80 @@ test("API-04 createSession does not consult the budget gate when reusing a store
   assert.equal(session.session_id, workItemId);
   assert.equal(gateCalls, 0);
 });
+
+// R23 P4（R20 P2A 端点上界面）：详情页要渲「认领 / 指派给…」两个按钮，就得先知道当前这个人有没有资格。
+// 服务端用与 POST /api/workitems/:id/{claim,assign} 完全相同的谓词算出 can_claim / can_assign 随 VM 下发——
+// 若两处各写一份判定，迟早漂移成「看得见点了却 403」或「有权限却没入口」。
+test("R23 P4: detailPage ships can_claim/can_assign computed with the same predicates as the write endpoints", async () => {
+  const submitterActor: AuthActor = { ...actor, id: userId, userId };
+  const detailFor = async (
+    rows: StoredWorkItemDetailRows,
+    withActor: AuthActor = submitterActor
+  ) => {
+    const repo = { ...repository(), async readWorkItemDetail() { return rows; } } as unknown as WorkItemDataRepository;
+    const service = createDbWorkItemService(repo, { now: () => now });
+    return service.detailPage({ workItemId, actor: withActor, locale: "zh-CN" });
+  };
+
+  // 提交人 + 可认领状态（spec_ready，无人独占指派）：两个动作都开放。
+  const openToSubmitter = await detailFor(detailRows({ status: "spec_ready", submitterUserId: userId }));
+  assert.equal(openToSubmitter.can_claim, true);
+  assert.equal(openToSubmitter.can_assign, true);
+
+  // in_review 仍可改归属（还在推进中），但已经过了可认领窗口——按钮该有的有、该没的没。
+  const inReview = await detailFor(detailRows({ status: "in_review", submitterUserId: userId }));
+  assert.equal(inReview.can_claim, false);
+  assert.equal(inReview.can_assign, true);
+
+  // 已完成的事项两个动作都关闭——归属不再是可改的东西。
+  const done = await detailFor(detailRows({ status: "done", submitterUserId: userId }));
+  assert.equal(done.can_claim, false);
+  assert.equal(done.can_assign, false);
+
+  // 非提交人、非管理员、也不是现任主责：能看（同工作区非私有态）但不能改归属。
+  const otherUserId = "93000000-0000-4000-8000-0000000003ff";
+  const stranger: AuthActor = { ...actor, id: otherUserId, userId: otherUserId };
+  const notMine = await detailFor(detailRows({ status: "ai_working", submitterUserId: userId }), stranger);
+  assert.equal(notMine.can_assign, false);
+  assert.equal(notMine.can_claim, false);
+
+  // 管理员在可改归属的状态上恒可指派。
+  const adminActor: AuthActor = { ...actor, id: otherUserId, userId: otherUserId, isAdmin: true };
+  const asAdmin = await detailFor(detailRows({ status: "ai_working", submitterUserId: userId }), adminActor);
+  assert.equal(asAdmin.can_assign, true);
+});
+
+// R23 P4（R20 P2A 端点上界面）：assign 写的是 work_item_assignments、不是 claimed_by——详情页 VM 必须把
+// 这份名单端出来，否则界面上指派完毫无变化，用户看不出这个动作到底生效没有。
+test("R23 P4: detailPage surfaces the assignment roster with display names, lead first", async () => {
+  const leadUserId = "93000000-0000-4000-8000-000000000501";
+  const helperUserId = "93000000-0000-4000-8000-000000000502";
+  const ghostUserId = "93000000-0000-4000-8000-000000000503";
+  const detailFor = async (assignments: StoredWorkItemDetailRows["assignments"]) => {
+    const rows: StoredWorkItemDetailRows = { ...detailRows({ submitterUserId: userId }), assignments };
+    const repo = { ...repository(), async readWorkItemDetail() { return rows; } } as unknown as WorkItemDataRepository;
+    const service = createDbWorkItemService(repo, { now: () => now });
+    return service.detailPage({ workItemId, actor: { ...actor, id: userId, userId }, locale: "zh-CN" });
+  };
+
+  // 没有任何指派：字段整体省略（诚实缺省，前端据此不渲空名单区块），不是端一个空数组出去。
+  assert.equal((await detailFor([])).assignees, undefined);
+
+  // 排序：lead 恒在前（谁主责是读者第一眼要找的），同角色内按展示名稳定排序——刷新两次顺序不会变。
+  const roster = await detailFor([
+    { userId: helperUserId, role: "collaborator", nickname: "阿岚" },
+    { userId: leadUserId, role: "lead", nickname: "小拓" }
+  ]);
+  assert.deepEqual(roster.assignees, [
+    { user_id: leadUserId, nickname: "小拓", role: "lead" },
+    { user_id: helperUserId, nickname: "阿岚", role: "collaborator" }
+  ]);
+
+  // 账号被硬删（join 不到 nickname）：这一行仍要在，只是没有名字——不能因为名字缺席就把被指派人吞掉。
+  const ghosted = await detailFor([{ userId: ghostUserId, role: "collaborator", nickname: null }]);
+  assert.deepEqual(ghosted.assignees, [{ user_id: ghostUserId, role: "collaborator" }]);
+
+  // 历史脏行的未知角色收口成 collaborator，不让一条脏数据把整页 VM 校验打挂（详情页整个渲不出来）。
+  const legacy = await detailFor([{ userId: helperUserId, role: "reviewer", nickname: "阿岚" }]);
+  assert.equal(legacy.assignees?.[0]?.role, "collaborator");
+});
