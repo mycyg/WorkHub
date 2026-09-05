@@ -1,4 +1,6 @@
-// 服务层产出的用户可见文案（错误消息、升级说明、审阅结论）的单一来源。
+// API 层产出的用户可见文案（错误消息、升级说明、审阅结论）的单一来源。
+// 起于服务层，R26 F3 起路由层的 HTTP 错误消息也读这一份——同一句「没有找到这个任务。」
+// 此前在 routes 与 services 各写一遍，两处改词必然漂移。
 //
 // 形状照 packages/ui/src/locales.ts：中文对象是 key 集事实源，英文对象用
 // `satisfies Record<keyof typeof zh, string>` 做编译期对齐。
@@ -123,7 +125,22 @@ const zh = {
   taskUntitled: "(未命名任务)",
   turnWorkItemCreated: "建任务：{title}",
   turnWorkItemCreateFailed: "建任务失败",
-  runRecoveredRequeued: "这次执行已恢复，正在重新排队。"
+  runRecoveredRequeued: "这次执行已恢复，正在重新排队。",
+
+  // R26 F3：路由层剩余的「事项 / 工单」按 glossary §11 收口成「任务」。
+  // 权限类统一成「你没有权限……」一种口吻——此前 routes 里同一句话有带「你」和不带「你」两种写法。
+  taskAuditViewForbidden: "你没有权限查看这个任务的审计。",
+  taskArtifactsEditForbidden: "你没有权限修改这个任务的交付物。",
+  taskAssignForbidden: "你没有权限指派这个任务。",
+  taskClaimForbidden: "你现在还不能认领这个任务。",
+  taskWorkspaceMissingAssign: "这个任务还没有归属工作区，暂时无法指派。",
+  taskWorkspaceMissingClaim: "这个任务还没有归属工作区，暂时无法认领。",
+  taskNotClaimable: "这个任务已被认领或已不在可认领状态。",
+  assigneeDirectoryUnavailable: "成员目录暂时无法校验，任务没有被指派。",
+  agentRunNotStartableStatus: "当前任务状态不能启动 AI，请刷新后再试。",
+  approvalWithoutTaskContext: "无任务上下文的审批只能路由给自己。",
+  approvalsCappedMore: "待审批的任务比这里显示的更多——去审批页看完整清单。",
+  planDispatchAuditableFlow: "后续执行会继续进入可审计的任务流。"
 } as const;
 
 const en = {
@@ -229,7 +246,20 @@ const en = {
   taskUntitled: "(untitled task)",
   turnWorkItemCreated: "Task created: {title}",
   turnWorkItemCreateFailed: "Couldn't create the task",
-  runRecoveredRequeued: "This run recovered and is back in the queue."
+  runRecoveredRequeued: "This run recovered and is back in the queue.",
+
+  taskAuditViewForbidden: "You don't have permission to view this task's audit trail.",
+  taskArtifactsEditForbidden: "You don't have permission to edit this task's deliverables.",
+  taskAssignForbidden: "You don't have permission to assign this task.",
+  taskClaimForbidden: "You can't claim this task yet.",
+  taskWorkspaceMissingAssign: "This task doesn't belong to a workspace yet, so it can't be assigned.",
+  taskWorkspaceMissingClaim: "This task doesn't belong to a workspace yet, so it can't be claimed.",
+  taskNotClaimable: "This task is already claimed, or it is no longer claimable.",
+  assigneeDirectoryUnavailable: "The member directory couldn't be checked just now, so the task wasn't assigned.",
+  agentRunNotStartableStatus: "This task's current status can't start AI. Refresh and try again.",
+  approvalWithoutTaskContext: "An approval with no task context can only be routed to you.",
+  approvalsCappedMore: "There are more pending approvals than shown here — open Approvals for the full list.",
+  planDispatchAuditableFlow: "Execution will continue in the auditable task flow."
 } as const satisfies Record<keyof typeof zh, string>;
 
 export type ServiceCopyKey = keyof typeof zh;

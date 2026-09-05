@@ -65,6 +65,7 @@ import { getDefaultWorkItemStatusKickoff, type WorkItemStatusKickoff } from "./a
 import { pageT } from "../pages/i18n.js";
 import { parseOutputContract } from "../pages/output-contract.js";
 import { readJsonObject } from "./json-body.js";
+import { serviceT } from "../services/locales.js";
 import { isUuidParam } from "./uuid-param.js";
 
 type TaskPlanRouteDispatcher = {
@@ -399,7 +400,9 @@ const proposalActionCopy: Record<WorkHubLocale, Record<ProposalActionCopyKey, st
     "merge.proposal.reason.noRollback": "这次变更缺少可用回滚快照。",
     "merge.plan.dispatch.summary": "任务计划已批准，子任务会开始执行。",
     "merge.plan.hold.summary": "任务计划已批准，暂不开始执行。",
-    "merge.plan.dispatch.reason": "后续执行会继续进入可审计的事项流。",
+    // 「事项」→「任务」（glossary §11）。改词要先把整句搬进词典：就地改会同时产生
+    // 「基线条目已消失」与「新增违规」（见 scripts/dev/check-ui-i18n.ts 的棘轮）。
+    "merge.plan.dispatch.reason": serviceT("zh-CN", "planDispatchAuditableFlow"),
     "merge.plan.hold.reason": "计划保持已批准状态，需要时可以再手动开始。",
     "merge.plan.start": "开始执行计划"
   },
@@ -416,7 +419,7 @@ const proposalActionCopy: Record<WorkHubLocale, Record<ProposalActionCopyKey, st
     "merge.proposal.reason.noRollback": "This change does not have an available rollback snapshot.",
     "merge.plan.dispatch.summary": "The task plan is approved. Subtasks will start.",
     "merge.plan.hold.summary": "The task plan is approved and held for later.",
-    "merge.plan.dispatch.reason": "Execution will continue in the auditable work-item flow.",
+    "merge.plan.dispatch.reason": serviceT("en-US", "planDispatchAuditableFlow"),
     "merge.plan.hold.reason": "The plan remains approved. Start it manually when ready.",
     "merge.plan.start": "Start task plan"
   }
@@ -794,7 +797,7 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
 
   async function assertCanReadWorkItem(workItemId: string, actor: AuthActor) {
     if (!workItems) {
-      throw new HTTPException(403, { message: "没有权限查看这个事项。" });
+      throw new HTTPException(403, { message: serviceT("zh-CN", "taskViewForbidden") });
     }
     try {
       await workItems.detailPage({ workItemId, actor });
@@ -805,7 +808,7 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
 
   async function assertCanMutateWorkItem(workItemId: string, actor: AuthActor) {
     if (!workItems) {
-      throw new HTTPException(403, { message: "没有权限修改这个事项。" });
+      throw new HTTPException(403, { message: serviceT("zh-CN", "taskEditForbidden") });
     }
     try {
       await workItems.assertCanMutateArtifacts({ workItemId, actor });
@@ -1282,12 +1285,12 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
 
   async function assertCanReadWorkItem(workItemId: string, actor: AuthActor) {
     if (!workItems) {
-      throw new HTTPException(403, { message: "没有权限查看这个事项。" });
+      throw new HTTPException(403, { message: serviceT("zh-CN", "taskViewForbidden") });
     }
     // 路由 uuid 形参先校验：非 uuid 串原本直达 detailPage 的 uuid 列 → PG 22P02 → 误报 500；
     // 与「合法但不存在」同样回 404，不泄露事项存在性。
     if (!isUuidParam(workItemId)) {
-      throw new HTTPException(404, { message: "没有找到这个事项。" });
+      throw new HTTPException(404, { message: serviceT("zh-CN", "taskNotFound") });
     }
     try {
       await workItems.detailPage({ workItemId, actor });
@@ -1298,10 +1301,10 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
 
   async function assertCanMutateWorkItem(workItemId: string, actor: AuthActor) {
     if (!workItems) {
-      throw new HTTPException(403, { message: "没有权限修改这个事项。" });
+      throw new HTTPException(403, { message: serviceT("zh-CN", "taskEditForbidden") });
     }
     if (!isUuidParam(workItemId)) {
-      throw new HTTPException(404, { message: "没有找到这个事项。" });
+      throw new HTTPException(404, { message: serviceT("zh-CN", "taskNotFound") });
     }
     try {
       await workItems.assertCanMutateArtifacts({ workItemId, actor });

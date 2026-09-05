@@ -32,6 +32,7 @@ import {
   type WorkItemCommentService
 } from "../services/work-item-comments.js";
 import { readJsonObject } from "./json-body.js";
+import { serviceT } from "../services/locales.js";
 import { isUuidParam } from "./uuid-param.js";
 
 export type WorkItemRoutesDependencies = {
@@ -49,7 +50,7 @@ function handleWorkItemError(error: unknown): never {
 // 同样的 404（WorkItemServiceError，经 app.onError 收口），不泄露存在性。
 function requireWorkItemId(value: string): string {
   if (!isUuidParam(value)) {
-    throw new WorkItemServiceError(404, "not_found", "没有找到这个事项。(Work item not found.)");
+    throw new WorkItemServiceError(404, "not_found", serviceT("zh-CN", "taskNotFound"));
   }
   return value;
 }
