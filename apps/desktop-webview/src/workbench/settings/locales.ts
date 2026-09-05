@@ -9,6 +9,13 @@
 
 import { normalizeWorkHubLocale, type WorkHubLocale } from "@workhub/contracts";
 
+import {
+  loadFailedRetryEn,
+  loadFailedRetryZh,
+  loadingEn,
+  loadingZh
+} from "../../load-state-copy.js";
+
 const zh = {
   aDailyPmStylePatrolStalled: "PM 视角每日巡检——工单停滞、临期未动工、项目成本异常放量，一天一次合并汇报",
   afterTheChatGoesQuietCuu: "群聊安静一段时间后，Cuu 自动把讨论里的活拎出来（行动卡）",
@@ -25,9 +32,9 @@ const zh = {
   connectionSucceeded: "连接成功",
   costSpikeFloor: "成本放量下限",
   costSpikeRatio: "成本放量比例",
-  couldnTLoadCustomInstructionsRetry: "自定义指令没拉到，稍后重试",
-  couldnTLoadTheGithubBinding: "GitHub 绑定状态没拉到，稍后重试",
-  couldnTLoadThisProjectS: "没拉到这个项目的设置，稍后重试",
+  couldnTLoadCustomInstructionsRetry: loadFailedRetryZh("自定义指令"),
+  couldnTLoadTheGithubBinding: loadFailedRetryZh("GitHub 绑定状态"),
+  couldnTLoadThisProjectS: loadFailedRetryZh("项目设置"),
   couldnTSaveTryAgain: "没保存成功，再试一次。",
   couldnTSaveWhatYouTyped: "没保存成功，你刚才写的内容还在——点重试，或者再改一下、失焦即可重新保存。",
   customInstructions: "自定义指令",
@@ -45,9 +52,9 @@ const zh = {
   linkAGithubRepository: "绑定 GitHub 仓库",
   linkRepository: "绑定仓库",
   linkThisProjectToAGithub: "把这个项目关联到一个 GitHub 仓库，commit/issue/PR 动态会同步进项目主页。",
-  loadingCustomInstructions: "正在拉自定义指令…",
-  loadingProjectSettings: "正在拉项目设置…",
-  loadingTheGithubBinding: "正在拉 GitHub 绑定状态…",
+  loadingCustomInstructions: loadingZh("自定义指令"),
+  loadingProjectSettings: loadingZh("项目设置"),
+  loadingTheGithubBinding: loadingZh("GitHub 绑定状态"),
   mainChatEveryone: "主区群聊 · 全员",
   manageMembers: "管理成员",
   members: "成员",
@@ -110,9 +117,9 @@ const en = {
   connectionSucceeded: "Connection succeeded",
   costSpikeFloor: "Cost spike floor",
   costSpikeRatio: "Cost spike ratio",
-  couldnTLoadCustomInstructionsRetry: "Couldn't load custom instructions — retry",
-  couldnTLoadTheGithubBinding: "Couldn't load the GitHub binding — retry",
-  couldnTLoadThisProjectS: "Couldn't load this project's settings — retry",
+  couldnTLoadCustomInstructionsRetry: loadFailedRetryEn("custom instructions"),
+  couldnTLoadTheGithubBinding: loadFailedRetryEn("the GitHub binding"),
+  couldnTLoadThisProjectS: loadFailedRetryEn("this project's settings"),
   couldnTSaveTryAgain: "Couldn't save — try again.",
   couldnTSaveWhatYouTyped: "Couldn't save — what you typed is still here. Retry, or edit and leave the field again.",
   customInstructions: "Custom instructions",
@@ -130,9 +137,9 @@ const en = {
   linkAGithubRepository: "Link a GitHub repository",
   linkRepository: "Link repository",
   linkThisProjectToAGithub: "Link this project to a GitHub repository — commit/issue/PR activity syncs into the project home page.",
-  loadingCustomInstructions: "Loading custom instructions…",
-  loadingProjectSettings: "Loading project settings…",
-  loadingTheGithubBinding: "Loading the GitHub binding…",
+  loadingCustomInstructions: loadingEn("custom instructions"),
+  loadingProjectSettings: loadingEn("project settings"),
+  loadingTheGithubBinding: loadingEn("the GitHub binding"),
   mainChatEveryone: "Main chat · everyone",
   manageMembers: "Manage members",
   members: "Members",

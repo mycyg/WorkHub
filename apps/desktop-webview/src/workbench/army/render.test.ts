@@ -166,13 +166,13 @@ test("renderArmyPanelHtml renders outputs and runs in list mode", () => {
   assert.match(html, /阿墨/u);
 });
 
-// R17 G3(#8 拍板 B)：后台任务区接真数据源后恢复渲染。没传 background(还没拉到)时诚实显示「正在拉」；
+// R17 G3(#8 拍板 B)：后台任务区接真数据源后恢复渲染。没传 background(还没拿到)时诚实显示加载态；
 // ready 时渲两块（定时任务 + 主动性动态）。此前那条「永远不渲染」的止血断言随本批接活作废。
 test("renderArmyPanelHtml shows a loading note for the background section when background data hasn't arrived yet", () => {
   const state: ArmyPanelViewState = { mode: "list", vm: panelVm(), loadingMore: false };
   const html = renderArmyPanelHtml(state, "zh-CN", noMembers);
   assert.match(html, /后台任务/u);
-  assert.match(html, /正在拉后台任务/u);
+  assert.match(html, /正在加载定时任务/u);
 });
 
 test("renderArmyPanelHtml renders the scheduled-tasks and proactivity blocks from real background data", () => {
@@ -407,7 +407,7 @@ test("renderArmyPanelHtml detail mode renders the full trace timeline once the r
 
 test("renderArmyPanelHtml surfaces a loading state and an error state distinctly", () => {
   const loading = renderArmyPanelHtml({ mode: "loading" }, "zh-CN", noMembers);
-  assert.match(loading, /正在拉军团面板/u);
+  assert.match(loading, /正在加载小队面板/u);
   const errored = renderArmyPanelHtml({ mode: "error", message: "网络断了" }, "zh-CN", noMembers);
   assert.match(errored, /网络断了/u);
 });

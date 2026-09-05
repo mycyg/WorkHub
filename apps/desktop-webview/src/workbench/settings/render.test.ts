@@ -371,7 +371,7 @@ test("the instructions section shows a spinner while loading", () => {
     savedPillVisible: false
   });
   assert.match(html, /data-wb-instr-state="loading"/u);
-  assert.match(html, /正在拉自定义指令/u);
+  assert.match(html, /正在加载自定义指令/u);
   assert.doesNotMatch(html, /data-wb-instr-textarea/u);
 });
 

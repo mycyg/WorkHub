@@ -1557,7 +1557,7 @@ function devicesState(over: Partial<DesktopDevicesSectionState> = {}): DesktopDe
 test("devicesSectionHtml renders a failed state with a retry button", () => {
   const html = devicesSectionHtml(devicesState({ failed: true, devices: undefined }), true);
   assert.match(html, /data-set-devices-retry="true"/u);
-  assert.match(html, /设备没拉到/u);
+  assert.match(html, /设备没加载出来/u);
 });
 
 test("devicesSectionHtml shows an empty-state note when there are no devices", () => {

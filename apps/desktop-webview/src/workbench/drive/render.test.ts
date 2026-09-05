@@ -249,7 +249,7 @@ test("renderDriveRecycleHtml disables the restore button of the item currently b
 // —— loading/error —— //
 
 test("renderDriveLoadingHtml and renderDriveErrorHtml render distinct, localized states", () => {
-  assert.match(renderDriveLoadingHtml("zh-CN"), /正在拉网盘/u);
+  assert.match(renderDriveLoadingHtml("zh-CN"), /正在加载网盘/u);
   assert.match(renderDriveLoadingHtml("en-US"), /Loading the drive/u);
   assert.match(renderDriveErrorHtml("zh-CN"), /data-wb-drive-retry/u);
 });

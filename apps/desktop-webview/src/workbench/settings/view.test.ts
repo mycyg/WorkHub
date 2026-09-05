@@ -489,7 +489,7 @@ test("R14 GH: a load failure renders a scoped retry that reloads only the GitHub
     });
     await tick();
 
-    assert.match(container.innerHTML, /GitHub 绑定状态没拉到，稍后重试/u);
+    assert.match(container.innerHTML, /GitHub 绑定状态没加载出来，稍后重试/u);
     fail = false;
     container.dispatch("click", new FakeElement(new Set(["[data-wb-gh-retry]"])));
     await tick();
