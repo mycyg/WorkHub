@@ -138,6 +138,17 @@ Pilot 栈默认 `APP_ENV=development` —— 对应规格树的 **LAN-first 信�
 
 **如果要暴露到公网/HTTPS**：设 `APP_ENV=production`，此时配置守卫会强制要求强 `COOKIE_SECRET`、`COOKIE_SECURE=true`（需 HTTPS）、收紧 `CORS_ALLOW_ORIGINS`（不许 `*`）——任何一项不满足进程直接拒绝启动（fail-closed）。完整威胁模型重审清单见 `docs/workhub/01-architecture/security-and-permissions.md` §1.3。
 
+**`AUTH_MODE` 在生产环境必须是 `password` 或 `hybrid`，不能是 `nickname`**（同一处 fail-closed 守卫，进程直接拒绝启动）——昵称模式没有口令/会话边界，cookie 即身份，不适合暴露到公网。设置：
+
+```bash
+# .env.pilot 加一行（或直接设为容器环境变量）：
+AUTH_MODE=password
+```
+
+这两种模式下 web 和桌面端都改走邮箱 + 密码登录（`POST /api/auth/login`）；`/`（web）首次打开会自动探测到这个模式并渲染邮箱/密码表单，不再是昵称报到屏。**首个管理员怎么来**：这两种模式下没有"填昵称 + 勾选管理员 + 填 `ADMIN_CLAIM_SECRET`"这条路——改成在登录屏切到"注册"标签页，用邮箱 + 昵称 + 密码创建账号（`POST /api/auth/register`）；只要这个实例当前还没有任何管理员，**第一个完成注册的账号会被服务端自动提为管理员**，不需要额外操作。之后再注册的账号都是普通成员，管理员身份只能后续在设置页的成员管理里手动授予。
+
+注意：配置守卫仍然要求 `ADMIN_CLAIM_SECRET` 在生产环境非空且 ≥16 位（这道检查不区分 `AUTH_MODE`），但这个值只在昵称模式的认领流程里会被读取——`password`/`hybrid` 模式下随便生成一个满足长度要求的随机串占位即可（`openssl rand -hex 16`），它不会被用到、也不会影响上面这条"第一个注册者自动成为管理员"的流程。
+
 ## 9. 日志口径
 
 容器 stdout 输出 JSON Lines（`LOG_FORMAT=json`）：`server_started`、`http_request`（method/path/status/duration_ms/actor）、`unhandled_error`、`server_stopping`。接采集器直接喂；人工排查可临时设 `LOG_FORMAT=pretty`。

@@ -1,5 +1,6 @@
 import { WorkHubApiError } from "@workhub/api-client/client";
 import type { IdentifyRequest, IdentityResponse } from "@workhub/api-client";
+import type { WorkHubLocale } from "@workhub/ui/gold-path";
 
 // R23 P2（SA-04）：生产环境强制 AUTH_MODE!='nickname' 时，POST /api/auth/identify 直接 404
 // （apps/api/src/routes/auth.ts 的 passwordModeEnabled 门在解析请求体之前就先检查）——web 端唯一的
@@ -35,4 +36,36 @@ export async function detectAuthScreenMode(
   // identify 理论上不会在传空昵称时成功（schema 要求至少 1 字符）；万一服务端行为变化导致真的
   // 成功了，也按 nickname 处理——这个分支不该出现，出现时 fail open 到侵入性最小的既有体验。
   return "nickname";
+}
+
+// R23 P2（SA-04）：把服务端/网络错误翻成用户可读的一句话——同 apps/desktop-webview/src/desktop-login.ts
+// 的 describeDesktopLoginError 先例（那份只覆盖 login；这里额外覆盖 register 的 409/凭据模式判断）。
+// 401 的统一口径「邮箱或密码不正确」不区分「邮箱不存在」与「密码错」，避免账号枚举。
+export function describeAuthScreenError(error: unknown, locale: WorkHubLocale, context: "login" | "register"): string {
+  const zh = locale === "zh-CN";
+  if (error instanceof WorkHubApiError) {
+    if (context === "login" && error.status === 401) {
+      return zh ? "邮箱或密码不正确，请重试。" : "Email or password is incorrect. Please try again.";
+    }
+    if (error.status === 429) {
+      return zh ? "尝试过于频繁，请稍后再试。" : "Too many attempts. Please wait a moment and retry.";
+    }
+    if (context === "register" && error.status === 409) {
+      return zh ? "该邮箱已注册，请改用登录。" : "That email is already registered — sign in instead.";
+    }
+    if (error.status === 400 || error.status === 422) {
+      return context === "register"
+        ? (zh
+          ? "请检查邮箱、昵称和密码是否有效（密码至少 8 位）。"
+          : "Check that email, nickname, and password are valid (password needs at least 8 characters).")
+        : (zh ? "请填写有效的邮箱和密码。" : "Enter a valid email and password.");
+    }
+    if (error.status === 404) {
+      // 罕见竞态：探测时是密码模式，提交时后端刚好切回了 nickname 模式（部署配置变更 + 重启）。
+      return zh ? "当前后端未启用这种登录方式，请刷新页面重试。" : "This sign-in method isn't enabled on this backend — refresh and try again.";
+    }
+  }
+  return zh
+    ? (context === "login" ? "登录失败，请检查网络连接后重试。" : "注册失败，请检查网络连接后重试。")
+    : (context === "login" ? "Sign-in failed — check your connection and retry." : "Registration failed — check your connection and retry.");
 }
