@@ -1,11 +1,14 @@
 import { WorkHubApiError } from "@workhub/api-client/client";
+import type { PageRequestOptions } from "@workhub/api-client";
 import type {
   ApplyMergeProposalCandidateRequest,
   BootstrapProjectRequest,
+  ChooseMergeProposalCandidateRequest,
   CreateWorkItemRequest,
   MergeProposalRequest,
   NextQuestionRequest,
   ProposalConflict,
+  ProposalMergeResult,
   UseEvidenceForTaskRequest
 } from "@workhub/contracts";
 
@@ -418,4 +421,45 @@ export function conflictsFromMergeError(error: unknown): ProposalConflict[] {
     }
   }
   return [];
+}
+
+export type SelectedConflictChooserCandidate = {
+  mergeProposalId: string;
+  proposalId?: string;
+};
+
+// F-05：从「选一份合并方案」选择器（packages/ui/proposal/render.ts 的 renderConflictChooser，多处冲突
+// 各自带融合稿时才渲染）里读出用户勾选的那一项。渲染层给每个 radio 打了 data-merge-proposal-id/
+// data-proposal-id，这里只做一次 :checked 读取，不碰网络——三端（web/桌面 spotlight/工作台编辑器）
+// 共用同一份读取逻辑，行为不会跑偏。
+export function selectedConflictChooserCandidate(container: ParentNode): SelectedConflictChooserCandidate | undefined {
+  const checked = container.querySelector<HTMLElement>("[data-conflict-chooser-option]:checked");
+  const mergeProposalId = checked?.dataset.mergeProposalId;
+  if (!mergeProposalId) {
+    return undefined;
+  }
+  const proposalId = checked.dataset.proposalId;
+  return proposalId ? { mergeProposalId, proposalId } : { mergeProposalId };
+}
+
+export type MergeCandidateChooseClient = {
+  chooseMergeProposalCandidate: (id: string, payload: ChooseMergeProposalCandidateRequest) => Promise<unknown>;
+  applyMergeProposalCandidate: (
+    id: string,
+    payload?: ApplyMergeProposalCandidateRequest,
+    options?: PageRequestOptions
+  ) => Promise<ProposalMergeResult>;
+};
+
+// F-05「先选稿再采纳」：choose 只登记选中了哪份候选（服务端 CAS 写 chosen_option_key，同一份候选被
+// 别人先选过会 409），真正写回正式交付物仍是既有的 apply。choose 失败直接冒泡给调用方，不掩盖成功
+// 状态、也不静默重试。候选目前只有 ai_fusion 一种可选路由——keep_current/accept_incoming 走 /merge
+// 内联解决，选择器根本不会为它们生成候选（见 fusionChooserCandidates），故 option_key 定死。
+export async function chooseThenApplyMergeCandidate(
+  client: MergeCandidateChooseClient,
+  mergeProposalId: string,
+  options?: PageRequestOptions
+): Promise<ProposalMergeResult> {
+  await client.chooseMergeProposalCandidate(mergeProposalId, { option_key: "ai_fusion" });
+  return client.applyMergeProposalCandidate(mergeProposalId, { confirm: true }, options);
 }
