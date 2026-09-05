@@ -53,7 +53,8 @@ docker compose --env-file .env.pilot -f docker-compose.pilot.yml logs -f workhub
 - 群聊、工单、审批、网盘、看板等**不依赖 AI 的功能照常可用**。
 - 主区静默观察者（拎活）与回话判定器（该不该主动搭话）**都不会启动**——服务端只打一行
   `conversation_observer_disabled` / `conversation_reply_judge_disabled` 日志，不会反复重试打空转的 LLM 请求。
-- 风险巡检（工单停滞/临期/成本异常）与 GitHub 轮询走确定性规则，**不依赖 LLM，照常运行**，与是否配置 key 无关。
+- 风险巡检（工单停滞/临期/成本异常/绑定仓库长期没有新提交）与 GitHub 轮询走确定性规则，**不依赖 LLM，照常运行**，与是否配置 key 无关。
+- 团队技能夜间自学（§3.4）**不会启动**——服务端只打一行 `skill_curation_disabled` 日志（`reason` 写明是没配密钥还是被开关关掉），不会每夜白跑一遍再被打回。
 - Web/桌面 composer 顶部会出现一条“AI 服务未配置”的横幅（读 `GET /api/health` 的 `ai_provider_configured`
   字段）。**这条横幅只是提示，不拦发送**——如果这时候用户仍然直接找 Cuu 说话（1:1 协同会话或 @Cuu），
   会同步收到一条明确的失败响应（“这一轮 Cuu 没接上，请再试一次”，HTTP 500），而不是卡死、超时或没反应。
@@ -73,6 +74,28 @@ GITHUB_TOKEN_ENC_KEY=$(openssl rand -base64 32)
 `GITHUB_TOKEN_ENC_KEY` 用 AES-256-GCM 加密落库的项目级 GitHub PAT，**故意与 `COOKIE_SECRET` 分离**——两者
 威胁模型和轮换节奏不同（会话伪造 vs 解密全部项目的 GitHub 令牌）。留空时绑定端点直接 fail-closed 返回
 503，绝不会把令牌明文落库；GitHub 轮询 worker 照常启动但每轮拉取零结果，只在首次打一行 warn 日志。
+
+绑定之后，每日风险巡检会多出一条信号：**这个项目绑了仓库，但已经很久没有新提交**。「很久」的天数由
+`GITHUB_STALE_DAYS` 决定（1–90，默认 7），是部署级设置，不逐项目配置。刚绑上的仓库、以及一次都还没
+成功同步过的绑定，都不会被算进这条信号——那种时候我们其实并不知道仓库动没动。
+
+## 3.4 团队技能夜间自学（默认开启）
+
+运行队列闲下来时，AI 会回看已完成的工作（包括成员点过的差评），把可复用的做法蒸馏成团队技能，
+成员在「团队技能」页就能看到攒下了什么。这条链路默认开启：
+
+```bash
+# .env.pilot 里想关掉时才需要这一行：
+AGENT_RUN_SKILL_CURATION_ENABLED=false
+# 两轮之间的间隔（毫秒），默认一天：
+# AGENT_RUN_SKILL_CURATION_INTERVAL_MS=86400000
+```
+
+三重约束保证它不会烧钱或空转：没配 `LLM_API_KEY` 时根本不启动；只在运行队列空闲时才开跑；每轮仍受
+当日蒸馏花费上限（`BUDGET_DEFAULT_CURATION_DAILY_COST_CNY`）约束，超额整轮跳过。
+
+管理员不想等今晚的，可以在「团队技能」页点「立即自学一轮」（`POST /api/team-skills/curate-now`）——
+非管理员没有这个按钮且调用会被拒；已经在跑时会明确告知「正在进行」，不会并发起第二轮。
 
 ## 4. 备份与恢复
 
