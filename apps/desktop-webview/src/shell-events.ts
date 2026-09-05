@@ -40,6 +40,11 @@ export type DesktopShellSystemNotificationPlan = {
 
 export type DesktopShellNavigatePayload = {
   route: string;
+  // 壳层（window_controls.rs ShellNavigatePayload）自 S3-#6 起随导航一起发的来源与原因：
+  // 谁发起了这次导航（tray / deep_link / system_notification / …）、对应哪条窗口控制计划
+  // （focus-main-route / show-main / …）。老壳层只发裸 route 字符串，故两者都是可选的。
+  source?: string;
+  reason?: string;
 };
 
 export type DesktopShellBridgeEvent = {
@@ -151,11 +156,19 @@ export function parseDesktopShellSystemNotificationPlan(input: unknown): Desktop
 }
 
 export function parseDesktopShellNavigatePayload(input: unknown): DesktopShellNavigatePayload | undefined {
-  const route = typeof input === "string"
-    ? input
-    : stringFieldAny(asRecord(input), ["route", "path"]);
+  const record = typeof input === "string" ? undefined : asRecord(input);
+  const route = typeof input === "string" ? input : stringFieldAny(record, ["route", "path"]);
   const safeRoute = safeDesktopShellRoute(route);
-  return safeRoute ? { route: safeRoute } : undefined;
+  if (!safeRoute) {
+    return undefined;
+  }
+  const source = stringField(record, "source");
+  const reason = stringField(record, "reason");
+  return {
+    route: safeRoute,
+    ...(source ? { source } : {}),
+    ...(reason ? { reason } : {})
+  };
 }
 
 export function workHubEventFromDesktopShellPush(

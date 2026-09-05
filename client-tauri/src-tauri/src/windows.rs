@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::locale::WorkHubLocale;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ShellWindowKind {
@@ -94,11 +96,24 @@ pub fn pet_window_plan() -> ShellWindowPlan {
     }
 }
 
+/// 工作台窗的运行时标题（按壳层语言）。
+///
+/// S3 严重 #4：声明层（tauri.conf.json / `workbench_window_plan().title`）只放**语言中立的产品名**——
+/// 那份 JSON 在读系统语言之前就被 Tauri 消费了,写死任何一种语言都会让另一种语言的用户看到外语标题。
+/// 真正给人看的标题在建窗时用这里的函数按 locale 设,切语言（apply_shell_locale）时再刷一次。
+pub fn workbench_window_title(locale: WorkHubLocale) -> &'static str {
+    match locale {
+        WorkHubLocale::ZhCn => "WorkHub 工作台",
+        WorkHubLocale::EnUs => "WorkHub Workbench",
+    }
+}
+
 pub fn workbench_window_plan() -> ShellWindowPlan {
     ShellWindowPlan {
         label: "workbench".to_string(),
         kind: ShellWindowKind::Workbench,
-        title: "WorkHub 工作台".to_string(),
+        // 语言中立的产品名；给人看的标题见 workbench_window_title()。
+        title: "WorkHub".to_string(),
         route: "/workbench.html".to_string(),
         // R12 项目工作台：常驻三栏主窗（群聊/协同/网盘 + 右栏情境面板）。与 Spotlight 聚焦盒
         // 分工——盒子用完即走，工作台承载常驻协作；默认隐藏，由 open_workbench / 深链唤起。
@@ -169,6 +184,27 @@ mod tests {
         assert!(main.height <= 640);
     }
 
+    // 三个窗口的声明层标题都不许带某种自然语言的词——给人看的标题由运行时按 locale 设。
+    #[test]
+    fn declared_window_titles_are_language_neutral() {
+        for plan in default_window_plans() {
+            assert!(
+                plan.title.is_ascii(),
+                "{} window title must stay language-neutral, got {:?}",
+                plan.label,
+                plan.title
+            );
+        }
+        assert_eq!(
+            workbench_window_title(WorkHubLocale::ZhCn),
+            "WorkHub 工作台"
+        );
+        assert_eq!(
+            workbench_window_title(WorkHubLocale::EnUs),
+            "WorkHub Workbench"
+        );
+    }
+
     #[test]
     fn window_plans_serialize_with_tauri_style_field_names() {
         let value = serde_json::to_value(pet_window_plan()).unwrap();
@@ -199,6 +235,9 @@ mod tests {
 
         assert_eq!(workbench.label, "workbench");
         assert_eq!(workbench.kind, ShellWindowKind::Workbench);
+        // S3 严重 #4：声明层标题必须是语言中立的产品名（tauri.conf.json 在读系统语言之前就被消费）。
+        assert_eq!(workbench.title, "WorkHub");
+        assert!(workbench.title.is_ascii());
         assert_eq!(workbench.route, "/workbench.html");
         // 常驻工作窗：默认隐藏等唤起、可缩放、不置顶、不跳过任务栏。
         assert!(!workbench.visible);

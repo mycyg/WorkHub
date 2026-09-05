@@ -10,6 +10,7 @@ use crate::notify::{
     system_notification_plan_from_push_payload_for_locale, ShellSystemNotificationDeduper,
     ShellSystemNotificationPlan,
 };
+use crate::shell_log::{shell_log_error, shell_log_warn};
 use crate::sse::{
     plan_shell_sse_worker, push_payload_from_frame, startup_shell_sse_targets,
     status_event_channel, status_payload, ShellSseConnectionState, ShellSseFrameBuffer,
@@ -621,7 +622,10 @@ fn process_sse_chunk<B: AsRef<[u8]>>(
         ) {
             Ok(plan) => plan,
             Err(error) => {
-                eprintln!("failed to plan WorkHub system notification: {error:?}");
+                shell_log_warn(
+                    "system_notification_plan_failed",
+                    format!("skipping one notification: {error:?}"),
+                );
                 continue;
             }
         };
@@ -632,7 +636,7 @@ fn process_sse_chunk<B: AsRef<[u8]>>(
             app.emit(system_notification_event_channel(), plan.clone())
                 .map_err(|error| format!("failed to emit system notification: {error}"))?;
             if let Err(error) = show_system_notification(app, &plan) {
-                eprintln!("failed to show WorkHub system notification: {error}");
+                shell_log_error("system_notification_show_failed", error);
             }
         }
     }
