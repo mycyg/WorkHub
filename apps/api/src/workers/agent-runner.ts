@@ -132,6 +132,7 @@ import {
 import { getDefaultProjectHydrator, type ProjectHydrator } from "./project-hydrate.js";
 import { getDefaultAuditStores } from "../services/audit-stores.js";
 import { getDefaultPluginHostClient } from "../services/plugin-host-client.js";
+import { getDefaultMcpClient } from "../services/mcp-client.js";
 import { createRunConversationReportHook } from "../services/run-conversation-report.js";
 import { createActionCardRunSettlementHook } from "../services/action-card-run-settlement.js";
 import { getDefaultTaskDispatcher } from "../services/task-dispatcher.js";
@@ -298,6 +299,27 @@ export type AgentRunPluginToolsProvider = (input: AgentRunExecutionInput) => Pro
  */
 const defaultPluginToolsProvider: AgentRunPluginToolsProvider = (input) =>
   getDefaultPluginHostClient().toolSpecs({
+    ...(input.run.workspace_id ? { workspaceId: input.run.workspace_id } : {}),
+    ...(input.run.actor_id ? { actorId: input.run.actor_id } : {}),
+    runId: input.run.run_id,
+    workItemId: input.run.work_item_id
+  });
+/**
+ * R26 工包 M4：MCP（Model Context Protocol，模型上下文协议）服务器贡献的额外工具规格。
+ * 形状与插件工具提供者完全一致——直接并进默认工具注册表，同样继承 canUse 双检 / 副作用
+ * 快照门 / human-reserved 拦截 / 审批；MCP 客户端只提供能力实现，授权仍在既有链路。
+ * 自定义 `tools` 提供者优先级更高，此时 MCP 工具与插件工具一样不参与（旧行为不变）。
+ */
+export type AgentRunMcpToolsProvider = (input: AgentRunExecutionInput) => Promise<AnyToolSpec[]> | AnyToolSpec[];
+
+/**
+ * 默认 MCP 工具来源：进程内唯一的 MCP 客户端。没调 `useMcpServerSource()`（只在 server.ts
+ * 启动早期调）时它的 serverSource 是 undefined，`toolSpecs()` 同步返回空数组、不发一次 DB
+ * 查询——所以不接 MCP 的部署与全部既有单测都是零行为变化，与插件工具来源同一条
+ * 「显式接线」先例。
+ */
+const defaultMcpToolsProvider: AgentRunMcpToolsProvider = (input) =>
+  getDefaultMcpClient().toolSpecs({
     ...(input.run.workspace_id ? { workspaceId: input.run.workspace_id } : {}),
     ...(input.run.actor_id ? { actorId: input.run.actor_id } : {}),
     runId: input.run.run_id,
@@ -559,6 +581,11 @@ export function createInMemoryAgentRunQueue(options: {
   // getDefaultPluginHostClient()——没配 WORKHUB_PLUGIN_PATHS 时它同步返回空数组、不起子进程，
   // 所以对既有 run / 单测是零行为变化。传 false 明确关掉。
   pluginTools?: AgentRunPluginToolsProvider | false;
+  // R26 工包 M4：第二路额外工具来源——MCP 服务器。默认走 getDefaultMcpClient()——没调
+  // useMcpServerSource() 时它同步返回空数组、不发一次 DB 查询，所以对既有 run / 单测是零行为
+  // 变化。传 false 明确关掉。合流优先级内置 > 插件 > MCP：重名（按 id）后来者丢弃并记
+  // tool_id_collision 日志（含来源）。
+  mcpTools?: AgentRunMcpToolsProvider | false;
   snapshot?: SnapshotHook;
   snapshotRoot?: string;
   snapshotId?: () => string;
@@ -710,22 +737,39 @@ export function createInMemoryAgentRunQueue(options: {
     return sideEffect === "external_effect" ? "external" : null;
   }
 
+  // R26 工包 M4：额外工具来源的标签——决定合流优先级与碰撞日志里「谁赢了」的可读名。
+  type ExtraToolSourceName = "plugin" | "mcp";
+
   function defaultToolRegistryFor(
     role: TaskPlanItemRole | undefined,
     teamSkillContent?: Record<string, string>,
-    // R24-P 阶段 0：插件贡献的额外工具。空数组（默认）时注册表与改造前逐字节一致。
-    extraSpecs: AnyToolSpec[] = []
+    // R24-P 阶段 0 起插件、R26 M4 起再加 MCP：额外工具来源，按数组顺序即优先级从高到低
+    // （调用方按「插件先、MCP 后」传入）。空数组（默认）时注册表与两次改造前逐字节一致。
+    extraSpecSources: { source: ExtraToolSourceName; specs: AnyToolSpec[] }[] = []
   ) {
     const builtIn = [...createBuiltInFileTools(), createSkillTool(undefined, teamSkillContent)];
-    const builtInIds = new Set(builtIn.map((spec) => spec.id));
-    // 插件不许顶掉内置工具：重名直接丢弃并留日志，而不是让 register() 抛错把整次 run 带崩。
-    const safeExtras = extraSpecs.filter((spec) => {
-      if (builtInIds.has(spec.id)) {
-        getDefaultStructuredLogger().warn("plugin_tool_id_collides_with_builtin", { tool_id: spec.id });
-        return false;
+    // 合流优先级：内置 > 插件 > MCP。ownerBySpecId 记录「这个工具 id 目前归谁」；后来者重名
+    // 一律丢弃并记日志，而不是让 register() 抛错把整次 run 带崩——任何额外来源都不许顶掉
+    // 内置工具，也不许顶掉优先级更高的额外来源（先到先得，含同一来源内部的重复）。
+    const ownerBySpecId = new Map<string, ExtraToolSourceName | "built_in">(
+      builtIn.map((spec) => [spec.id, "built_in" as const])
+    );
+    const safeExtras: AnyToolSpec[] = [];
+    for (const { source, specs } of extraSpecSources) {
+      for (const spec of specs) {
+        const owner = ownerBySpecId.get(spec.id);
+        if (owner) {
+          getDefaultStructuredLogger().warn("tool_id_collision", {
+            tool_id: spec.id,
+            kept_source: owner,
+            dropped_source: source
+          });
+          continue;
+        }
+        ownerBySpecId.set(spec.id, source);
+        safeExtras.push(spec);
       }
-      return true;
-    });
+    }
     return createToolRegistry(
       [...builtIn, ...safeExtras],
       { canUse: (spec) => canUseDefaultToolForRole(role, spec) }
@@ -745,6 +789,25 @@ export function createInMemoryAgentRunQueue(options: {
       return await provider(executionInput);
     } catch (error) {
       getDefaultStructuredLogger().warn("plugin_tools_unavailable", { error });
+      return [];
+    }
+  }
+
+  /**
+   * 解析这次 run 可用的 MCP 工具。任何失败都退化成「这次没有 MCP 工具」——MCP 面出问题
+   * 不该让 run 起不来，与插件宿主同一条崩溃隔离口径。`getDefaultMcpClient().toolSpecs()`
+   * 内部已经对逐台服务器的连接失败 try/catch；这里再包一层是防「调用 toolSpecs() 这件事
+   * 本身」出意外（例如注入的 provider 同步抛错），双保险不嫌多。
+   */
+  async function resolveMcpToolSpecs(executionInput: AgentRunExecutionInput): Promise<AnyToolSpec[]> {
+    if (options.mcpTools === false) {
+      return [];
+    }
+    const provider = options.mcpTools ?? defaultMcpToolsProvider;
+    try {
+      return await provider(executionInput);
+    } catch (error) {
+      getDefaultStructuredLogger().warn("mcp_tools_unavailable", { error });
       return [];
     }
   }
@@ -1697,11 +1760,23 @@ export function createInMemoryAgentRunQueue(options: {
       const resolvedProjectInstructions = await projectInstructions?.(current);
       // 默认工具集时把团队技能内容塞进 load_skill；自定义 tools 提供者保持原样不动。
       const teamSkillContent = resolvedTeamSkills?.contentByKey;
-      // R24-P 阶段 0：插件工具并进默认注册表（自定义 tools 提供者仍整体替换，行为不变）。
-      const pluginToolSpecs = options.tools ? [] : await resolvePluginToolSpecs(executionInput);
+      // R24-P 阶段 0：插件工具并进默认注册表；R26 M4：MCP 工具同样并入（自定义 tools 提供者
+      // 仍整体替换，两路额外来源都不参与，行为不变）。两路来源互不依赖，并发解析以免装配
+      // 等待时间是两者之和。
+      let pluginToolSpecs: AnyToolSpec[] = [];
+      let mcpToolSpecs: AnyToolSpec[] = [];
+      if (!options.tools) {
+        [pluginToolSpecs, mcpToolSpecs] = await Promise.all([
+          resolvePluginToolSpecs(executionInput),
+          resolveMcpToolSpecs(executionInput)
+        ]);
+      }
       const rawTools =
         options.tools?.(executionInput) ??
-        defaultToolRegistryFor(current.agent_role, teamSkillContent, pluginToolSpecs);
+        defaultToolRegistryFor(current.agent_role, teamSkillContent, [
+          { source: "plugin", specs: pluginToolSpecs },
+          { source: "mcp", specs: mcpToolSpecs }
+        ]);
       let visibleToolSideEffects = new Map<string, ToolSideEffect>();
       const tools: ReturnType<AgentRunToolsProvider> = {
         toModelTools: async (ctx) => {

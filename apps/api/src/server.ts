@@ -17,6 +17,7 @@ import { getDefaultPulseScheduler } from "./workers/pulse-scheduler.js";
 import { getDefaultEventOutboxDrainScheduler } from "./workers/event-outbox-drain.js";
 import { getDefaultMeetingAnalysisScheduler } from "./workers/meeting-analysis.js";
 import { closeDefaultPluginHostClient, usePluginRegistryPathSource } from "./services/plugin-host-client.js";
+import { closeDefaultMcpClient, useMcpServerSource } from "./services/mcp-client.js";
 
 // 进程级兜底：未捕获异常/未处理 rejection 此前无人接，一次走线的 throw/reject 会静默杀掉 daemon
 // 或留下半死状态。早注册（先于 server start），与下方 SIGINT/SIGTERM 优雅退出互补、不替代。
@@ -80,6 +81,11 @@ pulseScheduler?.start();
 // 开发/引导来源，两者合并去重）。**只在这里接线**：单测与离线工具不走 server.ts，于是它们的
 // 插件面仍然只认那个 env 变量，一次 PG 查询都不会发生（阶段 0 的「零行为变化」承诺继续成立）。
 usePluginRegistryPathSource();
+
+// R26 工包 M4：让默认 MCP 客户端从 `mcp_servers` 表读该工作区启用的服务器清单。与上面插件
+// 那行同一条先例——**只在这里接线**：单测与离线工具不走 server.ts，`getDefaultMcpClient()`
+// 的 serverSource 保持 undefined，一台服务器都不连、一次 PG 查询都不会发生。
+useMcpServerSource();
 
 // R20 P2-01（事务性 outbox）：会话消息事件的 outbox drain——启动即补发上次崩溃残留在 pending 的行，
 // 之后周期性重放 publish 失败的行。纯 DB + bus，无 LLM 依赖，与 risk-monitor 同档无条件启动。
@@ -151,6 +157,11 @@ function shutdown(exitCode: number) {
   // fail-open：关不掉不该拖住 API 退出（下面 8s 强退兜底照旧）。
   void closeDefaultPluginHostClient().catch((error) => {
     logger.warn("plugin_host_close_failed", { error });
+  });
+  // R26 工包 M4：MCP 子进程同样跟着 API 一起收尾，与插件宿主同一条 fail-open 口径——
+  // 关不掉不该拖住 API 退出。
+  void closeDefaultMcpClient().catch((error) => {
+    logger.warn("mcp_client_close_failed", { error });
   });
   // INF-09：2s 强退会截断在飞持久化（run 终态/trace 落库半途被杀，只能靠恢复重跑兜底）。
   // 放宽到 8s：server.close 等连接排空期间给在飞写入留足时间；SSE 长连接不会主动排空，
