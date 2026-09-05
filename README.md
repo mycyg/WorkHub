@@ -83,7 +83,7 @@ docker compose --env-file .env.pilot -f docker-compose.pilot.yml ps
 
 - macOS:在"访达"里找到 WorkHub.app,**按住 Control 点按 → 打开**,弹窗里再点一次"打开";或终端执行 `xattr -dr com.apple.quarantine /Applications/WorkHub.app`。
 - Windows:SmartScreen 提示"已保护你的电脑"时,点"更多信息" → "仍要运行"。
-- Linux:`sudo dpkg -i WorkHub_<版本>_amd64.deb`;AppImage 先 `chmod +x` 再运行。
+- Linux:`sudo dpkg -i WorkHub_<版本>_linux_amd64.deb`;AppImage 先 `chmod +x` 再运行。
 
 **告诉客户端服务器在哪**:客户端默认连本机 `http://127.0.0.1:8787`。服务器在别的机器上时,在客户端弹出的连接失败卡片里点"打开设置",填服务器地址后"保存并重试"。远端地址要能连通,服务器的 `CORS_ALLOW_ORIGINS` 也必须放行桌面端的来源——详见 [`DEPLOY.md`](DEPLOY.md) 的「把服务器地址给客户端」。
 
