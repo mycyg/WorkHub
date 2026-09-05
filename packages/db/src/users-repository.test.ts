@@ -227,3 +227,50 @@ test("CORE-02 findActiveByCookieToken returns null for an unknown token", async 
   assert.equal(result, null);
   assert.equal(queries.length, 1);
 });
+
+// ── R24 S3 严重#4：getOrCreateActiveByNickname 的 options.preferredLocale 透传 ──────────────
+
+test("R24 S3: getOrCreateActiveByNickname passes an explicit preferredLocale through to the insert on first creation", async () => {
+  const { createUserRepository } = await repositoryModule();
+  const created = userRow({ nickname: "Nova", preferredLocale: "en-US" });
+  // 第一条查询=findActiveByNickname 落空([])，第二条=insert().onConflictDoNothing().returning() 命中。
+  const { db, queries } = createQueryRecorder([[], [created]]);
+
+  const result = await createUserRepository(db).getOrCreateActiveByNickname("Nova", "cookie-nova", {
+    preferredLocale: "en-US"
+  });
+
+  assert.equal(result.created, true);
+  assert.equal(result.user.preferredLocale, "en-US");
+  const insertQuery = queries[1];
+  assert.equal(insertQuery?.operation, "insert");
+  const values = insertQuery?.valuesValue as Record<string, unknown>;
+  assert.equal(values.preferredLocale, "en-US");
+});
+
+test("R24 S3: getOrCreateActiveByNickname falls back to zh-CN when no locale option is given (unchanged default)", async () => {
+  const { createUserRepository } = await repositoryModule();
+  const created = userRow({ nickname: "Nova" });
+  const { db, queries } = createQueryRecorder([[], [created]]);
+
+  await createUserRepository(db).getOrCreateActiveByNickname("Nova", "cookie-nova");
+
+  const insertQuery = queries[1];
+  const values = insertQuery?.valuesValue as Record<string, unknown>;
+  assert.equal(values.preferredLocale, "zh-CN");
+});
+
+test("R24 S3: getOrCreateActiveByNickname never touches preferredLocale for an already-existing user", async () => {
+  const { createUserRepository } = await repositoryModule();
+  const existing = userRow({ nickname: "Nova", preferredLocale: "zh-CN" });
+  // 只有一条查询（findActiveByNickname 命中）——短路返回，insert 语句压根不执行，options 被忽略。
+  const { db, queries } = createQueryRecorder([[existing]]);
+
+  const result = await createUserRepository(db).getOrCreateActiveByNickname("Nova", "cookie-nova", {
+    preferredLocale: "en-US"
+  });
+
+  assert.equal(result.created, false);
+  assert.equal(result.user.preferredLocale, "zh-CN", "must not override an existing user's preference");
+  assert.equal(queries.length, 1, "must not issue an insert for an already-existing user");
+});
