@@ -5,9 +5,14 @@ on:
     branches: ["main"]
   pull_request:
 
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   workspace:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       # cargo gate runs in the dedicated rust-system-i18n job with Tauri system deps
       WORKHUB_RUST_I18N_CARGO: skip
@@ -25,7 +30,7 @@ jobs:
 
   web-live-route-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       WORKHUB_QA_CHROME_EXTRA_ARGS: "--no-sandbox --disable-dev-shm-usage"
     steps:
@@ -56,6 +61,7 @@ jobs:
 
   rust-system-i18n:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Install Tauri Linux system dependencies
@@ -91,6 +97,7 @@ jobs:
 
   r1-pg-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -127,6 +134,7 @@ jobs:
 
   r2-pg-redis-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -174,7 +182,7 @@ jobs:
 
   pilot-stack-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - name: Prepare pilot env from template
@@ -267,6 +275,7 @@ jobs:
   security-advisory:
     runs-on: ubuntu-latest
     continue-on-error: true
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -295,6 +304,7 @@ jobs:
 
   migration-audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16

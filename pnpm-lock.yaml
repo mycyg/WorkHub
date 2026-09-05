@@ -22,7 +22,7 @@ importers:
     dependencies:
       '@hono/node-server':
         specifier: ^1.14.4
-        version: 1.19.14(hono@4.12.23)
+        version: 1.19.14(hono@4.13.7)
       '@workhub/agent':
         specifier: workspace:*
         version: link:../../packages/agent
@@ -54,11 +54,14 @@ importers:
         specifier: workspace:*
         version: link:../../packages/tools
       hono:
-        specifier: ^4.8.0
-        version: 4.12.23
+        specifier: ^4.13.7
+        version: 4.13.7
       redis:
         specifier: ^5.5.6
         version: 5.12.1
+      tsx:
+        specifier: ^4.19.2
+        version: 4.22.4
       zod:
         specifier: ^4.0.1
         version: 4.4.3
@@ -212,8 +215,8 @@ importers:
         specifier: workspace:*
         version: link:../cost
       drizzle-orm:
-        specifier: ^0.44.2
-        version: 0.44.2(@types/pg@8.20.0)(pg@8.21.0)
+        specifier: ^0.45.2
+        version: 0.45.2(@types/pg@8.20.0)(pg@8.21.0)
       pg:
         specifier: ^8.13.1
         version: 8.21.0
@@ -921,8 +924,8 @@ packages:
     resolution: {integrity: sha512-7OZcmQUrdGI+DUNNsKBn1aW8qSoKuTH7d0mYgSP8bAzdFzKoovxEFnoGQp2dVs82EOJeYycqRtciopszwUf8bw==}
     hasBin: true
 
-  drizzle-orm@0.44.2:
-    resolution: {integrity: sha512-zGAqBzWWkVSFjZpwPOrmCrgO++1kZ5H/rZ4qTGeGOe18iXGVJWf3WPfHOVwFIbmi8kHjfJstC6rJomzGx8g/dQ==}
+  drizzle-orm@0.45.2:
+    resolution: {integrity: sha512-kY0BSaTNYWnoDMVoyY8uxmyHjpJW1geOmBMdSSicKo9CIIWkSxMIj2rkeSR51b8KAPB7m+qysjuHme5nKP+E5Q==}
     peerDependencies:
       '@aws-sdk/client-rds-data': '>=3'
       '@cloudflare/workers-types': '>=4'
@@ -1045,8 +1048,8 @@ packages:
   get-tsconfig@4.14.0:
     resolution: {integrity: sha512-yTb+8DXzDREzgvYmh6s9vHsSVCHeC0G3PI5bEXNBHtmshPnO+S5O7qgLEOn0I5QvMy6kpZN8K1NKGyilLb93wA==}
 
-  hono@4.12.23:
-    resolution: {integrity: sha512-eIaZ9qDgu7XV0pxOCrg7/WhnQ6Ivm22UcxhXx/A3dcbqbbYgBEkc6e/J/s7j2tS96zoB0S9VBdLwQNCWwUo4LA==}
+  hono@4.13.7:
+    resolution: {integrity: sha512-c8/gF9ac8Y78/agExVocyLevgR+JlpNB444Py0FSX8pJoPdYUfUzRcXtYEYGwt6l19qIlVZPN5Mfsw9jFShmQQ==}
     engines: {node: '>=16.9.0'}
 
   js-tokens@4.0.0:
@@ -1554,9 +1557,9 @@ snapshots:
   '@esbuild/win32-x64@0.28.0':
     optional: true
 
-  '@hono/node-server@1.19.14(hono@4.12.23)':
+  '@hono/node-server@1.19.14(hono@4.13.7)':
     dependencies:
-      hono: 4.12.23
+      hono: 4.13.7
 
   '@napi-rs/wasm-runtime@1.1.4(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
     dependencies:
@@ -1679,7 +1682,7 @@ snapshots:
       esbuild: 0.25.4
       tsx: 4.22.4
 
-  drizzle-orm@0.44.2(@types/pg@8.20.0)(pg@8.21.0):
+  drizzle-orm@0.45.2(@types/pg@8.20.0)(pg@8.21.0):
     optionalDependencies:
       '@types/pg': 8.20.0
       pg: 8.21.0
@@ -1777,7 +1780,7 @@ snapshots:
     dependencies:
       resolve-pkg-maps: 1.0.0
 
-  hono@4.12.23: {}
+  hono@4.13.7: {}
 
   js-tokens@4.0.0: {}
 

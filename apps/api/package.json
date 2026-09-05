@@ -37,8 +37,9 @@
     "@workhub/events": "workspace:*",
     "@workhub/permissions": "workspace:*",
     "@workhub/tools": "workspace:*",
-    "hono": "^4.8.0",
+    "hono": "^4.13.7",
     "redis": "^5.5.6",
+    "tsx": "^4.19.2",
     "zod": "^4.0.1"
   }
 }
