@@ -123,7 +123,7 @@ export function truncateMcpContent(text: string, maxChars = MCP_CONTENT_MAX_CHAR
   if (text.length <= maxChars) {
     return text;
   }
-  const marker = `[truncated: 共 ${text.length} 字符]`;
+  const marker = `[truncated: 共 ${text.length} 字符]`; // ui-i18n-allow：模型可见的截断标记，不是界面文案
   let keep = Math.max(0, maxChars - marker.length - 1);
   const lastCode = keep > 0 ? text.charCodeAt(keep - 1) : 0;
   if (lastCode >= 0xd800 && lastCode <= 0xdbff) {
