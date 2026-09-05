@@ -12,6 +12,9 @@ import type {
   DispatchPolicy,
   ExecutionHint,
   GithubActivityKind,
+  McpServerStatus,
+  McpServerTrustLevel,
+  McpTransport,
   PluginSourceKind,
   PluginStatus,
   RiskLevel,
@@ -2510,6 +2513,69 @@ export const plugins = pgTable(
   ]
 );
 
+// R26 M0（MCP 客户端接入·阶段 0，见 0073 迁移）：MCP 服务器清单。形状照抄 plugins（workspace 围栏 /
+// enabled / status / 报告 jsonb / tool_count / installed_by / 时间戳），但不复用那张表——server_name
+// 是独立的唯一键（它直接构成模型可见工具名，撞名会让两台服务器的工具坍缩），配置形状是判别联合
+// （stdio 有 command/args/env/cwd，HTTP 有 url/headers），体检项枚举也完全不相交。
+// transport 结构性只允许 'stdio'：HTTP 引入出网目的地治理与密钥落库两件全新的事，放开必须走新迁移。
+// url/auth_header_* 四列现在就建（全 nullable）避免阶段 1 再补一次加列迁移，但 CHECK 现在就锁死成
+// 「建了不能用」。trust_level 是管理员断言的读写分级上限（工具最终风险 = 管理员断言 AND 服务器
+// 自述，映射规则本身是 M1 的实现）。密钥不落库明文：env_json 只允许非密键，真正的凭据走
+// secret_refs_json 存指针（{子进程 env 名: 服务端 env 名}），本表结构性存不进任何一份明文凭据。
+export const mcpServers = pgTable(
+  "mcp_servers",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    // 模型可见工具名的命名空间；本地配置，绝不取远端自报的 serverInfo.name。工作区内唯一。
+    serverName: varchar("server_name", { length: 32 }).notNull(),
+    displayName: text("display_name"),
+    transport: varchar("transport", { length: 24 }).$type<McpTransport>().notNull().default("stdio"),
+    command: text("command"),
+    argsJson: jsonb("args_json").$type<JsonArray>().notNull().default([]),
+    // 只允许非密键（应用层过凭据形状黑名单 + 本表不存密文）。
+    envJson: jsonb("env_json").$type<Record<string, string>>().notNull().default({}),
+    // {子进程 env 名: 服务端 env 名}——存指针不是值。API 进程在 spawn 时从自己的 process.env 取值
+    // 注入子进程；引用的服务端变量不存在时 fail-closed，不拿空串起进程。
+    secretRefsJson: jsonb("secret_refs_json").$type<Record<string, string>>().notNull().default({}),
+    cwd: text("cwd"),
+    url: text("url"),
+    authHeaderCt: bytea("auth_header_ct"),
+    authHeaderIv: bytea("auth_header_iv"),
+    authHeaderTag: bytea("auth_header_tag"),
+    toolCallTimeoutMs: integer("tool_call_timeout_ms").notNull().default(60000),
+    enabled: boolean("enabled").notNull().default(true),
+    status: varchar("status", { length: 24 }).$type<McpServerStatus>().notNull().default("connected"),
+    // 管理员断言的读写分级上限。工具最终风险 = 这一列 AND 服务器自述——服务器只能在这个上限内
+    // 降风险，不能自己抬。默认 external_effect：新增服务器不假设它安全，必须管理员主动降级。
+    trustLevel: varchar("trust_level", { length: 24 })
+      .$type<McpServerTrustLevel>()
+      .notNull()
+      .default("external_effect"),
+    // 启动前静态体检，不执行任何东西（字符串判定 + 一次 access()）。
+    precheckReport: jsonb("precheck_report").$type<JsonObject>().notNull(),
+    lastError: text("last_error"),
+    toolCount: integer("tool_count").notNull().default(0),
+    toolsJson: jsonb("tools_json").$type<string[]>(),
+    installedBy: uuid("installed_by").references(() => users.id, { onDelete: "set null" }),
+    ...timestamps()
+  },
+  (table): PgTableExtraConfigValue[] => [
+    check("mcp_servers_transport_ck", sql`${table.transport} in ('stdio')`),
+    check("mcp_servers_status_ck", sql`${table.status} in ('connected', 'connect_failed', 'disabled')`),
+    check("mcp_servers_trust_level_ck", sql`${table.trustLevel} in ('read_only', 'external_effect')`),
+    check("mcp_servers_timeout_ck", sql`${table.toolCallTimeoutMs} between 1000 and 300000`),
+    check("mcp_servers_tool_count_ck", sql`${table.toolCount} >= 0`),
+    // server_name 直接构成模型可见工具名（mcp__<server_name>__<tool>），工作区内必须唯一且稳定。
+    uniqueIndex("mcp_servers_workspace_name_uq").on(table.workspaceId, table.serverName),
+    index("mcp_servers_workspace_created_idx").on(table.workspaceId, table.createdAt),
+    // 工具装配热路径：只挑启用且未被停用的行；部分索引不给停用行付索引成本。
+    index("mcp_servers_workspace_enabled_idx")
+      .on(table.workspaceId)
+      .where(sql`${table.enabled} = true and ${table.status} <> 'disabled'`)
+  ]
+);
+
 export const workHubTables = {
   users,
   // CORE-12：补收此前漏注册的 5 张表——session/凭据/邀请/成员/预算预留都在活跃 graph 里，
@@ -2595,7 +2661,9 @@ export const workHubTables = {
   projectGithubActivities,
   proactiveIntents,
   // R24-P 阶段 1：插件清单（见 0072 迁移）。
-  plugins
+  plugins,
+  // R26 M0：MCP 服务器清单（见 0073 迁移）。
+  mcpServers
 } as const;
 
 export type WorkHubTableName = keyof typeof workHubTables;
