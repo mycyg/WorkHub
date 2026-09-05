@@ -1,6 +1,7 @@
 use workhub_client_tauri::config::{
-    load_shell_config_from_json_env_and_system, normalize_shell_server_url,
-    shell_config_json_with_server_url, WorkHubShellConfig, WORKHUB_SERVER_URL_ENV,
+    detect_system_device_name, load_shell_config_from_json_env_system_and_device,
+    normalize_shell_server_url, shell_config_json_with_server_url, WorkHubShellConfig,
+    WORKHUB_SERVER_URL_ENV,
 };
 use workhub_client_tauri::deep_link::{
     deep_link_plan_from_url, describe_deep_link_error, ShellDeepLinkPlan,
@@ -649,6 +650,20 @@ fn set_server_url(
     }
 
     Ok(ShellServerUrlResponse { url: normalized })
+}
+
+/// S5-M-07：这台机器报到时用的设备名。真相在启动配置里
+/// （`DEFAULT_DEVICE_NAME` < 机器名 < 配置文件 `device_name` < `WORKHUB_DEVICE_NAME`），
+/// 但真正调 `/api/auth/desktop-bootstrap` 报到的是 webview，所以壳层把解析结果托管一份供它取。
+#[derive(Default)]
+struct ShellDeviceName(Mutex<String>);
+
+/// webview 报到前问一次：这台机器该叫什么。取不到（浏览器 dev 态/壳层没解析出来）时返回 None，
+/// 由 webview 保留它自己的兜底名。
+#[tauri::command]
+fn get_device_name(state: tauri::State<'_, ShellDeviceName>) -> Option<String> {
+    let name = state.0.lock().ok()?.trim().to_string();
+    (!name.is_empty()).then_some(name)
 }
 
 /// 壳层当前持有的服务器地址。webview 用它核对「壳层和我连的是不是同一台」——两份地址曾经可以永久分叉，
@@ -2251,12 +2266,49 @@ fn load_workhub_shell_config(app: &tauri::AppHandle) -> Result<WorkHubShellConfi
             None
         };
 
-    load_shell_config_from_json_env_and_system(
+    load_shell_config_from_json_env_system_and_device(
         raw.as_deref(),
         |name| std::env::var(name).ok(),
         system_workhub_locale(),
+        system_device_name(),
     )
     .map_err(|error| format!("failed to load shell config {}: {error:?}", path.display()))
+}
+
+// S5-M-07：设备名的第一来源是**机器名**（此前恒为一个常量，两台 mac 在设备列表里两行同名）。
+// 纯逻辑在 config.rs（normalize_system_device_name / detect_system_device_name），这里只负责取回来源。
+// 与系统语言同一条纪律：用现成命令读，不引新 crate；只在启动时跑一次；任何失败都静默换下一个来源，
+// 一个都问不出来时由 detect_system_device_name 回 None，配置层保留 DEFAULT_DEVICE_NAME。
+fn system_device_name() -> Option<String> {
+    let mut candidates: Vec<String> = Vec::new();
+    // macOS：「共享」偏好里用户自己起的那个名字（可含空格与中文），比 hostname 好读得多。
+    #[cfg(target_os = "macos")]
+    if let Some(value) = command_output("scutil", &["--get", "ComputerName"]) {
+        candidates.push(value);
+    }
+    // Windows 的 COMPUTERNAME / 各平台 shell 的 HOSTNAME。`.app` 双击启动时继承不到 shell 环境变量，
+    // 所以它排在系统来源之后（同 AppleLanguages 优先于 LANG 的取舍）。
+    for name in ["COMPUTERNAME", "HOSTNAME"] {
+        if let Ok(value) = std::env::var(name) {
+            candidates.push(value);
+        }
+    }
+    if let Some(value) = command_output("hostname", &[]) {
+        candidates.push(value);
+    }
+    detect_system_device_name(candidates)
+}
+
+// 只给上面两个系统来源用：跑一条命令取 stdout，任何失败（命令不存在/非零退出）都回 None。
+fn command_output(program: &str, args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new(program)
+        .args(args)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 // S3 严重 #4：壳层语言的第一来源是**系统语言**（此前写死中文）。纯逻辑在 locale.rs
@@ -2334,7 +2386,8 @@ macro_rules! workhub_invoke_handler {
             hide_pet_window,
             toggle_pet_window,
             take_pending_deep_link,
-            record_shell_diagnostic
+            record_shell_diagnostic,
+            get_device_name
             $(, $qa_command)*
         ]
     };
@@ -2362,6 +2415,8 @@ fn main() {
         // 因为 .manage() 早于 .setup()（配置文件那时还没读）——setup 里再把配置/环境变量里的真值 set 进去。
         // 先托管的好处是：即使 setup 因为别的原因失败，两个命令也不会因为 state 缺席而炸。
         .manage(ShellServerUrl::default())
+        // S5-M-07：设备名的解析结果（setup 里读完配置后灌进来），供 webview 报到时取用。
+        .manage(ShellDeviceName::default())
         // MRG-23：深链事件重放兜底（见 handle_deep_link_plan / take_pending_deep_link）。
         .manage(Mutex::new(PendingShellDeepLink::default()))
         .on_window_event(|window, event| {
@@ -2419,6 +2474,9 @@ fn main() {
             // 代际 1 不会打断任何连接——worker 稍后开流时读到的就是它。
             app.state::<ShellServerUrl>()
                 .set(shell_config.server_url.clone());
+            if let Ok(mut device_name) = app.state::<ShellDeviceName>().0.lock() {
+                device_name.clone_from(&shell_config.device_name);
+            }
             create_pet_window_with_surface_flag(app)?;
             if let Ok(Some(saved)) = load_pet_window_saved_placement(app.handle()) {
                 let work_area = app

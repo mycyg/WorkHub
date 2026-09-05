@@ -267,3 +267,52 @@ test("runDesktopRebind reports en-US for an English-locale first run, and the se
   const nextLocale = applyIdentityLocale({ locale: "en-US", preferences: { locale: "en-US" } }, "en-US");
   assert.equal(nextLocale, "en-US");
 });
+
+// S5-M-07：报到用的设备名优先取壳层解出的机器名（get_device_name），显式传入的更优先，
+// 两者都没有才回兜底常量——否则同一账号的每台机器在设置页里都叫「WorkHub Desktop」。
+test("desktop re-bind reports the machine name resolved by the shell", async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const scope = globalThis as { __TAURI__?: unknown };
+  const previous = scope.__TAURI__;
+  scope.__TAURI__ = {
+    core: {
+      invoke: (command: string) => (command === "get_device_name" ? Promise.resolve("Ada 的 MacBook Pro") : Promise.resolve(undefined))
+    }
+  };
+  try {
+    await runDesktopRebind({
+      client: {
+        bootstrapDesktop: async (payload: Record<string, unknown>) => {
+          calls.push(payload);
+          return { client_token: "tok", identity: { created: true } };
+        }
+      } as never,
+      nickname: "ada",
+      locale: "en-US",
+      storage: { setItem() {}, removeItem() {} }
+    });
+    assert.equal(calls[0]?.device_name, "Ada 的 MacBook Pro");
+
+    // 显式传入的名字压过壳层的机器名。
+    calls.length = 0;
+    await runDesktopRebind({
+      client: {
+        bootstrapDesktop: async (payload: Record<string, unknown>) => {
+          calls.push(payload);
+          return { client_token: "tok", identity: { created: false } };
+        }
+      } as never,
+      nickname: "ada",
+      locale: "en-US",
+      deviceName: "客厅那台",
+      storage: { setItem() {}, removeItem() {} }
+    });
+    assert.equal(calls[0]?.device_name, "客厅那台");
+  } finally {
+    if (previous === undefined) {
+      delete scope.__TAURI__;
+    } else {
+      scope.__TAURI__ = previous;
+    }
+  }
+});

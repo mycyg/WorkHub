@@ -82,3 +82,22 @@ export function logDesktopShellDiagnostic(
 ): boolean {
   return invokeDesktopWindowCommand("record_shell_diagnostic", { event, message }, scope);
 }
+
+// S5-M-07：这台机器报到时该用的设备名（壳层解析：兜底常量 < 机器名 < 配置文件 < WORKHUB_DEVICE_NAME）。
+// 设备列表此前每台都叫「WorkHub Desktop」，同一账号装两台就只能靠时间戳猜该撤销哪一台。
+// 浏览器 dev 态没有 __TAURI__、老壳层没有这个命令、壳层也可能一个来源都问不到 —— 全都回 undefined，
+// 由调用方保留自己的兜底名。
+export async function resolveDesktopDeviceName(
+  scope: DesktopWindowControlsScope = globalThis as DesktopWindowControlsScope
+): Promise<string | undefined> {
+  const invoke = resolveDesktopTauriInvoke(scope);
+  if (typeof invoke !== "function") {
+    return undefined;
+  }
+  try {
+    const name = await Promise.resolve(invoke("get_device_name", undefined));
+    return typeof name === "string" && name.trim() ? name.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
