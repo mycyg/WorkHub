@@ -4,13 +4,20 @@ import { test } from "node:test";
 import { WorkHubApiError } from "@workhub/api-client/client";
 
 import {
+  describeDesktopInviteError,
   describeDesktopLoginError,
+  describeDesktopRegisterError,
   isPasswordModeBootstrapError,
+  probeDesktopAuthMode,
   readDesktopAuthModeHint,
   rememberDesktopAuthModeHint,
   renderDesktopCredentialGateHtml,
+  resolveDesktopFirstRunGate,
+  resolveDesktopFirstRunGateWithLock,
   runDesktopBootstrapWithLock,
   runDesktopCredentialLogin,
+  runDesktopCredentialRegister,
+  runDesktopInviteAccept,
   type DesktopLoginClient
 } from "./desktop-login.js";
 
@@ -328,4 +335,416 @@ test("runDesktopBootstrapWithLock: run failure still releases the lock (TTL is o
     })
   );
   assert.equal(h.values.get("workhub_desktop_bootstrap_lock"), undefined);
+});
+
+// —— R24 S4：三页签凭据门渲染 —— //
+
+test("renderDesktopCredentialGateHtml renders sign-in, register, and invite-token tabs with correct field types", () => {
+  const html = renderDesktopCredentialGateHtml({ locale: "zh-CN" });
+  // 三个页签按钮 + 三个表单面板。
+  assert.match(html, /data-desktop-login-tab="signin"/u);
+  assert.match(html, /data-desktop-login-tab="register"/u);
+  assert.match(html, /data-desktop-login-tab="invite"/u);
+  // 登录页签：既有字段原样保留（向后兼容）。
+  assert.match(html, /data-desktop-login-email[^>]+type="email"/u);
+  assert.match(html, /data-desktop-login-password[^>]+type="password"/u);
+  assert.match(html, /data-desktop-login-submit/u);
+  assert.match(html, /data-desktop-login-error/u);
+  assert.match(html, /data-desktop-login-form/u);
+  // 注册页签：邮箱 + 昵称 + 密码。
+  assert.match(html, /data-desktop-register-email[^>]+type="email"/u);
+  assert.match(html, /data-desktop-register-nickname/u);
+  assert.match(html, /data-desktop-register-password[^>]+type="password"/u);
+  assert.match(html, /data-desktop-register-submit/u);
+  assert.match(html, /data-desktop-register-error/u);
+  // 邀请页签：令牌 + 昵称 + 密码。
+  assert.match(html, /data-desktop-invite-token/u);
+  assert.match(html, /data-desktop-invite-nickname/u);
+  assert.match(html, /data-desktop-invite-password[^>]+type="password"/u);
+  assert.match(html, /data-desktop-invite-submit/u);
+  assert.match(html, /data-desktop-invite-error/u);
+  // 登录仍是默认可见页签（其余两个 hidden）。
+  assert.match(html, /data-desktop-login-panel="signin"[^>]*novalidate/u);
+  assert.match(html, /data-desktop-register-form[^>]*data-desktop-login-panel="register" hidden/u);
+  assert.match(html, /data-desktop-invite-form[^>]*data-desktop-login-panel="invite" hidden/u);
+  // 中文文案。
+  assert.match(html, /登录/u);
+  assert.match(html, /密码/u);
+});
+
+test("renderDesktopCredentialGateHtml defaults to the signed-out copy and swaps to first-run welcome copy on request", () => {
+  const loggedOut = renderDesktopCredentialGateHtml({ locale: "en-US" });
+  assert.match(loggedOut, /Sign in to WorkHub/u);
+
+  const loggedOutExplicit = renderDesktopCredentialGateHtml({ locale: "en-US", context: "logged-out" });
+  assert.match(loggedOutExplicit, /Sign in to WorkHub/u);
+
+  const firstRun = renderDesktopCredentialGateHtml({ locale: "en-US", context: "first-run" });
+  assert.match(firstRun, /Welcome to WorkHub/u);
+  assert.doesNotMatch(firstRun, /Sign in to WorkHub/u);
+
+  const firstRunZh = renderDesktopCredentialGateHtml({ locale: "zh-CN", context: "first-run" });
+  assert.match(firstRunZh, /欢迎使用 WorkHub/u);
+});
+
+test("renderDesktopCredentialGateHtml can still seed a visible sign-in error (existing behavior)", () => {
+  const html = renderDesktopCredentialGateHtml({ locale: "en-US", error: "Email or password is incorrect." });
+  assert.match(html, /data-desktop-login-error[^>]*role="alert"/u);
+  assert.match(html, /Email or password is incorrect\./u);
+  assert.doesNotMatch(html, /data-desktop-login-error hidden/u);
+});
+
+// —— R24 S4：首启模式探测（不再盲打 desktop-bootstrap，见 E-03） —— //
+
+function fakeAuthModeProbeClient(response: unknown, error?: unknown) {
+  return {
+    request: async <T>() => {
+      if (error) {
+        throw error;
+      }
+      return response as T;
+    }
+  };
+}
+
+test("probeDesktopAuthMode reads a valid auth_mode off /api/health and rejects junk/missing values", async () => {
+  assert.equal(await probeDesktopAuthMode(fakeAuthModeProbeClient({ auth_mode: "password" })), "password");
+  assert.equal(await probeDesktopAuthMode(fakeAuthModeProbeClient({ auth_mode: "hybrid" })), "hybrid");
+  assert.equal(await probeDesktopAuthMode(fakeAuthModeProbeClient({ auth_mode: "nickname" })), "nickname");
+  assert.equal(await probeDesktopAuthMode(fakeAuthModeProbeClient({ auth_mode: "bogus" })), null);
+  assert.equal(await probeDesktopAuthMode(fakeAuthModeProbeClient({})), null);
+  assert.equal(await probeDesktopAuthMode(fakeAuthModeProbeClient(undefined, new Error("offline"))), null);
+});
+
+test("resolveDesktopFirstRunGate trusts a remembered hint before probing the network", async () => {
+  const { storage } = fakeReadWriteStorage({ workhub_auth_mode: "password" });
+  let probed = false;
+  const client = {
+    request: async () => {
+      probed = true;
+      return { auth_mode: "nickname" };
+    }
+  };
+  assert.equal(await resolveDesktopFirstRunGate({ client, storage }), "needs-credentials");
+  assert.equal(probed, false, "a remembered hint must skip the network probe entirely");
+});
+
+test("resolveDesktopFirstRunGate probes and remembers password/hybrid as needing credentials", async () => {
+  for (const mode of ["password", "hybrid"]) {
+    const { storage, values } = fakeReadWriteStorage();
+    const client = fakeAuthModeProbeClient({ auth_mode: mode });
+    assert.equal(await resolveDesktopFirstRunGate({ client, storage }), "needs-credentials");
+    assert.equal(values.get("workhub_auth_mode"), "password");
+  }
+});
+
+test("resolveDesktopFirstRunGate probes and remembers nickname as the logged-out (rebind) gate", async () => {
+  const { storage, values } = fakeReadWriteStorage();
+  const client = fakeAuthModeProbeClient({ auth_mode: "nickname" });
+  assert.equal(await resolveDesktopFirstRunGate({ client, storage }), "logged-out");
+  assert.equal(values.get("workhub_auth_mode"), "nickname");
+});
+
+test("resolveDesktopFirstRunGate defaults to the nickname rebind screen when the probe is inconclusive (old server / offline)", async () => {
+  const { storage, values } = fakeReadWriteStorage();
+  const client = fakeAuthModeProbeClient(undefined, new Error("offline"));
+  assert.equal(await resolveDesktopFirstRunGate({ client, storage }), "logged-out");
+  // 探测失败不落任何 hint——不确定的事不该被当成确定的记下来。
+  assert.equal(values.get("workhub_auth_mode"), undefined);
+});
+
+test("resolveDesktopFirstRunGateWithLock adopts a sibling window's freshly-stored token instead of re-probing", async () => {
+  const h = lockTestHarness();
+  h.storage.setItem("workhub_desktop_bootstrap_lock", `winner@${h.now() + 10_000}`);
+  let polls = 0;
+  const client = {
+    request: async () => {
+      throw new Error("must not probe when a sibling window already holds the lock");
+    }
+  };
+  const result = await resolveDesktopFirstRunGateWithLock({
+    client,
+    storage: h.storage,
+    readToken: () => {
+      polls += 1;
+      return polls >= 2 ? "winner-token" : undefined;
+    },
+    now: h.now,
+    sleep: h.sleep
+  });
+  assert.equal(result, "ready");
+});
+
+test("resolveDesktopFirstRunGateWithLock falls back to offline when the lock stays busy with no token", async () => {
+  const h = lockTestHarness();
+  h.storage.setItem("workhub_desktop_bootstrap_lock", `winner@${h.now() + 60_000}`);
+  const client = { request: async () => ({ auth_mode: "nickname" }) };
+  const result = await resolveDesktopFirstRunGateWithLock({
+    client,
+    storage: h.storage,
+    readToken: () => undefined,
+    now: h.now,
+    sleep: (ms: number) => {
+      h.advance(ms);
+      return Promise.resolve();
+    },
+    waitMs: 500,
+    pollMs: 100
+  });
+  assert.equal(result, "offline");
+});
+
+// —— R24 S4：注册页签 —— //
+
+test("runDesktopCredentialRegister registers, exchanges for a device token, and marks the identity as freshly created", async () => {
+  const calls: { register?: unknown; bootstrap?: unknown } = {};
+  const client: DesktopLoginClient = {
+    login: async () => {
+      throw new Error("register flow must not call login");
+    },
+    register: async (payload) => {
+      calls.register = payload;
+      return {
+        id: "u1",
+        nickname: "bob",
+        display_name: "bob",
+        created: true,
+        locale: "zh-CN",
+        preferences: { locale: "zh-CN" },
+        is_admin: true,
+        availability_status: "online"
+      };
+    },
+    bootstrapDesktop: async (payload) => {
+      calls.bootstrap = payload;
+      return {
+        identity: {
+          id: "u1",
+          nickname: "bob",
+          display_name: "bob",
+          // 密码模式 exchange 分支恒回 created:false——不能拿这个当「是不是新用户」的信号（见函数顶注）。
+          created: false,
+          locale: "zh-CN",
+          preferences: { locale: "zh-CN" },
+          is_admin: true,
+          availability_status: "online"
+        },
+        device: {
+          id: "d1",
+          user_id: "u1",
+          device_name: "WorkHub Desktop",
+          platform: "desktop",
+          created_at: "2026-09-05T00:00:00.000Z",
+          updated_at: "2026-09-05T00:00:00.000Z"
+        },
+        client_token: "device-token-that-is-long-enough-000000"
+      };
+    },
+    request: async () => {
+      throw new Error("register flow must not call the raw request path");
+    }
+  };
+  const { storage, values, removed } = fakeReadWriteStorage({ workhub_desktop_logged_out: "1" });
+
+  const result = await runDesktopCredentialRegister({
+    client,
+    registration: { email: "  bob@example.com  ", nickname: "  bob  ", password: "hunter2-strong-pass" },
+    storage
+  });
+
+  assert.equal(result.client_token, "device-token-that-is-long-enough-000000");
+  assert.equal(result.created, true);
+  assert.deepEqual(calls.register, { email: "bob@example.com", nickname: "bob", password: "hunter2-strong-pass" });
+  assert.equal(values.get("workhub_client_token"), "device-token-that-is-long-enough-000000");
+  assert.ok(removed.includes("workhub_desktop_logged_out"));
+  // 首启标记：register 恒 created=true，落地页据此渲「建你的第一个项目」。
+  assert.equal(values.get("workhub_desktop_identity_created"), "1");
+});
+
+test("runDesktopCredentialRegister propagates a duplicate-email conflict and does not store a token", async () => {
+  const client: DesktopLoginClient = {
+    login: async () => {
+      throw new Error("unused");
+    },
+    register: async () => {
+      throw new WorkHubApiError(409, "conflict", "该邮箱已注册");
+    },
+    bootstrapDesktop: async () => {
+      throw new Error("must not reach exchange when register fails");
+    },
+    request: async () => {
+      throw new Error("unused");
+    }
+  };
+  const { storage, values } = fakeReadWriteStorage();
+
+  await assert.rejects(
+    () =>
+      runDesktopCredentialRegister({
+        client,
+        registration: { email: "bob@example.com", nickname: "bob", password: "hunter2-strong-pass" },
+        storage
+      }),
+    (error) => error instanceof WorkHubApiError && error.status === 409
+  );
+  assert.equal(values.get("workhub_client_token"), undefined);
+  assert.equal(values.get("workhub_desktop_identity_created"), undefined);
+});
+
+test("describeDesktopRegisterError maps backend statuses to retryable, non-leaky messages", () => {
+  assert.match(describeDesktopRegisterError(new WorkHubApiError(409, "conflict", "x"), "zh-CN"), /已注册/u);
+  assert.match(describeDesktopRegisterError(new WorkHubApiError(400, "validation_error", "x"), "en-US"), /at least 8 characters/u);
+  assert.match(describeDesktopRegisterError(new WorkHubApiError(429, "rate_limited", "x"), "en-US"), /Too many/u);
+  assert.match(describeDesktopRegisterError(new WorkHubApiError(404, "not_found", "x"), "en-US"), /isn't enabled/u);
+  assert.match(describeDesktopRegisterError(new Error("Failed to fetch"), "zh-CN"), /注册失败/u);
+});
+
+// —— R24 S4：我有邀请令牌页签 —— //
+
+test("runDesktopInviteAccept posts the token/nickname/password to invites/accept, exchanges for a device token, and marks the identity as created", async () => {
+  const calls: { request?: { path: string; body: unknown }; bootstrap?: unknown } = {};
+  const client: DesktopLoginClient = {
+    login: async () => {
+      throw new Error("unused");
+    },
+    register: async () => {
+      throw new Error("unused");
+    },
+    bootstrapDesktop: async (payload) => {
+      calls.bootstrap = payload;
+      return {
+        identity: {
+          id: "u2",
+          nickname: "carol",
+          display_name: "carol",
+          created: false,
+          locale: "zh-CN",
+          preferences: { locale: "zh-CN" },
+          is_admin: false,
+          availability_status: "online"
+        },
+        device: {
+          id: "d2",
+          user_id: "u2",
+          device_name: "WorkHub Desktop",
+          platform: "desktop",
+          created_at: "2026-09-05T00:00:00.000Z",
+          updated_at: "2026-09-05T00:00:00.000Z"
+        },
+        client_token: "device-token-that-is-long-enough-111111"
+      };
+    },
+    request: async <T>(path: string, init?: RequestInit) => {
+      calls.request = { path, body: init?.body ? JSON.parse(init.body as string) : undefined };
+      return {
+        id: "u2",
+        nickname: "carol",
+        display_name: "carol",
+        created: true,
+        locale: "zh-CN",
+        preferences: { locale: "zh-CN" },
+        is_admin: false,
+        availability_status: "online"
+      } as T;
+    }
+  };
+  const { storage, values, removed } = fakeReadWriteStorage({ workhub_desktop_logged_out: "1" });
+
+  const result = await runDesktopInviteAccept({
+    client,
+    invite: { token: "  invite-token-abc  ", nickname: "  carol  ", password: "hunter2-strong-pass" },
+    storage
+  });
+
+  assert.equal(result.client_token, "device-token-that-is-long-enough-111111");
+  assert.equal(result.created, true);
+  assert.equal(calls.request?.path, "/api/auth/invites/accept");
+  assert.deepEqual(calls.request?.body, { token: "invite-token-abc", nickname: "carol", password: "hunter2-strong-pass" });
+  assert.equal(values.get("workhub_client_token"), "device-token-that-is-long-enough-111111");
+  assert.ok(removed.includes("workhub_desktop_logged_out"));
+  assert.equal(values.get("workhub_desktop_identity_created"), "1");
+});
+
+test("runDesktopInviteAccept propagates an expired/invalid invite error and does not store a token", async () => {
+  const client: DesktopLoginClient = {
+    login: async () => {
+      throw new Error("unused");
+    },
+    register: async () => {
+      throw new Error("unused");
+    },
+    bootstrapDesktop: async () => {
+      throw new Error("must not reach exchange when invite accept fails");
+    },
+    request: async () => {
+      throw new WorkHubApiError(404, "not_found", "邀请无效或已过期");
+    }
+  };
+  const { storage, values } = fakeReadWriteStorage();
+
+  await assert.rejects(
+    () =>
+      runDesktopInviteAccept({
+        client,
+        invite: { token: "expired", nickname: "carol", password: "hunter2-strong-pass" },
+        storage
+      }),
+    (error) => error instanceof WorkHubApiError && error.status === 404
+  );
+  assert.equal(values.get("workhub_client_token"), undefined);
+});
+
+test("describeDesktopInviteError maps backend statuses to retryable, non-leaky messages", () => {
+  assert.match(describeDesktopInviteError(new WorkHubApiError(404, "not_found", "x"), "zh-CN"), /无效或已过期/u);
+  assert.match(describeDesktopInviteError(new WorkHubApiError(409, "conflict", "x"), "en-US"), /already registered/u);
+  assert.match(describeDesktopInviteError(new WorkHubApiError(422, "validation_error", "x"), "en-US"), /at least 8 characters/u);
+  assert.match(describeDesktopInviteError(new Error("Failed to fetch"), "zh-CN"), /接受邀请失败/u);
+});
+
+test("runDesktopCredentialLogin does not touch the first-run identity marker either way (signing in is never a first run)", async () => {
+  const client: DesktopLoginClient = {
+    login: async () => ({
+      id: "u1",
+      nickname: "alice",
+      display_name: "alice",
+      created: false,
+      locale: "zh-CN",
+      preferences: { locale: "zh-CN" },
+      is_admin: false,
+      availability_status: "online"
+    }),
+    register: async () => {
+      throw new Error("unused");
+    },
+    bootstrapDesktop: async () => ({
+      identity: {
+        id: "u1",
+        nickname: "alice",
+        display_name: "alice",
+        created: false,
+        locale: "zh-CN",
+        preferences: { locale: "zh-CN" },
+        is_admin: false,
+        availability_status: "online"
+      },
+      device: {
+        id: "d1",
+        user_id: "u1",
+        device_name: "WorkHub Desktop",
+        platform: "desktop",
+        created_at: "2026-09-05T00:00:00.000Z",
+        updated_at: "2026-09-05T00:00:00.000Z"
+      },
+      client_token: "device-token-that-is-long-enough-222222"
+    }),
+    request: async () => {
+      throw new Error("unused");
+    }
+  };
+  const { storage, values } = fakeReadWriteStorage({ workhub_desktop_identity_created: "1" });
+
+  await runDesktopCredentialLogin({ client, credentials: { email: "alice@example.com", password: "hunter2-strong-pass" }, storage });
+
+  // 标记原样留着——login 不是首次注册，但也不该替用户清掉一个可能仍然有效的"还没建过项目"事实。
+  assert.equal(values.get("workhub_desktop_identity_created"), "1");
 });
