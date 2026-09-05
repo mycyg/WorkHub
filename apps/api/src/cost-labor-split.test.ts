@@ -232,3 +232,51 @@ test("R13 P4 buildCostDashboardPage hides ai_auto_merge from non-admins even whe
   });
   assert.equal(cost.ai_auto_merge, undefined);
 });
+
+// A2-63 / A2-64：成本页此前把内部 uuid 当人名与业务编号渲出去（by_user 的 label、by_workitem 的 code）。
+// 现在按人用昵称、按任务用编号/标题；解析不到时给中性词，绝不把 id 端给用户。
+test("按人花费用昵称，按任务用编号；取不到时用中性词而不是 uuid", () => {
+  const me = "00000000-0000-4000-8000-000000000001";
+  const other = "00000000-0000-4000-8000-000000000002";
+  const workItemId = "00000000-0000-4000-8000-0000000000b1";
+  const cost = buildCostDashboardPage({
+    settings,
+    isAdmin: true,
+    userId: me,
+    generatedAt: new Date("2026-06-16T02:00:00.000Z"),
+    assigneeCostRows: [{ actorUserId: other, nickname: "小拓", costCny: "0.2", tokens: 10, runCount: 1 }],
+    workItemLabels: new Map([[workItemId, "PROJ-001 · 区域发布复盘包"]]),
+    ledgerEntries: [
+      entry({ usageRecordId: "u1", source: "agent_step", estimatedCostCny: "0.6", scope: { kind: "user", userId: me } }),
+      entry({ usageRecordId: "u2", source: "agent_step", estimatedCostCny: "0.2", scope: { kind: "user", userId: other } }),
+      entry({ usageRecordId: "u3", source: "agent_step", estimatedCostCny: "0.1", scope: { kind: "workitem", workitemId: workItemId } })
+    ]
+  });
+
+  const labels = cost.by_user.map((row) => row.label);
+  assert.equal(labels.includes("当前用户"), true);
+  assert.equal(labels.includes("小拓"), true);
+  assert.equal(labels.some((label) => label.includes(other)), false, "别人的行不能再渲成 uuid");
+
+  assert.equal(cost.by_workitem[0]?.code, "PROJ-001 · 区域发布复盘包");
+  assert.equal(cost.by_workitem[0]?.code.includes(workItemId), false);
+});
+
+test("按人/按任务解析不到人话时回落到中性词，不回落到 id", () => {
+  const me = "00000000-0000-4000-8000-000000000001";
+  const other = "00000000-0000-4000-8000-000000000002";
+  const workItemId = "00000000-0000-4000-8000-0000000000b1";
+  const cost = buildCostDashboardPage({
+    settings,
+    isAdmin: true,
+    userId: me,
+    generatedAt: new Date("2026-06-16T02:00:00.000Z"),
+    ledgerEntries: [
+      entry({ usageRecordId: "u2", source: "agent_step", estimatedCostCny: "0.2", scope: { kind: "user", userId: other } }),
+      entry({ usageRecordId: "u3", source: "agent_step", estimatedCostCny: "0.1", scope: { kind: "workitem", workitemId: workItemId } })
+    ]
+  });
+
+  assert.equal(cost.by_user[0]?.label, "已停用成员");
+  assert.equal(cost.by_workitem[0]?.code, "未命名任务");
+});
