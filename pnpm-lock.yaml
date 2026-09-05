@@ -50,6 +50,9 @@ importers:
       '@workhub/events':
         specifier: workspace:*
         version: link:../../packages/events
+      '@workhub/mcp-client':
+        specifier: workspace:*
+        version: link:../../packages/mcp-client
       '@workhub/permissions':
         specifier: workspace:*
         version: link:../../packages/permissions

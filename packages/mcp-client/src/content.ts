@@ -15,56 +15,59 @@
  * 3. **上限 32KB 且带截断标记。** 这是继 `read_file` 之后又一条几乎没有预算约束的入口：
  *    服务器返回多少就进多少，能一次撑爆上下文与成本。截断必须留痕，否则模型会把半截当全部。
  *
- * **M1b 合并点**：`neutralizeMcpFenceTags` 与 `sanitizeModelFacingText` 是从既有实现复制来的最小
- * 逻辑（来源见各自注释）。本包不依赖 `@workhub/agent`，正确的归宿是 `packages/tools`——M1b 工包
- * 把 `plugin-host` 的 `sanitizePluginText` 挪过去时，把这两个函数一并收进去，本包与 plugin-host
- * 各改一处 import。在那之前，`content.test.ts` 里有一条**对着 loop.ts 源码核对围栏标签表**的
- * 漂移守卫：那边加了新围栏标签而这边没跟上，测试会红。
+ * **M1b 合并点已接上（工包 M2）**：`neutralizeMcpFenceTags` 与本文件的 `sanitizeModelFacingText`
+ * 原先是从 `packages/agent/src/loop/loop.ts` 的 `neutralizeFenceTags` 与 `plugin-host` 的
+ * `sanitizePluginText` 复制来的两份最小逻辑；M1b 已经把它们收进 `@workhub/tools`
+ * （`model-facing-text.ts`），这里改成薄封装转调那一份，本包不再持有算法副本。
+ * 两个函数名与签名逐字不变（`content.test.ts` 的断言一行没改），因为它们已经是本包的对外契约。
+ * 围栏标签表同样改成 re-export `@workhub/tools` 的 `DEFAULT_FENCE_TAG_NAMES`，
+ * `content.test.ts` 那条**对着 loop.ts 源码核对**的漂移守卫因此从「盯本包的副本」变成
+ * 「盯共享包的副本」——守的还是同一件事，而需要人工同步的表从三份降到两份。
  */
-import { errorToolResult, okToolResult, type ToolResult } from "@workhub/tools";
+import {
+  DEFAULT_FENCE_TAG_NAMES,
+  errorToolResult,
+  okToolResult,
+  sanitizeModelFacingText as sanitizeSharedModelFacingText,
+  type ToolResult
+} from "@workhub/tools";
 
 /**
- * 围栏标签登记表——复制自 `packages/agent/src/loop/loop.ts` 的 `FENCE_TAG_NAMES`。
- * 那边是权威，这边是副本；`content.test.ts` 的漂移守卫盯着两者一致。
+ * 围栏标签登记表。权威在 `packages/agent/src/loop/loop.ts` 的 `FENCE_TAG_NAMES`，
+ * 共享副本在 `@workhub/tools`；本包只是转手，不再自己留一份。
  */
-export const MCP_FENCE_TAG_NAMES = [
-  "outputs",
-  "worker_claim",
-  "task",
-  "acceptance",
-  "changes",
-  "work_item_context",
-  "user_memory",
-  "agent_private_memory",
-  "task_plan_objective"
-] as const;
-
-const MCP_FENCE_TAG_PATTERN = new RegExp(`<\\/?(?:${MCP_FENCE_TAG_NAMES.join("|")}|candidate_\\d+)\\s*>`, "giu");
+export const MCP_FENCE_TAG_NAMES = DEFAULT_FENCE_TAG_NAMES;
 
 /**
  * 把内容里所有「已知评审围栏标签」的尖括号中和成全角书名号（`<` 成 `‹`、`>` 成 `›`），
  * 使其无法发出真正的定界符。普通文本里的 `<` `>` 不受影响，长度也不变。
- * 逻辑与 `loop.ts` 的 `neutralizeFenceTags` 一致。
+ *
+ * 转调共享实现，只开中和这一档：不去控制字符、不设上限——这个函数的合同就是「只中和，长度不变」，
+ * `renderMcpContent` 里紧跟着的截断是另一步，两件事混在一个调用里会让「先中和再截断」这条
+ * 顺序保证看不出来。
  */
 export function neutralizeMcpFenceTags(text: string): string {
-  return text.replace(MCP_FENCE_TAG_PATTERN, (match) => match.replace(/</gu, "‹").replace(/>/gu, "›"));
+  return sanitizeSharedModelFacingText(text, {
+    maxChars: Number.MAX_SAFE_INTEGER,
+    stripControlChars: false,
+    neutralizeFenceTags: true,
+    fenceTagNames: MCP_FENCE_TAG_NAMES
+  });
 }
 
 /** 第三方文案进模型可见通道（工具 description）前的长度上限。 */
 export const MCP_TEXT_MAX_CHARS = 4000;
 
-/** C0 控制字符（保留换行与制表）加上 DEL。与 `plugin-host` 的 `sanitizePluginText` 同一张表。 */
-const CONTROL_CHAR_PATTERN = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/gu;
-
 /**
  * 第三方文案的最低限度中和：去掉 C0 控制字符（保留换行与制表），砍到上限。
- * 逻辑复制自 `plugin-host/src/to-tool-spec.ts` 的 `sanitizePluginText`（M1b 合并点）。
+ * 转调 `@workhub/tools` 的共享实现，显式选 `truncation: "tail"`——共享版的新缺省是
+ * `"head-tail"`，而本包这个函数管的是**工具描述与块类型标签**这类短文案，头部就是全部信息，
+ * 中段省略号反而更长更难读。
  * 不做语义改写——「装不装、给不给看」由治理层决定，这里只保证一段第三方字符串不会把请求体
  * 搞坏或撑爆提示词预算。
  */
 export function sanitizeModelFacingText(value: string, maxChars = MCP_TEXT_MAX_CHARS): string {
-  const stripped = value.replace(CONTROL_CHAR_PATTERN, " ");
-  return stripped.length > maxChars ? `${stripped.slice(0, maxChars)}…` : stripped;
+  return sanitizeSharedModelFacingText(value, { maxChars, truncation: "tail" });
 }
 
 /** 一次调用结果的文本上限。超出即截断并留标记。 */
