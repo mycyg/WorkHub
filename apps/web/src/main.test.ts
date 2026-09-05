@@ -402,6 +402,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async deactivateTeamSkillManage() {
       throw new Error("not needed");
     },
+    async curateTeamSkillsNow() {
+      throw new Error("not needed");
+    },
     pages: {
       async attention() {
         throw new Error("not needed");

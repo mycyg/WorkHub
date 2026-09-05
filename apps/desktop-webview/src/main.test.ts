@@ -487,6 +487,9 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
     async deactivateTeamSkillManage() {
       throw new Error("not needed");
     },
+    async curateTeamSkillsNow() {
+      throw new Error("not needed");
+    },
     async useEvidenceForWorkItem() {
       throw new Error("not needed");
     },
