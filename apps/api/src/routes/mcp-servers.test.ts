@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { captureStdoutLines } from "@workhub/tools/test-support";
+
 import { Hono } from "hono";
 import { generateSignedCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
@@ -742,6 +744,53 @@ test("六个写动作各落一条审计，动作名与插件那一系不共用�
 });
 
 // —— 网页设置页的只读清单（同一道管理员门；网页不做添加/启停） —— //
+
+// R27（与插件清单同一类事故）：command 这一列在库里可空（给将来的非 stdio 传输留的余地），读侧
+// 又拿 `?? ""` 伪造了一个契约明令禁止的空串——一条这样的行此前让 GET /api/mcp-servers 整个 500，
+// 设置页那一区跟着静默消失。契约不放宽（stdio 行的启动命令确实必填），坏行只丢自己。
+test("R27 一条没有启动命令的 MCP 行只丢自己，清单照常返回并留下结构化 warn", async () => {
+  const otherId = "33333333-3333-4333-8333-333333333399";
+  const { app, runtimeSettings } = harness({
+    seed: [
+      row({ command: null as unknown as McpServerRow["command"] }),
+      row({ id: otherId, serverName: "gl" })
+    ]
+  });
+  const headers = { Cookie: await cookie(runtimeSettings) };
+
+  // 捕获且透传（见 @workhub/tools/test-support）：整段替换 process.stdout.write 会吞掉报告器的 TAP 行。
+  const { result: response, lines } = await captureStdoutLines(() => app.request("/api/mcp-servers", { headers }));
+
+  assert.equal(response.status, 200);
+  const listed = await data<McpServerListVM>(response);
+  assert.deepEqual(listed.servers.map((server) => server.id), [otherId]);
+  const warned = lines.some((line) => {
+    try {
+      const entry = JSON.parse(line) as { level?: string; event?: string; mcpServerId?: string };
+      return entry.level === "warn"
+        && entry.event === "mcp_server_row_dropped_unparsable"
+        && entry.mcpServerId === serverId;
+    } catch {
+      return false;
+    }
+  });
+  assert.equal(warned, true, "被丢掉的那一行要留给运维一条结构化 warn");
+});
+
+// R27：取数失败此前被路由的 `catch {}` 吞成「字段缺席」，而缺席恰恰是「非管理员，不该看」的信号。
+test("R27 设置页 VM 用 failed_sections 标出「这次没取到」的 MCP 分区", () => {
+  const runtimeSettings = settings();
+  const readiness = { ready: true, checks: { database: { ok: true }, broker: { ok: true } } } as const;
+  const failed = buildSettingsPage({
+    settings: runtimeSettings,
+    readiness,
+    locale: "zh-CN",
+    generatedAt: now,
+    failedSections: ["mcp_servers"]
+  });
+  assert.equal(failed.mcp_servers, undefined);
+  assert.deepEqual(failed.failed_sections, ["mcp_servers"]);
+});
 
 test("M8 设置页 VM 只在调用方真的填了清单时才带 mcp_servers；摘要里没有命令、参数、环境变量、密钥引用、工作目录", () => {
   const runtimeSettings = settings();

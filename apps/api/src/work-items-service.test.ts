@@ -15,6 +15,7 @@ import {
   type WorkItemRow
 } from "@workhub/db";
 import type { ProviderRegistry } from "@workhub/agent/providers";
+import { captureStdoutLines } from "@workhub/tools/test-support";
 
 import type { AuthActor } from "./middleware/auth.js";
 import { InternalContractError } from "./pages/output-contract.js";
@@ -2050,6 +2051,70 @@ test("CHAT-05 evidence binding accepts work-item refs the actor can read", async
   });
 
   assert.equal(detail.workitem.id, workItemId);
+});
+
+// R27（真机走查）：一条 phase 是契约外值的 agent_steps 行此前把 /api/pages/workitems/:id 整页打成
+// internal_contract_error（500），界面只剩「详情没加载出来 / 重试」。现在那一步被丢掉、其余步骤与整页照常出。
+test("一条 phase 脏值的运行步骤只丢自己，任务详情整页照常返回并留下结构化 warn", async () => {
+  const runId = "93000000-0000-4000-8000-000000000901";
+  const dirtyStepId = "93000000-0000-4000-8000-000000000902";
+  const goodStepId = "93000000-0000-4000-8000-000000000903";
+  const repo = {
+    ...repository(),
+    async readWorkItemDetail() {
+      const rows = detailRows();
+      return {
+        ...rows,
+        agentSteps: [
+          {
+            id: dirtyStepId,
+            agentRunId: runId,
+            stepNo: 1,
+            phase: "mystery_future_phase",
+            inputJson: {},
+            toolName: null,
+            outputExcerpt: null,
+            controlSignal: null,
+            snapshotId: null,
+            createdAt: now
+          },
+          {
+            id: goodStepId,
+            agentRunId: runId,
+            stepNo: 2,
+            phase: "final",
+            inputJson: {},
+            toolName: null,
+            outputExcerpt: "写完了",
+            controlSignal: null,
+            snapshotId: null,
+            createdAt: now
+          }
+        ]
+      };
+    }
+  } as unknown as WorkItemDataRepository;
+  const service = createDbWorkItemService(repo, { now: () => now });
+
+  // 捕获且透传（见 @workhub/tools/test-support）：整段替换 process.stdout.write 会吞掉报告器的 TAP 行。
+  const { result: detail, lines } = await captureStdoutLines(() =>
+    service.detailPage({ workItemId, actor, locale: "zh-CN" })
+  );
+
+  assert.equal(detail.workitem.id, workItemId);
+  assert.deepEqual(detail.agent_trace_preview.map((step) => step.id), [goodStepId]);
+  const warned = lines.some((line) => {
+    try {
+      const entry = JSON.parse(line) as { level?: string; event?: string; phase?: string; stepId?: string };
+      return entry.level === "warn"
+        && entry.event === "work_item_agent_step_dropped_unparsable"
+        && entry.phase === "mystery_future_phase"
+        && entry.stepId === dirtyStepId;
+    } catch {
+      return false;
+    }
+  });
+  assert.equal(warned, true, "被丢掉的那一步要留给运维一条结构化 warn");
 });
 
 test("work item detail wraps VM assembly drift as an internal contract error", async () => {

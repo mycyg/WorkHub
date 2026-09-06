@@ -21,6 +21,7 @@ import {
   type UiRenderOptions
 } from "../i18n.js";
 import { safeHref } from "../safe-href.js";
+import { stripMarkdownMarkers } from "../markdown-text.js";
 
 import { workitemT } from "./locales.js";
 
@@ -64,9 +65,6 @@ function escapeHtml(value: unknown) {
     .replace(/'/gu, "&#39;");
 }
 
-function stripMarkdown(value: string) {
-  return value.replace(/[#*_`>-]/gu, " ").replace(/\s+/gu, " ").trim();
-}
 
 function cuuStateFor(status: WorkItemStatus, hasProposal: boolean): CuuState {
   if (status === "merged" || status === "done") {
@@ -222,7 +220,7 @@ export function renderWorkItemDetail(
   const hrefs = primaryHrefs(vm);
   const title = vm.workitem.title ?? vm.workitem.code;
   const rootClass = surface === "desktop" ? "wh-desktop" : "wh-web";
-  const summary = stripMarkdown(vm.workitem.summary_md ?? vm.workitem.raw_description ?? uiT(locale, "workitem.defaultSummary"));
+  const summary = stripMarkdownMarkers(vm.workitem.summary_md ?? vm.workitem.raw_description ?? uiT(locale, "workitem.defaultSummary"));
   const main = `<section class="wh-main" data-workitem-id="${escapeHtml(vm.workitem.id)}">
     <span class="wh-kicker">${escapeHtml(uiT(locale, "workitem.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(title)}</h1>

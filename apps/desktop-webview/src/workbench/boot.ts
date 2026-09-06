@@ -7,7 +7,7 @@
 import { createApiClient } from "@workhub/api-client/client";
 import type { IdentityResponse, WorkHubApiClient } from "@workhub/api-client";
 import type { WorkHubLocale } from "@workhub/ui/gold-path";
-import { applyIdentityLocale, browserLocale, setDocumentLocale } from "@workhub/web-runtime";
+import { applyIdentityLocale, browserLocale, persistBrowserLocale, setDocumentLocale } from "@workhub/web-runtime";
 
 import { isStaleDesktopClientTokenError } from "../auth-recovery.js";
 import {
@@ -15,6 +15,11 @@ import {
   readDesktopClientToken
 } from "../desktop-client-token.js";
 import { resolveDesktopApiBaseFromStorage } from "../desktop-api-base.js";
+import {
+  parseDesktopLocaleChangedPayload,
+  publishDesktopLocale,
+  resolveDesktopBootLocale
+} from "../desktop-shell-locale.js";
 import {
   bindDesktopCredentialGate,
   completeDesktopLoginSuccess,
@@ -248,6 +253,29 @@ export function bindWorkbenchLoggedInListener(
   });
 }
 
+// R27：跨窗口语言广播（workhub-locale-changed）的订阅桥——同 bindWorkbenchLoggedInListener 一样的
+// 降级取舍（浏览器 dev 预览 / 无 Tauri → no-op）。payload 解析交给 desktop-shell-locale.ts，认不出的
+// 形状直接丢弃，绝不拿一个猜出来的语言去 reload 整扇窗口。
+export function bindWorkbenchLocaleChangedListener(
+  onLocaleChanged: (payload: { locale: WorkHubLocale; source: string | undefined }) => void,
+  scope: unknown = globalThis
+): void {
+  const listen = resolveWorkbenchTauriListen(scope);
+  if (!listen) {
+    return;
+  }
+  void Promise.resolve(
+    listen("workhub-locale-changed", (event) => {
+      const parsed = parseDesktopLocaleChangedPayload(event.payload);
+      if (parsed) {
+        onLocaleChanged(parsed);
+      }
+    })
+  ).catch((error) => {
+    console.warn("WorkHub workbench: could not subscribe to the workhub-locale-changed event", error);
+  });
+}
+
 // R25-Q（源头对称）：工作台自己的凭据门（密码/hybrid 模式，desktop-login.ts 的 bindDesktopCredentialGate）
 // 成功登录后，此前只 window.location.reload() 工作台自己这扇窗口——主窗/桌宠若这次会话里也开着，
 // 完全收不到信号（此前只有主窗那边的凭据门/重绑屏会广播 workhub-logged-in，见 browser.ts 的
@@ -325,6 +353,10 @@ async function boot(): Promise<void> {
   root.innerHTML = `${renderWorkbenchDocumentHead()}<div class="wh-ds wh-wb"><div class="wh-wb-loading"><span class="wh-wb-spinner"></span>${
     workbenchT(locale, "openingTheWorkbench")
   }</div></div>`;
+  // R27（真机走查）：登录前的几屏此前只认 navigator.language——`WORKHUB_LOCALE=zh-CN` 在英文系统上
+  // 完全不起作用。问一次壳层当下的语言（显式偏好仍排第一，壳层只顶掉 navigator 那一级）。
+  locale = await resolveDesktopBootLocale();
+  setDocumentLocale(locale);
 
   const client = createApiClient({
     baseUrl: resolveWorkbenchApiBase(),
@@ -376,8 +408,12 @@ async function boot(): Promise<void> {
     return;
   }
   const identity = auth.identity;
+  const bootLocale = locale;
   locale = applyIdentityLocale(identity, locale);
   setDocumentLocale(locale);
+  // R27：身份语言此前只在这扇窗口里生效——桌宠/主窗还举着各自 boot 时算的旧语言。落定后推给壳层
+  // （托盘/标题/通知跟着换，后续任何一扇窗口 boot 也能问到对的语言）+ 广播给已经开着的窗口。
+  publishDesktopLocale({ locale, previous: bootLocale, source: "workbench" });
 
   // chat/stream.ts 的手写 SSE 客户端要用同一个 clientToken() 读法设 X-YQGL-Client-Token 头——
   // 显式传引用，而不是让 shell.ts 用它自己的兜底默认值（两边逻辑目前碰巧一样，但显式传递才是
@@ -412,6 +448,15 @@ async function boot(): Promise<void> {
     if (source !== "workbench") {
       window.location.reload();
     }
+  });
+  // R27：别的窗口把语言定下来了（主窗解析出身份语言、桌宠切了语言）——本窗跟着换。工作台整壳的
+  // 文案是挂载时按 locale 烘焙的，走与 workhub-logged-in 同款的 reload 生效路径；语言没变就不动。
+  bindWorkbenchLocaleChangedListener((payload) => {
+    if (payload.source === "workbench" || payload.locale === locale) {
+      return;
+    }
+    persistBrowserLocale(payload.locale);
+    window.location.reload();
   });
   // R25-Q：连接状态"单一真相"——都写进 store.connectionState，rail.ts 的头部状态词只读这一份，不再各自猜。
   // 顺序由 primeDesktopConnectionState 钉死：先订阅运行期广播，订阅落地后再拉一次 get_connection_state

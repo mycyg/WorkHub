@@ -88,7 +88,14 @@ export type DesktopShellEventName =
   // 主窗聚焦盒顶部细条/桌宠离线卡）只从这一个事件取状态，不再各自从 "sse-status"（per-subscription
   // 原始信号）猜一遍——那正是 r24-S5-reverify.md 项 9 记录的"三窗各说各话"的根因。boot 时另有
   // get_connection_state 命令拉初值，不必等第一次真实迁移。
-  | "workhub-connection-changed";
+  | "workhub-connection-changed"
+  // R27（真机走查）：昵称登录成功后主窗立刻切中文，桌宠卡片仍是英文夹中文，重启客户端才对齐。
+  // 身份语言此前只在**解析它的那扇窗口**里生效（applyIdentityLocale 写自己的 localStorage），
+  // 桌宠窗的 locale 是 boot 时算一次的常量——它收到 workhub-logged-in 确实 reload 了，但那次 reload
+  // 跑在主窗拿到 /me、写下 zh-CN 之前，读到的还是旧值。主窗/工作台把落定后的语言经这条广播出去
+  // （payload `{ locale, source: "main" | "workbench" }`，发起方据 source 跳过自己那一条），桌宠就地
+  // 重读重渲、工作台按需 reload。发布/解析在 desktop-shell-locale.ts。
+  | "workhub-locale-changed";
 
 export type DesktopShellListen = (
   eventName: DesktopShellEventName,

@@ -43,6 +43,10 @@ import {
 import { writeDesktopPetQaDomSnapshot } from "./cuu-qa-dom-report.js";
 import { readDesktopClientToken } from "./desktop-client-token.js";
 import { readDesktopConnectionState, resolveDesktopTauriInvoke } from "./desktop-window-controls.js";
+import {
+  parseDesktopLocaleChangedPayload,
+  resolveDesktopBootLocale
+} from "./desktop-shell-locale.js";
 import { liquidGlassHeadHtml } from "./liquid-glass.js";
 import {
   liquidGlassFilterCss,
@@ -116,6 +120,8 @@ export type DesktopPetSurfaceRuntime = {
   idleScheduler: CuuIdleScheduler;
   pointerSensor?: DesktopPetPointerSensor;
   subscribed: boolean;
+  /** 桌宠窗当前用的语言——会随桌宠设置里的切换与 workhub-locale-changed 广播变化（R27）。 */
+  readonly locale: WorkHubLocale;
   dispose: () => Promise<void>;
 };
 
@@ -936,7 +942,14 @@ export async function bootDesktopPetSurface(
     reload?: () => void;
   } = {}
 ): Promise<DesktopPetSurfaceRuntime> {
-  let locale = desktopPetLocale();
+  // R27（真机走查）：①登录前桌宠也只认 navigator.language，`WORKHUB_LOCALE=zh-CN` 在英文系统上不
+  // 起作用；②昵称登录成功后主窗立刻切中文、桌宠卡片仍是英文夹中文。这里先问一次壳层当下的语言
+  // （显式偏好仍排第一，壳层只顶掉 navigator 那一级）；②的另一半是下面的 workhub-locale-changed
+  // 订阅——桌宠收到 workhub-logged-in 后确实 reload 了，但那次 reload 跑在主窗拿到 /me、写下 zh-CN
+  // 之前，光靠 reload 读到的还是旧值。
+  let locale = await resolveDesktopBootLocale({
+    override: (globalThis as { __WORKHUB_CUU_QA_LOCALE__?: unknown }).__WORKHUB_CUU_QA_LOCALE__
+  });
   const controller = input.controller ?? createCuuController({ preferences: loadCuuPreferences() });
   const idleScheduler = input.idleScheduler ?? createDesktopPetIdleScheduler(Date.now());
   const petWindowBridge = input.petWindowBridge ?? resolveDesktopPetWindowBridge();
@@ -1330,6 +1343,24 @@ export async function bootDesktopPetSurface(
       setCard(cardFromDesktopCuuRuntimeError(error, { locale }), actionMessage(error, locale));
     }
   }
+
+  // R27：语言在本窗生效的那一半（落显式偏好 + 重取当前卡的文案 + 重渲）。桌宠自己切语言与跟随
+  // 别的窗口的广播共用它——只是后者不该再回头写服务端偏好，也不该再广播一次。
+  const applyLocaleLocally = (nextLocale: WorkHubLocale): boolean => {
+    if (locale === nextLocale) {
+      return false;
+    }
+    locale = nextLocale;
+    try {
+      globalThis.localStorage?.setItem(workHubLocaleStorageKey, nextLocale);
+    } catch {
+      // Local storage may be unavailable in isolated test surfaces.
+    }
+    // 卡片文案是创建时按当时的 locale 烘焙的——不重取会中英混语（真机走查看到的正是这一幕）。
+    void refreshVisibleAttentionCard();
+    render();
+    return true;
+  };
 
   const setLocalePreference = (nextLocale: WorkHubLocale) => {
     const previousLocale = locale;
@@ -1826,6 +1857,21 @@ export async function bootDesktopPetSurface(
     loggedInUnlisten = maybeLoggedInUnlisten;
   }
 
+  // R27（真机走查）：昵称登录成功后主窗立刻切中文，桌宠卡片却仍是英文夹中文，重启客户端才对齐。
+  // 上面那条 workhub-logged-in 只让桌宠 reload，而那次 reload 跑在主窗拿到 /me、把身份语言写进
+  // localStorage 之前——重读到的还是旧值。主窗/工作台把落定后的语言经这条广播出来，桌宠就地重读
+  // 并重渲（卡片文案随之重取），不必等下次重启。桌宠自己从不发这条广播，所以不看 source。
+  let localeChangedUnlisten: DesktopShellUnlisten | undefined;
+  const maybeLocaleChangedUnlisten = await shellListen?.("workhub-locale-changed", (event) => {
+    const parsed = parseDesktopLocaleChangedPayload(event.payload);
+    if (parsed) {
+      applyLocaleLocally(parsed.locale);
+    }
+  });
+  if (typeof maybeLocaleChangedUnlisten === "function") {
+    localeChangedUnlisten = maybeLocaleChangedUnlisten;
+  }
+
   // R25-Q：连接状态"单一真相"——订阅与快照都只更新 connectionStatus + render()，不碰 currentCard/
   // 窗口尺寸（见 desktopPetConnectionStatusText 顶注——L-06 根治的关键就是这条提示完全独立于卡片/
   // resize 管线）。顺序由 primeDesktopConnectionState 钉死：先订阅、订阅落地后再拉一次 get_connection_state
@@ -2040,6 +2086,9 @@ export async function bootDesktopPetSurface(
     idleScheduler,
     pointerSensor,
     subscribed: runtime.subscribed,
+    get locale() {
+      return locale;
+    },
     async dispose() {
       reduceMotionQuery?.removeEventListener?.("change", onReduceMotionChange);
       window.clearInterval(idleTimer);
@@ -2056,6 +2105,7 @@ export async function bootDesktopPetSurface(
       attentionRefreshUnlisten?.();
       loggedOutUnlisten?.();
       loggedInUnlisten?.();
+      localeChangedUnlisten?.();
       connectionChangedUnlisten?.();
       await runtime.dispose();
     }

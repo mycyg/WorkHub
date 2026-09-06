@@ -245,6 +245,8 @@ export type RouteCopyKey =
   | "settings.mcpServers"
   | "settings.mcpIntro"
   | "settings.mcpEmpty"
+  | "settings.mcpLoadFailed"
+  | "settings.pluginsLoadFailed"
   | "settings.mcpConnectedToolsOne"
   | "settings.mcpConnectedToolsMany"
   | "settings.mcpConnectedNoTools"
@@ -574,6 +576,8 @@ export const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "settings.mcpServers": "MCP 服务器",
     "settings.mcpIntro": "这个部署上接入的 MCP 服务器。添加、启停和移除在桌面客户端的设置里操作。",
     "settings.mcpEmpty": "还没有接入 MCP 服务器。",
+    "settings.mcpLoadFailed": "MCP 服务器清单这次没加载出来。刷新页面再试一次；在桌面客户端的设置里也能直接重试。",
+    "settings.pluginsLoadFailed": "插件清单这次没加载出来。刷新页面再试一次；在桌面客户端的设置里也能直接重试。",
     "settings.mcpConnectedToolsOne": "已连接 · 1 个工具",
     "settings.mcpConnectedToolsMany": "已连接 · {count} 个工具",
     "settings.mcpConnectedNoTools": "已连接 · 它没有提供工具",
@@ -901,6 +905,8 @@ export const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "settings.mcpServers": "MCP servers",
     "settings.mcpIntro": "MCP servers connected to this deployment. Add, enable, disable and remove them in the desktop app's settings.",
     "settings.mcpEmpty": "No MCP servers yet.",
+    "settings.mcpLoadFailed": "The MCP server list didn't load this time. Refresh the page to try again, or retry from the desktop app's settings.",
+    "settings.pluginsLoadFailed": "The plugin list didn't load this time. Refresh the page to try again, or retry from the desktop app's settings.",
     "settings.mcpConnectedToolsOne": "Connected · 1 tool",
     "settings.mcpConnectedToolsMany": "Connected · {count} tools",
     "settings.mcpConnectedNoTools": "Connected · it offers no tools",

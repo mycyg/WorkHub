@@ -14,6 +14,7 @@ import type {
 } from "@workhub/contracts";
 import { agentStepPhaseLabel, agentStepPublicSummary, budgetStatusLabel, checkStatusLabel, deliverableTargetLabel, formatLocalTimestamp, uiFormatCny, workItemStatusLabel } from "../i18n.js";
 import { publicProposalDisplayTitle } from "../proposal/render.js";
+import { stripMarkdownMarkers } from "../markdown-text.js";
 import { approvalQueuePageInfoText, goldPathT, normalizeWorkHubLocale, type GoldPathCopyKey, type WorkHubLocale } from "./i18n.js";
 import {
   renderStructuredFieldAuditDetails,
@@ -528,7 +529,7 @@ function renderProposal(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, l
   const displayTitle = publicProposalDisplayTitle(proposal.title, locale);
   const main = `<span class="wh-kicker">${escapeHtml(t(locale, "proposal.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(displayTitle)}</h1>
-    <p class="wh-subtle">${escapeHtml(manifest.summary_md.replace(/[#*_`-]/gu, " ").slice(0, 220))}</p>
+    <p class="wh-subtle">${escapeHtml(stripMarkdownMarkers(manifest.summary_md).slice(0, 220))}</p>
     <div class="wh-grid">
       <article class="wh-card"><strong>${escapeHtml(t(locale, "proposal.riskTitle"))}</strong><p class="wh-subtle">${escapeHtml(manifest.risk.human_label)}</p></article>
       <article class="wh-card"><strong>${escapeHtml(t(locale, "proposal.rollbackTitle"))}</strong><p class="wh-subtle">${escapeHtml(manifest.rollback.description)}</p></article>

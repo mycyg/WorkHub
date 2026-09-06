@@ -15,6 +15,8 @@ import { appleGlassDesignSystemCss } from "../design-system.js";
 import { readDesktopClientToken } from "../desktop-client-token.js";
 import { resolveDesktopShellEmitter } from "../desktop-cuu-runtime.js";
 import { resolveDesktopTauriInvoke } from "../desktop-window-controls.js";
+import { pendingDecisionCount } from "../pending-decision-count.js";
+import { startVisibilityAwarePolling } from "../desktop-visibility-polling.js";
 import { mountArmyOverviewView, type ArmyOverviewApiClient, type ArmyOverviewViewHandle } from "./army/overview.js";
 import { mountArmyContextPanel, type ArmyContextPanelApiClient, type ArmyContextPanelHandle } from "./army/panel.js";
 import { renderArmySidePanelIdleHtml } from "./army/render.js";
@@ -640,7 +642,7 @@ export function mountWorkbenchShell(
         if (disposed || my !== inboxBadgeRequestGen) {
           return;
         }
-        store.setState({ inboxCount: vm.queue?.length ?? 0 });
+        store.setState({ inboxCount: pendingDecisionCount(vm) });
       })
       .catch(() => {
         // 角标尽力而为——拉不到保持上一次的计数，不清零骚扰。
@@ -1929,12 +1931,33 @@ export function mountWorkbenchShell(
   // R15 批 I1（决策收件箱）：首帧拉一次「待拍板」计数 + 30s 兜底轮询——me-stream 决策通知与收件箱动作
   // 落定是实时增量刷新，这条轮询兜底覆盖"没有 __TAURI__ / me-stream 掉线 / 其它入口处置了审批"时的最终
   // 一致（同主窗 refreshApprovalsBadge 的 30s 节奏）。登出/卸载在 disposeActiveSubviews 里清定时器。
+  //
+  // R27（真机走查）：快捷入口说「1 条待你拍板」时工作台还写着「都处理完了」。两面读的是同一个
+  // GET /api/pages/attention，差的是**刷新时机**：主窗那份角标既随窗口可见性暂停/恢复（恢复即补刷
+  // 一次），又在窗口重新聚焦时刷一遍；工作台这边只有一条裸 setInterval——窗口在后台被系统节流时它
+  // 可以很久不响一次，用户把工作台切到前台也不会触发任何刷新，于是徽标停在上一次的旧值，直到一条
+  // 决策类 SSE 事件（比如 proposal.opened）把它推醒。这里补齐与主窗同一套节奏。
   refreshInboxBadge();
-  const inboxBadgePollTimer = setInterval(() => {
+  const stopInboxBadgePolling = startVisibilityAwarePolling({
+    refresh: () => {
+      if (!disposed && !loggedOut) {
+        refreshInboxBadge();
+      }
+    },
+    intervalMs: 30_000,
+    isHidden: () => doc.hidden === true,
+    onVisibilityChange: (handler) => {
+      doc.addEventListener("visibilitychange", handler);
+      return () => doc.removeEventListener("visibilitychange", handler);
+    }
+  });
+  const shellWindow = doc.defaultView;
+  const onWorkbenchWindowFocus = () => {
     if (!disposed && !loggedOut) {
       refreshInboxBadge();
     }
-  }, 30_000);
+  };
+  shellWindow?.addEventListener("focus", onWorkbenchWindowFocus);
 
   // 三栏子控制器的整批放手——真正的窗口卸载（dispose）和「已登出」整窗替换（showLoggedOut）都要做
   // 这同一件事：停掉 chat 的 SSE 连接、网盘/军团总览视图、rail 的后台活动、右栏三个 owner 控制器，
@@ -1945,8 +1968,10 @@ export function mountWorkbenchShell(
     doc.removeEventListener("keydown", onShellTabKeydown);
     // R15 批 A6：停掉 /api/push/stream/me 未读订阅（登出/卸载都要放手，否则登出后仍会拿废 token 重连）。
     meStream.close();
-    // R15 批 I1：停掉「待拍板」计数轮询定时器。
-    clearInterval(inboxBadgePollTimer);
+    // R15 批 I1：停掉「待拍板」计数轮询定时器（R27 起由 startVisibilityAwarePolling 一并摘掉
+    // visibilitychange 监听），并撤下窗口 focus 补刷。
+    stopInboxBadgePolling();
+    shellWindow?.removeEventListener("focus", onWorkbenchWindowFocus);
     disposeChat();
     disposeDrive();
     disposeTimeline();

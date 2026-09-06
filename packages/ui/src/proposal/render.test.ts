@@ -1007,6 +1007,13 @@ test("提议摘要的兜底洗词层：每条规则都把内部词换成产品�
   }
 });
 
+// R27（真机走查）：右栏提议摘要把 `24-48 小时` 渲成了 `24 48 小时`——洗词层下游的 markdown 压平
+// （markdown-text.ts 的 stripMarkdownMarkers）此前无差别吃掉连字符。这里钉住摘要这条完整链路。
+test("提议摘要保留数字区间里的连字符，行首列表符仍被抹平", () => {
+  assert.equal(publicProposalSummaryText("预计 24-48 小时内完成。", "zh-CN"), "预计 24-48 小时内完成。");
+  assert.equal(publicProposalSummaryText("- 预计 24-48 小时\n- 需要复核", "en-US"), "预计 24-48 小时 需要复核");
+});
+
 test("提议标题过滤模型自述，回落到中性标题", () => {
   assert.equal(publicProposalDisplayTitle("我已经完成了整理，让我来总结一下", "zh-CN").includes("我已经"), false);
   assert.equal(publicProposalDisplayTitle("AI 已生成变更申请：周报初稿", "zh-CN"), "周报初稿");
