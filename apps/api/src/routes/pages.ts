@@ -51,6 +51,7 @@ import { buildTeamSkillsPage } from "../pages/team-skills.js";
 import { buildP05GoldPathSurfacePage } from "../pages/gold-path.js";
 import { buildProposalDetailPage, buildProposalReviewAttentionItem } from "../pages/proposals.js";
 import { buildSettingsPage } from "../pages/settings.js";
+import { getDefaultStructuredLogger } from "../logging.js";
 import { checkReadiness, type ReadinessResult } from "../readiness.js";
 import {
   DrivePageServiceError,
@@ -1107,6 +1108,17 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     // R24-P 阶段 1：网页设置页的**只读**插件清单，同一道管理员门（服务端只给管理员填，
     // 非管理员字段结构性缺席）。取数失败降级为不渲这一区，不拖垮整页设置——与上面策略区同款取舍。
     // 网页不做安装/启停：安装要给一个本机绝对路径，那是「这台服务器上的目录」，只在桌面端说得通。
+    // R27（真机走查）：这两块此前的 `catch {}` 把取数失败吞成「字段缺席」，而字段缺席在契约上恰恰是
+    // 「你不是管理员，这一区不该给你看」——管理员既看不到分区也看不到任何一句错误。现在失败进
+    // failed_sections（结构化字段，两端渲一句「没加载出来」+ 重试），并留一条结构化 warn 给运维。
+    const failedSettingsSections: NonNullable<Parameters<typeof buildSettingsPage>[0]["failedSections"]> = [];
+    const noteSettingsSectionFailure = (
+      section: NonNullable<Parameters<typeof buildSettingsPage>[0]["failedSections"]>[number],
+      error: unknown
+    ) => {
+      failedSettingsSections.push(section);
+      getDefaultStructuredLogger().warn("settings_page_section_load_failed", { section, error });
+    };
     let installedPlugins: Parameters<typeof buildSettingsPage>[0]["plugins"];
     if (c.var.currentUser.isAdmin) {
       try {
@@ -1121,8 +1133,9 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
           tool_count: plugin.tool_count,
           compat_verdict: plugin.compat_report.verdict
         }));
-      } catch {
+      } catch (error) {
         installedPlugins = undefined;
+        noteSettingsSectionFailure("plugins", error);
       }
     }
     // R26 M8：网页设置页的**只读** MCP 服务器清单，同一道管理员门。列表里每一行都从完整 VM 裁剪成
@@ -1148,8 +1161,9 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
             ...(server.status === "connect_failed" && errorCode ? { last_error_code: errorCode } : {})
           };
         });
-      } catch {
+      } catch (error) {
         registeredMcpServers = undefined;
+        noteSettingsSectionFailure("mcp_servers", error);
       }
     }
     const runtimeReadiness = await readiness(authSettings);
@@ -1161,7 +1175,8 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       preferenceSource: "server",
       ...(permissionPolicies ? { permissionPolicies } : {}),
       ...(installedPlugins ? { plugins: installedPlugins } : {}),
-      ...(registeredMcpServers ? { mcpServers: registeredMcpServers } : {})
+      ...(registeredMcpServers ? { mcpServers: registeredMcpServers } : {}),
+      ...(failedSettingsSections.length > 0 ? { failedSections: failedSettingsSections } : {})
     }), locale));
   });
 

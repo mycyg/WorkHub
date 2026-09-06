@@ -5,6 +5,7 @@ import {
   type McpServerSummaryVM,
   type PluginSummaryVM,
   type SettingsPageVM,
+  type SettingsSectionKey,
   type WorkHubLocale
 } from "@workhub/contracts";
 import type { Settings } from "@workhub/config";
@@ -33,6 +34,9 @@ type SettingsPageInput = {
   // 收窄成 McpServerSummaryVM 而不是 McpServerVM：命令、参数、环境变量、密钥引用与工作目录都是
   // 这台服务器上的事实与潜在凭据指针，网页只读清单结构性不该有它们的位置。
   mcpServers?: McpServerSummaryVM[];
+  // R27：本该给这个身份看、但这一轮没取到的分区。与「字段缺席」（不该看）分开——此前两者在 VM 上
+  // 长得一模一样，管理员既看不到分区也看不到任何一句错误。
+  failedSections?: SettingsSectionKey[];
   generatedAt?: Date;
 };
 
@@ -61,6 +65,9 @@ export function buildSettingsPage(input: SettingsPageInput): SettingsPageVM {
       : {}),
     ...(input.plugins ? { plugins: input.plugins } : {}),
     ...(input.mcpServers ? { mcp_servers: input.mcpServers } : {}),
+    ...(input.failedSections && input.failedSections.length > 0
+      ? { failed_sections: [...input.failedSections] }
+      : {}),
     runtime: {
       app_env: input.settings.appEnv,
       runtime_status: input.readiness.ready && brokerConfigured && databaseConfigured ? "ready" : "attention_needed",

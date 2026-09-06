@@ -148,6 +148,20 @@ export function toPluginVm(row: PluginRow): PluginVM {
   );
 }
 
+// R27（真机走查）：compat_report 是没有 CHECK 约束的 jsonb，读回来时被 `as` 强转而不是 parse——
+// 一条形状漂移的行（旧版本写的、直接 SQL 改过的、将来新增的体检项）就让 GET /api/plugins 整个 500，
+// 设置页那一区跟着静默消失。清单这条路径改成逐行容错：解析不了的那一行丢掉并留一条结构化 warn，
+// 其余插件照常列出。单行响应（安装/启停/改信任后）仍走会抛的 toPluginVm——那时候的行是本次刚写的，
+// 走样就该是 500。
+function toListedPluginVm(row: PluginRow): PluginVM | undefined {
+  try {
+    return toPluginVm(row);
+  } catch (error) {
+    getDefaultStructuredLogger().warn("plugin_row_dropped_unparsable", { pluginId: row.id, error });
+    return undefined;
+  }
+}
+
 export function createPluginService(deps: PluginServiceDependencies): PluginService {
   const logger = getDefaultStructuredLogger();
   const now = deps.now ?? (() => new Date());
@@ -259,7 +273,7 @@ export function createPluginService(deps: PluginServiceDependencies): PluginServ
       const rows = await deps.repository.listForWorkspace(scope.workspaceId);
       const hostVersion = deps.hostDshToolsVersion ?? hostBundledDshToolsVersion();
       return {
-        plugins: rows.map(toPluginVm),
+        plugins: rows.flatMap((row) => toListedPluginVm(row) ?? []),
         ...(hostVersion ? { host_dsh_tools_version: hostVersion } : {}),
         bootstrap_path_count: host.bootstrapPathCount()
       };

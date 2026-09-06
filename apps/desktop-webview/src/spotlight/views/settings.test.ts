@@ -2391,6 +2391,79 @@ test("a non-admin settings view never fetches the MCP server list either", async
   });
 });
 
+// R27（真机走查）：插件 / MCP 分区会静默整块消失——服务端这两块的取数失败此前被吞成「字段缺席」，
+// 而缺席在桌面这一侧恰恰意味着「非管理员，整区不渲」。settings VM 现在会把「本该给你看、但这次
+// 没取到」的分区列进 failed_sections：见到它就照渲这一区，并照样去拉一次清单端点。
+test("R27 服务端标记分区没取到时，桌面照渲这一区并仍去拉清单端点", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    let pluginsListed = 0;
+    let mcpListed = 0;
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: {
+            async settings() {
+              // 两个字段都缺席（服务端这次没取到），但明确说了「该给你看」。
+              return { ...settingsVm(), failed_sections: ["plugins", "mcp_servers"] } as unknown as SettingsPageVM;
+            }
+          },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          },
+          async listPlugins() {
+            pluginsListed += 1;
+            throw new Error("network");
+          },
+          async listMcpServers() {
+            mcpListed += 1;
+            throw new Error("network");
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+    assert.equal(pluginsListed, 1, "字段缺席但被标记 → 照拉一次清单端点");
+    assert.equal(mcpListed, 1);
+    // 清单端点也挂了 → 落到既有的「没加载出来 + 重试」，而不是整区消失。
+    assert.match(body.innerHTML, /data-set-plugins-retry="true"/u);
+    assert.match(body.innerHTML, /data-set-mcp-retry="true"/u);
+  });
+});
+
+test("R27 没有 failed_sections 标记的缺席仍旧是「不该给你看」，两区都不渲也不发请求", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    let listed = 0;
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return settingsVm(); } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") return userProfileVm() as unknown as T;
+            return aiProfileVm() as unknown as T;
+          },
+          async listPlugins() {
+            listed += 1;
+            return { plugins: [], bootstrap_path_count: 0 } as unknown as never;
+          },
+          async listMcpServers() {
+            listed += 1;
+            return mcpListVm([]);
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+    await tick();
+    assert.equal(listed, 0);
+    assert.doesNotMatch(body.innerHTML, /data-set-plugins-retry/u);
+    assert.doesNotMatch(body.innerHTML, /data-spot-mcp-section/u);
+  });
+});
+
 test("R26 F3: the MCP section follows mcp_servers, not the plugins field it borrowed in M7", async () => {
   await withFakeHtmlElement(async () => {
     const body = new FakeBody();

@@ -3078,6 +3078,31 @@ test("R26 M8 settings MCP server list is admin-gated and read-only: members neve
   assert.equal(withServers.html.includes('data-action-id="disable_mcp_server"'), false);
 });
 
+// R27（真机走查）：这两区会静默整块消失——服务端的取数失败此前被吞成「字段缺席」，而缺席在这里
+// 恰恰意味着「非管理员，整区不渲」。现在 failed_sections 把两种情形分开。
+test("R27 服务端说分区没取到时，网页设置页照渲这一区并说清现状（而不是整块消失）", () => {
+  const base = settingsVm("zh-CN");
+  const failed = renderWebRouteComponent(
+    { key: "settings", settings: { ...base, failed_sections: ["plugins", "mcp_servers"] }, isAdmin: true },
+    { locale: "zh-CN" }
+  );
+  assert.equal(failed.html.includes('data-r24-settings-plugins-failed="true"'), true);
+  assert.equal(failed.html.includes('data-r26-settings-mcp-failed="true"'), true);
+  assert.equal(failed.html.includes("插件清单这次没加载出来。"), true);
+  assert.equal(failed.html.includes("MCP 服务器清单这次没加载出来。"), true);
+  // 缺席但没被标记 → 仍旧整区不渲（非管理员不该看见一句与自己无关的错误）。
+  const absent = renderWebRouteComponent({ key: "settings", settings: base, isAdmin: true }, { locale: "zh-CN" });
+  assert.equal(absent.html.includes("settings-plugins-failed"), false);
+  assert.equal(absent.html.includes("settings-mcp-failed"), false);
+
+  const english = renderWebRouteComponent(
+    { key: "settings", settings: { ...settingsVm("en-US"), failed_sections: ["plugins"] }, isAdmin: true },
+    { locale: "en-US" }
+  );
+  // 撇号在 HTML 里是转义过的实体，断言取不含撇号的那半句。
+  assert.equal(english.html.includes("load this time. Refresh the page to try again"), true);
+});
+
 test("R24-P settings plugins list is admin-gated and read-only: members never see the section at all", () => {
   const base = settingsVm("zh-CN");
   const withoutPlugins = renderWebRouteComponent({ key: "settings", settings: base }, { locale: "zh-CN" });

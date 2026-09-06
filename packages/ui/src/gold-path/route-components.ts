@@ -5137,10 +5137,27 @@ function settingsPluginCompatNote(
   return "";
 }
 
+// R27（真机走查）：这两区会静默整块消失——服务端此前把取数失败吞成「字段缺席」，而缺席在这里恰恰
+// 意味着「非管理员，整区不渲」。settings VM 现在把「本该给你看、但这次没取到」的分区列进
+// failed_sections：见到它就照渲这一区，正文换成一句说清现状的话（网页只读，重试入口是刷新页面/
+// 桌面客户端；不在这里放一个没有处理器的按钮）。
+function settingsSectionFailed(
+  vm: SettingsPageVM,
+  section: NonNullable<SettingsPageVM["failed_sections"]>[number]
+): boolean {
+  return (vm.failed_sections ?? []).includes(section);
+}
+
 function renderSettingsPluginsSection(vm: SettingsPageVM, locale: WorkHubLocale): string {
   const plugins = vm.plugins;
   if (!plugins) {
-    return "";
+    if (!settingsSectionFailed(vm, "plugins")) {
+      return "";
+    }
+    return `<section class="wh-card wh-r4-route-card" data-r24-settings-plugins-failed="true">
+        <h3 role="heading" aria-level="2">${escapeHtml(goldPathCopyT(locale, "plugins"))}</h3>
+        <p class="wh-subtle">${escapeHtml(routeT(locale, "settings.pluginsLoadFailed"))}</p>
+      </section>`;
   }
   const zh = locale === "zh-CN";
   const body = plugins.length === 0
@@ -5227,7 +5244,13 @@ function settingsMcpPrecheckNote(server: SettingsMcpServer, locale: WorkHubLocal
 function renderSettingsMcpSection(vm: SettingsPageVM, locale: WorkHubLocale): string {
   const servers = vm.mcp_servers;
   if (!servers) {
-    return "";
+    if (!settingsSectionFailed(vm, "mcp_servers")) {
+      return "";
+    }
+    return `<section class="wh-card wh-r4-route-card" data-r26-settings-mcp-failed="true">
+        <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "settings.mcpServers"))}</h3>
+        <p class="wh-subtle">${escapeHtml(routeT(locale, "settings.mcpLoadFailed"))}</p>
+      </section>`;
   }
   const body = servers.length === 0
     ? `<p class="wh-subtle">${escapeHtml(routeT(locale, "settings.mcpEmpty"))}</p>`

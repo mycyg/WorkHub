@@ -664,6 +664,17 @@ export type DesktopPluginsSectionState = {
   supported: boolean;
 };
 
+// R27（真机走查）：插件 / MCP 分区会静默整块消失——服务端这两块的取数失败此前被吞成「字段缺席」，
+// 而缺席在这里恰恰意味着「非管理员，整区不渲」。现在设置页 VM 会把「本该给你看、但这次没取到」的
+// 分区列进 failed_sections：见到它就照常渲这一区，落到既有的「没加载出来 + 重试」那一行，
+// 顺带仍然去拉一次 /api/plugins（那条端点可能好着——设置页只是没能把摘要塞进来）。
+export function settingsSectionFailedOnServer(
+  vm: Pick<SettingsPageVM, "failed_sections">,
+  section: NonNullable<SettingsPageVM["failed_sections"]>[number]
+): boolean {
+  return (vm.failed_sections ?? []).includes(section);
+}
+
 export function pluginsSectionHtml(state: DesktopPluginsSectionState, zh: boolean): string {
   if (!state.visible) {
     return "";
@@ -1480,7 +1491,8 @@ export function createSettingsView(): SpotlightCapabilityView {
         const pluginsHtml = pluginsSectionHtml(
           {
             // 管理员门：非管理员的 settings VM 结构性不含 plugins，整区不渲（同 permission_policies）。
-            visible: vm.plugins !== undefined,
+            // R27：服务端说这一区「该给你看但这次没取到」时照渲，落到下面的「没加载出来 + 重试」。
+            visible: vm.plugins !== undefined || settingsSectionFailedOnServer(vm, "plugins"),
             plugins,
             failed: pluginsFailed,
             hostDshToolsVersion: pluginHostVersion,
@@ -1497,7 +1509,7 @@ export function createSettingsView(): SpotlightCapabilityView {
         );
         const mcpHtml = mcpServersSectionHtml(
           {
-            visible: vm.mcp_servers !== undefined,
+            visible: vm.mcp_servers !== undefined || settingsSectionFailedOnServer(vm, "mcp_servers"),
             servers: mcpServers,
             connections: mcpConnections,
             secretRefEnvPrefix: mcpSecretRefEnvPrefix,
@@ -1636,9 +1648,13 @@ export function createSettingsView(): SpotlightCapabilityView {
           loadDevices(),
           loadServerHealth(),
           // 非管理员的 VM 里没有 plugins 字段——那就连列表都不去拉（省一次注定 403 的请求）。
-          vm.plugins !== undefined ? loadPlugins() : Promise.resolve(),
+          // R27：字段缺席但服务端把这一区列进了 failed_sections，说明身份是管理员、只是设置页这次
+          // 没取到摘要——照拉一次清单端点，它常常是好的。
+          vm.plugins !== undefined || settingsSectionFailedOnServer(vm, "plugins") ? loadPlugins() : Promise.resolve(),
           // MCP 清单端点同样是管理员门，据它自己的那个信号（见上面 mcpServers 那组状态的注释）。
-          vm.mcp_servers !== undefined ? loadMcpServers() : Promise.resolve()
+          vm.mcp_servers !== undefined || settingsSectionFailedOnServer(vm, "mcp_servers")
+            ? loadMcpServers()
+            : Promise.resolve()
         ]);
         if (disposed) return;
         renderAll();

@@ -1554,6 +1554,12 @@ export const costDashboardVmSchema = z.object({
 });
 export type CostDashboardVM = z.infer<typeof costDashboardVmSchema>;
 
+// R27（真机走查）：设置页的插件 / MCP 分区会**静默整块消失**——路由层这两块的取数失败被 `catch {}`
+// 吞成「字段缺席」，而字段缺席在契约上恰恰是「你不是管理员，这一区不该给你看」。管理员既看不到
+// 分区，也看不到任何一句错误。这个字段把两种情形分开：缺席 = 不该看；列进这里 = 该看但这次没取到。
+export const settingsSectionKeySchema = z.enum(["plugins", "mcp_servers"]);
+export type SettingsSectionKey = z.infer<typeof settingsSectionKeySchema>;
+
 export const settingsPageVmSchema = z.object({
   generated_at: isoDateTimeSchema,
   locale: workHubLocaleSchema,
@@ -1576,6 +1582,9 @@ export const settingsPageVmSchema = z.object({
   // 只在桌面端说得通；网页在这里只回答「这个部署接了什么、还连得上吗」，动作入口指向桌面客户端。
   // 行的形状是裁剪过的 summary，结构性不含命令 / 参数 / 环境变量 / 密钥引用 / 工作目录。
   mcp_servers: z.array(mcpServerSummaryVmSchema).optional(),
+  // R27：这一轮没取到的分区（见 settingsSectionKeySchema）。只有「本该给这个身份看」的分区才会进来，
+  // 两端据此渲一句「没加载出来」而不是把整区抹掉。
+  failed_sections: z.array(settingsSectionKeySchema).optional(),
   runtime: z.object({
     app_env: z.enum(["development", "test", "production"]),
     runtime_status: z.enum(["ready", "attention_needed"]),
