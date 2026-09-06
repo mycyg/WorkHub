@@ -27,6 +27,7 @@ import {
   type OverlapHunkChoiceAction
 } from "../overlap-hunk-review.js";
 import { renderRichPatchViewer, richPatchViewerCss } from "../rich-patch-viewer.js";
+import { stripMarkdownMarkers } from "../markdown-text.js";
 import { renderRouteLineEditor, routeLineEditorCss } from "../route-line-editor.js";
 import {
   compactStructuredFieldLabels,
@@ -127,9 +128,6 @@ function safeHref(value: unknown): string {
   return "#";
 }
 
-function stripMarkdown(value: string) {
-  return value.replace(/[#*_`>-]/gu, " ").replace(/\s+/gu, " ").trim();
-}
 
 function normalizePublicProposalCopy(value: string, locale: WorkHubLocale) {
   return value
@@ -144,7 +142,7 @@ function normalizePublicProposalCopy(value: string, locale: WorkHubLocale) {
 }
 
 export function publicProposalSummaryText(markdown: string, locale: WorkHubLocale, maxLength = 260) {
-  const text = stripMarkdown(normalizePublicProposalCopy(markdown, locale));
+  const text = stripMarkdownMarkers(normalizePublicProposalCopy(markdown, locale));
   // R4：硬切断像渲染 bug——超长补省略号。R7：按码点切（[...str]），不把 emoji 的 surrogate pair 切成乱码。
   const points = [...text];
   return points.length > maxLength ? `${points.slice(0, maxLength).join("")}…` : text;

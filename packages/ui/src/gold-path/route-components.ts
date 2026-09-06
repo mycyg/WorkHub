@@ -49,6 +49,7 @@ import type {
 import { WORK_ITEM_COMMENT_MAX_CHARS } from "@workhub/contracts";
 
 import { personAvatarTileHtml } from "../avatar/avatar-tile.js";
+import { stripMarkdownMarkers } from "../markdown-text.js";
 import { renderAgentRunReplay } from "../replay/index.js";
 import { proposalCss, renderProposalConflictCards } from "../proposal/index.js";
 import {
@@ -399,9 +400,6 @@ function routeTOrHumanize(locale: WorkHubLocale, key: string, fallbackToken: str
   return map[key] ?? humanizeToken(fallbackToken);
 }
 
-function stripMarkdown(value: string | undefined) {
-  return (value ?? "").replace(/[#*_`>-]/gu, " ").replace(/\s+/gu, " ").trim();
-}
 
 function boolLabel(value: boolean, locale: WorkHubLocale) {
   return routeT(locale, value ? "settings.configured" : "settings.notConfigured");
@@ -1686,7 +1684,7 @@ function renderTaskPlanPanel(
         return `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-task-plan-item="${escapeHtml(item.id)}" data-r9-task-plan-role="${escapeHtml(item.role)}" data-r9-task-plan-budget="${escapeHtml(String(item.budget_share_pct))}" data-r9-task-plan-depends="${escapeHtml(dependsLabel)}">
           <div>
             <strong>${escapeHtml(`${displaySeq}. ${item.title}`)}</strong>
-            <p>${escapeHtml(stripMarkdown(item.acceptance_md))}</p>
+            <p>${escapeHtml(stripMarkdownMarkers(item.acceptance_md))}</p>
           </div>
           <div class="wh-r4-route-meta">
             <span class="wh-pill">${escapeHtml(taskPlanItemRoleLabel(locale, item.role))}</span>
@@ -1979,7 +1977,7 @@ function renderWorkItemCommentsCard(vm: WorkItemDetailVM, locale: WorkHubLocale)
 
 function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocale): WebRouteComponent {
   const title = vm.workitem.title ?? vm.workitem.code;
-  const summary = stripMarkdown(vm.workitem.summary_md ?? vm.workitem.raw_description ?? uiT(locale, "workitem.defaultSummary"));
+  const summary = stripMarkdownMarkers(vm.workitem.summary_md ?? vm.workitem.raw_description ?? uiT(locale, "workitem.defaultSummary"));
   const actions = workItemActions(vm, locale);
   const latestProposal = vm.latest_proposal;
   const deliverableRows = latestProposal?.changes.length
@@ -2037,7 +2035,7 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
           ${(() => {
     // L25：上下文卡正文别和头部 summary 重复(都源自 raw_description 时)；两者都空也别渲一个空 <p>。
     const body = vm.workitem.planning_note ?? vm.workitem.raw_description ?? "";
-    return body && stripMarkdown(body) !== summary ? `<p>${escapeHtml(body)}</p>` : "";
+    return body && stripMarkdownMarkers(body) !== summary ? `<p>${escapeHtml(body)}</p>` : "";
   })()}
           ${renderWorkItemSourceContext(vm, locale)}
           ${(vm.approval_decisions ?? []).length ? `<div data-r9-workitem-approval-decisions="${escapeHtml(String((vm.approval_decisions ?? []).length))}">
@@ -2166,7 +2164,7 @@ function renderTaskPlanItemsPanel(vm: ProposalDetailVM, locale: WorkHubLocale): 
     return `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-plan-item="${escapeHtml(item.id)}" data-r9-plan-item-role="${escapeHtml(item.role)}">
       <div>
         <strong>#${index + 1} ${escapeHtml(item.title)}</strong>
-        <p style="white-space:pre-line">${escapeHtml(goldPathCopyT(locale, "acceptance"))}${escapeHtml(stripMarkdown(item.acceptance_md))}</p>
+        <p style="white-space:pre-line">${escapeHtml(goldPathCopyT(locale, "acceptance"))}${escapeHtml(stripMarkdownMarkers(item.acceptance_md))}</p>
       </div>
       <div class="wh-r4-route-meta">
         <span class="wh-pill">${escapeHtml(taskPlanItemRoleBadge(item.role, locale))}</span>
@@ -2257,7 +2255,7 @@ function renderProposalRouteComponent(
   });
   const reactAttrs = dataAttrs(reactRouteComponentMarkerAttrs(reactComponent));
   const props = reactComponent.props;
-  const summaryFull = stripMarkdown(vm.manifest.summary_md);
+  const summaryFull = stripMarkdownMarkers(vm.manifest.summary_md);
   // R4：硬切断像渲染 bug——超长补省略号。
   // R7：按码点截断——UTF-16 code unit 硬切会把 emoji surrogate pair 切成乱码。
   const summaryPoints = [...summaryFull];
@@ -4766,7 +4764,7 @@ function mirrorActionCardHtml(content: Record<string, unknown>, locale: WorkHubL
   const list = items.slice(0, 8).map((item) => {
     const record = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
     const titleMd = typeof record["title_md"] === "string" ? record["title_md"] : typeof record["title"] === "string" ? record["title"] : "";
-    const title = stripMarkdown(titleMd);
+    const title = stripMarkdownMarkers(titleMd);
     return `<span class="wh-mirror-clarify-opt">${escapeHtml(title || (goldPathCopyT(locale, "untitled")))}</span>`;
   }).join("");
   return `<div class="wh-mirror-clarify"><span class="wh-mirror-clarify-badge">${escapeHtml(header)}</span>${list ? `<div class="wh-mirror-clarify-opts">${list}</div>` : ""}</div>`;
