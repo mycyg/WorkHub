@@ -8,6 +8,11 @@
 [![License: PolyForm NC 1.0.0](https://img.shields.io/badge/License-PolyForm%20NC%201.0.0-orange)](LICENSE)
 [![verify](https://github.com/mycyg/WorkHub/actions/workflows/verify.yml/badge.svg)](https://github.com/mycyg/WorkHub/actions/workflows/verify.yml)
 
+![The WorkHub desktop spotlight box expanded, showing one project's work items and files](docs/assets/readme/desktop-spotlight-expanded.png)
+
+One keystroke brings up the spotlight box: projects, work items, and the changes waiting on you are
+all right there — no window to go hunting for.
+
 ---
 
 ## What WorkHub is
@@ -61,6 +66,16 @@ Every item below is a real, clickable feature — not a roadmap entry:
   signal Cuu can reason about project progress from, instead of relying only on people
   self-reporting.
 
+## A look at the interface
+
+All of these are the actual macOS desktop client.
+
+| | |
+|---|---|
+| ![The collapsed spotlight box: a thin search bar near the top of the screen](docs/assets/readme/desktop-spotlight-idle.png)<br>**Spotlight box · collapsed**<br>Most of the time it's just a thin search bar near the top of the screen. ⌥Space brings it up; type what you want to do instead of hunting for a window. | ![The expanded spotlight box: a project's work items and recent files](docs/assets/readme/desktop-spotlight-expanded.png)<br>**Spotlight box · expanded**<br>A project's work items carry a code, a status, and a priority, with recently changed files underneath. Pick one and you're in it. |
+| ![The Cuu desktop pet with an approval card waiting on a decision](docs/assets/readme/desktop-pet.png)<br>**Cuu, the desktop pet**<br>When something needs your call, Cuu hands you a card in the corner of the screen: what she changed, and which meeting and which file it came from. Approve, send back, or hand off right there. | ![The settings page showing the plugins section and the MCP servers section](docs/assets/readme/desktop-settings-plugins-mcp.png)<br>**Plugins and MCP servers**<br>Install plugins and connect MCP servers from Settings; each row shows its trust level and how many tools it brought online. Anything outside a read-only assertion still goes to a human every time. |
+| ![The workbench group chat: messages from teammates and Cuu, plus an action card](docs/assets/readme/desktop-workbench-chat.png)<br>**Workbench · project chat**<br>People and Cuu talk in the same room. When the discussion settles, Cuu turns it into an action card tagged with who should do it; the right-hand panel holds the project's files. | ![A change request in the workbench: line-by-line before/after with approve and send-back buttons](docs/assets/readme/desktop-workbench-change-request.png)<br>**Workbench · change request**<br>Finished work opens a change request first: which files moved, and the before/after laid out line by line. It only merges once you approve, and you can always roll back to before. |
+
 ## Quick self-host: three steps
 
 **Prerequisites**: a reachable machine (Linux/macOS), Docker 24+ (with the `docker compose`
@@ -102,6 +117,8 @@ posture) live in [`DEPLOY.md`](DEPLOY.md). For local development without buildin
 see "Local development" below.
 
 ## Download the desktop client
+
+<img src="docs/assets/readme/desktop-pet.png" alt="The Cuu desktop pet with an approval card waiting on a decision" width="260">
 
 Once the server is up, give everyone a desktop client too — the always-on spotlight box, the Cuu
 desktop pet, system notifications, a tray icon, and the full project workbench all live there. The
