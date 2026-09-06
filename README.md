@@ -7,6 +7,10 @@
 [![License: PolyForm NC 1.0.0](https://img.shields.io/badge/License-PolyForm%20NC%201.0.0-orange)](LICENSE)
 [![verify](https://github.com/mycyg/WorkHub/actions/workflows/verify.yml/badge.svg)](https://github.com/mycyg/WorkHub/actions/workflows/verify.yml)
 
+![WorkHub 桌面端聚焦盒展开后显示一个项目的任务与文件](docs/assets/readme/desktop-spotlight-expanded.png)
+
+一条快捷键唤起聚焦盒,项目、任务、待拍板的改动都在这里,不用先找窗口。
+
 ---
 
 ## WorkHub 是什么
@@ -35,6 +39,16 @@
 - **AI 反馈闭环**:对 Cuu 的每条回复/提议/产出打「有用 / 没用」,差评会真实进入夜间技能蒸馏的反例池。
 - **风险预警巡检**:项目经理视角的例行巡检——工单停滞、临期未动工、成本异常放量,汇总成一条日报推进群聊与通知,不逐条骚扰。
 - **GitHub 集成**:项目绑定仓库后,commit / PR / issue 动态成为 Cuu 感知项目进度的客观事实来源,而不只是靠人自己汇报。
+
+## 界面一览
+
+以下均为 macOS 桌面客户端的实际界面。
+
+| | |
+|---|---|
+| ![收起的聚焦盒:屏幕上方一条细搜索条](docs/assets/readme/desktop-spotlight-idle.png)<br>**聚焦盒 · 收起**<br>平时只是屏幕上方一条细搜索条。⌥Space 唤起,直接打字说要做什么,不用先去找窗口。 | ![展开的聚焦盒:一个项目下的任务列表与最近文件](docs/assets/readme/desktop-spotlight-expanded.png)<br>**聚焦盒 · 展开**<br>项目下的任务带编号、状态和优先级,最近改过的文件排在后面。选一条就直接进去处理。 |
+| ![桌宠 Cuu 与一张待拍板的审批卡片](docs/assets/readme/desktop-pet.png)<br>**桌宠 Cuu**<br>该你拍板的时候,Cuu 在桌面角落递一张卡:她改了什么、依据是哪次会议和哪份文件。就地同意、打回或转交。 | ![设置页的插件分区与 MCP 服务器分区](docs/assets/readme/desktop-settings-plugins-mcp.png)<br>**插件与 MCP 服务器**<br>在设置里装插件、接 MCP 服务器,每一条都标着信任级别和已上线的工具数。只读断言之外的工具照旧每次转人。 |
+| ![工作台群聊:成员与 Cuu 的消息,以及一张行动卡](docs/assets/readme/desktop-workbench-chat.png)<br>**工作台 · 项目群聊**<br>人和 Cuu 在同一个群里讨论。讨论停下来,Cuu 把它拎成一张行动卡并标好该谁去干;右侧是这个项目的文件。 | ![工作台里的变更申请:逐行改前改后比对与通过、打回按钮](docs/assets/readme/desktop-workbench-change-request.png)<br>**工作台 · 变更申请**<br>Cuu 干完活先开一份变更申请:动了哪几个文件、改前改后逐行摆出来。确认通过才合入,随时能还原到改之前。 |
 
 ## 快速自托管:三步走
 
@@ -67,6 +81,8 @@ docker compose --env-file .env.pilot -f docker-compose.pilot.yml ps
 完整的部署细节(备份恢复、单实例假设、故障排查、安全口径)见 [`DEPLOY.md`](DEPLOY.md)。本地开发(不经 Docker 打包镜像)见下方「本地开发」。
 
 ## 下载桌面客户端
+
+<img src="docs/assets/readme/desktop-pet.png" alt="桌宠 Cuu 与一张待拍板的审批卡片" width="260">
 
 服务器起好之后,再给每个人装一个桌面客户端——常驻的聚焦盒、桌宠 Cuu、系统通知、托盘,以及完整的项目工作台,都在客户端里。Web 端(浏览器直接开 `http://<服务器IP>:8787/`)功能不缺,只是没有这些常驻的原生能力。
 
