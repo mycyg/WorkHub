@@ -15,6 +15,7 @@ import {
 import { resolveDesktopApiBaseFromStorage } from "./desktop-api-base.js";
 import { startVisibilityAwarePolling } from "./desktop-visibility-polling.js";
 import { pendingDecisionCount } from "./pending-decision-count.js";
+import { resolveDesktopBootLocale } from "./desktop-shell-locale.js";
 import {
   resolveDesktopShellEmitter,
   resolveDesktopShellListen,
@@ -315,6 +316,11 @@ async function bootSpotlight() {
   // R12（首帧）：此前两次网络往返（token 探活 + locale me）完成前 #root 是空 div、整窗白屏——
   // 先同步渲一帧占位盒，让窗口一出现就有画面。
   root.innerHTML = renderDesktopSpotlightBootShell();
+  // R27（真机走查）：占位盒渲完（不拖慢首帧）之后再问壳层当下的语言——这一步之前，登录前的
+  // 连接屏/登录屏只认 navigator.language，`WORKHUB_LOCALE=zh-CN` 在英文系统上完全不起作用。
+  // 显式偏好仍排第一，壳层语言只顶掉 navigator 那一级（见 resolveDesktopBootLocale 顶注）。
+  locale = await resolveDesktopBootLocale();
+  setDocumentLocale(locale);
   // R24 S2（跨窗跟随）：别的窗口换了服务器 → 壳层广播 workhub-server-changed → 本窗 reload 走新地址。
   // 订阅要早于下面的鉴权门分支，否则停在连接屏/登录门的窗口收不到这条广播，会一直卡在旧地址那一屏。
   bindDesktopServerChangedReload(resolveDesktopShellListen(), () => window.location.reload());

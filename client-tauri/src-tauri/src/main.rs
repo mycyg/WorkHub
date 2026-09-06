@@ -1008,6 +1008,16 @@ fn set_shell_locale(app: tauri::AppHandle, locale: String) -> Result<(), String>
     apply_shell_locale(&app, normalize_workhub_locale(&locale))
 }
 
+// R27（真机走查）：登录前的连接屏 / 登录屏永远跟着系统语言——`WORKHUB_LOCALE=zh-CN` 只喂给壳层
+// （托盘菜单 / 窗口标题 / 通知兜底文案），webview 那边没有任何途径问到壳层当下用的是哪种语言，
+// 只能退回 navigator.language，于是英文系统上首启两屏全是英文。壳层这份 Mutex<WorkHubLocale> 本来
+// 就是「配置 → 系统语言」汇总后的单一事实源，读出来给三扇窗口 boot 时用（消费在
+// apps/desktop-webview/src/desktop-shell-locale.ts 的 resolveDesktopBootLocale）。
+#[tauri::command]
+fn get_shell_locale(app: tauri::AppHandle) -> String {
+    current_workhub_locale(&app).as_str().to_string()
+}
+
 fn apply_shell_locale(app: &tauri::AppHandle, locale: WorkHubLocale) -> Result<(), String> {
     if let Ok(mut current) = app.state::<Mutex<WorkHubLocale>>().lock() {
         *current = locale;
@@ -2651,6 +2661,7 @@ macro_rules! workhub_invoke_handler {
             set_spotlight_size,
             set_shell_badge,
             set_shell_locale,
+            get_shell_locale,
             focus_system_notification,
             start_main_window_drag,
             move_main_window_by,

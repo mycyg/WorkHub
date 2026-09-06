@@ -43,6 +43,7 @@ import {
 import { writeDesktopPetQaDomSnapshot } from "./cuu-qa-dom-report.js";
 import { readDesktopClientToken } from "./desktop-client-token.js";
 import { readDesktopConnectionState, resolveDesktopTauriInvoke } from "./desktop-window-controls.js";
+import { resolveDesktopBootLocale } from "./desktop-shell-locale.js";
 import { liquidGlassHeadHtml } from "./liquid-glass.js";
 import {
   liquidGlassFilterCss,
@@ -936,7 +937,14 @@ export async function bootDesktopPetSurface(
     reload?: () => void;
   } = {}
 ): Promise<DesktopPetSurfaceRuntime> {
-  let locale = desktopPetLocale();
+  // R27（真机走查）：①登录前桌宠也只认 navigator.language，`WORKHUB_LOCALE=zh-CN` 在英文系统上不
+  // 起作用；②昵称登录成功后主窗立刻切中文、桌宠卡片仍是英文夹中文。这里先问一次壳层当下的语言
+  // （显式偏好仍排第一，壳层只顶掉 navigator 那一级）；②的另一半是下面的 workhub-locale-changed
+  // 订阅——桌宠收到 workhub-logged-in 后确实 reload 了，但那次 reload 跑在主窗拿到 /me、写下 zh-CN
+  // 之前，光靠 reload 读到的还是旧值。
+  let locale = await resolveDesktopBootLocale({
+    override: (globalThis as { __WORKHUB_CUU_QA_LOCALE__?: unknown }).__WORKHUB_CUU_QA_LOCALE__
+  });
   const controller = input.controller ?? createCuuController({ preferences: loadCuuPreferences() });
   const idleScheduler = input.idleScheduler ?? createDesktopPetIdleScheduler(Date.now());
   const petWindowBridge = input.petWindowBridge ?? resolveDesktopPetWindowBridge();

@@ -15,6 +15,7 @@ import {
   readDesktopClientToken
 } from "../desktop-client-token.js";
 import { resolveDesktopApiBaseFromStorage } from "../desktop-api-base.js";
+import { resolveDesktopBootLocale } from "../desktop-shell-locale.js";
 import {
   bindDesktopCredentialGate,
   completeDesktopLoginSuccess,
@@ -325,6 +326,10 @@ async function boot(): Promise<void> {
   root.innerHTML = `${renderWorkbenchDocumentHead()}<div class="wh-ds wh-wb"><div class="wh-wb-loading"><span class="wh-wb-spinner"></span>${
     workbenchT(locale, "openingTheWorkbench")
   }</div></div>`;
+  // R27（真机走查）：登录前的几屏此前只认 navigator.language——`WORKHUB_LOCALE=zh-CN` 在英文系统上
+  // 完全不起作用。问一次壳层当下的语言（显式偏好仍排第一，壳层只顶掉 navigator 那一级）。
+  locale = await resolveDesktopBootLocale();
+  setDocumentLocale(locale);
 
   const client = createApiClient({
     baseUrl: resolveWorkbenchApiBase(),
