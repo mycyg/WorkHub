@@ -36,6 +36,7 @@ import {
 } from "./proposals.js";
 
 import { spotlightViewsT } from "./locales.js";
+import { pendingDecisionCount } from "../../pending-decision-count.js";
 
 // 决策卡的动作 href 分两类:导航型(看改动「查看变更」GET /proposals/:id、工作项 /workitems/:id —— 该内联打开对应能力)
 // 与提交型(POST /api/... —— 走 runAction 落库)。导航型若被当提交处理,会落到 runAction 末尾的「请到对应能力处理」
@@ -394,7 +395,7 @@ export function mountAttentionInbox(ctx: AttentionInboxContext): AttentionInboxH
       let pendingFocusItemId = ctx.target?.id;
 
       const setSubtitleFromVm = (vm: AttentionHomeVM) => {
-        const n = vm.queue?.length ?? 0;
+        const n = pendingDecisionCount(vm);
         const hasSourceWarnings = (vm.source_warnings?.length ?? 0) > 0;
         if (n === 0 && hasSourceWarnings) {
           ctx.setSubtitle(spotlightViewsT(ctx.locale, "partiallyLoaded"));

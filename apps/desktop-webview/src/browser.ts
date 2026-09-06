@@ -14,6 +14,7 @@ import {
 } from "./desktop-client-token.js";
 import { resolveDesktopApiBaseFromStorage } from "./desktop-api-base.js";
 import { startVisibilityAwarePolling } from "./desktop-visibility-polling.js";
+import { pendingDecisionCount } from "./pending-decision-count.js";
 import {
   resolveDesktopShellEmitter,
   resolveDesktopShellListen,
@@ -463,7 +464,7 @@ async function bootSpotlight() {
     const refreshApprovalsBadge = async () => {
       try {
         const att = await client.pages.attention({ locale });
-        const approvals = att.queue?.length ?? 0;
+        const approvals = pendingDecisionCount(att);
         spotlight.setBadges({ approvals });
         // R15 批 A6（托盘/Dock 角标）：把「待你拍板 + 未读通知」推到系统托盘/Dock 层（workbench 关着、
         // 聚焦盒收着也能看到有事要处理）。未读走既有 GET /api/notifications 的 counts.unread（不新造端点），

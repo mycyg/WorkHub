@@ -15,6 +15,8 @@ import {
   reviewAttentionProposalWithoutMerge
 } from "./attention.js";
 import type { SpotlightViewContext } from "../view-context.js";
+import { renderInboxNavHtml } from "../../workbench/rail.js";
+import { pendingDecisionCount } from "../../pending-decision-count.js";
 
 function tick() {
   return new Promise<void>((resolve) => setImmediate(resolve));
@@ -866,6 +868,86 @@ test("R23 F-04 an inbox opened on a named card focuses it once, then stops pulli
     await tick();
     await tick();
     assert.equal(namedCard.dataset["attFocus"], undefined);
+    handle.dispose();
+  } finally {
+    globals.HTMLElement = previousHTMLElement;
+  }
+});
+
+// R27（真机走查）：快捷入口「审批队列」写着「1 条待你拍板」时，工作台左上「待拍板」还是「都处理完了」。
+// 两面读的本来就是同一个 GET /api/pages/attention，但各自在自己的文件里把 queue 数了一遍——这条
+// 测试把「同一件待拍板的事在两面必须是同一个数」钉在一处，两面从此都只经 pendingDecisionCount。
+test("R27 同一条待审批在快捷入口副标题与工作台徽标上是同一个数", async () => {
+  const globals = globalThis as { HTMLElement?: unknown };
+  const previousHTMLElement = globals.HTMLElement;
+  globals.HTMLElement = FakeElement;
+  const body = new FakeBody();
+  let subtitle = "";
+  // 一条来自 approval_requests 的待审批（决策队列四个来源之一）。
+  const vm = {
+    queue: [
+      {
+        id: "ap-1",
+        kind: "approval",
+        title: "把这次改动发出去",
+        summary: "需要你拍板",
+        actions: []
+      }
+    ],
+    background_runs: [],
+    cuu_state: "idle"
+  } as unknown as AttentionHomeVM;
+
+  try {
+    const handle = mountAttentionInbox({
+      body: body as unknown as HTMLElement,
+      locale: "zh-CN",
+      client: { pages: { async attention() { return vm; } } } as never,
+      setSubtitle(text: string) {
+        subtitle = text;
+      },
+      toast() {},
+      requestResize() {},
+      open() {}
+    });
+    await tick();
+
+    assert.equal(subtitle, "1 条待你拍板");
+    // 工作台左上徽标读的是同一份计数（shell.ts 的 refreshInboxBadge → store.inboxCount）。
+    const railHtml = renderInboxNavHtml(true, false, pendingDecisionCount(vm));
+    assert.match(railHtml, /data-wb-inbox-count="1"/u);
+    assert.match(railHtml, />1</u);
+    handle.dispose();
+  } finally {
+    globals.HTMLElement = previousHTMLElement;
+  }
+});
+
+// 队列空了两面也要一致：快捷入口说「都处理完了」，工作台徽标干脆不渲。
+test("R27 队列为空时两面同样一致：一句「都处理完了」，一个不渲的徽标", async () => {
+  const globals = globalThis as { HTMLElement?: unknown };
+  const previousHTMLElement = globals.HTMLElement;
+  globals.HTMLElement = FakeElement;
+  const body = new FakeBody();
+  let subtitle = "";
+  const vm = { queue: [], background_runs: [], cuu_state: "idle" } as unknown as AttentionHomeVM;
+  try {
+    const handle = mountAttentionInbox({
+      body: body as unknown as HTMLElement,
+      locale: "zh-CN",
+      client: { pages: { async attention() { return vm; } } } as never,
+      setSubtitle(text: string) {
+        subtitle = text;
+      },
+      toast() {},
+      requestResize() {},
+      open() {}
+    });
+    await tick();
+
+    assert.equal(subtitle, "都处理完了");
+    assert.equal(pendingDecisionCount(vm), 0);
+    assert.doesNotMatch(renderInboxNavHtml(true, false, pendingDecisionCount(vm)), /data-wb-inbox-count/u);
     handle.dispose();
   } finally {
     globals.HTMLElement = previousHTMLElement;
