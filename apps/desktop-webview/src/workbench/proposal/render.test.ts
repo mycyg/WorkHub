@@ -45,6 +45,18 @@ test("an opened proposal renders approve and request-changes buttons plus summar
   assert.match(html, /data-wb-prop-back/u);
 });
 
+// R27（真机走查）：右栏提议摘要把「预计 24-48 小时」渲成了「预计 24 48 小时」——摘要压平层
+// （packages/ui 的 stripMarkdownMarkers）此前无差别吃掉连字符。这里从右栏 HTML 这一端钉住。
+test("右栏摘要保留数字区间里的连字符", () => {
+  const html = renderProposalSidePanelHtml(
+    detailState({
+      manifest: { ...proposalVm().manifest, summary_md: "补齐了第三节，预计 24-48 小时内交付。" }
+    }),
+    "zh-CN"
+  );
+  assert.match(html, /预计 24-48 小时内交付。/u);
+});
+
 test("a reviewed proposal with a merge action renders the merge button instead of approve/deny", () => {
   const html = renderProposalSidePanelHtml(
     detailState({

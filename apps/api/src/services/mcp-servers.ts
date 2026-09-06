@@ -290,6 +290,20 @@ export function toMcpServerVm(row: McpServerRow, snapshot?: McpServerStatusSnaps
   );
 }
 
+// R27（与插件清单同一类事故）：precheck_report 是没有 CHECK 约束的 jsonb，读回来被 `as` 强转而不是
+// parse；command 这一列在库里可空（给将来的非 stdio 传输留的余地），读侧又拿 `?? ""` 伪造了一个
+// 契约明令禁止的空串。任一情形都让 GET /api/mcp-servers 整个 500，设置页那一区跟着静默消失。
+// 清单这条路径改成逐行容错：解析不了的那一行丢掉并留一条结构化 warn，其余服务器照常列出。
+// 契约不放宽——stdio 行的启动命令确实必填，一条没有命令的 stdio 行是坏数据，不是合法状态。
+function toListedMcpServerVm(row: McpServerRow, snapshot?: McpServerStatusSnapshot): McpServerVM | undefined {
+  try {
+    return toMcpServerVm(row, snapshot);
+  } catch (error) {
+    getDefaultStructuredLogger().warn("mcp_server_row_dropped_unparsable", { mcpServerId: row.id, error });
+    return undefined;
+  }
+}
+
 export function createMcpServerService(deps: McpServerServiceDependencies): McpServerService {
   const logger = getDefaultStructuredLogger();
   const now = deps.now ?? (() => new Date());
@@ -441,7 +455,7 @@ export function createMcpServerService(deps: McpServerServiceDependencies): McpS
       return parseOutputContract(
         mcpServerListVmSchema,
         {
-          servers: rows.map((row) => toMcpServerVm(row, snapshotFor(snapshots, row.id))),
+          servers: rows.flatMap((row) => toListedMcpServerVm(row, snapshotFor(snapshots, row.id)) ?? []),
           connections,
           secret_ref_env_prefix: MCP_SECRET_REF_ENV_PREFIX,
           available_secret_refs: availableSecretRefs()

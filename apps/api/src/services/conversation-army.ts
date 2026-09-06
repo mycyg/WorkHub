@@ -13,6 +13,7 @@ import {
 import {
   armyBackgroundPageVmSchema,
   armyOverviewPageVmSchema,
+  armyRunRecentStepVmSchema,
   catCodename,
   conversationArmyPanelVmSchema,
   type ArmyBackgroundPageVM,
@@ -24,6 +25,7 @@ import {
 
 import type { AuthActor } from "../middleware/auth.js";
 import { parseOutputContract } from "../pages/output-contract.js";
+import { getDefaultStructuredLogger } from "../logging.js";
 import { getDefaultPulseScheduler, type PulseSchedulerStats } from "../workers/pulse-scheduler.js";
 
 // R17 G3（#8 后台任务区接真）：最近主动性动态展示上限（拍板 B）。多取 1 条用来精确判定 capped（拿到
@@ -96,16 +98,28 @@ export type ConversationArmyServiceDependencies = {
   now?: () => Date;
 };
 
+// R27（与任务详情同一类事故）：agent_steps.phase 是无 CHECK 的 varchar，一条契约外的值经这里进整页 VM
+// 就把军团面板/总览打成 internal_contract_error（500）。recent_step 本来就是可空字段——解析不了就退成
+// null（卡片少一行「最近一步」，其余照常），并留一条结构化 warn。
 function recentStepToVm(step: ConversationRunCardRow["recentStep"]) {
   if (!step) {
     return null;
   }
-  return {
+  const parsed = armyRunRecentStepVmSchema.safeParse({
     phase: step.phase,
     tool_name: step.toolName,
     output_excerpt: step.outputExcerpt,
     step_no: step.stepNo
-  };
+  });
+  if (!parsed.success) {
+    getDefaultStructuredLogger().warn("army_run_recent_step_dropped_unparsable", {
+      phase: step.phase,
+      stepNo: step.stepNo,
+      issues: parsed.error.issues.map((issue) => ({ path: issue.path.join("."), code: issue.code }))
+    });
+    return null;
+  }
+  return parsed.data;
 }
 
 // 猫仔代号在这一层现算(catCodename 是纯函数,不用存库):卡片元数据全部装配完才知道 run id，

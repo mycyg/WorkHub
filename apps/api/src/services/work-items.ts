@@ -24,6 +24,7 @@ import {
   type WorkHubDatabaseClient
 } from "@workhub/db";
 import {
+  agentStepSchema,
   cuuLauncherSpecFromSelectedOptionIds,
   deliverableChangeManifestSchema,
   evidenceRefSchema,
@@ -50,6 +51,7 @@ import {
   type WorkHubLocale
 } from "@workhub/contracts";
 import type { ProviderRegistry } from "@workhub/agent/providers";
+import { getDefaultStructuredLogger } from "../logging.js";
 
 import {
   ASSIGNMENT_ROLES,
@@ -1223,20 +1225,37 @@ function toWorkItemVm(row: WorkItemRow): WorkItem {
   return workItem;
 }
 
-function toAgentStepVm(row: WorkItemAgentStepRow): AgentStep {
-  const step: AgentStep = {
+// R27（真机走查）：agent_steps.phase / control_signal 是 varchar，库里没有 CHECK 约束——一条契约外的
+// 值（历史行、直接 SQL 写入、将来新增的档位）此前经 `as` 强转直接进整页 VM，workItemDetailVmSchema
+// 一 parse 就抛 InternalContractError，任务详情整页 500，界面只剩「详情没加载出来 / 重试」。
+// 改成逐步校验：解析不了的那一步丢掉并留一条结构化 warn（含 run/步号/原始值），其余步骤与整页照常渲。
+// 同 evidenceRefsFromBindings / assigneeList 的既有取舍——一条脏数据不许把整页打挂。
+function toAgentStepVm(row: WorkItemAgentStepRow): AgentStep | undefined {
+  const candidate: Record<string, unknown> = {
     id: row.id,
     agent_run_id: row.agentRunId,
     step_no: row.stepNo,
-    phase: row.phase as AgentStep["phase"],
+    phase: row.phase,
     input_json: row.inputJson,
     created_at: row.createdAt.toISOString()
   };
-  if (row.toolName) step.tool_name = row.toolName;
-  if (row.outputExcerpt) step.output_excerpt = row.outputExcerpt;
-  if (row.controlSignal) step.control_signal = row.controlSignal as AgentStep["control_signal"];
-  if (row.snapshotId) step.snapshot_id = row.snapshotId;
-  return step;
+  if (row.toolName) candidate.tool_name = row.toolName;
+  if (row.outputExcerpt) candidate.output_excerpt = row.outputExcerpt;
+  if (row.controlSignal) candidate.control_signal = row.controlSignal;
+  if (row.snapshotId) candidate.snapshot_id = row.snapshotId;
+  const parsed = agentStepSchema.safeParse(candidate);
+  if (!parsed.success) {
+    getDefaultStructuredLogger().warn("work_item_agent_step_dropped_unparsable", {
+      stepId: row.id,
+      agentRunId: row.agentRunId,
+      stepNo: row.stepNo,
+      phase: row.phase,
+      ...(row.controlSignal ? { controlSignal: row.controlSignal } : {}),
+      issues: parsed.error.issues.map((issue) => ({ path: issue.path.join("."), code: issue.code }))
+    });
+    return undefined;
+  }
+  return parsed.data;
 }
 
 function evidenceSourceType(raw: string): EvidenceRef["source_type"] {
@@ -1671,7 +1690,7 @@ function buildWorkItemDetail(
       created_at: item.createdAt.toISOString(),
       updated_at: item.updatedAt.toISOString()
     })),
-    agent_trace_preview: rows.agentSteps.map(toAgentStepVm),
+    agent_trace_preview: rows.agentSteps.flatMap((step) => toAgentStepVm(step) ?? []),
     ...(latestProposal?.success ? { latest_proposal: latestProposal.data } : {}),
     // R13 批 P4：reviewer_kind 是仓库层批量反查好、直接挂在 row 上的字段（见 attachAcceptedDeliverableReviewerKind），
     // 这里始终原样透传——与 includeRestore 是否显式传入无关（两者是正交的两个可选项）。

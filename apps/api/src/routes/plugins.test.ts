@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { captureStdoutLines } from "@workhub/tools/test-support";
+
 import { Hono } from "hono";
 import { generateSignedCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
@@ -557,6 +559,59 @@ test("不存在的插件是 404；不是 uuid 的 id 连服务都不进", async 
 });
 
 // —— 网页设置页的只读清单（同一道管理员门；网页不做安装/启停） —— //
+
+// R27（真机走查）：一条 compat_report 形状漂移的行此前让 GET /api/plugins 整个 500，
+// 设置页那一区跟着静默消失。现在坏行只丢自己。
+test("R27 一条 compat_report 漂移的插件行只丢自己，清单照常返回并留下结构化 warn", async () => {
+  const otherId = "22222222-2222-4222-8222-222222222299";
+  const { app, runtimeSettings } = harness({
+    seed: [
+      row({
+        // level 是契约外的值——库里 compat_report 是没有 CHECK 的 jsonb，拦不住这种行。
+        compatReport: okReport({ checks: [{ id: "manifest", level: "fatal" }] }) as unknown as PluginRow["compatReport"]
+      }),
+      row({ id: otherId, name: "dsh-plugin-two", sourcePath: "/srv/plugins/dsh-plugin-two" })
+    ]
+  });
+  const headers = { Cookie: await cookie(runtimeSettings) };
+
+  // 捕获且透传（见 @workhub/tools/test-support）：整段替换 process.stdout.write 会吞掉报告器的 TAP 行。
+  const { result: response, lines } = await captureStdoutLines(() => app.request("/api/plugins", { headers }));
+
+  assert.equal(response.status, 200);
+  const listed = await data<{ plugins: PluginVM[] }>(response);
+  assert.deepEqual(listed.plugins.map((plugin) => plugin.id), [otherId]);
+  const warned = lines.some((line) => {
+    try {
+      const entry = JSON.parse(line) as { level?: string; event?: string; pluginId?: string };
+      return entry.level === "warn" && entry.event === "plugin_row_dropped_unparsable" && entry.pluginId === pluginId;
+    } catch {
+      return false;
+    }
+  });
+  assert.equal(warned, true, "被丢掉的那一行要留给运维一条结构化 warn");
+});
+
+// R27：取数失败此前被路由的 `catch {}` 吞成「字段缺席」，而缺席恰恰是「非管理员，不该看」的信号——
+// 管理员既看不到分区也看不到任何一句错误。现在失败进 failed_sections，两端据此渲「没加载出来」。
+test("R27 设置页 VM 用 failed_sections 把「这次没取到」和「不该给你看」分开", () => {
+  const runtimeSettings = settings();
+  const readiness = { ready: true, checks: { database: { ok: true }, broker: { ok: true } } } as const;
+  const base = buildSettingsPage({ settings: runtimeSettings, readiness, locale: "zh-CN", generatedAt: now });
+  // 非管理员：既没有 plugins 字段，也没有 failed_sections——不该看的东西不该冒出一句错误。
+  assert.equal(base.plugins, undefined);
+  assert.equal(base.failed_sections, undefined);
+
+  const failed = buildSettingsPage({
+    settings: runtimeSettings,
+    readiness,
+    locale: "zh-CN",
+    generatedAt: now,
+    failedSections: ["plugins"]
+  });
+  assert.equal(failed.plugins, undefined);
+  assert.deepEqual(failed.failed_sections, ["plugins"]);
+});
 
 test("设置页 VM 只在调用方真的填了清单时才带 plugins；摘要里没有本机绝对路径", () => {
   const runtimeSettings = settings();

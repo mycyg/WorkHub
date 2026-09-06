@@ -2580,6 +2580,48 @@ test("pet surface reloads (via the injected reload effect) when it receives the 
   }
 });
 
+// R27（真机走查）：昵称登录成功后主窗立刻切中文，桌宠卡片仍是英文（Your call / Approve / Delegate）
+// 夹着中文正文，重启客户端才对齐。上面那条 workhub-logged-in 只让桌宠 reload，而那次 reload 跑在
+// 主窗拿到 /me、把身份语言写进 localStorage 之前——重读到的还是旧值。这条测试钉死：主窗把落定后的
+// 语言广播出来，桌宠当前语言随之变化并重渲，dispose 时一并解绑。
+test("pet surface follows the workhub-locale-changed broadcast after the main window signs in, and unlistens on dispose", async () => {
+  const target = globalThis as typeof globalThis & { __WORKHUB_CUU_QA_LOCALE__?: unknown };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "en-US";
+  try {
+    await withFakePetDom(async (root) => {
+      const handlers = new Map<string, (event: { payload: unknown }) => void>();
+      const stopped: string[] = [];
+      const listen: DesktopShellListen = (eventName, handler) => {
+        handlers.set(eventName, handler);
+        return () => stopped.push(eventName);
+      };
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient([]),
+        listen,
+        reload: () => undefined
+      });
+      try {
+        assert.equal(runtime.locale, "en-US");
+
+        // 主窗解析出身份语言（zh-CN）后广播——桌宠就地重读、重渲，不用等重启。
+        handlers.get("workhub-locale-changed")?.({ payload: { locale: "zh-CN", source: "main" } });
+        assert.equal(runtime.locale, "zh-CN");
+
+        // 认不出的 payload 一律丢弃，绝不拿猜出来的语言换掉当前语言。
+        handlers.get("workhub-locale-changed")?.({ payload: { locale: "fr-FR", source: "main" } });
+        handlers.get("workhub-locale-changed")?.({ payload: undefined });
+        assert.equal(runtime.locale, "zh-CN");
+      } finally {
+        await runtime.dispose();
+      }
+      assert.ok(stopped.includes("workhub-locale-changed"));
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+  }
+});
+
 // R25-Q（L-06 根治）：连接状态"单一真相"——桌宠收到 workhub-connection-changed 后渲一行诚实提示
 // （不是一张卡片），保持 260×340 body_only 不变（同 renderDesktopPetSurface 的 compactStatusOnly
 // 既有测试锁死的窗口尺寸——见"pet surface renders only the Live2D cat runtime..."用例里
