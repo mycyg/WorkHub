@@ -5,6 +5,7 @@ import type { WorkHubLocale } from "@workhub/ui/gold-path";
 import {
   applyIdentityLocale,
   browserLocale,
+  persistBrowserLocale,
   setDocumentLocale
 } from "@workhub/web-runtime";
 
@@ -15,7 +16,11 @@ import {
 import { resolveDesktopApiBaseFromStorage } from "./desktop-api-base.js";
 import { startVisibilityAwarePolling } from "./desktop-visibility-polling.js";
 import { pendingDecisionCount } from "./pending-decision-count.js";
-import { resolveDesktopBootLocale } from "./desktop-shell-locale.js";
+import {
+  parseDesktopLocaleChangedPayload,
+  publishDesktopLocale,
+  resolveDesktopBootLocale
+} from "./desktop-shell-locale.js";
 import {
   resolveDesktopShellEmitter,
   resolveDesktopShellListen,
@@ -353,7 +358,11 @@ async function bootSpotlight() {
     // R12（首帧）：resolveBootLocale 内部的 me() 与 ensureDesktopClientToken 的探活是同一请求的重复——
     // 直接拿一次 me 结果解析 locale，省一拍串行往返。
     const bootMe = await client.me().catch(() => null);
+    const bootLocale = locale;
     locale = applyIdentityLocale(bootMe, locale);
+    // R27（真机走查）：身份语言此前只在这扇窗口里生效——桌宠窗还举着 boot 时算的那个旧语言，
+    // 卡片一直是英文夹中文，重启客户端才对齐。落定后推给壳层 + 广播给别的窗口（没变就只同步壳层）。
+    publishDesktopLocale({ locale, previous: bootLocale, source: "main" });
     root.innerHTML = renderDesktopSpotlightBootShell();
     const hostEl = root.querySelector<HTMLElement>("[data-spot-host]");
     if (!hostEl) {
@@ -454,6 +463,16 @@ async function bootSpotlight() {
       if (source !== "main") {
         window.location.reload();
       }
+    });
+    // R27：别的窗口把语言定下来了（工作台解析出身份语言、桌宠切了语言）——本窗跟着换。
+    // 走与 pet-locale-changed 同款生效路径（落 localStorage 再 reload），语言没变就什么都不做。
+    void shellListen?.("workhub-locale-changed", (event) => {
+      const parsed = parseDesktopLocaleChangedPayload(event.payload);
+      if (!parsed || parsed.source === "main" || parsed.locale === locale) {
+        return;
+      }
+      persistBrowserLocale(parsed.locale);
+      window.location.reload();
     });
     // MRG-23：冷启动深链（应用未运行时 OS 直接唤起 workhub://…）在主窗 webview 订阅前就 emit 了——
     // 挂载完成后向壳层取回暂存的最后一条（按窗口 label 认领，这里只会拿到发给 main 的），不再丢。

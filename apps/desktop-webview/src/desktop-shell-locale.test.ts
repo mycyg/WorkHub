@@ -3,7 +3,12 @@ import test from "node:test";
 
 import { workHubLocaleStorageKey } from "@workhub/ui/gold-path";
 
-import { readDesktopShellLocale, resolveDesktopBootLocale } from "./desktop-shell-locale.js";
+import {
+  parseDesktopLocaleChangedPayload,
+  publishDesktopLocale,
+  readDesktopShellLocale,
+  resolveDesktopBootLocale
+} from "./desktop-shell-locale.js";
 import type { DesktopWindowControlsScope } from "./desktop-window-controls.js";
 
 type InvokeCall = { command: string; args?: Record<string, unknown> | undefined };
@@ -110,4 +115,75 @@ test("QA/夹具覆盖优先于一切，且读存储抛错时退化成继续问�
     }),
     "zh-CN"
   );
+});
+
+// R27（真机走查）：身份语言此前只在解析它的那扇窗口里生效，桌宠窗一直举着 boot 时算的旧语言。
+test("语言变了才广播；壳层永远先落定，广播排在它之后", async () => {
+  const changedCalls: InvokeCall[] = [];
+  const changedEmits: Array<{ eventName: string; payload: unknown }> = [];
+  const changed = publishDesktopLocale({
+    locale: "zh-CN",
+    previous: "en-US",
+    source: "main",
+    invoke: (command, args) => {
+      changedCalls.push({ command, args });
+      return Promise.resolve();
+    },
+    emitter: {
+      emit(eventName: string, payload?: unknown) {
+        // 广播必须排在 set_shell_locale 落定之后——顺序反了，收广播的窗口 boot 时会问到旧的壳层语言。
+        changedEmits.push({ eventName, payload });
+      }
+    } as never
+  });
+  assert.equal(changed, true);
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(changedCalls.length, 1);
+  assert.equal(changedCalls[0]?.command, "set_shell_locale");
+  assert.deepEqual(changedCalls[0]?.args, { locale: "zh-CN" });
+  assert.deepEqual(changedEmits, [
+    { eventName: "workhub-locale-changed", payload: { locale: "zh-CN", source: "main" } }
+  ]);
+
+  // 没变：壳层照样同步（托盘/标题跟着这台设备的真实语言），但不广播——收广播的窗口不该被无谓地
+  // reload，互相唤醒的回环也是这么断掉的。
+  const sameCalls: InvokeCall[] = [];
+  const sameEmits: Array<{ eventName: string; payload: unknown }> = [];
+  const unchanged = publishDesktopLocale({
+    locale: "zh-CN",
+    previous: "zh-CN",
+    source: "workbench",
+    invoke: (command, args) => {
+      sameCalls.push({ command, args });
+      return Promise.resolve();
+    },
+    emitter: {
+      emit(eventName: string, payload?: unknown) {
+        sameEmits.push({ eventName, payload });
+      }
+    } as never
+  });
+  assert.equal(unchanged, false);
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(sameCalls.length, 1);
+  assert.equal(sameCalls[0]?.command, "set_shell_locale");
+  assert.deepEqual(sameEmits, []);
+});
+
+test("广播 payload 认不出的形状一律丢弃，绝不拿猜出来的语言换掉整扇窗口", () => {
+  assert.deepEqual(parseDesktopLocaleChangedPayload({ locale: "zh-CN", source: "main" }), {
+    locale: "zh-CN",
+    source: "main"
+  });
+  assert.deepEqual(parseDesktopLocaleChangedPayload({ locale: "en-US" }), {
+    locale: "en-US",
+    source: undefined
+  });
+  assert.equal(parseDesktopLocaleChangedPayload({ locale: "fr-FR" }), undefined);
+  assert.equal(parseDesktopLocaleChangedPayload(undefined), undefined);
+  assert.equal(parseDesktopLocaleChangedPayload("zh-CN"), undefined);
 });
